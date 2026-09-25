@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Izuki",
+  "version": "1.0.0",
+  "identifier": "com.novaizuki.izuki",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    },
+    "withGlobalTauri": false
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "msi",
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "copyright": "Free software. Built for Windows.",
+    "category": "Productivity",
+    "shortDescription": "YO IZUKI, DO IT.",
+    "longDescription": "Draw on your screen and Izuki does it. Local-first screen automation for Windows.",
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "startMenuFolder": "Izuki",
+        "installerIcon": "icons/icon.ico",
+        "compression": "lzma"
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc5RjhGM0RBQTQ3QTQyQwpSV1FzcEVlcVBZK2ZCeFlCZ0dWWUY3Z0NEZTZFd1lSbEZ6WHhlUGYwOUpDSDl6ME1Delc0VVRybwo=",
+      "endpoints": [
+        "https://github.com/nova-izuki/izuki/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

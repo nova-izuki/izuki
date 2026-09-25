@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://nova-izuki.github.io/izuki/sitemap.xml

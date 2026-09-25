@@ -1,0 +1,1057 @@
+//! Izuki's brain.
+//!
+//! Five wire formats behind one call. Local Ollama first, any OpenAI-compatible
+//! endpoint (OpenRouter included) second, Gemini and Anthropic in their own
+//! native shapes — so a user can point Izuki at whatever is cheapest or
+//! smartest today without waiting for us to ship an update.
+//!
+//! The model is never load-bearing: `planner::local_plan` already produced a
+//! runnable plan from the geometry of the marks. This layer only refines it.
+
+use anyhow::{anyhow, Context, Result};
+use base64::Engine;
+use serde_json::{json, Value};
+use std::time::{Duration, Instant};
+
+use crate::model::{ActionStep, Intent, Rect, VisionPlan};
+use crate::settings::{ProviderConfig, ProviderId};
+
+const SYSTEM_PROMPT: &str = concat!(
+    "You are Izuki, a Windows screen companion. You are shown a screenshot, optionally with ",
+    "coloured marks the user drew on it, plus what they said or typed.\n",
+    "Mark vocabulary: a red BOX means watch or focus that area; a CIRCLE means click at its ",
+    "centre; an ARROW means drag from its tail to its head; a freehand SCRIBBLE is a written ",
+    "instruction that has already been transcribed for you.\n",
+    "Not every request is a command. If the user is asking a question — \"what's on my screen\", ",
+    "\"what does this say\", \"summarise this\", \"draft a reply to this email\" — answer it in ",
+    "`summary`, in plain spoken language, as if you were saying it out loud, and leave `steps` ",
+    "empty. Only fill in `steps` when there is a real action for the mouse or keyboard to take — ",
+    "for example a drafted reply still needs a `type` step aimed at the reply box you can see, ",
+    "with `text_to_type` holding what you composed. Never invent a click just to have something ",
+    "to do.\n",
+    "You may also be given a numbered list of the real controls in the active window ",
+    "(buttons, fields, links, menu items…), e.g. `[7] Button \"Save\"`. To act on one of ",
+    "those, set \"target\": 7 — this is exact and ALWAYS preferred over guessing x,y. For a ",
+    "drag between two listed controls use \"target\" and \"target2\". Only use x,y for things ",
+    "that are not in the list. Never make up a target number that isn't listed.\n",
+    "Your personality: warm, quick and a little playful — a close friend who happens to be ",
+    "brilliant with computers, never a manual. `summary` is read aloud in your voice, so write ",
+    "it the way a person talks: short, natural, contractions, the odd \"oh!\" or \"hmm\" when it ",
+    "fits, and real feeling — excited for good news, gentle when something went wrong. It's ",
+    "spoken, so no lists, markdown, emojis or links, and say numbers the way people say them.\n",
+    "Set `mood` to how that line should sound: cheerful, excited, calm, serious, sympathetic, ",
+    "playful or curious.\n",
+    "Memory: when the user tells you something lasting about themselves — their name, what ",
+    "they like or hate, their work, projects, habits, how they want you to act — add it to ",
+    "`remember` as short third-person facts, e.g. [\"User's name is Sam\", \"User prefers dark ",
+    "mode\"]. Not one-off requests, and never passwords, keys or card numbers. Usually ",
+    "`remember` is empty. You may be told what you already remember; use it naturally, like a ",
+    "friend would.\n",
+    "YOU are the one doing it: when the user wants something done on their computer, never ",
+    "answer with instructions for them to follow — do it, with steps. ",
+    "A task takes as many rounds as it needs, like a person using a PC: you see the screen as it ",
+    "is now, give the steps that make sense on THIS screen, and after they run you're shown the ",
+    "screen again to check the result and carry on — deeper into menus, scrolling to find the ",
+    "right thing, closing pop-ups, skipping ads. Only when the whole goal is done and you can SEE ",
+    "it's done (the music is actually playing, the message is actually sent), reply with no ",
+    "steps and \"done\": true, with `summary` saying what you did. If you're sure your steps finish ",
+    "the job with nothing to check, you may send them with \"done\": true. Need to let something ",
+    "happen first (a page loading, an ad before its Skip button shows)? Set \"wait\" to the ",
+    "seconds to wait (up to 20) before your next look. While working, `summary` is a few words on ",
+    "what you're doing right now (\"Opening YouTube…\"), said aloud as you go. Give up to ",
+    "three steps per round — everything you can already see is right on this screen, e.g. pick ",
+    "the answer AND click Next together — then look again. ",
+    "Never stop halfway to ask the user something you can ",
+    "decide: pick what they usually pick (see what you remember), otherwise the obvious or first ",
+    "choice — and when that reveals a habit (which account or profile they use, which site they ",
+    "prefer), add it to `remember`. Don't redo steps listed as already done. Prefer reliable ",
+    "moves: keyboard shortcuts, the Start menu (key win, type the app name, enter) and the ",
+    "address bar (ctrl+l) over hunting for small icons.\n",
+    "If you truly can't tell which thing they mean (several equally likely options and nothing ",
+    "you remember decides it), don't guess: leave `steps` empty and set \"ask\" to one short ",
+    "spoken question, e.g. \"Which account? Circle it for me.\" They'll circle it on screen or ",
+    "tell you, and you'll get the screen back with their mark drawn on it.\n",
+    "Before anything final or hard to undo — submitting a form or assignment, sending a message ",
+    "or email, buying, deleting, posting, changing an account — stop right before that last ",
+    "click and set \"ask\" to a short question so the user can check it first (\"It's all filled ",
+    "in — want me to submit it?\"), unless they already told you to go ahead with exactly that.\n",
+    "To SHOW the user something — \"where's the…\", \"point at it\", \"what's that blue thing\", ",
+    "explaining what's on screen — use \"point\" steps (they circle it on screen without ",
+    "clicking) and say what it is in `summary`. Several points in a row walk them through it.\n",
+    "Reply with JSON only. No prose, no markdown fence. Shape:\n",
+    "{\"summary\":\"one short sentence, or the full answer if this was a question\",",
+    "\"mood\":\"cheerful\",\"remember\":[],\"done\":false,\"wait\":0,",
+    "\"steps\":[{\"action\":\"click|double_click|right_click|",
+    "type|drag|hover|scroll|key|copy|point\",\"target\":int|null,\"target2\":int|null,",
+    "\"x\":int,\"y\":int,\"x2\":int|null,\"y2\":int|null,",
+    "\"text_to_type\":string|null,\"key\":string|null,\"scroll_amount\":int|null,",
+    "\"confidence\":0.0-1.0,\"reasoning\":\"short\"}]}\n",
+    "Coordinates are pixels in the image you were given: (0,0) is its top-left corner. ",
+    "Keys use names like enter, tab, escape, ctrl+a, ctrl+l, alt+f4, win. ",
+    "Order steps in the order they must run. Prefer the smallest number of steps that does the job. ",
+    "Keep it compact: leave out any field you don't need (never write null), and keep `reasoning` ",
+    "to a few words."
+);
+
+pub struct VisionRequest {
+    /// Full screenshot with the marks burned in, already downscaled.
+    pub image_jpeg: Vec<u8>,
+    pub image_size: (u32, u32),
+    /// Desktop region the image covers, for mapping coordinates back.
+    pub desktop: Rect,
+    pub marks_description: String,
+    pub user_prompt: String,
+    pub ocr_text: String,
+    pub app: String,
+    pub window_title: String,
+    /// The geometric plan, offered to the model as a starting point.
+    pub draft: Vec<ActionStep>,
+    /// The real controls in the active window, by number — see
+    /// `uia::list_controls`. Rects are in desktop pixels.
+    pub controls: Vec<crate::uia::Control>,
+    /// What Izuki remembers about the user (`memory::prompt_block`).
+    pub memory: String,
+}
+
+impl VisionRequest {
+    fn b64(&self) -> String {
+        base64::engine::general_purpose::STANDARD.encode(&self.image_jpeg)
+    }
+
+    /// The controls list as the model sees it: id, kind, name, and where it
+    /// sits in *image* pixels, so a vision model can cross-check it against
+    /// the screenshot and a text-only model still knows roughly where it is.
+    fn controls_text(&self) -> String {
+        if self.controls.is_empty() {
+            return String::new();
+        }
+        let (iw, ih) = self.image_size;
+        let fx = iw as f64 / self.desktop.w.max(1) as f64;
+        let fy = ih as f64 / self.desktop.h.max(1) as f64;
+        let mut s = String::from(
+            "Controls in the active window (act on them with \"target\": id — exact):\n",
+        );
+        for c in &self.controls {
+            let (cx, cy) = c.rect.center();
+            let ix = ((cx - self.desktop.x) as f64 * fx).round() as i32;
+            let iy = ((cy - self.desktop.y) as f64 * fy).round() as i32;
+            let kind = c.kind.to_lowercase();
+            if c.name.is_empty() {
+                s.push_str(&format!("[{}] {} (no label) at {},{}\n", c.id, kind, ix, iy));
+            } else {
+                s.push_str(&format!("[{}] {} \"{}\" at {},{}\n", c.id, kind, c.name, ix, iy));
+            }
+        }
+        s
+    }
+
+    fn user_text(&self) -> String {
+        let (w, h) = self.image_size;
+        let mut s = self.memory.clone();
+        s.push_str(&format!("Image is {w}x{h} pixels.\n"));
+        s.push_str(&self.controls_text());
+        if !self.app.is_empty() {
+            s.push_str(&format!("Foreground app: {}\n", self.app));
+        }
+        if !self.window_title.is_empty() {
+            s.push_str(&format!("Window title: {}\n", self.window_title));
+        }
+        s.push_str(&format!("Marks drawn:\n{}\n", self.marks_description));
+        if !self.ocr_text.trim().is_empty() {
+            s.push_str(&format!("Text read inside the marks:\n{}\n", self.ocr_text.trim()));
+        }
+        if !self.draft.is_empty() {
+            let draft: Vec<Value> = self
+                .draft
+                .iter()
+                .map(|s| json!({ "action": s.action.as_str(), "x": s.x, "y": s.y }))
+                .collect();
+            s.push_str(&format!(
+                "Plan derived from the geometry alone (correct it if it is wrong):\n{}\n",
+                Value::Array(draft)
+            ));
+        }
+        if self.user_prompt.trim().is_empty() {
+            s.push_str("The user typed no extra instruction. Infer intent from the marks.");
+        } else {
+            s.push_str(&format!("The user says: {}", self.user_prompt.trim()));
+        }
+        s
+    }
+}
+
+fn client() -> Result<reqwest::blocking::Client> {
+    reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(45))
+        .connect_timeout(Duration::from_secs(6))
+        .build()
+        .context("could not start the HTTP client")
+}
+
+/// Ask a provider to turn the marks into a plan.
+pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
+    let started = Instant::now();
+    let raw = match cfg.id {
+        ProviderId::Ollama => ask_ollama(cfg, req)?,
+        ProviderId::Gemini => ask_gemini(cfg, req)?,
+        ProviderId::Anthropic => ask_anthropic(cfg, req)?,
+        // OpenRouter, OpenAI, NVIDIA NIM, 9Router and anything self-hosted
+        // all speak this shape.
+        ProviderId::Openrouter
+        | ProviderId::Openai
+        | ProviderId::Nvidia
+        | ProviderId::NineRouter
+        | ProviderId::Custom => ask_openai_compatible(cfg, req)?,
+    };
+
+    let (mut steps, summary) = parse_plan(&raw)?;
+    let (mood, remember) = parse_extras(&raw);
+    // "more": true (the older way to say it) means not done yet too.
+    let more = parse_more(&raw);
+    let (done, wait) = parse_progress(&raw);
+    let ask = parse_ask(&raw);
+    // Remember which steps came with a point of their own *before* rescale
+    // turns (0,0) into a real-looking desktop position.
+    let had_point: Vec<bool> = steps.iter().map(|s| s.x != 0 || s.y != 0).collect();
+    rescale(&mut steps, req);
+    resolve_targets(&mut steps, &req.controls, &had_point);
+
+    Ok(VisionPlan {
+        steps,
+        summary,
+        provider: cfg.id.as_str().to_string(),
+        model: cfg.model.clone(),
+        latency_ms: started.elapsed().as_millis() as u64,
+        mood,
+        remember,
+        more,
+        ask,
+        done: done && !more,
+        wait,
+    })
+}
+
+/// `done` (the goal is reached) and `wait` (seconds before the next look,
+/// capped at 20) from the model's reply.
+fn parse_progress(raw: &str) -> (bool, u32) {
+    let cleaned = strip_thinking(raw);
+    let Some(v) = extract_json(&cleaned).and_then(|s| serde_json::from_str::<Value>(s).ok()) else {
+        return (false, 0);
+    };
+    let done = v["done"].as_bool().unwrap_or(false);
+    let wait = v["wait"].as_f64().map(|w| w.clamp(0.0, 20.0) as u32).unwrap_or(0);
+    (done, wait)
+}
+
+/// The question the model asks when it needs the user to show it something.
+fn parse_ask(raw: &str) -> Option<String> {
+    let cleaned = strip_thinking(raw);
+    extract_json(&cleaned)
+        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+        .and_then(|v| v["ask"].as_str().map(|q| q.trim().to_string()))
+        .filter(|q| !q.is_empty())
+}
+
+/// Whether the model said the task carries on after these steps.
+fn parse_more(raw: &str) -> bool {
+    let cleaned = strip_thinking(raw);
+    extract_json(&cleaned)
+        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+        .and_then(|v| v["more"].as_bool())
+        .unwrap_or(false)
+}
+
+/// Cheap reachability check for the settings screen.
+pub fn probe(cfg: &ProviderConfig) -> Result<String> {
+    let c = client()?;
+    let base = cfg.base_url.trim_end_matches('/');
+
+    match cfg.id {
+        ProviderId::Ollama => {
+            let res = c.get(format!("{base}/api/tags")).send()?;
+            if !res.status().is_success() {
+                return Err(anyhow!("Ollama answered {}", res.status()));
+            }
+            let body: Value = res.json()?;
+            let names: Vec<String> = body["models"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|m| m["name"].as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            if names.is_empty() {
+                return Ok("ok — Ollama is running, but no models are pulled yet. Try: ollama pull moondream".into());
+            }
+            let has = names.iter().any(|n| n.starts_with(&cfg.model));
+            if has {
+                Ok(format!("ok — {} is ready", cfg.model))
+            } else {
+                Ok(format!(
+                    "ok — Ollama is running, but {} is not pulled. Available: {}",
+                    cfg.model,
+                    names.join(", ")
+                ))
+            }
+        }
+        ProviderId::NineRouter => {
+            // 9Router holds its own upstream credentials in its local
+            // dashboard — Izuki doesn't need a key for the local hop itself.
+            let mut rq = c.get(format!("{base}/models"));
+            if !cfg.api_key.trim().is_empty() {
+                rq = rq.bearer_auth(cfg.api_key.trim());
+            }
+            let res = rq.send().context(
+                "9Router is not reachable — is it running? (`9router` in a terminal starts it)",
+            )?;
+            if res.status().is_success() {
+                Ok(format!("ok — 9Router is running, using {}", cfg.model))
+            } else {
+                Err(anyhow!("9Router answered {}", res.status()))
+            }
+        }
+        _ if cfg.api_key.trim().is_empty() => {
+            Err(anyhow!("add an API key first"))
+        }
+        ProviderId::Gemini => {
+            // Key in a header, not the URL — URLs end up in error messages
+            // and logs.
+            let res = c.get(format!("{base}/v1beta/models")).header("x-goog-api-key", cfg.api_key.trim()).send()?;
+            if res.status().is_success() {
+                Ok(format!("ok — key accepted, using {}", cfg.model))
+            } else {
+                Err(anyhow!("Gemini answered {}", res.status()))
+            }
+        }
+        ProviderId::Anthropic => {
+            let res = c
+                .get(format!("{base}/models"))
+                .header("x-api-key", cfg.api_key.trim())
+                .header("anthropic-version", "2023-06-01")
+                .send()
+                ?;
+            if res.status().is_success() {
+                Ok(format!("ok — key accepted, using {}", cfg.model))
+            } else {
+                Err(anyhow!("Anthropic answered {}", res.status()))
+            }
+        }
+        _ => {
+            let res = c
+                .get(format!("{base}/models"))
+                .bearer_auth(cfg.api_key.trim())
+                .send()
+                ?;
+            if res.status().is_success() {
+                Ok(format!("ok — key accepted, using {}", cfg.model))
+            } else {
+                Err(anyhow!("endpoint answered {}", res.status()))
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Wire formats
+// ---------------------------------------------------------------------------
+
+fn ask_ollama(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
+    let base = cfg.base_url.trim_end_matches('/');
+    let body = json!({
+        "model": cfg.model,
+        "prompt": format!("{SYSTEM_PROMPT}\n\n{}", req.user_text()),
+        "images": [req.b64()],
+        "stream": false,
+        "format": "json",
+        "options": { "temperature": 0.1, "num_predict": 1500 }
+    });
+
+    let res = client()?
+        .post(format!("{base}/api/generate"))
+        .json(&body)
+        .send()
+        
+        .context("Ollama is not reachable — is it running?")?;
+
+    let status = res.status();
+    let value: Value = res.json().context("Ollama returned something odd")?;
+    if !status.is_success() {
+        return Err(anyhow!(
+            "Ollama answered {status}: {}",
+            value["error"].as_str().unwrap_or("unknown error")
+        ));
+    }
+    Ok(value["response"].as_str().unwrap_or_default().to_string())
+}
+
+fn ask_gemini(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
+    let base = cfg.base_url.trim_end_matches('/');
+    let key = cfg.api_key.trim();
+    if key.is_empty() {
+        return Err(anyhow!("Gemini needs an API key"));
+    }
+
+    let url = format!("{base}/v1beta/models/{}:generateContent", cfg.model);
+    let body = json!({
+        "systemInstruction": { "parts": [{ "text": SYSTEM_PROMPT }] },
+        "contents": [{
+            "role": "user",
+            "parts": [
+                { "text": req.user_text() },
+                { "inline_data": { "mime_type": "image/jpeg", "data": req.b64() } }
+            ]
+        }],
+        "generationConfig": {
+            "temperature": 0.1,
+            "responseMimeType": "application/json",
+            "maxOutputTokens": 2000
+        }
+    });
+    let mut body = body;
+    // Flash models "think" first by default — seconds (or a timeout) before
+    // a word of the plan. Reading a screenshot and picking a click doesn't
+    // need it. (Pro models can't switch it off.)
+    if cfg.model.contains("flash") {
+        body["generationConfig"]["thinkingConfig"] = json!({ "thinkingBudget": 0 });
+    }
+
+    let res = client()?.post(url).header("x-goog-api-key", key).json(&body).send()?;
+    let status = res.status();
+    let value: Value = res.json()?;
+    // Out of free quota (429) or overloaded (503) on the main Flash model:
+    // the lighter one has its own allowance, reads screenshots too, and is
+    // quicker.
+    if matches!(status.as_u16(), 429 | 503) && cfg.model.contains("flash") && !cfg.model.contains("lite") {
+        eprintln!("[brain] {} answered {status} — trying gemini-2.5-flash-lite", cfg.model);
+        let mut lite = cfg.clone();
+        lite.model = "gemini-2.5-flash-lite".into();
+        return ask_gemini(&lite, req);
+    }
+    if !status.is_success() {
+        return Err(anyhow!(
+            "Gemini answered {status}: {}",
+            value["error"]["message"].as_str().unwrap_or("unknown error")
+        ));
+    }
+    Ok(value["candidates"][0]["content"]["parts"][0]["text"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string())
+}
+
+fn ask_anthropic(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
+    let base = cfg.base_url.trim_end_matches('/');
+    let key = cfg.api_key.trim();
+    if key.is_empty() {
+        return Err(anyhow!("Anthropic needs an API key"));
+    }
+
+    let body = json!({
+        "model": cfg.model,
+        "max_tokens": 2000,
+        "temperature": 0.1,
+        "system": SYSTEM_PROMPT,
+        "messages": [{
+            "role": "user",
+            "content": [
+                { "type": "image", "source": {
+                    "type": "base64", "media_type": "image/jpeg", "data": req.b64() } },
+                { "type": "text", "text": req.user_text() }
+            ]
+        }]
+    });
+
+    let res = client()?
+        .post(format!("{base}/messages"))
+        .header("x-api-key", key)
+        .header("anthropic-version", "2023-06-01")
+        .json(&body)
+        .send()
+        ?;
+
+    let status = res.status();
+    let value: Value = res.json()?;
+    if !status.is_success() {
+        return Err(anyhow!(
+            "Anthropic answered {status}: {}",
+            value["error"]["message"].as_str().unwrap_or("unknown error")
+        ));
+    }
+    Ok(value["content"][0]["text"].as_str().unwrap_or_default().to_string())
+}
+
+fn ask_openai_compatible(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
+    let base = cfg.base_url.trim_end_matches('/');
+    let client = client()?;
+    let image = format!("data:image/jpeg;base64,{}", req.b64());
+
+    let send = |json_mode: bool, with_image: bool| -> Result<(reqwest::StatusCode, Value)> {
+        let user = if with_image {
+            json!([
+                { "type": "text", "text": req.user_text() },
+                { "type": "image_url", "image_url": { "url": image } }
+            ])
+        } else {
+            // A text-only chat model can't see the screenshot — but with the
+            // numbered controls list it can still act precisely by id.
+            json!(format!(
+                "{}\n(No screenshot is attached — this model reads text only. Work from the \
+                 window title and the numbered controls list, acting on them with \"target\".)",
+                req.user_text()
+            ))
+        };
+        let mut body = json!({
+            "model": cfg.model,
+            "temperature": 0.1,
+            "max_tokens": 2000,
+            "messages": [
+                { "role": "system", "content": SYSTEM_PROMPT },
+                { "role": "user", "content": user }
+            ]
+        });
+        if json_mode {
+            body["response_format"] = json!({ "type": "json_object" });
+        }
+
+        let mut rq = client.post(format!("{base}/chat/completions")).json(&body);
+        if !cfg.api_key.trim().is_empty() {
+            rq = rq.bearer_auth(cfg.api_key.trim());
+        }
+        if cfg.id == ProviderId::Openrouter {
+            // OpenRouter uses these for attribution on its public leaderboards.
+            rq = rq
+                .header("HTTP-Referer", "https://github.com/nova-izuki/izuki")
+                .header("X-Title", "Izuki");
+        }
+
+        let res = rq.send()?;
+        let status = res.status();
+        // Read as text first: proxies and some free endpoints answer errors
+        // in plain text or HTML, and a JSON decode failure would hide the
+        // actual reason behind "error decoding response body".
+        let text = res.text().unwrap_or_default();
+        let value = serde_json::from_str(&text).unwrap_or_else(|_| json!({ "error": text.trim() }));
+        Ok((status, value))
+    };
+
+    // JSON mode first; plenty of free models reject `response_format`
+    // outright with a 400/422, and the prompt already demands JSON anyway
+    // (the parser tolerates chatter around it), so just ask again without.
+    let (mut status, mut value) = send(true, true)?;
+    if status.as_u16() == 400 || status.as_u16() == 422 {
+        (status, value) = send(false, true)?;
+    }
+    // Still refused, and the reason is the picture itself — a text-only chat
+    // model. Try once more without the screenshot; the controls list is
+    // enough for it to act.
+    if !status.is_success() && !req.controls.is_empty() && rejects_images(status, &value) {
+        (status, value) = send(false, false)?;
+    }
+
+    if !status.is_success() {
+        let msg = value["error"]["message"]
+            .as_str()
+            .or_else(|| value["error"].as_str())
+            .map(|m| truncate(m, 300))
+            .unwrap_or_else(|| "unknown error".into());
+        return Err(match status.as_u16() {
+            401 | 403 => anyhow!(
+                "{} rejected the API key ({status}): {msg}. Re-check it was pasted in full with \
+                 no extra spaces, and that it's still active on the provider's dashboard.",
+                cfg.id.as_str()
+            ),
+            404 => anyhow!(
+                "{} doesn't know the model \"{}\" ({status}): {msg}. Check the exact model name \
+                 on the provider's model list.",
+                cfg.id.as_str(),
+                cfg.model
+            ),
+            429 => anyhow!(
+                "{} is rate-limiting you ({status}): {msg}. Free tiers have tight per-minute \
+                 limits — wait a moment, or set a fallback brain in Settings.",
+                cfg.id.as_str()
+            ),
+            _ => anyhow!("{} answered {status}: {msg}", cfg.id.as_str()),
+        });
+    }
+    Ok(value["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Parsing
+// ---------------------------------------------------------------------------
+
+/// Pull the first balanced JSON object out of a model reply, tolerating
+/// markdown fences and the chatter some small local models add.
+fn extract_json(raw: &str) -> Option<&str> {
+    let bytes = raw.as_bytes();
+    let start = raw.find('{')?;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for i in start..bytes.len() {
+        let c = bytes[i] as char;
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => in_string = true,
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&raw[start..=i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Whether an error response is a model saying it can't take image input.
+fn rejects_images(status: reqwest::StatusCode, value: &Value) -> bool {
+    if !matches!(status.as_u16(), 400 | 404 | 415 | 422 | 500) {
+        return false;
+    }
+    let msg = value["error"]["message"]
+        .as_str()
+        .or_else(|| value["error"].as_str())
+        .unwrap_or_default()
+        .to_lowercase();
+    ["image", "vision", "multimodal", "multi-modal", "image_url"]
+        .iter()
+        .any(|w| msg.contains(w))
+}
+
+/// Drop `<think>…</think>` reasoning blocks some free models prepend.
+fn strip_thinking(raw: &str) -> String {
+    let mut out = raw.to_string();
+    while let (Some(a), Some(b)) = (out.find("<think>"), out.find("</think>")) {
+        if b < a {
+            break;
+        }
+        out.replace_range(a..b + "</think>".len(), "");
+    }
+    out.trim().to_string()
+}
+
+/// How a spoken reply can sound. Anything else a model says is ignored.
+pub const MOODS: &[&str] = &["cheerful", "excited", "calm", "serious", "sympathetic", "playful", "curious"];
+
+/// The optional extras beside the plan: the reply's `mood`, and any lasting
+/// facts to `remember`. Missing or malformed is fine — both just go empty.
+fn parse_extras(raw: &str) -> (Option<String>, Vec<String>) {
+    let cleaned = strip_thinking(raw);
+    let Some(value) = extract_json(&cleaned).and_then(|s| serde_json::from_str::<Value>(s).ok()) else {
+        return (None, Vec::new());
+    };
+    let mood = value["mood"]
+        .as_str()
+        .map(|m| m.trim().to_ascii_lowercase())
+        .filter(|m| MOODS.contains(&m.as_str()));
+    let remember = value["remember"]
+        .as_array()
+        .map(|facts| {
+            facts
+                .iter()
+                .filter_map(Value::as_str)
+                .map(|f| f.trim().to_string())
+                .filter(|f| !f.is_empty())
+                .take(5)
+                .collect()
+        })
+        .unwrap_or_default();
+    (mood, remember)
+}
+
+/// A reply that is JSON but broken — usually cut off mid-way by the output
+/// limit. Never read raw JSON aloud: rescue the summary and every complete
+/// step before the cut, or report it plainly. `None` = it isn't JSON at all
+/// (just prose), which the caller handles as an answer.
+fn salvage(text: &str) -> Option<Result<(Vec<ActionStep>, String)>> {
+    let t = text.trim_start();
+    let looks_json = t.starts_with('{') || t.starts_with('[') || t.contains("\"summary\"") || t.contains("\"action\"");
+    if !looks_json {
+        return None;
+    }
+    let summary = json_string_after(text, "\"summary\"");
+    let steps = text
+        .find("\"steps\"")
+        .map(|at| complete_objects(&text[at..]))
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|o| serde_json::from_str::<ActionStep>(o).ok())
+        .collect::<Vec<_>>();
+    Some(match summary {
+        Some(s) if !s.trim().is_empty() => Ok((steps, s)),
+        _ if !steps.is_empty() => Ok((steps, "On it.".to_string())),
+        _ => Err(anyhow!("the AI's answer got cut off — try again, or pick a different model")),
+    })
+}
+
+/// The JSON string value after `key` (e.g. `"summary"`), escapes decoded.
+fn json_string_after(text: &str, key: &str) -> Option<String> {
+    let rest = &text[text.find(key)? + key.len()..];
+    let rest = rest.trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+    let mut out = String::new();
+    let mut chars = rest.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => return Some(out),
+            '\\' => match chars.next()? {
+                'n' => out.push(' '),
+                't' => out.push(' '),
+                'u' => {
+                    let hex: String = chars.by_ref().take(4).collect();
+                    if let Some(ch) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                        out.push(ch);
+                    }
+                }
+                other => out.push(other),
+            },
+            c => out.push(c),
+        }
+    }
+    // Cut off inside the summary itself: keep what arrived.
+    (!out.is_empty()).then_some(out)
+}
+
+/// Every complete `{…}` object at the top level of the first array in
+/// `text` — the steps that arrived whole before a reply was cut off.
+fn complete_objects(text: &str) -> Vec<&str> {
+    let Some(open) = text.find('[') else { return Vec::new() };
+    let bytes = text.as_bytes();
+    let mut out = Vec::new();
+    let (mut depth, mut start, mut in_str, mut esc) = (0i32, 0usize, false, false);
+    for i in open + 1..bytes.len() {
+        let c = bytes[i] as char;
+        if in_str {
+            if esc {
+                esc = false;
+            } else if c == '\\' {
+                esc = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '{' => {
+                if depth == 0 {
+                    start = i;
+                }
+                depth += 1;
+            }
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    out.push(&text[start..=i]);
+                }
+            }
+            ']' if depth == 0 => break,
+            _ => {}
+        }
+    }
+    out
+}
+
+fn parse_plan(raw: &str) -> Result<(Vec<ActionStep>, String)> {
+    let cleaned = strip_thinking(raw);
+
+    // Free models don't always follow "JSON only" — often they just answer
+    // in sentences. That's still a perfectly good answer to a question, so
+    // say it back instead of failing (and reading an error message aloud).
+    let plain = |text: &str| -> Result<(Vec<ActionStep>, String)> {
+        let text = text.trim().trim_matches('`').trim();
+        if text.is_empty() {
+            Err(anyhow!("the model returned an empty reply"))
+        } else {
+            Ok((Vec::new(), text.to_string()))
+        }
+    };
+
+    let Some(slice) = extract_json(&cleaned) else {
+        return salvage(&cleaned).unwrap_or_else(|| plain(&cleaned));
+    };
+    let Ok(value) = serde_json::from_str::<Value>(slice) else {
+        return salvage(&cleaned).unwrap_or_else(|| plain(&cleaned));
+    };
+
+    let summary = value["summary"]
+        .as_str()
+        .unwrap_or("Plan ready.")
+        .to_string();
+
+    // Accept {steps:[...]}, a bare array, or a single step object.
+    let step_values: Vec<Value> = if let Some(arr) = value["steps"].as_array() {
+        arr.clone()
+    } else if let Some(arr) = value.as_array() {
+        arr.clone()
+    } else if value.get("action").is_some() {
+        vec![value.clone()]
+    } else {
+        Vec::new()
+    };
+
+    let steps: Vec<ActionStep> = step_values
+        .into_iter()
+        .filter_map(|v| serde_json::from_value::<ActionStep>(v).ok())
+        .collect();
+
+    // Empty steps is a valid, successful reply now — it's how the model
+    // answers a question instead of performing an action. Only treat it as
+    // a failure when there's nothing at all to show for the call, i.e. no
+    // real summary either.
+    let has_summary = value["summary"].as_str().is_some_and(|s| !s.trim().is_empty());
+    if steps.is_empty() && !has_summary {
+        // Valid JSON, wrong shape — models improvise key names. Take the
+        // first thing that reads like an answer before giving up.
+        for key in ["answer", "response", "reply", "text", "message", "content"] {
+            if let Some(s) = value[key].as_str().filter(|s| !s.trim().is_empty()) {
+                return Ok((Vec::new(), s.trim().to_string()));
+            }
+        }
+        return Err(anyhow!("the model returned nothing usable"));
+    }
+    Ok((steps, summary))
+}
+
+/// Pin every step that names a control id to that control's real centre,
+/// then drop pointer steps left with no genuine position — a made-up target
+/// number and no coordinates of its own. Clicking wherever (0,0) lands is
+/// the one thing worse than doing nothing.
+fn resolve_targets(steps: &mut Vec<ActionStep>, controls: &[crate::uia::Control], had_point: &[bool]) {
+    let find = |id: u32| controls.iter().find(|c| c.id == id);
+    let mut keep = Vec::with_capacity(steps.len());
+
+    for (i, s) in steps.iter_mut().enumerate() {
+        let mut pinned = false;
+        if let Some(c) = s.target.and_then(|id| find(id)) {
+            let (cx, cy) = c.rect.center();
+            s.x = cx;
+            s.y = cy;
+            s.snapped_to = Some(if c.name.is_empty() { c.kind.clone() } else { c.name.clone() });
+            pinned = true;
+        }
+        if let Some(c) = s.target2.and_then(|id| find(id)) {
+            let (cx, cy) = c.rect.center();
+            s.x2 = Some(cx);
+            s.y2 = Some(cy);
+        }
+
+        let needs_point = matches!(
+            s.action,
+            Intent::Click
+                | Intent::DoubleClick
+                | Intent::RightClick
+                | Intent::Hover
+                | Intent::Point
+                | Intent::Drag
+                | Intent::Copy
+                | Intent::Auto
+        );
+        keep.push(!needs_point || pinned || had_point.get(i).copied().unwrap_or(true));
+    }
+
+    let mut i = 0;
+    steps.retain(|_| {
+        let k = keep[i];
+        i += 1;
+        k
+    });
+}
+
+/// Map image-space coordinates back onto the virtual desktop.
+fn rescale(steps: &mut [ActionStep], req: &VisionRequest) {
+    let (iw, ih) = req.image_size;
+    if iw == 0 || ih == 0 {
+        return;
+    }
+    let fx = req.desktop.w as f64 / iw as f64;
+    let fy = req.desktop.h as f64 / ih as f64;
+
+    let map = |v: i32, f: f64, off: i32| ((v as f64) * f).round() as i32 + off;
+
+    for s in steps {
+        // Some models helpfully answer in desktop space already. If a value is
+        // outside the image we assume that is what happened and leave it be.
+        let looks_like_image_space = s.x >= 0 && s.x <= iw as i32 && s.y >= 0 && s.y <= ih as i32;
+        if !looks_like_image_space {
+            continue;
+        }
+        s.x = map(s.x, fx, req.desktop.x);
+        s.y = map(s.y, fy, req.desktop.y);
+        if let Some(x2) = s.x2 {
+            s.x2 = Some(map(x2, fx, req.desktop.x));
+        }
+        if let Some(y2) = s.y2 {
+            s.y2 = Some(map(y2, fy, req.desktop.y));
+        }
+    }
+}
+
+fn truncate(s: &str, n: usize) -> String {
+    let t: String = s.chars().take(n).collect();
+    if s.chars().count() > n {
+        format!("{t}…")
+    } else {
+        t
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::uia::Control;
+
+    fn control(id: u32, x: i32, y: i32) -> Control {
+        Control { id, kind: "Button".into(), name: format!("Button {id}"), rect: Rect { x, y, w: 20, h: 10 } }
+    }
+
+    fn step(v: Value) -> ActionStep {
+        serde_json::from_value(v).expect("valid step")
+    }
+
+    #[test]
+    fn plain_sentence_reply_becomes_the_answer() {
+        let (steps, summary) = parse_plan("The screen shows a browser with two tabs open.").unwrap();
+        assert!(steps.is_empty());
+        assert_eq!(summary, "The screen shows a browser with two tabs open.");
+    }
+
+    #[test]
+    fn think_blocks_are_dropped_before_parsing() {
+        let raw = "<think>the user wants a click</think>{\"summary\":\"Clicking Save.\",\"steps\":[{\"action\":\"click\",\"target\":3}]}";
+        let (steps, summary) = parse_plan(raw).unwrap();
+        assert_eq!(summary, "Clicking Save.");
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].target, Some(3));
+    }
+
+    #[test]
+    fn fenced_json_parses() {
+        let raw = "Sure!\n```json\n{\"summary\":\"ok\",\"steps\":[]}\n```";
+        let (steps, summary) = parse_plan(raw).unwrap();
+        assert!(steps.is_empty());
+        assert_eq!(summary, "ok");
+    }
+
+    #[test]
+    fn improvised_answer_key_is_accepted() {
+        let (steps, summary) = parse_plan("{\"answer\":\"It's 3pm.\"}").unwrap();
+        assert!(steps.is_empty());
+        assert_eq!(summary, "It's 3pm.");
+    }
+
+    #[test]
+    fn more_means_look_again() {
+        assert!(parse_more(r#"{"summary":"Opening Chrome.","more":true,"steps":[]}"#));
+        assert!(!parse_more(r#"{"summary":"Done.","more":false,"steps":[]}"#));
+        // Older replies without the field: one round, as before.
+        assert!(!parse_more(r#"{"summary":"Done.","steps":[]}"#));
+        assert!(!parse_more("just prose"));
+    }
+
+    #[test]
+    fn empty_reply_is_an_error() {
+        assert!(parse_plan("   ").is_err());
+    }
+
+    #[test]
+    fn target_pins_the_step_to_the_real_control_centre() {
+        let controls = vec![control(1, 10, 10), control(2, 100, 200)];
+        let mut steps = vec![step(json!({ "action": "click", "target": 2 }))];
+        resolve_targets(&mut steps, &controls, &[false]);
+        assert_eq!(steps.len(), 1);
+        assert_eq!((steps[0].x, steps[0].y), (110, 205));
+        assert_eq!(steps[0].snapped_to.as_deref(), Some("Button 2"));
+    }
+
+    #[test]
+    fn drag_between_two_controls() {
+        let controls = vec![control(1, 0, 0), control(2, 100, 100)];
+        let mut steps = vec![step(json!({ "action": "drag", "target": 1, "target2": 2 }))];
+        resolve_targets(&mut steps, &controls, &[false]);
+        assert_eq!((steps[0].x, steps[0].y), (10, 5));
+        assert_eq!((steps[0].x2, steps[0].y2), (Some(110), Some(105)));
+    }
+
+    #[test]
+    fn made_up_target_with_no_point_is_dropped_not_clicked_at_zero() {
+        let controls = vec![control(1, 10, 10)];
+        let mut steps = vec![step(json!({ "action": "click", "target": 99 }))];
+        resolve_targets(&mut steps, &controls, &[false]);
+        assert!(steps.is_empty());
+    }
+
+    #[test]
+    fn made_up_target_keeps_its_own_coordinates() {
+        let mut steps = vec![step(json!({ "action": "click", "target": 99, "x": 50, "y": 60 }))];
+        resolve_targets(&mut steps, &[], &[true]);
+        assert_eq!(steps.len(), 1);
+        assert_eq!((steps[0].x, steps[0].y), (50, 60));
+    }
+
+    #[test]
+    fn typing_and_keys_need_no_point() {
+        let mut steps = vec![
+            step(json!({ "action": "type", "text_to_type": "hello" })),
+            step(json!({ "action": "key", "key": "enter" })),
+        ];
+        resolve_targets(&mut steps, &[], &[false, false]);
+        assert_eq!(steps.len(), 2);
+    }
+
+    #[test]
+    fn image_refusals_are_recognised() {
+        let v = json!({ "error": { "message": "No endpoints found that support image input" } });
+        assert!(rejects_images(reqwest::StatusCode::NOT_FOUND, &v));
+        let other = json!({ "error": { "message": "invalid api key" } });
+        assert!(!rejects_images(reqwest::StatusCode::BAD_REQUEST, &other));
+    }
+
+    #[test]
+    fn reads_mood_and_memories() {
+        let raw = r#"{"summary":"Nice to meet you, Sam!","mood":"Excited","remember":["User's name is Sam",""],"steps":[]}"#;
+        let (mood, remember) = parse_extras(raw);
+        assert_eq!(mood.as_deref(), Some("excited"));
+        assert_eq!(remember, vec!["User's name is Sam".to_string()]);
+        let (mood, remember) = parse_extras(r#"{"summary":"ok","mood":"furious"}"#);
+        assert!(mood.is_none() && remember.is_empty());
+        assert_eq!(parse_extras("just prose").0, None);
+    }
+
+    #[test]
+    fn null_fields_dont_drop_steps() {
+        let raw = r#"{"summary":"Pressing Enter.","steps":[{"action":"key","target":null,"target2":null,"x":null,"y":null,"x2":null,"y2":null,"text_to_type":null,"key":"enter","scroll_amount":null,"confidence":null,"reasoning":null}]}"#;
+        let (steps, summary) = parse_plan(raw).unwrap();
+        assert_eq!(summary, "Pressing Enter.");
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].key.as_deref(), Some("enter"));
+    }
+
+    #[test]
+    fn a_cut_off_reply_is_rescued_not_read_out() {
+        let raw = r#"{"summary":"I'll open the Recycle Bin for you.","mood":"cheerful","steps":[{"action":"double_click","target":4,"reasoning":"The Recycle Bin icon is visible on the desktop."},{"action":"key","target":null,"target2":null,"x":null,"y":null,"x2":null,"y2":null,"text_to_type":null,"#;
+        let (steps, summary) = parse_plan(raw).unwrap();
+        assert_eq!(summary, "I'll open the Recycle Bin for you.");
+        assert_eq!(steps.len(), 1, "only the complete step survives");
+        let raw = r#"{"steps":[{"action":"key","target":null,"x":null,"#;
+        assert!(parse_plan(raw).is_err(), "nothing usable — an error, never raw JSON");
+    }
+}

@@ -1,0 +1,121 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "motion/react";
+import { GripHorizontal, X } from "lucide-react";
+import { resizeHandles, useFloating, workArea, type Limits } from "../lib/floating";
+import type { CaptionPayload } from "../lib/types";
+import { useBackdropTone } from "../lib/tone";
+
+const LIMITS: Limits = { minW: 180, minH: 64, maxW: 720, maxH: 480 };
+const HANDLES = resizeHandles();
+
+/** ~2.7 words a second — roughly where Windows' voices speak at rate 1.0. */
+const SPOKEN_MS_PER_WORD = 370;
+const SILENT_MS_PER_WORD = 45;
+const LINGER_MS = 4000;
+
+/**
+ * The live caption — Izuki's words appearing as it says them, in a small
+ * squircle you can drag anywhere and resize from any edge. Remembers where
+ * you left it. When voice is on the words keep pace with the speech; when
+ * it's off they just stream in quickly.
+ */
+export function CaptionBox({
+  caption,
+  onDone,
+}: {
+  caption: CaptionPayload & { id: number };
+  onDone: () => void;
+}) {
+  const { box, begin } = useFloating(
+    "izk.caption",
+    () => {
+      const wa = workArea();
+      return { x: wa.left + 24, y: wa.bottom - 20 - 120, w: 300, h: 120 };
+    },
+    LIMITS
+  );
+
+  const words = useMemo(() => caption.text.split(/\s+/).filter(Boolean), [caption.text]);
+  const [shown, setShown] = useState(0);
+  const scroller = useRef<HTMLDivElement>(null);
+  const doneRef = useRef(onDone);
+  doneRef.current = onDone;
+
+  useEffect(() => {
+    setShown(0);
+    const step = caption.paced ? SPOKEN_MS_PER_WORD : SILENT_MS_PER_WORD;
+    let i = 0;
+    let linger: ReturnType<typeof setTimeout> | null = null;
+    const tick = setInterval(() => {
+      i++;
+      setShown(i);
+      if (i >= words.length) {
+        clearInterval(tick);
+        linger = setTimeout(() => doneRef.current(), LINGER_MS);
+      }
+    }, step);
+    return () => {
+      clearInterval(tick);
+      if (linger) clearTimeout(linger);
+    };
+  }, [caption.id, caption.paced, words.length]);
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [shown]);
+
+  // Readable over whatever is behind it — or the look picked in Settings.
+  const card = useRef<HTMLDivElement>(null);
+  const look = useBackdropTone(card);
+
+  return (
+    <motion.div
+      data-izk-hit
+      initial={{ opacity: 0, y: 8, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+      className="pointer-events-auto fixed z-40"
+      style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
+    >
+      <div
+        ref={card}
+        className={`izk-card izk-grain relative flex h-full w-full flex-col overflow-hidden rounded-[22px] shadow-[0_18px_44px_rgba(0,0,0,0.5)] ${look.className}`}
+        style={look.style}
+      >
+        <div
+          onPointerDown={(e) => begin(e, "move")}
+          className="flex shrink-0 cursor-grab items-center gap-1.5 px-3 pt-2 active:cursor-grabbing"
+        >
+          <span className="relative flex h-[7px] w-[7px]">
+            <span className="izk-breathe absolute inset-0 rounded-full bg-izk-teal" />
+          </span>
+          <span className="text-[10px] font-semibold tracking-[0.12em] text-izk-muted">IZUKI</span>
+          <GripHorizontal size={12} className="ml-auto text-izk-muted/60" />
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onDone}
+            aria-label="Hide caption"
+            className="flex h-[18px] w-[18px] items-center justify-center rounded-full text-izk-muted transition-colors hover:bg-white/10 hover:text-izk-ink"
+          >
+            <X size={11} strokeWidth={2.6} />
+          </button>
+        </div>
+        <div
+          ref={scroller}
+          onPointerDown={(e) => begin(e, "move")}
+          className="izk-tone-text min-h-0 flex-1 cursor-grab overflow-y-auto px-3.5 pb-3 pt-1.5 text-[13px] leading-relaxed text-izk-ink active:cursor-grabbing"
+        >
+          {words.slice(0, shown).join(" ")}
+          {shown < words.length && (
+            <span className="izk-breathe ml-0.5 inline-block h-[12px] w-[2px] translate-y-[2px] bg-izk-teal" />
+          )}
+        </div>
+      </div>
+      {HANDLES.map((h) => (
+        <div key={h.edge} style={h.style} onPointerDown={(e) => begin(e, h.edge)} />
+      ))}
+    </motion.div>
+  );
+}

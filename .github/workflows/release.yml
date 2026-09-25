@@ -1,0 +1,87 @@
+name: Release Izuki (Windows)
+
+# Push a tag and GitHub builds the installer for you, free, on their runner:
+#   git tag v1.0.0 && git push origin v1.0.0
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      # The Rust build is the slow part; caching it takes repeat runs from
+      # ~12 minutes to about two.
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate icons
+        run: npm run icons
+
+      - name: Build installers
+        uses: tauri-apps/tauri-action@v0
+        id: tauri
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Add these in Settings → Secrets → Actions to sign auto-updates.
+          # Without them the build still succeeds; updates just go unsigned.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Izuki ${{ github.ref_name }}"
+          releaseBody: |
+            ## Izuki — the AI companion that lives on your Windows screen
+
+            Talk to it. It sees your screen, answers out loud, and uses your mouse and keyboard to get things done.
+
+            **Download `Izuki_*_x64-setup.exe` below and run it.** No admin needed.
+            Windows may say "Windows protected your PC" (the app is new and not code-signed yet) → **More info → Run anyway**.
+
+            Then paste a **free** Gemini key in the welcome tour (aistudio.google.com/apikey) — that's the only setup.
+
+            - `Izuki_*_x64-setup.exe` — recommended installer
+            - `Izuki_*_x64_en-US.msi` — for IT departments / managed PCs
+            - `Izuki-portable.exe` — single file, no install
+
+            Needs Windows 10 (1809+) or 11. macOS and Linux are coming soon.
+          releaseDraft: false
+          prerelease: false
+          args: --target x86_64-pc-windows-msvc
+
+      # tauri-action publishes the installers; the portable binary is just the
+      # raw executable, so attach that to the same release.
+      - name: Attach portable executable
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $src = "src-tauri/target/x86_64-pc-windows-msvc/release/izuki.exe"
+          if (-not (Test-Path $src)) { $src = "src-tauri/target/release/izuki.exe" }
+          if (-not (Test-Path $src)) { throw "could not find the built executable" }
+          Copy-Item $src "Izuki-portable.exe"
+          gh release upload ${{ github.ref_name }} "Izuki-portable.exe" --clobber

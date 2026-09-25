@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Izuki — Free AI Companion for Windows | Voice Assistant That Uses Your PC</title>
+  <meta name="description" content="Izuki is a free, open-source AI companion for Windows. Say “Hey Nova”, talk naturally, and it sees your screen, answers out loud, and clicks and types to get things done — like a Jarvis for your PC." />
+  <meta name="keywords" content="Izuki, Nova Izuki, AI assistant for Windows, free AI voice assistant, Jarvis for PC, AI that controls your computer, computer use agent, screen AI, hands-free PC assistant, AI desktop companion, open source" />
+  <meta name="author" content="Solomon Nwachukwu" />
+  <link rel="canonical" href="https://nova-izuki.github.io/izuki/" />
+  <meta name="theme-color" content="#0b1024" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Izuki — the AI companion that lives on your Windows screen" />
+  <meta property="og:description" content="Talk to it. It sees your screen, answers out loud, and does the work. Free and open source." />
+  <meta property="og:url" content="https://nova-izuki.github.io/izuki/" />
+  <meta property="og:image" content="https://nova-izuki.github.io/izuki/og.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Izuki — the AI companion that lives on your Windows screen" />
+  <meta name="twitter:description" content="Say “Hey Nova”. It sees your screen, answers out loud, and does the work. Free." />
+  <meta name="twitter:image" content="https://nova-izuki.github.io/izuki/og.png" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Izuki",
+    "alternateName": "Nova Izuki",
+    "operatingSystem": "Windows 10, Windows 11",
+    "applicationCategory": "UtilitiesApplication",
+    "description": "A free AI companion for Windows: hands-free voice, sees your screen, and uses your mouse and keyboard to get things done.",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "author": { "@type": "Person", "name": "Solomon Nwachukwu" },
+    "downloadUrl": "https://github.com/nova-izuki/izuki/releases/latest",
+    "url": "https://nova-izuki.github.io/izuki/"
+  }
+  </script>
+
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      --bg: #070a18;
+      --ink: #eef2ff;
+      --muted: #9aa3bd;
+      --line: rgba(255, 255, 255, 0.09);
+      --card: rgba(255, 255, 255, 0.04);
+      --cyan: #67e8f9;
+      --violet: #a5b4fc;
+      --pink: #f0abfc;
+      --grad: linear-gradient(90deg, var(--cyan), var(--violet) 50%, var(--pink));
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(1200px 700px at 80% -10%, rgba(99, 102, 241, 0.22), transparent 60%),
+        radial-gradient(900px 600px at -10% 30%, rgba(34, 211, 238, 0.12), transparent 60%),
+        var(--bg);
+      color: var(--ink);
+      font: 16px/1.6 "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif;
+      overflow-x: hidden;
+    }
+    a { color: inherit; }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 20px; text-decoration: none; }
+    .brand .dot { width: 26px; height: 26px; border-radius: 50%; background: conic-gradient(var(--cyan), var(--violet), var(--pink), var(--cyan)); box-shadow: 0 0 18px rgba(103, 232, 249, 0.6); }
+    nav .links a { color: var(--muted); text-decoration: none; margin-left: 22px; font-size: 15px; }
+    nav .links a:hover { color: var(--ink); }
+
+    .hero { display: grid; grid-template-columns: 1.15fr 1fr; align-items: center; gap: 40px; padding: 48px 0 72px; }
+    h1 { font-size: clamp(40px, 6vw, 68px); line-height: 1.02; letter-spacing: -2px; margin: 0 0 18px; }
+    h1 .g { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .lede { font-size: 20px; color: #c7cde0; max-width: 560px; margin: 0 0 28px; }
+    .ctas { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .btn { display: inline-flex; align-items: center; gap: 10px; padding: 15px 26px; border-radius: 999px; font-weight: 700; font-size: 17px; text-decoration: none; transition: transform 0.15s, box-shadow 0.15s; }
+    .btn:hover { transform: translateY(-2px); }
+    .btn.primary { background: var(--grad); color: #0b1024; box-shadow: 0 12px 40px rgba(103, 232, 249, 0.3); }
+    .btn.ghost { border: 1px solid var(--line); background: var(--card); }
+    .small { color: var(--muted); font-size: 14px; margin-top: 14px; }
+
+    /* The orb — the same liquid look as the app. */
+    .orb-stage { position: relative; aspect-ratio: 1; max-width: 440px; margin: 0 auto; width: 100%; }
+    .orb-halo { position: absolute; inset: -8%; border-radius: 50%; background: radial-gradient(circle, rgba(34, 211, 238, 0.45), rgba(139, 92, 246, 0.15) 50%, transparent 70%); filter: blur(10px); animation: breathe 5s ease-in-out infinite; }
+    .orb { position: absolute; inset: 14%; border-radius: 50%; background: radial-gradient(circle at 50% 60%, #1e3a8a55, #050818dd 70%); overflow: hidden; box-shadow: inset 0 0 40px rgba(255, 255, 255, 0.08); }
+    .blob { position: absolute; inset: -10%; border-radius: 42% 58% 55% 45% / 50% 42% 58% 50%; mix-blend-mode: screen; opacity: 0.8; filter: blur(2px); }
+    .b1 { background: conic-gradient(from 0deg, #06b6d4, #0a84ff, #6366f1, #22d3ee, #06b6d4); animation: spin 11s linear infinite, morph 7s ease-in-out infinite; }
+    .b2 { background: conic-gradient(from 120deg, #ec4899, #8b5cf6, #06b6d4, #ec4899); animation: spin 15s linear infinite reverse, morph 9s ease-in-out infinite; inset: -4%; opacity: 0.6; }
+    .b3 { background: conic-gradient(from 240deg, #10b981, #22d3ee, #a78bfa, #10b981); animation: spin 19s linear infinite, morph 11s ease-in-out infinite reverse; inset: 2%; opacity: 0.5; }
+    .orb::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle at 50% 50%, rgba(5, 8, 24, 0.85) 0%, rgba(5, 8, 24, 0.35) 45%, transparent 70%), radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.45), transparent 26%); }
+    .orb-ring { position: absolute; inset: 14%; border-radius: 50%; border: 1.5px solid rgba(165, 180, 252, 0.6); }
+    .bubble { position: absolute; left: 50%; bottom: -2%; transform: translateX(-50%); white-space: nowrap; padding: 9px 16px; border-radius: 16px; font-size: 15px; background: rgba(9, 12, 26, 0.9); border: 1px solid rgba(103, 232, 249, 0.4); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5); }
+    .bubble .d { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ffe66d; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes morph { 50% { border-radius: 58% 42% 45% 55% / 42% 58% 42% 58%; } }
+    @keyframes breathe { 50% { transform: scale(1.06); opacity: 0.8; } }
+
+    section { padding: 64px 0; }
+    h2 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -1px; margin: 0 0 10px; }
+    .sub { color: var(--muted); font-size: 18px; margin: 0 0 36px; max-width: 640px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 24px; }
+    .card .ic { font-size: 28px; margin-bottom: 10px; }
+    .card h3 { margin: 0 0 6px; font-size: 19px; }
+    .card p { margin: 0; color: var(--muted); font-size: 15.5px; }
+
+    .say { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+    .say span { padding: 10px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: #d6dcf0; font-size: 15px; }
+
+    .steps { counter-reset: s; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .step { position: relative; padding: 26px 22px 22px; border-radius: 20px; border: 1px solid var(--line); background: var(--card); }
+    .step::before { counter-increment: s; content: counter(s); position: absolute; top: -16px; left: 20px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #0b1024; background: var(--grad); }
+    .step h3 { margin: 6px 0 6px; font-size: 18px; }
+    .step p { margin: 0; color: var(--muted); font-size: 15px; }
+
+    .tip { border-radius: 26px; padding: 36px; border: 1px solid var(--line); background: radial-gradient(120% 140% at 0% 0%, rgba(52, 211, 153, 0.16), transparent 55%), radial-gradient(120% 140% at 100% 100%, rgba(244, 114, 182, 0.16), transparent 55%), rgba(255, 255, 255, 0.03); display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; }
+    .tip h2 { margin-bottom: 8px; }
+    .tip p { color: #c7cde0; margin: 0; max-width: 620px; }
+    .btn.cash { background: #00d64f; color: #06210f; box-shadow: 0 12px 34px rgba(0, 214, 79, 0.3); }
+
+    .about { display: grid; grid-template-columns: auto 1fr; gap: 26px; align-items: start; }
+    .avatar { width: 92px; height: 92px; border-radius: 28px; background: conic-gradient(var(--cyan), var(--violet), var(--pink), var(--cyan)); display: grid; place-items: center; font-weight: 800; font-size: 32px; color: #0b1024; }
+    .about p { color: #c7cde0; margin: 0 0 12px; }
+
+    footer { border-top: 1px solid var(--line); padding: 30px 0 50px; color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; gap: 14px; justify-content: space-between; }
+
+    /* Grid children may shrink below their content (long words, pills). */
+    .hero > *, .grid > *, .steps > *, .tip > *, .about > * { min-width: 0; }
+
+    @media (max-width: 860px) {
+      .bubble { white-space: normal; text-align: center; width: max-content; max-width: 92%; }
+      .hero { grid-template-columns: 1fr; padding-top: 20px; }
+      .orb-stage { max-width: 320px; }
+      .grid, .steps { grid-template-columns: 1fr; }
+      .tip { grid-template-columns: 1fr; }
+      nav .links a:not(.gh) { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .blob, .orb-halo { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <nav>
+      <a class="brand" href="#"><span class="dot"></span>Izuki</a>
+      <div class="links">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#support">Support</a>
+        <a class="gh" href="https://github.com/nova-izuki/izuki">GitHub</a>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <div>
+        <h1>The AI that lives on <span class="g">your screen.</span></h1>
+        <p class="lede">Say <b>“Hey Nova”</b> and just talk. Izuki sees your screen, answers you out loud, and uses your mouse and keyboard to get things done — like having a friend who's great with computers, right inside your PC.</p>
+        <div class="ctas">
+          <a class="btn primary" href="https://github.com/nova-izuki/izuki/releases/latest">⬇ Download for Windows — free</a>
+          <a class="btn ghost" href="#how">See how it works</a>
+        </div>
+        <p class="small">Windows 10 &amp; 11 · Free forever · Open source · macOS &amp; Linux coming soon</p>
+      </div>
+      <div class="orb-stage" aria-hidden="true">
+        <div class="orb-halo"></div>
+        <div class="orb"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
+        <div class="orb-ring"></div>
+        <div class="bubble"><span class="d"></span>Play something chill on YouTube</div>
+      </div>
+    </header>
+
+    <section id="features">
+      <h2>Talk to it. It does the rest.</h2>
+      <p class="sub">Not a chatbot in a box — a companion that can actually use your computer.</p>
+      <div class="grid">
+        <div class="card"><div class="ic">🎙️</div><h3>Hands-free voice</h3><p>Say your wake word, then talk like you would to a person. Interrupt it any time. It keeps listening for your next question.</p></div>
+        <div class="card"><div class="ic">👀</div><h3>Sees your screen</h3><p>“What does this error mean?” “Summarise this page.” It looks at what you're looking at and explains it.</p></div>
+        <div class="card"><div class="ic">🖱️</div><h3>Does the work</h3><p>Opens apps, searches, clicks, types, scrolls, skips ads — look, act, look again, until it's actually done.</p></div>
+        <div class="card"><div class="ic">👉</div><h3>Points things out</h3><p>“Where's the export button?” It circles it right on your screen while it explains — great for learning any app.</p></div>
+        <div class="card"><div class="ic">✍️</div><h3>Draw to show it</h3><p>Hold Ctrl+D, circle anything, and ask about it. Or let it ask <i>you</i> to circle the right one when it's unsure.</p></div>
+        <div class="card"><div class="ic">🧠</div><h3>Remembers you</h3><p>Your name, your preferences, the habits it notices. You can see and delete every memory, any time.</p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Just say it.</h2>
+      <p class="sub">Things people ask Izuki every day:</p>
+      <div class="say">
+        <span>“Open Spotify and play something chill.”</span>
+        <span>“What's on my screen?”</span>
+        <span>“Reply to this email saying I'll be late.”</span>
+        <span>“Explain this chart to me.”</span>
+        <span>“Point at the save button.”</span>
+        <span>“Find me a cheap flight to Lagos.”</span>
+        <span>“Remember I use my work Chrome profile.”</span>
+        <span>“Keep going.”</span>
+      </div>
+    </section>
+
+    <section id="how">
+      <h2>Up and running in two minutes.</h2>
+      <p class="sub">No complicated setup. If you can install an app, you can use Izuki.</p>
+      <div class="steps">
+        <div class="step"><h3>Download &amp; install</h3><p>Grab the installer and run it. (Windows may say it's a new app — click <b>More info → Run anyway</b>.)</p></div>
+        <div class="step"><h3>Paste a free key</h3><p>The welcome tour links you to a free Google Gemini key. Paste it in — that's the only setup.</p></div>
+        <div class="step"><h3>Start talking</h3><p>Hold the talk hotkey and speak, or type in the chat. Add a free wake word like “Hey Nova” to go fully hands-free.</p></div>
+      </div>
+    </section>
+
+    <section id="support">
+      <div class="tip">
+        <div>
+          <h2>☕ Buy the builder a coffee</h2>
+          <p>Izuki is free, and it's going to stay free. It's built by one person, late at night, on a lot of coffee and a big dream. If Izuki saved you time or made you smile, a small tip keeps the next feature coming. Every dollar counts — and a ⭐ on GitHub means just as much.</p>
+        </div>
+        <a class="btn cash" href="https://cash.app/$louismane2">💚 Tip $louismane2</a>
+      </div>
+    </section>
+
+    <section>
+      <div class="about">
+        <div class="avatar">SN</div>
+        <div>
+          <h2>Made by Solomon Nwachukwu</h2>
+          <p>I'm an IT and cybersecurity student, and Izuki is step one of something bigger: real robot companions (that's <b>Nova Izuki</b>), an Afro-tech community where more of us get to build the future instead of just using it, and one day a company that creates real opportunities for a lot of people. Step by step.</p>
+          <p>Questions, ideas or collaborations: <a href="mailto:solotechsolutions1@gmail.com">solotechsolutions1@gmail.com</a></p>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <span>© 2026 Izuki · MIT licensed · Made with ❤️ by Solomon Nwachukwu</span>
+      <span><a href="https://github.com/nova-izuki/izuki">GitHub</a> · <a href="https://github.com/nova-izuki/izuki/releases/latest">Download</a> · <a href="https://github.com/nova-izuki/izuki#privacy">Privacy</a></span>
+    </footer>
+  </div>
+</body>
+</html>

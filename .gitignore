@@ -1,0 +1,20 @@
+node_modules
+dist
+dist-ssr
+.vite
+*.local
+.DS_Store
+Thumbs.db
+src-tauri/target
+src-tauri/gen
+.env
+.env.local
+
+# Local secrets and scratch - never commit
+*.key
+*.pem
+.env.*
+debug/
+
+# Local assistant notes
+.claude/

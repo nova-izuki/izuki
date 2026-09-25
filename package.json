@@ -1,0 +1,42 @@
+{
+  "name": "izuki",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "IZUKI — YO IZUKI, DO IT. Draw on your screen, Izuki does it.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "icons": "node scripts/make-icons.mjs",
+    "app:dev": "tauri dev",
+    "app:build": "tauri build"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-global-shortcut": "2.3.2",
+    "@tauri-apps/plugin-opener": "2.5.5",
+    "kokoro-js": "^1.2.1",
+    "konva": "10.6.0",
+    "lucide-react": "1.47.0",
+    "motion": "13.4.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zustand": "5.0.15"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@tauri-apps/cli": "2.11.5",
+    "@types/node": "^26.6.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "esbuild": "^0.28.2",
+    "sharp": "0.35.4",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "8.3.0"
+  }
+}

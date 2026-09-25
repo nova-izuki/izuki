@@ -1,0 +1,345 @@
+/**
+ * Shared vocabulary between the React windows and the Rust core.
+ * Every field here has a matching serde field name in src-tauri/src/model.rs.
+ */
+
+export type ShapeKind = "box" | "arrow" | "circle" | "pen" | "text";
+
+/** What the user wants Izuki to do with a given mark. */
+export type Intent =
+  | "auto"
+  | "click"
+  | "double_click"
+  | "right_click"
+  | "type"
+  | "drag"
+  | "watch"
+  | "copy"
+  | "scroll"
+  | "hover"
+  | "point"
+  | "key";
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+/** A single mark drawn on the overlay, in virtual-desktop pixel space. */
+export interface Mark {
+  id: string;
+  kind: ShapeKind;
+  /** Axis-aligned bounds of the mark. */
+  rect: { x: number; y: number; w: number; h: number };
+  /** Freehand / arrow path. Arrows keep exactly two points. */
+  points: Point[];
+  intent: Intent;
+  /** Position in a chain: 1 -> 2 -> 3. */
+  order: number;
+  /** Typed or dictated text attached to this mark. */
+  text?: string;
+  /** OCR harvested from inside the mark, filled in by the backend. */
+  ocr?: string;
+}
+
+/** Everything the overlay hands to the brain when the user commits. */
+export interface DrawSession {
+  marks: Mark[];
+  prompt: string;
+  /** Bounds of the whole virtual desktop the marks were drawn on. */
+  desktop: { x: number; y: number; w: number; h: number };
+  createdAt: number;
+}
+
+/** One executable step the vision model returned. */
+export interface ActionStep {
+  action: Intent;
+  x: number;
+  y: number;
+  /** Id of a real on-screen control the model picked — exact, not a guess. */
+  target?: number | null;
+  /** Drag destination as a control id. */
+  target2?: number | null;
+  x2?: number | null;
+  y2?: number | null;
+  text_to_type?: string | null;
+  key?: string | null;
+  scroll_amount?: number | null;
+  confidence: number;
+  reasoning: string;
+  /** Set by the backend when UI Automation snapped the point to a real control. */
+  snapped_to?: string | null;
+}
+
+export interface VisionPlan {
+  steps: ActionStep[];
+  summary: string;
+  provider: string;
+  model: string;
+  /** Wall-clock milliseconds the provider took. */
+  latency_ms: number;
+  /** How the summary should sound when spoken. */
+  mood?: string | null;
+  /** Lasting facts about the user the model picked up (already saved). */
+  remember?: string[];
+}
+
+/** Something Izuki remembers about the user. */
+export interface Memory {
+  id: string;
+  text: string;
+  created_at: number;
+}
+
+/** The hands-free voice sphere's state ("hidden" puts it away). */
+export type OrbState = "hidden" | "listening" | "thinking" | "speaking";
+
+/** Your words as you speak them (`final` once you've finished). */
+export interface TranscriptPayload {
+  text: string;
+  final: boolean;
+}
+
+/** A line for the voice, with the feeling to say it with. */
+export interface SayPayload {
+  text: string;
+  mood?: string | null;
+  /** A real answer (not an "On it."), so the sphere may show for it. */
+  reply?: boolean;
+  /** Keep a Bluetooth mic held (more of this reply follows). */
+  quick?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Flows
+// ---------------------------------------------------------------------------
+
+export interface Flow {
+  id: string;
+  name: string;
+  /** Application the flow was recorded against, e.g. "chrome.exe". */
+  app: string;
+  steps: ActionStep[];
+  prompt: string;
+  /** Data URL of the thumbnail captured at record time. */
+  thumbnail?: string | null;
+  created_at: number;
+  last_run?: number | null;
+  run_count: number;
+  hotkey?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Watchers
+// ---------------------------------------------------------------------------
+
+export type WatcherCondition =
+  | { kind: "pixel_color"; color: string; tolerance: number }
+  | { kind: "region_changed"; threshold: number }
+  | { kind: "text_appears"; text: string }
+  | { kind: "text_disappears"; text: string }
+  | { kind: "vision"; question: string };
+
+export type WatcherAction =
+  | { kind: "click"; x: number; y: number }
+  | { kind: "run_flow"; flow_id: string }
+  | { kind: "notify" }
+  | { kind: "type"; text: string };
+
+export interface Watcher {
+  id: string;
+  name: string;
+  region: { x: number; y: number; w: number; h: number };
+  condition: WatcherCondition;
+  action: WatcherAction;
+  /** Poll cadence in milliseconds. */
+  interval_ms: number;
+  enabled: boolean;
+  /** Stop after the first trigger. */
+  once: boolean;
+  created_at: number;
+  last_checked?: number | null;
+  last_triggered?: number | null;
+  trigger_count: number;
+  status: "idle" | "watching" | "triggered" | "error";
+  message?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+export type ProviderId =
+  | "ollama"
+  | "gemini"
+  | "openrouter"
+  | "openai"
+  | "anthropic"
+  | "nvidia"
+  | "9router"
+  | "custom";
+
+export interface ProviderConfig {
+  id: ProviderId;
+  /** Display label shown in the settings list. */
+  label: string;
+  /** Base URL; for Ollama this is the local daemon. */
+  base_url: string;
+  model: string;
+  api_key: string;
+  enabled: boolean;
+}
+
+export type BackdropMode = "acrylic" | "mica" | "tabbed" | "none";
+
+export interface Settings {
+  /** Provider consulted first. */
+  active_provider: ProviderId;
+  /** Consulted when the active provider errors or times out. */
+  fallback_provider: ProviderId | null;
+  providers: ProviderConfig[];
+
+  hotkey_draw: string;
+  hotkey_replay: string;
+  hotkey_panic: string;
+  /** Push-to-talk: press it, speak, and Izuki acts on it — no wake word needed. */
+  hotkey_voice: string;
+  /** Hold it, drag one mark anywhere on screen, let go — no toolbar, no window. */
+  hotkey_quickdraw: string;
+
+  /** Paint the captured frame behind the overlay so the screen looks frozen. */
+  freeze_screen: boolean;
+  /** Snap targets to real UI Automation controls before clicking. */
+  magnetic_hand: boolean;
+  /** Show the predicted next click after enough samples. */
+  ghost_hand: boolean;
+  /** Run OCR over marks before asking the model. */
+  ocr_enabled: boolean;
+  /** Every committed draw becomes a saved flow. */
+  autosave_flows: boolean;
+  /** Ask before executing a plan. */
+  confirm_before_act: boolean;
+  /** Pointer travel time in ms for the humanised cursor path. */
+  move_duration_ms: number;
+  /** Mock mode performs no real input; it only animates the hand. */
+  dry_run: boolean;
+
+  /** Always-listening "Hey Izuki" wake word. Off by default — it holds a live mic stream. */
+  voice_wake_enabled: boolean;
+  /** Show a typed chat box on the Draw tab instead of (or alongside) the mic. */
+  chat_mode: boolean;
+  /**
+   * How a voice/chat command is carried out. Windows has exactly one cursor,
+   * so "background" cannot literally share it with you — it just skips the
+   * fullscreen freeze/overlay so your window stays visible and gets the
+   * pointer back the instant Izuki is done with it. "focus" puts up the same
+   * overlay the draw flow uses and holds it until the whole plan finishes.
+   */
+  execution_mode: "background" | "focus";
+
+  /**
+   * Keep the glowing hand on screen at all times, tracking the real cursor,
+   * whether or not the config panel is open — the "don't need the app open"
+   * mode.
+   */
+  follow_mode_enabled: boolean;
+  /** Size of the follow-mode hand, in px. */
+  follow_hand_size: number;
+
+  backdrop: BackdropMode;
+  start_with_windows: boolean;
+  /** Hand cursor trail length, 0 disables the trail. */
+  trail_length: number;
+
+  /** Set once the first-run welcome tour has finished or been skipped. */
+  onboarding_seen: boolean;
+
+  /** Which mark shape a fresh draw session — and quickdraw — starts on. */
+  default_draw_shape: ShapeKind;
+  /** Ink for drawn marks: a hex colour, "auto" (per-shape colours) or "gradient" (per-shape gradients). */
+  ink_color: string;
+  /** Show a live caption of what Izuki is doing/saying near the hand. */
+  show_captions: boolean;
+  /** Speak responses out loud, independent of `show_captions`. */
+  speak_responses: boolean;
+  /** "natural" (Kokoro, local neural voice) or "system" (Windows voice). */
+  voice_engine: "natural" | "orpheus" | "openai" | "system";
+  /** Kokoro voice id, e.g. "af_heart". */
+  voice_name: string;
+  /** Groq key for the Orpheus voice. */
+  groq_api_key: string;
+  /** Cloud voice name ("" = engine default). */
+  cloud_voice: string;
+  /** Show the voice sphere while Izuki answers typed/push-to-talk requests. */
+  sphere_on_replies: boolean;
+  /** Microphone name to listen with ("" = automatic). */
+  mic_device: string;
+  /** Show your own words live as you talk. */
+  show_transcript: boolean;
+  /** Talk over Izuki to interrupt it (it listens while it answers). */
+  barge_in: boolean;
+  /** How long a conversation waits for you before closing (seconds, 5…1800). */
+  follow_up_secs: number;
+  /** Chat/caption look: matched to the screen, or fixed. */
+  chat_style: "auto" | "dark" | "light" | "gradient" | "custom";
+  /** Text colour for `chat_style: "custom"`. */
+  chat_color: string;
+}
+
+// ---------------------------------------------------------------------------
+// Runtime events pushed from Rust
+// ---------------------------------------------------------------------------
+
+export interface DesktopBounds {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  scale: number;
+}
+
+export interface OverlayOpenPayload {
+  desktop: DesktopBounds;
+  freeze: boolean;
+  mode: "draw" | "watch" | "preview" | "follow" | "quickdraw";
+  /** The mark shape to start on — only set for `mode: "quickdraw"`. */
+  shape?: ShapeKind | null;
+}
+
+/** Push-to-talk state, sent from the config panel's mic to the overlay. */
+export interface ListeningPayload {
+  active: boolean;
+  /** Whether "Always show the hand" is on — decides hand-orb vs. mic badge. */
+  follow: boolean;
+}
+
+/** One line Izuki said, for the overlay's live caption box. */
+export interface CaptionPayload {
+  text: string;
+  /** Reveal word-by-word at speaking pace (voice is on) vs. near-instantly. */
+  paced: boolean;
+}
+
+/** Real cursor position, virtual-desktop pixels — driving the hand in follow mode. */
+export interface CursorPosition {
+  x: number;
+  y: number;
+}
+
+export interface HandCommand {
+  /** Virtual-desktop coordinates the hand should travel to. */
+  x: number;
+  y: number;
+  /** Set for drags — where the sketchy arrow should point to. */
+  x2?: number | null;
+  y2?: number | null;
+  action: Intent;
+  duration_ms: number;
+  label?: string | null;
+}
+
+export interface StatusEvent {
+  kind: "info" | "working" | "success" | "error";
+  message: string;
+  detail?: string | null;
+}

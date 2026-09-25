@@ -1,0 +1,88 @@
+[package]
+name = "izuki"
+version = "1.0.0"
+description = "IZUKI — draw on your screen, Izuki does it."
+authors = ["Izuki"]
+edition = "2021"
+rust-version = "1.82"
+default-run = "izuki"
+
+[lib]
+name = "izuki_lib"
+crate-type = ["lib"]
+
+[[bin]]
+name = "izuki"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.6", features = ["tray-icon", "image-png", "devtools"] }
+tauri-plugin-global-shortcut = "2.3.2"
+tauri-plugin-opener = "2.5.5"
+tauri-plugin-autostart = "2.5.1"
+tauri-plugin-updater = "2.12.0"
+tauri-plugin-process = "2.3.1"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+parking_lot = "0.12"
+dirs = "7"
+rand = "0.9"
+base64 = "0.23"
+uuid = { version = "1", features = ["v4"] }
+
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "macros"] }
+reqwest = { version = "0.13", features = ["json", "blocking"] }
+
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+enigo = "0.6"
+arboard = "3"
+uiautomation = "0.25"
+
+# Same version wry uses, so its WebView2 types line up with Tauri's.
+[target.'cfg(windows)'.dependencies.webview2-com]
+version = "0.38"
+
+[target.'cfg(windows)'.dependencies.windows-future]
+version = "0.3"
+
+[target.'cfg(windows)'.dependencies.windows-core]
+version = "0.62"
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+  "Foundation",
+  "Foundation_Collections",
+  "Globalization",
+  "Graphics_Imaging",
+  "Media_Ocr",
+  "Storage_Streams",
+  "Win32_Foundation",
+  "Win32_Graphics_Dwm",
+  "Win32_Graphics_Gdi",
+  "Win32_System_Com",
+  "Win32_System_ProcessStatus",
+  "Win32_System_Threading",
+  "Win32_UI_HiDpi",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 1
+# Incremental + optimisation hits a rustc bug here: links fail with
+# unresolved `anon.….llvm.…` symbols after a few rebuilds, until a
+# `cargo clean -p izuki`. A full crate rebuild each time is slower but sane.
+incremental = false

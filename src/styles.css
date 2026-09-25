@@ -1,0 +1,569 @@
+@import "tailwindcss";
+
+/* ============================================================
+   IZUKI design tokens
+   ============================================================ */
+@theme {
+  --color-izk-base: #0e0e11;
+  --color-izk-ink: #f4f4f7;
+  --color-izk-muted: #9ea0ad;
+  --color-izk-violet: #7c5cff;
+  --color-izk-teal: #4ecdc4;
+  --color-izk-hand: #ffe66d;
+  --color-izk-danger: #ff5f7a;
+  --color-izk-good: #58e6a8;
+
+  --radius-glass: 32px;
+  --radius-card: 22px;
+
+  --font-sans: "Geist", "SF Pro Rounded", "SF Pro Display", "Segoe UI Variable Display",
+    "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+
+  --ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root {
+  --izk-accent: linear-gradient(135deg, #8a6cff 0%, #5b8dff 55%, #4ecdc4 100%);
+  --izk-hairline: rgba(255, 255, 255, 0.14);
+  --izk-fill: rgba(255, 255, 255, 0.06);
+  --izk-shadow: 0 30px 90px rgba(0, 0, 0, 0.7);
+  --izk-noise: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
+  color-scheme: dark;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: var(--font-sans);
+  color: var(--color-izk-ink);
+  font-synthesis-weight: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The config window is a transparent Tauri window; the DWM Mica/Acrylic
+   backdrop lives behind it, so the page paints only the glass layers. */
+html.izuki-config body {
+  background:
+    radial-gradient(120% 90% at 12% -10%, rgba(124, 92, 255, 0.22) 0%, rgba(124, 92, 255, 0) 58%),
+    radial-gradient(110% 80% at 108% 106%, rgba(78, 205, 196, 0.18) 0%, rgba(78, 205, 196, 0) 60%),
+    rgba(14, 14, 17, 0.62);
+}
+
+/* ------------------------------------------------------------------
+   Two window treatments.
+
+   With a DWM system backdrop (Mica/Acrylic) Windows blurs the real desktop
+   behind the whole window rectangle — so the sheet must sit edge to edge and
+   match the corner radius DWM itself draws. With the backdrop off there is
+   nothing behind the window at all, so the page draws a floating, deeply
+   rounded card with its own shadow instead.
+   ------------------------------------------------------------------ */
+.izk-window {
+  height: 100%;
+  width: 100%;
+  padding: 14px;
+}
+
+html[data-backdrop="acrylic"] .izk-window,
+html[data-backdrop="mica"] .izk-window,
+html[data-backdrop="tabbed"] .izk-window {
+  padding: 0;
+}
+
+html[data-backdrop="acrylic"] .izk-sheet,
+html[data-backdrop="mica"] .izk-sheet,
+html[data-backdrop="tabbed"] .izk-sheet {
+  border-radius: 10px;
+  /* Lighter blur: DWM has already done the expensive part. */
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 0 80px rgba(124, 92, 255, 0.05);
+}
+
+html.izuki-config[data-backdrop="acrylic"] body,
+html.izuki-config[data-backdrop="mica"] body,
+html.izuki-config[data-backdrop="tabbed"] body {
+  background:
+    radial-gradient(120% 90% at 12% -10%, rgba(124, 92, 255, 0.2) 0%, rgba(124, 92, 255, 0) 58%),
+    radial-gradient(110% 80% at 108% 106%, rgba(78, 205, 196, 0.16) 0%, rgba(78, 205, 196, 0) 60%),
+    rgba(14, 14, 17, 0.2);
+}
+
+html.izuki-overlay,
+html.izuki-overlay body {
+  background: transparent;
+  cursor: none;
+  user-select: none;
+}
+
+#root,
+#overlay-root {
+  height: 100%;
+  width: 100%;
+}
+
+::selection {
+  background: rgba(124, 92, 255, 0.45);
+}
+
+/* ============================================================
+   Scrollbars — thin and glassy, never Win32 grey
+   ============================================================ */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+  background-clip: content-box;
+}
+
+/* ============================================================
+   Liquid glass primitives
+   ============================================================ */
+
+/* Fine grain keeps large blurred panels from banding. */
+.izk-grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: var(--izk-noise);
+}
+
+/* The window-level sheet: iOS liquid glass layered over Windows 11 Mica. */
+.izk-sheet {
+  position: relative;
+  height: 100%;
+  border-radius: var(--radius-glass);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.075) 0%,
+    rgba(255, 255, 255, 0.025) 42%,
+    rgba(255, 255, 255, 0.045) 100%
+  );
+  backdrop-filter: blur(40px) saturate(185%);
+  -webkit-backdrop-filter: blur(40px) saturate(185%);
+  border: 1px solid var(--izk-hairline);
+  box-shadow:
+    var(--izk-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 80px rgba(124, 92, 255, 0.07);
+  overflow: hidden;
+}
+
+/* Specular sweep across the top edge — the "wet glass" read. */
+.izk-sheet::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 44%;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    168deg,
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0.05) 32%,
+    rgba(255, 255, 255, 0) 78%
+  );
+  mask-image: linear-gradient(180deg, #000 0%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 100%);
+}
+
+.izk-card {
+  position: relative;
+  border-radius: var(--radius-card);
+  background: var(--izk-fill);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 8px 28px rgba(0, 0, 0, 0.32);
+  transition:
+    background 220ms var(--ease-glass),
+    border-color 220ms var(--ease-glass),
+    transform 220ms var(--ease-spring),
+    box-shadow 220ms var(--ease-glass);
+}
+
+.izk-card-hover:hover {
+  background: rgba(255, 255, 255, 0.085);
+  border-color: rgba(255, 255, 255, 0.16);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 14px 38px rgba(0, 0, 0, 0.42);
+}
+
+.izk-inset {
+  background: rgba(0, 0, 0, 0.26);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+/* ============================================================
+   Controls
+   ============================================================ */
+.izk-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-izk-muted);
+  font-weight: 560;
+  letter-spacing: -0.01em;
+  transition:
+    color 180ms var(--ease-glass),
+    background 180ms var(--ease-glass),
+    border-color 180ms var(--ease-glass),
+    transform 180ms var(--ease-spring);
+}
+
+.izk-pill:hover {
+  color: var(--color-izk-ink);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.izk-pill:active {
+  transform: scale(0.97);
+}
+
+.izk-btn-primary {
+  position: relative;
+  border-radius: 999px;
+  color: #0b0a12;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  background: var(--izk-accent);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow:
+    0 10px 30px rgba(124, 92, 255, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transition:
+    transform 180ms var(--ease-spring),
+    box-shadow 200ms var(--ease-glass),
+    filter 200ms var(--ease-glass);
+}
+
+.izk-btn-primary:hover {
+  filter: brightness(1.07);
+  box-shadow:
+    0 14px 40px rgba(124, 92, 255, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.izk-btn-primary:active {
+  transform: scale(0.975);
+}
+
+.izk-field {
+  width: 100%;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--color-izk-ink);
+  padding: 11px 14px;
+  font-size: 13.5px;
+  outline: none;
+  transition:
+    border-color 180ms var(--ease-glass),
+    box-shadow 180ms var(--ease-glass),
+    background 180ms var(--ease-glass);
+}
+
+.izk-field::placeholder {
+  color: rgba(158, 160, 173, 0.55);
+}
+
+.izk-field:focus {
+  border-color: rgba(124, 92, 255, 0.55);
+  background: rgba(0, 0, 0, 0.42);
+  box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.16);
+}
+
+.izk-range {
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.izk-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: none;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.4);
+  cursor: grab;
+  transition: transform 160ms var(--ease-spring);
+}
+
+.izk-range::-webkit-slider-thumb:active {
+  transform: scale(1.16);
+  cursor: grabbing;
+}
+
+.izk-divider {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.11) 18%,
+    rgba(255, 255, 255, 0.11) 82%,
+    transparent
+  );
+}
+
+.izk-accent-text {
+  background: var(--izk-accent);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.izk-drag {
+  -webkit-app-region: drag;
+}
+
+.izk-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* ============================================================
+   Motion
+   ============================================================ */
+@keyframes izk-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.12);
+  }
+}
+
+@keyframes izk-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes izk-marching {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+@keyframes izk-drift-a {
+  0%,
+  100% {
+    transform: translate(-6%, -4%) scale(1);
+  }
+  50% {
+    transform: translate(4%, 5%) scale(1.14);
+  }
+}
+
+@keyframes izk-drift-b {
+  0%,
+  100% {
+    transform: translate(5%, 4%) scale(1.05);
+  }
+  50% {
+    transform: translate(-5%, -6%) scale(1);
+  }
+}
+
+/* The slow-drifting colour underneath the glass — the signature "aurora"
+   read that separates a considered panel from a flat dark sheet. */
+.izk-aurora {
+  position: absolute;
+  inset: -10%;
+  pointer-events: none;
+  z-index: -1;
+  overflow: hidden;
+}
+
+.izk-aurora span {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(64px);
+  will-change: transform;
+}
+
+/* The aurora blobs stay still: drifting them forever behind blurred glass
+   made the graphics chip redraw the whole panel every frame — a big share
+   of the lag on a slow laptop, for a movement nobody could see. */
+.izk-aurora span:nth-child(1) {
+  left: -8%;
+  top: -12%;
+  width: 62%;
+  height: 46%;
+  background: radial-gradient(circle, rgba(138, 108, 255, 0.42), transparent 72%);
+}
+
+.izk-aurora span:nth-child(2) {
+  right: -12%;
+  bottom: -14%;
+  width: 58%;
+  height: 44%;
+  background: radial-gradient(circle, rgba(78, 205, 196, 0.32), transparent 72%);
+}
+
+.izk-aurora span:nth-child(3) {
+  right: 8%;
+  top: -6%;
+  width: 34%;
+  height: 28%;
+  background: radial-gradient(circle, rgba(91, 141, 255, 0.24), transparent 72%);
+}
+
+.izk-blink {
+  animation: izk-blink 5.5s var(--ease-glass) infinite;
+  transform-origin: center;
+}
+
+.izk-breathe {
+  animation: izk-breathe 3.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* "Listening…" / "Thinking…" under the voice sphere: a small glass pill
+   with gradient lettering, so it belongs to the orb rather than floating
+   as loose text. (No looping animation — this sits over live video.) */
+.izk-orb-label {
+  /* Solid-ish, not blurred glass: it sits on the orb's glow, which
+     repaints every frame, and a blur under it would be redone each time. */
+  background: rgba(10, 14, 30, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+}
+.izk-orb-label {
+  color: #e0f2fe;
+}
+@supports (-webkit-background-clip: text) {
+  .izk-orb-label {
+    background-image: linear-gradient(90deg, #67e8f9, #a5b4fc 50%, #f0abfc), linear-gradient(rgba(10, 14, 30, 0.72), rgba(10, 14, 30, 0.72));
+    -webkit-background-clip: text, padding-box;
+    background-clip: text, padding-box;
+    -webkit-text-fill-color: transparent;
+  }
+}
+
+/* Your words under the voice sphere / above the taskbar. Dark and nearly
+   solid so they read over any wallpaper, with a faint gradient edge that
+   matches the orb — and no backdrop blur: the orb's glow under it repaints
+   every frame. */
+.izk-transcript {
+  background:
+    linear-gradient(rgba(9, 12, 26, 0.86), rgba(9, 12, 26, 0.86)) padding-box,
+    linear-gradient(100deg, rgba(103, 232, 249, 0.55), rgba(165, 180, 252, 0.35), rgba(240, 171, 252, 0.55)) border-box;
+  border: 1px solid transparent;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+}
+
+/* The tip jar in Settings — warm, a little glow, clearly not a system
+   setting. */
+.izk-support {
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(52, 211, 153, 0.16), transparent 55%),
+    radial-gradient(120% 140% at 100% 100%, rgba(244, 114, 182, 0.14), transparent 55%),
+    rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Overlay boxes matched to what's behind them (lib/tone.ts) — the chat, the
+   captions, your words, the Ctrl+D oval. They float over every app, so one
+   fixed colour was unreadable on half the screens. */
+.izk-card.izk-tone-dark {
+  background: rgba(12, 14, 28, 0.66);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.izk-card.izk-tone-light,
+.izk-transcript.izk-tone-light {
+  --color-izk-ink: #0f1222;
+  --color-izk-muted: #4b5266;
+  box-shadow: 0 14px 40px rgba(15, 23, 42, 0.22);
+}
+.izk-card.izk-tone-light {
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(15, 23, 42, 0.12);
+}
+.izk-transcript.izk-tone-light {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.93), rgba(255, 255, 255, 0.93)) padding-box,
+    linear-gradient(100deg, rgba(8, 145, 178, 0.55), rgba(99, 102, 241, 0.4), rgba(192, 38, 211, 0.55)) border-box;
+}
+.izk-card.izk-tone-vivid {
+  background: rgba(10, 12, 24, 0.76);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+/* Gradient lettering on busy, colourful screens (and the "Gradient" choice). */
+.izk-tone-vivid .izk-tone-text,
+.izk-tone-vivid.izk-tone-text {
+  background-image: linear-gradient(90deg, #67e8f9, #a5b4fc 50%, #f0abfc);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.izk-tone-vivid textarea,
+.izk-tone-vivid input {
+  caret-color: #a5f3fc;
+}
+.izk-tone-custom textarea,
+.izk-tone-custom input {
+  caret-color: var(--izk-custom);
+}

@@ -1,0 +1,389 @@
+//! Actually moving the mouse and pressing keys.
+//!
+//! Two things make this feel different from a macro recorder:
+//!   * travel follows a jittered cubic Bézier with an ease-out profile, so the
+//!     pointer arrives like a hand rather than teleporting;
+//!   * targets are snapped to real UI Automation controls first, so a mark
+//!     drawn roughly over a button still lands on the button.
+
+use anyhow::{anyhow, Result};
+use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
+use rand::Rng;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
+
+use crate::model::{ActionStep, Intent};
+use crate::uia;
+
+/// Flipped by the panic hotkey; every loop checks it between steps.
+static ABORT: AtomicBool = AtomicBool::new(false);
+
+pub fn request_abort() {
+    ABORT.store(true, Ordering::SeqCst);
+}
+
+pub fn clear_abort() {
+    ABORT.store(false, Ordering::SeqCst);
+}
+
+pub fn aborted() -> bool {
+    ABORT.load(Ordering::SeqCst)
+}
+
+fn enigo() -> Result<Enigo> {
+    Enigo::new(&Settings::default()).map_err(|e| anyhow!("could not open an input channel: {e:?}"))
+}
+
+/// Cubic Bézier through two control points offset perpendicular to the path.
+fn bezier(p0: (f64, f64), p1: (f64, f64), p2: (f64, f64), p3: (f64, f64), t: f64) -> (f64, f64) {
+    let u = 1.0 - t;
+    let (a, b, c, d) = (u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t);
+    (
+        a * p0.0 + b * p1.0 + c * p2.0 + d * p3.0,
+        a * p0.1 + b * p1.1 + c * p2.1 + d * p3.1,
+    )
+}
+
+fn ease_out_quint(t: f64) -> f64 {
+    1.0 - (1.0 - t).powi(5)
+}
+
+/// Glide the real cursor from where it is to (x, y).
+pub fn glide_to(x: i32, y: i32, duration_ms: u64) -> Result<()> {
+    let mut e = enigo()?;
+    let (sx, sy) = e.location().unwrap_or_else(|_| crate::capture::cursor_pos());
+    let (sx, sy) = (sx as f64, sy as f64);
+    let (tx, ty) = (x as f64, y as f64);
+
+    let dx = tx - sx;
+    let dy = ty - sy;
+    let dist = (dx * dx + dy * dy).sqrt();
+
+    // Very short hops are not worth animating.
+    if dist < 3.0 {
+        e.move_mouse(x, y, Coordinate::Abs).ok();
+        return Ok(());
+    }
+
+    // Control points bowed off the straight line, sign chosen at random so
+    // repeated runs do not trace an identical arc.
+    let mut rng = rand::rng();
+    let bow = (dist * 0.16).min(90.0) * if rng.random_bool(0.5) { 1.0 } else { -1.0 };
+    let (nx, ny) = (-dy / dist, dx / dist);
+    let jitter = |r: &mut rand::rngs::ThreadRng| r.random_range(-0.06_f64..0.06);
+
+    let c1 = (
+        sx + dx * (0.28 + jitter(&mut rng)) + nx * bow * 0.72,
+        sy + dy * (0.28 + jitter(&mut rng)) + ny * bow * 0.72,
+    );
+    let c2 = (
+        sx + dx * (0.72 + jitter(&mut rng)) + nx * bow * 0.42,
+        sy + dy * (0.72 + jitter(&mut rng)) + ny * bow * 0.42,
+    );
+
+    let duration = Duration::from_millis(duration_ms.clamp(60, 2500));
+    // ~120 Hz of updates, capped so long travels do not flood the input queue.
+    let steps = ((duration.as_millis() as f64 / 8.0).round() as u32).clamp(6, 160);
+    let start = Instant::now();
+
+    for i in 1..=steps {
+        if aborted() {
+            return Err(anyhow!("stopped"));
+        }
+        let linear = i as f64 / steps as f64;
+        let t = ease_out_quint(linear);
+        let (px, py) = bezier((sx, sy), c1, c2, (tx, ty), t);
+        e.move_mouse(px.round() as i32, py.round() as i32, Coordinate::Abs)
+            .ok();
+
+        // Sleep against the wall clock so we stay on schedule even if a frame
+        // of work ran long.
+        let target = duration.mul_f64(linear);
+        let elapsed = start.elapsed();
+        if target > elapsed {
+            std::thread::sleep(target - elapsed);
+        }
+    }
+
+    e.move_mouse(x, y, Coordinate::Abs).ok();
+    Ok(())
+}
+
+fn tiny_pause() {
+    std::thread::sleep(Duration::from_millis(rand::rng().random_range(24..52)));
+}
+
+pub fn click_at(x: i32, y: i32, button: Button, times: u8, duration_ms: u64) -> Result<()> {
+    glide_to(x, y, duration_ms)?;
+    tiny_pause();
+    let mut e = enigo()?;
+    for i in 0..times.max(1) {
+        e.button(button, Direction::Click)
+            .map_err(|err| anyhow!("click failed: {err:?}"))?;
+        if i + 1 < times {
+            std::thread::sleep(Duration::from_millis(55));
+        }
+    }
+    Ok(())
+}
+
+pub fn drag(from: (i32, i32), to: (i32, i32), duration_ms: u64) -> Result<()> {
+    glide_to(from.0, from.1, duration_ms / 2)?;
+    tiny_pause();
+    {
+        let mut e = enigo()?;
+        e.button(Button::Left, Direction::Press)
+            .map_err(|err| anyhow!("could not press the mouse: {err:?}"))?;
+    }
+    // A short settle before travelling makes drag-and-drop targets register.
+    std::thread::sleep(Duration::from_millis(70));
+    let travel = glide_to(to.0, to.1, duration_ms.max(240));
+    std::thread::sleep(Duration::from_millis(70));
+    {
+        let mut e = enigo()?;
+        e.button(Button::Left, Direction::Release)
+            .map_err(|err| anyhow!("could not release the mouse: {err:?}"))?;
+    }
+    travel
+}
+
+pub fn type_text(text: &str) -> Result<()> {
+    let mut e = enigo()?;
+    // Chunked so a long paragraph still responds to the panic key.
+    for chunk in text.as_bytes().chunks(48) {
+        if aborted() {
+            return Err(anyhow!("stopped"));
+        }
+        let part = String::from_utf8_lossy(chunk);
+        e.text(&part)
+            .map_err(|err| anyhow!("typing failed: {err:?}"))?;
+        std::thread::sleep(Duration::from_millis(12));
+    }
+    Ok(())
+}
+
+/// Press a key or a chord: "enter", "win", "ctrl+l", "ctrl+shift+esc",
+/// "alt+f4", "win+d". Modifiers go down in order, the last key is tapped,
+/// then the modifiers come back up in reverse. A chord of only modifiers
+/// ("win", "ctrl+alt") taps the last one — "win" alone opens Start.
+pub fn press_key(name: &str) -> Result<()> {
+    let parts: Vec<&str> = name
+        .split('+')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .collect();
+    let Some((last, mods)) = parts.split_last() else {
+        return Err(anyhow!("empty key"));
+    };
+
+    let mut held = Vec::new();
+    for m in mods {
+        held.push(parse_modifier(m).ok_or_else(|| anyhow!("unknown modifier \"{m}\" in {name}"))?);
+    }
+    let key = parse_modifier(last)
+        .or_else(|| parse_key(last))
+        .ok_or_else(|| anyhow!("unknown key: {name}"))?;
+
+    let mut e = enigo()?;
+    for m in &held {
+        e.key(*m, Direction::Press).map_err(|err| anyhow!("key press failed: {err:?}"))?;
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    let tapped = e.key(key, Direction::Click);
+    for m in held.iter().rev() {
+        e.key(*m, Direction::Release).ok();
+    }
+    tapped.map_err(|err| anyhow!("key press failed: {err:?}"))
+}
+
+fn parse_modifier(name: &str) -> Option<Key> {
+    Some(match name.trim().to_ascii_lowercase().as_str() {
+        "ctrl" | "control" | "ctl" => Key::Control,
+        "shift" => Key::Shift,
+        "alt" | "option" => Key::Alt,
+        "win" | "windows" | "super" | "meta" | "cmd" | "command" | "start" => Key::Meta,
+        _ => return None,
+    })
+}
+
+pub fn scroll_at(x: i32, y: i32, amount: i32, duration_ms: u64) -> Result<()> {
+    glide_to(x, y, duration_ms)?;
+    let mut e = enigo()?;
+    // Break the scroll into notches so pages with momentum keep up.
+    let step = if amount > 0 { 1 } else { -1 };
+    for _ in 0..amount.abs().min(40) {
+        e.scroll(step, Axis::Vertical).ok();
+        std::thread::sleep(Duration::from_millis(18));
+    }
+    Ok(())
+}
+
+fn parse_key(name: &str) -> Option<Key> {
+    let n = name.trim().to_ascii_lowercase();
+    Some(match n.as_str() {
+        "enter" | "return" => Key::Return,
+        "tab" => Key::Tab,
+        "escape" | "esc" => Key::Escape,
+        "space" | "spacebar" => Key::Space,
+        "capslock" | "caps" => Key::CapsLock,
+        "printscreen" | "prtsc" | "print" => Key::PrintScr,
+        "backspace" => Key::Backspace,
+        "delete" | "del" => Key::Delete,
+        "up" => Key::UpArrow,
+        "down" => Key::DownArrow,
+        "left" => Key::LeftArrow,
+        "right" => Key::RightArrow,
+        "home" => Key::Home,
+        "end" => Key::End,
+        "pageup" => Key::PageUp,
+        "pagedown" => Key::PageDown,
+        "f1" => Key::F1,
+        "f2" => Key::F2,
+        "f3" => Key::F3,
+        "f4" => Key::F4,
+        "f5" => Key::F5,
+        "f6" => Key::F6,
+        "f7" => Key::F7,
+        "f8" => Key::F8,
+        "f9" => Key::F9,
+        "f10" => Key::F10,
+        "f11" => Key::F11,
+        "f12" => Key::F12,
+        other => {
+            let mut chars = other.chars();
+            let c = chars.next()?;
+            if chars.next().is_some() {
+                return None;
+            }
+            Key::Unicode(c)
+        }
+    })
+}
+
+/// Run a single planned step. `magnetic` snaps the point onto a real control
+/// first; `dry_run` animates nothing at the OS level.
+pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -> Result<String> {
+    if aborted() {
+        return Err(anyhow!("stopped"));
+    }
+
+    let (mut x, mut y) = (step.x, step.y);
+    let mut snapped = None;
+
+    // A step already pinned to a real control (by id) is exact — only guessed
+    // pixels need the magnetic snap.
+    if magnetic && step.snapped_to.is_none() && !matches!(step.action, Intent::Watch) {
+        if let Some(hit) = uia::snap_to_control(x, y, 64) {
+            x = hit.x;
+            y = hit.y;
+            snapped = Some(hit.name);
+        }
+    }
+
+    let label = snapped
+        .clone()
+        .unwrap_or_else(|| format!("{},{}", x, y));
+
+    if dry_run {
+        return Ok(format!("[dry run] {} at {}", step.action.as_str(), label));
+    }
+
+    match step.action {
+        Intent::Click | Intent::Auto => click_at(x, y, Button::Left, 1, move_ms)?,
+        Intent::DoubleClick => click_at(x, y, Button::Left, 2, move_ms)?,
+        Intent::RightClick => click_at(x, y, Button::Right, 1, move_ms)?,
+        Intent::Hover => glide_to(x, y, move_ms)?,
+        // Only the on-screen hand goes there and circles it (the overlay
+        // draws it off the HAND event) — the real mouse stays put. Held a
+        // moment so there's time to look.
+        Intent::Point => std::thread::sleep(Duration::from_millis(1800)),
+        Intent::Drag => {
+            let to = (step.x2.unwrap_or(x), step.y2.unwrap_or(y));
+            drag((x, y), to, move_ms)?;
+        }
+        Intent::Type => {
+            // Focus the field first unless the model gave no coordinates.
+            if x > 0 || y > 0 {
+                click_at(x, y, Button::Left, 1, move_ms)?;
+                std::thread::sleep(Duration::from_millis(90));
+            }
+            if let Some(text) = &step.text_to_type {
+                type_text(text)?;
+            }
+        }
+        Intent::Key => {
+            if let Some(k) = &step.key {
+                press_key(k)?;
+            }
+        }
+        Intent::Scroll => {
+            // No point given: scroll wherever the cursor already is, rather
+            // than dragging it to the top-left corner of the screen.
+            let (sx, sy) = if x <= 0 && y <= 0 { crate::capture::cursor_pos() } else { (x, y) };
+            scroll_at(sx, sy, step.scroll_amount.unwrap_or(3), move_ms)?
+        }
+        Intent::Copy => {
+            click_at(x, y, Button::Left, 3, move_ms)?;
+            std::thread::sleep(Duration::from_millis(60));
+            copy_selection()?;
+        }
+        Intent::Watch => return Ok("handed to the watcher".into()),
+    }
+
+    Ok(format!("{} at {}", step.action.as_str(), label))
+}
+
+/// Ctrl+C, then read what landed on the clipboard.
+pub fn copy_selection() -> Result<String> {
+    {
+        let mut e = enigo()?;
+        e.key(Key::Control, Direction::Press).ok();
+        e.key(Key::Unicode('c'), Direction::Click).ok();
+        e.key(Key::Control, Direction::Release).ok();
+    }
+    std::thread::sleep(Duration::from_millis(120));
+    read_clipboard()
+}
+
+pub fn read_clipboard() -> Result<String> {
+    let mut cb = arboard::Clipboard::new().map_err(|e| anyhow!("clipboard unavailable: {e}"))?;
+    cb.get_text().map_err(|e| anyhow!("clipboard is not text: {e}"))
+}
+
+pub fn write_clipboard(text: &str) -> Result<()> {
+    let mut cb = arboard::Clipboard::new().map_err(|e| anyhow!("clipboard unavailable: {e}"))?;
+    cb.set_text(text.to_string())
+        .map_err(|e| anyhow!("could not write to the clipboard: {e}"))
+}
+
+/// Ask Windows to report physical pixels, so drawn coordinates and real
+/// coordinates agree on high-DPI displays.
+pub fn make_dpi_aware() {
+    #[cfg(windows)]
+    {
+        let _ = enigo::set_dpi_awareness();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_key_and_modifiers_are_understood() {
+        assert_eq!(parse_modifier("win"), Some(Key::Meta));
+        assert_eq!(parse_modifier("Windows"), Some(Key::Meta));
+        assert_eq!(parse_modifier("ctrl"), Some(Key::Control));
+        assert_eq!(parse_modifier("alt"), Some(Key::Alt));
+        assert_eq!(parse_modifier("shift"), Some(Key::Shift));
+        assert_eq!(parse_modifier("enter"), None);
+    }
+
+    #[test]
+    fn plain_keys_are_understood() {
+        assert_eq!(parse_key("enter"), Some(Key::Return));
+        assert_eq!(parse_key("F4"), Some(Key::F4));
+        assert_eq!(parse_key("l"), Some(Key::Unicode('l')));
+        assert_eq!(parse_key("notakey"), None);
+    }
+}
