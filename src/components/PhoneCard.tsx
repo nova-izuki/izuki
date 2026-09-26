@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Copy, ExternalLink, Loader2, Smartphone, Unlink } from "lucide-react";
 import { Badge, Row, Section, Toggle } from "./ui";
+import { CallCard } from "./CallCard";
 import { useIzuki } from "../lib/store";
 import { api, EV, IS_TAURI, on } from "../lib/ipc";
 import type { PhoneStatus } from "../lib/types";
@@ -149,6 +150,8 @@ export function PhoneCard() {
       >
         <Toggle checked={settings.phone_controls_pc} onChange={(v) => patch({ phone_controls_pc: v })} />
       </Row>
+
+      <CallCard />
 
       {paired && (
         <button

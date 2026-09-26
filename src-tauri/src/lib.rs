@@ -2,11 +2,13 @@
 
 pub mod apps;
 pub mod automation;
+pub mod call;
 pub mod brain;
 pub mod capture;
 pub mod duck;
 pub mod chat;
 pub mod commands;
+pub mod companion;
 pub mod composio;
 pub mod events;
 pub mod follow;
@@ -179,6 +181,7 @@ pub fn run() {
             commands::cloud_transcribe,
             commands::duck_audio,
             commands::phone_status,
+            commands::call_status,
             commands::apps_ask,
             commands::apps_test,
             commands::phone_unpair,
@@ -218,6 +221,7 @@ pub fn run() {
             follow::spawn(handle.clone(), store.clone());
             reminders::spawn(handle.clone());
             telegram::spawn(handle.clone());
+            call::spawn(handle.clone());
 
             Ok(())
         })
@@ -242,6 +246,7 @@ pub fn run() {
             // apps' sound turned down.
             if let tauri::RunEvent::Exit = event {
                 duck::restore_now();
+                call::stop();
             }
             if let tauri::RunEvent::Ready = event {
                 // `--minimised` is passed by the autostart entry so Izuki

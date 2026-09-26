@@ -21,7 +21,6 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 
-use crate::chat::{Style, Turn};
 
 const API: &str = "https://api.telegram.org";
 
@@ -37,8 +36,6 @@ pub struct Status {
 
 static STATUS: Mutex<Status> = Mutex::new(Status { bot: String::new(), paired: false, code: String::new(), error: None });
 static STARTED: AtomicBool = AtomicBool::new(false);
-/// The phone conversation so far (oldest first), for back-and-forth.
-static HISTORY: Mutex<Vec<Turn>> = Mutex::new(Vec::new());
 
 pub fn status() -> Status {
     let s = crate::state::store().settings();
@@ -247,6 +244,18 @@ fn handle(app: &AppHandle, token: &str, msg: &Value) -> Result<()> {
         "screen" | "screenshot" | "show me my screen" | "show my screen" => {
             return send_screen(token, chat);
         }
+        "call" => {
+            let st = crate::call::status();
+            let text = if st.state == "ready" {
+                format!("📞 Open this and tap to talk:\n{}", st.link)
+            } else if crate::state::store().settings().call_enabled {
+                "The call link is still starting — I'll text it to you the moment it's ready.".to_string()
+            } else {
+                "Turn on \"Call Izuki\" in Izuki → Settings → Phone first, then send /call again.".to_string()
+            };
+            send_text(token, chat, &text);
+            return Ok(());
+        }
         "reminders" => {
             let list = crate::reminders::list();
             let text = if list.is_empty() {
@@ -268,6 +277,7 @@ fn handle(app: &AppHandle, token: &str, msg: &Value) -> Result<()> {
                  • Ask me anything, or to draft something\n\
                  • \"Remind me at 6 to call Mum\" — /reminders lists them\n\
                  • \"Open Spotify on my PC\" — I'll do it and tell you\n\
+                 • /call — a link to talk to me hands-free\n\
                  • /screen shows your PC's screen, /stop stops me",
             );
             return Ok(());
@@ -277,63 +287,12 @@ fn handle(app: &AppHandle, token: &str, msg: &Value) -> Result<()> {
 
     // ---- the companion -----------------------------------------------------
     typing(token, chat);
-    let history = {
-        let mut h = HISTORY.lock();
-        h.push(Turn { role: "user".into(), content: said.clone() });
-        let excess = h.len().saturating_sub(16);
-        h.drain(..excess);
-        h.clone()
-    };
-    let reply = match crate::chat::reply(&history, Style::Phone) {
-        Ok(r) => r,
-        Err(e) => {
-            send_text(token, chat, &format!("My AI brain didn't answer ({e}). Try again in a moment?"));
-            return Ok(());
-        }
-    };
-    let reply = crate::reminders::take_tags(&reply);
-
-    if reply.trim().trim_matches(|c| c == '[' || c == ']').eq_ignore_ascii_case("screen") || reply.starts_with("[SCREEN]") {
-        HISTORY.lock().pop();
-        return do_on_pc(app, token, chat, &said);
+    let reply = crate::companion::respond(app, &said, false, &|line| send_text(token, chat, line));
+    let mut text = reply.text.clone();
+    for (name, url) in &reply.links {
+        text.push_str(&format!("\n\n🔗 Connect {name}: {url}"));
     }
-    if reply.trim().trim_matches(|c| c == '[' || c == ']').eq_ignore_ascii_case("apps") || reply.starts_with("[APPS]") {
-        typing(token, chat);
-        let answer = match crate::composio::ask(&history) {
-            Ok(a) => a,
-            Err(e) => crate::composio::Answer { text: format!("I couldn't get into your apps just now ({e})."), links: Vec::new() },
-        };
-        let mut text = crate::reminders::take_tags(&answer.text);
-        for (name, url) in &answer.links {
-            text.push_str(&format!("\n\n🔗 Connect {name}: {url}"));
-        }
-        HISTORY.lock().push(Turn { role: "assistant".into(), content: answer.text.clone() });
-        send_text(token, chat, &text);
-        return Ok(());
-    }
-    HISTORY.lock().push(Turn { role: "assistant".into(), content: reply.clone() });
-    send_text(token, chat, &reply);
-    Ok(())
-}
-
-/// Something to do on the PC, asked from the phone.
-fn do_on_pc(app: &AppHandle, token: &str, chat: i64, said: &str) -> Result<()> {
-    let store = crate::state::store();
-    if !store.settings().phone_controls_pc {
-        send_text(token, chat, "That needs your PC, and doing things on it from your phone is switched off (Izuki → Settings → Phone).");
-        return Ok(());
-    }
-    if crate::uia::screen_locked() {
-        send_text(token, chat, "Your PC is locked, so I can't do that right now — unlock it and ask again.");
-        return Ok(());
-    }
-    send_text(token, chat, "On it — doing that on your PC… 🖥️ (/stop to stop)");
-    let plan = crate::brain::submit_voice_command(app, &store, said.to_string());
-    let summary = plan.summary.trim();
-    let done = if summary.is_empty() { "Done." } else { summary };
-    HISTORY.lock().push(Turn { role: "user".into(), content: said.to_string() });
-    HISTORY.lock().push(Turn { role: "assistant".into(), content: done.to_string() });
-    send_text(token, chat, &format!("{done}\n\n(/screen to see it)"));
+    send_text(token, chat, &text);
     Ok(())
 }
 
@@ -373,7 +332,7 @@ pub fn unpair() {
     next.telegram_chat_id = 0;
     next.telegram_code.clear(); // heal() makes a fresh one
     store.set_settings(next);
-    HISTORY.lock().clear();
+    crate::companion::forget();
 }
 
 #[cfg(test)]

@@ -99,6 +99,13 @@ export interface AppsAnswer {
   links: Array<[string, string]>;
 }
 
+export interface CallStatus {
+  /** "off" | "downloading" | "starting" | "ready" | "error" */
+  state: string;
+  link: string;
+  error: string | null;
+}
+
 export interface PhoneStatus {
   bot: string;
   paired: boolean;
@@ -313,6 +320,9 @@ export interface Settings {
   phone_controls_pc: boolean;
   /** Your free Composio key — Izuki in Gmail, Calendar, Drive, Slack… */
   composio_api_key: string;
+  /** "Call Izuki" — the hands-free phone page through a free tunnel. */
+  call_enabled: boolean;
+  call_token: string;
   composio_user_id: string;
   /** How long a conversation waits for you before closing (seconds, 5…1800). */
   follow_up_secs: number;

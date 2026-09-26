@@ -234,6 +234,13 @@ pub struct Settings {
     pub phone_controls_pc: bool,
     /// Your own free Composio key: Izuki's access to Gmail, Calendar, Drive,
     /// Slack, Notion, socials and more (composio.rs).
+    /// "Call Izuki": a hands-free voice page for your phone, reached through
+    /// a free Cloudflare tunnel (call.rs).
+    #[serde(default)]
+    pub call_enabled: bool,
+    /// The secret part of the call link — without it the page won't open.
+    #[serde(default)]
+    pub call_token: String,
     #[serde(default)]
     pub composio_api_key: String,
     /// This PC's user at Composio (made once).
@@ -344,6 +351,9 @@ impl Settings {
         self.groq_api_key = clean_key(&self.groq_api_key);
         self.telegram_token = clean_key(&self.telegram_token);
         self.composio_api_key = clean_key(&self.composio_api_key);
+        if self.call_token.len() < 20 {
+            self.call_token = uuid::Uuid::new_v4().simple().to_string();
+        }
         if self.telegram_code.len() != 6 {
             self.telegram_code = format!("{:06}", rand::random::<u32>() % 1_000_000);
         }
@@ -481,6 +491,8 @@ impl Default for Settings {
             telegram_chat_id: 0,
             telegram_code: String::new(),
             phone_controls_pc: true,
+            call_enabled: false,
+            call_token: String::new(),
             composio_api_key: String::new(),
             composio_user_id: String::new(),
             follow_up_secs: default_follow_up(),

@@ -14,6 +14,7 @@ import type {
   Watcher,
   Memory,
   PhoneStatus,
+  CallStatus,
   AppsAnswer,
   Reminder,
 } from "./types";
@@ -177,6 +178,8 @@ export const MOCK_SETTINGS: Settings = {
   cloud_ears: true,
   telegram_token: "",
   composio_api_key: "",
+  call_enabled: false,
+  call_token: "",
   composio_user_id: "",
   telegram_chat_id: 0,
   telegram_code: "",
@@ -253,6 +256,7 @@ export const api = {
       links: [],
     })),
   appsTest: (key: string) => call<void>("apps_test", { key }, () => undefined),
+  callStatus: () => call<CallStatus>("call_status", undefined, () => ({ state: "off", link: "", error: null })),
   phoneStatus: () =>
     call<PhoneStatus>("phone_status", undefined, () => ({ bot: "", paired: false, code: "123456", error: null })),
   phoneUnpair: () => call<Settings>("phone_unpair", undefined, () => MOCK_SETTINGS),
@@ -413,6 +417,7 @@ export const EV = {
   memoryChanged: "izuki://memory-changed",
   remindersChanged: "izuki://reminders-changed",
   phoneChanged: "izuki://phone-changed",
+  callChanged: "izuki://call-changed",
   /** Frontend-only: Izuki's voice started (true) or stopped (false) talking. */
   speaking: "izuki://speaking",
   /** Cut Izuki off mid-sentence. Sent by the chat's stop button, the

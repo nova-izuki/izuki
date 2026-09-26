@@ -535,6 +535,11 @@ pub async fn apps_test(key: String) -> R<()> {
 }
 
 #[tauri::command]
+pub fn call_status() -> crate::call::Status {
+    crate::call::status()
+}
+
+#[tauri::command]
 pub fn phone_status() -> crate::telegram::Status {
     crate::telegram::status()
 }

@@ -186,6 +186,11 @@ background mode, confirm before acting, practice mode (dry run).
   reach the prompt. Unlinked apps return a sign-in link (opened on the PC, texted to the phone).
   Premium (paid) tools are switched off. Nothing is sent, posted or deleted without a yes.
 
+- **Call Izuki** — `call.rs` serves `call.html` on 127.0.0.1 and runs a free Cloudflare quick
+  tunnel (`cloudflared.exe`, downloaded once) for an https link with a secret token. The phone's
+  own speech recognition and voice are used; replies come from `companion.rs` (shared with
+  Telegram). Phones without speech recognition upload a recording to `/hear` (cloud ears).
+
 ## 9. Checklist (run through after any change)
 
 1. "Hey Nova" → one orb, one "Mhm?" → ask something → answer → ask again without the wake word.
