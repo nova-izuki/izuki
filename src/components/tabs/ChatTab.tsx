@@ -29,6 +29,10 @@ interface Msg {
   retry?: boolean;
   /** What it's doing before the answer ("Searching the web…"). */
   status?: string;
+  /** A change it wants to make (save a file, run a command) — Allow / No. */
+  action?: { id: number; kind: "save" | "run"; title: string; detail: string; state?: "allowed" | "denied" | "working" };
+  /** Your answer to such a card, told to Izuki (shown as a small note). */
+  note?: boolean;
 }
 
 /** How long to wait for the first words before saying something's wrong. */
@@ -100,14 +104,14 @@ export function ChatTab() {
   }, [refreshReminders]);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, note = false) => {
       const t = text.trim();
       if (!t || busy) return;
-      setDraft("");
+      if (!note) setDraft("");
       const history = [...msgs.filter((m) => !m.failed && !m.screen), { role: "user" as const, content: t }].map(
         ({ role, content }) => ({ role, content })
       );
-      setMsgs((m) => [...m, { role: "user", content: t }, { role: "assistant", content: "" }]);
+      setMsgs((m) => [...m, { role: "user", content: t, note }, { role: "assistant", content: "" }]);
       setBusy(true);
       const id = Date.now();
       streamId.current = id;
@@ -156,8 +160,15 @@ export function ChatTab() {
           });
           resolve();
         };
-        const off = on<{ id: number; text: string; done: boolean; error: string | null; status?: string }>(EV.chatDelta, (d) => {
+        const off = on<{ id: number; text: string; done: boolean; error: string | null; status?: string; action?: Msg["action"] }>(EV.chatDelta, (d) => {
           if (d.id !== id || settled) return;
+          // It wants to save a file or run a command: ask, and stop here.
+          if (d.action) {
+            void off.then((f) => f());
+            setLast({ content: d.text || "Okay to do this?", action: d.action, status: undefined });
+            resolve();
+            return;
+          }
           // Looking something up first: show what, and give it time.
           if (d.status) {
             clearTimeout(slow);
@@ -216,6 +227,26 @@ export function ChatTab() {
     streamId.current = null;
     finish.current?.("Stopped.");
     setBusy(false);
+  };
+
+  /** Allow / No on a change it asked to make; tell it what happened. */
+  const answer = async (i: number, allow: boolean) => {
+    const a = msgs[i]?.action;
+    if (!a || a.state || busy) return;
+    const mark = (state: NonNullable<Msg["action"]>["state"]) =>
+      setMsgs((m) => m.map((x, j) => (j === i && x.action ? { ...x, action: { ...x.action, state } } : x)));
+    mark(allow ? "working" : "denied");
+    let result: string;
+    try {
+      result = await api.chatAction(a.id, allow);
+    } catch (e) {
+      result = `It didn't work: ${String(e)}`;
+    }
+    if (allow) mark("allowed");
+    setTimeout(
+      () => void sendRef.current(allow ? `[I allowed it. Result:]\n${result}` : "[I said no — don't do that.]", true),
+      40
+    );
   };
 
   /** Ask the question before a failed reply again. */
@@ -314,7 +345,12 @@ export function ChatTab() {
               </div>
             </div>
           )}
-          {msgs.map((m, i) => (
+          {msgs.map((m, i) =>
+            m.note ? (
+              <div key={i} className="self-center rounded-full bg-white/5 px-2.5 py-0.5 text-[10.5px] text-izk-muted">
+                {m.content.startsWith("[I allowed") ? "✓ You allowed it" : "✕ You said no"}
+              </div>
+            ) : (
             <div key={i} className={cx("flex", m.role === "user" ? "justify-end" : "justify-start")}>
               <div
                 className={cx(
@@ -362,9 +398,45 @@ export function ChatTab() {
                     <MonitorSmartphone size={12} strokeWidth={2.4} /> Do it on my PC
                   </button>
                 )}
+                {m.action && (
+                  <div className="mt-2 rounded-[12px] border border-white/10 bg-black/25 p-2">
+                    <div className="text-[11.5px] font-semibold text-izk-ink">
+                      {m.action.kind === "save" ? "💾 " : "⚡ "}
+                      {m.action.title}
+                    </div>
+                    <pre className="mt-1 max-h-[160px] overflow-auto whitespace-pre-wrap break-words rounded-[8px] bg-black/30 p-1.5 font-mono text-[10.5px] leading-snug text-izk-muted">
+                      {m.action.detail}
+                    </pre>
+                    {!m.action.state ? (
+                      <div className="mt-1.5 flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => void answer(i, true)}
+                          disabled={busy}
+                          className="izk-btn-primary flex h-[26px] items-center rounded-full px-3 text-[11.5px] disabled:opacity-50"
+                        >
+                          Allow
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void answer(i, false)}
+                          disabled={busy}
+                          className="izk-pill izk-no-drag h-[26px] px-3 text-[11.5px] disabled:opacity-50"
+                        >
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-1.5 text-[10.5px] text-izk-muted">
+                        {m.action.state === "working" ? "Doing it…" : m.action.state === "allowed" ? "✓ Allowed" : "✕ Not done"}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
-          ))}
+            )
+          )}
           <div ref={bottom} />
         </div>
 

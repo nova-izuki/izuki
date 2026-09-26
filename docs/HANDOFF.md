@@ -144,9 +144,15 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
 23. Call Izuki on, POST `{"text":"hi from n8n"}` to the notify address →
     heads-up arrives.
 
+24. Chat tab: "what's the latest Burna Boy news?" (searches), "summarise
+    https://…" (reads), sign in to Blackboard in the Izuki browser then
+    "what's due on Blackboard?" (browses, hidden). "Find my resume" (FIND),
+    "save these notes to my Desktop" → Allow card → file saved.
+25. Phone app: "what's the weather in Lagos today?" → a real, current answer.
+
 Running the Rust tests from Linux: `cargo test --target x86_64-pc-windows-gnu
 --lib --no-run`, copy `target/x86_64-pc-windows-gnu/debug/WebView2Loader.dll`
-next to the test exe in `deps/`, and run it with `wine64` (47 pass).
+next to the test exe in `deps/`, and run it with `wine64` (60 pass).
 
 Fix whatever breaks; keep each fix small.
 

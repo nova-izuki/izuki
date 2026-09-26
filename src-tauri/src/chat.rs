@@ -40,6 +40,41 @@ pub struct Delta {
     /// What it's doing meanwhile ("Searching the web…") — not part of the reply.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    /// Something it wants to change (save a file, run a command): shown as
+    /// an Allow / No card, and only the user's click does it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<ActionAsk>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct ActionAsk {
+    pub id: u64,
+    /// "save" or "run".
+    pub kind: &'static str,
+    pub title: String,
+    pub detail: String,
+}
+
+/// Changes waiting for the user's Allow, by id.
+static PENDING: Mutex<Vec<(u64, Tool)>> = Mutex::new(Vec::new());
+
+/// The user answered an Allow / No card. Returns what happened, for the
+/// chat to carry on from.
+pub fn answer_action(id: u64, allow: bool) -> anyhow::Result<String> {
+    let tool = {
+        let mut p = PENDING.lock();
+        let i = p.iter().position(|(k, _)| *k == id).ok_or_else(|| anyhow::anyhow!("that request has expired — ask again"))?;
+        p.remove(i).1
+    };
+    if !allow {
+        return Ok("The user said no — it wasn't done.".into());
+    }
+    eprintln!("[chat] allowed: {tool:?}");
+    match tool {
+        Tool::Write(path, content) => crate::files::write(&path, &content),
+        Tool::Run(cmd) => crate::files::run(&cmd),
+        _ => anyhow::bail!("nothing to do"),
+    }
 }
 
 /// Streams the user cut off (a new message, "stop") — checked between tokens.
@@ -88,12 +123,28 @@ Use a few at most, then answer in your normal way and say where it came from. Ne
 card numbers, and never send, post, submit, buy or delete anything through the browser unless the \
 user clearly said yes to exactly that.\n";
 
+/// The Chat tab only (not the voice orb, not the phone): the user's files.
+const FILES_RULE: &str = "In this chat you can also work with the files on their PC, like a helpful \
+assistant at their desk. Same rule — reply with only the tag:\n\
+[FIND: words] — find files or folders by name (Desktop, Documents, Downloads, Pictures, OneDrive…).\n\
+[FILES: folder] — see what's in a folder (\"Downloads\", \"Desktop/School\", or a full path).\n\
+[OPEN: path] — read a file (text, notes, code, CSV, Word .docx, PowerPoint .pptx).\n\
+[WRITE: path] then, on the next lines, the whole content — save a file (a new one, or a fixed version).\n\
+[RUN: command] — run one PowerShell command (rename or move files, make a zip, check disk space, \
+install something they asked for…).\n\
+WRITE and RUN show the user an Allow / No button first and only happen if they allow it, so just use \
+them when it's what they asked for — you'll be told the result. Prefer the smallest, safest command; \
+never delete anything they didn't clearly ask to delete.\n";
+
 fn system_prompt(style: Style, apps: bool) -> String {
     let mut s = match style {
         Style::Voice { expressive } => voice_prompt(expressive),
         Style::Text | Style::Phone => written_prompt(style == Style::Phone),
     };
     s.push_str(TOOLS_RULE);
+    if style == Style::Text {
+        s.push_str(FILES_RULE);
+    }
     if apps {
         s.push_str(APPS_RULE);
     } else {
@@ -217,11 +268,12 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             if done {
                 crate::reminders::take_tags(&whole.lock());
             }
-            let _ = app.emit(DELTA, Delta { id, text, done, error, status: None });
+            let _ = app.emit(DELTA, Delta { id, text, done, error, status: None, action: None });
         };
         let status = |s: &str| {
-            let _ = app.emit(DELTA, Delta { id, text: String::new(), done: false, error: None, status: Some(s.to_string()) });
+            let _ = app.emit(DELTA, Delta { id, text: String::new(), done: false, error: None, status: Some(s.to_string()), action: None });
         };
+        let files = style == Style::Text;
         let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
         if chain.is_empty() {
             return emit(String::new(), true, Some("no chat-capable brain is set up".into()));
@@ -263,8 +315,32 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             let Some(tool) = parse_tool(&raw) else {
                 return emit(String::new(), true, Some("the answer got muddled — try again".into()));
             };
+            // Changes wait for the user: an Allow / No card, and this reply ends.
+            if let Some(ask) = tool.needs_ok() {
+                if !files {
+                    return emit("I can only do that from the Chat tab on your PC.".into(), true, None);
+                }
+                let action_id = rand::random::<u32>() as u64 + 1;
+                let lead = if ask.kind == "save" { "Here's what I'll save — okay?" } else { "I'd like to run this — okay?" };
+                PENDING.lock().push((action_id, tool));
+                let mut p = PENDING.lock();
+                let n = p.len();
+                if n > 20 {
+                    p.drain(..n - 20);
+                }
+                drop(p);
+                let _ = app.emit(DELTA, Delta {
+                    id,
+                    text: lead.into(),
+                    done: true,
+                    error: None,
+                    status: None,
+                    action: Some(ActionAsk { id: action_id, ..ask }),
+                });
+                return;
+            }
             status(tool.doing());
-            let result = run_tool(&tool);
+            let result = if !files && tool.is_files() { "Files can only be used from the Chat tab on the PC.".into() } else { run_tool(&tool) };
             messages.push(json!({ "role": "assistant", "content": raw.trim() }));
             messages.push(json!({ "role": "user", "content": format!("[result]\n{result}\n[Now carry on — another tag, or your answer.]") }));
         }
@@ -277,7 +353,7 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
 
 const TOOL_ROUNDS: usize = 4;
 const NO_MORE_TOOLS: &str = "[No more tools now — answer with what you have.]";
-const TOOL_WORDS: &[&str] = &["SEARCH", "READ", "BROWSE", "CLICK", "TYPE"];
+const TOOL_WORDS: &[&str] = &["SEARCH", "READ", "BROWSE", "CLICK", "TYPE", "FIND", "FILES", "OPEN", "WRITE", "RUN"];
 const MOODS: &[&str] = &["cheerful", "excited", "calm", "serious", "sympathetic", "playful", "curious"];
 
 #[derive(Debug, PartialEq)]
@@ -287,6 +363,11 @@ enum Tool {
     Browse(String),
     Click(u32),
     Type(u32, String, bool),
+    Find(String),
+    Files(String),
+    Open(String),
+    Write(String, String),
+    Run(String),
 }
 
 impl Tool {
@@ -296,6 +377,28 @@ impl Tool {
             Tool::Read(_) => "📄 Reading the page…",
             Tool::Browse(_) => "🌐 Opening it in the Izuki browser…",
             Tool::Click(_) | Tool::Type(..) => "🖱️ Working on the page…",
+            Tool::Find(_) => "🗂️ Looking through your files…",
+            Tool::Files(_) => "📁 Opening the folder…",
+            Tool::Open(_) => "📄 Reading the file…",
+            Tool::Write(..) | Tool::Run(_) => "…",
+        }
+    }
+
+    fn is_files(&self) -> bool {
+        matches!(self, Tool::Find(_) | Tool::Files(_) | Tool::Open(_) | Tool::Write(..) | Tool::Run(_))
+    }
+
+    /// The Allow / No card for a change, if this is one.
+    fn needs_ok(&self) -> Option<ActionAsk> {
+        match self {
+            Tool::Write(path, content) => Some(ActionAsk {
+                id: 0,
+                kind: "save",
+                title: format!("Save {}", crate::files::resolve(path).display()),
+                detail: crate::web::clip(content, 1500),
+            }),
+            Tool::Run(cmd) => Some(ActionAsk { id: 0, kind: "run", title: "Run this command".into(), detail: cmd.clone() }),
+            _ => None,
         }
     }
 }
@@ -320,7 +423,10 @@ fn classify(t: &str) -> Option<bool> {
     // A mood tag still being written: wait.
     if trimmed.starts_with('[') && !trimmed.contains(']') && trimmed.len() < 16 {
         let w: String = trimmed[1..].chars().take_while(|c| c.is_ascii_alphabetic()).collect();
-        if MOODS.iter().any(|m| m.starts_with(&w.to_lowercase())) || TOOL_WORDS.iter().any(|k| k.starts_with(&w.to_uppercase())) {
+        // Only while the name itself is still arriving.
+        if w.len() + 1 == trimmed.len()
+            && (MOODS.iter().any(|m| m.starts_with(&w.to_lowercase())) || TOOL_WORDS.iter().any(|k| k.starts_with(&w.to_uppercase())))
+        {
             return None;
         }
     }
@@ -339,6 +445,19 @@ fn classify(t: &str) -> Option<bool> {
 /// The tool a whole reply asks for, if the reply is only a tool tag.
 fn parse_tool(reply: &str) -> Option<Tool> {
     let rest = after_mood(reply);
+    // [WRITE: path] and then the content, which may hold anything.
+    if rest.len() > 7 && rest[..7].eq_ignore_ascii_case("[WRITE:") {
+        let close = rest.find(']')?;
+        let path = rest[7..close].trim().to_string();
+        let body = rest[close + 1..].trim_start_matches([' ', '\r']).trim_start_matches('\n');
+        // A fenced block around the content is just formatting.
+        let body = body.trim_end();
+        let body = match body.strip_prefix("```") {
+            Some(b) => b.split_once('\n').map(|(_, r)| r).unwrap_or("").trim_end().trim_end_matches("```").trim_end(),
+            None => body,
+        };
+        return (!path.is_empty()).then(|| Tool::Write(path, format!("{body}\n")));
+    }
     let inner = rest.strip_prefix('[')?;
     let end = inner.rfind(']')?;
     if !rest[end + 2..].trim().is_empty() {
@@ -351,6 +470,10 @@ fn parse_tool(reply: &str) -> Option<Tool> {
         "READ" if !arg.is_empty() => Some(Tool::Read(arg.to_string())),
         "BROWSE" if !arg.is_empty() => Some(Tool::Browse(arg.to_string())),
         "CLICK" => arg.trim_matches('#').parse().ok().map(Tool::Click),
+        "FIND" if !arg.is_empty() => Some(Tool::Find(arg.to_string())),
+        "FILES" => Some(Tool::Files(arg.to_string())),
+        "OPEN" if !arg.is_empty() => Some(Tool::Open(arg.to_string())),
+        "RUN" if !arg.is_empty() => Some(Tool::Run(arg.to_string())),
         "TYPE" => {
             let (n, text) = arg.split_once('|')?;
             let text = text.trim();
@@ -369,6 +492,11 @@ fn run_tool(tool: &Tool) -> String {
         Tool::Browse(u) => crate::browser::browse(u),
         Tool::Click(n) => crate::browser::click(*n),
         Tool::Type(n, text, submit) => crate::browser::type_into(*n, text, *submit),
+        Tool::Find(w) => crate::files::find(w),
+        Tool::Files(d) => crate::files::list(d),
+        Tool::Open(p) => crate::files::read(p),
+        // Never straight from here — only through the Allow card.
+        Tool::Write(..) | Tool::Run(_) => Err(anyhow::anyhow!("that needs the user's OK in the Chat tab")),
     };
     r.unwrap_or_else(|e| format!("That didn't work: {e}"))
 }
@@ -685,5 +813,13 @@ mod tool_tests {
         assert_eq!(parse_tool("[SEARCH: x] and some words"), None);
         assert_eq!(parse_tool("Here you go"), None);
         assert_eq!(parse_tool("[SCREEN]"), None);
+        assert_eq!(parse_tool("[FIND: resume]"), Some(Tool::Find("resume".into())));
+        assert_eq!(parse_tool("[RUN: Get-PSDrive C]"), Some(Tool::Run("Get-PSDrive C".into())));
+        assert_eq!(
+            parse_tool("[WRITE: Desktop/notes.txt]\n```\nBuy milk [x]\nCall Sam\n```"),
+            Some(Tool::Write("Desktop/notes.txt".into(), "Buy milk [x]\nCall Sam\n".into()))
+        );
+        assert_eq!(classify("[WRI"), None);
+        assert_eq!(classify("[WRITE: a"), Some(true));
     }
 }

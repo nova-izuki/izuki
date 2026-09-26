@@ -277,6 +277,8 @@ export const api = {
   appsConnected: () => call<string[]>("apps_connected", undefined, () => ["gmail"]),
   /** A sign-in page for linking one app. */
   appsConnect: (toolkit: string) => call<string>("apps_connect", { toolkit }, () => "https://composio.dev"),
+  /** Allow / No on a change the chat asked to make; what happened. */
+  chatAction: (id: number, allow: boolean) => call<string>("chat_action", { id, allow }, () => (allow ? "Done." : "Not done.")),
   /** Show the Izuki browser (to sign in to a site once), optionally at `url`. */
   browserShow: (url?: string) =>
     call<void>("browser_show", { url: url ?? null }, () => void (url && window.open(url, "_blank"))),

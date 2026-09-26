@@ -13,6 +13,7 @@ pub mod discord;
 pub mod companion;
 pub mod composio;
 pub mod events;
+pub mod files;
 pub mod follow;
 pub mod headsup;
 pub mod ghost;
@@ -198,6 +199,7 @@ pub fn run() {
             commands::apps_connect,
             commands::headsup_test,
             commands::browser_show,
+            commands::chat_action,
             commands::phone_unpair,
             commands::reminders_list,
             commands::reminder_remove,
