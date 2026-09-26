@@ -143,6 +143,11 @@ unsafe extern "system" fn esc_hook(
     CallNextHookEx(None, code, wparam, lparam)
 }
 
+/// Whether Izuki is busy right now (thinking, working or talking).
+pub fn is_busy() -> bool {
+    ESC_ON.load(Ordering::SeqCst)
+}
+
 /// Izuki is busy (Esc stops it) or not (Esc is left alone).
 pub fn set_escape(_app: &AppHandle, on: bool) {
     if on {

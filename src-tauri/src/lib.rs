@@ -24,6 +24,7 @@ pub mod store;
 pub mod tray;
 pub mod tts;
 pub mod uia;
+pub mod updates;
 pub mod vision;
 pub mod watcher;
 
@@ -198,6 +199,7 @@ pub fn run() {
             tray::build(&handle)?;
             hotkey::rebind(&handle, &settings);
             hotkey::install_escape_watch(&handle);
+            updates::check_later(&handle);
             watcher::spawn(handle.clone(), store.clone());
             follow::spawn(handle.clone(), store.clone());
 
