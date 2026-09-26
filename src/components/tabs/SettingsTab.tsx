@@ -272,7 +272,7 @@ export function SettingsTab() {
         />
         <div className="izk-divider" />
         <HotkeyRow
-          label="Panic stop"
+          label="Emergency stop — everything, every mode"
           value={settings.hotkey_panic}
           onChange={(v) => patch({ hotkey_panic: v })}
         />

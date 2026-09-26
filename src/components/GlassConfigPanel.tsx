@@ -13,6 +13,7 @@ import { VoiceEngine } from "./VoiceEngine";
 import { OnboardingTour } from "./OnboardingTour";
 import { useIzuki, type TabId } from "../lib/store";
 import { IS_TAURI } from "../lib/ipc";
+import { Recover } from "./Recover";
 
 const TABS: Array<{ value: TabId; label: string; icon: React.ReactNode }> = [
   { value: "draw", label: "Draw", icon: <PenLine size={13} strokeWidth={2.4} /> },
@@ -78,7 +79,9 @@ export function GlassConfigPanel() {
     <div className="izk-window">
       {/* Always mounted, regardless of which tab is showing — this is the
           one and only "Hey Izuki" microphone session in the whole app. */}
-      <VoiceEngine />
+      <Recover name="voice" silent>
+        <VoiceEngine />
+      </Recover>
       <div className="izk-sheet izk-grain flex h-full flex-col">
         {/* the slow-drifting colour under the glass — always there, never distracting */}
         <div className="izk-aurora" aria-hidden="true">
@@ -140,16 +143,20 @@ export function GlassConfigPanel() {
               transition={{ duration: 0.26, ease: [0.32, 0.72, 0, 1] }}
               className="flex flex-col gap-3"
             >
-              {tab === "draw" && <DrawTab />}
-              {tab === "chat" && <ChatTab />}
-              {tab === "flows" && <FlowLibrary />}
-              {tab === "watchers" && <WatcherManager />}
-              {tab === "settings" && <SettingsTab />}
+              <Recover name={`tab:${tab}`}>
+                {tab === "draw" && <DrawTab />}
+                {tab === "chat" && <ChatTab />}
+                {tab === "flows" && <FlowLibrary />}
+                {tab === "watchers" && <WatcherManager />}
+                {tab === "settings" && <SettingsTab />}
+              </Recover>
             </motion.div>
           </AnimatePresence>
         </main>
 
-        <StatusToast />
+        <Recover name="toast" silent>
+          <StatusToast />
+        </Recover>
 
         <AnimatePresence>{tourOpen && <OnboardingTour onDone={closeTour} />}</AnimatePresence>
       </div>

@@ -124,6 +124,10 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
     explains step by step. "Where's the settings button?" → circles it.
 15. On a long page: "open the Blackboard link" when it's far down → it
     scrolls straight there and clicks.
+16. Start a watcher and a task, press Ctrl+Shift+Q (also with Task Manager
+    focused): everything stops and the watcher shows as off.
+17. Leave the panel open through a sleep/lock; it should still show
+    everything (or come back the moment you move the mouse over it).
 
 Fix whatever breaks; keep each fix small.
 

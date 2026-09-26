@@ -126,6 +126,18 @@ clearly says yes to exactly that — first show them the draft or what you'll do
 send it?\". Reading and searching needs no permission. If a tool fails, try once another way, then \
 tell them simply what went wrong.";
 
+/// Bumped by the stop keys. A request remembers the number it started with
+/// and never runs another tool (a send, a post) once it has changed.
+static STOPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn stop() {
+    STOPS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn stopped(since: u64) -> bool {
+    STOPS.load(std::sync::atomic::Ordering::SeqCst) != since
+}
+
 /// Handle a request that needs the user's apps. `history` ends with it.
 pub fn ask(history: &[Turn]) -> Result<Answer> {
     let key = crate::state::store().settings().composio_api_key.trim().to_string();
@@ -142,9 +154,17 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
         messages.push(json!({ "role": role, "content": t.content }));
     }
 
+    let started = STOPS.load(std::sync::atomic::Ordering::SeqCst);
+    let halt = || Answer { text: "Okay, I stopped.".into(), links: Vec::new() };
     let mut links = Vec::new();
     for round in 0..MAX_ROUNDS {
+        if stopped(started) {
+            return Ok(halt());
+        }
         let raw = crate::chat::complete(&messages)?;
+        if stopped(started) {
+            return Ok(halt());
+        }
         let Some(step) = parse_step(&raw) else {
             // Not JSON: take it as the answer rather than fail.
             return Ok(Answer { text: plain(&raw), links });

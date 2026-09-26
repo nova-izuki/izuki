@@ -12,7 +12,7 @@ use crate::brain;
 use crate::capture;
 use crate::events;
 use crate::ghost::{self, Prediction};
-use crate::model::{DesktopBounds, DrawSession, Flow, StatusEvent, VisionPlan, Watcher};
+use crate::model::{DesktopBounds, DrawSession, Flow, VisionPlan, Watcher};
 use crate::overlay;
 use crate::settings::{ProviderId, Settings};
 use crate::state;
@@ -389,11 +389,7 @@ pub fn quit_app(app: AppHandle) {
 
 #[tauri::command]
 pub fn panic_stop(app: AppHandle) {
-    brain::cancel_task();
-    let _ = app.emit(events::STOP_SPEAKING, ());
-    overlay::orb_closed();
-    let _ = overlay::hide_overlay(&app);
-    let _ = app.emit(events::STATUS, StatusEvent::info("Stopped everything."));
+    crate::hotkey::stop_current(&app);
 }
 
 // ---------------------------------------------------------------------------

@@ -149,6 +149,11 @@ pub fn watch_ads(how_long: Duration) {
         .ok();
 }
 
+/// Stop pressing Skip (the stop keys). The watch thread ends within a second.
+pub fn stop_watching_ads() {
+    *WATCH_UNTIL.lock() = None;
+}
+
 fn is_skip_button(c: &crate::uia::Control) -> bool {
     if c.kind != "Button" || c.hidden {
         return false;

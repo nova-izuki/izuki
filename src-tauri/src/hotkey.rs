@@ -167,7 +167,7 @@ unsafe extern "system" fn esc_hook(
                 // Never do real work inside the hook — Windows drops slow hooks.
                 std::thread::spawn(move || {
                     eprintln!("[hotkey] Esc pressed — stopping");
-                    Action::Panic.run(&app);
+                    stop_current(&app);
                 });
             }
         }
@@ -315,14 +315,7 @@ impl Action {
                     );
                 }
             }
-            Action::Panic => {
-                crate::brain::cancel_task();
-                let _ = app.emit(events::STOP_SPEAKING, ());
-                crate::overlay::orb_closed();
-                let _ = app.emit("izuki://pen-clear", ());
-                let _ = crate::overlay::hide_overlay(app);
-                let _ = app.emit(events::STATUS, StatusEvent::info("Stopped everything."));
-            }
+            Action::Panic => stop_everything(app),
             // A one-shot mic capture, no wake word, no window to open first —
             // the config panel's `VoiceEngine` is always mounted (even
             // hidden to tray) and is what actually listens for this. The
@@ -338,4 +331,48 @@ impl Action {
             Action::Quickdraw => {}
         }
     }
+}
+
+/// Stop what Izuki is doing right now: the screen task or flow, anything
+/// it's saying, the orb, the pen, an apps request about to run a tool, and
+/// the YouTube ad skipper. (Esc, the "Stop" button, "stop" by text.)
+pub fn stop_current(app: &AppHandle) {
+    halt(app);
+    let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
+}
+
+fn halt(app: &AppHandle) {
+    crate::brain::cancel_task();
+    crate::composio::stop();
+    crate::youtube::stop_watching_ads();
+    let _ = app.emit(events::STOP_SPEAKING, ());
+    crate::overlay::orb_closed();
+    let _ = app.emit("izuki://pen-clear", ());
+    let _ = crate::overlay::hide_overlay(app);
+    // Bring the music back up if it was lowered for listening.
+    crate::duck::set(false);
+}
+
+/// The emergency stop (Ctrl+Shift+Q, the tray's "Stop everything"): all of
+/// the above, in every mode, and every watcher is switched off too so
+/// nothing starts clicking again a second later. Works even when Esc can't
+/// (Esc only reaches Izuki while it's busy, and never over admin windows
+/// like Task Manager; a registered hotkey always does).
+pub fn stop_everything(app: &AppHandle) {
+    halt(app);
+    let store = crate::state::store();
+    let running: Vec<String> = store.watchers().into_iter().filter(|w| w.enabled).map(|w| w.id).collect();
+    for id in &running {
+        store.mutate_watcher(id, |w| w.enabled = false);
+    }
+    if !running.is_empty() {
+        let _ = app.emit(events::WATCHERS_CHANGED, ());
+    }
+    let detail = match running.len() {
+        0 => None,
+        1 => Some("Your watcher is paused — turn it back on in Watchers.".to_string()),
+        n => Some(format!("{n} watchers are paused — turn them back on in Watchers.")),
+    };
+    eprintln!("[hotkey] emergency stop ({} watchers paused)", running.len());
+    let _ = app.emit(events::STATUS, StatusEvent { kind: "info", message: "Stopped everything.".into(), detail });
 }
