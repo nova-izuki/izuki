@@ -287,6 +287,21 @@ pub fn clip(s: &str, max: usize) -> String {
 mod tests {
     use super::*;
 
+    /// The real web, no AI: a search and a page read. Needs the internet, so
+    /// only when asked: `cargo test live_web -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn live_web_search_and_read() {
+        let found = search_text("Burna Boy latest news").unwrap();
+        eprintln!("search:
+{}", clip(&found, 700));
+        assert!(found.to_lowercase().contains("burna"), "{found}");
+        let page = read("https://en.wikipedia.org/wiki/Burna_Boy").unwrap();
+        eprintln!("page:
+{}", clip(&page, 400));
+        assert!(page.contains("Burna Boy"), "{page}");
+    }
+
     #[test]
     fn reads_the_article_not_the_furniture() {
         let html = r#"<html><head><title>Bundle by Bundle</title><style>.x{}</style></head><body>

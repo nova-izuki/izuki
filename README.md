@@ -9,7 +9,8 @@
 Free · Open source · Hands-free voice · Works with free AI keys
 
 [**⬇ Download for Windows**](https://github.com/nova-izuki/izuki/releases/latest) ·
-[🌐 Website](https://nova-izuki.github.io/izuki/) ·
+[🌐 Website — try it in your browser](https://nova-izuki.github.io/izuki/#try) ·
+[📱 Phone app](https://nova-izuki.github.io/izuki/app/) ·
 [How to use it](#how-to-use-it) ·
 [Support the builder ☕](#-support-the-builder)
 
@@ -30,6 +31,9 @@ happens to be great with computers. It can:
 - **Ask you when it's unsure** — “Which account? Circle it for me.” Circle it, press Enter, and it carries on.
 - **Check with you before anything final** — submitting, sending, buying or deleting always waits for your OK.
 - **Remember you** — your name, your preferences, the habits it notices. You can see and delete every memory.
+- **Tap you on the shoulder** — an important email, a meeting in 15 minutes, homework due tomorrow, a morning brief.
+- **Look things up for you** — it searches the web and reads the pages itself, quietly, even sites you're signed in to.
+- **Stop the instant you say so** — **Esc** or **Ctrl+Shift+Q**, any time, in every mode.
 
 <!-- Screenshots / demo: drop a GIF or MP4 of Izuki in action into docs/ and link it here, e.g.
 <p align="center"><img src="docs/demo.gif" width="720" alt="Izuki opening Spotify by voice" /></p> -->
@@ -50,9 +54,13 @@ happens to be great with computers. It can:
 | 📱 **On your phone, free** | Pair a Telegram bot (made in a minute with @BotFather) and text Izuki or send voice notes from anywhere — it can even do things on your PC and send you a screenshot. No app store, no server. |
 | 📲 **Izuki for phones, no PC needed** | Open [nova-izuki.github.io/izuki/app](https://nova-izuki.github.io/izuki/app/) on your phone and add it to your home screen: chat or talk hands-free, it remembers you, reminders go into your phone's calendar, and "Hey Siri, Izuki" works with a two-step Shortcut. Free with your own Gemini key; link your PC for more. |
 | 📞 **Call it from your phone** | Turn on *Call Izuki* and open the link on your phone to talk hands-free, like a call — your phone does the listening and talking, a free Cloudflare tunnel reaches your PC. |
-| 🔌 **In your apps** | With your own free Composio key: read and draft email, check your calendar, find files in Drive, post to Slack or Notion, and hundreds more — from chat, voice or your phone. It always shows a draft and asks before sending or posting. |
+| 🔌 **In your apps** | The **Apps** tab connects Gmail, Google Calendar, Drive, Slack, Notion, GitHub and more in one tap (with your own free Composio key) — from chat, voice or your phone. It always shows a draft and asks before sending or posting. Got an [n8n](https://n8n.io) workflow? Add its webhook and Izuki can run it by name. |
+| 🔔 **Heads-ups** | Izuki taps you on the shoulder — on your PC *and* your phone — for an important new email, a meeting coming up in 15 minutes, school work due tomorrow (from your Blackboard / Canvas / Google Classroom calendar link), and a morning brief at the time you pick. |
+| 🌐 **Searches and reads the web** | In the chat, Izuki searches the web and reads pages as clean text — no browser window, no key, nothing to install. For sites behind a sign-in (Blackboard, NotebookLM…), sign in once in the built-in **Izuki browser** and it can open, read, click and type there in the background. It never asks for or types your passwords. |
+| 📁 **Your files, from the chat** | “Find my history essay”, “what's in my Downloads?”, “save these notes to a file on my Desktop.” It finds, reads (even .docx and .pptx) and writes files — and anything that changes a file or runs a command waits for you to press **Allow**, with a backup of the old version. |
 | 🎧 **Hears you over music** | Other apps get quieter while you talk, and your words can be double-checked by a big cloud speech model that gets names right and ignores background songs. |
-| 🛑 **Always stoppable** | **Esc** (while it's working or talking) or **Ctrl+Shift+Q** (any time) stops everything instantly — the task, the voice, the listening. Say “quit Izuki” to close the app. |
+| 🛑 **Always stoppable** | **Esc** (while it's working or talking) stops what it's doing; **Ctrl+Shift+Q** (any time, in every mode) is the emergency stop — the task, the voice, the listening, the watchers. Say “quit Izuki” to close the app. |
+| 📲 **Web search on your phone too** | The phone app can search the web and read links with the same free Gemini key, and hands anything that needs a sign-in to your PC. |
 
 ## Install
 

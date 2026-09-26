@@ -197,7 +197,7 @@
 
     /* ---------- the app, shown like an ad ---------- */
     .show { width: 100%; max-width: none; padding: 0; }
-    .show-track { height: 520vh; position: relative; }
+    .show-track { height: 380vh; position: relative; }
     .show-sticky { position: sticky; top: 0; height: 100vh; overflow: hidden; display: grid; grid-template-columns: 0.9fr 1.1fr; align-items: center; gap: 24px;
       padding: 80px max(16px, (100% - 1160px) / 2) 24px; }
     .show-word { position: absolute; left: 50%; top: 50%; z-index: 0; font: 800 clamp(120px, 24vw, 380px)/1 var(--display); letter-spacing: -0.05em; white-space: nowrap; pointer-events: none;
@@ -234,7 +234,7 @@
     /* ---------- scroll demo ---------- */
     .demo { width: 100%; max-width: none; padding-inline: 0; }
     .demo-head { width: var(--wrap); margin: 0 auto; }
-    .demo-track { height: 330vh; position: relative; margin-top: 40px; }
+    .demo-track { height: 240vh; position: relative; margin-top: 40px; }
     .demo-sticky { position: sticky; top: 0; height: 100vh; display: grid; place-items: center; padding: 84px 16px 24px; }
     .screen { position: relative; width: min(1040px, 100%); aspect-ratio: 16 / 10; max-height: 76vh; border-radius: 20px; overflow: hidden;
       border: 1px solid rgba(255,255,255,0.14); background: #0b0c15; box-shadow: 0 40px 120px rgba(0,0,0,0.6), 0 0 0 1px rgba(139, 92, 246, 0.1), 0 0 80px rgba(139, 92, 246, 0.15);
@@ -412,7 +412,7 @@
 
     /* ---------- zoom through "HEY NOVA" ---------- */
     .zoom { width: 100%; max-width: none; padding: 0; }
-    .zoom-track { height: 260vh; position: relative; }
+    .zoom-track { height: 175vh; position: relative; }
     .zoom-sticky { position: sticky; top: 0; height: 100vh; overflow: hidden; display: grid; place-items: center; }
     .zoom-behind { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; text-align: center; padding: 16px; opacity: var(--zb, 0);
       background: radial-gradient(60% 50% at 50% 55%, rgba(139, 92, 246, 0.35), transparent 70%), radial-gradient(40% 30% at 50% 100%, rgba(34, 211, 238, 0.25), transparent 70%); }
@@ -428,7 +428,7 @@
 
     /* ---------- reels: vertical clips that slide past as you scroll ---------- */
     .reels { width: 100%; max-width: none; padding: 0; }
-    .reels-track-wrap { height: 420vh; position: relative; margin-top: clamp(40px, 8vw, 100px); }
+    .reels-track-wrap { height: 300vh; position: relative; margin-top: clamp(40px, 8vw, 100px); }
     .reels-sticky { position: sticky; top: 0; height: 100vh; overflow: hidden; display: flex; flex-direction: column; justify-content: center; gap: clamp(16px, 3vh, 34px); padding-top: 70px; }
     .reels-head { width: var(--wrap); margin: 0 auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
     .reels-head h2 { font-size: clamp(30px, 4.4vw, 56px); line-height: 1.02; font-weight: 800; margin-top: 8px; }
@@ -557,7 +557,98 @@
     .js .rv { opacity: 0; transform: translateY(28px); filter: blur(6px); transition: opacity 0.9s cubic-bezier(.2,.8,.2,1), transform 0.9s cubic-bezier(.2,.8,.2,1), filter 0.9s; transition-delay: var(--d, 0s); }
     .js .rv.in { opacity: 1; transform: none; filter: none; }
 
+    /* ---------- the hero, now tappable ---------- */
+    #hero-orb, .stage .chip { cursor: pointer; }
+    .stage .ring, .stage .state, .stage .chat { pointer-events: none; }
+    .stage .chip { transition: border-color 0.2s, background 0.2s; }
+    .stage .chip:hover { border-color: rgba(103, 232, 249, 0.6); background: rgba(24, 26, 52, 0.75); }
+    .tapme { position: absolute; z-index: 4; right: 12%; top: 15%; padding: 6px 12px; border-radius: 999px; font: 600 12.5px var(--body); pointer-events: none;
+      color: #06060f; background: linear-gradient(120deg, #67e8f9, #f0abfc); box-shadow: 0 8px 24px rgba(139, 92, 246, 0.45); animation: bob 2.6s ease-in-out infinite; transition: opacity 0.4s; }
+    .tapme::after { content: ""; position: absolute; left: 18%; bottom: -5px; width: 10px; height: 10px; background: #a5d8f9; transform: rotate(45deg); border-radius: 2px; }
+    .tapme.gone { opacity: 0; }
+
+    /* ---------- sparkles ---------- */
+    .spark { position: fixed; z-index: 90; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; pointer-events: none; background: var(--c, #fff);
+      box-shadow: 0 0 12px var(--c, #fff); animation: spark 0.9s cubic-bezier(.1, .7, .3, 1) forwards; }
+    .spark.star { border-radius: 2px; transform: rotate(45deg); }
+    @keyframes spark { to { translate: var(--dx) var(--dy); scale: 0.2; opacity: 0; } }
+
+    /* ---------- try it: talk to Izuki right here ---------- */
+    .play { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 28px; margin-top: 44px; padding: clamp(18px, 3vw, 34px); border-radius: 30px; position: relative; overflow: hidden;
+      border: 1px solid rgba(167, 139, 250, 0.28); background: linear-gradient(145deg, rgba(139, 92, 246, 0.12), rgba(34, 211, 238, 0.05) 60%, rgba(236, 72, 153, 0.07));
+      box-shadow: 0 40px 120px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+    .play-orb { position: relative; display: grid; place-items: center; min-height: 300px; }
+    .play-orb canvas { width: min(100%, 360px); aspect-ratio: 1; cursor: pointer; display: block; }
+    .play-state { position: absolute; top: 4%; left: 50%; transform: translateX(-50%); font: 500 11.5px var(--mono); letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+    .play-done { position: absolute; left: 50%; bottom: 6%; padding: 9px 15px; border-radius: 14px; font-size: 14px; font-weight: 700; white-space: nowrap;
+      background: rgba(14, 15, 30, 0.78); border: 1px solid rgba(52, 211, 153, 0.5); box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5), 0 0 26px rgba(52, 211, 153, 0.25);
+      transform: translate(-50%, 14px) scale(0.9); opacity: 0; transition: opacity 0.35s, transform 0.5s cubic-bezier(.2, 1.4, .3, 1); }
+    .play-done.on { opacity: 1; transform: translate(-50%, 0); }
+    .play-chat { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+    .play-log { display: flex; flex-direction: column; gap: 10px; height: 290px; overflow-y: auto; padding: 4px 4px 4px 0; overscroll-behavior: contain;
+      mask-image: linear-gradient(transparent, #000 14%); -webkit-mask-image: linear-gradient(transparent, #000 14%); }
+    .play-log > * { flex: none; }
+    .play-log .bubble { max-width: 88%; animation: pop 0.35s cubic-bezier(.2, 1.3, .3, 1) both; }
+    .play-log .hi { margin-top: auto; }
+    @keyframes pop { from { transform: translateY(10px) scale(0.96); opacity: 0; } }
+    .play-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .play-chips button, .play-sound { font: 600 14px var(--body); color: var(--ink); padding: 9px 14px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); cursor: pointer;
+      transition: transform 0.2s, background 0.2s, border-color 0.2s; }
+    .play-chips button:hover { transform: translateY(-2px); background: rgba(139, 92, 246, 0.2); border-color: rgba(167, 139, 250, 0.5); }
+    .play-chips button:active { transform: scale(0.96); }
+    .play-form { display: flex; gap: 8px; padding: 6px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(8, 9, 20, 0.6); transition: border-color 0.2s, box-shadow 0.2s; }
+    .play-form:focus-within { border-color: rgba(103, 232, 249, 0.6); box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.12); }
+    .play-form input { flex: 1; min-width: 0; background: none; border: 0; outline: none; color: var(--ink); font: 500 16px var(--body); padding: 8px 12px; }
+    .play-form input::placeholder { color: var(--faint); }
+    .play-form button { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; font-size: 17px; color: #06060f; background: linear-gradient(120deg, #67e8f9, #a78bfa 55%, #f0abfc);
+      transition: transform 0.2s; }
+    .play-form button:hover { transform: scale(1.08) rotate(-8deg); }
+    .play-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13.5px; color: var(--faint); }
+    .play-foot kbd { font-size: 11.5px; }
+    .play-sound { padding: 6px 12px; font-size: 13px; }
+    .play-sound[aria-pressed="true"] { border-color: rgba(52, 211, 153, 0.6); background: rgba(52, 211, 153, 0.14); }
+
+    /* ---------- the stop card: press Esc ---------- */
+    .card.stop { grid-column: span 6; display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; border-color: rgba(244, 63, 94, 0.28);
+      background: linear-gradient(120deg, rgba(244, 63, 94, 0.1), rgba(255, 255, 255, 0.02) 60%); }
+    .esc-key { position: relative; width: 116px; height: 96px; border-radius: 20px; cursor: pointer; font: 800 26px var(--display); color: var(--ink);
+      background: linear-gradient(180deg, #2a2c3f, #15161f); border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow: 0 8px 0 #07080d, 0 18px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.18); transition: transform 0.08s, box-shadow 0.08s; }
+    .esc-key.down { transform: translateY(7px); box-shadow: 0 1px 0 #07080d, 0 6px 16px rgba(0, 0, 0, 0.5), 0 0 40px rgba(244, 63, 94, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
+    .esc-key small { position: absolute; left: 50%; top: calc(100% + 16px); transform: translateX(-50%); font: 600 12.5px var(--body); color: var(--faint); white-space: nowrap; }
+    .card.stop.hit h3 { color: #fda4af; }
+
+    /* ---------- back to top + section dots ---------- */
+    .totop { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 45; width: 52px; height: 52px; border-radius: 50%;
+      display: grid; place-items: center; cursor: pointer; color: var(--ink); font-size: 19px; border: 1px solid var(--line); background: rgba(8, 9, 20, 0.7);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+      opacity: 0; transform: translateY(16px) scale(0.85); pointer-events: none; transition: opacity 0.3s, transform 0.35s cubic-bezier(.2, 1.3, .3, 1); }
+    .totop.on { opacity: 1; transform: none; pointer-events: auto; }
+    .totop:hover { transform: translateY(-3px); }
+    .totop svg { position: absolute; inset: -1px; width: calc(100% + 2px); height: calc(100% + 2px); transform: rotate(-90deg); pointer-events: none; }
+    .totop circle { fill: none; stroke: url(#tt-grad); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 150.8; stroke-dashoffset: var(--tt, 150.8); }
+    .dots-nav { position: fixed; right: 18px; top: 50%; transform: translateY(-50%); z-index: 44; display: flex; flex-direction: column; gap: 14px; }
+    .dots-nav a { position: relative; display: block; width: 10px; height: 10px; border-radius: 50%; background: rgba(255, 255, 255, 0.2); transition: background 0.3s, transform 0.3s, box-shadow 0.3s; }
+    .dots-nav a::before { content: ""; position: absolute; inset: -8px; }
+    .dots-nav a span { position: absolute; right: 22px; top: 50%; transform: translate(6px, -50%); opacity: 0; pointer-events: none; white-space: nowrap; font: 600 12.5px var(--body);
+      padding: 5px 10px; border-radius: 8px; background: rgba(8, 9, 20, 0.85); border: 1px solid var(--line); transition: opacity 0.2s, transform 0.2s; }
+    .dots-nav a:hover span, .dots-nav a:focus-visible span { opacity: 1; transform: translate(0, -50%); }
+    .dots-nav a.on { background: #a78bfa; transform: scale(1.35); box-shadow: 0 0 12px #a78bfa; }
+    .steps-rail i, .show-dots i { cursor: pointer; }
+    .steps-rail i { padding-block: 6px; background-clip: content-box; }
+    .reel { cursor: pointer; }
+    @media (max-width: 1240px) { .dots-nav { display: none; } }
+
     @media (max-width: 900px) {
+      .play { grid-template-columns: 1fr; gap: 10px; }
+      .play-orb { min-height: 0; }
+      .play-orb canvas { width: min(62vw, 250px); }
+      .play-log { height: 250px; }
+      .play-chips { flex-wrap: nowrap; overflow-x: auto; margin-inline: -4px; padding: 2px 4px 6px; scrollbar-width: none; }
+      .play-chips::-webkit-scrollbar { display: none; }
+      .play-chips button { flex: none; }
+      .card.stop { grid-column: span 2; grid-template-columns: 1fr; justify-items: start; padding-bottom: 54px; }
+      .tapme { right: 4%; top: 10%; }
       .hero { grid-template-columns: 1fr; height: auto; min-height: 0; max-height: none; padding-block: 28px 16vh; }
       .hero h1 { font-size: clamp(38px, 11vw, 56px); }
       .scene .shade { background: linear-gradient(180deg, rgba(4, 5, 12, 0.72) 0%, rgba(4, 5, 12, 0.55) 45%, rgba(4, 5, 12, 0.8) 80%, #04050c 100%); }
@@ -569,7 +660,7 @@
       .card, .card.wide, .card.hero-card { grid-column: span 2; }
       .phone-wrap, .how, .free { grid-template-columns: 1fr; }
       .how::before { display: none; }
-      .demo-track { height: 300vh; }
+      .demo-track { height: 220vh; }
       .screen { aspect-ratio: 4 / 5; }
       .yt { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
       .mini-orb { width: 24%; }
@@ -578,7 +669,7 @@
       .chip { font-size: 12px; padding: 7px 11px; }
       .chip.c1 { left: 0; top: 14%; } .chip.c2 { right: 0; top: 30%; } .chip.c3 { left: 2%; top: 52%; }
       .reel { height: min(58vh, 560px); }
-      .reels-track-wrap { height: 380vh; }
+      .reels-track-wrap { height: 280vh; }
       .show-sticky { grid-template-columns: 1fr; grid-template-rows: 1fr auto; padding: 76px 16px 20px; gap: 8px; }
       .show-stage { grid-row: 1; }
       .show-copy { grid-row: 2; min-height: 200px; }
@@ -604,7 +695,8 @@
       .reels-row { overflow-x: auto; width: auto; padding: 0 16px 16px; }
       .hero-copy, .hero-art { transform: none; opacity: 1; }
       .scene { clip-path: none !important; transition: none; }
-      .boot-line, .ring-cursor, .ring-dot { display: none !important; }
+      .boot-line, .ring-cursor, .ring-dot, .spark { display: none !important; }
+      .tapme, .play-log .bubble { animation: none !important; }
       html.js #hero-h1 .ch, html.js #hero-h1 .shine { opacity: 1 !important; animation: none !important; }
       .show-track { height: auto; }
       .show-sticky { position: relative; height: auto; }
@@ -623,6 +715,7 @@
     <div class="nav-in">
       <a class="brand" href="#top"><i></i>IZUKI</a>
       <div class="nav-links">
+        <a href="#try">Try it</a>
         <a href="#app">The app</a>
         <a href="#demo">See it work</a>
         <a href="#features">Features</a>
@@ -692,7 +785,7 @@
           <a class="btn primary" href="https://github.com/nova-izuki/izuki/releases/latest">⬇ Download for Windows — free</a>
           <a class="btn ghost" href="app/">📱 Izuki on your phone</a>
         </div>
-        <p class="fine rv" style="--d:.3s">Free forever · Your own free AI key · macOS &amp; Linux coming soon</p>
+        <p class="fine rv" style="--d:.3s">Free forever · Your own free AI key · <a href="#try" style="color:var(--cyan)">Try it right here ↓</a></p>
       </div>
       <div class="hero-art">
       <div class="stage rv" style="--d:.2s" aria-hidden="true">
@@ -702,6 +795,7 @@
         <div class="ring"></div>
         <div class="ring r2"></div>
         <canvas id="hero-orb"></canvas>
+        <div class="tapme" id="tapme">tap me ✨</div>
         <div class="state" id="hero-state">Listening</div>
         <div class="chat">
           <div class="bubble you" id="hero-you"></div>
@@ -728,6 +822,41 @@
           </div>
           <h2 class="zoom-word" id="zoom-word" aria-hidden="true">HEY N<span id="zoom-o">O</span>VA</h2>
           <div class="zoom-hint">Keep scrolling ↓</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== try it: talk to Izuki right here ========== -->
+    <section id="try">
+      <div class="kicker rv">Try it now</div>
+      <h2 class="rv">Go on. Say something.</h2>
+      <p class="sub rv">A little taste of talking to Izuki. Tap an idea or type anything — on your PC, it actually goes and does it.</p>
+      <div class="play rv">
+        <div class="play-orb">
+          <canvas id="play-orb" aria-label="Izuki's orb — tap it" role="img"></canvas>
+          <div class="play-state" id="play-state">Listening</div>
+          <div class="play-done" id="play-done" aria-hidden="true"></div>
+        </div>
+        <div class="play-chat">
+          <div class="play-log" id="play-log" aria-live="polite">
+            <div class="bubble iz hi">Hey, I'm Izuki 👋 What are we doing today?</div>
+          </div>
+          <div class="play-chips" id="play-chips">
+            <button type="button">▶ Play some music</button>
+            <button type="button">📚 What's due this week?</button>
+            <button type="button">⏰ Remind me at 6 to call Mum</button>
+            <button type="button">✏️ Explain 2x + 3 = 11</button>
+            <button type="button">✉️ Check my email</button>
+            <button type="button">😂 Tell me a joke</button>
+          </div>
+          <form class="play-form" id="play-form" autocomplete="off">
+            <input id="play-in" type="text" maxlength="160" placeholder="Ask Izuki anything…" aria-label="Ask Izuki anything" enterkeyhint="send" />
+            <button type="submit" aria-label="Send">➤</button>
+          </form>
+          <div class="play-foot">
+            <span>Psst — type <kbd>hey nova</kbd> anywhere on this page.</span>
+            <button type="button" class="play-sound" id="play-sound" aria-pressed="false" hidden>🔈 Hear it talk</button>
+          </div>
         </div>
       </div>
     </section>
@@ -882,7 +1011,14 @@
         <article class="card rv" style="--d:.06s"><div class="glyph">👀</div><h3>Sees what you see</h3><p>“What does this error mean?” It reads your screen — and the app's hidden buttons — to answer precisely.</p></article>
         <article class="card rv" style="--d:.12s"><div class="glyph">✍️</div><h3>Draw to show it</h3><p>Hold <kbd>Ctrl</kbd>+<kbd>D</kbd>, circle anything, and ask. One tap to click, copy or explain it.</p></article>
         <article class="card wide rv"><div class="glyph">💬</div><h3>Chat, reminders &amp; memory</h3><p>A chat that never touches your screen, reminders that ring on your PC and phone, and a memory of you that you can see and wipe any time.</p></article>
-        <article class="card wide rv" style="--d:.06s"><div class="glyph">🔌</div><h3>In your apps</h3><p>Email, calendar, Drive, Slack, Notion and hundreds more with your own free key. It always shows the draft and asks before sending.</p></article>
+        <article class="card wide rv" style="--d:.06s"><div class="glyph">🔌</div><h3>In your apps</h3><p>Connect Gmail, Calendar, Drive, Slack, Notion and hundreds more in one tap from the Apps tab. It always shows the draft and asks before sending.</p></article>
+        <article class="card rv"><div class="glyph">🔔</div><h3>Heads-ups</h3><p>A new important email, a meeting in 15 minutes, homework due tomorrow — it taps you on the shoulder, on your PC and your phone. Plus a morning brief.</p></article>
+        <article class="card rv" style="--d:.06s"><div class="glyph">🌐</div><h3>Searches the web for you</h3><p>“What's the latest on…?” It searches and reads the pages itself, quietly — even school sites you're signed in to, in its own little browser.</p></article>
+        <article class="card rv" style="--d:.12s"><div class="glyph">📁</div><h3>Knows your files</h3><p>“Find my history essay.” It finds, reads and tidies your files from the chat — and asks you before changing anything.</p></article>
+        <article class="card stop rv" id="stop-card">
+          <div><div class="glyph">🛑</div><h3>One key stops everything</h3><p>Press <kbd>Esc</kbd> and Izuki lets go instantly — the task, the voice, the lot. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Q</kbd> works any time. Go on, try it on this page.</p></div>
+          <button type="button" class="esc-key" id="esc-key" aria-label="Press Esc">Esc<small id="esc-note">tap me or press Esc</small></button>
+        </article>
       </div>
     </section>
 
@@ -971,6 +1107,20 @@
     <span>© 2026 Izuki · MIT licensed · Made with ❤️ by Solomon Nwachukwu · Earth photo: <a href="https://unsplash.com/photos/photo-of-outer-space-Q1p7bh3SHj8?utm_source=izuki&utm_medium=referral">NASA</a> on <a href="https://unsplash.com/?utm_source=izuki&utm_medium=referral">Unsplash</a></span>
     <span><a href="https://github.com/nova-izuki/izuki">GitHub</a> · <a href="https://github.com/nova-izuki/izuki/releases/latest">Download</a> · <a href="app/">Phone app</a> · <a href="https://github.com/nova-izuki/izuki#privacy">Privacy</a></span>
   </footer>
+
+  <button class="totop" id="totop" type="button" aria-label="Back to the top">
+    <svg viewBox="0 0 52 52" aria-hidden="true"><defs><linearGradient id="tt-grad" x1="0" x2="1"><stop offset="0" stop-color="#67e8f9"/><stop offset=".5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f0abfc"/></linearGradient></defs><circle cx="26" cy="26" r="24"/></svg>
+    ↑
+  </button>
+  <nav class="dots-nav" id="dots-nav" aria-label="Jump to a section">
+    <a href="#top"><span>Home</span></a>
+    <a href="#try"><span>Try it</span></a>
+    <a href="#app"><span>The app</span></a>
+    <a href="#demo"><span>See it work</span></a>
+    <a href="#features"><span>Features</span></a>
+    <a href="#phone"><span>Phone</span></a>
+    <a href="#how"><span>Get started</span></a>
+  </nav>
 
 <script>
 (() => {
@@ -1307,35 +1457,195 @@
   })();
 
   // ------------------------------------------------ hero conversation
+  // Plays by itself, but it's alive: tap the orb or a chip and it answers
+  // you instead, then carries on. Esc stops it, like the real thing.
   const SCRIPT = [
     ["Hey Nova, play Bundle by Bundle by Burna Boy on YouTube.", "Playing it now — and I'll skip the ad for you. 🎶"],
     ["What's this error on my screen?", "It says your disk is almost full. Want me to open Storage settings?"],
     ["Explain this maths problem.", "Sure — first, look at the part I've circled: that's the x we're solving for…"],
     ["Remind me at 6 to call Mum.", "Done! I'll remind you at 6 — on your PC and your phone."],
   ];
+  const TAPS = [
+    "Hey! That tickles. 😄", "I'm awake! Say “Hey Nova” and I'm all yours.", "Boop. 👀 Scroll down — I want to show you something.",
+    "Still here. Still free. Still brilliant with computers.", "Okay okay, you found my favourite spot. 💜", "Want to talk properly? There's a chat box just below. 👇",
+  ];
   const you = $("hero-you"), iz = $("hero-iz"), heroState = $("hero-state");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  async function type(el, text, speed) {
+  let heroGen = 0, tapN = 0;
+  async function type(el, text, speed, live) {
     el.innerHTML = "";
     const span = document.createElement("span");
     const caret = document.createElement("i"); caret.className = "caret";
     el.append(span, caret);
-    for (let i = 1; i <= text.length; i++) { span.textContent = text.slice(0, i); await sleep(speed); }
+    for (let i = 1; i <= text.length; i++) {
+      if (!live()) return false;
+      span.textContent = text.slice(0, i);
+      await sleep(speed);
+    }
     caret.remove();
+    return live();
   }
-  async function converse() {
+  async function exchange(q, a, g, hold = 2600) {
+    const live = () => g === heroGen;
+    heroOrb.mode = "listening"; heroState.textContent = "Listening"; iz.textContent = "";
+    if (!(await type(you, q, reduce ? 0 : 34, live))) return false;
+    heroOrb.mode = "thinking"; heroState.textContent = "Thinking"; await sleep(reduce ? 0 : 750);
+    if (!live()) return false;
+    heroOrb.mode = "speaking"; heroState.textContent = "Talking";
+    if (!(await type(iz, a, reduce ? 0 : 24, live))) return false;
+    await sleep(hold);
+    return live();
+  }
+  async function converse(g, from = 0) {
     if (reduce) { you.textContent = SCRIPT[0][0]; iz.textContent = SCRIPT[0][1]; heroOrb.mode = "speaking"; heroState.textContent = "Talking"; return; }
-    for (let n = 0; ; n = (n + 1) % SCRIPT.length) {
-      const [q, a] = SCRIPT[n];
-      heroOrb.mode = "listening"; heroState.textContent = "Listening"; iz.textContent = "";
-      await type(you, q, 38);
-      heroOrb.mode = "thinking"; heroState.textContent = "Thinking"; await sleep(900);
-      heroOrb.mode = "speaking"; heroState.textContent = "Talking";
-      await type(iz, a, 26); await sleep(2600);
+    for (let n = from; ; n = (n + 1) % SCRIPT.length) if (!(await exchange(SCRIPT[n][0], SCRIPT[n][1], g))) return;
+  }
+  // Answer something now, then go back to the loop.
+  function heroSay(q, a, next = 0) {
+    const g = ++heroGen;
+    (async () => { if (await exchange(q, a, g, 3200)) converse(g, next); })();
+  }
+  function heroStop() {
+    const g = ++heroGen;
+    you.textContent = ""; iz.textContent = ""; heroOrb.mode = "listening"; heroState.textContent = "Stopped";
+    setTimeout(() => { if (g === heroGen) converse(g); }, 2200);
+  }
+  converse(heroGen);
+
+  // Little bursts of light, for taps and wins.
+  const SPARK = ["#67e8f9", "#a78bfa", "#f0abfc", "#fde68a", "#34d399", "#ffffff"];
+  function burst(x, y, n = 16) {
+    if (reduce) return;
+    for (let i = 0; i < n; i++) {
+      const s = document.createElement("i");
+      const a = Math.random() * Math.PI * 2, d = 40 + Math.random() * 90;
+      s.className = "spark" + (i % 3 ? "" : " star");
+      s.style.left = x + "px"; s.style.top = y + "px";
+      s.style.setProperty("--dx", `${Math.cos(a) * d}px`); s.style.setProperty("--dy", `${Math.sin(a) * d - 20}px`);
+      s.style.setProperty("--c", SPARK[i % SPARK.length]);
+      s.style.animationDelay = `${Math.random() * 60}ms`;
+      s.addEventListener("animationend", () => s.remove());
+      document.body.appendChild(s);
     }
   }
-  converse();
+  const tapme = $("tapme");
+  $("hero-orb").addEventListener("click", (e) => {
+    burst(e.clientX, e.clientY);
+    tapme.classList.add("gone");
+    heroSay("*taps the orb*", TAPS[tapN++ % TAPS.length]);
+  });
+  document.querySelectorAll(".stage .chip").forEach((chip, i) => {
+    const lines = [0, 3, null][i];
+    chip.addEventListener("click", (e) => {
+      burst(e.clientX, e.clientY, 10);
+      if (lines != null) heroSay(SCRIPT[lines][0], SCRIPT[lines][1], (lines + 1) % SCRIPT.length);
+      else heroSay("Reply to Sam saying I'll be there Friday.", "Here's the draft: “Hi Sam, I'll be there Friday!” — send it? ✉️");
+    });
+  });
 
+  // ------------------------------------------------ try it: a tiny Izuki
+  // Canned answers (no AI, nothing sent anywhere) that show the kind of
+  // thing the real one does.
+  const BRAIN = [
+    [/^\*boop\*$/, () => TAPS[tapN++ % TAPS.length], "✨ Boop"],
+    [/\b(hey|hi|hello|yo|sup|hiya|howdy)\b.*\bnova\b|\bhey nova\b/i, "Mhm? I'm listening. 👂 What can I do for you?", "👂 Listening"],
+    [/joke|funny|laugh/i, ["Why did the PC go to therapy? Too many unresolved tabs. 😅", "I told my computer a joke about UDP. Not sure it got it. 🤭", "Why was the laptop cold? It left its Windows open. 🥶"], "😂 Nailed it"],
+    [/stop|cancel|esc\b|shut up|quiet/i, "Stopped. 🛑 Press Esc any time and I let go — instantly.", "🛑 Stopped"],
+    [/play|song|music|youtube|spotify|playlist|burna|drake|afrobeat/i, "Playing it now — and I'll skip the ad for you. 🎶", "✓ Ad skipped"],
+    [/remind|reminder|alarm|wake me/i, "Done! I'll remind you then — out loud on your PC, and on your phone. ⏰", "⏰ Reminder set"],
+    [/homework|assignment|due|school|blackboard|canvas|class|exam|test\b|study/i, "You've got a History essay due tomorrow at 11:59 PM and a quiz Friday. Want me to make you a study plan? 📚", "📚 2 things due"],
+    [/math|maths|equation|solve|algebra|\d\s*x|x\s*=|explain|teach/i, "Easy — watch, I'll draw it. 2x + 3 = 11, take 3 from both sides: 2x = 8. Halve it: x = 4. ✏️", "✏️ Drawn on screen"],
+    [/email|inbox|gmail|mail|reply/i, "You've got 3 new emails — one from Sam about Friday. Want me to draft a reply? (I'll show you before sending.)", "✉️ Draft ready"],
+    [/schedule|calendar|plan|week|meeting|busy|free time/i, "You're free Tuesday after 3 and all of Thursday. Shall I block Thursday morning for study? 🗓️", "🗓️ Week planned"],
+    [/weather|news|search|google|look up|latest|who is|who's|what's happening/i, "On it — searching the web and reading the pages for you… here's the short version, with links if you want more. 🌐", "🌐 3 pages read"],
+    [/file|folder|document|pdf|essay|download|desktop/i, "Found it in Documents → School. Want me to open it? (I always ask before changing a file.) 📁", "📁 Found it"],
+    [/screen|error|what('s| is) this|help me with/i, "Let me look… that error means your disk is almost full. Want me to open Storage settings? 👀", "👀 Screen read"],
+    [/free|price|cost|pay|money|subscription/i, "Totally free. No subscription, no catch — you just use your own free AI key. 💸", "💸 $0 forever"],
+    [/mac|linux|iphone|android|phone|mobile/i, "I'm on Windows 10 & 11, and on any phone through my free web app — you can even call me. Mac and Linux are coming. 📱", "📱 In your pocket"],
+    [/who are you|your name|what are you|what can you do|izuki/i, "I'm Izuki — Nova to my friends. I live on your screen, talk with you, and do the clicking for you. 💜", "💜 Nice to meet you"],
+    [/thank|thx|ty\b/i, "Anytime! 💜", "💜"],
+    [/love|cute|cool|amazing|awesome|nice/i, ["Aww, stop it. 🥹💜", "You're pretty cool yourself. 😎"], "🥹 Blushing"],
+    [/\b(hi|hey|hello|yo|sup|hiya)\b/i, "Hey! 👋 What are we doing today?", "👋 Hi!"],
+  ];
+  const FALLBACK = [
+    "Ooh, I'd love to do that on your PC. Download me free and ask again — for real this time. 😉",
+    "On your PC I'd just go and do that. Here I'm only a preview — grab the free download! ⬇",
+    "Good one. The real me would look at your screen and handle it. This me is just showing off. ✨",
+  ];
+  const playOrbEl = $("play-orb");
+  const playOrb = makeOrb(playOrbEl);
+  const playLog = $("play-log"), playState = $("play-state"), playDone = $("play-done"), playIn = $("play-in"), soundBtn = $("play-sound");
+  let playGen = 0, fallN = 0, sound = false, doneTimer = 0;
+  const canSpeak = "speechSynthesis" in window && typeof SpeechSynthesisUtterance === "function";
+  if (canSpeak) {
+    soundBtn.hidden = false;
+    soundBtn.addEventListener("click", () => {
+      sound = !sound;
+      soundBtn.setAttribute("aria-pressed", String(sound));
+      soundBtn.textContent = sound ? "🔊 Talking out loud" : "🔈 Hear it talk";
+      if (!sound) speechSynthesis.cancel();
+    });
+  }
+  function speak(text) {
+    if (!sound || !canSpeak) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, "").replace(/\s+/g, " "));
+    u.rate = 1.03; u.pitch = 1.08;
+    const v = speechSynthesis.getVoices().find((x) => /en/i.test(x.lang) && /female|zira|aria|jenny|samantha|google us/i.test(x.name));
+    if (v) u.voice = v;
+    speechSynthesis.speak(u);
+  }
+  function answer(q) {
+    for (const [re, a, done] of BRAIN) {
+      if (re.test(q)) return [typeof a === "function" ? a() : Array.isArray(a) ? a[Math.floor(Math.random() * a.length)] : a, done];
+    }
+    return [FALLBACK[fallN++ % FALLBACK.length], "✨ Download to do it for real"];
+  }
+  new MutationObserver(() => (playLog.scrollTop = playLog.scrollHeight)).observe(playLog, { childList: true, subtree: true, characterData: true });
+  function bubble(cls, text) {
+    const b = document.createElement("div");
+    b.className = "bubble " + cls;
+    b.textContent = text;
+    playLog.appendChild(b);
+    while (playLog.children.length > 12) playLog.firstElementChild.remove();
+    playLog.scrollTop = playLog.scrollHeight;
+    return b;
+  }
+  async function ask(raw) {
+    const q = raw.trim().slice(0, 160);
+    if (!q) return;
+    const g = ++playGen, live = () => g === playGen;
+    if (canSpeak) speechSynthesis.cancel();
+    bubble("you", q);
+    playDone.classList.remove("on");
+    playOrb.mode = "thinking"; playState.textContent = "Thinking";
+    await sleep(reduce ? 0 : 650);
+    if (!live()) return;
+    const [a, done] = answer(q);
+    const b = bubble("iz", "");
+    playOrb.mode = "speaking"; playState.textContent = "Talking";
+    speak(a);
+    if (!(await type(b, a, reduce ? 0 : 18, live))) return;
+    playLog.scrollTop = playLog.scrollHeight;
+    playDone.textContent = done; playDone.classList.add("on");
+    const r = playOrbEl.getBoundingClientRect();
+    burst(r.left + r.width / 2, r.top + r.height / 2, 12);
+    clearTimeout(doneTimer);
+    doneTimer = setTimeout(() => { if (live()) { playDone.classList.remove("on"); playOrb.mode = "listening"; playState.textContent = "Listening"; } }, 3200);
+  }
+  function playStop() {
+    ++playGen;
+    if (canSpeak) speechSynthesis.cancel();
+    playOrb.mode = "listening"; playState.textContent = "Stopped";
+    setTimeout(() => { if (playState.textContent === "Stopped") playState.textContent = "Listening"; }, 2000);
+  }
+  $("play-form").addEventListener("submit", (e) => { e.preventDefault(); const q = playIn.value; playIn.value = ""; ask(q); });
+  $("play-chips").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (b) ask(b.textContent.replace(/^[^\w]+/u, ""));
+  });
+  playIn.addEventListener("input", () => { if (playOrb.mode !== "speaking") { playOrb.mode = "listening"; playState.textContent = "Listening"; } });
+  playOrbEl.addEventListener("click", (e) => { burst(e.clientX, e.clientY); ask("*boop*"); });
   // ------------------------------------------------ ticker
   const SAYS = ["Open Spotify and play something chill.", "What's on my screen?", "Reply to this email saying I'll be late.", "Explain this chart to me.",
     "Where's the save button?", "Find me a cheap flight to Lagos.", "Remind me in 20 minutes to stretch.", "Summarise this page.",
@@ -1611,6 +1921,69 @@
   addEventListener("resize", () => { placeZoomOrigin(); onScroll(); });
   onScroll();
   if (reduce) { demo(1); reels.forEach((el) => el.classList.add("on")); }
+
+  // ------------------------------------------------ jump around the pinned parts
+  // Scroll-driven sections are also clickable, so nobody has to scroll
+  // through them to get to the good bit.
+  const toTrack = (el, p) => {
+    const top = el.getBoundingClientRect().top + scrollY;
+    scrollTo({ top: top + p * Math.max(0, el.offsetHeight - innerHeight), behavior: reduce ? "auto" : "smooth" });
+  };
+  if (!reduce) {
+    reels.forEach((el, i) => el.addEventListener("click", () => toTrack(reelsWrap, i / Math.max(1, reels.length - 1))));
+    rail.forEach((el, i) => el.addEventListener("click", () => toTrack(demoTrack, [0.08, 0.28, 0.48, 0.68, 0.92][i])));
+    dots.forEach((el, i) => el.addEventListener("click", () => toTrack(showTrack, 0.06 + ((i + 0.5) / 5) * 0.94)));
+  }
+
+  // ------------------------------------------------ back to top + section dots
+  const totop = $("totop"), dotLinks = [...$("dots-nav").children];
+  const dotTargets = dotLinks.map((a) => document.querySelector(a.getAttribute("href")));
+  totop.addEventListener("click", () => scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" }));
+  let lastDot = -1;
+  function chrome() {
+    const max = document.documentElement.scrollHeight - innerHeight;
+    totop.classList.toggle("on", scrollY > innerHeight * 0.9);
+    totop.style.setProperty("--tt", String(150.8 * (1 - (max > 0 ? scrollY / max : 0))));
+    let on = 0;
+    dotTargets.forEach((el, i) => { if (el && el.getBoundingClientRect().top <= innerHeight * 0.4) on = i; });
+    if (on !== lastDot) { lastDot = on; dotLinks.forEach((a, i) => a.classList.toggle("on", i === on)); }
+  }
+  let chromeTick = false;
+  addEventListener("scroll", () => { if (!chromeTick) { chromeTick = true; requestAnimationFrame(() => { chromeTick = false; chrome(); }); } }, { passive: true });
+  chrome();
+
+  // ------------------------------------------------ Esc stops everything — even here
+  const escKey = $("esc-key"), stopCard = $("stop-card"), escNote = $("esc-note");
+  function pressEsc() {
+    heroStop(); playStop();
+    escKey.classList.add("down"); stopCard.classList.add("hit");
+    escNote.textContent = "Stopped. ✓ That fast.";
+    const r = escKey.getBoundingClientRect();
+    if (r.bottom > 0 && r.top < innerHeight) burst(r.left + r.width / 2, r.top + r.height / 2, 14);
+    setTimeout(() => escKey.classList.remove("down"), 160);
+    setTimeout(() => { stopCard.classList.remove("hit"); escNote.textContent = "tap me or press Esc"; }, 2400);
+  }
+  escKey.addEventListener("click", pressEsc);
+
+  // ------------------------------------------------ type "hey nova" anywhere
+  let heard = "";
+  addEventListener("keydown", (e) => {
+    const t = e.target;
+    const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+    if (e.key === "Escape") { if (!typing || t === playIn) pressEsc(); return; }
+    if (typing || e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
+    heard = (heard + e.key.toLowerCase()).replace(/[^a-z]/g, "").slice(-12);
+    if (heard.endsWith("heynova")) {
+      heard = "";
+      $("try").scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+      setTimeout(() => {
+        const r = playOrbEl.getBoundingClientRect();
+        burst(r.left + r.width / 2, r.top + r.height / 2, 28);
+        ask("Hey Nova");
+        playIn.focus({ preventScroll: true });
+      }, reduce ? 0 : 700);
+    }
+  });
 })();
 </script>
 </body>
