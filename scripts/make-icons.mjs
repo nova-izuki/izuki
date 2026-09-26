@@ -70,8 +70,8 @@ writeFileSync(resolve(iconsDir, "icon.ico"), Buffer.concat([header, ...entries, 
 console.log("  icon: icon.ico", icoSizes.join("/"));
 console.log("Izuki icons generated.");
 
-// The phone app (mobile/): home-screen icons for iPhone and Android.
-const mobileDir = resolve(root, "mobile");
+// The phone app (docs/app/): home-screen icons for iPhone and Android.
+const mobileDir = resolve(root, "docs/app");
 mkdirSync(mobileDir, { recursive: true });
 for (const [name, size] of [["icon-192.png", 192], ["icon-512.png", 512], ["apple-touch-icon.png", 180]]) {
   await png(size).toFile(resolve(mobileDir, name));
