@@ -94,8 +94,8 @@ mod imp {
 
     pub struct Ducked {
         volume: ISimpleAudioVolume,
-        was: f32,
-        set_to: f32,
+        pub(super) was: f32,
+        pub(super) set_to: f32,
     }
 
     /// Processes whose sound is Izuki's own (its voice, its chimes).
@@ -146,6 +146,16 @@ mod imp {
         out
     }
 
+    #[cfg(test)]
+    impl Ducked {
+        pub fn now(&self) -> f32 {
+            unsafe { self.volume.GetMasterVolume().unwrap_or(-1.0) }
+        }
+        pub fn handle(&self) -> ISimpleAudioVolume {
+            self.volume.clone()
+        }
+    }
+
     pub fn restore(ducked: Vec<Ducked>) {
         for d in ducked {
             unsafe {
@@ -156,5 +166,65 @@ mod imp {
                 }
             }
         }
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::imp;
+
+    /// Another app playing (a near-silent WAV looped by PowerShell) is turned
+    /// down to a fifth and put back exactly. Needs a sound device, so it only
+    /// runs when asked: `cargo test duck -- --ignored`.
+    #[test]
+    #[ignore]
+    fn ducks_and_restores_another_app() {
+        use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+        // One second of 16 kHz near-silence: an audio stream, but nothing to hear.
+        let wav = std::env::temp_dir().join("izuki-duck-test.wav");
+        let samples = 16_000u32;
+        let mut b: Vec<u8> = Vec::new();
+        b.extend_from_slice(b"RIFF");
+        b.extend_from_slice(&(36 + samples * 2).to_le_bytes());
+        b.extend_from_slice(b"WAVEfmt ");
+        b.extend_from_slice(&[16, 0, 0, 0, 1, 0, 1, 0]);
+        b.extend_from_slice(&16_000u32.to_le_bytes());
+        b.extend_from_slice(&32_000u32.to_le_bytes());
+        b.extend_from_slice(&[2, 0, 16, 0]);
+        b.extend_from_slice(b"data");
+        b.extend_from_slice(&(samples * 2).to_le_bytes());
+        for i in 0..samples {
+            b.extend_from_slice(&(if i % 2 == 0 { 1i16 } else { -1 }).to_le_bytes());
+        }
+        std::fs::write(&wav, b).unwrap();
+        let mut player = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!("(New-Object Media.SoundPlayer '{}').PlayLooping(); Start-Sleep 15", wav.display()),
+            ])
+            .spawn()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(3));
+
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        let ducked = imp::duck_all();
+        let found: Vec<(f32, f32, f32)> = ducked.iter().map(|d| (d.was, d.set_to, d.now())).collect();
+        eprintln!("ducked: {found:?}");
+        assert!(!ducked.is_empty(), "the playing app wasn't found");
+        for (was, set_to, now) in &found {
+            assert!((set_to - was * super::DUCKED_TO).abs() < 0.01);
+            assert!((now - set_to).abs() < 0.02, "volume wasn't lowered");
+        }
+        let volumes: Vec<_> = ducked.iter().map(|d| d.handle()).collect();
+        imp::restore(ducked);
+        for (v, (was, _, _)) in volumes.iter().zip(&found) {
+            let now = unsafe { v.GetMasterVolume().unwrap() };
+            assert!((now - was).abs() < 0.01, "volume wasn't put back");
+        }
+        let _ = player.kill();
+        let _ = std::fs::remove_file(&wav);
     }
 }

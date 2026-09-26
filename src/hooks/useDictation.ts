@@ -77,7 +77,12 @@ export function useDictation(onFinal: (text: string) => void, opts: DictationOpt
 
     const s = listen({
       onLevel: (l) => optsRef.current.onLevel?.(l),
-      onSpeech: () => optsRef.current.onSpeech?.(),
+      onSpeech: () => {
+        // A long follow-up wait outlasts the core's 45 s safety restore, so
+        // the music may be back up by the time you speak — down again now.
+        void api.duckAudio(true).catch(() => undefined);
+        optsRef.current.onSpeech?.();
+      },
       onPartial: (audio) => {
         if (!optsRef.current.onPartialText || partialBusy.current) return;
         partialBusy.current = true;
