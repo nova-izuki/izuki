@@ -61,6 +61,18 @@ then `docs/HOW-IZUKI-WORKS.md`, before changing anything.
     commands, screenshots and "message my phone" are shared in
     `companion.rs` (`quick`, `screenshot`, `notify_everywhere`).
 
+12. **Izuki for phones** (`mobile/`) — a free home-screen web app (no app
+    store, no PC needed): each user pastes their own free Gemini key (kept on
+    the phone), chats or talks hands-free (Safari/Chrome speech recognition,
+    or a recording Gemini hears), memory, reminders added to the phone's own
+    calendar (.ics with an alert), "Hey Siri, Izuki" via a 2-step Shortcut
+    that opens `?q=…`, and an optional link to the PC's Call Izuki address
+    (`call.rs` now answers CORS) for PC tasks and apps. Published by
+    `.github/workflows/phone-app.yml` to https://nova-izuki.github.io/izuki/
+    once merged to `main` and Pages is set to "GitHub Actions".
+    iMessage is not possible for free without a Mac (Apple only allows it
+    through a Mac or paid providers).
+
 ## What has NOT been verified (do this first on Windows)
 
 The cloud session could only type-check (`cargo check --target
@@ -79,6 +91,8 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
 9. Call Izuki: toggle on, wait for the link, scan the QR, talk.
 10. Discord: make a bot, paste the token, add it to a server, DM it the
     code, text it, send a voice message, `/screen`.
+11. Phone app: open https://nova-izuki.github.io/izuki/ in Safari, add a
+    Gemini key, chat, talk, set a reminder → "Add to calendar", link the PC.
 
 Fix whatever breaks; keep each fix small.
 

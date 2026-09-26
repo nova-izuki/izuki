@@ -209,11 +209,18 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
         if let Ok(h) = tiny_http::Header::from_bytes("Cache-Control", "no-store") {
             r.add_header(h);
         }
+        cors(&mut r);
         let _ = req.respond(r);
     };
     let json_reply = |req: tiny_http::Request, v: Value| respond(req, 200, "application/json", v.to_string().into_bytes());
 
     match (method, path) {
+        // The Izuki phone app (another web address) asking first.
+        (tiny_http::Method::Options, Some(_)) => {
+            let mut r = tiny_http::Response::empty(204);
+            cors(&mut r);
+            let _ = req.respond(r);
+        }
         (tiny_http::Method::Get, Some("")) => {
             let r = tiny_http::Response::empty(302)
                 .with_header(tiny_http::Header::from_bytes("Location", format!("{base}/")).expect("header"));
@@ -259,6 +266,21 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
             }
         }
         _ => respond(req, 404, "text/plain", b"Not found".to_vec()),
+    }
+}
+
+/// Let the Izuki phone app (served from its own web address) call `talk`
+/// and `hear`. The secret in the link is what keeps others out.
+fn cors<R: std::io::Read>(r: &mut tiny_http::Response<R>) {
+    for (k, v) in [
+        ("Access-Control-Allow-Origin", "*"),
+        ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+        ("Access-Control-Allow-Headers", "Content-Type"),
+        ("Access-Control-Max-Age", "86400"),
+    ] {
+        if let Ok(h) = tiny_http::Header::from_bytes(k, v) {
+            r.add_header(h);
+        }
     }
 }
 
