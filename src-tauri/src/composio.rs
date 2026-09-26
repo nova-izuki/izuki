@@ -128,6 +128,9 @@ tell them simply what went wrong.";
 
 /// Bumped by the stop keys. A request remembers the number it started with
 /// and never runs another tool (a send, a post) once it has changed.
+/// The most one apps request works for before it answers anyway.
+const BUDGET: std::time::Duration = std::time::Duration::from_secs(70);
+
 static STOPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 pub fn stop() {
@@ -142,8 +145,11 @@ fn stopped(since: u64) -> bool {
 pub fn ask(history: &[Turn]) -> Result<Answer> {
     let key = crate::state::store().settings().composio_api_key.trim().to_string();
     if key.is_empty() {
+        // No apps linked: still help ("plan my week" deserves a plan, not
+        // a setup chore), and say once how to let it into their apps.
+        let text = crate::chat::reply_here(history, crate::chat::Style::Text)?;
         return Ok(Answer {
-            text: "I can do that once your apps are linked — add a free Composio key in Izuki → Settings → Apps (it takes a minute).".into(),
+            text: format!("{text}\n\n(Link your apps in Settings → Apps and I can put things straight into your email and calendar.)"),
             links: Vec::new(),
         });
     }
@@ -157,7 +163,14 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
     let started = STOPS.load(std::sync::atomic::Ordering::SeqCst);
     let halt = || Answer { text: "Okay, I stopped.".into(), links: Vec::new() };
     let mut links = Vec::new();
+    let began = std::time::Instant::now();
     for round in 0..MAX_ROUNDS {
+        // Never keep them waiting for minutes: past this, answer with what
+        // it has.
+        if began.elapsed() > BUDGET {
+            eprintln!("[apps] out of time after {round} rounds");
+            break;
+        }
         if stopped(started) {
             return Ok(halt());
         }

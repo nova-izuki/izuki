@@ -129,6 +129,16 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
 17. Leave the panel open through a sleep/lock; it should still show
     everything (or come back the moment you move the mouse over it).
 
+18. With only Ollama set up (e.g. `ollama pull llama3.2` and
+    `ollama pull moondream`): Settings → Test, chat in the Chat tab, and a
+    screen task — all three answer. Then the same with Gemini, OpenRouter
+    and NVIDIA keys.
+19. Chat tab → "Help me plan my week" answers (with and without a Composio key).
+
+Running the Rust tests from Linux: `cargo test --target x86_64-pc-windows-gnu
+--lib --no-run`, copy `target/x86_64-pc-windows-gnu/debug/WebView2Loader.dll`
+next to the test exe in `deps/`, and run it with `wine64` (47 pass).
+
 Fix whatever breaks; keep each fix small.
 
 ## Ideas queued (only free ones)

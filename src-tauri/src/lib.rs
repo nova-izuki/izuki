@@ -36,6 +36,8 @@ pub mod updates;
 pub mod vision;
 pub mod watcher;
 pub mod youtube;
+#[cfg(test)]
+mod provider_tests;
 
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 

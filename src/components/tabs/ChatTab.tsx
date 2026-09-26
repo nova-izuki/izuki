@@ -111,7 +111,9 @@ export function ChatTab() {
             if (SCREEN.test(raw)) {
               setLast({ content: "That one needs your PC — want me to do it?", screen: true });
             } else if (APPS.test(raw)) {
-              // Their email, calendar, files…: the apps lane does it.
+              // Their email, calendar, files…: the apps lane does it. Say so
+              // right away — it can take a little while.
+              setLast({ content: "Checking your apps… 🔎" });
               void api
                 .appsAsk(history)
                 .then((a) => setLast({ content: a.text, links: a.links.length ? a.links : undefined }))

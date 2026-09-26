@@ -71,12 +71,19 @@ nothing else; another part of you works in their apps. Prefer [APPS] over [SCREE
 their accounts. If the user is saying yes to a draft or action you just proposed in their apps, \
 reply [APPS] too.\n";
 
-fn system_prompt(style: Style) -> String {
+fn system_prompt(style: Style, apps: bool) -> String {
     let mut s = match style {
         Style::Voice { expressive } => voice_prompt(expressive),
         Style::Text | Style::Phone => written_prompt(style == Style::Phone),
     };
-    s.push_str(APPS_RULE);
+    if apps {
+        s.push_str(APPS_RULE);
+    } else {
+        s.push_str(
+            "Their apps (email, calendar, files) aren't linked to you yet, so help right here in the \
+             chat instead — never reply [APPS].\n",
+        );
+    }
     s.push_str(&crate::reminders::prompt_block());
     s.push_str(&crate::memory::prompt_block());
     s
@@ -147,20 +154,36 @@ fn voice_prompt(expressive: bool) -> String {
     s
 }
 
-/// Brains that speak the OpenAI chat-completions dialect (all but a few).
-/// Gemini does too, at its OpenAI-compatible address — and it's the
-/// quickest free brain (first words in under a second).
-fn streamable(c: &ProviderConfig) -> bool {
-    !matches!(c.id, ProviderId::Anthropic | ProviderId::Ollama)
+/// Every brain can chat: they all speak the OpenAI chat-completions
+/// dialect somewhere — Gemini and Claude at their OpenAI-compatible
+/// addresses, Ollama at `/v1` on the same local port (so a PC with only a
+/// local model can chat too).
+fn streamable(_: &ProviderConfig) -> bool {
+    true
 }
 
 fn chat_url(cfg: &ProviderConfig) -> String {
     let base = cfg.base_url.trim_end_matches('/');
-    if cfg.id == ProviderId::Gemini {
-        let root = base.trim_end_matches("/v1beta").trim_end_matches("/v1");
-        format!("{root}/v1beta/openai/chat/completions")
+    match cfg.id {
+        ProviderId::Gemini => {
+            let root = base.trim_end_matches("/v1beta").trim_end_matches("/v1");
+            format!("{root}/v1beta/openai/chat/completions")
+        }
+        ProviderId::Ollama => {
+            let root = base.trim_end_matches("/api").trim_end_matches("/v1");
+            format!("{root}/v1/chat/completions")
+        }
+        _ => format!("{base}/chat/completions"),
+    }
+}
+
+/// How long one brain may take for a whole reply. A model on the PC itself
+/// may first have to load into memory, and runs slower on a laptop.
+fn reply_timeout(cfg: &ProviderConfig) -> Duration {
+    if cfg.id.is_local() {
+        Duration::from_secs(240)
     } else {
-        format!("{base}/chat/completions")
+        Duration::from_secs(60)
     }
 }
 
@@ -187,7 +210,11 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
 }
 
 fn messages_for(history: &[Turn], style: Style) -> Vec<Value> {
-    let mut messages = vec![json!({ "role": "system", "content": system_prompt(style) })];
+    with_system(history, system_prompt(style, crate::composio::configured()))
+}
+
+fn with_system(history: &[Turn], system: String) -> Vec<Value> {
+    let mut messages = vec![json!({ "role": "system", "content": system })];
     for t in history.iter().rev().take(12).rev() {
         let role = if t.role == "assistant" { "assistant" } else { "user" };
         messages.push(json!({ "role": role, "content": t.content }));
@@ -199,6 +226,12 @@ fn messages_for(history: &[Turn], style: Style) -> Vec<Value> {
 /// as the streamed one. Reminder tags are left in for the caller.
 pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
     complete(&messages_for(history, style))
+}
+
+/// A written reply that never hands over to the apps lane — for when it
+/// can't help (no apps linked) and the chat should just answer.
+pub fn reply_here(history: &[Turn], style: Style) -> anyhow::Result<String> {
+    complete(&with_system(history, system_prompt(style, false)))
 }
 
 /// Any finished answer to `messages` (system prompt first), raced across
@@ -285,7 +318,8 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
     let mut errors = Vec::new();
     loop {
         let won = winner.load(Ordering::SeqCst);
-        let wait = if won == usize::MAX && launched < chain.len() { HEDGE_AFTER } else { Duration::from_secs(90) };
+        let patience = if chain[..launched].iter().any(|c| c.id.is_local()) { 240 } else { 90 };
+        let wait = if won == usize::MAX && launched < chain.len() { HEDGE_AFTER } else { Duration::from_secs(patience) };
         match rx.recv_timeout(wait) {
             Ok(Event::Text(i, t)) => {
                 // The first brain to say anything is the one that's heard.
@@ -323,10 +357,10 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
 
 /// One provider. `Ok(true)` = finished, `Ok(false)` = cancelled. Only fails
 /// over to the next provider if nothing was sent yet.
-fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn() -> bool, on_text: &dyn Fn(String)) -> anyhow::Result<bool> {
+pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn() -> bool, on_text: &dyn Fn(String)) -> anyhow::Result<bool> {
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(6))
-        .timeout(Duration::from_secs(60))
+        .timeout(reply_timeout(cfg))
         .build()?;
     let body = json!({
         "model": cfg.model,

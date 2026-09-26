@@ -358,7 +358,11 @@ pub fn probe(cfg: &ProviderConfig) -> Result<String> {
 
     match cfg.id {
         ProviderId::Ollama => {
-            let res = c.get(format!("{base}/api/tags")).send()?;
+            let base = base.trim_end_matches("/v1").trim_end_matches("/api");
+            let res = c
+                .get(format!("{base}/api/tags"))
+                .send()
+                .context("Ollama isn't running — start the Ollama app (or install it from ollama.com)")?;
             if !res.status().is_success() {
                 return Err(anyhow!("Ollama answered {}", res.status()));
             }
@@ -402,7 +406,8 @@ pub fn probe(cfg: &ProviderConfig) -> Result<String> {
                 Err(anyhow!("9Router answered {}", res.status()))
             }
         }
-        _ if cfg.api_key.trim().is_empty() => {
+        // Local servers (LM Studio, llama.cpp, vLLM…) usually need no key.
+        _ if cfg.api_key.trim().is_empty() && !cfg.id.is_local() => {
             Err(anyhow!("add an API key first"))
         }
         ProviderId::Gemini => {
@@ -429,11 +434,11 @@ pub fn probe(cfg: &ProviderConfig) -> Result<String> {
             }
         }
         _ => {
-            let res = c
-                .get(format!("{base}/models"))
-                .bearer_auth(cfg.api_key.trim())
-                .send()
-                ?;
+            let mut rq = c.get(format!("{base}/models"));
+            if !cfg.api_key.trim().is_empty() {
+                rq = rq.bearer_auth(cfg.api_key.trim());
+            }
+            let res = rq.send().with_context(|| format!("nothing answered at {base} — is it running?"))?;
             if res.status().is_success() {
                 Ok(format!("ok — key accepted, using {}", cfg.model))
             } else {
@@ -448,30 +453,64 @@ pub fn probe(cfg: &ProviderConfig) -> Result<String> {
 // ---------------------------------------------------------------------------
 
 fn ask_ollama(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
-    let base = cfg.base_url.trim_end_matches('/');
-    let body = json!({
-        "model": cfg.model,
-        "prompt": format!("{SYSTEM_PROMPT}\n\n{}", req.user_text()),
-        "images": [req.b64()],
-        "stream": false,
-        "format": "json",
-        "options": { "temperature": 0.1, "num_predict": 1500 }
-    });
+    let base = cfg.base_url.trim_end_matches('/').trim_end_matches("/v1").trim_end_matches("/api");
+    // A model on the PC itself may have to load into memory first, and runs
+    // slower than a data centre — give it minutes, not seconds.
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(240))
+        .connect_timeout(Duration::from_secs(4))
+        .build()
+        .context("could not start the HTTP client")?;
+    let send = |with_image: bool| -> Result<(reqwest::StatusCode, Value)> {
+        let mut body = json!({
+            "model": cfg.model,
+            "prompt": format!("{SYSTEM_PROMPT}\n\n{}", req.user_text()),
+            "stream": false,
+            "format": "json",
+            "options": { "temperature": 0.1, "num_predict": 1500 }
+        });
+        if with_image {
+            body["images"] = json!([req.b64()]);
+        } else {
+            body["prompt"] = json!(format!(
+                "{SYSTEM_PROMPT}\n\n{}\n(No screenshot is attached — this model reads text only. Work from \
+                 the window title and the numbered controls list, acting on them with \"target\".)",
+                req.user_text()
+            ));
+        }
+        let res = client
+            .post(format!("{base}/api/generate"))
+            .json(&body)
+            .send()
+            .context("Ollama is not reachable — is the Ollama app running?")?;
+        let status = res.status();
+        let text = res.text().unwrap_or_default();
+        let value = serde_json::from_str(&text).unwrap_or_else(|_| json!({ "error": text.trim() }));
+        Ok((status, value))
+    };
 
-    let res = client()?
-        .post(format!("{base}/api/generate"))
-        .json(&body)
-        .send()
-        
-        .context("Ollama is not reachable — is it running?")?;
-
-    let status = res.status();
-    let value: Value = res.json().context("Ollama returned something odd")?;
+    let (mut status, mut value) = send(true)?;
+    // A text-only local model (llama3.2, qwen…) refuses pictures; the
+    // controls list is enough for it to act.
+    let refuses_pictures = |v: &Value| {
+        v["error"].as_str().is_some_and(|e| {
+            let e = e.to_lowercase();
+            e.contains("image") || e.contains("vision") || e.contains("missing data")
+        })
+    };
+    if !status.is_success() && refuses_pictures(&value) {
+        (status, value) = send(false)?;
+    }
     if !status.is_success() {
-        return Err(anyhow!(
-            "Ollama answered {status}: {}",
-            value["error"].as_str().unwrap_or("unknown error")
-        ));
+        let err = value["error"].as_str().unwrap_or("unknown error");
+        if status.as_u16() == 404 || err.contains("not found") {
+            return Err(anyhow!(
+                "Ollama doesn't have the model \"{}\" yet — run `ollama pull {}` once, then try again.",
+                cfg.model,
+                cfg.model
+            ));
+        }
+        return Err(anyhow!("Ollama answered {status}: {err}"));
     }
     Ok(value["response"].as_str().unwrap_or_default().to_string())
 }
