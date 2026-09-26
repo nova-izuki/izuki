@@ -232,6 +232,23 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // Back from the taskbar after being minimised: the same blank
+            // "frosted glass only" as coming back from the tray — redraw it.
+            if window.label() == overlay::CONFIG_LABEL {
+                use std::sync::atomic::{AtomicBool, Ordering};
+                static WAS_MINIMISED: AtomicBool = AtomicBool::new(false);
+                match event {
+                    WindowEvent::Resized(_) if window.is_minimized().unwrap_or(false) => {
+                        WAS_MINIMISED.store(true, Ordering::Relaxed);
+                    }
+                    WindowEvent::Focused(true) if WAS_MINIMISED.swap(false, Ordering::Relaxed) => {
+                        if let Some(w) = window.app_handle().get_webview_window(overlay::CONFIG_LABEL) {
+                            overlay::repaint(&w);
+                        }
+                    }
+                    _ => {}
+                }
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 // Izuki keeps its watchers running, so closing the panel hides
                 // it to the tray rather than quitting.
@@ -259,10 +276,7 @@ pub fn run() {
                 // boots into the tray rather than stealing focus at login.
                 let quiet = std::env::args().any(|a| a == "--minimised");
                 if !quiet {
-                    if let Some(config) = app.get_webview_window(overlay::CONFIG_LABEL) {
-                        let _ = config.show();
-                        let _ = config.set_focus();
-                    }
+                    let _ = overlay::show_config(app);
                 }
 
                 // Pick follow mode back up if it was left on last time Izuki
