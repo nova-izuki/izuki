@@ -178,6 +178,14 @@ background mode, confirm before acting, practice mode (dry run).
   `[SCREEN]` replies run the task loop on the PC (if "Let my phone use this PC" is on) and the
   result is texted back; `/screen` sends a screenshot, `/stop` stops, `/reminders` lists them.
 
+- **Apps (Composio)** — `composio.rs`. Every chat lane may answer `[APPS]` for anything in the
+  user's accounts (email, calendar, cloud files, Slack, Notion, socials…); the voice lane also
+  goes straight there for obvious app words when a key is set, and sends a quick "yes, send it"
+  back to the apps lane. The apps loop speaks a four-shape JSON protocol (`search`, `run`,
+  `connect`, `reply`) against Composio's Tool Router, so only the tools it searched for ever
+  reach the prompt. Unlinked apps return a sign-in link (opened on the PC, texted to the phone).
+  Premium (paid) tools are switched off. Nothing is sent, posted or deleted without a yes.
+
 ## 9. Checklist (run through after any change)
 
 1. "Hey Nova" → one orb, one "Mhm?" → ask something → answer → ask again without the wake word.

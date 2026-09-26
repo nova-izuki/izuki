@@ -522,6 +522,18 @@ pub fn duck_audio(on: bool) {
 // Phone (telegram.rs) and reminders (reminders.rs)
 // ---------------------------------------------------------------------------
 
+/// A request that needs the user's apps (email, calendar, …) — composio.rs.
+#[tauri::command]
+pub async fn apps_ask(history: Vec<crate::chat::Turn>) -> R<crate::composio::Answer> {
+    blocking(move || crate::composio::ask(&history).map_err(err)).await?
+}
+
+/// Check a Composio key (Settings → Apps → Test).
+#[tauri::command]
+pub async fn apps_test(key: String) -> R<()> {
+    blocking(move || crate::composio::test_key(&key).map_err(err)).await?
+}
+
 #[tauri::command]
 pub fn phone_status() -> crate::telegram::Status {
     crate::telegram::status()

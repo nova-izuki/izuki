@@ -7,6 +7,7 @@ pub mod capture;
 pub mod duck;
 pub mod chat;
 pub mod commands;
+pub mod composio;
 pub mod events;
 pub mod follow;
 pub mod ghost;
@@ -178,6 +179,8 @@ pub fn run() {
             commands::cloud_transcribe,
             commands::duck_audio,
             commands::phone_status,
+            commands::apps_ask,
+            commands::apps_test,
             commands::phone_unpair,
             commands::reminders_list,
             commands::reminder_remove,

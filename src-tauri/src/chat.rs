@@ -63,11 +63,20 @@ pub enum Style {
     Phone,
 }
 
+/// Handing over to the apps lane (composio.rs) — email, calendar, files…
+const APPS_RULE: &str = "If they want something from their apps or accounts — email, calendar, \
+Google Drive or other files in the cloud, Slack, Discord, Notion, GitHub, social media, to-do apps \
+and the like (read, find, summarise, draft, send, schedule, post) — reply with exactly [APPS] and \
+nothing else; another part of you works in their apps. Prefer [APPS] over [SCREEN] for anything in \
+their accounts. If the user is saying yes to a draft or action you just proposed in their apps, \
+reply [APPS] too.\n";
+
 fn system_prompt(style: Style) -> String {
     let mut s = match style {
         Style::Voice { expressive } => voice_prompt(expressive),
         Style::Text | Style::Phone => written_prompt(style == Style::Phone),
     };
+    s.push_str(APPS_RULE);
     s.push_str(&crate::reminders::prompt_block());
     s.push_str(&crate::memory::prompt_block());
     s
@@ -189,6 +198,12 @@ fn messages_for(history: &[Turn], style: Style) -> Vec<Value> {
 /// A whole reply at once (the phone lane), with the same racing of brains
 /// as the streamed one. Reminder tags are left in for the caller.
 pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
+    complete(&messages_for(history, style))
+}
+
+/// Any finished answer to `messages` (system prompt first), raced across
+/// the brains like everything else here.
+pub fn complete(messages: &[Value]) -> anyhow::Result<String> {
     let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
     if chain.is_empty() {
         anyhow::bail!("no AI brain is set up yet — add a free Gemini key in Izuki's Settings");
@@ -202,7 +217,7 @@ pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
             *failed.lock() = error;
         }
     };
-    race(&chain, &messages_for(history, style), id, &emit);
+    race(&chain, messages, id, &emit);
     let text = text.into_inner();
     match failed.into_inner() {
         Some(e) if text.trim().is_empty() => anyhow::bail!(e),
@@ -317,7 +332,8 @@ fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn() -> bool,
         "model": cfg.model,
         "messages": messages,
         "stream": true,
-        "max_tokens": 350,
+        // Room for a drafted email or an app call; the prompts keep chat short.
+        "max_tokens": 900,
         "temperature": 0.7,
     });
     let mut body = body;

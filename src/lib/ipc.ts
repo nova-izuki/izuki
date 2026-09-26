@@ -14,6 +14,7 @@ import type {
   Watcher,
   Memory,
   PhoneStatus,
+  AppsAnswer,
   Reminder,
 } from "./types";
 
@@ -175,6 +176,8 @@ export const MOCK_SETTINGS: Settings = {
   duck_while_listening: true,
   cloud_ears: true,
   telegram_token: "",
+  composio_api_key: "",
+  composio_user_id: "",
   telegram_chat_id: 0,
   telegram_code: "",
   phone_controls_pc: true,
@@ -243,6 +246,13 @@ export const api = {
   /** The Chat tab: the same lane, written rather than spoken. */
   chatStreamWritten: (id: number, history: Array<{ role: string; content: string }>) =>
     call<void>("chat_stream", { id, history, expressive: false, written: true }, () => undefined),
+  /** A request in the user's apps (email, calendar, …) — the Composio lane. */
+  appsAsk: (history: Array<{ role: string; content: string }>) =>
+    call<AppsAnswer>("apps_ask", { history }, () => ({
+      text: "Apps only work inside the Izuki app.",
+      links: [],
+    })),
+  appsTest: (key: string) => call<void>("apps_test", { key }, () => undefined),
   phoneStatus: () =>
     call<PhoneStatus>("phone_status", undefined, () => ({ bot: "", paired: false, code: "123456", error: null })),
   phoneUnpair: () => call<Settings>("phone_unpair", undefined, () => MOCK_SETTINGS),

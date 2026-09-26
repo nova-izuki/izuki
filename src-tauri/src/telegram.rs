@@ -297,6 +297,20 @@ fn handle(app: &AppHandle, token: &str, msg: &Value) -> Result<()> {
         HISTORY.lock().pop();
         return do_on_pc(app, token, chat, &said);
     }
+    if reply.trim().trim_matches(|c| c == '[' || c == ']').eq_ignore_ascii_case("apps") || reply.starts_with("[APPS]") {
+        typing(token, chat);
+        let answer = match crate::composio::ask(&history) {
+            Ok(a) => a,
+            Err(e) => crate::composio::Answer { text: format!("I couldn't get into your apps just now ({e})."), links: Vec::new() },
+        };
+        let mut text = crate::reminders::take_tags(&answer.text);
+        for (name, url) in &answer.links {
+            text.push_str(&format!("\n\n🔗 Connect {name}: {url}"));
+        }
+        HISTORY.lock().push(Turn { role: "assistant".into(), content: answer.text.clone() });
+        send_text(token, chat, &text);
+        return Ok(());
+    }
     HISTORY.lock().push(Turn { role: "assistant".into(), content: reply.clone() });
     send_text(token, chat, &reply);
     Ok(())

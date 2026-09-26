@@ -48,6 +48,7 @@ happens to be great with computers. It can:
 | 💬 **Just chat** | A Chat tab for plain companion chat — plans, drafts, homework, advice — that never touches your screen. If something needs the PC, one tap lets Izuki do it. |
 | ⏰ **Reminders** | “Remind me at 6 to call Mum” — by voice, chat or phone. Izuki says it out loud when it's due and texts your phone. |
 | 📱 **On your phone, free** | Pair a Telegram bot (made in a minute with @BotFather) and text Izuki or send voice notes from anywhere — it can even do things on your PC and send you a screenshot. No app store, no server. |
+| 🔌 **In your apps** | With your own free Composio key: read and draft email, check your calendar, find files in Drive, post to Slack or Notion, and hundreds more — from chat, voice or your phone. It always shows a draft and asks before sending or posting. |
 | 🎧 **Hears you over music** | Other apps get quieter while you talk, and your words can be double-checked by a big cloud speech model that gets names right and ignores background songs. |
 | 🛑 **Always stoppable** | **Esc** (while it's working or talking) or **Ctrl+Shift+Q** (any time) stops everything instantly — the task, the voice, the listening. Say “quit Izuki” to close the app. |
 

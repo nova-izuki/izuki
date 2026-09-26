@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useWakeEngine } from "../hooks/useWakeEngine";
 import { useDictation } from "../hooks/useDictation";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
-import { cancelChat, chatLane, needsScreen, remember, type LaneResult } from "../lib/conversation";
+import { cancelChat, chatLane, needsApps, needsScreen, recentHistory, remember, type LaneResult } from "../lib/conversation";
 import { speakable } from "../lib/speakable";
 import { parseInstant, type Instant } from "../lib/instant";
 import { isEcho, noteSaid, noteStillSaying } from "../lib/echo";
@@ -327,6 +327,11 @@ async function talkFast(text: string): Promise<LaneResult> {
   return result;
 }
 
+/** When the apps lane last answered — a quick "yes, send it" goes back to it. */
+let lastAppsAt = 0;
+const APPS_FOLLOW_UP =
+  /^\s*(yes|yeah|yep|yup|sure|ok(ay)?|go ahead|do it|please do|confirm|sounds good|perfect|send( it)?|no|nope|don'?t|cancel|wait|change|make it|add|remove|also|reply|and )\b/i;
+
 /** The "this PC is too slow for the natural voice" tip, once per session. */
 let slowTipShown = false;
 
@@ -622,7 +627,44 @@ export function VoiceEngine() {
     // answers — start talking and it stops to hear you.
     const listeningThrough = from === "voice" && listenThrough.current();
 
+    // Their apps (email, calendar, Drive, Slack…): done inside the apps
+    // themselves, no screen — read, draft, and send only on a yes.
+    const runApps = async (alreadyRemembered: boolean) => {
+      if (!alreadyRemembered) remember("user", t);
+      const ack = setTimeout(() => {
+        if (requestSeq === at && !isSpeaking()) respond(pick(ACK));
+      }, 1800);
+      try {
+        await useIzuki.getState().flushSettings();
+        const answer = await api.appsAsk(recentHistory());
+        clearTimeout(ack);
+        if (requestSeq !== at) return;
+        thinkingNow.current = false;
+        // Not linked yet: open the sign-in page right away.
+        for (const [, url] of answer.links) void api.openUrl(url).catch(() => undefined);
+        const said = sayable(answer.text, "Done.");
+        lastAppsAt = Date.now();
+        remember("assistant", said);
+        await respond(said, null, true);
+        void afterReply(at, listeningThrough);
+      } catch (e) {
+        clearTimeout(ack);
+        if (requestSeq !== at) return;
+        thinkingNow.current = false;
+        await respond(failure(e), "sympathetic");
+        void afterReply(at, listeningThrough);
+      }
+    };
+
     try {
+      const appsOn = !!useIzuki.getState().settings.composio_api_key.trim();
+      // "Yes, send it" / "change the time to 4" right after an apps answer
+      // is about that draft — not a screen task.
+      const followUp = Date.now() - lastAppsAt < 3 * 60_000 && t.split(/\s+/).length <= 14 && APPS_FOLLOW_UP.test(t);
+      if (appsOn && (needsApps(t) || followUp)) {
+        await runApps(false);
+        return;
+      }
       // Just talking? The fast lane — no screenshot, the voice starts on the
       // first sentence. It hands over if it needs the screen after all.
       if (!needsScreen(t)) {
@@ -638,6 +680,10 @@ export function VoiceEngine() {
           return void afterReply(at, listeningThrough);
         }
         if (lane === "cancelled") return;
+        if (lane === "apps") {
+          await runApps(true);
+          return;
+        }
         // "screen" / "failed": the full screen path below.
       }
 

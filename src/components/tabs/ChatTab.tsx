@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, Loader2, Mic, MonitorSmartphone, RotateCcw, Send, Square, X } from "lucide-react";
+import { AlarmClock, Link2, Loader2, Mic, MonitorSmartphone, RotateCcw, Send, Square, X } from "lucide-react";
 import { api, EV, on } from "../../lib/ipc";
 import { useDictation } from "../../hooks/useDictation";
 import { sendChatCommand } from "../VoiceEngine";
@@ -23,11 +23,14 @@ interface Msg {
   /** The reply was "that needs your screen": offer to do it. */
   screen?: boolean;
   failed?: boolean;
+  /** Sign-in links for apps that aren't linked yet. */
+  links?: Array<[string, string]>;
 }
 
 const KEY = "izuki.chat.v1";
 const KEEP = 60;
 const SCREEN = /^\s*\[?SCREEN\]?\s*$/i;
+const APPS = /^\s*\[?APPS\]?\s*$/i;
 const REMIND_TAG = /\s*\[REMIND[^\]]*\]?\s*/gi;
 
 function load(): Msg[] {
@@ -107,6 +110,14 @@ export function ChatTab() {
             void off.then((f) => f());
             if (SCREEN.test(raw)) {
               setLast({ content: "That one needs your PC — want me to do it?", screen: true });
+            } else if (APPS.test(raw)) {
+              // Their email, calendar, files…: the apps lane does it.
+              void api
+                .appsAsk(history)
+                .then((a) => setLast({ content: a.text, links: a.links.length ? a.links : undefined }))
+                .catch((e) => setLast({ content: `I couldn't get into your apps — ${String(e)}`, failed: true }))
+                .finally(resolve);
+              return;
             } else if (!shown) {
               setLast({
                 content: d.error ? `I couldn't reach my AI brain — ${d.error}` : "Hmm, I lost my words there. Try again?",
@@ -118,8 +129,8 @@ export function ChatTab() {
             resolve();
             return;
           }
-          // Hold back while it might still be "[SCREEN]".
-          if (!/^\s*\[?S?C?R?E?E?N?\]?\s*$/i.test(raw)) setLast({ content: shown });
+          // Hold back while it might still be "[SCREEN]" or "[APPS]".
+          if (!/^\s*\[?(S?C?R?E?E?N?|A?P?P?S?)\]?\s*$/i.test(raw)) setLast({ content: shown });
         });
         void off.then(() => {
           if (streamId.current !== id) return resolve();
@@ -241,6 +252,16 @@ export function ChatTab() {
                 }
               >
                 {m.content || <Loader2 size={13} className="animate-spin text-izk-muted" />}
+                {m.links?.map(([name, url]) => (
+                  <button
+                    key={url}
+                    type="button"
+                    onClick={() => void api.openUrl(url)}
+                    className="izk-btn-primary mt-2 flex h-[28px] items-center gap-1.5 rounded-full px-3 text-[11.5px]"
+                  >
+                    <Link2 size={12} strokeWidth={2.4} /> Connect {name}
+                  </button>
+                ))}
                 {m.screen && (
                   <button
                     type="button"

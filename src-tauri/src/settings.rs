@@ -232,6 +232,13 @@ pub struct Settings {
     /// Let the paired phone ask Izuki to do things on this PC.
     #[serde(default = "default_true")]
     pub phone_controls_pc: bool,
+    /// Your own free Composio key: Izuki's access to Gmail, Calendar, Drive,
+    /// Slack, Notion, socials and more (composio.rs).
+    #[serde(default)]
+    pub composio_api_key: String,
+    /// This PC's user at Composio (made once).
+    #[serde(default)]
+    pub composio_user_id: String,
     /// How long a conversation waits for you to say something before the
     /// orb closes, in seconds (5 s … 30 min). "That's all" closes it at once.
     #[serde(default = "default_follow_up")]
@@ -336,6 +343,7 @@ impl Settings {
         }
         self.groq_api_key = clean_key(&self.groq_api_key);
         self.telegram_token = clean_key(&self.telegram_token);
+        self.composio_api_key = clean_key(&self.composio_api_key);
         if self.telegram_code.len() != 6 {
             self.telegram_code = format!("{:06}", rand::random::<u32>() % 1_000_000);
         }
@@ -473,6 +481,8 @@ impl Default for Settings {
             telegram_chat_id: 0,
             telegram_code: String::new(),
             phone_controls_pc: true,
+            composio_api_key: String::new(),
+            composio_user_id: String::new(),
             follow_up_secs: default_follow_up(),
             chat_style: default_chat_style(),
             chat_color: default_chat_color(),

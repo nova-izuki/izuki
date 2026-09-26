@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import pkg from "../../../package.json";
 import { PhoneCard } from "../PhoneCard";
+import { AppsCard } from "../AppsCard";
 import { Badge, Row, Section, Segmented, Slider, Toggle, cx } from "../ui";
 import { useIzuki } from "../../lib/store";
 import { api } from "../../lib/ipc";
@@ -407,6 +408,8 @@ export function SettingsTab() {
           />
         </Row>
       </Section>
+
+      <AppsCard />
 
       <PhoneCard />
 

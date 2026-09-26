@@ -93,6 +93,12 @@ export interface Reminder {
   text: string;
 }
 
+export interface AppsAnswer {
+  text: string;
+  /** Sign-in links for apps not connected yet: [app, url]. */
+  links: Array<[string, string]>;
+}
+
 export interface PhoneStatus {
   bot: string;
   paired: boolean;
@@ -305,6 +311,9 @@ export interface Settings {
   telegram_code: string;
   /** Let the paired phone do things on this PC. */
   phone_controls_pc: boolean;
+  /** Your free Composio key — Izuki in Gmail, Calendar, Drive, Slack… */
+  composio_api_key: string;
+  composio_user_id: string;
   /** How long a conversation waits for you before closing (seconds, 5…1800). */
   follow_up_secs: number;
   /** Chat/caption look: matched to the screen, or fixed. */
