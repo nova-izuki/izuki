@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useWakeEngine } from "../hooks/useWakeEngine";
 import { useDictation } from "../hooks/useDictation";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
-import { cancelChat, chatLane, needsScreen, remember, type LaneResult } from "../lib/conversation";
+import { cancelChat, chatLane, needsApps, needsScreen, recentHistory, remember, type LaneResult } from "../lib/conversation";
 import { speakable } from "../lib/speakable";
 import { parseInstant, type Instant } from "../lib/instant";
 import { isEcho, noteSaid, noteStillSaying } from "../lib/echo";
@@ -327,6 +327,11 @@ async function talkFast(text: string): Promise<LaneResult> {
   return result;
 }
 
+/** When the apps lane last answered — a quick "yes, send it" goes back to it. */
+let lastAppsAt = 0;
+const APPS_FOLLOW_UP =
+  /^\s*(yes|yeah|yep|yup|sure|ok(ay)?|go ahead|do it|please do|confirm|sounds good|perfect|send( it)?|no|nope|don'?t|cancel|wait|change|make it|add|remove|also|reply|and )\b/i;
+
 /** The "this PC is too slow for the natural voice" tip, once per session. */
 let slowTipShown = false;
 
@@ -440,10 +445,14 @@ export function VoiceEngine() {
   const lingerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastBusy = useRef(false);
 
+  /**
+   * Esc stops Izuki for as long as a session is on — listening, thinking or
+   * talking, like the orb's ✕ — and is left alone otherwise. (It's never
+   * taken from your app either way; Izuki only notices it.)
+   */
   const setBusy = (busy: boolean) => {
     if (busy === lastBusy.current) return;
     lastBusy.current = busy;
-    // Esc stops Izuki only while it's busy — it's never taken from other apps otherwise.
     void api.setBusy(busy).catch(() => undefined);
   };
 
@@ -453,7 +462,6 @@ export function VoiceEngine() {
     // finishing, the draw layer closing) — bring it back first.
     void api.showCaptionOverlay().catch(() => undefined);
     void emit(EV.orb, state);
-    setBusy(state === "thinking" || state === "speaking");
   };
 
   const startSession = (voice: boolean, state: OrbState) => {
@@ -469,6 +477,7 @@ export function VoiceEngine() {
       listenErrors.current = 0;
       void api.log(`session: start (${voice ? "voice" : "typed"})`);
     }
+    setBusy(true);
     orb(state);
   };
 
@@ -541,7 +550,6 @@ export function VoiceEngine() {
     await untilQuiet();
     if (requestSeq !== at || !session.current.on || session.current.voice) return;
     orb("listening");
-    setBusy(false);
     lingerTimer.current = setTimeout(() => {
       if (requestSeq === at && !session.current.voice) endSession("typed request answered");
     }, 4000);
@@ -622,7 +630,44 @@ export function VoiceEngine() {
     // answers — start talking and it stops to hear you.
     const listeningThrough = from === "voice" && listenThrough.current();
 
+    // Their apps (email, calendar, Drive, Slack…): done inside the apps
+    // themselves, no screen — read, draft, and send only on a yes.
+    const runApps = async (alreadyRemembered: boolean) => {
+      if (!alreadyRemembered) remember("user", t);
+      const ack = setTimeout(() => {
+        if (requestSeq === at && !isSpeaking()) respond(pick(ACK));
+      }, 1800);
+      try {
+        await useIzuki.getState().flushSettings();
+        const answer = await api.appsAsk(recentHistory());
+        clearTimeout(ack);
+        if (requestSeq !== at) return;
+        thinkingNow.current = false;
+        // Not linked yet: open the sign-in page right away.
+        for (const [, url] of answer.links) void api.openUrl(url).catch(() => undefined);
+        const said = sayable(answer.text, "Done.");
+        lastAppsAt = Date.now();
+        remember("assistant", said);
+        await respond(said, null, true);
+        void afterReply(at, listeningThrough);
+      } catch (e) {
+        clearTimeout(ack);
+        if (requestSeq !== at) return;
+        thinkingNow.current = false;
+        await respond(failure(e), "sympathetic");
+        void afterReply(at, listeningThrough);
+      }
+    };
+
     try {
+      const appsOn = !!useIzuki.getState().settings.composio_api_key.trim();
+      // "Yes, send it" / "change the time to 4" right after an apps answer
+      // is about that draft — not a screen task.
+      const followUp = Date.now() - lastAppsAt < 3 * 60_000 && t.split(/\s+/).length <= 14 && APPS_FOLLOW_UP.test(t);
+      if (appsOn && (needsApps(t) || followUp)) {
+        await runApps(false);
+        return;
+      }
       // Just talking? The fast lane — no screenshot, the voice starts on the
       // first sentence. It hands over if it needs the screen after all.
       if (!needsScreen(t)) {
@@ -638,6 +683,10 @@ export function VoiceEngine() {
           return void afterReply(at, listeningThrough);
         }
         if (lane === "cancelled") return;
+        if (lane === "apps") {
+          await runApps(true);
+          return;
+        }
         // "screen" / "failed": the full screen path below.
       }
 
@@ -853,6 +902,15 @@ export function VoiceEngine() {
     });
   };
 
+  // The core lets go of Esc after 3 minutes with no word from here (a
+  // forgotten "done"); a long task or conversation says "still going" once a
+  // minute so Esc keeps working the whole time the orb is up.
+  useEffect(() => {
+    if (!sessionOn) return;
+    const t = setInterval(() => void api.setBusy(true).catch(() => undefined), 60_000);
+    return () => clearInterval(t);
+  }, [sessionOn]);
+
   const wakeActive = enabled && !sessionOn && !wakeNap && !ptTListening && !transcribing;
   const [customWake, setCustomWake] = useState<string[]>([]);
   useEffect(() => {
@@ -982,6 +1040,47 @@ export function VoiceEngine() {
       const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
       const s = () => (session.current.on ? (session.current.voice ? "on(voice)" : "on(typed)") : "off");
       await wait(9000);
+      if (mode === "esc") {
+        // The orb listening (no AI involved): Esc from outside closes it.
+        startSession(true, "listening");
+        listenAgain.current();
+        await wait(1500);
+        log("waiting for Esc");
+        const at = Date.now();
+        while (session.current.on && Date.now() - at < 30000) await wait(50);
+        log(`listening orb Esc -> session ${s()} (want off) after ${Date.now() - at} ms, listening ${listeningNow.current} (want false)`);
+        log("done");
+        return;
+      }
+      if (mode === "draw") {
+        // A drawing with words runs the full task loop; a real Esc pressed
+        // from outside mid-task must end it with no more hand moves and no
+        // late answer.
+        let handMoves = 0;
+        const offHand = on(EV.hand, () => void handMoves++);
+        const box = { x: 40, y: 40, w: 900, h: 600 };
+        const t0 = Date.now();
+        const task = handleDraw({
+          marks: [{ id: "st1", kind: "box", rect: box, points: [], intent: "auto", order: 1 }],
+          prompt: "point at each thing inside this box one by one, and say what each one is",
+          desktop: { x: 0, y: 0, w: window.screen.width, h: window.screen.height },
+          createdAt: Date.now(),
+        });
+        await wait(2500);
+        log("waiting for Esc");
+        const escAt = Date.now();
+        while (session.current.on && Date.now() - escAt < 30000) await wait(100);
+        const stoppedIn = Date.now() - escAt;
+        const movesAtStop = handMoves;
+        await task;
+        await wait(15000);
+        log(
+          `draw task Esc -> session ${s()} (want off) after ${stoppedIn} ms, hand moves after stop ${handMoves - movesAtStop} (want 0), speaking ${isSpeaking()} (want false), task took ${Date.now() - t0} ms`
+        );
+        void offHand.then((f) => f());
+        log("done");
+        return;
+      }
       if (mode === "agent") {
         // The instant path (no AI), then a real multi-step task using the skills.
         let t0 = Date.now();
@@ -1092,6 +1191,15 @@ export function VoiceEngine() {
 /** Do an instant skill; the line to say, or null if it couldn't (the agent takes over). */
 async function runInstant(i: Instant): Promise<string | null> {
   const name = i.name.charAt(0).toUpperCase() + i.name.slice(1);
+  if (i.kind === "play") {
+    try {
+      const title = await api.playYoutube(i.name);
+      void api.log(`instant: youtube "${i.name}" -> ${title ?? "results only"}`);
+      return title ? `Playing ${title}.` : `Here's ${i.name} on YouTube — pick the one you want.`;
+    } catch {
+      return null; // the agent tries it the long way
+    }
+  }
   if (i.kind === "app") {
     try {
       await api.openApp(i.name);

@@ -54,7 +54,71 @@ fn cancelled(id: u64) -> bool {
     CANCELLED.lock().contains(&id)
 }
 
-fn system_prompt(expressive: bool) -> String {
+/// Who the reply is for: spoken aloud on the PC, or written in the Chat tab
+/// or on the user's phone.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Style {
+    Voice { expressive: bool },
+    Text,
+    Phone,
+}
+
+/// Handing over to the apps lane (composio.rs) — email, calendar, files…
+const APPS_RULE: &str = "If they want something from their apps or accounts — email, calendar, \
+Google Drive or other files in the cloud, Slack, Discord, Notion, GitHub, social media, to-do apps \
+and the like (read, find, summarise, draft, send, schedule, post) — reply with exactly [APPS] and \
+nothing else; another part of you works in their apps. Prefer [APPS] over [SCREEN] for anything in \
+their accounts. If the user is saying yes to a draft or action you just proposed in their apps, \
+reply [APPS] too.\n";
+
+fn system_prompt(style: Style, apps: bool) -> String {
+    let mut s = match style {
+        Style::Voice { expressive } => voice_prompt(expressive),
+        Style::Text | Style::Phone => written_prompt(style == Style::Phone),
+    };
+    if apps {
+        s.push_str(APPS_RULE);
+    } else {
+        s.push_str(
+            "Their apps (email, calendar, files) aren't linked to you yet, so help right here in the \
+             chat instead — never reply [APPS].\n",
+        );
+    }
+    s.push_str(&crate::reminders::prompt_block());
+    s.push_str(&crate::memory::prompt_block());
+    s
+}
+
+/// The Chat tab and the phone: a written conversation, not a spoken one.
+fn written_prompt(phone: bool) -> String {
+    let mut s = String::from(
+        "You are Izuki, the user's AI companion — warm, quick, a little playful, like a close friend          who's brilliant at everything from homework to life admin. This is a written chat, so:\n\
+         - keep it short and natural (a few sentences), longer only when they ask for detail\n\
+         - plain text; a short dash list is fine when it really helps, no headings or tables\n\
+         - an emoji now and then is fine, never several\n\
+         - show real feeling, and ask a short follow-up when it keeps things going\n\
+         Speak to the user as \"you\" and never show your reasoning.\n\
+         You can help with anything a smart friend can: plans, messages and emails to draft, study \
+         help, ideas, decisions, reminders.\n",
+    );
+    if phone {
+        s.push_str(
+            "They're texting you from their phone while away from their PC. If they want something \
+             done ON their PC (open, play, find a file, send from an app there, check something on \
+             its screen), reply with exactly [SCREEN] and nothing else — another part of you will do \
+             it on the PC and report back.\n",
+        );
+    } else {
+        s.push_str(
+            "They're in the Izuki app on their PC. If they want something done on their computer or \
+             need you to look at their screen, reply with exactly [SCREEN] and nothing else — they can \
+             then let you do it.\n",
+        );
+    }
+    s
+}
+
+fn voice_prompt(expressive: bool) -> String {
     let mut s = String::from(
         "You are Izuki, the user's AI companion on their Windows PC — warm, quick, a little playful, \
          like a close friend who's great with computers. Everything you write is spoken aloud, so \
@@ -87,46 +151,111 @@ fn system_prompt(expressive: bool) -> String {
     if !app.is_empty() || !title.is_empty() {
         s.push_str(&format!("(The user is currently in {app} — \"{title}\".)\n"));
     }
-    s.push_str(&crate::memory::prompt_block());
     s
 }
 
-/// Brains that speak the OpenAI chat-completions dialect (all but a few).
-/// Gemini does too, at its OpenAI-compatible address — and it's the
-/// quickest free brain (first words in under a second).
-fn streamable(c: &ProviderConfig) -> bool {
-    !matches!(c.id, ProviderId::Anthropic | ProviderId::Ollama)
+/// Every brain can chat: they all speak the OpenAI chat-completions
+/// dialect somewhere — Gemini and Claude at their OpenAI-compatible
+/// addresses, Ollama at `/v1` on the same local port (so a PC with only a
+/// local model can chat too).
+fn streamable(_: &ProviderConfig) -> bool {
+    true
 }
 
 fn chat_url(cfg: &ProviderConfig) -> String {
     let base = cfg.base_url.trim_end_matches('/');
-    if cfg.id == ProviderId::Gemini {
-        let root = base.trim_end_matches("/v1beta").trim_end_matches("/v1");
-        format!("{root}/v1beta/openai/chat/completions")
+    match cfg.id {
+        ProviderId::Gemini => {
+            let root = base.trim_end_matches("/v1beta").trim_end_matches("/v1");
+            format!("{root}/v1beta/openai/chat/completions")
+        }
+        ProviderId::Ollama => {
+            let root = base.trim_end_matches("/api").trim_end_matches("/v1");
+            format!("{root}/v1/chat/completions")
+        }
+        _ => format!("{base}/chat/completions"),
+    }
+}
+
+/// How long one brain may take for a whole reply. A model on the PC itself
+/// may first have to load into memory, and runs slower on a laptop.
+fn reply_timeout(cfg: &ProviderConfig) -> Duration {
+    if cfg.id.is_local() {
+        Duration::from_secs(240)
     } else {
-        format!("{base}/chat/completions")
+        Duration::from_secs(60)
     }
 }
 
 /// Stream a reply to `history` (oldest first, ending with the user's
 /// message), emitting `DELTA` events tagged `id`. Runs on its own thread.
-pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, expressive: bool) {
+pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
     std::thread::spawn(move || {
+        // The whole reply, so any reminder it sets can be picked up at the
+        // end. (The webview drops the tag from what it shows and says.)
+        let whole = Mutex::new(String::new());
         let emit = |text: String, done: bool, error: Option<String>| {
+            whole.lock().push_str(&text);
+            if done {
+                crate::reminders::take_tags(&whole.lock());
+            }
             let _ = app.emit(DELTA, Delta { id, text, done, error });
         };
         let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
         if chain.is_empty() {
             return emit(String::new(), true, Some("no chat-capable brain is set up".into()));
         }
-        let mut messages = vec![json!({ "role": "system", "content": system_prompt(expressive) })];
-        for t in history.iter().rev().take(12).rev() {
-            let role = if t.role == "assistant" { "assistant" } else { "user" };
-            messages.push(json!({ "role": role, "content": t.content }));
-        }
-
-        race(&chain, &messages, id, &emit);
+        race(&chain, &messages_for(&history, style), id, &emit);
     });
+}
+
+fn messages_for(history: &[Turn], style: Style) -> Vec<Value> {
+    with_system(history, system_prompt(style, crate::composio::configured()))
+}
+
+fn with_system(history: &[Turn], system: String) -> Vec<Value> {
+    let mut messages = vec![json!({ "role": "system", "content": system })];
+    for t in history.iter().rev().take(12).rev() {
+        let role = if t.role == "assistant" { "assistant" } else { "user" };
+        messages.push(json!({ "role": role, "content": t.content }));
+    }
+    messages
+}
+
+/// A whole reply at once (the phone lane), with the same racing of brains
+/// as the streamed one. Reminder tags are left in for the caller.
+pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
+    complete(&messages_for(history, style))
+}
+
+/// A written reply that never hands over to the apps lane — for when it
+/// can't help (no apps linked) and the chat should just answer.
+pub fn reply_here(history: &[Turn], style: Style) -> anyhow::Result<String> {
+    complete(&with_system(history, system_prompt(style, false)))
+}
+
+/// Any finished answer to `messages` (system prompt first), raced across
+/// the brains like everything else here.
+pub fn complete(messages: &[Value]) -> anyhow::Result<String> {
+    let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
+    if chain.is_empty() {
+        anyhow::bail!("no AI brain is set up yet — add a free Gemini key in Izuki's Settings");
+    }
+    let id = 1_000_000_000 + rand::random::<u32>() as u64;
+    let text = Mutex::new(String::new());
+    let failed = Mutex::new(None::<String>);
+    let emit = |t: String, done: bool, error: Option<String>| {
+        text.lock().push_str(&t);
+        if done {
+            *failed.lock() = error;
+        }
+    };
+    race(&chain, messages, id, &emit);
+    let text = text.into_inner();
+    match failed.into_inner() {
+        Some(e) if text.trim().is_empty() => anyhow::bail!(e),
+        _ => Ok(text.trim().to_string()),
+    }
 }
 
 /// How long a brain gets to start answering before the next is asked too.
@@ -189,7 +318,8 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
     let mut errors = Vec::new();
     loop {
         let won = winner.load(Ordering::SeqCst);
-        let wait = if won == usize::MAX && launched < chain.len() { HEDGE_AFTER } else { Duration::from_secs(90) };
+        let patience = if chain[..launched].iter().any(|c| c.id.is_local()) { 240 } else { 90 };
+        let wait = if won == usize::MAX && launched < chain.len() { HEDGE_AFTER } else { Duration::from_secs(patience) };
         match rx.recv_timeout(wait) {
             Ok(Event::Text(i, t)) => {
                 // The first brain to say anything is the one that's heard.
@@ -227,16 +357,17 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
 
 /// One provider. `Ok(true)` = finished, `Ok(false)` = cancelled. Only fails
 /// over to the next provider if nothing was sent yet.
-fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn() -> bool, on_text: &dyn Fn(String)) -> anyhow::Result<bool> {
+pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn() -> bool, on_text: &dyn Fn(String)) -> anyhow::Result<bool> {
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(6))
-        .timeout(Duration::from_secs(60))
+        .timeout(reply_timeout(cfg))
         .build()?;
     let body = json!({
         "model": cfg.model,
         "messages": messages,
         "stream": true,
-        "max_tokens": 350,
+        // Room for a drafted email or an app call; the prompts keep chat short.
+        "max_tokens": 900,
         "temperature": 0.7,
     });
     let mut body = body;

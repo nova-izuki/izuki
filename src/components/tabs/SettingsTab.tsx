@@ -17,6 +17,10 @@ import {
   Sparkles,
   Wand2,
 } from "lucide-react";
+import pkg from "../../../package.json";
+import { PhoneCard } from "../PhoneCard";
+import { DiscordCard } from "../DiscordCard";
+import { AppsCard } from "../AppsCard";
 import { Badge, Row, Section, Segmented, Slider, Toggle, cx } from "../ui";
 import { useIzuki } from "../../lib/store";
 import { api } from "../../lib/ipc";
@@ -268,7 +272,7 @@ export function SettingsTab() {
         />
         <div className="izk-divider" />
         <HotkeyRow
-          label="Panic stop"
+          label="Emergency stop — everything, every mode"
           value={settings.hotkey_panic}
           onChange={(v) => patch({ hotkey_panic: v })}
         />
@@ -406,6 +410,12 @@ export function SettingsTab() {
         </Row>
       </Section>
 
+      <AppsCard />
+
+      <PhoneCard />
+
+      <DiscordCard />
+
       {/* ------------------------------------------------ help */}
       <Section title="Help">
         <Row
@@ -439,7 +449,7 @@ export function SettingsTab() {
       <SupportCard />
 
       <p className="pb-1 text-center text-[10px] text-izk-muted/60">
-        IZUKI v1.0 · Free forever · Made with ❤️ by Solomon Nwachukwu
+        IZUKI v{pkg.version} · Free forever · Made with ❤️ by Solomon Nwachukwu
       </p>
     </>
   );

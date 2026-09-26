@@ -113,15 +113,7 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
         "flows" => navigate(app, "flows"),
         "watchers" => navigate(app, "watchers"),
         "settings" => navigate(app, "settings"),
-        "stop" => {
-            crate::brain::cancel_task();
-            let _ = app.emit(events::STOP_SPEAKING, ());
-            let _ = overlay::hide_overlay(app);
-            let _ = app.emit(
-                events::STATUS,
-                crate::model::StatusEvent::info("Stopped everything."),
-            );
-        }
+        "stop" => crate::hotkey::stop_everything(app),
         "quit" => app.exit(0),
         _ => {}
     }

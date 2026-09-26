@@ -12,7 +12,7 @@ use crate::brain;
 use crate::capture;
 use crate::events;
 use crate::ghost::{self, Prediction};
-use crate::model::{DesktopBounds, DrawSession, Flow, StatusEvent, VisionPlan, Watcher};
+use crate::model::{DesktopBounds, DrawSession, Flow, VisionPlan, Watcher};
 use crate::overlay;
 use crate::settings::{ProviderId, Settings};
 use crate::state;
@@ -363,6 +363,17 @@ pub async fn open_app(name: String) -> R<String> {
     blocking(move || crate::apps::open_app(&name).map_err(|e| e.to_string())).await?
 }
 
+/// Instant skill: play something on YouTube (and skip its ads). The title
+/// it started, or null if it only got as far as the results.
+#[tauri::command]
+pub async fn play_youtube(query: String) -> R<Option<String>> {
+    blocking(move || {
+        crate::automation::clear_abort();
+        crate::youtube::play(&query).map_err(|e| e.to_string())
+    })
+    .await?
+}
+
 /// Instant skill: open a web address in the default browser.
 #[tauri::command]
 pub async fn open_url(url: String) -> R<()> {
@@ -378,10 +389,7 @@ pub fn quit_app(app: AppHandle) {
 
 #[tauri::command]
 pub fn panic_stop(app: AppHandle) {
-    brain::cancel_task();
-    let _ = app.emit(events::STOP_SPEAKING, ());
-    let _ = overlay::hide_overlay(&app);
-    let _ = app.emit(events::STATUS, StatusEvent::info("Stopped everything."));
+    crate::hotkey::stop_current(&app);
 }
 
 // ---------------------------------------------------------------------------
@@ -488,6 +496,102 @@ pub async fn speak_cloud(
     blocking(move || crate::tts::synthesize(&settings, &engine, &text, mood.as_deref()))
         .await?
         .map(tauri::ipc::Response::new)
+}
+
+// ---------------------------------------------------------------------------
+// Hearing you over the music (stt.rs, duck.rs)
+// ---------------------------------------------------------------------------
+
+/// Whether a cloud speech model is set up (Groq or Gemini key, and on).
+#[tauri::command]
+pub fn cloud_ears_ready() -> bool {
+    crate::stt::available(&state::store().settings())
+}
+
+/// What was said in a 16 kHz WAV clip (base64), per the big cloud model.
+/// An error means "use the on-device words".
+#[tauri::command]
+pub async fn cloud_transcribe(wav_b64: String) -> R<String> {
+    use base64::Engine;
+    let wav = base64::engine::general_purpose::STANDARD.decode(wav_b64.as_bytes()).map_err(err)?;
+    let settings = state::store().settings();
+    blocking(move || crate::stt::transcribe(&settings, wav).map_err(err)).await?
+}
+
+/// Turn other apps' sound down while Izuki listens (and back up after).
+#[tauri::command]
+pub fn duck_audio(on: bool) {
+    if !on || state::store().settings().duck_while_listening {
+        crate::duck::set(on);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phone (telegram.rs) and reminders (reminders.rs)
+// ---------------------------------------------------------------------------
+
+/// A request that needs the user's apps (email, calendar, …) — composio.rs.
+#[tauri::command]
+pub async fn apps_ask(history: Vec<crate::chat::Turn>) -> R<crate::composio::Answer> {
+    blocking(move || crate::composio::ask(&history).map_err(err)).await?
+}
+
+/// Check a Composio key (Settings → Apps → Test).
+#[tauri::command]
+pub async fn apps_test(key: String) -> R<()> {
+    blocking(move || crate::composio::test_key(&key).map_err(err)).await?
+}
+
+#[tauri::command]
+pub fn call_status() -> crate::call::Status {
+    crate::call::status()
+}
+
+#[tauri::command]
+pub fn discord_status() -> crate::discord::Status {
+    crate::discord::status()
+}
+
+/// Forget the paired Discord user; hands back the settings with the new code.
+#[tauri::command]
+pub fn discord_unpair(app: AppHandle) -> Settings {
+    crate::discord::unpair();
+    let s = state::store().settings();
+    let _ = app.emit(
+        "izuki://patch-settings",
+        serde_json::json!({ "discord_user_id": "", "telegram_code": s.telegram_code }),
+    );
+    let _ = app.emit(crate::discord::CHANGED, ());
+    s
+}
+
+#[tauri::command]
+pub fn phone_status() -> crate::telegram::Status {
+    crate::telegram::status()
+}
+
+/// Forget the paired phone; hands back the settings with the new code.
+#[tauri::command]
+pub fn phone_unpair(app: AppHandle) -> Settings {
+    crate::telegram::unpair();
+    let s = state::store().settings();
+    let _ = app.emit(
+        "izuki://patch-settings",
+        serde_json::json!({ "telegram_chat_id": 0, "telegram_code": s.telegram_code }),
+    );
+    let _ = app.emit(crate::telegram::PHONE_CHANGED, ());
+    s
+}
+
+#[tauri::command]
+pub fn reminders_list() -> Vec<crate::reminders::Reminder> {
+    crate::reminders::list()
+}
+
+#[tauri::command]
+pub fn reminder_remove(app: AppHandle, id: String) {
+    crate::reminders::remove(&id);
+    let _ = app.emit(crate::reminders::CHANGED, ());
 }
 
 /// Start looking at the screen early — called the moment the user starts
@@ -641,8 +745,19 @@ pub fn import_wakewords() -> R<WakewordImport> {
 /// Stream a spoken-style reply to the conversation so far; words arrive as
 /// `izuki://chat-delta` events tagged `id`.
 #[tauri::command]
-pub fn chat_stream(app: AppHandle, id: u64, history: Vec<crate::chat::Turn>, expressive: Option<bool>) {
-    crate::chat::stream(app, id, history, expressive.unwrap_or(false));
+pub fn chat_stream(
+    app: AppHandle,
+    id: u64,
+    history: Vec<crate::chat::Turn>,
+    expressive: Option<bool>,
+    written: Option<bool>,
+) {
+    let style = if written.unwrap_or(false) {
+        crate::chat::Style::Text
+    } else {
+        crate::chat::Style::Voice { expressive: expressive.unwrap_or(false) }
+    };
+    crate::chat::stream(app, id, history, style);
 }
 
 #[tauri::command]

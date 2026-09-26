@@ -148,3 +148,49 @@ mod tests {
         assert!(openai_instructions(Some("excited")).contains("excited"));
     }
 }
+
+/// A reply as spoken audio (WAV) for another device — the "Call Izuki"
+/// page on a phone, where the browser's own voice is muted by the iPhone's
+/// silent switch but a plain audio file isn't. The chosen cloud voice if one
+/// is set up, otherwise Windows' own voice: free, offline, instant.
+pub fn speak_to_wav(settings: &Settings, text: &str) -> Result<Vec<u8>, String> {
+    let engine = settings.voice_engine.as_str();
+    if matches!(engine, "orpheus" | "openai") {
+        match synthesize(settings, engine, text, None) {
+            Ok(wav) => return Ok(wav),
+            Err(e) => eprintln!("[tts] {engine} for the call: {e} — using the Windows voice"),
+        }
+    }
+    windows_voice(text)
+}
+
+/// Windows' built-in text-to-speech, as WAV bytes.
+#[cfg(windows)]
+pub fn windows_voice(text: &str) -> Result<Vec<u8>, String> {
+    use windows::Media::SpeechSynthesis::SpeechSynthesizer;
+    use windows::Storage::Streams::DataReader;
+    use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("nothing to say".into());
+    }
+    let go = || -> windows_core::Result<Vec<u8>> {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        let synth = SpeechSynthesizer::new()?;
+        let stream = crate::ocr::wait(synth.SynthesizeTextToStreamAsync(&windows_core::HSTRING::from(text))?)?;
+        let size = stream.Size()? as u32;
+        let reader = DataReader::CreateDataReader(&stream.GetInputStreamAt(0)?)?;
+        crate::ocr::wait(reader.LoadAsync(size)?)?;
+        let mut buf = vec![0u8; size as usize];
+        reader.ReadBytes(&mut buf)?;
+        Ok(buf)
+    };
+    go().map_err(|e| format!("Windows voice: {e}"))
+}
+
+#[cfg(not(windows))]
+pub fn windows_voice(_text: &str) -> Result<Vec<u8>, String> {
+    Err("no system voice here".into())
+}

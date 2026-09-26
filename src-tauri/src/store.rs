@@ -87,6 +87,26 @@ impl Store {
     }
 
     pub fn set_settings(&self, mut next: Settings) -> Settings {
+        {
+            // The panel saves its whole copy of the settings, and it may not
+            // have heard yet that a phone paired in the background — don't
+            // let that stale copy unpair it. (Unpairing makes a new code.)
+            let current = self.settings.read();
+            if next.telegram_chat_id == 0
+                && current.telegram_chat_id != 0
+                && next.telegram_code == current.telegram_code
+                && next.telegram_token == current.telegram_token
+            {
+                next.telegram_chat_id = current.telegram_chat_id;
+            }
+            if next.discord_user_id.is_empty()
+                && !current.discord_user_id.is_empty()
+                && next.telegram_code == current.telegram_code
+                && next.discord_token == current.discord_token
+            {
+                next.discord_user_id = current.discord_user_id.clone();
+            }
+        }
         next.heal();
         *self.settings.write() = next.clone();
         let _ = write_json(&self.dir.join("settings.json"), &next);

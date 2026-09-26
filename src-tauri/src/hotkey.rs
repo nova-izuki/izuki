@@ -94,6 +94,29 @@ static ESC_ON: AtomicBool = AtomicBool::new(false);
 /// When Esc was last armed, so a forgotten "busy" can't keep it armed forever.
 static ESC_SINCE: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
 static ESC_APP: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
+/// How many tasks are working the screen right now (a drawing, a replay, a
+/// spoken or typed command). Esc stops these too — the orb's "busy" alone
+/// missed every drawing and replay, which run without the orb.
+static WORKING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Esc stops Izuki until this is dropped.
+pub struct Working(());
+
+impl Drop for Working {
+    fn drop(&mut self) {
+        WORKING.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Arm Esc for as long as the returned guard lives.
+pub fn working() -> Working {
+    WORKING.fetch_add(1, Ordering::SeqCst);
+    Working(())
+}
+
+fn esc_armed() -> bool {
+    ESC_ON.load(Ordering::SeqCst) || WORKING.load(Ordering::SeqCst) > 0
+}
 
 /// Start the Esc watcher (once, at startup). Costs nothing while idle.
 #[cfg(windows)]
@@ -126,16 +149,25 @@ unsafe extern "system" fn esc_hook(
     lparam: windows::Win32::Foundation::LPARAM,
 ) -> windows::Win32::Foundation::LRESULT {
     use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
-    use windows::Win32::UI::WindowsAndMessaging::{CallNextHookEx, KBDLLHOOKSTRUCT, WM_KEYDOWN};
-    if code >= 0 && wparam.0 as u32 == WM_KEYDOWN && ESC_ON.load(Ordering::SeqCst) {
+    use windows::Win32::UI::WindowsAndMessaging::{CallNextHookEx, KBDLLHOOKSTRUCT, LLKHF_INJECTED, WM_KEYDOWN};
+    if code >= 0 && wparam.0 as u32 == WM_KEYDOWN && esc_armed() {
         let key = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
-        if key.vkCode == VK_ESCAPE.0 as u32 && ESC_ON.swap(false, Ordering::SeqCst) {
+        if cfg!(debug_assertions) && key.vkCode == VK_ESCAPE.0 as u32 {
+            eprintln!("[hotkey] Esc seen (flags {:#x}, extra {})", key.flags.0, key.dwExtraInfo);
+        }
+        // Izuki's own key presses (a plan step that presses Esc to close a
+        // menu) mustn't stop it. They all go through enigo, which tags each
+        // one — ignore only those. Other injected keys still count: the
+        // On-Screen Keyboard and voice-typing tools send Esc that way.
+        let ours = key.flags.0 & LLKHF_INJECTED.0 != 0 && key.dwExtraInfo == enigo::EVENT_MARKER as usize;
+        if key.vkCode == VK_ESCAPE.0 as u32 && !ours && !key_repeat_of_last_stop() {
+            ESC_ON.store(false, Ordering::SeqCst);
             if let Some(app) = ESC_APP.get() {
                 let app = app.clone();
                 // Never do real work inside the hook — Windows drops slow hooks.
                 std::thread::spawn(move || {
                     eprintln!("[hotkey] Esc pressed — stopping");
-                    Action::Panic.run(&app);
+                    stop_current(&app);
                 });
             }
         }
@@ -143,9 +175,19 @@ unsafe extern "system" fn esc_hook(
     CallNextHookEx(None, code, wparam, lparam)
 }
 
+/// A held Esc auto-repeats; one stop per press is plenty.
+#[cfg(windows)]
+fn key_repeat_of_last_stop() -> bool {
+    static LAST: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
+    let mut last = LAST.lock();
+    let repeat = last.is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(400));
+    *last = Some(std::time::Instant::now());
+    repeat
+}
+
 /// Whether Izuki is busy right now (thinking, working or talking).
 pub fn is_busy() -> bool {
-    ESC_ON.load(Ordering::SeqCst)
+    esc_armed()
 }
 
 /// Izuki is busy (Esc stops it) or not (Esc is left alone).
@@ -273,12 +315,7 @@ impl Action {
                     );
                 }
             }
-            Action::Panic => {
-                crate::brain::cancel_task();
-                let _ = app.emit(events::STOP_SPEAKING, ());
-                let _ = crate::overlay::hide_overlay(app);
-                let _ = app.emit(events::STATUS, StatusEvent::info("Stopped everything."));
-            }
+            Action::Panic => stop_everything(app),
             // A one-shot mic capture, no wake word, no window to open first —
             // the config panel's `VoiceEngine` is always mounted (even
             // hidden to tray) and is what actually listens for this. The
@@ -294,4 +331,48 @@ impl Action {
             Action::Quickdraw => {}
         }
     }
+}
+
+/// Stop what Izuki is doing right now: the screen task or flow, anything
+/// it's saying, the orb, the pen, an apps request about to run a tool, and
+/// the YouTube ad skipper. (Esc, the "Stop" button, "stop" by text.)
+pub fn stop_current(app: &AppHandle) {
+    halt(app);
+    let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
+}
+
+fn halt(app: &AppHandle) {
+    crate::brain::cancel_task();
+    crate::composio::stop();
+    crate::youtube::stop_watching_ads();
+    let _ = app.emit(events::STOP_SPEAKING, ());
+    crate::overlay::orb_closed();
+    let _ = app.emit("izuki://pen-clear", ());
+    let _ = crate::overlay::hide_overlay(app);
+    // Bring the music back up if it was lowered for listening.
+    crate::duck::set(false);
+}
+
+/// The emergency stop (Ctrl+Shift+Q, the tray's "Stop everything"): all of
+/// the above, in every mode, and every watcher is switched off too so
+/// nothing starts clicking again a second later. Works even when Esc can't
+/// (Esc only reaches Izuki while it's busy, and never over admin windows
+/// like Task Manager; a registered hotkey always does).
+pub fn stop_everything(app: &AppHandle) {
+    halt(app);
+    let store = crate::state::store();
+    let running: Vec<String> = store.watchers().into_iter().filter(|w| w.enabled).map(|w| w.id).collect();
+    for id in &running {
+        store.mutate_watcher(id, |w| w.enabled = false);
+    }
+    if !running.is_empty() {
+        let _ = app.emit(events::WATCHERS_CHANGED, ());
+    }
+    let detail = match running.len() {
+        0 => None,
+        1 => Some("Your watcher is paused — turn it back on in Watchers.".to_string()),
+        n => Some(format!("{n} watchers are paused — turn them back on in Watchers.")),
+    };
+    eprintln!("[hotkey] emergency stop ({} watchers paused)", running.len());
+    let _ = app.emit(events::STATUS, StatusEvent { kind: "info", message: "Stopped everything.".into(), detail });
 }

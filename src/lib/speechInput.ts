@@ -119,12 +119,6 @@ export function preloadSpeechInput(): Promise<Transcriber> {
  */
 const PHANTOMS = /^(\[.*\]|\(.*\)|you|thank you|thanks|thanks for watching|bye|okay|oh|uh|um|hmm|so)[.!?]*$/i;
 
-/**
- * Words from recorded speech. `size: "tiny"` is for the wake word (fast,
- * good on short phrases). Otherwise "base" — and if that comes back empty
- * for a short clip (its known weak spot: "Hey Nova", "yes", "stop"), tiny
- * gets a second go.
- */
 /** 16 kHz mono float samples → a WAV file's bytes. */
 export function toWav(samples: Float32Array, rate = RATE): Uint8Array {
   const out = new DataView(new ArrayBuffer(44 + samples.length * 2));
@@ -174,7 +168,93 @@ export async function whisperCheck(audio: Float32Array): Promise<string | null> 
   }
 }
 
+// ------------------------------------------------------------ cloud ears
+
+/** Whether a cloud speech model is set up — asked at most every 30 s. */
+let cloudReady: { at: number; ok: Promise<boolean> } | null = null;
+function cloudEarsReady(): Promise<boolean> {
+  if (!cloudReady || Date.now() - cloudReady.at > 30_000) {
+    cloudReady = { at: Date.now(), ok: api.cloudEarsReady().catch(() => false) };
+  }
+  return cloudReady.ok;
+}
+
+function base64(bytes: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(s);
+}
+
+/** Longest the cloud gets at all, and how much longer than this PC's own words. */
+const CLOUD_MAX_MS = 3500;
+const CLOUD_GRACE_MS = 700;
+
+/**
+ * Words from recorded speech. `size: "tiny"` is for the wake word (fast,
+ * good on short phrases). Otherwise "base" — and if that comes back empty
+ * for a short clip (its known weak spot: "Hey Nova", "yes", "stop"), tiny
+ * gets a second go.
+ *
+ * For a real request ("base") with a Groq or Gemini key, a big cloud model
+ * hears the same clip at the same time: it gets names right ("Burna Boy",
+ * not "bonto") and leaves out music playing in the room. Whichever is
+ * better and in time wins — the cloud's words if they arrive first or
+ * within a moment of this PC's, otherwise this PC's. Never slower than
+ * before by more than that moment; offline or keyless it's skipped.
+ */
 export async function transcribe(
+  audio: Float32Array,
+  size: ModelSize = "base",
+  o: { whisperFallback?: boolean } = {}
+): Promise<string> {
+  if (size !== "base" || !(await cloudEarsReady())) return transcribeHere(audio, size, o);
+
+  const began = Date.now();
+  // Read before the worker takes the buffer (it's empty afterwards).
+  const seconds = audio.length / RATE;
+  const spare = audio.length < RATE * 8 ? audio.slice() : null;
+  let cloudFailed = false;
+  const timeout = <T,>(ms: number) => new Promise<T>((_, no) => setTimeout(() => no(new Error("slow")), ms));
+  // Sent before the on-device worker takes ownership of the buffer.
+  const cloud: Promise<string> = Promise.race([api.cloudTranscribe(base64(toWav(audio))), timeout<string>(CLOUD_MAX_MS)]);
+  cloud.catch(() => undefined);
+  const here = transcribeHere(audio, size, { ...o, whisperFallback: false });
+  here.catch(() => undefined);
+
+  const first = await Promise.race([
+    cloud.then((text) => ({ from: "cloud" as const, text }), () => ({ from: "cloud-failed" as const, text: "" })),
+    here.then((text) => ({ from: "here" as const, text }), () => ({ from: "here-failed" as const, text: "" })),
+  ]);
+  let text: string;
+  if (first.from === "cloud") {
+    text = first.text;
+  } else {
+    // This PC answered (or the cloud failed) first: give the cloud only a
+    // moment more before going with what's here.
+    const wait = first.from === "cloud-failed" ? 0 : CLOUD_GRACE_MS;
+    const late = await Promise.race([cloud, timeout<string>(wait)]).then(
+      (t) => ({ ok: true, t }),
+      () => ({ ok: false, t: "" })
+    );
+    cloudFailed = !late.ok;
+    if (late.ok) text = late.t;
+    else if (first.from === "here") text = first.text;
+    else text = await here.catch(() => "");
+  }
+  // Cloud out of reach and nothing heard here: Whisper's careful second
+  // opinion, as without cloud ears.
+  if (!text && cloudFailed && spare && o.whisperFallback !== false) {
+    text = (await whisperCheck(spare).catch(() => null)) ?? "";
+  }
+  log(`final in ${Date.now() - began}ms: "${text.slice(0, 80)}"`);
+  if (!text || (PHANTOMS.test(text) && seconds < 1.2)) return "";
+  return text;
+}
+
+/** Words from this PC's own models only. */
+async function transcribeHere(
   audio: Float32Array,
   size: ModelSize = "base",
   o: { whisperFallback?: boolean } = {}

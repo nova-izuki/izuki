@@ -13,6 +13,11 @@ import type {
   VisionPlan,
   Watcher,
   Memory,
+  PhoneStatus,
+  DiscordStatus,
+  CallStatus,
+  AppsAnswer,
+  Reminder,
 } from "./types";
 
 export const IS_TAURI =
@@ -170,6 +175,18 @@ export const MOCK_SETTINGS: Settings = {
   mic_device: "",
   show_transcript: true,
   barge_in: true,
+  duck_while_listening: true,
+  cloud_ears: true,
+  telegram_token: "",
+  composio_api_key: "",
+  call_enabled: false,
+  call_token: "",
+  composio_user_id: "",
+  telegram_chat_id: 0,
+  telegram_code: "",
+  discord_token: "",
+  discord_user_id: "",
+  phone_controls_pc: true,
   follow_up_secs: 1800,
   chat_style: "auto",
   chat_color: "#7dd3fc",
@@ -213,6 +230,16 @@ export const api = {
   forgetMemories: (about: string) => call<number>("forget_memories", { about }, () => 0),
   clearMemories: () => call<void>("clear_memories", {}, () => undefined),
 
+  /** Whether a cloud speech model (Groq or Gemini key) is set up. */
+  cloudEarsReady: () => call<boolean>("cloud_ears_ready", undefined, () => false),
+  /** What was said in a WAV clip (base64), per the cloud model. Rejects → use the on-device words. */
+  cloudTranscribe: (wavB64: string) =>
+    call<string>("cloud_transcribe", { wavB64 }, () => {
+      throw new Error("Not running inside Izuki.");
+    }),
+  /** Turn other apps' sound down while listening (true), back up (false). */
+  duckAudio: (on: boolean) => call<void>("duck_audio", { on }, () => undefined),
+
   /** One sentence in a cloud voice ("orpheus" | "openai"), as WAV. */
   speakCloud: (engine: string, text: string, mood?: string | null) =>
     call<ArrayBuffer>("speak_cloud", { engine, text, mood: mood ?? null }, () => {
@@ -222,6 +249,30 @@ export const api = {
   /** Fast conversation lane: stream a reply (words arrive as EV.chatDelta). */
   chatStream: (id: number, history: Array<{ role: string; content: string }>, expressive = false) =>
     call<void>("chat_stream", { id, history, expressive }, () => undefined),
+  /** The Chat tab: the same lane, written rather than spoken. */
+  chatStreamWritten: (id: number, history: Array<{ role: string; content: string }>) =>
+    call<void>("chat_stream", { id, history, expressive: false, written: true }, () => undefined),
+  /** A request in the user's apps (email, calendar, …) — the Composio lane. */
+  appsAsk: (history: Array<{ role: string; content: string }>) =>
+    call<AppsAnswer>("apps_ask", { history }, () => ({
+      text: "Apps only work inside the Izuki app.",
+      links: [],
+    })),
+  /** Play something on YouTube (and skip its ads): the title it started, or null. */
+  playYoutube: (query: string) =>
+    call<string | null>("play_youtube", { query }, () => {
+      throw new Error("Not running inside Izuki.");
+    }),
+  appsTest: (key: string) => call<void>("apps_test", { key }, () => undefined),
+  callStatus: () => call<CallStatus>("call_status", undefined, () => ({ state: "off", link: "", error: null })),
+  discordStatus: () =>
+    call<DiscordStatus>("discord_status", undefined, () => ({ bot: "", invite: "", paired: false, code: "123456", error: null })),
+  discordUnpair: () => call<Settings>("discord_unpair", undefined, () => MOCK_SETTINGS),
+  phoneStatus: () =>
+    call<PhoneStatus>("phone_status", undefined, () => ({ bot: "", paired: false, code: "123456", error: null })),
+  phoneUnpair: () => call<Settings>("phone_unpair", undefined, () => MOCK_SETTINGS),
+  remindersList: () => call<Reminder[]>("reminders_list", undefined, () => []),
+  reminderRemove: (id: string) => call<void>("reminder_remove", { id }, () => undefined),
   chatCancel: (id: number) => call<void>("chat_cancel", { id }, () => undefined).catch(() => undefined),
   /** The wake-word models installed (file names) — the user's own. */
   listWakewords: () => call<string[]>("list_wakewords", {}, () => []),
@@ -331,6 +382,8 @@ export const api = {
 export const EV = {
   overlayOpen: "izuki://overlay-open",
   overlayClose: "izuki://overlay-close",
+  /** A new task: clear what Izuki drew while explaining the last one. */
+  penClear: "izuki://pen-clear",
   frozenFrame: "izuki://frozen-frame",
   hand: "izuki://hand",
   status: "izuki://status",
@@ -375,6 +428,10 @@ export const EV = {
   orb: "izuki://orb",
   /** Memories were added or removed — the Memory list refreshes. */
   memoryChanged: "izuki://memory-changed",
+  remindersChanged: "izuki://reminders-changed",
+  phoneChanged: "izuki://phone-changed",
+  callChanged: "izuki://call-changed",
+  discordChanged: "izuki://discord-changed",
   /** Frontend-only: Izuki's voice started (true) or stopped (false) talking. */
   speaking: "izuki://speaking",
   /** Cut Izuki off mid-sentence. Sent by the chat's stop button, the

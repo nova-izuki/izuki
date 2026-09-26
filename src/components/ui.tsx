@@ -49,15 +49,18 @@ export function Row({
   icon?: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-2.5">
-      <div className="flex min-w-0 items-center gap-2.5">
+    // Wraps rather than squeezes: a control too wide to sit beside its
+    // label (a five-way picker) drops onto its own line, right-aligned,
+    // instead of crushing the label into a one-word column.
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2.5">
+      <div className="flex min-w-[160px] flex-1 basis-[160px] items-center gap-2.5">
         {icon && <span className="shrink-0 text-izk-muted">{icon}</span>}
         <div className="min-w-0">
           <div className="text-[13px] font-medium tracking-[-0.01em] text-izk-ink">{label}</div>
           {hint && <div className="mt-0.5 text-[11px] leading-snug text-izk-muted">{hint}</div>}
         </div>
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="ml-auto max-w-full shrink-0">{children}</div>
     </div>
   );
 }

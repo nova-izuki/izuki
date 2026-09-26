@@ -62,6 +62,8 @@ pub fn capture_frozen() -> Result<String> {
 pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession) -> VisionPlan {
     let settings = store.settings();
     automation::clear_abort();
+    // Esc stops it from here on — while the model looks, too.
+    let _esc = crate::hotkey::working();
 
     if session.created_at == 0 {
         session.created_at = now_ms();
@@ -154,6 +156,24 @@ pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession
         latency_ms: 0,
         ..Default::default()
     };
+
+    // Anything the model has to think about goes through the same look →
+    // act → check loop as a spoken request: it sees your marks, acts, looks
+    // again to check it worked, carries on until it can see the job done,
+    // and asks if it's unsure — rather than one blind guess. (With "confirm
+    // before acting" on, the one-shot plan is kept, to preview first.)
+    if should_ask_model(&session, &local) && !settings.confirm_before_act && frame.is_some() {
+        let prompt = if session.prompt.trim().is_empty() {
+            "Do what my marks on the screen show.".to_string()
+        } else {
+            session.prompt.clone()
+        };
+        let _ = app.emit(events::STATUS, StatusEvent::working("Izuki is looking…"));
+        drop(_esc);
+        let plan = submit_task(app, store, prompt, session.marks.clone(), frame);
+        set_frozen(None);
+        return plan;
+    }
 
     if should_ask_model(&session, &local) {
         if let Some(f) = &frame {
@@ -266,7 +286,7 @@ fn ask_model(
         // Izuki's "hands": the real controls on screen, numbered, so the
         // model can say "click #7" instead of guessing pixels.
         controls: controls_job.join().unwrap_or_default(),
-        memory: crate::memory::prompt_block(),
+        memory: crate::memory::prompt_block() + &crate::reminders::prompt_block(),
         windows: uia::open_windows(14),
     };
     let prep_ms = started.elapsed().as_millis();
@@ -275,7 +295,11 @@ fn ask_model(
     if chain.is_empty() {
         return Err(anyhow!("no brain is configured"));
     }
-    let plan = ask_racing(&chain, req, prep_ms)?;
+    let mut plan = ask_racing(&chain, req, prep_ms)?;
+    // "Remind me…" said while it works the screen: set it, don't say the tag.
+    if plan.summary.contains("[REMIND") {
+        plan.summary = crate::reminders::take_tags(&plan.summary);
+    }
     // Anything lasting the user just mentioned about themselves.
     for fact in &plan.remember {
         crate::memory::add(fact);
@@ -641,7 +665,12 @@ where
 fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> bool {
             let settings = store.settings();
             let move_ms = settings.move_duration_ms;
-            automation::clear_abort();
+            // No clear_abort() here: each task clears the flag once, when it
+            // starts. Clearing it again right before the clicks threw away a
+            // stop pressed while the model was still thinking.
+            // Esc stops Izuki for as long as it works the screen, whether or
+            // not the orb is up (a drawing or a replay has no orb).
+            let _esc = crate::hotkey::working();
 
             // If the command came from Izuki's chat bubble, Izuki holds the
             // keyboard right now — hand it back so typing lands in the app.
@@ -658,13 +687,13 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     }
 
                     // Pointing is only seen on the overlay — make sure it's up.
-                    if step.action == Intent::Point {
+                    if matches!(step.action, Intent::Point | Intent::Draw) {
                         let _ = crate::overlay::ensure_caption_visible(app);
                     }
                     // Tell the overlay's hand where it is going before we move
                     // the real pointer, so the animation leads rather than trails.
                     // (Instant skills happen nowhere on screen — no hand.)
-                    let placeless = matches!(step.action, Intent::OpenApp | Intent::OpenUrl | Intent::Search);
+                    let placeless = matches!(step.action, Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube);
                     if !placeless {
                     let _ = app.emit(
                         events::HAND,
@@ -676,6 +705,8 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             action: step.action,
                             duration_ms: move_ms,
                             label: Some(format!("{}/{}", i + 1, steps.len())),
+                            shape: step.shape.clone(),
+                            text: if step.action == Intent::Draw { step.text_to_type.clone() } else { None },
                         },
                     );
                     }
@@ -715,6 +746,8 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
 
 pub fn run_flow(app: &AppHandle, store: &Arc<Store>, id: &str) -> Result<()> {
     let flow = store.flow(id).ok_or_else(|| anyhow!("no such flow"))?;
+    // A replay is a new task: an old stop no longer applies.
+    automation::clear_abort();
     store.mutate_flow(id, |f| {
         f.run_count += 1;
         f.last_run = Some(now_ms());
@@ -737,12 +770,28 @@ pub fn run_flow(app: &AppHandle, store: &Arc<Store>, id: &str) -> Result<()> {
 /// model gets — the same pipeline `submit_draw` uses, just with an empty
 /// mark list standing in for the geometry-only fast path.
 pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String) -> VisionPlan {
+    submit_task(app, store, prompt, Vec::new(), None)
+}
+
+/// The look → act → check loop behind every request. `marks` are what the
+/// user drew (shown to the model on the first look), and `frame` the screen
+/// they drew them on — `None` takes a fresh look.
+fn submit_task(
+    app: &AppHandle,
+    store: &Arc<Store>,
+    prompt: String,
+    marks: Vec<crate::model::Mark>,
+    drawn_on: Option<Frame>,
+) -> VisionPlan {
     let settings = store.settings();
     // This task replaces any other: the old one sees the number change and
     // stops, and a question it was waiting on is let go.
     answer_help(None);
     let my_task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     automation::clear_abort();
+    let _esc = crate::hotkey::working();
+    // A new task: whatever was drawn to explain the last one goes.
+    let _ = app.emit("izuki://pen-clear", ());
     let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted();
 
     // "Keep going" after a task had to stop: pick it up where it left off.
@@ -759,8 +808,9 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
     let focus = matches!(settings.execution_mode, crate::settings::ExecutionMode::Focus);
 
     // Look first, before any Izuki UI goes up, so the model sees the user's
-    // screen rather than Izuki's own overlay.
-    let frame = capture::capture_all().ok();
+    // screen rather than Izuki's own overlay. (A drawing brings the screen
+    // it was drawn on — the marks are placed on that picture.)
+    let frame = drawn_on.or_else(|| capture::capture_all().ok());
 
     // Focus mode puts up the overlay as a *live*, click-through viewport so
     // the hand has somewhere to visibly point while it acts. It deliberately
@@ -817,7 +867,7 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
     let mut frame = frame;
     let mut done_so_far: Vec<String> = resumed;
     // What the user showed or told Izuki when it asked, for the next look.
-    let mut shown: Vec<crate::model::Mark> = Vec::new();
+    let mut shown: Vec<crate::model::Mark> = marks;
     let mut told: Option<String> = None;
     let mut asked = 0;
     // The same steps twice in a row means they aren't working.
@@ -973,6 +1023,33 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
         last_look = Some(look);
         if !this_round.is_empty() && this_round == last_round && !screen_changed {
             repeats += 1;
+            if repeats >= 2 && asked < 3 && alive() {
+                // Going in circles: rather than give up halfway, ask what
+                // to do and carry on with the answer.
+                eprintln!("[agent] stuck repeating the same steps — asking");
+                asked += 1;
+                repeats = 0;
+                last_round.clear();
+                if focus {
+                    let _ = overlay::hide_overlay(app);
+                }
+                let question = "Hmm, I'm stuck on this bit. What should I click? Tell me, or circle it.";
+                if let Some(answer) = ask_user(app, question, &alive) {
+                    let said = answer.prompt.trim().to_string();
+                    told = Some(format!(
+                        "Your last steps kept changing nothing, so you asked the user what to do. They answered{}{}. Do that now, a different way from before.",
+                        if answer.marks.is_empty() { "" } else { " by marking it on the screen (their mark is drawn on the screenshot)" },
+                        if said.is_empty() { String::new() } else { format!(", saying: \"{said}\"") },
+                    ));
+                    shown = answer.marks;
+                    std::thread::sleep(Duration::from_millis(350));
+                    match capture::capture_all() {
+                        Ok(f) => frame = f,
+                        Err(_) => break,
+                    }
+                    continue;
+                }
+            }
             if repeats >= 2 {
                 eprintln!("[agent] stuck repeating the same steps — stopping");
                 let mut plan = plan;
@@ -1146,6 +1223,12 @@ fn worth_saying(line: &str, last: &str) -> bool {
             .map(str::to_string)
             .collect()
     };
+    // "Waiting for the page to load…" is stale by the time it's said (the
+    // screen settled long before the model answered) — just carry on.
+    let l = line.to_lowercase();
+    if ["wait", "load", "hang on", "hold on", "give it a", "a moment", "a sec"].iter().any(|p| l.contains(p)) {
+        return false;
+    }
     let now = words(line);
     const FILLER: &[&str] = &[
         "got", "it", "okay", "ok", "alright", "sure", "on", "let's", "lets", "let", "me", "i'll", "now",
@@ -1237,6 +1320,8 @@ fn describe_step(s: &ActionStep) -> String {
         Intent::OpenApp => format!("opened the app \"{}\"", s.text_to_type.as_deref().unwrap_or("")),
         Intent::OpenUrl => format!("opened {}", s.text_to_type.as_deref().unwrap_or("a web page")),
         Intent::Search => format!("searched the web for \"{}\"", s.text_to_type.as_deref().unwrap_or("")),
+        Intent::PlayYoutube => format!("played \"{}\" on YouTube", s.text_to_type.as_deref().unwrap_or("")),
+        Intent::Draw => format!("drew a {} at {},{}", s.shape.as_deref().unwrap_or("mark"), s.x, s.y),
         other => format!("{} at {},{}", other.as_str(), s.x, s.y),
     };
     if s.reasoning.trim().is_empty() {

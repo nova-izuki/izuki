@@ -33,15 +33,27 @@ const SITES: Record<string, string> = {
 const OPEN = /^(?:(?:hey|ok(?:ay)?|please|can you|could you|would you)[\s,]+)*(?:open|launch|start|run|bring up|pull up|go to|visit)\s+(?:up\s+)?(.{2,48}?)(?:\s+(?:for me|please))?[.!?]*$/i;
 const DOMAIN = /^[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/\S*)?$/i;
 
+/**
+ * "play X on YouTube", "put on X on youtube", "youtube X" — a song or video
+ * to find and start. (Plain "play X" without YouTube stays with the agent:
+ * it might mean Spotify, or the video already on screen.)
+ */
+const PLAY = /^(?:(?:hey|ok(?:ay)?|please|can you|could you|would you)[\s,]+)*(?:(?:play|put on|find and play|start)\s+(.{2,80}?)\s+(?:on|in|from|off)\s+youtube|youtube\s+(.{2,80}?))(?:\s+(?:for me|please))?[.!?]*$/i;
+
 export interface Instant {
-  /** "app": try an installed app first, then `url` if there is one. */
-  kind: "app" | "url";
+  /** "app": try an installed app first, then `url` if there is one. "play": YouTube. */
+  kind: "app" | "url" | "play";
   name: string;
   url: string | null;
 }
 
 /** What an instant request asks for, or null if it isn't one. */
 export function parseInstant(said: string): Instant | null {
+  const p = said.trim().match(PLAY);
+  if (p) {
+    const what = (p[1] ?? p[2] ?? "").replace(/^(?:the\s+)?(?:song|video|music)\s+/i, "").trim();
+    if (what && !/^(it|this|that|something|anything|music)$/i.test(what)) return { kind: "play", name: what, url: null };
+  }
   const m = said.trim().match(OPEN);
   if (!m) return null;
   const name = m[1].replace(/^(?:the|my)\s+/i, "").replace(/\s+(?:app|application|website|site|page)$/i, "").trim();

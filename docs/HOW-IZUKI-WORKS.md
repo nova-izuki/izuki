@@ -43,7 +43,7 @@ While a session is on, the orb **never disappears**. It shows what Izuki is doin
 | Say or type **"bye"**, "that's all", "I'm done", "thanks, that's it"… | Izuki says a short goodbye and the orb closes. The wake word keeps working. |
 | Stay silent on **your turn** for the follow-up time (Settings, 5 s – 30 min) | The orb closes with a soft chime. |
 | Say or type **"stop"**, "cancel", "never mind" | Everything stops at once (see below) and the orb closes. |
-| Press **Esc** while Izuki is working or talking | Same as "stop". (Esc still works normally in your app too — Izuki only watches for it, and only while it's busy.) |
+| Press **Esc** while the orb is up — listening, thinking or talking — or while a drawing/replay runs | Same as "stop". (Esc still works normally in your app too — Izuki only watches for it, and only while the orb is up or it's working. Esc from the On-Screen Keyboard counts; Izuki's own Esc presses don't.) |
 | Press the **stop hotkey** (Ctrl+Shift+Q) — any time | Same as "stop". |
 | Click the orb's **✕** | Same as "stop". |
 | Say or type **"quit Izuki"**, "close the app", "exit Izuki" — or tray → Quit, or Settings → Quit | Izuki closes **completely**. (Open it again from the Start menu or desktop.) |
@@ -138,6 +138,11 @@ Targets:
 - *Microphone* — which mic to use. Automatic picks a connected headset first.
 - *Interrupt by talking* — talk over Izuki to cut it off. (On Bluetooth headphones, its
   voice sounds like a phone call while this is on.)
+- *Turn other sounds down while I listen* — music and videos get quieter while you talk,
+  then come back up exactly where they were.
+- *Sharper hearing* — also checks your words with a big cloud model (your Gemini or Groq key):
+  gets names like "Burna Boy" right and ignores background music. Never slower than a moment
+  past the on-device words; offline it's simply skipped.
 - *Keep listening after I stop talking* — how long a voice session waits for you (5 s – 30 min).
 - *Show my words as I talk* — your words under the orb, live.
 - *Speak responses* / *Captions* — hear Izuki, read Izuki, or both.
@@ -157,6 +162,34 @@ Targets:
 background mode, confirm before acting, practice mode (dry run).
 
 ---
+
+## 8b. Chat, reminders and your phone
+
+- **Chat tab** — a written chat with the same companion, using the fast chat lane (no
+  screenshot, no controls scan — the lightest request Izuki makes). If the reply is `[SCREEN]`,
+  the chat offers "Do it on my PC", which runs the normal task loop.
+- **Reminders** — no extra AI call: each chat lane is told the time and adds
+  `[REMIND YYYY-MM-DD HH:MM | text]` when asked. The core pulls those out (`reminders.rs`)
+  before anything is shown or spoken, saves them to `reminders.json`, and when one is due
+  says it, shows it, and texts the paired phone.
+- **Phone (Telegram)** — `telegram.rs` long-polls the bot from this PC, so nothing is hosted.
+  Pairing: the first chat to send the 6-digit code from Settings is the only one ever answered;
+  "Unpair" makes a new code. Voice notes are transcribed by the cloud ears (Groq/Gemini).
+  `[SCREEN]` replies run the task loop on the PC (if "Let my phone use this PC" is on) and the
+  result is texted back; `/screen` sends a screenshot, `/stop` stops, `/reminders` lists them.
+
+- **Apps (Composio)** — `composio.rs`. Every chat lane may answer `[APPS]` for anything in the
+  user's accounts (email, calendar, cloud files, Slack, Notion, socials…); the voice lane also
+  goes straight there for obvious app words when a key is set, and sends a quick "yes, send it"
+  back to the apps lane. The apps loop speaks a four-shape JSON protocol (`search`, `run`,
+  `connect`, `reply`) against Composio's Tool Router, so only the tools it searched for ever
+  reach the prompt. Unlinked apps return a sign-in link (opened on the PC, texted to the phone).
+  Premium (paid) tools are switched off. Nothing is sent, posted or deleted without a yes.
+
+- **Call Izuki** — `call.rs` serves `call.html` on 127.0.0.1 and runs a free Cloudflare quick
+  tunnel (`cloudflared.exe`, downloaded once) for an https link with a secret token. The phone's
+  own speech recognition and voice are used; replies come from `companion.rs` (shared with
+  Telegram). Phones without speech recognition upload a recording to `/hear` (cloud ears).
 
 ## 9. Checklist (run through after any change)
 

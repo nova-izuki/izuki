@@ -31,6 +31,25 @@ export function remember(role: Turn["role"], content: string) {
   if (history.length > 16) history.splice(0, history.length - 16);
 }
 
+/** The conversation so far (oldest first) — for the apps lane. */
+export function recentHistory(): Turn[] {
+  return history.slice();
+}
+
+/**
+ * Whether a request is about the user's accounts — email, calendar, cloud
+ * files, chat apps, socials — which the apps lane (Composio) does directly,
+ * with no screen at all. Only used when apps are linked.
+ */
+export function needsApps(text: string): boolean {
+  return APPS.test(text);
+}
+
+const APPS = new RegExp(
+  String.raw`(e-?mails?|inbox|gmail|outlook|mail from|unread|calendar|meetings?|events? (today|tomorrow|this week)|what'?s on my (day|schedule|agenda)|my schedule|agenda|google drive|my drive|dropbox|onedrive|google docs?|google sheets?|slack|discord|notion|trello|asana|todoist|github|linkedin|twitter|tweet|instagram|facebook|reddit|my dms?)`,
+  "i"
+);
+
 /**
  * Whether a request needs the screen (look at it or do something on it) —
  * decided locally and instantly. When unsure it says no: the chat model
@@ -53,10 +72,11 @@ const SCREEN = new RegExp(
 // ---------------------------------------------------------------- streaming
 
 /** "end": the model recognised a goodbye ([END]) — close the session after saying it. */
-export type LaneResult = "done" | "end" | "screen" | "failed" | "cancelled";
+export type LaneResult = "done" | "end" | "screen" | "apps" | "failed" | "cancelled";
 
 /** The model's "this conversation is over" tag — never spoken. */
-const END_TAG = /\s*\[\s*END\s*\]\s*/gi;
+/** [END], and any [REMIND … | …] (the core sets the reminder; it's never read out). */
+const END_TAG = /\s*\[\s*(?:END|REMIND[^\]]*)\]\s*/gi;
 
 let seq = Date.now();
 let activeId: number | null = null;
@@ -122,9 +142,15 @@ export function chatLane(
           history.pop(); // the screen path will record this turn itself
           return finish("screen");
         }
+        // Their apps (email, calendar…): the user's turn stays in the
+        // history — the apps lane reads it from there.
+        if (/^\[APPS\]?/i.test(head)) {
+          void api.chatCancel(id);
+          return finish("apps");
+        }
         const undecided =
           (!m && /^\s*\[?[a-z]*\]?$/i.test(raw) && raw.trim().length < 14) ||
-          (head.length > 0 && head.length < 8 && "[SCREEN]".startsWith(head.toUpperCase()));
+          (head.length > 0 && head.length < 8 && ("[SCREEN]".startsWith(head.toUpperCase()) || "[APPS]".startsWith(head.toUpperCase())));
         if (undecided && !d.done) return;
         headerDone = true;
         body = rest;

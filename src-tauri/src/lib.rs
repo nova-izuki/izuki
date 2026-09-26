@@ -2,10 +2,15 @@
 
 pub mod apps;
 pub mod automation;
+pub mod call;
 pub mod brain;
 pub mod capture;
+pub mod duck;
 pub mod chat;
 pub mod commands;
+pub mod discord;
+pub mod companion;
+pub mod composio;
 pub mod events;
 pub mod follow;
 pub mod ghost;
@@ -18,15 +23,21 @@ pub mod ocr;
 pub mod overlay;
 pub mod planner;
 pub mod recipes;
+pub mod reminders;
 pub mod settings;
 pub mod state;
 pub mod store;
+pub mod stt;
+pub mod telegram;
 pub mod tray;
 pub mod tts;
 pub mod uia;
 pub mod updates;
 pub mod vision;
 pub mod watcher;
+pub mod youtube;
+#[cfg(test)]
+mod provider_tests;
 
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
@@ -170,11 +181,24 @@ pub fn run() {
             commands::submit_voice_command,
             commands::answer_help,
             commands::set_busy,
+            commands::cloud_ears_ready,
+            commands::cloud_transcribe,
+            commands::duck_audio,
+            commands::phone_status,
+            commands::discord_status,
+            commands::discord_unpair,
+            commands::call_status,
+            commands::apps_ask,
+            commands::apps_test,
+            commands::phone_unpair,
+            commands::reminders_list,
+            commands::reminder_remove,
             commands::cancel_task,
             commands::quit_app,
             commands::selftest_enabled,
             commands::open_app,
             commands::open_url,
+            commands::play_youtube,
             commands::preview_plan,
             commands::panic_stop,
             commands::probe_provider,
@@ -202,10 +226,31 @@ pub fn run() {
             updates::check_later(&handle);
             watcher::spawn(handle.clone(), store.clone());
             follow::spawn(handle.clone(), store.clone());
+            reminders::spawn(handle.clone());
+            telegram::spawn(handle.clone());
+            discord::spawn(handle.clone());
+            call::spawn(handle.clone());
 
             Ok(())
         })
         .on_window_event(|window, event| {
+            // Back from the taskbar after being minimised: the same blank
+            // "frosted glass only" as coming back from the tray — redraw it.
+            if window.label() == overlay::CONFIG_LABEL {
+                use std::sync::atomic::{AtomicBool, Ordering};
+                static WAS_MINIMISED: AtomicBool = AtomicBool::new(false);
+                match event {
+                    WindowEvent::Resized(_) if window.is_minimized().unwrap_or(false) => {
+                        WAS_MINIMISED.store(true, Ordering::Relaxed);
+                    }
+                    WindowEvent::Focused(true) if WAS_MINIMISED.swap(false, Ordering::Relaxed) => {
+                        if let Some(w) = window.app_handle().get_webview_window(overlay::CONFIG_LABEL) {
+                            overlay::repaint(&w);
+                        }
+                    }
+                    _ => {}
+                }
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 // Izuki keeps its watchers running, so closing the panel hides
                 // it to the tray rather than quitting.
@@ -222,15 +267,18 @@ pub fn run() {
             // deliberate: `Ready` fires the moment the platform event loop
             // takes over, which is the earliest point a window's native
             // handle is reliably in a good state to show and focus.
+            // Quitting (or updating) mid-listen must never leave other
+            // apps' sound turned down.
+            if let tauri::RunEvent::Exit = event {
+                duck::restore_now();
+                call::stop();
+            }
             if let tauri::RunEvent::Ready = event {
                 // `--minimised` is passed by the autostart entry so Izuki
                 // boots into the tray rather than stealing focus at login.
                 let quiet = std::env::args().any(|a| a == "--minimised");
                 if !quiet {
-                    if let Some(config) = app.get_webview_window(overlay::CONFIG_LABEL) {
-                        let _ = config.show();
-                        let _ = config.set_focus();
-                    }
+                    let _ = overlay::show_config(app);
                 }
 
                 // Pick follow mode back up if it was left on last time Izuki

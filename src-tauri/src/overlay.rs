@@ -33,6 +33,13 @@ pub fn track_orb(app: &AppHandle) {
     });
 }
 
+/// A stop closes the orb. Said here first, because the webview's own
+/// "hidden" arrives a moment later — hiding the overlay in between would see
+/// the orb still "up" and bring the window straight back.
+pub fn orb_closed() {
+    ORB_UP.store(false, Ordering::Relaxed);
+}
+
 pub fn overlay_shown() -> bool {
     OVERLAY_SHOWN.load(Ordering::Relaxed)
 }
@@ -125,7 +132,23 @@ pub fn show_config(app: &AppHandle) -> Result<()> {
     w.show()?;
     w.unminimize().ok();
     w.set_focus()?;
+    repaint(&w);
     Ok(())
+}
+
+/// Coming back from the tray, the see-through panel sometimes showed only
+/// Windows' frosted backdrop — the page underneath was all there, but the
+/// web view hadn't drawn it again yet. A one-pixel size nudge and back makes
+/// it redraw at once (too quick to see).
+pub fn repaint(w: &WebviewWindow) {
+    let w = w.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        let Ok(size) = w.inner_size() else { return };
+        let _ = w.set_size(tauri::PhysicalSize::new(size.width, size.height + 1));
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        let _ = w.set_size(size);
+    });
 }
 
 /// Apply the Windows 11 backdrop, dark title colours and rounded corners.

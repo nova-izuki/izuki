@@ -34,6 +34,30 @@ const SYSTEM_PROMPT: &str = concat!(
     "those, set \"target\": 7 — this is exact and ALWAYS preferred over guessing x,y. For a ",
     "drag between two listed controls use \"target\" and \"target2\". Only use x,y for things ",
     "that are not in the list. Never make up a target number that isn't listed.\n",
+    "Some listed controls are marked \"shows on hover\": they're really there (a tab's close ✕, ",
+    "a notification's dismiss button, a row's menu) but only drawn while the mouse is over them, ",
+    "so you won't see them in the screenshot. Target them by id like any other — Izuki hovers ",
+    "first so they appear, then clicks. A field shown with = \"…\" already holds that text (the ",
+    "browser's address bar = the page you're on); \"typing goes here now\" marks the field ",
+    "with the keyboard focus. Trust these over reading pixels. Controls marked \"further down the page\" ",
+    "are real links and buttons scrolled out of view: target one by id and Izuki scrolls straight to it ",
+    "before acting — no need to scroll and look again first.\n",
+    "Teaching and explaining, like a tutor with a pen: when the user wants something explained, taught or ",
+    "walked through (a maths problem, a diagram, code, a chart, a video, a form), draw on the screen as you ",
+    "explain with {\"action\":\"draw\",\"shape\":\"circle|underline|arrow|box|note\",\"x\":…,\"y\":…} — ",
+    "circle/box: x,y is one corner and x2,y2 the other, around the thing; underline: x,y to x2,y2 under the ",
+    "words; arrow: from x,y to x2,y2; note: a few words in text_to_type written at x,y (a working step, an ",
+    "answer, a label). Nothing gets clicked. Draw in the order you explain, 2 to 6 marks, and put the ",
+    "explanation itself in `summary` step by step, the way a patient teacher talks — the marks stay on screen ",
+    "while it's said. If a video is playing, pause it first (key k on YouTube, otherwise space), explain, and ",
+    "leave it paused unless they ask to carry on.\n",
+    "Requests are usually spoken and run through speech recognition, so they can be short, ",
+    "misheard or misspelled (\"play bonto by bonto\" = Burna Boy's \"Bundle by Bundle\", ",
+    "\"open you tube\", \"blackbored\", \"ms word\"). Work out what they most likely meant from ",
+    "the words, the screen and what you remember, and do that — never take a garbled word ",
+    "literally, and never ask them to repeat themselves just because the wording is odd. A ",
+    "one- or two-word request (\"spotify\", \"louder\", \"next\", \"close it\") means the obvious ",
+    "action on what's in front of them.\n",
     "Your personality: warm, quick and a little playful — a close friend who happens to be ",
     "brilliant with computers, never a manual. `summary` is read aloud in your voice, so write ",
     "it the way a person talks: short, natural, contractions, the odd \"oh!\" or \"hmm\" when it ",
@@ -54,6 +78,9 @@ const SYSTEM_PROMPT: &str = concat!(
     "unexpected is in the way (a pop-up, cookie banner, sign-in, update prompt, ad), deal with it ",
     "first. If a step didn't work, try a different way (keyboard instead of mouse, search instead ",
     "of browsing, another menu). If something you need is in another open window, switch to it. ",
+    "An ad is not what they asked for: if you see \"Ad\", \"Sponsored\", a countdown or a Skip button, the ",
+    "video they wanted isn't playing yet — click Skip when it's there, otherwise set \"wait\" to the seconds left ",
+    "and look again. After a play_youtube step that says it started playing, the job is done unless they asked for more.\n",
     "Check the result on screen before calling it done: go through EVERY part of the request and ",
     "make sure you can SEE each one finished in this screenshot (the app is open AND the text is ",
     "typed in it, the song is actually playing, the message shows as sent). Steps listed as ",
@@ -63,7 +90,9 @@ const SYSTEM_PROMPT: &str = concat!(
     "\"text_to_type\":\"notepad\"} opens an installed app by name; {\"action\":\"open_url\",",
     "\"text_to_type\":\"https://www.youtube.com/results?search_query=lofi+music\"} opens a web ",
     "address in the browser (use the site's search URL to search a site); {\"action\":\"search\",",
-    "\"text_to_type\":\"blackboard login\"} searches the web. They need no x/y. After one, ",
+    "\"text_to_type\":\"blackboard login\"} searches the web; {\"action\":\"play_youtube\",",
+    "\"text_to_type\":\"bundle by bundle burna boy\"} finds a video on YouTube and starts it in one go ",
+    "(it also skips YouTube ads by itself) — use it for any song or video to play there. They need no x/y. After one, ",
     "set \"wait\": 1 and look again before typing — the new window takes a moment to appear.\n",
     "Finding something (a site, a link, a button, a file): 1) look at what's on screen — open ",
     "tabs, the bookmarks bar, links on the page, desktop icons, the taskbar; 2) if it could be ",
@@ -96,22 +125,27 @@ const SYSTEM_PROMPT: &str = concat!(
     "address bar (ctrl+l) over hunting for small icons.\n",
     "If you truly can't tell which thing they mean (several equally likely options and nothing ",
     "you remember decides it), don't guess: leave `steps` empty and set \"ask\" to one short ",
-    "spoken question, e.g. \"Which account? Circle it for me.\" They'll circle it on screen or ",
-    "tell you, and you'll get the screen back with their mark drawn on it.\n",
+    "spoken question that names the real choices you can see, e.g. \"Want me to sign in with ",
+    "Google or with Microsoft?\" or \"The first result or the official channel?\" — at most three, ",
+    "easy to answer in a word. They'll answer out loud, type it, or circle it on screen, and ",
+    "you'll get the screen back with their answer (and any mark drawn on it); then carry on ",
+    "from where you were without redoing anything.\n",
     "Before anything final or hard to undo — submitting a form or assignment, sending a message ",
     "or email, buying, deleting, posting, changing an account — stop right before that last ",
     "click and set \"ask\" to a short question so the user can check it first (\"It's all filled ",
     "in — want me to submit it?\"), unless they already told you to go ahead with exactly that.\n",
     "To SHOW the user something — \"where's the…\", \"point at it\", \"what's that blue thing\", ",
-    "explaining what's on screen — use \"point\" steps (they circle it on screen without ",
-    "clicking) and say what it is in `summary`. Several points in a row walk them through it.\n",
+    "explaining what's on screen — use \"point\" steps (the hand goes there and circles it, nothing is ",
+    "clicked) or \"draw\" steps (circle or box it, an arrow to it, underline it, a short note beside it — ",
+    "whatever shows it best), and say \"here it is\" and what it is in `summary`. Several in a row walk ",
+    "them through it.\n",
     "Reply with JSON only. No prose, no markdown fence. Shape:\n",
     "{\"summary\":\"one short sentence, or the full answer if this was a question\",",
     "\"mood\":\"cheerful\",\"remember\":[],\"notes\":\"plan / what I've learned\",\"done\":false,\"wait\":0,",
     "\"steps\":[{\"action\":\"click|double_click|right_click|",
-    "type|drag|hover|scroll|key|copy|point|open_app|open_url|search\",\"target\":int|null,\"target2\":int|null,",
+    "type|drag|hover|scroll|key|copy|point|draw|open_app|open_url|search|play_youtube\",\"target\":int|null,\"target2\":int|null,",
     "\"x\":int,\"y\":int,\"x2\":int|null,\"y2\":int|null,",
-    "\"text_to_type\":string|null,\"key\":string|null,\"scroll_amount\":int|null,",
+    "\"text_to_type\":string|null,\"key\":string|null,\"scroll_amount\":int|null,\"shape\":string|null,",
     "\"confidence\":0.0-1.0,\"reasoning\":\"short\"}]}\n",
     "Coordinates are pixels in the image you were given: (0,0) is its top-left corner. ",
     "Keys use names like enter, tab, escape, ctrl+a, ctrl+l, alt+f4, win. ",
@@ -165,10 +199,23 @@ impl VisionRequest {
             let ix = ((cx - self.desktop.x) as f64 * fx).round() as i32;
             let iy = ((cy - self.desktop.y) as f64 * fy).round() as i32;
             let kind = c.kind.to_lowercase();
+            let mut extra = String::new();
+            if !c.value.is_empty() {
+                extra.push_str(&format!(" = \"{}\"", c.value));
+            }
+            if c.focused {
+                extra.push_str(" (typing goes here now)");
+            }
+            if c.hidden {
+                extra.push_str(" (shows on hover — not visible in the screenshot)");
+            }
+            if c.below {
+                extra.push_str(" (further down the page — target it and Izuki scrolls to it)");
+            }
             if c.name.is_empty() {
-                s.push_str(&format!("[{}] {} (no label) at {},{}\n", c.id, kind, ix, iy));
+                s.push_str(&format!("[{}] {} (no label) at {},{}{extra}\n", c.id, kind, ix, iy));
             } else {
-                s.push_str(&format!("[{}] {} \"{}\" at {},{}\n", c.id, kind, c.name, ix, iy));
+                s.push_str(&format!("[{}] {} \"{}\" at {},{}{extra}\n", c.id, kind, c.name, ix, iy));
             }
         }
         s
@@ -311,7 +358,11 @@ pub fn probe(cfg: &ProviderConfig) -> Result<String> {
 
     match cfg.id {
         ProviderId::Ollama => {
-            let res = c.get(format!("{base}/api/tags")).send()?;
+            let base = base.trim_end_matches("/v1").trim_end_matches("/api");
+            let res = c
+                .get(format!("{base}/api/tags"))
+                .send()
+                .context("Ollama isn't running — start the Ollama app (or install it from ollama.com)")?;
             if !res.status().is_success() {
                 return Err(anyhow!("Ollama answered {}", res.status()));
             }
@@ -355,7 +406,8 @@ pub fn probe(cfg: &ProviderConfig) -> Result<String> {
                 Err(anyhow!("9Router answered {}", res.status()))
             }
         }
-        _ if cfg.api_key.trim().is_empty() => {
+        // Local servers (LM Studio, llama.cpp, vLLM…) usually need no key.
+        _ if cfg.api_key.trim().is_empty() && !cfg.id.is_local() => {
             Err(anyhow!("add an API key first"))
         }
         ProviderId::Gemini => {
@@ -382,11 +434,11 @@ pub fn probe(cfg: &ProviderConfig) -> Result<String> {
             }
         }
         _ => {
-            let res = c
-                .get(format!("{base}/models"))
-                .bearer_auth(cfg.api_key.trim())
-                .send()
-                ?;
+            let mut rq = c.get(format!("{base}/models"));
+            if !cfg.api_key.trim().is_empty() {
+                rq = rq.bearer_auth(cfg.api_key.trim());
+            }
+            let res = rq.send().with_context(|| format!("nothing answered at {base} — is it running?"))?;
             if res.status().is_success() {
                 Ok(format!("ok — key accepted, using {}", cfg.model))
             } else {
@@ -401,30 +453,64 @@ pub fn probe(cfg: &ProviderConfig) -> Result<String> {
 // ---------------------------------------------------------------------------
 
 fn ask_ollama(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
-    let base = cfg.base_url.trim_end_matches('/');
-    let body = json!({
-        "model": cfg.model,
-        "prompt": format!("{SYSTEM_PROMPT}\n\n{}", req.user_text()),
-        "images": [req.b64()],
-        "stream": false,
-        "format": "json",
-        "options": { "temperature": 0.1, "num_predict": 1500 }
-    });
+    let base = cfg.base_url.trim_end_matches('/').trim_end_matches("/v1").trim_end_matches("/api");
+    // A model on the PC itself may have to load into memory first, and runs
+    // slower than a data centre — give it minutes, not seconds.
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(240))
+        .connect_timeout(Duration::from_secs(4))
+        .build()
+        .context("could not start the HTTP client")?;
+    let send = |with_image: bool| -> Result<(reqwest::StatusCode, Value)> {
+        let mut body = json!({
+            "model": cfg.model,
+            "prompt": format!("{SYSTEM_PROMPT}\n\n{}", req.user_text()),
+            "stream": false,
+            "format": "json",
+            "options": { "temperature": 0.1, "num_predict": 1500 }
+        });
+        if with_image {
+            body["images"] = json!([req.b64()]);
+        } else {
+            body["prompt"] = json!(format!(
+                "{SYSTEM_PROMPT}\n\n{}\n(No screenshot is attached — this model reads text only. Work from \
+                 the window title and the numbered controls list, acting on them with \"target\".)",
+                req.user_text()
+            ));
+        }
+        let res = client
+            .post(format!("{base}/api/generate"))
+            .json(&body)
+            .send()
+            .context("Ollama is not reachable — is the Ollama app running?")?;
+        let status = res.status();
+        let text = res.text().unwrap_or_default();
+        let value = serde_json::from_str(&text).unwrap_or_else(|_| json!({ "error": text.trim() }));
+        Ok((status, value))
+    };
 
-    let res = client()?
-        .post(format!("{base}/api/generate"))
-        .json(&body)
-        .send()
-        
-        .context("Ollama is not reachable — is it running?")?;
-
-    let status = res.status();
-    let value: Value = res.json().context("Ollama returned something odd")?;
+    let (mut status, mut value) = send(true)?;
+    // A text-only local model (llama3.2, qwen…) refuses pictures; the
+    // controls list is enough for it to act.
+    let refuses_pictures = |v: &Value| {
+        v["error"].as_str().is_some_and(|e| {
+            let e = e.to_lowercase();
+            e.contains("image") || e.contains("vision") || e.contains("missing data")
+        })
+    };
+    if !status.is_success() && refuses_pictures(&value) {
+        (status, value) = send(false)?;
+    }
     if !status.is_success() {
-        return Err(anyhow!(
-            "Ollama answered {status}: {}",
-            value["error"].as_str().unwrap_or("unknown error")
-        ));
+        let err = value["error"].as_str().unwrap_or("unknown error");
+        if status.as_u16() == 404 || err.contains("not found") {
+            return Err(anyhow!(
+                "Ollama doesn't have the model \"{}\" yet — run `ollama pull {}` once, then try again.",
+                cfg.model,
+                cfg.model
+            ));
+        }
+        return Err(anyhow!("Ollama answered {status}: {err}"));
     }
     Ok(value["response"].as_str().unwrap_or_default().to_string())
 }
@@ -921,6 +1007,8 @@ fn resolve_targets(steps: &mut Vec<ActionStep>, controls: &[crate::uia::Control]
             s.x = cx;
             s.y = cy;
             s.snapped_to = Some(if c.name.is_empty() { c.kind.clone() } else { c.name.clone() });
+            s.hover_first = c.hidden;
+            s.scroll_first = c.below;
             pinned = true;
         }
         if let Some(c) = s.target2.and_then(|id| find(id)) {
@@ -936,6 +1024,7 @@ fn resolve_targets(steps: &mut Vec<ActionStep>, controls: &[crate::uia::Control]
                 | Intent::RightClick
                 | Intent::Hover
                 | Intent::Point
+                | Intent::Draw
                 | Intent::Drag
                 | Intent::Copy
                 | Intent::Auto
@@ -995,7 +1084,7 @@ mod tests {
     use crate::uia::Control;
 
     fn control(id: u32, x: i32, y: i32) -> Control {
-        Control { id, kind: "Button".into(), name: format!("Button {id}"), rect: Rect { x, y, w: 20, h: 10 } }
+        Control { id, kind: "Button".into(), name: format!("Button {id}"), rect: Rect { x, y, w: 20, h: 10 }, hidden: false, value: String::new(), focused: false, below: false }
     }
 
     fn step(v: Value) -> ActionStep {

@@ -18,7 +18,12 @@ export type Intent =
   | "scroll"
   | "hover"
   | "point"
-  | "key";
+  | "key"
+  | "draw"
+  | "open_app"
+  | "open_url"
+  | "search"
+  | "play_youtube";
 
 export interface Point {
   x: number;
@@ -69,6 +74,7 @@ export interface ActionStep {
   reasoning: string;
   /** Set by the backend when UI Automation snapped the point to a real control. */
   snapped_to?: string | null;
+  hover_first?: boolean;
 }
 
 export interface VisionPlan {
@@ -85,6 +91,42 @@ export interface VisionPlan {
 }
 
 /** Something Izuki remembers about the user. */
+export interface Reminder {
+  id: string;
+  /** Due, Unix ms. */
+  at: number;
+  text: string;
+}
+
+export interface AppsAnswer {
+  text: string;
+  /** Sign-in links for apps not connected yet: [app, url]. */
+  links: Array<[string, string]>;
+}
+
+export interface CallStatus {
+  /** "off" | "downloading" | "starting" | "ready" | "error" */
+  state: string;
+  link: string;
+  error: string | null;
+}
+
+export interface DiscordStatus {
+  bot: string;
+  /** Adds the bot to a server of yours (you can DM it after). */
+  invite: string;
+  paired: boolean;
+  code: string;
+  error: string | null;
+}
+
+export interface PhoneStatus {
+  bot: string;
+  paired: boolean;
+  code: string;
+  error: string | null;
+}
+
 export interface Memory {
   id: string;
   text: string;
@@ -278,6 +320,28 @@ export interface Settings {
   show_transcript: boolean;
   /** Talk over Izuki to interrupt it (it listens while it answers). */
   barge_in: boolean;
+  /** Turn other apps' sound down while Izuki listens. */
+  duck_while_listening: boolean;
+  /** Double-check your words with a cloud speech model (Groq or Gemini key). */
+  cloud_ears: boolean;
+  /** Telegram bot token from @BotFather — Izuki on your phone. */
+  telegram_token: string;
+  /** The paired Telegram chat (0 = none). */
+  telegram_chat_id: number;
+  /** The code sent to the bot once to pair. */
+  telegram_code: string;
+  /** Discord bot token — Izuki on your phone through Discord. */
+  discord_token: string;
+  /** The paired Discord user ("" = none). */
+  discord_user_id: string;
+  /** Let the paired phone do things on this PC. */
+  phone_controls_pc: boolean;
+  /** Your free Composio key — Izuki in Gmail, Calendar, Drive, Slack… */
+  composio_api_key: string;
+  /** "Call Izuki" — the hands-free phone page through a free tunnel. */
+  call_enabled: boolean;
+  call_token: string;
+  composio_user_id: string;
   /** How long a conversation waits for you before closing (seconds, 5…1800). */
   follow_up_secs: number;
   /** Chat/caption look: matched to the screen, or fixed. */
@@ -336,6 +400,9 @@ export interface HandCommand {
   action: Intent;
   duration_ms: number;
   label?: string | null;
+  /** For "draw": circle, box, underline, arrow or note — and a note's words. */
+  shape?: string | null;
+  text?: string | null;
 }
 
 export interface StatusEvent {

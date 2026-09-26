@@ -45,6 +45,13 @@ happens to be great with computers. It can:
 | ✍️ **Draw to show it** | Hold **Ctrl+D**, circle something, let go, then say or type what you want. A circle is a click, an arrow is a drag, a box watches a region. |
 | 🧠 **Any brain you like** | Google Gemini (free), NVIDIA NIM (free), OpenRouter, OpenAI, Anthropic, a local model with Ollama, or any OpenAI-compatible server. Izuki races them and uses whichever answers first if one is slow. |
 | 💾 **Flows & watchers** | Anything Izuki does can be saved and replayed in one click, or triggered when something on screen changes. |
+| 💬 **Just chat** | A Chat tab for plain companion chat — plans, drafts, homework, advice — that never touches your screen. If something needs the PC, one tap lets Izuki do it. |
+| ⏰ **Reminders** | “Remind me at 6 to call Mum” — by voice, chat or phone. Izuki says it out loud when it's due and texts your phone. |
+| 📱 **On your phone, free** | Pair a Telegram bot (made in a minute with @BotFather) and text Izuki or send voice notes from anywhere — it can even do things on your PC and send you a screenshot. No app store, no server. |
+| 📲 **Izuki for phones, no PC needed** | Open [nova-izuki.github.io/izuki/app](https://nova-izuki.github.io/izuki/app/) on your phone and add it to your home screen: chat or talk hands-free, it remembers you, reminders go into your phone's calendar, and "Hey Siri, Izuki" works with a two-step Shortcut. Free with your own Gemini key; link your PC for more. |
+| 📞 **Call it from your phone** | Turn on *Call Izuki* and open the link on your phone to talk hands-free, like a call — your phone does the listening and talking, a free Cloudflare tunnel reaches your PC. |
+| 🔌 **In your apps** | With your own free Composio key: read and draft email, check your calendar, find files in Drive, post to Slack or Notion, and hundreds more — from chat, voice or your phone. It always shows a draft and asks before sending or posting. |
+| 🎧 **Hears you over music** | Other apps get quieter while you talk, and your words can be double-checked by a big cloud speech model that gets names right and ignores background songs. |
 | 🛑 **Always stoppable** | **Esc** (while it's working or talking) or **Ctrl+Shift+Q** (any time) stops everything instantly — the task, the voice, the listening. Say “quit Izuki” to close the app. |
 
 ## Install
@@ -82,7 +89,8 @@ Every shortcut can be changed in **Settings → Shortcuts**. To add a wake word:
 
 ## Privacy
 
-- Wake-word detection and speech-to-text run **on your PC**.
+- Wake-word detection and speech-to-text run **on your PC**. With *Sharper hearing* on (and a Gemini or Groq key), what you say to Izuki is also sent to that provider to transcribe — switch it off in Talk settings to keep speech on your PC.
+- Phone messages go through Telegram to Izuki on your PC; only the one phone you paired is answered.
 - When a request needs your screen, a screenshot is sent to **the AI provider you chose** — nowhere else. Plain conversation sends only text.
 - API keys, memories and settings stay in `%APPDATA%\Izuki` on your machine. Izuki never remembers passwords, keys or card numbers.
 - No accounts, no telemetry.

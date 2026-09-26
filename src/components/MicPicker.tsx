@@ -98,10 +98,11 @@ export function MicPicker() {
           <select
             value={mics.some((m) => m.label === chosen) ? chosen : ""}
             onChange={(e) => patch({ mic_device: e.target.value })}
-            className="izk-no-drag h-[30px] max-w-[170px] rounded-[10px] border border-white/10 bg-white/6 px-2 text-[12px] text-izk-ink outline-none"
+            title="Automatic picks a headset first, otherwise the best real mic"
+            className="izk-no-drag h-[30px] max-w-[170px] truncate rounded-[10px] border border-white/10 bg-white/6 px-2 text-[12px] text-izk-ink outline-none"
           >
             <option value="" className="bg-[#1b2230]">
-              Automatic (headset first)
+              Automatic
             </option>
             {[...mics]
               .sort((a, b) => Number(isVirtual(a.label)) - Number(isVirtual(b.label)))

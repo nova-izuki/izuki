@@ -208,6 +208,50 @@ pub struct Settings {
     /// headset that keeps its mic open, so replies play in call quality.)
     #[serde(default = "default_true")]
     pub barge_in: bool,
+    /// Turn other apps' sound (music, videos) down while Izuki listens to
+    /// you, then back up — like Siri lowering your music.
+    #[serde(default = "default_true")]
+    pub duck_while_listening: bool,
+    /// Double-check what you said with a big cloud speech model (your Groq
+    /// key, else Gemini): gets names like "Burna Boy" right and leaves out
+    /// the lyrics of music playing in the room. The on-device model still
+    /// answers whenever the cloud is slow or offline.
+    #[serde(default = "default_true")]
+    pub cloud_ears: bool,
+    /// Izuki on your phone: a Telegram bot you made with @BotFather (free).
+    /// Izuki on this PC answers it — no server, no app store.
+    #[serde(default)]
+    pub telegram_token: String,
+    /// The one Telegram chat paired with this PC (0 = not paired yet).
+    /// Messages from anyone else are refused.
+    #[serde(default)]
+    pub telegram_chat_id: i64,
+    /// The code you send the bot once to pair your phone.
+    #[serde(default)]
+    pub telegram_code: String,
+    /// Izuki on your phone through Discord (discord.rs): your own free bot.
+    #[serde(default)]
+    pub discord_token: String,
+    /// The one Discord user paired with this PC ("" = none yet).
+    #[serde(default)]
+    pub discord_user_id: String,
+    /// Let the paired phone ask Izuki to do things on this PC.
+    #[serde(default = "default_true")]
+    pub phone_controls_pc: bool,
+    /// Your own free Composio key: Izuki's access to Gmail, Calendar, Drive,
+    /// Slack, Notion, socials and more (composio.rs).
+    /// "Call Izuki": a hands-free voice page for your phone, reached through
+    /// a free Cloudflare tunnel (call.rs).
+    #[serde(default)]
+    pub call_enabled: bool,
+    /// The secret part of the call link — without it the page won't open.
+    #[serde(default)]
+    pub call_token: String,
+    #[serde(default)]
+    pub composio_api_key: String,
+    /// This PC's user at Composio (made once).
+    #[serde(default)]
+    pub composio_user_id: String,
     /// How long a conversation waits for you to say something before the
     /// orb closes, in seconds (5 s … 30 min). "That's all" closes it at once.
     #[serde(default = "default_follow_up")]
@@ -311,6 +355,15 @@ impl Settings {
             }
         }
         self.groq_api_key = clean_key(&self.groq_api_key);
+        self.telegram_token = clean_key(&self.telegram_token);
+        self.discord_token = clean_key(&self.discord_token);
+        self.composio_api_key = clean_key(&self.composio_api_key);
+        if self.call_token.len() < 20 {
+            self.call_token = uuid::Uuid::new_v4().simple().to_string();
+        }
+        if self.telegram_code.len() != 6 {
+            self.telegram_code = format!("{:06}", rand::random::<u32>() % 1_000_000);
+        }
         if self.move_duration_ms == 0 {
             self.move_duration_ms = 320;
         }
@@ -439,6 +492,18 @@ impl Default for Settings {
             mic_device: String::new(),
             show_transcript: true,
             barge_in: true,
+            duck_while_listening: true,
+            cloud_ears: true,
+            telegram_token: String::new(),
+            telegram_chat_id: 0,
+            telegram_code: String::new(),
+            discord_token: String::new(),
+            discord_user_id: String::new(),
+            phone_controls_pc: true,
+            call_enabled: false,
+            call_token: String::new(),
+            composio_api_key: String::new(),
+            composio_user_id: String::new(),
             follow_up_secs: default_follow_up(),
             chat_style: default_chat_style(),
             chat_color: default_chat_color(),

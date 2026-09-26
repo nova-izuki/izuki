@@ -34,9 +34,13 @@ dirs = "7"
 rand = "0.9"
 base64 = "0.23"
 uuid = { version = "1", features = ["v4"] }
+tiny_http = "0.12"
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
-tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "macros"] }
-reqwest = { version = "0.13", features = ["json", "blocking"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "macros", "net"] }
+reqwest = { version = "0.13", features = ["json", "blocking", "multipart"] }
 
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 enigo = "0.6"
@@ -60,17 +64,22 @@ features = [
   "Foundation_Collections",
   "Globalization",
   "Graphics_Imaging",
+  "Media_Core",
   "Media_Ocr",
+  "Media_SpeechSynthesis",
   "Storage_Streams",
   "Win32_Foundation",
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
+  "Win32_Media_Audio",
   "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
   "Win32_System_ProcessStatus",
   "Win32_System_Threading",
   "Win32_UI_HiDpi",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging",
+  "Win32_System_Variant",
 ]
 
 [profile.release]

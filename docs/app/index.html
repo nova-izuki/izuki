@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0e0e13">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Izuki">
+<meta name="description" content="Izuki on your phone — a free AI companion. Chat or talk hands-free, reminders, and your PC when you want it.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Izuki</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --ground: #0e0e13;
+    --raised: rgba(255, 255, 255, 0.06);
+    --line: rgba(255, 255, 255, 0.09);
+    --ink: #ecebf5;
+    --muted: #9ea0ad;
+    --violet: #7c5cff;
+    --teal: #4ecdc4;
+    --danger: #ff6b81;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background:
+      radial-gradient(120% 60% at 0% -10%, rgba(124, 92, 255, 0.26), transparent 60%),
+      radial-gradient(110% 55% at 110% 110%, rgba(78, 205, 196, 0.2), transparent 60%),
+      var(--ground);
+    color: var(--ink);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior: none;
+  }
+  button, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  a { color: var(--teal); }
+
+  .app { height: 100%; display: flex; flex-direction: column; padding: var(--safe-top) 16px 0; max-width: 640px; margin: 0 auto; }
+  header { display: flex; align-items: center; justify-content: space-between; padding-block: 12px 8px; }
+  .brand { font-size: 17px; font-weight: 700; letter-spacing: 0.14em;
+    background: linear-gradient(90deg, #a78bfa, var(--teal)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .icon-btn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--raised); display: grid; place-items: center; }
+  .icon-btn svg { width: 18px; height: 18px; }
+
+  #log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-block: 8px 12px; }
+  .msg { max-width: 86%; padding: 9px 13px; border-radius: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .me { align-self: flex-end; background: linear-gradient(135deg, rgba(124, 92, 255, 0.9), rgba(78, 205, 196, 0.75)); color: #fff; border-bottom-right-radius: 6px; }
+  .izuki { align-self: flex-start; background: var(--raised); border: 1px solid var(--line); border-bottom-left-radius: 6px; }
+  .izuki.error { color: var(--danger); }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); border-radius: 999px; padding: 6px 12px; font-size: 13px; text-decoration: none; color: var(--ink); }
+  .chip.primary { background: var(--teal); color: var(--ground); border-color: transparent; font-weight: 600; }
+  .welcome { margin: auto 0; text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; padding-block: 16px; }
+  .welcome h1 { margin: 0; font-size: 22px; text-wrap: balance; }
+  .welcome p { margin: 0; color: var(--muted); max-width: 34ch; }
+
+  footer { padding-block: 8px calc(12px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  #status { color: var(--muted); font-size: 13px; min-height: 1.3em; text-align: center; }
+  .bar { display: flex; gap: 8px; width: 100%; align-items: flex-end; }
+  #orb {
+    width: 52px; height: 52px; flex: none; border-radius: 50%; border: 0;
+    background: radial-gradient(circle at 35% 30%, #b8a6ff, var(--violet) 45%, #2b6f8f 100%);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45); display: grid; place-items: center; color: #fff;
+  }
+  #orb svg { width: 22px; height: 22px; }
+  #orb.listening { background: radial-gradient(circle at 35% 30%, #a7fff6, var(--teal) 45%, #1d5e6b 100%); animation: pulse 1.3s ease-in-out infinite; }
+  #orb.thinking { animation: spin 1.2s linear infinite; }
+  #orb.speaking { animation: pulse 0.9s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+  @keyframes spin { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { #orb { animation: none !important; } }
+  #text { flex: 1; min-width: 0; max-height: 120px; resize: none; border-radius: 22px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.35); padding: 13px 16px; }
+  #send { flex: none; height: 52px; padding: 0 18px; border: 0; border-radius: 26px; background: var(--violet); color: #fff; font-weight: 600; }
+  #send[disabled] { opacity: 0.4; }
+
+  /* settings / setup sheet */
+  .sheet { position: fixed; inset: 0; background: rgba(8, 8, 12, 0.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: flex; align-items: flex-end; justify-content: center; z-index: 10; }
+  .sheet[hidden] { display: none; }
+  .panel { width: 100%; max-width: 640px; max-height: calc(100% - var(--safe-top) - 20px); overflow-y: auto; background: #16161d; border: 1px solid var(--line); border-radius: 22px 22px 0 0; padding: 18px 16px calc(20px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 18px; }
+  .panel h2 { margin: 0; font-size: 18px; }
+  .panel h3 { margin: 0 0 6px; font-size: 15px; }
+  .panel p, .panel li { color: var(--muted); font-size: 14px; margin: 0; }
+  .panel ol { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+  .panel b { color: var(--ink); }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 13px; font-weight: 600; }
+  .field input { width: 100%; border-radius: 14px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.35); padding: 12px 14px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .btn { border: 0; border-radius: 999px; padding: 11px 18px; background: var(--violet); color: #fff; font-weight: 600; }
+  .btn.ghost { background: var(--raised); border: 1px solid var(--line); color: var(--ink); font-weight: 500; }
+  .btn.danger { background: none; border: 1px solid rgba(255, 107, 129, 0.4); color: var(--danger); font-weight: 500; }
+  .note { font-size: 12.5px; color: var(--muted); }
+  .ok { color: var(--teal); font-size: 13px; }
+  .bad { color: var(--danger); font-size: 13px; }
+  .mem { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .mem button { border: 0; background: none; color: var(--muted); padding: 4px 8px; }
+  code { background: rgba(255, 255, 255, 0.08); padding: 1px 6px; border-radius: 6px; font-size: 13px; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <span class="brand">IZUKI</span>
+    <button class="icon-btn" id="open-settings" type="button" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </header>
+
+  <main id="log" aria-live="polite"></main>
+
+  <footer>
+    <div id="status"></div>
+    <form class="bar" id="form" autocomplete="off">
+      <button id="orb" type="button" aria-label="Talk to Izuki">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg>
+      </button>
+      <textarea id="text" rows="1" placeholder="Message Izuki" aria-label="Message Izuki"></textarea>
+      <button id="send" type="submit" disabled>Send</button>
+    </form>
+  </footer>
+</div>
+
+<!-- first run and settings -->
+<div class="sheet" id="sheet" hidden>
+  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="row" style="justify-content: space-between">
+      <h2 id="sheet-title">Izuki settings</h2>
+      <button class="btn ghost" id="close-settings" type="button">Done</button>
+    </div>
+
+    <section>
+      <h3>1. Your free AI key</h3>
+      <p>Izuki runs on Google's free Gemini. Get a key (sign in → <b>Create API key</b>), copy it, and paste it here. It stays on this phone only.</p>
+      <div class="row" style="margin-top: 8px"><a class="chip" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free Gemini key ↗</a></div>
+      <div class="field" style="margin-top: 10px">
+        <label for="key">Gemini key</label>
+        <input id="key" type="password" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="row" style="margin-top: 8px"><button class="btn" id="save-key" type="button">Save and test</button><span id="key-result"></span></div>
+    </section>
+
+    <section>
+      <h3>2. Put Izuki on your home screen</h3>
+      <p><b>iPhone:</b> in Safari tap <b>Share</b> → <b>Add to Home Screen</b>. <b>Android:</b> Chrome menu ⋮ → <b>Add to Home screen</b>. It opens like an app.</p>
+    </section>
+
+    <section>
+      <h3>3. “Hey Siri, Izuki” (iPhone, optional)</h3>
+      <p>In the <b>Shortcuts</b> app: tap <b>+</b>, name it <b>Izuki</b>, then add two actions:</p>
+      <ol>
+        <li><b>Dictate Text</b></li>
+        <li><b>Open URLs</b> with <code id="siri-url"></code> and tap the end to insert <b>Dictated Text</b></li>
+      </ol>
+      <p style="margin-top: 6px">Say “Hey Siri, Izuki”, then what you want — Izuki opens and answers. You can also put it on the Action Button or Back Tap (Settings → Accessibility → Touch → Back Tap).</p>
+    </section>
+
+    <section>
+      <h3>4. Link your PC (optional)</h3>
+      <p>Have Izuki on a Windows PC? In the PC app turn on <b>Call Izuki from your phone</b> and paste its link here. Then “play lofi on my PC”, your email and calendar, and anything else on the PC work from here too.</p>
+      <div class="field" style="margin-top: 10px">
+        <label for="pc">PC link</label>
+        <input id="pc" type="url" placeholder="https://….trycloudflare.com/…/" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="row" style="margin-top: 8px"><button class="btn ghost" id="save-pc" type="button">Save link</button><span id="pc-result"></span></div>
+    </section>
+
+    <section>
+      <h3>What Izuki remembers</h3>
+      <div id="memories"></div>
+    </section>
+
+    <section class="row">
+      <button class="btn danger" id="clear-chat" type="button">Clear chat</button>
+      <button class="btn danger" id="forget-all" type="button">Forget everything</button>
+    </section>
+    <p class="note">Free and private: your key, chats, memories and reminders are kept on this phone. Messages go straight to Google's Gemini (and to your own PC if linked) — nowhere else.</p>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+
+  // ------------------------------------------------------------ storage
+  const store = {
+    get(k, fallback) {
+      try { const v = localStorage.getItem("izuki." + k); return v == null ? fallback : JSON.parse(v); } catch { return fallback; }
+    },
+    set(k, v) { try { localStorage.setItem("izuki." + k, JSON.stringify(v)); } catch {} },
+  };
+  let key = store.get("key", "");
+  let pc = store.get("pc", "");
+  let history = store.get("history", []);   // [{role:"user"|"model", text}]
+  let memories = store.get("memories", []); // ["User's name is Sam", …]
+  let reminders = store.get("reminders", []); // [{at, text, done}]
+  const saveAll = () => {
+    store.set("history", history.slice(-40));
+    store.set("memories", memories.slice(-80));
+    store.set("reminders", reminders.filter((r) => !r.done || Date.now() - r.at < 86400000));
+  };
+
+  // ------------------------------------------------------------ UI
+  const log = $("log"), status = $("status"), orb = $("orb"), text = $("text"), send = $("send");
+  const setStatus = (s) => (status.textContent = s || "");
+  const setOrb = (mode) => (orb.className = mode || "");
+
+  function bubble(who, content, opts = {}) {
+    log.querySelector(".welcome")?.remove();
+    const div = document.createElement("div");
+    div.className = "msg " + who + (opts.error ? " error" : "");
+    div.textContent = content;
+    if (opts.chips?.length) {
+      const row = document.createElement("div");
+      row.className = "chip-row";
+      for (const c of opts.chips) row.appendChild(c);
+      div.appendChild(row);
+    }
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+    return div;
+  }
+
+  function welcome() {
+    log.innerHTML = "";
+    const w = document.createElement("div");
+    w.className = "welcome";
+    const h = document.createElement("h1");
+    h.textContent = key ? "Hey! What's on your mind?" : "Hi, I'm Izuki 👋";
+    const p = document.createElement("p");
+    p.textContent = key
+      ? "Type, or tap the mic and just talk. Ask anything, plan your day, draft a message, or set a reminder."
+      : "Your free AI companion. Add a free Gemini key to start — it takes a minute.";
+    w.append(h, p);
+    const row = document.createElement("div");
+    row.className = "chip-row";
+    row.style.justifyContent = "center";
+    if (!key) {
+      const b = document.createElement("button");
+      b.className = "chip primary"; b.type = "button"; b.textContent = "Set me up";
+      b.onclick = openSettings;
+      row.appendChild(b);
+    } else {
+      for (const idea of ["Remind me in 20 minutes to stretch", "Plan my evening", "Draft a text saying I'm running late"]) {
+        const b = document.createElement("button");
+        b.className = "chip"; b.type = "button"; b.textContent = idea;
+        b.onclick = () => ask(idea);
+        row.appendChild(b);
+      }
+    }
+    w.appendChild(row);
+    log.appendChild(w);
+  }
+
+  function render() {
+    if (!history.length) return welcome();
+    log.innerHTML = "";
+    for (const m of history.slice(-30)) bubble(m.role === "user" ? "me" : "izuki", m.text);
+  }
+
+  // ------------------------------------------------------------ the brain
+  function systemPrompt() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const in20 = new Date(now.getTime() + 20 * 60000);
+    const stamp = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return [
+      "You are Izuki, the user's AI companion on their phone — warm, quick, a little playful, like a close friend who's brilliant at everything.",
+      "Keep replies short and natural (a few sentences) unless they ask for detail. Plain text; a short dash list only when it really helps; an emoji now and then at most.",
+      "What you write may be read aloud, so write the way a person talks.",
+      `It is now ${now.toLocaleString([], { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })} on the user's phone.`,
+      `If they ask to be reminded of something, confirm it and add on its own line at the very end: [REMIND YYYY-MM-DD HH:MM | what to remind them] in their local time, 24-hour clock ("in 20 minutes" is ${stamp(in20)}).`,
+      "If they tell you something lasting about themselves (name, likes, work, people in their life, how they want you to act), add a line [REMEMBER short third-person fact]. Never passwords, codes or card numbers.",
+      pc
+        ? "If they want something done on their computer, or anything in their email, calendar, cloud files or other accounts, reply with exactly [PC] and nothing else — their PC will do it."
+        : "You can't reach their computer, email or other accounts from here. If they ask for that, tell them kindly they can link Izuki on their PC in Settings to do it.",
+      memories.length ? "What you remember about them:\n- " + memories.slice(-40).join("\n- ") : "",
+    ].filter(Boolean).join("\n");
+  }
+
+  const MODEL = "gemini-2.5-flash", LITE = "gemini-2.5-flash-lite";
+  let liteUntil = store.get("liteUntil", 0);
+
+  /** Stream a reply; onText gets the text so far. Returns the whole reply. */
+  async function gemini(contents, onText, model) {
+    model = model || (Date.now() < liteUntil ? LITE : MODEL);
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemPrompt() }] },
+        contents,
+        generationConfig: { temperature: 0.7, maxOutputTokens: 900, thinkingConfig: { thinkingBudget: 0 } },
+      }),
+    });
+    if ((res.status === 429 || res.status === 503) && model === MODEL) {
+      // The main model's free allowance is used up or busy: its lighter
+      // sibling has its own, and is quicker anyway.
+      liteUntil = Date.now() + (res.status === 429 ? 3600000 : 60000);
+      store.set("liteUntil", liteUntil);
+      return gemini(contents, onText, LITE);
+    }
+    if (!res.ok) {
+      let why = "";
+      try { why = (await res.json()).error?.message || ""; } catch {}
+      if (res.status === 400 && /API key/i.test(why)) throw new Error("That Gemini key doesn't work — check it in Settings.");
+      throw new Error(why || `Gemini answered ${res.status}`);
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "", out = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line.startsWith("data:")) continue;
+        try {
+          const v = JSON.parse(line.slice(5));
+          for (const p of v.candidates?.[0]?.content?.parts || []) if (p.text) out += p.text;
+          onText?.(out);
+        } catch {}
+      }
+    }
+    return out.trim();
+  }
+
+  const TAGS = /\s*\[(REMIND|REMEMBER)[^\]]*\]?\s*/gi;
+  const shown = (t) => t.replace(TAGS, " ").replace(/\s+\n/g, "\n").trim();
+
+  /** Pull [REMIND …] and [REMEMBER …] out of a reply; returns chips to show. */
+  function takeTags(reply) {
+    const chips = [];
+    for (const m of reply.matchAll(/\[REMEMBER\s+([^\]]+)\]/gi)) {
+      const fact = m[1].trim();
+      if (fact && !memories.includes(fact)) memories.push(fact);
+    }
+    for (const m of reply.matchAll(/\[REMIND\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})\s*\|\s*([^\]]+)\]/gi)) {
+      const at = new Date(`${m[1]}T${m[2]}:00`).getTime();
+      const what = m[3].trim();
+      if (!isFinite(at) || !what) continue;
+      reminders.push({ at, text: what, done: false });
+      chips.push(calendarChip(at, what));
+    }
+    saveAll();
+    scheduleReminders();
+    return chips;
+  }
+
+  // A reminder that rings even when Izuki is closed: an event with an alert,
+  // added to the phone's own calendar in one tap.
+  function calendarChip(at, what) {
+    const z = (d) => new Date(d).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+    const esc = (s) => s.replace(/[\\,;]/g, (c) => "\\" + c).replace(/\n/g, " ");
+    const ics = [
+      "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Izuki//Phone//EN", "BEGIN:VEVENT",
+      `UID:${at}-${Math.random().toString(36).slice(2)}@izuki`, `DTSTAMP:${z(Date.now())}`,
+      `DTSTART:${z(at)}`, `DTEND:${z(at + 15 * 60000)}`, `SUMMARY:${esc(what)}`, "DESCRIPTION:Reminder from Izuki",
+      "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${esc(what)}`, "TRIGGER:PT0M", "END:VALARM",
+      "END:VEVENT", "END:VCALENDAR",
+    ].join("\r\n");
+    const a = document.createElement("a");
+    a.className = "chip primary";
+    a.href = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
+    a.download = "izuki-reminder.ics";
+    const when = new Date(at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
+    a.textContent = `⏰ Add to calendar (${when})`;
+    return a;
+  }
+
+  // While Izuki is open, it also says the reminder itself.
+  let reminderTimer = null;
+  function scheduleReminders() {
+    clearTimeout(reminderTimer);
+    const next = reminders.filter((r) => !r.done).sort((a, b) => a.at - b.at)[0];
+    if (!next) return;
+    reminderTimer = setTimeout(() => {
+      next.done = true;
+      saveAll();
+      const line = "Hey — reminder: " + next.text;
+      bubble("izuki", "⏰ " + line);
+      speak(line);
+      scheduleReminders();
+    }, Math.max(0, Math.min(next.at - Date.now(), 2 ** 31 - 1)));
+  }
+
+  /** Ask the linked PC (its Call Izuki page). */
+  async function askPc(said) {
+    const base = pc.endsWith("/") ? pc : pc + "/";
+    const r = await fetch(base + "talk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: said }) });
+    if (!r.ok) throw new Error("pc");
+    return r.json();
+  }
+
+  let busy = false;
+  async function ask(said, audio) {
+    said = (said || "").trim();
+    if (busy || (!said && !audio)) return;
+    if (!key) { openSettings(); return; }
+    busy = true;
+    send.disabled = true;
+    setOrb("thinking");
+    setStatus("Thinking…");
+    const me = bubble("me", said || "🎙️ …");
+    const out = bubble("izuki", "…");
+
+    const parts = audio
+      ? [{ inline_data: { mime_type: audio.type, data: audio.b64 } },
+         { text: "The user said this out loud to you. Start your reply with one line [HEARD: their exact words], then answer them." }]
+      : [{ text: said }];
+    const contents = history.slice(-16).map((m) => ({ role: m.role, parts: [{ text: m.text }] }));
+    contents.push({ role: "user", parts });
+
+    let reply = "";
+    try {
+      reply = await gemini(contents, (t) => {
+        const heard = t.match(/^\s*\[HEARD:\s*([^\]]*)\]?/i);
+        if (heard) { me.textContent = heard[1].trim() || "🎙️"; t = t.slice(heard[0].length); }
+        if (!/^\s*\[?P?C?\]?\s*$/i.test(t)) out.textContent = shown(t) || "…";
+        log.scrollTop = log.scrollHeight;
+      });
+      const heard = reply.match(/^\s*\[HEARD:\s*([^\]]*)\]\s*/i);
+      if (heard) { said = heard[1].trim(); reply = reply.slice(heard[0].length); }
+      history.push({ role: "user", text: said || "(voice message)" });
+
+      if (/^\s*\[PC\]\s*$/i.test(reply)) {
+        out.textContent = "On it — asking your PC…";
+        setStatus("Working on your PC…");
+        try {
+          const v = await askPc(said);
+          reply = v.text || "Done.";
+          const chips = (v.links || []).map(([name, url]) => {
+            const a = document.createElement("a");
+            a.className = "chip primary"; a.href = url; a.target = "_blank"; a.rel = "noopener";
+            a.textContent = "Connect " + name;
+            return a;
+          });
+          out.remove();
+          bubble("izuki", reply, { chips });
+        } catch {
+          reply = "I couldn't reach your PC — is it on, with Izuki open? The link also changes when Izuki restarts, so paste the new one in Settings.";
+          out.remove();
+          bubble("izuki", reply, { error: true });
+        }
+      } else {
+        const chips = takeTags(reply);
+        reply = shown(reply);
+        out.remove();
+        bubble("izuki", reply || "Hmm, I lost my words there — try again?", { chips });
+      }
+      history.push({ role: "model", text: reply });
+      saveAll();
+      await speak(reply);
+    } catch (e) {
+      out.remove();
+      bubble("izuki", e.message || "I couldn't reach my AI brain. Check your internet and try again.", { error: true });
+    } finally {
+      busy = false;
+      send.disabled = !text.value.trim();
+      setOrb("");
+      setStatus("");
+      if (talking) listen();
+    }
+  }
+
+  // ------------------------------------------------------------ voice
+  let voiceOn = store.get("voice", true);
+
+  // Izuki's voice is Gemini's own (natural, free with the same key), played
+  // as audio through an <audio> element — which, unlike the phone's built-in
+  // speech, still plays with the iPhone's silent switch on. The phone's own
+  // voice is the fallback when Gemini's isn't available.
+  const player = new Audio();
+  player.setAttribute("playsinline", "");
+  const SILENT = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+  /** From a tap: lets replies play later without another tap (iPhone rule). */
+  function unlockAudio() {
+    player.src = SILENT;
+    player.play().catch(() => {});
+    if ("speechSynthesis" in window) {
+      const u = new SpeechSynthesisUtterance(" ");
+      u.volume = 0;
+      speechSynthesis.speak(u);
+    }
+  }
+  let voiceRestUntil = store.get("voiceRestUntil", 0);
+
+  /** Raw 16-bit PCM (what Gemini's voice returns) → a playable WAV. */
+  function pcmToWavUrl(b64, rate) {
+    const pcm = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const out = new DataView(new ArrayBuffer(44 + pcm.length));
+    const text = (at, s) => [...s].forEach((ch, i) => out.setUint8(at + i, ch.charCodeAt(0)));
+    text(0, "RIFF"); out.setUint32(4, 36 + pcm.length, true); text(8, "WAVEfmt ");
+    out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true);
+    out.setUint32(24, rate, true); out.setUint32(28, rate * 2, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true);
+    text(36, "data"); out.setUint32(40, pcm.length, true);
+    new Uint8Array(out.buffer, 44).set(pcm);
+    return URL.createObjectURL(new Blob([out.buffer], { type: "audio/wav" }));
+  }
+
+  async function geminiVoice(t) {
+    if (Date.now() < voiceRestUntil) return null;
+    try {
+      const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: "Say warmly and naturally, like a friend: " + t }] }],
+          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } },
+        }),
+      });
+      if (!r.ok) {
+        // Not on this key's free plan, or used up for now: the phone's voice
+        // for a while instead of asking every time.
+        voiceRestUntil = Date.now() + (r.status === 429 ? 3600000 : 6 * 3600000);
+        store.set("voiceRestUntil", voiceRestUntil);
+        return null;
+      }
+      const v = await r.json();
+      const part = (v.candidates?.[0]?.content?.parts || []).find((p) => p.inlineData?.data);
+      if (!part) return null;
+      const rate = Number((part.inlineData.mimeType || "").match(/rate=(\d+)/)?.[1]) || 24000;
+      return pcmToWavUrl(part.inlineData.data, rate);
+    } catch {
+      return null;
+    }
+  }
+
+  function speakWithPhone(t) {
+    return new Promise((done) => {
+      if (!("speechSynthesis" in window)) return done();
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(t.replace(/[*_#`]/g, ""));
+      u.rate = 1.05;
+      u.onend = done; u.onerror = done;
+      speechSynthesis.speak(u);
+    });
+  }
+
+  async function speak(t) {
+    if (!voiceOn || !talking || !t) return;
+    setOrb("speaking");
+    setStatus("Tap the mic to cut in");
+    const url = await geminiVoice(t.replace(/[*_#`]/g, ""));
+    if (!talking) return;
+    if (!url) return speakWithPhone(t);
+    await new Promise((done) => {
+      player.onended = done;
+      player.onerror = () => speakWithPhone(t).then(done);
+      player.src = url;
+      player.play().catch(() => speakWithPhone(t).then(done));
+    });
+    URL.revokeObjectURL(url);
+  }
+  function hush() {
+    try { player.pause(); if (player.onended) player.onended(); } catch {}
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
+  }
+
+  // "Talking": a hands-free back-and-forth, started by tapping the mic.
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let talking = false, recog = null, recorder = null;
+
+  function stopTalking(note) {
+    talking = false;
+    try { recog?.abort(); } catch {}
+    try { recorder?.stop(); } catch {}
+    hush();
+    setOrb("");
+    setStatus(note || "");
+  }
+
+  function listen() {
+    if (!talking || busy) return;
+    if (Rec) {
+      recog = new Rec();
+      recog.lang = navigator.language || "en-US";
+      recog.interimResults = true;
+      let final = "", heardAny = false;
+      recog.onresult = (e) => {
+        heardAny = true;
+        let interim = "";
+        for (const r of e.results) (r.isFinal ? (final += r[0].transcript) : (interim += r[0].transcript));
+        setStatus((final + interim) || "Listening…");
+      };
+      recog.onerror = (e) => {
+        if (e.error === "not-allowed" || e.error === "service-not-allowed") stopTalking("Allow the microphone for Izuki, then tap the mic again.");
+      };
+      recog.onend = () => {
+        recog = null;
+        if (!talking) return;
+        if (final.trim()) ask(final.trim());
+        else setTimeout(listen, heardAny ? 100 : 300);
+      };
+      setOrb("listening");
+      setStatus("Listening… (tap the mic to stop)");
+      try { recog.start(); } catch { setTimeout(listen, 400); }
+    } else {
+      record();
+    }
+  }
+
+  // No speech recognition in this browser: record, and Gemini hears it.
+  async function record() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const chunks = [];
+      recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        recorder = null;
+        if (!talking) return;
+        const blob = new Blob(chunks, { type: chunks[0]?.type || "audio/mp4" });
+        const b64 = await new Promise((ok) => {
+          const fr = new FileReader();
+          fr.onload = () => ok(String(fr.result).split(",")[1] || "");
+          fr.readAsDataURL(blob);
+        });
+        ask("", { type: blob.type.split(";")[0], b64 });
+      };
+      recorder.start();
+      setOrb("listening");
+      setStatus("Listening… tap the mic when you're done");
+    } catch {
+      stopTalking("Allow the microphone for Izuki, then tap the mic again.");
+    }
+  }
+
+  orb.addEventListener("click", () => {
+    if (!key) return openSettings();
+    if (orb.className === "speaking") { hush(); return; }
+    if (recorder) { recorder.stop(); return; }
+    if (talking) return stopTalking("");
+    talking = true;
+    // A silent line from the tap unlocks the phone's voice for the answers.
+    unlockAudio();
+    listen();
+  });
+
+  // ------------------------------------------------------------ typing
+  text.addEventListener("input", () => {
+    send.disabled = busy || !text.value.trim();
+    text.style.height = "auto";
+    text.style.height = Math.min(text.scrollHeight, 120) + "px";
+  });
+  text.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("form").requestSubmit(); }
+  });
+  $("form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const t = text.value.trim();
+    if (!t || busy) return;
+    text.value = "";
+    text.style.height = "auto";
+    send.disabled = true;
+    ask(t);
+  });
+
+  // ------------------------------------------------------------ settings
+  const sheet = $("sheet");
+  function renderMemories() {
+    const box = $("memories");
+    box.innerHTML = "";
+    if (!memories.length) {
+      const p = document.createElement("p");
+      p.textContent = "Nothing yet — Izuki picks things up as you chat.";
+      box.appendChild(p);
+      return;
+    }
+    memories.forEach((m, i) => {
+      const row = document.createElement("div");
+      row.className = "mem";
+      const span = document.createElement("span");
+      span.textContent = m;
+      const x = document.createElement("button");
+      x.type = "button"; x.textContent = "✕"; x.setAttribute("aria-label", "Forget this");
+      x.onclick = () => { memories.splice(i, 1); saveAll(); renderMemories(); };
+      row.append(span, x);
+      box.appendChild(row);
+    });
+  }
+  function openSettings() {
+    $("key").value = key;
+    $("pc").value = pc;
+    $("siri-url").textContent = location.origin + location.pathname + "?q=";
+    renderMemories();
+    sheet.hidden = false;
+  }
+  $("open-settings").onclick = openSettings;
+  $("close-settings").onclick = () => { sheet.hidden = true; render(); };
+  sheet.addEventListener("click", (e) => { if (e.target === sheet) { sheet.hidden = true; render(); } });
+
+  $("save-key").onclick = async () => {
+    const k = $("key").value.trim();
+    const out = $("key-result");
+    if (!k) { out.className = "bad"; out.textContent = "Paste your key first."; return; }
+    out.className = "note"; out.textContent = "Checking…";
+    const old = key;
+    key = k;
+    try {
+      await gemini([{ role: "user", parts: [{ text: "Say hi in three words." }] }]);
+      store.set("key", key);
+      out.className = "ok"; out.textContent = "Works! You're all set.";
+    } catch (e) {
+      key = old;
+      out.className = "bad"; out.textContent = e.message;
+    }
+  };
+  $("save-pc").onclick = async () => {
+    const v = $("pc").value.trim();
+    const out = $("pc-result");
+    if (!v) { pc = ""; store.set("pc", ""); out.className = "note"; out.textContent = "PC unlinked."; return; }
+    if (!/^https:\/\/[^\s]+$/.test(v)) { out.className = "bad"; out.textContent = "That doesn't look like the link from Izuki on your PC."; return; }
+    pc = v; store.set("pc", pc);
+    out.className = "note"; out.textContent = "Checking…";
+    try {
+      const r = await fetch((pc.endsWith("/") ? pc : pc + "/") + "talk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "" }) });
+      out.className = r.ok ? "ok" : "bad";
+      out.textContent = r.ok ? "Linked to your PC!" : "Your PC answered oddly — is Izuki up to date?";
+    } catch {
+      out.className = "bad"; out.textContent = "Saved, but I can't reach your PC right now — is it on with Izuki open?";
+    }
+  };
+  $("clear-chat").onclick = () => { history = []; saveAll(); sheet.hidden = true; render(); };
+  $("forget-all").onclick = () => {
+    if ($("forget-all").dataset.sure !== "1") { $("forget-all").dataset.sure = "1"; $("forget-all").textContent = "Tap again to forget everything"; return; }
+    history = []; memories = []; reminders = []; saveAll();
+    $("forget-all").dataset.sure = ""; $("forget-all").textContent = "Forget everything";
+    renderMemories();
+  };
+
+  // ------------------------------------------------------------ start
+  render();
+  scheduleReminders();
+  if (!key) openSettings();
+  // "Hey Siri, Izuki": the Shortcut opens …?q=what you said.
+  const q = new URLSearchParams(location.search).get("q");
+  if (q && key) {
+    // Clear it from the address first, so reopening the app doesn't ask again.
+    window.history.replaceState(null, "", location.pathname);
+    ask(q);
+  }
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+})();
+</script>
+</body>
+</html>
