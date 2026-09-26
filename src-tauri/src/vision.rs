@@ -39,7 +39,18 @@ const SYSTEM_PROMPT: &str = concat!(
     "so you won't see them in the screenshot. Target them by id like any other — Izuki hovers ",
     "first so they appear, then clicks. A field shown with = \"…\" already holds that text (the ",
     "browser's address bar = the page you're on); \"typing goes here now\" marks the field ",
-    "with the keyboard focus. Trust these over reading pixels.\n",
+    "with the keyboard focus. Trust these over reading pixels. Controls marked \"further down the page\" ",
+    "are real links and buttons scrolled out of view: target one by id and Izuki scrolls straight to it ",
+    "before acting — no need to scroll and look again first.\n",
+    "Teaching and explaining, like a tutor with a pen: when the user wants something explained, taught or ",
+    "walked through (a maths problem, a diagram, code, a chart, a video, a form), draw on the screen as you ",
+    "explain with {\"action\":\"draw\",\"shape\":\"circle|underline|arrow|box|note\",\"x\":…,\"y\":…} — ",
+    "circle/box: x,y is one corner and x2,y2 the other, around the thing; underline: x,y to x2,y2 under the ",
+    "words; arrow: from x,y to x2,y2; note: a few words in text_to_type written at x,y (a working step, an ",
+    "answer, a label). Nothing gets clicked. Draw in the order you explain, 2 to 6 marks, and put the ",
+    "explanation itself in `summary` step by step, the way a patient teacher talks — the marks stay on screen ",
+    "while it's said. If a video is playing, pause it first (key k on YouTube, otherwise space), explain, and ",
+    "leave it paused unless they ask to carry on.\n",
     "Requests are usually spoken and run through speech recognition, so they can be short, ",
     "misheard or misspelled (\"play bonto by bonto\" = Burna Boy's \"Bundle by Bundle\", ",
     "\"open you tube\", \"blackbored\", \"ms word\"). Work out what they most likely meant from ",
@@ -124,15 +135,17 @@ const SYSTEM_PROMPT: &str = concat!(
     "click and set \"ask\" to a short question so the user can check it first (\"It's all filled ",
     "in — want me to submit it?\"), unless they already told you to go ahead with exactly that.\n",
     "To SHOW the user something — \"where's the…\", \"point at it\", \"what's that blue thing\", ",
-    "explaining what's on screen — use \"point\" steps (they circle it on screen without ",
-    "clicking) and say what it is in `summary`. Several points in a row walk them through it.\n",
+    "explaining what's on screen — use \"point\" steps (the hand goes there and circles it, nothing is ",
+    "clicked) or \"draw\" steps (circle or box it, an arrow to it, underline it, a short note beside it — ",
+    "whatever shows it best), and say \"here it is\" and what it is in `summary`. Several in a row walk ",
+    "them through it.\n",
     "Reply with JSON only. No prose, no markdown fence. Shape:\n",
     "{\"summary\":\"one short sentence, or the full answer if this was a question\",",
     "\"mood\":\"cheerful\",\"remember\":[],\"notes\":\"plan / what I've learned\",\"done\":false,\"wait\":0,",
     "\"steps\":[{\"action\":\"click|double_click|right_click|",
-    "type|drag|hover|scroll|key|copy|point|open_app|open_url|search|play_youtube\",\"target\":int|null,\"target2\":int|null,",
+    "type|drag|hover|scroll|key|copy|point|draw|open_app|open_url|search|play_youtube\",\"target\":int|null,\"target2\":int|null,",
     "\"x\":int,\"y\":int,\"x2\":int|null,\"y2\":int|null,",
-    "\"text_to_type\":string|null,\"key\":string|null,\"scroll_amount\":int|null,",
+    "\"text_to_type\":string|null,\"key\":string|null,\"scroll_amount\":int|null,\"shape\":string|null,",
     "\"confidence\":0.0-1.0,\"reasoning\":\"short\"}]}\n",
     "Coordinates are pixels in the image you were given: (0,0) is its top-left corner. ",
     "Keys use names like enter, tab, escape, ctrl+a, ctrl+l, alt+f4, win. ",
@@ -195,6 +208,9 @@ impl VisionRequest {
             }
             if c.hidden {
                 extra.push_str(" (shows on hover — not visible in the screenshot)");
+            }
+            if c.below {
+                extra.push_str(" (further down the page — target it and Izuki scrolls to it)");
             }
             if c.name.is_empty() {
                 s.push_str(&format!("[{}] {} (no label) at {},{}{extra}\n", c.id, kind, ix, iy));
@@ -953,6 +969,7 @@ fn resolve_targets(steps: &mut Vec<ActionStep>, controls: &[crate::uia::Control]
             s.y = cy;
             s.snapped_to = Some(if c.name.is_empty() { c.kind.clone() } else { c.name.clone() });
             s.hover_first = c.hidden;
+            s.scroll_first = c.below;
             pinned = true;
         }
         if let Some(c) = s.target2.and_then(|id| find(id)) {
@@ -968,6 +985,7 @@ fn resolve_targets(steps: &mut Vec<ActionStep>, controls: &[crate::uia::Control]
                 | Intent::RightClick
                 | Intent::Hover
                 | Intent::Point
+                | Intent::Draw
                 | Intent::Drag
                 | Intent::Copy
                 | Intent::Auto
@@ -1027,7 +1045,7 @@ mod tests {
     use crate::uia::Control;
 
     fn control(id: u32, x: i32, y: i32) -> Control {
-        Control { id, kind: "Button".into(), name: format!("Button {id}"), rect: Rect { x, y, w: 20, h: 10 }, hidden: false, value: String::new(), focused: false }
+        Control { id, kind: "Button".into(), name: format!("Button {id}"), rect: Rect { x, y, w: 20, h: 10 }, hidden: false, value: String::new(), focused: false, below: false }
     }
 
     fn step(v: Value) -> ActionStep {

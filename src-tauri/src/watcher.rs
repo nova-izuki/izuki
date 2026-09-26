@@ -168,6 +168,8 @@ fn trigger(app: &AppHandle, store: &Arc<Store>, w: &Watcher) {
                 reasoning: "watcher fired".into(),
                 snapped_to: None,
                 hover_first: false,
+                scroll_first: false,
+                shape: None,
                 target: None,
                 target2: None,
             };

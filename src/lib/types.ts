@@ -18,7 +18,12 @@ export type Intent =
   | "scroll"
   | "hover"
   | "point"
-  | "key";
+  | "key"
+  | "draw"
+  | "open_app"
+  | "open_url"
+  | "search"
+  | "play_youtube";
 
 export interface Point {
   x: number;
@@ -395,6 +400,9 @@ export interface HandCommand {
   action: Intent;
   duration_ms: number;
   label?: string | null;
+  /** For "draw": circle, box, underline, arrow or note — and a note's words. */
+  shape?: string | null;
+  text?: string | null;
 }
 
 export interface StatusEvent {

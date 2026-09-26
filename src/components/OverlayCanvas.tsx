@@ -16,6 +16,7 @@ import { FloatingChat } from "./FloatingChat";
 import { HandCursor, type HandCursorHandle } from "./HandCursor";
 import { HandGlyph } from "./IzukiMark";
 import { PointOutLayer, type PointOut } from "./PointOutLayer";
+import { PenLayer, PEN_INKS, type PenMark } from "./PenLayer";
 import { RadialMenu } from "./RadialMenu";
 import { VoiceOrb } from "./VoiceOrb";
 import { createDrawSurface, TOOL_COLOUR, type DrawSurface } from "../lib/draw";
@@ -76,6 +77,8 @@ export function OverlayCanvas() {
   const [note, setNote] = useState<string | null>(null);
   const [ghost, setGhost] = useState<{ x: number; y: number; confidence: number } | null>(null);
   const [pointOuts, setPointOuts] = useState<PointOut[]>([]);
+  /** What Izuki has drawn while explaining — up until the talk moves on. */
+  const [penMarks, setPenMarks] = useState<PenMark[]>([]);
   /** Push-to-talk's mic state, mirrored from the config panel's VoiceEngine. */
   const [listening, setListening] = useState(false);
   /** The hands-free voice sphere, driven by the config panel's VoiceEngine. */
@@ -342,6 +345,7 @@ export function OverlayCanvas() {
         }
       }),
       on<void>(EV.overlayClose, () => close()),
+      on<void>(EV.penClear, () => setPenMarks([])),
       // "Which one? Circle it for me." — draw with the mouse (no key held),
       // or just type/say it in the box that's already open.
       on<string>(EV.helpAsk, (question) => {
@@ -362,6 +366,7 @@ export function OverlayCanvas() {
       on<CaptionPayload>(EV.caption, (p) => setCaption({ ...p, id: Date.now() })),
       on<OrbState>(EV.orb, (state) => {
         setOrb(state);
+        if (state === "hidden") setPenMarks([]);
         // Your turn (or all done): the "doing" line has served its purpose.
         if (state === "listening" || state === "hidden") setDoing(null);
       }),
@@ -391,7 +396,23 @@ export function OverlayCanvas() {
         // "let me point at this" gesture, in the same rough ink your own
         // marks use, so it reads as one language rather than a separate UI.
         const id = `po${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-        if (cmd.action === "drag" && cmd.x2 != null && cmd.y2 != null) {
+        if (cmd.action === "draw") {
+          // The teaching pen: the mark stays while Izuki explains.
+          const shape = (["circle", "box", "underline", "arrow", "note"] as const).find((s) => s === cmd.shape) ?? "circle";
+          setPenMarks((prev) => [
+            ...prev,
+            {
+              id: `pen${Date.now()}${prev.length}`,
+              shape,
+              x: cx2,
+              y: cy2,
+              x2: cmd.x2 != null ? (cmd.x2 - desktop.x) * sx : undefined,
+              y2: cmd.y2 != null ? (cmd.y2 - desktop.y) * sy : undefined,
+              text: cmd.text ?? undefined,
+              tone: PEN_INKS[prev.length % PEN_INKS.length],
+            },
+          ]);
+        } else if (cmd.action === "drag" && cmd.x2 != null && cmd.y2 != null) {
           const hx2 = (cmd.x2 - desktop.x) * sx;
           const hy2 = (cmd.y2 - desktop.y) * sy;
           setPointOuts((prev) => [
@@ -585,6 +606,11 @@ export function OverlayCanvas() {
   const floatingSlot =
     mode === "follow" || mode === "preview" ? (
       <>
+        {penMarks.length > 0 && (
+          <div className="pointer-events-none fixed inset-0">
+            <PenLayer marks={penMarks} />
+          </div>
+        )}
         <VoiceSphere state={orb} transcript={transcript} doing={doing} />
         {orb === "hidden" && <TranscriptBar text={transcript?.text ?? null} final={!!transcript?.final} />}
         {caption && <CaptionBox caption={caption} onDone={() => setCaption(null)} />}

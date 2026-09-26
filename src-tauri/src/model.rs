@@ -109,6 +109,10 @@ pub enum Intent {
     Search,
     /// Play something on YouTube — `text_to_type` holds what (youtube.rs).
     PlayYoutube,
+    /// Draw on the screen like a teacher's pen — `shape` says what (circle,
+    /// underline, arrow, box, note), `text_to_type` holds a note's words.
+    /// Nothing is clicked.
+    Draw,
 }
 
 impl Intent {
@@ -130,6 +134,7 @@ impl Intent {
             Intent::OpenUrl => "open_url",
             Intent::Search => "search",
             Intent::PlayYoutube => "play_youtube",
+            Intent::Draw => "draw",
         }
     }
 }
@@ -204,6 +209,13 @@ pub struct ActionStep {
     /// and let it show before clicking.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hover_first: bool,
+    /// The control is further down the page: have the app scroll it into
+    /// view (exactly — no blind wheel turns) before acting on it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub scroll_first: bool,
+    /// For `draw`: circle, underline, arrow, box or note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
 }
 
 fn half() -> f32 {
@@ -386,6 +398,11 @@ pub struct HandCommand {
     pub action: Intent,
     pub duration_ms: u64,
     pub label: Option<String>,
+    /// For `draw`: the shape, and a note's words.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

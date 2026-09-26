@@ -61,15 +61,16 @@ then `docs/HOW-IZUKI-WORKS.md`, before changing anything.
     commands, screenshots and "message my phone" are shared in
     `companion.rs` (`quick`, `screenshot`, `notify_everywhere`).
 
-12. **Izuki for phones** (`mobile/`) — a free home-screen web app (no app
+12. **Izuki for phones** (`docs/app/`) — a free home-screen web app (no app
     store, no PC needed): each user pastes their own free Gemini key (kept on
     the phone), chats or talks hands-free (Safari/Chrome speech recognition,
     or a recording Gemini hears), memory, reminders added to the phone's own
     calendar (.ics with an alert), "Hey Siri, Izuki" via a 2-step Shortcut
     that opens `?q=…`, and an optional link to the PC's Call Izuki address
     (`call.rs` now answers CORS) for PC tasks and apps. Published by
-    `.github/workflows/phone-app.yml` to https://nova-izuki.github.io/izuki/
-    once merged to `main` and Pages is set to "GitHub Actions".
+    with the website: GitHub Pages serves `docs/` from `main`, so it lives at
+    https://nova-izuki.github.io/izuki/app/ once merged (the website stays at
+    the root). No separate workflow.
     iMessage is not possible for free without a Mac (Apple only allows it
     through a Mac or paid providers).
 
@@ -85,6 +86,15 @@ then `docs/HOW-IZUKI-WORKS.md`, before changing anything.
     mute. Page redesigned with the PC's liquid orb; installable (icon +
     manifest). The phone app uses Gemini's TTS voice the same way, falling
     back to the phone's own voice.
+
+15. **Teaching pen** (`PenLayer.tsx`, `draw` action) — while explaining,
+    the model can draw circles, boxes, underlines, arrows and short notes
+    on screen (hand-drawn, drawn on in order, kept until the talk moves on;
+    cleared on a new task, a stop, or when the orb closes). "Where's the…"
+    can circle/arrow it too. It pauses videos before explaining.
+16. **Scroll straight to it** — the controls list now includes links and
+    buttons further down the page (`below`); targeting one has the app
+    scroll it into view (UIA ScrollItemPattern, or focus) before clicking.
 
 ## What has NOT been verified (do this first on Windows)
 
@@ -104,12 +114,16 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
 9. Call Izuki: toggle on, wait for the link, scan the QR, talk.
 10. Discord: make a bot, paste the token, add it to a server, DM it the
     code, text it, send a voice message, `/screen`.
-11. Phone app: open https://nova-izuki.github.io/izuki/ in Safari, add a
+11. Phone app: open https://nova-izuki.github.io/izuki/app/ in Safari, add a
     Gemini key, chat, talk (voice plays with silent mode on?), set a
     reminder → "Add to calendar", link the PC.
 12. "Play Bundle by Bundle by Burna Boy on YouTube" by voice: the video
     starts within a few seconds, and ads get skipped when Skip shows.
 13. Call Izuki from the iPhone with the silent switch ON: the reply is heard.
+14. On a page with a maths problem: "explain this to me" → it draws and
+    explains step by step. "Where's the settings button?" → circles it.
+15. On a long page: "open the Blackboard link" when it's far down → it
+    scrolls straight there and clicks.
 
 Fix whatever breaks; keep each fix small.
 

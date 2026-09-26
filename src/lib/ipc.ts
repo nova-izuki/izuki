@@ -382,6 +382,8 @@ export const api = {
 export const EV = {
   overlayOpen: "izuki://overlay-open",
   overlayClose: "izuki://overlay-close",
+  /** A new task: clear what Izuki drew while explaining the last one. */
+  penClear: "izuki://pen-clear",
   frozenFrame: "izuki://frozen-frame",
   hand: "izuki://hand",
   status: "izuki://status",

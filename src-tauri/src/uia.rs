@@ -156,6 +156,9 @@ pub struct Control {
     pub value: String,
     /// Where typing goes right now (the field with the keyboard focus).
     pub focused: bool,
+    /// Further down the page (scrolled out of view). Acting on it has the
+    /// app scroll it into view first — see [`scroll_into_view`].
+    pub below: bool,
 }
 
 /// The window the user is actually working in. Normally the foreground
@@ -265,7 +268,12 @@ pub fn list_controls(max: usize) -> Vec<Control> {
     // Reading order, in coarse rows so a row of buttons stays left-to-right.
     found.sort_by_key(|c| (c.rect.y / 12, c.rect.x));
     found.dedup_by(|a, b| a.rect == b.rect && a.name == b.name);
-    found.truncate(max);
+    // What's on screen first, but keep room for some of what's further down.
+    let (mut here, below): (Vec<Control>, Vec<Control>) = found.into_iter().partition(|c| !c.below);
+    let room_below = below.len().min(15).min(max / 4);
+    here.truncate(max - room_below);
+    here.extend(below.into_iter().take(room_below));
+    let mut found = here;
     for (i, c) in found.iter_mut().enumerate() {
         c.id = i as u32 + 1;
     }
@@ -299,6 +307,7 @@ fn collect(
     let window = root.get_bounding_rectangle().ok().map(|r| to_rect(&r));
     let start_len = out.len();
     let mut hidden_found = 0usize;
+    let mut below_found = 0usize;
     let mut visited = 0usize;
     let mut stack = vec![root];
 
@@ -320,7 +329,10 @@ fn collect(
             // that hide like this, and only named ones — a nameless hidden
             // thing is no use to anyone.
             let hover_only = offscreen && score >= 90 && hidden_found < 20;
-            if score >= 70 && (!offscreen || hover_only) {
+            // Links and buttons scrolled out of view below: listed too, so
+            // "open Blackboard" can find the link further down the page.
+            let maybe_below = offscreen && score >= 88 && below_found < 25;
+            if score >= 70 && (!offscreen || hover_only || maybe_below) {
                 if let Ok(r) = el.get_bounding_rectangle() {
                     let rect = to_rect(&r);
                     let inside = window.as_ref().map_or(true, |w| {
@@ -333,7 +345,26 @@ fn collect(
                         .map(|n| n.split_whitespace().collect::<Vec<_>>().join(" "))
                         .unwrap_or_default();
                     let hidden_ok = !offscreen || (!name.is_empty() && rect.w < 400 && rect.h < 200);
-                    if rect.w > 2 && rect.h > 2 && inside && hidden_ok {
+                    let below = maybe_below
+                        && !inside
+                        && !name.is_empty()
+                        && window.as_ref().is_some_and(|w| {
+                            let (cx, cy) = rect.center();
+                            cx >= w.x && cx <= w.x + w.w && cy > w.y + w.h && cy < w.y + w.h * 5
+                        });
+                    if below && rect.w > 2 && rect.h > 2 {
+                        below_found += 1;
+                        out.push(Control {
+                            id: 0,
+                            kind: format!("{ct:?}"),
+                            name: name.chars().take(60).collect(),
+                            rect,
+                            hidden: false,
+                            value: String::new(),
+                            focused: false,
+                            below: true,
+                        });
+                    } else if rect.w > 2 && rect.h > 2 && inside && hidden_ok && (!offscreen || hover_only) {
                         if offscreen {
                             hidden_found += 1;
                         }
@@ -359,6 +390,7 @@ fn collect(
                             hidden: offscreen,
                             value,
                             focused,
+                            below: false,
                         });
                     }
                 }
@@ -405,6 +437,42 @@ pub fn focus_target_window() {
 
 #[cfg(not(windows))]
 pub fn focus_target_window() {}
+
+/// Have the app scroll the control named `name` into view (browsers and
+/// most apps can, exactly), and say where it is now. `None` if it couldn't
+/// be found or scrolled.
+#[cfg(windows)]
+pub fn scroll_into_view(name: &str) -> Option<(i32, i32)> {
+    use uiautomation::patterns::UIScrollItemPattern;
+    use uiautomation::types::{PropertyConditionFlags, TreeScope, UIProperty};
+    use uiautomation::UIAutomation;
+
+    let automation = UIAutomation::new().or_else(|_| UIAutomation::new_direct()).ok()?;
+    let root = automation.element_from_handle(target_window()?.into()).ok()?;
+    // Names in the list are cut to 60 characters — match on the start.
+    let needle: String = name.chars().take(50).collect();
+    let cond = automation
+        .create_property_condition(UIProperty::Name, needle.as_str().into(), Some(PropertyConditionFlags::All))
+        .ok()?;
+    let el = root.find_first(TreeScope::Descendants, &cond).ok()?;
+    match el.get_pattern::<UIScrollItemPattern>() {
+        Ok(p) => {
+            let _ = p.scroll_into_view();
+        }
+        // Focusing a link scrolls the page to it in every browser.
+        Err(_) => {
+            let _ = el.set_focus();
+        }
+    }
+    std::thread::sleep(std::time::Duration::from_millis(350));
+    let r = to_rect(&el.get_bounding_rectangle().ok()?);
+    (r.w > 2 && r.h > 2 && !el.is_offscreen().unwrap_or(false)).then(|| r.center())
+}
+
+#[cfg(not(windows))]
+pub fn scroll_into_view(_name: &str) -> Option<(i32, i32)> {
+    None
+}
 
 #[cfg(not(windows))]
 pub fn list_controls(_max: usize) -> Vec<Control> {

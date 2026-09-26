@@ -319,6 +319,7 @@ impl Action {
                 crate::brain::cancel_task();
                 let _ = app.emit(events::STOP_SPEAKING, ());
                 crate::overlay::orb_closed();
+                let _ = app.emit("izuki://pen-clear", ());
                 let _ = crate::overlay::hide_overlay(app);
                 let _ = app.emit(events::STATUS, StatusEvent::info("Stopped everything."));
             }

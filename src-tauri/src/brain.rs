@@ -687,7 +687,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     }
 
                     // Pointing is only seen on the overlay — make sure it's up.
-                    if step.action == Intent::Point {
+                    if matches!(step.action, Intent::Point | Intent::Draw) {
                         let _ = crate::overlay::ensure_caption_visible(app);
                     }
                     // Tell the overlay's hand where it is going before we move
@@ -705,6 +705,8 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             action: step.action,
                             duration_ms: move_ms,
                             label: Some(format!("{}/{}", i + 1, steps.len())),
+                            shape: step.shape.clone(),
+                            text: if step.action == Intent::Draw { step.text_to_type.clone() } else { None },
                         },
                     );
                     }
@@ -788,6 +790,8 @@ fn submit_task(
     let my_task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     automation::clear_abort();
     let _esc = crate::hotkey::working();
+    // A new task: whatever was drawn to explain the last one goes.
+    let _ = app.emit("izuki://pen-clear", ());
     let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted();
 
     // "Keep going" after a task had to stop: pick it up where it left off.
@@ -1317,6 +1321,7 @@ fn describe_step(s: &ActionStep) -> String {
         Intent::OpenUrl => format!("opened {}", s.text_to_type.as_deref().unwrap_or("a web page")),
         Intent::Search => format!("searched the web for \"{}\"", s.text_to_type.as_deref().unwrap_or("")),
         Intent::PlayYoutube => format!("played \"{}\" on YouTube", s.text_to_type.as_deref().unwrap_or("")),
+        Intent::Draw => format!("drew a {} at {},{}", s.shape.as_deref().unwrap_or("mark"), s.x, s.y),
         other => format!("{} at {},{}", other.as_str(), s.x, s.y),
     };
     if s.reasoning.trim().is_empty() {

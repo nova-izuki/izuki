@@ -41,6 +41,8 @@ pub fn local_plan(session: &DrawSession) -> Vec<ActionStep> {
                     reasoning: "arrow drawn from one point to another".into(),
                     snapped_to: None,
                     hover_first: false,
+                    scroll_first: false,
+                    shape: None,
                     target: None,
                     target2: None,
                 }
@@ -62,6 +64,8 @@ pub fn local_plan(session: &DrawSession) -> Vec<ActionStep> {
                     reasoning: "text attached to this mark".into(),
                     snapped_to: None,
                     hover_first: false,
+                    scroll_first: false,
+                    shape: None,
                     target: None,
                     target2: None,
                 }
@@ -80,6 +84,8 @@ pub fn local_plan(session: &DrawSession) -> Vec<ActionStep> {
                 reasoning: reason_for(m),
                 snapped_to: None,
                 hover_first: false,
+                scroll_first: false,
+                shape: None,
                 target: None,
                 target2: None,
             },
