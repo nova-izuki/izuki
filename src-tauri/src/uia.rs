@@ -422,6 +422,44 @@ pub fn foreground_app() -> String {
     String::new()
 }
 
+/// Whether Windows is locked (or at its sign-in screen): its lock screen
+/// (LogonUI.exe) is running. Izuki never clicks or types while it is — a
+/// keystroke there lands in the PIN / password box.
+#[cfg(windows)]
+pub fn screen_locked() -> bool {
+    use windows::Win32::Foundation::{CloseHandle, MAX_PATH};
+    use windows::Win32::System::ProcessStatus::EnumProcesses;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    unsafe {
+        let mut pids = vec![0u32; 4096];
+        let mut bytes = 0u32;
+        if EnumProcesses(pids.as_mut_ptr(), (pids.len() * 4) as u32, &mut bytes).is_err() {
+            return false;
+        }
+        for &pid in &pids[..(bytes as usize / 4)] {
+            if pid == 0 {
+                continue;
+            }
+            let Ok(h) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else { continue };
+            let mut buf = [0u16; MAX_PATH as usize];
+            let mut len = buf.len() as u32;
+            let ok = QueryFullProcessImageNameW(h, PROCESS_NAME_FORMAT(0), windows::core::PWSTR(buf.as_mut_ptr()), &mut len).is_ok();
+            let _ = CloseHandle(h);
+            if ok && String::from_utf16_lossy(&buf[..len as usize]).to_lowercase().ends_with("\\logonui.exe") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[cfg(not(windows))]
+pub fn screen_locked() -> bool {
+    false
+}
+
 /// Every real app window that's open (title and whether it's minimised),
 /// front to back — so the agent knows Blackboard is already open in a
 /// background window and switches to it instead of hunting for it.
@@ -519,4 +557,16 @@ pub fn controls_fresh_or_now(max: usize) -> Vec<Control> {
         }
     }
     list_controls(max)
+}
+
+#[cfg(test)]
+mod lock_tests {
+    /// `cargo test lock_check -- --ignored --nocapture` — prints whether Windows is locked right now, and how long checking takes.
+    #[test]
+    #[ignore]
+    fn lock_check() {
+        let t = std::time::Instant::now();
+        let locked = super::screen_locked();
+        println!("locked: {locked} (checked in {} ms)", t.elapsed().as_millis());
+    }
 }

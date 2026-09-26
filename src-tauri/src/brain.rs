@@ -663,6 +663,9 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     }
                     // Tell the overlay's hand where it is going before we move
                     // the real pointer, so the animation leads rather than trails.
+                    // (Instant skills happen nowhere on screen — no hand.)
+                    let placeless = matches!(step.action, Intent::OpenApp | Intent::OpenUrl | Intent::Search);
+                    if !placeless {
                     let _ = app.emit(
                         events::HAND,
                         HandCommand {
@@ -675,6 +678,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             label: Some(format!("{}/{}", i + 1, steps.len())),
                         },
                     );
+                    }
 
                     match automation::execute(step, move_ms, settings.magnetic_hand, settings.dry_run)
                     {
@@ -841,6 +845,16 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
     for round in 0..MAX_ROUNDS {
         if !alive() {
             eprintln!("[agent] stopped (replaced or cancelled)");
+            break;
+        }
+        // Locked PC: stop, and say so — never try to get past the lock screen.
+        if uia::screen_locked() {
+            eprintln!("[agent] the PC is locked — stopping");
+            *UNFINISHED.lock() = Some((prompt.clone(), done_so_far.clone()));
+            let mut plan = last_plan.take().unwrap_or_default();
+            plan.summary = "Your PC is locked. Unlock it and say \"keep going\", and I'll carry on.".into();
+            plan.mood = Some("calm".into());
+            last_plan = Some(plan);
             break;
         }
         let mut ask = if done_so_far.is_empty() {
@@ -1135,7 +1149,9 @@ fn worth_saying(line: &str, last: &str) -> bool {
     let now = words(line);
     const FILLER: &[&str] = &[
         "got", "it", "okay", "ok", "alright", "sure", "on", "let's", "lets", "let", "me", "i'll", "now",
-        "so", "right", "cool", "great", "perfect", "here", "we", "go", "thing",
+        "so", "right", "cool", "great", "perfect", "here", "we", "go", "thing", "almost", "there", "just",
+        "still", "trying", "try", "hang", "one", "more", "time", "again", "you", "for", "your", "the", "a",
+        "to", "that", "this", "up", "get", "getting", "is", "in", "of", "and", "moment", "second", "sec",
     ];
     let meaningful = now.iter().filter(|w| !FILLER.contains(&w.as_str())).count();
     if meaningful < 2 {
@@ -1145,8 +1161,14 @@ fn worth_saying(line: &str, last: &str) -> bool {
     if before.is_empty() {
         return true;
     }
-    let shared = now.iter().filter(|w| before.contains(w)).count();
-    (shared as f32) / (now.len().max(1) as f32) < 0.6
+    // Say it only if it adds something: its meaningful words aren't all
+    // things just said ("Opening Notepad for you!" → "Almost there, just
+    // opening Notepad now" adds nothing).
+    let fresh = now
+        .iter()
+        .filter(|w| !FILLER.contains(&w.as_str()) && !before.contains(w))
+        .count();
+    fresh > 0 && (fresh as f32) / (meaningful as f32) >= 0.4
 }
 
 /// A task that had to stop partway (busy brains, out of rounds): what was
@@ -1212,6 +1234,9 @@ fn describe_step(s: &ActionStep) -> String {
         Intent::Type => format!("typed \"{}\"", s.text_to_type.as_deref().unwrap_or("").chars().take(40).collect::<String>()),
         Intent::Key => format!("pressed {}", s.key.as_deref().unwrap_or("a key")),
         Intent::Scroll => "scrolled".to_string(),
+        Intent::OpenApp => format!("opened the app \"{}\"", s.text_to_type.as_deref().unwrap_or("")),
+        Intent::OpenUrl => format!("opened {}", s.text_to_type.as_deref().unwrap_or("a web page")),
+        Intent::Search => format!("searched the web for \"{}\"", s.text_to_type.as_deref().unwrap_or("")),
         other => format!("{} at {},{}", other.as_str(), s.x, s.y),
     };
     if s.reasoning.trim().is_empty() {

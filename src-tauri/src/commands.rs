@@ -356,6 +356,19 @@ pub fn selftest_enabled() -> String {
     std::env::var("IZUKI_SELFTEST").unwrap_or_default()
 }
 
+/// Instant skill: open an installed app by name (Start-menu shortcut or a
+/// Windows built-in). Returns the app's name as shown, or why not.
+#[tauri::command]
+pub async fn open_app(name: String) -> R<String> {
+    blocking(move || crate::apps::open_app(&name).map_err(|e| e.to_string())).await?
+}
+
+/// Instant skill: open a web address in the default browser.
+#[tauri::command]
+pub async fn open_url(url: String) -> R<()> {
+    blocking(move || crate::apps::open_url(&url).map_err(|e| e.to_string())).await?
+}
+
 /// "Quit Izuki" — close the app completely.
 #[tauri::command]
 pub fn quit_app(app: AppHandle) {

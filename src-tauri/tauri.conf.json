@@ -52,7 +52,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc5RjhGM0RBQTQ3QTQyQwpSV1FzcEVlcVBZK2ZCeFlCZ0dWWUY3Z0NEZTZFd1lSbEZ6WHhlUGYwOUpDSDl6ME1Delc0VVRybwo=",
       "endpoints": [
-        "https://github.com/nova-izuki/izuki/releases/latest/download/latest.json"
+        "https://github.com/louismane28/izuki/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

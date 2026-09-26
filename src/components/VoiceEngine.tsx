@@ -4,6 +4,7 @@ import { useDictation } from "../hooks/useDictation";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
 import { cancelChat, chatLane, needsScreen, remember, type LaneResult } from "../lib/conversation";
 import { speakable } from "../lib/speakable";
+import { parseInstant, type Instant } from "../lib/instant";
 import { isEcho, noteSaid, noteStillSaying } from "../lib/echo";
 import { onSystemSpeaking, speak, stopSpeaking, systemIsSpeaking, systemVoiceLevel } from "../lib/speak";
 import {
@@ -596,6 +597,21 @@ export function VoiceEngine() {
       }
     }
 
+    // Instant skills: "open Notepad", "open YouTube" — through Windows,
+    // well under a second, no AI.
+    const instant = parseInstant(t);
+    if (instant) {
+      const said = await runInstant(instant);
+      if (requestSeq !== at) return;
+      if (said) {
+        startSession(from === "voice", "speaking");
+        await respond(said, "cheerful");
+        void afterReply(at, false);
+        return;
+      }
+      // Nothing installed by that name and not a known site: the agent finds it.
+    }
+
     rememberInPassing(t);
     startSession(from === "voice", "thinking");
     thinkingNow.current = true;
@@ -967,15 +983,19 @@ export function VoiceEngine() {
       const s = () => (session.current.on ? (session.current.voice ? "on(voice)" : "on(typed)") : "off");
       await wait(9000);
       if (mode === "agent") {
-        // A real multi-step task, twice — the second time should reuse what worked.
-        for (const run of [1, 2]) {
-          const t0 = Date.now();
-          await handleRequest("open Notepad and type: hello from Izuki", "typed");
-          log(`agent run ${run} -> finished in ${Date.now() - t0} ms, session ${s()}`);
-          await wait(12000);
-          log(`agent run ${run} closing notepad`);
-          await wait(6000);
-        }
+        // The instant path (no AI), then a real multi-step task using the skills.
+        let t0 = Date.now();
+        await handleRequest("open Notepad", "typed");
+        log(`instant "open Notepad" -> ${Date.now() - t0} ms`);
+        await wait(3000);
+        log("closing notepad");
+        await wait(4000);
+        t0 = Date.now();
+        await handleRequest("open Notepad and type: hello from Izuki", "typed");
+        log(`agent "open Notepad and type…" -> ${Date.now() - t0} ms`);
+        await wait(6000);
+        log("closing notepad");
+        await wait(4000);
         log("done");
         return;
       }
@@ -1066,6 +1086,30 @@ export function VoiceEngine() {
     });
   }, [settingsLoaded, voiceEngine]);
 
+  return null;
+}
+
+/** Do an instant skill; the line to say, or null if it couldn't (the agent takes over). */
+async function runInstant(i: Instant): Promise<string | null> {
+  const name = i.name.charAt(0).toUpperCase() + i.name.slice(1);
+  if (i.kind === "app") {
+    try {
+      await api.openApp(i.name);
+      void api.log(`instant: opened app "${i.name}"`);
+      return `Opening ${name}.`;
+    } catch {
+      /* not installed — maybe it's a website */
+    }
+  }
+  if (i.url) {
+    try {
+      await api.openUrl(i.url);
+      void api.log(`instant: opened ${i.url}`);
+      return `Opening ${name}.`;
+    } catch {
+      return null;
+    }
+  }
   return null;
 }
 

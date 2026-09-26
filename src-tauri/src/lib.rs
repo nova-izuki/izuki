@@ -1,5 +1,6 @@
 //! IZUKI — draw on your screen, Izuki does it.
 
+pub mod apps;
 pub mod automation;
 pub mod brain;
 pub mod capture;
@@ -171,6 +172,8 @@ pub fn run() {
             commands::cancel_task,
             commands::quit_app,
             commands::selftest_enabled,
+            commands::open_app,
+            commands::open_url,
             commands::preview_plan,
             commands::panic_stop,
             commands::probe_provider,

@@ -102,6 +102,11 @@ pub enum Intent {
     /// Circle something to *show* it — "point at it", "where's the…",
     /// "show me what that is" — without clicking it.
     Point,
+    /// Instant skills (apps.rs) — `text_to_type` holds the app name, the web
+    /// address, or the search.
+    OpenApp,
+    OpenUrl,
+    Search,
 }
 
 impl Intent {
@@ -119,6 +124,9 @@ impl Intent {
             Intent::Hover => "hover",
             Intent::Key => "key",
             Intent::Point => "point",
+            Intent::OpenApp => "open_app",
+            Intent::OpenUrl => "open_url",
+            Intent::Search => "search",
         }
     }
 }

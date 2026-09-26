@@ -311,6 +311,13 @@ export const api = {
   cancelTask: () => call<void>("cancel_task", undefined, () => undefined),
   /** Developer self-test mode (IZUKI_SELFTEST=1). */
   selftestEnabled: () => call<string>("selftest_enabled", undefined, () => ""),
+  /** Instant skill: open an installed app by name (rejects if none matches). */
+  openApp: (name: string) =>
+    call<string>("open_app", { name }, () => {
+      throw new Error("not in Izuki");
+    }),
+  /** Instant skill: open a web address in the default browser. */
+  openUrl: (url: string) => call<void>("open_url", { url }, () => undefined),
   /** Close Izuki completely. */
   quitApp: () => call<void>("quit_app", undefined, () => undefined),
 

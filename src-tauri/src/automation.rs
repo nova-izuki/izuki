@@ -263,6 +263,12 @@ fn parse_key(name: &str) -> Option<Key> {
 /// Run a single planned step. `magnetic` snaps the point onto a real control
 /// first; `dry_run` animates nothing at the OS level.
 pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -> Result<String> {
+    // Never act on the lock screen: a keystroke there goes into the PIN or
+    // password box.
+    if crate::uia::screen_locked() {
+        request_abort();
+        return Err(anyhow!("your PC is locked"));
+    }
     if aborted() {
         return Err(anyhow!("stopped"));
     }
@@ -272,7 +278,8 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
 
     // A step already pinned to a real control (by id) is exact — only guessed
     // pixels need the magnetic snap.
-    if magnetic && step.snapped_to.is_none() && !matches!(step.action, Intent::Watch) {
+    let pointless = matches!(step.action, Intent::Watch | Intent::OpenApp | Intent::OpenUrl | Intent::Search);
+    if magnetic && step.snapped_to.is_none() && !pointless {
         if let Some(hit) = uia::snap_to_control(x, y, 64) {
             x = hit.x;
             y = hit.y;
@@ -297,6 +304,22 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         // draws it off the HAND event) — the real mouse stays put. Held a
         // moment so there's time to look.
         Intent::Point => std::thread::sleep(Duration::from_millis(1800)),
+        // Instant skills: straight through Windows, no clicking around.
+        Intent::OpenApp => {
+            let what = step.text_to_type.as_deref().unwrap_or_default();
+            let shown = crate::apps::open_app(what)?;
+            return Ok(format!("opened {shown}"));
+        }
+        Intent::OpenUrl => {
+            let url = step.text_to_type.as_deref().unwrap_or_default();
+            crate::apps::open_url(url)?;
+            return Ok(format!("opened {url}"));
+        }
+        Intent::Search => {
+            let q = step.text_to_type.as_deref().unwrap_or_default();
+            crate::apps::web_search(q)?;
+            return Ok(format!("searched the web for {q}"));
+        }
         Intent::Drag => {
             let to = (step.x2.unwrap_or(x), step.y2.unwrap_or(y));
             drag((x, y), to, move_ms)?;

@@ -764,7 +764,7 @@ export function OverlayCanvas() {
 
       {/* Preview is click-through — no DOM pointer events will ever arrive
           to reveal the hand, so it shows straight away there. */}
-      <HandCursor ref={handRef} trail={12} size={38} hideUntilMove={mode !== "preview"} />
+      <HandCursor ref={handRef} trail={12} size={22} hideUntilMove={mode !== "preview"} />
 
       {/* preview mode: a voice/chat command watching itself run. The pill is
           honest about the wait — "thinking" while the model looks at the
