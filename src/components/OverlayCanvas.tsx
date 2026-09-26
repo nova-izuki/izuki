@@ -21,7 +21,7 @@ import { RadialMenu } from "./RadialMenu";
 import { VoiceOrb } from "./VoiceOrb";
 import { createDrawSurface, TOOL_COLOUR, type DrawSurface } from "../lib/draw";
 import { workArea } from "../lib/floating";
-import { hitTest, resetHit } from "../lib/hitTest";
+import { hitTest, reassertHit, resetHit } from "../lib/hitTest";
 import { api, EV, emit, on } from "../lib/ipc";
 import { useDictation } from "../hooks/useDictation";
 import { VoiceSphere } from "./VoiceSphere";
@@ -109,6 +109,14 @@ export function OverlayCanvas() {
   // Read inside the long-lived bus listeners without re-subscribing them.
   const modeRef = useRef(mode);
   modeRef.current = mode;
+
+  // Outside drawing, the overlay must never swallow the whole screen's
+  // clicks (it looked like a frozen, blurred screen). Re-check it steadily.
+  useEffect(() => {
+    if (mode !== "follow" && mode !== "preview") return;
+    const t = setInterval(reassertHit, 1500);
+    return () => clearInterval(t);
+  }, [mode]);
 
   /**
    * Quickdraw's oval chat, beside the mark, once the keys are let go
