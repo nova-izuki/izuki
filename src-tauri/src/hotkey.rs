@@ -153,9 +153,11 @@ unsafe extern "system" fn esc_hook(
     if code >= 0 && wparam.0 as u32 == WM_KEYDOWN && esc_armed() {
         let key = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
         // Izuki's own key presses (a plan step that presses Esc to close a
-        // menu) are injected — only a real Esc from the keyboard stops it.
-        let injected = key.flags.0 & LLKHF_INJECTED.0 != 0;
-        if key.vkCode == VK_ESCAPE.0 as u32 && !injected && !key_repeat_of_last_stop() {
+        // menu) mustn't stop it. They all go through enigo, which tags each
+        // one — ignore only those. Other injected keys still count: the
+        // On-Screen Keyboard and voice-typing tools send Esc that way.
+        let ours = key.flags.0 & LLKHF_INJECTED.0 != 0 && key.dwExtraInfo == enigo::EVENT_MARKER as usize;
+        if key.vkCode == VK_ESCAPE.0 as u32 && !ours && !key_repeat_of_last_stop() {
             ESC_ON.store(false, Ordering::SeqCst);
             if let Some(app) = ESC_APP.get() {
                 let app = app.clone();

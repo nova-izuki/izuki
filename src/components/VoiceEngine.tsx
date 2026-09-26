@@ -1028,6 +1028,35 @@ export function VoiceEngine() {
       const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
       const s = () => (session.current.on ? (session.current.voice ? "on(voice)" : "on(typed)") : "off");
       await wait(9000);
+      if (mode === "draw") {
+        // A drawing with words runs the full task loop; a real Esc pressed
+        // from outside mid-task must end it with no more hand moves and no
+        // late answer.
+        let handMoves = 0;
+        const offHand = on(EV.hand, () => void handMoves++);
+        const box = { x: 40, y: 40, w: 900, h: 600 };
+        const t0 = Date.now();
+        const task = handleDraw({
+          marks: [{ id: "st1", kind: "box", rect: box, points: [], intent: "auto", order: 1 }],
+          prompt: "point at each thing inside this box one by one, and say what each one is",
+          desktop: { x: 0, y: 0, w: window.screen.width, h: window.screen.height },
+          createdAt: Date.now(),
+        });
+        await wait(2500);
+        log("waiting for Esc");
+        const escAt = Date.now();
+        while (session.current.on && Date.now() - escAt < 30000) await wait(100);
+        const stoppedIn = Date.now() - escAt;
+        const movesAtStop = handMoves;
+        await task;
+        await wait(15000);
+        log(
+          `draw task Esc -> session ${s()} (want off) after ${stoppedIn} ms, hand moves after stop ${handMoves - movesAtStop} (want 0), speaking ${isSpeaking()} (want false), task took ${Date.now() - t0} ms`
+        );
+        void offHand.then((f) => f());
+        log("done");
+        return;
+      }
       if (mode === "agent") {
         // The instant path (no AI), then a real multi-step task using the skills.
         let t0 = Date.now();
