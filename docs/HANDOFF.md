@@ -134,6 +134,15 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
     screen task — all three answer. Then the same with Gemini, OpenRouter
     and NVIDIA keys.
 19. Chat tab → "Help me plan my week" answers (with and without a Composio key).
+20. Leave the panel open for an hour (and through a lock/sleep): it never
+    shows only the frosted glass.
+21. Apps tab: paste a Composio key, connect Gmail + Calendar (ticks show),
+    "Send a test" → a Windows notification and a phone message. Get an
+    email → a heads-up within ~3 min. A calendar event 10 min out → heads-up.
+22. Paste a Blackboard/Canvas calendar link → the log shows no feed error;
+    something due tomorrow → a school reminder.
+23. Call Izuki on, POST `{"text":"hi from n8n"}` to the notify address →
+    heads-up arrives.
 
 Running the Rust tests from Linux: `cargo test --target x86_64-pc-windows-gnu
 --lib --no-run`, copy `target/x86_64-pc-windows-gnu/debug/WebView2Loader.dll`
