@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import pkg from "../../../package.json";
 import { PhoneCard } from "../PhoneCard";
+import { DiscordCard } from "../DiscordCard";
 import { AppsCard } from "../AppsCard";
 import { Badge, Row, Section, Segmented, Slider, Toggle, cx } from "../ui";
 import { useIzuki } from "../../lib/store";
@@ -412,6 +413,8 @@ export function SettingsTab() {
       <AppsCard />
 
       <PhoneCard />
+
+      <DiscordCard />
 
       {/* ------------------------------------------------ help */}
       <Section title="Help">

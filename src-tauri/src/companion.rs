@@ -94,6 +94,77 @@ pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str))
     Reply::text(text)
 }
 
+/// The quick commands every away channel understands, answered without the
+/// AI: stop, screenshot, reminders, the call link, help.
+pub enum Quick {
+    Text(String),
+    /// Send a screenshot of the PC (see [`screenshot`]).
+    Screen,
+}
+
+pub fn quick(app: &AppHandle, said: &str) -> Option<Quick> {
+    use tauri::Emitter;
+    let lower = said.to_lowercase();
+    let bare = lower.trim().trim_start_matches(['/', '!']).trim_end_matches(|c: char| !c.is_alphanumeric());
+    // "/screen@izuki_bot" in a group.
+    let bare = bare.split('@').next().unwrap_or(bare);
+    Some(match bare {
+        "stop" | "cancel" => {
+            crate::brain::cancel_task();
+            let _ = app.emit(crate::events::STOP_SPEAKING, ());
+            Quick::Text("Stopped. ✋".into())
+        }
+        "screen" | "screenshot" | "show me my screen" | "show my screen" => Quick::Screen,
+        "call" => {
+            let st = crate::call::status();
+            Quick::Text(if st.state == "ready" {
+                format!("📞 Open this and tap to talk:\n{}", st.link)
+            } else if crate::state::store().settings().call_enabled {
+                "The call link is still starting — I'll message it to you the moment it's ready.".to_string()
+            } else {
+                "Turn on \"Call Izuki\" in Izuki → Settings → Phone first, then ask for the call link again.".to_string()
+            })
+        }
+        "reminders" => {
+            let list = crate::reminders::list();
+            Quick::Text(if list.is_empty() {
+                "No reminders set. Say \"remind me…\" to add one.".to_string()
+            } else {
+                list.iter()
+                    .map(|r| format!("⏰ {} — {}", crate::reminders::describe_time(r.at), r.text))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+        }
+        "start" | "help" => Quick::Text(
+            "I'm Izuki 👋 Text me or send a voice message.\n\
+             • Ask me anything, or to draft something\n\
+             • \"Remind me at 6 to call Mum\" — /reminders lists them\n\
+             • \"Open Spotify on my PC\" — I'll do it and tell you\n\
+             • /call — a link to talk to me hands-free\n\
+             • /screen shows your PC's screen, /stop stops me"
+                .into(),
+        ),
+        _ => return None,
+    })
+}
+
+/// The PC's screen as a JPEG, for "/screen" — or why not.
+pub fn screenshot() -> anyhow::Result<Vec<u8>> {
+    if crate::uia::screen_locked() {
+        anyhow::bail!("Your PC is locked 🔒");
+    }
+    let frame = crate::capture::capture_all()?;
+    frame.downscaled(1600).to_jpeg(78)
+}
+
+/// Message every paired phone channel (Telegram, Discord) — reminders, the
+/// call link. A no-op for channels that aren't set up.
+pub fn notify_everywhere(text: &str) {
+    crate::telegram::notify(text);
+    crate::discord::notify(text);
+}
+
 /// Something to do on the PC, asked from away.
 fn on_pc(app: &AppHandle, said: &str, status: &dyn Fn(&str)) -> Reply {
     let store = crate::state::store();

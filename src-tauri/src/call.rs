@@ -172,7 +172,7 @@ fn start_tunnel(app: &AppHandle, port: u16) -> anyhow::Result<()> {
                 let link = format!("{base}/{token}/");
                 eprintln!("[call] ready at {base}/…");
                 set(&app, "ready", &link, None);
-                crate::telegram::notify(&format!("📞 Call Izuki — open this on your phone and tap to talk:\n{link}"));
+                crate::companion::notify_everywhere(&format!("📞 Call Izuki — open this on your phone and tap to talk:\n{link}"));
             }
         }
         if !announced {

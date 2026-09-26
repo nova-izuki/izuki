@@ -8,6 +8,7 @@ pub mod capture;
 pub mod duck;
 pub mod chat;
 pub mod commands;
+pub mod discord;
 pub mod companion;
 pub mod composio;
 pub mod events;
@@ -181,6 +182,8 @@ pub fn run() {
             commands::cloud_transcribe,
             commands::duck_audio,
             commands::phone_status,
+            commands::discord_status,
+            commands::discord_unpair,
             commands::call_status,
             commands::apps_ask,
             commands::apps_test,
@@ -221,6 +224,7 @@ pub fn run() {
             follow::spawn(handle.clone(), store.clone());
             reminders::spawn(handle.clone());
             telegram::spawn(handle.clone());
+            discord::spawn(handle.clone());
             call::spawn(handle.clone());
 
             Ok(())

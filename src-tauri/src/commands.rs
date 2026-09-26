@@ -540,6 +540,24 @@ pub fn call_status() -> crate::call::Status {
 }
 
 #[tauri::command]
+pub fn discord_status() -> crate::discord::Status {
+    crate::discord::status()
+}
+
+/// Forget the paired Discord user; hands back the settings with the new code.
+#[tauri::command]
+pub fn discord_unpair(app: AppHandle) -> Settings {
+    crate::discord::unpair();
+    let s = state::store().settings();
+    let _ = app.emit(
+        "izuki://patch-settings",
+        serde_json::json!({ "discord_user_id": "", "telegram_code": s.telegram_code }),
+    );
+    let _ = app.emit(crate::discord::CHANGED, ());
+    s
+}
+
+#[tauri::command]
 pub fn phone_status() -> crate::telegram::Status {
     crate::telegram::status()
 }

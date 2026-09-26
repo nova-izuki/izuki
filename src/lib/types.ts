@@ -106,6 +106,15 @@ export interface CallStatus {
   error: string | null;
 }
 
+export interface DiscordStatus {
+  bot: string;
+  /** Adds the bot to a server of yours (you can DM it after). */
+  invite: string;
+  paired: boolean;
+  code: string;
+  error: string | null;
+}
+
 export interface PhoneStatus {
   bot: string;
   paired: boolean;
@@ -316,6 +325,10 @@ export interface Settings {
   telegram_chat_id: number;
   /** The code sent to the bot once to pair. */
   telegram_code: string;
+  /** Discord bot token — Izuki on your phone through Discord. */
+  discord_token: string;
+  /** The paired Discord user ("" = none). */
+  discord_user_id: string;
   /** Let the paired phone do things on this PC. */
   phone_controls_pc: boolean;
   /** Your free Composio key — Izuki in Gmail, Calendar, Drive, Slack… */

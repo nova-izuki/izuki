@@ -232,57 +232,13 @@ fn handle(app: &AppHandle, token: &str, msg: &Value) -> Result<()> {
     };
 
     // ---- quick commands --------------------------------------------------
-    let lower = said.to_lowercase();
-    let bare = lower.trim_start_matches('/').trim_end_matches(|c: char| !c.is_alphanumeric());
-    match bare {
-        "stop" | "cancel" => {
-            crate::brain::cancel_task();
-            let _ = app.emit(crate::events::STOP_SPEAKING, ());
-            send_text(token, chat, "Stopped. ✋");
+    match crate::companion::quick(app, &said) {
+        Some(crate::companion::Quick::Text(t)) => {
+            send_text(token, chat, &t);
             return Ok(());
         }
-        "screen" | "screenshot" | "show me my screen" | "show my screen" => {
-            return send_screen(token, chat);
-        }
-        "call" => {
-            let st = crate::call::status();
-            let text = if st.state == "ready" {
-                format!("📞 Open this and tap to talk:\n{}", st.link)
-            } else if crate::state::store().settings().call_enabled {
-                "The call link is still starting — I'll text it to you the moment it's ready.".to_string()
-            } else {
-                "Turn on \"Call Izuki\" in Izuki → Settings → Phone first, then send /call again.".to_string()
-            };
-            send_text(token, chat, &text);
-            return Ok(());
-        }
-        "reminders" => {
-            let list = crate::reminders::list();
-            let text = if list.is_empty() {
-                "No reminders set. Say \"remind me…\" to add one.".to_string()
-            } else {
-                list.iter()
-                    .map(|r| format!("⏰ {} — {}", crate::reminders::describe_time(r.at), r.text))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            };
-            send_text(token, chat, &text);
-            return Ok(());
-        }
-        "start" | "help" => {
-            send_text(
-                token,
-                chat,
-                "I'm Izuki 👋 Text me or send a voice note.\n\
-                 • Ask me anything, or to draft something\n\
-                 • \"Remind me at 6 to call Mum\" — /reminders lists them\n\
-                 • \"Open Spotify on my PC\" — I'll do it and tell you\n\
-                 • /call — a link to talk to me hands-free\n\
-                 • /screen shows your PC's screen, /stop stops me",
-            );
-            return Ok(());
-        }
-        _ => {}
+        Some(crate::companion::Quick::Screen) => return send_screen(token, chat),
+        None => {}
     }
 
     // ---- the companion -----------------------------------------------------
@@ -308,12 +264,13 @@ fn download(token: &str, file_id: &str) -> Result<Vec<u8>> {
 
 fn send_screen(token: &str, chat: i64) -> Result<()> {
     use reqwest::blocking::multipart::{Form, Part};
-    if crate::uia::screen_locked() {
-        send_text(token, chat, "Your PC is locked 🔒");
-        return Ok(());
-    }
-    let frame = crate::capture::capture_all()?;
-    let jpeg = frame.downscaled(1600).to_jpeg(78)?;
+    let jpeg = match crate::companion::screenshot() {
+        Ok(j) => j,
+        Err(e) => {
+            send_text(token, chat, &e.to_string());
+            return Ok(());
+        }
+    };
     let form = Form::new()
         .text("chat_id", chat.to_string())
         .part("photo", Part::bytes(jpeg).file_name("screen.jpg").mime_str("image/jpeg")?);

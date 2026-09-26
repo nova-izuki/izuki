@@ -180,7 +180,7 @@ pub fn spawn(app: AppHandle) {
                     "izuki://say",
                     serde_json::json!({ "text": line, "mood": "cheerful", "reply": true }),
                 );
-                crate::telegram::notify(&format!("⏰ Reminder: {}", r.text));
+                crate::companion::notify_everywhere(&format!("⏰ Reminder: {}", r.text));
                 let _ = app.emit(CHANGED, ());
             }
         })

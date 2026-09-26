@@ -229,6 +229,12 @@ pub struct Settings {
     /// The code you send the bot once to pair your phone.
     #[serde(default)]
     pub telegram_code: String,
+    /// Izuki on your phone through Discord (discord.rs): your own free bot.
+    #[serde(default)]
+    pub discord_token: String,
+    /// The one Discord user paired with this PC ("" = none yet).
+    #[serde(default)]
+    pub discord_user_id: String,
     /// Let the paired phone ask Izuki to do things on this PC.
     #[serde(default = "default_true")]
     pub phone_controls_pc: bool,
@@ -350,6 +356,7 @@ impl Settings {
         }
         self.groq_api_key = clean_key(&self.groq_api_key);
         self.telegram_token = clean_key(&self.telegram_token);
+        self.discord_token = clean_key(&self.discord_token);
         self.composio_api_key = clean_key(&self.composio_api_key);
         if self.call_token.len() < 20 {
             self.call_token = uuid::Uuid::new_v4().simple().to_string();
@@ -490,6 +497,8 @@ impl Default for Settings {
             telegram_token: String::new(),
             telegram_chat_id: 0,
             telegram_code: String::new(),
+            discord_token: String::new(),
+            discord_user_id: String::new(),
             phone_controls_pc: true,
             call_enabled: false,
             call_token: String::new(),

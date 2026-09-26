@@ -53,6 +53,14 @@ then `docs/HOW-IZUKI-WORKS.md`, before changing anything.
     phone can just scan it. Useful when Telegram isn't available (the
     owner's Telegram account is currently spam-limited).
 
+11. **Discord** (`discord.rs`, `DiscordCard.tsx`) — same as Telegram for
+    people Telegram doesn't work for (the owner's Telegram account is
+    spam-limited and can't even use @BotFather). A websocket to Discord's
+    gateway from the PC (`tokio-tungstenite`), DMs only, the same pairing
+    code, voice messages, `/screen` `/stop` `/call` `/reminders`. Quick
+    commands, screenshots and "message my phone" are shared in
+    `companion.rs` (`quick`, `screenshot`, `notify_everywhere`).
+
 ## What has NOT been verified (do this first on Windows)
 
 The cloud session could only type-check (`cargo check --target
@@ -68,7 +76,9 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
 7. Telegram: make a bot, pair with the code, text it, send a voice note,
    `/screen`, "open Notepad on my PC".
 8. Composio: paste a key, Test, "what's in my inbox?" → sign-in link opens.
-9. Call Izuki: toggle on, wait for the link, open on the phone, talk.
+9. Call Izuki: toggle on, wait for the link, scan the QR, talk.
+10. Discord: make a bot, paste the token, add it to a server, DM it the
+    code, text it, send a voice message, `/screen`.
 
 Fix whatever breaks; keep each fix small.
 

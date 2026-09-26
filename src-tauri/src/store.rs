@@ -99,6 +99,13 @@ impl Store {
             {
                 next.telegram_chat_id = current.telegram_chat_id;
             }
+            if next.discord_user_id.is_empty()
+                && !current.discord_user_id.is_empty()
+                && next.telegram_code == current.telegram_code
+                && next.discord_token == current.discord_token
+            {
+                next.discord_user_id = current.discord_user_id.clone();
+            }
         }
         next.heal();
         *self.settings.write() = next.clone();
