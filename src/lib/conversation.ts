@@ -56,7 +56,8 @@ const SCREEN = new RegExp(
 export type LaneResult = "done" | "end" | "screen" | "failed" | "cancelled";
 
 /** The model's "this conversation is over" tag — never spoken. */
-const END_TAG = /\s*\[\s*END\s*\]\s*/gi;
+/** [END], and any [REMIND … | …] (the core sets the reminder; it's never read out). */
+const END_TAG = /\s*\[\s*(?:END|REMIND[^\]]*)\]\s*/gi;
 
 let seq = Date.now();
 let activeId: number | null = null;

@@ -19,10 +19,12 @@ pub mod ocr;
 pub mod overlay;
 pub mod planner;
 pub mod recipes;
+pub mod reminders;
 pub mod settings;
 pub mod state;
 pub mod store;
 pub mod stt;
+pub mod telegram;
 pub mod tray;
 pub mod tts;
 pub mod uia;
@@ -175,6 +177,10 @@ pub fn run() {
             commands::cloud_ears_ready,
             commands::cloud_transcribe,
             commands::duck_audio,
+            commands::phone_status,
+            commands::phone_unpair,
+            commands::reminders_list,
+            commands::reminder_remove,
             commands::cancel_task,
             commands::quit_app,
             commands::selftest_enabled,
@@ -207,6 +213,8 @@ pub fn run() {
             updates::check_later(&handle);
             watcher::spawn(handle.clone(), store.clone());
             follow::spawn(handle.clone(), store.clone());
+            reminders::spawn(handle.clone());
+            telegram::spawn(handle.clone());
 
             Ok(())
         })

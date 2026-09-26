@@ -13,6 +13,8 @@ import type {
   VisionPlan,
   Watcher,
   Memory,
+  PhoneStatus,
+  Reminder,
 } from "./types";
 
 export const IS_TAURI =
@@ -172,6 +174,10 @@ export const MOCK_SETTINGS: Settings = {
   barge_in: true,
   duck_while_listening: true,
   cloud_ears: true,
+  telegram_token: "",
+  telegram_chat_id: 0,
+  telegram_code: "",
+  phone_controls_pc: true,
   follow_up_secs: 1800,
   chat_style: "auto",
   chat_color: "#7dd3fc",
@@ -234,6 +240,14 @@ export const api = {
   /** Fast conversation lane: stream a reply (words arrive as EV.chatDelta). */
   chatStream: (id: number, history: Array<{ role: string; content: string }>, expressive = false) =>
     call<void>("chat_stream", { id, history, expressive }, () => undefined),
+  /** The Chat tab: the same lane, written rather than spoken. */
+  chatStreamWritten: (id: number, history: Array<{ role: string; content: string }>) =>
+    call<void>("chat_stream", { id, history, expressive: false, written: true }, () => undefined),
+  phoneStatus: () =>
+    call<PhoneStatus>("phone_status", undefined, () => ({ bot: "", paired: false, code: "123456", error: null })),
+  phoneUnpair: () => call<Settings>("phone_unpair", undefined, () => MOCK_SETTINGS),
+  remindersList: () => call<Reminder[]>("reminders_list", undefined, () => []),
+  reminderRemove: (id: string) => call<void>("reminder_remove", { id }, () => undefined),
   chatCancel: (id: number) => call<void>("chat_cancel", { id }, () => undefined).catch(() => undefined),
   /** The wake-word models installed (file names) — the user's own. */
   listWakewords: () => call<string[]>("list_wakewords", {}, () => []),
@@ -387,6 +401,8 @@ export const EV = {
   orb: "izuki://orb",
   /** Memories were added or removed — the Memory list refreshes. */
   memoryChanged: "izuki://memory-changed",
+  remindersChanged: "izuki://reminders-changed",
+  phoneChanged: "izuki://phone-changed",
   /** Frontend-only: Izuki's voice started (true) or stopped (false) talking. */
   speaking: "izuki://speaking",
   /** Cut Izuki off mid-sentence. Sent by the chat's stop button, the

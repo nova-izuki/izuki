@@ -218,6 +218,20 @@ pub struct Settings {
     /// answers whenever the cloud is slow or offline.
     #[serde(default = "default_true")]
     pub cloud_ears: bool,
+    /// Izuki on your phone: a Telegram bot you made with @BotFather (free).
+    /// Izuki on this PC answers it — no server, no app store.
+    #[serde(default)]
+    pub telegram_token: String,
+    /// The one Telegram chat paired with this PC (0 = not paired yet).
+    /// Messages from anyone else are refused.
+    #[serde(default)]
+    pub telegram_chat_id: i64,
+    /// The code you send the bot once to pair your phone.
+    #[serde(default)]
+    pub telegram_code: String,
+    /// Let the paired phone ask Izuki to do things on this PC.
+    #[serde(default = "default_true")]
+    pub phone_controls_pc: bool,
     /// How long a conversation waits for you to say something before the
     /// orb closes, in seconds (5 s … 30 min). "That's all" closes it at once.
     #[serde(default = "default_follow_up")]
@@ -321,6 +335,10 @@ impl Settings {
             }
         }
         self.groq_api_key = clean_key(&self.groq_api_key);
+        self.telegram_token = clean_key(&self.telegram_token);
+        if self.telegram_code.len() != 6 {
+            self.telegram_code = format!("{:06}", rand::random::<u32>() % 1_000_000);
+        }
         if self.move_duration_ms == 0 {
             self.move_duration_ms = 320;
         }
@@ -451,6 +469,10 @@ impl Default for Settings {
             barge_in: true,
             duck_while_listening: true,
             cloud_ears: true,
+            telegram_token: String::new(),
+            telegram_chat_id: 0,
+            telegram_code: String::new(),
+            phone_controls_pc: true,
             follow_up_secs: default_follow_up(),
             chat_style: default_chat_style(),
             chat_color: default_chat_color(),

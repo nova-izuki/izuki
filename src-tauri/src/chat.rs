@@ -54,7 +54,55 @@ fn cancelled(id: u64) -> bool {
     CANCELLED.lock().contains(&id)
 }
 
-fn system_prompt(expressive: bool) -> String {
+/// Who the reply is for: spoken aloud on the PC, or written in the Chat tab
+/// or on the user's phone.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Style {
+    Voice { expressive: bool },
+    Text,
+    Phone,
+}
+
+fn system_prompt(style: Style) -> String {
+    let mut s = match style {
+        Style::Voice { expressive } => voice_prompt(expressive),
+        Style::Text | Style::Phone => written_prompt(style == Style::Phone),
+    };
+    s.push_str(&crate::reminders::prompt_block());
+    s.push_str(&crate::memory::prompt_block());
+    s
+}
+
+/// The Chat tab and the phone: a written conversation, not a spoken one.
+fn written_prompt(phone: bool) -> String {
+    let mut s = String::from(
+        "You are Izuki, the user's AI companion — warm, quick, a little playful, like a close friend          who's brilliant at everything from homework to life admin. This is a written chat, so:\n\
+         - keep it short and natural (a few sentences), longer only when they ask for detail\n\
+         - plain text; a short dash list is fine when it really helps, no headings or tables\n\
+         - an emoji now and then is fine, never several\n\
+         - show real feeling, and ask a short follow-up when it keeps things going\n\
+         Speak to the user as \"you\" and never show your reasoning.\n\
+         You can help with anything a smart friend can: plans, messages and emails to draft, study \
+         help, ideas, decisions, reminders.\n",
+    );
+    if phone {
+        s.push_str(
+            "They're texting you from their phone while away from their PC. If they want something \
+             done ON their PC (open, play, find a file, send from an app there, check something on \
+             its screen), reply with exactly [SCREEN] and nothing else — another part of you will do \
+             it on the PC and report back.\n",
+        );
+    } else {
+        s.push_str(
+            "They're in the Izuki app on their PC. If they want something done on their computer or \
+             need you to look at their screen, reply with exactly [SCREEN] and nothing else — they can \
+             then let you do it.\n",
+        );
+    }
+    s
+}
+
+fn voice_prompt(expressive: bool) -> String {
     let mut s = String::from(
         "You are Izuki, the user's AI companion on their Windows PC — warm, quick, a little playful, \
          like a close friend who's great with computers. Everything you write is spoken aloud, so \
@@ -87,7 +135,6 @@ fn system_prompt(expressive: bool) -> String {
     if !app.is_empty() || !title.is_empty() {
         s.push_str(&format!("(The user is currently in {app} — \"{title}\".)\n"));
     }
-    s.push_str(&crate::memory::prompt_block());
     s
 }
 
@@ -110,23 +157,57 @@ fn chat_url(cfg: &ProviderConfig) -> String {
 
 /// Stream a reply to `history` (oldest first, ending with the user's
 /// message), emitting `DELTA` events tagged `id`. Runs on its own thread.
-pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, expressive: bool) {
+pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
     std::thread::spawn(move || {
+        // The whole reply, so any reminder it sets can be picked up at the
+        // end. (The webview drops the tag from what it shows and says.)
+        let whole = Mutex::new(String::new());
         let emit = |text: String, done: bool, error: Option<String>| {
+            whole.lock().push_str(&text);
+            if done {
+                crate::reminders::take_tags(&whole.lock());
+            }
             let _ = app.emit(DELTA, Delta { id, text, done, error });
         };
         let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
         if chain.is_empty() {
             return emit(String::new(), true, Some("no chat-capable brain is set up".into()));
         }
-        let mut messages = vec![json!({ "role": "system", "content": system_prompt(expressive) })];
-        for t in history.iter().rev().take(12).rev() {
-            let role = if t.role == "assistant" { "assistant" } else { "user" };
-            messages.push(json!({ "role": role, "content": t.content }));
-        }
-
-        race(&chain, &messages, id, &emit);
+        race(&chain, &messages_for(&history, style), id, &emit);
     });
+}
+
+fn messages_for(history: &[Turn], style: Style) -> Vec<Value> {
+    let mut messages = vec![json!({ "role": "system", "content": system_prompt(style) })];
+    for t in history.iter().rev().take(12).rev() {
+        let role = if t.role == "assistant" { "assistant" } else { "user" };
+        messages.push(json!({ "role": role, "content": t.content }));
+    }
+    messages
+}
+
+/// A whole reply at once (the phone lane), with the same racing of brains
+/// as the streamed one. Reminder tags are left in for the caller.
+pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
+    let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
+    if chain.is_empty() {
+        anyhow::bail!("no AI brain is set up yet — add a free Gemini key in Izuki's Settings");
+    }
+    let id = 1_000_000_000 + rand::random::<u32>() as u64;
+    let text = Mutex::new(String::new());
+    let failed = Mutex::new(None::<String>);
+    let emit = |t: String, done: bool, error: Option<String>| {
+        text.lock().push_str(&t);
+        if done {
+            *failed.lock() = error;
+        }
+    };
+    race(&chain, &messages_for(history, style), id, &emit);
+    let text = text.into_inner();
+    match failed.into_inner() {
+        Some(e) if text.trim().is_empty() => anyhow::bail!(e),
+        _ => Ok(text.trim().to_string()),
+    }
 }
 
 /// How long a brain gets to start answering before the next is asked too.

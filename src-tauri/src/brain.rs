@@ -286,7 +286,7 @@ fn ask_model(
         // Izuki's "hands": the real controls on screen, numbered, so the
         // model can say "click #7" instead of guessing pixels.
         controls: controls_job.join().unwrap_or_default(),
-        memory: crate::memory::prompt_block(),
+        memory: crate::memory::prompt_block() + &crate::reminders::prompt_block(),
         windows: uia::open_windows(14),
     };
     let prep_ms = started.elapsed().as_millis();
@@ -295,7 +295,11 @@ fn ask_model(
     if chain.is_empty() {
         return Err(anyhow!("no brain is configured"));
     }
-    let plan = ask_racing(&chain, req, prep_ms)?;
+    let mut plan = ask_racing(&chain, req, prep_ms)?;
+    // "Remind me…" said while it works the screen: set it, don't say the tag.
+    if plan.summary.contains("[REMIND") {
+        plan.summary = crate::reminders::take_tags(&plan.summary);
+    }
     // Anything lasting the user just mentioned about themselves.
     for fact in &plan.remember {
         crate::memory::add(fact);

@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Layers, Minus, PenLine, Settings2, X, Eye } from "lucide-react";
+import { Layers, MessageCircle, Minus, PenLine, Settings2, X, Eye } from "lucide-react";
 import { IzukiMark } from "./IzukiMark";
 import { Segmented, cx } from "./ui";
 import { DrawTab } from "./tabs/DrawTab";
+import { ChatTab } from "./tabs/ChatTab";
 import { FlowLibrary } from "./tabs/FlowLibrary";
 import { WatcherManager } from "./tabs/WatcherManager";
 import { SettingsTab } from "./tabs/SettingsTab";
@@ -15,6 +16,7 @@ import { IS_TAURI } from "../lib/ipc";
 
 const TABS: Array<{ value: TabId; label: string; icon: React.ReactNode }> = [
   { value: "draw", label: "Draw", icon: <PenLine size={13} strokeWidth={2.4} /> },
+  { value: "chat", label: "Chat", icon: <MessageCircle size={13} strokeWidth={2.4} /> },
   { value: "flows", label: "Flows", icon: <Layers size={13} strokeWidth={2.4} /> },
   { value: "watchers", label: "Watchers", icon: <Eye size={13} strokeWidth={2.4} /> },
   { value: "settings", label: "Settings", icon: <Settings2 size={13} strokeWidth={2.4} /> },
@@ -120,7 +122,7 @@ export function GlassConfigPanel() {
 
         {/* ---------------- tabs ---------------- */}
         <div className="izk-no-drag px-[18px] pb-[12px]">
-          <Segmented value={tab} options={TABS} onChange={setTab} />
+          <Segmented value={tab} options={TABS} onChange={setTab} size="sm" />
         </div>
 
         <div className="izk-divider mx-[18px]" />
@@ -137,6 +139,7 @@ export function GlassConfigPanel() {
               className="flex flex-col gap-3"
             >
               {tab === "draw" && <DrawTab />}
+              {tab === "chat" && <ChatTab />}
               {tab === "flows" && <FlowLibrary />}
               {tab === "watchers" && <WatcherManager />}
               {tab === "settings" && <SettingsTab />}

@@ -86,6 +86,20 @@ export interface VisionPlan {
 }
 
 /** Something Izuki remembers about the user. */
+export interface Reminder {
+  id: string;
+  /** Due, Unix ms. */
+  at: number;
+  text: string;
+}
+
+export interface PhoneStatus {
+  bot: string;
+  paired: boolean;
+  code: string;
+  error: string | null;
+}
+
 export interface Memory {
   id: string;
   text: string;
@@ -283,6 +297,14 @@ export interface Settings {
   duck_while_listening: boolean;
   /** Double-check your words with a cloud speech model (Groq or Gemini key). */
   cloud_ears: boolean;
+  /** Telegram bot token from @BotFather — Izuki on your phone. */
+  telegram_token: string;
+  /** The paired Telegram chat (0 = none). */
+  telegram_chat_id: number;
+  /** The code sent to the bot once to pair. */
+  telegram_code: string;
+  /** Let the paired phone do things on this PC. */
+  phone_controls_pc: boolean;
   /** How long a conversation waits for you before closing (seconds, 5…1800). */
   follow_up_secs: number;
   /** Chat/caption look: matched to the screen, or fixed. */

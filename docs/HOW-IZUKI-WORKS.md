@@ -163,6 +163,21 @@ background mode, confirm before acting, practice mode (dry run).
 
 ---
 
+## 8b. Chat, reminders and your phone
+
+- **Chat tab** — a written chat with the same companion, using the fast chat lane (no
+  screenshot, no controls scan — the lightest request Izuki makes). If the reply is `[SCREEN]`,
+  the chat offers "Do it on my PC", which runs the normal task loop.
+- **Reminders** — no extra AI call: each chat lane is told the time and adds
+  `[REMIND YYYY-MM-DD HH:MM | text]` when asked. The core pulls those out (`reminders.rs`)
+  before anything is shown or spoken, saves them to `reminders.json`, and when one is due
+  says it, shows it, and texts the paired phone.
+- **Phone (Telegram)** — `telegram.rs` long-polls the bot from this PC, so nothing is hosted.
+  Pairing: the first chat to send the 6-digit code from Settings is the only one ever answered;
+  "Unpair" makes a new code. Voice notes are transcribed by the cloud ears (Groq/Gemini).
+  `[SCREEN]` replies run the task loop on the PC (if "Let my phone use this PC" is on) and the
+  result is texted back; `/screen` sends a screenshot, `/stop` stops, `/reminders` lists them.
+
 ## 9. Checklist (run through after any change)
 
 1. "Hey Nova" → one orb, one "Mhm?" → ask something → answer → ask again without the wake word.

@@ -30,11 +30,15 @@ fn client() -> Result<reqwest::blocking::Client> {
         .build()?)
 }
 
-/// Whether any cloud ears are set up at all (a Groq or Gemini key).
+/// Whether there's a key for cloud ears at all (Groq or Gemini).
+pub fn has_key(settings: &Settings) -> bool {
+    !settings.groq_api_key.trim().is_empty()
+        || settings.provider(ProviderId::Gemini).is_some_and(|g| !g.api_key.trim().is_empty())
+}
+
+/// Whether the PC's listening should use them (a key, and switched on).
 pub fn available(settings: &Settings) -> bool {
-    settings.cloud_ears
-        && (!settings.groq_api_key.trim().is_empty()
-            || settings.provider(ProviderId::Gemini).is_some_and(|g| !g.api_key.trim().is_empty()))
+    settings.cloud_ears && has_key(settings)
 }
 
 /// The words in a 16 kHz WAV clip. Errors when no cloud ears are set up or
@@ -43,22 +47,31 @@ pub fn transcribe(settings: &Settings, wav: Vec<u8>) -> Result<String> {
     if !available(settings) {
         return Err(anyhow!("no cloud ears"));
     }
+    transcribe_clip(settings, wav, "audio/wav", "speech.wav")
+}
+
+/// The words in any audio clip — a phone voice note is `audio/ogg`.
+pub fn transcribe_clip(settings: &Settings, audio: Vec<u8>, mime: &str, file_name: &str) -> Result<String> {
+    if !has_key(settings) {
+        return Err(anyhow!("no cloud ears"));
+    }
+    let wav = audio;
     let started = std::time::Instant::now();
     let groq = settings.groq_api_key.trim();
     let gemini_cfg = settings.provider(ProviderId::Gemini).filter(|g| !g.api_key.trim().is_empty());
     let text = match (groq.is_empty(), gemini_cfg) {
         // Whisper first (fast, great with names); Gemini if Groq is down.
-        (false, g) => match groq_whisper(groq, wav.clone()) {
+        (false, g) => match groq_whisper(groq, wav.clone(), mime, file_name) {
             Ok(t) => t,
             Err(e) => match g {
                 Some(g) => {
                     eprintln!("[stt] {e} — asking Gemini");
-                    gemini(&g.base_url, g.api_key.trim(), &wav)?
+                    gemini(&g.base_url, g.api_key.trim(), &wav, mime)?
                 }
                 None => return Err(e),
             },
         },
-        (true, Some(g)) => gemini(&g.base_url, g.api_key.trim(), &wav)?,
+        (true, Some(g)) => gemini(&g.base_url, g.api_key.trim(), &wav, mime)?,
         (true, None) => return Err(anyhow!("no cloud ears")),
     };
     let text = clean(&text);
@@ -88,14 +101,14 @@ fn clean(text: &str) -> String {
     }
 }
 
-fn groq_whisper(key: &str, wav: Vec<u8>) -> Result<String> {
+fn groq_whisper(key: &str, wav: Vec<u8>, mime: &str, file_name: &str) -> Result<String> {
     use reqwest::blocking::multipart::{Form, Part};
     let form = Form::new()
         .text("model", "whisper-large-v3-turbo")
         .text("response_format", "json")
         .text("temperature", "0")
         .text("prompt", WHISPER_HINT)
-        .part("file", Part::bytes(wav).file_name("speech.wav").mime_str("audio/wav")?);
+        .part("file", Part::bytes(wav).file_name(file_name.to_string()).mime_str(mime)?);
     let res = client()?
         .post("https://api.groq.com/openai/v1/audio/transcriptions")
         .bearer_auth(key)
@@ -109,7 +122,7 @@ fn groq_whisper(key: &str, wav: Vec<u8>) -> Result<String> {
     Ok(value["text"].as_str().unwrap_or_default().to_string())
 }
 
-fn gemini(base: &str, key: &str, wav: &[u8]) -> Result<String> {
+fn gemini(base: &str, key: &str, wav: &[u8], mime: &str) -> Result<String> {
     use base64::Engine;
     let base = base.trim().trim_end_matches('/');
     let base = if base.is_empty() { "https://generativelanguage.googleapis.com" } else { base };
@@ -121,7 +134,7 @@ fn gemini(base: &str, key: &str, wav: &[u8]) -> Result<String> {
             "role": "user",
             "parts": [
                 { "text": GEMINI_ASK },
-                { "inline_data": { "mime_type": "audio/wav", "data": base64::engine::general_purpose::STANDARD.encode(wav) } }
+                { "inline_data": { "mime_type": mime, "data": base64::engine::general_purpose::STANDARD.encode(wav) } }
             ]
         }],
         "generationConfig": { "temperature": 0, "maxOutputTokens": 200, "thinkingConfig": { "thinkingBudget": 0 } }

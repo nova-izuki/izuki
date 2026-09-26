@@ -518,6 +518,39 @@ pub fn duck_audio(on: bool) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Phone (telegram.rs) and reminders (reminders.rs)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn phone_status() -> crate::telegram::Status {
+    crate::telegram::status()
+}
+
+/// Forget the paired phone; hands back the settings with the new code.
+#[tauri::command]
+pub fn phone_unpair(app: AppHandle) -> Settings {
+    crate::telegram::unpair();
+    let s = state::store().settings();
+    let _ = app.emit(
+        "izuki://patch-settings",
+        serde_json::json!({ "telegram_chat_id": 0, "telegram_code": s.telegram_code }),
+    );
+    let _ = app.emit(crate::telegram::PHONE_CHANGED, ());
+    s
+}
+
+#[tauri::command]
+pub fn reminders_list() -> Vec<crate::reminders::Reminder> {
+    crate::reminders::list()
+}
+
+#[tauri::command]
+pub fn reminder_remove(app: AppHandle, id: String) {
+    crate::reminders::remove(&id);
+    let _ = app.emit(crate::reminders::CHANGED, ());
+}
+
 /// Start looking at the screen early — called the moment the user starts
 /// talking or typing, so the answer isn't waiting on it later.
 #[tauri::command]
@@ -669,8 +702,19 @@ pub fn import_wakewords() -> R<WakewordImport> {
 /// Stream a spoken-style reply to the conversation so far; words arrive as
 /// `izuki://chat-delta` events tagged `id`.
 #[tauri::command]
-pub fn chat_stream(app: AppHandle, id: u64, history: Vec<crate::chat::Turn>, expressive: Option<bool>) {
-    crate::chat::stream(app, id, history, expressive.unwrap_or(false));
+pub fn chat_stream(
+    app: AppHandle,
+    id: u64,
+    history: Vec<crate::chat::Turn>,
+    expressive: Option<bool>,
+    written: Option<bool>,
+) {
+    let style = if written.unwrap_or(false) {
+        crate::chat::Style::Text
+    } else {
+        crate::chat::Style::Voice { expressive: expressive.unwrap_or(false) }
+    };
+    crate::chat::stream(app, id, history, style);
 }
 
 #[tauri::command]
