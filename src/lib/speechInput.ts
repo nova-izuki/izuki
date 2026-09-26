@@ -243,7 +243,16 @@ export interface ListenOptions {
    * do cut in, `onCutIn` fires (stop talking!) and the listen carries on
    * recording you, from just before you started.
    */
-  cutIn?: { busy: () => boolean; onCutIn: () => void };
+  cutIn?: {
+    busy: () => boolean;
+    onCutIn: () => void;
+    /**
+     * Whether cutting in is possible right now. Off while Izuki's voice is
+     * coming out of speakers the echo canceller can't see (the Windows
+     * voice) — otherwise its own voice in the mic would stop it mid-sentence.
+     */
+    allowed?: () => boolean;
+  };
 }
 
 export interface Listening {
@@ -256,6 +265,12 @@ export interface Listening {
   finish: () => void;
   /** True once the recording hit `maxMs` — the speaker was still going. */
   readonly cutOff: boolean;
+  /**
+   * Why it ended: "speech" (you said something), "silence" (nobody spoke
+   * for `noSpeechMs`), or "cancelled" (stopped, mic taken away). Only real
+   * silence should ever close a conversation.
+   */
+  readonly endReason: "speech" | "silence" | "cancelled";
   /** Throw it away. */
   cancel: () => void;
 }
@@ -438,6 +453,12 @@ async function acquireMic(): Promise<OpenMic> {
 
 // ---------------------------------------------------------------- Bluetooth
 
+/** The open mic is a headset/earbuds (so Izuki's voice can't leak into it). */
+export function micIsHeadset(): boolean {
+  const label = openMic?.label ?? lastMicLabel;
+  return HEADSET.test(label) && !NOT_A_MIC.test(label);
+}
+
 /** Mics that switch a Bluetooth headset into low-quality "call" mode. */
 const BLUETOOTH = /bluetooth|hands-?free|headset|airpods|buds/i;
 /** Every listen in progress, by its cancel — so a hold can end them. */
@@ -598,11 +619,13 @@ export function listen(opts: ListenOptions = {}): Listening {
 
   let ended = false;
   let keep = false;
+  let endReason: "speech" | "silence" | "cancelled" = "cancelled";
   let teardown: () => void = () => {};
   const end = (keepIt: boolean) => {
     if (ended) return;
     ended = true;
     keep = keepIt;
+    if (keepIt) endReason = "speech";
     liveListens.delete(cancelThis);
     teardown();
   };
@@ -666,6 +689,13 @@ export function listen(opts: ListenOptions = {}): Listening {
       const rms = Math.sqrt(sum / data.length);
       opts.onLevel?.(Math.min(1, Math.sqrt(rms) * 2.2));
       if (Date.now() < warmupUntil) return;
+      // Izuki talking out loud where its own voice can't be told apart from
+      // yours: don't count anything as you cutting in (the wait still
+      // doesn't run down meanwhile).
+      if (speechAt < 0 && opts.cutIn?.busy() && opts.cutIn.allowed && !opts.cutIn.allowed()) {
+        waitedWhileBusy += chunkMs;
+        return;
+      }
       chunks.push(data);
 
       // Capped, so a room with a TV or people talking doesn't push the bar
@@ -697,6 +727,7 @@ export function listen(opts: ListenOptions = {}): Listening {
           if (busy) opts.cutIn?.onCutIn();
           opts.onSpeech?.();
         } else if (noSpeechMs && elapsed - waitedWhileBusy > noSpeechMs) {
+          endReason = "silence";
           end(false);
         } else if (chunks.length > 40) {
           // Still waiting (it can be up to half an hour): only the last
@@ -765,6 +796,9 @@ export function listen(opts: ListenOptions = {}): Listening {
     cancel: () => end(false),
     get cutOff() {
       return cutOff;
+    },
+    get endReason() {
+      return endReason;
     },
   };
 }

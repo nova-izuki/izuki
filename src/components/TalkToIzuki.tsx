@@ -90,10 +90,12 @@ export function TalkToIzuki() {
           </h2>
           <p className="mt-0.5 text-[11px] leading-snug text-izk-muted">
             {settings.voice_wake_enabled
-              ? voice.active
-                ? 'Listening for "Hey Izuki" or "Nova" — hands-free, no key needed.'
-                : "Reconnecting the microphone…"
-              : "Off. Draw, dictate with Space, or turn hands-free on below."}
+              ? voice.error === "no-wake-word"
+                ? "Hands-free needs a wake word — add one below. Until then, hold the talk key."
+                : voice.active
+                  ? "Listening for your wake word — just say it, no key needed."
+                  : "Starting the microphone…"
+              : "Hands-free is off. Hold the talk key, type in the chat, or turn it on below."}
           </p>
         </div>
       </div>

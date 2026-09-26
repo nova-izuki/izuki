@@ -114,7 +114,7 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
         "watchers" => navigate(app, "watchers"),
         "settings" => navigate(app, "settings"),
         "stop" => {
-            crate::automation::request_abort();
+            crate::brain::cancel_task();
             let _ = app.emit(events::STOP_SPEAKING, ());
             let _ = overlay::hide_overlay(app);
             let _ = app.emit(

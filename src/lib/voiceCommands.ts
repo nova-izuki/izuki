@@ -18,9 +18,15 @@ export type LocalCommand =
   | { kind: "forgetAll" }
   | { kind: "sphere"; on: boolean }
   | { kind: "endConversation" }
+  | { kind: "quit" }
   | { kind: "greeting" };
 
 const PATTERNS: Array<{ test: RegExp; command: LocalCommand }> = [
+  // Closing the whole app — checked first, so "close izuki" isn't just "close".
+  {
+    test: /^(quit|exit|close|shut down|shutdown|turn off|kill)( yourself)?( izuki| nova| the app| the assistant| completely| everything| the whole app| the whole thing)+$|^(quit|exit|close) (izuki|nova) completely$|^turn yourself off$/i,
+    command: { kind: "quit" },
+  },
   // Checked before "chat" so "chat back"/"reset chat" don't just open it.
   {
     test: /^(reset (the )?chat|bring (back )?(the )?chat( back)?|where'?s (the |my )?chat|find (the |my )?chat|chat back)\.?$/i,
@@ -42,7 +48,7 @@ const PATTERNS: Array<{ test: RegExp; command: LocalCommand }> = [
   },
   // Ending a "Hey Izuki" conversation, the way you'd end one with a person.
   {
-    test: /^(ok(ay)?,? )?(i'?m done|i am done|we'?re done|done|that'?s all|that'?s it|that will be all|that'?ll be all|nothing else|no,? that'?s all|no thanks|no thank you|thanks|thank you|thanks,? (that'?s all|i'?m done|bye)|thank you,? (that'?s all|i'?m done|bye)|bye|bye bye|goodbye|good ?night|see you|see ya|later|talk (to you )?later|end (the )?(chat|conversation)|close|you can go)[.!]*$/i,
+    test: /^((i'?m|i am|we'?re|we are) (done|good|all good|finished|set)|done|all done|finished|that'?s (all|it|everything|enough)|that (will|would) be all|that'?ll be all|nothing else|no thanks|no thank you|thanks|thank you|thanks a lot|thank you so much|bye|bye bye|goodbye|good bye|good ?night|see you|see ya|see you later|later|catch you later|talk (to you )?(later|soon)|end (the )?(chat|conversation|session)|close|close (it|this|the orb|the chat)|you can go|go to sleep|dismiss|quit|exit|leave)( (bye|goodbye|for now|then|for today))*$/i,
     command: { kind: "endConversation" },
   },
 ];
@@ -117,20 +123,60 @@ const SPHERE_ON = new RegExp(
   "i"
 );
 
+/**
+ * What was said, minus what speech-to-text wraps around it: "Okay, bye
+ * Nova." → "bye", "Alright, that's it, thanks!" → "that's it thanks". The
+ * commands above are matched against this, so real speech still hits them.
+ */
+export function normalizeCommand(heard: string): string {
+  let t = heard
+    .toLowerCase()
+    .replace(/[.,!?;:…"“”]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const FILLER = /^(ok(ay)?|alright|all right|so|um+|uh+|hmm+|well|yeah|yes|no|oh|right|cool|great|perfect|hey|please)\s+/;
+  const NAME = /\s+(izuki|nova|jarvis|buddy|bro|man|dude)$/;
+  for (let i = 0; i < 4; i++) {
+    const before = t;
+    t = t.replace(FILLER, "").replace(NAME, "").trim();
+    if (t === before) break;
+  }
+  // "thanks that's all" / "that's all thanks" — the thanks doesn't change it.
+  // ("Thank you so much" on its own stays a thank-you.)
+  if (!/^(thanks|thank you)( so much| a lot| very much)?$/.test(t)) {
+    t = t.replace(/^(thanks|thank you)\s+(?=\S)/, "").replace(/\s+(thanks|thank you)$/, "");
+  }
+  return t;
+}
+
 export function matchLocalCommand(heard: string): LocalCommand | null {
-  const norm = heard.trim();
+  // Memory commands keep the user's own wording (names keep their capitals);
+  // everything else is matched on the tidied-up version.
+  const raw = heard.trim().replace(/^(?:ok(?:ay)?|alright|so|hey)[,\s]+/i, "");
+  const norm = normalizeCommand(heard);
   if (!norm) return null;
+  // Quitting names the app ("quit Izuki"), so it's checked before the name
+  // is tidied away.
+  const plain = heard
+    .toLowerCase()
+    .replace(/[.,!?;:…"“”]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^(ok(ay)?|alright|so|please|hey)\s+/, "");
+  if (PATTERNS[0].test.test(plain)) return PATTERNS[0].command;
   if (SPHERE_OFF.test(norm)) return { kind: "sphere", on: false };
   if (SPHERE_ON.test(norm)) return { kind: "sphere", on: true };
   if (FORGET_ALL.test(norm)) return { kind: "forgetAll" };
-  const forget = norm.match(FORGET);
+  const forget = raw.match(FORGET);
   // "Forget it" / "forget that" mean "never mind", not "delete a memory".
   if (forget && !/^(it|that|this|about it|about that|everything i said)$/i.test(forget[1].trim())) {
     return { kind: "forget", about: forget[1].replace(/^(?:that\s+)?(?:i|my)\s+/i, "") };
   }
-  if (/^forget (it|that|this)\.?$/i.test(norm)) return { kind: "stop" };
-  const remember = norm.match(REMEMBER);
+  if (/^forget (it|that|this)$/i.test(norm)) return { kind: "stop" };
+  const remember = raw.match(REMEMBER);
   if (remember) return { kind: "remember", text: asFact(remember[1]) };
+  // Just the name ("Hey Nova", "Izuki?") — a hello.
+  if (/^(hey |hi |hello |ok |okay )?(izuki|nova|jarvis)$/.test(norm)) return { kind: "greeting" };
   for (const { test, command } of PATTERNS) {
     if (test.test(norm)) return command;
   }

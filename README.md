@@ -45,7 +45,7 @@ happens to be great with computers. It can:
 | ✍️ **Draw to show it** | Hold **Ctrl+D**, circle something, let go, then say or type what you want. A circle is a click, an arrow is a drag, a box watches a region. |
 | 🧠 **Any brain you like** | Google Gemini (free), NVIDIA NIM (free), OpenRouter, OpenAI, Anthropic, a local model with Ollama, or any OpenAI-compatible server. Izuki races them and uses whichever answers first if one is slow. |
 | 💾 **Flows & watchers** | Anything Izuki does can be saved and replayed in one click, or triggered when something on screen changes. |
-| 🛑 **Always stoppable** | **Ctrl+Shift+Q** stops everything instantly. |
+| 🛑 **Always stoppable** | **Esc** (while it's working or talking) or **Ctrl+Shift+Q** (any time) stops everything instantly — the task, the voice, the listening. Say “quit Izuki” to close the app. |
 
 ## Install
 
@@ -72,7 +72,8 @@ The first time you use voice, Izuki downloads its speech models once (a few hund
 | Hold **Ctrl+Win+Space** | Push-to-talk without the wake word. |
 | Hold **Ctrl+D**, draw, let go | Mark something and ask about it (Enter with nothing typed = “help me with this”). |
 | **Ctrl+Shift+Space** | The full drawing overlay, for multi-mark jobs. |
-| **Ctrl+Shift+Q** | Stop everything. |
+| **Esc** (while Izuki is busy) or **Ctrl+Shift+Q** | Stop everything. |
+| Say or type **“quit Izuki”** | Close the app completely. |
 | “Remember that …” / “Forget …” | Manage what Izuki knows about you. |
 
 Every shortcut can be changed in **Settings → Shortcuts**. To add a wake word: sign in at

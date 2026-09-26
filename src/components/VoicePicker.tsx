@@ -116,8 +116,8 @@ export function VoicePicker() {
       <div className="izk-divider" />
 
       <Row
-        label="Voice sphere"
-        hint="The liquid sphere for push-to-talk and replies: it ripples with your voice, shows your words, swirls while thinking and moves as Izuki talks. (Always on for “Hey Izuki”.)"
+        label="Show the orb for typed requests"
+        hint="When you type in the chat or use Ctrl+D, the orb shows what Izuki is doing and moves as it answers. (Voice conversations always show it.)"
         icon={<Orbit size={14} strokeWidth={2.3} />}
       >
         <Toggle checked={settings.sphere_on_replies} onChange={(v) => patch({ sphere_on_replies: v })} />

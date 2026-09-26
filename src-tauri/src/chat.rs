@@ -69,6 +69,8 @@ fn system_prompt(expressive: bool) -> String {
          [sympathetic] [playful] [curious]. It sets the tone of your voice and isn't read out.\n\
          Speak TO the user as \"you\" — never describe them or what they said in the third person, and \
          never show your reasoning.\n\
+         When the user is wrapping up — bye, that's all, I'm good, thanks that's it, see you, goodnight, \
+         in any wording — reply with one short warm goodbye and end your reply with [END].\n\
          IMPORTANT: if answering needs you to look at the user's screen, or to do something on their \
          computer (open, click, type, play, search, close, scroll… — even asked as \"can you…\" or \
          \"how do I…\" while they're at their PC), reply with exactly [SCREEN] and nothing else — \
@@ -242,6 +244,11 @@ fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn() -> bool,
     if cfg.id == ProviderId::Gemini && cfg.model.contains("flash") {
         body["reasoning_effort"] = json!("none");
     }
+    // (Gemini's main model may be resting — see `vision::gemini_model_now`.)
+    let mut body = body;
+    if cfg.id == ProviderId::Gemini {
+        body["model"] = json!(crate::vision::gemini_model_now(&cfg.model));
+    }
     let mut rq = client.post(chat_url(cfg)).json(&body);
     if !cfg.api_key.trim().is_empty() {
         rq = rq.bearer_auth(cfg.api_key.trim());
@@ -255,6 +262,9 @@ fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn() -> bool,
     let busy = matches!(resp.status().as_u16(), 429 | 503);
     if busy && cfg.id == ProviderId::Gemini && cfg.model.contains("flash") && !cfg.model.contains("lite") {
         eprintln!("[chat] {} is busy ({}) — using gemini-2.5-flash-lite", cfg.model, resp.status());
+        if resp.status().as_u16() == 429 {
+            crate::vision::gemini_main_tired();
+        }
         let mut lite = cfg.clone();
         lite.model = "gemini-2.5-flash-lite".into();
         return stream_one(&lite, messages, stop, on_text);

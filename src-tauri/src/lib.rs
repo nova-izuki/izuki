@@ -16,6 +16,7 @@ pub mod models;
 pub mod ocr;
 pub mod overlay;
 pub mod planner;
+pub mod recipes;
 pub mod settings;
 pub mod state;
 pub mod store;
@@ -166,6 +167,10 @@ pub fn run() {
             commands::submit_draw,
             commands::submit_voice_command,
             commands::answer_help,
+            commands::set_busy,
+            commands::cancel_task,
+            commands::quit_app,
+            commands::selftest_enabled,
             commands::preview_plan,
             commands::panic_stop,
             commands::probe_provider,
@@ -189,6 +194,7 @@ pub fn run() {
 
             tray::build(&handle)?;
             hotkey::rebind(&handle, &settings);
+            hotkey::install_escape_watch(&handle);
             watcher::spawn(handle.clone(), store.clone());
             follow::spawn(handle.clone(), store.clone());
 

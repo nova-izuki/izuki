@@ -228,6 +228,14 @@ fn ask_model(
 ) -> Result<VisionPlan> {
     let _ = store; // brains now come from `brain_chain()`
     let started = std::time::Instant::now();
+    // Reading the window's buttons takes the longest part of the prep (up to
+    // a second) — do it at the same time as the screenshot work.
+    let controls_job = std::thread::spawn(|| {
+        let t = std::time::Instant::now();
+        let c = uia::controls_fresh_or_now(MAX_CONTROLS);
+        eprintln!("[brain] screen controls: {} in {} ms", c.len(), t.elapsed().as_millis());
+        c
+    });
 
     let annotated = planner::annotate(frame, session);
     let scaled = annotated.downscaled(MODEL_IMAGE_EDGE);
@@ -257,13 +265,9 @@ fn ask_model(
         draft: draft.to_vec(),
         // Izuki's "hands": the real controls on screen, numbered, so the
         // model can say "click #7" instead of guessing pixels.
-        controls: {
-            let t = std::time::Instant::now();
-            let c = uia::controls_fresh_or_now(MAX_CONTROLS);
-            eprintln!("[brain] screen controls: {} in {} ms", c.len(), t.elapsed().as_millis());
-            c
-        },
+        controls: controls_job.join().unwrap_or_default(),
         memory: crate::memory::prompt_block(),
+        windows: uia::open_windows(14),
     };
     let prep_ms = started.elapsed().as_millis();
 
@@ -301,8 +305,60 @@ pub fn brain_chain() -> Vec<crate::settings::ProviderConfig> {
         }
     }
     skip_broken(&mut chain);
+    skip_resting(&mut chain);
     order_by_speed(&mut chain);
     chain
+}
+
+/// Brains told to slow down ("too many requests"), and until when. Asking
+/// them again right away only burns more of the quota and adds a failure.
+static RESTING: parking_lot::Mutex<Vec<(crate::settings::ProviderId, std::time::Instant)>> =
+    parking_lot::Mutex::new(Vec::new());
+
+/// How long a "too many requests" answer means leaving that brain alone:
+/// a used-up daily quota for an hour, a per-minute limit for a minute.
+fn rest_for(err: &str) -> Option<std::time::Duration> {
+    let e = err.to_ascii_lowercase();
+    let limited = e.contains("429") || e.contains("too many requests") || e.contains("rate-limit") || e.contains("rate limit");
+    if !limited {
+        return None;
+    }
+    if e.contains("quota") || e.contains("per day") || e.contains("daily") {
+        Some(std::time::Duration::from_secs(60 * 60))
+    } else {
+        Some(std::time::Duration::from_secs(60))
+    }
+}
+
+/// Remember what a failure says about a brain: gone for good (bad key, no
+/// credits) or just resting (rate limits).
+fn note_failure(id: crate::settings::ProviderId, err: &str) {
+    if is_hopeless(err) {
+        mark_broken(id);
+    } else if let Some(d) = rest_for(err) {
+        let mut r = RESTING.lock();
+        r.retain(|(p, _)| *p != id);
+        r.push((id, std::time::Instant::now() + d));
+        eprintln!("[brain] resting {id:?} for {} s (rate-limited)", d.as_secs());
+    }
+}
+
+/// Leave out resting brains — unless that would leave none, then keep the
+/// one that's back soonest.
+fn skip_resting(chain: &mut Vec<crate::settings::ProviderConfig>) {
+    let mut r = RESTING.lock();
+    let now = std::time::Instant::now();
+    r.retain(|(_, until)| *until > now);
+    if r.is_empty() {
+        return;
+    }
+    let until = |id| r.iter().find(|(p, _)| *p == id).map(|(_, u)| *u);
+    let awake: Vec<_> = chain.iter().filter(|c| until(c.id).is_none()).cloned().collect();
+    if !awake.is_empty() {
+        *chain = awake;
+    } else if let Some(best) = chain.iter().min_by_key(|c| until(c.id)).cloned() {
+        *chain = vec![best];
+    }
 }
 
 /// Record how a brain did outside the racing path (the chat lane).
@@ -310,10 +366,10 @@ pub fn note_answer(id: crate::settings::ProviderId, result: Result<u128, &str>) 
     match result {
         Ok(ms) => note_speed(id, Some(ms)),
         Err(e) => {
-            note_speed(id, None);
-            if is_hopeless(e) {
-                mark_broken(id);
+            if rest_for(e).is_none() && !is_hopeless(e) {
+                note_speed(id, None);
             }
+            note_failure(id, e);
         }
     }
 }
@@ -435,7 +491,10 @@ fn order_by_speed(chain: &mut [crate::settings::ProviderConfig]) {
 }
 
 /// How long the chosen brain gets before a backup is asked as well.
-const HEDGE_AFTER: std::time::Duration = std::time::Duration::from_millis(2000);
+// Every hedge is an extra request against a free quota; 2 s fired a second
+// (and third) brain on nearly every look and burned through the daily
+// limits. Only a really slow brain gets company now.
+const HEDGE_AFTER: std::time::Duration = std::time::Duration::from_millis(5000);
 
 /// Ask the brains in `chain` order, but don't wait on a slow one: if the
 /// current brain hasn't answered after `HEDGE_AFTER`, the next one is asked
@@ -453,11 +512,14 @@ fn ask_racing(chain: &[crate::settings::ProviderConfig], req: VisionRequest, pre
             let t = Instant::now();
             let r = vision::ask(&cfg, &req);
             // Remember how this brain did, even if another one won the race.
-            note_speed(cfg.id, r.as_ref().ok().map(|_| t.elapsed().as_millis()));
+            // ("Too many requests" or a bad key isn't slowness — don't rank it down for that.)
+            match &r {
+                Ok(_) => note_speed(cfg.id, Some(t.elapsed().as_millis())),
+                Err(e) if rest_for(&e.to_string()).is_none() && !is_hopeless(&e.to_string()) => note_speed(cfg.id, None),
+                Err(_) => {}
+            }
             if let Err(e) = &r {
-                if is_hopeless(&e.to_string()) {
-                    mark_broken(cfg.id);
-                }
+                note_failure(cfg.id, &e.to_string());
             }
             let _ = tx.send((i, r, t.elapsed()));
         });
@@ -568,7 +630,7 @@ where
     std::thread::Builder::new()
         .name("izuki-act".into())
         .spawn(move || {
-            run_steps_blocking(&app, &store, &steps);
+            run_steps_blocking(&app, &store, &steps, &|| !automation::aborted());
             on_done();
         })
         .ok();
@@ -576,7 +638,7 @@ where
 
 /// Run `steps` on this thread. `true` if every step ran (not stopped and
 /// no step failed).
-fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep]) -> bool {
+fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> bool {
             let settings = store.settings();
             let move_ms = settings.move_duration_ms;
             automation::clear_abort();
@@ -590,7 +652,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep])
 
             let run = || {
                 for (i, step) in steps.iter().enumerate() {
-                    if automation::aborted() {
+                    if !alive() {
                         let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
                         return false;
                     }
@@ -672,7 +734,12 @@ pub fn run_flow(app: &AppHandle, store: &Arc<Store>, id: &str) -> Result<()> {
 /// mark list standing in for the geometry-only fast path.
 pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String) -> VisionPlan {
     let settings = store.settings();
+    // This task replaces any other: the old one sees the number change and
+    // stops, and a question it was waiting on is let go.
+    answer_help(None);
+    let my_task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     automation::clear_abort();
+    let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted();
 
     // "Keep going" after a task had to stop: pick it up where it left off.
     let (prompt, resumed) = match UNFINISHED.lock().take() {
@@ -730,7 +797,7 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
         );
         return VisionPlan {
             steps: Vec::new(),
-            summary: "Could not capture the screen.".into(),
+            summary: "I can't see your screen right now — is it locked or asleep? Unlock it and ask me again.".into(),
             provider: "local".into(),
             model: "geometry".into(),
             latency_ms: 0,
@@ -755,18 +822,45 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
     let mut repeats = 0;
     let mut all_steps: Vec<ActionStep> = Vec::new();
     let mut last_plan: Option<VisionPlan> = None;
+    // What was last said while working, so it isn't said again.
+    let mut last_said = String::new();
+    // The agent's own running plan and findings, carried from look to look.
+    let mut notes: Option<String> = None;
+    // Did it finish (and see that it's done)? Then how it did it is kept.
+    let mut completed = false;
+    // Done something like this before? Say how it went.
+    let experience = crate::recipes::recall(&prompt).map(|r| {
+        eprintln!("[agent] recalled how \"{}\" was done last time", r.task);
+        format!(
+            "\nLast time a task like this (\"{}\") worked like this: {}. Take the same route if this screen allows it.",
+            r.task,
+            r.steps.join("; ")
+        )
+    });
 
     for round in 0..MAX_ROUNDS {
+        if !alive() {
+            eprintln!("[agent] stopped (replaced or cancelled)");
+            break;
+        }
         let mut ask = if done_so_far.is_empty() {
             prompt.clone()
         } else {
             format!(
-                "{prompt}\n\nAlready done (don't repeat): {}.\nThis is the screen now. Carry on with the task, or finish.",
+                "{prompt}\n\nSteps already tried: {}.\nThis is the screen now — check which parts of the request it actually shows finished, don't redo what worked, and carry on with the rest (or finish if every part is visibly done).",
                 done_so_far.join("; ")
             )
         };
         if let Some(note) = told.take() {
             ask.push_str(&format!("\n{note}"));
+        }
+        if let Some(n) = &notes {
+            ask.push_str(&format!("\nYour notes so far: {n}"));
+        }
+        if round == 0 {
+            if let Some(e) = &experience {
+                ask.push_str(e);
+            }
         }
         let session = DrawSession {
             marks: std::mem::take(&mut shown),
@@ -784,7 +878,7 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
                 Err(e) => {
                     attempt += 1;
                     eprintln!("[agent] round {} try {attempt} failed: {e}", round + 1);
-                    if attempt >= 3 || automation::aborted() {
+                    if attempt >= 3 || !alive() {
                         break Err(e);
                     }
                     if attempt == 1 {
@@ -795,12 +889,16 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
                     }
                     let _ = app.emit(events::STATUS, StatusEvent::working("Waiting for a free AI brain…"));
                     let until = std::time::Instant::now() + Duration::from_secs(6 * attempt);
-                    while std::time::Instant::now() < until && !automation::aborted() {
+                    while std::time::Instant::now() < until && alive() {
                         std::thread::sleep(Duration::from_millis(200));
                     }
                 }
             }
         };
+        if !alive() {
+            eprintln!("[agent] stopped while thinking (replaced or cancelled)");
+            break;
+        }
         let plan = match asked_now {
             Ok(plan) => plan,
             // Partway through: keep what was done, say so, and remember
@@ -838,6 +936,12 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
         let steps = plan.steps.clone();
         let done = plan.done;
         let wait = plan.wait;
+        if plan.notes.is_some() {
+            notes = plan.notes.clone();
+        }
+        if done && steps.is_empty() && round > 0 {
+            completed = true;
+        }
         eprintln!(
             "[agent] round {}: {} step(s){}{} — {}",
             round + 1,
@@ -871,12 +975,12 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
         last_round = this_round;
         // Stuck on "which one?": ask, and carry on with what they show us.
         if let (true, Some(question)) = (steps.is_empty(), plan.ask.clone()) {
-            if asked < 3 && !automation::aborted() {
+            if asked < 3 && alive() {
                 asked += 1;
                 if focus {
                     let _ = overlay::hide_overlay(app);
                 }
-                match ask_user(app, &question) {
+                match ask_user(app, &question, &alive) {
                     Some(answer) => {
                         let said = answer.prompt.trim().to_string();
                         told = Some(format!(
@@ -917,9 +1021,11 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
             );
             return plan;
         }
-        // Say what it's doing as it goes — "Opening YouTube…" — unless this
-        // is the last word (that one is the reply).
-        if !steps.is_empty() && !done && !plan.summary.trim().is_empty() {
+        // Say what it's doing as it goes — "Opening Blackboard…" — unless
+        // this is the last word (that one is the reply), or it's the same
+        // thing again, or just "Got it!".
+        if !steps.is_empty() && !done && worth_saying(&plan.summary, &last_said) {
+            last_said = plan.summary.clone();
             let _ = app.emit(
                 "izuki://say",
                 serde_json::json!({ "text": plan.summary, "mood": plan.mood, "reply": true, "quick": true }),
@@ -930,10 +1036,13 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
             break;
         }
 
-        let finished = run_steps_blocking(app, store, &steps);
+        let finished = run_steps_blocking(app, store, &steps, &alive);
         all_steps.extend(steps.iter().cloned());
         done_so_far.extend(steps.iter().map(describe_step));
-        if !finished || automation::aborted() || done || round + 1 == MAX_ROUNDS {
+        if done && finished {
+            completed = true;
+        }
+        if !finished || !alive() || done || round + 1 == MAX_ROUNDS {
             // Ran out of rounds mid-task: "keep going" carries on from here.
             if round + 1 == MAX_ROUNDS && !done && finished {
                 *UNFINISHED.lock() = Some((prompt.clone(), done_so_far.clone()));
@@ -950,7 +1059,7 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
         let waited = std::time::Instant::now();
         let min = Duration::from_millis(150 + u64::from(wait) * 1000);
         let max = Duration::from_millis(6000 + u64::from(wait) * 1000);
-        let settled = crate::live::wait_until_settled(min, max, automation::aborted);
+        let settled = crate::live::wait_until_settled(min, max, || !alive());
         eprintln!(
             "[agent] screen {} after {} ms",
             if settled { "settled" } else { "still moving" },
@@ -964,6 +1073,11 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
 
     if focus {
         let _ = overlay::hide_overlay(app);
+    }
+
+    // It worked: keep how, for next time.
+    if completed && alive() && !done_so_far.is_empty() {
+        crate::recipes::remember(&prompt, &uia::foreground_app(), &done_so_far);
     }
 
     let mut plan = last_plan.unwrap_or_default();
@@ -992,6 +1106,49 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
 /// How many look-act rounds one request may take.
 const MAX_ROUNDS: usize = 10;
 
+/// Bumped by every new task and by "stop". A task remembers its number and
+/// stops (before its next click, and without answering) once it changes —
+/// so there's only ever one task working the screen, and "stop" really
+/// stops it instead of just muting it.
+static TASK_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Stop the task in progress, forget any half-done one, and let go of a
+/// question it was waiting on. (Stop hotkey, Esc, the orb's ✕, "stop".)
+pub fn cancel_task() {
+    TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    automation::request_abort();
+    UNFINISHED.lock().take();
+    answer_help(None);
+}
+
+/// Worth saying out loud while working? Not the same thing twice, and not
+/// just "Got it!" — the user heard "Got it, let's do this" five times in a
+/// row on a quiz.
+fn worth_saying(line: &str, last: &str) -> bool {
+    let words = |s: &str| -> Vec<String> {
+        s.to_lowercase()
+            .split(|c: char| !c.is_alphanumeric() && c != '\'')
+            .filter(|w| !w.is_empty())
+            .map(str::to_string)
+            .collect()
+    };
+    let now = words(line);
+    const FILLER: &[&str] = &[
+        "got", "it", "okay", "ok", "alright", "sure", "on", "let's", "lets", "let", "me", "i'll", "now",
+        "so", "right", "cool", "great", "perfect", "here", "we", "go", "thing",
+    ];
+    let meaningful = now.iter().filter(|w| !FILLER.contains(&w.as_str())).count();
+    if meaningful < 2 {
+        return false;
+    }
+    let before = words(last);
+    if before.is_empty() {
+        return true;
+    }
+    let shared = now.iter().filter(|w| before.contains(w)).count();
+    (shared as f32) / (now.len().max(1) as f32) < 0.6
+}
+
 /// A task that had to stop partway (busy brains, out of rounds): what was
 /// asked and what's been done, for "keep going".
 static UNFINISHED: parking_lot::Mutex<Option<(String, Vec<String>)>> = parking_lot::Mutex::new(None);
@@ -1015,7 +1172,7 @@ static HELP: parking_lot::Mutex<Option<std::sync::mpsc::Sender<Option<DrawSessio
 /// Ask the user to show Izuki something: says the question, opens the draw
 /// surface, and waits for their mark (and/or words) — `None` if they skip it
 /// (Esc), stop Izuki, or don't answer within a minute and a half.
-fn ask_user(app: &AppHandle, question: &str) -> Option<DrawSession> {
+fn ask_user(app: &AppHandle, question: &str, alive: &dyn Fn() -> bool) -> Option<DrawSession> {
     let (tx, rx) = std::sync::mpsc::channel();
     *HELP.lock() = Some(tx);
     let _ = app.emit(events::STATUS, StatusEvent::info(question.to_string()));
@@ -1028,7 +1185,7 @@ fn ask_user(app: &AppHandle, question: &str) -> Option<DrawSession> {
         match rx.recv_timeout(Duration::from_millis(250)) {
             Ok(a) => break a,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                if automation::aborted() || started.elapsed() > Duration::from_secs(90) {
+                if !alive() || started.elapsed() > Duration::from_secs(90) {
                     break None;
                 }
             }
@@ -1097,6 +1254,7 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
         draft: Vec::new(),
         controls: Vec::new(),
         memory: String::new(),
+        windows: Vec::new(),
     };
 
     let answer = vision::ask(&cfg, &req);

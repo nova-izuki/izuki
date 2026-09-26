@@ -241,6 +241,10 @@ pub struct VisionPlan {
     /// Seconds to let the screen settle (a page, an ad) before the next look.
     #[serde(default)]
     pub wait: u32,
+    /// The agent's working notes — its running plan and what it has learned
+    /// (where things are) — shown back to it on the next look.
+    #[serde(default)]
+    pub notes: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

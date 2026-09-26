@@ -305,6 +305,14 @@ export const api = {
     ),
 
   panic: () => call<void>("panic_stop", undefined, () => undefined),
+  /** Izuki is thinking/working/talking — Esc stops it only then. */
+  setBusy: (busy: boolean) => call<void>("set_busy", { busy }, () => undefined),
+  /** Stop the task in progress (no more clicks, no late answer). */
+  cancelTask: () => call<void>("cancel_task", undefined, () => undefined),
+  /** Developer self-test mode (IZUKI_SELFTEST=1). */
+  selftestEnabled: () => call<string>("selftest_enabled", undefined, () => ""),
+  /** Close Izuki completely. */
+  quitApp: () => call<void>("quit_app", undefined, () => undefined),
 
   showConfig: (tab?: string) => call<void>("show_config", { tab }, () => undefined),
 };
@@ -365,6 +373,8 @@ export const EV = {
   /** Cut Izuki off mid-sentence. Sent by the chat's stop button, the
    * caption's ×, a new command, and (from Rust) the Stop hotkey/tray item. */
   stopSpeaking: "izuki://stop-speaking",
+  /** A Ctrl+D / draw-overlay request, handed to the one session (VoiceEngine). */
+  runDraw: "izuki://run-draw",
   /** Izuki asks the user to show it something (payload: the question). */
   helpAsk: "izuki://help-ask",
   helpDone: "izuki://help-done",

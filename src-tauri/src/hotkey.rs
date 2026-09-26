@@ -85,6 +85,89 @@ fn code_for(token: &str) -> Option<Code> {
     name.parse::<Code>().ok()
 }
 
+/// Esc stops Izuki — but only while it's busy (thinking, working or
+/// talking). A plain-Esc system hotkey never fired here, and would have
+/// swallowed Esc in every other app anyway; instead a light keyboard watcher
+/// notices Esc (without taking it — the app you're in still gets it) and
+/// only acts while Izuki is busy.
+static ESC_ON: AtomicBool = AtomicBool::new(false);
+/// When Esc was last armed, so a forgotten "busy" can't keep it armed forever.
+static ESC_SINCE: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
+static ESC_APP: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
+
+/// Start the Esc watcher (once, at startup). Costs nothing while idle.
+#[cfg(windows)]
+pub fn install_escape_watch(app: &AppHandle) {
+    use windows::Win32::UI::WindowsAndMessaging::{GetMessageW, SetWindowsHookExW, MSG, WH_KEYBOARD_LL};
+    if ESC_APP.set(app.clone()).is_err() {
+        return;
+    }
+    std::thread::Builder::new()
+        .name("izuki-esc".into())
+        .spawn(|| unsafe {
+            if SetWindowsHookExW(WH_KEYBOARD_LL, Some(esc_hook), None, 0).is_err() {
+                eprintln!("[hotkey] couldn't watch for Esc");
+                return;
+            }
+            // A low-level hook needs its thread to keep pumping messages.
+            let mut msg = MSG::default();
+            while GetMessageW(&mut msg, None, 0, 0).as_bool() {}
+        })
+        .ok();
+}
+
+#[cfg(not(windows))]
+pub fn install_escape_watch(_app: &AppHandle) {}
+
+#[cfg(windows)]
+unsafe extern "system" fn esc_hook(
+    code: i32,
+    wparam: windows::Win32::Foundation::WPARAM,
+    lparam: windows::Win32::Foundation::LPARAM,
+) -> windows::Win32::Foundation::LRESULT {
+    use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
+    use windows::Win32::UI::WindowsAndMessaging::{CallNextHookEx, KBDLLHOOKSTRUCT, WM_KEYDOWN};
+    if code >= 0 && wparam.0 as u32 == WM_KEYDOWN && ESC_ON.load(Ordering::SeqCst) {
+        let key = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
+        if key.vkCode == VK_ESCAPE.0 as u32 && ESC_ON.swap(false, Ordering::SeqCst) {
+            if let Some(app) = ESC_APP.get() {
+                let app = app.clone();
+                // Never do real work inside the hook — Windows drops slow hooks.
+                std::thread::spawn(move || {
+                    eprintln!("[hotkey] Esc pressed — stopping");
+                    Action::Panic.run(&app);
+                });
+            }
+        }
+    }
+    CallNextHookEx(None, code, wparam, lparam)
+}
+
+/// Izuki is busy (Esc stops it) or not (Esc is left alone).
+pub fn set_escape(_app: &AppHandle, on: bool) {
+    if on {
+        *ESC_SINCE.lock() = Some(std::time::Instant::now());
+        if !ESC_ON.swap(true, Ordering::SeqCst) {
+            eprintln!("[hotkey] Esc stops Izuki while it's busy");
+            // Safety net: busy for 3 minutes with no word from the app means
+            // something forgot to say "done".
+            std::thread::spawn(|| loop {
+                std::thread::sleep(std::time::Duration::from_secs(15));
+                if !ESC_ON.load(Ordering::SeqCst) {
+                    return;
+                }
+                let stale = ESC_SINCE.lock().map(|t| t.elapsed() > std::time::Duration::from_secs(180)).unwrap_or(true);
+                if stale {
+                    ESC_ON.store(false, Ordering::SeqCst);
+                    return;
+                }
+            });
+        }
+    } else if ESC_ON.swap(false, Ordering::SeqCst) {
+        eprintln!("[hotkey] Esc left alone again");
+    }
+}
+
 /// Drop every shortcut and register the current set.
 pub fn rebind(app: &AppHandle, settings: &Settings) {
     let gs = app.global_shortcut();
@@ -186,7 +269,7 @@ impl Action {
                 }
             }
             Action::Panic => {
-                crate::automation::request_abort();
+                crate::brain::cancel_task();
                 let _ = app.emit(events::STOP_SPEAKING, ());
                 let _ = crate::overlay::hide_overlay(app);
                 let _ = app.emit(events::STATUS, StatusEvent::info("Stopped everything."));

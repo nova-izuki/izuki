@@ -72,11 +72,14 @@ export function VoiceSphere({
   state,
   demo = false,
   transcript = null,
+  doing = null,
 }: {
   state: OrbState;
   demo?: boolean;
   /** Your words as you speak them — shown under the sphere, Siri-style. */
   transcript?: { text: string; final: boolean } | null;
+  /** What Izuki is doing right now ("Opening Blackboard…"), while it works. */
+  doing?: string | null;
 }) {
   const visible = state !== "hidden";
   const { box, setBox, begin, reset } = useFloating("izuki.sphere", initialBox, LIMITS);
@@ -147,16 +150,22 @@ export function VoiceSphere({
                 >
                   <TranscriptText text={transcript.text} final={transcript.final} />
                 </motion.div>
-              ) : LABEL[state as Exclude<OrbState, "hidden">] ? (
+              ) : LABEL[state as Exclude<OrbState, "hidden">] || (state === "speaking" && doing) ? (
                 <motion.div
-                  key={state}
+                  key={`${state}:${doing ?? ""}`}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.2 }}
-                  className="izk-orb-label rounded-full px-3 py-[3px] text-[12.5px] font-semibold tracking-[0.04em]"
+                  className="izk-orb-label flex max-w-[360px] items-center gap-2 rounded-full px-3 py-[3px] text-[12.5px] font-semibold tracking-[0.02em]"
                 >
-                  {LABEL[state as Exclude<OrbState, "hidden">]}
+                  <span className="truncate">
+                    {state !== "listening" && doing ? doing : LABEL[state as Exclude<OrbState, "hidden">]}
+                  </span>
+                  {/* While it's busy, how to stop it — for everyone, not just people who read settings. */}
+                  {state !== "listening" && (
+                    <span className="shrink-0 text-[10.5px] font-medium opacity-60">Esc to stop</span>
+                  )}
                 </motion.div>
               ) : null}
             </AnimatePresence>

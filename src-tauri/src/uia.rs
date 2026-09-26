@@ -422,6 +422,53 @@ pub fn foreground_app() -> String {
     String::new()
 }
 
+/// Every real app window that's open (title and whether it's minimised),
+/// front to back — so the agent knows Blackboard is already open in a
+/// background window and switches to it instead of hunting for it.
+#[cfg(windows)]
+pub fn open_windows(max: usize) -> Vec<String> {
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindow, GetWindowLongW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
+        IsWindowVisible, GWL_EXSTYLE, GW_HWNDFIRST, GW_HWNDNEXT, WS_EX_TOOLWINDOW,
+    };
+    let me = std::process::id();
+    let mut out = Vec::new();
+    unsafe {
+        let Ok(mut hwnd) = GetWindow(GetForegroundWindow(), GW_HWNDFIRST) else { return out };
+        for _ in 0..600 {
+            if hwnd.0.is_null() || out.len() >= max {
+                break;
+            }
+            let mut pid: u32 = 0;
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            let ex = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+            let mut cloaked: u32 = 0;
+            let _ = DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, (&mut cloaked as *mut u32).cast(), std::mem::size_of::<u32>() as u32);
+            if pid != 0 && pid != me && IsWindowVisible(hwnd).as_bool() && ex & WS_EX_TOOLWINDOW.0 == 0 && cloaked == 0 {
+                let mut buf = [0u16; 256];
+                let n = GetWindowTextW(hwnd, &mut buf);
+                if n > 0 {
+                    let title = String::from_utf16_lossy(&buf[..n as usize]);
+                    if title != "Program Manager" {
+                        out.push(if IsIconic(hwnd).as_bool() { format!("{title} (minimised)") } else { title });
+                    }
+                }
+            }
+            hwnd = match GetWindow(hwnd, GW_HWNDNEXT) {
+                Ok(next) => next,
+                Err(_) => break,
+            };
+        }
+    }
+    out
+}
+
+#[cfg(not(windows))]
+pub fn open_windows(_max: usize) -> Vec<String> {
+    Vec::new()
+}
+
 /// Title of the window the user is working in, as extra context for the model.
 #[cfg(windows)]
 pub fn foreground_title() -> String {

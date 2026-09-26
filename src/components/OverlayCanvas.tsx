@@ -80,6 +80,8 @@ export function OverlayCanvas() {
   const [listening, setListening] = useState(false);
   /** The hands-free voice sphere, driven by the config panel's VoiceEngine. */
   const [orb, setOrb] = useState<OrbState>("hidden");
+  /** What Izuki says it's doing while it works — shown under the orb. */
+  const [doing, setDoing] = useState<string | null>(null);
   /** Your words while you talk (hands-free or push-to-talk). */
   const [transcript, setTranscript] = useState<(TranscriptPayload & { at: number }) | null>(null);
   /** Live caption of whatever Izuki just said — null hides it. */
@@ -209,20 +211,11 @@ export function OverlayCanvas() {
       return;
     }
 
-    try {
-      void emit(EV.thinking, true);
-      const plan = await api.submitDraw(payload);
-      // Say the answer — the same voice (and sphere) as a spoken request.
-      // A plan read straight off the marks by geometry has nothing to say.
-      if (plan.summary && plan.provider !== "local") {
-        const line: SayPayload = { text: plan.summary, mood: plan.mood, reply: true };
-        void emit(EV.say, line);
-      }
-      if (plan.remember?.length) void emit(EV.memoryChanged);
-    } finally {
-      void emit(EV.thinking, false);
-      close();
-    }
+    // Hand it to the one session (VoiceEngine): the orb comes up on
+    // "Thinking…", Izuki answers in the same voice, and Esc / the stop key
+    // stop it like any other request. The draw layer gets out of the way.
+    void emit(EV.runDraw, payload);
+    close();
   }, [close, desktop, prompt]);
   commitRef.current = commit;
 
@@ -366,7 +359,17 @@ export function OverlayCanvas() {
         setHandOn(p.follow);
       }),
       on<CaptionPayload>(EV.caption, (p) => setCaption({ ...p, id: Date.now() })),
-      on<OrbState>(EV.orb, setOrb),
+      on<OrbState>(EV.orb, (state) => {
+        setOrb(state);
+        // Your turn (or all done): the "doing" line has served its purpose.
+        if (state === "listening" || state === "hidden") setDoing(null);
+      }),
+      // Izuki's lines while a task runs ("Opening Blackboard…") double as
+      // the line under the orb. (Only the config panel speaks them.)
+      on<SayPayload | string>(EV.say, (p) => {
+        const text = typeof p === "string" ? p : p.text;
+        if (text && text.length <= 90) setDoing(text.replace(/\s+/g, " ").trim());
+      }),
       on<TranscriptPayload>(EV.transcript, (p) => setTranscript(p.text ? { ...p, at: Date.now() } : null)),
       on<void>(EV.settingsChanged, () => {
         void api.getSettings().then((s) => {
@@ -581,7 +584,7 @@ export function OverlayCanvas() {
   const floatingSlot =
     mode === "follow" || mode === "preview" ? (
       <>
-        <VoiceSphere state={orb} transcript={transcript} />
+        <VoiceSphere state={orb} transcript={transcript} doing={doing} />
         {orb === "hidden" && <TranscriptBar text={transcript?.text ?? null} final={!!transcript?.final} />}
         {caption && <CaptionBox caption={caption} onDone={() => setCaption(null)} />}
         {handOn && <FloatingChat />}

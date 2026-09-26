@@ -47,6 +47,25 @@ const SYSTEM_PROMPT: &str = concat!(
     "mode\"]. Not one-off requests, and never passwords, keys or card numbers. Usually ",
     "`remember` is empty. You may be told what you already remember; use it naturally, like a ",
     "friend would.\n",
+    "How to work, like a sharp person at a PC: first think what the goal looks like when it's ",
+    "done and the quickest reliable way there. Keep `notes` — your running plan (what's done, ",
+    "what's next) and anything useful you learn (where things are, which account) in under 60 ",
+    "words; it's shown back to you on every look, so you never lose track. If something ",
+    "unexpected is in the way (a pop-up, cookie banner, sign-in, update prompt, ad), deal with it ",
+    "first. If a step didn't work, try a different way (keyboard instead of mouse, search instead ",
+    "of browsing, another menu). If something you need is in another open window, switch to it. ",
+    "Check the result on screen before calling it done: go through EVERY part of the request and ",
+    "make sure you can SEE each one finished in this screenshot (the app is open AND the text is ",
+    "typed in it, the song is actually playing, the message shows as sent). Steps listed as ",
+    "\"already done\" were only attempted — trust the screen, not the list. If any part isn't ",
+    "visible, it isn't done: do it now.\n",
+    "Finding something (a site, a link, a button, a file): 1) look at what's on screen — open ",
+    "tabs, the bookmarks bar, links on the page, desktop icons, the taskbar; 2) if it could be ",
+    "further down or in a list, scroll and look again; 3) if it isn't there, search for it — for ",
+    "a website press ctrl+l, type its name or address (e.g. \"blackboard\" or the user's school ",
+    "Blackboard) and press enter, then click the right result; for an app press win, type its ",
+    "name, press enter. Never give up after one look, and remember the address or place you ",
+    "found it (`remember`) so next time is instant.\n",
     "YOU are the one doing it: when the user wants something done on their computer, never ",
     "answer with instructions for them to follow — do it, with steps. ",
     "A task takes as many rounds as it needs, like a person using a PC: you see the screen as it ",
@@ -80,7 +99,7 @@ const SYSTEM_PROMPT: &str = concat!(
     "clicking) and say what it is in `summary`. Several points in a row walk them through it.\n",
     "Reply with JSON only. No prose, no markdown fence. Shape:\n",
     "{\"summary\":\"one short sentence, or the full answer if this was a question\",",
-    "\"mood\":\"cheerful\",\"remember\":[],\"done\":false,\"wait\":0,",
+    "\"mood\":\"cheerful\",\"remember\":[],\"notes\":\"plan / what I've learned\",\"done\":false,\"wait\":0,",
     "\"steps\":[{\"action\":\"click|double_click|right_click|",
     "type|drag|hover|scroll|key|copy|point\",\"target\":int|null,\"target2\":int|null,",
     "\"x\":int,\"y\":int,\"x2\":int|null,\"y2\":int|null,",
@@ -111,6 +130,8 @@ pub struct VisionRequest {
     pub controls: Vec<crate::uia::Control>,
     /// What Izuki remembers about the user (`memory::prompt_block`).
     pub memory: String,
+    /// Every open app window, front to back (`uia::open_windows`).
+    pub windows: Vec<String>,
 }
 
 impl VisionRequest {
@@ -155,6 +176,9 @@ impl VisionRequest {
         }
         if !self.window_title.is_empty() {
             s.push_str(&format!("Window title: {}\n", self.window_title));
+        }
+        if self.windows.len() > 1 {
+            s.push_str(&format!("Open windows (front to back): {}\n", self.windows.join(" | ")));
         }
         s.push_str(&format!("Marks drawn:\n{}\n", self.marks_description));
         if !self.ocr_text.trim().is_empty() {
@@ -209,6 +233,7 @@ pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
     // "more": true (the older way to say it) means not done yet too.
     let more = parse_more(&raw);
     let (done, wait) = parse_progress(&raw);
+    let notes = parse_notes(&raw);
     let ask = parse_ask(&raw);
     // Remember which steps came with a point of their own *before* rescale
     // turns (0,0) into a real-looking desktop position.
@@ -228,7 +253,17 @@ pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
         ask,
         done: done && !more,
         wait,
+        notes,
     })
+}
+
+/// The agent's working notes, if it kept any.
+fn parse_notes(raw: &str) -> Option<String> {
+    let cleaned = strip_thinking(raw);
+    extract_json(&cleaned)
+        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+        .and_then(|v| v["notes"].as_str().map(|n| n.trim().chars().take(400).collect::<String>()))
+        .filter(|n| !n.is_empty() && n != "plan / what I've learned")
 }
 
 /// `done` (the goal is reached) and `wait` (seconds before the next look,
@@ -386,7 +421,36 @@ fn ask_ollama(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
     Ok(value["response"].as_str().unwrap_or_default().to_string())
 }
 
+/// Gemini's main Flash model is out of free quota until this time.
+static GEMINI_MAIN_TIRED: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
+
+/// The Gemini model to ask right now: the chosen one, or Flash-Lite while
+/// the main Flash model's quota is used up.
+pub fn gemini_model_now(model: &str) -> String {
+    let tired = GEMINI_MAIN_TIRED.lock().map(|t| t > std::time::Instant::now()).unwrap_or(false);
+    if tired && model.contains("flash") && !model.contains("lite") {
+        "gemini-2.5-flash-lite".into()
+    } else {
+        model.to_string()
+    }
+}
+
+/// The main Flash model said "quota exceeded": rest it for an hour.
+pub fn gemini_main_tired() {
+    *GEMINI_MAIN_TIRED.lock() = Some(std::time::Instant::now() + std::time::Duration::from_secs(60 * 60));
+}
+
 fn ask_gemini(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
+    let now_model = gemini_model_now(&cfg.model);
+    if now_model != cfg.model {
+        let mut lite = cfg.clone();
+        lite.model = now_model;
+        return ask_gemini_as(&lite, req);
+    }
+    ask_gemini_as(cfg, req)
+}
+
+fn ask_gemini_as(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
     let base = cfg.base_url.trim_end_matches('/');
     let key = cfg.api_key.trim();
     if key.is_empty() {
@@ -425,9 +489,12 @@ fn ask_gemini(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
     // quicker.
     if matches!(status.as_u16(), 429 | 503) && cfg.model.contains("flash") && !cfg.model.contains("lite") {
         eprintln!("[brain] {} answered {status} — trying gemini-2.5-flash-lite", cfg.model);
+        if status.as_u16() == 429 && value.to_string().to_lowercase().contains("quota") {
+            gemini_main_tired();
+        }
         let mut lite = cfg.clone();
         lite.model = "gemini-2.5-flash-lite".into();
-        return ask_gemini(&lite, req);
+        return ask_gemini_as(&lite, req);
     }
     if !status.is_success() {
         return Err(anyhow!(

@@ -172,13 +172,33 @@ export function naturalVoiceReady() {
  * up with itself; far over (a laptop on battery managed 7–16) and every
  * reply stalls between sentences for many seconds.
  */
-let rtf = 0;
-let rtfSamples = 0;
+/** Remembered between launches, so Izuki knows from the first word (no 12 s check at startup). */
+const SPEED_KEY = "izuki.voiceSpeed";
+function loadSpeed(): { rtf: number; at: number } | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(SPEED_KEY) ?? "null");
+    // A week-old reading is still a good first guess; it's refreshed when idle.
+    return v && typeof v.rtf === "number" && Date.now() - v.at < 7 * 24 * 3600_000 ? v : null;
+  } catch {
+    return null;
+  }
+}
+function saveSpeed() {
+  try {
+    localStorage.setItem(SPEED_KEY, JSON.stringify({ rtf, at: Date.now() }));
+  } catch {
+    /* private mode — measure again next time */
+  }
+}
+const known = loadSpeed();
+let rtf = known?.rtf ?? 0;
+let rtfSamples = known ? 1 : 0;
 function noteSpeed(workMs: number, audioSeconds: number) {
   if (audioSeconds <= 0.2) return;
   const r = workMs / 1000 / audioSeconds;
   rtf = rtfSamples ? rtf * 0.6 + r * 0.4 : r;
   rtfSamples++;
+  saveSpeed();
 }
 
 /** True when this PC can't generate the natural voice fast enough right now. */
@@ -190,15 +210,26 @@ export function naturalVoiceSpeed(): number | null {
   return rtfSamples ? rtf : null;
 }
 
-let lastProbe = 0;
+let lastProbe = Date.now();
+let probeTimer: ReturnType<typeof setTimeout> | null = null;
 /**
  * Time a short line in the background (nothing plays) to learn how fast
  * this PC is right now. It changes: plugged in vs on battery was 3–4× here.
- * At most every few minutes.
+ * On a slow PC one check is ~12 s of heavy CPU — it used to run every few
+ * minutes *while you were talking to Izuki* and make everything lag. Now:
+ * at most every 20 minutes, and only after a minute with no speaking.
  */
 export function probeVoiceSpeed(voice = preferredVoice) {
-  if (!ready || Date.now() - lastProbe < 3 * 60_000) return;
-  lastProbe = Date.now();
+  if (!ready || Date.now() - lastProbe < 20 * 60_000 || probeTimer) return;
+  probeTimer = setTimeout(() => {
+    probeTimer = null;
+    if (speakingNow || streamOpen) return; // busy — try again another time
+    lastProbe = Date.now();
+    probeNow(voice);
+  }, 60_000);
+}
+
+function probeNow(voice: string) {
   // On battery the answer is "still too slow", and finding out costs
   // seconds of heavy CPU — only re-check once the charger is in.
   const nav = navigator as Navigator & { getBattery?: () => Promise<{ charging: boolean }> };
@@ -221,6 +252,7 @@ function runProbe(voice: string) {
       // notice the laptop being plugged back in.
       rtf = r;
       rtfSamples = Math.max(1, rtfSamples);
+      saveSpeed();
       void api.log(`voice: speed check ${r.toFixed(1)}× real time`);
     })
     .catch(() => undefined);
@@ -429,7 +461,8 @@ function renderLine(text: string, voice: string): Promise<{ samples: Float32Arra
  * cache) so later launches don't spend the CPU again.
  */
 export async function prepareLines(lines: string[], voice: string) {
-  await preloadNaturalVoice(voice);
+  // Lines already made (on disk) don't need the model at all — only missing
+  // ones do, and only on a PC fast enough to use the natural voice.
   const o = await output().catch(() => null);
   if (!o) return;
   let cache: Cache | null = null;
@@ -450,6 +483,8 @@ export async function prepareLines(lines: string[], voice: string) {
         rate = Number(hit.headers.get("x-rate") ?? 24000);
         samples = new Float32Array(await hit.arrayBuffer());
       } else {
+        if (naturalVoiceTooSlow()) continue; // said by the quick voice instead
+        await preloadNaturalVoice(voice);
         const began = performance.now();
         ({ samples, rate } = await renderLine(text, voice));
         noteSpeed(performance.now() - began, samples.length / rate);
@@ -466,7 +501,7 @@ export async function prepareLines(lines: string[], voice: string) {
     }
   }
   // Everything came from the disk cache: still learn how fast this PC is.
-  if (!rtfSamples) probeVoiceSpeed(voice);
+  if (!rtfSamples && ready) probeVoiceSpeed(voice);
   void api.log(
     `voice: ${ready_lines.size} short lines ready (${rendered} made now${rtfSamples ? `, speed ${rtf.toFixed(1)}× real time` : ""})`
   );
@@ -485,7 +520,12 @@ export async function speakNatural(
   onStart?: () => void,
   mood?: string | null
 ): Promise<boolean> {
-  if (!ready) {
+  // A line made ahead of time plays without the model — even on a PC too
+  // slow to run it ("Mhm?" is instant and natural either way).
+  if (!ready && !ready_lines.has(lineKey(voice, text))) {
+    // Known too slow: don't load a model that won't be used (it cost ~10 s
+    // of CPU at every start).
+    if (naturalVoiceTooSlow()) return false;
     void api.log(`natural voice: not ready (${status.state} ${status.progress}%) — Windows voice this time`);
     void preloadNaturalVoice().catch(() => undefined);
     return false;
@@ -522,12 +562,18 @@ export async function speakNatural(
   });
   // Nothing heard for too long (the PC is busy): let the instant Windows
   // voice say it — a quick "Mhm?" matters more than which voice says it.
-  const patience = text.length <= 24 ? 2500 : 8000;
+  // The first sentence should be ready within about its own length (a
+  // person speaks ~15 characters a second); a little slack, 2.5–5 s at most.
+  const firstSentence = splitForSpeech(text, 280)[0] ?? text;
+  const patience = Math.min(5000, Math.max(2500, (firstSentence.length / 15) * 1000 * 1.3));
   let gaveUp = false;
   const slow = setTimeout(() => {
     if (play.started || mine !== generation) return;
-    void api.log(`natural voice: nothing after ${patience} ms — Windows voice for "${text.slice(0, 32)}"`);
+    void api.log(`natural voice: nothing after ${Math.round(patience)} ms — Windows voice for "${text.slice(0, 32)}"`);
     gaveUp = true;
+    // That's a measurement too: at least this slow. Remembered, so the next
+    // lines go straight to the quick voice instead of waiting again.
+    noteSpeed(patience, Math.max(0.5, firstSentence.length / 15));
     stopNatural("too slow to start");
   }, patience);
   try {

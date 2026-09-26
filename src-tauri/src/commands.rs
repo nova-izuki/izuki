@@ -335,9 +335,37 @@ pub fn preview_plan(session: DrawSession) -> VisionPlan {
     }
 }
 
+/// Izuki is busy (thinking, working, talking) or not — Esc stops it only
+/// while it's busy.
+#[tauri::command]
+pub fn set_busy(app: AppHandle, busy: bool) {
+    crate::hotkey::set_escape(&app, busy);
+}
+
+/// "Stop": the task in progress stops before its next click and never
+/// answers. (The voice and the orb are the webview's job.)
+#[tauri::command]
+pub fn cancel_task() {
+    brain::cancel_task();
+}
+
+/// Self-test mode (developer only): launched with IZUKI_SELFTEST=1, the
+/// engine runs a scripted set of requests and logs how each one behaved.
+#[tauri::command]
+pub fn selftest_enabled() -> String {
+    std::env::var("IZUKI_SELFTEST").unwrap_or_default()
+}
+
+/// "Quit Izuki" — close the app completely.
+#[tauri::command]
+pub fn quit_app(app: AppHandle) {
+    brain::cancel_task();
+    app.exit(0);
+}
+
 #[tauri::command]
 pub fn panic_stop(app: AppHandle) {
-    automation::request_abort();
+    brain::cancel_task();
     let _ = app.emit(events::STOP_SPEAKING, ());
     let _ = overlay::hide_overlay(&app);
     let _ = app.emit(events::STATUS, StatusEvent::info("Stopped everything."));

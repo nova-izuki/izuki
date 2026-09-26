@@ -52,7 +52,11 @@ const SCREEN = new RegExp(
 
 // ---------------------------------------------------------------- streaming
 
-export type LaneResult = "done" | "screen" | "failed" | "cancelled";
+/** "end": the model recognised a goodbye ([END]) — close the session after saying it. */
+export type LaneResult = "done" | "end" | "screen" | "failed" | "cancelled";
+
+/** The model's "this conversation is over" tag — never spoken. */
+const END_TAG = /\s*\[\s*END\s*\]\s*/gi;
 
 let seq = Date.now();
 let activeId: number | null = null;
@@ -130,14 +134,16 @@ export function chatLane(
 
       if (d.done) {
         if (d.error && !body.trim()) return finish("failed");
-        const rest = body.slice(spokenUpTo).trim();
+        const ending = /\[\s*END\s*\]/i.test(body);
+        const rest = body.slice(spokenUpTo).replace(END_TAG, " ").trim();
         onChunk(rest, true, mood);
-        remember("assistant", body);
-        return finish(body.trim() ? "done" : "failed");
+        remember("assistant", body.replace(END_TAG, " ").trim());
+        return finish(!body.replace(END_TAG, "").trim() ? "failed" : ending ? "end" : "done");
       }
 
-      // Speak complete sentences as soon as they're there.
-      const pending = body.slice(spokenUpTo);
+      // Speak complete sentences as soon as they're there (the [END] tag
+      // is never read out).
+      const pending = body.slice(spokenUpTo).replace(END_TAG, (m) => " ".repeat(m.length));
       const ends = [...pending.matchAll(/[.!?…](?=\s)/g)].map((x) => (x.index ?? 0) + 1);
       if (!ends.length) return;
       // First chunk: one sentence (speed). Later: two, or one long one.

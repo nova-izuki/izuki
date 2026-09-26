@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useWakeWord } from "../hooks/useWakeWord";
+import { useEffect, useRef, useState } from "react";
 import { useWakeEngine } from "../hooks/useWakeEngine";
 import { useDictation } from "../hooks/useDictation";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
@@ -22,10 +21,10 @@ import {
   speakNatural,
   stopNatural,
 } from "../lib/naturalVoice";
-import { holdMicForVoice, preloadSpeechInput, releaseMicForVoice, setKeepMicWhileTalking } from "../lib/speechInput";
+import { holdMicForVoice, micIsHeadset, preloadSpeechInput, releaseMicForVoice, setKeepMicWhileTalking } from "../lib/speechInput";
 import { api, EV, emit, IS_TAURI, on } from "../lib/ipc";
 import { useIzuki } from "../lib/store";
-import type { CaptionPayload, ListeningPayload, OrbState, SayPayload, Settings, TranscriptPayload } from "../lib/types";
+import type { CaptionPayload, DrawSession, OrbState, SayPayload, Settings, TranscriptPayload } from "../lib/types";
 
 const ACK = ["On it.", "Got it.", "Sure thing.", "Okay.", "Working on it."];
 const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
@@ -147,12 +146,10 @@ function showCaption(text: string, paced: boolean) {
  * keep pace with the voice rather than racing ahead of it. Until the
  * natural model has downloaded (first run), the Windows voice stands in.
  */
-/** The line being spoken is a real answer — the reply sphere may show. */
-let replySpeaking = false;
 /** Cloud voice problems already shown, so each is captioned only once. */
 const cloudProblemsShown = new Set<string>();
 
-async function say(text: string, settings: Settings, mood?: string | null, reply = false, quick = false) {
+async function say(text: string, settings: Settings, mood?: string | null, _reply = false, quick = false) {
   const caption = settings.show_captions;
   if (!settings.speak_responses) {
     if (caption) showCaption(speakable(text), false);
@@ -165,13 +162,13 @@ async function say(text: string, settings: Settings, mood?: string | null, reply
   // cost a second.
   if (!quick) await holdMicForVoice();
   try {
-    await speakLine(text, settings, mood, reply);
+    await speakLine(text, settings, mood);
   } finally {
     if (!quick) void untilQuiet().then(() => releaseMicForVoice());
   }
 }
 
-async function speakLine(raw: string, settings: Settings, mood: string | null | undefined, reply: boolean) {
+async function speakLine(raw: string, settings: Settings, mood: string | null | undefined) {
   const caption = settings.show_captions;
   // Said the way a person would say it (no markdown, links, "e.g."…); the
   // Orpheus voice keeps its <laugh>/<sigh> cues, captions never show them.
@@ -184,7 +181,6 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
     shown = true;
     showCaption(shownText, true);
   };
-  replySpeaking = reply;
   stopSpeaking();
   const engine = settings.voice_engine;
 
@@ -334,7 +330,8 @@ async function talkFast(text: string): Promise<LaneResult> {
 let slowTipShown = false;
 
 /** What Izuki says when you just say its name — like Siri's "Mhm?". */
-const GREETINGS = ["Mhm?", "Yeah?", "Hey! What's up?", "How can I help?"];
+// (Never starting with "Hey…" — through speakers that could wake Izuki itself.)
+const GREETINGS = ["Mhm?", "Yeah?", "I'm listening.", "How can I help?"];
 /** And when you tell it you're done. */
 const GOODBYES = ["Okay!", "Alright — I'm here if you need me.", "Got it. Talk soon!"];
 
@@ -408,272 +405,332 @@ function chime(up = true) {
 }
 
 /**
- * The always-on "Hey Izuki" engine.
+ * The one engine behind everything Izuki hears, says and does.
  *
- * Mounted exactly once, at the top of `GlassConfigPanel`, so it keeps
- * listening no matter which tab is open — and keeps running even after the
- * window is hidden to the tray, since hiding never unmounts React. Every
- * other component only ever reads its state back out of the store; nothing
- * else should call `useWakeWord` directly, or Izuki would end up holding two
- * separate microphone sessions at once.
+ * Mounted exactly once, at the top of `GlassConfigPanel` (kept alive even
+ * when the window is hidden to the tray). It owns the **session** — the time
+ * the orb is on screen — and every way in goes through it: the wake word,
+ * the talk hotkey, the typed chat and Ctrl+D. The rules it follows are
+ * written down in docs/HOW-IZUKI-WORKS.md; change that first.
  */
 export function VoiceEngine() {
   const enabled = useIzuki((s) => s.settings.voice_wake_enabled);
-  const chatMode = useIzuki((s) => s.settings.chat_mode);
-  const patchSettings = useIzuki((s) => s.patchSettings);
   const setVoice = useIzuki((s) => s.setVoice);
 
-  // Set once the dictation hook below exists — `dispatch` needs it for the
-  // follow-up listen, but has to be declared first.
-  const listenAgain = useRef<() => void>(() => {});
-  /** Start listening *while* Izuki answers, so you can cut in (see below). */
-  const listenThrough = useRef<() => boolean>(() => false);
-
-  // ---- the hands-free conversation and its voice sphere ----------------
-  // "Hey Izuki" opens a conversation: the big sphere comes up and stays
-  // through listening → thinking → answering → listening for your reply,
-  // Jarvis-style, until you stop talking to it.
-  const sphere = useRef(false);
+  // ---- the session ------------------------------------------------------
   /**
-   * "convo": a "Hey Izuki" conversation — stays up and keeps listening
-   * until you're done. "ptt": one push-to-talk exchange — up while you
-   * talk, while Izuki thinks and while it answers, then it goes.
+   * `on`: the orb is up. `voice`: it started by voice (wake word / talk key),
+   * so after each answer Izuki listens for the next thing; a typed or drawn
+   * request instead closes a few seconds after its answer. `orb`: whether
+   * this session shows the orb at all (typed ones only if "show the orb for
+   * typed replies" is on).
    */
-  const sphereKind = useRef<"convo" | "ptt">("convo");
-  /** Same as `sphere`, as state — the wake word pauses during a conversation. */
-  const [convo, setConvo] = useState(false);
-  /** Silences in a row inside a conversation — a few, and it winds down. */
-  const idleListens = useRef(0);
+  const session = useRef({ on: false, voice: false, orb: false });
+  const [sessionOn, setSessionOn] = useState(false);
+  /** The wake word rests a moment after a session, so it can't re-trigger on the goodbye. */
+  const [wakeNap, setWakeNap] = useState(false);
   /** Words caught with the wake word while you were still talking. */
   const pendingPrefix = useRef("");
-  /** Waiting on the model — the sphere swirls between Izuki's lines. */
+  /** Working on a request (thinking, looking, clicking) — the orb says "Thinking…". */
   const thinkingNow = useRef(false);
+  /** Mic or speech-model failures in a row — a few, and the session stops trying. */
+  const listenErrors = useRef(0);
+  /** A typed session closing a few seconds after its answer. */
+  const lingerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastBusy = useRef(false);
+
+  const setBusy = (busy: boolean) => {
+    if (busy === lastBusy.current) return;
+    lastBusy.current = busy;
+    // Esc stops Izuki only while it's busy — it's never taken from other apps otherwise.
+    void api.setBusy(busy).catch(() => undefined);
+  };
+
   const orb = (state: OrbState) => {
-    if (!sphere.current) return;
+    if (!session.current.on || !session.current.orb) return;
     // The orb's window may have been put away by something else (a task
     // finishing, the draw layer closing) — bring it back first.
-    if (state !== "hidden") void api.showCaptionOverlay().catch(() => undefined);
+    void api.showCaptionOverlay().catch(() => undefined);
     void emit(EV.orb, state);
+    setBusy(state === "thinking" || state === "speaking");
   };
-  const startSphere = async (state: OrbState, kind: "convo" | "ptt" = "convo") => {
-    sphere.current = true;
-    sphereKind.current = kind;
-    setConvo(kind === "convo");
-    idleListens.current = 0;
-    await api.showCaptionOverlay().catch(() => undefined);
-    void emit(EV.orb, state);
+
+  const startSession = (voice: boolean, state: OrbState) => {
+    if (lingerTimer.current) {
+      clearTimeout(lingerTimer.current);
+      lingerTimer.current = null;
+    }
+    const was = session.current;
+    const showOrb = voice || was.orb || useIzuki.getState().settings.sphere_on_replies;
+    session.current = { on: true, voice: was.voice || voice, orb: showOrb };
+    if (!was.on) {
+      setSessionOn(true);
+      listenErrors.current = 0;
+      void api.log(`session: start (${voice ? "voice" : "typed"})`);
+    }
+    orb(state);
   };
-  const endSphere = () => {
-    if (!sphere.current) return;
-    sphere.current = false;
-    setConvo(false);
+
+  // `cancelListen` is set once the dictation hook exists (it's declared below).
+  const cancelListen = useRef<() => void>(() => {});
+
+  const endSession = (why: string) => {
+    if (lingerTimer.current) {
+      clearTimeout(lingerTimer.current);
+      lingerTimer.current = null;
+    }
+    if (!session.current.on) return;
+    void api.log(`session: end (${why})`);
+    session.current = { on: false, voice: false, orb: false };
+    setSessionOn(false);
     pendingPrefix.current = "";
+    thinkingNow.current = false;
+    cancelListen.current();
     void emit(EV.orb, "hidden" satisfies OrbState);
-  };
-  /** Let the last line finish, then put the sphere away. */
-  const endSphereWhenQuiet = () => {
-    if (!sphere.current) return;
-    void untilQuiet().then(() => endSphere());
+    setBusy(false);
+    showTranscript("", false);
+    // Let the goodbye (and the end of your sentence) pass before the wake
+    // word listens again.
+    setWakeNap(true);
+    setTimeout(() => setWakeNap(false), 2000);
   };
 
-  const dispatch = useCallback(
-    async (text: string) => {
-      // Anything you say cuts Izuki off — like talking over someone.
-      stopAllSpeech("you started talking", useIzuki.getState().settings.speak_responses);
-      idleListens.current = 0;
-      const local = matchLocalCommand(text);
-      if (local && (await handleMemoryCommand(local))) {
-        endSphereWhenQuiet();
-        return;
-      }
-      if (local) {
-        // An instant command ends the conversation — "stop" at once, the
-        // others once their one-line reply has been said.
-        if (local.kind === "stop") endSphere();
-        else if (local.kind !== "greeting") endSphereWhenQuiet();
-        switch (local.kind) {
-          case "endConversation":
-            respond(pick(GOODBYES), "cheerful");
-            return;
-          case "greeting":
-            // Stay in the conversation — a hello isn't a goodbye.
-            respond(pick(GREETINGS), "cheerful", false, true);
-            if (sphere.current) void untilQuiet().then((ok) => ok && listenAgain.current());
-            return;
-          case "hide":
-            respond("Hiding.");
-            void hideConfigWindow();
-            return;
-          case "show":
-            respond("I'm here.");
-            void api.showConfig();
-            return;
-          case "stop":
-            // Already silenced above; stop anything it's doing, quietly.
-            void api.panic();
-            return;
-          case "mute":
-            respond("Going quiet.");
-            patchSettings({ voice_wake_enabled: false });
-            return;
-          case "chat":
-            respond("Go ahead, type it.");
-            if (!chatMode) patchSettings({ chat_mode: true });
-            // Reaches the overlay's own floating toggle too — that's a
-            // separate webview and won't see the settings change above
-            // until its next reload, but it does see this immediately.
-            void emit(EV.openFloatingChat);
-            return;
-          case "resetChat":
-            respond("Chat's back in the corner.");
-            void emit(EV.resetFloating);
-            return;
+  /** Close the session once Izuki has finished its last line — unless something new started meanwhile. */
+  const endAfterSpeaking = (why: string) => {
+    const at = requestSeq;
+    void untilQuiet().then(() => {
+      if (requestSeq === at) endSession(why);
+    });
+  };
+
+  /**
+   * Stop everything, now: the voice, the task in progress (it stops before
+   * its next click and its answer is thrown away), the listening, and any
+   * question Izuki was waiting on. Then the orb goes.
+   */
+  const stopEverything = (why: string) => {
+    requestSeq++;
+    helpPending = false;
+    stopAllSpeech(why);
+    void api.cancelTask().catch(() => undefined);
+    endSession(why);
+  };
+
+  // `listenAgain` / `listenThrough` need the dictation hook, declared below.
+  const listenAgain = useRef<() => void>(() => {});
+  const listenThrough = useRef<() => boolean>(() => false);
+  const listeningNow = useRef(false);
+
+  /**
+   * What happens after Izuki has answered. Voice sessions listen for your
+   * next thing (the silence timer only starts now); typed ones close a few
+   * seconds later, unless a voice session is running.
+   */
+  const afterReply = async (at: number, listeningThrough: boolean) => {
+    if (requestSeq !== at || !session.current.on) return;
+    if (session.current.voice) {
+      // Already listening since the request went off — that listen carries on.
+      if (listeningThrough && listeningNow.current) return;
+      if (!(await untilQuiet())) return;
+      if (requestSeq !== at || !session.current.on) return;
+      orb("listening");
+      listenAgain.current();
+      return;
+    }
+    await untilQuiet();
+    if (requestSeq !== at || !session.current.on || session.current.voice) return;
+    orb("listening");
+    setBusy(false);
+    lingerTimer.current = setTimeout(() => {
+      if (requestSeq === at && !session.current.voice) endSession("typed request answered");
+    }, 4000);
+  };
+
+  /**
+   * One request — spoken or typed — through the one pipeline. Instant
+   * commands first ("bye", "stop", "quit Izuki", "remember…"), then the
+   * fast chat lane for plain talk, or the screen agent for anything to see
+   * or do.
+   */
+  const handleRequest = async (text: string, from: "voice" | "typed") => {
+    const t = text.trim();
+    if (!t) return;
+    // Anything new cuts Izuki off — like talking over someone.
+    stopAllSpeech("a new request", useIzuki.getState().settings.speak_responses);
+    const at = ++requestSeq;
+    listenErrors.current = 0;
+
+    const local = matchLocalCommand(t);
+    if (local) {
+      switch (local.kind) {
+        case "stop":
+          stopEverything("you said stop");
+          return;
+        case "endConversation":
+          startSession(from === "voice", "speaking");
+          respond(pick(GOODBYES), "cheerful");
+          endAfterSpeaking("you said goodbye");
+          return;
+        case "quit": {
+          stopAllSpeech("quitting");
+          void api.cancelTask().catch(() => undefined);
+          startSession(from === "voice", "speaking");
+          respond("Closing Izuki. Bye!", "cheerful");
+          // Let the goodbye be heard (but never wait long), then close for real.
+          await Promise.race([untilQuiet(), new Promise((r) => setTimeout(r, 3500))]);
+          void api.quitApp();
+          return;
+        }
+        case "mute":
+          patchFromAnywhere({ voice_wake_enabled: false });
+          startSession(from === "voice", "speaking");
+          respond("Okay — I'll stop listening for my name. Turn hands-free back on any time.");
+          endAfterSpeaking("muted");
+          return;
+        default: {
+          startSession(from === "voice", "speaking");
+          await handleInstant(local);
+          void afterReply(at, false);
+          return;
         }
       }
+    }
 
-      rememberInPassing(text);
-      const at = ++requestSeq;
-      // In a conversation, keep listening while Izuki thinks and answers —
-      // start talking and it stops to hear you, like ChatGPT's voice mode.
-      const listeningThrough = listenThrough.current();
+    rememberInPassing(t);
+    startSession(from === "voice", "thinking");
+    thinkingNow.current = true;
+    orb("thinking");
+    setVoice({ lastHeard: t, busy: true });
+    void emit(EV.thinking, true);
+    // In a voice conversation, keep listening while Izuki thinks and
+    // answers — start talking and it stops to hear you.
+    const listeningThrough = from === "voice" && listenThrough.current();
 
-      // A conversation, not a walkie-talkie: once Izuki finishes answering,
-      // listen for your reply without making you press the key again. If
-      // you say nothing, the listen just ends quietly (and the sphere goes
-      // away). Outside a sphere conversation, "Hey Izuki" already keeps
-      // listening — no second mic.
-      const afterReply = async () => {
-        // You've already moved on to something newer — that owns the orb.
+    try {
+      // Just talking? The fast lane — no screenshot, the voice starts on the
+      // first sentence. It hands over if it needs the screen after all.
+      if (!needsScreen(t)) {
+        const lane = await talkFast(t);
         if (requestSeq !== at) return;
-        // Already listening since the request went off: that listen simply
-        // carries on, and now starts waiting for your reply. (Unless it was
-        // used up — e.g. you answered Izuki's question out loud.)
-        if (listeningThrough && listeningNow.current) return;
-        const s = useIzuki.getState().settings;
-        const followUp =
-          (sphere.current && sphereKind.current === "convo") || (s.speak_responses && !s.voice_wake_enabled);
-        if (followUp && (await untilQuiet())) {
-          await api.showCaptionOverlay().catch(() => undefined);
-          listenAgain.current();
-        } else {
-          endSphereWhenQuiet();
-        }
-      };
-
-      // Just talking? The fast lane — no screenshot, the voice starts on
-      // the first sentence. It hands over if it needs the screen after all.
-      if (!needsScreen(text)) {
-        setVoice({ lastHeard: text, busy: true });
-        thinkingNow.current = true;
-        orb("thinking");
-        void emit(EV.thinking, true);
-        let lane: LaneResult;
-        try {
-          lane = await talkFast(text);
-        } finally {
+        if (lane === "end") {
           thinkingNow.current = false;
-          setVoice({ busy: false });
-          void emit(EV.thinking, false);
+          endAfterSpeaking("goodbye (the AI heard it)");
+          return;
         }
-        if (lane === "done") return void afterReply();
+        if (lane === "done") {
+          thinkingNow.current = false;
+          return void afterReply(at, listeningThrough);
+        }
         if (lane === "cancelled") return;
         // "screen" / "failed": the full screen path below.
       }
 
-      remember("user", text);
-      setVoice({ lastHeard: text, busy: true });
-      thinkingNow.current = true;
-      orb("thinking");
-      // "On it." only if the answer is slow to come — said every time, it
-      // gets in the way (and used to talk over the real answer).
+      remember("user", t);
+      // "On it." only if the answer is slow to come.
       const ack = setTimeout(() => {
-        if (requestSeq === at && !helpPending) respond(pick(ACK));
+        if (requestSeq === at && !helpPending && !isSpeaking()) respond(pick(ACK));
       }, 1800);
       try {
-        // Flush any just-edited setting (a freshly pasted API key, a
-        // provider switch) so this doesn't fire against a stale backend copy.
+        // Flush a just-edited setting (a freshly pasted key) before relying on it.
         await useIzuki.getState().flushSettings();
-        void emit(EV.thinking, true);
-        // The headset's switch back to full-quality sound happens while
-        // the brain is thinking, not after.
         if (useIzuki.getState().settings.speak_responses) void holdMicForVoice();
-        const plan = await api.submitVoiceCommand(text);
+        const plan = await api.submitVoiceCommand(t);
         clearTimeout(ack);
+        if (requestSeq !== at) return; // stopped, or you've moved on — don't answer over you
         thinkingNow.current = false;
-        void emit(EV.thinking, false);
         if (plan.remember?.length) void emit(EV.memoryChanged);
         const said = sayable(plan.summary, plan.steps.length ? "Done." : "I couldn't find anything to do for that.");
         remember("assistant", said);
-        // You cut in while it was working — you've moved on; don't answer
-        // over you.
-        if (requestSeq !== at) return;
         await respond(said, plan.mood, true);
-        await afterReply();
+        void afterReply(at, listeningThrough);
       } catch (e) {
         clearTimeout(ack);
         console.error(e);
         if (requestSeq !== at) return;
-        respond(failure(e), "sympathetic");
-        endSphereWhenQuiet();
-      } finally {
         thinkingNow.current = false;
-        setVoice({ busy: false });
-        void emit(EV.thinking, false);
+        // A failure is said, and the conversation goes on — it doesn't end it.
+        await respond(failure(e), "sympathetic");
+        void afterReply(at, listeningThrough);
       }
-    },
-    [chatMode, patchSettings, setVoice]
-  );
+    } finally {
+      if (requestSeq === at) thinkingNow.current = false;
+      setVoice({ busy: false });
+      void emit(EV.thinking, false);
+    }
+  };
 
-  // Push-to-talk: the global hotkey fires this, no wake word needed — just
-  // press it and say what you want, from anywhere. It stops by itself when
-  // you pause; pressing the key again means "that's it, go".
+  /** A Ctrl+D / draw-overlay request — the same session, the same orb. */
+  const handleDraw = async (payload: DrawSession) => {
+    stopAllSpeech("a new request", useIzuki.getState().settings.speak_responses);
+    const at = ++requestSeq;
+    startSession(false, "thinking");
+    thinkingNow.current = true;
+    orb("thinking");
+    void emit(EV.thinking, true);
+    try {
+      const plan = await api.submitDraw(payload);
+      if (requestSeq !== at) return;
+      thinkingNow.current = false;
+      if (plan.remember?.length) void emit(EV.memoryChanged);
+      // A plan read straight off the marks by geometry has nothing to say.
+      if (plan.summary && plan.provider !== "local") await respond(sayable(plan.summary, "Done."), plan.mood, true);
+      void afterReply(at, false);
+    } catch (e) {
+      if (requestSeq !== at) return;
+      thinkingNow.current = false;
+      await respond(failure(e), "sympathetic");
+      void afterReply(at, false);
+    } finally {
+      if (requestSeq === at) thinkingNow.current = false;
+      void emit(EV.thinking, false);
+    }
+  };
+
+  // The module-level door (typed chat from anywhere) uses this.
+  runRequest = handleRequest;
+
+  // ---- listening ----------------------------------------------------------
   const {
     start: startPushToTalk,
     stop: finishPushToTalk,
+    cancel: cancelDictation,
     listening: ptTListening,
     transcribing,
     error: pttError,
   } = useDictation(
-    (text) => {
+    (heard) => {
+      listenErrors.current = 0;
       // Answering Izuki's own question ("which account?") out loud — it goes
       // to the task that's waiting, not in as a new request.
-      if (helpPending && !isEcho(text)) {
+      if (helpPending && !isEcho(heard)) {
         helpPending = false;
-        showTranscript(text, true);
-        void api.answerHelp({ marks: [], prompt: text, desktop: { x: 0, y: 0, w: 0, h: 0 }, createdAt: Date.now() });
+        showTranscript(heard, true);
+        void api.answerHelp({ marks: [], prompt: heard, desktop: { x: 0, y: 0, w: 0, h: 0 }, createdAt: Date.now() });
         orb("thinking");
         return;
       }
-      // Izuki's own voice coming back through the mic (speakers → webcam
-      // mic): not the user. Keep listening for the real reply.
-      if (isEcho(text)) {
-        void api.log(`speech: ignored my own voice: "${text.slice(0, 60)}"`);
+      // Izuki's own voice coming back through the mic: not you. Keep listening.
+      if (isEcho(heard)) {
+        void api.log(`speech: ignored my own voice: "${heard.slice(0, 60)}"`);
         showTranscript("", false);
-        if (sphere.current && sphereKind.current === "convo") {
-          orb("listening");
-          listenAgain.current();
-        } else endSphere();
+        if (session.current.on && session.current.voice) listenAgain.current();
         return;
       }
       // "Hey Nova, what's the time?" said while it's already listening: the
-      // wake word isn't part of the question. (Just "Hey Nova" on its own
-      // is a greeting — Izuki answers and keeps listening, like Siri.)
-      text = text.replace(/^\s*(hey|hi|ok|okay)[\s,]+(nova|jarvis|izuki)\b[\s,.!?]*(?=\S)/i, "");
+      // wake word isn't part of the question.
+      const text = heard.replace(/^\s*(hey|hi|ok|okay)[\s,]+(nova|jarvis|izuki)\b[\s,.!?]*(?=\S)/i, "");
       const prefix = pendingPrefix.current;
       pendingPrefix.current = "";
       const full = prefix ? `${prefix} ${text}` : text;
       showTranscript(full, true);
-      void dispatch(full);
+      void handleRequest(full, "voice");
     },
     {
-      // Your real voice, live, on the ring — from the same mic that's
-      // recording, so the two can never fight over it.
-      // (While Izuki talks, its voice drives the ring, not the open mic.)
+      // Your voice moves the orb — Izuki's own voice does while it talks.
       onLevel: (level) => {
         if (!isSpeaking()) void emit(EV.voiceLevel, level);
       },
-      // Start reading the screen the moment you start talking — by the
-      // time you've finished, that part's done.
+      // Start reading the screen the moment you start talking.
       onSpeech: () => {
         void api.prefetchScreen();
         showTranscript(pendingPrefix.current || "…", false);
@@ -683,45 +740,58 @@ export function VoiceEngine() {
         const prefix = pendingPrefix.current;
         showTranscript(prefix ? `${prefix} ${text}` : text, false);
       },
-      // Silence inside a conversation: keep listening a little longer (the
-      // sphere stays), then wind down — "I'm done" ends it straight away.
-      onNothing: () => {
-        if (!sphere.current) return;
-        // Push-to-talk: nothing more said — the exchange is over.
-        if (sphereKind.current === "ptt") {
-          endSphere();
-          return;
-        }
+      // Only real silence on your turn ends a conversation. A cough, noise,
+      // or words that couldn't be made out just mean "keep listening".
+      onNothing: (why) => {
+        if (!session.current.on || !session.current.voice) return;
         const prefix = pendingPrefix.current;
         if (prefix) {
           pendingPrefix.current = "";
-          void dispatch(prefix);
+          void handleRequest(prefix, "voice");
           return;
         }
-        // Like Siri: nothing said for a few seconds and it bows out (with a
-        // soft chime). "Hey Nova" brings it straight back.
-        idleListens.current++;
-        if (idleListens.current < 1) {
-          orb("listening");
-          listenAgain.current();
-        } else {
+        if (why === "silence") {
+          if (helpPending || thinkingNow.current || isSpeaking()) return void listenAgain.current();
           chime(false);
-          endSphere();
+          endSession("quiet for the whole follow-up time");
+          return;
         }
+        if (why === "error" && ++listenErrors.current >= 3) {
+          showCaption("I can't hear you right now — check the microphone in Talk to Izuki.", false);
+          endSession("the microphone keeps failing");
+          return;
+        }
+        // Unclear, cancelled (mic switched) or a one-off error: listen again,
+        // unless something else already is.
+        setTimeout(() => {
+          if (session.current.on && session.current.voice && !listeningNow.current) {
+            if (!thinkingNow.current && !isSpeaking()) orb("listening");
+            listenAgain.current();
+          }
+        }, 250);
       },
     }
   );
+  listeningNow.current = ptTListening;
+  cancelListen.current = cancelDictation;
+
+  listenAgain.current = () => {
+    if (!session.current.on || !session.current.voice) return;
+    startPushToTalk({ noSpeechMs: followUpMs() });
+  };
   listenThrough.current = () => {
     const s = useIzuki.getState().settings;
-    if (!s.barge_in || !sphere.current || sphereKind.current !== "convo") return false;
+    if (!s.barge_in || !session.current.on || !session.current.voice) return false;
     startPushToTalk({
       noSpeechMs: followUpMs(),
       cutIn: {
         busy: () => thinkingNow.current || isSpeaking(),
+        // The Windows voice through speakers leaks into a desk/laptop mic and
+        // the echo canceller can't remove it — only a headset can cut in then.
+        allowed: () => micIsHeadset() || !systemIsSpeaking(),
         onCutIn: () => {
           void api.log("speech: you cut in — Izuki stops and listens");
           stopAllSpeech("you cut in", true);
-          thinkingNow.current = false;
           orb("listening");
         },
       },
@@ -732,84 +802,42 @@ export function VoiceEngine() {
   const bargeIn = useIzuki((s) => s.settings.barge_in);
   useEffect(() => setKeepMicWhileTalking(bargeIn), [bargeIn]);
 
-  // In a conversation: about as long as Siri waits for you to start talking.
-  listenAgain.current = () => startPushToTalk(sphere.current ? { noSpeechMs: followUpMs() } : undefined);
-  const listeningNow = useRef(false);
-  listeningNow.current = ptTListening;
-
-  // The mic itself lives here (config panel), but the voice ring the hotkey
-  // reveals renders in the overlay window — a different webview, so this is
-  // a plain cross-window signal. The hotkey handler already made sure the
-  // overlay is visible before this can fire, and the overlay puts itself
-  // away again once there's nothing left for it to show.
-  const wasListening = useRef(false);
+  // Your turn: the orb says so (a listen that runs through Izuki's answer
+  // leaves it on "Thinking…"/speaking until then).
   useEffect(() => {
-    // In a hands-free conversation the sphere is the listening indicator,
-    // not the hand.
-    if (sphere.current) {
-      // (A listen that runs through Izuki's answer leaves the orb on
-      // "thinking"/"speaking" until it's your turn.)
-      if (ptTListening && !thinkingNow.current && !isSpeaking()) orb("listening");
-      return;
-    }
-    if (!wasListening.current && !ptTListening) return; // nothing to report at mount
-    wasListening.current = ptTListening;
-    const payload: ListeningPayload = {
-      active: ptTListening,
-      follow: useIzuki.getState().settings.follow_mode_enabled,
-    };
-    void emit(EV.listening, payload);
+    if (ptTListening && session.current.on && !thinkingNow.current && !isSpeaking()) orb("listening");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ptTListening]);
 
-  // Between "you stopped talking" and "the model has it": the hand's spinner.
-  const wasTranscribing = useRef(false);
+  // Between "you stopped talking" and "the model has it".
   useEffect(() => {
     if (transcribing) orb("thinking");
-    if (!wasTranscribing.current && !transcribing) return;
-    wasTranscribing.current = transcribing;
-    void emit(EV.thinking, transcribing);
+    void emit(EV.thinking, transcribing || thinkingNow.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcribing]);
 
-  // "Hey Izuki": the sphere comes up. Said on its own, Izuki listens for
-  // the rest; said with a request ("Hey Izuki, open Spotify"), it goes
-  // straight to work. Paused while push-to-talk has the mic, so the same
-  // words aren't transcribed twice.
-  // During a conversation the conversation does the listening; the wake
-  // word only stays on while Izuki talks, so "Hey Izuki, stop" still works.
-  const [talkingNow, setTalkingNow] = useState(false);
-  // What a wake word does — whichever detector heard it.
-  const onWake = (text: string, cutOff: boolean) => {
+  // ---- the wake word ---------------------------------------------------------
+  // "Hey Nova": the orb comes up, Izuki says "Mhm?" and listens. One
+  // detection, one session — it only listens when no session is on (during
+  // one you just talk), and rests for a moment after one ends.
+  const onWake = () => {
+    if (session.current.on) return;
     stopAllSpeech("you said the wake word");
     void api.prefetchScreen();
-    if (cutOff) {
-      // "Hey Izuki, open the…" — still talking: keep the start and
-      // record the rest.
-      pendingPrefix.current = text;
-      void startSphere("listening").then(() => listenAgain.current());
-    } else if (!text) {
-      // Just the wake word: answer like Siri would, then listen.
-      const t0 = Date.now();
-      const step = (m: string) => void api.log(`wake: ${m} (+${Date.now() - t0}ms)`).catch(() => undefined);
-      void startSphere("listening").then(async () => {
-        step("sphere up");
-        const at = interruptions;
-        // Listen right after "Mhm?" — but never wait on it: if the voice is
-        // slow or stuck, listening starts anyway (Siri never leaves you
-        // hanging on its own reply).
-        const said = respond(pick(GREETINGS), "cheerful", false, true).then(() => untilQuiet());
-        const ok = await Promise.race([said, new Promise<boolean>((r) => setTimeout(() => r(true), 2500))]);
-        step(ok ? "listening" : "greeting cut off");
-        if (ok && interruptions === at && sphere.current) listenAgain.current();
-      });
-    } else {
-      void startSphere("thinking").then(() => dispatch(text));
-    }
+    startSession(true, "listening");
+    const at = interruptions;
+    const said = respond(pick(GREETINGS), "cheerful", false, true).then(() => untilQuiet());
+    // Listen right after "Mhm?" — but never wait on it: if the voice is slow,
+    // listening starts anyway.
+    void Promise.race([said, new Promise<boolean>((r) => setTimeout(() => r(true), 2500))]).then((ok) => {
+      if (ok && interruptions === at && session.current.on) {
+        orb("listening");
+        listenAgain.current();
+      }
+    });
   };
 
-  const wakeActive = enabled && !ptTListening && !transcribing && (!convo || talkingNow);
-
-  // The dedicated wake-word detector (how Siri/Alexa listen): the user's own
-  // built in, plus any custom model installed ("Hey Nova", "Hey Izuki").
+  const wakeActive = enabled && !sessionOn && !wakeNap && !ptTListening && !transcribing;
   const [customWake, setCustomWake] = useState<string[]>([]);
   useEffect(() => {
     const load = () => void api.listWakewords().then(setCustomWake).catch(() => undefined);
@@ -817,29 +845,29 @@ export function VoiceEngine() {
     const off = on<void>(EV.wakewordsChanged, load);
     return () => void off.then((f) => f());
   }, []);
-  const wakeWords = useWakeEngine(wakeActive, customWake, () => onWake("", false));
+  // Loaded while hands-free is on; only *listening* while no session is on.
+  const wakeWords = useWakeEngine(wakeActive, customWake, () => onWake(), enabled);
 
-  // The old way — speech-to-text on every sound, then look for the name —
-  // is off: it cost a whole CPU core on a slow laptop (plus a 5–8 s Whisper
-  // check per unclear sound) and still missed "Hey Nova" through a
-  // Bluetooth headset. The dedicated detector above does the job; "Hey
-  // Nova"/"Hey Izuki" come with their own model (Wake words → Add it).
-  const wake = useWakeWord(false, (text, cutOff) => onWake(text, cutOff));
-
+  // For the "Talk to Izuki" status line: listening for the wake word, in a
+  // conversation, or missing a wake word altogether.
   useEffect(() => {
-    setVoice({ active: wake.active || wakeWords.length > 0, heard: wake.heard, error: wake.error });
-  }, [wake.active, wakeWords.length, wake.heard, wake.error, setVoice]);
+    setVoice({
+      active: wakeWords.length > 0 || sessionOn,
+      heard: false,
+      error: enabled && customWake.length === 0 ? "no-wake-word" : null,
+    });
+  }, [wakeWords.length, sessionOn, enabled, customWake.length, setVoice]);
 
-  // Say why nothing happened — silently vanishing is what made the old
-  // push-to-talk feel broken. Caption only: no voice over your next try.
+  // Say why nothing happened — caption only, no voice over your next try.
   useEffect(() => {
     if (pttError) showCaption(pttError, false);
   }, [pttError]);
 
+  // ---- the talk hotkey -----------------------------------------------------
   const pressedAt = useRef(0);
   useEffect(() => {
-    // Held down (like HeyClicky): talk while holding, let go to send. A
-    // quick tap instead keeps listening until you pause.
+    // Held down: talk while holding, let go to send. A quick tap keeps
+    // listening until you pause.
     const off = on<void>(EV.pushToTalkRelease, () => {
       if (listeningNow.current && Date.now() - pressedAt.current > 600) finishPushToTalk();
     });
@@ -853,79 +881,60 @@ export function VoiceEngine() {
         return;
       }
       pressedAt.current = Date.now();
-      // Pressing the key while Izuki is mid-sentence cuts it off — the key
-      // means "my turn". The chime only when it wasn't talking: cutting in
-      // should feel instant, and the voice ring already shows it.
+      // The key means "my turn": it cuts Izuki off.
       const wasTalking = isSpeaking();
-      stopAllSpeech("you pressed push-to-talk");
+      stopAllSpeech("you pressed the talk key");
       if (!wasTalking) chime();
-      // The liquid sphere for push-to-talk too, Siri-style — unless it's
-      // switched off, then the hand's small voice ring as before.
-      if (!sphere.current && useIzuki.getState().settings.sphere_on_replies) {
-        void startSphere("listening", "ptt").then(() => startPushToTalk());
-      } else {
-        startPushToTalk();
-      }
+      startSession(true, "listening");
+      // The first listen gives up after a few seconds of nothing (you pressed
+      // it by accident); follow-ups wait as long as the setting says.
+      startPushToTalk({ noSpeechMs: 8000 });
     });
     return () => void off.then((f) => f());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startPushToTalk, finishPushToTalk]);
 
-  // Lines the overlay wants said (its floating chat) — this is the one voice.
+  // ---- everything else that talks to the engine ------------------------------
   useEffect(() => {
     const offs = [
+      // Lines to say: the overlay's, and "what I'm doing" while a task runs.
       on<SayPayload | string>(EV.say, (p) =>
         void (typeof p === "string" ? respond(p) : respond(p.text, p.mood, p.reply, p.quick))
       ),
       on<Partial<Settings>>(EV.patchSettings, (patch) => useIzuki.getState().patchSettings(patch)),
+      // Typed in the overlay's chat.
       on<{ id: number; text: string }>(EV.runChat, (m) => {
-        void sendChatCommand(m.text).finally(() => emit(EV.chatDone, { id: m.id }));
+        void handleRequest(m.text, "typed").finally(() => emit(EV.chatDone, { id: m.id }));
       }),
+      // Ctrl+D / the draw overlay.
+      on<DrawSession>(EV.runDraw, (payload) => void handleDraw(payload)),
       on<void>(EV.prepareVoice, () => {
         if (useIzuki.getState().settings.speak_responses) void holdMicForVoice();
       }),
       on<string>(EV.helpAsk, (question) => {
         helpPending = true;
+        if (!session.current.on) startSession(false, "speaking");
         respond(question, "curious", true, true);
       }),
       on<void>(EV.helpDone, () => {
         helpPending = false;
       }),
-      on<void>(EV.stopSpeaking, () => {
-        stopAllSpeech("stop was pressed");
-        endSphere();
-      }),
+      // The stop hotkey, Esc, the tray's Stop, the orb's ✕.
+      on<void>(EV.stopSpeaking, () => stopEverything("stop was pressed")),
     ];
     return () => offs.forEach((o) => void o.then((f) => f()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Tell the overlay when Izuki is talking, and how loudly, so the chat can
-  // offer a stop button and the voice ring can show it responding.
+  // ---- the orb follows Izuki's voice --------------------------------------------
   useEffect(() => {
     let meter: ReturnType<typeof setInterval> | null = null;
-    let replySphere = false;
     const update = () => {
       const talking = naturalSpeaking() || systemIsSpeaking();
-      setTalkingNow(talking);
       void emit(EV.speaking, talking);
       if (talking) orb("speaking");
       else if (thinkingNow.current) orb("thinking");
-      // Done talking and still listening for you: say so.
       else if (listeningNow.current) orb("listening");
-      // Outside a "Hey Izuki" conversation, the sphere can still rise just
-      // for the answer — Jarvis-style — and sink again when it's said.
-      if (!sphere.current) {
-        const want = talking && replySpeaking && useIzuki.getState().settings.sphere_on_replies;
-        if (want && !replySphere) {
-          replySphere = true;
-          void api
-            .showCaptionOverlay()
-            .catch(() => undefined)
-            .then(() => emit(EV.orb, "speaking" satisfies OrbState));
-        } else if (!talking && replySphere) {
-          replySphere = false;
-          void emit(EV.orb, "hidden" satisfies OrbState);
-        }
-      }
       if (meter) clearInterval(meter);
       meter = null;
       if (talking) {
@@ -942,18 +951,106 @@ export function VoiceEngine() {
       offs.forEach((o) => o());
       if (meter) clearInterval(meter);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch the natural voice in the background as soon as it's selected, so
-  // the first real reply doesn't wait on the one-time download.
+  // Developer self-test (IZUKI_SELFTEST=1): real requests through the real
+  // session, logging what happened, so behaviour can be checked end to end
+  // without anyone talking to it. Never on for users.
+  const selftestReady = useIzuki((st) => st.settingsLoaded);
+  useEffect(() => {
+    if (!selftestReady) return;
+    void api.selftestEnabled().then(async (mode) => {
+      if (!mode) return;
+      const log = (m: string) => void api.log(`selftest: ${m}`);
+      const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      const s = () => (session.current.on ? (session.current.voice ? "on(voice)" : "on(typed)") : "off");
+      await wait(9000);
+      if (mode === "agent") {
+        // A real multi-step task, twice — the second time should reuse what worked.
+        for (const run of [1, 2]) {
+          const t0 = Date.now();
+          await handleRequest("open Notepad and type: hello from Izuki", "typed");
+          log(`agent run ${run} -> finished in ${Date.now() - t0} ms, session ${s()}`);
+          await wait(12000);
+          log(`agent run ${run} closing notepad`);
+          await wait(6000);
+        }
+        log("done");
+        return;
+      }
+      log("start");
+      let t = Date.now();
+      await handleRequest("hi", "typed");
+      log(`typed hi -> answered in ${Date.now() - t} ms, session ${s()} (want on)`);
+      await wait(9000);
+      log(`typed session after its answer + linger: ${s()} (want off)`);
+      t = Date.now();
+      await handleRequest("what is two plus two? answer in five words", "typed");
+      log(`typed question -> answered in ${Date.now() - t} ms, session ${s()}`);
+      await handleRequest("okay, bye Nova.", "typed");
+      await wait(4000);
+      log(`typed "okay, bye Nova." -> session ${s()} (want off)`);
+      startSession(true, "listening");
+      t = Date.now();
+      await handleRequest("tell me a fun fact about the moon in one sentence", "voice");
+      await wait(1500);
+      log(`voice question -> ${Date.now() - t} ms, session ${s()} (want on(voice)), listening ${listeningNow.current} (want true)`);
+      await handleRequest("that's all, thanks", "voice");
+      await wait(4000);
+      log(`voice "that's all, thanks" -> session ${s()} (want off), listening ${listeningNow.current} (want false)`);
+      t = Date.now();
+      await handleRequest("what app is in front on my screen? answer in one short sentence, don't click anything", "typed");
+      log(`screen question -> answered in ${Date.now() - t} ms`);
+      await wait(16000);
+      log(`after screen answer + linger: ${s()} (want off)`);
+      const before = requestSeq;
+      const task = handleRequest("what's on my screen right now? describe it briefly", "typed");
+      await wait(1500);
+      stopEverything("selftest stop");
+      await task;
+      await wait(3000);
+      log(`stop mid-task -> session ${s()} (want off), answer dropped ${requestSeq > before + 1} (want true), speaking ${isSpeaking()} (want false)`);
+      await wait(3000);
+      // Esc while busy: the tester presses Esc from outside once it sees this line.
+      const escTask = handleRequest("describe everything on my screen in detail, don't click anything", "typed");
+      await wait(800);
+      log("waiting for Esc");
+      const escAt = Date.now();
+      while (session.current.on && Date.now() - escAt < 25000) await wait(200);
+      await escTask;
+      log(`Esc -> session ${s()} (want off) after ${Date.now() - escAt} ms, speaking ${isSpeaking()} (want false)`);
+      await wait(3000);
+      // The stop hotkey (Ctrl+Shift+Q) while busy, pressed from outside the same way.
+      const qTask = handleRequest("describe everything on my screen in detail again, don't click anything", "typed");
+      await wait(800);
+      log("waiting for the stop key");
+      const qAt = Date.now();
+      while (session.current.on && Date.now() - qAt < 25000) await wait(200);
+      await qTask;
+      log(`stop key -> session ${s()} (want off) after ${Date.now() - qAt} ms, speaking ${isSpeaking()} (want false)`);
+      await wait(3000);
+      log("quitting now (want the app to close)");
+      await handleRequest("quit Izuki", "typed");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selftestReady]);
+
+  // Fetch the voice and the ears in the background as soon as possible, so
+  // the first request doesn't wait on a one-time download.
   const voiceEngine = useIzuki((s) => s.settings.voice_engine);
   const settingsLoaded = useIzuki((s) => s.settingsLoaded);
-  // The ears load right after (downloads run one at a time anyway), so the
-  // first push-to-talk doesn't sit waiting on them either.
   useEffect(() => {
     if (!settingsLoaded) return;
+    // The saved short lines ("Mhm?", "Okay!") first — they're tiny, need no
+    // model, and make the very first wake-word answer instant.
+    if (voiceEngine !== "system") {
+      void prepareLines([...GREETINGS, ...GOODBYES, ...ACK], useIzuki.getState().settings.voice_name);
+    }
+    // On a PC known to be too slow for the natural voice (remembered from
+    // last time), skip loading its model — it only slowed the start down.
     const voice =
-      voiceEngine !== "system"
+      voiceEngine !== "system" && !naturalVoiceTooSlow()
         ? preloadNaturalVoice(useIzuki.getState().settings.voice_name)
             .then(() => undefined)
             .catch((e) => console.warn("natural voice unavailable:", e))
@@ -961,7 +1058,6 @@ export function VoiceEngine() {
     void voice.finally(() => {
       void preloadSpeechInput()
         .catch(() => undefined)
-        // Then the things Izuki says most, rendered ahead so they're instant.
         .finally(() => {
           if (voiceEngine !== "system") {
             void prepareLines([...GREETINGS, ...GOODBYES, ...ACK], useIzuki.getState().settings.voice_name);
@@ -970,23 +1066,50 @@ export function VoiceEngine() {
     });
   }, [settingsLoaded, voiceEngine]);
 
-  // This component is a pure background engine — no DOM.
   return null;
 }
+
+/** Instant commands that answer in one line and change a setting or window. */
+async function handleInstant(local: LocalCommand) {
+  if (await handleMemoryCommand(local)) return;
+  switch (local.kind) {
+    case "greeting":
+      await respond(pick(GREETINGS), "cheerful", false, true);
+      return;
+    case "hide":
+      await respond("Hiding.");
+      void hideConfigWindow();
+      return;
+    case "show":
+      await respond("I'm here.");
+      void api.showConfig();
+      return;
+    case "chat":
+      await respond("Go ahead, type it.");
+      patchFromAnywhere({ chat_mode: true });
+      void emit(EV.openFloatingChat);
+      return;
+    case "resetChat":
+      await respond("Chat's back in the corner.");
+      void emit(EV.resetFloating);
+      return;
+  }
+}
+
+/** Set by the mounted `VoiceEngine` — the one pipeline for every request. */
+let runRequest: (text: string, from: "voice" | "typed") => Promise<void> = async () => {};
 
 /** Send a typed chat line through the exact same pipeline a spoken one uses. */
 export async function sendChatCommand(text: string) {
   const t = text.trim();
   if (!t) return;
-  const { setVoice, settingsLoaded } = useIzuki.getState();
-
   // Typed in the overlay's floating chat: the voice, the mic and the real
   // settings all live in the config panel — hand the message over and wait
   // for it to be handled, so there's exactly one place this logic runs.
-  if (!settingsLoaded) {
+  if (!useIzuki.getState().settingsLoaded) {
     const id = Date.now() + Math.random();
     await new Promise<void>((resolve) => {
-      const timer = setTimeout(done, 90_000);
+      const timer = setTimeout(done, 180_000);
       const off = on<{ id: number }>(EV.chatDone, (d) => {
         if (d.id === id) done();
       });
@@ -999,82 +1122,5 @@ export async function sendChatCommand(text: string) {
     });
     return;
   }
-
-  const local = matchLocalCommand(t);
-
-  // A new message cuts off whatever Izuki was still saying. The voice lives
-  // in the config panel; from the overlay's chat, ask it to stop.
-  if (settingsLoaded) stopAllSpeech("you sent a new message", useIzuki.getState().settings.speak_responses);
-  else void emit(EV.stopSpeaking);
-
-  if (local && (await handleMemoryCommand(local))) return;
-  if (local) {
-    switch (local.kind) {
-      case "hide":
-        respond("Hiding.");
-        void hideConfigWindow();
-        return;
-      case "show":
-        respond("I'm here.");
-        void api.showConfig();
-        return;
-      case "stop":
-        void api.panic();
-        return;
-      case "mute":
-        respond("Going quiet.");
-        patchFromAnywhere({ voice_wake_enabled: false });
-        return;
-      case "chat":
-        return; // already in chat, nothing to do
-      case "resetChat":
-        respond("Chat's back in the corner.");
-        void emit(EV.resetFloating);
-        return;
-      case "endConversation":
-        respond(pick(GOODBYES), "cheerful");
-        return;
-      case "greeting":
-        respond(pick(GREETINGS), "cheerful", false, true);
-        return;
-    }
-  }
-
-  rememberInPassing(t);
-  setVoice({ lastHeard: t, busy: true });
-
-  // Just talking? The fast lane (see talkFast).
-  if (!needsScreen(t)) {
-    void emit(EV.thinking, true);
-    let lane: LaneResult;
-    try {
-      lane = await talkFast(t);
-    } finally {
-      void emit(EV.thinking, false);
-    }
-    if (lane === "done" || lane === "cancelled") {
-      setVoice({ busy: false });
-      return;
-    }
-  }
-
-  remember("user", t);
-  if (useIzuki.getState().settings.speak_responses) void holdMicForVoice();
-  try {
-    // Same race guard as the spoken path — flush a just-edited setting
-    // (API key, provider switch) before it's relied on.
-    await useIzuki.getState().flushSettings();
-    void emit(EV.thinking, true);
-    const plan = await api.submitVoiceCommand(t);
-    if (plan.remember?.length) void emit(EV.memoryChanged);
-    const said = sayable(plan.summary, plan.steps.length ? "Done." : "Nothing to do there.");
-    remember("assistant", said);
-    respond(said, plan.mood, true);
-  } catch (e) {
-    respond(failure(e));
-    console.error(e);
-  } finally {
-    setVoice({ busy: false });
-    void emit(EV.thinking, false);
-  }
+  await runRequest(t, "typed");
 }

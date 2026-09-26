@@ -29,7 +29,7 @@ export interface Dictation {
 export interface StartOptions {
   noSpeechMs?: number;
   /** Listen while Izuki is still busy, so you can cut in (see `listen`). */
-  cutIn?: { busy: () => boolean; onCutIn: () => void };
+  cutIn?: { busy: () => boolean; onCutIn: () => void; allowed?: () => boolean };
 }
 
 export interface DictationOptions {
@@ -37,8 +37,13 @@ export interface DictationOptions {
   onLevel?: (level: number) => void;
   /** Give up after this long with no speech (ms). */
   noSpeechMs?: number;
-  /** A listen ended with nothing to act on — silence, noise, an error. */
-  onNothing?: () => void;
+  /**
+   * A listen ended with nothing to act on, and why: "silence" (nobody spoke
+   * for the whole wait), "unclear" (sound, but no words made out), "cancelled"
+   * (stopped / mic taken away), "error" (the mic or speech model failed).
+   * Only "silence" means the person has gone quiet.
+   */
+  onNothing?: (why: "silence" | "unclear" | "cancelled" | "error") => void;
   /** The moment you start talking. */
   onSpeech?: () => void;
   /** Your words so far, while you're still talking (rough; final follows). */
@@ -94,29 +99,28 @@ export function useDictation(onFinal: (text: string) => void, opts: DictationOpt
       if (session.current === s) session.current = null;
       setListening(false);
       if (!audio) {
-        optsRef.current.onNothing?.();
+        optsRef.current.onNothing?.(s.endReason === "silence" ? "silence" : "cancelled");
         return;
       }
       setTranscribing(true);
       try {
         const text = await transcribe(audio);
         if (!text) {
-          setError("Didn't catch that.");
-          optsRef.current.onNothing?.();
+          optsRef.current.onNothing?.("unclear");
           return;
         }
         setTranscript(text);
         finalRef.current(text);
       } catch (e) {
         setError(`Couldn't make that out — ${e instanceof Error ? e.message : String(e)}`);
-        optsRef.current.onNothing?.();
+        optsRef.current.onNothing?.("error");
       } finally {
         setTranscribing(false);
       }
     }, (e: unknown) => {
       if (session.current === s) session.current = null;
       setListening(false);
-      optsRef.current.onNothing?.();
+      optsRef.current.onNothing?.("error");
       setError(
         e instanceof DOMException && e.name === "NotAllowedError"
           ? "Microphone access was refused — check Windows Settings › Privacy › Microphone."

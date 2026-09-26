@@ -421,6 +421,19 @@ export function SettingsTab() {
             Start tour
           </button>
         </Row>
+        <Row
+          label="Quit Izuki"
+          hint="Close Izuki completely (it stops listening). You can also say “quit Izuki”. Open it again from the Start menu."
+          icon={<Power size={14} strokeWidth={2.3} />}
+        >
+          <button
+            type="button"
+            onClick={() => void api.quitApp()}
+            className="izk-pill izk-no-drag h-[32px] px-3.5 text-[11.5px] text-izk-danger"
+          >
+            Quit
+          </button>
+        </Row>
       </Section>
 
       <SupportCard />
