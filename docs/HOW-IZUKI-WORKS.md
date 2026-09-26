@@ -43,7 +43,7 @@ While a session is on, the orb **never disappears**. It shows what Izuki is doin
 | Say or type **"bye"**, "that's all", "I'm done", "thanks, that's it"… | Izuki says a short goodbye and the orb closes. The wake word keeps working. |
 | Stay silent on **your turn** for the follow-up time (Settings, 5 s – 30 min) | The orb closes with a soft chime. |
 | Say or type **"stop"**, "cancel", "never mind" | Everything stops at once (see below) and the orb closes. |
-| Press **Esc** while Izuki is working or talking | Same as "stop" — for drawings, replays and typed requests too. (Esc still works normally in your app — Izuki only watches for it, and only while it's busy.) |
+| Press **Esc** while the orb is up — listening, thinking or talking — or while a drawing/replay runs | Same as "stop". (Esc still works normally in your app too — Izuki only watches for it, and only while the orb is up or it's working. Esc from the On-Screen Keyboard counts; Izuki's own Esc presses don't.) |
 | Press the **stop hotkey** (Ctrl+Shift+Q) — any time | Same as "stop". |
 | Click the orb's **✕** | Same as "stop". |
 | Say or type **"quit Izuki"**, "close the app", "exit Izuki" — or tray → Quit, or Settings → Quit | Izuki closes **completely**. (Open it again from the Start menu or desktop.) |

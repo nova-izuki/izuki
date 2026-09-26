@@ -116,6 +116,7 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
         "stop" => {
             crate::brain::cancel_task();
             let _ = app.emit(events::STOP_SPEAKING, ());
+            overlay::orb_closed();
             let _ = overlay::hide_overlay(app);
             let _ = app.emit(
                 events::STATUS,

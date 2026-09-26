@@ -380,6 +380,7 @@ pub fn quit_app(app: AppHandle) {
 pub fn panic_stop(app: AppHandle) {
     brain::cancel_task();
     let _ = app.emit(events::STOP_SPEAKING, ());
+    overlay::orb_closed();
     let _ = overlay::hide_overlay(&app);
     let _ = app.emit(events::STATUS, StatusEvent::info("Stopped everything."));
 }

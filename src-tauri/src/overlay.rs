@@ -33,6 +33,13 @@ pub fn track_orb(app: &AppHandle) {
     });
 }
 
+/// A stop closes the orb. Said here first, because the webview's own
+/// "hidden" arrives a moment later — hiding the overlay in between would see
+/// the orb still "up" and bring the window straight back.
+pub fn orb_closed() {
+    ORB_UP.store(false, Ordering::Relaxed);
+}
+
 pub fn overlay_shown() -> bool {
     OVERLAY_SHOWN.load(Ordering::Relaxed)
 }

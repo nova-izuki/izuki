@@ -445,10 +445,14 @@ export function VoiceEngine() {
   const lingerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastBusy = useRef(false);
 
+  /**
+   * Esc stops Izuki for as long as a session is on — listening, thinking or
+   * talking, like the orb's ✕ — and is left alone otherwise. (It's never
+   * taken from your app either way; Izuki only notices it.)
+   */
   const setBusy = (busy: boolean) => {
     if (busy === lastBusy.current) return;
     lastBusy.current = busy;
-    // Esc stops Izuki only while it's busy — it's never taken from other apps otherwise.
     void api.setBusy(busy).catch(() => undefined);
   };
 
@@ -458,7 +462,6 @@ export function VoiceEngine() {
     // finishing, the draw layer closing) — bring it back first.
     void api.showCaptionOverlay().catch(() => undefined);
     void emit(EV.orb, state);
-    setBusy(state === "thinking" || state === "speaking");
   };
 
   const startSession = (voice: boolean, state: OrbState) => {
@@ -474,6 +477,7 @@ export function VoiceEngine() {
       listenErrors.current = 0;
       void api.log(`session: start (${voice ? "voice" : "typed"})`);
     }
+    setBusy(true);
     orb(state);
   };
 
@@ -546,7 +550,6 @@ export function VoiceEngine() {
     await untilQuiet();
     if (requestSeq !== at || !session.current.on || session.current.voice) return;
     orb("listening");
-    setBusy(false);
     lingerTimer.current = setTimeout(() => {
       if (requestSeq === at && !session.current.voice) endSession("typed request answered");
     }, 4000);
@@ -899,6 +902,15 @@ export function VoiceEngine() {
     });
   };
 
+  // The core lets go of Esc after 3 minutes with no word from here (a
+  // forgotten "done"); a long task or conversation says "still going" once a
+  // minute so Esc keeps working the whole time the orb is up.
+  useEffect(() => {
+    if (!sessionOn) return;
+    const t = setInterval(() => void api.setBusy(true).catch(() => undefined), 60_000);
+    return () => clearInterval(t);
+  }, [sessionOn]);
+
   const wakeActive = enabled && !sessionOn && !wakeNap && !ptTListening && !transcribing;
   const [customWake, setCustomWake] = useState<string[]>([]);
   useEffect(() => {
@@ -1028,6 +1040,18 @@ export function VoiceEngine() {
       const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
       const s = () => (session.current.on ? (session.current.voice ? "on(voice)" : "on(typed)") : "off");
       await wait(9000);
+      if (mode === "esc") {
+        // The orb listening (no AI involved): Esc from outside closes it.
+        startSession(true, "listening");
+        listenAgain.current();
+        await wait(1500);
+        log("waiting for Esc");
+        const at = Date.now();
+        while (session.current.on && Date.now() - at < 30000) await wait(50);
+        log(`listening orb Esc -> session ${s()} (want off) after ${Date.now() - at} ms, listening ${listeningNow.current} (want false)`);
+        log("done");
+        return;
+      }
       if (mode === "draw") {
         // A drawing with words runs the full task loop; a real Esc pressed
         // from outside mid-task must end it with no more hand moves and no

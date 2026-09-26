@@ -152,6 +152,9 @@ unsafe extern "system" fn esc_hook(
     use windows::Win32::UI::WindowsAndMessaging::{CallNextHookEx, KBDLLHOOKSTRUCT, LLKHF_INJECTED, WM_KEYDOWN};
     if code >= 0 && wparam.0 as u32 == WM_KEYDOWN && esc_armed() {
         let key = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
+        if cfg!(debug_assertions) && key.vkCode == VK_ESCAPE.0 as u32 {
+            eprintln!("[hotkey] Esc seen (flags {:#x}, extra {})", key.flags.0, key.dwExtraInfo);
+        }
         // Izuki's own key presses (a plan step that presses Esc to close a
         // menu) mustn't stop it. They all go through enigo, which tags each
         // one — ignore only those. Other injected keys still count: the
@@ -315,6 +318,7 @@ impl Action {
             Action::Panic => {
                 crate::brain::cancel_task();
                 let _ = app.emit(events::STOP_SPEAKING, ());
+                crate::overlay::orb_closed();
                 let _ = crate::overlay::hide_overlay(app);
                 let _ = app.emit(events::STATUS, StatusEvent::info("Stopped everything."));
             }
