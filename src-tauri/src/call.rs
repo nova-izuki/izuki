@@ -230,10 +230,11 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
         (tiny_http::Method::Post, Some("/talk")) => {
             let mut body = String::new();
             let _ = req.as_reader().take(64 * 1024).read_to_string(&mut body);
-            let said = serde_json::from_str::<Value>(&body)
-                .ok()
-                .and_then(|v| v["text"].as_str().map(|s| s.trim().to_string()))
-                .unwrap_or_default();
+            let asked = serde_json::from_str::<Value>(&body).unwrap_or(Value::Null);
+            let said = asked["text"].as_str().map(|s| s.trim().to_string()).unwrap_or_default();
+            // The call page wants the reply as audio too: the phone's own
+            // voice is silenced by the iPhone's silent switch, a file isn't.
+            let want_voice = asked["voice"].as_bool().unwrap_or(false);
             if said.is_empty() {
                 return json_reply(req, json!({ "text": "", "links": [] }));
             }
@@ -245,7 +246,22 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
             } else {
                 crate::companion::respond(app, &said, true, &|_| {})
             };
-            json_reply(req, json!({ "text": reply.text, "links": reply.links }))
+            let audio = if want_voice {
+                let settings = crate::state::store().settings();
+                match crate::tts::speak_to_wav(&settings, &reply.text) {
+                    Ok(wav) => {
+                        use base64::Engine;
+                        Some(base64::engine::general_purpose::STANDARD.encode(wav))
+                    }
+                    Err(e) => {
+                        eprintln!("[call] no voice for the reply: {e}");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            json_reply(req, json!({ "text": reply.text, "links": reply.links, "audio": audio }))
         }
         (tiny_http::Method::Post, Some("/hear")) => {
             // For phones whose browser has no speech recognition: the

@@ -17,7 +17,7 @@ use crate::capture::Frame;
 /// we just poll `Status()` — the syscall behind it is cheap and the whole
 /// operation finishes in single-digit milliseconds.
 #[cfg(windows)]
-fn wait<T>(op: windows_future::IAsyncOperation<T>) -> windows_core::Result<T>
+pub(crate) fn wait<T>(op: windows_future::IAsyncOperation<T>) -> windows_core::Result<T>
 where
     T: windows_core::RuntimeType + 'static,
 {
