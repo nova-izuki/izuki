@@ -121,7 +121,9 @@ export function GlassConfigPanel() {
         </header>
 
         {/* ---------------- tabs ---------------- */}
-        <div className="izk-no-drag px-[18px] pb-[12px]">
+        {/* Scrolls sideways rather than cutting the last tab off in a
+            narrow window. */}
+        <div className="izk-no-drag overflow-x-auto px-[18px] pb-[12px] [scrollbar-width:none]">
           <Segmented value={tab} options={TABS} onChange={setTab} size="sm" />
         </div>
 

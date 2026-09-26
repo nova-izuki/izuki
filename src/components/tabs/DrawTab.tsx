@@ -139,7 +139,7 @@ export function DrawTab() {
             <button
               type="button"
               onClick={() => void api.openOverlay()}
-              className="izk-btn-primary izk-no-drag flex h-[38px] flex-1 items-center justify-center gap-2 text-[13px]"
+              className="izk-btn-primary izk-no-drag flex h-[38px] flex-1 items-center justify-center gap-2 whitespace-nowrap text-[13px]"
             >
               <MousePointerClick size={15} strokeWidth={2.6} />
               Draw now
