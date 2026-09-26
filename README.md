@@ -8,8 +8,8 @@
 
 Free · Open source · Hands-free voice · Works with free AI keys
 
-[**⬇ Download for Windows**](https://github.com/louismane28/izuki/releases/latest) ·
-[🌐 Website](https://louismane28.github.io/izuki/) ·
+[**⬇ Download for Windows**](https://github.com/nova-izuki/izuki/releases/latest) ·
+[🌐 Website](https://nova-izuki.github.io/izuki/) ·
 [How to use it](#how-to-use-it) ·
 [Support the builder ☕](#-support-the-builder)
 
@@ -49,7 +49,7 @@ happens to be great with computers. It can:
 
 ## Install
 
-1. Download **`Izuki_…_x64-setup.exe`** from the [latest release](https://github.com/louismane28/izuki/releases/latest) and run it.
+1. Download **`Izuki_…_x64-setup.exe`** from the [latest release](https://github.com/nova-izuki/izuki/releases/latest) and run it.
    Windows may say *“Windows protected your PC”* because the app is new and not yet code-signed —
    click **More info → Run anyway**.
 2. The welcome tour opens. Get a **free Gemini key** at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
@@ -93,7 +93,7 @@ You need [Node.js 20+](https://nodejs.org) and [Rust](https://rustup.rs) (plus t
 [Tauri prerequisites](https://tauri.app/start/prerequisites/) for Windows).
 
 ```bash
-git clone https://github.com/louismane28/izuki.git
+git clone https://github.com/nova-izuki/izuki.git
 cd izuki
 npm install
 npm run tauri dev      # run it

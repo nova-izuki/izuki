@@ -254,7 +254,7 @@ fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn() -> bool,
         rq = rq.bearer_auth(cfg.api_key.trim());
     }
     if cfg.id == ProviderId::Openrouter {
-        rq = rq.header("HTTP-Referer", "https://github.com/louismane28/izuki").header("X-Title", "Izuki");
+        rq = rq.header("HTTP-Referer", "https://github.com/nova-izuki/izuki").header("X-Title", "Izuki");
     }
     let resp = rq.send()?;
     // Gemini's main model is often "experiencing high demand" on the free

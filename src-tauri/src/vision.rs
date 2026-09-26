@@ -597,7 +597,7 @@ fn ask_openai_compatible(cfg: &ProviderConfig, req: &VisionRequest) -> Result<St
         if cfg.id == ProviderId::Openrouter {
             // OpenRouter uses these for attribution on its public leaderboards.
             rq = rq
-                .header("HTTP-Referer", "https://github.com/louismane28/izuki")
+                .header("HTTP-Referer", "https://github.com/nova-izuki/izuki")
                 .header("X-Title", "Izuki");
         }
 
