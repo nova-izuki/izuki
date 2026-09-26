@@ -318,19 +318,44 @@
       transform: translate3d(calc(var(--mx, 0) * -22px), calc(var(--my, 0) * -14px + var(--hp, 0) * 60px), 0) scale(calc(1 + var(--hp, 0) * 0.55));
       filter: brightness(calc(1 - var(--hp, 0) * 0.5)); }
     .scene.has-photo .photo { opacity: 1; }
-    .scene .photo img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 18%; display: block;
-      animation: orbit 70s ease-in-out infinite alternate; filter: saturate(1.15) contrast(1.08) brightness(0.92); }
+    .scene .photo .orbit { position: absolute; inset: 0; animation: orbit 70s ease-in-out infinite alternate; }
+    .scene .photo img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 0%; display: block;
+      filter: saturate(1.15) contrast(1.1) brightness(0.92); }
+    /* the sunrise: drawn on the photo's own horizon, crisp, breathing gently */
+    .scene .sunrise { position: absolute; inset: 0; width: 100%; height: 100%; mix-blend-mode: screen; overflow: visible; }
+    .scene .sunrise .sun { animation: sunpulse 6s ease-in-out infinite; transform-box: fill-box; }
+    .scene .sunrise .rays { animation: rays 40s linear infinite; transform-box: fill-box; transform-origin: center; }
+    .scene .sunrise .streak { animation: streak 6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+    .scene .sunrise .rim { animation: rim 6s ease-in-out infinite; }
+    @keyframes sunpulse { 50% { opacity: 0.86; } }
+    @keyframes rays { to { transform: rotate(360deg); } }
+    @keyframes streak { 50% { transform: scaleX(1.25); opacity: 0.8; } }
+    @keyframes rim { 50% { stroke-opacity: 0.8; } }
     @keyframes orbit { from { transform: scale(1.06) translate3d(-1.2%, 0, 0) rotate(-0.6deg); } to { transform: scale(1.16) translate3d(1.4%, 0.8%, 0) rotate(0.6deg); } }
     /* colour grade: city lights and atmosphere pulled toward the site's violet and cyan */
     .scene .grade { position: absolute; inset: 0; opacity: 0; transition: opacity 1.6s ease; mix-blend-mode: color;
       background: linear-gradient(115deg, rgba(139, 92, 246, 0.85) 0%, rgba(99, 102, 241, 0.7) 45%, rgba(34, 211, 238, 0.75) 100%); }
-    .scene.has-photo .grade { opacity: 0.55; }
-    /* a sunrise glint sliding along the horizon */
-    .scene .glint { position: absolute; left: -30%; top: 2%; width: 60%; height: 34%; opacity: 0; mix-blend-mode: screen; pointer-events: none;
-      background: radial-gradient(50% 50% at 50% 50%, rgba(255, 244, 255, 0.55), rgba(240, 171, 252, 0.28) 30%, rgba(103, 232, 249, 0.1) 55%, transparent 72%);
-      animation: glint 22s ease-in-out infinite; }
-    .scene.has-photo .glint { opacity: 1; }
-    @keyframes glint { 0% { transform: translateX(0) scaleY(0.5); opacity: 0; } 15% { opacity: 1; } 50% { transform: translateX(110%) scaleY(0.6); opacity: 0.9; } 85% { opacity: 1; } 100% { transform: translateX(210%) scaleY(0.5); opacity: 0; } }
+    .scene.has-photo .grade { opacity: 0.5; }
+    /* floating glass: frosted panes drifting over the world, catching the light */
+    .scene .glass { position: absolute; inset: 0; pointer-events: none;
+      transform: translate3d(calc(var(--mx, 0) * -40px), calc(var(--my, 0) * -26px), 0); }
+    .scene .glass i { position: absolute; display: block; border-radius: 28px; overflow: hidden;
+      background:
+        radial-gradient(120% 90% at 0% 0%, rgba(255, 255, 255, 0.24), transparent 55%),
+        linear-gradient(135deg, rgba(186, 230, 253, 0.14), rgba(196, 181, 253, 0.08) 50%, rgba(240, 171, 252, 0.12));
+      border: 1px solid rgba(255, 255, 255, 0.34); border-bottom-color: rgba(103, 232, 249, 0.22); border-right-color: rgba(167, 139, 250, 0.26);
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55), inset 0 0 22px rgba(167, 139, 250, 0.18), 0 0 40px rgba(139, 92, 246, 0.18);
+      backdrop-filter: blur(14px) saturate(1.5) brightness(1.1); -webkit-backdrop-filter: blur(14px) saturate(1.5) brightness(1.1);
+      animation: float 14s ease-in-out infinite; }
+    .scene .glass i::after { content: ""; position: absolute; inset: -40%; background: linear-gradient(115deg, transparent 42%, rgba(255, 255, 255, 0.28) 50%, transparent 58%);
+      animation: sheen 7s ease-in-out infinite; }
+    .scene .glass .g1 { width: 170px; height: 110px; left: 38%; top: 80%; transform: rotate(-12deg); animation-duration: 13s; }
+    .scene .glass .g2 { width: 92px; height: 92px; border-radius: 50%; right: 7%; top: 58%; animation-duration: 11s; animation-delay: -3s; }
+    .scene .glass .g3 { width: 220px; height: 140px; right: 3%; top: 70%; transform: rotate(9deg); animation-duration: 17s; animation-delay: -6s; }
+    .scene .glass .g4 { width: 120px; height: 76px; left: 2%; top: 70%; transform: rotate(8deg); animation-duration: 15s; animation-delay: -9s; }
+    .scene .glass .g5 { width: 54px; height: 54px; border-radius: 50%; left: 47%; top: 72%; animation-duration: 9s; animation-delay: -2s; }
+    .scene .glass .g2::after, .scene .glass .g5::after { animation-delay: -3.5s; }
+    @keyframes float { 0%, 100% { translate: 0 0; rotate: 0deg; } 50% { translate: 0 -22px; rotate: 3deg; } }
     /* dark behind the words, and a soft fade into the rest of the page */
     .scene .shade { position: absolute; inset: 0; pointer-events: none;
       background:
@@ -500,7 +525,8 @@
       .hero { grid-template-columns: 1fr; height: auto; min-height: 0; max-height: none; padding-block: 28px 16vh; }
       .hero h1 { font-size: clamp(38px, 11vw, 56px); }
       .scene .shade { background: linear-gradient(180deg, rgba(4, 5, 12, 0.72) 0%, rgba(4, 5, 12, 0.55) 45%, rgba(4, 5, 12, 0.8) 80%, #04050c 100%); }
-      .scene .photo img { object-position: 42% 20%; }
+      .scene .glass .g1, .scene .glass .g3 { display: none; }
+      .scene .glass .g2 { width: 64px; height: 64px; top: 80%; }
       .stage { max-width: 440px; }
       .nav-links { display: none; }
       .bento { grid-template-columns: 1fr 1fr; }
@@ -533,7 +559,7 @@
       .demo-track { height: auto; }
       .demo-sticky { position: relative; height: auto; }
       .screen { transform: none !important; }
-      .scene .grain, .scene .photo img, .scene .glint, .chip, .reel .bar i, .a-sees .beam, .a-talks .rip, .a-clicks .cur, .a-clicks .ring, .a-teach path, .a-teach .ans, .a-free .rays, .a-free b, .zoom-word, .final-glow { animation: none !important; }
+      .scene .grain, .scene .photo .orbit, .scene .sunrise *, .scene .glass i, .scene .glass i::after, .chip, .reel .bar i, .a-sees .beam, .a-talks .rip, .a-clicks .cur, .a-clicks .ring, .a-teach path, .a-teach .ans, .a-free .rays, .a-free b, .zoom-word, .final-glow { animation: none !important; }
       .a-teach path { stroke-dashoffset: 0; } .a-teach .ans { opacity: 1; }
       .zoom-track, .reels-track-wrap { height: auto; }
       .zoom-sticky, .reels-sticky { position: relative; height: auto; padding-block: 60px; }
@@ -581,13 +607,43 @@
              Station (NASA, via Unsplash). If it can't load, the drawn planet
              in the canvas shows instead. -->
         <div class="photo" id="photo">
-          <img id="photo-img" alt="" decoding="async" fetchpriority="high"
+          <div class="orbit">
+            <img id="photo-img" alt="" decoding="async" fetchpriority="high"
             src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1920&q=80"
             srcset="https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1280&q=78 1280w, https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1920&q=80 1920w, https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=2560&q=80 2560w"
             sizes="100vw" />
+            <svg class="sunrise" viewBox="0 0 400 266" preserveAspectRatio="xMidYMin slice" aria-hidden="true">
+              <defs>
+                <radialGradient id="sr-core"><stop offset="0" stop-color="#fff"/><stop offset=".18" stop-color="#fff" stop-opacity=".95"/><stop offset=".45" stop-color="#e0f2fe" stop-opacity=".35"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></radialGradient>
+                <radialGradient id="sr-halo"><stop offset="0" stop-color="#f5f3ff" stop-opacity=".55"/><stop offset=".35" stop-color="#c4b5fd" stop-opacity=".22"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/></radialGradient>
+                <linearGradient id="sr-streak" x1="0" x2="1"><stop offset="0" stop-color="#67e8f9" stop-opacity="0"/><stop offset=".5" stop-color="#fff"/><stop offset="1" stop-color="#f0abfc" stop-opacity="0"/></linearGradient>
+                <linearGradient id="sr-rim" gradientUnits="userSpaceOnUse" x1="40" y1="0" x2="400" y2="0">
+                  <stop offset="0" stop-color="#8b5cf6" stop-opacity="0"/><stop offset=".45" stop-color="#a5f3fc" stop-opacity=".55"/>
+                  <stop offset=".62" stop-color="#fff" stop-opacity="1"/><stop offset=".8" stop-color="#c4b5fd" stop-opacity=".5"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+                </linearGradient>
+                <filter id="sr-soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.6"/></filter>
+              </defs>
+              <!-- the sunlit edge of the atmosphere: a soft glow under a crisp line -->
+              <path class="rim-glow" d="M 20 128 A 771.1 771.1 0 0 1 400 88.6" stroke="url(#sr-rim)" stroke-width="3" fill="none" filter="url(#sr-soft)"/>
+              <path class="rim" d="M 20 128 A 771.1 771.1 0 0 1 400 88.6" stroke="url(#sr-rim)" stroke-width=".55" fill="none"/>
+              <!-- the sun, just breaking over the edge -->
+              <g class="sun" transform="translate(368 85.4)">
+                <circle r="34" fill="url(#sr-halo)"/>
+                <rect class="streak" x="-150" y="-.45" width="300" height=".9" fill="url(#sr-streak)"/>
+                <g class="rays" stroke="#fff" stroke-linecap="round">
+                  <line x1="0" y1="-26" x2="0" y2="26" stroke-width=".35" stroke-opacity=".8"/>
+                  <line x1="-26" y1="0" x2="26" y2="0" stroke-width=".35" stroke-opacity=".8"/>
+                  <line x1="-10" y1="-10" x2="10" y2="10" stroke-width=".22" stroke-opacity=".5"/>
+                  <line x1="-10" y1="10" x2="10" y2="-10" stroke-width=".22" stroke-opacity=".5"/>
+                </g>
+                <circle r="7" fill="url(#sr-core)"/>
+                <circle r="1.4" fill="#fff"/>
+              </g>
+            </svg>
+          </div>
         </div>
         <div class="grade"></div>
-        <div class="glint"></div>
+        <div class="glass" aria-hidden="true"><i class="g1"></i><i class="g2"></i><i class="g3"></i><i class="g4"></i><i class="g5"></i></div>
         <canvas id="scene"></canvas>
         <div class="shade"></div>
         <div class="grain"></div>
