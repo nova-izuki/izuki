@@ -290,7 +290,11 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
                 first.lock().get_or_insert(started.elapsed().as_millis());
                 let _ = tx.send(Event::Text(i, t));
             };
-            match stream_one(&cfg, &messages, &stop, &on_text) {
+            eprintln!("[chat] asking {} ({})", cfg.label, cfg.model);
+            // A panic inside must still report back, or the reply would wait forever.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| stream_one(&cfg, &messages, &stop, &on_text)))
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("crashed while answering")));
+            match result {
                 Ok(true) => {
                     let ttft = first.lock().unwrap_or(0);
                     crate::brain::note_answer(cfg.id, Ok(ttft));
@@ -313,13 +317,27 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
     };
 
     launch(0);
+    let began = Instant::now();
     let mut launched = 1;
     let mut failed = 0;
     let mut errors = Vec::new();
     loop {
         let won = winner.load(Ordering::SeqCst);
-        let patience = if chain[..launched].iter().any(|c| c.id.is_local()) { 240 } else { 90 };
-        let wait = if won == usize::MAX && launched < chain.len() { HEDGE_AFTER } else { Duration::from_secs(patience) };
+        let local = chain[..launched].iter().any(|c| c.id.is_local());
+        // Nobody has said a word for this long: stop waiting and say why.
+        let first_words = Duration::from_secs(if local { 240 } else { 40 });
+        if winner.load(Ordering::SeqCst) == usize::MAX && launched == chain.len() && began.elapsed() > first_words {
+            errors.push("no answer in time".into());
+            return emit(String::new(), true, Some(errors.join("; ")));
+        }
+        let patience = if local { 240 } else { 90 };
+        let wait = if won == usize::MAX && launched < chain.len() {
+            HEDGE_AFTER
+        } else if won == usize::MAX {
+            first_words.saturating_sub(began.elapsed()).max(Duration::from_millis(200))
+        } else {
+            Duration::from_secs(patience)
+        };
         match rx.recv_timeout(wait) {
             Ok(Event::Text(i, t)) => {
                 // The first brain to say anything is the one that's heard.
@@ -350,7 +368,11 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
                 launch(launched);
                 launched += 1;
             }
-            Err(_) => return emit(String::new(), true, Some("no brain answered in time".into())),
+            Err(_) if winner.load(Ordering::SeqCst) == usize::MAX => {
+                // Loops back to the first-words check above.
+                continue;
+            }
+            Err(_) => return emit(String::new(), true, Some("the answer stopped halfway".into())),
         }
     }
 }

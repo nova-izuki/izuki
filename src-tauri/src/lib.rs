@@ -243,9 +243,18 @@ pub fn run() {
                     WindowEvent::Resized(_) if window.is_minimized().unwrap_or(false) => {
                         WAS_MINIMISED.store(true, Ordering::Relaxed);
                     }
-                    WindowEvent::Focused(true) if WAS_MINIMISED.swap(false, Ordering::Relaxed) => {
-                        if let Some(w) = window.app_handle().get_webview_window(overlay::CONFIG_LABEL) {
-                            overlay::repaint(&w);
+                    // Any time it comes to the front, not just after the
+                    // taskbar: it also went blank while left open (sleep, a
+                    // lock, a graphics hiccup). At most every few seconds.
+                    WindowEvent::Focused(true) => {
+                        WAS_MINIMISED.store(false, Ordering::Relaxed);
+                        static LAST: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
+                        let mut last = LAST.lock();
+                        if last.is_none_or(|t| t.elapsed() > std::time::Duration::from_secs(3)) {
+                            *last = Some(std::time::Instant::now());
+                            if let Some(w) = window.app_handle().get_webview_window(overlay::CONFIG_LABEL) {
+                                overlay::repaint(&w);
+                            }
                         }
                     }
                     _ => {}

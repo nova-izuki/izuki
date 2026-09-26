@@ -25,7 +25,12 @@ interface Msg {
   failed?: boolean;
   /** Sign-in links for apps that aren't linked yet. */
   links?: Array<[string, string]>;
+  /** It never answered: offer to ask again. */
+  retry?: boolean;
 }
+
+/** How long to wait for the first words before saying something's wrong. */
+const FIRST_WORDS_MS = 45_000;
 
 const KEY = "izuki.chat.v1";
 const KEEP = 60;
@@ -37,7 +42,15 @@ function load(): Msg[] {
   try {
     const raw = localStorage.getItem(KEY);
     const v = raw ? (JSON.parse(raw) as Msg[]) : [];
-    return Array.isArray(v) ? v.slice(-KEEP) : [];
+    // A reply still empty from last time (the app closed or the tab changed
+    // mid-answer) would spin forever — say so and offer to ask again.
+    return Array.isArray(v)
+      ? v.slice(-KEEP).map((m) =>
+          m.role === "assistant" && !m.content.trim()
+            ? { ...m, content: "That reply didn't come through.", failed: true, retry: true }
+            : m
+        )
+      : [];
   } catch {
     return [];
   }
@@ -64,6 +77,8 @@ export function ChatTab() {
   const [busy, setBusy] = useState(false);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const streamId = useRef<number | null>(null);
+  /** Ends the request in flight (Stop, a timeout) so nothing is left spinning. */
+  const finish = useRef<((why: string) => void) | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -101,9 +116,35 @@ export function ChatTab() {
           copy[copy.length - 1] = { ...copy[copy.length - 1], ...patch };
           return copy;
         });
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolveRaw) => {
+        let settled = false;
+        const resolve = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(slow);
+          finish.current = null;
+          resolveRaw();
+        };
+        // Nothing at all for a while: the brain isn't answering. Say so plainly
+        // instead of spinning forever.
+        const slow = setTimeout(() => {
+          if (raw) return;
+          void api.chatCancel(id);
+          void off.then((f) => f());
+          setLast({
+            content: "My AI brain didn't answer. Check your internet and Settings → Izuki's brain, then try again.",
+            failed: true,
+            retry: true,
+          });
+          resolve();
+        }, FIRST_WORDS_MS);
+        finish.current = (why: string) => {
+          void off.then((f) => f());
+          if (!raw) setLast({ content: why, failed: true, retry: true });
+          resolve();
+        };
         const off = on<{ id: number; text: string; done: boolean; error: string | null }>(EV.chatDelta, (d) => {
-          if (d.id !== id) return;
+          if (d.id !== id || settled) return;
           raw += d.text;
           const shown = raw.replace(REMIND_TAG, " ").trim();
           if (d.done) {
@@ -124,6 +165,7 @@ export function ChatTab() {
               setLast({
                 content: d.error ? `I couldn't reach my AI brain — ${d.error}` : "Hmm, I lost my words there. Try again?",
                 failed: true,
+                retry: true,
               });
             } else {
               setLast({ content: shown });
@@ -137,7 +179,7 @@ export function ChatTab() {
         void off.then(() => {
           if (streamId.current !== id) return resolve();
           api.chatStreamWritten(id, history).catch(() => {
-            setLast({ content: "I couldn't reach my AI brain — check Settings → Izuki's brain.", failed: true });
+            setLast({ content: "I couldn't reach my AI brain — check Settings → Izuki's brain.", failed: true, retry: true });
             resolve();
           });
         });
@@ -152,8 +194,22 @@ export function ChatTab() {
   const stop = () => {
     if (streamId.current !== null) void api.chatCancel(streamId.current);
     streamId.current = null;
+    finish.current?.("Stopped.");
     setBusy(false);
   };
+
+  /** Ask the question before a failed reply again. */
+  const retry = (i: number) => {
+    const ask = msgs[i - 1]?.role === "user" ? msgs[i - 1].content : undefined;
+    if (!ask || busy) return;
+    const trimmed = msgs.filter((_, j) => j !== i && j !== i - 1);
+    setMsgs(trimmed);
+    // Next tick, so `send` sees the trimmed history.
+    setTimeout(() => void sendRef.current(ask), 40);
+  };
+
+  const sendRef = useRef(send);
+  sendRef.current = send;
 
   const dictation = useDictation((heard) => void send(heard));
 
@@ -253,7 +309,20 @@ export function ChatTab() {
                     : undefined
                 }
               >
-                {m.content || <Loader2 size={13} className="animate-spin text-izk-muted" />}
+                {m.content || (
+                  <span className="flex items-center gap-1.5 text-izk-muted">
+                    <Loader2 size={13} className="animate-spin" /> Thinking…
+                  </span>
+                )}
+                {m.retry && i === msgs.length - 1 && (
+                  <button
+                    type="button"
+                    onClick={() => retry(i)}
+                    className="izk-pill izk-no-drag mt-2 flex h-[26px] items-center gap-1.5 px-2.5 text-[11px] text-izk-ink"
+                  >
+                    <RotateCcw size={11} strokeWidth={2.4} /> Try again
+                  </button>
+                )}
                 {m.links?.map(([name, url]) => (
                   <button
                     key={url}

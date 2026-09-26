@@ -342,6 +342,20 @@ export interface Settings {
   call_enabled: boolean;
   call_token: string;
   composio_user_id: string;
+  /** Heads-up: new emails as they arrive. */
+  heads_up_email: boolean;
+  /** Heads-up: a few minutes before a meeting. */
+  heads_up_calendar: boolean;
+  /** A short brief every morning. */
+  morning_brief: boolean;
+  /** "HH:MM" local time for the morning brief. */
+  morning_brief_at: string;
+  /** Heads-ups as Windows notifications on this PC. */
+  heads_up_pc: boolean;
+  /** Heads-ups sent to the paired phone. */
+  heads_up_phone: boolean;
+  /** The user's n8n workflows, started by name. */
+  n8n_hooks: N8nHook[];
   /** How long a conversation waits for you before closing (seconds, 5…1800). */
   follow_up_secs: number;
   /** Chat/caption look: matched to the screen, or fixed. */
@@ -409,4 +423,10 @@ export interface StatusEvent {
   kind: "info" | "working" | "success" | "error";
   message: string;
   detail?: string | null;
+}
+
+/** One of the user's n8n workflows (a webhook Izuki can call by name). */
+export interface N8nHook {
+  name: string;
+  url: string;
 }
