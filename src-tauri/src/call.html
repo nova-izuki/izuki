@@ -416,53 +416,225 @@
   };
 
   // ------------------------------------------------------------ hearing
-  // This phone's speech recognition where the browser has it, otherwise a
-  // recording that Izuki on the PC transcribes.
-  function listen() {
-    if (busy || !inCall) return;
-    if (Rec) {
-      recog = new Rec();
-      recog.lang = navigator.language || "en-US";
-      recog.interimResults = true;
-      recog.continuous = false;
-      let final = "", heardAny = false, lastLen = 0;
-      recog.onresult = (e) => {
-        heardAny = true;
-        let interim = "";
-        for (const r of e.results) (r.isFinal ? (final += r[0].transcript) : (interim += r[0].transcript));
-        const now = (final + interim).trim();
-        // Each new word makes the orb ripple.
-        if (now.length > lastLen) kick(0.5 + Math.min(0.5, (now.length - lastLen) / 12));
-        lastLen = now.length;
-        $("you").textContent = now;
-      };
-      recog.onerror = (e) => {
-        if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-          setCall(false);
-          setMode("idle", "Allow the microphone for this page, then tap again");
-        }
-      };
-      recog.onend = () => {
-        recog = null;
-        if (!inCall) return;
-        if (final.trim()) ask(final.trim());
-        else setTimeout(() => inCall && !busy && listen(), heardAny ? 100 : 250);
-      };
-      setMode("listening", "Just talk — tap the red button to hang up");
-      try { recog.start(); } catch { setTimeout(listen, 400); }
-      return;
-    }
-    record();
+  // Phones only let a page start listening from a tap. "Tap to talk" is one,
+  // so the first turn always worked — but every turn after, the page started
+  // listening by itself, and the phone (an iPhone especially) quietly
+  // refused: "Listening", with nothing heard. So now the microphone is
+  // opened once, from that first tap, and stays open for the whole call:
+  // the page hears when you start and stop talking, and your PC turns the
+  // clip into words (with the free Groq or Gemini key it already has).
+  // Without such a key the phone's own recognition is used; where the phone
+  // won't restart it by itself, the next turn is a tap on the orb — never a
+  // "Listening" that isn't.
+  const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  let canHear = null;              // can the PC transcribe a clip? (asked once, at load)
+  let mic = null, actx = null, analyser = null, buf = null;
+  let vadTimer = null, needTap = false, sendNow = null, turns = 0;
+
+  fetch("caps").then((r) => r.json()).then((v) => (canHear = !!v.hear)).catch(() => (canHear = false));
+
+  const makeAudioContext = () => {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      actx = actx || new AC();
+      if (actx.state !== "running") actx.resume().catch(() => {});
+    } catch { actx = null; }
+  };
+  async function openMic() {
+    if (mic && mic.getAudioTracks().some((t) => t.readyState === "live")) return true;
+    try {
+      mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    } catch { mic = null; return false; }
+    try {
+      const src = actx.createMediaStreamSource(mic);
+      analyser = actx.createAnalyser();
+      analyser.fftSize = 1024;
+      src.connect(analyser);
+      buf = new Float32Array(analyser.fftSize);
+    } catch { analyser = null; }
+    return true;
+  }
+  function closeMic() {
+    clearInterval(vadTimer); vadTimer = null; sendNow = null;
+    try { if (recorder && recorder.state !== "inactive") recorder.stop(); } catch {}
+    recorder = null;
+    if (mic) mic.getTracks().forEach((t) => t.stop());
+    mic = null; analyser = null;
+  }
+  /** How loud the mic is (RMS), or -1 when there's no meter. */
+  const loudness = () => {
+    if (!analyser) return -1;
+    analyser.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    return Math.sqrt(sum / buf.length);
+  };
+  const clipType = () =>
+    ["audio/webm;codecs=opus", "audio/mp4", "audio/webm", "audio/ogg"].find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || "";
+
+  function tapToTalk(hint) {
+    needTap = true;
+    setMode("idle", hint || "Tap the orb and talk");
   }
 
+  function listen() {
+    if (busy || !inCall) return;
+    needTap = false;
+    if (canHear && mic && window.MediaRecorder) return hearTurn();
+    // The phone's own recognition. On an iPhone it only starts from a tap —
+    // the first turn is one; later turns ask for one.
+    if (Rec) return turns > 0 && IOS ? tapToTalk() : recognize();
+    if (mic || window.MediaRecorder) return record();
+    tapToTalk("Type below — this browser can't listen");
+  }
+
+  /** One turn with the open mic: wait for speech, record it, send it. */
+  function hearTurn() {
+    if (busy || !inCall) return;
+    turns++;
+    if (actx && actx.state !== "running") actx.resume().catch(() => {});
+    setMode("listening", "Just talk — tap the red button to hang up");
+    const type = clipType();
+    let chunks = [], rec = null, phase = "waiting";
+    const begin = () => {
+      chunks = [];
+      rec = new MediaRecorder(mic, type ? { mimeType: type } : undefined);
+      rec.ondataavailable = (e) => e.data && e.data.size && chunks.push(e.data);
+      rec.start(250);
+      recorder = rec;
+    };
+    const stop = (keep) => new Promise((done) => {
+      if (!rec || rec.state === "inactive") return done(null);
+      rec.onstop = () => done(keep && chunks.length ? new Blob(chunks, { type: chunks[0].type || type || "audio/webm" }) : null);
+      try { rec.stop(); } catch { done(null); }
+    });
+    try { begin(); } catch { return tapToTalk(); }
+
+    const STEP = 60;
+    let floor = 0.008, loudMs = 0, quietMs = 0, spokeMs = 0, idleMs = 0, deadMs = 0, settleMs = 0;
+    const finish = async () => {
+      if (phase === "done") return;
+      phase = "done";
+      clearInterval(vadTimer); vadTimer = null; sendNow = null;
+      const blob = await stop(true);
+      recorder = null;
+      if (!inCall) return;
+      if (!blob || blob.size < 1200) return hearTurn();
+      setMode("thinking", "Working out what you said…");
+      try {
+        const r = await fetch("hear", { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
+        const v = await r.json();
+        setOnline(true);
+        if (v.error) {
+          canHear = false;
+          remember("iz", v.error);
+          return Rec ? tapToTalk() : tapToTalk("Type below");
+        }
+        if (!(v.text || "").trim()) return hearTurn();
+        ask(v.text.trim());
+      } catch {
+        setOnline(false);
+        setTimeout(() => inCall && !busy && hearTurn(), 1500);
+      }
+    };
+    sendNow = finish; // tap the orb to send it straight away
+    clearInterval(vadTimer);
+    vadTimer = setInterval(async () => {
+      if (!inCall || busy || phase === "done") { clearInterval(vadTimer); return; }
+      const v = loudness();
+      if (v < 0) return; // no meter: the orb tap sends it
+      // A meter reading pure silence for seconds is a dead mic, not a quiet
+      // room — say so rather than "listening" forever.
+      if (v === 0) {
+        deadMs += STEP;
+        if (deadMs > 3000) { phase = "done"; clearInterval(vadTimer); await stop(false); tapToTalk("Tap the orb and talk"); needTap = true; }
+        return;
+      }
+      deadMs = 0;
+      // A moment to let the end of Izuki's own voice die away.
+      if ((settleMs += STEP) < 300) { floor = Math.max(floor, Math.min(v, 0.03)); return; }
+      const on = Math.max(0.02, floor * 3), off = Math.max(0.013, floor * 2);
+      if (phase === "waiting") {
+        if (v > on) {
+          loudMs += STEP;
+          kick(Math.min(1, v * 10));
+          if (loudMs >= 180) { phase = "talking"; $("you").textContent = "…"; $("hint").textContent = "Tap the orb when you're done (or just stop talking)"; }
+        } else {
+          loudMs = 0;
+          floor = floor * 0.95 + v * 0.05;
+          // Long silence: start a fresh clip, so it stays small.
+          if ((idleMs += STEP) > 10000) {
+            idleMs = 0;
+            phase = "restarting";
+            await stop(false);
+            if (!inCall || busy) return;
+            try { begin(); phase = "waiting"; } catch { phase = "done"; tapToTalk(); }
+          }
+        }
+      } else if (phase === "talking") {
+        spokeMs += STEP;
+        kick(Math.min(1, v * 10));
+        if (v < off) {
+          quietMs += STEP;
+          if (quietMs >= 900 && spokeMs >= 400) finish();
+        } else quietMs = 0;
+        if (spokeMs > 30000) finish();
+      }
+    }, STEP);
+  }
+
+  /** The phone's own speech recognition (when the PC can't transcribe). */
+  function recognize() {
+    turns++;
+    recog = new Rec();
+    recog.lang = navigator.language || "en-US";
+    recog.interimResults = true;
+    recog.continuous = false;
+    let final = "", heardAny = false, lastLen = 0, started = false;
+    recog.onstart = recog.onaudiostart = () => (started = true);
+    recog.onresult = (e) => {
+      heardAny = started = true;
+      let interim = "";
+      for (const r of e.results) (r.isFinal ? (final += r[0].transcript) : (interim += r[0].transcript));
+      const now = (final + interim).trim();
+      // Each new word makes the orb ripple.
+      if (now.length > lastLen) kick(0.5 + Math.min(0.5, (now.length - lastLen) / 12));
+      lastLen = now.length;
+      $("you").textContent = now;
+    };
+    recog.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        // Refused without a tap (or the mic is off): ask for one.
+        if (turns > 1) return tapToTalk();
+        setCall(false);
+        setMode("idle", "Allow the microphone for this page, then tap again");
+      }
+    };
+    recog.onend = () => {
+      recog = null;
+      if (!inCall || needTap) return;
+      if (final.trim()) ask(final.trim());
+      else if (!started) tapToTalk();
+      else setTimeout(() => inCall && !busy && listen(), heardAny ? 100 : 250);
+    };
+    // A recognizer that never actually starts is a refusal too.
+    setTimeout(() => {
+      if (recog && !started && inCall && !busy) { try { recog.abort(); } catch {} tapToTalk(); }
+    }, 3000);
+    setMode("listening", "Just talk — tap the red button to hang up");
+    try { recog.start(); } catch { tapToTalk(); }
+  }
+
+  /** No recognition on this phone and no meter: record until the orb is tapped. */
   async function record() {
+    turns++;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = mic || (await navigator.mediaDevices.getUserMedia({ audio: true }));
       const chunks = [];
       recorder = new MediaRecorder(stream);
       recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
       recorder.onstop = async () => {
-        stream.getTracks().forEach((tr) => tr.stop());
+        if (stream !== mic) stream.getTracks().forEach((tr) => tr.stop());
         recorder = null;
         if (!inCall) return;
         const blob = new Blob(chunks, { type: chunks[0] ? chunks[0].type : "audio/webm" });
@@ -490,12 +662,22 @@
     setCall(true);
     unlockAudio();
     keepAwake();
+    turns = 0;
+    // All from inside the tap — the one moment a phone allows it.
+    makeAudioContext();
+    if (canHear && window.MediaRecorder && navigator.mediaDevices) {
+      setMode("listening", "One moment…");
+      openMic().then((ok) => (ok ? listen() : (setCall(false), setMode("idle", "Allow the microphone for this page, then tap again"))));
+      return;
+    }
     listen();
   }
   function endCall() {
     setCall(false);
+    needTap = false;
     try { if (recog) recog.abort(); } catch {}
-    try { if (recorder) recorder.stop(); } catch {}
+    try { if (recorder && recorder.state !== "inactive") recorder.stop(); } catch {}
+    closeMic();
     hush();
     try { if (lock) lock.release(); } catch {}
     setMode("idle", "Call ended — tap to talk again");
@@ -505,8 +687,17 @@
   // The orb itself: cut in while Izuki talks, finish a recording, or start.
   $("orb-wrap").addEventListener("click", () => {
     if (mode === "speaking") return hush();
-    if (recorder) return recorder.stop();
     if (!inCall) return startCall();
+    // A tap is what a phone needs to start listening again.
+    if (needTap) {
+      needTap = false;
+      makeAudioContext();
+      if (canHear && mic) return hearTurn();
+      if (Rec) return recognize();
+      return listen();
+    }
+    if (sendNow) return sendNow();
+    if (recorder && recorder.state !== "inactive") return recorder.stop();
   });
   $("kbd").addEventListener("click", () => {
     const f = $("typed");
@@ -519,6 +710,12 @@
     if (!txt || busy) return;
     $("text").value = "";
     unlockAudio();
+    // Typed while the mic waits: drop that turn and answer this.
+    needTap = false;
+    clearInterval(vadTimer); vadTimer = null; sendNow = null;
+    try { if (recog) recog.abort(); } catch {}
+    try { if (recorder && recorder.state !== "inactive") { recorder.onstop = null; recorder.stop(); } } catch {}
+    recorder = null;
     ask(txt);
   });
   $("history").addEventListener("click", () => ($("sheet").hidden = false));

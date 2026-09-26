@@ -184,6 +184,14 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
 29. Website: Download on a Windows PC → the installer downloads at once,
     popup shows; on a phone → phone-app popup.
 
+30. Call Izuki on an iPhone AND an Android phone: tap once, then talk,
+    wait for the answer, talk again — at least 4 turns with no taps. (The
+    page keeps the mic open from the first tap and sends each clip to the
+    PC to transcribe — `GET caps`, `POST hear`. Without a Groq/Gemini key
+    it uses the phone's recognizer, and on an iPhone asks for a tap on the
+    orb each turn instead of showing a fake "Listening".) Tapping the orb
+    while talking sends it at once; typing still works mid-call.
+
 Running the Rust tests from Linux: `cargo test --target x86_64-pc-windows-gnu
 --lib --no-run`, copy `target/x86_64-pc-windows-gnu/debug/WebView2Loader.dll`
 next to the test exe in `deps/`, and run it with `wine64` (65 pass).

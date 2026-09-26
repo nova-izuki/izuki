@@ -230,6 +230,11 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
             let _ = req.respond(r);
         }
         (tiny_http::Method::Get, Some("/")) => respond(req, 200, "text/html; charset=utf-8", PAGE.as_bytes().to_vec()),
+        // What the call page can rely on: can the PC turn a clip into words?
+        (tiny_http::Method::Get, Some("/caps")) => {
+            let settings = crate::state::store().settings();
+            json_reply(req, json!({ "hear": crate::stt::has_key(&settings) }))
+        }
         (tiny_http::Method::Get, Some("/icon.png")) => respond(req, 200, "image/png", ICON.to_vec()),
         (tiny_http::Method::Get, Some("/manifest.webmanifest")) => {
             respond(req, 200, "application/manifest+json", MANIFEST.as_bytes().to_vec())
