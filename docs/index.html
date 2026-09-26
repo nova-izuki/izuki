@@ -3,40 +3,76 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Izuki — Free AI Companion for Windows | Voice Assistant That Uses Your PC</title>
-  <meta name="description" content="Izuki is a free, open-source AI companion for Windows. Say “Hey Nova”, talk naturally, and it sees your screen, answers out loud, and clicks, types and draws to get things done — on your PC and from your phone." />
-  <meta name="keywords" content="Izuki, Nova Izuki, AI assistant for Windows, free AI voice assistant, Jarvis for PC, AI that controls your computer, computer use agent, screen AI, hands-free PC assistant, AI desktop companion, AI tutor, open source" />
+  <title>Izuki (Nova Izuki) — Free AI Assistant for Windows That Uses Your PC</title>
+  <meta name="description" content="Izuki (Nova Izuki) is a free AI assistant for Windows. Say “Hey Nova”, talk naturally, and Izuki sees your screen, answers out loud, and clicks, types and draws to get things done — on your PC and from your phone." />
+  <meta name="keywords" content="Izuki, Nova Izuki, Izuki AI, Hey Nova, Nova AI assistant, AI assistant for Windows, free AI voice assistant, Jarvis for PC, AI that controls your computer, computer use agent, screen AI, hands-free PC assistant, AI desktop companion, AI tutor, open source" />
   <meta name="author" content="Solomon Nwachukwu" />
   <link rel="canonical" href="https://nova-izuki.github.io/izuki/" />
   <meta name="theme-color" content="#04050c" />
+  <meta name="application-name" content="Izuki" />
+  <meta name="apple-mobile-web-app-title" content="Izuki" />
+  <meta property="og:site_name" content="Izuki" />
 
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Izuki — the AI companion that lives on your Windows screen" />
+  <meta property="og:title" content="Izuki — the AI that lives on your screen" />
   <meta property="og:description" content="Talk to it. It sees your screen, answers out loud, and does the work. Free and open source." />
   <meta property="og:url" content="https://nova-izuki.github.io/izuki/" />
   <meta property="og:image" content="https://nova-izuki.github.io/izuki/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Izuki — the AI that lives on your screen" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Izuki — the AI companion that lives on your Windows screen" />
+  <meta name="twitter:title" content="Izuki — the AI that lives on your screen" />
   <meta name="twitter:description" content="Say “Hey Nova”. It sees your screen, answers out loud, and does the work. Free." />
   <meta name="twitter:image" content="https://nova-izuki.github.io/izuki/og.png" />
 
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "Izuki",
-    "alternateName": "Nova Izuki",
-    "operatingSystem": "Windows 10, Windows 11",
-    "applicationCategory": "UtilitiesApplication",
-    "description": "A free AI companion for Windows: hands-free voice, sees your screen, and uses your mouse and keyboard to get things done.",
-    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-    "author": { "@type": "Person", "name": "Solomon Nwachukwu" },
-    "downloadUrl": "https://github.com/nova-izuki/izuki/releases/latest",
-    "url": "https://nova-izuki.github.io/izuki/"
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://nova-izuki.github.io/izuki/#org",
+        "name": "Izuki",
+        "alternateName": ["Nova Izuki", "Izuki AI", "Nova"],
+        "url": "https://nova-izuki.github.io/izuki/",
+        "logo": { "@type": "ImageObject", "url": "https://nova-izuki.github.io/izuki/icon-512.png", "width": 512, "height": 512 },
+        "image": "https://nova-izuki.github.io/izuki/og.png",
+        "description": "Izuki makes a free AI assistant for Windows that sees your screen, talks with you and uses your PC to get things done.",
+        "founder": { "@type": "Person", "name": "Solomon Nwachukwu" },
+        "email": "solotechsolutions1@gmail.com",
+        "sameAs": ["https://github.com/nova-izuki/izuki"]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://nova-izuki.github.io/izuki/#site",
+        "name": "Izuki",
+        "alternateName": ["Nova Izuki", "Izuki AI"],
+        "url": "https://nova-izuki.github.io/izuki/",
+        "publisher": { "@id": "https://nova-izuki.github.io/izuki/#org" }
+      },
+      {
+        "@type": "SoftwareApplication",
+        "name": "Izuki",
+        "alternateName": ["Nova Izuki", "Izuki AI"],
+        "operatingSystem": "Windows 10, Windows 11",
+        "applicationCategory": "UtilitiesApplication",
+        "description": "A free AI assistant for Windows: say “Hey Nova”, and it sees your screen, answers out loud, and uses your mouse and keyboard to get things done — on your PC and from your phone.",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "image": "https://nova-izuki.github.io/izuki/og.png",
+        "screenshot": "https://nova-izuki.github.io/izuki/shots/panel-draw.jpg",
+        "author": { "@id": "https://nova-izuki.github.io/izuki/#org" },
+        "publisher": { "@id": "https://nova-izuki.github.io/izuki/#org" },
+        "downloadUrl": "https://github.com/nova-izuki/izuki/releases/latest",
+        "url": "https://nova-izuki.github.io/izuki/"
+      }
+    ]
   }
   </script>
 
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="icon" href="icon-512.png" type="image/png" sizes="512x512" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
@@ -649,7 +685,7 @@
         <div class="grain"></div>
       </div>
       <div class="hero-copy">
-        <span class="eyebrow rv"><b></b>Free · open source · Windows 10 &amp; 11</span>
+        <span class="eyebrow rv"><b></b>Izuki · Free · Windows 10 &amp; 11</span>
         <h1 id="hero-h1" aria-label="The AI that lives on your screen.">The AI that lives on <span class="shine">your screen.</span></h1>
         <p class="lede rv" style="--d:.16s">Say <b>“Hey Nova”</b> and just talk. Izuki sees your screen, answers you out loud, and uses your mouse and keyboard to get things done — it can even grab a pen and draw on your screen to teach you. Like a friend who's brilliant with computers, living right inside your PC.</p>
         <div class="ctas rv" style="--d:.24s">
