@@ -374,11 +374,7 @@ pub fn list_controls(_max: usize) -> Vec<Control> {
 /// "chrome.exe". Flows and the ghost-hand model are keyed on this.
 #[cfg(windows)]
 pub fn foreground_app() -> String {
-    use windows::Win32::Foundation::{CloseHandle, HWND, MAX_PATH};
-    use windows::Win32::System::Threading::{
-        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
-        PROCESS_QUERY_LIMITED_INFORMATION,
-    };
+    use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
 
     unsafe {
@@ -389,7 +385,19 @@ pub fn foreground_app() -> String {
         if pid == 0 {
             return String::new();
         }
+        process_name(pid)
+    }
+}
 
+/// A process's file name, e.g. "chrome.exe" ("" if it can't be read).
+#[cfg(windows)]
+pub fn process_name(pid: u32) -> String {
+    use windows::Win32::Foundation::{CloseHandle, MAX_PATH};
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    unsafe {
         let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
             return String::new();
         };

@@ -278,6 +278,8 @@ export interface Settings {
   show_transcript: boolean;
   /** Talk over Izuki to interrupt it (it listens while it answers). */
   barge_in: boolean;
+  /** Turn other apps' sound down while Izuki listens. */
+  duck_while_listening: boolean;
   /** How long a conversation waits for you before closing (seconds, 5…1800). */
   follow_up_secs: number;
   /** Chat/caption look: matched to the screen, or fixed. */

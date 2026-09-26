@@ -170,6 +170,7 @@ export const MOCK_SETTINGS: Settings = {
   mic_device: "",
   show_transcript: true,
   barge_in: true,
+  duck_while_listening: true,
   follow_up_secs: 1800,
   chat_style: "auto",
   chat_color: "#7dd3fc",

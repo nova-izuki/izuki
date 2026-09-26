@@ -229,6 +229,19 @@ export function TalkToIzuki() {
 
         <div className="izk-divider" />
 
+        <Row
+          label="Turn other sounds down while I listen"
+          hint="Music and videos get quieter while you talk to Izuki, then come back up — so it hears you, not the song."
+          icon={<Volume2 size={14} strokeWidth={2.3} />}
+        >
+          <Toggle
+            checked={settings.duck_while_listening}
+            onChange={(v) => patch({ duck_while_listening: v })}
+          />
+        </Row>
+
+        <div className="izk-divider" />
+
         <FollowUpPicker />
 
         <div className="izk-divider" />
