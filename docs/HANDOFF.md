@@ -96,6 +96,26 @@ then `docs/HOW-IZUKI-WORKS.md`, before changing anything.
     buttons further down the page (`below`); targeting one has the app
     scroll it into view (UIA ScrollItemPattern, or focus) before clicking.
 
+17. **Voices & characters** (`voices.rs`, `VoicePicker.tsx`, `personas.ts`)
+    — new default voice engine `"edge"`: Microsoft's free neural voices
+    (the Edge Read Aloud service over a websocket, no key; `Sec-MS-GEC`
+    token, retries once on a clock-skew 403). ~33 characters, each a voice
+    + accent + pace + personality that goes into every prompt
+    (`voices::prompt_block` in chat.rs / composio.rs / brain.rs). "Make it
+    yours": name, any voice, speed, pitch, own personality text. Fallbacks:
+    natural → Kokoro (English only) → Windows voice in the character's
+    language. Kokoro now pauses after sentences (`ttsWorker.ts pauseAfter`);
+    the fast lane prefetches the next sentence's audio (`prefetchCloud`).
+    Human/ChatGPT follow the character's voice; errors are explained (Groq's
+    Orpheus terms error → a link to accept them). "Test voice" button.
+    Existing users are moved to `"edge"` once (`voices_v2`).
+18. **Grok (xAI)** is a brain (`ProviderId::Xai`, api.x.ai/v1). Test
+    connection now checks the model exists and lists the ones that do.
+    Each brain has a clear "Use this brain" button.
+19. **Website Download** goes straight to the installer (GitHub API → the
+    newest `*_x64-setup.exe`), with a "what next" popup. Releases now also
+    attach `Izuki-Setup.exe` (fixed name).
+
 ## What has NOT been verified (do this first on Windows)
 
 The cloud session could only type-check (`cargo check --target
@@ -150,9 +170,23 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
     "save these notes to my Desktop" → Allow card → file saved.
 25. Phone app: "what's the weather in Lagos today?" → a real, current answer.
 
+26. Voice: `cargo test live_voice -- --ignored` (real natural-voice
+    requests — the cloud sandbox can't reach the service). Then Talk →
+    Voice → Natural → Test voice; tap ▶ on Ezinne, Chidi, Lucía, Rex; pick
+    Rex and chat (it roasts and swears), pick Lucía and talk (answers in
+    Spanish, in a Spanish voice). Unplug the internet → it falls back to the
+    offline voice without a stall. A long answer flows with pauses at
+    commas and full stops, no gaps between sentences.
+27. Human (Groq key) and ChatGPT (OpenAI key) → Test voice plays, or says
+    exactly why not (Orpheus terms → the link works).
+28. Settings → Grok (xAI): paste a key, Test connection (model check), Use
+    this brain, chat.
+29. Website: Download on a Windows PC → the installer downloads at once,
+    popup shows; on a phone → phone-app popup.
+
 Running the Rust tests from Linux: `cargo test --target x86_64-pc-windows-gnu
 --lib --no-run`, copy `target/x86_64-pc-windows-gnu/debug/WebView2Loader.dll`
-next to the test exe in `deps/`, and run it with `wine64` (60 pass).
+next to the test exe in `deps/`, and run it with `wine64` (65 pass).
 
 Fix whatever breaks; keep each fix small.
 

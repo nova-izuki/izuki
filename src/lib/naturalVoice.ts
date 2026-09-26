@@ -518,7 +518,9 @@ export async function speakNatural(
   text: string,
   voice: string,
   onStart?: () => void,
-  mood?: string | null
+  mood?: string | null,
+  /** The character's pace (1 = as made). */
+  pace = 1
 ): Promise<boolean> {
   // A line made ahead of time plays without the model — even on a PC too
   // slow to run it ("Mhm?" is instant and natural either way).
@@ -552,7 +554,7 @@ export async function speakNatural(
   // Kokoro reads at most ~510 phonemes at a time and silently drops the
   // rest, so it gets pieces, never the whole reply.
   let last = performance.now();
-  const job = generate(splitForSpeech(text, 280), voice, m.speed, (samples, rate) => {
+  const job = generate(splitForSpeech(text, 280), voice, m.speed * pace, (samples, rate) => {
     const now = performance.now();
     noteSpeed(now - last, samples.length / rate);
     last = now;
@@ -652,7 +654,7 @@ export async function speakCloud(
   mood?: string | null,
   onStart?: () => void
 ): Promise<boolean> {
-  const pieces = packPieces(splitForSpeech(text), 180);
+  const pieces = cloudPieces(engine, text);
   if (!pieces.length) return true;
   stopNatural("a newer line started");
   const mine = generation;
@@ -663,7 +665,7 @@ export async function speakCloud(
   const play = player(mine, o.ctx, o.out, 1, onStart);
 
   const fetchOne = (piece: string) => {
-    const p = api.speakCloud(engine, piece, mood).then((wav) => o.ctx.decodeAudioData(wav));
+    const p = fetchAudio(engine, piece, mood).then((bytes) => o.ctx.decodeAudioData(bytes.slice(0)));
     p.catch(() => undefined); // awaited below; don't report it twice
     return p;
   };
@@ -702,6 +704,69 @@ export async function speakCloud(
     play.done();
   }
   return true;
+}
+
+/**
+ * How a reply is cut up for a cloud voice. Orpheus reads at most 200
+ * characters a request, so it gets a sentence or two at a time. The natural
+ * voices read long passages beautifully — a sentence break inside one
+ * request gets a real, breathing pause, and the tune carries across — so
+ * they get the first sentence alone (it starts talking sooner), then the
+ * rest in long runs.
+ */
+function cloudPieces(engine: string, text: string): string[] {
+  if (engine !== "edge") return packPieces(splitForSpeech(text), 180);
+  const sentences = splitForSpeech(text, 400);
+  if (sentences.length <= 1) return sentences;
+  return [sentences[0], ...packPieces(sentences.slice(1), 700)];
+}
+
+/** Audio already asked for, so the next line is ready the moment it's needed. */
+const prefetched = new Map<string, Promise<ArrayBuffer>>();
+const fetchKey = (engine: string, piece: string, mood?: string | null) => `${engine}|${mood ?? ""}|${piece}`;
+
+function fetchAudio(engine: string, piece: string, mood?: string | null): Promise<ArrayBuffer> {
+  const key = fetchKey(engine, piece, mood);
+  const early = prefetched.get(key);
+  if (early) {
+    prefetched.delete(key);
+    return early;
+  }
+  return api.speakCloud(engine, piece, mood);
+}
+
+/**
+ * Start making a line's audio now, while the one before it is still being
+ * said — the gap between sentences disappears. Harmless if it's never used.
+ */
+export function prefetchCloud(engine: string, text: string, mood?: string | null) {
+  if (!["edge", "orpheus", "openai"].includes(engine) || !text.trim()) return;
+  for (const piece of cloudPieces(engine, text).slice(0, 2)) {
+    const key = fetchKey(engine, piece, mood);
+    if (prefetched.has(key)) continue;
+    const p = api.speakCloud(engine, piece, mood);
+    p.catch(() => prefetched.delete(key));
+    prefetched.set(key, p);
+  }
+  // Only the latest few matter.
+  while (prefetched.size > 8) prefetched.delete(prefetched.keys().next().value as string);
+}
+
+/**
+ * Play a clip (a voice preview) through the same output, so it stops with
+ * everything else and moves the orb. Resolves when it's done.
+ */
+export async function playClip(bytes: ArrayBuffer): Promise<void> {
+  stopNatural("a preview started");
+  const mine = generation;
+  const o = await output();
+  if (!o) throw new Error("audio output is blocked — click anywhere in Izuki, then try again");
+  const buf = await o.ctx.decodeAudioData(bytes.slice(0));
+  if (mine !== generation) return;
+  const play = player(mine, o.ctx, o.out, 1);
+  play.push(buf);
+  play.done();
+  await new Promise((r) => setTimeout(r, buf.duration * 1000 + 60));
 }
 
 /** Why the last cloud voice attempt failed — shown once as a caption. */

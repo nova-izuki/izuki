@@ -219,6 +219,7 @@ export type ProviderId =
   | "anthropic"
   | "nvidia"
   | "9router"
+  | "xai"
   | "custom";
 
 export interface ProviderConfig {
@@ -304,14 +305,29 @@ export interface Settings {
   show_captions: boolean;
   /** Speak responses out loud, independent of `show_captions`. */
   speak_responses: boolean;
-  /** "natural" (Kokoro, local neural voice) or "system" (Windows voice). */
-  voice_engine: "natural" | "orpheus" | "openai" | "system";
+  /**
+   * "edge" (Microsoft's free natural voices, online), "natural" (Kokoro, on
+   * this PC), "orpheus" (Groq), "openai" (ChatGPT) or "system" (Windows).
+   */
+  voice_engine: "edge" | "natural" | "orpheus" | "openai" | "system";
   /** Kokoro voice id, e.g. "af_heart". */
   voice_name: string;
   /** Groq key for the Orpheus voice. */
   groq_api_key: string;
-  /** Cloud voice name ("" = engine default). */
+  /** Cloud voice name ("" = the character's own). */
   cloud_voice: string;
+  /** Izuki's character (voices.rs): "nova", "leo", "rex"… */
+  persona: string;
+  /** The user's name for it ("" = the character's). */
+  persona_name: string;
+  /** A natural voice of the user's choosing ("" = the character's). */
+  persona_voice: string;
+  /** Extra personality, in the user's words. */
+  persona_style: string;
+  /** Speed (%) and pitch (Hz) on top of the character's. */
+  voice_rate: number;
+  voice_pitch: number;
+  voices_v2: boolean;
   /** Show the voice sphere while Izuki answers typed/push-to-talk requests. */
   sphere_on_replies: boolean;
   /** Microphone name to listen with ("" = automatic). */
@@ -433,4 +449,35 @@ export interface StatusEvent {
 export interface N8nHook {
   name: string;
   url: string;
+}
+
+// ---------------------------------------------------------------------------
+// Voices and characters (voices.rs)
+// ---------------------------------------------------------------------------
+
+export interface Persona {
+  id: string;
+  name: string;
+  /** Everyday · Accents · Languages · Characters */
+  group: string;
+  blurb: string;
+  /** Natural (Edge) voice, e.g. "en-GB-SoniaNeural". */
+  voice: string;
+  rate: number;
+  pitch: number;
+  /** On-device (Kokoro) voice for when offline. */
+  kokoro: string;
+  orpheus: string;
+  openai: string;
+  /** e.g. "en-NG", "es-ES". */
+  lang: string;
+  style: string;
+  sample: string;
+  /** Swears and roasts. */
+  spicy: boolean;
+}
+
+export interface VoiceCatalog {
+  personas: Persona[];
+  voices: Array<{ id: string; label: string }>;
 }

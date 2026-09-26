@@ -37,6 +37,7 @@ pub mod tts;
 pub mod uia;
 pub mod updates;
 pub mod vision;
+pub mod voices;
 pub mod watcher;
 pub mod web;
 pub mod youtube;
@@ -169,6 +170,8 @@ pub fn run() {
             commands::forget_memories,
             commands::clear_memories,
             commands::speak_cloud,
+            commands::voice_catalog,
+            commands::voice_test,
             commands::prefetch_screen,
             commands::save_clip,
             commands::list_wakewords,

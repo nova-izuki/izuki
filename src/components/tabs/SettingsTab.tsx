@@ -175,6 +175,8 @@ export function SettingsTab() {
                           placeholder={
                             p.id === "openrouter"
                               ? "sk-or-v1-…"
+                              : p.id === "xai"
+                                ? "xai-… (from console.x.ai → API Keys)"
                               : p.id === "9router"
                                 ? "not needed — 9Router holds its own provider keys"
                                 : "paste your key"
@@ -197,20 +199,34 @@ export function SettingsTab() {
                         )}
                         Test connection
                       </button>
-                      {probe[p.id] && (
-                        <span
-                          className={cx(
-                            "min-w-0 flex-1 truncate text-[10.5px]",
-                            probe[p.id].toLowerCase().startsWith("ok")
-                              ? "text-izk-good"
-                              : "text-izk-danger"
-                          )}
-                          title={probe[p.id]}
-                        >
-                          {probe[p.id]}
-                        </span>
-                      )}
+                      <button
+                        type="button"
+                        disabled={active}
+                        onClick={() => {
+                          patch({ active_provider: p.id });
+                          setProvider(p.id, { enabled: true });
+                        }}
+                        className={cx(
+                          "izk-pill izk-no-drag h-[30px] shrink-0 px-3 text-[11.5px]",
+                          active && "border-izk-good/40 text-izk-good"
+                        )}
+                        title={active ? "Izuki is thinking with this one" : "Make this Izuki's brain"}
+                      >
+                        <Check size={12} strokeWidth={2.6} />
+                        {active ? "In use" : "Use this brain"}
+                      </button>
                     </div>
+                    {probe[p.id] && (
+                      <p
+                        className={cx(
+                          "select-text break-words text-[10.5px] leading-snug",
+                          probe[p.id].toLowerCase().startsWith("ok") ? "text-izk-good" : "text-izk-danger"
+                        )}
+                      >
+                        {probe[p.id]}
+                        {probe[p.id].toLowerCase().startsWith("ok") && !active && " — tap “Use this brain” to switch to it."}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

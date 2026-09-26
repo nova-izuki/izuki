@@ -286,7 +286,7 @@ fn ask_model(
         // Izuki's "hands": the real controls on screen, numbered, so the
         // model can say "click #7" instead of guessing pixels.
         controls: controls_job.join().unwrap_or_default(),
-        memory: crate::memory::prompt_block() + &crate::reminders::prompt_block(),
+        memory: crate::memory::prompt_block() + &crate::reminders::prompt_block() + &crate::voices::prompt_block(),
         windows: uia::open_windows(14),
     };
     let prep_ms = started.elapsed().as_millis();

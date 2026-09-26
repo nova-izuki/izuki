@@ -138,6 +138,7 @@ fn all(base: &str) -> Vec<ProviderConfig> {
         cfg(ProviderId::Anthropic, format!("{base}/v1"), "claude-haiku-4-5-20251001", "sk-ant-test"),
         cfg(ProviderId::Nvidia, format!("{base}/v1"), "strict", "nvapi-test"),
         cfg(ProviderId::NineRouter, format!("{base}/local9/v1"), "kr/claude-haiku-4.5", ""),
+        cfg(ProviderId::Xai, format!("{base}/xai/v1"), "grok-4-fast-non-reasoning", "xai-test"),
         cfg(ProviderId::Custom, format!("{base}/local/v1"), "local-vlm", ""),
     ]
 }

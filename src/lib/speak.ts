@@ -15,37 +15,56 @@
  * of quietly settling for the robotic fallback.
  */
 
-let voice: SpeechSynthesisVoice | null = null;
-let voicePicked = false;
 let sawNatural = false;
+/** The best installed voice per language, e.g. "en-GB" → Hazel. */
+const picked = new Map<string, SpeechSynthesisVoice | null>();
 
 const NATURAL = /natural|online|neural/i;
 
-function pickVoice(): SpeechSynthesisVoice | null {
-  if (voicePicked) return voice;
+/**
+ * The best voice for `lang` ("es-ES", "en-NG"…): that exact accent, then
+ * the same language, then English. Natural voices first in each.
+ */
+function pickVoice(lang = "en-US"): SpeechSynthesisVoice | null {
+  if (picked.has(lang)) return picked.get(lang) ?? null;
   const list = window.speechSynthesis?.getVoices?.() ?? [];
   if (!list.length) return null; // voices load async; try again next call
-  voicePicked = true;
+  sawNatural = list.some((v) => /^en-/i.test(v.lang) && NATURAL.test(v.name));
+  const base = lang.split("-")[0].toLowerCase();
+  const norm = (l: string) => l.replace("_", "-").toLowerCase();
+  const exact = list.filter((v) => norm(v.lang) === lang.toLowerCase());
+  const sameLang = list.filter((v) => norm(v.lang).split("-")[0] === base);
+  const pool = exact.length ? exact : sameLang;
+  if (pool.length && base !== "en") {
+    const v = pool.find((x) => NATURAL.test(x.name)) ?? pool[0];
+    picked.set(lang, v);
+    return v;
+  }
+  if (exact.length && base === "en") {
+    const v = exact.find((x) => NATURAL.test(x.name)) ?? exact[0];
+    // Only prefer the accent over a natural US voice when it's natural too.
+    if (NATURAL.test(v.name) || !list.some((x) => /^en-/i.test(x.lang) && NATURAL.test(x.name))) {
+      picked.set(lang, v);
+      return v;
+    }
+  }
+  const voice = englishVoice(list);
+  picked.set(lang, voice);
+  return voice;
+}
 
+function englishVoice(list: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
   const english = list.filter((v) => /^en-/i.test(v.lang));
   const natural = english.find((v) => NATURAL.test(v.name)) ?? list.find((v) => NATURAL.test(v.name));
-  sawNatural = !!natural;
-
   // Among the old desktop voices, "Zira" reads the least mechanically of the
   // three Windows ships by default — a small, safe nudge while no natural
   // voice is installed.
-  voice =
-    natural ??
-    english.find((v) => /zira/i.test(v.name)) ??
-    english[0] ??
-    list[0] ??
-    null;
-  return voice;
+  return natural ?? english.find((v) => /zira/i.test(v.name)) ?? english[0] ?? list[0] ?? null;
 }
 
 if (typeof window !== "undefined" && window.speechSynthesis) {
   window.speechSynthesis.onvoiceschanged = () => {
-    voicePicked = false;
+    picked.clear();
   };
 }
 
@@ -67,12 +86,13 @@ export function openVoiceSettings() {
  * Speak a short line. Cancels whatever it was saying before, so replies never
  * queue up and lag behind the moment they were meant for.
  */
-export function speak(text: string, opts: { rate?: number; pitch?: number } = {}) {
+export function speak(text: string, opts: { rate?: number; pitch?: number; lang?: string } = {}) {
   if (!canSpeak() || !text.trim()) return;
   try {
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    const v = pickVoice();
+    const v = pickVoice(opts.lang);
+    if (opts.lang) u.lang = v?.lang ?? opts.lang;
     // Natural voices already carry their own prosody — pushing rate/pitch on
     // top makes them sound worse, not better. The nudge is only for the flat
     // legacy voices that need the help.

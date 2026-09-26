@@ -10,7 +10,13 @@
 //!   with plain-English instructions. Uses the OpenAI key already in Izuki;
 //!   paid, but about a cent for several minutes of speech.
 //!
-//! Keys never leave Rust; the webview only ever gets the WAV back.
+//! - **edge** — Microsoft's free neural voices (voices.rs): no key, many
+//!   accents and languages. The default.
+//!
+//! All of them follow the character the user picked (voices.rs): its
+//! voice, its accent, its pace.
+//!
+//! Keys never leave Rust; the webview only ever gets the audio back.
 
 use std::time::Duration;
 
@@ -34,7 +40,21 @@ fn orpheus_direction(mood: Option<&str>) -> &'static str {
     }
 }
 
-fn openai_instructions(mood: Option<&str>) -> String {
+/// How a mood nudges the natural voice: (rate %, pitch Hz).
+fn edge_mood(mood: Option<&str>) -> (i32, i32) {
+    match mood {
+        Some("cheerful") => (4, 2),
+        Some("excited") => (10, 4),
+        Some("playful") => (5, 3),
+        Some("curious") => (2, 2),
+        Some("calm") => (-6, -2),
+        Some("serious") => (-3, -1),
+        Some("sympathetic") => (-8, -2),
+        _ => (0, 0),
+    }
+}
+
+fn openai_instructions(settings: &Settings, mood: Option<&str>) -> String {
     let feeling = match mood {
         Some("cheerful") => "cheerful and upbeat, smiling as you speak",
         Some("excited") => "genuinely excited and energetic",
@@ -45,10 +65,16 @@ fn openai_instructions(mood: Option<&str>) -> String {
         Some("curious") => "curious and interested",
         _ => "warm and friendly",
     };
+    let a = crate::voices::active(settings);
+    let who = if a.persona.id == "nova" {
+        String::new()
+    } else {
+        format!(" Your voice: {} ({}).", a.persona.blurb, a.persona.lang)
+    };
     format!(
-        "You are Izuki, the user's close friend and computer companion. Speak {feeling}. \
-         Sound like a real person in a casual conversation: natural rhythm, small pauses, \
-         never like an announcer or a robot."
+        "You are Izuki, the user's close friend and computer companion. Speak {feeling}.{who} \
+         Sound like a real person in a casual conversation: natural rhythm, a small pause at \
+         every comma and full stop, a lift on questions — never like an announcer or a robot."
     )
 }
 
@@ -61,6 +87,17 @@ fn client() -> Result<reqwest::blocking::Client, String> {
 }
 
 fn friendly_error(service: &str, status: reqwest::StatusCode, body: &str) -> String {
+    // Groq's Orpheus voice has terms to accept once, on their site — until
+    // then every request is refused, however good the key.
+    if body.contains("terms") && service == "Groq" {
+        return "Groq needs you to accept the Orpheus voice's terms once: open \
+                console.groq.com/playground?model=canopylabs%2Forpheus-v1-english, sign in, \
+                accept, then try again"
+            .into();
+    }
+    let said = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v["error"]["message"].as_str().map(|m| m.chars().take(160).collect::<String>()));
     match status.as_u16() {
         401 | 403 => format!("{service} rejected the key — check it in Talk to Izuki"),
         402 => format!("{service} needs credits on the account"),
@@ -68,7 +105,10 @@ fn friendly_error(service: &str, status: reqwest::StatusCode, body: &str) -> Str
             format!("{service} has no credits left on this account")
         }
         429 => format!("{service} voice limit reached for now"),
-        _ => format!("{service} voice failed (HTTP {status})"),
+        _ => match said {
+            Some(m) => format!("{service} voice failed: {m}"),
+            None => format!("{service} voice failed (HTTP {status})"),
+        },
     }
 }
 
@@ -78,8 +118,14 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
     if text.is_empty() {
         return Err("nothing to say".into());
     }
+    if engine == "edge" {
+        let a = crate::voices::active(settings);
+        let (dr, dp) = edge_mood(mood);
+        return crate::voices::synthesize(text, &a.voice, a.rate + dr, a.pitch + dp);
+    }
     let c = client()?;
-    let voice = settings.cloud_voice.trim();
+    let persona = crate::voices::active(settings).persona;
+    let chosen = settings.cloud_voice.trim();
 
     let resp = match engine {
         "orpheus" => {
@@ -95,7 +141,7 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
                 .json(&json!({
                     "model": "canopylabs/orpheus-v1-english",
                     "input": format!("[{direction}] {line}"),
-                    "voice": if voice.is_empty() { "hannah" } else { voice },
+                    "voice": if ORPHEUS_VOICES.contains(&chosen) { chosen } else { persona.orpheus },
                     "response_format": "wav",
                 }))
                 .send()
@@ -117,8 +163,8 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
                 .json(&json!({
                     "model": "gpt-4o-mini-tts",
                     "input": text,
-                    "voice": if voice.is_empty() { "marin" } else { voice },
-                    "instructions": openai_instructions(mood),
+                    "voice": if OPENAI_VOICES.contains(&chosen) { chosen } else { persona.openai },
+                    "instructions": openai_instructions(settings, mood),
                     "response_format": "wav",
                 }))
                 .send()
@@ -145,24 +191,38 @@ mod tests {
     fn moods_map_to_directions() {
         assert_eq!(orpheus_direction(Some("sympathetic")), "gentle");
         assert_eq!(orpheus_direction(None), "friendly");
-        assert!(openai_instructions(Some("excited")).contains("excited"));
+        let mut s = Settings::default();
+        assert!(openai_instructions(&s, Some("excited")).contains("excited"));
+        s.persona = "ezinne".into();
+        assert!(openai_instructions(&s, None).contains("Nigerian"));
+        assert_eq!(edge_mood(Some("calm")), (-6, -2));
+        assert!(friendly_error("Groq", reqwest::StatusCode::BAD_REQUEST, r#"{"error":{"message":"The model requires terms acceptance","code":"model_terms_required"}}"#).contains("accept"));
+        assert!(friendly_error("OpenAI", reqwest::StatusCode::BAD_REQUEST, r#"{"error":{"message":"Invalid voice"}}"#).contains("Invalid voice"));
     }
 }
 
-/// A reply as spoken audio (WAV) for another device — the "Call Izuki"
-/// page on a phone, where the browser's own voice is muted by the iPhone's
-/// silent switch but a plain audio file isn't. The chosen cloud voice if one
-/// is set up, otherwise Windows' own voice: free, offline, instant.
-pub fn speak_to_wav(settings: &Settings, text: &str) -> Result<Vec<u8>, String> {
+/// A reply as spoken audio for another device — the "Call Izuki" page on a
+/// phone, where the browser's own voice is muted by the iPhone's silent
+/// switch but a plain audio file isn't. The chosen voice, else the free
+/// natural one, else Windows' own (offline, instant). Returns the bytes and
+/// their type.
+pub fn speak_audio(settings: &Settings, text: &str) -> Result<(Vec<u8>, &'static str), String> {
     let engine = settings.voice_engine.as_str();
     if matches!(engine, "orpheus" | "openai") {
         match synthesize(settings, engine, text, None) {
-            Ok(wav) => return Ok(wav),
-            Err(e) => eprintln!("[tts] {engine} for the call: {e} — using the Windows voice"),
+            Ok(wav) => return Ok((wav, "audio/wav")),
+            Err(e) => eprintln!("[tts] {engine} for the call: {e} — trying the natural voice"),
         }
     }
-    windows_voice(text)
+    match synthesize(settings, "edge", text, None) {
+        Ok(mp3) => return Ok((mp3, "audio/mpeg")),
+        Err(e) => eprintln!("[tts] natural voice for the call: {e} — using the Windows voice"),
+    }
+    windows_voice(text).map(|wav| (wav, "audio/wav"))
 }
+
+pub const ORPHEUS_VOICES: &[&str] = &["hannah", "autumn", "diana", "austin", "daniel", "troy"];
+pub const OPENAI_VOICES: &[&str] = &["marin", "cedar", "coral", "sage", "ash", "verse", "alloy", "ballad", "echo", "fable", "nova", "onyx", "shimmer"];
 
 /// Windows' built-in text-to-speech, as WAV bytes.
 #[cfg(windows)]

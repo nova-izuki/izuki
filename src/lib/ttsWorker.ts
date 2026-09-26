@@ -84,6 +84,23 @@ async function pump() {
   busy = false;
 }
 
+/** Silence after a sentence, by how it ends (seconds). */
+export function pauseAfter(sentence: string): number {
+  const end = sentence.trim().replace(/["'”’)\]]+$/, "");
+  if (/(\.\.\.|…)$/.test(end)) return 0.38;
+  if (/[?!]$/.test(end)) return 0.3;
+  if (/[.。]$/.test(end)) return 0.24;
+  if (/[,;:—–-]$/.test(end)) return 0.12;
+  return 0.06;
+}
+
+function withPause(samples: Float32Array, rate: number, sentence: string): Float32Array {
+  const extra = Math.round(pauseAfter(sentence) * rate);
+  const out = new Float32Array(samples.length + extra);
+  out.set(samples, 0);
+  return out;
+}
+
 async function run(msg: Job) {
   try {
     if (cancelled.has(msg.id)) {
@@ -108,13 +125,16 @@ async function run(msg: Job) {
       const splitter = new TextSplitterStream();
       splitter.push(piece);
       splitter.close();
-      for await (const { audio } of model.stream(splitter, { voice: msg.voice as never, speed: msg.speed })) {
+      for await (const { text, audio } of model.stream(splitter, { voice: msg.voice as never, speed: msg.speed })) {
         if (!firstLogged) {
           firstLogged = true;
           post({ id: msg.id, kind: "log", text: `first audio in ${Math.round(performance.now() - began)} ms` });
         }
         if (cancelled.has(msg.id)) break;
-        const samples = audio.audio as Float32Array;
+        // Each sentence comes out on its own, and played back to back they
+        // run together like a list being read. A person takes a beat after
+        // a full stop, a little more after a question, a breath at a comma.
+        const samples = withPause(audio.audio as Float32Array, audio.sampling_rate, String(text ?? ""));
         seconds += samples.length / audio.sampling_rate;
         post({ id: msg.id, kind: "chunk", samples, rate: audio.sampling_rate }, [samples.buffer]);
       }
