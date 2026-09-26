@@ -313,6 +313,28 @@
     .scene { position: absolute; left: calc(50% - 50vw); width: 100vw; top: -90px; bottom: -8vh; overflow: hidden; pointer-events: none; z-index: 0;
       mask-image: linear-gradient(transparent, #000 12%, #000 86%, transparent); -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 86%, transparent); }
     .scene canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    /* the photo: edge to edge, drifting like a slow orbit, leaning with the mouse and sinking as you scroll */
+    .scene .photo { position: absolute; inset: -4%; opacity: 0; transition: opacity 1.6s ease;
+      transform: translate3d(calc(var(--mx, 0) * -22px), calc(var(--my, 0) * -14px + var(--hp, 0) * 90px), 0) scale(calc(1 + var(--hp, 0) * 0.12)); }
+    .scene.has-photo .photo { opacity: 1; }
+    .scene .photo img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 18%; display: block;
+      animation: orbit 70s ease-in-out infinite alternate; filter: saturate(1.15) contrast(1.08) brightness(0.92); }
+    @keyframes orbit { from { transform: scale(1.06) translate3d(-1.2%, 0, 0) rotate(-0.6deg); } to { transform: scale(1.16) translate3d(1.4%, 0.8%, 0) rotate(0.6deg); } }
+    /* colour grade: city lights and atmosphere pulled toward the site's violet and cyan */
+    .scene .grade { position: absolute; inset: 0; opacity: 0; transition: opacity 1.6s ease; mix-blend-mode: color;
+      background: linear-gradient(115deg, rgba(139, 92, 246, 0.85) 0%, rgba(99, 102, 241, 0.7) 45%, rgba(34, 211, 238, 0.75) 100%); }
+    .scene.has-photo .grade { opacity: 0.55; }
+    /* a sunrise glint sliding along the horizon */
+    .scene .glint { position: absolute; left: -30%; top: 2%; width: 60%; height: 34%; opacity: 0; mix-blend-mode: screen; pointer-events: none;
+      background: radial-gradient(50% 50% at 50% 50%, rgba(255, 244, 255, 0.55), rgba(240, 171, 252, 0.28) 30%, rgba(103, 232, 249, 0.1) 55%, transparent 72%);
+      animation: glint 22s ease-in-out infinite; }
+    .scene.has-photo .glint { opacity: 1; }
+    @keyframes glint { 0% { transform: translateX(0) scaleY(0.5); opacity: 0; } 15% { opacity: 1; } 50% { transform: translateX(110%) scaleY(0.6); opacity: 0.9; } 85% { opacity: 1; } 100% { transform: translateX(210%) scaleY(0.5); opacity: 0; } }
+    /* dark behind the words, and a soft fade into the rest of the page */
+    .scene .shade { position: absolute; inset: 0; pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(4, 5, 12, 0.88) 0%, rgba(4, 5, 12, 0.62) 34%, rgba(4, 5, 12, 0.12) 62%, transparent 80%),
+        linear-gradient(180deg, rgba(4, 5, 12, 0.55) 0%, transparent 18%, transparent 62%, rgba(4, 5, 12, 0.7) 84%, #04050c 100%); }
     .scene .grain { position: absolute; inset: -50%; opacity: 0.06; mix-blend-mode: overlay; animation: grain 1.2s steps(6) infinite;
       background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
     @keyframes grain { 0% { transform: translate(0, 0); } 20% { transform: translate(-3%, 2%); } 40% { transform: translate(2%, -3%); } 60% { transform: translate(-2%, -1%); } 80% { transform: translate(3%, 3%); } 100% { transform: translate(0, 0); } }
@@ -444,6 +466,8 @@
     @media (max-width: 900px) {
       .hero { grid-template-columns: 1fr; height: auto; min-height: 0; max-height: none; padding-block: 28px 16vh; }
       .hero h1 { font-size: clamp(38px, 11vw, 56px); }
+      .scene .shade { background: linear-gradient(180deg, rgba(4, 5, 12, 0.72) 0%, rgba(4, 5, 12, 0.55) 45%, rgba(4, 5, 12, 0.8) 80%, #04050c 100%); }
+      .scene .photo img { object-position: 42% 20%; }
       .stage { max-width: 440px; }
       .nav-links { display: none; }
       .bento { grid-template-columns: 1fr 1fr; }
@@ -476,7 +500,7 @@
       .demo-track { height: auto; }
       .demo-sticky { position: relative; height: auto; }
       .screen { transform: none !important; }
-      .scene .grain, .chip, .reel .bar i, .a-sees .beam, .a-talks .rip, .a-clicks .cur, .a-clicks .ring, .a-teach path, .a-teach .ans, .a-free .rays, .a-free b, .zoom-word, .final-glow { animation: none !important; }
+      .scene .grain, .scene .photo img, .scene .glint, .chip, .reel .bar i, .a-sees .beam, .a-talks .rip, .a-clicks .cur, .a-clicks .ring, .a-teach path, .a-teach .ans, .a-free .rays, .a-free b, .zoom-word, .final-glow { animation: none !important; }
       .a-teach path { stroke-dashoffset: 0; } .a-teach .ans { opacity: 1; }
       .zoom-track, .reels-track-wrap { height: auto; }
       .zoom-sticky, .reels-sticky { position: relative; height: auto; padding-block: 60px; }
@@ -515,7 +539,19 @@
     <!-- ========== hero ========== -->
     <header class="hero">
       <div class="scene" aria-hidden="true">
+        <!-- A real photograph of Earth at night from the International Space
+             Station (NASA, via Unsplash). If it can't load, the drawn planet
+             in the canvas shows instead. -->
+        <div class="photo" id="photo">
+          <img id="photo-img" alt="" decoding="async" fetchpriority="high"
+            src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1920&q=80"
+            srcset="https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1280&q=78 1280w, https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1920&q=80 1920w, https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=2560&q=80 2560w"
+            sizes="100vw" />
+        </div>
+        <div class="grade"></div>
+        <div class="glint"></div>
         <canvas id="scene"></canvas>
+        <div class="shade"></div>
         <div class="grain"></div>
       </div>
       <div class="hero-copy">
@@ -802,7 +838,7 @@
   </main>
 
   <footer>
-    <span>© 2026 Izuki · MIT licensed · Made with ❤️ by Solomon Nwachukwu</span>
+    <span>© 2026 Izuki · MIT licensed · Made with ❤️ by Solomon Nwachukwu · Earth photo: <a href="https://unsplash.com/photos/photo-of-outer-space-Q1p7bh3SHj8?utm_source=izuki&utm_medium=referral">NASA</a> on <a href="https://unsplash.com/?utm_source=izuki&utm_medium=referral">Unsplash</a></span>
     <span><a href="https://github.com/nova-izuki/izuki">GitHub</a> · <a href="https://github.com/nova-izuki/izuki/releases/latest">Download</a> · <a href="app/">Phone app</a> · <a href="https://github.com/nova-izuki/izuki#privacy">Privacy</a></span>
   </footer>
 
@@ -971,21 +1007,39 @@
       g.fillRect(x - r, y - r, r * 2, r * 2);
     }
 
+    // The real photo, once it's here, takes the place of the drawn planet
+    // and nebula; the stars and shooting stars stay on top of it.
+    const sceneEl = cv.parentElement, photoImg = $("photo-img");
+    let photo = false;
+    const usePhoto = () => { photo = true; sceneEl.classList.add("has-photo"); };
+    if (photoImg) {
+      if (photoImg.complete && photoImg.naturalWidth) usePhoto();
+      else {
+        photoImg.addEventListener("load", usePhoto, { once: true });
+        photoImg.addEventListener("error", () => $("photo").remove(), { once: true });
+      }
+    }
+
     function frame(now) {
       requestAnimationFrame(frame);
       if (!visible) return;
       mx += (tx - mx) * 0.05; my += (ty - my) * 0.05;
       const t = reduce ? 0 : now / 1000;
       const hp = Number(getComputedStyle(cv.parentElement).getPropertyValue("--hp")) || 0;
+      sceneEl.style.setProperty("--mx", mx.toFixed(3));
+      sceneEl.style.setProperty("--my", my.toFixed(3));
       g.clearRect(0, 0, W, H);
 
-      // far: nebula, drifting
+      // far: nebula, drifting (the photo has its own sky)
       g.globalCompositeOperation = "screen";
       const fx = mx * -18, fy = my * -12;
+      if (!photo) {
       cloud(W * 0.18 + fx + Math.sin(t * 0.05) * 30, H * 0.28 + fy, W * 0.42, "124,58,237", 0.22);
       cloud(W * 0.8 + fx + Math.cos(t * 0.04) * 40, H * 0.2 + fy, W * 0.36, "14,165,233", 0.16);
       cloud(W * 0.6 + fx, H * 0.55 + fy + Math.sin(t * 0.07) * 20, W * 0.3, "219,39,119", 0.12);
       cloud(W * 0.35 + fx + Math.sin(t * 0.03 + 2) * 50, H * 0.45 + fy, W * 0.25, "56,189,248", 0.07);
+
+      }
 
       // near: a few bright stars with soft cross flares
       const nx = mx * -40, ny = my * -26;
@@ -1016,6 +1070,8 @@
           if (shoot.life > 55) shoot = null;
         }
       }
+
+      if (photo) { g.globalCompositeOperation = "source-over"; return; }
 
       // the planet, nearest of all
       const P = planet();
