@@ -164,6 +164,21 @@ mod tests {
         assert_eq!(clean("..."), "");
     }
 
+    /// A real clip through the real cloud ears, with the key in this PC's
+    /// Izuki settings: `IZUKI_STT_CLIP=path\to.wav cargo test stt -- --ignored`.
+    /// One free Gemini (or Groq) call.
+    #[test]
+    #[ignore]
+    fn hears_a_real_clip() {
+        let clip = std::env::var("IZUKI_STT_CLIP").expect("set IZUKI_STT_CLIP to a 16 kHz WAV");
+        let path = dirs::config_dir().unwrap().join("Izuki").join("settings.json");
+        let settings: crate::settings::Settings =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let text = super::transcribe_clip(&settings, std::fs::read(clip).unwrap(), "audio/wav", "speech.wav").unwrap();
+        eprintln!("heard: {text}");
+        assert!(text.to_lowercase().contains("burna boy"), "heard: {text}");
+    }
+
     #[test]
     fn real_words_are_kept() {
         assert_eq!(clean("  play Bundle by Bundle\nby Burna Boy "), "play Bundle by Bundle by Burna Boy");
