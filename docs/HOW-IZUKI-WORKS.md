@@ -43,7 +43,7 @@ While a session is on, the orb **never disappears**. It shows what Izuki is doin
 | Say or type **"bye"**, "that's all", "I'm done", "thanks, that's it"… | Izuki says a short goodbye and the orb closes. The wake word keeps working. |
 | Stay silent on **your turn** for the follow-up time (Settings, 5 s – 30 min) | The orb closes with a soft chime. |
 | Say or type **"stop"**, "cancel", "never mind" | Everything stops at once (see below) and the orb closes. |
-| Press **Esc** while Izuki is working or talking | Same as "stop". (Esc still works normally in your app too — Izuki only watches for it, and only while it's busy.) |
+| Press **Esc** while Izuki is working or talking | Same as "stop" — for drawings, replays and typed requests too. (Esc still works normally in your app — Izuki only watches for it, and only while it's busy.) |
 | Press the **stop hotkey** (Ctrl+Shift+Q) — any time | Same as "stop". |
 | Click the orb's **✕** | Same as "stop". |
 | Say or type **"quit Izuki"**, "close the app", "exit Izuki" — or tray → Quit, or Settings → Quit | Izuki closes **completely**. (Open it again from the Start menu or desktop.) |
@@ -138,6 +138,11 @@ Targets:
 - *Microphone* — which mic to use. Automatic picks a connected headset first.
 - *Interrupt by talking* — talk over Izuki to cut it off. (On Bluetooth headphones, its
   voice sounds like a phone call while this is on.)
+- *Turn other sounds down while I listen* — music and videos get quieter while you talk,
+  then come back up exactly where they were.
+- *Sharper hearing* — also checks your words with a big cloud model (your Gemini or Groq key):
+  gets names like "Burna Boy" right and ignores background music. Never slower than a moment
+  past the on-device words; offline it's simply skipped.
 - *Keep listening after I stop talking* — how long a voice session waits for you (5 s – 30 min).
 - *Show my words as I talk* — your words under the orb, live.
 - *Speak responses* / *Captions* — hear Izuki, read Izuki, or both.
