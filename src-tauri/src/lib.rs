@@ -13,6 +13,7 @@ pub mod companion;
 pub mod composio;
 pub mod events;
 pub mod follow;
+pub mod headsup;
 pub mod ghost;
 pub mod hotkey;
 pub mod live;
@@ -135,6 +136,7 @@ pub fn run() {
             std::thread::spawn(move || responder.respond(models::handle(&app, &request)));
         })
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -190,6 +192,9 @@ pub fn run() {
             commands::call_status,
             commands::apps_ask,
             commands::apps_test,
+            commands::apps_connected,
+            commands::apps_connect,
+            commands::headsup_test,
             commands::phone_unpair,
             commands::reminders_list,
             commands::reminder_remove,
@@ -230,6 +235,7 @@ pub fn run() {
             telegram::spawn(handle.clone());
             discord::spawn(handle.clone());
             call::spawn(handle.clone());
+            headsup::spawn(handle.clone());
 
             Ok(())
         })

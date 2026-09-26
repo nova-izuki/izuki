@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { api, EV, emit, on, MOCK_SETTINGS } from "./ipc";
 import type { Flow, Settings, StatusEvent, Watcher } from "./types";
 
-export type TabId = "draw" | "chat" | "flows" | "watchers" | "settings";
+export type TabId = "draw" | "chat" | "apps" | "flows" | "watchers" | "settings";
 
 interface IzukiState {
   tab: TabId;

@@ -11,6 +11,10 @@
     "core:window:allow-show",
     "core:window:allow-hide",
     "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-is-maximized",
     "core:window:allow-unminimize",
     "core:window:allow-close",
     "core:window:allow-set-focus",
@@ -25,6 +29,7 @@
     "opener:default",
     "global-shortcut:default",
     "updater:default",
-    "process:default"
+    "process:default",
+    "notification:default"
   ]
 }

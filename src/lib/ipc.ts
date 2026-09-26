@@ -189,6 +189,8 @@ export const MOCK_SETTINGS: Settings = {
   heads_up_pc: true,
   heads_up_phone: true,
   n8n_hooks: [],
+  school_feeds: [],
+  heads_up_school: true,
   telegram_chat_id: 0,
   telegram_code: "",
   discord_token: "",
@@ -271,6 +273,12 @@ export const api = {
       throw new Error("Not running inside Izuki.");
     }),
   appsTest: (key: string) => call<void>("apps_test", { key }, () => undefined),
+  /** Apps linked through Composio ("gmail", "googlecalendar"…). */
+  appsConnected: () => call<string[]>("apps_connected", undefined, () => ["gmail"]),
+  /** A sign-in page for linking one app. */
+  appsConnect: (toolkit: string) => call<string>("apps_connect", { toolkit }, () => "https://composio.dev"),
+  /** Send a sample heads-up. */
+  headsupTest: () => call<void>("headsup_test", undefined, () => undefined),
   callStatus: () => call<CallStatus>("call_status", undefined, () => ({ state: "off", link: "", error: null })),
   discordStatus: () =>
     call<DiscordStatus>("discord_status", undefined, () => ({ bot: "", invite: "", paired: false, code: "123456", error: null })),

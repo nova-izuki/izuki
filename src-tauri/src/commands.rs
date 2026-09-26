@@ -536,6 +536,24 @@ pub async fn apps_ask(history: Vec<crate::chat::Turn>) -> R<crate::composio::Ans
     blocking(move || crate::composio::ask(&history).map_err(err)).await?
 }
 
+/// The apps linked through Composio (for the Apps tab's ticks).
+#[tauri::command]
+pub async fn apps_connected() -> R<Vec<String>> {
+    blocking(|| crate::composio::connected().map_err(err)).await?
+}
+
+/// A sign-in page for linking one app; the Apps tab opens it.
+#[tauri::command]
+pub async fn apps_connect(toolkit: String) -> R<String> {
+    blocking(move || crate::composio::link(&toolkit).map_err(err)).await?
+}
+
+/// Send a sample heads-up to wherever they're set to go.
+#[tauri::command]
+pub async fn headsup_test(app: AppHandle) {
+    let _ = blocking(move || crate::headsup::test(&app)).await;
+}
+
 /// Check a Composio key (Settings → Apps → Test).
 #[tauri::command]
 pub async fn apps_test(key: String) -> R<()> {

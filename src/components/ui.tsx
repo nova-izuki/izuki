@@ -116,11 +116,14 @@ export function Segmented<T extends string>({
   options,
   onChange,
   size = "md",
+  compact = false,
 }: {
   value: T;
   options: Array<{ value: T; label: string; icon?: ReactNode }>;
   onChange: (v: T) => void;
   size?: "sm" | "md";
+  /** Only the chosen option shows its name; the rest are icons (tight space). */
+  compact?: boolean;
 }) {
   return (
     <div
@@ -135,6 +138,8 @@ export function Segmented<T extends string>({
           <button
             key={o.value}
             type="button"
+            title={o.label}
+            aria-label={o.label}
             onClick={() => onChange(o.value)}
             className={cx(
               "relative flex items-center gap-1.5 rounded-full font-medium transition-all duration-200",
@@ -150,7 +155,7 @@ export function Segmented<T extends string>({
             }
           >
             {o.icon}
-            {o.label}
+            {(!compact || active || !o.icon) && o.label}
           </button>
         );
       })}

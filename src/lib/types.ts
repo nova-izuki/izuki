@@ -356,6 +356,10 @@ export interface Settings {
   heads_up_phone: boolean;
   /** The user's n8n workflows, started by name. */
   n8n_hooks: N8nHook[];
+  /** Private calendar links (.ics) from Blackboard, Canvas… for due dates. */
+  school_feeds: string[];
+  /** Heads-up: school work due soon. */
+  heads_up_school: boolean;
   /** How long a conversation waits for you before closing (seconds, 5…1800). */
   follow_up_secs: number;
   /** Chat/caption look: matched to the screen, or fixed. */
