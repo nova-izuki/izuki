@@ -62,6 +62,8 @@ pub fn capture_frozen() -> Result<String> {
 pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession) -> VisionPlan {
     let settings = store.settings();
     automation::clear_abort();
+    // Esc stops it from here on — while the model looks, too.
+    let _esc = crate::hotkey::working();
 
     if session.created_at == 0 {
         session.created_at = now_ms();
@@ -641,7 +643,12 @@ where
 fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> bool {
             let settings = store.settings();
             let move_ms = settings.move_duration_ms;
-            automation::clear_abort();
+            // No clear_abort() here: each task clears the flag once, when it
+            // starts. Clearing it again right before the clicks threw away a
+            // stop pressed while the model was still thinking.
+            // Esc stops Izuki for as long as it works the screen, whether or
+            // not the orb is up (a drawing or a replay has no orb).
+            let _esc = crate::hotkey::working();
 
             // If the command came from Izuki's chat bubble, Izuki holds the
             // keyboard right now — hand it back so typing lands in the app.
@@ -715,6 +722,8 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
 
 pub fn run_flow(app: &AppHandle, store: &Arc<Store>, id: &str) -> Result<()> {
     let flow = store.flow(id).ok_or_else(|| anyhow!("no such flow"))?;
+    // A replay is a new task: an old stop no longer applies.
+    automation::clear_abort();
     store.mutate_flow(id, |f| {
         f.run_count += 1;
         f.last_run = Some(now_ms());
@@ -743,6 +752,7 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
     answer_help(None);
     let my_task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     automation::clear_abort();
+    let _esc = crate::hotkey::working();
     let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted();
 
     // "Keep going" after a task had to stop: pick it up where it left off.
@@ -973,6 +983,33 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
         last_look = Some(look);
         if !this_round.is_empty() && this_round == last_round && !screen_changed {
             repeats += 1;
+            if repeats >= 2 && asked < 3 && alive() {
+                // Going in circles: rather than give up halfway, ask what
+                // to do and carry on with the answer.
+                eprintln!("[agent] stuck repeating the same steps — asking");
+                asked += 1;
+                repeats = 0;
+                last_round.clear();
+                if focus {
+                    let _ = overlay::hide_overlay(app);
+                }
+                let question = "Hmm, I'm stuck on this bit. What should I click? Tell me, or circle it.";
+                if let Some(answer) = ask_user(app, question, &alive) {
+                    let said = answer.prompt.trim().to_string();
+                    told = Some(format!(
+                        "Your last steps kept changing nothing, so you asked the user what to do. They answered{}{}. Do that now, a different way from before.",
+                        if answer.marks.is_empty() { "" } else { " by marking it on the screen (their mark is drawn on the screenshot)" },
+                        if said.is_empty() { String::new() } else { format!(", saying: \"{said}\"") },
+                    ));
+                    shown = answer.marks;
+                    std::thread::sleep(Duration::from_millis(350));
+                    match capture::capture_all() {
+                        Ok(f) => frame = f,
+                        Err(_) => break,
+                    }
+                    continue;
+                }
+            }
             if repeats >= 2 {
                 eprintln!("[agent] stuck repeating the same steps — stopping");
                 let mut plan = plan;

@@ -306,6 +306,13 @@ html.izuki-overlay body {
     background 180ms var(--ease-glass);
 }
 
+/* A drop-down's text sits centred on its own; the text-box padding
+   pushed it half out of a short select ("nvidia" cut in two). */
+select.izk-field {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
 .izk-field::placeholder {
   color: rgba(158, 160, 173, 0.55);
 }

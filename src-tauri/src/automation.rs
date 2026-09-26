@@ -17,9 +17,21 @@ use crate::uia;
 
 /// Flipped by the panic hotkey; every loop checks it between steps.
 static ABORT: AtomicBool = AtomicBool::new(false);
+/// When the last stop was asked for.
+static ABORT_AT: parking_lot::Mutex<Option<Instant>> = parking_lot::Mutex::new(None);
 
 pub fn request_abort() {
+    *ABORT_AT.lock() = Some(Instant::now());
     ABORT.store(true, Ordering::SeqCst);
+}
+
+/// Forget a stop that's older than `age` — for work nobody is watching
+/// start (a watcher firing), which shouldn't fail forever because the
+/// user once pressed stop, but must still honour a stop pressed just now.
+pub fn clear_stale_abort(age: Duration) {
+    if ABORT_AT.lock().is_none_or(|at| at.elapsed() > age) {
+        clear_abort();
+    }
 }
 
 pub fn clear_abort() {
@@ -115,6 +127,31 @@ fn tiny_pause() {
 
 pub fn click_at(x: i32, y: i32, button: Button, times: u8, duration_ms: u64) -> Result<()> {
     glide_to(x, y, duration_ms)?;
+    click_at_here(button, times)
+}
+
+/// Click something that may only appear once the mouse is over it. Glide
+/// there, give hover effects a moment, and — if a control showed up under
+/// the pointer — land on its centre. `reveal` is for a control known to be
+/// hidden until hover (the waits are longer); `look_again` is for a guessed
+/// point that found nothing to snap to before the hover.
+fn hover_then_click(x: i32, y: i32, button: Button, times: u8, duration_ms: u64, reveal: bool, look_again: bool) -> Result<()> {
+    glide_to(x, y, duration_ms)?;
+    if reveal || look_again {
+        std::thread::sleep(Duration::from_millis(if reveal { 380 } else { 140 }));
+        if aborted() {
+            return Err(anyhow!("stopped"));
+        }
+        if let Some(hit) = uia::snap_to_control(x, y, if reveal { 40 } else { 28 }) {
+            if (hit.x, hit.y) != (x, y) {
+                glide_to(hit.x, hit.y, 120)?;
+            }
+        }
+    }
+    click_at_here(button, times)
+}
+
+fn click_at_here(button: Button, times: u8) -> Result<()> {
     tiny_pause();
     let mut e = enigo()?;
     for i in 0..times.max(1) {
@@ -295,10 +332,15 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         return Ok(format!("[dry run] {} at {}", step.action.as_str(), label));
     }
 
+    // Hover-only controls (a tab's ✕) need the pointer over them before
+    // they exist on screen; a guessed point with nothing under it gets one
+    // more look once the hover has had its effect.
+    let reveal = step.hover_first;
+    let look_again = magnetic && step.snapped_to.is_none() && snapped.is_none();
     match step.action {
-        Intent::Click | Intent::Auto => click_at(x, y, Button::Left, 1, move_ms)?,
-        Intent::DoubleClick => click_at(x, y, Button::Left, 2, move_ms)?,
-        Intent::RightClick => click_at(x, y, Button::Right, 1, move_ms)?,
+        Intent::Click | Intent::Auto => hover_then_click(x, y, Button::Left, 1, move_ms, reveal, look_again)?,
+        Intent::DoubleClick => hover_then_click(x, y, Button::Left, 2, move_ms, reveal, look_again)?,
+        Intent::RightClick => hover_then_click(x, y, Button::Right, 1, move_ms, reveal, look_again)?,
         Intent::Hover => glide_to(x, y, move_ms)?,
         // Only the on-screen hand goes there and circles it (the overlay
         // draws it off the HAND event) — the real mouse stays put. Held a

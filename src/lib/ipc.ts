@@ -170,6 +170,8 @@ export const MOCK_SETTINGS: Settings = {
   mic_device: "",
   show_transcript: true,
   barge_in: true,
+  duck_while_listening: true,
+  cloud_ears: true,
   follow_up_secs: 1800,
   chat_style: "auto",
   chat_color: "#7dd3fc",
@@ -212,6 +214,16 @@ export const api = {
   /** Drop every memory mentioning `about`; resolves to how many went. */
   forgetMemories: (about: string) => call<number>("forget_memories", { about }, () => 0),
   clearMemories: () => call<void>("clear_memories", {}, () => undefined),
+
+  /** Whether a cloud speech model (Groq or Gemini key) is set up. */
+  cloudEarsReady: () => call<boolean>("cloud_ears_ready", undefined, () => false),
+  /** What was said in a WAV clip (base64), per the cloud model. Rejects → use the on-device words. */
+  cloudTranscribe: (wavB64: string) =>
+    call<string>("cloud_transcribe", { wavB64 }, () => {
+      throw new Error("Not running inside Izuki.");
+    }),
+  /** Turn other apps' sound down while listening (true), back up (false). */
+  duckAudio: (on: boolean) => call<void>("duck_audio", { on }, () => undefined),
 
   /** One sentence in a cloud voice ("orpheus" | "openai"), as WAV. */
   speakCloud: (engine: string, text: string, mood?: string | null) =>

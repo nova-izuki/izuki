@@ -197,6 +197,10 @@ pub struct ActionStep {
     pub reasoning: String,
     #[serde(default)]
     pub snapped_to: Option<String>,
+    /// The control only appears while the mouse is over it: hover there
+    /// and let it show before clicking.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hover_first: bool,
 }
 
 fn half() -> f32 {

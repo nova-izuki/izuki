@@ -490,6 +490,34 @@ pub async fn speak_cloud(
         .map(tauri::ipc::Response::new)
 }
 
+// ---------------------------------------------------------------------------
+// Hearing you over the music (stt.rs, duck.rs)
+// ---------------------------------------------------------------------------
+
+/// Whether a cloud speech model is set up (Groq or Gemini key, and on).
+#[tauri::command]
+pub fn cloud_ears_ready() -> bool {
+    crate::stt::available(&state::store().settings())
+}
+
+/// What was said in a 16 kHz WAV clip (base64), per the big cloud model.
+/// An error means "use the on-device words".
+#[tauri::command]
+pub async fn cloud_transcribe(wav_b64: String) -> R<String> {
+    use base64::Engine;
+    let wav = base64::engine::general_purpose::STANDARD.decode(wav_b64.as_bytes()).map_err(err)?;
+    let settings = state::store().settings();
+    blocking(move || crate::stt::transcribe(&settings, wav).map_err(err)).await?
+}
+
+/// Turn other apps' sound down while Izuki listens (and back up after).
+#[tauri::command]
+pub fn duck_audio(on: bool) {
+    if !on || state::store().settings().duck_while_listening {
+        crate::duck::set(on);
+    }
+}
+
 /// Start looking at the screen early — called the moment the user starts
 /// talking or typing, so the answer isn't waiting on it later.
 #[tauri::command]

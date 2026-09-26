@@ -3,14 +3,17 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   AudioLines,
   Captions,
+  Ear,
   Hand,
   Keyboard,
   Mic,
   MicOff,
+  MousePointer2,
   RotateCcw,
   Send,
   Sparkles,
   Timer,
+  Volume1,
   Volume2,
 } from "lucide-react";
 import { Row, Segmented, Slider, Toggle, cx } from "./ui";
@@ -177,6 +180,7 @@ export function TalkToIzuki() {
 
         <Row
           label="While it works"
+          icon={<MousePointer2 size={14} strokeWidth={2.3} />}
           hint={
             settings.execution_mode === "focus"
               ? "Focus — the hand points at each step on your live screen. Your mouse stays yours while it thinks."
@@ -225,6 +229,29 @@ export function TalkToIzuki() {
           icon={<Hand size={14} strokeWidth={2.3} />}
         >
           <Toggle checked={settings.barge_in} onChange={(v) => patch({ barge_in: v })} />
+        </Row>
+
+        <div className="izk-divider" />
+
+        <Row
+          label="Turn other sounds down while I listen"
+          hint="Music and videos get quieter while you talk to Izuki, then come back up — so it hears you, not the song."
+          icon={<Volume1 size={14} strokeWidth={2.3} />}
+        >
+          <Toggle
+            checked={settings.duck_while_listening}
+            onChange={(v) => patch({ duck_while_listening: v })}
+          />
+        </Row>
+
+        <div className="izk-divider" />
+
+        <Row
+          label="Sharper hearing"
+          hint="Also checks your words with a big cloud model using your Gemini (or Groq) key — gets names like Burna Boy right and ignores background music. Falls back to this PC instantly if it's slow or offline."
+          icon={<Ear size={14} strokeWidth={2.3} />}
+        >
+          <Toggle checked={settings.cloud_ears} onChange={(v) => patch({ cloud_ears: v })} />
         </Row>
 
         <div className="izk-divider" />

@@ -208,6 +208,16 @@ pub struct Settings {
     /// headset that keeps its mic open, so replies play in call quality.)
     #[serde(default = "default_true")]
     pub barge_in: bool,
+    /// Turn other apps' sound (music, videos) down while Izuki listens to
+    /// you, then back up — like Siri lowering your music.
+    #[serde(default = "default_true")]
+    pub duck_while_listening: bool,
+    /// Double-check what you said with a big cloud speech model (your Groq
+    /// key, else Gemini): gets names like "Burna Boy" right and leaves out
+    /// the lyrics of music playing in the room. The on-device model still
+    /// answers whenever the cloud is slow or offline.
+    #[serde(default = "default_true")]
+    pub cloud_ears: bool,
     /// How long a conversation waits for you to say something before the
     /// orb closes, in seconds (5 s … 30 min). "That's all" closes it at once.
     #[serde(default = "default_follow_up")]
@@ -439,6 +449,8 @@ impl Default for Settings {
             mic_device: String::new(),
             show_transcript: true,
             barge_in: true,
+            duck_while_listening: true,
+            cloud_ears: true,
             follow_up_secs: default_follow_up(),
             chat_style: default_chat_style(),
             chat_color: default_chat_color(),

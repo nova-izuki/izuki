@@ -103,11 +103,11 @@ export function DrawTab() {
           }}
         >
           {/* fake UI the hand can hover, so the preview reads as a real screen */}
-          <div className="absolute left-[22px] top-[22px] flex flex-col gap-2">
+          <div className="absolute left-[22px] top-[44px] flex flex-col gap-2">
             <div className="h-[9px] w-[74px] rounded-full bg-white/12" />
             <div className="h-[9px] w-[112px] rounded-full bg-white/7" />
           </div>
-          <div className="absolute right-[26px] top-[30px] h-[30px] w-[86px] rounded-[11px] border border-izk-violet/40 bg-izk-violet/15" />
+          <div className="absolute right-[26px] top-[44px] h-[30px] w-[86px] rounded-[11px] border border-izk-violet/40 bg-izk-violet/15" />
           <div className="absolute bottom-[26px] left-[26px] h-[26px] w-[150px] rounded-[9px] border border-white/10 bg-black/30" />
           <div
             className="absolute bottom-[24px] right-[26px] h-[30px] w-[70px] rounded-full"
@@ -116,7 +116,7 @@ export function DrawTab() {
 
           <HandCursor trail={settings.trail_length} size={36} />
 
-          <div className="pointer-events-none absolute left-1/2 top-[8px] -translate-x-1/2">
+          <div className="pointer-events-none absolute left-1/2 top-[8px] -translate-x-1/2 whitespace-nowrap">
             <Badge tone="accent">
               <Sparkles size={9} strokeWidth={2.6} /> live hand preview — move your mouse here
             </Badge>

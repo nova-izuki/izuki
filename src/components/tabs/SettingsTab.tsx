@@ -17,6 +17,7 @@ import {
   Sparkles,
   Wand2,
 } from "lucide-react";
+import pkg from "../../../package.json";
 import { Badge, Row, Section, Segmented, Slider, Toggle, cx } from "../ui";
 import { useIzuki } from "../../lib/store";
 import { api } from "../../lib/ipc";
@@ -439,7 +440,7 @@ export function SettingsTab() {
       <SupportCard />
 
       <p className="pb-1 text-center text-[10px] text-izk-muted/60">
-        IZUKI v1.0 · Free forever · Made with ❤️ by Solomon Nwachukwu
+        IZUKI v{pkg.version} · Free forever · Made with ❤️ by Solomon Nwachukwu
       </p>
     </>
   );

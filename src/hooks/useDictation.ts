@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "../lib/ipc";
 import { canListen, listen, preloadSpeechInput, transcribe, transcribePartial, type Listening } from "../lib/speechInput";
 
 /**
@@ -94,8 +95,13 @@ export function useDictation(onFinal: (text: string) => void, opts: DictationOpt
     setError(null);
     setTranscript("");
     setListening(true);
+    // Music and videos down while you talk, so the mic hears you, not the
+    // song (off in Talk settings; the core also skips it then).
+    void api.duckAudio(true).catch(() => undefined);
+    const unduck = () => void api.duckAudio(false).catch(() => undefined);
 
     void s.audio.then(async (audio) => {
+      unduck();
       if (session.current === s) session.current = null;
       setListening(false);
       if (!audio) {
@@ -118,6 +124,7 @@ export function useDictation(onFinal: (text: string) => void, opts: DictationOpt
         setTranscribing(false);
       }
     }, (e: unknown) => {
+      unduck();
       if (session.current === s) session.current = null;
       setListening(false);
       optsRef.current.onNothing?.("error");

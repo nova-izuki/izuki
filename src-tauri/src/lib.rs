@@ -4,6 +4,7 @@ pub mod apps;
 pub mod automation;
 pub mod brain;
 pub mod capture;
+pub mod duck;
 pub mod chat;
 pub mod commands;
 pub mod events;
@@ -21,6 +22,7 @@ pub mod recipes;
 pub mod settings;
 pub mod state;
 pub mod store;
+pub mod stt;
 pub mod tray;
 pub mod tts;
 pub mod uia;
@@ -170,6 +172,9 @@ pub fn run() {
             commands::submit_voice_command,
             commands::answer_help,
             commands::set_busy,
+            commands::cloud_ears_ready,
+            commands::cloud_transcribe,
+            commands::duck_audio,
             commands::cancel_task,
             commands::quit_app,
             commands::selftest_enabled,
@@ -222,6 +227,11 @@ pub fn run() {
             // deliberate: `Ready` fires the moment the platform event loop
             // takes over, which is the earliest point a window's native
             // handle is reliably in a good state to show and focus.
+            // Quitting (or updating) mid-listen must never leave other
+            // apps' sound turned down.
+            if let tauri::RunEvent::Exit = event {
+                duck::restore_now();
+            }
             if let tauri::RunEvent::Ready = event {
                 // `--minimised` is passed by the autostart entry so Izuki
                 // boots into the tray rather than stealing focus at login.

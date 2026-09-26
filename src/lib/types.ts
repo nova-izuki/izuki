@@ -69,6 +69,7 @@ export interface ActionStep {
   reasoning: string;
   /** Set by the backend when UI Automation snapped the point to a real control. */
   snapped_to?: string | null;
+  hover_first?: boolean;
 }
 
 export interface VisionPlan {
@@ -278,6 +279,10 @@ export interface Settings {
   show_transcript: boolean;
   /** Talk over Izuki to interrupt it (it listens while it answers). */
   barge_in: boolean;
+  /** Turn other apps' sound down while Izuki listens. */
+  duck_while_listening: boolean;
+  /** Double-check your words with a cloud speech model (Groq or Gemini key). */
+  cloud_ears: boolean;
   /** How long a conversation waits for you before closing (seconds, 5…1800). */
   follow_up_secs: number;
   /** Chat/caption look: matched to the screen, or fixed. */

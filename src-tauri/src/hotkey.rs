@@ -94,6 +94,29 @@ static ESC_ON: AtomicBool = AtomicBool::new(false);
 /// When Esc was last armed, so a forgotten "busy" can't keep it armed forever.
 static ESC_SINCE: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
 static ESC_APP: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
+/// How many tasks are working the screen right now (a drawing, a replay, a
+/// spoken or typed command). Esc stops these too — the orb's "busy" alone
+/// missed every drawing and replay, which run without the orb.
+static WORKING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Esc stops Izuki until this is dropped.
+pub struct Working(());
+
+impl Drop for Working {
+    fn drop(&mut self) {
+        WORKING.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Arm Esc for as long as the returned guard lives.
+pub fn working() -> Working {
+    WORKING.fetch_add(1, Ordering::SeqCst);
+    Working(())
+}
+
+fn esc_armed() -> bool {
+    ESC_ON.load(Ordering::SeqCst) || WORKING.load(Ordering::SeqCst) > 0
+}
 
 /// Start the Esc watcher (once, at startup). Costs nothing while idle.
 #[cfg(windows)]
@@ -126,10 +149,14 @@ unsafe extern "system" fn esc_hook(
     lparam: windows::Win32::Foundation::LPARAM,
 ) -> windows::Win32::Foundation::LRESULT {
     use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
-    use windows::Win32::UI::WindowsAndMessaging::{CallNextHookEx, KBDLLHOOKSTRUCT, WM_KEYDOWN};
-    if code >= 0 && wparam.0 as u32 == WM_KEYDOWN && ESC_ON.load(Ordering::SeqCst) {
+    use windows::Win32::UI::WindowsAndMessaging::{CallNextHookEx, KBDLLHOOKSTRUCT, LLKHF_INJECTED, WM_KEYDOWN};
+    if code >= 0 && wparam.0 as u32 == WM_KEYDOWN && esc_armed() {
         let key = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
-        if key.vkCode == VK_ESCAPE.0 as u32 && ESC_ON.swap(false, Ordering::SeqCst) {
+        // Izuki's own key presses (a plan step that presses Esc to close a
+        // menu) are injected — only a real Esc from the keyboard stops it.
+        let injected = key.flags.0 & LLKHF_INJECTED.0 != 0;
+        if key.vkCode == VK_ESCAPE.0 as u32 && !injected && !key_repeat_of_last_stop() {
+            ESC_ON.store(false, Ordering::SeqCst);
             if let Some(app) = ESC_APP.get() {
                 let app = app.clone();
                 // Never do real work inside the hook — Windows drops slow hooks.
@@ -143,9 +170,19 @@ unsafe extern "system" fn esc_hook(
     CallNextHookEx(None, code, wparam, lparam)
 }
 
+/// A held Esc auto-repeats; one stop per press is plenty.
+#[cfg(windows)]
+fn key_repeat_of_last_stop() -> bool {
+    static LAST: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
+    let mut last = LAST.lock();
+    let repeat = last.is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(400));
+    *last = Some(std::time::Instant::now());
+    repeat
+}
+
 /// Whether Izuki is busy right now (thinking, working or talking).
 pub fn is_busy() -> bool {
-    ESC_ON.load(Ordering::SeqCst)
+    esc_armed()
 }
 
 /// Izuki is busy (Esc stops it) or not (Esc is left alone).

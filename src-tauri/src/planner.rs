@@ -40,6 +40,7 @@ pub fn local_plan(session: &DrawSession) -> Vec<ActionStep> {
                     confidence: 0.9,
                     reasoning: "arrow drawn from one point to another".into(),
                     snapped_to: None,
+                    hover_first: false,
                     target: None,
                     target2: None,
                 }
@@ -60,6 +61,7 @@ pub fn local_plan(session: &DrawSession) -> Vec<ActionStep> {
                     confidence: 0.8,
                     reasoning: "text attached to this mark".into(),
                     snapped_to: None,
+                    hover_first: false,
                     target: None,
                     target2: None,
                 }
@@ -77,6 +79,7 @@ pub fn local_plan(session: &DrawSession) -> Vec<ActionStep> {
                 confidence: confidence_for(m),
                 reasoning: reason_for(m),
                 snapped_to: None,
+                hover_first: false,
                 target: None,
                 target2: None,
             },

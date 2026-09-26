@@ -34,6 +34,19 @@ const SYSTEM_PROMPT: &str = concat!(
     "those, set \"target\": 7 — this is exact and ALWAYS preferred over guessing x,y. For a ",
     "drag between two listed controls use \"target\" and \"target2\". Only use x,y for things ",
     "that are not in the list. Never make up a target number that isn't listed.\n",
+    "Some listed controls are marked \"shows on hover\": they're really there (a tab's close ✕, ",
+    "a notification's dismiss button, a row's menu) but only drawn while the mouse is over them, ",
+    "so you won't see them in the screenshot. Target them by id like any other — Izuki hovers ",
+    "first so they appear, then clicks. A field shown with = \"…\" already holds that text (the ",
+    "browser's address bar = the page you're on); \"typing goes here now\" marks the field ",
+    "with the keyboard focus. Trust these over reading pixels.\n",
+    "Requests are usually spoken and run through speech recognition, so they can be short, ",
+    "misheard or misspelled (\"play bonto by bonto\" = Burna Boy's \"Bundle by Bundle\", ",
+    "\"open you tube\", \"blackbored\", \"ms word\"). Work out what they most likely meant from ",
+    "the words, the screen and what you remember, and do that — never take a garbled word ",
+    "literally, and never ask them to repeat themselves just because the wording is odd. A ",
+    "one- or two-word request (\"spotify\", \"louder\", \"next\", \"close it\") means the obvious ",
+    "action on what's in front of them.\n",
     "Your personality: warm, quick and a little playful — a close friend who happens to be ",
     "brilliant with computers, never a manual. `summary` is read aloud in your voice, so write ",
     "it the way a person talks: short, natural, contractions, the odd \"oh!\" or \"hmm\" when it ",
@@ -96,8 +109,11 @@ const SYSTEM_PROMPT: &str = concat!(
     "address bar (ctrl+l) over hunting for small icons.\n",
     "If you truly can't tell which thing they mean (several equally likely options and nothing ",
     "you remember decides it), don't guess: leave `steps` empty and set \"ask\" to one short ",
-    "spoken question, e.g. \"Which account? Circle it for me.\" They'll circle it on screen or ",
-    "tell you, and you'll get the screen back with their mark drawn on it.\n",
+    "spoken question that names the real choices you can see, e.g. \"Want me to sign in with ",
+    "Google or with Microsoft?\" or \"The first result or the official channel?\" — at most three, ",
+    "easy to answer in a word. They'll answer out loud, type it, or circle it on screen, and ",
+    "you'll get the screen back with their answer (and any mark drawn on it); then carry on ",
+    "from where you were without redoing anything.\n",
     "Before anything final or hard to undo — submitting a form or assignment, sending a message ",
     "or email, buying, deleting, posting, changing an account — stop right before that last ",
     "click and set \"ask\" to a short question so the user can check it first (\"It's all filled ",
@@ -165,10 +181,20 @@ impl VisionRequest {
             let ix = ((cx - self.desktop.x) as f64 * fx).round() as i32;
             let iy = ((cy - self.desktop.y) as f64 * fy).round() as i32;
             let kind = c.kind.to_lowercase();
+            let mut extra = String::new();
+            if !c.value.is_empty() {
+                extra.push_str(&format!(" = \"{}\"", c.value));
+            }
+            if c.focused {
+                extra.push_str(" (typing goes here now)");
+            }
+            if c.hidden {
+                extra.push_str(" (shows on hover — not visible in the screenshot)");
+            }
             if c.name.is_empty() {
-                s.push_str(&format!("[{}] {} (no label) at {},{}\n", c.id, kind, ix, iy));
+                s.push_str(&format!("[{}] {} (no label) at {},{}{extra}\n", c.id, kind, ix, iy));
             } else {
-                s.push_str(&format!("[{}] {} \"{}\" at {},{}\n", c.id, kind, c.name, ix, iy));
+                s.push_str(&format!("[{}] {} \"{}\" at {},{}{extra}\n", c.id, kind, c.name, ix, iy));
             }
         }
         s
@@ -921,6 +947,7 @@ fn resolve_targets(steps: &mut Vec<ActionStep>, controls: &[crate::uia::Control]
             s.x = cx;
             s.y = cy;
             s.snapped_to = Some(if c.name.is_empty() { c.kind.clone() } else { c.name.clone() });
+            s.hover_first = c.hidden;
             pinned = true;
         }
         if let Some(c) = s.target2.and_then(|id| find(id)) {
@@ -995,7 +1022,7 @@ mod tests {
     use crate::uia::Control;
 
     fn control(id: u32, x: i32, y: i32) -> Control {
-        Control { id, kind: "Button".into(), name: format!("Button {id}"), rect: Rect { x, y, w: 20, h: 10 } }
+        Control { id, kind: "Button".into(), name: format!("Button {id}"), rect: Rect { x, y, w: 20, h: 10 }, hidden: false, value: String::new(), focused: false }
     }
 
     fn step(v: Value) -> ActionStep {

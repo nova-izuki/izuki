@@ -1,4 +1,4 @@
-import { ExternalLink, Orbit } from "lucide-react";
+import { AudioWaveform, ExternalLink, Orbit } from "lucide-react";
 import { Row, Segmented, Toggle } from "./ui";
 import { useIzuki } from "../lib/store";
 import { IS_TAURI } from "../lib/ipc";
@@ -55,6 +55,7 @@ export function VoicePicker() {
     <>
       <Row
         label="Voice"
+        icon={<AudioWaveform size={14} strokeWidth={2.3} />}
         hint={
           engine === "orpheus"
             ? "Human — the most lifelike free voice, with real feeling. Needs a free Groq key."

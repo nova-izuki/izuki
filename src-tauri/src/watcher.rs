@@ -151,6 +151,8 @@ fn trigger(app: &AppHandle, store: &Arc<Store>, w: &Watcher) {
     let move_ms = settings.move_duration_ms;
     let dry = settings.dry_run;
 
+    // A stop from minutes ago isn't about this.
+    automation::clear_stale_abort(std::time::Duration::from_secs(5));
     let detail = match &w.action {
         WatcherAction::Click { x, y } => {
             let step = ActionStep {
@@ -165,6 +167,7 @@ fn trigger(app: &AppHandle, store: &Arc<Store>, w: &Watcher) {
                 confidence: 1.0,
                 reasoning: "watcher fired".into(),
                 snapped_to: None,
+                hover_first: false,
                 target: None,
                 target2: None,
             };
