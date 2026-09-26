@@ -157,6 +157,24 @@ pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession
         ..Default::default()
     };
 
+    // Anything the model has to think about goes through the same look →
+    // act → check loop as a spoken request: it sees your marks, acts, looks
+    // again to check it worked, carries on until it can see the job done,
+    // and asks if it's unsure — rather than one blind guess. (With "confirm
+    // before acting" on, the one-shot plan is kept, to preview first.)
+    if should_ask_model(&session, &local) && !settings.confirm_before_act && frame.is_some() {
+        let prompt = if session.prompt.trim().is_empty() {
+            "Do what my marks on the screen show.".to_string()
+        } else {
+            session.prompt.clone()
+        };
+        let _ = app.emit(events::STATUS, StatusEvent::working("Izuki is looking…"));
+        drop(_esc);
+        let plan = submit_task(app, store, prompt, session.marks.clone(), frame);
+        set_frozen(None);
+        return plan;
+    }
+
     if should_ask_model(&session, &local) {
         if let Some(f) = &frame {
             let _ = app.emit(events::STATUS, StatusEvent::working("Izuki is looking…"));
@@ -746,6 +764,19 @@ pub fn run_flow(app: &AppHandle, store: &Arc<Store>, id: &str) -> Result<()> {
 /// model gets — the same pipeline `submit_draw` uses, just with an empty
 /// mark list standing in for the geometry-only fast path.
 pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String) -> VisionPlan {
+    submit_task(app, store, prompt, Vec::new(), None)
+}
+
+/// The look → act → check loop behind every request. `marks` are what the
+/// user drew (shown to the model on the first look), and `frame` the screen
+/// they drew them on — `None` takes a fresh look.
+fn submit_task(
+    app: &AppHandle,
+    store: &Arc<Store>,
+    prompt: String,
+    marks: Vec<crate::model::Mark>,
+    drawn_on: Option<Frame>,
+) -> VisionPlan {
     let settings = store.settings();
     // This task replaces any other: the old one sees the number change and
     // stops, and a question it was waiting on is let go.
@@ -769,8 +800,9 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
     let focus = matches!(settings.execution_mode, crate::settings::ExecutionMode::Focus);
 
     // Look first, before any Izuki UI goes up, so the model sees the user's
-    // screen rather than Izuki's own overlay.
-    let frame = capture::capture_all().ok();
+    // screen rather than Izuki's own overlay. (A drawing brings the screen
+    // it was drawn on — the marks are placed on that picture.)
+    let frame = drawn_on.or_else(|| capture::capture_all().ok());
 
     // Focus mode puts up the overlay as a *live*, click-through viewport so
     // the hand has somewhere to visibly point while it acts. It deliberately
@@ -827,7 +859,7 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
     let mut frame = frame;
     let mut done_so_far: Vec<String> = resumed;
     // What the user showed or told Izuki when it asked, for the next look.
-    let mut shown: Vec<crate::model::Mark> = Vec::new();
+    let mut shown: Vec<crate::model::Mark> = marks;
     let mut told: Option<String> = None;
     let mut asked = 0;
     // The same steps twice in a row means they aren't working.

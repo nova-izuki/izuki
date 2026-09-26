@@ -228,7 +228,8 @@ export function OverlayCanvas() {
     if (x < 8) x = Math.min(Math.max(8, m.rect.x), window.innerWidth - W - 8);
     let y = m.rect.y + m.rect.h / 2 - 24;
     if (x === Math.min(Math.max(8, m.rect.x), window.innerWidth - W - 8)) y = m.rect.y + m.rect.h + pad;
-    y = Math.min(Math.max(8, y), window.innerHeight - 64);
+    // Room below for the box and its row of one-tap actions.
+    y = Math.min(Math.max(8, y), window.innerHeight - 104);
     return { x, y };
   }, []);
 
@@ -668,6 +669,7 @@ export function OverlayCanvas() {
                       : "Look at what I marked and help me with it — explain what it is, answer what it's asking, or suggest what to do. Only click or type if that's clearly what I want.")
                 )
               }
+              onQuick={help ? undefined : (p) => void commit(p)}
               onClear={() => {
                 dictation.cancel();
                 surface.current?.clear();

@@ -1,11 +1,20 @@
 import { useEffect, useRef } from "react";
 import { motion } from "motion/react";
-import { Loader2, Mic, Send, Trash2, X } from "lucide-react";
+import { Copy, Info, Loader2, Mic, MousePointer2, MousePointerClick, Send, SquareMousePointer, Trash2, X } from "lucide-react";
 import { VoiceOrb } from "./VoiceOrb";
 import { cx } from "./ui";
 import { useBackdropTone } from "../lib/tone";
 
 export const QUICK_ASK_WIDTH = 400;
+
+/** One tap instead of typing: the usual things to do with a mark. */
+const QUICK_ACTIONS = [
+  { label: "Click", icon: MousePointerClick, prompt: "Click the thing I marked." },
+  { label: "Double-click", icon: MousePointer2, prompt: "Double-click the thing I marked." },
+  { label: "Right-click", icon: SquareMousePointer, prompt: "Right-click the thing I marked." },
+  { label: "Copy text", icon: Copy, prompt: "Copy the text I marked to the clipboard, and tell me what it says." },
+  { label: "Explain", icon: Info, prompt: "Explain what I marked, briefly. Don't click anything." },
+] as const;
 
 /**
  * The oval chat that pops up beside a Ctrl+D mark once you let go of the
@@ -26,6 +35,7 @@ export function QuickAsk({
   transcribing,
   onMic,
   busy,
+  onQuick,
 }: {
   x: number;
   y: number;
@@ -38,6 +48,8 @@ export function QuickAsk({
   transcribing: boolean;
   onMic: () => void;
   busy: boolean;
+  /** One-tap actions under the box; left out when answering a question. */
+  onQuick?: (prompt: string) => void;
 }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Readable over whatever is behind it — or the look picked in Settings.
@@ -130,6 +142,23 @@ export function QuickAsk({
           <X size={13} strokeWidth={2.4} />
         </button>
       </div>
+      {onQuick && !prompt.trim() && !listening && !transcribing && (
+        <div className="mt-1.5 flex flex-wrap justify-center gap-1">
+          {QUICK_ACTIONS.map(({ label, icon: Icon, prompt: p }) => (
+            <button
+              key={label}
+              type="button"
+              disabled={busy}
+              onClick={() => onQuick(p)}
+              className={`izk-card flex h-[26px] items-center gap-1 rounded-full px-2.5 text-[11px] font-medium text-izk-ink shadow-[0_8px_24px_rgba(0,0,0,0.45)] transition-transform hover:scale-[1.04] disabled:opacity-40 ${look.className}`}
+              style={look.style}
+            >
+              <Icon size={11} strokeWidth={2.4} />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
     </motion.div>
   );
 }
