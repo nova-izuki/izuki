@@ -48,6 +48,10 @@ then `docs/HOW-IZUKI-WORKS.md`, before changing anything.
     downloaded once to `%APPDATA%\Izuki\bin`); the phone's own speech
     recognition and voice; link has a secret token; link texted to the
     paired phone. Toggle in Settings → Izuki on your phone.
+    Settings also shows a **QR code** for the link (`QrCode.tsx`, drawn
+    locally with the bundled `qrcode-generator` — no online service), so the
+    phone can just scan it. Useful when Telegram isn't available (the
+    owner's Telegram account is currently spam-limited).
 
 ## What has NOT been verified (do this first on Windows)
 
@@ -75,7 +79,7 @@ Fix whatever breaks; keep each fix small.
   1 Oct 2026, and setup is heavy — skip unless the owner asks.
 - Bank access: skip (Plaid etc. are paid).
 - Nice next steps: a morning brief (calendar + email + weather + reminders)
-  sent to Telegram; a QR code for the call link; release v1.1.0 (bump
+  sent to Telegram; release v1.1.0 (bump
   `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, then
   push a `v1.1.0` tag — `.github/workflows/release.yml` builds the installer
   and existing installs auto-update). Only release after the checks above.

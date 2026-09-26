@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Copy, ExternalLink, Loader2, PhoneCall } from "lucide-react";
 import { Row, Toggle } from "./ui";
+import { QrCode } from "./QrCode";
 import { useIzuki } from "../lib/store";
 import { api, EV, IS_TAURI, on } from "../lib/ipc";
 import type { CallStatus } from "../lib/types";
@@ -54,6 +55,12 @@ export function CallCard() {
         <div className="mb-1 ml-[24px] text-[12px] leading-snug text-izk-muted">
           {status.state === "ready" ? (
             <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-3">
+                <QrCode text={status.link} label="QR code for the Call Izuki link" />
+                <span className="min-w-0 flex-1">
+                  Point your phone's camera at this, then tap the link that pops up.
+                </span>
+              </div>
               <span className="break-all font-mono text-[11px] text-izk-ink">{status.link}</span>
               <div className="flex flex-wrap gap-1.5">
                 <button
