@@ -51,9 +51,9 @@ export function GlassConfigPanel() {
   const tourOpen = useIzuki((s) => s.tourOpen);
   const [maxed, setMaxed] = useState(false);
   // Six tabs don't fit with names at the panel's usual width.
-  const [narrow, setNarrow] = useState(() => window.innerWidth < 560);
+  const [narrow, setNarrow] = useState(() => window.innerWidth < 600);
   useEffect(() => {
-    const fit = () => setNarrow(window.innerWidth < 560);
+    const fit = () => setNarrow(window.innerWidth < 600);
     window.addEventListener("resize", fit);
     return () => window.removeEventListener("resize", fit);
   }, []);

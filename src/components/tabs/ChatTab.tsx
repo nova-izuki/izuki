@@ -27,6 +27,8 @@ interface Msg {
   links?: Array<[string, string]>;
   /** It never answered: offer to ask again. */
   retry?: boolean;
+  /** What it's doing before the answer ("Searching the web…"). */
+  status?: string;
 }
 
 /** How long to wait for the first words before saying something's wrong. */
@@ -127,7 +129,7 @@ export function ChatTab() {
         };
         // Nothing at all for a while: the brain isn't answering. Say so plainly
         // instead of spinning forever.
-        const slow = setTimeout(() => {
+        let slow = setTimeout(() => {
           if (raw) return;
           void api.chatCancel(id);
           void off.then((f) => f());
@@ -143,8 +145,26 @@ export function ChatTab() {
           if (!raw) setLast({ content: why, failed: true, retry: true });
           resolve();
         };
-        const off = on<{ id: number; text: string; done: boolean; error: string | null }>(EV.chatDelta, (d) => {
+        const giveUp = () => {
+          if (raw) return;
+          void api.chatCancel(id);
+          void off.then((f) => f());
+          setLast({
+            content: "My AI brain didn't answer. Check your internet and Settings → Izuki's brain, then try again.",
+            failed: true,
+            retry: true,
+          });
+          resolve();
+        };
+        const off = on<{ id: number; text: string; done: boolean; error: string | null; status?: string }>(EV.chatDelta, (d) => {
           if (d.id !== id || settled) return;
+          // Looking something up first: show what, and give it time.
+          if (d.status) {
+            clearTimeout(slow);
+            slow = setTimeout(giveUp, FIRST_WORDS_MS);
+            setLast({ status: d.status });
+            return;
+          }
           raw += d.text;
           const shown = raw.replace(REMIND_TAG, " ").trim();
           if (d.done) {
@@ -311,7 +331,7 @@ export function ChatTab() {
               >
                 {m.content || (
                   <span className="flex items-center gap-1.5 text-izk-muted">
-                    <Loader2 size={13} className="animate-spin" /> Thinking…
+                    <Loader2 size={13} className="animate-spin" /> {m.status ?? "Thinking…"}
                   </span>
                 )}
                 {m.retry && i === msgs.length - 1 && (

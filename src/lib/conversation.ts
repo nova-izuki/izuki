@@ -122,9 +122,19 @@ export function chatLane(
       resolve(r);
     };
 
-    const off = on<{ id: number; text: string; done: boolean; error: string | null }>(EV.chatDelta, (d) => {
+    let filler = false;
+    const off = on<{ id: number; text: string; done: boolean; error: string | null; status?: string }>(EV.chatDelta, (d) => {
       if (d.id !== id || finished) return;
       if (activeId !== id) return finish("cancelled");
+      // It's looking something up (the web, the Izuki browser): say so once,
+      // so the silence doesn't feel like it froze.
+      if (d.status) {
+        if (!filler && !raw) {
+          filler = true;
+          onChunk(d.status.includes("browser") ? "One sec, let me open that." : "One sec, let me check.", false, mood);
+        }
+        return;
+      }
       raw += d.text;
 
       // The opening: an optional mood tag, then possibly [SCREEN] (the

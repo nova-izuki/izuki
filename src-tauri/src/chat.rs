@@ -37,6 +37,9 @@ pub struct Delta {
     pub text: String,
     pub done: bool,
     pub error: Option<String>,
+    /// What it's doing meanwhile ("Searching the web…") — not part of the reply.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 /// Streams the user cut off (a new message, "stop") — checked between tokens.
@@ -71,11 +74,26 @@ nothing else; another part of you works in their apps. Prefer [APPS] over [SCREE
 their accounts. If the user is saying yes to a draft or action you just proposed in their apps, \
 reply [APPS] too.\n";
 
+/// The web and the Izuki browser (web.rs, browser.rs), for every lane.
+const TOOLS_RULE: &str = "You can use the web and the Izuki browser. To use one, reply with ONLY the tag — \
+no mood tag, no other words — and you'll get the result, then answer:\n\
+[SEARCH: words] — search the web: news, scores, prices, opening hours, facts, anything recent or that \
+you're not sure of.\n\
+[READ: url] — read a public web page (a link they give you, or one from a search).\n\
+[BROWSE: url] — open a page in the Izuki browser, where the user is signed in (Blackboard, Canvas, \
+NotebookLM, Classroom, their accounts). Use it for anything behind a sign-in.\n\
+[CLICK: n] and [TYPE: n | text] — click, or type into, thing number n on the page you last browsed \
+(end the text with ⏎ to press Enter).\n\
+Use a few at most, then answer in your normal way and say where it came from. Never type passwords or \
+card numbers, and never send, post, submit, buy or delete anything through the browser unless the \
+user clearly said yes to exactly that.\n";
+
 fn system_prompt(style: Style, apps: bool) -> String {
     let mut s = match style {
         Style::Voice { expressive } => voice_prompt(expressive),
         Style::Text | Style::Phone => written_prompt(style == Style::Phone),
     };
+    s.push_str(TOOLS_RULE);
     if apps {
         s.push_str(APPS_RULE);
     } else {
@@ -199,14 +217,179 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             if done {
                 crate::reminders::take_tags(&whole.lock());
             }
-            let _ = app.emit(DELTA, Delta { id, text, done, error });
+            let _ = app.emit(DELTA, Delta { id, text, done, error, status: None });
+        };
+        let status = |s: &str| {
+            let _ = app.emit(DELTA, Delta { id, text: String::new(), done: false, error: None, status: Some(s.to_string()) });
         };
         let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
         if chain.is_empty() {
             return emit(String::new(), true, Some("no chat-capable brain is set up".into()));
         }
-        race(&chain, &messages_for(&history, style), id, &emit);
+        let mut messages = messages_for(&history, style);
+        for round in 0..=TOOL_ROUNDS {
+            let last = round == TOOL_ROUNDS;
+            if last {
+                messages.push(json!({ "role": "user", "content": NO_MORE_TOOLS }));
+            }
+            // Hold the opening back until it's clear whether it's a tool
+            // tag (run it quietly) or the answer (stream it as it comes).
+            let held = Mutex::new(String::new());
+            let mode = Mutex::new(if last { Some(false) } else { None::<bool> });
+            let tag = Mutex::new(None::<String>);
+            race(&chain, &messages, id, &|t: String, done: bool, err: Option<String>| {
+                let mut m = mode.lock();
+                if *m == Some(false) {
+                    drop(m);
+                    return emit(t, done, err);
+                }
+                let mut h = held.lock();
+                h.push_str(&t);
+                if m.is_none() {
+                    *m = classify(&h).or(done.then_some(false));
+                }
+                match *m {
+                    Some(false) => {
+                        let all = std::mem::take(&mut *h);
+                        drop(h);
+                        drop(m);
+                        emit(all, done, err);
+                    }
+                    Some(true) if done => *tag.lock() = Some(h.clone()),
+                    _ => {}
+                }
+            });
+            let Some(raw) = tag.into_inner() else { return };
+            let Some(tool) = parse_tool(&raw) else {
+                return emit(String::new(), true, Some("the answer got muddled — try again".into()));
+            };
+            status(tool.doing());
+            let result = run_tool(&tool);
+            messages.push(json!({ "role": "assistant", "content": raw.trim() }));
+            messages.push(json!({ "role": "user", "content": format!("[result]\n{result}\n[Now carry on — another tag, or your answer.]") }));
+        }
     });
+}
+
+// ---------------------------------------------------------------------------
+// Tools the chat can use mid-conversation
+// ---------------------------------------------------------------------------
+
+const TOOL_ROUNDS: usize = 4;
+const NO_MORE_TOOLS: &str = "[No more tools now — answer with what you have.]";
+const TOOL_WORDS: &[&str] = &["SEARCH", "READ", "BROWSE", "CLICK", "TYPE"];
+const MOODS: &[&str] = &["cheerful", "excited", "calm", "serious", "sympathetic", "playful", "curious"];
+
+#[derive(Debug, PartialEq)]
+enum Tool {
+    Search(String),
+    Read(String),
+    Browse(String),
+    Click(u32),
+    Type(u32, String, bool),
+}
+
+impl Tool {
+    fn doing(&self) -> &'static str {
+        match self {
+            Tool::Search(_) => "🔎 Searching the web…",
+            Tool::Read(_) => "📄 Reading the page…",
+            Tool::Browse(_) => "🌐 Opening it in the Izuki browser…",
+            Tool::Click(_) | Tool::Type(..) => "🖱️ Working on the page…",
+        }
+    }
+}
+
+/// A leading mood tag ("[curious] ") is skipped: the tool tag may follow it.
+fn after_mood(t: &str) -> &str {
+    let t = t.trim_start();
+    if let Some(rest) = t.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            if MOODS.contains(&rest[..end].trim().to_lowercase().as_str()) {
+                return rest[end + 1..].trim_start();
+            }
+        }
+    }
+    t
+}
+
+/// From the first words of a reply: a tool tag (`Some(true)`), the answer
+/// itself (`Some(false)`), or too soon to tell (`None`).
+fn classify(t: &str) -> Option<bool> {
+    let trimmed = t.trim_start();
+    // A mood tag still being written: wait.
+    if trimmed.starts_with('[') && !trimmed.contains(']') && trimmed.len() < 16 {
+        let w: String = trimmed[1..].chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+        if MOODS.iter().any(|m| m.starts_with(&w.to_lowercase())) || TOOL_WORDS.iter().any(|k| k.starts_with(&w.to_uppercase())) {
+            return None;
+        }
+    }
+    let rest = after_mood(t);
+    if rest.is_empty() {
+        return None;
+    }
+    let Some(inner) = rest.strip_prefix('[') else { return Some(false) };
+    let word: String = inner.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+    if inner.len() == word.len() {
+        return if TOOL_WORDS.iter().any(|k| k.starts_with(&word.to_uppercase())) { None } else { Some(false) };
+    }
+    Some(TOOL_WORDS.contains(&word.to_uppercase().as_str()))
+}
+
+/// The tool a whole reply asks for, if the reply is only a tool tag.
+fn parse_tool(reply: &str) -> Option<Tool> {
+    let rest = after_mood(reply);
+    let inner = rest.strip_prefix('[')?;
+    let end = inner.rfind(']')?;
+    if !rest[end + 2..].trim().is_empty() {
+        return None;
+    }
+    let (word, arg) = inner[..end].split_once(':')?;
+    let arg = arg.trim();
+    match word.trim().to_uppercase().as_str() {
+        "SEARCH" if !arg.is_empty() => Some(Tool::Search(arg.to_string())),
+        "READ" if !arg.is_empty() => Some(Tool::Read(arg.to_string())),
+        "BROWSE" if !arg.is_empty() => Some(Tool::Browse(arg.to_string())),
+        "CLICK" => arg.trim_matches('#').parse().ok().map(Tool::Click),
+        "TYPE" => {
+            let (n, text) = arg.split_once('|')?;
+            let text = text.trim();
+            let submit = text.ends_with('⏎');
+            Some(Tool::Type(n.trim().trim_matches('#').parse().ok()?, text.trim_end_matches('⏎').trim().to_string(), submit))
+        }
+        _ => None,
+    }
+}
+
+fn run_tool(tool: &Tool) -> String {
+    eprintln!("[chat] tool: {tool:?}");
+    let r = match tool {
+        Tool::Search(q) => crate::web::search_text(q),
+        Tool::Read(u) => crate::web::read(u),
+        Tool::Browse(u) => crate::browser::browse(u),
+        Tool::Click(n) => crate::browser::click(*n),
+        Tool::Type(n, text, submit) => crate::browser::type_into(*n, text, *submit),
+    };
+    r.unwrap_or_else(|e| format!("That didn't work: {e}"))
+}
+
+/// A whole reply, using tools along the way (the phone, calls, Telegram).
+fn complete_with_tools(mut messages: Vec<Value>) -> anyhow::Result<String> {
+    for round in 0..=TOOL_ROUNDS {
+        if round == TOOL_ROUNDS {
+            messages.push(json!({ "role": "user", "content": NO_MORE_TOOLS }));
+        }
+        let text = complete(&messages)?;
+        match parse_tool(&text) {
+            Some(tool) if round < TOOL_ROUNDS => {
+                let result = run_tool(&tool);
+                messages.push(json!({ "role": "assistant", "content": text }));
+                messages.push(json!({ "role": "user", "content": format!("[result]\n{result}\n[Now carry on — another tag, or your answer.]") }));
+            }
+            _ => return Ok(text),
+        }
+    }
+    anyhow::bail!("ran out of steps")
 }
 
 fn messages_for(history: &[Turn], style: Style) -> Vec<Value> {
@@ -225,13 +408,13 @@ fn with_system(history: &[Turn], system: String) -> Vec<Value> {
 /// A whole reply at once (the phone lane), with the same racing of brains
 /// as the streamed one. Reminder tags are left in for the caller.
 pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
-    complete(&messages_for(history, style))
+    complete_with_tools(messages_for(history, style))
 }
 
 /// A written reply that never hands over to the apps lane — for when it
 /// can't help (no apps linked) and the chat should just answer.
 pub fn reply_here(history: &[Turn], style: Style) -> anyhow::Result<String> {
-    complete(&with_system(history, system_prompt(style, false)))
+    complete_with_tools(with_system(history, system_prompt(style, false)))
 }
 
 /// Any finished answer to `messages` (system prompt first), raced across
@@ -473,4 +656,34 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
         anyhow::bail!("the model returned an empty reply");
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod tool_tests {
+    use super::*;
+
+    #[test]
+    fn tells_tool_tags_from_answers_early() {
+        assert_eq!(classify("[SEA"), None);
+        assert_eq!(classify("[SEARCH: weather"), Some(true));
+        assert_eq!(classify("[cheerful] Oh hey!"), Some(false));
+        assert_eq!(classify("[cheer"), None);
+        assert_eq!(classify("[curious] [BROWSE: x"), Some(true));
+        assert_eq!(classify("[SCREEN]"), Some(false));
+        assert_eq!(classify("[APPS]"), Some(false));
+        assert_eq!(classify("Sure"), Some(false));
+        assert_eq!(classify("  "), None);
+    }
+
+    #[test]
+    fn reads_tool_tags() {
+        assert_eq!(parse_tool("[SEARCH: burna boy tour 2026]"), Some(Tool::Search("burna boy tour 2026".into())));
+        assert_eq!(parse_tool("[calm] [READ: https://x.com/a]"), Some(Tool::Read("https://x.com/a".into())));
+        assert_eq!(parse_tool("[CLICK: 12]"), Some(Tool::Click(12)));
+        assert_eq!(parse_tool("[TYPE: 3 | hello there ⏎]"), Some(Tool::Type(3, "hello there".into(), true)));
+        assert_eq!(parse_tool("[TYPE: 3 | hi]"), Some(Tool::Type(3, "hi".into(), false)));
+        assert_eq!(parse_tool("[SEARCH: x] and some words"), None);
+        assert_eq!(parse_tool("Here you go"), None);
+        assert_eq!(parse_tool("[SCREEN]"), None);
+    }
 }

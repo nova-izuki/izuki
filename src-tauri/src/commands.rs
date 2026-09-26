@@ -548,6 +548,12 @@ pub async fn apps_connect(toolkit: String) -> R<String> {
     blocking(move || crate::composio::link(&toolkit).map_err(err)).await?
 }
 
+/// Show the Izuki browser (to sign in to a site once), optionally at `url`.
+#[tauri::command]
+pub async fn browser_show(url: Option<String>) -> R<()> {
+    blocking(move || crate::browser::show(url.as_deref()).map_err(err)).await?
+}
+
 /// Send a sample heads-up to wherever they're set to go.
 #[tauri::command]
 pub async fn headsup_test(app: AppHandle) {

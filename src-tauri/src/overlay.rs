@@ -49,7 +49,7 @@ pub fn overlay_shown() -> bool {
 /// Tauri's own defaults are kept; autoplay is opened up because Izuki's
 /// voice plays from the config panel while it's hidden in the tray, where
 /// nobody has clicked to "allow" audio.
-const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
+pub const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
                             --autoplay-policy=no-user-gesture-required";
 
 /// Let Izuki's own pages use the microphone without a permission prompt.

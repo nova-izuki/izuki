@@ -277,6 +277,9 @@ export const api = {
   appsConnected: () => call<string[]>("apps_connected", undefined, () => ["gmail"]),
   /** A sign-in page for linking one app. */
   appsConnect: (toolkit: string) => call<string>("apps_connect", { toolkit }, () => "https://composio.dev"),
+  /** Show the Izuki browser (to sign in to a site once), optionally at `url`. */
+  browserShow: (url?: string) =>
+    call<void>("browser_show", { url: url ?? null }, () => void (url && window.open(url, "_blank"))),
   /** Send a sample heads-up. */
   headsupTest: () => call<void>("headsup_test", undefined, () => undefined),
   callStatus: () => call<CallStatus>("call_status", undefined, () => ({ state: "off", link: "", error: null })),

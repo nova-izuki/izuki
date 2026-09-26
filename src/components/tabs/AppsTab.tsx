@@ -147,7 +147,7 @@ export function AppsTab() {
   const openScreenApp = (a: ScreenApp) => {
     const url = a.url ?? schoolUrl(a.key);
     if (url) {
-      void openLink(url);
+      void api.browserShow(url);
       return;
     }
     setAsking(a.key);
@@ -163,7 +163,7 @@ export function AppsTab() {
       /* not kept — it still opens now */
     }
     setAsking(null);
-    void openLink(url);
+    void api.browserShow(url);
   };
 
   const hooks = settings.n8n_hooks ?? [];
@@ -234,8 +234,8 @@ export function AppsTab() {
 
       {/* ------------------------------------------------ on your screen */}
       <Section
-        title="School & notes — on your screen"
-        hint="These don't let apps sign in for you, so Izuki uses them like you do: open one, then just ask. It reads it and clicks through."
+        title="School, notes & any website — the Izuki browser"
+        hint="Tap one and sign in once in the Izuki browser (it's built into Windows — nothing to install). Close it, and from then on just ask in the chat or from your phone: Izuki opens it in the background, reads it and clicks through."
       >
         <div className="grid grid-cols-2 gap-1.5">
           {SCREEN_APPS.map((a) => (
@@ -254,6 +254,13 @@ export function AppsTab() {
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          onClick={() => void api.browserShow()}
+          className="izk-pill izk-no-drag mt-2 h-[28px] px-3 text-[11.5px]"
+        >
+          🌐 Open the Izuki browser (sign in to any site)
+        </button>
         {asking && (
           <div className="mt-2 flex items-center gap-1.5">
             <input

@@ -279,8 +279,9 @@
       `It is now ${now.toLocaleString([], { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })} on the user's phone.`,
       `If they ask to be reminded of something, confirm it and add on its own line at the very end: [REMIND YYYY-MM-DD HH:MM | what to remind them] in their local time, 24-hour clock ("in 20 minutes" is ${stamp(in20)}).`,
       "If they tell you something lasting about themselves (name, likes, work, people in their life, how they want you to act), add a line [REMEMBER short third-person fact]. Never passwords, codes or card numbers.",
+      "You can search the web and read links — do it whenever it helps: news, scores, prices, opening hours, facts, anything recent, or a link they send. Say where it came from.",
       pc
-        ? "If they want something done on their computer, or anything in their email, calendar, cloud files or other accounts, reply with exactly [PC] and nothing else — their PC will do it."
+        ? "If they want something done on their computer, anything in their email, calendar, cloud files or other accounts, or a site behind their sign-in (Blackboard, Canvas, NotebookLM, Classroom…), reply with exactly [PC] and nothing else — their PC will do it (it has the Izuki browser, signed in)."
         : "You can't reach their computer, email or other accounts from here. If they ask for that, tell them kindly they can link Izuki on their PC in Settings to do it.",
       memories.length ? "What you remember about them:\n- " + memories.slice(-40).join("\n- ") : "",
     ].filter(Boolean).join("\n");
@@ -288,25 +289,40 @@
 
   const MODEL = "gemini-2.5-flash", LITE = "gemini-2.5-flash-lite";
   let liteUntil = store.get("liteUntil", 0);
+  // Google Search and link reading, free with the same key. If a model or
+  // key refuses them, carry on without (and don't ask again for a day).
+  const WEB_TOOLS = [{ google_search: {} }, { url_context: {} }];
+  let noToolsUntil = store.get("noToolsUntil", 0);
 
   /** Stream a reply; onText gets the text so far. Returns the whole reply. */
-  async function gemini(contents, onText, model) {
+  async function gemini(contents, onText, model, bare) {
     model = model || (Date.now() < liteUntil ? LITE : MODEL);
+    const tools = !bare && Date.now() > noToolsUntil;
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemPrompt() }] },
         contents,
+        ...(tools ? { tools: WEB_TOOLS } : {}),
         generationConfig: { temperature: 0.7, maxOutputTokens: 900, thinkingConfig: { thinkingBudget: 0 } },
       }),
     });
+    if (tools && res.status === 400) {
+      let why = "";
+      try { why = (await res.clone().json()).error?.message || ""; } catch {}
+      if (/tool|search|url|ground/i.test(why)) {
+        noToolsUntil = Date.now() + 86400000;
+        store.set("noToolsUntil", noToolsUntil);
+        return gemini(contents, onText, model, true);
+      }
+    }
     if ((res.status === 429 || res.status === 503) && model === MODEL) {
       // The main model's free allowance is used up or busy: its lighter
       // sibling has its own, and is quicker anyway.
       liteUntil = Date.now() + (res.status === 429 ? 3600000 : 60000);
       store.set("liteUntil", liteUntil);
-      return gemini(contents, onText, LITE);
+      return gemini(contents, onText, LITE, bare);
     }
     if (!res.ok) {
       let why = "";

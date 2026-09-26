@@ -1,6 +1,7 @@
 //! IZUKI — draw on your screen, Izuki does it.
 
 pub mod apps;
+pub mod browser;
 pub mod automation;
 pub mod call;
 pub mod brain;
@@ -36,6 +37,7 @@ pub mod uia;
 pub mod updates;
 pub mod vision;
 pub mod watcher;
+pub mod web;
 pub mod youtube;
 #[cfg(test)]
 mod provider_tests;
@@ -195,6 +197,7 @@ pub fn run() {
             commands::apps_connected,
             commands::apps_connect,
             commands::headsup_test,
+            commands::browser_show,
             commands::phone_unpair,
             commands::reminders_list,
             commands::reminder_remove,
@@ -236,6 +239,7 @@ pub fn run() {
             discord::spawn(handle.clone());
             call::spawn(handle.clone());
             headsup::spawn(handle.clone());
+            browser::init(&handle);
 
             Ok(())
         })
@@ -265,6 +269,14 @@ pub fn run() {
                     }
                     _ => {}
                 }
+            }
+            // The Izuki browser keeps its page and sign-ins: closing hides it.
+            if window.label() == browser::LABEL {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                return;
             }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 // Izuki keeps its watchers running, so closing the panel hides
