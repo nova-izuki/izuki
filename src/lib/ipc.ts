@@ -258,6 +258,11 @@ export const api = {
       text: "Apps only work inside the Izuki app.",
       links: [],
     })),
+  /** Play something on YouTube (and skip its ads): the title it started, or null. */
+  playYoutube: (query: string) =>
+    call<string | null>("play_youtube", { query }, () => {
+      throw new Error("Not running inside Izuki.");
+    }),
   appsTest: (key: string) => call<void>("apps_test", { key }, () => undefined),
   callStatus: () => call<CallStatus>("call_status", undefined, () => ({ state: "off", link: "", error: null })),
   discordStatus: () =>

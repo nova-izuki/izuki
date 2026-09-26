@@ -315,7 +315,7 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
 
     // A step already pinned to a real control (by id) is exact — only guessed
     // pixels need the magnetic snap.
-    let pointless = matches!(step.action, Intent::Watch | Intent::OpenApp | Intent::OpenUrl | Intent::Search);
+    let pointless = matches!(step.action, Intent::Watch | Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube);
     if magnetic && step.snapped_to.is_none() && !pointless {
         if let Some(hit) = uia::snap_to_control(x, y, 64) {
             x = hit.x;
@@ -355,7 +355,17 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         Intent::OpenUrl => {
             let url = step.text_to_type.as_deref().unwrap_or_default();
             crate::apps::open_url(url)?;
+            if url.contains("youtube.com") || url.contains("youtu.be") {
+                crate::youtube::watch_ads(crate::youtube::AD_WATCH);
+            }
             return Ok(format!("opened {url}"));
+        }
+        Intent::PlayYoutube => {
+            let what = step.text_to_type.as_deref().unwrap_or_default();
+            return Ok(match crate::youtube::play(what)? {
+                Some(title) => format!("started playing \"{title}\" on YouTube (ads are skipped by themselves)"),
+                None => format!("opened YouTube results for \"{what}\" but didn't pick a video"),
+            });
         }
         Intent::Search => {
             let q = step.text_to_type.as_deref().unwrap_or_default();
@@ -393,6 +403,13 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
             copy_selection()?;
         }
         Intent::Watch => return Ok("handed to the watcher".into()),
+    }
+
+    // A click on YouTube is usually "play this": watch for its ads.
+    if matches!(step.action, Intent::Click | Intent::Auto | Intent::DoubleClick)
+        && uia::foreground_title().to_lowercase().contains("youtube")
+    {
+        crate::youtube::watch_ads(crate::youtube::AD_WATCH);
     }
 
     Ok(format!("{} at {}", step.action.as_str(), label))

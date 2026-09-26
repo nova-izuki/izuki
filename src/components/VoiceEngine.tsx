@@ -1191,6 +1191,15 @@ export function VoiceEngine() {
 /** Do an instant skill; the line to say, or null if it couldn't (the agent takes over). */
 async function runInstant(i: Instant): Promise<string | null> {
   const name = i.name.charAt(0).toUpperCase() + i.name.slice(1);
+  if (i.kind === "play") {
+    try {
+      const title = await api.playYoutube(i.name);
+      void api.log(`instant: youtube "${i.name}" -> ${title ?? "results only"}`);
+      return title ? `Playing ${title}.` : `Here's ${i.name} on YouTube — pick the one you want.`;
+    } catch {
+      return null; // the agent tries it the long way
+    }
+  }
   if (i.kind === "app") {
     try {
       await api.openApp(i.name);

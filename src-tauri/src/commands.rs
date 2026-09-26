@@ -363,6 +363,17 @@ pub async fn open_app(name: String) -> R<String> {
     blocking(move || crate::apps::open_app(&name).map_err(|e| e.to_string())).await?
 }
 
+/// Instant skill: play something on YouTube (and skip its ads). The title
+/// it started, or null if it only got as far as the results.
+#[tauri::command]
+pub async fn play_youtube(query: String) -> R<Option<String>> {
+    blocking(move || {
+        crate::automation::clear_abort();
+        crate::youtube::play(&query).map_err(|e| e.to_string())
+    })
+    .await?
+}
+
 /// Instant skill: open a web address in the default browser.
 #[tauri::command]
 pub async fn open_url(url: String) -> R<()> {

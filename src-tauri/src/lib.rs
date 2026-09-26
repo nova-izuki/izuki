@@ -35,6 +35,7 @@ pub mod uia;
 pub mod updates;
 pub mod vision;
 pub mod watcher;
+pub mod youtube;
 
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
@@ -195,6 +196,7 @@ pub fn run() {
             commands::selftest_enabled,
             commands::open_app,
             commands::open_url,
+            commands::play_youtube,
             commands::preview_plan,
             commands::panic_stop,
             commands::probe_provider,

@@ -107,6 +107,8 @@ pub enum Intent {
     OpenApp,
     OpenUrl,
     Search,
+    /// Play something on YouTube — `text_to_type` holds what (youtube.rs).
+    PlayYoutube,
 }
 
 impl Intent {
@@ -127,6 +129,7 @@ impl Intent {
             Intent::OpenApp => "open_app",
             Intent::OpenUrl => "open_url",
             Intent::Search => "search",
+            Intent::PlayYoutube => "play_youtube",
         }
     }
 }

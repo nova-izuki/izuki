@@ -476,17 +476,96 @@
 
   // ------------------------------------------------------------ voice
   let voiceOn = store.get("voice", true);
-  function speak(t) {
+
+  // Izuki's voice is Gemini's own (natural, free with the same key), played
+  // as audio through an <audio> element — which, unlike the phone's built-in
+  // speech, still plays with the iPhone's silent switch on. The phone's own
+  // voice is the fallback when Gemini's isn't available.
+  const player = new Audio();
+  player.setAttribute("playsinline", "");
+  const SILENT = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+  /** From a tap: lets replies play later without another tap (iPhone rule). */
+  function unlockAudio() {
+    player.src = SILENT;
+    player.play().catch(() => {});
+    if ("speechSynthesis" in window) {
+      const u = new SpeechSynthesisUtterance(" ");
+      u.volume = 0;
+      speechSynthesis.speak(u);
+    }
+  }
+  let voiceRestUntil = store.get("voiceRestUntil", 0);
+
+  /** Raw 16-bit PCM (what Gemini's voice returns) → a playable WAV. */
+  function pcmToWavUrl(b64, rate) {
+    const pcm = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const out = new DataView(new ArrayBuffer(44 + pcm.length));
+    const text = (at, s) => [...s].forEach((ch, i) => out.setUint8(at + i, ch.charCodeAt(0)));
+    text(0, "RIFF"); out.setUint32(4, 36 + pcm.length, true); text(8, "WAVEfmt ");
+    out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true);
+    out.setUint32(24, rate, true); out.setUint32(28, rate * 2, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true);
+    text(36, "data"); out.setUint32(40, pcm.length, true);
+    new Uint8Array(out.buffer, 44).set(pcm);
+    return URL.createObjectURL(new Blob([out.buffer], { type: "audio/wav" }));
+  }
+
+  async function geminiVoice(t) {
+    if (Date.now() < voiceRestUntil) return null;
+    try {
+      const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: "Say warmly and naturally, like a friend: " + t }] }],
+          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } },
+        }),
+      });
+      if (!r.ok) {
+        // Not on this key's free plan, or used up for now: the phone's voice
+        // for a while instead of asking every time.
+        voiceRestUntil = Date.now() + (r.status === 429 ? 3600000 : 6 * 3600000);
+        store.set("voiceRestUntil", voiceRestUntil);
+        return null;
+      }
+      const v = await r.json();
+      const part = (v.candidates?.[0]?.content?.parts || []).find((p) => p.inlineData?.data);
+      if (!part) return null;
+      const rate = Number((part.inlineData.mimeType || "").match(/rate=(\d+)/)?.[1]) || 24000;
+      return pcmToWavUrl(part.inlineData.data, rate);
+    } catch {
+      return null;
+    }
+  }
+
+  function speakWithPhone(t) {
     return new Promise((done) => {
-      if (!voiceOn || !talking || !("speechSynthesis" in window) || !t) return done();
+      if (!("speechSynthesis" in window)) return done();
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(t.replace(/[*_#`]/g, ""));
       u.rate = 1.05;
       u.onend = done; u.onerror = done;
-      setOrb("speaking");
-      setStatus("Tap the mic to cut in");
       speechSynthesis.speak(u);
     });
+  }
+
+  async function speak(t) {
+    if (!voiceOn || !talking || !t) return;
+    setOrb("speaking");
+    setStatus("Tap the mic to cut in");
+    const url = await geminiVoice(t.replace(/[*_#`]/g, ""));
+    if (!talking) return;
+    if (!url) return speakWithPhone(t);
+    await new Promise((done) => {
+      player.onended = done;
+      player.onerror = () => speakWithPhone(t).then(done);
+      player.src = url;
+      player.play().catch(() => speakWithPhone(t).then(done));
+    });
+    URL.revokeObjectURL(url);
+  }
+  function hush() {
+    try { player.pause(); if (player.onended) player.onended(); } catch {}
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
   }
 
   // "Talking": a hands-free back-and-forth, started by tapping the mic.
@@ -497,7 +576,7 @@
     talking = false;
     try { recog?.abort(); } catch {}
     try { recorder?.stop(); } catch {}
-    if ("speechSynthesis" in window) speechSynthesis.cancel();
+    hush();
     setOrb("");
     setStatus(note || "");
   }
@@ -561,12 +640,12 @@
 
   orb.addEventListener("click", () => {
     if (!key) return openSettings();
-    if (orb.className === "speaking") { speechSynthesis.cancel(); return; }
+    if (orb.className === "speaking") { hush(); return; }
     if (recorder) { recorder.stop(); return; }
     if (talking) return stopTalking("");
     talking = true;
     // A silent line from the tap unlocks the phone's voice for the answers.
-    if ("speechSynthesis" in window) speechSynthesis.speak(new SpeechSynthesisUtterance(""));
+    unlockAudio();
     listen();
   });
 

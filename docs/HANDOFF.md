@@ -73,6 +73,19 @@ then `docs/HOW-IZUKI-WORKS.md`, before changing anything.
     iMessage is not possible for free without a Mac (Apple only allows it
     through a Mac or paid providers).
 
+13. **YouTube skill** (`youtube.rs`) — "play X on YouTube" (voice
+    instant path in `instant.ts`, and a `play_youtube` action the agent can
+    use) opens the search and clicks the best-matching result via UI
+    Automation, no AI. An ad watcher presses YouTube's Skip button whenever
+    it appears, for 4 minutes after anything is played/clicked on YouTube.
+    Stale "waiting for it to load…" lines are no longer spoken.
+14. **Call Izuki voice** — the PC now speaks each reply (`tts::speak_to_wav`:
+    Orpheus/OpenAI if set, else Windows' own voice) and sends it as audio;
+    the page plays it via `<audio>`, which the iPhone silent switch can't
+    mute. Page redesigned with the PC's liquid orb; installable (icon +
+    manifest). The phone app uses Gemini's TTS voice the same way, falling
+    back to the phone's own voice.
+
 ## What has NOT been verified (do this first on Windows)
 
 The cloud session could only type-check (`cargo check --target
@@ -92,7 +105,11 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
 10. Discord: make a bot, paste the token, add it to a server, DM it the
     code, text it, send a voice message, `/screen`.
 11. Phone app: open https://nova-izuki.github.io/izuki/ in Safari, add a
-    Gemini key, chat, talk, set a reminder → "Add to calendar", link the PC.
+    Gemini key, chat, talk (voice plays with silent mode on?), set a
+    reminder → "Add to calendar", link the PC.
+12. "Play Bundle by Bundle by Burna Boy on YouTube" by voice: the video
+    starts within a few seconds, and ads get skipped when Skip shows.
+13. Call Izuki from the iPhone with the silent switch ON: the reply is heard.
 
 Fix whatever breaks; keep each fix small.
 

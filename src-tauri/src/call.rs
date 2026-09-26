@@ -24,6 +24,9 @@ use tauri::{AppHandle, Emitter};
 
 pub const CHANGED: &str = "izuki://call-changed";
 const PAGE: &str = include_str!("call.html");
+/// So "Add to Home Screen" gives a proper Izuki icon and name.
+const ICON: &[u8] = include_bytes!("../icons/128x128@2x.png");
+const MANIFEST: &str = r##"{"name":"Call Izuki","short_name":"Izuki","start_url":"./","scope":"./","display":"standalone","background_color":"#05060d","theme_color":"#05060d","icons":[{"src":"icon.png","sizes":"256x256","type":"image/png"}]}"##;
 const CLOUDFLARED_URL: &str = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe";
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -227,6 +230,10 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
             let _ = req.respond(r);
         }
         (tiny_http::Method::Get, Some("/")) => respond(req, 200, "text/html; charset=utf-8", PAGE.as_bytes().to_vec()),
+        (tiny_http::Method::Get, Some("/icon.png")) => respond(req, 200, "image/png", ICON.to_vec()),
+        (tiny_http::Method::Get, Some("/manifest.webmanifest")) => {
+            respond(req, 200, "application/manifest+json", MANIFEST.as_bytes().to_vec())
+        }
         (tiny_http::Method::Post, Some("/talk")) => {
             let mut body = String::new();
             let _ = req.as_reader().take(64 * 1024).read_to_string(&mut body);

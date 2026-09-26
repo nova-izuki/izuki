@@ -693,7 +693,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     // Tell the overlay's hand where it is going before we move
                     // the real pointer, so the animation leads rather than trails.
                     // (Instant skills happen nowhere on screen — no hand.)
-                    let placeless = matches!(step.action, Intent::OpenApp | Intent::OpenUrl | Intent::Search);
+                    let placeless = matches!(step.action, Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube);
                     if !placeless {
                     let _ = app.emit(
                         events::HAND,
@@ -1219,6 +1219,12 @@ fn worth_saying(line: &str, last: &str) -> bool {
             .map(str::to_string)
             .collect()
     };
+    // "Waiting for the page to load…" is stale by the time it's said (the
+    // screen settled long before the model answered) — just carry on.
+    let l = line.to_lowercase();
+    if ["wait", "load", "hang on", "hold on", "give it a", "a moment", "a sec"].iter().any(|p| l.contains(p)) {
+        return false;
+    }
     let now = words(line);
     const FILLER: &[&str] = &[
         "got", "it", "okay", "ok", "alright", "sure", "on", "let's", "lets", "let", "me", "i'll", "now",
@@ -1310,6 +1316,7 @@ fn describe_step(s: &ActionStep) -> String {
         Intent::OpenApp => format!("opened the app \"{}\"", s.text_to_type.as_deref().unwrap_or("")),
         Intent::OpenUrl => format!("opened {}", s.text_to_type.as_deref().unwrap_or("a web page")),
         Intent::Search => format!("searched the web for \"{}\"", s.text_to_type.as_deref().unwrap_or("")),
+        Intent::PlayYoutube => format!("played \"{}\" on YouTube", s.text_to_type.as_deref().unwrap_or("")),
         other => format!("{} at {},{}", other.as_str(), s.x, s.y),
     };
     if s.reasoning.trim().is_empty() {
