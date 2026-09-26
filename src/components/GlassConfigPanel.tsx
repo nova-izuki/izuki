@@ -1,10 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Layers, MessageCircle, Minus, PenLine, Settings2, X, Eye } from "lucide-react";
+import { Layers, MessageCircle, Minus, PenLine, Settings2, X, Eye, Blocks, Maximize2, Minimize2 } from "lucide-react";
 import { IzukiMark } from "./IzukiMark";
 import { Segmented, cx } from "./ui";
 import { DrawTab } from "./tabs/DrawTab";
 import { ChatTab } from "./tabs/ChatTab";
+import { AppsTab } from "./tabs/AppsTab";
 import { FlowLibrary } from "./tabs/FlowLibrary";
 import { WatcherManager } from "./tabs/WatcherManager";
 import { SettingsTab } from "./tabs/SettingsTab";
@@ -18,17 +19,22 @@ import { Recover } from "./Recover";
 const TABS: Array<{ value: TabId; label: string; icon: React.ReactNode }> = [
   { value: "draw", label: "Draw", icon: <PenLine size={13} strokeWidth={2.4} /> },
   { value: "chat", label: "Chat", icon: <MessageCircle size={13} strokeWidth={2.4} /> },
+  { value: "apps", label: "Apps", icon: <Blocks size={13} strokeWidth={2.4} /> },
   { value: "flows", label: "Flows", icon: <Layers size={13} strokeWidth={2.4} /> },
   { value: "watchers", label: "Watchers", icon: <Eye size={13} strokeWidth={2.4} /> },
   { value: "settings", label: "Settings", icon: <Settings2 size={13} strokeWidth={2.4} /> },
 ];
 
-async function windowAction(kind: "minimize" | "hide") {
-  if (!IS_TAURI) return;
+async function windowAction(kind: "minimize" | "maximize" | "hide") {
+  if (!IS_TAURI) return false;
   const { getCurrentWindow } = await import("@tauri-apps/api/window");
   const w = getCurrentWindow();
   if (kind === "minimize") await w.minimize();
-  else await w.hide();
+  else if (kind === "maximize") {
+    await w.toggleMaximize();
+    return w.isMaximized();
+  } else await w.hide();
+  return false;
 }
 
 export function GlassConfigPanel() {
@@ -43,6 +49,14 @@ export function GlassConfigPanel() {
   const onboardingSeen = useIzuki((s) => s.settings.onboarding_seen);
   const patchSettings = useIzuki((s) => s.patchSettings);
   const tourOpen = useIzuki((s) => s.tourOpen);
+  const [maxed, setMaxed] = useState(false);
+  // Six tabs don't fit with names at the panel's usual width.
+  const [narrow, setNarrow] = useState(() => window.innerWidth < 600);
+  useEffect(() => {
+    const fit = () => setNarrow(window.innerWidth < 600);
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
   const setTourOpen = useIzuki((s) => s.setTourOpen);
 
   // The page lays itself out differently depending on whether Windows is
@@ -117,6 +131,12 @@ export function GlassConfigPanel() {
             <WinButton onClick={() => void windowAction("minimize")} label="Minimise">
               <Minus size={13} strokeWidth={2.6} />
             </WinButton>
+            <WinButton
+              onClick={() => void windowAction("maximize").then((m) => setMaxed(!!m))}
+              label={maxed ? "Restore" : "Make it big"}
+            >
+              {maxed ? <Minimize2 size={12} strokeWidth={2.6} /> : <Maximize2 size={12} strokeWidth={2.6} />}
+            </WinButton>
             <WinButton onClick={() => void windowAction("hide")} label="Close to tray" danger>
               <X size={13} strokeWidth={2.6} />
             </WinButton>
@@ -127,7 +147,7 @@ export function GlassConfigPanel() {
         {/* Scrolls sideways rather than cutting the last tab off in a
             narrow window. */}
         <div className="izk-no-drag overflow-x-auto px-[18px] pb-[12px] [scrollbar-width:none]">
-          <Segmented value={tab} options={TABS} onChange={setTab} size="sm" />
+          <Segmented value={tab} options={TABS} onChange={setTab} size="sm" compact={narrow} />
         </div>
 
         <div className="izk-divider mx-[18px]" />
@@ -146,6 +166,7 @@ export function GlassConfigPanel() {
               <Recover name={`tab:${tab}`}>
                 {tab === "draw" && <DrawTab />}
                 {tab === "chat" && <ChatTab />}
+                {tab === "apps" && <AppsTab />}
                 {tab === "flows" && <FlowLibrary />}
                 {tab === "watchers" && <WatcherManager />}
                 {tab === "settings" && <SettingsTab />}

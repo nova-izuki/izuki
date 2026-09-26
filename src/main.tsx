@@ -28,6 +28,8 @@ function repaint() {
 window.addEventListener("focus", repaint);
 document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && repaint());
 document.documentElement.addEventListener("pointerenter", repaint);
+// And now and then while it's on screen, in case it went blank unseen.
+setInterval(() => document.visibilityState === "visible" && repaint(), 20_000);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

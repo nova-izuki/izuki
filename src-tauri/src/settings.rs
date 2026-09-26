@@ -252,6 +252,35 @@ pub struct Settings {
     /// This PC's user at Composio (made once).
     #[serde(default)]
     pub composio_user_id: String,
+    /// Heads-up (headsup.rs): tell me about new emails as they arrive.
+    #[serde(default = "default_true")]
+    pub heads_up_email: bool,
+    /// Heads-up: tell me a few minutes before a meeting or event.
+    #[serde(default = "default_true")]
+    pub heads_up_calendar: bool,
+    /// Heads-up: a short morning brief (today's events, new mail, reminders).
+    #[serde(default)]
+    pub morning_brief: bool,
+    /// When the morning brief comes, "HH:MM" local time.
+    #[serde(default = "default_brief_at")]
+    pub morning_brief_at: String,
+    /// Where heads-ups go: a Windows notification on this PC…
+    #[serde(default = "default_true")]
+    pub heads_up_pc: bool,
+    /// …and/or the paired phone (Telegram / Discord).
+    #[serde(default = "default_true")]
+    pub heads_up_phone: bool,
+    /// The user's own n8n workflows Izuki can start by name ("run my
+    /// invoice flow"), each a webhook address.
+    #[serde(default)]
+    pub n8n_hooks: Vec<N8nHook>,
+    /// Private calendar links (.ics) from Blackboard, Canvas and the like:
+    /// every assignment and due date, for school-work reminders.
+    #[serde(default)]
+    pub school_feeds: Vec<String>,
+    /// Heads-up: school work due soon (from `school_feeds`).
+    #[serde(default = "default_true")]
+    pub heads_up_school: bool,
     /// How long a conversation waits for you to say something before the
     /// orb closes, in seconds (5 s … 30 min). "That's all" closes it at once.
     #[serde(default = "default_follow_up")]
@@ -287,6 +316,17 @@ fn default_voice_name() -> String {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_brief_at() -> String {
+    "08:00".into()
+}
+
+/// One of the user's n8n workflows: a name to call it by and its webhook.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct N8nHook {
+    pub name: String,
+    pub url: String,
 }
 
 /// A pasted key minus any `Authorization:` / `Bearer ` it was copied with.
@@ -504,6 +544,15 @@ impl Default for Settings {
             call_token: String::new(),
             composio_api_key: String::new(),
             composio_user_id: String::new(),
+            heads_up_email: true,
+            heads_up_calendar: true,
+            morning_brief: false,
+            morning_brief_at: default_brief_at(),
+            heads_up_pc: true,
+            heads_up_phone: true,
+            n8n_hooks: Vec::new(),
+            school_feeds: Vec::new(),
+            heads_up_school: true,
             follow_up_secs: default_follow_up(),
             chat_style: default_chat_style(),
             chat_color: default_chat_color(),

@@ -113,21 +113,21 @@
     .btn.small { padding: 9px 16px; font-size: 14px; }
 
     /* ---------- hero ---------- */
-    .hero { width: var(--wrap); margin: 0 auto; min-height: min(96vh, 980px); display: grid; grid-template-columns: 1.05fr 0.95fr; align-items: center; gap: 24px; padding-block: 48px 190px; }
+    .hero { width: var(--wrap); margin: 0 auto; height: calc(100vh - 76px); height: calc(100svh - 76px); min-height: 560px; max-height: 1000px; display: grid; grid-template-columns: 1.05fr 0.95fr; align-items: center; gap: 24px; padding-block: 12px 13vh; }
     .eyebrow { display: inline-flex; align-items: center; gap: 9px; font: 500 12.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
       padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--glass); }
     .eyebrow b { width: 7px; height: 7px; border-radius: 50%; background: var(--live); box-shadow: 0 0 10px var(--live); animation: blink 2s ease-in-out infinite; }
     @keyframes blink { 50% { opacity: 0.35; } }
-    .hero h1 { font-size: clamp(44px, 7vw, 92px); line-height: 0.98; font-weight: 800; margin-top: 22px; }
+    .hero h1 { font-size: clamp(38px, min(6vw, 9.6vh), 86px); line-height: 0.98; font-weight: 800; margin-top: clamp(12px, 2.4vh, 22px); }
     .shine { background: linear-gradient(90deg, #67e8f9, #a78bfa, #f0abfc, #67e8f9); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
       animation: shimmer 8s linear infinite; }
     @keyframes shimmer { to { background-position: 300% 0; } }
-    .lede { margin-top: 22px; font-size: clamp(17px, 1.6vw, 20px); color: var(--muted); max-width: 34em; }
+    .lede { margin-top: clamp(12px, 2.4vh, 22px); font-size: clamp(15.5px, min(1.45vw, 2.3vh), 19px); color: var(--muted); max-width: 34em; }
     .lede b { color: var(--ink); }
-    .ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+    .ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: clamp(16px, 3.4vh, 30px); }
     .fine { margin-top: 18px; font-size: 13.5px; color: var(--faint); }
 
-    .stage { position: relative; aspect-ratio: 1; width: 100%; max-width: 560px; justify-self: center; }
+    .stage { position: relative; aspect-ratio: 1; width: 100%; max-width: min(540px, 66vh); justify-self: center; }
     #hero-orb { width: 100%; height: 100%; display: block; }
     .ring { position: absolute; inset: 8%; border-radius: 50%; border: 1px solid rgba(167, 139, 250, 0.16); animation: spin 40s linear infinite; }
     .ring::before { content: ""; position: absolute; top: -4px; left: 50%; width: 8px; height: 8px; border-radius: 50%; background: #a78bfa; box-shadow: 0 0 16px #a78bfa; }
@@ -310,21 +310,12 @@
 
 
     /* ---------- hero backdrop: a neon horizon ---------- */
-    .scene { position: absolute; left: calc(50% - 50vw); width: 100vw; top: -120px; bottom: -40px; overflow: hidden; pointer-events: none; z-index: 0;
-      mask-image: linear-gradient(transparent, #000 20%, #000 88%, transparent); -webkit-mask-image: linear-gradient(transparent, #000 20%, #000 88%, transparent); }
-    .hero-copy, .hero-art { position: relative; z-index: 1; }
-    .scene .sun { position: absolute; left: 72%; top: 58%; width: min(62vw, 720px); aspect-ratio: 1; transform: translate(-50%, -50%) translateY(calc(var(--hp, 0) * 18%)); border-radius: 50%;
-      background: linear-gradient(180deg, rgba(240, 171, 252, 0.55), rgba(139, 92, 246, 0.35) 45%, rgba(34, 211, 238, 0.05) 70%);
-      -webkit-mask-image: repeating-linear-gradient(180deg, #000 0 14px, transparent 14px 20px), linear-gradient(#000 55%, transparent 60%);
-      -webkit-mask-composite: source-in; mask-image: repeating-linear-gradient(180deg, #000 0 14px, transparent 14px 20px), linear-gradient(#000 55%, transparent 60%); mask-composite: intersect;
-      filter: blur(0.3px) drop-shadow(0 0 60px rgba(217, 70, 239, 0.5)); opacity: 0.55; }
-    .scene .hills { position: absolute; left: 0; right: 0; bottom: 190px; width: 100%; height: 120px; }
-    .scene .floor { position: absolute; left: 0; right: 0; bottom: 0; height: 190px; perspective: 420px; overflow: hidden; }
-    .scene .floor::before { content: ""; position: absolute; left: -60%; right: -60%; top: 0; height: 260%; transform-origin: 50% 0; transform: rotateX(72deg);
-      background-image: linear-gradient(rgba(167, 139, 250, 0.55) 1.5px, transparent 1.5px), linear-gradient(90deg, rgba(34, 211, 238, 0.4) 1.5px, transparent 1.5px);
-      background-size: 70px 70px; animation: floor 2.4s linear infinite; mask-image: linear-gradient(transparent, #000 12%); -webkit-mask-image: linear-gradient(transparent, #000 12%); }
-    .scene .floor::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: linear-gradient(90deg, transparent, #f0abfc, #67e8f9, transparent); box-shadow: 0 0 24px 4px rgba(240, 171, 252, 0.55); }
-    @keyframes floor { to { background-position: 0 70px, 0 0; } }
+    .scene { position: absolute; left: calc(50% - 50vw); width: 100vw; top: -90px; bottom: -8vh; overflow: hidden; pointer-events: none; z-index: 0;
+      mask-image: linear-gradient(transparent, #000 12%, #000 86%, transparent); -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 86%, transparent); }
+    .scene canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .scene .grain { position: absolute; inset: -50%; opacity: 0.06; mix-blend-mode: overlay; animation: grain 1.2s steps(6) infinite;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+    @keyframes grain { 0% { transform: translate(0, 0); } 20% { transform: translate(-3%, 2%); } 40% { transform: translate(2%, -3%); } 60% { transform: translate(-2%, -1%); } 80% { transform: translate(3%, 3%); } 100% { transform: translate(0, 0); } }
     .hero { position: relative; z-index: 1; }
     .hero-copy { transform: translateY(calc(var(--hp, 0) * -90px)); opacity: calc(1 - var(--hp, 0) * 1.3); }
     .hero-art { transform: translateY(calc(var(--hp, 0) * 60px)) scale(calc(1 + var(--hp, 0) * 0.35)); }
@@ -451,7 +442,8 @@
     .js .rv.in { opacity: 1; transform: none; filter: none; }
 
     @media (max-width: 900px) {
-      .hero { grid-template-columns: 1fr; min-height: auto; padding-top: 32px; }
+      .hero { grid-template-columns: 1fr; height: auto; min-height: 0; max-height: none; padding-block: 28px 16vh; }
+      .hero h1 { font-size: clamp(38px, 11vw, 56px); }
       .stage { max-width: 440px; }
       .nav-links { display: none; }
       .bento { grid-template-columns: 1fr 1fr; }
@@ -466,7 +458,6 @@
       .about { flex-direction: column; }
       .chip { font-size: 12px; padding: 7px 11px; }
       .chip.c1 { left: 0; top: 14%; } .chip.c2 { right: 0; top: 30%; } .chip.c3 { left: 2%; top: 52%; }
-      .scene .sun { left: 50%; top: 72%; width: 110vw; }
       .reel { height: min(58vh, 560px); }
       .reels-track-wrap { height: 380vh; }
       .show-sticky { grid-template-columns: 1fr; grid-template-rows: 1fr auto; padding: 76px 16px 20px; gap: 8px; }
@@ -485,7 +476,7 @@
       .demo-track { height: auto; }
       .demo-sticky { position: relative; height: auto; }
       .screen { transform: none !important; }
-      .scene .floor::before, .chip, .reel .bar i, .a-sees .beam, .a-talks .rip, .a-clicks .cur, .a-clicks .ring, .a-teach path, .a-teach .ans, .a-free .rays, .a-free b, .zoom-word, .final-glow { animation: none !important; }
+      .scene .grain, .chip, .reel .bar i, .a-sees .beam, .a-talks .rip, .a-clicks .cur, .a-clicks .ring, .a-teach path, .a-teach .ans, .a-free .rays, .a-free b, .zoom-word, .final-glow { animation: none !important; }
       .a-teach path { stroke-dashoffset: 0; } .a-teach .ans { opacity: 1; }
       .zoom-track, .reels-track-wrap { height: auto; }
       .zoom-sticky, .reels-sticky { position: relative; height: auto; padding-block: 60px; }
@@ -524,13 +515,8 @@
     <!-- ========== hero ========== -->
     <header class="hero">
       <div class="scene" aria-hidden="true">
-        <div class="sun"></div>
-        <svg class="hills" viewBox="0 0 1440 200" preserveAspectRatio="none">
-          <defs><linearGradient id="hill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a1a4a"/><stop offset="1" stop-color="#07060f"/></linearGradient></defs>
-          <path d="M0 200 L0 120 L90 70 L170 110 L260 40 L360 105 L430 80 L520 130 L640 60 L720 100 L800 50 L900 115 L990 75 L1080 120 L1180 45 L1270 95 L1360 70 L1440 110 L1440 200 Z" fill="url(#hill)" opacity="0.85"/>
-          <path d="M0 200 L0 150 L120 115 L240 150 L330 120 L470 160 L600 118 L760 158 L880 125 L1010 160 L1150 120 L1290 155 L1440 130 L1440 200 Z" fill="#06050d"/>
-        </svg>
-        <div class="floor"></div>
+        <canvas id="scene"></canvas>
+        <div class="grain"></div>
       </div>
       <div class="hero-copy">
         <span class="eyebrow rv"><b></b>Free · open source · Windows 10 &amp; 11</span>
@@ -940,6 +926,157 @@
   const phoneOrb = makeOrb($("phone-orb"));
   phoneOrb.mode = "speaking";
   makeOrb($("reel-orb")).mode = "speaking";
+
+  // ------------------------------------------------ the hero's world
+  // Dawn over a planet: nebula clouds far away, a few close bright stars,
+  // the planet's night side with city lights, and its atmosphere lit up by
+  // a sun that's about to rise. Each layer sits at its own depth, so the
+  // mouse (or a tilted phone) moves them at different speeds.
+  (function scene() {
+    const cv = $("scene");
+    if (!cv) return;
+    const g = cv.getContext("2d");
+    let W = 0, H = 0, dpr = 1, visible = true, lights = [], flares = [], shoot = null, nextShoot = 2500;
+    let mx = 0, my = 0, tx = 0, ty = 0;
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    function size() {
+      dpr = Math.min(1.5, devicePixelRatio || 1);
+      W = cv.clientWidth; H = cv.clientHeight;
+      cv.width = W * dpr; cv.height = H * dpr;
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const R = planet().R;
+      lights = Array.from({ length: Math.round(W / 6) }, () => {
+        // Cities cluster along a few "coasts" near the lit edge.
+        const a = rnd(-0.55, 0.55), depth = Math.pow(Math.random(), 2.2) * R * 0.1;
+        return { a, depth, s: rnd(0.4, 1.3), tw: rnd(0, 6), warm: Math.random() < 0.8 };
+      });
+      flares = Array.from({ length: 6 }, () => ({ x: rnd(0.55, 0.97), y: rnd(0.04, 0.5), r: rnd(1, 2.2), tw: rnd(0, 6) }));
+    }
+    function planet() {
+      const R = Math.max(W * 1.25, H * 1.6);
+      return { R, cx: W * 0.5, cy: H * 0.82 + R };
+    }
+    new IntersectionObserver(([e]) => (visible = e.isIntersecting)).observe(cv);
+    addEventListener("resize", size);
+    addEventListener("pointermove", (e) => { tx = e.clientX / innerWidth - 0.5; ty = e.clientY / innerHeight - 0.5; }, { passive: true });
+    addEventListener("deviceorientation", (e) => { if (e.gamma != null) { tx = clamp(e.gamma / 60, -0.5, 0.5); ty = clamp((e.beta - 45) / 90, -0.5, 0.5); } }, { passive: true });
+    size();
+
+    function cloud(x, y, r, rgb, a) {
+      const gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, `rgba(${rgb},${a})`);
+      gr.addColorStop(0.45, `rgba(${rgb},${a * 0.45})`);
+      gr.addColorStop(1, `rgba(${rgb},0)`);
+      g.fillStyle = gr;
+      g.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+
+    function frame(now) {
+      requestAnimationFrame(frame);
+      if (!visible) return;
+      mx += (tx - mx) * 0.05; my += (ty - my) * 0.05;
+      const t = reduce ? 0 : now / 1000;
+      const hp = Number(getComputedStyle(cv.parentElement).getPropertyValue("--hp")) || 0;
+      g.clearRect(0, 0, W, H);
+
+      // far: nebula, drifting
+      g.globalCompositeOperation = "screen";
+      const fx = mx * -18, fy = my * -12;
+      cloud(W * 0.18 + fx + Math.sin(t * 0.05) * 30, H * 0.28 + fy, W * 0.42, "124,58,237", 0.22);
+      cloud(W * 0.8 + fx + Math.cos(t * 0.04) * 40, H * 0.2 + fy, W * 0.36, "14,165,233", 0.16);
+      cloud(W * 0.6 + fx, H * 0.55 + fy + Math.sin(t * 0.07) * 20, W * 0.3, "219,39,119", 0.12);
+      cloud(W * 0.35 + fx + Math.sin(t * 0.03 + 2) * 50, H * 0.45 + fy, W * 0.25, "56,189,248", 0.07);
+
+      // near: a few bright stars with soft cross flares
+      const nx = mx * -40, ny = my * -26;
+      for (const f of flares) {
+        const x = f.x * W + nx, y = f.y * H + ny, a = 0.55 + 0.45 * Math.sin(t * 1.3 + f.tw);
+        cloud(x, y, f.r * 9, "220,225,255", 0.35 * a);
+        g.fillStyle = `rgba(255,255,255,${0.9 * a})`;
+        g.fillRect(x - f.r * 7, y - 0.5, f.r * 14, 1);
+        g.fillRect(x - 0.5, y - f.r * 7, 1, f.r * 14);
+      }
+
+      // a shooting star every few seconds
+      if (!reduce) {
+        nextShoot -= 16;
+        if (!shoot && nextShoot <= 0) {
+          shoot = { x: rnd(0.1, 0.7) * W, y: rnd(0.02, 0.3) * H, vx: rnd(9, 14), vy: rnd(2.5, 4.5), life: 0 };
+          nextShoot = rnd(4000, 9000);
+        }
+        if (shoot) {
+          shoot.life += 1;
+          shoot.x += shoot.vx; shoot.y += shoot.vy;
+          const a = Math.min(1, shoot.life / 8) * Math.max(0, 1 - shoot.life / 55);
+          const tail = g.createLinearGradient(shoot.x, shoot.y, shoot.x - shoot.vx * 14, shoot.y - shoot.vy * 14);
+          tail.addColorStop(0, `rgba(255,255,255,${a})`);
+          tail.addColorStop(1, "rgba(167,139,250,0)");
+          g.strokeStyle = tail; g.lineWidth = 1.6; g.lineCap = "round";
+          g.beginPath(); g.moveTo(shoot.x, shoot.y); g.lineTo(shoot.x - shoot.vx * 14, shoot.y - shoot.vy * 14); g.stroke();
+          if (shoot.life > 55) shoot = null;
+        }
+      }
+
+      // the planet, nearest of all
+      const P = planet();
+      const px = mx * -60, py = my * -20 + hp * H * 0.12;
+      const cx = P.cx + px, cy = P.cy + py, R = P.R;
+      // where the sun is about to rise along the edge — it drifts slowly
+      const sunA = -Math.PI / 2 + 0.16 * Math.sin(t * 0.06) + mx * 0.12;
+      const sx = cx + Math.cos(sunA) * R, sy = cy + Math.sin(sunA) * R;
+
+      // sunlight spilling into space above the horizon
+      g.globalCompositeOperation = "screen";
+      cloud(sx, sy, W * 0.55, "167,139,250", 0.28);
+      cloud(sx, sy, W * 0.28, "103,232,249", 0.25);
+      cloud(sx, sy, W * 0.09, "255,236,250", 0.55);
+      // a soft glow rising off the sunrise, fading fast
+      g.save();
+      g.translate(sx, sy);
+      g.scale(1, 3.2);
+      cloud(0, -H * 0.02, Math.min(W, H) * 0.08, "240,171,252", 0.22);
+      g.restore();
+
+      // the night side
+      g.globalCompositeOperation = "source-over";
+      g.save();
+      g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.clip();
+      const body = g.createRadialGradient(sx, sy, 0, sx, sy + R * 0.25, R * 0.6);
+      body.addColorStop(0, "rgba(58,48,110,1)");
+      body.addColorStop(0.08, "rgba(20,18,44,1)");
+      body.addColorStop(0.4, "rgba(6,7,16,1)");
+      body.addColorStop(1, "rgba(3,4,10,1)");
+      g.fillStyle = body;
+      g.fillRect(cx - R, cy - R, R * 2, R * 2);
+      // city lights, twinkling, fading with distance from the lit edge
+      g.globalCompositeOperation = "lighter";
+      for (const L of lights) {
+        const a = -Math.PI / 2 + L.a;
+        const r = R - 6 - L.depth;
+        const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+        if (y > H + 4 || x < -4 || x > W + 4) continue;
+        const fade = Math.max(0, 1 - Math.abs(L.a - (sunA + Math.PI / 2)) * 1.4);
+        const al = (0.25 + 0.5 * fade) * (0.75 + 0.25 * Math.sin(t * 2 + L.tw));
+        g.fillStyle = L.warm ? `rgba(255,196,120,${al})` : `rgba(160,220,255,${al})`;
+        g.fillRect(x, y, L.s, L.s);
+      }
+      g.restore();
+
+      // the atmosphere: a glowing rim, brightest near the sunrise
+      g.globalCompositeOperation = "screen";
+      for (const [w, a, col] of [[46, 0.1, "124,58,237"], [22, 0.2, "56,189,248"], [9, 0.45, "167,139,250"], [2.5, 0.95, "224,231,255"]]) {
+        const rim = g.createRadialGradient(sx, sy, 0, sx, sy, W * 0.9);
+        rim.addColorStop(0, `rgba(${col},${Math.min(1, a * 1.6)})`);
+        rim.addColorStop(0.5, `rgba(${col},${a * 0.5})`);
+        rim.addColorStop(1, `rgba(${col},${a * 0.12})`);
+        g.strokeStyle = rim; g.lineWidth = w;
+        g.beginPath(); g.arc(cx, cy, R + w * 0.25, Math.PI, Math.PI * 2); g.stroke();
+      }
+      g.globalCompositeOperation = "source-over";
+      if (reduce) return;
+    }
+    requestAnimationFrame(frame);
+  })();
 
   // ------------------------------------------------ hero conversation
   const SCRIPT = [

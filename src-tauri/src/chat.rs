@@ -37,6 +37,44 @@ pub struct Delta {
     pub text: String,
     pub done: bool,
     pub error: Option<String>,
+    /// What it's doing meanwhile ("Searching the web…") — not part of the reply.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// Something it wants to change (save a file, run a command): shown as
+    /// an Allow / No card, and only the user's click does it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<ActionAsk>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct ActionAsk {
+    pub id: u64,
+    /// "save" or "run".
+    pub kind: &'static str,
+    pub title: String,
+    pub detail: String,
+}
+
+/// Changes waiting for the user's Allow, by id.
+static PENDING: Mutex<Vec<(u64, Tool)>> = Mutex::new(Vec::new());
+
+/// The user answered an Allow / No card. Returns what happened, for the
+/// chat to carry on from.
+pub fn answer_action(id: u64, allow: bool) -> anyhow::Result<String> {
+    let tool = {
+        let mut p = PENDING.lock();
+        let i = p.iter().position(|(k, _)| *k == id).ok_or_else(|| anyhow::anyhow!("that request has expired — ask again"))?;
+        p.remove(i).1
+    };
+    if !allow {
+        return Ok("The user said no — it wasn't done.".into());
+    }
+    eprintln!("[chat] allowed: {tool:?}");
+    match tool {
+        Tool::Write(path, content) => crate::files::write(&path, &content),
+        Tool::Run(cmd) => crate::files::run(&cmd),
+        _ => anyhow::bail!("nothing to do"),
+    }
 }
 
 /// Streams the user cut off (a new message, "stop") — checked between tokens.
@@ -71,11 +109,42 @@ nothing else; another part of you works in their apps. Prefer [APPS] over [SCREE
 their accounts. If the user is saying yes to a draft or action you just proposed in their apps, \
 reply [APPS] too.\n";
 
+/// The web and the Izuki browser (web.rs, browser.rs), for every lane.
+const TOOLS_RULE: &str = "You can use the web and the Izuki browser. To use one, reply with ONLY the tag — \
+no mood tag, no other words — and you'll get the result, then answer:\n\
+[SEARCH: words] — search the web: news, scores, prices, opening hours, facts, anything recent or that \
+you're not sure of.\n\
+[READ: url] — read a public web page (a link they give you, or one from a search).\n\
+[BROWSE: url] — open a page in the Izuki browser, where the user is signed in (Blackboard, Canvas, \
+NotebookLM, Classroom, their accounts). Use it for anything behind a sign-in.\n\
+[CLICK: n] and [TYPE: n | text] — click, or type into, thing number n on the page you last browsed \
+(end the text with ⏎ to press Enter).\n\
+Use a few at most, then answer in your normal way and say where it came from. Never type passwords or \
+card numbers, and never send, post, submit, buy or delete anything through the browser unless the \
+user clearly said yes to exactly that.\n";
+
+/// The Chat tab only (not the voice orb, not the phone): the user's files.
+const FILES_RULE: &str = "In this chat you can also work with the files on their PC, like a helpful \
+assistant at their desk. Same rule — reply with only the tag:\n\
+[FIND: words] — find files or folders by name (Desktop, Documents, Downloads, Pictures, OneDrive…).\n\
+[FILES: folder] — see what's in a folder (\"Downloads\", \"Desktop/School\", or a full path).\n\
+[OPEN: path] — read a file (text, notes, code, CSV, Word .docx, PowerPoint .pptx).\n\
+[WRITE: path] then, on the next lines, the whole content — save a file (a new one, or a fixed version).\n\
+[RUN: command] — run one PowerShell command (rename or move files, make a zip, check disk space, \
+install something they asked for…).\n\
+WRITE and RUN show the user an Allow / No button first and only happen if they allow it, so just use \
+them when it's what they asked for — you'll be told the result. Prefer the smallest, safest command; \
+never delete anything they didn't clearly ask to delete.\n";
+
 fn system_prompt(style: Style, apps: bool) -> String {
     let mut s = match style {
         Style::Voice { expressive } => voice_prompt(expressive),
         Style::Text | Style::Phone => written_prompt(style == Style::Phone),
     };
+    s.push_str(TOOLS_RULE);
+    if style == Style::Text {
+        s.push_str(FILES_RULE);
+    }
     if apps {
         s.push_str(APPS_RULE);
     } else {
@@ -199,14 +268,256 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             if done {
                 crate::reminders::take_tags(&whole.lock());
             }
-            let _ = app.emit(DELTA, Delta { id, text, done, error });
+            let _ = app.emit(DELTA, Delta { id, text, done, error, status: None, action: None });
         };
+        let status = |s: &str| {
+            let _ = app.emit(DELTA, Delta { id, text: String::new(), done: false, error: None, status: Some(s.to_string()), action: None });
+        };
+        let files = style == Style::Text;
         let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
         if chain.is_empty() {
             return emit(String::new(), true, Some("no chat-capable brain is set up".into()));
         }
-        race(&chain, &messages_for(&history, style), id, &emit);
+        let mut messages = messages_for(&history, style);
+        for round in 0..=TOOL_ROUNDS {
+            let last = round == TOOL_ROUNDS;
+            if last {
+                messages.push(json!({ "role": "user", "content": NO_MORE_TOOLS }));
+            }
+            // Hold the opening back until it's clear whether it's a tool
+            // tag (run it quietly) or the answer (stream it as it comes).
+            let held = Mutex::new(String::new());
+            let mode = Mutex::new(if last { Some(false) } else { None::<bool> });
+            let tag = Mutex::new(None::<String>);
+            race(&chain, &messages, id, &|t: String, done: bool, err: Option<String>| {
+                let mut m = mode.lock();
+                if *m == Some(false) {
+                    drop(m);
+                    return emit(t, done, err);
+                }
+                let mut h = held.lock();
+                h.push_str(&t);
+                if m.is_none() {
+                    *m = classify(&h).or(done.then_some(false));
+                }
+                match *m {
+                    Some(false) => {
+                        let all = std::mem::take(&mut *h);
+                        drop(h);
+                        drop(m);
+                        emit(all, done, err);
+                    }
+                    Some(true) if done => *tag.lock() = Some(h.clone()),
+                    _ => {}
+                }
+            });
+            let Some(raw) = tag.into_inner() else { return };
+            let Some(tool) = parse_tool(&raw) else {
+                return emit(String::new(), true, Some("the answer got muddled — try again".into()));
+            };
+            // Changes wait for the user: an Allow / No card, and this reply ends.
+            if let Some(ask) = tool.needs_ok() {
+                if !files {
+                    return emit("I can only do that from the Chat tab on your PC.".into(), true, None);
+                }
+                let action_id = rand::random::<u32>() as u64 + 1;
+                let lead = if ask.kind == "save" { "Here's what I'll save — okay?" } else { "I'd like to run this — okay?" };
+                PENDING.lock().push((action_id, tool));
+                let mut p = PENDING.lock();
+                let n = p.len();
+                if n > 20 {
+                    p.drain(..n - 20);
+                }
+                drop(p);
+                let _ = app.emit(DELTA, Delta {
+                    id,
+                    text: lead.into(),
+                    done: true,
+                    error: None,
+                    status: None,
+                    action: Some(ActionAsk { id: action_id, ..ask }),
+                });
+                return;
+            }
+            status(tool.doing());
+            let result = if !files && tool.is_files() { "Files can only be used from the Chat tab on the PC.".into() } else { run_tool(&tool) };
+            messages.push(json!({ "role": "assistant", "content": raw.trim() }));
+            messages.push(json!({ "role": "user", "content": format!("[result]\n{result}\n[Now carry on — another tag, or your answer.]") }));
+        }
     });
+}
+
+// ---------------------------------------------------------------------------
+// Tools the chat can use mid-conversation
+// ---------------------------------------------------------------------------
+
+const TOOL_ROUNDS: usize = 4;
+const NO_MORE_TOOLS: &str = "[No more tools now — answer with what you have.]";
+const TOOL_WORDS: &[&str] = &["SEARCH", "READ", "BROWSE", "CLICK", "TYPE", "FIND", "FILES", "OPEN", "WRITE", "RUN"];
+const MOODS: &[&str] = &["cheerful", "excited", "calm", "serious", "sympathetic", "playful", "curious"];
+
+#[derive(Debug, PartialEq)]
+enum Tool {
+    Search(String),
+    Read(String),
+    Browse(String),
+    Click(u32),
+    Type(u32, String, bool),
+    Find(String),
+    Files(String),
+    Open(String),
+    Write(String, String),
+    Run(String),
+}
+
+impl Tool {
+    fn doing(&self) -> &'static str {
+        match self {
+            Tool::Search(_) => "🔎 Searching the web…",
+            Tool::Read(_) => "📄 Reading the page…",
+            Tool::Browse(_) => "🌐 Opening it in the Izuki browser…",
+            Tool::Click(_) | Tool::Type(..) => "🖱️ Working on the page…",
+            Tool::Find(_) => "🗂️ Looking through your files…",
+            Tool::Files(_) => "📁 Opening the folder…",
+            Tool::Open(_) => "📄 Reading the file…",
+            Tool::Write(..) | Tool::Run(_) => "…",
+        }
+    }
+
+    fn is_files(&self) -> bool {
+        matches!(self, Tool::Find(_) | Tool::Files(_) | Tool::Open(_) | Tool::Write(..) | Tool::Run(_))
+    }
+
+    /// The Allow / No card for a change, if this is one.
+    fn needs_ok(&self) -> Option<ActionAsk> {
+        match self {
+            Tool::Write(path, content) => Some(ActionAsk {
+                id: 0,
+                kind: "save",
+                title: format!("Save {}", crate::files::resolve(path).display()),
+                detail: crate::web::clip(content, 1500),
+            }),
+            Tool::Run(cmd) => Some(ActionAsk { id: 0, kind: "run", title: "Run this command".into(), detail: cmd.clone() }),
+            _ => None,
+        }
+    }
+}
+
+/// A leading mood tag ("[curious] ") is skipped: the tool tag may follow it.
+fn after_mood(t: &str) -> &str {
+    let t = t.trim_start();
+    if let Some(rest) = t.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            if MOODS.contains(&rest[..end].trim().to_lowercase().as_str()) {
+                return rest[end + 1..].trim_start();
+            }
+        }
+    }
+    t
+}
+
+/// From the first words of a reply: a tool tag (`Some(true)`), the answer
+/// itself (`Some(false)`), or too soon to tell (`None`).
+fn classify(t: &str) -> Option<bool> {
+    let trimmed = t.trim_start();
+    // A mood tag still being written: wait.
+    if trimmed.starts_with('[') && !trimmed.contains(']') && trimmed.len() < 16 {
+        let w: String = trimmed[1..].chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+        // Only while the name itself is still arriving.
+        if w.len() + 1 == trimmed.len()
+            && (MOODS.iter().any(|m| m.starts_with(&w.to_lowercase())) || TOOL_WORDS.iter().any(|k| k.starts_with(&w.to_uppercase())))
+        {
+            return None;
+        }
+    }
+    let rest = after_mood(t);
+    if rest.is_empty() {
+        return None;
+    }
+    let Some(inner) = rest.strip_prefix('[') else { return Some(false) };
+    let word: String = inner.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+    if inner.len() == word.len() {
+        return if TOOL_WORDS.iter().any(|k| k.starts_with(&word.to_uppercase())) { None } else { Some(false) };
+    }
+    Some(TOOL_WORDS.contains(&word.to_uppercase().as_str()))
+}
+
+/// The tool a whole reply asks for, if the reply is only a tool tag.
+fn parse_tool(reply: &str) -> Option<Tool> {
+    let rest = after_mood(reply);
+    // [WRITE: path] and then the content, which may hold anything.
+    if rest.len() > 7 && rest[..7].eq_ignore_ascii_case("[WRITE:") {
+        let close = rest.find(']')?;
+        let path = rest[7..close].trim().to_string();
+        let body = rest[close + 1..].trim_start_matches([' ', '\r']).trim_start_matches('\n');
+        // A fenced block around the content is just formatting.
+        let body = body.trim_end();
+        let body = match body.strip_prefix("```") {
+            Some(b) => b.split_once('\n').map(|(_, r)| r).unwrap_or("").trim_end().trim_end_matches("```").trim_end(),
+            None => body,
+        };
+        return (!path.is_empty()).then(|| Tool::Write(path, format!("{body}\n")));
+    }
+    let inner = rest.strip_prefix('[')?;
+    let end = inner.rfind(']')?;
+    if !rest[end + 2..].trim().is_empty() {
+        return None;
+    }
+    let (word, arg) = inner[..end].split_once(':')?;
+    let arg = arg.trim();
+    match word.trim().to_uppercase().as_str() {
+        "SEARCH" if !arg.is_empty() => Some(Tool::Search(arg.to_string())),
+        "READ" if !arg.is_empty() => Some(Tool::Read(arg.to_string())),
+        "BROWSE" if !arg.is_empty() => Some(Tool::Browse(arg.to_string())),
+        "CLICK" => arg.trim_matches('#').parse().ok().map(Tool::Click),
+        "FIND" if !arg.is_empty() => Some(Tool::Find(arg.to_string())),
+        "FILES" => Some(Tool::Files(arg.to_string())),
+        "OPEN" if !arg.is_empty() => Some(Tool::Open(arg.to_string())),
+        "RUN" if !arg.is_empty() => Some(Tool::Run(arg.to_string())),
+        "TYPE" => {
+            let (n, text) = arg.split_once('|')?;
+            let text = text.trim();
+            let submit = text.ends_with('⏎');
+            Some(Tool::Type(n.trim().trim_matches('#').parse().ok()?, text.trim_end_matches('⏎').trim().to_string(), submit))
+        }
+        _ => None,
+    }
+}
+
+fn run_tool(tool: &Tool) -> String {
+    eprintln!("[chat] tool: {tool:?}");
+    let r = match tool {
+        Tool::Search(q) => crate::web::search_text(q),
+        Tool::Read(u) => crate::web::read(u),
+        Tool::Browse(u) => crate::browser::browse(u),
+        Tool::Click(n) => crate::browser::click(*n),
+        Tool::Type(n, text, submit) => crate::browser::type_into(*n, text, *submit),
+        Tool::Find(w) => crate::files::find(w),
+        Tool::Files(d) => crate::files::list(d),
+        Tool::Open(p) => crate::files::read(p),
+        // Never straight from here — only through the Allow card.
+        Tool::Write(..) | Tool::Run(_) => Err(anyhow::anyhow!("that needs the user's OK in the Chat tab")),
+    };
+    r.unwrap_or_else(|e| format!("That didn't work: {e}"))
+}
+
+/// A whole reply, using tools along the way (the phone, calls, Telegram).
+fn complete_with_tools(mut messages: Vec<Value>) -> anyhow::Result<String> {
+    for round in 0..=TOOL_ROUNDS {
+        if round == TOOL_ROUNDS {
+            messages.push(json!({ "role": "user", "content": NO_MORE_TOOLS }));
+        }
+        let text = complete(&messages)?;
+        match parse_tool(&text) {
+            Some(tool) if round < TOOL_ROUNDS => {
+                let result = run_tool(&tool);
+                messages.push(json!({ "role": "assistant", "content": text }));
+                messages.push(json!({ "role": "user", "content": format!("[result]\n{result}\n[Now carry on — another tag, or your answer.]") }));
+            }
+            _ => return Ok(text),
+        }
+    }
+    anyhow::bail!("ran out of steps")
 }
 
 fn messages_for(history: &[Turn], style: Style) -> Vec<Value> {
@@ -225,13 +536,13 @@ fn with_system(history: &[Turn], system: String) -> Vec<Value> {
 /// A whole reply at once (the phone lane), with the same racing of brains
 /// as the streamed one. Reminder tags are left in for the caller.
 pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
-    complete(&messages_for(history, style))
+    complete_with_tools(messages_for(history, style))
 }
 
 /// A written reply that never hands over to the apps lane — for when it
 /// can't help (no apps linked) and the chat should just answer.
 pub fn reply_here(history: &[Turn], style: Style) -> anyhow::Result<String> {
-    complete(&with_system(history, system_prompt(style, false)))
+    complete_with_tools(with_system(history, system_prompt(style, false)))
 }
 
 /// Any finished answer to `messages` (system prompt first), raced across
@@ -290,7 +601,11 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
                 first.lock().get_or_insert(started.elapsed().as_millis());
                 let _ = tx.send(Event::Text(i, t));
             };
-            match stream_one(&cfg, &messages, &stop, &on_text) {
+            eprintln!("[chat] asking {} ({})", cfg.label, cfg.model);
+            // A panic inside must still report back, or the reply would wait forever.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| stream_one(&cfg, &messages, &stop, &on_text)))
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("crashed while answering")));
+            match result {
                 Ok(true) => {
                     let ttft = first.lock().unwrap_or(0);
                     crate::brain::note_answer(cfg.id, Ok(ttft));
@@ -313,13 +628,27 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
     };
 
     launch(0);
+    let began = Instant::now();
     let mut launched = 1;
     let mut failed = 0;
     let mut errors = Vec::new();
     loop {
         let won = winner.load(Ordering::SeqCst);
-        let patience = if chain[..launched].iter().any(|c| c.id.is_local()) { 240 } else { 90 };
-        let wait = if won == usize::MAX && launched < chain.len() { HEDGE_AFTER } else { Duration::from_secs(patience) };
+        let local = chain[..launched].iter().any(|c| c.id.is_local());
+        // Nobody has said a word for this long: stop waiting and say why.
+        let first_words = Duration::from_secs(if local { 240 } else { 40 });
+        if winner.load(Ordering::SeqCst) == usize::MAX && launched == chain.len() && began.elapsed() > first_words {
+            errors.push("no answer in time".into());
+            return emit(String::new(), true, Some(errors.join("; ")));
+        }
+        let patience = if local { 240 } else { 90 };
+        let wait = if won == usize::MAX && launched < chain.len() {
+            HEDGE_AFTER
+        } else if won == usize::MAX {
+            first_words.saturating_sub(began.elapsed()).max(Duration::from_millis(200))
+        } else {
+            Duration::from_secs(patience)
+        };
         match rx.recv_timeout(wait) {
             Ok(Event::Text(i, t)) => {
                 // The first brain to say anything is the one that's heard.
@@ -350,7 +679,11 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
                 launch(launched);
                 launched += 1;
             }
-            Err(_) => return emit(String::new(), true, Some("no brain answered in time".into())),
+            Err(_) if winner.load(Ordering::SeqCst) == usize::MAX => {
+                // Loops back to the first-words check above.
+                continue;
+            }
+            Err(_) => return emit(String::new(), true, Some("the answer stopped halfway".into())),
         }
     }
 }
@@ -451,4 +784,42 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
         anyhow::bail!("the model returned an empty reply");
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod tool_tests {
+    use super::*;
+
+    #[test]
+    fn tells_tool_tags_from_answers_early() {
+        assert_eq!(classify("[SEA"), None);
+        assert_eq!(classify("[SEARCH: weather"), Some(true));
+        assert_eq!(classify("[cheerful] Oh hey!"), Some(false));
+        assert_eq!(classify("[cheer"), None);
+        assert_eq!(classify("[curious] [BROWSE: x"), Some(true));
+        assert_eq!(classify("[SCREEN]"), Some(false));
+        assert_eq!(classify("[APPS]"), Some(false));
+        assert_eq!(classify("Sure"), Some(false));
+        assert_eq!(classify("  "), None);
+    }
+
+    #[test]
+    fn reads_tool_tags() {
+        assert_eq!(parse_tool("[SEARCH: burna boy tour 2026]"), Some(Tool::Search("burna boy tour 2026".into())));
+        assert_eq!(parse_tool("[calm] [READ: https://x.com/a]"), Some(Tool::Read("https://x.com/a".into())));
+        assert_eq!(parse_tool("[CLICK: 12]"), Some(Tool::Click(12)));
+        assert_eq!(parse_tool("[TYPE: 3 | hello there ⏎]"), Some(Tool::Type(3, "hello there".into(), true)));
+        assert_eq!(parse_tool("[TYPE: 3 | hi]"), Some(Tool::Type(3, "hi".into(), false)));
+        assert_eq!(parse_tool("[SEARCH: x] and some words"), None);
+        assert_eq!(parse_tool("Here you go"), None);
+        assert_eq!(parse_tool("[SCREEN]"), None);
+        assert_eq!(parse_tool("[FIND: resume]"), Some(Tool::Find("resume".into())));
+        assert_eq!(parse_tool("[RUN: Get-PSDrive C]"), Some(Tool::Run("Get-PSDrive C".into())));
+        assert_eq!(
+            parse_tool("[WRITE: Desktop/notes.txt]\n```\nBuy milk [x]\nCall Sam\n```"),
+            Some(Tool::Write("Desktop/notes.txt".into(), "Buy milk [x]\nCall Sam\n".into()))
+        );
+        assert_eq!(classify("[WRI"), None);
+        assert_eq!(classify("[WRITE: a"), Some(true));
+    }
 }

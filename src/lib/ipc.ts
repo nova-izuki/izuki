@@ -182,6 +182,15 @@ export const MOCK_SETTINGS: Settings = {
   call_enabled: false,
   call_token: "",
   composio_user_id: "",
+  heads_up_email: true,
+  heads_up_calendar: true,
+  morning_brief: false,
+  morning_brief_at: "08:00",
+  heads_up_pc: true,
+  heads_up_phone: true,
+  n8n_hooks: [],
+  school_feeds: [],
+  heads_up_school: true,
   telegram_chat_id: 0,
   telegram_code: "",
   discord_token: "",
@@ -264,6 +273,17 @@ export const api = {
       throw new Error("Not running inside Izuki.");
     }),
   appsTest: (key: string) => call<void>("apps_test", { key }, () => undefined),
+  /** Apps linked through Composio ("gmail", "googlecalendar"…). */
+  appsConnected: () => call<string[]>("apps_connected", undefined, () => ["gmail"]),
+  /** A sign-in page for linking one app. */
+  appsConnect: (toolkit: string) => call<string>("apps_connect", { toolkit }, () => "https://composio.dev"),
+  /** Allow / No on a change the chat asked to make; what happened. */
+  chatAction: (id: number, allow: boolean) => call<string>("chat_action", { id, allow }, () => (allow ? "Done." : "Not done.")),
+  /** Show the Izuki browser (to sign in to a site once), optionally at `url`. */
+  browserShow: (url?: string) =>
+    call<void>("browser_show", { url: url ?? null }, () => void (url && window.open(url, "_blank"))),
+  /** Send a sample heads-up. */
+  headsupTest: () => call<void>("headsup_test", undefined, () => undefined),
   callStatus: () => call<CallStatus>("call_status", undefined, () => ({ state: "off", link: "", error: null })),
   discordStatus: () =>
     call<DiscordStatus>("discord_status", undefined, () => ({ bot: "", invite: "", paired: false, code: "123456", error: null })),

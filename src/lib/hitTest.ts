@@ -17,15 +17,17 @@ import { api } from "./ipc";
 
 let current = false;
 let locks = 0;
+let last: [number, number] | null = null;
 
-function apply(want: boolean) {
-  if (want === current) return;
+function apply(want: boolean, force = false) {
+  if (want === current && !force) return;
   current = want;
   void api.setOverlayHit(want);
 }
 
 /** Feed a cursor position in overlay client pixels. */
 export function hitTest(clientX: number, clientY: number) {
+  last = [clientX, clientY];
   if (locks > 0) return apply(true);
   const el = document.elementFromPoint(clientX, clientY);
   apply(!!el?.closest("[data-izk-hit]"));
@@ -58,4 +60,18 @@ export function resetHit() {
  */
 export function markHit() {
   current = true;
+}
+
+/**
+ * The safety net: the whole screen must never stay blocked behind the
+ * overlay. Something can make the window clickable without this file
+ * knowing (Rust changing modes, the chat taking focus, a lost cursor
+ * update), and then every click lands on an invisible layer. So now and
+ * then the real state is set again from scratch — click-through unless
+ * the pointer is actually on one of Izuki's own widgets.
+ */
+export function reassertHit() {
+  if (locks > 0) return;
+  const el = last ? document.elementFromPoint(last[0], last[1]) : null;
+  apply(!!el?.closest("[data-izk-hit]"), true);
 }

@@ -67,6 +67,81 @@ fn post(key: &str, path: &str, body: &Value) -> Result<Value> {
     Ok(v)
 }
 
+fn get(key: &str, path: &str) -> Result<Value> {
+    let res = client()?.get(format!("{API}{path}")).header("x-api-key", key).send()?;
+    let status = res.status();
+    let v: Value = res.json().unwrap_or(Value::Null);
+    if !status.is_success() {
+        let msg = v["error"]["message"].as_str().or(v["message"].as_str()).unwrap_or("no details");
+        return Err(anyhow!("Composio answered {status}: {msg}"));
+    }
+    Ok(v)
+}
+
+fn key() -> Result<String> {
+    let k = crate::state::store().settings().composio_api_key.trim().to_string();
+    if k.is_empty() {
+        return Err(anyhow!("add your free Composio key first (Izuki → Apps)"));
+    }
+    Ok(k)
+}
+
+/// The apps this PC's user has linked (toolkit slugs like "gmail").
+pub fn connected() -> Result<Vec<String>> {
+    let key = key()?;
+    let v = get(&key, &format!("/connected_accounts?user_ids={}&statuses=ACTIVE&limit=100", user_id()))?;
+    let mut out: Vec<String> = v["items"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|c| c["toolkit"]["slug"].as_str().or(c["toolkit_slug"].as_str()).map(|s| s.to_lowercase()))
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
+/// A sign-in page for linking one app (opened in the browser).
+pub fn link(toolkit: &str) -> Result<String> {
+    let key = key()?;
+    let v = router(&key, "link", &json!({ "toolkit": toolkit.trim().to_lowercase() }))?;
+    v["redirect_url"]
+        .as_str()
+        .filter(|u| !u.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| anyhow!("Composio couldn't make a sign-in link for {toolkit}"))
+}
+
+/// Run one tool directly — no AI involved (the heads-up checks use this).
+pub fn execute(tool: &str, arguments: Value) -> Result<Value> {
+    let key = key()?;
+    let v = router(&key, "execute", &json!({ "tool_slug": tool, "arguments": arguments }))?;
+    if let Some(e) = v["error"].as_str().filter(|e| !e.is_empty()) {
+        return Err(anyhow!("{tool} failed: {e}"));
+    }
+    Ok(v["data"].clone())
+}
+
+/// Start one of the user's n8n workflows by name, with `data` as its input.
+pub fn run_n8n(name: &str, data: &Value) -> Result<String> {
+    let hooks = crate::state::store().settings().n8n_hooks;
+    let want = name.trim().to_lowercase();
+    let hook = hooks
+        .iter()
+        .find(|h| h.name.trim().to_lowercase() == want)
+        .or_else(|| hooks.iter().find(|h| h.name.to_lowercase().contains(&want) || want.contains(&h.name.to_lowercase())))
+        .ok_or_else(|| anyhow!("there's no n8n workflow called \"{name}\" in Izuki → Apps"))?;
+    let res = client()?.post(hook.url.trim()).json(data).send()?;
+    let status = res.status();
+    let text = res.text().unwrap_or_default();
+    if !status.is_success() {
+        return Err(anyhow!("n8n answered {status}: {}", clip(&text, 200)));
+    }
+    Ok(if text.trim().is_empty() { "started".into() } else { clip(&text, RESULT_CHARS) })
+}
+
 /// This PC's Composio user — made once, kept in settings.
 fn user_id() -> String {
     let store = crate::state::store();
@@ -154,7 +229,18 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
         });
     }
 
-    let mut messages = vec![json!({ "role": "system", "content": format!("{PROMPT}\n{}{}", crate::reminders::prompt_block(), crate::memory::prompt_block()) })];
+    let hooks = crate::state::store().settings().n8n_hooks;
+    let n8n = if hooks.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\nThe user's own n8n workflows (automations they built), started with \
+             {{\"n8n\": {{\"name\": \"…\", \"data\": {{…}}}}}}: {}. Use one when they ask for it by name or \
+             it clearly fits. Same yes-first rule if it sends or changes anything.\n",
+            hooks.iter().map(|h| format!("\"{}\"", h.name)).collect::<Vec<_>>().join(", ")
+        )
+    };
+    let mut messages = vec![json!({ "role": "system", "content": format!("{PROMPT}{n8n}\n{}{}", crate::reminders::prompt_block(), crate::memory::prompt_block()) })];
     for t in history.iter().rev().take(10).rev() {
         let role = if t.role == "assistant" { "assistant" } else { "user" };
         messages.push(json!({ "role": role, "content": t.content }));
@@ -209,6 +295,12 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
                     }
                 }
                 Err(e) => format!("Couldn't make a sign-in link: {e}"),
+            }
+        } else if step["n8n"].is_object() {
+            let name = step["n8n"]["name"].as_str().unwrap_or_default();
+            match run_n8n(name, &step["n8n"]["data"]) {
+                Ok(r) => format!("n8n \"{name}\" result: {r}"),
+                Err(e) => format!("n8n failed: {e}"),
             }
         } else if step["run"].is_object() {
             let tool = step["run"]["tool"].as_str().unwrap_or_default();

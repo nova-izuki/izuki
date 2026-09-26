@@ -270,6 +270,21 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
             };
             json_reply(req, json!({ "text": reply.text, "links": reply.links, "audio": audio }))
         }
+        // Anything that can send a web request — an n8n workflow, Zapier,
+        // IFTTT, a script — can hand Izuki a heads-up:
+        // POST {link}notify  {"title": "…", "text": "…"}
+        (tiny_http::Method::Post, Some("/notify")) => {
+            let mut body = String::new();
+            let _ = req.as_reader().take(16 * 1024).read_to_string(&mut body);
+            let v = serde_json::from_str::<Value>(&body).unwrap_or_else(|_| json!({ "text": body.trim() }));
+            let text = v["text"].as_str().or(v["message"].as_str()).unwrap_or("").trim().chars().take(1500).collect::<String>();
+            if text.is_empty() {
+                return respond(req, 400, "application/json", br#"{"ok":false,"error":"send {\"text\": \"...\"}"}"#.to_vec());
+            }
+            let title = v["title"].as_str().unwrap_or("Heads-up").trim().chars().take(80).collect::<String>();
+            crate::headsup::deliver(app, &title, &text);
+            json_reply(req, json!({ "ok": true }))
+        }
         (tiny_http::Method::Post, Some("/hear")) => {
             // For phones whose browser has no speech recognition: the
             // recording comes here and the cloud ears transcribe it.

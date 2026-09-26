@@ -22,6 +22,7 @@ tauri-build = { version = "2.6.3", features = [] }
 tauri = { version = "2.11.6", features = ["tray-icon", "image-png", "devtools"] }
 tauri-plugin-global-shortcut = "2.3.2"
 tauri-plugin-opener = "2.5.5"
+tauri-plugin-notification = "2"
 tauri-plugin-autostart = "2.5.1"
 tauri-plugin-updater = "2.12.0"
 tauri-plugin-process = "2.3.1"
@@ -35,6 +36,8 @@ rand = "0.9"
 base64 = "0.23"
 uuid = { version = "1", features = ["v4"] }
 tiny_http = "0.12"
+scraper = "0.23"
+zip = { version = "4", default-features = false, features = ["deflate"] }
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
