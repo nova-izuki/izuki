@@ -17,6 +17,8 @@ pub enum ProviderId {
     /// upstreams is configured inside 9Router's own dashboard, not here.
     #[serde(rename = "9router")]
     NineRouter,
+    /// xAI's Grok (https://console.x.ai) — OpenAI-compatible.
+    Xai,
     Custom,
 }
 
@@ -30,6 +32,7 @@ impl ProviderId {
             ProviderId::Anthropic => "anthropic",
             ProviderId::Nvidia => "nvidia",
             ProviderId::NineRouter => "9router",
+            ProviderId::Xai => "xai",
             ProviderId::Custom => "custom",
         }
     }
@@ -43,6 +46,7 @@ impl ProviderId {
             "anthropic" => ProviderId::Anthropic,
             "nvidia" => ProviderId::Nvidia,
             "9router" => ProviderId::NineRouter,
+            "xai" | "grok" => ProviderId::Xai,
             "custom" => ProviderId::Custom,
             _ => return None,
         })
@@ -177,6 +181,7 @@ pub struct Settings {
     /// have captions with no voice, voice with no captions, or both.
     #[serde(default = "default_true")]
     pub speak_responses: bool,
+    /// "edge" — Microsoft's free neural voices (no key, online; voices.rs);
     /// "natural" — Kokoro neural voice running locally (free, offline);
     /// "orpheus" — Orpheus on Groq (free key, most human); "openai" — the
     /// ChatGPT voice (paid); "system" — Windows' built-in voice. See tts.rs.
@@ -188,9 +193,30 @@ pub struct Settings {
     /// Groq API key, for the Orpheus voice.
     #[serde(default)]
     pub groq_api_key: String,
-    /// Voice for the cloud engines ("" = that engine's default).
+    /// Voice for the cloud engines ("" = the character's own).
     #[serde(default)]
     pub cloud_voice: String,
+    /// Izuki's character (voices.rs): "nova", "leo", "ezinne", "rex"…
+    #[serde(default = "default_persona")]
+    pub persona: String,
+    /// The user's own name for it ("" = the character's).
+    #[serde(default)]
+    pub persona_name: String,
+    /// A natural voice of the user's choosing ("" = the character's).
+    #[serde(default)]
+    pub persona_voice: String,
+    /// Extra personality, in the user's own words.
+    #[serde(default)]
+    pub persona_style: String,
+    /// Speed and pitch on top of the character's (percent, Hz).
+    #[serde(default)]
+    pub voice_rate: i32,
+    #[serde(default)]
+    pub voice_pitch: i32,
+    /// Moved to the natural voices once (they replaced "natural" as the
+    /// default); a later choice of any voice is left alone.
+    #[serde(default)]
+    pub voices_v2: bool,
     /// Show the voice sphere while Izuki answers a typed or push-to-talk
     /// request too — not only in "Hey Izuki" conversations.
     #[serde(default = "default_true")]
@@ -307,7 +333,11 @@ fn default_follow_up() -> u32 {
 }
 
 fn default_voice_engine() -> String {
-    "natural".into()
+    "edge".into()
+}
+
+fn default_persona() -> String {
+    "nova".into()
 }
 
 fn default_voice_name() -> String {
@@ -404,6 +434,14 @@ impl Settings {
         if self.telegram_code.len() != 6 {
             self.telegram_code = format!("{:06}", rand::random::<u32>() % 1_000_000);
         }
+        // The free natural voices sound far more human than the on-device
+        // or Windows voice — move everyone over once.
+        if !self.voices_v2 {
+            if matches!(self.voice_engine.as_str(), "natural" | "system" | "") {
+                self.voice_engine = "edge".into();
+            }
+            self.voices_v2 = true;
+        }
         if self.move_duration_ms == 0 {
             self.move_duration_ms = 320;
         }
@@ -490,6 +528,14 @@ impl Default for Settings {
                     enabled: false,
                 },
                 ProviderConfig {
+                    id: ProviderId::Xai,
+                    label: "Grok (xAI)".into(),
+                    base_url: "https://api.x.ai/v1".into(),
+                    model: "grok-4-fast-non-reasoning".into(),
+                    api_key: String::new(),
+                    enabled: false,
+                },
+                ProviderConfig {
                     id: ProviderId::Custom,
                     label: "Custom endpoint".into(),
                     base_url: "http://127.0.0.1:8080/v1".into(),
@@ -528,6 +574,13 @@ impl Default for Settings {
             voice_name: default_voice_name(),
             groq_api_key: String::new(),
             cloud_voice: String::new(),
+            persona: default_persona(),
+            persona_name: String::new(),
+            persona_voice: String::new(),
+            persona_style: String::new(),
+            voice_rate: 0,
+            voice_pitch: 0,
+            voices_v2: true,
             sphere_on_replies: true,
             mic_device: String::new(),
             show_transcript: true,

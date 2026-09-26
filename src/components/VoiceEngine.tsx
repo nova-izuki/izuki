@@ -21,7 +21,9 @@ import {
   speakCloud,
   speakNatural,
   stopNatural,
+  prefetchCloud,
 } from "../lib/naturalVoice";
+import { voiceFor } from "../lib/personas";
 import { holdMicForVoice, micIsHeadset, preloadSpeechInput, releaseMicForVoice, setKeepMicWhileTalking } from "../lib/speechInput";
 import { api, EV, emit, IS_TAURI, on } from "../lib/ipc";
 import { useIzuki } from "../lib/store";
@@ -184,10 +186,11 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
   };
   stopSpeaking();
   const engine = settings.voice_engine;
+  const who = voiceFor(settings);
 
   // The most human voices first; each falls back to the next if it can't
   // speak right now (no key, out of credits, offline).
-  if (engine === "orpheus" || engine === "openai") {
+  if (engine === "edge" || engine === "orpheus" || engine === "openai") {
     const spoke = await speakCloud(engine, text, mood, captionOnce).catch(() => false);
     if (spoke) {
       captionOnce();
@@ -196,7 +199,8 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
     const why = lastCloudError ?? "it didn't answer";
     if (!cloudProblemsShown.has(why)) {
       cloudProblemsShown.add(why);
-      showCaption(`Couldn't use the ${engine === "orpheus" ? "Orpheus" : "ChatGPT"} voice — ${why}. Using the on-device voice.`, false);
+      const label = engine === "edge" ? "natural" : engine === "orpheus" ? "Human (Groq)" : "ChatGPT";
+      showCaption(`Couldn't use the ${label} voice — ${why}. Using the on-device voice for now.`, false);
     }
   }
   // The natural voice — unless this PC can't make it fast enough right
@@ -204,10 +208,12 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
   // instant Windows voice beats a reply that trickles out over a minute.
   // Pre-rendered lines ("Mhm?", "Okay!") are instant either way.
   const tooSlow = naturalVoiceTooSlow() && !lineReady(settings.voice_name, shownText);
-  if (engine !== "system" && !tooSlow) {
+  // The on-device voice only speaks English — a Spanish or Pidgin line goes
+  // to Windows' voice for that language instead.
+  if (engine !== "system" && !tooSlow && who.english) {
     // (Only the Orpheus voice performs <laugh> and friends.)
     const began = Date.now();
-    const spoke = await speakNatural(shownText, settings.voice_name, captionOnce, mood).catch((e) => {
+    const spoke = await speakNatural(shownText, settings.voice_name, captionOnce, mood, who.speed).catch((e) => {
       void api.log(`voice: natural voice failed — ${e}`).catch(() => undefined);
       return false;
     });
@@ -230,7 +236,7 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
       }
     }
   }
-  speak(shownText);
+  speak(shownText, { lang: who.lang, rate: who.speed !== 1 ? who.speed : undefined });
   if (caption) showCaption(shownText, true);
 }
 
@@ -308,6 +314,10 @@ async function talkFast(text: string): Promise<LaneResult> {
   const result = await chatLane(
     text,
     (chunk, last, mood) => {
+      // Start making this sentence's audio now, while the one before is
+      // still being said — no gap between them.
+      const s = useIzuki.getState().settings;
+      if (chunk && s.speak_responses && interruptions === at) prefetchCloud(s.voice_engine, speakable(chunk, s.voice_engine === "orpheus"), mood);
       queue = queue.then(async () => {
         if (interruptions !== at) return;
         if (chunk) {
@@ -1158,9 +1168,33 @@ export function VoiceEngine() {
   // Fetch the voice and the ears in the background as soon as possible, so
   // the first request doesn't wait on a one-time download.
   const voiceEngine = useIzuki((s) => s.settings.voice_engine);
+  const persona = useIzuki((s) => `${s.settings.persona}|${s.settings.persona_voice}|${s.settings.voice_rate}|${s.settings.voice_pitch}`);
   const settingsLoaded = useIzuki((s) => s.settingsLoaded);
   useEffect(() => {
+    if (!settingsLoaded || voiceEngine !== "edge") return;
+    // The natural voice needs no model on this PC — just have the short
+    // lines ("Mhm?", "On it.") made once, so they play the instant they're
+    // needed (the backend keeps them).
+    let cancelled = false;
+    void (async () => {
+      await new Promise((r) => setTimeout(r, 1500));
+      for (const line of [...GREETINGS, ...ACK]) {
+        if (cancelled) return;
+        await api.speakCloud("edge", line, null).catch(() => undefined);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsLoaded, voiceEngine, persona]);
+  useEffect(() => {
     if (!settingsLoaded) return;
+    if (voiceEngine === "edge") {
+      // The offline voice only matters as a fallback here; loading its model
+      // at start cost seconds of CPU on slower laptops. It loads on demand.
+      void preloadSpeechInput().catch(() => undefined);
+      return;
+    }
     // The saved short lines ("Mhm?", "Okay!") first — they're tiny, need no
     // model, and make the very first wake-word answer instant.
     if (voiceEngine !== "system") {

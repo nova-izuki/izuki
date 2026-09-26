@@ -280,6 +280,7 @@ pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
         | ProviderId::Openai
         | ProviderId::Nvidia
         | ProviderId::NineRouter
+        | ProviderId::Xai
         | ProviderId::Custom => ask_openai_compatible(cfg, req)?,
     };
 
@@ -439,12 +440,50 @@ pub fn probe(cfg: &ProviderConfig) -> Result<String> {
                 rq = rq.bearer_auth(cfg.api_key.trim());
             }
             let res = rq.send().with_context(|| format!("nothing answered at {base} — is it running?"))?;
-            if res.status().is_success() {
-                Ok(format!("ok — key accepted, using {}", cfg.model))
-            } else {
-                Err(anyhow!("endpoint answered {}", res.status()))
+            let status = res.status();
+            if !status.is_success() {
+                return Err(match status.as_u16() {
+                    401 | 403 => anyhow!("the key was rejected ({status}) — copy it again, whole"),
+                    _ => anyhow!("endpoint answered {status}"),
+                });
             }
+            // The key works; check the model is one this account can use,
+            // and name the ones it can if not (a typo'd or retired model is
+            // the usual reason a "working" key still gets no answers).
+            let body: Value = res.json().unwrap_or(Value::Null);
+            let ids: Vec<String> = body["data"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|m| m["id"].as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            Ok(model_check(&cfg.model, &ids))
         }
+    }
+}
+
+/// "ok — …" when `model` is among `ids` (or there's no list to check),
+/// otherwise which ones the account does have.
+fn model_check(model: &str, ids: &[String]) -> String {
+    let m = model.trim();
+    if ids.is_empty() || ids.iter().any(|i| i == m || i.ends_with(&format!("/{m}"))) {
+        return format!("ok — key accepted, using {m}");
+    }
+    let mut some: Vec<&str> = ids.iter().map(String::as_str).collect();
+    some.sort_unstable();
+    let list = some.iter().take(12).copied().collect::<Vec<_>>().join(", ");
+    format!("key accepted, but \"{m}\" isn't on this account — set Model to one of: {list}")
+}
+
+#[cfg(test)]
+mod probe_tests {
+    use super::model_check;
+
+    #[test]
+    fn names_the_models_when_the_one_set_is_missing() {
+        let ids = vec!["grok-4".to_string(), "grok-3-mini".to_string()];
+        assert!(model_check("grok-4", &ids).starts_with("ok"));
+        let msg = model_check("grok-9", &ids);
+        assert!(!msg.starts_with("ok") && msg.contains("grok-3-mini"), "{msg}");
+        assert!(model_check("anything", &[]).starts_with("ok"));
     }
 }
 

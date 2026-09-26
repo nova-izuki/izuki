@@ -18,6 +18,7 @@ import type {
   CallStatus,
   AppsAnswer,
   Reminder,
+  VoiceCatalog,
 } from "./types";
 
 export const IS_TAURI =
@@ -133,6 +134,14 @@ export const MOCK_SETTINGS: Settings = {
       enabled: false,
     },
     {
+      id: "xai",
+      label: "Grok (xAI)",
+      base_url: "https://api.x.ai/v1",
+      model: "grok-4-fast-non-reasoning",
+      api_key: "",
+      enabled: false,
+    },
+    {
       id: "custom",
       label: "Custom endpoint",
       base_url: "http://127.0.0.1:8080/v1",
@@ -167,10 +176,17 @@ export const MOCK_SETTINGS: Settings = {
   ink_color: "auto",
   show_captions: true,
   speak_responses: true,
-  voice_engine: "natural",
+  voice_engine: "edge",
   voice_name: "af_heart",
   groq_api_key: "",
   cloud_voice: "",
+  persona: "nova",
+  persona_name: "",
+  persona_voice: "",
+  persona_style: "",
+  voice_rate: 0,
+  voice_pitch: 0,
+  voices_v2: true,
   sphere_on_replies: true,
   mic_device: "",
   show_transcript: true,
@@ -249,7 +265,18 @@ export const api = {
   /** Turn other apps' sound down while listening (true), back up (false). */
   duckAudio: (on: boolean) => call<void>("duck_audio", { on }, () => undefined),
 
-  /** One sentence in a cloud voice ("orpheus" | "openai"), as WAV. */
+  /** Every character and natural voice (voices.rs). */
+  voiceCatalog: () => call<VoiceCatalog>("voice_catalog", undefined, () => ({ personas: [], voices: [] })),
+  /**
+   * A sample line in a voice (MP3 or WAV bytes). `persona` previews that
+   * character as it comes; none = the current one with the user's tweaks.
+   * Rejects with the exact reason a voice can't speak.
+   */
+  voiceTest: (engine: string, persona?: string | null, text?: string | null) =>
+    call<ArrayBuffer>("voice_test", { engine, persona: persona ?? null, text: text ?? null }, () => {
+      throw new Error("Not running inside Izuki.");
+    }),
+  /** One sentence in a cloud voice ("edge" | "orpheus" | "openai"), as audio. */
   speakCloud: (engine: string, text: string, mood?: string | null) =>
     call<ArrayBuffer>("speak_cloud", { engine, text, mood: mood ?? null }, () => {
       throw new Error("Not running inside Izuki.");

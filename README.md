@@ -43,11 +43,12 @@ happens to be great with computers. It can:
 | | |
 |---|---|
 | 🎙️ **Hands-free voice** | Wake word runs on your PC (no audio leaves it until you talk to Izuki). Live transcript of your words, a voice-reactive orb, and you can **talk over Izuki to interrupt it** — like ChatGPT's voice mode. |
-| 🗣️ **A natural voice** | A neural voice that runs on your own PC (Kokoro), or a free cloud voice (Groq) for extra-human delivery. |
+| 🗣️ **A natural voice** | Lifelike free neural voices that pause at commas and full stops like a person — no key needed. Or a voice that runs on your own PC, offline (Kokoro), Groq's expressive Orpheus, or ChatGPT's voice. |
+| 🎭 **30+ characters** | Pick who Izuki is: warm Nova, deep calm Leo, British Sophie, Nigerian Ezinne, Naija Pidgin Chidi, Spanish Lucía, French, Swahili, Hindi, a hype coach, a butler, a pirate — or **Rex**, unfiltered and sarcastic (it swears and roasts you, only if you pick it). Rename it, pick any of 50+ voices, change speed and pitch, and give it your own personality. It talks that way everywhere — voice, chat, phone and Telegram. |
 | 👀 **Sees your screen** | Understands screenshots *and* the real buttons/fields Windows reports, so clicks land on the right control. |
 | 🔁 **Look → act → look again** | Multi-step tasks keep going across new windows, pages and pop-ups — up to six rounds per request. |
 | ✍️ **Draw to show it** | Hold **Ctrl+D**, circle something, let go, then say or type what you want. A circle is a click, an arrow is a drag, a box watches a region. |
-| 🧠 **Any brain you like** | Google Gemini (free), NVIDIA NIM (free), OpenRouter, OpenAI, Anthropic, a local model with Ollama, or any OpenAI-compatible server. Izuki races them and uses whichever answers first if one is slow. |
+| 🧠 **Any brain you like** | Google Gemini (free), NVIDIA NIM (free), OpenRouter, OpenAI, Anthropic, Grok (xAI), a local model with Ollama, or any OpenAI-compatible server. Izuki races them and uses whichever answers first if one is slow. |
 | 💾 **Flows & watchers** | Anything Izuki does can be saved and replayed in one click, or triggered when something on screen changes. |
 | 💬 **Just chat** | A Chat tab for plain companion chat — plans, drafts, homework, advice — that never touches your screen. If something needs the PC, one tap lets Izuki do it. |
 | ⏰ **Reminders** | “Remind me at 6 to call Mum” — by voice, chat or phone. Izuki says it out loud when it's due and texts your phone. |

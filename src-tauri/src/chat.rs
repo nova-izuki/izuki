@@ -155,6 +155,7 @@ fn system_prompt(style: Style, apps: bool) -> String {
     }
     s.push_str(&crate::reminders::prompt_block());
     s.push_str(&crate::memory::prompt_block());
+    s.push_str(&crate::voices::prompt_block());
     s
 }
 

@@ -374,13 +374,13 @@
     u.onend = done; u.onerror = done;
     speechSynthesis.speak(u);
   });
-  const say = (text, audio) => new Promise((done) => {
+  const say = (text, audio, type) => new Promise((done) => {
     if (!text) return done();
     setMode("speaking", "Tap the orb to cut in");
     if (!audio) return speakWithPhone(text).then(done);
     player.onended = () => done();
     player.onerror = () => speakWithPhone(text).then(done);
-    player.src = "data:audio/wav;base64," + audio;
+    player.src = "data:" + (type || "audio/wav") + ";base64," + audio;
     player.play().catch(() => speakWithPhone(text).then(done));
   });
   const hush = () => {
@@ -401,7 +401,7 @@
       const v = await r.json();
       setOnline(true);
       remember("iz", v.text || "Hmm, I lost my words there.", v.links);
-      await say(v.text, v.audio);
+      await say(v.text, v.audio, v.audio_type);
     } catch {
       setOnline(false);
       remember("iz", "I can't reach your PC right now — is it on, with Izuki open?");

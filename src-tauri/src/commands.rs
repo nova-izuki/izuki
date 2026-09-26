@@ -498,6 +498,37 @@ pub async fn speak_cloud(
         .map(tauri::ipc::Response::new)
 }
 
+/// Every character and natural voice, for the picker.
+#[tauri::command]
+pub fn voice_catalog() -> serde_json::Value {
+    serde_json::json!({
+        "personas": crate::voices::PERSONAS,
+        "voices": crate::voices::VOICES.iter().map(|(id, label)| serde_json::json!({ "id": id, "label": label })).collect::<Vec<_>>(),
+    })
+}
+
+/// A line in a voice, to hear it before choosing ("Hear it" / "Test voice").
+/// `persona`: preview that character as it comes (none = the current one,
+/// with the user's tweaks). An error says exactly why that voice can't speak.
+#[tauri::command]
+pub async fn voice_test(engine: String, persona: Option<String>, text: Option<String>) -> R<tauri::ipc::Response> {
+    let mut settings = state::store().settings();
+    if let Some(id) = persona.filter(|p| *p != settings.persona) {
+        settings.persona = id;
+        settings.persona_name.clear();
+        settings.persona_voice.clear();
+        settings.voice_rate = 0;
+        settings.voice_pitch = 0;
+        settings.cloud_voice.clear();
+    }
+    let line = text
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or_else(|| crate::voices::active(&settings).persona.sample.to_string());
+    blocking(move || crate::tts::synthesize(&settings, &engine, &line, None))
+        .await?
+        .map(tauri::ipc::Response::new)
+}
+
 // ---------------------------------------------------------------------------
 // Hearing you over the music (stt.rs, duck.rs)
 // ---------------------------------------------------------------------------

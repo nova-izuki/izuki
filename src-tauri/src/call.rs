@@ -255,10 +255,10 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
             };
             let audio = if want_voice {
                 let settings = crate::state::store().settings();
-                match crate::tts::speak_to_wav(&settings, &reply.text) {
-                    Ok(wav) => {
+                match crate::tts::speak_audio(&settings, &reply.text) {
+                    Ok((bytes, kind)) => {
                         use base64::Engine;
-                        Some(base64::engine::general_purpose::STANDARD.encode(wav))
+                        Some((base64::engine::general_purpose::STANDARD.encode(bytes), kind))
                     }
                     Err(e) => {
                         eprintln!("[call] no voice for the reply: {e}");
@@ -268,7 +268,11 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
             } else {
                 None
             };
-            json_reply(req, json!({ "text": reply.text, "links": reply.links, "audio": audio }))
+            let (audio, audio_type) = match audio {
+                Some((a, t)) => (Some(a), Some(t)),
+                None => (None, None),
+            };
+            json_reply(req, json!({ "text": reply.text, "links": reply.links, "audio": audio, "audio_type": audio_type }))
         }
         // Anything that can send a web request — an n8n workflow, Zapier,
         // IFTTT, a script — can hand Izuki a heads-up:
