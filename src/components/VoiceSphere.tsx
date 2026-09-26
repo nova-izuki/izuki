@@ -150,7 +150,7 @@ export function VoiceSphere({
                 >
                   <TranscriptText text={transcript.text} final={transcript.final} />
                 </motion.div>
-              ) : LABEL[state as Exclude<OrbState, "hidden">] || (state === "speaking" && doing) ? (
+              ) : LABEL[state as Exclude<OrbState, "hidden">] ? (
                 <motion.div
                   key={`${state}:${doing ?? ""}`}
                   initial={{ opacity: 0 }}
