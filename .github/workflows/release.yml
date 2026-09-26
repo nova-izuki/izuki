@@ -85,3 +85,15 @@ jobs:
           if (-not (Test-Path $src)) { throw "could not find the built executable" }
           Copy-Item $src "Izuki-portable.exe"
           gh release upload ${{ github.ref_name }} "Izuki-portable.exe" --clobber
+
+      # The website's Download button links straight to this file, so it needs
+      # a name that never changes: releases/latest/download/Izuki-Setup.exe.
+      - name: Attach Izuki-Setup.exe (stable name for direct downloads)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $setup = Get-ChildItem -Recurse -Path "src-tauri/target" -Filter "*_x64-setup.exe" | Where-Object { $_.FullName -match "bundle[\\/]nsis" } | Select-Object -First 1
+          if (-not $setup) { throw "could not find the NSIS installer" }
+          Copy-Item $setup.FullName "Izuki-Setup.exe"
+          gh release upload ${{ github.ref_name }} "Izuki-Setup.exe" --clobber
