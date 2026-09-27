@@ -907,6 +907,20 @@ fn submit_task(
             last_plan = Some(plan);
             break;
         }
+        // Did the last steps actually do anything? A person notices at once
+        // when a click did nothing — and says so, and tries again smarter.
+        if round > 0 && !last_round.is_empty() {
+            let unchanged = last_look
+                .as_ref()
+                .is_some_and(|prev| crate::live::changed_share(prev, &frame.downscaled(160)) <= 0.02);
+            if unchanged && !told.as_deref().is_some_and(|t| t.contains("loading")) {
+                let note = NO_EFFECT.to_string();
+                told = Some(match told.take() {
+                    Some(t) => format!("{t}\n{note}"),
+                    None => note,
+                });
+            }
+        }
         let mut ask = if done_so_far.is_empty() {
             prompt.clone()
         } else {
@@ -1156,6 +1170,29 @@ fn submit_task(
             if settled { "settled" } else { "still moving" },
             waited.elapsed().as_millis()
         );
+        // Still loading (a busy cursor, the browser's Stop button)? Wait for
+        // it like a person would, rather than judging a half-loaded page —
+        // "I can't find YouTube" was often just YouTube still arriving.
+        if let Some(why) = uia::loading() {
+            let _ = app.emit(events::STATUS, StatusEvent::working("Waiting for it to load…"));
+            let until = std::time::Instant::now() + Duration::from_secs(12);
+            while std::time::Instant::now() < until && alive() && uia::loading().is_some() {
+                std::thread::sleep(Duration::from_millis(400));
+            }
+            let still = uia::loading().is_some();
+            eprintln!("[agent] {why}; {} after {} ms", if still { "still loading" } else { "loaded" }, waited.elapsed().as_millis());
+            if !still {
+                crate::live::wait_until_settled(Duration::from_millis(250), Duration::from_secs(3), || !alive());
+            }
+            told = Some(if still {
+                format!(
+                    "It's STILL loading ({why}) — slow internet, not a failure. Don't click again and don't decide \
+                     anything is missing: say it's loading, set \"wait\" to a few seconds, and look again."
+                )
+            } else {
+                format!("It was loading for a moment ({why}) and has finished now — judge the screen as it is.")
+            });
+        }
         match capture::capture_all() {
             Ok(f) => frame = f,
             Err(_) => break,
@@ -1193,6 +1230,14 @@ fn submit_task(
     plan.more = false;
     plan
 }
+
+/// Told to the agent when its last steps visibly changed nothing.
+const NO_EFFECT: &str = "Your last step(s) didn't visibly change anything — the screen looks the same as before. \
+Work out why, like a person would: still loading (a spinner, blank or grey boxes) → set \"wait\" and look again; \
+the click missed → use the control's target id, or a keyboard route (tab/enter, ctrl+l); something covering it \
+(pop-up, cookie banner, menu) → close that first; it needs a double-click; the window isn't in front → click inside \
+it first. Say it naturally in `summary` (\"Hmm, that didn't open — trying another way\") and try again differently. \
+Only ask the user after three honest, different tries.";
 
 /// How many look-act rounds one request may take.
 const MAX_ROUNDS: usize = 10;

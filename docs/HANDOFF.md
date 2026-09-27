@@ -192,6 +192,14 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
     orb each turn instead of showing a fake "Listening".) Tapping the orb
     while talking sends it at once; typing still works mid-call.
 
+31. Smarter agent: "play some cool videos on YouTube" → it picks and plays
+    one (no "which one?"); "find another one" → a different video, no
+    endless scrolling. On slow internet, "open YouTube" → it says it's
+    loading and waits (log: "[agent] … still loading/loaded"), never "can't
+    find it". Click something that doesn't respond → it says "that didn't
+    open", tries another way (log shows the retry). Chat: "recommend a film"
+    → one pick with a reason.
+
 Running the Rust tests from Linux: `cargo test --target x86_64-pc-windows-gnu
 --lib --no-run`, copy `target/x86_64-pc-windows-gnu/debug/WebView2Loader.dll`
 next to the test exe in `deps/`, and run it with `wine64` (65 pass).

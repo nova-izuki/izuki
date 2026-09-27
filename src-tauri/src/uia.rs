@@ -578,6 +578,60 @@ pub fn screen_locked() -> bool {
     false
 }
 
+/// Whether what's in front is still loading, and how that shows: the
+/// mouse's busy cursor, or the browser's Reload button having turned into
+/// "Stop" while a page loads. A person waits for that before deciding a
+/// click failed or a page has nothing on it — so does Izuki.
+pub fn loading() -> Option<&'static str> {
+    if busy_cursor() {
+        return Some("the mouse shows the busy cursor");
+    }
+    let app = foreground_app().to_lowercase();
+    if ["chrome", "msedge", "firefox", "brave", "opera", "vivaldi"].iter().any(|b| app.starts_with(b)) {
+        let controls = list_controls(120);
+        if controls.iter().any(|c| c.kind == "Button" && is_stop_loading(&c.name)) {
+            return Some("the browser's reload button still says Stop — the page is loading");
+        }
+    }
+    None
+}
+
+/// The browser's "Stop loading this page" / "Stop (Esc)" button.
+fn is_stop_loading(name: &str) -> bool {
+    let n = name.trim().to_lowercase();
+    n == "stop" || n.starts_with("stop loading") || n.starts_with("stop (")
+}
+
+#[cfg(windows)]
+fn busy_cursor() -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{GetCursorInfo, LoadCursorW, CURSORINFO, IDC_APPSTARTING, IDC_WAIT};
+    unsafe {
+        let mut ci = CURSORINFO { cbSize: std::mem::size_of::<CURSORINFO>() as u32, ..Default::default() };
+        if GetCursorInfo(&mut ci).is_err() || ci.hCursor.is_invalid() {
+            return false;
+        }
+        [IDC_WAIT, IDC_APPSTARTING]
+            .into_iter()
+            .any(|id| LoadCursorW(None, id).is_ok_and(|c| c == ci.hCursor))
+    }
+}
+
+#[cfg(not(windows))]
+fn busy_cursor() -> bool {
+    false
+}
+
+#[cfg(test)]
+mod loading_tests {
+    #[test]
+    fn knows_the_browsers_stop_button() {
+        assert!(super::is_stop_loading("Stop loading this page"));
+        assert!(super::is_stop_loading("Stop (Esc)"));
+        assert!(!super::is_stop_loading("Stop sharing"));
+        assert!(!super::is_stop_loading("Reload"));
+    }
+}
+
 /// Every real app window that's open (title and whether it's minimised),
 /// front to back — so the agent knows Blackboard is already open in a
 /// background window and switches to it instead of hunting for it.

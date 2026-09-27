@@ -20,6 +20,8 @@ use parking_lot::Mutex;
 /// Keep skipping ads until then.
 static WATCH_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
 static WATCHING: AtomicBool = AtomicBool::new(false);
+/// What it played lately, so "another one" is another one.
+static RECENT: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// How long ads are watched for after something is played.
 pub const AD_WATCH: Duration = Duration::from_secs(4 * 60);
 
@@ -36,9 +38,11 @@ pub fn search_url(query: &str) -> String {
     format!("https://www.youtube.com/results?search_query={q}")
 }
 
-/// Search YouTube for `query` and start the best match. `Some(title)` once
-/// it clicked a video; `None` if the results are open but no video matched
-/// well enough to pick (they're left on screen).
+/// Search YouTube for `query` and start the best video for it — a friend's
+/// pick, not a menu: the closest match to what was asked, skipping what it
+/// played lately; for something vague ("cool videos", "something chill")
+/// the most-watched of the top results. `Some(title)` once it clicked one;
+/// `None` if the results never showed (they're left on screen).
 pub fn play(query: &str) -> Result<Option<String>> {
     crate::apps::open_url(&search_url(query))?;
     watch_ads(AD_WATCH);
@@ -55,10 +59,16 @@ pub fn play(query: &str) -> Result<Option<String>> {
             continue;
         }
         let controls = crate::uia::list_controls(160);
-        if let Some(best) = best_result(&controls, &words) {
+        let recent = RECENT.lock().clone();
+        if let Some(best) = best_result(&controls, &words, &recent) {
             let (x, y) = best.rect.center();
             eprintln!("[youtube] playing \"{}\"", best.name);
             crate::automation::click_at(x, y, enigo::Button::Left, 1, 260)?;
+            let mut r = RECENT.lock();
+            r.push(key_of(&best.name));
+            if r.len() > 12 {
+                r.remove(0);
+            }
             return Ok(Some(short_title(&best.name)));
         }
     }
@@ -73,13 +83,40 @@ fn words(s: &str) -> Vec<String> {
         .collect()
 }
 
-/// The video link whose title shares the most words with the request —
-/// never an ad, a Short, a channel or the page's own links.
-fn best_result<'a>(controls: &'a [crate::uia::Control], want: &[String]) -> Option<&'a crate::uia::Control> {
-    if want.is_empty() {
-        return None;
-    }
+/// A video, recognisably: its title, lower-cased and cut short.
+fn key_of(name: &str) -> String {
+    short_title(name).to_lowercase()
+}
+
+/// "… 1.2M views …" / "… 12,345,678 views …" → how many.
+fn views(name: &str) -> Option<u64> {
+    let lower = name.to_lowercase();
+    let at = lower.find(" views")?;
+    let before = lower[..at].trim_end();
+    let token = before.rsplit(' ').next()?;
+    let (num, mult) = match token.chars().last()? {
+        'k' => (&token[..token.len() - 1], 1e3),
+        'm' => (&token[..token.len() - 1], 1e6),
+        'b' => (&token[..token.len() - 1], 1e9),
+        _ => (token, 1.0),
+    };
+    let n: f64 = num.replace(',', "").parse().ok()?;
+    Some((n * mult) as u64)
+}
+
+/// The video to play: the one whose title shares the most words with the
+/// request; when nothing really matches (a vague ask), the most-watched of
+/// the first results. Never an ad, a Short, a channel, the page's own
+/// links, or something it played lately.
+fn best_result<'a>(
+    controls: &'a [crate::uia::Control],
+    want: &[String],
+    recent: &[String],
+) -> Option<&'a crate::uia::Control> {
     let mut best: Option<(usize, &crate::uia::Control)> = None;
+    // Fallback for vague asks: (views, control) among the first few videos.
+    let mut popular: Option<(u64, &crate::uia::Control)> = None;
+    let mut videos_seen = 0;
     for c in controls {
         if c.kind != "Hyperlink" || c.hidden || c.rect.w < 80 {
             continue;
@@ -92,6 +129,15 @@ fn best_result<'a>(controls: &'a [crate::uia::Control], want: &[String]) -> Opti
         {
             continue;
         }
+        if recent.iter().any(|r| *r == key_of(&c.name)) {
+            continue;
+        }
+        if let Some(v) = views(&c.name) {
+            videos_seen += 1;
+            if videos_seen <= 8 && popular.is_none_or(|(p, _)| v > p) {
+                popular = Some((v, c));
+            }
+        }
         let have = words(&name);
         let hits = want.iter().filter(|w| have.contains(w)).count();
         // Most of what was asked for, at least.
@@ -103,7 +149,7 @@ fn best_result<'a>(controls: &'a [crate::uia::Control], want: &[String]) -> Opti
             best = Some((hits, c));
         }
     }
-    best.map(|(_, c)| c)
+    best.map(|(_, c)| c).or(popular.map(|(_, c)| c))
 }
 
 /// "Burna Boy - Bundle by Bundle [Official Video] 3 minutes…" → the title part.
@@ -180,10 +226,34 @@ mod tests {
             c(3, "Hyperlink", "Burna Boy - Bundle by Bundle [Official Music Video] by Burna Boy 3 minutes"),
             c(4, "Hyperlink", "Burna Boy - Last Last"),
         ];
-        let got = best_result(&list, &words("play bundle by bundle by burna boy on youtube")).unwrap();
+        let got = best_result(&list, &words("play bundle by bundle by burna boy on youtube"), &[]).unwrap();
         assert_eq!(got.id, 3);
         assert_eq!(short_title(&got.name), "Burna Boy - Bundle");
-        assert!(best_result(&list, &words("taylor swift")).is_none());
+        assert!(best_result(&list, &words("taylor swift"), &[]).is_none());
+    }
+
+    #[test]
+    fn picks_for_you_when_the_ask_is_vague_and_never_repeats() {
+        let list = vec![
+            c(1, "Hyperlink", "Sponsored · 50% off"),
+            c(2, "Hyperlink", "Relaxing rain sounds by Calm Vibes 120K views 1 year ago 3 hours"),
+            c(3, "Hyperlink", "Most satisfying video ever by Satisfy 48M views 2 years ago 10 minutes"),
+            c(4, "Hyperlink", "Cool science tricks by Lab 3.1M views 5 months ago 12 minutes"),
+            c(5, "Hyperlink", "Burna Boy"),
+        ];
+        // Nothing matches "cool stuff" well → the most-watched of the top results.
+        let got = best_result(&list, &words("play some cool videos for me"), &[]).unwrap();
+        assert_eq!(got.id, 3);
+        // "Another one": the one it just played is skipped.
+        let played = vec![key_of(&list[2].name)];
+        let got = best_result(&list, &words("play some cool videos for me"), &played).unwrap();
+        assert_eq!(got.id, 4);
+        // A real match still wins over popularity.
+        let got = best_result(&list, &words("rain sounds"), &[]).unwrap();
+        assert_eq!(got.id, 2);
+        assert_eq!(views("x by y 1,234 views"), Some(1234));
+        assert_eq!(views("x 2.5M views"), Some(2_500_000));
+        assert_eq!(views("no count here"), None);
     }
 
     #[test]
