@@ -293,6 +293,21 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
     Groq / OpenRouter / Mistral read pictures and text files, and anything
     else goes to Gemini if there's a key. Checked live: a picture read
     correctly by Gemini and by openrouter/free.
+50. Discord/Telegram/calls do PC tasks: over Discord, "play some music"
+    or "open chrome" now runs on the PC (needs_screen detects it — the free
+    chat model wasn't emitting [SCREEN]). Unit-tested.
+51. Call mute: the call page and the phone app's live call have a mute
+    button — Izuki still hears you and replies in text, just no voice.
+52. Android control (NEW, off by default, needs the owner's phone to test):
+    Settings → Control my Android → turn on → on the phone enable Wireless
+    debugging (Developer options) and enter its IP:port → Connect & test
+    (downloads Google platform-tools ~15 MB, phone shows an Allow prompt).
+    Then "open YouTube and play lofi on my phone" / "text mum on my phone"
+    from chat, voice, Discord, Telegram or a call. Unit tests cover the
+    element/bounds parsing and shell escaping; the live device path is
+    UNVERIFIED (no phone/adb in the build sandbox). Next: a native Android
+    app so no PC is needed (Composio can be called directly from a native
+    app; browsers are CORS-blocked).
 47. Gemini's newest speech model returns a finished WAV (older ones raw
     PCM): the Gemini voice on the PC and phone now plays it as-is — check it
     has no click at the start and isn't sped up.
