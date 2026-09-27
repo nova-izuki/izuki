@@ -107,6 +107,8 @@ export function VoicePicker() {
   const [playing, setPlaying] = useState<string | null>(null);
   const [test, setTest] = useState<{ ok: boolean; text: string } | null>(null);
   const [custom, setCustom] = useState(false);
+  /** A spicy character waiting on the 18+ agreement. */
+  const [gate, setGate] = useState<Persona | null>(null);
 
   useEffect(() => {
     void loadCatalog().then((c) => {
@@ -184,7 +186,7 @@ export function VoicePicker() {
     }
   }
 
-  function choose(p: Persona) {
+  function apply(p: Persona) {
     patch({
       persona: p.id,
       persona_name: "",
@@ -194,6 +196,15 @@ export function VoicePicker() {
       cloud_voice: "",
       voice_name: p.kokoro,
     });
+  }
+
+  function choose(p: Persona) {
+    // Unfiltered characters (Rex, Roxy) need the 18+ agreement first.
+    if (p.spicy && !settings.adult_ok) {
+      setGate(p);
+      return;
+    }
+    apply(p);
   }
 
   const tweaked =
@@ -731,6 +742,53 @@ export function VoicePicker() {
       >
         <Toggle checked={settings.sphere_on_replies} onChange={(v) => patch({ sphere_on_replies: v })} />
       </Row>
+
+      {gate && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onClick={() => setGate(null)}
+        >
+          <div
+            className="izk-card izk-grain w-full max-w-[380px] p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 text-[15px] font-bold text-izk-ink">
+              🌶️ {gate.name} — for adults (18+)
+            </div>
+            <p className="mt-2 text-[12px] leading-relaxed text-izk-muted">
+              {gate.name} is an <b className="text-izk-ink">unfiltered</b> character: it swears, roasts you and
+              speaks crudely on purpose. It’s meant for adults only.
+            </p>
+            <p className="mt-2 text-[11.5px] leading-relaxed text-izk-muted">
+              By continuing you confirm you’re <b className="text-izk-ink">18 or older</b> and that you’re choosing this
+              on purpose. You’re responsible for how you use it. Nova Izuki and its makers aren’t liable for anything it
+              says. It won’t use slurs or hateful content, and it drops the act if you’re genuinely upset. You can switch
+              back to any other character any time.
+            </p>
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setGate(null)}
+                className="izk-pill izk-no-drag h-[30px] px-3 text-[12px]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const p = gate;
+                  setGate(null);
+                  patch({ adult_ok: true });
+                  apply(p);
+                }}
+                className="izk-btn-primary izk-no-drag h-[30px] rounded-full px-3.5 text-[12px]"
+              >
+                I’m 18+ — continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

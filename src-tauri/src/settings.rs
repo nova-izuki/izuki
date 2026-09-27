@@ -289,6 +289,9 @@ pub struct Settings {
     /// The paired phone's address from Wireless debugging, e.g. "192.168.1.24:5555".
     #[serde(default)]
     pub android_addr: String,
+    /// The user accepted the 18+ terms for the unfiltered characters.
+    #[serde(default)]
+    pub adult_ok: bool,
     /// Your own free Composio key: Izuki's access to Gmail, Calendar, Drive,
     /// Slack, Notion, socials and more (composio.rs).
     /// "Call Izuki": a hands-free voice page for your phone, reached through
@@ -676,6 +679,7 @@ impl Default for Settings {
             phone_controls_pc: true,
             android_enabled: false,
             android_addr: String::new(),
+            adult_ok: false,
             call_enabled: false,
             call_token: String::new(),
             composio_api_key: String::new(),
