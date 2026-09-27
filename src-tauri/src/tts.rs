@@ -200,10 +200,11 @@ fn gemini_speak(settings: &Settings, c: &reqwest::blocking::Client, text: &str, 
         }
     });
     let known = *GEMINI_TTS_MODEL.lock();
-    let models: Vec<&'static str> = match known {
-        Some(m) => vec![m],
-        None => GEMINI_TTS_MODELS.to_vec(),
-    };
+    // The one that worked last time first, then the rest: each model has its
+    // own small free daily allowance (10 requests), so when one is used up
+    // the next still speaks.
+    let mut models: Vec<&'static str> = known.into_iter().collect();
+    models.extend(GEMINI_TTS_MODELS.iter().filter(|m| Some(**m) != known));
     let mut last = String::from("Gemini voice failed");
     for model in models {
         body["contents"][0]["parts"][0]["text"] = json!(if takes_direction(model) { directed.as_str() } else { text });
@@ -222,6 +223,11 @@ fn gemini_speak(settings: &Settings, c: &reqwest::blocking::Client, text: &str, 
             || (status.as_u16() == 400 && (gone.contains("no longer available") || gone.contains("not found") || gone.contains("not supported")))
         {
             last = format!("Gemini has no voice model called {model}");
+            continue;
+        }
+        if status.as_u16() == 429 {
+            eprintln!("[tts] {model} is used up for now — trying the next Gemini voice model");
+            last = friendly_error("Gemini", status, &text);
             continue;
         }
         if !status.is_success() {

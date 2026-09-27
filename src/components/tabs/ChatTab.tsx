@@ -178,7 +178,13 @@ export function ChatTab() {
   const settingsLoaded = useIzuki((s) => s.settingsLoaded);
   const openSetup = useIzuki((s) => s.setSetupOpen);
   const noBrain = settingsLoaded && !brainReady(settings);
-  useEffect(() => bottom.current?.scrollIntoView({ block: "end", behavior: "smooth" }), [msgs]);
+  // Braces, not an arrow that returns: newer WebView2 makes scrollIntoView
+  // return a promise, and a returned promise is taken as the effect's
+  // clean-up — "destroy is not a function", and the Chat tab crashed on every
+  // message.
+  useEffect(() => {
+    bottom.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [msgs]);
 
   const refreshReminders = useCallback(() => void api.remindersList().then(setReminders).catch(() => undefined), []);
   useEffect(() => {

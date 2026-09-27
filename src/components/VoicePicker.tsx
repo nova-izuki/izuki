@@ -126,7 +126,9 @@ export function VoicePicker() {
   const geminiKey = settings.providers.find((p) => p.id === "gemini")?.api_key.trim() ?? "";
 
   // A new engine or character → the last test result no longer applies.
-  useEffect(() => setTest(null), [engine, settings.persona]);
+  useEffect(() => {
+    setTest(null);
+  }, [engine, settings.persona]);
 
   // The ChatGPT voice's key, pasted right here: saved into the OpenAI brain
   // slot (the one place it lives), then tested out loud.

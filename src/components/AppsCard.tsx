@@ -34,6 +34,13 @@ export function AppsCard() {
   const hasKey = settings.composio_api_key.trim().length > 0;
 
   const check = async () => {
+    const k = settings.composio_api_key.trim();
+    // Composio's "Getting started" page puts a setup command for coding tools
+    // (npx skills add …) right under the key, and it's easy to copy that instead.
+    if (/\s/.test(k) || /^npx\b/i.test(k)) {
+      setTest("That's Composio's setup command for coding tools — Izuki doesn't need it. Copy the API key itself instead (Settings → API Keys, it starts with ak_).");
+      return;
+    }
     setTest("testing");
     await flush();
     try {

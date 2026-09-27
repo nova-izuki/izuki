@@ -888,7 +888,9 @@ export function VoiceEngine() {
   };
   // Keep the mic open while Izuki talks only when talking over it is on.
   const bargeIn = useIzuki((s) => s.settings.barge_in);
-  useEffect(() => setKeepMicWhileTalking(bargeIn), [bargeIn]);
+  useEffect(() => {
+    setKeepMicWhileTalking(bargeIn);
+  }, [bargeIn]);
 
   // Your turn: the orb says so (a listen that runs through Izuki's answer
   // leaves it on "Thinking…"/speaking until then).

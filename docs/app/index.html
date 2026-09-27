@@ -925,7 +925,8 @@
           generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: person().voice } } } },
         }),
       });
-      if (r.status === 404) return "gone";
+      // Retired, or this model's small daily allowance is used up: the next one.
+      if (r.status === 404 || r.status === 429) return "gone";
       if (r.status === 400) {
         const why = await r.text();
         if (/no longer available|not found|not supported/i.test(why)) return "gone";
