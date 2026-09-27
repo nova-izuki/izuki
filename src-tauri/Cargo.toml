@@ -37,6 +37,8 @@ base64 = "0.23"
 uuid = { version = "1", features = ["v4"] }
 sha2 = "0.10"
 tiny_http = "0.12"
+# Named only to pick its encryption engine (see `tls_ready` in lib.rs).
+rustls = { version = "0.23", default-features = false }
 scraper = "0.23"
 zip = { version = "4", default-features = false, features = ["deflate"] }
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }

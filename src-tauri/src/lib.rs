@@ -126,7 +126,20 @@ pub fn set_autostart(app: &AppHandle, enabled: bool) {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Two encryption engines end up in the build (reqwest brings aws-lc-rs,
+/// the websocket library brings ring), and with two the TLS library won't
+/// guess: the first websocket (the Natural voice, Discord) panicked with
+/// "Could not automatically determine the process-level CryptoProvider".
+/// Pick one, once, before any websocket connects.
+pub fn tls_ready() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    });
+}
+
 pub fn run() {
+    tls_ready();
     // Physical pixels everywhere, so a point drawn on the overlay is the same
     // point the mouse is later moved to.
     automation::make_dpi_aware();

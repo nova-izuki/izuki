@@ -239,6 +239,7 @@ async fn wait_for_new_token(old: &str, max: Duration) {
 
 /// One gateway connection, until it drops or the token changes.
 async fn session(app: &AppHandle, token: &str) -> Result<()> {
+    crate::tls_ready();
     let (ws, _) = tokio_tungstenite::connect_async(GATEWAY).await?;
     let (mut tx, mut rx) = ws.split();
 

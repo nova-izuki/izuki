@@ -720,6 +720,7 @@ async fn edge_once(text: &str, voice: &str, rate: i32, pitch: i32) -> Result<Vec
         }
     }
 
+    crate::tls_ready();
     let (ws, _) = match tokio_tungstenite::connect_async(req).await {
         Ok(ok) => ok,
         Err(WsError::Http(resp)) => {
