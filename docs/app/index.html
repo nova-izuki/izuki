@@ -143,6 +143,19 @@
   .icon-btn.on { background: var(--teal); color: var(--ground); }
   header .tools { display: flex; gap: 8px; }
 
+  /* attachments */
+  #clip { flex: none; width: 44px; height: 52px; border: 1px solid var(--line); border-radius: 22px; background: var(--raised); display: grid; place-items: center; }
+  #clip svg { width: 20px; height: 20px; }
+  #attached { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; }
+  #attached:empty { display: none; }
+  .att { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.3); border-radius: 12px; padding: 4px 6px 4px 4px; font-size: 12.5px; max-width: 100%; }
+  .att img { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; }
+  .att .ext { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; background: var(--raised); font-size: 16px; }
+  .att .nm { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .att button { border: 0; background: none; color: var(--muted); padding: 2px 6px; }
+  .msg .thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .msg .thumbs img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; }
+
   /* the live call */
   #live { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
     padding: calc(var(--safe-top) + 18px) 20px calc(var(--safe-bottom) + 24px); background: rgba(8, 8, 14, 0.82); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
@@ -183,10 +196,15 @@
 
   <footer>
     <div id="status"></div>
+    <div id="attached"></div>
     <form class="bar" id="form" autocomplete="off">
       <button id="orb" type="button" aria-label="Talk to Izuki">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg>
       </button>
+      <button id="clip" type="button" aria-label="Add a photo, screenshot or file" title="Add a photo, screenshot or file">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>
+      </button>
+      <input id="files" type="file" multiple hidden accept="image/*,application/pdf,audio/*,video/*,text/*,.txt,.md,.csv,.json,.html,.xml,.log">
       <textarea id="text" rows="1" placeholder="Message Izuki" aria-label="Message Izuki"></textarea>
       <button id="send" type="submit" disabled>Send</button>
     </form>
@@ -582,7 +600,13 @@
     const b = BRAINS[id || brain];
     const k = brainKeys[id || brain];
     const messages = [{ role: "system", content: systemPrompt() }].concat(
-      contents.map((c) => ({ role: c.role === "model" ? "assistant" : "user", content: c.parts.map((p) => p.text || "").join("\n") }))
+      contents.map((c) => {
+        const role = c.role === "model" ? "assistant" : "user";
+        const pics = c.parts.filter((p) => p.inline_data && /^image\//.test(p.inline_data.mime_type));
+        const words = c.parts.filter((p) => p.text != null).map((p) => p.text).join("\n");
+        if (!pics.length) return { role, content: words };
+        return { role, content: [{ type: "text", text: words }, ...pics.map((p) => ({ type: "image_url", image_url: { url: `data:${p.inline_data.mime_type};base64,${p.inline_data.data}` } }))] };
+      })
     );
     const headers = { "Content-Type": "application/json", Authorization: "Bearer " + k };
     if (b === BRAINS.openrouter) { headers["HTTP-Referer"] = "https://nova-izuki.github.io/izuki/"; headers["X-Title"] = "Izuki"; }
@@ -704,10 +728,54 @@
     return r.json();
   }
 
+  // ------------------------------------------------------------ attachments
+  // Photos, screenshots, PDFs, documents, voice and short videos go with the
+  // next message. Gemini reads them all; the other free brains read pictures
+  // and text files (for anything else, Gemini steps in if there's a key).
+  let attached = []; // [{ name, type, b64, text, url }]
+  const MAX_BYTES = 15 * 1024 * 1024;
+  const isText = (f) => /^text\//.test(f.type) || /\.(txt|md|csv|json|html|xml|log)$/i.test(f.name);
+  function showAttached() {
+    const box = $("attached");
+    box.innerHTML = "";
+    attached.forEach((a, i) => {
+      const row = document.createElement("div");
+      row.className = "att";
+      if (a.url) { const im = document.createElement("img"); im.src = a.url; im.alt = ""; row.appendChild(im); }
+      else { const e = document.createElement("span"); e.className = "ext"; e.textContent = /pdf/.test(a.type) ? "📄" : /audio/.test(a.type) ? "🎵" : /video/.test(a.type) ? "🎬" : "📎"; row.appendChild(e); }
+      const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = a.name;
+      const x = document.createElement("button"); x.type = "button"; x.textContent = "✕"; x.setAttribute("aria-label", "Remove " + a.name);
+      x.onclick = () => { attached.splice(i, 1); showAttached(); };
+      row.append(nm, x);
+      box.appendChild(row);
+    });
+    send.disabled = busy || (!text.value.trim() && !attached.length);
+  }
+  $("clip").onclick = () => $("files").click();
+  $("files").onchange = async () => {
+    for (const f of [...$("files").files]) {
+      const used = attached.reduce((n, a) => n + a.size, 0);
+      if (used + f.size > MAX_BYTES) { setStatus(`${f.name} is too big to send (15 MB in all).`); continue; }
+      const b64 = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(",")[1] || ""); fr.readAsDataURL(f); });
+      const item = { name: f.name, type: f.type || (isText(f) ? "text/plain" : "application/octet-stream"), size: f.size, b64 };
+      if (isText(f)) item.text = await f.text();
+      if (/^image\//.test(item.type)) item.url = URL.createObjectURL(f);
+      attached.push(item);
+    }
+    $("files").value = "";
+    showAttached();
+  };
+  /** An attachment as a Gemini part. */
+  const geminiPart = (a) => (a.text != null
+    ? { text: `[File ${a.name}]\n${a.text.slice(0, 60000)}` }
+    : { inline_data: { mime_type: a.type, data: a.b64 } });
+
   let busy = false;
   async function ask(said, audio) {
     said = (said || "").trim();
-    if (busy || (!said && !audio)) return;
+    const files = attached;
+    if (busy || (!said && !audio && !files.length)) return;
+    if (files.length && !said) said = "Have a look at this and help me with it.";
     if (!ready()) { openSettings(); return; }
     // A voice note with no Gemini key: Groq's Whisper turns it into words first.
     if (audio && !key) {
@@ -721,19 +789,33 @@
     setOrb("thinking");
     setStatus("Thinking…");
     const me = bubble("me", said || "🎙️ …");
+    if (files.length) {
+      const thumbs = document.createElement("div");
+      thumbs.className = "thumbs";
+      for (const a of files) {
+        if (a.url) { const im = document.createElement("img"); im.src = a.url; im.alt = a.name; thumbs.appendChild(im); }
+        else { const t = document.createElement("span"); t.className = "chip"; t.textContent = "📎 " + a.name; thumbs.appendChild(t); }
+      }
+      me.appendChild(thumbs);
+      attached = [];
+      showAttached();
+    }
     const out = bubble("izuki", "…");
 
     // (A voice note only gets here with a Gemini key, which hears it.)
     const parts = audio
       ? [{ inline_data: { mime_type: audio.type, data: audio.b64 } },
          { text: "The user said this out loud to you. Start your reply with one line [HEARD: their exact words], then answer them." }]
-      : [{ text: said }];
+      : [{ text: said }, ...files.map(geminiPart)];
     const contents = history.slice(-16).map((m) => ({ role: m.role, parts: [{ text: m.text }] }));
     contents.push({ role: "user", parts });
 
     let reply = "";
     try {
-      reply = await (audio ? gemini : think)(contents, (t) => {
+      // Something only Gemini can open (a PDF, a voice clip, a video): Gemini answers.
+      const geminiOnly = files.some((a) => !/^image\//.test(a.type) && a.text == null);
+      if (geminiOnly && !key) throw new Error("To look at that kind of file, add a free Gemini key in Settings (pictures and text files work with any brain).");
+      reply = await (audio || geminiOnly ? gemini : think)(contents, (t) => {
         const heard = t.match(/^\s*\[HEARD:\s*([^\]]*)\]?/i);
         if (heard) { me.textContent = heard[1].trim() || "🎙️"; t = t.slice(heard[0].length); }
         if (!/^\s*\[?P?C?\]?\s*$/i.test(t)) out.textContent = shown(t) || "…";
@@ -741,7 +823,7 @@
       });
       const heard = reply.match(/^\s*\[HEARD:\s*([^\]]*)\]\s*/i);
       if (heard) { said = heard[1].trim(); reply = reply.slice(heard[0].length); }
-      history.push({ role: "user", text: said || "(voice message)" });
+      history.push({ role: "user", text: (said || "(voice message)") + (files.length ? `\n(attached: ${files.map((a) => a.name).join(", ")})` : "") });
 
       if (/^\s*\[PC\]\s*$/i.test(reply)) {
         out.textContent = "On it — asking your PC…";
@@ -1034,7 +1116,7 @@
 
   // ------------------------------------------------------------ typing
   text.addEventListener("input", () => {
-    send.disabled = busy || !text.value.trim();
+    send.disabled = busy || (!text.value.trim() && !attached.length);
     text.style.height = "auto";
     text.style.height = Math.min(text.scrollHeight, 120) + "px";
   });
@@ -1044,7 +1126,7 @@
   $("form").addEventListener("submit", (e) => {
     e.preventDefault();
     const t = text.value.trim();
-    if (!t || busy) return;
+    if ((!t && !attached.length) || busy) return;
     text.value = "";
     text.style.height = "auto";
     send.disabled = true;

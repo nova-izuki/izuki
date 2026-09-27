@@ -287,6 +287,12 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
     aloud. Settings → "Who's your Izuki?" and "Install Izuki on this phone"
     (Android: the install prompt; iPhone: the steps). Checked in a headless
     browser at phone size; needs a real iPhone + Android test.
+49. Phone app attachments: the paperclip adds photos, screenshots, PDFs,
+    documents, voice and short videos (15 MB in all) — previews above the
+    box, ✕ to remove, send with or without words. Gemini reads them all;
+    Groq / OpenRouter / Mistral read pictures and text files, and anything
+    else goes to Gemini if there's a key. Checked live: a picture read
+    correctly by Gemini and by openrouter/free.
 47. Gemini's newest speech model returns a finished WAV (older ones raw
     PCM): the Gemini voice on the PC and phone now plays it as-is — check it
     has no click at the start and isn't sped up.
