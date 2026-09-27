@@ -342,15 +342,29 @@ pub fn stop_current(app: &AppHandle) {
 }
 
 fn halt(app: &AppHandle) {
-    crate::brain::cancel_task();
-    crate::composio::stop();
-    crate::youtube::stop_watching_ads();
-    let _ = app.emit(events::STOP_SPEAKING, ());
-    crate::overlay::orb_closed();
-    let _ = app.emit("izuki://pen-clear", ());
-    let _ = crate::overlay::hide_overlay(app);
+    // Each part on its own: one that fails (a device gone, a window already
+    // closed) must never take the rest — or Izuki itself — down with it.
+    // Stopping closes nothing but the overlay; the app stays open.
+    let safe = |what: &str, f: &dyn Fn()| {
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).is_err() {
+            eprintln!("[hotkey] stopping {what} failed — carrying on");
+        }
+    };
+    safe("the task", &|| crate::brain::cancel_task());
+    safe("the apps lane", &|| crate::composio::stop());
+    safe("the ad watch", &|| crate::youtube::stop_watching_ads());
+    safe("the voice", &|| {
+        let _ = app.emit(events::STOP_SPEAKING, ());
+    });
+    safe("the orb", &|| crate::overlay::orb_closed());
+    safe("the pen", &|| {
+        let _ = app.emit("izuki://pen-clear", ());
+    });
+    safe("the overlay", &|| {
+        let _ = crate::overlay::hide_overlay(app);
+    });
     // Bring the music back up if it was lowered for listening.
-    crate::duck::set(false);
+    safe("the volume", &|| crate::duck::set(false));
 }
 
 /// The emergency stop (Ctrl+Shift+Q, the tray's "Stop everything"): all of
@@ -363,7 +377,7 @@ pub fn stop_everything(app: &AppHandle) {
     let store = crate::state::store();
     let running: Vec<String> = store.watchers().into_iter().filter(|w| w.enabled).map(|w| w.id).collect();
     for id in &running {
-        store.mutate_watcher(id, |w| w.enabled = false);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| store.mutate_watcher(id, |w| w.enabled = false)));
     }
     if !running.is_empty() {
         let _ = app.emit(events::WATCHERS_CHANGED, ());
@@ -374,5 +388,6 @@ pub fn stop_everything(app: &AppHandle) {
         n => Some(format!("{n} watchers are paused — turn them back on in Watchers.")),
     };
     eprintln!("[hotkey] emergency stop ({} watchers paused)", running.len());
+    let detail = Some(detail.unwrap_or_else(|| "Izuki's still here — just ask when you're ready.".to_string()));
     let _ = app.emit(events::STATUS, StatusEvent { kind: "info", message: "Stopped everything.".into(), detail });
 }

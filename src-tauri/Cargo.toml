@@ -92,7 +92,11 @@ features = [
 opt-level = 3
 lto = true
 codegen-units = 1
-panic = "abort"
+# "unwind", not "abort": with abort, any panic in any background thread (a
+# device gone, a websocket library mix-up) killed the whole app instantly —
+# Ctrl+Shift+Q once closed Izuki outright. Unwinding stops only that thread,
+# and the catch_unwind guards (chat, the emergency stop) actually work.
+panic = "unwind"
 strip = true
 
 [profile.dev]
