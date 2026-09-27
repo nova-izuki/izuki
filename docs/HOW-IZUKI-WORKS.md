@@ -110,8 +110,16 @@ the job is done (the music is playing, the page is open).
   1 hour when its daily free quota is used up. Izuki doesn't keep hammering it.
 - If every brain is busy, Izuki says so ("The free AI's busy — give me a second"), retries
   a couple of times, then offers "keep going" later.
-- Best free setup: Gemini (fast) + NVIDIA Gemma 4 (backup). Best reliability: add a paid
-  Claude key.
+- Free brains: Gemini, Groq, OpenRouter, Mistral, NVIDIA, or Ollama on the PC. Best free
+  setup: Gemini + Groq (Groq is the fastest by far — about 0.6 s to a chat reply — and the same
+  key also gives sharper hearing and the Human voice). Best reliability: add a paid Claude key.
+- Gemini is asked by Google's always-current names (`gemini-flash-latest`,
+  `gemini-flash-lite-latest`), never a fixed version — fixed ones get retired ("no longer
+  available to new users"). Old saved names move over by themselves.
+- The phone app can use Gemini, Groq, OpenRouter (`openrouter/free`) or Mistral. Gemini is
+  best there (web search, its voice, hearing voice notes); with only a Groq key, Groq's Whisper
+  hears voice notes. When Gemini's search allowance runs out, it answers without search for
+  an hour instead of failing.
 
 ## 7. Speed
 

@@ -252,6 +252,21 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
 41. Chat tab never gets stuck on "Something went wrong": a bad saved
     message is dropped; if the tab still crashes twice it starts a fresh
     chat by itself, and the card shows the error text (screenshot it).
+42. Gemini for new users: a brand-new Gemini key → Settings → Test →
+    "ok"; chat and a screen task answer (uses gemini-flash-latest — the
+    old gemini-2.5-* names are moved over by settings heal). Verified on
+    Windows with a real key: chat 4.1 s, screen 4.5 s.
+43. New free brains: Settings → Groq (paste a gsk_ key — the same key
+    fills the Human voice and sharper hearing) → Test → Use this brain →
+    chat and a screen task. Verified with a real key: chat 0.6 s, screen
+    1.9 s (qwen/qwen3.8-27b sees images). Mistral: paste a key from
+    console.mistral.ai (free Experiment plan) → Test → chat.
+    `cargo test live_brains -- --ignored` runs Gemini + Groq for real.
+44. Phone app → Settings → "Other free brains": pick Groq / OpenRouter /
+    Mistral, paste its key, Save and test → it answers. With no Gemini key
+    and a Groq key, a voice note is heard by Groq's Whisper. Verified the
+    exact requests from Node: Groq and OpenRouter (openrouter/free) answer
+    in ~0.3 s; Groq Whisper heard the test clip.
 
 Running the Rust tests from Linux: `cargo test --target x86_64-pc-windows-gnu
 --lib --no-run`, copy `target/x86_64-pc-windows-gnu/debug/WebView2Loader.dll`
