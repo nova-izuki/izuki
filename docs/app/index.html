@@ -217,6 +217,9 @@
   <button class="liquid" id="live-orb" type="button" aria-label="Tap to interrupt or finish talking"></button>
   <div class="lines"><div id="live-status">Starting…</div><div id="live-heard"></div><div id="live-said"></div></div>
   <div class="live-bar">
+    <button class="round" id="live-mute" type="button" aria-pressed="false" aria-label="Mute Izuki's voice">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m23 9-6 6M17 9l6 6"/></svg>
+    </button>
     <button class="round" id="live-type" type="button" aria-label="Type instead">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
     </button>
@@ -1076,6 +1079,20 @@
   }
   $("go-live").onclick = openLive;
   $("live-end").onclick = endLive;
+  function showMute() {
+    const b = $("live-mute");
+    b.setAttribute("aria-pressed", String(!voiceOn));
+    b.style.color = voiceOn ? "" : "#ff6b81";
+    b.setAttribute("aria-label", voiceOn ? "Mute Izuki's voice" : "Unmute Izuki's voice");
+  }
+  showMute();
+  $("live-mute").onclick = () => {
+    voiceOn = !voiceOn;
+    store.set("voice", voiceOn);
+    showMute();
+    if (!voiceOn) hush();
+    setStatus(voiceOn ? "Sound's back on." : "Muted — I'll reply in text.");
+  };
   $("live-type").onclick = () => { endLive(); text.focus(); };
   // Tap the orb: cut Izuki off, or finish what you were saying.
   $("live-orb").onclick = () => {

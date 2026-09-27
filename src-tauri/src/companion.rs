@@ -62,7 +62,37 @@ fn tidy(reply: &str) -> String {
 /// Answer `said`. `spoken`: the reply will be read aloud (a call), so it's
 /// asked for in the spoken style. `status` hears progress lines ("On it —
 /// doing that on your PC…") while a long piece of work runs.
+/// Whether a message plainly asks for something on the PC (play, open, close,
+/// search, "what's on my screen"…). Away channels (Discord, Telegram, calls)
+/// route these straight to the PC instead of hoping the free chat model emits
+/// the [SCREEN] tag — small models often just chat back instead.
+pub fn needs_screen(said: &str) -> bool {
+    let t = format!(" {} ", said.to_lowercase());
+    const DO: &[&str] = &[
+        "open ", "close ", "click ", "tap ", "type ", "press ", "scroll ", "go to ",
+        "play ", "pause ", "resume ", "skip ", "next song", "previous song", "mute", "unmute",
+        "volume", "search ", "google ", "look up ", "send ", "reply ", "delete ", "remove ",
+        "download ", "install ", "launch ", "run ", "switch to ", "screenshot", "refresh ",
+        "reload ", "log in", "log out", "sign in", "sign out", "submit", "turn on ", "turn off ",
+        "bookmark", "print ", "watch ", "listen to ", "put on ", "buy ", "order ", "fill in",
+        "fill out", "skip the ad", "keep going", "carry on", "do the rest", "on youtube",
+    ];
+    const LOOK: &[&str] = &[
+        "on my screen", "my screen", "this page", "this window", "this tab", "this app",
+        "what's this", "whats this", "what is this", "what's on", "whats on", "read this",
+        "look at", "in front of me",
+    ];
+    DO.iter().chain(LOOK).any(|k| t.contains(k))
+}
+
 pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str)) -> Reply {
+    // Plainly a PC job? Do it — don't gamble on the chat model tagging it.
+    if needs_screen(said) && crate::state::store().settings().phone_controls_pc && !crate::uia::screen_locked() {
+        push("user", said);
+        let out = on_pc(app, said, status);
+        push("assistant", &out.text);
+        return out;
+    }
     push("user", said);
     let history = HISTORY.lock().clone();
     let style = if spoken { Style::Voice { expressive: false } } else { Style::Phone };
@@ -188,7 +218,12 @@ mod tests {
     fn spoken_tags_are_tidied() {
         assert_eq!(tidy("[cheerful] Sure thing! [END]"), "Sure thing!");
         assert_eq!(tidy("Plain reply."), "Plain reply.");
-        assert!(hands_over(" [SCREEN] ", "SCREEN"));
+assert!(hands_over(" [SCREEN] ", "SCREEN"));
+        assert!(needs_screen("play some music"));
+        assert!(needs_screen("open chrome and play burna boy on youtube"));
+        assert!(needs_screen("what's on my screen"));
+        assert!(!needs_screen("how are you today"));
+        assert!(!needs_screen("what's a good name for a cat"));
         assert!(hands_over("APPS", "APPS"));
         assert!(!hands_over("Let me check the screen", "SCREEN"));
     }
