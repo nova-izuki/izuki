@@ -18,6 +18,7 @@ pub mod follow;
 pub mod headsup;
 pub mod ghost;
 pub mod hotkey;
+pub mod keys;
 pub mod live;
 pub mod memory;
 pub mod model;
@@ -172,6 +173,9 @@ pub fn run() {
             commands::speak_cloud,
             commands::voice_catalog,
             commands::voice_test,
+            commands::clipboard_key,
+            commands::recognise_key,
+            commands::n8n_import,
             commands::prefetch_screen,
             commands::save_clip,
             commands::list_wakewords,

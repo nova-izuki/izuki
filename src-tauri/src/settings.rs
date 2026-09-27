@@ -300,6 +300,11 @@ pub struct Settings {
     /// invoice flow"), each a webhook address.
     #[serde(default)]
     pub n8n_hooks: Vec<N8nHook>,
+    /// Where the user's n8n is, and its API key — to import their workflows.
+    #[serde(default)]
+    pub n8n_url: String,
+    #[serde(default)]
+    pub n8n_api_key: String,
     /// Private calendar links (.ics) from Blackboard, Canvas and the like:
     /// every assignment and due date, for school-work reminders.
     #[serde(default)]
@@ -604,6 +609,8 @@ impl Default for Settings {
             heads_up_pc: true,
             heads_up_phone: true,
             n8n_hooks: Vec::new(),
+            n8n_url: String::new(),
+            n8n_api_key: String::new(),
             school_feeds: Vec::new(),
             heads_up_school: true,
             follow_up_secs: default_follow_up(),

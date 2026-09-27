@@ -32,6 +32,7 @@ export function SettingsTab() {
   const settings = useIzuki((s) => s.settings);
   const patch = useIzuki((s) => s.patchSettings);
   const setTourOpen = useIzuki((s) => s.setTourOpen);
+  const setSetupOpen = useIzuki((s) => s.setSetupOpen);
   const [open, setOpen] = useState<ProviderId | null>(settings.active_provider);
   const [probing, setProbing] = useState<ProviderId | null>(null);
   const [probe, setProbe] = useState<Record<string, string>>({});
@@ -60,6 +61,20 @@ export function SettingsTab() {
 
   return (
     <>
+      <button
+        type="button"
+        onClick={() => setSetupOpen(true)}
+        className="izk-no-drag flex items-center gap-3 rounded-[18px] border border-izk-violet/35 bg-izk-violet/10 p-3 text-left transition-colors hover:bg-izk-violet/16"
+      >
+        <Sparkles size={18} className="shrink-0 text-izk-violet" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] font-semibold text-izk-ink">Quick setup</span>
+          <span className="block text-[11px] leading-snug text-izk-muted">
+            Brain, apps, phone, automations — copy a key on the website and Izuki picks it up by itself.
+          </span>
+        </span>
+      </button>
+
       {/* ------------------------------------------------ brain */}
       <Section
         title="Izuki's brain"

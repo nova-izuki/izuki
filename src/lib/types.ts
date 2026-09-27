@@ -372,6 +372,9 @@ export interface Settings {
   heads_up_phone: boolean;
   /** The user's n8n workflows, started by name. */
   n8n_hooks: N8nHook[];
+  /** The user's n8n address and API key — to import their workflows. */
+  n8n_url: string;
+  n8n_api_key: string;
   /** Private calendar links (.ics) from Blackboard, Canvas… for due dates. */
   school_feeds: string[];
   /** Heads-up: school work due soon. */
@@ -480,4 +483,17 @@ export interface Persona {
 export interface VoiceCatalog {
   personas: Persona[];
   voices: Array<{ id: string; label: string }>;
+}
+
+/** A key the user just copied (keys.rs). */
+export interface FoundKey {
+  kind: "gemini" | "groq" | "openrouter" | "xai" | "nvidia" | "anthropic" | "openai" | "composio" | "telegram";
+  label: string;
+  key: string;
+}
+
+export interface N8nImport {
+  hooks: N8nHook[];
+  /** Workflows left out, and why. */
+  skipped: string[];
 }

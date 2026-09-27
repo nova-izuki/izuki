@@ -200,6 +200,18 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
     open", tries another way (log shows the retry). Chat: "recommend a film"
     → one pick with a reason.
 
+32. Easy setup: with no brain key, the Chat tab shows "Give Izuki a brain
+    first" → the guide → "Get my free brain" opens Google → copy the key →
+    come back → it's filled in and tested by itself (KeyCatcher). Copy any
+    other key (Groq, Composio, OpenRouter, xai-…) and switch to Izuki → it
+    offers to use it. Apps tab: tap Gmail with no key → Composio opens →
+    copy the key → come back → Gmail's sign-in opens by itself. n8n:
+    address + API key → Import → workflows listed; "run my <workflow>"
+    in chat runs it (no Composio needed). "What's the weather in Lagos?"
+    → a real forecast. Switch tabs mid-reply → the reply is there when you
+    come back. Phone app: "Paste my key" saves and tests; PC → Call Izuki
+    → "Link the phone app" QR → the phone app opens already linked.
+
 Running the Rust tests from Linux: `cargo test --target x86_64-pc-windows-gnu
 --lib --no-run`, copy `target/x86_64-pc-windows-gnu/debug/WebView2Loader.dll`
 next to the test exe in `deps/`, and run it with `wine64` (65 pass).

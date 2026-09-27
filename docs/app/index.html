@@ -139,7 +139,7 @@
     <section>
       <h3>1. Your free AI key</h3>
       <p>Izuki runs on Google's free Gemini. Get a key (sign in → <b>Create API key</b>), copy it, and paste it here. It stays on this phone only.</p>
-      <div class="row" style="margin-top: 8px"><a class="chip" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free Gemini key ↗</a></div>
+      <div class="row" style="margin-top: 8px"><a class="chip" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">1 · Get a free Gemini key ↗</a><button class="chip" id="paste-key" type="button">2 · 📋 Paste my key</button></div>
       <div class="field" style="margin-top: 10px">
         <label for="key">Gemini key</label>
         <input id="key" type="password" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false">
@@ -718,6 +718,24 @@
   $("close-settings").onclick = () => { sheet.hidden = true; render(); };
   sheet.addEventListener("click", (e) => { if (e.target === sheet) { sheet.hidden = true; render(); } });
 
+  // Copy the key on Google's page, come back, one tap: pasted, saved, tested.
+  $("paste-key").onclick = async () => {
+    const out = $("key-result");
+    try {
+      const t = (await navigator.clipboard.readText()).trim();
+      if (!/^AIza[0-9A-Za-z_-]{35}$/.test(t)) { out.className = "bad"; out.textContent = "That's not a Gemini key yet — copy the key (it starts with AIza), then tap Paste again."; return; }
+      $("key").value = t;
+      $("save-key").click();
+    } catch {
+      out.className = "note"; out.textContent = "Long-press the box and choose Paste instead.";
+      $("key").focus();
+    }
+  };
+  // Pasted straight into the box: save and test it right away.
+  $("key").addEventListener("paste", () => setTimeout(() => {
+    if (/^AIza[0-9A-Za-z_-]{35}$/.test($("key").value.trim())) $("save-key").click();
+  }, 50));
+
   $("save-key").onclick = async () => {
     const k = $("key").value.trim();
     const out = $("key-result");
@@ -758,6 +776,13 @@
   };
 
   // ------------------------------------------------------------ start
+  // Scanned the "Link the phone app" QR on the PC: linked, nothing to paste.
+  const linked = new URLSearchParams(location.hash.slice(1)).get("pc");
+  if (linked && /^https:\/\/[^\s]+$/.test(linked)) {
+    pc = linked;
+    store.set("pc", pc);
+    window.history.replaceState(null, "", location.pathname + location.search);
+  }
   render();
   scheduleReminders();
   if (!key) openSettings();

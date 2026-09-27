@@ -115,6 +115,8 @@ no mood tag, no other words — and you'll get the result, then answer:\n\
 [SEARCH: words] — search the web: news, scores, prices, opening hours, facts, anything recent or that \
 you're not sure of.\n\
 [READ: url] — read a public web page (a link they give you, or one from a search).\n\
+[WEATHER: place] — the weather now and the next few days (use their city from what you remember \
+if they don't say).\n\
 [BROWSE: url] — open a page in the Izuki browser, where the user is signed in (Blackboard, Canvas, \
 NotebookLM, Classroom, their accounts). Use it for anything behind a sign-in.\n\
 [CLICK: n] and [TYPE: n | text] — click, or type into, thing number n on the page you last browsed \
@@ -122,6 +124,26 @@ NotebookLM, Classroom, their accounts). Use it for anything behind a sign-in.\n\
 Use a few at most, then answer in your normal way and say where it came from. Never type passwords or \
 card numbers, and never send, post, submit, buy or delete anything through the browser unless the \
 user clearly said yes to exactly that.\n";
+
+/// The user's own n8n workflows, by name — Izuki picks the right one by
+/// itself ("send the weekly report" → their "weekly report" workflow).
+fn flows_rule() -> String {
+    let hooks = crate::state::store().settings().n8n_hooks;
+    let names: Vec<String> = hooks
+        .iter()
+        .filter(|h| !h.name.trim().is_empty() && !h.url.trim().is_empty())
+        .map(|h| format!("\"{}\"", h.name.trim()))
+        .collect();
+    if names.is_empty() {
+        return String::new();
+    }
+    format!(
+        "The user has their own automations (n8n workflows): {}. When what they want matches one — even \
+         loosely worded — reply with only [FLOW: name | the details it needs] and you'll be told what it \
+         answered. Pick the right one yourself; don't ask which.\n",
+        names.join(", ")
+    )
+}
 
 /// The Chat tab only (not the voice orb, not the phone): the user's files.
 const FILES_RULE: &str = "In this chat you can also work with the files on their PC, like a helpful \
@@ -145,6 +167,7 @@ fn system_prompt(style: Style, apps: bool) -> String {
     if style == Style::Text {
         s.push_str(FILES_RULE);
     }
+    s.push_str(&flows_rule());
     if apps {
         s.push_str(APPS_RULE);
     } else {
@@ -358,7 +381,7 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
 
 const TOOL_ROUNDS: usize = 4;
 const NO_MORE_TOOLS: &str = "[No more tools now — answer with what you have.]";
-const TOOL_WORDS: &[&str] = &["SEARCH", "READ", "BROWSE", "CLICK", "TYPE", "FIND", "FILES", "OPEN", "WRITE", "RUN"];
+const TOOL_WORDS: &[&str] = &["SEARCH", "READ", "BROWSE", "CLICK", "TYPE", "FIND", "FILES", "OPEN", "WRITE", "RUN", "WEATHER", "FLOW"];
 const MOODS: &[&str] = &["cheerful", "excited", "calm", "serious", "sympathetic", "playful", "curious"];
 
 #[derive(Debug, PartialEq)]
@@ -373,6 +396,9 @@ enum Tool {
     Open(String),
     Write(String, String),
     Run(String),
+    Weather(String),
+    /// One of the user's n8n workflows: (name, what to hand it).
+    Flow(String, String),
 }
 
 impl Tool {
@@ -385,6 +411,8 @@ impl Tool {
             Tool::Find(_) => "🗂️ Looking through your files…",
             Tool::Files(_) => "📁 Opening the folder…",
             Tool::Open(_) => "📄 Reading the file…",
+            Tool::Weather(_) => "🌤️ Checking the weather…",
+            Tool::Flow(..) => "⚡ Running your workflow…",
             Tool::Write(..) | Tool::Run(_) => "…",
         }
     }
@@ -479,6 +507,11 @@ fn parse_tool(reply: &str) -> Option<Tool> {
         "FILES" => Some(Tool::Files(arg.to_string())),
         "OPEN" if !arg.is_empty() => Some(Tool::Open(arg.to_string())),
         "RUN" if !arg.is_empty() => Some(Tool::Run(arg.to_string())),
+        "WEATHER" if !arg.is_empty() => Some(Tool::Weather(arg.to_string())),
+        "FLOW" if !arg.is_empty() => {
+            let (name, what) = arg.split_once('|').unwrap_or((arg, ""));
+            Some(Tool::Flow(name.trim().to_string(), what.trim().to_string()))
+        }
         "TYPE" => {
             let (n, text) = arg.split_once('|')?;
             let text = text.trim();
@@ -500,6 +533,9 @@ fn run_tool(tool: &Tool) -> String {
         Tool::Find(w) => crate::files::find(w),
         Tool::Files(d) => crate::files::list(d),
         Tool::Open(p) => crate::files::read(p),
+        Tool::Weather(place) => crate::web::weather(place),
+        Tool::Flow(name, what) => crate::composio::run_n8n(name, &json!({ "request": what, "from": "Izuki" }))
+            .map(|r| format!("The \"{name}\" workflow ran. It answered: {r}")),
         // Never straight from here — only through the Allow card.
         Tool::Write(..) | Tool::Run(_) => Err(anyhow::anyhow!("that needs the user's OK in the Chat tab")),
     };
@@ -811,6 +847,14 @@ mod tool_tests {
     #[test]
     fn reads_tool_tags() {
         assert_eq!(parse_tool("[SEARCH: burna boy tour 2026]"), Some(Tool::Search("burna boy tour 2026".into())));
+        assert_eq!(parse_tool("[WEATHER: Lagos]"), Some(Tool::Weather("Lagos".into())));
+        assert_eq!(
+            parse_tool("[FLOW: weekly report | send it to the team]"),
+            Some(Tool::Flow("weekly report".into(), "send it to the team".into()))
+        );
+        assert_eq!(parse_tool("[FLOW: backup]"), Some(Tool::Flow("backup".into(), String::new())));
+        assert_eq!(classify("[FL"), None);
+        assert_eq!(classify("[WEATHER: Ab"), Some(true));
         assert_eq!(parse_tool("[calm] [READ: https://x.com/a]"), Some(Tool::Read("https://x.com/a".into())));
         assert_eq!(parse_tool("[CLICK: 12]"), Some(Tool::Click(12)));
         assert_eq!(parse_tool("[TYPE: 3 | hello there ⏎]"), Some(Tool::Type(3, "hello there".into(), true)));

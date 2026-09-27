@@ -498,6 +498,25 @@ pub async fn speak_cloud(
         .map(tauri::ipc::Response::new)
 }
 
+/// A key the user just copied (Gemini, Groq, Composio…), if that's what's
+/// on the clipboard — so setting up is copy on the website, come back, done.
+#[tauri::command]
+pub fn clipboard_key() -> Option<crate::keys::FoundKey> {
+    crate::keys::from_clipboard()
+}
+
+/// What kind of key some pasted text is, if it's one.
+#[tauri::command]
+pub fn recognise_key(text: String) -> Option<crate::keys::FoundKey> {
+    crate::keys::recognise(&text)
+}
+
+/// The user's n8n workflows, ready to run by name.
+#[tauri::command]
+pub async fn n8n_import(address: String, api_key: String) -> R<crate::keys::N8nImport> {
+    blocking(move || crate::keys::n8n_import(&address, &api_key).map_err(err)).await?
+}
+
 /// Every character and natural voice, for the picker.
 #[tauri::command]
 pub fn voice_catalog() -> serde_json::Value {
