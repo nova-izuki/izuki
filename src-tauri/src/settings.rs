@@ -235,7 +235,7 @@ pub struct Settings {
     #[serde(default = "default_true")]
     pub barge_in: bool,
     /// Turn other apps' sound (music, videos) down while Izuki listens to
-    /// you, then back up — like Siri lowering your music.
+    /// you, then back up — like a phone assistant lowering your music.
     #[serde(default = "default_true")]
     pub duck_while_listening: bool,
     /// Double-check what you said with a big cloud speech model (your Groq
@@ -377,7 +377,7 @@ fn clean_key(raw: &str) -> String {
 }
 
 fn default_follow_hand_size() -> u32 {
-    // HeyClicky's cursor is a 16pt triangle (OverlayWindow.swift).
+    // A 16pt triangle reads well at any screen scale.
     16
 }
 
@@ -397,7 +397,7 @@ fn default_hotkey_voice() -> String {
     // As close as a real OS global hotkey gets to "just Ctrl+Windows" — a
     // bare two-modifier chord can't be registered as a system-wide shortcut
     // (Windows requires one real key alongside the modifiers), so this adds
-    // Space, the same chord shape HeyClicky-style companions use.
+    // Space, an easy chord to hold.
     "Ctrl+Super+Space".into()
 }
 

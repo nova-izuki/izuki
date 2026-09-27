@@ -14,6 +14,7 @@ import { VoiceEngine } from "./VoiceEngine";
 import { OnboardingTour } from "./OnboardingTour";
 import { SetupGuide } from "./SetupGuide";
 import { KeyCatcher } from "./KeyCatcher";
+import { brainReady } from "../lib/setup";
 import { useIzuki, type TabId } from "../lib/store";
 import { IS_TAURI } from "../lib/ipc";
 import { Recover } from "./Recover";
@@ -87,6 +88,17 @@ export function GlassConfigPanel() {
       setTourOpen(true);
     }
   }, [settingsLoaded, onboardingSeen, setTourOpen]);
+
+  // No brain at all (and the tour's done): open the setup guide once, so a
+  // new user never meets a chat that can't answer.
+  const brainOk = useIzuki((s) => brainReady(s.settings));
+  const autoOpenedSetup = useRef(false);
+  useEffect(() => {
+    if (settingsLoaded && onboardingSeen && !tourOpen && !brainOk && !autoOpenedSetup.current) {
+      autoOpenedSetup.current = true;
+      setSetupOpen(true);
+    }
+  }, [settingsLoaded, onboardingSeen, tourOpen, brainOk, setSetupOpen]);
 
   const closeTour = () => {
     setTourOpen(false);

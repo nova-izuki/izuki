@@ -327,7 +327,7 @@ export function SettingsTab() {
         <div className="izk-divider" />
         <Row
           label="Cursor trail"
-          hint="Comet tail behind the hand. Zero turns it off."
+          hint="A glowing trail behind the hand. Zero turns it off."
           icon={<Sparkles size={14} strokeWidth={2.3} />}
         >
           <Slider
@@ -474,6 +474,8 @@ export function SettingsTab() {
         </Row>
       </Section>
 
+      <FollowCard />
+
       <SupportCard />
 
       <p className="pb-1 text-center text-[10px] text-izk-muted/60">
@@ -576,6 +578,43 @@ async function openLink(url: string) {
  * The builder's little tip jar — Izuki is free, and this is the one place
  * that says who made it and how to say thanks.
  */
+/** Izuki's official accounts — the same name, @izukiapp, everywhere. */
+const SOCIALS: Array<[string, string, string]> = [
+  ["𝕏", "X", "https://x.com/izukiapp"],
+  ["📸", "Instagram", "https://www.instagram.com/izukiapp"],
+  ["🎵", "TikTok", "https://www.tiktok.com/@izukiapp"],
+  ["▶️", "YouTube", "https://www.youtube.com/@izukiapp"],
+  ["💼", "LinkedIn", "https://www.linkedin.com/company/izukiapp"],
+  ["🐙", "GitHub", "https://github.com/nova-izuki/izuki"],
+];
+
+function FollowCard() {
+  return (
+    <Section title="Follow Izuki" hint="Tips, new features and what's coming — @izukiapp everywhere.">
+      <div className="grid grid-cols-3 gap-1.5">
+        {SOCIALS.map(([icon, name, url]) => (
+          <button
+            key={name}
+            type="button"
+            onClick={() => void openLink(url)}
+            className="izk-no-drag flex items-center gap-1.5 rounded-[12px] border border-white/8 bg-white/4 px-2 py-2 text-left text-[11.5px] font-semibold text-izk-ink transition-colors hover:border-white/18 hover:bg-white/8"
+          >
+            <span className="text-[14px] leading-none">{icon}</span>
+            <span className="truncate">{name}</span>
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => void openLink("https://nova-izuki.github.io/izuki/links/")}
+        className="izk-pill izk-no-drag mt-2 h-[28px] px-3 text-[11.5px]"
+      >
+        All links · nova-izuki.github.io/izuki
+      </button>
+    </Section>
+  );
+}
+
 function SupportCard() {
   return (
     <div className="izk-support mb-3 overflow-hidden rounded-[20px] p-4">

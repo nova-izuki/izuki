@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Izuki — links</title>
+<meta name="description" content="Izuki: the free AI that lives on your Windows screen. Download it, try the phone app, and follow @izukiapp." />
+<link rel="canonical" href="https://nova-izuki.github.io/izuki/links/" />
+<meta name="theme-color" content="#04050c" />
+<meta property="og:title" content="Izuki — the AI that lives on your screen" />
+<meta property="og:description" content="Download free · Phone app · @izukiapp everywhere" />
+<meta property="og:image" content="https://nova-izuki.github.io/izuki/og.png" />
+<meta property="og:url" content="https://nova-izuki.github.io/izuki/links/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:site" content="@izukiapp" />
+<link rel="icon" href="../icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="../apple-touch-icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root { color-scheme: dark; --ink: #eef0ff; --muted: #a3a9c7; --line: rgba(255,255,255,0.1); --grad: linear-gradient(120deg, #67e8f9, #a78bfa 55%, #f0abfc); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body { background: #04050c; color: var(--ink); font: 16px/1.5 "Manrope", system-ui, sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+  .bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  .bg img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 60% 0; opacity: 0.55; filter: saturate(1.2); animation: drift 40s ease-in-out infinite alternate; }
+  .bg::after { content: ""; position: absolute; inset: 0; background: radial-gradient(60% 45% at 50% 20%, rgba(139,92,246,0.28), transparent 70%), linear-gradient(180deg, rgba(4,5,12,0.35), rgba(4,5,12,0.92) 55%, #04050c); }
+  @keyframes drift { to { transform: scale(1.12) translate3d(-2%, 1%, 0); } }
+  main { position: relative; z-index: 1; width: min(460px, 100% - 32px); margin: 0 auto; padding: calc(env(safe-area-inset-top, 0px) + 48px) 0 calc(env(safe-area-inset-bottom, 0px) + 40px); display: flex; flex-direction: column; align-items: center; }
+  .pic { width: 104px; height: 104px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.25); box-shadow: 0 0 0 6px rgba(139,92,246,0.18), 0 0 60px rgba(139,92,246,0.55); object-fit: cover; animation: pop 0.7s cubic-bezier(.2,1.3,.3,1) both; }
+  h1 { margin: 16px 0 0; font: 800 30px/1 "Sora", sans-serif; letter-spacing: 0.22em; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .handle { margin-top: 6px; color: var(--muted); font-weight: 600; }
+  .tag { margin-top: 12px; text-align: center; color: #d7dbf5; max-width: 30ch; }
+  .links { width: 100%; display: flex; flex-direction: column; gap: 12px; margin-top: 26px; }
+  .link { position: relative; display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 18px; text-decoration: none; color: var(--ink); font-weight: 700;
+    background: rgba(14, 15, 30, 0.62); border: 1px solid var(--line); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    transition: transform 0.25s cubic-bezier(.2,1.3,.3,1), border-color 0.25s, background 0.25s; animation: rise 0.6s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i) * 60ms + 150ms); }
+  .link:hover, .link:focus-visible { transform: translateY(-3px) scale(1.01); border-color: rgba(167,139,250,0.55); background: rgba(40, 32, 80, 0.55); outline: none; }
+  .link .ic { width: 38px; height: 38px; flex: none; border-radius: 12px; display: grid; place-items: center; font-size: 19px; background: rgba(255,255,255,0.07); }
+  .link small { display: block; font-weight: 500; font-size: 13px; color: var(--muted); }
+  .link.main { background: var(--grad); color: #06060f; border: 0; box-shadow: 0 16px 50px rgba(139,92,246,0.45); }
+  .link.main small { color: rgba(6,6,15,0.7); }
+  .link.main .ic { background: rgba(255,255,255,0.35); }
+  .row { display: flex; gap: 10px; justify-content: center; margin-top: 26px; flex-wrap: wrap; }
+  .row a { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; border: 1px solid var(--line); background: rgba(255,255,255,0.05); transition: transform 0.2s, background 0.2s; }
+  .row a:hover { transform: translateY(-3px); background: rgba(139,92,246,0.2); }
+  .row svg { width: 20px; height: 20px; fill: var(--ink); }
+  footer { margin-top: 30px; font-size: 13px; color: #6b7194; text-align: center; }
+  footer a { color: var(--muted); }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+  @keyframes pop { from { opacity: 0; transform: scale(0.8); } }
+  @media (prefers-reduced-motion: reduce) { .bg img, .link, .pic { animation: none; } }
+</style>
+</head>
+<body>
+<div class="bg" aria-hidden="true"><img src="../brand/izuki-horizon.png" alt="" /></div>
+<main>
+  <img class="pic" src="../brand/izuki-horizon.png" alt="Izuki" width="104" height="104" />
+  <h1>IZUKI</h1>
+  <div class="handle">@izukiapp</div>
+  <p class="tag">The free AI that lives on your screen. Say “Hey Nova” — it sees, talks and does the work.</p>
+
+  <nav class="links" aria-label="Izuki links">
+    <a class="link main" style="--i:0" href="../#download" id="dl"><span class="ic">⬇</span><span>Download Izuki for Windows<small>Free forever · Windows 10 &amp; 11</small></span></a>
+    <a class="link" style="--i:1" href="../app/"><span class="ic">📱</span><span>Izuki on your phone<small>Free web app — add it to your home screen</small></span></a>
+    <a class="link" style="--i:2" href="../#try"><span class="ic">✨</span><span>Try it in your browser<small>Talk to Izuki right now</small></span></a>
+    <a class="link" style="--i:3" href="../"><span class="ic">🌐</span><span>The website<small>See everything Izuki can do</small></span></a>
+    <a class="link" style="--i:4" href="https://www.youtube.com/@izukiapp"><span class="ic">▶️</span><span>Watch the demos<small>YouTube · @izukiapp</small></span></a>
+    <a class="link" style="--i:5" href="https://github.com/nova-izuki/izuki"><span class="ic">⭐</span><span>Star it on GitHub<small>Open source — read every line</small></span></a>
+    <a class="link" style="--i:6" href="https://cash.app/$louismane2"><span class="ic">☕</span><span>Buy the builder a coffee<small>Keeps Izuki free for everyone</small></span></a>
+  </nav>
+
+  <div class="row" aria-label="Izuki on social media">
+    <a href="https://x.com/izukiapp" aria-label="X" rel="me"><svg viewBox="0 0 24 24"><path d="M17.8 3h3.1l-6.8 7.7 8 10.3h-6.3l-4.9-6.4L5.3 21H2.2l7.2-8.3L1.8 3h6.4l4.4 5.8L17.8 3zm-1.1 16.2h1.7L7.4 4.7H5.6l11.1 14.5z"/></svg></a>
+    <a href="https://www.instagram.com/izukiapp" aria-label="Instagram" rel="me"><svg viewBox="0 0 24 24"><path d="M12 7.3A4.7 4.7 0 1 0 16.7 12 4.7 4.7 0 0 0 12 7.3zm0 7.8A3.1 3.1 0 1 1 15.1 12 3.1 3.1 0 0 1 12 15.1zm6-8a1.1 1.1 0 1 1-1.1-1.1A1.1 1.1 0 0 1 18 7.1zM21.9 8.2a5.4 5.4 0 0 0-1.5-3.9 5.5 5.5 0 0 0-3.9-1.5C15 2.7 9 2.7 7.5 2.8a5.5 5.5 0 0 0-3.9 1.5 5.4 5.4 0 0 0-1.5 3.9c-.1 1.6-.1 6.1 0 7.7a5.4 5.4 0 0 0 1.5 3.9 5.5 5.5 0 0 0 3.9 1.5c1.6.1 7.5.1 9 0a5.4 5.4 0 0 0 3.9-1.5 5.4 5.4 0 0 0 1.5-3.9c.1-1.6.1-6.1 0-7.7zm-2.1 9.4a3.2 3.2 0 0 1-1.8 1.8c-1.2.5-4.2.4-5.6.4s-4.4.1-5.6-.4a3.2 3.2 0 0 1-1.8-1.8c-.5-1.2-.4-4.2-.4-5.6s-.1-4.4.4-5.6a3.2 3.2 0 0 1 1.8-1.8c1.2-.5 4.2-.4 5.6-.4s4.4-.1 5.6.4a3.2 3.2 0 0 1 1.8 1.8c.5 1.2.4 4.2.4 5.6s.1 4.4-.4 5.6z"/></svg></a>
+    <a href="https://www.tiktok.com/@izukiapp" aria-label="TikTok" rel="me"><svg viewBox="0 0 24 24"><path d="M16.6 2h-3.3v13.2a2.9 2.9 0 1 1-2.9-2.9 2.8 2.8 0 0 1 .9.1V9a6.3 6.3 0 1 0 5.3 6.2V8.6a7.9 7.9 0 0 0 4.6 1.5V6.8A4.6 4.6 0 0 1 16.6 2z"/></svg></a>
+    <a href="https://www.youtube.com/@izukiapp" aria-label="YouTube" rel="me"><svg viewBox="0 0 24 24"><path d="M23 7.2a3 3 0 0 0-2.1-2.1C19 4.6 12 4.6 12 4.6s-7 0-8.9.5A3 3 0 0 0 1 7.2 31 31 0 0 0 .5 12 31 31 0 0 0 1 16.8a3 3 0 0 0 2.1 2.1c1.9.5 8.9.5 8.9.5s7 0 8.9-.5a3 3 0 0 0 2.1-2.1 31 31 0 0 0 .5-4.8 31 31 0 0 0-.5-4.8zM9.7 15V9l5.8 3-5.8 3z"/></svg></a>
+    <a href="https://www.linkedin.com/company/izukiapp" aria-label="LinkedIn" rel="me"><svg viewBox="0 0 24 24"><path d="M20.4 20.5h-3.6v-5.6c0-1.3 0-3-1.8-3s-2.1 1.4-2.1 2.9v5.7H9.3V9h3.4v1.6a3.8 3.8 0 0 1 3.4-1.9c3.6 0 4.3 2.4 4.3 5.5v6.3zM5.3 7.4a2.1 2.1 0 1 1 2.1-2.1 2.1 2.1 0 0 1-2.1 2.1zm1.8 13.1H3.5V9h3.6v11.5zM22.2 0H1.8A1.7 1.7 0 0 0 0 1.7v20.6A1.7 1.7 0 0 0 1.8 24h20.4a1.8 1.8 0 0 0 1.8-1.7V1.7A1.8 1.8 0 0 0 22.2 0z"/></svg></a>
+    <a href="https://github.com/nova-izuki/izuki" aria-label="GitHub" rel="me"><svg viewBox="0 0 24 24"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2 0-.4-.5-1.6.2-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.7 1.6.2 2.8.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.5.4.9 1 .9 2.2v3.3c0 .3.1.7.8.6A12 12 0 0 0 12 .3"/></svg></a>
+  </div>
+  <footer>© 2026 Izuki · <a href="mailto:izuki.hq@gmail.com">izuki.hq@gmail.com</a></footer>
+</main>
+<script>
+  // "Download" goes straight to the installer, like on the main page.
+  (() => {
+    const a = document.getElementById("dl");
+    if (!/Windows NT/i.test(navigator.userAgent)) return;
+    fetch("https://api.github.com/repos/nova-izuki/izuki/releases/latest")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        const assets = (j && j.assets) || [];
+        const x = assets.find((a) => a.name === "Izuki-Setup.exe") || assets.find((a) => /_x64-setup\.exe$/i.test(a.name));
+        if (x) a.href = x.browser_download_url;
+      })
+      .catch(() => {});
+  })();
+</script>
+</body>
+</html>

@@ -4,10 +4,10 @@ This is the rulebook. Every way of using Izuki — the wake word, the talk hotke
 typing, Ctrl+D — follows the same rules below. When something changes, this
 page changes first, then the code.
 
-References it's measured against: Siri (wake word → "Mhm?" → follow-up),
-ChatGPT voice (talk over it, natural turn-taking), Gemini (sees the screen),
-HeyClicky (the hand flies to what it's talking about), Comet (finishes the whole
-task, reads the page's structure, not just pixels).
+What it aims for: a wake word, then a quick "Mhm?" and natural follow-ups;
+talking over it like a real conversation; seeing the screen; a hand that flies
+to what it's talking about; and finishing the whole task, reading the page's
+structure, not just pixels.
 
 ---
 

@@ -76,7 +76,7 @@ export function VoiceSphere({
 }: {
   state: OrbState;
   demo?: boolean;
-  /** Your words as you speak them — shown under the sphere, Siri-style. */
+  /** Your words as you speak them — shown under the sphere, live. */
   transcript?: { text: string; final: boolean } | null;
   /** What Izuki is doing right now ("Opening Blackboard…"), while it works. */
   doing?: string | null;

@@ -5,7 +5,7 @@ import { createHandEngine, type HandEngine } from "../lib/hand";
 
 export interface HandCursorHandle extends HandEngine {}
 
-/** Voice-ring size riding the cursor — compact, like Clicky's waveform. */
+/** Voice-ring size riding the cursor — compact, like a small waveform. */
 const ORB = 26;
 
 /**
@@ -61,7 +61,7 @@ export const HandCursor = forwardRef<
   },
   ref
 ) {
-  // HeyClicky parks its buddy's *centre* 35px right and 25px below the real
+  // The buddy's *centre* sits 35px right and 25px below the real
   // cursor tip (OverlayWindow.swift) — clear of the arrow, still obviously
   // "with" it. "trail" matches that exactly, whatever the hand's size.
   const glyphH = size * 1.16;

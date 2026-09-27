@@ -16,6 +16,14 @@ Free · Open source · Hands-free voice · Works with free AI keys
 
 *macOS and Linux versions are coming soon.*
 
+**Follow Izuki — @izukiapp everywhere:**
+[X](https://x.com/izukiapp) ·
+[Instagram](https://www.instagram.com/izukiapp) ·
+[TikTok](https://www.tiktok.com/@izukiapp) ·
+[YouTube](https://www.youtube.com/@izukiapp) ·
+[LinkedIn](https://www.linkedin.com/company/izukiapp) ·
+[All links](https://nova-izuki.github.io/izuki/links/)
+
 </div>
 
 ---

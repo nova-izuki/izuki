@@ -5,7 +5,7 @@ import { useBackdropTone } from "../lib/tone";
 
 /**
  * Your words as you speak them — proof Izuki is really hearing you, the
- * way Siri and ChatGPT show what they caught. Rough while you talk,
+ * way voice assistants show what they caught. Rough while you talk,
  * corrected when you finish. Used on its own for push-to-talk; with the
  * voice sphere up, the sphere shows the same words under itself instead.
  */

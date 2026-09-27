@@ -1,4 +1,4 @@
-//! Turning other sounds down while Izuki listens — the way Siri lowers your
+//! Turning other sounds down while Izuki listens — the way a phone assistant lowers your
 //! music when you talk to it. Music or a video playing on this PC reaches the
 //! mic (and the speech model happily writes down the lyrics); a quieter room
 //! means your words are what gets heard.

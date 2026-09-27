@@ -9,8 +9,8 @@ then `docs/HOW-IZUKI-WORKS.md`, before changing anything.
 - Owner: Solomon (GitHub `nova-izuki`), building Izuki as a company. Not a
   developer by trade — explain things plainly and keep going without asking
   for permission on small things; ask only for real decisions.
-- Goal: the best free AI companion — "like Clicky / Gemini Live / Siri /
-  ChatGPT voice, but smarter", able to do things on the PC, in the user's
+- Goal: the best free AI companion — a natural voice conversation that's
+  smarter than the usual assistants, able to do things on the PC, in the user's
   apps, and from the phone. **Everything must stay free for users**: Izuki
   runs on each user's PC with *their own* free keys (Gemini, Groq, Composio,
   a Telegram bot). Never add anything that needs a paid service or a server
@@ -115,6 +115,14 @@ then `docs/HOW-IZUKI-WORKS.md`, before changing anything.
 19. **Website Download** goes straight to the installer (GitHub API → the
     newest `*_x64-setup.exe`), with a "what next" popup. Releases now also
     attach `Izuki-Setup.exe` (fixed name).
+
+20. **v1.0.2 polish** — @izukiapp socials in the app (Settings → Follow
+    Izuki), website footer + structured data, README; a link-in-bio page
+    (docs/links/); the ad film on the website (docs/media/izuki-ad.mp4) and a
+    "hear the voices" section (docs/media/voices/); the setup guide opens by
+    itself when there's no brain; ChatGPT voice speaks each character's
+    accent strongly (Nigerian, Pidgin…); unfiltered characters switch on
+    without a popup; competitor names removed from comments and notes.
 
 ## What has NOT been verified (do this first on Windows)
 
