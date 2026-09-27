@@ -73,7 +73,10 @@ export function AppsCard() {
                 patch({ composio_api_key: e.target.value });
                 setTest("idle");
               }}
-              placeholder="ak_…"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && hasKey) void check();
+              }}
+              placeholder="ak_… then Enter"
               spellCheck={false}
               autoComplete="off"
               className="izk-field izk-no-drag h-[34px] flex-1 py-0 text-[12px]"

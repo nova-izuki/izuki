@@ -549,6 +549,9 @@ function N8nImporter() {
           type="password"
           value={settings.n8n_api_key}
           onChange={(e) => patch({ n8n_api_key: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && settings.n8n_url.trim() && settings.n8n_api_key.trim()) void run();
+          }}
           placeholder="n8n API key (Settings → n8n API → Create)"
           spellCheck={false}
           autoComplete="off"

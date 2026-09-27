@@ -248,7 +248,7 @@ export function TalkToIzuki() {
 
         <Row
           label="Sharper hearing"
-          hint="Also checks your words with a big cloud model using your Gemini (or Groq) key — gets names like Burna Boy right and ignores background music. Falls back to this PC instantly if it's slow or offline."
+          hint="Also checks your words with a big cloud model using your Gemini (or Groq) key — gets song and artist names right and ignores background music. Falls back to this PC instantly if it's slow or offline."
           icon={<Ear size={14} strokeWidth={2.3} />}
         >
           <Toggle checked={settings.cloud_ears} onChange={(v) => patch({ cloud_ears: v })} />

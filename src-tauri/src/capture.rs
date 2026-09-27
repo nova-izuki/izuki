@@ -118,6 +118,25 @@ impl Frame {
         }
     }
 
+    /// Enlarged (smoothly, up to `max_factor`×) so the longest edge reaches
+    /// about `edge` — a zoomed-in crop of small print is read far better by
+    /// the vision models at a size they don't shrink. Never shrinks.
+    pub fn enlarged(&self, edge: u32, max_factor: f32) -> Frame {
+        let long = self.width.max(self.height);
+        if long == 0 || long >= edge {
+            return self.clone();
+        }
+        let f = (edge as f32 / long as f32).min(max_factor);
+        let nw = ((self.width as f32 * f).round() as u32).max(1);
+        let nh = ((self.height as f32 * f).round() as u32).max(1);
+        let big = image::imageops::resize(&self.to_rgba_image(), nw, nh, image::imageops::FilterType::CatmullRom);
+        let mut bgra = big.into_raw();
+        for px in bgra.chunks_exact_mut(4) {
+            px.swap(0, 2);
+        }
+        Frame { width: nw, height: nh, origin: self.origin, bgra }
+    }
+
     pub fn to_jpeg(&self, quality: u8) -> Result<Vec<u8>> {
         let img = self.to_rgba_image();
         let rgb = image::DynamicImage::ImageRgba8(img).to_rgb8();

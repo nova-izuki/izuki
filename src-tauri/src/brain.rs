@@ -180,7 +180,7 @@ pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession
     if should_ask_model(&session, &local) {
         if let Some(f) = &frame {
             let _ = app.emit(events::STATUS, StatusEvent::working("Izuki is looking…"));
-            match ask_model(store, &session, f, &local) {
+            match ask_model(store, &session, f, &local, false) {
                 Ok(refined) if !refined.steps.is_empty() => plan = refined,
                 Ok(_) => {}
                 Err(e) => {
@@ -247,6 +247,7 @@ fn ask_model(
     session: &DrawSession,
     frame: &Frame,
     draft: &[ActionStep],
+    zoomed: bool,
 ) -> Result<VisionPlan> {
     let _ = store; // brains now come from `brain_chain()`
     let started = std::time::Instant::now();
@@ -263,11 +264,25 @@ fn ask_model(
     });
 
     let annotated = planner::annotate(frame, session);
-    let mut scaled = annotated.downscaled(MODEL_IMAGE_EDGE);
+    // A close-up is enlarged, not shrunk: small print, tiny radio buttons and
+    // a lab's terminal text come out big enough to read and hit exactly.
+    let mut scaled = if zoomed {
+        annotated.enlarged(MODEL_IMAGE_EDGE, 3.0).downscaled(MODEL_IMAGE_EDGE)
+    } else {
+        annotated.downscaled(MODEL_IMAGE_EDGE)
+    };
     let desktop = Rect { x: frame.origin.0, y: frame.origin.1, w: frame.width as i32, h: frame.height as i32 };
     // Each control's number printed on the picture itself (tags.rs), so the
     // brain points at the real button instead of guessing pixels.
-    let (controls, page_text) = controls_job.join().unwrap_or_default();
+    let (mut controls, page_text) = controls_job.join().unwrap_or_default();
+    if zoomed {
+        // Only what's in the close-up — the rest would have coordinates
+        // off the picture.
+        controls.retain(|c| {
+            let (cx, cy) = c.rect.center();
+            !c.below && cx >= desktop.x && cy >= desktop.y && cx < desktop.x + desktop.w && cy < desktop.y + desktop.h
+        });
+    }
     crate::tags::draw(&mut scaled, &desktop, &controls);
     let image_jpeg = scaled.to_jpeg(80)?;
 
@@ -886,6 +901,9 @@ fn submit_task(
     let mut last_said = String::new();
     // The agent's own running plan and findings, carried from look to look.
     let mut notes: Option<String> = None;
+    // Looking up close at part of the screen this round (and how often it has).
+    let mut zoomed: Option<Rect> = None;
+    let mut zooms = 0;
     // Did it finish (and see that it's done)? Then how it did it is kept.
     let mut completed = false;
     // Done something like this before? Say how it went.
@@ -941,6 +959,13 @@ fn submit_task(
         if let Some(n) = &notes {
             ask.push_str(&format!("\nYour notes so far: {n}"));
         }
+        if zoomed.is_some() {
+            ask.push_str(
+                "\nCLOSE-UP: this picture is only the part of the screen you asked to zoom into, enlarged. \
+                 Read it carefully and act on it now — coordinates and targets are in THIS picture as usual. \
+                 Zoom again only if it's still unreadable.",
+            );
+        }
         if round == 0 {
             if let Some(e) = &experience {
                 ask.push_str(e);
@@ -957,7 +982,7 @@ fn submit_task(
         // try again rather than dropping the task halfway.
         let mut attempt = 0u64;
         let asked_now = loop {
-            match ask_model(store, &session, &frame, &[]) {
+            match ask_model(store, &session, &frame, &[], zoomed.is_some()) {
                 Ok(plan) => break Ok(plan),
                 Err(e) => {
                     attempt += 1;
@@ -1022,6 +1047,23 @@ fn submit_task(
         let wait = plan.wait;
         if plan.notes.is_some() {
             notes = plan.notes.clone();
+        }
+        // "Let me look closer": the next look is that part of the screen at
+        // full resolution, enlarged — the way a person leans in to read small
+        // print before choosing an answer or typing a command.
+        zoomed = None;
+        if let (true, Some(region), false) = (steps.is_empty(), plan.zoom, done) {
+            if zooms < 4 && plan.ask.is_none() && alive() {
+                if let Some(close) = zoom_region(&frame, region) {
+                    zooms += 1;
+                    eprintln!("[agent] round {}: zooming in on {}x{} at {},{}", round + 1, region.w, region.h, region.x, region.y);
+                    let _ = app.emit(events::STATUS, StatusEvent::working("Taking a closer look…"));
+                    zoomed = Some(region);
+                    frame = close;
+                    last_plan = Some(plan);
+                    continue;
+                }
+            }
         }
         if done && steps.is_empty() && round > 0 {
             completed = true;
@@ -1250,16 +1292,44 @@ fn submit_task(
     plan
 }
 
+/// The close-up for a `zoom`: the region with a little margin, at least a
+/// readable size, kept on the screen. `None` if it would be most of it anyway.
+fn zoom_region(frame: &Frame, region: Rect) -> Option<Frame> {
+    let screen = Rect { x: frame.origin.0, y: frame.origin.1, w: frame.width as i32, h: frame.height as i32 };
+    let pad = (region.w.max(region.h) / 16).max(12);
+    let mut r = region.inflate(pad);
+    // Never a sliver: a little context around it helps the brain place it.
+    let (min_w, min_h) = (420.min(screen.w), 280.min(screen.h));
+    if r.w < min_w {
+        r.x -= (min_w - r.w) / 2;
+        r.w = min_w;
+    }
+    if r.h < min_h {
+        r.y -= (min_h - r.h) / 2;
+        r.h = min_h;
+    }
+    // Slide it back onto the screen rather than cutting it short.
+    r.x = r.x.clamp(screen.x, (screen.x + screen.w - r.w).max(screen.x));
+    r.y = r.y.clamp(screen.y, (screen.y + screen.h - r.h).max(screen.y));
+    let r = r.clip_to(&screen)?;
+    if (r.w as i64) * (r.h as i64) > (screen.w as i64) * (screen.h as i64) * 3 / 4 {
+        return None;
+    }
+    frame.crop(&r)
+}
+
 /// Told to the agent when its last steps visibly changed nothing.
 const NO_EFFECT: &str = "Your last step(s) didn't visibly change anything — the screen looks the same as before. \
 Work out why, like a person would: still loading (a spinner, blank or grey boxes) → set \"wait\" and look again; \
-the click missed → use the control's target id, or a keyboard route (tab/enter, ctrl+l); something covering it \
+the click missed → use the control's target id, zoom in to see it exactly, or a keyboard route (tab/enter, ctrl+l); \
+a scroll did nothing → the mouse was over the wrong area (put x,y inside the panel you mean) or it's at the end; something covering it \
 (pop-up, cookie banner, menu) → close that first; it needs a double-click; the window isn't in front → click inside \
 it first. Say it naturally in `summary` (\"Hmm, that didn't open — trying another way\") and try again differently. \
 Only ask the user after three honest, different tries.";
 
-/// How many look-act rounds one request may take.
-const MAX_ROUNDS: usize = 10;
+/// How many look-act rounds one request may take. Long jobs (a lab, a
+/// worksheet) need plenty; "keep going" carries on past it.
+const MAX_ROUNDS: usize = 16;
 
 /// Bumped by every new task and by "stop". A task remembers its number and
 /// stops (before its next click, and without answering) once it changes —
@@ -1380,7 +1450,15 @@ fn describe_step(s: &ActionStep) -> String {
     let what = match s.action {
         Intent::Type => format!("typed \"{}\"", s.text_to_type.as_deref().unwrap_or("").chars().take(40).collect::<String>()),
         Intent::Key => format!("pressed {}", s.key.as_deref().unwrap_or("a key")),
-        Intent::Scroll => "scrolled".to_string(),
+        Intent::Scroll => {
+            let n = s.scroll_amount.unwrap_or(3);
+            let dir = match s.key.as_deref().map(str::trim) {
+                Some(d @ ("left" | "right" | "up" | "down")) => d.to_string(),
+                _ if n < 0 => "up".into(),
+                _ => "down".into(),
+            };
+            format!("scrolled {dir} {} at {},{}", n.abs(), s.x, s.y)
+        }
         Intent::OpenApp => format!("opened the app \"{}\"", s.text_to_type.as_deref().unwrap_or("")),
         Intent::OpenUrl => format!("opened {}", s.text_to_type.as_deref().unwrap_or("a web page")),
         Intent::Search => format!("searched the web for \"{}\"", s.text_to_type.as_deref().unwrap_or("")),
@@ -1468,6 +1546,20 @@ mod speed_tests {
         // that isn't running is.
         assert!(!is_hopeless("error sending request for url (https://integrate.api.nvidia.com/v1/chat/completions)"));
         assert!(is_hopeless("error sending request for url (http://localhost:20128/v1/chat/completions)"));
+    }
+
+    #[test]
+    fn a_close_up_is_readable_and_stays_on_screen() {
+        let frame = Frame { width: 1920, height: 1080, origin: (-1920, 0), bgra: vec![0; 1920 * 1080 * 4] };
+        // A tiny radio button near the corner: grown to a readable size, slid back onto the screen.
+        let z = zoom_region(&frame, Rect { x: -1915, y: 5, w: 20, h: 20 }).expect("close-up");
+        assert_eq!((z.width, z.height, z.origin), (420, 280, (-1920, 0)));
+        // A question panel: kept, with a little margin.
+        let z = zoom_region(&frame, Rect { x: -1500, y: 300, w: 640, h: 400 }).expect("close-up");
+        assert_eq!(z.origin, (-1540, 260));
+        assert_eq!((z.width, z.height), (720, 480));
+        // Most of the screen: no point.
+        assert!(zoom_region(&frame, Rect { x: -1900, y: 10, w: 1800, h: 1000 }).is_none());
     }
 
     #[test]

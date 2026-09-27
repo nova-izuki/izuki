@@ -141,7 +141,7 @@ Targets:
 - *Turn other sounds down while I listen* — music and videos get quieter while you talk,
   then come back up exactly where they were.
 - *Sharper hearing* — also checks your words with a big cloud model (your Gemini or Groq key):
-  gets names like "Burna Boy" right and ignores background music. Never slower than a moment
+  gets song and artist names right and ignores background music. Never slower than a moment
   past the on-device words; offline it's simply skipped.
 - *Keep listening after I stop talking* — how long a voice session waits for you (5 s – 30 min).
 - *Show my words as I talk* — your words under the orb, live.

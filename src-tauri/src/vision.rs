@@ -170,9 +170,33 @@ const SYSTEM_PROMPT: &str = concat!(
     "clicked) or \"draw\" steps (circle or box it, an arrow to it, underline it, a short note beside it — ",
     "whatever shows it best), and say \"here it is\" and what it is in `summary`. Several in a row walk ",
     "them through it.\n",
+    "LOOK CLOSER instead of guessing. If what you need is small or hard to read — small print, a ",
+    "question's answer options, tiny radio buttons or checkboxes, a terminal or code box, a table, a ",
+    "dropdown's items, an error message — give no steps and set \"zoom\": [x1,y1,x2,y2] (a box in this ",
+    "image around that part). Your next look is that part at full resolution, enlarged, so you can read it ",
+    "exactly and click precisely. Never click, choose or type something you can't actually read.\n",
+    "SCROLLING, like a person with a mouse: a screen often has several separate scroll areas — the page, a ",
+    "side bar, an instructions or question panel, a list, a chat, a code editor, a terminal, a wide table. ",
+    "Only the area under the mouse scrolls, so put x,y INSIDE the area you mean (or its target id). A ",
+    "scrollbar on an area's edge, text cut off at its bottom or right, or a half-shown row means there's ",
+    "more in THAT area. {\"action\":\"scroll\",\"x\":…,\"y\":…,\"key\":\"down\",\"scroll_amount\":5} ",
+    "— key is down, up, left or right (sideways for wide tables, timelines, code, carousels), ",
+    "scroll_amount the notches (about 3 lines each). If a scroll changed nothing, the mouse was over the ",
+    "wrong area or it's already at the end — pick the area's middle, or try the other direction.\n",
+    "LABS, TESTS AND PRECISE WORK (uCertify, Cisco/NetAcad, TestOut, Packet Tracer, cloud consoles, a VM, ",
+    "a terminal, an online quiz): accuracy beats speed. 1) Read the task instructions first — every step, ",
+    "scrolling the instructions panel to its end and zooming in if the text is small — and keep the list ",
+    "of steps and which one you're on in `notes`. 2) Do exactly what each step says: the exact names, ",
+    "values, paths, IP addresses, commands and options, typed character for character (case, spaces, ",
+    "dashes and dots matter). 3) After each command or change, zoom in on the result and read it: an ",
+    "error, a typo or \"command not found\" means fix it before moving on. 4) Fields: click the field ",
+    "first, clear what's there (ctrl+a) and then type. Drop-downs: open, zoom if needed, pick the exact ",
+    "item. 5) Use the lab's own Check or Validate button once every step is done and checked (Submit, ",
+    "Finish or End still asks the user first, as below). 6) Multiple choice: read the whole question and every option before choosing; \"select ",
+    "two\" means two. Think it through properly and choose the correct answer, not a guess.\n",
     "Reply with JSON only. No prose, no markdown fence. Shape:\n",
     "{\"summary\":\"one short sentence, or the full answer if this was a question\",",
-    "\"mood\":\"cheerful\",\"remember\":[],\"notes\":\"plan / what I've learned\",\"done\":false,\"wait\":0,",
+    "\"mood\":\"cheerful\",\"remember\":[],\"notes\":\"plan / what I've learned\",\"done\":false,\"wait\":0,\"zoom\":[x1,y1,x2,y2] only to look closer,",
     "\"steps\":[{\"action\":\"click|double_click|right_click|",
     "type|drag|hover|scroll|key|copy|point|draw|open_app|open_url|search|play_youtube\",\"target\":int|null,\"target2\":int|null,",
     "\"x\":int,\"y\":int,\"x2\":int|null,\"y2\":int|null,",
@@ -330,6 +354,7 @@ pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
     let (done, wait) = parse_progress(&raw);
     let notes = parse_notes(&raw);
     let ask = parse_ask(&raw);
+    let zoom = parse_zoom(&raw, req);
     // Remember which steps came with a point of their own *before* rescale
     // turns (0,0) into a real-looking desktop position.
     let had_point: Vec<bool> = steps.iter().map(|s| s.x != 0 || s.y != 0).collect();
@@ -349,6 +374,42 @@ pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
         done: done && !more,
         wait,
         notes,
+        zoom,
+    })
+}
+
+/// A region the model wants to look at up close: `"zoom":[x1,y1,x2,y2]` in
+/// image pixels (or an object with x,y,x2,y2), mapped to desktop pixels.
+/// Too small or covering nearly the whole picture means nothing to gain.
+fn parse_zoom(raw: &str, req: &VisionRequest) -> Option<Rect> {
+    let cleaned = strip_thinking(raw);
+    let v = extract_json(&cleaned).and_then(|s| serde_json::from_str::<Value>(s).ok())?;
+    let z = &v["zoom"];
+    let n = |k: &Value| k.as_f64();
+    let (x1, y1, x2, y2) = if let Some(a) = z.as_array() {
+        (n(a.first()?)?, n(a.get(1)?)?, n(a.get(2)?)?, n(a.get(3)?)?)
+    } else if z.is_object() {
+        (n(&z["x"])?, n(&z["y"])?, n(&z["x2"])?, n(&z["y2"])?)
+    } else {
+        return None;
+    };
+    let (iw, ih) = req.image_size;
+    if iw == 0 || ih == 0 {
+        return None;
+    }
+    let (x1, x2) = (x1.min(x2).max(0.0), x1.max(x2).min(iw as f64));
+    let (y1, y2) = (y1.min(y2).max(0.0), y1.max(y2).min(ih as f64));
+    let (w, h) = (x2 - x1, y2 - y1);
+    if w < 24.0 || h < 24.0 || w * h > 0.8 * iw as f64 * ih as f64 {
+        return None;
+    }
+    let fx = req.desktop.w as f64 / iw as f64;
+    let fy = req.desktop.h as f64 / ih as f64;
+    Some(Rect {
+        x: (x1 * fx).round() as i32 + req.desktop.x,
+        y: (y1 * fy).round() as i32 + req.desktop.y,
+        w: (w * fx).round() as i32,
+        h: (h * fy).round() as i32,
     })
 }
 
@@ -1167,6 +1228,40 @@ mod tests {
 
     fn step(v: Value) -> ActionStep {
         serde_json::from_value(v).expect("valid step")
+    }
+
+    fn request(image: (u32, u32), desktop: Rect) -> VisionRequest {
+        VisionRequest {
+            image_jpeg: Vec::new(),
+            image_size: image,
+            desktop,
+            marks_description: String::new(),
+            user_prompt: String::new(),
+            ocr_text: String::new(),
+            app: String::new(),
+            window_title: String::new(),
+            draft: Vec::new(),
+            controls: Vec::new(),
+            memory: String::new(),
+            windows: Vec::new(),
+            page_text: String::new(),
+        }
+    }
+
+    #[test]
+    fn zoom_maps_to_the_desktop() {
+        // A 1280x720 picture of a 2560x1440 screen that starts at (-2560, 0).
+        let req = request((1280, 720), Rect { x: -2560, y: 0, w: 2560, h: 1440 });
+        let z = parse_zoom(r#"{"summary":"Looking closer","steps":[],"zoom":[100,50,400,250]}"#, &req).expect("zoom");
+        assert_eq!(z, Rect { x: -2360, y: 100, w: 600, h: 400 });
+        // The object form, corners given the other way round.
+        let z = parse_zoom(r#"{"zoom":{"x":400,"y":250,"x2":100,"y2":50}}"#, &req).expect("zoom");
+        assert_eq!(z, Rect { x: -2360, y: 100, w: 600, h: 400 });
+        // Nothing to gain: a speck, almost the whole picture, the template text, or none.
+        assert!(parse_zoom(r#"{"zoom":[10,10,20,20]}"#, &req).is_none());
+        assert!(parse_zoom(r#"{"zoom":[0,0,1280,720]}"#, &req).is_none());
+        assert!(parse_zoom(r#"{"zoom":"[x1,y1,x2,y2]"}"#, &req).is_none());
+        assert!(parse_zoom(r#"{"summary":"hi","steps":[]}"#, &req).is_none());
     }
 
     #[test]

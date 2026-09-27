@@ -24,6 +24,7 @@ import { Badge, Row, Section, Segmented, Slider, Toggle, cx } from "../ui";
 import { useIzuki } from "../../lib/store";
 import { api } from "../../lib/ipc";
 import { setChatLook } from "../../lib/tone";
+import { brainReady } from "../../lib/setup";
 import type { BackdropMode, ProviderId } from "../../lib/types";
 
 const LOCAL_PROVIDERS: ProviderId[] = ["ollama"];
@@ -52,6 +53,13 @@ export function SettingsTab() {
       await useIzuki.getState().flushSettings();
       const res = await api.probeProvider(id);
       setProbe((p) => ({ ...p, [id]: res }));
+      // It works and there's no working brain yet: make it the brain now —
+      // one less thing to find.
+      const now = useIzuki.getState().settings;
+      if (res.toLowerCase().startsWith("ok") && !brainReady(now)) {
+        patch({ active_provider: id });
+        setProvider(id, { enabled: true });
+      }
     } catch (e) {
       setProbe((p) => ({ ...p, [id]: String(e) }));
     } finally {
@@ -187,6 +195,9 @@ export function SettingsTab() {
                           spellCheck={false}
                           autoComplete="off"
                           onChange={(e) => setProvider(p.id, { api_key: e.target.value })}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && p.api_key.trim()) void runProbe(p.id);
+                          }}
                           placeholder={
                             p.id === "openrouter"
                               ? "sk-or-v1-…"
