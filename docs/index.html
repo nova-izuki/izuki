@@ -251,7 +251,27 @@
     .chrome-bar { height: 42px; display: flex; align-items: center; gap: 8px; padding: 0 14px; background: #15161f; border-bottom: 1px solid rgba(255,255,255,0.06); }
     .chrome-bar i { width: 11px; height: 11px; border-radius: 50%; background: #3a3b48; }
     .url { flex: 1; margin: 0 170px 0 10px; height: 26px; border-radius: 13px; background: #0d0e16; display: flex; align-items: center; padding-inline: 14px; font: 500 12.5px var(--mono); color: var(--faint); overflow: hidden; white-space: nowrap; }
-    .yt { position: absolute; inset: 42px 0 0; display: grid; grid-template-columns: 1.6fr 1fr; gap: 3%; padding: 3%; }
+    .ytbar { position: absolute; left: 0; right: 0; top: 42px; height: 44px; display: flex; align-items: center; gap: 14px; padding: 0 16px; background: #0f0f0f; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .ytlogo { display: flex; align-items: center; gap: 6px; font: 700 15px var(--body); letter-spacing: -0.03em; }
+    .ytlogo i { font-style: normal; width: 24px; height: 17px; border-radius: 5px; background: #ff0033; display: grid; place-items: center; font-size: 9px; color: #fff; }
+    .ytsearch { flex: 1; max-width: 360px; margin: 0 auto; height: 28px; border-radius: 14px; border: 1px solid #303030; background: #121212; display: flex; align-items: center; padding: 0 14px; font: 500 12.5px var(--body); color: #aaa; overflow: hidden; white-space: nowrap; }
+    .ytavatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, #8b5cf6, #22d3ee); }
+    .yt { position: absolute; inset: 86px 0 0; display: grid; grid-template-columns: 1.6fr 1fr; gap: 3%; padding: 2.5% 3%; background: #0f0f0f; }
+    .eqviz { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; gap: 6px; align-items: flex-end; height: 34%; }
+    .eqviz i { width: 10px; border-radius: 4px; background: rgba(255,255,255,0.85); animation: bar 0.7s ease-in-out infinite alternate; }
+    .eqviz i:nth-child(odd) { animation-duration: 0.55s; } .eqviz i:nth-child(3n) { animation-duration: 0.9s; }
+    .adart { font: 800 clamp(14px, 2.4vw, 30px)/1 var(--display); text-align: center; letter-spacing: 0.02em; }
+    .adart b { display: block; font-size: 1.6em; margin-top: 4px; }
+    .adbadge { position: absolute; left: 3%; bottom: 8%; font: 700 11px var(--body); background: #ffcc00; color: #111; padding: 3px 7px; border-radius: 4px; }
+    .adsite { position: absolute; left: 3%; top: 7%; font: 600 11px var(--body); background: rgba(0,0,0,0.55); color: #fff; padding: 4px 9px; border-radius: 12px; }
+    .ytprog { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255,255,255,0.2); }
+    .ytprog i { display: block; height: 100%; width: 0; background: #ff0033; }
+    .result .th { position: relative; }
+    .result .th em { position: absolute; right: 5px; bottom: 5px; font: 700 10px var(--body); font-style: normal; background: rgba(0,0,0,0.8); padding: 1px 4px; border-radius: 3px; }
+    .th1 { background: radial-gradient(60% 70% at 30% 40%, #f472b6, transparent), linear-gradient(135deg, #312e81, #0e7490) !important; }
+    .th2 { background: radial-gradient(60% 70% at 70% 40%, #ef4444, transparent), linear-gradient(135deg, #111827, #7f1d1d) !important; }
+    .th3 { background: radial-gradient(60% 70% at 40% 60%, #fbbf24, transparent), linear-gradient(135deg, #14532d, #0e7490) !important; }
+    .result .tx small { display: block; margin-top: 4px; font-size: clamp(8px, 0.85vw, 11px); color: #aaa; }
     .player { position: relative; border-radius: 12px; overflow: hidden; background: linear-gradient(135deg, #1b1030, #0d2230); display: grid; place-items: center; }
     .player .vid { position: absolute; inset: 0; background:
         radial-gradient(40% 50% at 30% 40%, rgba(236, 72, 153, 0.55), transparent 70%),
@@ -261,7 +281,7 @@
     .player .vid-title { position: absolute; left: 4%; bottom: 7%; font-family: var(--display); font-weight: 700; font-size: clamp(12px, 1.6vw, 20px); opacity: 0; transition: opacity 0.5s; text-shadow: 0 2px 12px #000; }
     .ad { position: absolute; inset: 0; background: linear-gradient(135deg, #f59e0b, #ef4444); display: grid; place-items: center; font-family: var(--display); font-weight: 800; font-size: clamp(14px, 2.2vw, 28px); color: #fff; opacity: 0; transition: opacity 0.4s; }
     .ad small { position: absolute; left: 4%; bottom: 7%; font: 600 11px var(--mono); background: rgba(0,0,0,0.5); padding: 3px 8px; border-radius: 6px; }
-    .skip { position: absolute; right: 0; bottom: 12%; padding: 8px 16px 8px 14px; background: rgba(0,0,0,0.72); border: 1px solid rgba(255,255,255,0.35); font: 600 clamp(10px, 1.1vw, 13px) var(--body); color: #fff; opacity: 0; transition: opacity 0.3s, background 0.2s; }
+    .skip { position: absolute; right: 0; bottom: 12%; padding: 9px 16px 9px 16px; border-radius: 18px 0 0 18px; background: rgba(0,0,0,0.6); border: 0; font: 600 clamp(10px, 1.1vw, 13px) var(--body); color: #fff; opacity: 0; transition: opacity 0.3s, background 0.2s; }
     .skip.hit { background: rgba(255,255,255,0.3); }
     .results { display: flex; flex-direction: column; gap: 5%; }
     .result { display: flex; gap: 6%; align-items: center; opacity: 0.35; transition: opacity 0.5s; }
@@ -998,27 +1018,29 @@
         <div class="demo-sticky">
           <div class="screen" id="screen" aria-label="An animated example: Izuki opens YouTube, plays a song and skips the ad">
             <div class="chrome-bar"><i></i><i></i><i></i><div class="url" id="url">New tab</div></div>
+            <div class="ytbar"><span class="ytlogo"><i>▶</i>YouTube</span><span class="ytsearch" id="ytq">Search</span><span class="ytavatar"></span></div>
             <div class="yt">
               <div class="player">
-                <div class="vid" id="vid"></div>
-                <div class="vid-title" id="vid-title">Chill Afrobeats Mix ▶︎</div>
-                <div class="ad" id="ad">Summer Sale — 50% off<small>Ad · 0:05</small></div>
-                <div class="skip" id="skip">Skip ▸</div>
+                <div class="vid" id="vid"><div class="eqviz"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+                <div class="vid-title" id="vid-title">Chill Lofi Beats to Study To 📚</div>
+                <div class="ad" id="ad"><div class="adart">SUMMER SALE<b>50% OFF</b></div><span class="adbadge">Ad · 0:05</span><span class="adsite">Visit advertiser</span></div>
+                <div class="skip" id="skip">Skip Ads ▸|</div>
+                <div class="ytprog"><i id="ytprog"></i></div>
               </div>
               <div class="results">
-                <div class="result" id="r1"><div class="th"></div><div class="tx"><b>Chill Afrobeats Mix — 1 Hour</b><span></span></div></div>
-                <div class="result"><div class="th"></div><div class="tx"><b>Lofi Beats to Study To</b><span></span></div></div>
-                <div class="result"><div class="th"></div><div class="tx"><b>Afrobeats Mix 2026</b><span></span></div></div>
+                <div class="result" id="r1"><div class="th th1"><em>1:02:14</em></div><div class="tx"><b>Chill Lofi Beats to Study To 📚</b><small>LofiDaily · 2.1M views · 3 days ago</small></div></div>
+                <div class="result"><div class="th th2"><em>45:08</em></div><div class="tx"><b>Trap Workout Mix 2026 🔥</b><small>BassHouse · 890K views · 1 week ago</small></div></div>
+                <div class="result"><div class="th th3"><em>1:00:31</em></div><div class="tx"><b>Chill Afrobeats Mix — 1 Hour 🌴</b><small>Vibes FM · 1.4M views · 2 weeks ago</small></div></div>
               </div>
             </div>
-            <svg class="pen" id="pen" viewBox="0 0 1000 625" preserveAspectRatio="none">
+            <svg class="pen" id="pen" viewBox="0 0 1000 625" preserveAspectRatio="none"><g transform="translate(0 16)">
               <path id="pen-circle" stroke="#FFD166" color="#FFD166" d="M640 112 C 720 92, 960 96, 972 150 C 982 204, 770 214, 660 196 C 600 186, 596 126, 652 108" />
               <path id="pen-arrow" stroke="#4ECDC4" color="#4ECDC4" d="M 560 470 C 600 440, 610 420, 610 395 M 596 405 L 610 392 L 620 410" />
-              <text id="pen-note" x="420" y="520" fill="#FF7AA2">ad skipped ✓</text>
-            </svg>
+              <text id="pen-note" x="470" y="430" fill="#FF7AA2">ad skipped ✓</text>
+            </g></svg>
             <svg class="hand" id="hand" viewBox="0 0 32 32"><path d="M6 3 L6 25 L11.5 19.5 L15 28 L19 26.5 L15.6 18 L23 18 Z" fill="#fff" stroke="#111" stroke-width="1.6" stroke-linejoin="round"/></svg>
             <canvas class="mini-orb" id="mini-orb"></canvas>
-            <div class="caption" id="caption">“Hey Nova, play some chill Afrobeats on YouTube.”</div>
+            <div class="caption" id="caption">“Hey Nova, play some chill lofi on YouTube.”</div>
             <div class="steps-rail" id="rail"><i></i><i></i><i></i><i></i><i></i></div>
           </div>
         </div>
@@ -1917,15 +1939,15 @@
     if (stage !== lastStage) {
       lastStage = stage;
       if (stage === 0) {
-        miniOrb.mode = "listening"; url.textContent = "New tab"; r1.classList.remove("lit"); place(70, 80);
+        miniOrb.mode = "listening"; url.textContent = "New tab"; $("ytq").textContent = "Search"; r1.classList.remove("lit"); place(70, 80);
         vid.style.opacity = 0; vidTitle.style.opacity = 0; ad.style.opacity = 0; skip.style.opacity = 0;
-        caption.textContent = "“Hey Nova, play some chill Afrobeats on YouTube.”";
+        caption.textContent = "“Hey Nova, play some chill lofi on YouTube.”";
       } else if (stage === 1) {
-        miniOrb.mode = "thinking"; url.textContent = "youtube.com/results?search_query=chill+afrobeats+mix";
+        miniOrb.mode = "thinking"; url.textContent = "youtube.com/results?search_query=chill+lofi+beats"; $("ytq").textContent = "chill lofi beats";
         r1.classList.add("lit"); place(80, 25); vid.style.opacity = 0; vidTitle.style.opacity = 0; ad.style.opacity = 0; skip.style.opacity = 0;
         caption.textContent = "Found it — that's the one.";
       } else if (stage === 2) {
-        miniOrb.mode = "speaking"; url.textContent = "youtube.com/watch?v=chill-afrobeats-mix";
+        miniOrb.mode = "speaking"; url.textContent = "youtube.com/watch?v=chill-lofi-beats";
         ad.style.opacity = 1; skip.style.opacity = 1; skip.classList.remove("hit"); vid.style.opacity = 0; vidTitle.style.opacity = 0; place(55, 60);
         caption.textContent = "An ad first… I've got it.";
       } else if (stage === 3) {
@@ -1934,9 +1956,10 @@
         caption.textContent = "Skipped.";
       } else {
         miniOrb.mode = "speaking"; ad.style.opacity = 0; skip.style.opacity = 0; vid.style.opacity = 1; vidTitle.style.opacity = 1; place(88, 86);
-        caption.textContent = "Playing your chill mix — enjoy! 🎶";
+        caption.textContent = "Playing Chill Lofi Beats — enjoy! 🎶";
       }
     }
+    $("ytprog").style.width = `${clamp((p - 0.62) / 0.38, 0, 1) * 40}%`;
     drawPen(penC, (p - 0.24) / 0.12);
     drawPen(penA, (p - 0.8) / 0.08);
     penN.style.opacity = clamp((p - 0.86) / 0.06, 0, 1);

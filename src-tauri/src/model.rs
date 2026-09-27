@@ -272,6 +272,10 @@ pub struct VisionPlan {
     /// (where things are) — shown back to it on the next look.
     #[serde(default)]
     pub notes: Option<String>,
+    /// Too small to read or hit exactly: the desktop region to look at up
+    /// close next round (full resolution, enlarged) — see `brain::submit_task`.
+    #[serde(default)]
+    pub zoom: Option<Rect>,
 }
 
 // ---------------------------------------------------------------------------

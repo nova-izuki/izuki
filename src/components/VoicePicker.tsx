@@ -96,6 +96,17 @@ export function VoicePicker() {
   // A new engine or character → the last test result no longer applies.
   useEffect(() => setTest(null), [engine, settings.persona]);
 
+  // The ChatGPT voice's key, pasted right here: saved into the OpenAI brain
+  // slot (the one place it lives), then tested out loud.
+  const [openaiDraft, setOpenaiDraft] = useState("");
+  function saveOpenaiKey() {
+    const key = openaiDraft.trim();
+    if (!key) return;
+    patch({ providers: settings.providers.map((p) => (p.id === "openai" ? { ...p, api_key: key } : p)) });
+    setOpenaiDraft("");
+    void hear("test", "openai", null);
+  }
+
   /** Play a line in a voice; on failure say exactly why. */
   async function hear(key: string, eng: Engine, persona: string | null) {
     if (playing === key) {
@@ -184,7 +195,10 @@ export function VoicePicker() {
             type="password"
             value={settings.groq_api_key}
             onChange={(e) => patch({ groq_api_key: e.target.value })}
-            placeholder="Paste your free Groq key (gsk_…)"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && settings.groq_api_key.trim()) void hear("test", engine, null);
+            }}
+            placeholder="Paste your free Groq key (gsk_…), then Enter"
             className="h-[30px] min-w-0 flex-1 bg-transparent px-2 text-[12px] text-izk-ink outline-none placeholder:text-izk-muted/55"
             spellCheck={false}
             autoComplete="off"
@@ -197,14 +211,44 @@ export function VoicePicker() {
             <ExternalLink size={11} strokeWidth={2.4} />
             Get a free key
           </button>
+          {settings.groq_api_key.trim() && (
+            <button
+              type="button"
+              onClick={() => void hear("test", engine, null)}
+              className="izk-btn-primary izk-no-drag h-[28px] shrink-0 px-2.5 text-[11px]"
+            >
+              <Check size={11} strokeWidth={2.6} /> Save &amp; test
+            </button>
+          )}
         </div>
       )}
 
       {engine === "openai" && !openaiKey && (
-        <p className="mb-1 rounded-[12px] border border-izk-hand/25 bg-izk-hand/8 px-2.5 py-2 text-[10.5px] leading-relaxed text-izk-muted">
-          The ChatGPT voice uses the key under <b className="text-izk-ink">Settings → Izuki's brain → OpenAI compatible</b>. Paste
-          one there first.
-        </p>
+        <div className="mb-1 rounded-[12px] border border-izk-hand/25 bg-izk-hand/8 px-2.5 py-2 text-[10.5px] leading-relaxed text-izk-muted">
+          The ChatGPT voice needs an OpenAI key (the same one as <b className="text-izk-ink">Settings → Izuki's brain → OpenAI</b>).
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <input
+              type="password"
+              value={openaiDraft}
+              onChange={(e) => setOpenaiDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveOpenaiKey();
+              }}
+              placeholder="Paste your OpenAI key (sk-…), then Enter"
+              className="izk-field izk-no-drag h-[30px] min-w-0 flex-1 py-0 text-[12px]"
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              disabled={!openaiDraft.trim()}
+              onClick={saveOpenaiKey}
+              className="izk-btn-primary izk-no-drag h-[28px] shrink-0 px-2.5 text-[11px] disabled:opacity-40"
+            >
+              <Check size={11} strokeWidth={2.6} /> Save &amp; test
+            </button>
+          </div>
+        </div>
       )}
 
       {cloud && (

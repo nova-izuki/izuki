@@ -243,13 +243,34 @@ fn parse_modifier(name: &str) -> Option<Key> {
     })
 }
 
+/// A scroll step's direction: `key` may say "left", "right", "up" or
+/// "down" (the amount's size is then the notches); otherwise the amount's
+/// sign decides — positive down, negative up.
+fn scroll_direction(key: Option<&str>, amount: i32) -> (i32, Axis) {
+    let n = amount.abs().max(1);
+    match key.map(|k| k.trim().to_ascii_lowercase()).as_deref() {
+        Some("left") => (-n, Axis::Horizontal),
+        Some("right") => (n, Axis::Horizontal),
+        Some("up") => (-n, Axis::Vertical),
+        Some("down") => (n, Axis::Vertical),
+        _ => (amount, Axis::Vertical),
+    }
+}
+
 pub fn scroll_at(x: i32, y: i32, amount: i32, duration_ms: u64) -> Result<()> {
+    scroll_axis(x, y, amount, Axis::Vertical, duration_ms)
+}
+
+/// Scroll whatever is under (x, y) — the page, a side panel, a list, a code
+/// box — `amount` notches: down/right when positive, up/left when negative.
+/// Only the pane under the mouse moves, exactly as with a real wheel.
+pub fn scroll_axis(x: i32, y: i32, amount: i32, axis: Axis, duration_ms: u64) -> Result<()> {
     glide_to(x, y, duration_ms)?;
     let mut e = enigo()?;
     // Break the scroll into notches so pages with momentum keep up.
     let step = if amount > 0 { 1 } else { -1 };
     for _ in 0..amount.abs().min(40) {
-        e.scroll(step, Axis::Vertical).ok();
+        e.scroll(step, axis).ok();
         std::thread::sleep(Duration::from_millis(18));
     }
     Ok(())
@@ -423,7 +444,8 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
             // No point given: scroll wherever the cursor already is, rather
             // than dragging it to the top-left corner of the screen.
             let (sx, sy) = if x <= 0 && y <= 0 { crate::capture::cursor_pos() } else { (x, y) };
-            scroll_at(sx, sy, step.scroll_amount.unwrap_or(3), move_ms)?
+            let (amount, axis) = scroll_direction(step.key.as_deref(), step.scroll_amount.unwrap_or(3));
+            scroll_axis(sx, sy, amount, axis, move_ms)?
         }
         Intent::Copy => {
             click_at(x, y, Button::Left, 3, move_ms)?;
@@ -478,6 +500,16 @@ pub fn make_dpi_aware() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scrolls_go_the_way_they_are_asked() {
+        assert_eq!(scroll_direction(Some("right"), 4), (4, Axis::Horizontal));
+        assert_eq!(scroll_direction(Some("Left"), 4), (-4, Axis::Horizontal));
+        assert_eq!(scroll_direction(Some("up"), 3), (-3, Axis::Vertical));
+        assert_eq!(scroll_direction(Some("down"), -3), (3, Axis::Vertical));
+        assert_eq!(scroll_direction(None, -5), (-5, Axis::Vertical));
+        assert_eq!(scroll_direction(Some("pagedown"), 2), (2, Axis::Vertical));
+    }
 
     #[test]
     fn windows_key_and_modifiers_are_understood() {

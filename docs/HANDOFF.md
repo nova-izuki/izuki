@@ -236,10 +236,20 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
     task stops too); hold the orb while it talks → it goes quiet and
     records until you let go; "Talk over Izuki: on" (quiet rooms) → just
     talking cuts it off, and your words are kept.
+37. Labs and small print (uCertify, a quiz, a terminal): "do this lab step
+    by step" → the log shows `zooming in on …` before it picks answers or
+    reads command output; the status says "Taking a closer look…". It reads
+    the instructions panel to the end first and types commands exactly.
+38. Scroll areas: "scroll the side bar down" / "scroll that table right" →
+    only that panel moves (sideways works too). Ask it to read something
+    lower in a lab's instructions panel → it scrolls that panel, not the page.
+39. Enter to confirm: paste a key and press Enter (Settings brain key, Apps
+    Composio key, n8n key, voice Groq/OpenAI key) → it's tested at once and
+    says it works (a brain key becomes the active brain if none was set).
 
 Running the Rust tests from Linux: `cargo test --target x86_64-pc-windows-gnu
 --lib --no-run`, copy `target/x86_64-pc-windows-gnu/debug/WebView2Loader.dll`
-next to the test exe in `deps/`, and run it with `wine64` (71 pass).
+next to the test exe in `deps/`, and run it with `wine64` (74 pass).
 
 Fix whatever breaks; keep each fix small.
 
