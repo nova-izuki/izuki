@@ -628,6 +628,26 @@ export function VoiceEngine() {
       }
     }
 
+    // "… on my phone": drive the paired Android phone over Wi-Fi.
+    const s0 = useIzuki.getState().settings;
+    if (s0.android_enabled && /on (my|the) (phone|android)/i.test(t)) {
+      startSession(from === "voice", "thinking");
+      thinkingNow.current = true;
+      orb("thinking");
+      try {
+        const said = await api.androidDo(t);
+        if (requestSeq !== at) return;
+        thinkingNow.current = false;
+        await respond(said, "cheerful", true);
+      } catch (e) {
+        if (requestSeq !== at) return;
+        thinkingNow.current = false;
+        await respond(failure(e), "sympathetic");
+      }
+      void afterReply(at, from === "voice" && listenThrough.current());
+      return;
+    }
+
     // Instant skills: "open Notepad", "open YouTube" — through Windows,
     // well under a second, no AI.
     const instant = parseInstant(t);

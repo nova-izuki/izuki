@@ -85,7 +85,21 @@ pub fn needs_screen(said: &str) -> bool {
     DO.iter().chain(LOOK).any(|k| t.contains(k))
 }
 
+/// "…on my phone" / "on my android" — the request is for the phone, not the PC.
+pub fn on_phone_asked(said: &str) -> bool {
+    let t = said.to_lowercase();
+    t.contains("on my phone") || t.contains("on the phone") || t.contains("on my android")
+}
+
 pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str)) -> Reply {
+    // "…on my phone": drive the Android phone over Wi-Fi.
+    if on_phone_asked(said) && crate::state::store().settings().android_enabled {
+        push("user", said);
+        status("On it — doing that on your phone…");
+        let out = Reply::text(crate::android::run_on_phone(said));
+        push("assistant", &out.text);
+        return out;
+    }
     // Plainly a PC job? Do it — don't gamble on the chat model tagging it.
     if needs_screen(said) && crate::state::store().settings().phone_controls_pc && !crate::uia::screen_locked() {
         push("user", said);

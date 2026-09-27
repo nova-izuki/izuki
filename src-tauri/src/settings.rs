@@ -283,6 +283,12 @@ pub struct Settings {
     /// Let the paired phone ask Izuki to do things on this PC.
     #[serde(default = "default_true")]
     pub phone_controls_pc: bool,
+    /// Let Izuki control an Android phone over Wi-Fi (ADB). Off by default.
+    #[serde(default)]
+    pub android_enabled: bool,
+    /// The paired phone's address from Wireless debugging, e.g. "192.168.1.24:5555".
+    #[serde(default)]
+    pub android_addr: String,
     /// Your own free Composio key: Izuki's access to Gmail, Calendar, Drive,
     /// Slack, Notion, socials and more (composio.rs).
     /// "Call Izuki": a hands-free voice page for your phone, reached through
@@ -668,6 +674,8 @@ impl Default for Settings {
             discord_token: String::new(),
             discord_user_id: String::new(),
             phone_controls_pc: true,
+            android_enabled: false,
+            android_addr: String::new(),
             call_enabled: false,
             call_token: String::new(),
             composio_api_key: String::new(),

@@ -844,3 +844,19 @@ pub fn chat_stream(
 pub fn chat_cancel(id: u64) {
     crate::chat::cancel(id);
 }
+
+/// Connect to the paired Android phone (Settings → Control my Android).
+#[tauri::command]
+pub async fn android_connect() -> Result<String, String> {
+    blocking(|| crate::android::connect().map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Do something on the phone from the PC's Chat/voice ("… on my phone").
+#[tauri::command]
+pub async fn android_do(prompt: String) -> Result<String, String> {
+    Ok(blocking(move || crate::android::run_on_phone(&prompt))
+        .await
+        .map_err(|e| e.to_string())?)
+}

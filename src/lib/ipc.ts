@@ -235,6 +235,8 @@ export const MOCK_SETTINGS: Settings = {
   discord_token: "",
   discord_user_id: "",
   phone_controls_pc: true,
+  android_enabled: false,
+  android_addr: "",
   follow_up_secs: 1800,
   chat_style: "auto",
   chat_color: "#7dd3fc",
@@ -353,6 +355,10 @@ export const api = {
   remindersList: () => call<Reminder[]>("reminders_list", undefined, () => []),
   reminderRemove: (id: string) => call<void>("reminder_remove", { id }, () => undefined),
   chatCancel: (id: number) => call<void>("chat_cancel", { id }, () => undefined).catch(() => undefined),
+  /** Connect to the paired Android phone. */
+  androidConnect: () => call<string>("android_connect", undefined, () => { throw new Error("not in Izuki"); }),
+  /** Do something on the phone from the PC ("… on my phone"). */
+  androidDo: (prompt: string) => call<string>("android_do", { prompt }, () => { throw new Error("not in Izuki"); }),
   /** The wake-word models installed (file names) — the user's own. */
   listWakewords: () => call<string[]>("list_wakewords", {}, () => []),
   openWakewordsFolder: () => call<void>("open_wakewords_folder", {}, () => undefined),

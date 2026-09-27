@@ -360,6 +360,8 @@ export interface Settings {
   discord_user_id: string;
   /** Let the paired phone do things on this PC. */
   phone_controls_pc: boolean;
+  android_enabled: boolean;
+  android_addr: string;
   /** Your free Composio key — Izuki in Gmail, Calendar, Drive, Slack… */
   composio_api_key: string;
   /** "Call Izuki" — the hands-free phone page through a free tunnel. */
