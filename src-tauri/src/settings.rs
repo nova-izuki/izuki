@@ -19,6 +19,11 @@ pub enum ProviderId {
     NineRouter,
     /// xAI's Grok (https://console.x.ai) — OpenAI-compatible.
     Xai,
+    /// Groq (https://console.groq.com) — free and very fast; the same key
+    /// Izuki uses for sharper hearing and the Human voice.
+    Groq,
+    /// Mistral (https://console.mistral.ai) — free on its "Experiment" plan.
+    Mistral,
     Custom,
 }
 
@@ -33,6 +38,8 @@ impl ProviderId {
             ProviderId::Nvidia => "nvidia",
             ProviderId::NineRouter => "9router",
             ProviderId::Xai => "xai",
+            ProviderId::Groq => "groq",
+            ProviderId::Mistral => "mistral",
             ProviderId::Custom => "custom",
         }
     }
@@ -47,6 +54,8 @@ impl ProviderId {
             "nvidia" => ProviderId::Nvidia,
             "9router" => ProviderId::NineRouter,
             "xai" | "grok" => ProviderId::Xai,
+            "groq" => ProviderId::Groq,
+            "mistral" => ProviderId::Mistral,
             "custom" => ProviderId::Custom,
             _ => return None,
         })
@@ -429,7 +438,25 @@ impl Settings {
                 p.api_key = k;
             }
         }
+        // Old fixed Gemini names are being retired ("no longer available to
+        // new users"): move to Google's always-current ones.
+        for p in &mut self.providers {
+            if p.id == ProviderId::Gemini {
+                p.model = crate::vision::gemini_current(&p.model);
+            }
+        }
         self.groq_api_key = clean_key(&self.groq_api_key);
+        // One Groq key for everything Groq does (hearing, the Human voice and
+        // now a brain): pasted in either place, it fills the other.
+        let groq_brain_key = self.provider(ProviderId::Groq).map(|p| p.api_key.clone()).unwrap_or_default();
+        if self.groq_api_key.is_empty() && !groq_brain_key.is_empty() {
+            self.groq_api_key = groq_brain_key;
+        } else if groq_brain_key.is_empty() && !self.groq_api_key.is_empty() {
+            let k = self.groq_api_key.clone();
+            if let Some(p) = self.providers.iter_mut().find(|p| p.id == ProviderId::Groq) {
+                p.api_key = k;
+            }
+        }
         self.telegram_token = clean_key(&self.telegram_token);
         self.discord_token = clean_key(&self.discord_token);
         self.composio_api_key = clean_key(&self.composio_api_key);
@@ -483,7 +510,7 @@ impl Default for Settings {
                     id: ProviderId::Gemini,
                     label: "Gemini 2.5 Flash (free tier)".into(),
                     base_url: "https://generativelanguage.googleapis.com".into(),
-                    model: "gemini-2.5-flash".into(),
+                    model: crate::vision::GEMINI_MAIN.into(),
                     api_key: String::new(),
                     enabled: false,
                 },
@@ -537,6 +564,25 @@ impl Default for Settings {
                     label: "Grok (xAI)".into(),
                     base_url: "https://api.x.ai/v1".into(),
                     model: "grok-4-fast-non-reasoning".into(),
+                    api_key: String::new(),
+                    enabled: false,
+                },
+                ProviderConfig {
+                    id: ProviderId::Groq,
+                    label: "Groq (free, very fast)".into(),
+                    base_url: "https://api.groq.com/openai/v1".into(),
+                    // Sees pictures (checked: it named a red square in 0.6 s),
+                    // so it does screen tasks too, not just chat.
+                    model: "qwen/qwen3.8-27b".into(),
+                    api_key: String::new(),
+                    enabled: false,
+                },
+                ProviderConfig {
+                    id: ProviderId::Mistral,
+                    label: "Mistral (free plan)".into(),
+                    base_url: "https://api.mistral.ai/v1".into(),
+                    // Mistral's own "always the current Small" name; it reads images.
+                    model: "mistral-small-latest".into(),
                     api_key: String::new(),
                     enabled: false,
                 },

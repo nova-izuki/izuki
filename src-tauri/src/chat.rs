@@ -746,13 +746,15 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
     });
     let mut body = body;
     // Conversation wants first words fast, not deliberation.
-    if cfg.id == ProviderId::Gemini && cfg.model.contains("flash") {
+    // (Gemini's main model may be resting — see `vision::gemini_model_now`.)
+    let model_now = crate::vision::gemini_model_now(&cfg.model);
+    let knob = cfg.id == ProviderId::Gemini && crate::vision::gemini_takes_no_think(&model_now);
+    if knob {
         body["reasoning_effort"] = json!("none");
     }
-    // (Gemini's main model may be resting — see `vision::gemini_model_now`.)
     let mut body = body;
     if cfg.id == ProviderId::Gemini {
-        body["model"] = json!(crate::vision::gemini_model_now(&cfg.model));
+        body["model"] = json!(model_now);
     }
     let mut rq = client.post(chat_url(cfg)).json(&body);
     if !cfg.api_key.trim().is_empty() {
@@ -762,16 +764,21 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
         rq = rq.header("HTTP-Referer", "https://github.com/nova-izuki/izuki").header("X-Title", "Izuki");
     }
     let resp = rq.send()?;
+    // This model takes a different "don't think" setting (or none): again without it.
+    if knob && resp.status().as_u16() == 400 {
+        crate::vision::gemini_refused_no_think(&model_now);
+        return stream_one(cfg, messages, stop, on_text);
+    }
     // Gemini's main model is often "experiencing high demand" on the free
     // tier; its lighter sibling usually isn't, and answers even faster.
     let busy = matches!(resp.status().as_u16(), 429 | 503);
     if busy && cfg.id == ProviderId::Gemini && cfg.model.contains("flash") && !cfg.model.contains("lite") {
-        eprintln!("[chat] {} is busy ({}) — using gemini-2.5-flash-lite", cfg.model, resp.status());
+        eprintln!("[chat] {} is busy ({}) — using {}", cfg.model, resp.status(), crate::vision::GEMINI_LITE);
         if resp.status().as_u16() == 429 {
             crate::vision::gemini_main_tired();
         }
         let mut lite = cfg.clone();
-        lite.model = "gemini-2.5-flash-lite".into();
+        lite.model = crate::vision::GEMINI_LITE.into();
         return stream_one(&lite, messages, stop, on_text);
     }
     if !resp.status().is_success() {

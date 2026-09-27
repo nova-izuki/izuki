@@ -344,6 +344,8 @@ pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
         | ProviderId::Nvidia
         | ProviderId::NineRouter
         | ProviderId::Xai
+        | ProviderId::Groq
+        | ProviderId::Mistral
         | ProviderId::Custom => ask_openai_compatible(cfg, req)?,
     };
 
@@ -654,6 +656,37 @@ fn ask_ollama(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
     Ok(value["response"].as_str().unwrap_or_default().to_string())
 }
 
+/// Google's own "always the current one" names. Fixed version names get
+/// retired ("Gemini 2.5 Flash is no longer available to new users" broke
+/// every new install), while these keep pointing at the newest Flash models.
+pub const GEMINI_MAIN: &str = "gemini-flash-latest";
+pub const GEMINI_LITE: &str = "gemini-flash-lite-latest";
+
+/// The saved name, or its always-current stand-in if it's an old fixed
+/// version (1.5 / 2.0 / 2.5 Flash) that Google is retiring.
+pub fn gemini_current(model: &str) -> String {
+    let m = model.trim();
+    let old = m.starts_with("gemini-2.0-flash") || m.starts_with("gemini-2.5-flash") || m.starts_with("gemini-1.5-flash");
+    match (old, m.contains("lite")) {
+        (true, true) => GEMINI_LITE.into(),
+        (true, false) => GEMINI_MAIN.into(),
+        _ => m.to_string(),
+    }
+}
+
+/// Models that refused the "don't think first" setting (each newer model
+/// takes a different one, and some take none): asked without it from then on.
+static NO_THINK_KNOB: parking_lot::Mutex<Vec<String>> = parking_lot::Mutex::new(Vec::new());
+
+pub fn gemini_takes_no_think(model: &str) -> bool {
+    model.contains("flash") && !NO_THINK_KNOB.lock().iter().any(|m| m == model)
+}
+
+pub fn gemini_refused_no_think(model: &str) {
+    eprintln!("[brain] {model} doesn't take the no-thinking setting; asking without it");
+    NO_THINK_KNOB.lock().push(model.to_string());
+}
+
 /// Gemini's main Flash model is out of free quota until this time.
 static GEMINI_MAIN_TIRED: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
 
@@ -662,7 +695,7 @@ static GEMINI_MAIN_TIRED: parking_lot::Mutex<Option<std::time::Instant>> = parki
 pub fn gemini_model_now(model: &str) -> String {
     let tired = GEMINI_MAIN_TIRED.lock().map(|t| t > std::time::Instant::now()).unwrap_or(false);
     if tired && model.contains("flash") && !model.contains("lite") {
-        "gemini-2.5-flash-lite".into()
+        GEMINI_LITE.into()
     } else {
         model.to_string()
     }
@@ -710,23 +743,28 @@ fn ask_gemini_as(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
     // Flash models "think" first by default — seconds (or a timeout) before
     // a word of the plan. Reading a screenshot and picking a click doesn't
     // need it. (Pro models can't switch it off.)
-    if cfg.model.contains("flash") {
+    let knob = gemini_takes_no_think(&cfg.model);
+    if knob {
         body["generationConfig"]["thinkingConfig"] = json!({ "thinkingBudget": 0 });
     }
 
     let res = client()?.post(url).header("x-goog-api-key", key).json(&body).send()?;
     let status = res.status();
     let value: Value = res.json()?;
+    if status.as_u16() == 400 && knob {
+        gemini_refused_no_think(&cfg.model);
+        return ask_gemini_as(cfg, req);
+    }
     // Out of free quota (429) or overloaded (503) on the main Flash model:
     // the lighter one has its own allowance, reads screenshots too, and is
     // quicker.
     if matches!(status.as_u16(), 429 | 503) && cfg.model.contains("flash") && !cfg.model.contains("lite") {
-        eprintln!("[brain] {} answered {status} — trying gemini-2.5-flash-lite", cfg.model);
+        eprintln!("[brain] {} answered {status} — trying {GEMINI_LITE}", cfg.model);
         if status.as_u16() == 429 && value.to_string().to_lowercase().contains("quota") {
             gemini_main_tired();
         }
         let mut lite = cfg.clone();
-        lite.model = "gemini-2.5-flash-lite".into();
+        lite.model = GEMINI_LITE.into();
         return ask_gemini_as(&lite, req);
     }
     if !status.is_success() {

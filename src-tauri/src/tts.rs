@@ -145,7 +145,13 @@ fn gemini_voice(chosen: &str, openai: &str) -> &'static str {
 
 /// Gemini's speech models, newest guess first; the one that answers is
 /// remembered (a retired name just answers 404).
-const GEMINI_TTS_MODELS: &[&str] = &["gemini-2.5-flash-preview-tts", "gemini-2.5-flash-tts", "gemini-2.5-pro-preview-tts"];
+const GEMINI_TTS_MODELS: &[&str] = &[
+    "gemini-3.8-flash-tts",
+    "gemini-3.1-flash-tts-preview",
+    "gemini-2.5-flash-preview-tts",
+    "gemini-2.5-flash-tts",
+    "gemini-3.8-flash-lite-tts",
+];
 static GEMINI_TTS_MODEL: parking_lot::Mutex<Option<&'static str>> = parking_lot::Mutex::new(None);
 
 /// Gemini returns bare 16-bit PCM (24 kHz, mono): put a WAV header on it.
@@ -199,7 +205,12 @@ fn gemini_speak(settings: &Settings, c: &reqwest::blocking::Client, text: &str, 
             .map_err(|e| format!("couldn't reach the voice service ({e})"))?;
         let status = resp.status();
         let text = resp.text().unwrap_or_default();
-        if status.as_u16() == 404 {
+        // Retired for this account ("no longer available to new users") or
+        // not there at all: the next name.
+        let gone = text.to_lowercase();
+        if status.as_u16() == 404
+            || (status.as_u16() == 400 && (gone.contains("no longer available") || gone.contains("not found") || gone.contains("not supported")))
+        {
             last = format!("Gemini has no voice model called {model}");
             continue;
         }

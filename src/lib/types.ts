@@ -220,6 +220,8 @@ export type ProviderId =
   | "nvidia"
   | "9router"
   | "xai"
+  | "groq"
+  | "mistral"
   | "custom";
 
 export interface ProviderConfig {
