@@ -643,7 +643,7 @@ function packPieces(pieces: string[], max: number): string[] {
 }
 
 /**
- * Speak `text` in a cloud voice ("orpheus" or "openai"), sentence by
+ * Speak `text` in a cloud voice ("orpheus", "openai", "gemini" or "edge"), sentence by
  * sentence: the first starts playing as soon as it arrives while the next
  * is already being made. Resolves `false` if nothing could be played (no
  * key, no credits, offline) so the caller can fall back to the local voice.
@@ -715,6 +715,9 @@ export async function speakCloud(
  * rest in long runs.
  */
 function cloudPieces(engine: string, text: string): string[] {
+  // Gemini's free allowance counts requests, and it reads long passages
+  // well: a whole reply in as few requests as possible.
+  if (engine === "gemini") return packPieces(splitForSpeech(text, 400), 900);
   if (engine !== "edge") return packPieces(splitForSpeech(text), 180);
   const sentences = splitForSpeech(text, 400);
   if (sentences.length <= 1) return sentences;
@@ -740,7 +743,7 @@ function fetchAudio(engine: string, piece: string, mood?: string | null): Promis
  * said — the gap between sentences disappears. Harmless if it's never used.
  */
 export function prefetchCloud(engine: string, text: string, mood?: string | null) {
-  if (!["edge", "orpheus", "openai"].includes(engine) || !text.trim()) return;
+  if (!["edge", "orpheus", "openai", "gemini"].includes(engine) || !text.trim()) return;
   for (const piece of cloudPieces(engine, text).slice(0, 2)) {
     const key = fetchKey(engine, piece, mood);
     if (prefetched.has(key)) continue;

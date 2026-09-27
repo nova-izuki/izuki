@@ -307,9 +307,10 @@ export interface Settings {
   speak_responses: boolean;
   /**
    * "edge" (Microsoft's free natural voices, online), "natural" (Kokoro, on
-   * this PC), "orpheus" (Groq), "openai" (ChatGPT) or "system" (Windows).
+   * this PC), "orpheus" (Groq), "openai" (ChatGPT), "gemini" (Gemini, free key)
+   * or "system" (Windows).
    */
-  voice_engine: "edge" | "natural" | "orpheus" | "openai" | "system";
+  voice_engine: "edge" | "natural" | "orpheus" | "openai" | "gemini" | "system";
   /** Kokoro voice id, e.g. "af_heart". */
   voice_name: string;
   /** Groq key for the Orpheus voice. */

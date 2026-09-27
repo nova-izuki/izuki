@@ -246,10 +246,16 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
 39. Enter to confirm: paste a key and press Enter (Settings brain key, Apps
     Composio key, n8n key, voice Groq/OpenAI key) → it's tested at once and
     says it works (a brain key becomes the active brain if none was set).
+40. Voice → Gemini: paste the Gemini key, Enter → it speaks and shows ✓.
+    A Nigerian character sounds Nigerian. When the free daily allowance
+    runs out, replies carry on in the Natural voice (a one-time caption).
+41. Chat tab never gets stuck on "Something went wrong": a bad saved
+    message is dropped; if the tab still crashes twice it starts a fresh
+    chat by itself, and the card shows the error text (screenshot it).
 
 Running the Rust tests from Linux: `cargo test --target x86_64-pc-windows-gnu
 --lib --no-run`, copy `target/x86_64-pc-windows-gnu/debug/WebView2Loader.dll`
-next to the test exe in `deps/`, and run it with `wine64` (74 pass).
+next to the test exe in `deps/`, and run it with `wine64` (75 pass).
 
 Fix whatever breaks; keep each fix small.
 

@@ -51,19 +51,53 @@ const SCREEN = /^\s*\[?SCREEN\]?\s*$/i;
 const APPS = /^\s*\[?APPS\]?\s*$/i;
 const REMIND_TAG = /\s*\[REMIND[^\]]*\]?\s*/gi;
 
+/**
+ * Only well-formed messages: a saved chat from an older version, or a reply
+ * that arrived in an odd shape, must never be able to break the tab — the
+ * conversation outlives the tab, so one bad message would break it every
+ * time it opened.
+ */
+function clean(v: unknown): Msg[] {
+  if (!Array.isArray(v)) return [];
+  const text = (x: unknown) => (typeof x === "string" ? x : x == null ? "" : String(x));
+  const out: Msg[] = [];
+  for (const m of v as Array<Record<string, unknown>>) {
+    if (!m || typeof m !== "object" || (m.role !== "user" && m.role !== "assistant")) continue;
+    // Garbled (not text), or a question with nothing in it: leave it out.
+    if (m.content != null && typeof m.content !== "string") continue;
+    if (m.role === "user" && !text(m.content).trim()) continue;
+    const links = Array.isArray(m.links)
+      ? (m.links as unknown[]).filter(
+          (l): l is [string, string] => Array.isArray(l) && typeof l[0] === "string" && typeof l[1] === "string"
+        )
+      : [];
+    const a = m.action as Record<string, unknown> | undefined;
+    out.push({
+      ...(m as unknown as Msg),
+      content: text(m.content),
+      status: typeof m.status === "string" ? m.status : undefined,
+      links: links.length ? links : undefined,
+      action:
+        a && typeof a === "object" && typeof a.id === "number"
+          ? ({ ...a, title: text(a.title), detail: text(a.detail) } as Msg["action"])
+          : undefined,
+    });
+  }
+  return out;
+}
+
 function load(): Msg[] {
   try {
     const raw = localStorage.getItem(KEY);
-    const v = raw ? (JSON.parse(raw) as Msg[]) : [];
     // A reply still empty from last time (the app closed or the tab changed
     // mid-answer) would spin forever — say so and offer to ask again.
-    return Array.isArray(v)
-      ? v.slice(-KEEP).map((m) =>
-          m.role === "assistant" && !m.content.trim()
-            ? { ...m, content: "That reply didn't come through.", failed: true, retry: true }
-            : m
-        )
-      : [];
+    return clean(raw ? JSON.parse(raw) : [])
+      .slice(-KEEP)
+      .map((m) =>
+        m.role === "assistant" && !m.content.trim() && !m.action
+          ? { ...m, content: "That reply didn't come through.", failed: true, retry: true }
+          : m
+      );
   } catch {
     return [];
   }
@@ -87,7 +121,20 @@ let chatBusy = false;
 const chatSubs = new Set<() => void>();
 const ping = () => chatSubs.forEach((f) => f());
 function setChatMsgs(next: Msg[] | ((m: Msg[]) => Msg[])) {
-  chatMsgs = typeof next === "function" ? next(chatMsgs) : next;
+  const was = chatMsgs;
+  chatMsgs = clean(typeof next === "function" ? next(chatMsgs) : next);
+  // A patch for "the last message" when there is none (New chat pressed
+  // while a reply was on its way) changes nothing.
+  if (chatMsgs.length === 0 && was.length === 0 && typeof next === "function") return;
+  save(chatMsgs);
+  ping();
+}
+/** A fresh, empty chat — the way back if the tab ever fails to draw. */
+export function resetChat() {
+  chatStream.current = null;
+  chatFinish.current = null;
+  chatMsgs = [];
+  chatBusy = false;
   save(chatMsgs);
   ping();
 }
@@ -160,6 +207,7 @@ export function ChatTab() {
       let raw = "";
       const setLast = (patch: Partial<Msg>) =>
         setMsgs((m) => {
+          if (!m.length) return m;
           const copy = m.slice();
           copy[copy.length - 1] = { ...copy[copy.length - 1], ...patch };
           return copy;
@@ -414,7 +462,7 @@ export function ChatTab() {
           {msgs.map((m, i) =>
             m.note ? (
               <div key={i} className="self-center rounded-full bg-white/5 px-2.5 py-0.5 text-[10.5px] text-izk-muted">
-                {m.content.startsWith("[I allowed") ? "✓ You allowed it" : "✕ You said no"}
+                {String(m.content).startsWith("[I allowed") ? "✓ You allowed it" : "✕ You said no"}
               </div>
             ) : (
             <div key={i} className={cx("flex", m.role === "user" ? "justify-end" : "justify-start")}>

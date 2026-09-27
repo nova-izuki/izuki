@@ -10,6 +10,10 @@
 //!   with plain-English instructions. Uses the OpenAI key already in Izuki;
 //!   paid, but about a cent for several minutes of speech.
 //!
+//! - **gemini** — Google's Gemini speech, steered in plain words (accent,
+//!   feeling) like the ChatGPT voice, and free with the same Gemini key as
+//!   the brain (a daily allowance; past it, the natural voice takes over).
+//!
 //! - **edge** — Microsoft's free neural voices (voices.rs): no key, many
 //!   accents and languages. The default.
 //!
@@ -102,6 +106,125 @@ fn openai_instructions(settings: &Settings, mood: Option<&str>) -> String {
     )
 }
 
+/// How the Gemini voice is told to say a line: the feeling and the
+/// character's accent in a few words, before the line itself.
+fn gemini_direction(settings: &Settings, mood: Option<&str>) -> String {
+    let feeling = match mood {
+        Some("cheerful") => "cheerfully, smiling",
+        Some("excited") => "with real excitement",
+        Some("calm") => "calmly and reassuringly",
+        Some("serious") => "seriously but kindly",
+        Some("sympathetic") => "gently, with care",
+        Some("playful") => "playfully, a little teasing",
+        Some("curious") => "with curiosity",
+        _ => "warmly, like a close friend",
+    };
+    let a = crate::voices::active(settings);
+    let accent = if a.persona.id == "chidi" || a.persona.id == "amaka" {
+        " in a strong Nigerian accent, with the rhythm and bounce of Lagos Pidgin".to_string()
+    } else {
+        accent_of(a.persona.lang).map(|x| format!(" in a strong, authentic {x} accent")).unwrap_or_default()
+    };
+    format!("Say {feeling}{accent}, in a natural conversational rhythm")
+}
+
+/// A Gemini voice for the character: its chosen one, else the closest to
+/// its ChatGPT voice.
+fn gemini_voice(chosen: &str, openai: &str) -> &'static str {
+    if let Some(v) = GEMINI_VOICES.iter().find(|v| v.eq_ignore_ascii_case(chosen)) {
+        return v;
+    }
+    match openai {
+        "ash" => "Algieba",
+        "cedar" => "Charon",
+        "marin" => "Aoede",
+        "sage" => "Vindemiatrix",
+        _ => "Sulafat",
+    }
+}
+
+/// Gemini's speech models, newest guess first; the one that answers is
+/// remembered (a retired name just answers 404).
+const GEMINI_TTS_MODELS: &[&str] = &["gemini-2.5-flash-preview-tts", "gemini-2.5-flash-tts", "gemini-2.5-pro-preview-tts"];
+static GEMINI_TTS_MODEL: parking_lot::Mutex<Option<&'static str>> = parking_lot::Mutex::new(None);
+
+/// Gemini returns bare 16-bit PCM (24 kHz, mono): put a WAV header on it.
+fn pcm_to_wav(pcm: &[u8], rate: u32) -> Vec<u8> {
+    let mut w = Vec::with_capacity(44 + pcm.len());
+    let len = pcm.len() as u32;
+    w.extend_from_slice(b"RIFF");
+    w.extend_from_slice(&(36 + len).to_le_bytes());
+    w.extend_from_slice(b"WAVEfmt ");
+    w.extend_from_slice(&16u32.to_le_bytes());
+    w.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    w.extend_from_slice(&1u16.to_le_bytes()); // mono
+    w.extend_from_slice(&rate.to_le_bytes());
+    w.extend_from_slice(&(rate * 2).to_le_bytes());
+    w.extend_from_slice(&2u16.to_le_bytes());
+    w.extend_from_slice(&16u16.to_le_bytes());
+    w.extend_from_slice(b"data");
+    w.extend_from_slice(&len.to_le_bytes());
+    w.extend_from_slice(pcm);
+    w
+}
+
+fn gemini_speak(settings: &Settings, c: &reqwest::blocking::Client, text: &str, mood: Option<&str>) -> Result<Vec<u8>, String> {
+    let cfg = settings.provider(ProviderId::Gemini).ok_or("Gemini isn't set up")?;
+    let key = cfg.api_key.trim();
+    if key.is_empty() {
+        return Err("add your free Gemini key to use the Gemini voice".into());
+    }
+    let persona = crate::voices::active(settings).persona;
+    let body = json!({
+        "contents": [{ "parts": [{ "text": format!("{}: {text}", gemini_direction(settings, mood)) }] }],
+        "generationConfig": {
+            "responseModalities": ["AUDIO"],
+            "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": {
+                "voiceName": gemini_voice(settings.cloud_voice.trim(), persona.openai)
+            } } }
+        }
+    });
+    let known = *GEMINI_TTS_MODEL.lock();
+    let models: Vec<&'static str> = match known {
+        Some(m) => vec![m],
+        None => GEMINI_TTS_MODELS.to_vec(),
+    };
+    let mut last = String::from("Gemini voice failed");
+    for model in models {
+        let resp = c
+            .post(format!("https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"))
+            .header("x-goog-api-key", key)
+            .json(&body)
+            .send()
+            .map_err(|e| format!("couldn't reach the voice service ({e})"))?;
+        let status = resp.status();
+        let text = resp.text().unwrap_or_default();
+        if status.as_u16() == 404 {
+            last = format!("Gemini has no voice model called {model}");
+            continue;
+        }
+        if !status.is_success() {
+            eprintln!("[tts] gemini HTTP {status}: {}", text.chars().take(200).collect::<String>());
+            return Err(friendly_error("Gemini", status, &text));
+        }
+        let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("Gemini voice: {e}"))?;
+        let part = &v["candidates"][0]["content"]["parts"][0]["inlineData"];
+        let Some(data) = part["data"].as_str() else {
+            return Err("Gemini sent no audio back — try again".into());
+        };
+        use base64::Engine as _;
+        let pcm = base64::engine::general_purpose::STANDARD.decode(data).map_err(|e| format!("Gemini voice: {e}"))?;
+        let rate = part["mimeType"]
+            .as_str()
+            .and_then(|m| m.split("rate=").nth(1))
+            .and_then(|r| r.trim_end_matches(|c: char| !c.is_ascii_digit()).parse().ok())
+            .unwrap_or(24_000);
+        *GEMINI_TTS_MODEL.lock() = Some(model);
+        return Ok(pcm_to_wav(&pcm, rate));
+    }
+    Err(last)
+}
+
 fn client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(8))
@@ -125,6 +248,7 @@ fn friendly_error(service: &str, status: reqwest::StatusCode, body: &str) -> Str
     match status.as_u16() {
         401 | 403 => format!("{service} rejected the key — check it in Talk to Izuki"),
         402 => format!("{service} needs credits on the account"),
+        429 if service == "Gemini" => "the free Gemini voice has used today's allowance".into(),
         429 if body.contains("credit") || body.contains("quota") => {
             format!("{service} has no credits left on this account")
         }
@@ -148,6 +272,9 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
         return crate::voices::synthesize(text, &a.voice, a.rate + dr, a.pitch + dp);
     }
     let c = client()?;
+    if engine == "gemini" {
+        return gemini_speak(settings, &c, text, mood);
+    }
     let persona = crate::voices::active(settings).persona;
     let chosen = settings.cloud_voice.trim();
 
@@ -225,6 +352,23 @@ mod tests {
         assert!(friendly_error("Groq", reqwest::StatusCode::BAD_REQUEST, r#"{"error":{"message":"The model requires terms acceptance","code":"model_terms_required"}}"#).contains("accept"));
         assert!(friendly_error("OpenAI", reqwest::StatusCode::BAD_REQUEST, r#"{"error":{"message":"Invalid voice"}}"#).contains("Invalid voice"));
     }
+
+    #[test]
+    fn gemini_voice_is_steered_and_wrapped() {
+        let mut s = Settings::default();
+        s.persona = "chidi".into();
+        let d = gemini_direction(&s, Some("excited"));
+        assert!(d.contains("excitement") && d.contains("Pidgin"), "{d}");
+        assert_eq!(gemini_voice("charon", "coral"), "Charon");
+        assert_eq!(gemini_voice("", "cedar"), "Charon");
+        assert_eq!(gemini_voice("nope", "coral"), "Sulafat");
+        let wav = pcm_to_wav(&[0u8; 480], 24_000);
+        assert_eq!(&wav[..4], b"RIFF");
+        assert_eq!(&wav[8..16], b"WAVEfmt ");
+        assert_eq!(u32::from_le_bytes(wav[24..28].try_into().unwrap()), 24_000);
+        assert_eq!(wav.len(), 44 + 480);
+        assert!(friendly_error("Gemini", reqwest::StatusCode::TOO_MANY_REQUESTS, "{}").contains("today's allowance"));
+    }
 }
 
 /// A reply as spoken audio for another device — the "Call Izuki" page on a
@@ -234,7 +378,7 @@ mod tests {
 /// their type.
 pub fn speak_audio(settings: &Settings, text: &str) -> Result<(Vec<u8>, &'static str), String> {
     let engine = settings.voice_engine.as_str();
-    if matches!(engine, "orpheus" | "openai") {
+    if matches!(engine, "orpheus" | "openai" | "gemini") {
         match synthesize(settings, engine, text, None) {
             Ok(wav) => return Ok((wav, "audio/wav")),
             Err(e) => eprintln!("[tts] {engine} for the call: {e} — trying the natural voice"),
@@ -248,6 +392,10 @@ pub fn speak_audio(settings: &Settings, text: &str) -> Result<(Vec<u8>, &'static
 }
 
 pub const ORPHEUS_VOICES: &[&str] = &["hannah", "autumn", "diana", "austin", "daniel", "troy"];
+pub const GEMINI_VOICES: &[&str] = &[
+    "Charon", "Algieba", "Orus", "Iapetus", "Umbriel", "Achird", "Sadaltager", "Puck",
+    "Sulafat", "Aoede", "Kore", "Vindemiatrix", "Despina", "Leda", "Zephyr", "Gacrux",
+];
 pub const OPENAI_VOICES: &[&str] = &["marin", "cedar", "coral", "sage", "ash", "verse", "alloy", "ballad", "echo", "fable", "nova", "onyx", "shimmer"];
 
 /// Windows' built-in text-to-speech, as WAV bytes.

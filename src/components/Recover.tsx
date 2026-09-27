@@ -16,11 +16,19 @@ interface Props {
   children: ReactNode;
   /** Draw nothing while broken (for invisible parts like the voice engine). */
   silent?: boolean;
+  /**
+   * Clear whatever this part keeps between visits (the chat's saved
+   * conversation) — tried after a second crash, since state that outlives
+   * the part would otherwise break it again on every retry.
+   */
+  onReset?: () => void;
 }
 
 interface State {
   broken: boolean;
   attempt: number;
+  /** The last error, shown small on the card so a screenshot says what broke. */
+  error?: string;
 }
 
 const RETRY_MS = 400;
@@ -33,8 +41,9 @@ export class Recover extends Component<Props, State> {
   private crashes: number[] = [];
   private timer: ReturnType<typeof setTimeout> | undefined;
 
-  static getDerivedStateFromError(): Partial<State> {
-    return { broken: true };
+  static getDerivedStateFromError(error: unknown): Partial<State> {
+    const e = error as { message?: string } | undefined;
+    return { broken: true, error: String(e?.message ?? error).slice(0, 180) };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
@@ -42,6 +51,14 @@ export class Recover extends Component<Props, State> {
     this.crashes = [...this.crashes.filter((t) => now - t < WINDOW_MS), now];
     const where = (info.componentStack ?? "").trim().split("\n").slice(0, 6).join(" | ");
     void api.log(`[${this.props.name}] crashed: ${error?.message ?? error} :: ${where} :: ${(error?.stack ?? "").split("\n").slice(0, 4).join(" | ")}`);
+    if (this.crashes.length === 2 && this.props.onReset) {
+      void api.log(`[${this.props.name}] starting it fresh`);
+      try {
+        this.props.onReset();
+      } catch {
+        /* the retry still happens */
+      }
+    }
     if (this.crashes.length <= MAX_RETRIES) {
       clearTimeout(this.timer);
       this.timer = setTimeout(() => this.setState((s) => ({ broken: false, attempt: s.attempt + 1 })), RETRY_MS);
@@ -64,11 +81,19 @@ export class Recover extends Component<Props, State> {
         <span>Izuki saved what happened so it can be fixed. Reloading usually sorts it out.</span>
         <button
           type="button"
-          onClick={() => location.reload()}
+          onClick={() => {
+            try {
+              this.props.onReset?.();
+            } catch {
+              /* reload anyway */
+            }
+            location.reload();
+          }}
           className="rounded-full border border-white/12 bg-white/8 px-3 py-1 text-[12px] font-semibold text-izk-ink hover:bg-white/14"
         >
-          Reload
+          {this.props.onReset ? "Start fresh" : "Reload"}
         </button>
+        {this.state.error && <span className="font-mono text-[10.5px] text-izk-muted/70">{this.state.error}</span>}
       </div>
     );
   }
