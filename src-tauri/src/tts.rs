@@ -368,7 +368,10 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
             return Err("add your free ElevenLabs key to use the ElevenLabs voice".into());
         }
         let persona = crate::voices::active(settings).persona;
-        let voice = eleven_voice(settings.cloud_voice.trim(), persona.openai);
+        // A pasted voice ID (any voice from ElevenLabs' library — e.g. a strong
+        // Nigerian one) is used as-is; otherwise the character's default.
+        let chosen = settings.cloud_voice.trim();
+        let voice: &str = if !chosen.is_empty() { chosen } else { eleven_voice("", persona.openai) };
         let resp = c
             .post(format!("https://api.elevenlabs.io/v1/text-to-speech/{voice}?output_format=pcm_24000"))
             .header("xi-api-key", key)

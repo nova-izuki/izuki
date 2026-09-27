@@ -475,6 +475,41 @@ export function VoicePicker() {
         </Row>
       )}
 
+      {engine === "elevenlabs" && (
+        <div className="mb-1 rounded-[12px] border border-white/10 bg-white/5 px-2.5 py-2 text-[10.5px] leading-relaxed text-izk-muted">
+          Want a <b className="text-izk-ink">stronger accent</b> (a real Nigerian voice, etc.)? Open ElevenLabs’ Voice
+          Library, search e.g. <b className="text-izk-ink">Nigerian</b>, open a voice you like, copy its
+          <b className="text-izk-ink"> Voice ID</b>, and paste it here — it’s used for whichever character is playing.
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <input
+              type="text"
+              value={settings.cloud_voice}
+              onChange={(e) => patch({ cloud_voice: e.target.value.trim() })}
+              placeholder="Paste a voice ID (blank = the character’s own)"
+              className="izk-field izk-no-drag h-[30px] min-w-0 flex-1 py-0 font-mono text-[11.5px]"
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              onClick={() => void openLink("https://elevenlabs.io/app/voice-library")}
+              className="izk-pill izk-no-drag h-[26px] shrink-0 px-2.5 text-[11px]"
+            >
+              <ExternalLink size={11} strokeWidth={2.4} /> Library
+            </button>
+          </div>
+          {settings.cloud_voice.trim() && (
+            <button
+              type="button"
+              onClick={() => void hear("test", engine, null)}
+              className="izk-btn-primary izk-no-drag mt-1.5 flex h-[26px] items-center gap-1 rounded-full px-2.5 text-[11px]"
+            >
+              <Check size={11} strokeWidth={2.6} /> Hear this voice ID
+            </button>
+          )}
+        </div>
+      )}
+
       {engine === "natural" && (
         <Row label="Which voice" hint="The voice on this PC. Your character picks one for you.">
           <select value={settings.voice_name} onChange={(e) => patch({ voice_name: e.target.value })} className={selectClass}>

@@ -144,6 +144,11 @@ const SYSTEM_PROMPT: &str = concat!(
     "prefer), add it to `remember`. Don't redo steps listed as already done. Prefer reliable ",
     "moves: keyboard shortcuts, the Start menu (key win, type the app name, enter) and the ",
     "address bar (ctrl+l) over hunting for small icons.\n",
+    "Clear what's in the way, like a person would: if a window covers the thing you need, minimise it ",
+    "(its minimise button, or win+down) or drag its title bar aside first, then act. If something sits on ",
+    "top of exactly where you must click (a pop-up, a floating panel, a chat bubble), move or close it ",
+    "first rather than clicking through it. If a cookie/consent or 'not now' banner blocks the page, ",
+    "dismiss it first. Don't keep clicking a spot that's covered — deal with the cover, then click.\n",
     "BE DECISIVE, like a friend with great taste. Choosing for them IS the job: which video, song, ",
     "result, link, article, product to look at, which of several similar options. Read what's on ",
     "screen (titles, channels, views, ratings, dates), match it to what they asked and what you ",
@@ -334,9 +339,11 @@ impl VisionRequest {
 }
 
 fn client() -> Result<reqwest::blocking::Client> {
+    // Bounded so a stuck cloud call can't freeze "thinking" for long — the
+    // agent checks for a stop between calls, so shorter here means a faster stop.
     reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(45))
-        .connect_timeout(Duration::from_secs(6))
+        .timeout(Duration::from_secs(22))
+        .connect_timeout(Duration::from_secs(5))
         .build()
         .context("could not start the HTTP client")
 }

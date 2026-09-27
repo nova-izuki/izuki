@@ -987,7 +987,7 @@ fn submit_task(
                 Err(e) => {
                     attempt += 1;
                     eprintln!("[agent] round {} try {attempt} failed: {e}", round + 1);
-                    if attempt >= 3 || !alive() {
+                    if attempt >= 2 || !alive() {
                         break Err(e);
                     }
                     if attempt == 1 {

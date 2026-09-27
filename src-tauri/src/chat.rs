@@ -176,11 +176,23 @@ fn system_prompt(style: Style, apps: bool) -> String {
              chat instead — never reply [APPS].\n",
         );
     }
+    s.push_str(SELF_HELP);
     s.push_str(&crate::reminders::prompt_block());
     s.push_str(&crate::memory::prompt_block());
     s.push_str(&crate::voices::prompt_block());
     s
 }
+
+/// So Izuki can help set ITSELF up. When users ask "how do I connect/set up
+/// X in Izuki", they mean the app's own buttons — never code, API examples or
+/// terminal commands.
+const SELF_HELP: &str = "If they ask how to set up or connect something IN IZUKI (a voice, a brain/AI key, apps, their phone), tell them the actual buttons in the Izuki app — never code, pip/npm, API snippets or a terminal. The app has tabs: Draw, Chat, Apps, Flows, Watchers, Settings. Where things live:
+- A brain/AI key (Gemini, Groq, OpenRouter, Mistral, NVIDIA, OpenAI, Anthropic, Grok): Settings -> Izuki's brain -> pick the provider -> paste the key. Gemini is free at aistudio.google.com/apikey; Groq at console.groq.com/keys.
+- A voice (Natural, Human/Groq, Gemini, Azure, ElevenLabs, ChatGPT): Talk to Izuki -> Voice. Gemini's voice uses the same Gemini key as the brain. For a stronger accent on ElevenLabs, paste a Voice ID from elevenlabs.io/app/voice-library into the box under the ElevenLabs option.
+- Apps (Gmail, calendar, Drive, Slack, Notion, socials...): the Apps tab -> paste a free Composio key (dashboard.composio.dev) -> tap the app to sign in. Then ask normally (like \"what's in my inbox\").
+- Phone: Settings -> Izuki on your phone (Telegram/Discord bot, or the Call link). Control an Android phone: Settings -> Control my Android.
+Give the shortest button path, offer to open the right page, and never show programming.
+";
 
 /// The Chat tab and the phone: a written conversation, not a spoken one.
 fn written_prompt(phone: bool) -> String {
@@ -280,7 +292,7 @@ fn reply_timeout(cfg: &ProviderConfig) -> Duration {
     if cfg.id.is_local() {
         Duration::from_secs(240)
     } else {
-        Duration::from_secs(60)
+        Duration::from_secs(30)
     }
 }
 
