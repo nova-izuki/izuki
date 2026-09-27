@@ -29,6 +29,39 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> Option<T> {
     serde_json::from_str(&raw).ok()
 }
 
+/// The user's settings — keys and all — read forgivingly. A strict read used
+/// to fail on anything this copy of Izuki didn't know (a brain added in a
+/// newer version, "groq" as the chosen one), fall back to blank defaults,
+/// and the next save wiped every key the user had pasted. Now what isn't
+/// understood is skipped, the rest is kept, and a file that still can't be
+/// read is copied aside before anything is written over it.
+fn read_settings(path: &Path) -> Settings {
+    let Ok(raw) = fs::read_to_string(path) else { return Settings::default() };
+    if let Ok(s) = serde_json::from_str::<Settings>(&raw) {
+        return s;
+    }
+    if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&raw) {
+        let known = |id: &serde_json::Value| id.as_str().and_then(crate::settings::ProviderId::parse).is_some();
+        if let Some(list) = v.get_mut("providers").and_then(|p| p.as_array_mut()) {
+            list.retain(|p| known(&p["id"]));
+        }
+        if !v.get("active_provider").is_some_and(|a| known(a)) {
+            v["active_provider"] = serde_json::json!("gemini");
+        }
+        if v.get("fallback_provider").is_some_and(|f| !f.is_null() && !known(f)) {
+            v["fallback_provider"] = serde_json::Value::Null;
+        }
+        if let Ok(s) = serde_json::from_value::<Settings>(v) {
+            eprintln!("[store] settings had entries this version doesn't know — skipped them, kept the rest");
+            return s;
+        }
+    }
+    let aside = path.with_file_name(format!("settings.unreadable-{}.json", chrono::Local::now().format("%Y%m%d-%H%M%S")));
+    let _ = fs::copy(path, &aside);
+    eprintln!("[store] couldn't read settings.json — kept a copy at {}", aside.display());
+    Settings::default()
+}
+
 /// Write via a temp file then rename, so a crash mid-write cannot corrupt the
 /// user's flow library.
 fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
@@ -52,7 +85,7 @@ impl Store {
     pub fn load() -> Self {
         let dir = ensure_dir();
 
-        let mut settings: Settings = read_json(&dir.join("settings.json")).unwrap_or_default();
+        let mut settings: Settings = read_settings(&dir.join("settings.json"));
         settings.heal();
 
         let flows: Vec<Flow> = read_json(&dir.join("flows.json")).unwrap_or_default();
@@ -219,5 +252,33 @@ impl Store {
 
     pub fn write_ghost(&self, v: &serde_json::Value) {
         let _ = write_json(&self.dir.join("ghost.json"), v);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// A brain this version doesn't know — even as the chosen one — must not
+    /// cost the user their keys.
+    #[test]
+    fn unknown_brains_never_wipe_the_keys() {
+        let dir = std::env::temp_dir().join(format!("izuki-settings-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        let mut v = serde_json::to_value(crate::settings::Settings::default()).unwrap();
+        for p in v["providers"].as_array_mut().unwrap() {
+            if p["id"] == "gemini" {
+                p["api_key"] = "AIza-keep-me".into();
+            }
+        }
+        v["providers"].as_array_mut().unwrap().push(serde_json::json!({
+            "id": "brand-new-brain", "label": "Future", "base_url": "https://x", "model": "m", "api_key": "k", "enabled": true
+        }));
+        v["active_provider"] = "brand-new-brain".into();
+        std::fs::write(&path, v.to_string()).unwrap();
+        let s = super::read_settings(&path);
+        let gemini = s.provider(crate::settings::ProviderId::Gemini).unwrap();
+        assert_eq!(gemini.api_key, "AIza-keep-me");
+        assert_eq!(s.active_provider, crate::settings::ProviderId::Gemini);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
