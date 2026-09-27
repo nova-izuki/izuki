@@ -238,6 +238,7 @@ export const MOCK_SETTINGS: Settings = {
   android_enabled: false,
   android_addr: "",
   adult_ok: false,
+  chat_auto_run: false,
   follow_up_secs: 1800,
   chat_style: "auto",
   chat_color: "#7dd3fc",

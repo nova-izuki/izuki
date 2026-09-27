@@ -292,6 +292,10 @@ pub struct Settings {
     /// The user accepted the 18+ terms for the unfiltered characters.
     #[serde(default)]
     pub adult_ok: bool,
+    /// Chat tab: run file saves and commands without the Allow card (still
+    /// shown, like Claude Code's auto mode). Off by default — safer.
+    #[serde(default)]
+    pub chat_auto_run: bool,
     /// Your own free Composio key: Izuki's access to Gmail, Calendar, Drive,
     /// Slack, Notion, socials and more (composio.rs).
     /// "Call Izuki": a hands-free voice page for your phone, reached through
@@ -680,6 +684,7 @@ impl Default for Settings {
             android_enabled: false,
             android_addr: String::new(),
             adult_ok: false,
+            chat_auto_run: false,
             call_enabled: false,
             call_token: String::new(),
             composio_api_key: String::new(),

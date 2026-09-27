@@ -175,6 +175,7 @@ export function ChatTab() {
   const bottom = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const settings = useIzuki((s) => s.settings);
+  const patch = useIzuki((s) => s.patchSettings);
   const settingsLoaded = useIzuki((s) => s.settingsLoaded);
   const openSetup = useIzuki((s) => s.setSetupOpen);
   const noBrain = settingsLoaded && !brainReady(settings);
@@ -416,7 +417,18 @@ export function ChatTab() {
       {/* ------------------------------------------------ the chat */}
       <div className="izk-card flex min-h-[420px] flex-col p-0">
         <div className="flex items-center justify-between px-[14px] pt-[12px]">
-          <div className="text-[12px] text-izk-muted">Just chatting — nothing on your screen is touched.</div>
+          <button
+            type="button"
+            onClick={() => patch({ chat_auto_run: !settings.chat_auto_run })}
+            className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
+            title={
+              settings.chat_auto_run
+                ? "Auto: saves and commands run on their own (the command is still shown). Tap to switch to Ask."
+                : "Ask: you tap Allow before any save or command runs. Tap to switch to Auto."
+            }
+          >
+            {settings.chat_auto_run ? "⚡ Auto-run" : "🛡️ Ask first"}
+          </button>
           {msgs.length > 0 && (
             <button
               type="button"

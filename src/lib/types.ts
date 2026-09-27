@@ -363,6 +363,7 @@ export interface Settings {
   android_enabled: boolean;
   android_addr: string;
   adult_ok: boolean;
+  chat_auto_run: boolean;
   /** Your free Composio key — Izuki in Gmail, Calendar, Drive, Slack… */
   composio_api_key: string;
   /** "Call Izuki" — the hands-free phone page through a free tunnel. */
