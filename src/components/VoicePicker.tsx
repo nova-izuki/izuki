@@ -22,7 +22,17 @@ import type { Persona, Settings, VoiceCatalog } from "../lib/types";
  *   change speed and pitch, and add a personality of your own.
  */
 
-const CLOUD_VOICES: Record<"orpheus" | "openai" | "gemini", Array<{ id: string; label: string }>> = {
+const CLOUD_VOICES: Record<"orpheus" | "openai" | "gemini" | "elevenlabs", Array<{ id: string; label: string }>> = {
+  elevenlabs: [
+    { id: "cgSgspJ2msm6clMCkdW9", label: "Jessica — warm" },
+    { id: "Xb7hH8MSUJpSbSDYk0k2", label: "Alice — clear, British" },
+    { id: "pFZP5JQG7iQjIQuC4Bku", label: "Lily — soft, British" },
+    { id: "XrExE9yKIg1WjnnlVkGX", label: "Matilda — friendly" },
+    { id: "nPczCjzI2devNBz1zQrb", label: "Brian — deep, calm" },
+    { id: "JBFqnCBsd6RMkjVDRZzb", label: "George — warm, British" },
+    { id: "onwK4e9ZLuTAKqWW03F9", label: "Daniel — steady, British" },
+    { id: "TX3LPaxmHKxFdv7VOQHJ", label: "Liam — young, energetic" },
+  ],
   gemini: [
     { id: "Charon", label: "Charon — deep, calm" },
     { id: "Algieba", label: "Algieba — smooth" },
@@ -67,6 +77,13 @@ const OFFLINE_VOICES = [
 
 const GROUPS = ["Everyday", "Accents", "Languages", "Characters"] as const;
 const ORPHEUS_TERMS = "https://console.groq.com/playground?model=canopylabs%2Forpheus-v1-english";
+/** Where Azure Speech resources can live — the region is part of the address. */
+const AZURE_REGIONS = [
+  "eastus", "eastus2", "westus", "westus2", "centralus", "canadacentral", "brazilsouth",
+  "northeurope", "westeurope", "uksouth", "francecentral", "germanywestcentral", "swedencentral",
+  "southafricanorth", "uaenorth", "centralindia", "eastasia", "southeastasia", "japaneast",
+  "koreacentral", "australiaeast",
+];
 
 type Engine = Settings["voice_engine"];
 
@@ -102,7 +119,7 @@ export function VoicePicker() {
   }, []);
 
   const engine: Engine = settings.voice_engine === "system" ? "natural" : settings.voice_engine;
-  const cloud = engine === "orpheus" || engine === "openai" || engine === "gemini" ? engine : null;
+  const cloud = engine === "orpheus" || engine === "openai" || engine === "gemini" || engine === "elevenlabs" ? engine : null;
   const current = catalog.personas.find((p) => p.id === settings.persona) ?? catalog.personas[0];
   const shown = useMemo(() => catalog.personas.filter((p) => p.group === group), [catalog, group]);
   const openaiKey = settings.providers.find((p) => p.id === "openai")?.api_key.trim() ?? "";
@@ -197,6 +214,10 @@ export function VoicePicker() {
               ? "Human — Orpheus on Groq, very expressive (it can laugh and sigh). Needs a free Groq key. English only."
               : engine === "gemini"
                 ? "Gemini — Google's voice, follows your character's accent and mood. Free with the same Gemini key as the brain (a daily allowance — past it, Izuki switches to Natural)."
+              : engine === "azure"
+                ? "Azure — the same lifelike Natural voices and accents, through Microsoft's official free plan (half a million characters a month). Needs your own free Azure Speech key."
+              : engine === "elevenlabs"
+                ? "ElevenLabs — the most human-sounding voices there are. Free plan with a monthly allowance (about 10 minutes of speech) — past it, Izuki switches to Natural. Needs your own free key."
               : engine === "openai"
                 ? "ChatGPT's voice — the strongest accents (Nigerian, Pidgin…), following your character. The one paid option: an OpenAI key with a little credit (about a cent for several minutes)."
                 : "Offline — runs on this PC: free, private, works with no internet. English only."
@@ -211,6 +232,8 @@ export function VoicePicker() {
             { value: "natural", label: "Offline" },
             { value: "orpheus", label: "Human" },
             { value: "gemini", label: "Gemini" },
+            { value: "azure", label: "Azure" },
+            { value: "elevenlabs", label: "ElevenLabs" },
             { value: "openai", label: "ChatGPT" },
           ]}
         />
@@ -242,6 +265,90 @@ export function VoicePicker() {
             <button
               type="button"
               onClick={() => void hear("test", engine, null)}
+              className="izk-btn-primary izk-no-drag flex h-[28px] shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px]"
+            >
+              <Check size={11} strokeWidth={2.6} /> Save &amp; test
+            </button>
+          )}
+        </div>
+      )}
+
+      {engine === "azure" && (
+        <div className="mb-1 rounded-[12px] border border-izk-hand/25 bg-izk-hand/8 px-2.5 py-2 text-[10.5px] leading-relaxed text-izk-muted">
+          Free: in the Azure portal, create a <b className="text-izk-ink">Speech</b> resource on the <b className="text-izk-ink">Free F0</b> tier, then copy <b className="text-izk-ink">Key 1</b> and its <b className="text-izk-ink">Region</b> from “Keys and Endpoint”.
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <input
+              type="password"
+              value={settings.azure_speech_key}
+              onChange={(e) => patch({ azure_speech_key: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && settings.azure_speech_key.trim()) void hear("test", "azure", null);
+              }}
+              placeholder="Paste Key 1, then Enter"
+              className="izk-field izk-no-drag h-[30px] min-w-0 flex-1 py-0 text-[12px]"
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <select
+              value={settings.azure_speech_region}
+              onChange={(e) => patch({ azure_speech_region: e.target.value })}
+              className={selectClass}
+              aria-label="Azure region"
+            >
+              {(AZURE_REGIONS.includes(settings.azure_speech_region) ? AZURE_REGIONS : [settings.azure_speech_region, ...AZURE_REGIONS]).map((r) => (
+                <option key={r} value={r} className="bg-[#1b2230]">
+                  {r}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => void openLink("https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices")}
+              className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
+            >
+              <ExternalLink size={11} strokeWidth={2.4} /> Get a free key
+            </button>
+            {settings.azure_speech_key.trim() && (
+              <button
+                type="button"
+                onClick={() => void hear("test", "azure", null)}
+                className="izk-btn-primary izk-no-drag flex h-[26px] shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px]"
+              >
+                <Check size={11} strokeWidth={2.6} /> Save &amp; test
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {engine === "elevenlabs" && (
+        <div className="izk-inset mb-1 flex items-center gap-2 rounded-[14px] p-1.5">
+          <input
+            type="password"
+            value={settings.elevenlabs_key}
+            onChange={(e) => patch({ elevenlabs_key: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && settings.elevenlabs_key.trim()) void hear("test", "elevenlabs", null);
+            }}
+            placeholder="Paste your free ElevenLabs key, then Enter"
+            className="h-[30px] min-w-0 flex-1 bg-transparent px-2 text-[12px] text-izk-ink outline-none placeholder:text-izk-muted/55"
+            spellCheck={false}
+            autoComplete="off"
+          />
+          <button
+            type="button"
+            onClick={() => void openLink("https://elevenlabs.io/app/settings/api-keys")}
+            className="izk-pill izk-no-drag h-[28px] shrink-0 px-2.5 text-[11px]"
+          >
+            <ExternalLink size={11} strokeWidth={2.4} />
+            Get a free key
+          </button>
+          {settings.elevenlabs_key.trim() && (
+            <button
+              type="button"
+              onClick={() => void hear("test", "elevenlabs", null)}
               className="izk-btn-primary izk-no-drag flex h-[28px] shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px]"
             >
               <Check size={11} strokeWidth={2.6} /> Save &amp; test

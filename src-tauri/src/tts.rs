@@ -271,6 +271,31 @@ fn friendly_error(service: &str, status: reqwest::StatusCode, body: &str) -> Str
     }
 }
 
+/// ElevenLabs' ready-made voices (free on every plan).
+pub const ELEVEN_VOICES: &[(&str, &str)] = &[
+    ("cgSgspJ2msm6clMCkdW9", "Jessica"),
+    ("Xb7hH8MSUJpSbSDYk0k2", "Alice"),
+    ("pFZP5JQG7iQjIQuC4Bku", "Lily"),
+    ("XrExE9yKIg1WjnnlVkGX", "Matilda"),
+    ("nPczCjzI2devNBz1zQrb", "Brian"),
+    ("JBFqnCBsd6RMkjVDRZzb", "George"),
+    ("onwK4e9ZLuTAKqWW03F9", "Daniel"),
+    ("TX3LPaxmHKxFdv7VOQHJ", "Liam"),
+];
+
+/// The character's ElevenLabs voice: a deeper male one for the male
+/// characters (their ChatGPT voice says which), a warm female one otherwise.
+fn eleven_voice(chosen: &str, openai: &str) -> &'static str {
+    if let Some((id, _)) = ELEVEN_VOICES.iter().find(|(id, _)| *id == chosen) {
+        return id;
+    }
+    if matches!(openai, "cedar" | "ash" | "verse" | "echo" | "onyx" | "ballad") {
+        "nPczCjzI2devNBz1zQrb" // Brian — deep, calm
+    } else {
+        "cgSgspJ2msm6clMCkdW9" // Jessica — warm
+    }
+}
+
 /// One line of speech as WAV bytes.
 pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&str>) -> Result<Vec<u8>, String> {
     let text = text.trim();
@@ -285,6 +310,59 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
     let c = client()?;
     if engine == "gemini" {
         return gemini_speak(settings, &c, text, mood);
+    }
+    if engine == "azure" {
+        // Microsoft's official, free route to the very voices "Natural" uses —
+        // the character's voice, speed and pitch, all the same.
+        let key = settings.azure_speech_key.trim();
+        if key.is_empty() {
+            return Err("add your free Azure Speech key to use the Azure voice".into());
+        }
+        let a = crate::voices::active(settings);
+        let (dr, dp) = edge_mood(mood);
+        let region = settings.azure_speech_region.trim();
+        let resp = c
+            .post(format!("https://{region}.tts.speech.microsoft.com/cognitiveservices/v1"))
+            .header("Ocp-Apim-Subscription-Key", key)
+            .header("Content-Type", "application/ssml+xml")
+            .header("X-Microsoft-OutputFormat", "riff-24khz-16bit-mono-pcm")
+            .header("User-Agent", "Izuki")
+            .body(crate::voices::azure_ssml(text, &a.voice, a.rate + dr, a.pitch + dp))
+            .send()
+            .map_err(|e| format!("couldn't reach Azure Speech in \"{region}\" — check the region ({e})"))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().unwrap_or_default();
+            eprintln!("[tts] azure HTTP {status}: {}", body.chars().take(200).collect::<String>());
+            return Err(if status.as_u16() == 401 {
+                "Azure didn't accept that key — copy Key 1 again, and check the region matches your resource".into()
+            } else {
+                friendly_error("Azure Speech", status, &body)
+            });
+        }
+        return resp.bytes().map(|b| b.to_vec()).map_err(|e| e.to_string());
+    }
+    if engine == "elevenlabs" {
+        let key = settings.elevenlabs_key.trim();
+        if key.is_empty() {
+            return Err("add your free ElevenLabs key to use the ElevenLabs voice".into());
+        }
+        let persona = crate::voices::active(settings).persona;
+        let voice = eleven_voice(settings.cloud_voice.trim(), persona.openai);
+        let resp = c
+            .post(format!("https://api.elevenlabs.io/v1/text-to-speech/{voice}?output_format=pcm_24000"))
+            .header("xi-api-key", key)
+            .json(&json!({ "text": text, "model_id": "eleven_flash_v2_5" }))
+            .send()
+            .map_err(|e| format!("couldn't reach ElevenLabs ({e})"))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().unwrap_or_default();
+            eprintln!("[tts] elevenlabs HTTP {status}: {}", body.chars().take(200).collect::<String>());
+            return Err(friendly_error("ElevenLabs", status, &body));
+        }
+        let pcm = resp.bytes().map_err(|e| e.to_string())?;
+        return Ok(pcm_to_wav(&pcm, 24_000));
     }
     let persona = crate::voices::active(settings).persona;
     let chosen = settings.cloud_voice.trim();
@@ -389,7 +467,7 @@ mod tests {
 /// their type.
 pub fn speak_audio(settings: &Settings, text: &str) -> Result<(Vec<u8>, &'static str), String> {
     let engine = settings.voice_engine.as_str();
-    if matches!(engine, "orpheus" | "openai" | "gemini") {
+    if matches!(engine, "orpheus" | "openai" | "gemini" | "azure" | "elevenlabs") {
         match synthesize(settings, engine, text, None) {
             Ok(wav) => return Ok((wav, "audio/wav")),
             Err(e) => eprintln!("[tts] {engine} for the call: {e} — trying the natural voice"),

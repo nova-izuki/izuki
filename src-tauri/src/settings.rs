@@ -205,6 +205,16 @@ pub struct Settings {
     /// Voice for the cloud engines ("" = the character's own).
     #[serde(default)]
     pub cloud_voice: String,
+    /// Azure Speech key (free tier: half a million characters a month) —
+    /// Microsoft's official way to the same neural voices as "Natural".
+    #[serde(default)]
+    pub azure_speech_key: String,
+    /// The region the Azure Speech resource was made in, e.g. "eastus".
+    #[serde(default = "default_azure_region")]
+    pub azure_speech_region: String,
+    /// ElevenLabs key (free plan: a monthly allowance of the most human voices).
+    #[serde(default)]
+    pub elevenlabs_key: String,
     /// Izuki's character (voices.rs): "nova", "leo", "ezinne", "rex"…
     #[serde(default = "default_persona")]
     pub persona: String,
@@ -334,6 +344,10 @@ pub struct Settings {
     pub chat_color: String,
 }
 
+fn default_azure_region() -> String {
+    "eastus".into()
+}
+
 fn default_chat_style() -> String {
     "auto".into()
 }
@@ -446,6 +460,13 @@ impl Settings {
             }
         }
         self.groq_api_key = clean_key(&self.groq_api_key);
+        self.azure_speech_key = clean_key(&self.azure_speech_key);
+        self.elevenlabs_key = clean_key(&self.elevenlabs_key);
+        // "East US" / "eastus" / " EastUS " all mean the same region.
+        self.azure_speech_region = self.azure_speech_region.trim().to_lowercase().replace(' ', "");
+        if self.azure_speech_region.is_empty() {
+            self.azure_speech_region = default_azure_region();
+        }
         // One Groq key for everything Groq does (hearing, the Human voice and
         // now a brain): pasted in either place, it fills the other.
         let groq_brain_key = self.provider(ProviderId::Groq).map(|p| p.api_key.clone()).unwrap_or_default();
@@ -625,6 +646,9 @@ impl Default for Settings {
             voice_name: default_voice_name(),
             groq_api_key: String::new(),
             cloud_voice: String::new(),
+            azure_speech_key: String::new(),
+            azure_speech_region: default_azure_region(),
+            elevenlabs_key: String::new(),
             persona: default_persona(),
             persona_name: String::new(),
             persona_voice: String::new(),

@@ -267,6 +267,12 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
     and a Groq key, a voice note is heard by Groq's Whisper. Verified the
     exact requests from Node: Groq and OpenRouter (openrouter/free) answer
     in ~0.3 s; Groq Whisper heard the test clip.
+45. Free voices: Talk → Voice → Azure: make a free Speech resource (F0) in
+    the Azure portal, paste Key 1, pick its region, Save & test → the
+    character's own Natural voice speaks (Ezinne sounds Nigerian). Voice →
+    ElevenLabs: paste a free key, Save & test → Jessica (or Brian for male
+    characters) speaks; "Which voice" lists 8 ready-made voices. Neither
+    could be tried without keys — azure_ssml has a unit test.
 
 Running the Rust tests from Linux: `cargo test --target x86_64-pc-windows-gnu
 --lib --no-run`, copy `target/x86_64-pc-windows-gnu/debug/WebView2Loader.dll`

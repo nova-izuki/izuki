@@ -567,6 +567,20 @@ fn xml_escape(s: &str) -> String {
     out
 }
 
+/// The same request for Azure Speech, which takes the short voice name.
+pub fn azure_ssml(text: &str, voice: &str, rate: i32, pitch: i32) -> String {
+    let lang: String = voice.splitn(3, '-').take(2).collect::<Vec<_>>().join("-");
+    format!(
+        "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='{}'>\
+         <voice name='{}'><prosody pitch='{:+}Hz' rate='{:+}%'>{}</prosody></voice></speak>",
+        if lang.len() >= 4 { lang } else { "en-US".into() },
+        xml_escape(voice),
+        pitch,
+        rate,
+        xml_escape(text)
+    )
+}
+
 fn ssml(text: &str, voice: &str, rate: i32, pitch: i32) -> String {
     format!(
         "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>\
@@ -792,6 +806,16 @@ async fn edge_once(text: &str, voice: &str, rate: i32, pitch: i32) -> Result<Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn azure_request_names_the_voice_and_its_language() {
+        let x = azure_ssml("Tom & Jerry's <show>", "en-NG-EzinneNeural", 5, -2);
+        assert!(x.contains("xml:lang='en-NG'"), "{x}");
+        assert!(x.contains("<voice name='en-NG-EzinneNeural'>"), "{x}");
+        assert!(x.contains("pitch='-2Hz' rate='+5%'"), "{x}");
+        assert!(x.contains("Tom &amp; Jerry&apos;s &lt;show&gt;"), "{x}");
+        assert!(azure_ssml("hola", "es-ES-ElviraNeural", 0, 0).contains("xml:lang='es-ES'"));
+    }
 
     #[test]
     fn token_matches_the_reference_implementation() {

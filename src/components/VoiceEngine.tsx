@@ -190,7 +190,7 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
 
   // The most human voices first; each falls back to the next if it can't
   // speak right now (no key, out of credits, offline).
-  if (engine === "edge" || engine === "orpheus" || engine === "openai" || engine === "gemini") {
+  if (["edge", "orpheus", "openai", "gemini", "azure", "elevenlabs"].includes(engine)) {
     const spoke = await speakCloud(engine, text, mood, captionOnce).catch(() => false);
     if (spoke) {
       captionOnce();
@@ -202,7 +202,13 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
     const natural = engine !== "edge" && (await speakCloud("edge", speakable(raw, false), mood, captionOnce).catch(() => false));
     if (!cloudProblemsShown.has(why)) {
       cloudProblemsShown.add(why);
-      const label = engine === "edge" ? "natural" : engine === "orpheus" ? "Human (Groq)" : engine === "gemini" ? "Gemini" : "ChatGPT";
+      const label =
+        engine === "edge" ? "natural"
+        : engine === "orpheus" ? "Human (Groq)"
+        : engine === "gemini" ? "Gemini"
+        : engine === "azure" ? "Azure"
+        : engine === "elevenlabs" ? "ElevenLabs"
+        : "ChatGPT";
       showCaption(`Couldn't use the ${label} voice — ${why}. Using the ${natural ? "natural" : "on-device"} voice for now.`, false);
     }
     if (natural) {

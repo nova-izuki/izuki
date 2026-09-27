@@ -312,13 +312,18 @@ export interface Settings {
    * this PC), "orpheus" (Groq), "openai" (ChatGPT), "gemini" (Gemini, free key)
    * or "system" (Windows).
    */
-  voice_engine: "edge" | "natural" | "orpheus" | "openai" | "gemini" | "system";
+  voice_engine: "edge" | "natural" | "orpheus" | "openai" | "gemini" | "azure" | "elevenlabs" | "system";
   /** Kokoro voice id, e.g. "af_heart". */
   voice_name: string;
   /** Groq key for the Orpheus voice. */
   groq_api_key: string;
   /** Cloud voice name ("" = the character's own). */
   cloud_voice: string;
+  /** Azure Speech key + region: the official, free route to the Natural voices. */
+  azure_speech_key: string;
+  azure_speech_region: string;
+  /** ElevenLabs key (free plan's monthly allowance). */
+  elevenlabs_key: string;
   /** Izuki's character (voices.rs): "nova", "leo", "rex"… */
   persona: string;
   /** The user's name for it ("" = the character's). */

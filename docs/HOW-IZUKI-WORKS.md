@@ -154,7 +154,10 @@ Targets:
 - *Keep listening after I stop talking* — how long a voice session waits for you (5 s – 30 min).
 - *Show my words as I talk* — your words under the orb, live.
 - *Speak responses* / *Captions* — hear Izuki, read Izuki, or both.
-- *Voice* — the on-device voice, or a free cloud voice (Groq key) for the most natural sound.
+- *Voice* — Natural (free, no key), Offline (on this PC), Human (Groq, free key), Gemini (free with
+  the Gemini key), Azure (the Natural voices through Microsoft's official free plan — your own free
+  key + region), ElevenLabs (most human, free monthly allowance — your own free key), or ChatGPT
+  (paid). A keyed voice that can't speak right now falls back to Natural, then Offline.
 
 **Looks**
 - *Chat & caption colours* — Auto (matches your screen), Dark, Light, Gradient, or any colour.
