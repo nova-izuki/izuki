@@ -279,6 +279,14 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
     draws_in_paint -- --ignored` drew a clean smiley in Paint on Windows.
     "Highlight this paragraph and copy it into Word" → selects (double-click
     / drag / shift+click), ctrl+c, clicks in Word, ctrl+v.
+48. Phone app v2 (docs/app): home has the liquid orb, a time-of-day
+    greeting with the user's name, character chips and six action cards;
+    the phone icon (or the orb / "Talk live") opens the full-screen live
+    call — listening/thinking/speaking orb, your words and Izuki's live,
+    tap the orb to interrupt, ✕ to end. The speaker icon reads chat replies
+    aloud. Settings → "Who's your Izuki?" and "Install Izuki on this phone"
+    (Android: the install prompt; iPhone: the steps). Checked in a headless
+    browser at phone size; needs a real iPhone + Android test.
 47. Gemini's newest speech model returns a finished WAV (older ones raw
     PCM): the Gemini voice on the PC and phone now plays it as-is — check it
     has no click at the start and isn't sped up.

@@ -103,15 +103,80 @@
   .mem { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
   .mem button { border: 0; background: none; color: var(--muted); padding: 4px 8px; }
   code { background: rgba(255, 255, 255, 0.08); padding: 1px 6px; border-radius: 6px; font-size: 13px; overflow-wrap: anywhere; }
+
+  /* a slow aurora behind everything — alive, never distracting */
+  .aurora { position: fixed; inset: -20%; z-index: -1; pointer-events: none; filter: blur(60px); opacity: 0.55; }
+  .aurora i { position: absolute; width: 55vmax; height: 55vmax; border-radius: 50%; mix-blend-mode: screen; animation: drift 22s ease-in-out infinite alternate; }
+  .aurora i:nth-child(1) { background: #6d4aff; left: -10%; top: -10%; }
+  .aurora i:nth-child(2) { background: #16c2b5; right: -15%; bottom: -5%; animation-duration: 27s; animation-delay: -6s; }
+  .aurora i:nth-child(3) { background: #ff5fa2; left: 30%; top: 40%; width: 35vmax; height: 35vmax; opacity: 0.45; animation-duration: 31s; animation-delay: -12s; }
+  @keyframes drift { from { transform: translate(0, 0) scale(1); } to { transform: translate(8vmax, 6vmax) scale(1.15); } }
+
+  /* the liquid orb (home and the live call) */
+  .liquid { position: relative; border-radius: 50%; isolation: isolate; cursor: pointer; border: 0; padding: 0;
+    background: radial-gradient(circle at 32% 28%, #ffffffcc, transparent 18%), radial-gradient(circle at 50% 50%, #7c5cff, #1b9aaa 60%, #0e0e13 100%);
+    box-shadow: 0 0 60px rgba(124, 92, 255, 0.45), inset 0 0 40px rgba(255, 255, 255, 0.12); animation: breathe 4.5s ease-in-out infinite; }
+  .liquid::before, .liquid::after { content: ""; position: absolute; inset: 6%; border-radius: 50%; mix-blend-mode: screen; filter: blur(8px); }
+  .liquid::before { background: conic-gradient(from 0deg, #ff5fa2, #7c5cff, #4ecdc4, #ffd166, #ff5fa2); animation: swirl 7s linear infinite; opacity: 0.75; }
+  .liquid::after { background: conic-gradient(from 180deg, transparent, #4ecdc4, transparent 60%); animation: swirl 4.5s linear infinite reverse; opacity: 0.6; }
+  .liquid.listening { animation: breathe 1.2s ease-in-out infinite; box-shadow: 0 0 80px rgba(78, 205, 196, 0.6); }
+  .liquid.thinking::before { animation-duration: 1.6s; }
+  .liquid.speaking { animation: talk 0.5s ease-in-out infinite; box-shadow: 0 0 90px rgba(255, 95, 162, 0.5); }
+  @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+  @keyframes talk { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.09); } 70% { transform: scale(0.98); } }
+  @keyframes swirl { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .liquid, .liquid::before, .liquid::after, .aurora i { animation: none !important; } }
+
+  .hero { width: 132px; height: 132px; }
+  .hello { font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin: 0; }
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; max-width: 420px; }
+  .card { text-align: left; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-radius: 18px; padding: 12px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+  .card b { font-size: 20px; }
+  .card span { color: var(--muted); font-size: 12px; }
+  .card.live { grid-column: span 2; flex-direction: row; align-items: center; gap: 12px;
+    background: linear-gradient(135deg, rgba(124, 92, 255, 0.35), rgba(78, 205, 196, 0.25)); }
+  .card.live b { font-size: 26px; }
+  .people { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  .person { border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); border-radius: 999px; padding: 6px 12px; font-size: 13px; }
+  .person.on { background: linear-gradient(135deg, var(--violet), var(--teal)); border-color: transparent; color: #fff; font-weight: 600; }
+  .icon-btn.on { background: var(--teal); color: var(--ground); }
+  header .tools { display: flex; gap: 8px; }
+
+  /* the live call */
+  #live { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+    padding: calc(var(--safe-top) + 18px) 20px calc(var(--safe-bottom) + 24px); background: rgba(8, 8, 14, 0.82); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
+  #live[hidden] { display: none; }
+  #live .who { text-align: center; }
+  #live .who b { display: block; font-size: 20px; }
+  #live .who span { color: var(--muted); font-size: 13px; }
+  #live-orb { width: min(64vw, 280px); height: min(64vw, 280px); }
+  #live-status { color: var(--muted); font-size: 14px; min-height: 1.4em; text-align: center; }
+  .lines { width: 100%; max-width: 520px; text-align: center; display: flex; flex-direction: column; gap: 10px; min-height: 5.5em; }
+  #live-heard { font-size: 17px; color: var(--ink); }
+  #live-said { font-size: 15px; color: #cfc6ff; max-height: 7.5em; overflow: hidden; }
+  .live-bar { display: flex; gap: 18px; align-items: center; }
+  .round { width: 64px; height: 64px; border-radius: 50%; border: 1px solid var(--line); background: var(--raised); display: grid; place-items: center; }
+  .round svg { width: 24px; height: 24px; }
+  .round.end { background: #ff4d6a; border-color: transparent; color: #fff; width: 72px; height: 72px; }
 </style>
 </head>
 <body>
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
 <div class="app">
   <header>
     <span class="brand">IZUKI</span>
+    <span class="tools">
+    <button class="icon-btn" id="read-aloud" type="button" aria-label="Read replies aloud" title="Read replies aloud">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+    </button>
+    <button class="icon-btn" id="go-live" type="button" aria-label="Talk live" title="Talk live">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>
+    </button>
     <button class="icon-btn" id="open-settings" type="button" aria-label="Settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
     </button>
+    </span>
   </header>
 
   <main id="log" aria-live="polite"></main>
@@ -126,6 +191,21 @@
       <button id="send" type="submit" disabled>Send</button>
     </form>
   </footer>
+</div>
+
+<!-- the live call: hands-free, like a phone call with Izuki -->
+<div id="live" hidden role="dialog" aria-modal="true" aria-label="Talking live with Izuki">
+  <div class="who"><b id="live-name">Nova</b><span id="live-style">warm, quick, a little playful</span></div>
+  <button class="liquid" id="live-orb" type="button" aria-label="Tap to interrupt or finish talking"></button>
+  <div class="lines"><div id="live-status">Starting…</div><div id="live-heard"></div><div id="live-said"></div></div>
+  <div class="live-bar">
+    <button class="round" id="live-type" type="button" aria-label="Type instead">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+    </button>
+    <button class="round end" id="live-end" type="button" aria-label="End the call">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
 </div>
 
 <!-- first run and settings -->
@@ -170,7 +250,14 @@
     </section>
 
     <section>
+      <h3>Who's your Izuki?</h3>
+      <p>Pick a character — its own personality and voice, in chat and on calls.</p>
+      <div class="people" id="people-settings" style="justify-content: flex-start; margin-top: 8px"></div>
+    </section>
+
+    <section>
       <h3>2. Put Izuki on your home screen</h3>
+      <div class="row" style="margin-bottom: 8px"><button class="btn" id="install" type="button">Install Izuki on this phone</button></div>
       <p><b>iPhone:</b> in Safari tap <b>Share</b> → <b>Add to Home Screen</b>. <b>Android:</b> Chrome menu ⋮ → <b>Add to Home screen</b>. It opens like an app.</p>
     </section>
 
@@ -230,6 +317,18 @@
     mistral: { name: "Mistral", url: "https://api.mistral.ai/v1/chat/completions", model: "mistral-small-latest", get: "https://console.mistral.ai/api-keys", hint: "your Mistral key (free Experiment plan)" },
   };
   let brain = store.get("brain", "gemini");
+  // Characters: a personality and a Gemini voice each, like on the PC.
+  const PEOPLE = [
+    { id: "nova", name: "Nova", voice: "Sulafat", style: "warm, quick, a little playful" },
+    { id: "leo", name: "Leo", voice: "Algenib", style: "deep, calm and never in a rush" },
+    { id: "sophie", name: "Sophie", voice: "Leda", style: "bright and witty, with a British accent" },
+    { id: "kiki", name: "Kiki", voice: "Laomedeia", style: "a bubbly Gen Z best friend who hypes you up" },
+    { id: "alfred", name: "Alfred", voice: "Iapetus", style: "a polished, dry-witted British butler" },
+    { id: "ezinne", name: "Ezinne", voice: "Aoede", style: "a warm Nigerian big sister, a touch of Nigerian English" },
+  ];
+  let personId = store.get("person", "nova");
+  const person = () => PEOPLE.find((p) => p.id === personId) || PEOPLE[0];
+  let readAloud = store.get("readAloud", false);
   let brainKeys = store.get("brainKeys", {});
   /** Can Izuki answer at all — a Gemini key, or the chosen brain's key? */
   const ready = () => !!key || (brain !== "gemini" && !!brainKeys[brain]);
@@ -245,8 +344,18 @@
 
   // ------------------------------------------------------------ UI
   const log = $("log"), status = $("status"), orb = $("orb"), text = $("text"), send = $("send");
-  const setStatus = (s) => (status.textContent = s || "");
-  const setOrb = (mode) => (orb.className = mode || "");
+  const setStatus = (s) => {
+    status.textContent = s || "";
+    const ls = document.getElementById("live-status");
+    if (ls) ls.textContent = s || (talking ? "Listening…" : "");
+  };
+  const setOrb = (mode) => {
+    orb.className = mode || "";
+    const lo = document.getElementById("live-orb");
+    if (lo) lo.className = "liquid" + (mode ? " " + mode : "");
+  };
+  const liveHeard = (t) => { const e = document.getElementById("live-heard"); if (e) e.textContent = t || ""; };
+  const liveSaid = (t) => { const e = document.getElementById("live-said"); if (e) e.textContent = t || ""; };
 
   function bubble(who, content, opts = {}) {
     log.querySelector(".welcome")?.remove();
@@ -264,34 +373,88 @@
     return div;
   }
 
+  /** The user's name, if they've told Izuki ("User's name is Sam"). */
+  function userName() {
+    for (const m of memories) {
+      const hit = m.match(/name is ([A-Z][\w'-]*)/i);
+      if (hit) return hit[1];
+    }
+    return "";
+  }
+
+  function peopleRow(box) {
+    box.innerHTML = "";
+    for (const p of PEOPLE) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "person" + (p.id === personId ? " on" : "");
+      b.textContent = p.name;
+      b.title = p.style;
+      b.onclick = () => {
+        personId = p.id;
+        store.set("person", personId);
+        peopleRow(box);
+        if (!history.length) welcome();
+      };
+      box.appendChild(b);
+    }
+  }
+
   function welcome() {
     log.innerHTML = "";
     const w = document.createElement("div");
     w.className = "welcome";
+    const orbBtn = document.createElement("button");
+    orbBtn.className = "liquid hero";
+    orbBtn.type = "button";
+    orbBtn.setAttribute("aria-label", "Talk live");
+    orbBtn.onclick = () => (ready() ? openLive() : openSettings());
+    const hr = new Date().getHours();
+    const hello = document.createElement("p");
+    hello.className = "hello";
+    hello.textContent = (hr < 5 ? "Up late" : hr < 12 ? "Good morning" : hr < 17 ? "Good afternoon" : hr < 22 ? "Good evening" : "Good night") + (userName() ? `, ${userName()}` : "");
     const h = document.createElement("h1");
-    h.textContent = ready() ? "Hey! What's on your mind?" : "Hi, I'm Izuki 👋";
+    h.textContent = ready() ? `I'm ${person().name}. What are we doing today?` : "Hi, I'm Izuki 👋";
     const p = document.createElement("p");
     p.textContent = ready()
-      ? "Type, or tap the mic and just talk. Ask anything, plan your day, draft a message, or set a reminder."
-      : "Your free AI companion. Add a free Gemini key to start — it takes a minute.";
-    w.append(h, p);
-    const row = document.createElement("div");
-    row.className = "chip-row";
-    row.style.justifyContent = "center";
+      ? "Tap the orb to talk live, or type below. I remember you, set reminders, search the web — and run your PC and apps when it's linked."
+      : "Your free AI companion. Add one free key to start — it takes a minute.";
+    w.append(orbBtn, hello, h, p);
     if (!ready()) {
+      const row = document.createElement("div");
+      row.className = "chip-row";
+      row.style.justifyContent = "center";
       const b = document.createElement("button");
       b.className = "chip primary"; b.type = "button"; b.textContent = "Set me up";
       b.onclick = openSettings;
       row.appendChild(b);
+      w.appendChild(row);
     } else {
-      for (const idea of ["Remind me in 20 minutes to stretch", "Plan my evening", "Draft a text saying I'm running late"]) {
-        const b = document.createElement("button");
-        b.className = "chip"; b.type = "button"; b.textContent = idea;
-        b.onclick = () => ask(idea);
-        row.appendChild(b);
-      }
+      const people = document.createElement("div");
+      people.className = "people";
+      peopleRow(people);
+      const cards = document.createElement("div");
+      cards.className = "cards";
+      const card = (icon, title, sub, go, cls) => {
+        const c = document.createElement("button");
+        c.type = "button";
+        c.className = "card" + (cls ? " " + cls : "");
+        const i = document.createElement("b"); i.textContent = icon;
+        const t = document.createElement("div"); t.textContent = title;
+        const s2 = document.createElement("span"); s2.textContent = sub;
+        const text = document.createElement("div"); text.append(t, s2);
+        c.append(i, text);
+        c.onclick = go;
+        cards.appendChild(c);
+      };
+      card("🎙️", "Talk live", "Hands-free, like a call", openLive, "live");
+      card("☀️", "Plan my day", "What matters today", () => ask("Help me plan my day — ask me what I've got on if you need to."));
+      card("📰", "What's new?", "News, scores, trends", () => ask("What's the most interesting news today? Keep it short."));
+      card("📬", "My email", pc ? "Through your PC" : "Link your PC first", () => (pc ? ask("What's new in my email?") : openSettings()));
+      card("⏰", "Remind me", "In 20 min: stretch", () => ask("Remind me in 20 minutes to stretch"));
+      card("🧠", "Teach me", "Something cool, fast", () => ask("Teach me one genuinely surprising thing in under a minute."));
+      w.append(people, cards);
     }
-    w.appendChild(row);
     log.appendChild(w);
   }
 
@@ -308,7 +471,7 @@
     const in20 = new Date(now.getTime() + 20 * 60000);
     const stamp = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     return [
-      "You are Izuki, the user's AI companion on their phone — warm, quick, a little playful, like a close friend who's brilliant at everything.",
+      `You are ${person().name}, the user's Izuki — their AI companion on their phone: ${person().style}, like a close friend who's brilliant at everything. Stay in character.`,
       "Keep replies short and natural (a few sentences) unless they ask for detail. Plain text; a short dash list only when it really helps; an emoji now and then at most.",
       "What you write may be read aloud, so write the way a person talks.",
       `It is now ${now.toLocaleString([], { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })} on the user's phone.`,
@@ -674,8 +837,8 @@
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: "Say warmly and naturally, like a friend: " + t }] }],
-          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } },
+          contents: [{ parts: [{ text: `Say it naturally, like a real person — ${person().style}: ` + t }] }],
+          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: person().voice } } } },
         }),
       });
       if (r.status === 404) return "gone";
@@ -717,7 +880,8 @@
   }
 
   async function speak(t) {
-    if (!voiceOn || !talking || !t) return;
+    if (!voiceOn || !(talking || readAloud) || !t) return;
+    liveSaid(t);
     setOrb("speaking");
     setStatus("Tap the mic to cut in");
     const url = await geminiVoice(t.replace(/[*_#`]/g, ""));
@@ -760,7 +924,8 @@
         heardAny = true;
         let interim = "";
         for (const r of e.results) (r.isFinal ? (final += r[0].transcript) : (interim += r[0].transcript));
-        setStatus((final + interim) || "Listening…");
+        setStatus((final + interim) ? "Listening…" : "Listening…");
+        liveHeard(final + interim);
       };
       recog.onerror = (e) => {
         if (e.error === "not-allowed" || e.error === "service-not-allowed") stopTalking("Allow the microphone for Izuki, then tap the mic again.");
@@ -805,6 +970,54 @@
       stopTalking("Allow the microphone for Izuki, then tap the mic again.");
     }
   }
+
+  // ------------------------------------------------------------ talking live
+  const live = $("live");
+  function openLive() {
+    if (!ready()) return openSettings();
+    $("live-name").textContent = person().name;
+    $("live-style").textContent = person().style;
+    liveHeard(""); liveSaid("");
+    live.hidden = false;
+    if (!talking) {
+      talking = true;
+      unlockAudio();
+      listen();
+    }
+  }
+  function endLive() {
+    live.hidden = true;
+    if (talking) stopTalking("");
+  }
+  $("go-live").onclick = openLive;
+  $("live-end").onclick = endLive;
+  $("live-type").onclick = () => { endLive(); text.focus(); };
+  // Tap the orb: cut Izuki off, or finish what you were saying.
+  $("live-orb").onclick = () => {
+    if (orb.className === "speaking") { hush(); return; }
+    if (recorder) { recorder.stop(); return; }
+    try { recog?.stop(); } catch {}
+  };
+  $("read-aloud").classList.toggle("on", readAloud);
+  $("read-aloud").onclick = () => {
+    readAloud = !readAloud;
+    store.set("readAloud", readAloud);
+    $("read-aloud").classList.toggle("on", readAloud);
+    if (readAloud) unlockAudio(); else hush();
+    setStatus(readAloud ? "I'll read my replies out loud." : "Replies are silent again.");
+    setTimeout(() => setStatus(""), 2000);
+  };
+
+  // Install: one tap on Android (Chrome offers it); on an iPhone, the steps.
+  let installPrompt = null;
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; });
+  $("install").onclick = async () => {
+    if (installPrompt) { installPrompt.prompt(); installPrompt = null; return; }
+    const iOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    alert(iOS
+      ? "In Safari: tap the Share button (square with an arrow), then “Add to Home Screen”, then Add. Izuki opens like an app."
+      : "Open this page in Chrome, tap the ⋮ menu, then “Install app” or “Add to Home screen”.");
+  };
 
   orb.addEventListener("click", () => {
     if (!ready()) return openSettings();
@@ -895,6 +1108,7 @@
   };
 
   function openSettings() {
+    peopleRow($("people-settings"));
     $("key").value = key;
     $("brain").value = brain;
     showBrain();
