@@ -22,7 +22,21 @@ import type { Persona, Settings, VoiceCatalog } from "../lib/types";
  *   change speed and pitch, and add a personality of your own.
  */
 
-const CLOUD_VOICES: Record<"orpheus" | "openai", Array<{ id: string; label: string }>> = {
+const CLOUD_VOICES: Record<"orpheus" | "openai" | "gemini", Array<{ id: string; label: string }>> = {
+  gemini: [
+    { id: "Charon", label: "Charon — deep, calm" },
+    { id: "Algieba", label: "Algieba — smooth" },
+    { id: "Orus", label: "Orus — firm" },
+    { id: "Iapetus", label: "Iapetus — clear" },
+    { id: "Umbriel", label: "Umbriel — easygoing" },
+    { id: "Achird", label: "Achird — friendly" },
+    { id: "Sulafat", label: "Sulafat — warm" },
+    { id: "Aoede", label: "Aoede — breezy" },
+    { id: "Kore", label: "Kore — firm" },
+    { id: "Vindemiatrix", label: "Vindemiatrix — gentle" },
+    { id: "Despina", label: "Despina — smooth" },
+    { id: "Leda", label: "Leda — youthful" },
+  ],
   orpheus: [
     { id: "hannah", label: "Hannah — warm" },
     { id: "autumn", label: "Autumn — soft" },
@@ -88,10 +102,11 @@ export function VoicePicker() {
   }, []);
 
   const engine: Engine = settings.voice_engine === "system" ? "natural" : settings.voice_engine;
-  const cloud = engine === "orpheus" || engine === "openai" ? engine : null;
+  const cloud = engine === "orpheus" || engine === "openai" || engine === "gemini" ? engine : null;
   const current = catalog.personas.find((p) => p.id === settings.persona) ?? catalog.personas[0];
   const shown = useMemo(() => catalog.personas.filter((p) => p.group === group), [catalog, group]);
   const openaiKey = settings.providers.find((p) => p.id === "openai")?.api_key.trim() ?? "";
+  const geminiKey = settings.providers.find((p) => p.id === "gemini")?.api_key.trim() ?? "";
 
   // A new engine or character → the last test result no longer applies.
   useEffect(() => setTest(null), [engine, settings.persona]);
@@ -105,6 +120,15 @@ export function VoicePicker() {
     patch({ providers: settings.providers.map((p) => (p.id === "openai" ? { ...p, api_key: key } : p)) });
     setOpenaiDraft("");
     void hear("test", "openai", null);
+  }
+  // Same for the Gemini voice — the very key that runs the brain.
+  const [geminiDraft, setGeminiDraft] = useState("");
+  function saveGeminiKey() {
+    const key = geminiDraft.trim();
+    if (!key) return;
+    patch({ providers: settings.providers.map((p) => (p.id === "gemini" ? { ...p, api_key: key, enabled: true } : p)) });
+    setGeminiDraft("");
+    void hear("test", "gemini", null);
   }
 
   /** Play a line in a voice; on failure say exactly why. */
@@ -171,6 +195,8 @@ export function VoicePicker() {
             ? "Natural — lifelike voices in many accents and languages. Free, no key; needs the internet (falls back to the offline voice without it)."
             : engine === "orpheus"
               ? "Human — Orpheus on Groq, very expressive (it can laugh and sigh). Needs a free Groq key. English only."
+              : engine === "gemini"
+                ? "Gemini — Google's voice, follows your character's accent and mood. Free with the same Gemini key as the brain (a daily allowance — past it, Izuki switches to Natural)."
               : engine === "openai"
                 ? "ChatGPT's voice — the strongest accents (Nigerian, Pidgin…), following your character. The one paid option: an OpenAI key with a little credit (about a cent for several minutes)."
                 : "Offline — runs on this PC: free, private, works with no internet. English only."
@@ -184,6 +210,7 @@ export function VoicePicker() {
             { value: "edge", label: "Natural" },
             { value: "natural", label: "Offline" },
             { value: "orpheus", label: "Human" },
+            { value: "gemini", label: "Gemini" },
             { value: "openai", label: "ChatGPT" },
           ]}
         />
@@ -215,11 +242,46 @@ export function VoicePicker() {
             <button
               type="button"
               onClick={() => void hear("test", engine, null)}
-              className="izk-btn-primary izk-no-drag h-[28px] shrink-0 px-2.5 text-[11px]"
+              className="izk-btn-primary izk-no-drag flex h-[28px] shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px]"
             >
               <Check size={11} strokeWidth={2.6} /> Save &amp; test
             </button>
           )}
+        </div>
+      )}
+
+      {engine === "gemini" && !geminiKey && (
+        <div className="mb-1 rounded-[12px] border border-izk-hand/25 bg-izk-hand/8 px-2.5 py-2 text-[10.5px] leading-relaxed text-izk-muted">
+          The Gemini voice is free with a Gemini key — the same one that runs Izuki's brain.
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <input
+              type="password"
+              value={geminiDraft}
+              onChange={(e) => setGeminiDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveGeminiKey();
+              }}
+              placeholder="Paste your free Gemini key (AIza…), then Enter"
+              className="izk-field izk-no-drag h-[30px] min-w-0 flex-1 py-0 text-[12px]"
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              disabled={!geminiDraft.trim()}
+              onClick={saveGeminiKey}
+              className="izk-btn-primary izk-no-drag flex h-[28px] shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px] disabled:opacity-40"
+            >
+              <Check size={11} strokeWidth={2.6} /> Save &amp; test
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => void openLink("https://aistudio.google.com/apikey")}
+            className="izk-pill izk-no-drag mt-1.5 h-[26px] px-2.5 text-[11px]"
+          >
+            <ExternalLink size={11} strokeWidth={2.4} /> Get a free key
+          </button>
         </div>
       )}
 
@@ -243,7 +305,7 @@ export function VoicePicker() {
               type="button"
               disabled={!openaiDraft.trim()}
               onClick={saveOpenaiKey}
-              className="izk-btn-primary izk-no-drag h-[28px] shrink-0 px-2.5 text-[11px] disabled:opacity-40"
+              className="izk-btn-primary izk-no-drag flex h-[28px] shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px] disabled:opacity-40"
             >
               <Check size={11} strokeWidth={2.6} /> Save &amp; test
             </button>
@@ -273,6 +335,13 @@ export function VoicePicker() {
               className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
             >
               Human — free Groq key
+            </button>
+            <button
+              type="button"
+              onClick={() => patch({ voice_engine: "gemini", cloud_voice: "" })}
+              className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
+            >
+              Gemini — free Gemini key
             </button>
           </div>
         </div>

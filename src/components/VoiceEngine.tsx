@@ -190,17 +190,24 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
 
   // The most human voices first; each falls back to the next if it can't
   // speak right now (no key, out of credits, offline).
-  if (engine === "edge" || engine === "orpheus" || engine === "openai") {
+  if (engine === "edge" || engine === "orpheus" || engine === "openai" || engine === "gemini") {
     const spoke = await speakCloud(engine, text, mood, captionOnce).catch(() => false);
     if (spoke) {
       captionOnce();
       return;
     }
     const why = lastCloudError ?? "it didn't answer";
+    // A keyed voice that can't speak right now (out of today's free
+    // allowance, no credit): the free natural voice is next best.
+    const natural = engine !== "edge" && (await speakCloud("edge", speakable(raw, false), mood, captionOnce).catch(() => false));
     if (!cloudProblemsShown.has(why)) {
       cloudProblemsShown.add(why);
-      const label = engine === "edge" ? "natural" : engine === "orpheus" ? "Human (Groq)" : "ChatGPT";
-      showCaption(`Couldn't use the ${label} voice — ${why}. Using the on-device voice for now.`, false);
+      const label = engine === "edge" ? "natural" : engine === "orpheus" ? "Human (Groq)" : engine === "gemini" ? "Gemini" : "ChatGPT";
+      showCaption(`Couldn't use the ${label} voice — ${why}. Using the ${natural ? "natural" : "on-device"} voice for now.`, false);
+    }
+    if (natural) {
+      captionOnce();
+      return;
     }
   }
   // The natural voice — unless this PC can't make it fast enough right

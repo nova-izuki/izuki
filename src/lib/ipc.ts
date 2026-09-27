@@ -289,7 +289,7 @@ export const api = {
     call<ArrayBuffer>("voice_test", { engine, persona: persona ?? null, text: text ?? null }, () => {
       throw new Error("Not running inside Izuki.");
     }),
-  /** One sentence in a cloud voice ("edge" | "orpheus" | "openai"), as audio. */
+  /** One sentence in a cloud voice ("edge" | "orpheus" | "openai" | "gemini"), as audio. */
   speakCloud: (engine: string, text: string, mood?: string | null) =>
     call<ArrayBuffer>("speak_cloud", { engine, text, mood: mood ?? null }, () => {
       throw new Error("Not running inside Izuki.");

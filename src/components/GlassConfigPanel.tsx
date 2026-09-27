@@ -4,7 +4,7 @@ import { Layers, MessageCircle, Minus, PenLine, Settings2, X, Eye, Blocks, Maxim
 import { IzukiMark } from "./IzukiMark";
 import { Segmented, cx } from "./ui";
 import { DrawTab } from "./tabs/DrawTab";
-import { ChatTab } from "./tabs/ChatTab";
+import { ChatTab, resetChat } from "./tabs/ChatTab";
 import { AppsTab } from "./tabs/AppsTab";
 import { FlowLibrary } from "./tabs/FlowLibrary";
 import { WatcherManager } from "./tabs/WatcherManager";
@@ -179,7 +179,7 @@ export function GlassConfigPanel() {
               transition={{ duration: 0.26, ease: [0.32, 0.72, 0, 1] }}
               className="flex flex-col gap-3"
             >
-              <Recover name={`tab:${tab}`}>
+              <Recover name={`tab:${tab}`} onReset={tab === "chat" ? resetChat : undefined}>
                 {tab === "draw" && <DrawTab />}
                 {tab === "chat" && <ChatTab />}
                 {tab === "apps" && <AppsTab />}
