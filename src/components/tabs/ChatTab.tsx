@@ -203,6 +203,13 @@ export function ChatTab() {
     async (text: string, note = false) => {
       const t = text.trim();
       if (!t || busy) return;
+      // "clear chat" / "start over" — just wipe it, don't ask the AI.
+      if (!note && /^(clear|reset|wipe|empty|start over|new)( (the|this|our|my))? ?(chat|conversation|messages|history|it|over)?$/i.test(t)) {
+        stop();
+        setMsgs([]);
+        setDraft("");
+        return;
+      }
       if (!note) setDraft("");
       const history = [...msgs.filter((m) => !m.failed && !m.screen), { role: "user" as const, content: t }].map(
         ({ role, content }) => ({ role, content })
