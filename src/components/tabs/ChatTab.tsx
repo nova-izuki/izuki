@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, Link2, Loader2, Mic, MonitorSmartphone, RotateCcw, Send, Square, X } from "lucide-react";
+import { AlarmClock, Link2, Loader2, Mic, MonitorSmartphone, RotateCcw, Send, Sparkles, Square, X } from "lucide-react";
 import { api, EV, on } from "../../lib/ipc";
 import { useDictation } from "../../hooks/useDictation";
 import { sendChatCommand } from "../VoiceEngine";
 import { VoiceOrb } from "../VoiceOrb";
 import { cx } from "../ui";
 import type { Reminder } from "../../lib/types";
+import { useIzuki } from "../../lib/store";
+import { brainReady } from "../../lib/setup";
 
 /**
  * Izuki as a plain chat companion — no screen, no mouse. Ask anything,
@@ -33,7 +35,12 @@ interface Msg {
   action?: { id: number; kind: "save" | "run"; title: string; detail: string; state?: "allowed" | "denied" | "working" };
   /** Your answer to such a card, told to Izuki (shown as a small note). */
   note?: boolean;
+  /** It failed for want of a (working) brain: offer the setup guide. */
+  setup?: boolean;
 }
+
+/** A failure that setting up a brain would fix. */
+const NEEDS_BRAIN = /no chat-capable brain|add an api key|key was rejected|rejected the key|unauthori[sz]ed|\b401\b|invalid api key|api key not valid/i;
 
 /** How long to wait for the first words before saying something's wrong. */
 const FIRST_WORDS_MS = 45_000;
@@ -70,6 +77,38 @@ function save(msgs: Msg[]) {
   }
 }
 
+/*
+ * The conversation lives out here, not in the tab: switch to another tab
+ * mid-answer and the reply still arrives, and is there when you come back.
+ * (It used to be lost — "That reply didn't come through.")
+ */
+let chatMsgs: Msg[] = load();
+let chatBusy = false;
+const chatSubs = new Set<() => void>();
+const ping = () => chatSubs.forEach((f) => f());
+function setChatMsgs(next: Msg[] | ((m: Msg[]) => Msg[])) {
+  chatMsgs = typeof next === "function" ? next(chatMsgs) : next;
+  save(chatMsgs);
+  ping();
+}
+function setChatBusy(v: boolean) {
+  chatBusy = v;
+  ping();
+}
+const chatStream = { current: null as number | null };
+const chatFinish = { current: null as ((why: string) => void) | null };
+function useChatState() {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const f = () => bump((n) => n + 1);
+    chatSubs.add(f);
+    return () => {
+      chatSubs.delete(f);
+    };
+  }, []);
+  return { msgs: chatMsgs, busy: chatBusy };
+}
+
 const IDEAS = [
   "Remind me in 20 minutes to stretch",
   "Help me plan my week",
@@ -78,17 +117,20 @@ const IDEAS = [
 ];
 
 export function ChatTab() {
-  const [msgs, setMsgs] = useState<Msg[]>(load);
+  const { msgs, busy } = useChatState();
+  const setMsgs = setChatMsgs;
+  const setBusy = setChatBusy;
   const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
   const [reminders, setReminders] = useState<Reminder[]>([]);
-  const streamId = useRef<number | null>(null);
+  const streamId = chatStream;
   /** Ends the request in flight (Stop, a timeout) so nothing is left spinning. */
-  const finish = useRef<((why: string) => void) | null>(null);
+  const finish = chatFinish;
   const bottom = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => save(msgs), [msgs]);
+  const settings = useIzuki((s) => s.settings);
+  const settingsLoaded = useIzuki((s) => s.settingsLoaded);
+  const openSetup = useIzuki((s) => s.setSetupOpen);
+  const noBrain = settingsLoaded && !brainReady(settings);
   useEffect(() => bottom.current?.scrollIntoView({ block: "end", behavior: "smooth" }), [msgs]);
 
   const refreshReminders = useCallback(() => void api.remindersList().then(setReminders).catch(() => undefined), []);
@@ -193,11 +235,20 @@ export function ChatTab() {
                 .finally(resolve);
               return;
             } else if (!shown) {
-              setLast({
-                content: d.error ? `I couldn't reach my AI brain — ${d.error}` : "Hmm, I lost my words there. Try again?",
-                failed: true,
-                retry: true,
-              });
+              setLast(
+                d.error && NEEDS_BRAIN.test(d.error)
+                  ? {
+                      content: "I don't have a working brain yet 🧠 — let's fix that. It's free and takes about a minute.",
+                      failed: true,
+                      retry: true,
+                      setup: true,
+                    }
+                  : {
+                      content: d.error ? `I couldn't reach my AI brain — ${d.error}` : "Hmm, I lost my words there. Try again?",
+                      failed: true,
+                      retry: true,
+                    }
+              );
             } else {
               setLast({ content: shown });
             }
@@ -210,7 +261,7 @@ export function ChatTab() {
         void off.then(() => {
           if (streamId.current !== id) return resolve();
           api.chatStreamWritten(id, history).catch(() => {
-            setLast({ content: "I couldn't reach my AI brain — check Settings → Izuki's brain.", failed: true, retry: true });
+            setLast({ content: "I couldn't reach my AI brain — let's check it's set up.", failed: true, retry: true, setup: true });
             resolve();
           });
         });
@@ -328,6 +379,21 @@ export function ChatTab() {
         </div>
 
         <div className="flex flex-1 flex-col gap-2 px-[14px] py-[12px]">
+          {noBrain && (
+            <button
+              type="button"
+              onClick={() => openSetup(true)}
+              className="izk-no-drag flex items-center gap-3 rounded-[16px] border border-izk-violet/40 bg-izk-violet/12 p-3 text-left transition-colors hover:bg-izk-violet/18"
+            >
+              <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[12px] bg-gradient-to-br from-izk-violet/70 to-izk-teal/60">
+                <Sparkles size={16} className="text-white" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-semibold text-izk-ink">Give Izuki a brain first — free, one minute</span>
+                <span className="block text-[11px] leading-snug text-izk-muted">Tap here, copy the key on the page that opens, come back. That's it.</span>
+              </span>
+            </button>
+          )}
           {msgs.length === 0 && (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 py-6 text-center">
               <div className="text-[15px] font-semibold text-izk-ink">Hey! What's on your mind?</div>
@@ -369,6 +435,15 @@ export function ChatTab() {
                   <span className="flex items-center gap-1.5 text-izk-muted">
                     <Loader2 size={13} className="animate-spin" /> {m.status ?? "Thinking…"}
                   </span>
+                )}
+                {m.setup && i === msgs.length - 1 && (
+                  <button
+                    type="button"
+                    onClick={() => openSetup(true)}
+                    className="izk-btn-primary izk-no-drag mt-2 flex h-[28px] items-center gap-1.5 rounded-full px-3 text-[11.5px]"
+                  >
+                    <Sparkles size={12} strokeWidth={2.4} /> Set me up
+                  </button>
                 )}
                 {m.retry && i === msgs.length - 1 && (
                   <button

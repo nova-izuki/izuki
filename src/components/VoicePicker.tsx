@@ -131,12 +131,6 @@ export function VoicePicker() {
   }
 
   function choose(p: Persona) {
-    if (p.spicy && settings.persona !== p.id) {
-      const ok = window.confirm(
-        `${p.name} is unfiltered: it swears, roasts you and doesn't hold back. It still helps with everything, and drops the act if you're genuinely upset.\n\nSwitch to ${p.name}?`
-      );
-      if (!ok) return;
-    }
     patch({
       persona: p.id,
       persona_name: "",
@@ -349,6 +343,12 @@ export function VoicePicker() {
           );
         })}
       </div>
+      {engine === "edge" && (group === "Accents" || group === "Languages") && (
+        <p className="mb-2 text-[10px] leading-relaxed text-izk-muted/80">
+          Tip: the free natural voices have a light accent. For the strongest Nigerian, Pidgin or any accent, pick{" "}
+          <b className="text-izk-muted">ChatGPT</b> above — Izuki tells it to speak like a local.
+        </p>
+      )}
       {(engine === "orpheus" || engine === "natural") && group === "Languages" && (
         <p className="mb-2 text-[10px] leading-relaxed text-izk-muted/80">
           This voice only speaks English — pick <b className="text-izk-muted">Natural</b> above for other languages.

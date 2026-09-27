@@ -578,6 +578,108 @@ pub fn screen_locked() -> bool {
     false
 }
 
+/// The readable text of the page or document in front — a web page, a PDF
+/// in the browser, a Word document — straight from the app, word for word:
+/// the exact question, every answer option, the instructions. The
+/// screenshot shows where things are; this says exactly what they say.
+#[cfg(windows)]
+pub fn document_text(max_chars: usize) -> String {
+    use uiautomation::patterns::UITextPattern;
+    use uiautomation::types::ControlType;
+    use uiautomation::UIAutomation;
+    let Some(hwnd) = target_window() else { return String::new() };
+    let Ok(automation) = UIAutomation::new().or_else(|_| UIAutomation::new_direct()) else { return String::new() };
+    let Ok(root) = automation.element_from_handle(hwnd.into()) else { return String::new() };
+    let Ok(doc) = automation
+        .create_matcher()
+        .from(root)
+        .control_type(ControlType::Document)
+        .depth(14)
+        .timeout(450)
+        .find_first()
+    else {
+        return String::new();
+    };
+    let Ok(text) = doc
+        .get_pattern::<UITextPattern>()
+        .and_then(|p| p.get_document_range())
+        .and_then(|r| r.get_text(max_chars as i32))
+    else {
+        return String::new();
+    };
+    // Tidy: no runs of blank lines or spaces.
+    let mut out = String::new();
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        out.push_str(&line.split_whitespace().collect::<Vec<_>>().join(" "));
+        out.push('\n');
+    }
+    out.chars().take(max_chars).collect()
+}
+
+#[cfg(not(windows))]
+pub fn document_text(_max_chars: usize) -> String {
+    String::new()
+}
+
+/// Whether what's in front is still loading, and how that shows: the
+/// mouse's busy cursor, or the browser's Reload button having turned into
+/// "Stop" while a page loads. A person waits for that before deciding a
+/// click failed or a page has nothing on it — so does Izuki.
+/// With `keep`, a finished page's controls (read to check for the Stop
+/// button) are kept for the next look, so it isn't read twice.
+pub fn loading(keep: bool) -> Option<&'static str> {
+    if busy_cursor() {
+        return Some("the mouse shows the busy cursor");
+    }
+    let app = foreground_app().to_lowercase();
+    if ["chrome", "msedge", "firefox", "brave", "opera", "vivaldi"].iter().any(|b| app.starts_with(b)) {
+        let controls = list_controls(crate::brain::MAX_CONTROLS);
+        if controls.iter().any(|c| c.kind == "Button" && is_stop_loading(&c.name)) {
+            return Some("the browser's reload button still says Stop — the page is loading");
+        }
+        if keep {
+            keep_controls(controls);
+        }
+    }
+    None
+}
+
+/// The browser's "Stop loading this page" / "Stop (Esc)" button.
+fn is_stop_loading(name: &str) -> bool {
+    let n = name.trim().to_lowercase();
+    n == "stop" || n.starts_with("stop loading") || n.starts_with("stop (")
+}
+
+#[cfg(windows)]
+fn busy_cursor() -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{GetCursorInfo, LoadCursorW, CURSORINFO, IDC_APPSTARTING, IDC_WAIT};
+    unsafe {
+        let mut ci = CURSORINFO { cbSize: std::mem::size_of::<CURSORINFO>() as u32, ..Default::default() };
+        if GetCursorInfo(&mut ci).is_err() || ci.hCursor.is_invalid() {
+            return false;
+        }
+        [IDC_WAIT, IDC_APPSTARTING]
+            .into_iter()
+            .any(|id| LoadCursorW(None, id).is_ok_and(|c| c == ci.hCursor))
+    }
+}
+
+#[cfg(not(windows))]
+fn busy_cursor() -> bool {
+    false
+}
+
+#[cfg(test)]
+mod loading_tests {
+    #[test]
+    fn knows_the_browsers_stop_button() {
+        assert!(super::is_stop_loading("Stop loading this page"));
+        assert!(super::is_stop_loading("Stop (Esc)"));
+        assert!(!super::is_stop_loading("Stop sharing"));
+        assert!(!super::is_stop_loading("Reload"));
+    }
+}
+
 /// Every real app window that's open (title and whether it's minimised),
 /// front to back — so the agent knows Blackboard is already open in a
 /// background window and switches to it instead of hunting for it.
@@ -656,6 +758,11 @@ pub fn foreground_title() -> String {
 /// the request goes to the model.
 static PREFETCH: parking_lot::Mutex<Option<(std::time::Instant, std::thread::JoinHandle<Vec<Control>>)>> =
     parking_lot::Mutex::new(None);
+
+/// Controls just read, handed to the next `controls_fresh_or_now`.
+fn keep_controls(controls: Vec<Control>) {
+    *PREFETCH.lock() = Some((std::time::Instant::now(), std::thread::spawn(move || controls)));
+}
 
 /// Start walking the target window's controls in the background.
 pub fn prefetch_controls(max: usize) {

@@ -19,6 +19,8 @@ import type {
   AppsAnswer,
   Reminder,
   VoiceCatalog,
+  FoundKey,
+  N8nImport,
 } from "./types";
 
 export const IS_TAURI =
@@ -205,6 +207,8 @@ export const MOCK_SETTINGS: Settings = {
   heads_up_pc: true,
   heads_up_phone: true,
   n8n_hooks: [],
+  n8n_url: "",
+  n8n_api_key: "",
   school_feeds: [],
   heads_up_school: true,
   telegram_chat_id: 0,
@@ -265,6 +269,15 @@ export const api = {
   /** Turn other apps' sound down while listening (true), back up (false). */
   duckAudio: (on: boolean) => call<void>("duck_audio", { on }, () => undefined),
 
+  /** A key on the clipboard (Gemini, Groq, Composio…), if that's what's there. */
+  clipboardKey: () => call<FoundKey | null>("clipboard_key", undefined, () => null),
+  /** What kind of key some pasted text is, if it's one. */
+  recogniseKey: (text: string) => call<FoundKey | null>("recognise_key", { text }, () => null),
+  /** The user's n8n workflows that Izuki can run by name. */
+  n8nImport: (address: string, apiKey: string) =>
+    call<N8nImport>("n8n_import", { address, apiKey }, () => {
+      throw new Error("Not running inside Izuki.");
+    }),
   /** Every character and natural voice (voices.rs). */
   voiceCatalog: () => call<VoiceCatalog>("voice_catalog", undefined, () => ({ personas: [], voices: [] })),
   /**

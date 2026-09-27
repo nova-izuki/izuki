@@ -345,7 +345,7 @@ const APPS_FOLLOW_UP =
 /** The "this PC is too slow for the natural voice" tip, once per session. */
 let slowTipShown = false;
 
-/** What Izuki says when you just say its name — like Siri's "Mhm?". */
+/** What Izuki says when you just say its name — a quick "Mhm?". */
 // (Never starting with "Hey…" — through speakers that could wake Izuki itself.)
 const GREETINGS = ["Mhm?", "Yeah?", "I'm listening.", "How can I help?"];
 /** And when you tell it you're done. */

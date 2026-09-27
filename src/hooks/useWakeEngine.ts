@@ -5,7 +5,7 @@ import { api } from "../lib/ipc";
 /**
  * The dedicated wake-word detector (lib/wakeEngine.ts, in wakeWorker.ts):
  * listens for the wake words installed (a "Hey Nova" or "Hey Izuki" model —
- * none is bundled), the way Siri and Alexa do — a tiny model on the raw
+ * none is bundled), the way voice assistants do — a tiny model on the raw
  * sound, not speech-to-text on everything. `onWake(name)` fires on a
  * detection.
  *

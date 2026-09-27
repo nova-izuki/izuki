@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Copy, ExternalLink, Loader2, PhoneCall } from "lucide-react";
+import { Copy, ExternalLink, Loader2, PhoneCall, Smartphone } from "lucide-react";
+
+/** The free phone app; `#pc=` links it to this PC in one scan. */
+const PHONE_APP = "https://nova-izuki.github.io/izuki/app/";
 import { Row, Toggle } from "./ui";
 import { QrCode } from "./QrCode";
 import { useIzuki } from "../lib/store";
@@ -30,6 +33,7 @@ export function CallCard() {
   const patch = useIzuki((s) => s.patchSettings);
   const [status, setStatus] = useState<CallStatus>({ state: "off", link: "", error: null });
   const [copied, setCopied] = useState(false);
+  const [appQr, setAppQr] = useState(false);
 
   const refresh = useCallback(() => void api.callStatus().then(setStatus).catch(() => undefined), []);
   useEffect(() => {
@@ -81,7 +85,23 @@ export function CallCard() {
                 >
                   <ExternalLink size={11} strokeWidth={2.4} /> Try it here
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setAppQr((v) => !v)}
+                  className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
+                >
+                  <Smartphone size={11} strokeWidth={2.4} /> Link the phone app
+                </button>
               </div>
+              {appQr && (
+                <div className="flex items-center gap-3">
+                  <QrCode text={`${PHONE_APP}#pc=${encodeURIComponent(status.link)}`} label="QR code that links the Izuki phone app to this PC" />
+                  <span className="min-w-0 flex-1">
+                    Scan this with your phone: the Izuki phone app opens already linked to this PC — your email, calendar
+                    and “do it on my PC” work from it. Add it to your home screen from there.
+                  </span>
+                </div>
+              )}
               <span>
                 The link changes when Izuki restarts — a paired phone gets the new one by text, or send the bot /call.
               </span>

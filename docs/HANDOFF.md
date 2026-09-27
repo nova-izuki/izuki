@@ -9,8 +9,8 @@ then `docs/HOW-IZUKI-WORKS.md`, before changing anything.
 - Owner: Solomon (GitHub `nova-izuki`), building Izuki as a company. Not a
   developer by trade — explain things plainly and keep going without asking
   for permission on small things; ask only for real decisions.
-- Goal: the best free AI companion — "like Clicky / Gemini Live / Siri /
-  ChatGPT voice, but smarter", able to do things on the PC, in the user's
+- Goal: the best free AI companion — a natural voice conversation that's
+  smarter than the usual assistants, able to do things on the PC, in the user's
   apps, and from the phone. **Everything must stay free for users**: Izuki
   runs on each user's PC with *their own* free keys (Gemini, Groq, Composio,
   a Telegram bot). Never add anything that needs a paid service or a server
@@ -116,6 +116,14 @@ then `docs/HOW-IZUKI-WORKS.md`, before changing anything.
     newest `*_x64-setup.exe`), with a "what next" popup. Releases now also
     attach `Izuki-Setup.exe` (fixed name).
 
+20. **v1.0.2 polish** — @izukiapp socials in the app (Settings → Follow
+    Izuki), website footer + structured data, README; a link-in-bio page
+    (docs/links/); the ad film on the website (docs/media/izuki-ad.mp4) and a
+    "hear the voices" section (docs/media/voices/); the setup guide opens by
+    itself when there's no brain; ChatGPT voice speaks each character's
+    accent strongly (Nigerian, Pidgin…); unfiltered characters switch on
+    without a popup; competitor names removed from comments and notes.
+
 ## What has NOT been verified (do this first on Windows)
 
 The cloud session could only type-check (`cargo check --target
@@ -184,9 +192,54 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
 29. Website: Download on a Windows PC → the installer downloads at once,
     popup shows; on a phone → phone-app popup.
 
+30. Call Izuki on an iPhone AND an Android phone: tap once, then talk,
+    wait for the answer, talk again — at least 4 turns with no taps. (The
+    page keeps the mic open from the first tap and sends each clip to the
+    PC to transcribe — `GET caps`, `POST hear`. Without a Groq/Gemini key
+    it uses the phone's recognizer, and on an iPhone asks for a tap on the
+    orb each turn instead of showing a fake "Listening".) Tapping the orb
+    while talking sends it at once; typing still works mid-call.
+
+31. Smarter agent: "play some cool videos on YouTube" → it picks and plays
+    one (no "which one?"); "find another one" → a different video, no
+    endless scrolling. On slow internet, "open YouTube" → it says it's
+    loading and waits (log: "[agent] … still loading/loaded"), never "can't
+    find it". Click something that doesn't respond → it says "that didn't
+    open", tries another way (log shows the retry). Chat: "recommend a film"
+    → one pick with a reason.
+
+32. Easy setup: with no brain key, the Chat tab shows "Give Izuki a brain
+    first" → the guide → "Get my free brain" opens Google → copy the key →
+    come back → it's filled in and tested by itself (KeyCatcher). Copy any
+    other key (Groq, Composio, OpenRouter, xai-…) and switch to Izuki → it
+    offers to use it. Apps tab: tap Gmail with no key → Composio opens →
+    copy the key → come back → Gmail's sign-in opens by itself. n8n:
+    address + API key → Import → workflows listed; "run my <workflow>"
+    in chat runs it (no Composio needed). "What's the weather in Lagos?"
+    → a real forecast. Switch tabs mid-reply → the reply is there when you
+    come back. Phone app: "Paste my key" saves and tests; PC → Call Izuki
+    → "Link the phone app" QR → the phone app opens already linked.
+
+33. Sharper eyes: on a quiz/web form, "click the first option" → it clicks
+    that exact option (log: "[brain] screen controls: N, page text: M
+    chars"). The brain now sees yellow number tags on every control in its
+    screenshot (tags.rs — never shown on the user's screen) and the page's
+    own text. `IZK_SHOT=x.jpg IZK_OUT=y.png cargo test tags_look -- --ignored`
+    renders the tags on a picture to eyeball them.
+34. "Help me do this assignment and teach me as you go" on a quiz page →
+    one question at a time: it explains out loud (and the explanation is
+    heard before the click), circles the key part, answers, moves on, and
+    asks before submitting.
+35. Speed: with a YouTube video playing, a multi-step task no longer
+    stalls ~6 s per step (log "[agent] screen still moving after ~2500 ms").
+36. Call Izuki: tap the orb while it's thinking → "Okay — stopped" (the PC
+    task stops too); hold the orb while it talks → it goes quiet and
+    records until you let go; "Talk over Izuki: on" (quiet rooms) → just
+    talking cuts it off, and your words are kept.
+
 Running the Rust tests from Linux: `cargo test --target x86_64-pc-windows-gnu
 --lib --no-run`, copy `target/x86_64-pc-windows-gnu/debug/WebView2Loader.dll`
-next to the test exe in `deps/`, and run it with `wine64` (65 pass).
+next to the test exe in `deps/`, and run it with `wine64` (71 pass).
 
 Fix whatever breaks; keep each fix small.
 

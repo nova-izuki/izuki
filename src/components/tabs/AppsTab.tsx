@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bell, CheckCircle2, Copy, Loader2, Plus, RefreshCw, Sparkles, Trash2, Workflow } from "lucide-react";
+import { Bell, CheckCircle2, Copy, Download, ExternalLink, Loader2, Plus, RefreshCw, Sparkles, Trash2, Workflow } from "lucide-react";
 import { AppsCard } from "../AppsCard";
 import { Row, Section, Toggle, cx } from "../ui";
 import { useIzuki } from "../../lib/store";
 import { api, IS_TAURI } from "../../lib/ipc";
+import { getKey } from "../../lib/setup";
 
 /**
  * Everything Izuki can reach beyond this PC, in one place:
@@ -130,7 +131,26 @@ export function AppsTab() {
     void api.callStatus().then((s) => setNotifyUrl(s.state === "ready" && s.link ? `${s.link}notify` : ""));
   }, [settings.call_enabled]);
 
+  // Tapped an app with no key yet: get the (free) key first, then carry on
+  // to that app's sign-in the moment the key is copied — no second tap.
+  const [waitingFor, setWaitingFor] = useState<App | null>(null);
+  useEffect(() => {
+    const onKey = (e: Event) => {
+      if ((e as CustomEvent).detail !== "composio" || !waitingFor) return;
+      const app = waitingFor;
+      setWaitingFor(null);
+      setTimeout(() => void connect(app), 400);
+    };
+    window.addEventListener("izuki:key", onKey);
+    return () => window.removeEventListener("izuki:key", onKey);
+  });
+
   const connect = async (app: App) => {
+    if (!useIzuki.getState().settings.composio_api_key.trim()) {
+      setWaitingFor(app);
+      getKey("composio");
+      return;
+    }
     setOpening(app.slug);
     setLinkErr(null);
     try {
@@ -167,12 +187,24 @@ export function AppsTab() {
   };
 
   const hooks = settings.n8n_hooks ?? [];
+  const openSetup = useIzuki((s) => s.setSetupOpen);
   const feeds = settings.school_feeds ?? [];
   const setHook = (i: number, part: Partial<{ name: string; url: string }>) =>
     patch({ n8n_hooks: hooks.map((h, j) => (j === i ? { ...h, ...part } : h)) });
 
   return (
     <>
+      <button
+        type="button"
+        onClick={() => openSetup(true)}
+        className="izk-no-drag flex items-center gap-3 rounded-[18px] border border-izk-violet/35 bg-izk-violet/10 p-3 text-left transition-colors hover:bg-izk-violet/16"
+      >
+        <Sparkles size={18} className="shrink-0 text-izk-violet" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] font-semibold text-izk-ink">Quick setup</span>
+          <span className="block text-[11px] leading-snug text-izk-muted">See what's connected and add the rest in a tap or two.</span>
+        </span>
+      </button>
       <AppsCard />
 
       {/* ------------------------------------------------ connect */}
@@ -181,7 +213,7 @@ export function AppsTab() {
         hint={
           hasKey
             ? "Tap one to sign in (it opens in your browser, once). Then just ask — in the chat, by voice or from your phone."
-            : "Add your free Composio key above first — then connect with one tap."
+            : "Tap any app — Izuki walks you through the free key, then opens its sign-in."
         }
         right={
           hasKey ? (
@@ -203,7 +235,7 @@ export function AppsTab() {
               <button
                 key={a.slug}
                 type="button"
-                disabled={!hasKey || opening !== null}
+                disabled={opening !== null}
                 onClick={() => void connect(a)}
                 title={on ? `${a.name} is connected — tap to connect another account` : `Connect ${a.name}`}
                 className={cx(
@@ -225,6 +257,21 @@ export function AppsTab() {
             );
           })}
         </div>
+        {waitingFor && (
+          <div className="mt-2 rounded-[14px] border border-izk-violet/35 bg-izk-violet/10 p-2.5 text-[11.5px] leading-snug text-izk-ink">
+            <b>One free key first, then {waitingFor.name}.</b> On the Composio page that just opened: sign up (free), go to{" "}
+            <b>Settings → API Keys</b> and copy your key. Come back here — Izuki picks it up and opens {waitingFor.name}'s
+            sign-in by itself.
+            <div className="mt-2 flex gap-1.5">
+              <button type="button" onClick={() => getKey("composio")} className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]">
+                <ExternalLink size={11} /> Open it again
+              </button>
+              <button type="button" onClick={() => setWaitingFor(null)} className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         {linkErr && <div className="mt-2 text-[11px] leading-snug text-izk-danger">{linkErr}</div>}
         <p className="mt-2 text-[10.5px] leading-snug text-izk-muted">
           Hundreds more work too — just ask for them by name. Some apps (TikTok, Instagram, WhatsApp) only allow business
@@ -386,9 +433,13 @@ export function AppsTab() {
       {/* ------------------------------------------------ n8n */}
       <Section
         title="Your automations (n8n)"
-        hint="Give each n8n workflow a name and its webhook address — then say “run my invoice flow”."
+        hint="Bring in all your n8n workflows at once — Izuki picks the right one when you ask (“send the weekly report”)."
         right={<Workflow size={14} className="text-izk-muted" />}
       >
+        <N8nImporter />
+        <div className="mb-1 mt-3 text-[11px] font-semibold text-izk-muted">
+          {hooks.length ? "Your workflows" : "Or add one by hand"}
+        </div>
         <div className="flex flex-col gap-1.5">
           {hooks.map((h, i) => (
             <div key={i} className="flex items-center gap-1.5">
@@ -448,5 +499,86 @@ export function AppsTab() {
         </div>
       </Section>
     </>
+  );
+}
+
+/**
+ * n8n, imported: the user's n8n address and an API key, once — every active
+ * workflow that starts with a (POST) Webhook becomes one Izuki can run.
+ */
+function N8nImporter() {
+  const settings = useIzuki((s) => s.settings);
+  const patch = useIzuki((s) => s.patchSettings);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; skipped?: string[] } | null>(null);
+
+  const run = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const got = await api.n8nImport(settings.n8n_url, settings.n8n_api_key);
+      // Imported ones replace hand-made ones of the same name.
+      const names = new Set(got.hooks.map((h) => h.name.toLowerCase()));
+      const kept = (useIzuki.getState().settings.n8n_hooks ?? []).filter((h) => !names.has(h.name.toLowerCase()));
+      patch({ n8n_hooks: [...kept, ...got.hooks] });
+      setMsg({
+        ok: got.hooks.length > 0,
+        text: got.hooks.length
+          ? `Imported ${got.hooks.length} workflow${got.hooks.length === 1 ? "" : "s"} — just ask for one by what it does.`
+          : "No workflows could be imported yet.",
+        skipped: got.skipped,
+      });
+    } catch (e) {
+      setMsg({ ok: false, text: String(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-[14px] border border-white/8 bg-white/4 p-2.5">
+      <input
+        value={settings.n8n_url}
+        onChange={(e) => patch({ n8n_url: e.target.value })}
+        placeholder="Your n8n address — e.g. https://you.app.n8n.cloud"
+        spellCheck={false}
+        className="izk-field izk-no-drag h-[32px] py-0 text-[12px]"
+      />
+      <div className="flex gap-1.5">
+        <input
+          type="password"
+          value={settings.n8n_api_key}
+          onChange={(e) => patch({ n8n_api_key: e.target.value })}
+          placeholder="n8n API key (Settings → n8n API → Create)"
+          spellCheck={false}
+          autoComplete="off"
+          className="izk-field izk-no-drag h-[32px] min-w-0 flex-1 py-0 text-[12px]"
+        />
+        <button
+          type="button"
+          disabled={busy || !settings.n8n_url.trim() || !settings.n8n_api_key.trim()}
+          onClick={() => void run()}
+          className="izk-btn-primary izk-no-drag h-[32px] shrink-0 px-3 text-[11.5px] disabled:opacity-40"
+        >
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} Import
+        </button>
+      </div>
+      {msg && (
+        <div className={cx("text-[11px] leading-snug", msg.ok ? "text-izk-good" : "text-izk-danger")}>
+          {msg.text}
+          {msg.skipped && msg.skipped.length > 0 && (
+            <ul className="mt-1 list-disc pl-4 text-izk-muted">
+              {msg.skipped.slice(0, 6).map((x) => (
+                <li key={x}>{x}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      <p className="text-[10.5px] leading-snug text-izk-muted">
+        Workflows need to start with a <b className="text-izk-ink">Webhook</b> node set to <b className="text-izk-ink">POST</b> and be switched on.
+        Izuki sends them what you asked for as <code>request</code>.
+      </p>
+    </div>
   );
 }

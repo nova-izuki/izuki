@@ -7,6 +7,8 @@
   <meta name="description" content="Izuki (Nova Izuki) is a free AI assistant for Windows. Say “Hey Nova”, talk naturally, and Izuki sees your screen, answers out loud, and clicks, types and draws to get things done — on your PC and from your phone." />
   <meta name="keywords" content="Izuki, Nova Izuki, Izuki AI, Hey Nova, Nova AI assistant, AI assistant for Windows, free AI voice assistant, Jarvis for PC, AI that controls your computer, computer use agent, screen AI, hands-free PC assistant, AI desktop companion, AI tutor, open source" />
   <meta name="author" content="Solomon Nwachukwu" />
+  <meta name="twitter:site" content="@izukiapp" />
+  <meta name="twitter:creator" content="@izukiapp" />
   <link rel="canonical" href="https://nova-izuki.github.io/izuki/" />
   <meta name="theme-color" content="#04050c" />
   <meta name="application-name" content="Izuki" />
@@ -40,8 +42,15 @@
         "image": "https://nova-izuki.github.io/izuki/og.png",
         "description": "Izuki makes a free AI assistant for Windows that sees your screen, talks with you and uses your PC to get things done.",
         "founder": { "@type": "Person", "name": "Solomon Nwachukwu" },
-        "email": "solotechsolutions1@gmail.com",
-        "sameAs": ["https://github.com/nova-izuki/izuki"]
+        "email": "izuki.hq@gmail.com",
+        "sameAs": [
+          "https://github.com/nova-izuki/izuki",
+          "https://x.com/izukiapp",
+          "https://www.instagram.com/izukiapp",
+          "https://www.tiktok.com/@izukiapp",
+          "https://www.youtube.com/@izukiapp",
+          "https://www.linkedin.com/company/izukiapp"
+        ]
       },
       {
         "@type": "WebSite",
@@ -343,6 +352,12 @@
     footer { width: var(--wrap); margin: clamp(80px, 12vw, 140px) auto 0; padding-block: 28px calc(28px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line);
       display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; color: var(--faint); font-size: 14px; }
     footer a { color: var(--muted); }
+    .socials { flex-basis: 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+    .socials a { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; border: 1px solid var(--line); background: var(--glass);
+      transition: transform 0.2s, border-color 0.2s, background 0.2s; }
+    .socials a:hover { transform: translateY(-3px); border-color: rgba(167, 139, 250, 0.55); background: rgba(139, 92, 246, 0.16); }
+    .socials svg { width: 18px; height: 18px; fill: var(--ink); }
+    .socials .handle { margin-left: 4px; font: 500 13px var(--mono); color: var(--muted); }
 
 
     /* ---------- hero backdrop: a neon horizon ---------- */
@@ -618,6 +633,44 @@
     .esc-key small { position: absolute; left: 50%; top: calc(100% + 16px); transform: translateX(-50%); font: 600 12.5px var(--body); color: var(--faint); white-space: nowrap; }
     .card.stop.hit h3 { color: #fda4af; }
 
+    /* ---------- the film ---------- */
+    .film { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
+    .film-phone { position: relative; justify-self: center; width: min(360px, 78vw); aspect-ratio: 9 / 16; border-radius: 44px; padding: 10px;
+      background: linear-gradient(145deg, #2a2c3c, #0b0c14); box-shadow: 0 60px 140px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.1), 0 0 120px rgba(139,92,246,0.4); }
+    .film-phone::before { content: ""; position: absolute; inset: -3px; border-radius: 47px; z-index: -1; background: conic-gradient(from var(--spin, 0deg), #67e8f9, #a78bfa, #f0abfc, #67e8f9);
+      filter: blur(14px); opacity: 0.55; animation: spinGlow 8s linear infinite; }
+    @property --spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+    @keyframes spinGlow { to { --spin: 360deg; } }
+    .film-phone video { width: 100%; height: 100%; object-fit: cover; border-radius: 36px; display: block; background: #05060d; }
+    .film-sound { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); border: 1px solid rgba(255,255,255,0.3); background: rgba(8,9,20,0.7); color: #fff; border-radius: 999px;
+      padding: 10px 18px; font: 700 14px var(--body); cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); white-space: nowrap; }
+    .film-sound:hover { background: rgba(139,92,246,0.5); }
+    .film ul { list-style: none; padding: 0; margin: 22px 0 0; display: grid; gap: 10px; }
+    .film li { display: flex; gap: 12px; align-items: center; color: var(--muted); font-size: 16.5px; }
+    .film li b { color: var(--ink); }
+    .film li i { font-style: normal; width: 34px; height: 34px; flex: none; border-radius: 10px; display: grid; place-items: center; background: rgba(139,92,246,0.18); }
+
+    /* ---------- hear the voices ---------- */
+    .voices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 44px; }
+    .voice { position: relative; display: flex; align-items: center; gap: 14px; padding: 18px; border-radius: 22px; border: 1px solid var(--line); background: rgba(255,255,255,0.035);
+      cursor: pointer; text-align: left; color: var(--ink); font: inherit; transition: transform 0.25s cubic-bezier(.2,1.3,.3,1), border-color 0.25s, background 0.25s; overflow: hidden; }
+    .voice:hover { transform: translateY(-3px); border-color: rgba(167,139,250,0.45); background: rgba(139,92,246,0.1); }
+    .voice.on { border-color: rgba(103,232,249,0.6); background: rgba(34,211,238,0.1); box-shadow: 0 0 40px rgba(34,211,238,0.2); }
+    .voice .av { width: 54px; height: 54px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 26px; }
+    .voice b { display: block; font-family: var(--display); font-size: 18px; }
+    .voice small { display: block; color: var(--muted); font-size: 13.5px; }
+    .voice .eq { margin-left: auto; display: flex; gap: 3px; align-items: flex-end; height: 26px; }
+    .voice .eq i { width: 4px; height: 6px; border-radius: 2px; background: linear-gradient(180deg, #67e8f9, #a78bfa); }
+    .voice.on .eq i { animation: bar 0.5s ease-in-out infinite alternate; }
+    .voice.on .eq i:nth-child(2) { animation-delay: -0.2s; } .voice.on .eq i:nth-child(3) { animation-delay: -0.35s; } .voice.on .eq i:nth-child(4) { animation-delay: -0.1s; }
+    .more-voices { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 8px; }
+    .more-voices span { padding: 7px 13px; border-radius: 999px; border: 1px solid var(--line); background: var(--glass); font-size: 13.5px; color: var(--muted); }
+
+    /* the demo screen gets a living edge */
+    .screen::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; padding: 1.5px;
+      background: conic-gradient(from var(--spin, 0deg), rgba(103,232,249,0.7), rgba(167,139,250,0.15), rgba(240,171,252,0.7), rgba(167,139,250,0.15), rgba(103,232,249,0.7));
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: spinGlow 10s linear infinite; }
+
     /* ---------- back to top + section dots ---------- */
     .totop { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 45; width: 52px; height: 52px; border-radius: 50%;
       display: grid; place-items: center; cursor: pointer; color: var(--ink); font-size: 19px; border: 1px solid var(--line); background: rgba(8, 9, 20, 0.7);
@@ -665,6 +718,8 @@
       .play-chips::-webkit-scrollbar { display: none; }
       .play-chips button { flex: none; }
       .card.stop { grid-column: span 2; grid-template-columns: 1fr; justify-items: start; padding-bottom: 54px; }
+      .film { grid-template-columns: 1fr; gap: 30px; }
+      .voices { grid-template-columns: 1fr; }
       .tapme { right: 4%; top: 10%; }
       .hero { grid-template-columns: 1fr; height: auto; min-height: 0; max-height: none; padding-block: 28px 16vh; }
       .hero h1 { font-size: clamp(38px, 11vw, 56px); }
@@ -736,6 +791,7 @@
         <a href="#app">The app</a>
         <a href="#demo">See it work</a>
         <a href="#features">Features</a>
+        <a href="#voices">Voices</a>
         <a href="#phone">Phone</a>
         <a href="#how">Get started</a>
         <a href="#support">Support</a>
@@ -798,7 +854,7 @@
         <span class="eyebrow rv"><b></b>Izuki · Free · Windows 10 &amp; 11</span>
         <h1 id="hero-h1" aria-label="The AI that lives on your screen.">The AI that lives on <span class="shine">your screen.</span></h1>
         <p class="lede rv" style="--d:.16s">Say <b>“Hey Nova”</b> and just talk. Izuki sees your screen, answers you out loud, and uses your mouse and keyboard to get things done — it can even grab a pen and draw on your screen to teach you. Like a friend who's brilliant with computers, living right inside your PC.</p>
-        <div class="ctas rv" style="--d:.24s">
+        <div class="ctas rv" style="--d:.24s" id="download">
           <a class="btn primary dl" href="https://github.com/nova-izuki/izuki/releases/latest">⬇ Download for Windows — free</a>
           <a class="btn ghost" href="app/">📱 Izuki on your phone</a>
         </div>
@@ -826,6 +882,27 @@
     <div class="ticker" aria-label="Things people ask Izuki">
       <div class="ticker-track" id="ticker"></div>
     </div>
+
+    <!-- ========== the film ========== -->
+    <section id="film">
+      <div class="film">
+        <div>
+          <div class="kicker rv">60 seconds</div>
+          <h2 class="rv">Watch Izuki in a minute.</h2>
+          <p class="sub rv">It hears you, sees your screen and does the work — then teaches, reminds, and answers your phone. In 30+ voices.</p>
+          <ul class="rv">
+            <li><i>🎙️</i><span><b>Talk</b> — “Hey Nova” and just say it</span></li>
+            <li><i>🖱️</i><span><b>It clicks for you</b> — even skips the ads</span></li>
+            <li><i>✏️</i><span><b>It teaches</b> with a pen on your screen</span></li>
+            <li><i>📞</i><span><b>Call it</b> from your phone, anywhere</span></li>
+          </ul>
+        </div>
+        <div class="film-phone rv" style="--d:.1s">
+          <video id="film-video" src="media/izuki-ad.mp4" poster="media/izuki-ad-poster.jpg" muted loop playsinline preload="metadata"></video>
+          <button class="film-sound" id="film-sound" type="button">🔊 Tap for sound</button>
+        </div>
+      </div>
+    </section>
 
     <!-- ========== zoom through the words ========== -->
     <section class="zoom" aria-label="Hey Nova">
@@ -885,9 +962,9 @@
           <div class="show-word" id="show-word" aria-hidden="true">DRAW</div>
           <div class="show-copy">
             <div class="sc on"><div class="tag">The app · Draw</div><h3>Draw it. <span class="shine">Izuki does it.</span></h3><p>Hold <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd>, scribble on anything, and the little hand takes over.</p></div>
-            <div class="sc"><div class="tag">The app · Chat</div><h3>A chat that <span class="shine">stays out of the way.</span></h3><p>Plan your week, draft an email, set a reminder — without it touching your screen.</p></div>
+            <div class="sc"><div class="tag">The app · Chat</div><h3>A chat that <span class="shine">looks things up.</span></h3><p>Plan your week, draft an email, check the weather, search the web, find your files — without touching your screen.</p></div>
             <div class="sc"><div class="tag">The app · Watchers</div><h3>It keeps <span class="shine">watch for you.</span></h3><p>Box a patch of screen — ticket queues, drops, slow forms — and it clicks the instant it changes.</p></div>
-            <div class="sc"><div class="tag">The app · Settings</div><h3>Your brain. <span class="shine">Your free key.</span></h3><p>Gemini, OpenRouter, or a model running offline on your own PC. Your key never leaves it.</p></div>
+            <div class="sc"><div class="tag">The app · You</div><h3>Your brain. <span class="shine">Your voice.</span></h3><p>Free Gemini, Grok, OpenRouter or a model on your own PC — and 30+ voices and characters. Your keys never leave it.</p></div>
             <div class="sc"><div class="tag">The app · Phone</div><h3>Then <span class="shine">call it.</span></h3><p>Scan a QR code and talk to Izuki from your phone — it answers out loud and works your PC.</p></div>
             <div class="show-dots" id="show-dots" style="position:absolute;top:100%;left:0"><i class="on"></i><i></i><i></i><i></i><i></i></div>
           </div>
@@ -924,13 +1001,13 @@
             <div class="yt">
               <div class="player">
                 <div class="vid" id="vid"></div>
-                <div class="vid-title" id="vid-title">Burna Boy — Bundle by Bundle ▶︎</div>
+                <div class="vid-title" id="vid-title">Chill Afrobeats Mix ▶︎</div>
                 <div class="ad" id="ad">Summer Sale — 50% off<small>Ad · 0:05</small></div>
                 <div class="skip" id="skip">Skip ▸</div>
               </div>
               <div class="results">
-                <div class="result" id="r1"><div class="th"></div><div class="tx"><b>Burna Boy — Bundle by Bundle (Official Video)</b><span></span></div></div>
-                <div class="result"><div class="th"></div><div class="tx"><b>Burna Boy — Last Last</b><span></span></div></div>
+                <div class="result" id="r1"><div class="th"></div><div class="tx"><b>Chill Afrobeats Mix — 1 Hour</b><span></span></div></div>
+                <div class="result"><div class="th"></div><div class="tx"><b>Lofi Beats to Study To</b><span></span></div></div>
                 <div class="result"><div class="th"></div><div class="tx"><b>Afrobeats Mix 2026</b><span></span></div></div>
               </div>
             </div>
@@ -941,7 +1018,7 @@
             </svg>
             <svg class="hand" id="hand" viewBox="0 0 32 32"><path d="M6 3 L6 25 L11.5 19.5 L15 28 L19 26.5 L15.6 18 L23 18 Z" fill="#fff" stroke="#111" stroke-width="1.6" stroke-linejoin="round"/></svg>
             <canvas class="mini-orb" id="mini-orb"></canvas>
-            <div class="caption" id="caption">“Hey Nova, play Bundle by Bundle by Burna Boy on YouTube.”</div>
+            <div class="caption" id="caption">“Hey Nova, play some chill Afrobeats on YouTube.”</div>
             <div class="steps-rail" id="rail"><i></i><i></i><i></i><i></i><i></i></div>
           </div>
         </div>
@@ -1034,10 +1111,32 @@
         <article class="card rv" style="--d:.12s"><div class="glyph">📁</div><h3>Knows your files</h3><p>“Find my history essay.” It finds, reads and tidies your files from the chat — and asks you before changing anything.</p></article>
         <article class="card wide rv"><div class="glyph">🎭</div><h3>30+ voices &amp; characters</h3><p>Warm Nova, deep calm Leo, British Sophie, Nigerian Ezinne, Naija Pidgin Chidi, Spanish Lucía, a hype coach, a butler, a pirate — or Rex, unfiltered and savage, if you dare. Rename it, change the voice, speed and pitch, and give it your own personality.</p></article>
         <article class="card wide rv" style="--d:.06s"><div class="glyph">🗣️</div><h3>Sounds like a person</h3><p>Natural voices that breathe at commas and pause at full stops — free, no key. Offline voice on your PC too, and it works in English, Spanish, French, Swahili, Hindi and more.</p></article>
+        <article class="card wide rv"><div class="glyph">🎯</div><h3>Clicks the right thing</h3><p>Izuki reads the real buttons, links and answers behind your screen — not just the picture — so it clicks exactly what you meant. It waits for slow pages and tries another way when something doesn't respond.</p></article>
+        <article class="card wide rv" style="--d:.06s"><div class="glyph">⚡</div><h3>Set up in a minute</h3><p>Copy a free key on the website that opens, come back — Izuki fills it in by itself. Tap Gmail and it walks you through the rest. No settings to hunt for.</p></article>
         <article class="card stop rv" id="stop-card">
           <div><div class="glyph">🛑</div><h3>One key stops everything</h3><p>Press <kbd>Esc</kbd> and Izuki lets go instantly — the task, the voice, the lot. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Q</kbd> works any time. Go on, try it on this page.</p></div>
           <button type="button" class="esc-key" id="esc-key" aria-label="Press Esc">Esc<small id="esc-note">tap me or press Esc</small></button>
         </article>
+      </div>
+    </section>
+
+    <!-- ========== hear the voices ========== -->
+    <section id="voices">
+      <div class="kicker rv">30+ voices &amp; characters</div>
+      <h2 class="rv">Who do you want Izuki to be?</h2>
+      <p class="sub rv">Tap one to hear it. Each has its own voice and its own way of talking — and you can rename it, pick any voice, and give it your own personality.</p>
+      <div class="voices" id="voice-grid">
+        <button class="voice rv" type="button" data-src="media/voices/nova.m4a"><span class="av" style="background:linear-gradient(135deg,#a78bfa,#22d3ee)">✨</span><span><b>Nova</b><small>Warm · the default</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
+        <button class="voice rv" type="button" data-src="media/voices/leo.m4a" style="--d:.05s"><span class="av" style="background:linear-gradient(135deg,#1e3a8a,#6366f1)">🌙</span><span><b>Leo</b><small>Deep &amp; calm</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
+        <button class="voice rv" type="button" data-src="media/voices/sophie.m4a" style="--d:.1s"><span class="av" style="background:linear-gradient(135deg,#be185d,#6366f1)">🇬🇧</span><span><b>Sophie</b><small>British</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
+        <button class="voice rv" type="button" data-src="media/voices/alfred.m4a"><span class="av" style="background:linear-gradient(135deg,#334155,#a16207)">🎩</span><span><b>Alfred</b><small>Your butler</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
+        <button class="voice rv" type="button" data-src="media/voices/kiki.m4a" style="--d:.05s"><span class="av" style="background:linear-gradient(135deg,#ec4899,#f59e0b)">💅</span><span><b>Kiki</b><small>Gen Z bestie</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
+        <button class="voice rv" type="button" data-src="media/voices/rex.m4a" style="--d:.1s"><span class="av" style="background:linear-gradient(135deg,#7f1d1d,#ef4444)">😈</span><span><b>Rex 🌶️</b><small>Unfiltered · roasts you</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
+      </div>
+      <div class="more-voices rv">
+        <span>🇳🇬 Ezinne</span><span>🇳🇬 Abeo</span><span>🇳🇬 Chidi · Pidgin</span><span>🇳🇬 Amaka · Pidgin</span><span>🇪🇸 Lucía</span><span>🇲🇽 Mateo</span><span>🇫🇷 Camille</span>
+        <span>🇧🇷 Bia</span><span>🇩🇪 Lena</span><span>🇰🇪 Zuri · Swahili</span><span>🇮🇳 Priya</span><span>🇮🇪 Niamh</span><span>🇦🇺 Jack</span><span>🇿🇦 Thabo</span><span>🔥 Blaze</span>
+        <span>🎬 Morgan</span><span>🏴‍☠️ Captain Salty</span><span>🧘 Sage</span><span>👩‍🏫 Ada</span><span>+ more</span>
       </div>
     </section>
 
@@ -1106,7 +1205,7 @@
         <div>
           <h2>Made by Solomon Nwachukwu</h2>
           <p>I'm an IT and cybersecurity student, and Izuki is step one of something bigger: real robot companions (that's <b>Nova Izuki</b>), an Afro-tech community where more of us get to build the future instead of just using it, and one day a company that creates real opportunities for a lot of people. Step by step.</p>
-          <p>Questions, ideas or collaborations: <a href="mailto:solotechsolutions1@gmail.com">solotechsolutions1@gmail.com</a></p>
+          <p>Questions, ideas or collaborations: <a href="mailto:izuki.hq@gmail.com">izuki.hq@gmail.com</a></p>
         </div>
       </div>
     </section>
@@ -1123,8 +1222,17 @@
   </main>
 
   <footer>
+    <div class="socials" aria-label="Izuki on social media">
+      <a href="https://x.com/izukiapp" aria-label="Izuki on X" rel="me noopener" target="_blank"><svg viewBox="0 0 24 24"><path d="M17.8 3h3.1l-6.8 7.7 8 10.3h-6.3l-4.9-6.4L5.3 21H2.2l7.2-8.3L1.8 3h6.4l4.4 5.8L17.8 3zm-1.1 16.2h1.7L7.4 4.7H5.6l11.1 14.5z"/></svg></a>
+      <a href="https://www.instagram.com/izukiapp" aria-label="Izuki on Instagram" rel="me noopener" target="_blank"><svg viewBox="0 0 24 24"><path d="M12 7.3A4.7 4.7 0 1 0 16.7 12 4.7 4.7 0 0 0 12 7.3zm0 7.8A3.1 3.1 0 1 1 15.1 12 3.1 3.1 0 0 1 12 15.1zm6-8a1.1 1.1 0 1 1-1.1-1.1A1.1 1.1 0 0 1 18 7.1zM21.9 8.2a5.4 5.4 0 0 0-1.5-3.9 5.5 5.5 0 0 0-3.9-1.5C15 2.7 9 2.7 7.5 2.8a5.5 5.5 0 0 0-3.9 1.5 5.4 5.4 0 0 0-1.5 3.9c-.1 1.6-.1 6.1 0 7.7a5.4 5.4 0 0 0 1.5 3.9 5.5 5.5 0 0 0 3.9 1.5c1.6.1 7.5.1 9 0a5.4 5.4 0 0 0 3.9-1.5 5.4 5.4 0 0 0 1.5-3.9c.1-1.6.1-6.1 0-7.7zm-2.1 9.4a3.2 3.2 0 0 1-1.8 1.8c-1.2.5-4.2.4-5.6.4s-4.4.1-5.6-.4a3.2 3.2 0 0 1-1.8-1.8c-.5-1.2-.4-4.2-.4-5.6s-.1-4.4.4-5.6a3.2 3.2 0 0 1 1.8-1.8c1.2-.5 4.2-.4 5.6-.4s4.4-.1 5.6.4a3.2 3.2 0 0 1 1.8 1.8c.5 1.2.4 4.2.4 5.6s.1 4.4-.4 5.6z"/></svg></a>
+      <a href="https://www.tiktok.com/@izukiapp" aria-label="Izuki on TikTok" rel="me noopener" target="_blank"><svg viewBox="0 0 24 24"><path d="M16.6 2h-3.3v13.2a2.9 2.9 0 1 1-2.9-2.9 2.8 2.8 0 0 1 .9.1V9a6.3 6.3 0 1 0 5.3 6.2V8.6a7.9 7.9 0 0 0 4.6 1.5V6.8A4.6 4.6 0 0 1 16.6 2z"/></svg></a>
+      <a href="https://www.youtube.com/@izukiapp" aria-label="Izuki on YouTube" rel="me noopener" target="_blank"><svg viewBox="0 0 24 24"><path d="M23 7.2a3 3 0 0 0-2.1-2.1C19 4.6 12 4.6 12 4.6s-7 0-8.9.5A3 3 0 0 0 1 7.2 31 31 0 0 0 .5 12 31 31 0 0 0 1 16.8a3 3 0 0 0 2.1 2.1c1.9.5 8.9.5 8.9.5s7 0 8.9-.5a3 3 0 0 0 2.1-2.1 31 31 0 0 0 .5-4.8 31 31 0 0 0-.5-4.8zM9.7 15V9l5.8 3-5.8 3z"/></svg></a>
+      <a href="https://www.linkedin.com/company/izukiapp" aria-label="Izuki on LinkedIn" rel="me noopener" target="_blank"><svg viewBox="0 0 24 24"><path d="M20.4 20.5h-3.6v-5.6c0-1.3 0-3-1.8-3s-2.1 1.4-2.1 2.9v5.7H9.3V9h3.4v1.6a3.8 3.8 0 0 1 3.4-1.9c3.6 0 4.3 2.4 4.3 5.5v6.3zM5.3 7.4a2.1 2.1 0 1 1 2.1-2.1 2.1 2.1 0 0 1-2.1 2.1zm1.8 13.1H3.5V9h3.6v11.5zM22.2 0H1.8A1.7 1.7 0 0 0 0 1.7v20.6A1.7 1.7 0 0 0 1.8 24h20.4a1.8 1.8 0 0 0 1.8-1.7V1.7A1.8 1.8 0 0 0 22.2 0z"/></svg></a>
+      <a href="https://github.com/nova-izuki/izuki" aria-label="Izuki on GitHub" rel="me noopener" target="_blank"><svg viewBox="0 0 24 24"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2 0-.4-.5-1.6.2-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.7 1.6.2 2.8.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.5.4.9 1 .9 2.2v3.3c0 .3.1.7.8.6A12 12 0 0 0 12 .3"/></svg></a>
+      <span class="handle">@izukiapp everywhere</span>
+    </div>
     <span>© 2026 Izuki · MIT licensed · Made with ❤️ by Solomon Nwachukwu · Earth photo: <a href="https://unsplash.com/photos/photo-of-outer-space-Q1p7bh3SHj8?utm_source=izuki&utm_medium=referral">NASA</a> on <a href="https://unsplash.com/?utm_source=izuki&utm_medium=referral">Unsplash</a></span>
-    <span><a href="https://github.com/nova-izuki/izuki">GitHub</a> · <a class="dl" href="https://github.com/nova-izuki/izuki/releases/latest">Download</a> · <a href="app/">Phone app</a> · <a href="https://github.com/nova-izuki/izuki#privacy">Privacy</a></span>
+    <span><a href="https://github.com/nova-izuki/izuki">GitHub</a> · <a class="dl" href="https://github.com/nova-izuki/izuki/releases/latest">Download</a> · <a href="app/">Phone app</a> · <a href="links/">All links</a> · <a href="https://github.com/nova-izuki/izuki#privacy">Privacy</a></span>
   </footer>
 
   <dialog class="dl-modal" id="dl-modal" aria-labelledby="dl-title">
@@ -1160,6 +1268,7 @@
     <a href="#app"><span>The app</span></a>
     <a href="#demo"><span>See it work</span></a>
     <a href="#features"><span>Features</span></a>
+    <a href="#voices"><span>Voices</span></a>
     <a href="#phone"><span>Phone</span></a>
     <a href="#how"><span>Get started</span></a>
   </nav>
@@ -1502,7 +1611,7 @@
   // Plays by itself, but it's alive: tap the orb or a chip and it answers
   // you instead, then carries on. Esc stops it, like the real thing.
   const SCRIPT = [
-    ["Hey Nova, play Bundle by Bundle by Burna Boy on YouTube.", "Playing it now — and I'll skip the ad for you. 🎶"],
+    ["Hey Nova, play some chill Afrobeats on YouTube.", "Playing it now — and I'll skip the ad for you. 🎶"],
     ["What's this error on my screen?", "It says your disk is almost full. Want me to open Storage settings?"],
     ["Explain this maths problem.", "Sure — first, look at the part I've circled: that's the x we're solving for…"],
     ["Remind me at 6 to call Mum.", "Done! I'll remind you at 6 — on your PC and your phone."],
@@ -1593,7 +1702,7 @@
     [/\b(hey|hi|hello|yo|sup|hiya|howdy)\b.*\bnova\b|\bhey nova\b/i, "Mhm? I'm listening. 👂 What can I do for you?", "👂 Listening"],
     [/joke|funny|laugh/i, ["Why did the PC go to therapy? Too many unresolved tabs. 😅", "I told my computer a joke about UDP. Not sure it got it. 🤭", "Why was the laptop cold? It left its Windows open. 🥶"], "😂 Nailed it"],
     [/stop|cancel|esc\b|shut up|quiet/i, "Stopped. 🛑 Press Esc any time and I let go — instantly.", "🛑 Stopped"],
-    [/play|song|music|youtube|spotify|playlist|burna|drake|afrobeat/i, "Playing it now — and I'll skip the ad for you. 🎶", "✓ Ad skipped"],
+    [/play|song|music|youtube|spotify|playlist|afrobeat|lofi|beats/i, "Playing it now — and I'll skip the ad for you. 🎶", "✓ Ad skipped"],
     [/remind|reminder|alarm|wake me/i, "Done! I'll remind you then — out loud on your PC, and on your phone. ⏰", "⏰ Reminder set"],
     [/homework|assignment|due|school|blackboard|canvas|class|exam|test\b|study/i, "You've got a History essay due tomorrow at 11:59 PM and a quiz Friday. Want me to make you a study plan? 📚", "📚 2 things due"],
     [/math|maths|equation|solve|algebra|\d\s*x|x\s*=|explain|teach/i, "Easy — watch, I'll draw it. 2x + 3 = 11, take 3 from both sides: 2x = 8. Halve it: x = 4. ✏️", "✏️ Drawn on screen"],
@@ -1810,13 +1919,13 @@
       if (stage === 0) {
         miniOrb.mode = "listening"; url.textContent = "New tab"; r1.classList.remove("lit"); place(70, 80);
         vid.style.opacity = 0; vidTitle.style.opacity = 0; ad.style.opacity = 0; skip.style.opacity = 0;
-        caption.textContent = "“Hey Nova, play Bundle by Bundle by Burna Boy on YouTube.”";
+        caption.textContent = "“Hey Nova, play some chill Afrobeats on YouTube.”";
       } else if (stage === 1) {
-        miniOrb.mode = "thinking"; url.textContent = "youtube.com/results?search_query=bundle+by+bundle+burna+boy";
+        miniOrb.mode = "thinking"; url.textContent = "youtube.com/results?search_query=chill+afrobeats+mix";
         r1.classList.add("lit"); place(80, 25); vid.style.opacity = 0; vidTitle.style.opacity = 0; ad.style.opacity = 0; skip.style.opacity = 0;
         caption.textContent = "Found it — that's the one.";
       } else if (stage === 2) {
-        miniOrb.mode = "speaking"; url.textContent = "youtube.com/watch?v=bundle-by-bundle";
+        miniOrb.mode = "speaking"; url.textContent = "youtube.com/watch?v=chill-afrobeats-mix";
         ad.style.opacity = 1; skip.style.opacity = 1; skip.classList.remove("hit"); vid.style.opacity = 0; vidTitle.style.opacity = 0; place(55, 60);
         caption.textContent = "An ad first… I've got it.";
       } else if (stage === 3) {
@@ -1825,7 +1934,7 @@
         caption.textContent = "Skipped.";
       } else {
         miniOrb.mode = "speaking"; ad.style.opacity = 0; skip.style.opacity = 0; vid.style.opacity = 1; vidTitle.style.opacity = 1; place(88, 86);
-        caption.textContent = "Playing Bundle by Bundle — enjoy! 🎶";
+        caption.textContent = "Playing your chill mix — enjoy! 🎶";
       }
     }
     drawPen(penC, (p - 0.24) / 0.12);
@@ -2006,6 +2115,31 @@
     setTimeout(() => { stopCard.classList.remove("hit"); escNote.textContent = "tap me or press Esc"; }, 2400);
   }
   escKey.addEventListener("click", pressEsc);
+
+  // ------------------------------------------------ the film: plays when you see it
+  const film = $("film-video"), filmSound = $("film-sound");
+  if (film) {
+    new IntersectionObserver(([e]) => { if (e.isIntersecting) film.play().catch(() => {}); else film.pause(); }, { threshold: 0.35 }).observe(film);
+    filmSound.addEventListener("click", () => {
+      film.muted = !film.muted;
+      if (!film.muted) { film.currentTime = 0; film.play().catch(() => {}); }
+      filmSound.textContent = film.muted ? "🔊 Tap for sound" : "🔇 Mute";
+    });
+  }
+
+  // ------------------------------------------------ hear the voices
+  const voiceAudio = new Audio();
+  let voiceOn = null;
+  document.querySelectorAll(".voice").forEach((b) => b.addEventListener("click", () => {
+    if (voiceOn) voiceOn.classList.remove("on");
+    if (voiceOn === b && !voiceAudio.paused) { voiceAudio.pause(); voiceOn = null; return; }
+    voiceOn = b;
+    b.classList.add("on");
+    if (film && !film.muted) { film.muted = true; filmSound.textContent = "🔊 Tap for sound"; }
+    voiceAudio.src = b.dataset.src;
+    voiceAudio.play().catch(() => b.classList.remove("on"));
+  }));
+  voiceAudio.addEventListener("ended", () => { if (voiceOn) voiceOn.classList.remove("on"); voiceOn = null; });
 
   // ------------------------------------------------ Download: straight to the installer
   // No GitHub page in between: ask GitHub which file is the newest installer

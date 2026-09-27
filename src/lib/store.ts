@@ -34,6 +34,10 @@ interface IzukiState {
   tourOpen: boolean;
   setTourOpen: (v: boolean) => void;
 
+  /** The "get Izuki connected" guide (SetupGuide.tsx). */
+  setupOpen: boolean;
+  setSetupOpen: (v: boolean) => void;
+
   /**
    * Live state of the "Hey Izuki" wake-word engine. Owned by a single
    * `<VoiceEngine />` mounted once at the top of the app — this is just its
@@ -100,6 +104,9 @@ export const useIzuki = create<IzukiState>((set, get) => ({
 
   tourOpen: false,
   setTourOpen: (tourOpen) => set({ tourOpen }),
+
+  setupOpen: false,
+  setSetupOpen: (setupOpen) => set({ setupOpen }),
 
   voice: { active: false, heard: false, error: null, lastHeard: null, busy: false },
   setVoice: (patch) => {

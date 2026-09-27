@@ -98,7 +98,7 @@ export function OverlayCanvas() {
   const [handSize, setHandSize] = useState(16);
   /** The user's ink colour for drawn marks, or "auto" for per-shape colours. */
   const [ink, setInk] = useState("auto");
-  /** A command is out with the model — the hand shows a spinner, like Clicky. */
+  /** A command is out with the model — the hand shows a spinner. */
   const [thinking, setThinking] = useState(false);
   /**
    * Preview mode spends most of its life waiting on the model before the

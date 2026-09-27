@@ -1,5 +1,5 @@
 /**
- * A dedicated wake-word detector — the way Siri, Alexa and Jarvis-style
+ * A dedicated wake-word detector — the way voice-assistant
  * assistants listen: a tiny model that does one job, spotting one phrase in
  * raw sound, every 80 ms, for almost no CPU. Only when it fires does the
  * full speech recognition start.

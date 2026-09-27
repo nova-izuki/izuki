@@ -329,3 +329,102 @@ mod tests {
         assert_eq!(hits[0].snippet, "The first one.");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Weather — Open-Meteo: free, no key, no account
+// ---------------------------------------------------------------------------
+
+/// Today's weather and the next few days for a place, in words.
+pub fn weather(place: &str) -> Result<String> {
+    let place = place.trim();
+    if place.is_empty() {
+        return Err(anyhow!("which town or city?"));
+    }
+    let c = client()?;
+    let geo: serde_json::Value = c
+        .get(format!("https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&name={}", enc(place)))
+        .send()?
+        .error_for_status()?
+        .json()?;
+    let hit = geo["results"].get(0).ok_or_else(|| anyhow!("couldn't find a place called \"{place}\""))?;
+    let (lat, lon) = (hit["latitude"].as_f64().unwrap_or(0.0), hit["longitude"].as_f64().unwrap_or(0.0));
+    let name = [hit["name"].as_str(), hit["admin1"].as_str(), hit["country"].as_str()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(", ");
+    let w: serde_json::Value = c
+        .get(format!(
+            "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&timezone=auto&forecast_days=4\
+             &current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m\
+             &daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+        ))
+        .send()?
+        .error_for_status()?
+        .json()?;
+    Ok(weather_text(&name, &w))
+}
+
+fn weather_text(name: &str, w: &serde_json::Value) -> String {
+    let cur = &w["current"];
+    let num = |v: &serde_json::Value| v.as_f64().map(|x| x.round() as i64);
+    let mut s = format!("Weather for {name} (Open-Meteo):\n");
+    if let Some(t) = num(&cur["temperature_2m"]) {
+        s.push_str(&format!(
+            "Now: {t}°C ({}°F), {}, feels like {}°C, humidity {}%, wind {} km/h.\n",
+            t * 9 / 5 + 32,
+            sky(cur["weather_code"].as_i64().unwrap_or(-1)),
+            num(&cur["apparent_temperature"]).unwrap_or(t),
+            num(&cur["relative_humidity_2m"]).unwrap_or(0),
+            num(&cur["wind_speed_10m"]).unwrap_or(0),
+        ));
+    }
+    let d = &w["daily"];
+    for i in 0..4 {
+        let (Some(day), Some(hi), Some(lo)) = (d["time"][i].as_str(), num(&d["temperature_2m_max"][i]), num(&d["temperature_2m_min"][i])) else {
+            break;
+        };
+        let rain = num(&d["precipitation_probability_max"][i]).unwrap_or(0);
+        let label = match i {
+            0 => "Today".to_string(),
+            1 => "Tomorrow".to_string(),
+            _ => day.to_string(),
+        };
+        s.push_str(&format!("{label}: {} — high {hi}°C, low {lo}°C, {rain}% chance of rain.\n", sky(d["weather_code"][i].as_i64().unwrap_or(-1))));
+    }
+    s
+}
+
+/// WMO weather code → words.
+fn sky(code: i64) -> &'static str {
+    match code {
+        0 => "clear sky",
+        1 => "mostly clear",
+        2 => "partly cloudy",
+        3 => "cloudy",
+        45 | 48 => "foggy",
+        51..=57 => "drizzle",
+        61 | 63 | 80 | 81 => "rain",
+        65 | 82 => "heavy rain",
+        66 | 67 => "freezing rain",
+        71..=77 | 85 | 86 => "snow",
+        95..=99 => "thunderstorms",
+        _ => "mixed weather",
+    }
+}
+
+#[cfg(test)]
+mod weather_tests {
+    #[test]
+    fn says_the_weather_in_words() {
+        let w = serde_json::json!({
+            "current": { "temperature_2m": 31.4, "apparent_temperature": 35.0, "relative_humidity_2m": 70, "weather_code": 2, "wind_speed_10m": 11.2 },
+            "daily": { "time": ["2026-09-27", "2026-09-28"], "weather_code": [95, 61],
+                       "temperature_2m_max": [32.0, 29.6], "temperature_2m_min": [24.1, 23.0], "precipitation_probability_max": [80, 55] }
+        });
+        let t = super::weather_text("Lagos, Nigeria", &w);
+        assert!(t.contains("Now: 31°C (87°F), partly cloudy, feels like 35°C"), "{t}");
+        assert!(t.contains("Today: thunderstorms — high 32°C, low 24°C, 80% chance of rain."), "{t}");
+        assert!(t.contains("Tomorrow: rain"), "{t}");
+    }
+}

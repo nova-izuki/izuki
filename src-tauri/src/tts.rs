@@ -40,6 +40,23 @@ fn orpheus_direction(mood: Option<&str>) -> &'static str {
     }
 }
 
+/// The accent a character's language tag stands for (for the ChatGPT voice,
+/// which does accents well when asked).
+fn accent_of(lang: &str) -> Option<&'static str> {
+    Some(match lang {
+        "en-NG" => "Nigerian (Lagos)",
+        "en-GB" => "British (London)",
+        "en-IE" => "Irish (Dublin)",
+        "en-AU" => "Australian",
+        "en-IN" => "Indian",
+        "en-KE" => "Kenyan",
+        "en-ZA" => "South African",
+        "es-MX" => "Mexican Spanish",
+        "es-ES" => "Castilian Spanish",
+        _ => return None,
+    })
+}
+
 /// How a mood nudges the natural voice: (rate %, pitch Hz).
 fn edge_mood(mood: Option<&str>) -> (i32, i32) {
     match mood {
@@ -66,8 +83,15 @@ fn openai_instructions(settings: &Settings, mood: Option<&str>) -> String {
         _ => "warm and friendly",
     };
     let a = crate::voices::active(settings);
+    let accent = accent_of(a.persona.lang);
     let who = if a.persona.id == "nova" {
         String::new()
+    } else if a.persona.id == "chidi" || a.persona.id == "amaka" {
+        " Speak with a strong, authentic Nigerian accent, straight from Lagos — the real rhythm, melody and \
+         bounce of Nigerian Pidgin, like a Nigerian friend talking, never like a British or American reading it."
+            .to_string()
+    } else if let Some(accent) = accent {
+        format!(" Your voice: {}. Speak with a strong, natural, authentic {accent} accent all the way through.", a.persona.blurb)
     } else {
         format!(" Your voice: {} ({}).", a.persona.blurb, a.persona.lang)
     };
@@ -194,7 +218,9 @@ mod tests {
         let mut s = Settings::default();
         assert!(openai_instructions(&s, Some("excited")).contains("excited"));
         s.persona = "ezinne".into();
-        assert!(openai_instructions(&s, None).contains("Nigerian"));
+        assert!(openai_instructions(&s, None).contains("strong, natural, authentic Nigerian"));
+        s.persona = "chidi".into();
+        assert!(openai_instructions(&s, None).contains("Pidgin"));
         assert_eq!(edge_mood(Some("calm")), (-6, -2));
         assert!(friendly_error("Groq", reqwest::StatusCode::BAD_REQUEST, r#"{"error":{"message":"The model requires terms acceptance","code":"model_terms_required"}}"#).contains("accept"));
         assert!(friendly_error("OpenAI", reqwest::StatusCode::BAD_REQUEST, r#"{"error":{"message":"Invalid voice"}}"#).contains("Invalid voice"));

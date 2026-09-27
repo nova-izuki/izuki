@@ -12,6 +12,9 @@ import { SettingsTab } from "./tabs/SettingsTab";
 import { StatusToast } from "./StatusToast";
 import { VoiceEngine } from "./VoiceEngine";
 import { OnboardingTour } from "./OnboardingTour";
+import { SetupGuide } from "./SetupGuide";
+import { KeyCatcher } from "./KeyCatcher";
+import { brainReady } from "../lib/setup";
 import { useIzuki, type TabId } from "../lib/store";
 import { IS_TAURI } from "../lib/ipc";
 import { Recover } from "./Recover";
@@ -49,6 +52,8 @@ export function GlassConfigPanel() {
   const onboardingSeen = useIzuki((s) => s.settings.onboarding_seen);
   const patchSettings = useIzuki((s) => s.patchSettings);
   const tourOpen = useIzuki((s) => s.tourOpen);
+  const setupOpen = useIzuki((s) => s.setupOpen);
+  const setSetupOpen = useIzuki((s) => s.setSetupOpen);
   const [maxed, setMaxed] = useState(false);
   // Six tabs don't fit with names at the panel's usual width.
   const [narrow, setNarrow] = useState(() => window.innerWidth < 600);
@@ -83,6 +88,17 @@ export function GlassConfigPanel() {
       setTourOpen(true);
     }
   }, [settingsLoaded, onboardingSeen, setTourOpen]);
+
+  // No brain at all (and the tour's done): open the setup guide once, so a
+  // new user never meets a chat that can't answer.
+  const brainOk = useIzuki((s) => brainReady(s.settings));
+  const autoOpenedSetup = useRef(false);
+  useEffect(() => {
+    if (settingsLoaded && onboardingSeen && !tourOpen && !brainOk && !autoOpenedSetup.current) {
+      autoOpenedSetup.current = true;
+      setSetupOpen(true);
+    }
+  }, [settingsLoaded, onboardingSeen, tourOpen, brainOk, setSetupOpen]);
 
   const closeTour = () => {
     setTourOpen(false);
@@ -179,6 +195,11 @@ export function GlassConfigPanel() {
           <StatusToast />
         </Recover>
 
+        <Recover name="keys" silent>
+          <KeyCatcher />
+        </Recover>
+
+        <AnimatePresence>{setupOpen && !tourOpen && <SetupGuide onClose={() => setSetupOpen(false)} />}</AnimatePresence>
         <AnimatePresence>{tourOpen && <OnboardingTour onDone={closeTour} />}</AnimatePresence>
       </div>
     </div>
