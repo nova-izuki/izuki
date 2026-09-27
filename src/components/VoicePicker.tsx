@@ -172,7 +172,7 @@ export function VoicePicker() {
             : engine === "orpheus"
               ? "Human — Orpheus on Groq, very expressive (it can laugh and sigh). Needs a free Groq key. English only."
               : engine === "openai"
-                ? "ChatGPT's voice — follows your character's accent. Needs credits on your OpenAI account (about a cent for several minutes)."
+                ? "ChatGPT's voice — the strongest accents (Nigerian, Pidgin…), following your character. The one paid option: an OpenAI key with a little credit (about a cent for several minutes)."
                 : "Offline — runs on this PC: free, private, works with no internet. English only."
         }
       >
@@ -246,6 +246,33 @@ export function VoicePicker() {
               className="izk-btn-primary izk-no-drag h-[28px] shrink-0 px-2.5 text-[11px] disabled:opacity-40"
             >
               <Check size={11} strokeWidth={2.6} /> Save &amp; test
+            </button>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => void openLink("https://platform.openai.com/api-keys")}
+              className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
+            >
+              <ExternalLink size={11} strokeWidth={2.4} /> Get an OpenAI key
+            </button>
+            <span>OpenAI has no free keys — it needs about $5 of credit (a cent lasts several minutes).</span>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <span>Want it free?</span>
+            <button
+              type="button"
+              onClick={() => patch({ voice_engine: "edge", cloud_voice: "" })}
+              className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
+            >
+              Natural — no key at all
+            </button>
+            <button
+              type="button"
+              onClick={() => patch({ voice_engine: "orpheus", cloud_voice: "" })}
+              className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
+            >
+              Human — free Groq key
             </button>
           </div>
         </div>
