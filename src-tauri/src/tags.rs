@@ -151,6 +151,22 @@ mod tests {
 #[cfg(test)]
 mod look {
     /// Draws tags on a real screenshot to eyeball them:
+    /// The real thing: this screen, the real controls Windows reports for the
+    /// window in front, tagged exactly as the brain sees them, saved as a
+    /// picture. `IZK_OUT=out.png cargo test tags_live -- --ignored`.
+    #[test]
+    #[ignore]
+    fn tags_live() {
+        let frame = crate::capture::capture_all().unwrap();
+        let desktop = crate::model::Rect { x: frame.origin.0, y: frame.origin.1, w: frame.width as i32, h: frame.height as i32 };
+        let controls = crate::uia::controls_fresh_or_now(80);
+        eprintln!("{} controls in {}", controls.len(), crate::uia::foreground_app());
+        assert!(!controls.is_empty(), "Windows reported no controls");
+        let mut scaled = frame.downscaled(1280);
+        super::draw(&mut scaled, &desktop, &controls);
+        std::fs::write(std::env::var("IZK_OUT").unwrap(), scaled.to_jpeg(85).unwrap()).unwrap();
+    }
+
     /// IZK_SHOT=in.jpg IZK_OUT=out.png cargo test tags_look -- --ignored
     #[test]
     #[ignore]
