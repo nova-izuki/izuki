@@ -52,9 +52,12 @@ export function DiscordCard() {
           <li className="flex gap-2">
             <Step n={1} />
             <div className="min-w-0 flex-1">
-              On the Discord developer site, press <b className="text-izk-ink">New Application</b> and name it (e.g.
-              “My Izuki”). Open <b className="text-izk-ink">Bot</b> on the left and press{" "}
-              <b className="text-izk-ink">Reset Token</b>, then copy it.
+              On the Discord developer site, press <b className="text-izk-ink">New Application</b>, name it (e.g.
+              “My Izuki”) and press <b className="text-izk-ink">Create</b>. Open <b className="text-izk-ink">Bot</b> on
+              the left. Scroll down to <b className="text-izk-ink">Privileged Gateway Intents</b> and turn{" "}
+              <b className="text-izk-ink">ON</b> the <b className="text-izk-ink">Message Content Intent</b> (without it
+              the bot can’t read your messages), then <b className="text-izk-ink">Save</b>. Now scroll back up, press{" "}
+              <b className="text-izk-ink">Reset Token</b> → <b className="text-izk-ink">Yes</b> → <b className="text-izk-ink">Copy</b>.
               <div className="mt-1.5">
                 <button
                   type="button"
