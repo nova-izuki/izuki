@@ -212,9 +212,26 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
     come back. Phone app: "Paste my key" saves and tests; PC → Call Izuki
     → "Link the phone app" QR → the phone app opens already linked.
 
+33. Sharper eyes: on a quiz/web form, "click the first option" → it clicks
+    that exact option (log: "[brain] screen controls: N, page text: M
+    chars"). The brain now sees yellow number tags on every control in its
+    screenshot (tags.rs — never shown on the user's screen) and the page's
+    own text. `IZK_SHOT=x.jpg IZK_OUT=y.png cargo test tags_look -- --ignored`
+    renders the tags on a picture to eyeball them.
+34. "Help me do this assignment and teach me as you go" on a quiz page →
+    one question at a time: it explains out loud (and the explanation is
+    heard before the click), circles the key part, answers, moves on, and
+    asks before submitting.
+35. Speed: with a YouTube video playing, a multi-step task no longer
+    stalls ~6 s per step (log "[agent] screen still moving after ~2500 ms").
+36. Call Izuki: tap the orb while it's thinking → "Okay — stopped" (the PC
+    task stops too); hold the orb while it talks → it goes quiet and
+    records until you let go; "Talk over Izuki: on" (quiet rooms) → just
+    talking cuts it off, and your words are kept.
+
 Running the Rust tests from Linux: `cargo test --target x86_64-pc-windows-gnu
 --lib --no-run`, copy `target/x86_64-pc-windows-gnu/debug/WebView2Loader.dll`
-next to the test exe in `deps/`, and run it with `wine64` (65 pass).
+next to the test exe in `deps/`, and run it with `wine64` (71 pass).
 
 Fix whatever breaks; keep each fix small.
 

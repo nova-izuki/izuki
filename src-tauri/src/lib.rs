@@ -32,6 +32,7 @@ pub mod settings;
 pub mod state;
 pub mod store;
 pub mod stt;
+pub mod tags;
 pub mod telegram;
 pub mod tray;
 pub mod tts;

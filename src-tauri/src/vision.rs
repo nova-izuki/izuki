@@ -31,7 +31,10 @@ const SYSTEM_PROMPT: &str = concat!(
     "to do.\n",
     "You may also be given a numbered list of the real controls in the active window ",
     "(buttons, fields, links, menu items…), e.g. `[7] Button \"Save\"`. To act on one of ",
-    "those, set \"target\": 7 — this is exact and ALWAYS preferred over guessing x,y. For a ",
+    "those, set \"target\": 7 — this is exact and ALWAYS preferred over guessing x,y. Each listed ",
+    "control ALSO has its number printed on the screenshot, in a small yellow tag at its top-left ",
+    "corner: find the thing you mean in the picture, read the number on its tag, and use that. The ",
+    "tags are Izuki's, not part of their screen — never mention them. For a ",
     "drag between two listed controls use \"target\" and \"target2\". Only use x,y for things ",
     "that are not in the list. Never make up a target number that isn't listed.\n",
     "Some listed controls are marked \"shows on hover\": they're really there (a tab's close ✕, ",
@@ -51,6 +54,14 @@ const SYSTEM_PROMPT: &str = concat!(
     "explanation itself in `summary` step by step, the way a patient teacher talks — the marks stay on screen ",
     "while it's said. If a video is playing, pause it first (key k on YouTube, otherwise space), explain, and ",
     "leave it paused unless they ask to carry on.\n",
+    "Working through something WITH them and teaching as you go (\"help me do my assignment and explain ",
+    "it\", \"teach me while you do it\", homework, a quiz, a worksheet): go ONE question at a time. For each, ",
+    "read it (use the page text — exact wording), then in `summary` explain it like a patient tutor talking: ",
+    "the idea behind it and why the answer is right, 2 to 4 short sentences, in plain words. In the same ",
+    "round add a draw or point step on the key part, THEN the step that answers it (click the right option, ",
+    "type the answer). Izuki says your explanation before it acts, so they hear it first. Next question in ",
+    "the next round; keep a note of which one you're on. Never submit or hand in the whole thing at the end ",
+    "— ask first (see below). If they only asked you to explain, explain and let them answer themselves.\n",
     "Requests are usually spoken and run through speech recognition, so they can be short, ",
     "misheard or misspelled (\"play bonto by bonto\" = Burna Boy's \"Bundle by Bundle\", ",
     "\"open you tube\", \"blackbored\", \"ms word\"). Work out what they most likely meant from ",
@@ -194,6 +205,8 @@ pub struct VisionRequest {
     pub memory: String,
     /// Every open app window, front to back (`uia::open_windows`).
     pub windows: Vec<String>,
+    /// The page or document's own text, word for word (`uia::document_text`).
+    pub page_text: String,
 }
 
 impl VisionRequest {
@@ -254,6 +267,12 @@ impl VisionRequest {
         }
         if self.windows.len() > 1 {
             s.push_str(&format!("Open windows (front to back): {}\n", self.windows.join(" | ")));
+        }
+        if !self.page_text.trim().is_empty() {
+            s.push_str(&format!(
+                "The text of the page/document in front, read straight from the app (exact wording — trust it over reading pixels):\n{}\n",
+                self.page_text.trim()
+            ));
         }
         s.push_str(&format!("Marks drawn:\n{}\n", self.marks_description));
         if !self.ocr_text.trim().is_empty() {

@@ -111,6 +111,10 @@
   .iz { align-self: flex-start; background: rgba(255,255,255,0.06); border: 1px solid var(--line); border-bottom-left-radius: 6px; }
   .empty { color: var(--faint); text-align: center; padding: 20px 0; }
 
+  #barge { align-self: center; margin-top: 8px; border: 1px solid var(--line); background: var(--glass); color: var(--muted, #a3a9c7); border-radius: 999px; padding: 6px 12px; font-size: 12.5px; }
+  #barge[aria-pressed="true"] { border-color: rgba(52, 211, 153, 0.55); background: rgba(52, 211, 153, 0.14); color: #d1fae5; }
+  #orb-wrap { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
   @media (prefers-reduced-motion: reduce) { .sky { animation: none; } }
 </style>
 </head>
@@ -147,6 +151,7 @@
     </button>
   </div>
   <div class="hint" id="hint">Tap once — then just talk back and forth</div>
+  <button id="barge" type="button" aria-pressed="false" title="In a quiet place: just start talking to cut Izuki off. In a noisy place leave it off and hold the orb instead.">🗣️ Talk over Izuki: off</button>
   <form id="typed" autocomplete="off" hidden>
     <input id="text" placeholder="Type to Izuki…" aria-label="Type a message">
     <button id="send" type="submit">Send</button>
@@ -374,9 +379,28 @@
     u.onend = done; u.onerror = done;
     speechSynthesis.speak(u);
   });
+  /** "Talk over Izuki" on: your voice (much louder than Izuki's own echo) cuts it off. */
+  function watchBarge() {
+    clearInterval(bargeTimer);
+    if (!bargeOn || !analyser || !mic) return;
+    const began = performance.now();
+    let echo = 0, loudMs = 0;
+    bargeTimer = setInterval(() => {
+      if (mode !== "speaking" || !inCall) { clearInterval(bargeTimer); return; }
+      const v = loudness();
+      if (v < 0) return;
+      // The first half-second is Izuki's own voice coming back in: learn how loud that is.
+      if (performance.now() - began < 500) { echo = Math.max(echo, v); return; }
+      if (v > Math.max(0.08, echo * 2.2)) {
+        loudMs += 60;
+        if (loudMs >= 300) { clearInterval(bargeTimer); bargeNext = true; hush(); }
+      } else loudMs = Math.max(0, loudMs - 60);
+    }, 60);
+  }
   const say = (text, audio, type) => new Promise((done) => {
     if (!text) return done();
-    setMode("speaking", "Tap the orb to cut in");
+    setMode("speaking", bargeOn ? "Just talk to cut me off" : "Tap the orb to stop me · hold it to talk");
+    watchBarge();
     if (!audio) return speakWithPhone(text).then(done);
     player.onended = () => done();
     player.onerror = () => speakWithPhone(text).then(done);
@@ -384,6 +408,7 @@
     player.play().catch(() => speakWithPhone(text).then(done));
   });
   const hush = () => {
+    clearInterval(bargeTimer);
     try { player.pause(); if (player.onended) player.onended(); } catch {}
     if ("speechSynthesis" in window) speechSynthesis.cancel();
   };
@@ -395,19 +420,33 @@
     remember("me", text);
     $("izuki").textContent = "";
     $("links").replaceChildren();
-    setMode("thinking", "Working on it…");
+    setMode("thinking", "Working on it… (tap the orb to cancel)");
+    const abort = (talkAbort = new AbortController());
     try {
-      const r = await fetch("talk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice: true }) });
+      const r = await fetch("talk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice: true }), signal: abort.signal });
       const v = await r.json();
       setOnline(true);
+      talkAbort = null;
       remember("iz", v.text || "Hmm, I lost my words there.", v.links);
       await say(v.text, v.audio, v.audio_type);
-    } catch {
-      setOnline(false);
-      remember("iz", "I can't reach your PC right now — is it on, with Izuki open?");
+    } catch (e) {
+      if (!(e && e.name === "AbortError")) {
+        setOnline(false);
+        remember("iz", "I can't reach your PC right now — is it on, with Izuki open?");
+      }
     }
+    talkAbort = null;
     busy = false;
     listenAgain();
+  }
+
+  /** Tapped (or held) while it's thinking: stop the task on the PC too. */
+  function cancelThinking() {
+    if (!talkAbort) return;
+    talkAbort.abort();
+    talkAbort = null;
+    fetch("talk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "stop" }) }).catch(() => {});
+    $("izuki").textContent = "Okay — stopped. Go ahead.";
   }
 
   const listenAgain = () => {
@@ -430,6 +469,23 @@
   let canHear = null;              // can the PC transcribe a clip? (asked once, at load)
   let mic = null, actx = null, analyser = null, buf = null;
   let vadTimer = null, needTap = false, sendNow = null, turns = 0;
+  // Cutting in: tap the orb (stop), hold it (talk over, walkie-talkie
+  // style — works anywhere, even somewhere noisy), or, with "Talk over
+  // Izuki" on (quiet places), just start talking.
+  let bargeOn = false, bargeNext = false, bargeTimer = null, talkAbort = null;
+  let holding = false, holdTimer = null, holdRec = null, holdChunks = [], suppressClick = false;
+  try { bargeOn = localStorage.getItem("izuki.call.barge") === "1"; } catch {}
+  const showBarge = () => {
+    $("barge").setAttribute("aria-pressed", String(bargeOn));
+    $("barge").textContent = "🗣️ Talk over Izuki: " + (bargeOn ? "on" : "off");
+  };
+  showBarge();
+  $("barge").addEventListener("click", () => {
+    bargeOn = !bargeOn;
+    try { localStorage.setItem("izuki.call.barge", bargeOn ? "1" : "0"); } catch {}
+    showBarge();
+    $("hint").textContent = bargeOn ? "Just start talking to cut me off" : "Tap the orb to stop me · hold it to talk over me";
+  });
 
   fetch("caps").then((r) => r.json()).then((v) => (canHear = !!v.hear)).catch(() => (canHear = false));
 
@@ -478,7 +534,7 @@
   }
 
   function listen() {
-    if (busy || !inCall) return;
+    if (busy || !inCall || holding) return;
     needTap = false;
     if (canHear && mic && window.MediaRecorder) return hearTurn();
     // The phone's own recognition. On an iPhone it only starts from a tap —
@@ -490,8 +546,11 @@
 
   /** One turn with the open mic: wait for speech, record it, send it. */
   function hearTurn() {
-    if (busy || !inCall) return;
+    if (busy || !inCall || holding) return;
     turns++;
+    // Cut Izuki off by talking: they're mid-sentence already.
+    const already = bargeNext;
+    bargeNext = false;
     if (actx && actx.state !== "running") actx.resume().catch(() => {});
     setMode("listening", "Just talk — tap the red button to hang up");
     const type = clipType();
@@ -511,7 +570,8 @@
     try { begin(); } catch { return tapToTalk(); }
 
     const STEP = 60;
-    let floor = 0.008, loudMs = 0, quietMs = 0, spokeMs = 0, idleMs = 0, deadMs = 0, settleMs = 0;
+    let floor = 0.008, loudMs = 0, quietMs = 0, spokeMs = 0, idleMs = 0, deadMs = 0, settleMs = already ? 300 : 0;
+    if (already) { phase = "talking"; $("you").textContent = "…"; }
     const finish = async () => {
       if (phase === "done") return;
       phase = "done";
@@ -685,9 +745,76 @@
 
   $("main").addEventListener("click", () => (inCall ? endCall() : startCall()));
   // The orb itself: cut in while Izuki talks, finish a recording, or start.
+  // Hold the orb: talk over Izuki, walkie-talkie style. Let go to send.
+  function startHold() {
+    holding = true;
+    suppressClick = true;
+    if (mode === "speaking") hush();
+    cancelThinking();
+    clearInterval(vadTimer); vadTimer = null; sendNow = null; needTap = false;
+    try { if (recog) recog.abort(); } catch {}
+    try { if (recorder && recorder.state !== "inactive") { recorder.onstop = null; recorder.stop(); } } catch {}
+    recorder = null;
+    if (navigator.vibrate) navigator.vibrate(20);
+    setMode("listening", "Talking — let go when you're done");
+    $("you").textContent = "…";
+    if (canHear && mic && window.MediaRecorder) {
+      const type = clipType();
+      holdChunks = [];
+      try {
+        holdRec = new MediaRecorder(mic, type ? { mimeType: type } : undefined);
+        holdRec.ondataavailable = (e) => e.data && e.data.size && holdChunks.push(e.data);
+        holdRec.start(200);
+      } catch { holdRec = null; }
+      clearInterval(vadTimer);
+      vadTimer = setInterval(() => { const v = loudness(); if (v > 0) kick(Math.min(1, v * 10)); }, 60);
+    } else if (Rec) {
+      recognize();
+    }
+  }
+  function finishHold() {
+    holding = false;
+    clearInterval(vadTimer); vadTimer = null;
+    setTimeout(() => (suppressClick = false), 80);
+    if (holdRec) {
+      const rec = holdRec;
+      holdRec = null;
+      rec.onstop = async () => {
+        const blob = holdChunks.length ? new Blob(holdChunks, { type: holdChunks[0].type || "audio/webm" }) : null;
+        if (!blob || blob.size < 1200 || !inCall) return listen();
+        setMode("thinking", "Working out what you said…");
+        try {
+          const r = await fetch("hear", { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
+          const v = await r.json();
+          if (v.error || !(v.text || "").trim()) return listen();
+          ask(v.text.trim());
+        } catch { listen(); }
+      };
+      try { rec.stop(); } catch { listen(); }
+    } else if (recog) {
+      try { recog.stop(); } catch {}
+    } else listen();
+  }
+  const orbWrap = $("orb-wrap");
+  orbWrap.addEventListener("pointerdown", () => {
+    if (!inCall) return;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(startHold, 350);
+  });
+  const endPress = () => {
+    clearTimeout(holdTimer);
+    if (holding) finishHold();
+  };
+  orbWrap.addEventListener("pointerup", endPress);
+  orbWrap.addEventListener("pointercancel", endPress);
+  orbWrap.addEventListener("pointerleave", endPress);
+  orbWrap.addEventListener("contextmenu", (e) => e.preventDefault());
+
   $("orb-wrap").addEventListener("click", () => {
+    if (suppressClick) { suppressClick = false; return; }
     if (mode === "speaking") return hush();
     if (!inCall) return startCall();
+    if (talkAbort) return cancelThinking();
     // A tap is what a phone needs to start listening again.
     if (needTap) {
       needTap = false;

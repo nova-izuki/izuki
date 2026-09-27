@@ -37,6 +37,8 @@ const MODEL_IMAGE_EDGE: u32 = 1280;
 /// How many real controls to list for the model — enough for a busy app's
 /// visible UI without drowning a small model's context.
 pub const MAX_CONTROLS: usize = 80;
+/// How much of the page's own text the brain gets with each look.
+const PAGE_TEXT_CHARS: usize = 5000;
 
 pub fn set_frozen(frame: Option<Frame>) {
     *FROZEN.lock() = frame;
@@ -252,13 +254,21 @@ fn ask_model(
     // a second) — do it at the same time as the screenshot work.
     let controls_job = std::thread::spawn(|| {
         let t = std::time::Instant::now();
+        // The page's own words, read alongside the controls (not after).
+        let text_job = std::thread::spawn(|| uia::document_text(PAGE_TEXT_CHARS));
         let c = uia::controls_fresh_or_now(MAX_CONTROLS);
-        eprintln!("[brain] screen controls: {} in {} ms", c.len(), t.elapsed().as_millis());
-        c
+        let text = text_job.join().unwrap_or_default();
+        eprintln!("[brain] screen controls: {}, page text: {} chars, in {} ms", c.len(), text.len(), t.elapsed().as_millis());
+        (c, text)
     });
 
     let annotated = planner::annotate(frame, session);
-    let scaled = annotated.downscaled(MODEL_IMAGE_EDGE);
+    let mut scaled = annotated.downscaled(MODEL_IMAGE_EDGE);
+    let desktop = Rect { x: frame.origin.0, y: frame.origin.1, w: frame.width as i32, h: frame.height as i32 };
+    // Each control's number printed on the picture itself (tags.rs), so the
+    // brain points at the real button instead of guessing pixels.
+    let (controls, page_text) = controls_job.join().unwrap_or_default();
+    crate::tags::draw(&mut scaled, &desktop, &controls);
     let image_jpeg = scaled.to_jpeg(80)?;
 
     let ocr_text = session
@@ -271,12 +281,7 @@ fn ask_model(
     let req = VisionRequest {
         image_jpeg,
         image_size: (scaled.width, scaled.height),
-        desktop: Rect {
-            x: frame.origin.0,
-            y: frame.origin.1,
-            w: frame.width as i32,
-            h: frame.height as i32,
-        },
+        desktop,
         marks_description: planner::describe(session),
         user_prompt: session.prompt.clone(),
         ocr_text,
@@ -285,9 +290,10 @@ fn ask_model(
         draft: draft.to_vec(),
         // Izuki's "hands": the real controls on screen, numbered, so the
         // model can say "click #7" instead of guessing pixels.
-        controls: controls_job.join().unwrap_or_default(),
+        controls,
         memory: crate::memory::prompt_block() + &crate::reminders::prompt_block() + &crate::voices::prompt_block(),
         windows: uia::open_windows(14),
+        page_text,
     };
     let prep_ms = started.elapsed().as_millis();
 
@@ -1135,6 +1141,15 @@ fn submit_task(
                 "izuki://say",
                 serde_json::json!({ "text": plan.summary, "mood": plan.mood, "reply": true, "quick": true }),
             );
+            // An explanation (teaching as it works) is heard before the click
+            // it explains: give it about as long as it takes to say.
+            let chars = plan.summary.chars().count();
+            if chars > 90 {
+                let until = std::time::Instant::now() + Duration::from_secs_f64((chars as f64 / 14.0).min(25.0));
+                while std::time::Instant::now() < until && alive() {
+                    std::thread::sleep(Duration::from_millis(150));
+                }
+            }
         }
         last_plan = Some(plan);
         if steps.is_empty() {
@@ -1163,7 +1178,10 @@ fn submit_task(
         // the model asked for (an ad counting down) comes on top.
         let waited = std::time::Instant::now();
         let min = Duration::from_millis(150 + u64::from(wait) * 1000);
-        let max = Duration::from_millis(6000 + u64::from(wait) * 1000);
+        // Not the full 6 s it used to be: with a video playing the screen
+        // never "settles", and every round of a task waited the whole time.
+        // A page still loading is caught just below (busy cursor, Stop button).
+        let max = Duration::from_millis(2500 + u64::from(wait) * 1000);
         let settled = crate::live::wait_until_settled(min, max, || !alive());
         eprintln!(
             "[agent] screen {} after {} ms",
@@ -1173,13 +1191,14 @@ fn submit_task(
         // Still loading (a busy cursor, the browser's Stop button)? Wait for
         // it like a person would, rather than judging a half-loaded page —
         // "I can't find YouTube" was often just YouTube still arriving.
-        if let Some(why) = uia::loading() {
+        // (A finished page's controls are kept for the next look — read once.)
+        if let Some(why) = uia::loading(true) {
             let _ = app.emit(events::STATUS, StatusEvent::working("Waiting for it to load…"));
             let until = std::time::Instant::now() + Duration::from_secs(12);
-            while std::time::Instant::now() < until && alive() && uia::loading().is_some() {
+            while std::time::Instant::now() < until && alive() && uia::loading(false).is_some() {
                 std::thread::sleep(Duration::from_millis(400));
             }
-            let still = uia::loading().is_some();
+            let still = uia::loading(false).is_some();
             eprintln!("[agent] {why}; {} after {} ms", if still { "still loading" } else { "loaded" }, waited.elapsed().as_millis());
             if !still {
                 crate::live::wait_until_settled(Duration::from_millis(250), Duration::from_secs(3), || !alive());
@@ -1410,6 +1429,7 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
         controls: Vec::new(),
         memory: String::new(),
         windows: Vec::new(),
+        page_text: String::new(),
     };
 
     let answer = vision::ask(&cfg, &req);
