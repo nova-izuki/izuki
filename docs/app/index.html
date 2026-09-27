@@ -819,7 +819,9 @@
   }
 
   // Gemini's speech models, newest first; the one that answers is remembered.
-  const TTS_MODELS = ["gemini-3.8-flash-tts", "gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts"];
+  // Only the 2.5 speech models act on a spoken direction; newer ones read it
+  // out loud word for word, so they get just the words (the voice carries the character).
+  const TTS_MODELS = ["gemini-2.5-flash-preview-tts", "gemini-3.1-flash-tts-preview", "gemini-3.8-flash-tts"];
   let ttsModel = store.get("ttsModel", "");
   async function geminiVoice(t) {
     if (!key || Date.now() < voiceRestUntil) return null;
@@ -837,7 +839,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: `Say it naturally, like a real person — ${person().style}: ` + t }] }],
+          contents: [{ parts: [{ text: model.startsWith("gemini-2.5") ? `Say it naturally, like a real person — ${person().style}: ` + t : t }] }],
           generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: person().voice } } } },
         }),
       });

@@ -146,12 +146,20 @@ fn gemini_voice(chosen: &str, openai: &str) -> &'static str {
 /// Gemini's speech models, newest guess first; the one that answers is
 /// remembered (a retired name just answers 404).
 const GEMINI_TTS_MODELS: &[&str] = &[
-    "gemini-3.8-flash-tts",
-    "gemini-3.1-flash-tts-preview",
     "gemini-2.5-flash-preview-tts",
     "gemini-2.5-flash-tts",
+    "gemini-3.1-flash-tts-preview",
+    "gemini-3.8-flash-tts",
     "gemini-3.8-flash-lite-tts",
 ];
+
+/// Only the 2.5 speech models act on a spoken direction ("Say warmly, in a
+/// Nigerian accent: …"). Newer ones read it out loud word for word (checked
+/// on 3.8), and refuse a separate style instruction — they get just the
+/// words, and the chosen voice carries the character.
+fn takes_direction(model: &str) -> bool {
+    model.starts_with("gemini-2.5")
+}
 static GEMINI_TTS_MODEL: parking_lot::Mutex<Option<&'static str>> = parking_lot::Mutex::new(None);
 
 /// Gemini returns bare 16-bit PCM (24 kHz, mono): put a WAV header on it.
@@ -181,8 +189,9 @@ fn gemini_speak(settings: &Settings, c: &reqwest::blocking::Client, text: &str, 
         return Err("add your free Gemini key to use the Gemini voice".into());
     }
     let persona = crate::voices::active(settings).persona;
-    let body = json!({
-        "contents": [{ "parts": [{ "text": format!("{}: {text}", gemini_direction(settings, mood)) }] }],
+    let directed = format!("{}: {text}", gemini_direction(settings, mood));
+    let mut body = json!({
+        "contents": [{ "parts": [{ "text": directed }] }],
         "generationConfig": {
             "responseModalities": ["AUDIO"],
             "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": {
@@ -197,6 +206,7 @@ fn gemini_speak(settings: &Settings, c: &reqwest::blocking::Client, text: &str, 
     };
     let mut last = String::from("Gemini voice failed");
     for model in models {
+        body["contents"][0]["parts"][0]["text"] = json!(if takes_direction(model) { directed.as_str() } else { text });
         let resp = c
             .post(format!("https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"))
             .header("x-goog-api-key", key)
