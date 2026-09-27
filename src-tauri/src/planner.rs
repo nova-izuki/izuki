@@ -43,6 +43,7 @@ pub fn local_plan(session: &DrawSession) -> Vec<ActionStep> {
                     hover_first: false,
                     scroll_first: false,
                     shape: None,
+                    path: None,
                     target: None,
                     target2: None,
                 }
@@ -66,6 +67,7 @@ pub fn local_plan(session: &DrawSession) -> Vec<ActionStep> {
                     hover_first: false,
                     scroll_first: false,
                     shape: None,
+                    path: None,
                     target: None,
                     target2: None,
                 }
@@ -86,6 +88,7 @@ pub fn local_plan(session: &DrawSession) -> Vec<ActionStep> {
                 hover_first: false,
                 scroll_first: false,
                 shape: None,
+                path: None,
                 target: None,
                 target2: None,
             },

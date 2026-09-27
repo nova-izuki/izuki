@@ -170,6 +170,7 @@ fn trigger(app: &AppHandle, store: &Arc<Store>, w: &Watcher) {
                 hover_first: false,
                 scroll_first: false,
                 shape: None,
+                path: None,
                 target: None,
                 target2: None,
             };

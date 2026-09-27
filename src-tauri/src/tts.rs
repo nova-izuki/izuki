@@ -231,6 +231,10 @@ fn gemini_speak(settings: &Settings, c: &reqwest::blocking::Client, text: &str, 
             .and_then(|r| r.trim_end_matches(|c: char| !c.is_ascii_digit()).parse().ok())
             .unwrap_or(24_000);
         *GEMINI_TTS_MODEL.lock() = Some(model);
+        // Newer speech models send a finished WAV; older ones bare PCM.
+        if pcm.starts_with(b"RIFF") || part["mimeType"].as_str().is_some_and(|m| m.contains("wav")) {
+            return Ok(pcm);
+        }
         return Ok(pcm_to_wav(&pcm, rate));
     }
     Err(last)

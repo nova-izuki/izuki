@@ -113,6 +113,9 @@ pub enum Intent {
     /// underline, arrow, box, note), `text_to_type` holds a note's words.
     /// Nothing is clicked.
     Draw,
+    /// Draw for real, inside an app (Paint, Whiteboard, a canvas): the left
+    /// button held down along `path`, like a hand holding a pen.
+    Stroke,
 }
 
 impl Intent {
@@ -135,6 +138,7 @@ impl Intent {
             Intent::Search => "search",
             Intent::PlayYoutube => "play_youtube",
             Intent::Draw => "draw",
+            Intent::Stroke => "stroke",
         }
     }
 }
@@ -216,6 +220,9 @@ pub struct ActionStep {
     /// For `draw`: circle, underline, arrow, box or note.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shape: Option<String>,
+    /// For `stroke`: the points the pen passes through, in order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<Vec<[i32; 2]>>,
 }
 
 fn half() -> f32 {

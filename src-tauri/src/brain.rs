@@ -1464,6 +1464,7 @@ fn describe_step(s: &ActionStep) -> String {
         Intent::Search => format!("searched the web for \"{}\"", s.text_to_type.as_deref().unwrap_or("")),
         Intent::PlayYoutube => format!("played \"{}\" on YouTube", s.text_to_type.as_deref().unwrap_or("")),
         Intent::Draw => format!("drew a {} at {},{}", s.shape.as_deref().unwrap_or("mark"), s.x, s.y),
+        Intent::Stroke => format!("drew a line through {} points starting at {},{}", s.path.as_ref().map_or(0, |p| p.len()), s.x, s.y),
         other => format!("{} at {},{}", other.as_str(), s.x, s.y),
     };
     if s.reasoning.trim().is_empty() {

@@ -56,6 +56,7 @@ happens to be great with computers. It can:
 | 👀 **Sees your screen** | Understands screenshots *and* the real buttons/fields Windows reports, so clicks land on the right control. |
 | 🔁 **Look → act → look again** | Multi-step tasks keep going across new windows, pages and pop-ups — up to six rounds per request. |
 | ✍️ **Draw to show it** | Hold **Ctrl+D**, circle something, let go, then say or type what you want. A circle is a click, an arrow is a drag, a box watches a region. |
+| 🖌️ **It draws and highlights like a person** | "Draw a smiley in Paint", "sketch a house on the whiteboard" — its hand holds the pen and draws. "Highlight this paragraph and paste it into Word" — it selects, copies and pastes like you would. |
 | 🧠 **Any brain you like** | Free: Google Gemini, Groq (the fastest), OpenRouter's free models, Mistral, NVIDIA NIM, or a local model with Ollama. Also OpenAI, Anthropic, Grok (xAI) or any OpenAI-compatible server. Izuki races them and uses whichever answers first if one is slow. The phone app works with Gemini, Groq, OpenRouter or Mistral. |
 | 💾 **Flows & watchers** | Anything Izuki does can be saved and replayed in one click, or triggered when something on screen changes. |
 | 💬 **Just chat** | A Chat tab for plain companion chat — plans, drafts, homework, advice — that never touches your screen. If something needs the PC, one tap lets Izuki do it. |

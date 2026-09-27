@@ -273,6 +273,15 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
     ElevenLabs: paste a free key, Save & test → Jessica (or Brian for male
     characters) speaks; "Which voice" lists 8 ready-made voices. Neither
     could be tried without keys — azure_ssml has a unit test.
+46. Drawing for real: "draw a smiley in Paint" / "draw a house on the
+    whiteboard" → the hand holds the button down and draws (new `stroke`
+    action with a `path`). Verified: `IZK_OUT=x.jpg cargo test
+    draws_in_paint -- --ignored` drew a clean smiley in Paint on Windows.
+    "Highlight this paragraph and copy it into Word" → selects (double-click
+    / drag / shift+click), ctrl+c, clicks in Word, ctrl+v.
+47. Gemini's newest speech model returns a finished WAV (older ones raw
+    PCM): the Gemini voice on the PC and phone now plays it as-is — check it
+    has no click at the start and isn't sped up.
 
 Running the Rust tests from Linux: `cargo test --target x86_64-pc-windows-gnu
 --lib --no-run`, copy `target/x86_64-pc-windows-gnu/debug/WebView2Loader.dll`

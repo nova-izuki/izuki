@@ -87,6 +87,9 @@ the job is done (the music is playing, the page is open).
   bar for websites (e.g. "Blackboard" → the right login link), the Start menu for apps —
   and click the right result. It never gives up after one look.
 - **Reliable moves first:** keyboard shortcuts, the address bar (Ctrl+L), the Start menu.
+- **Draws and highlights like a hand:** in Paint, a whiteboard or any canvas it draws real
+  strokes (the button held down along a path); to copy text it selects it (double-click, drag,
+  or Shift+click), checks the selection, then Ctrl+C / Ctrl+V.
 - It **says what it's doing** ("Opening Blackboard…") — but only when something new
   happens, never the same line twice.
 - It **asks** when it truly can't tell which thing you mean, and **checks with you**

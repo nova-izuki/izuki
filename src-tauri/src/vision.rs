@@ -54,6 +54,16 @@ const SYSTEM_PROMPT: &str = concat!(
     "explanation itself in `summary` step by step, the way a patient teacher talks — the marks stay on screen ",
     "while it's said. If a video is playing, pause it first (key k on YouTube, otherwise space), explain, and ",
     "leave it paused unless they ask to carry on.\n",
+    "Drawing FOR REAL inside an app (Paint, Whiteboard, a canvas, a signature box), the way a hand would: ",
+    "{\"action\":\"stroke\",\"path\":[[x,y],[x,y],…]} holds the mouse button down along the path (image ",
+    "pixels, 3 to 40 points per stroke, one stroke per continuous line — lift and start a new stroke for each ",
+    "separate line). Pick the brush/pen, size and colour first. A circle is about 16 points around it; a ",
+    "house is a square, a triangle roof, a door; letters are a few strokes each. Draw the whole picture, then look.\n",
+    "Highlighting, copying and pasting like a person: to select text, double_click one word, drag from just ",
+    "before its first letter to just after its last for a sentence, or click then shift+click to stretch it; ",
+    "ctrl+a selects everything in a field or document. Then key ctrl+c copies; click where it should go and ",
+    "key ctrl+v pastes (or type the words). To HIGHLIGHT in colour (Word, a PDF, Docs), select the text first, ",
+    "then click the highlighter button. Always look again to check the right text is selected before copying.\n",
     "Working through something WITH them and teaching as you go (\"help me do my assignment and explain ",
     "it\", \"teach me while you do it\", homework, a quiz, a worksheet): go ONE question at a time. For each, ",
     "read it (use the page text — exact wording), then in `summary` explain it like a patient tutor talking: ",
@@ -198,7 +208,8 @@ const SYSTEM_PROMPT: &str = concat!(
     "{\"summary\":\"one short sentence, or the full answer if this was a question\",",
     "\"mood\":\"cheerful\",\"remember\":[],\"notes\":\"plan / what I've learned\",\"done\":false,\"wait\":0,\"zoom\":[x1,y1,x2,y2] only to look closer,",
     "\"steps\":[{\"action\":\"click|double_click|right_click|",
-    "type|drag|hover|scroll|key|copy|point|draw|open_app|open_url|search|play_youtube\",\"target\":int|null,\"target2\":int|null,",
+    "type|drag|stroke|hover|scroll|key|copy|point|draw|open_app|open_url|search|play_youtube\",\"target\":int|null,\"target2\":int|null,",
+    "\"path\":[[x,y],…] only for stroke,",
     "\"x\":int,\"y\":int,\"x2\":int|null,\"y2\":int|null,",
     "\"text_to_type\":string|null,\"key\":string|null,\"scroll_amount\":int|null,\"shape\":string|null,",
     "\"confidence\":0.0-1.0,\"reasoning\":\"short\"}]}\n",
@@ -1242,6 +1253,11 @@ fn rescale(steps: &mut [ActionStep], req: &VisionRequest) {
         }
         if let Some(y2) = s.y2 {
             s.y2 = Some(map(y2, fy, req.desktop.y));
+        }
+        if let Some(path) = &mut s.path {
+            for p in path.iter_mut() {
+                *p = [map(p[0], fx, req.desktop.x), map(p[1], fy, req.desktop.y)];
+            }
         }
     }
 }
