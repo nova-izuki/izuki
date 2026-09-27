@@ -152,8 +152,10 @@ assistant at their desk. Same rule — reply with only the tag:\n\
 [FILES: folder] — see what's in a folder (\"Downloads\", \"Desktop/School\", or a full path).\n\
 [OPEN: path] — read a file (text, notes, code, CSV, Word .docx, PowerPoint .pptx).\n\
 [WRITE: path] then, on the next lines, the whole content — save a file (a new one, or a fixed version).\n\
-[RUN: command] — run one PowerShell command (rename or move files, make a zip, check disk space, \
-install something they asked for…).\n\
+[RUN: command] — run one real PowerShell command (a true terminal): manage files, make a zip, check \
+disk space or the system, run a script, install something they asked for, even call python or node \
+(e.g. python -c \"...\"). Chain several [RUN:] across turns to do a multi-step job — run one, read the \
+real output, then the next, like a person at a terminal.\n\
 WRITE and RUN show the user an Allow / No button first and only happen if they allow it, so just use \
 them when it's what they asked for — you'll be told the result. Prefer the smallest, safest command; \
 never delete anything they didn't clearly ask to delete.\n\
@@ -439,7 +441,7 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
 // Tools the chat can use mid-conversation
 // ---------------------------------------------------------------------------
 
-const TOOL_ROUNDS: usize = 4;
+const TOOL_ROUNDS: usize = 7;
 const NO_MORE_TOOLS: &str = "[No more tools now — answer with what you have.]";
 const TOOL_WORDS: &[&str] = &["SEARCH", "READ", "BROWSE", "CLICK", "TYPE", "FIND", "FILES", "OPEN", "WRITE", "RUN", "WEATHER", "FLOW"];
 const MOODS: &[&str] = &["cheerful", "excited", "calm", "serious", "sympathetic", "playful", "curious"];
