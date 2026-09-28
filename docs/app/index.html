@@ -283,13 +283,25 @@
     </section>
 
     <section>
-      <h3>3. “Hey Siri, Izuki” (iPhone, optional)</h3>
-      <p>In the <b>Shortcuts</b> app: tap <b>+</b>, name it <b>Izuki</b>, then add two actions:</p>
+      <h3>3. “Hey Siri, Izuki” (iPhone — optional, skip if you want)</h3>
+      <div style="border:1px solid rgba(78,205,196,.35);background:rgba(78,205,196,.08);border-radius:14px;padding:12px;margin-bottom:12px">
+        <b style="color:var(--teal)">✅ Easiest way (no setup):</b> just open the <b>Izuki</b> app from your home screen and tap the big orb — talk to it hands-free. That's it. You don't need anything below. 👇 The steps below are ONLY if you also want to trigger it by saying “Hey Siri”.
+      </div>
+      <p class="note" style="margin-bottom:8px">Optional: this makes “Hey Siri, Izuki, what's the weather” open it with your words. It's a bit fiddly — do it slowly, once, and skip it if it's confusing:</p>
       <ol>
-        <li><b>Dictate Text</b></li>
-        <li><b>Open URLs</b> with <code id="siri-url"></code> and tap the end to insert <b>Dictated Text</b></li>
+        <li>Open Apple's <b>Shortcuts</b> app (it's built into every iPhone).</li>
+        <li>Tap the <b>+</b> at the top right → then <b>Add Action</b>.</li>
+        <li>In the search box type <b>Dictate Text</b> → tap it. (This makes Siri listen to what you say.)</li>
+        <li>Tap <b>+ Add Action</b> again → search <b>Text</b> → tap <b>Text</b>. In that text box, paste this exactly:<br>
+          <code id="siri-url" style="display:inline-block;margin-top:4px;word-break:break-all"></code>
+          <button class="chip" id="copy-siri" type="button" style="margin-top:6px">📋 Copy this link</button>
+        </li>
+        <li>Now, right after the link you pasted (no space), tap the little <b>“Dictated Text”</b> chip that appears above the keyboard — so the line reads <i>…?q=</i> then <b>Dictated Text</b>. (It joins your spoken words onto the link.)</li>
+        <li>Tap <b>+ Add Action</b> again → search <b>Open URLs</b> → tap it. Where it says “URL”, tap it and pick the <b>Text</b> from step 4–5.</li>
+        <li>Tap the shortcut's name at the top → rename it to just <b>Izuki</b> → <b>Done</b>.</li>
       </ol>
-      <p style="margin-top: 6px">Say “Hey Siri, Izuki”, then what you want — Izuki opens and answers. You can also put it on the Action Button or Back Tap (Settings → Accessibility → Touch → Back Tap).</p>
+      <p class="note" style="margin-top:6px">Now say <b>“Hey Siri, Izuki”</b>, then what you want. Siri listens, then opens Izuki with your words. (Optional: Settings → Accessibility → Touch → <b>Back Tap</b> to run it by tapping the back of your phone.)</p>
+      <p class="note" style="margin-top:6px">Too fiddly? Skip it — just open the Izuki app from your home screen and tap the orb. Same result.</p>
     </section>
 
     <section>
@@ -1215,7 +1227,13 @@
     $("brain").value = brain;
     showBrain();
     $("pc").value = pc;
-    $("siri-url").textContent = location.origin + location.pathname + "?q=";
+    const siriUrl = location.origin + location.pathname + "?q=";
+    $("siri-url").textContent = siriUrl;
+    const copySiri = $("copy-siri");
+    if (copySiri) copySiri.onclick = async () => {
+      try { await navigator.clipboard.writeText(siriUrl); copySiri.textContent = "✓ Copied!"; setTimeout(() => (copySiri.textContent = "📋 Copy this link"), 1500); }
+      catch { copySiri.textContent = "Long-press the link above to copy"; }
+    };
     renderMemories();
     sheet.hidden = false;
   }
