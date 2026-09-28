@@ -94,6 +94,11 @@ the job is done (the music is playing, the page is open).
   happens, never the same line twice.
 - It **asks** when it truly can't tell which thing you mean, and **checks with you**
   before anything final (submit, send, buy, delete, post).
+- **Safety — sensitive things:** if it sees something sensitive or valuable on screen (banking, a
+  payment/card page, a login or password manager, a legal/medical/financial/tax document, an ID,
+  or someone's private data), it won't act on its own — it says what it sees and asks first, and
+  never fills, sends or pays there without a clear yes. Same before closing unsaved work, deleting,
+  or overwriting an important-looking file. When unsure, it treats it as important and asks.
 - **Working memory:** each look, it keeps short notes — its plan and what it's found
   ("Blackboard is under Bookmarks → School") — and sees them again next look, so it
   doesn't lose track halfway.
