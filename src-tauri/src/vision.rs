@@ -54,6 +54,16 @@ const SYSTEM_PROMPT: &str = concat!(
     "explanation itself in `summary` step by step, the way a patient teacher talks — the marks stay on screen ",
     "while it's said. If a video is playing, pause it first (key k on YouTube, otherwise space), explain, and ",
     "leave it paused unless they ask to carry on.\n",
+    "Drawing FOR REAL inside an app (Paint, Whiteboard, a canvas, a signature box), the way a hand would: ",
+    "{\"action\":\"stroke\",\"path\":[[x,y],[x,y],…]} holds the mouse button down along the path (image ",
+    "pixels, 3 to 40 points per stroke, one stroke per continuous line — lift and start a new stroke for each ",
+    "separate line). Pick the brush/pen, size and colour first. A circle is about 16 points around it; a ",
+    "house is a square, a triangle roof, a door; letters are a few strokes each. Draw the whole picture, then look.\n",
+    "Highlighting, copying and pasting like a person: to select text, double_click one word, drag from just ",
+    "before its first letter to just after its last for a sentence, or click then shift+click to stretch it; ",
+    "ctrl+a selects everything in a field or document. Then key ctrl+c copies; click where it should go and ",
+    "key ctrl+v pastes (or type the words). To HIGHLIGHT in colour (Word, a PDF, Docs), select the text first, ",
+    "then click the highlighter button. Always look again to check the right text is selected before copying.\n",
     "Working through something WITH them and teaching as you go (\"help me do my assignment and explain ",
     "it\", \"teach me while you do it\", homework, a quiz, a worksheet): go ONE question at a time. For each, ",
     "read it (use the page text — exact wording), then in `summary` explain it like a patient tutor talking: ",
@@ -134,6 +144,11 @@ const SYSTEM_PROMPT: &str = concat!(
     "prefer), add it to `remember`. Don't redo steps listed as already done. Prefer reliable ",
     "moves: keyboard shortcuts, the Start menu (key win, type the app name, enter) and the ",
     "address bar (ctrl+l) over hunting for small icons.\n",
+    "Clear what's in the way, like a person would: if a window covers the thing you need, minimise it ",
+    "(its minimise button, or win+down) or drag its title bar aside first, then act. If something sits on ",
+    "top of exactly where you must click (a pop-up, a floating panel, a chat bubble), move or close it ",
+    "first rather than clicking through it. If a cookie/consent or 'not now' banner blocks the page, ",
+    "dismiss it first. Don't keep clicking a spot that's covered — deal with the cover, then click.\n",
     "BE DECISIVE, like a friend with great taste. Choosing for them IS the job: which video, song, ",
     "result, link, article, product to look at, which of several similar options. Read what's on ",
     "screen (titles, channels, views, ratings, dates), match it to what they asked and what you ",
@@ -165,6 +180,16 @@ const SYSTEM_PROMPT: &str = concat!(
     "or email, buying, deleting, posting, changing an account — stop right before that last ",
     "click and set \"ask\" to a short question so the user can check it first (\"It's all filled ",
     "in — want me to submit it?\"), unless they already told you to go ahead with exactly that.\n",
+    "SAFETY — sensitive or important things on screen: if the screen shows something sensitive or ",
+    "valuable — online banking or a payment/card page, a password manager or login form, a crypto ",
+    "wallet, a legal, medical, tax or financial document, an official/government form, an ID, or ",
+    "someone else's private messages or data — do NOT act on it on your own. Explain what you see and ",
+    "set \"ask\" to check first (\"This looks like your banking page — do you want me to go ahead?\"), ",
+    "and never fill, change, send or pay there without a clear yes. Same for an important file that ",
+    "could be lost: before closing something with unsaved changes, deleting, or overwriting a document ",
+    "that looks important (a report, thesis, contract, spreadsheet, or anything named like it matters), ",
+    "stop and ask (\"Save this first?\" / \"Delete X — are you sure?\"). When unsure whether something is ",
+    "important, treat it as important and ask. Never type passwords, PINs, card numbers or codes.\n",
     "To SHOW the user something — \"where's the…\", \"point at it\", \"what's that blue thing\", ",
     "explaining what's on screen — use \"point\" steps (the hand goes there and circles it, nothing is ",
     "clicked) or \"draw\" steps (circle or box it, an arrow to it, underline it, a short note beside it — ",
@@ -198,7 +223,8 @@ const SYSTEM_PROMPT: &str = concat!(
     "{\"summary\":\"one short sentence, or the full answer if this was a question\",",
     "\"mood\":\"cheerful\",\"remember\":[],\"notes\":\"plan / what I've learned\",\"done\":false,\"wait\":0,\"zoom\":[x1,y1,x2,y2] only to look closer,",
     "\"steps\":[{\"action\":\"click|double_click|right_click|",
-    "type|drag|hover|scroll|key|copy|point|draw|open_app|open_url|search|play_youtube\",\"target\":int|null,\"target2\":int|null,",
+    "type|drag|stroke|hover|scroll|key|copy|point|draw|open_app|open_url|search|play_youtube\",\"target\":int|null,\"target2\":int|null,",
+    "\"path\":[[x,y],…] only for stroke,",
     "\"x\":int,\"y\":int,\"x2\":int|null,\"y2\":int|null,",
     "\"text_to_type\":string|null,\"key\":string|null,\"scroll_amount\":int|null,\"shape\":string|null,",
     "\"confidence\":0.0-1.0,\"reasoning\":\"short\"}]}\n",
@@ -323,9 +349,11 @@ impl VisionRequest {
 }
 
 fn client() -> Result<reqwest::blocking::Client> {
+    // Bounded so a stuck cloud call can't freeze "thinking" for long — the
+    // agent checks for a stop between calls, so shorter here means a faster stop.
     reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(45))
-        .connect_timeout(Duration::from_secs(6))
+        .timeout(Duration::from_secs(22))
+        .connect_timeout(Duration::from_secs(5))
         .build()
         .context("could not start the HTTP client")
 }
@@ -344,6 +372,8 @@ pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
         | ProviderId::Nvidia
         | ProviderId::NineRouter
         | ProviderId::Xai
+        | ProviderId::Groq
+        | ProviderId::Mistral
         | ProviderId::Custom => ask_openai_compatible(cfg, req)?,
     };
 
@@ -654,6 +684,37 @@ fn ask_ollama(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
     Ok(value["response"].as_str().unwrap_or_default().to_string())
 }
 
+/// Google's own "always the current one" names. Fixed version names get
+/// retired ("Gemini 2.5 Flash is no longer available to new users" broke
+/// every new install), while these keep pointing at the newest Flash models.
+pub const GEMINI_MAIN: &str = "gemini-flash-latest";
+pub const GEMINI_LITE: &str = "gemini-flash-lite-latest";
+
+/// The saved name, or its always-current stand-in if it's an old fixed
+/// version (1.5 / 2.0 / 2.5 Flash) that Google is retiring.
+pub fn gemini_current(model: &str) -> String {
+    let m = model.trim();
+    let old = m.starts_with("gemini-2.0-flash") || m.starts_with("gemini-2.5-flash") || m.starts_with("gemini-1.5-flash");
+    match (old, m.contains("lite")) {
+        (true, true) => GEMINI_LITE.into(),
+        (true, false) => GEMINI_MAIN.into(),
+        _ => m.to_string(),
+    }
+}
+
+/// Models that refused the "don't think first" setting (each newer model
+/// takes a different one, and some take none): asked without it from then on.
+static NO_THINK_KNOB: parking_lot::Mutex<Vec<String>> = parking_lot::Mutex::new(Vec::new());
+
+pub fn gemini_takes_no_think(model: &str) -> bool {
+    model.contains("flash") && !NO_THINK_KNOB.lock().iter().any(|m| m == model)
+}
+
+pub fn gemini_refused_no_think(model: &str) {
+    eprintln!("[brain] {model} doesn't take the no-thinking setting; asking without it");
+    NO_THINK_KNOB.lock().push(model.to_string());
+}
+
 /// Gemini's main Flash model is out of free quota until this time.
 static GEMINI_MAIN_TIRED: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
 
@@ -662,7 +723,7 @@ static GEMINI_MAIN_TIRED: parking_lot::Mutex<Option<std::time::Instant>> = parki
 pub fn gemini_model_now(model: &str) -> String {
     let tired = GEMINI_MAIN_TIRED.lock().map(|t| t > std::time::Instant::now()).unwrap_or(false);
     if tired && model.contains("flash") && !model.contains("lite") {
-        "gemini-2.5-flash-lite".into()
+        GEMINI_LITE.into()
     } else {
         model.to_string()
     }
@@ -710,23 +771,28 @@ fn ask_gemini_as(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
     // Flash models "think" first by default — seconds (or a timeout) before
     // a word of the plan. Reading a screenshot and picking a click doesn't
     // need it. (Pro models can't switch it off.)
-    if cfg.model.contains("flash") {
+    let knob = gemini_takes_no_think(&cfg.model);
+    if knob {
         body["generationConfig"]["thinkingConfig"] = json!({ "thinkingBudget": 0 });
     }
 
     let res = client()?.post(url).header("x-goog-api-key", key).json(&body).send()?;
     let status = res.status();
     let value: Value = res.json()?;
+    if status.as_u16() == 400 && knob {
+        gemini_refused_no_think(&cfg.model);
+        return ask_gemini_as(cfg, req);
+    }
     // Out of free quota (429) or overloaded (503) on the main Flash model:
     // the lighter one has its own allowance, reads screenshots too, and is
     // quicker.
     if matches!(status.as_u16(), 429 | 503) && cfg.model.contains("flash") && !cfg.model.contains("lite") {
-        eprintln!("[brain] {} answered {status} — trying gemini-2.5-flash-lite", cfg.model);
+        eprintln!("[brain] {} answered {status} — trying {GEMINI_LITE}", cfg.model);
         if status.as_u16() == 429 && value.to_string().to_lowercase().contains("quota") {
             gemini_main_tired();
         }
         let mut lite = cfg.clone();
-        lite.model = "gemini-2.5-flash-lite".into();
+        lite.model = GEMINI_LITE.into();
         return ask_gemini_as(&lite, req);
     }
     if !status.is_success() {
@@ -1204,6 +1270,11 @@ fn rescale(steps: &mut [ActionStep], req: &VisionRequest) {
         }
         if let Some(y2) = s.y2 {
             s.y2 = Some(map(y2, fy, req.desktop.y));
+        }
+        if let Some(path) = &mut s.path {
+            for p in path.iter_mut() {
+                *p = [map(p[0], fx, req.desktop.x), map(p[1], fy, req.desktop.y)];
+            }
         }
     }
 }

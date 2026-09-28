@@ -97,9 +97,21 @@ export async function applyKey(found: FoundKey): Promise<{ ok: boolean; text: st
       .then(() => ({ ok: true, text: "Composio key works — now tap an app to sign in. 🔌" }))
       .catch((e) => ({ ok: false, text: `Saved your Composio key, but checking it said: ${String(e)}` }));
   } else if (found.kind === "groq") {
-    st.patchSettings({ groq_api_key: found.key });
+    // One Groq key does it all: hearing, the Human voice, and a fast free
+    // brain (the brain too when there isn't a working one yet).
+    const becomeBrain = !brainReady(s);
+    st.patchSettings({
+      groq_api_key: found.key,
+      providers: s.providers.map((p) => (p.id === "groq" ? { ...p, api_key: found.key, enabled: true } : p)),
+      ...(becomeBrain ? { active_provider: "groq" as ProviderId } : {}),
+    });
     await st.flushSettings();
-    result = { ok: true, text: "Groq key added — the Human voice and sharper hearing are ready. 🎙️" };
+    result = {
+      ok: true,
+      text: becomeBrain
+        ? "Groq key added — Izuki can think now, and the Human voice and sharper hearing are ready. 🧠🎙️"
+        : "Groq key added — the Human voice, sharper hearing and a fast backup brain are ready. 🎙️",
+    };
   } else {
     st.patchSettings({ telegram_token: found.key });
     await st.flushSettings();

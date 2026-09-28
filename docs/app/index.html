@@ -92,7 +92,7 @@
   .panel b { color: var(--ink); }
   .field { display: flex; flex-direction: column; gap: 6px; }
   .field label { font-size: 13px; font-weight: 600; }
-  .field input { width: 100%; border-radius: 14px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.35); padding: 12px 14px; }
+  .field input, .field select { width: 100%; border-radius: 14px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.35); padding: 12px 14px; color: inherit; font: inherit; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .btn { border: 0; border-radius: 999px; padding: 11px 18px; background: var(--violet); color: #fff; font-weight: 600; }
   .btn.ghost { background: var(--raised); border: 1px solid var(--line); color: var(--ink); font-weight: 500; }
@@ -103,29 +103,130 @@
   .mem { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
   .mem button { border: 0; background: none; color: var(--muted); padding: 4px 8px; }
   code { background: rgba(255, 255, 255, 0.08); padding: 1px 6px; border-radius: 6px; font-size: 13px; overflow-wrap: anywhere; }
+
+  /* a slow aurora behind everything — alive, never distracting */
+  .aurora { position: fixed; inset: -20%; z-index: -1; pointer-events: none; filter: blur(60px); opacity: 0.55; }
+  .aurora i { position: absolute; width: 55vmax; height: 55vmax; border-radius: 50%; mix-blend-mode: screen; animation: drift 22s ease-in-out infinite alternate; }
+  .aurora i:nth-child(1) { background: #6d4aff; left: -10%; top: -10%; }
+  .aurora i:nth-child(2) { background: #16c2b5; right: -15%; bottom: -5%; animation-duration: 27s; animation-delay: -6s; }
+  .aurora i:nth-child(3) { background: #ff5fa2; left: 30%; top: 40%; width: 35vmax; height: 35vmax; opacity: 0.45; animation-duration: 31s; animation-delay: -12s; }
+  @keyframes drift { from { transform: translate(0, 0) scale(1); } to { transform: translate(8vmax, 6vmax) scale(1.15); } }
+
+  /* the liquid orb (home and the live call) */
+  .liquid { position: relative; border-radius: 50%; isolation: isolate; cursor: pointer; border: 0; padding: 0;
+    background: radial-gradient(circle at 32% 28%, #ffffffcc, transparent 18%), radial-gradient(circle at 50% 50%, #7c5cff, #1b9aaa 60%, #0e0e13 100%);
+    box-shadow: 0 0 60px rgba(124, 92, 255, 0.45), inset 0 0 40px rgba(255, 255, 255, 0.12); animation: breathe 4.5s ease-in-out infinite; }
+  .liquid::before, .liquid::after { content: ""; position: absolute; inset: 6%; border-radius: 50%; mix-blend-mode: screen; filter: blur(8px); }
+  .liquid::before { background: conic-gradient(from 0deg, #ff5fa2, #7c5cff, #4ecdc4, #ffd166, #ff5fa2); animation: swirl 7s linear infinite; opacity: 0.75; }
+  .liquid::after { background: conic-gradient(from 180deg, transparent, #4ecdc4, transparent 60%); animation: swirl 4.5s linear infinite reverse; opacity: 0.6; }
+  .liquid.listening { animation: breathe 1.2s ease-in-out infinite; box-shadow: 0 0 80px rgba(78, 205, 196, 0.6); }
+  .liquid.thinking::before { animation-duration: 1.6s; }
+  .liquid.speaking { animation: talk 0.5s ease-in-out infinite; box-shadow: 0 0 90px rgba(255, 95, 162, 0.5); }
+  @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+  @keyframes talk { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.09); } 70% { transform: scale(0.98); } }
+  @keyframes swirl { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .liquid, .liquid::before, .liquid::after, .aurora i { animation: none !important; } }
+
+  .hero { width: 132px; height: 132px; }
+  .hello { font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin: 0; }
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; max-width: 420px; }
+  .card { text-align: left; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-radius: 18px; padding: 12px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+  .card b { font-size: 20px; }
+  .card span { color: var(--muted); font-size: 12px; }
+  .card.live { grid-column: span 2; flex-direction: row; align-items: center; gap: 12px;
+    background: linear-gradient(135deg, rgba(124, 92, 255, 0.35), rgba(78, 205, 196, 0.25)); }
+  .card.live b { font-size: 26px; }
+  .people { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  .person { border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); border-radius: 999px; padding: 6px 12px; font-size: 13px; }
+  .person.on { background: linear-gradient(135deg, var(--violet), var(--teal)); border-color: transparent; color: #fff; font-weight: 600; }
+  .icon-btn.on { background: var(--teal); color: var(--ground); }
+  header .tools { display: flex; gap: 8px; }
+
+  /* attachments */
+  #clip { flex: none; width: 44px; height: 52px; border: 1px solid var(--line); border-radius: 22px; background: var(--raised); display: grid; place-items: center; }
+  #clip svg { width: 20px; height: 20px; }
+  #attached { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; }
+  #attached:empty { display: none; }
+  .att { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.3); border-radius: 12px; padding: 4px 6px 4px 4px; font-size: 12.5px; max-width: 100%; }
+  .att img { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; }
+  .att .ext { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; background: var(--raised); font-size: 16px; }
+  .att .nm { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .att button { border: 0; background: none; color: var(--muted); padding: 2px 6px; }
+  .msg .thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .msg .thumbs img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; }
+
+  /* the live call */
+  #live { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+    padding: calc(var(--safe-top) + 18px) 20px calc(var(--safe-bottom) + 24px); background: rgba(8, 8, 14, 0.82); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
+  #live[hidden] { display: none; }
+  #live .who { text-align: center; }
+  #live .who b { display: block; font-size: 20px; }
+  #live .who span { color: var(--muted); font-size: 13px; }
+  #live-orb { width: min(64vw, 280px); height: min(64vw, 280px); }
+  #live-status { color: var(--muted); font-size: 14px; min-height: 1.4em; text-align: center; }
+  .lines { width: 100%; max-width: 520px; text-align: center; display: flex; flex-direction: column; gap: 10px; min-height: 5.5em; }
+  #live-heard { font-size: 17px; color: var(--ink); }
+  #live-said { font-size: 15px; color: #cfc6ff; max-height: 7.5em; overflow: hidden; }
+  .live-bar { display: flex; gap: 18px; align-items: center; }
+  .round { width: 64px; height: 64px; border-radius: 50%; border: 1px solid var(--line); background: var(--raised); display: grid; place-items: center; }
+  .round svg { width: 24px; height: 24px; }
+  .round.end { background: #ff4d6a; border-color: transparent; color: #fff; width: 72px; height: 72px; }
 </style>
 </head>
 <body>
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
 <div class="app">
   <header>
     <span class="brand">IZUKI</span>
+    <span class="tools">
+    <button class="icon-btn" id="read-aloud" type="button" aria-label="Read replies aloud" title="Read replies aloud">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+    </button>
+    <button class="icon-btn" id="go-live" type="button" aria-label="Talk live" title="Talk live">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>
+    </button>
     <button class="icon-btn" id="open-settings" type="button" aria-label="Settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
     </button>
+    </span>
   </header>
 
   <main id="log" aria-live="polite"></main>
 
   <footer>
     <div id="status"></div>
+    <div id="attached"></div>
     <form class="bar" id="form" autocomplete="off">
       <button id="orb" type="button" aria-label="Talk to Izuki">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg>
       </button>
+      <button id="clip" type="button" aria-label="Add a photo, screenshot or file" title="Add a photo, screenshot or file">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>
+      </button>
+      <input id="files" type="file" multiple hidden accept="image/*,application/pdf,audio/*,video/*,text/*,.txt,.md,.csv,.json,.html,.xml,.log">
       <textarea id="text" rows="1" placeholder="Message Izuki" aria-label="Message Izuki"></textarea>
       <button id="send" type="submit" disabled>Send</button>
     </form>
   </footer>
+</div>
+
+<!-- the live call: hands-free, like a phone call with Izuki -->
+<div id="live" hidden role="dialog" aria-modal="true" aria-label="Talking live with Izuki">
+  <div class="who"><b id="live-name">Nova</b><span id="live-style">warm, quick, a little playful</span></div>
+  <button class="liquid" id="live-orb" type="button" aria-label="Tap to interrupt or finish talking"></button>
+  <div class="lines"><div id="live-status">Starting…</div><div id="live-heard"></div><div id="live-said"></div></div>
+  <div class="live-bar">
+    <button class="round" id="live-mute" type="button" aria-pressed="false" aria-label="Mute Izuki's voice">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m23 9-6 6M17 9l6 6"/></svg>
+    </button>
+    <button class="round" id="live-type" type="button" aria-label="Type instead">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+    </button>
+    <button class="round end" id="live-end" type="button" aria-label="End the call">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
 </div>
 
 <!-- first run and settings -->
@@ -148,7 +249,36 @@
     </section>
 
     <section>
+      <h3>Other free brains (optional)</h3>
+      <p>Gemini is best here — it can search the web and talk out loud. You can also let another free service answer (Groq is the fastest). Any one key is enough to start.</p>
+      <div class="field" style="margin-top: 10px">
+        <label for="brain">Who answers</label>
+        <select id="brain">
+          <option value="gemini">Gemini (Google) — recommended</option>
+          <option value="groq">Groq — free, fastest</option>
+          <option value="openrouter">OpenRouter — free models</option>
+          <option value="mistral">Mistral — free plan</option>
+        </select>
+      </div>
+      <div id="brain-extra" hidden>
+        <div class="row" style="margin-top: 8px"><a class="chip" id="brain-get" href="#" target="_blank" rel="noopener">Get a free key ↗</a></div>
+        <div class="field" style="margin-top: 10px">
+          <label for="brain-key" id="brain-key-label">Key</label>
+          <input id="brain-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </div>
+        <div class="row" style="margin-top: 8px"><button class="btn" id="save-brain" type="button">Save and test</button><span id="brain-result"></span></div>
+      </div>
+    </section>
+
+    <section>
+      <h3>Who's your Izuki?</h3>
+      <p>Pick a character — its own personality and voice, in chat and on calls.</p>
+      <div class="people" id="people-settings" style="justify-content: flex-start; margin-top: 8px"></div>
+    </section>
+
+    <section>
       <h3>2. Put Izuki on your home screen</h3>
+      <div class="row" style="margin-bottom: 8px"><button class="btn" id="install" type="button">Install Izuki on this phone</button></div>
       <p><b>iPhone:</b> in Safari tap <b>Share</b> → <b>Add to Home Screen</b>. <b>Android:</b> Chrome menu ⋮ → <b>Add to Home screen</b>. It opens like an app.</p>
     </section>
 
@@ -181,7 +311,7 @@
       <button class="btn danger" id="clear-chat" type="button">Clear chat</button>
       <button class="btn danger" id="forget-all" type="button">Forget everything</button>
     </section>
-    <p class="note">Free and private: your key, chats, memories and reminders are kept on this phone. Messages go straight to Google's Gemini (and to your own PC if linked) — nowhere else.</p>
+    <p class="note">Free and private: your key, chats, memories and reminders are kept on this phone. Messages go straight to the AI you picked (Google's Gemini unless you chose another) and to your own PC if linked — nowhere else.</p>
   </div>
 </div>
 
@@ -198,6 +328,31 @@
     set(k, v) { try { localStorage.setItem("izuki." + k, JSON.stringify(v)); } catch {} },
   };
   let key = store.get("key", "");
+  // Other free brains (optional). Gemini stays best here: web search, its
+  // voice, and hearing voice notes all come with its key.
+  const BRAINS = {
+    groq: { name: "Groq", url: "https://api.groq.com/openai/v1/chat/completions", model: "qwen/qwen3.8-27b", get: "https://console.groq.com/keys", hint: "gsk_…" },
+    // "openrouter/free" always routes to a free model that's up right now,
+    // so it can't go stale the way a fixed ":free" name does.
+    openrouter: { name: "OpenRouter", url: "https://openrouter.ai/api/v1/chat/completions", model: "openrouter/free", get: "https://openrouter.ai/keys", hint: "sk-or-v1-…" },
+    mistral: { name: "Mistral", url: "https://api.mistral.ai/v1/chat/completions", model: "mistral-small-latest", get: "https://console.mistral.ai/api-keys", hint: "your Mistral key (free Experiment plan)" },
+  };
+  let brain = store.get("brain", "gemini");
+  // Characters: a personality and a Gemini voice each, like on the PC.
+  const PEOPLE = [
+    { id: "nova", name: "Nova", voice: "Sulafat", style: "warm, quick, a little playful" },
+    { id: "leo", name: "Leo", voice: "Algenib", style: "deep, calm and never in a rush" },
+    { id: "sophie", name: "Sophie", voice: "Leda", style: "bright and witty, with a British accent" },
+    { id: "kiki", name: "Kiki", voice: "Laomedeia", style: "a bubbly Gen Z best friend who hypes you up" },
+    { id: "alfred", name: "Alfred", voice: "Iapetus", style: "a polished, dry-witted British butler" },
+    { id: "ezinne", name: "Ezinne", voice: "Aoede", style: "a warm Nigerian big sister, a touch of Nigerian English" },
+  ];
+  let personId = store.get("person", "nova");
+  const person = () => PEOPLE.find((p) => p.id === personId) || PEOPLE[0];
+  let readAloud = store.get("readAloud", false);
+  let brainKeys = store.get("brainKeys", {});
+  /** Can Izuki answer at all — a Gemini key, or the chosen brain's key? */
+  const ready = () => !!key || (brain !== "gemini" && !!brainKeys[brain]);
   let pc = store.get("pc", "");
   let history = store.get("history", []);   // [{role:"user"|"model", text}]
   let memories = store.get("memories", []); // ["User's name is Sam", …]
@@ -210,8 +365,18 @@
 
   // ------------------------------------------------------------ UI
   const log = $("log"), status = $("status"), orb = $("orb"), text = $("text"), send = $("send");
-  const setStatus = (s) => (status.textContent = s || "");
-  const setOrb = (mode) => (orb.className = mode || "");
+  const setStatus = (s) => {
+    status.textContent = s || "";
+    const ls = document.getElementById("live-status");
+    if (ls) ls.textContent = s || (talking ? "Listening…" : "");
+  };
+  const setOrb = (mode) => {
+    orb.className = mode || "";
+    const lo = document.getElementById("live-orb");
+    if (lo) lo.className = "liquid" + (mode ? " " + mode : "");
+  };
+  const liveHeard = (t) => { const e = document.getElementById("live-heard"); if (e) e.textContent = t || ""; };
+  const liveSaid = (t) => { const e = document.getElementById("live-said"); if (e) e.textContent = t || ""; };
 
   function bubble(who, content, opts = {}) {
     log.querySelector(".welcome")?.remove();
@@ -229,34 +394,88 @@
     return div;
   }
 
+  /** The user's name, if they've told Izuki ("User's name is Sam"). */
+  function userName() {
+    for (const m of memories) {
+      const hit = m.match(/name is ([A-Z][\w'-]*)/i);
+      if (hit) return hit[1];
+    }
+    return "";
+  }
+
+  function peopleRow(box) {
+    box.innerHTML = "";
+    for (const p of PEOPLE) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "person" + (p.id === personId ? " on" : "");
+      b.textContent = p.name;
+      b.title = p.style;
+      b.onclick = () => {
+        personId = p.id;
+        store.set("person", personId);
+        peopleRow(box);
+        if (!history.length) welcome();
+      };
+      box.appendChild(b);
+    }
+  }
+
   function welcome() {
     log.innerHTML = "";
     const w = document.createElement("div");
     w.className = "welcome";
+    const orbBtn = document.createElement("button");
+    orbBtn.className = "liquid hero";
+    orbBtn.type = "button";
+    orbBtn.setAttribute("aria-label", "Talk live");
+    orbBtn.onclick = () => (ready() ? openLive() : openSettings());
+    const hr = new Date().getHours();
+    const hello = document.createElement("p");
+    hello.className = "hello";
+    hello.textContent = (hr < 5 ? "Up late" : hr < 12 ? "Good morning" : hr < 17 ? "Good afternoon" : hr < 22 ? "Good evening" : "Good night") + (userName() ? `, ${userName()}` : "");
     const h = document.createElement("h1");
-    h.textContent = key ? "Hey! What's on your mind?" : "Hi, I'm Izuki 👋";
+    h.textContent = ready() ? `I'm ${person().name}. What are we doing today?` : "Hi, I'm Izuki 👋";
     const p = document.createElement("p");
-    p.textContent = key
-      ? "Type, or tap the mic and just talk. Ask anything, plan your day, draft a message, or set a reminder."
-      : "Your free AI companion. Add a free Gemini key to start — it takes a minute.";
-    w.append(h, p);
-    const row = document.createElement("div");
-    row.className = "chip-row";
-    row.style.justifyContent = "center";
-    if (!key) {
+    p.textContent = ready()
+      ? "Tap the orb to talk live, or type below. I remember you, set reminders, search the web — and run your PC and apps when it's linked."
+      : "Your free AI companion. Add one free key to start — it takes a minute.";
+    w.append(orbBtn, hello, h, p);
+    if (!ready()) {
+      const row = document.createElement("div");
+      row.className = "chip-row";
+      row.style.justifyContent = "center";
       const b = document.createElement("button");
       b.className = "chip primary"; b.type = "button"; b.textContent = "Set me up";
       b.onclick = openSettings;
       row.appendChild(b);
+      w.appendChild(row);
     } else {
-      for (const idea of ["Remind me in 20 minutes to stretch", "Plan my evening", "Draft a text saying I'm running late"]) {
-        const b = document.createElement("button");
-        b.className = "chip"; b.type = "button"; b.textContent = idea;
-        b.onclick = () => ask(idea);
-        row.appendChild(b);
-      }
+      const people = document.createElement("div");
+      people.className = "people";
+      peopleRow(people);
+      const cards = document.createElement("div");
+      cards.className = "cards";
+      const card = (icon, title, sub, go, cls) => {
+        const c = document.createElement("button");
+        c.type = "button";
+        c.className = "card" + (cls ? " " + cls : "");
+        const i = document.createElement("b"); i.textContent = icon;
+        const t = document.createElement("div"); t.textContent = title;
+        const s2 = document.createElement("span"); s2.textContent = sub;
+        const text = document.createElement("div"); text.append(t, s2);
+        c.append(i, text);
+        c.onclick = go;
+        cards.appendChild(c);
+      };
+      card("🎙️", "Talk live", "Hands-free, like a call", openLive, "live");
+      card("☀️", "Plan my day", "What matters today", () => ask("Help me plan my day — ask me what I've got on if you need to."));
+      card("📰", "What's new?", "News, scores, trends", () => ask("What's the most interesting news today? Keep it short."));
+      card("📬", "My email", pc ? "Through your PC" : "Link your PC first", () => (pc ? ask("What's new in my email?") : openSettings()));
+      card("⏰", "Remind me", "In 20 min: stretch", () => ask("Remind me in 20 minutes to stretch"));
+      card("🧠", "Teach me", "Something cool, fast", () => ask("Teach me one genuinely surprising thing in under a minute."));
+      w.append(people, cards);
     }
-    w.appendChild(row);
     log.appendChild(w);
   }
 
@@ -273,13 +492,15 @@
     const in20 = new Date(now.getTime() + 20 * 60000);
     const stamp = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     return [
-      "You are Izuki, the user's AI companion on their phone — warm, quick, a little playful, like a close friend who's brilliant at everything.",
+      `You are ${person().name}, the user's Izuki — their AI companion on their phone: ${person().style}, like a close friend who's brilliant at everything. Stay in character.`,
       "Keep replies short and natural (a few sentences) unless they ask for detail. Plain text; a short dash list only when it really helps; an emoji now and then at most.",
       "What you write may be read aloud, so write the way a person talks.",
       `It is now ${now.toLocaleString([], { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })} on the user's phone.`,
       `If they ask to be reminded of something, confirm it and add on its own line at the very end: [REMIND YYYY-MM-DD HH:MM | what to remind them] in their local time, 24-hour clock ("in 20 minutes" is ${stamp(in20)}).`,
       "If they tell you something lasting about themselves (name, likes, work, people in their life, how they want you to act), add a line [REMEMBER short third-person fact]. Never passwords, codes or card numbers.",
-      "You can search the web and read links — do it whenever it helps: news, scores, prices, opening hours, facts, anything recent, or a link they send. Say where it came from.",
+      usesGemini()
+        ? "You can search the web and read links — do it whenever it helps: news, scores, prices, opening hours, facts, anything recent, or a link they send. Say where it came from."
+        : "You can't search the web from here; for something recent, say so kindly and suggest they add a free Gemini key in Settings.",
       pc
         ? "If they want something done on their computer, anything in their email, calendar, cloud files or other accounts, or a site behind their sign-in (Blackboard, Canvas, NotebookLM, Classroom…), reply with exactly [PC] and nothing else — their PC will do it (it has the Izuki browser, signed in)."
         : "You can't reach their computer, email or other accounts from here. If they ask for that, tell them kindly they can link Izuki on their PC in Settings to do it.",
@@ -287,7 +508,13 @@
     ].filter(Boolean).join("\n");
   }
 
-  const MODEL = "gemini-2.5-flash", LITE = "gemini-2.5-flash-lite";
+  // Google's "always the current one" names: fixed ones get retired ("Gemini
+  // 2.5 Flash is no longer available to new users").
+  const MODEL = "gemini-flash-latest", LITE = "gemini-flash-lite-latest";
+  // Models that refused the "don't think first" setting (each newer model
+  // takes a different one, some none): asked without it from then on.
+  let noThinkKnob = store.get("noThinkKnob", []);
+  const usesGemini = () => brain === "gemini" || !brainKeys[brain];
   let liteUntil = store.get("liteUntil", 0);
   // Google Search and link reading, free with the same key. If a model or
   // key refuses them, carry on without (and don't ask again for a day).
@@ -305,9 +532,21 @@
         systemInstruction: { parts: [{ text: systemPrompt() }] },
         contents,
         ...(tools ? { tools: WEB_TOOLS } : {}),
-        generationConfig: { temperature: 0.7, maxOutputTokens: 900, thinkingConfig: { thinkingBudget: 0 } },
+        generationConfig: {
+          temperature: 0.7, maxOutputTokens: 900,
+          ...(noThinkKnob.includes(model) ? {} : { thinkingConfig: { thinkingBudget: 0 } }),
+        },
       }),
     });
+    if (res.status === 400 && !noThinkKnob.includes(model)) {
+      let why = "";
+      try { why = (await res.clone().json()).error?.message || ""; } catch {}
+      if (!/API key|tool|search|url|ground/i.test(why)) {
+        noThinkKnob.push(model);
+        store.set("noThinkKnob", noThinkKnob);
+        return gemini(contents, onText, model, bare);
+      }
+    }
     if (tools && res.status === 400) {
       let why = "";
       try { why = (await res.clone().json()).error?.message || ""; } catch {}
@@ -316,6 +555,13 @@
         store.set("noToolsUntil", noToolsUntil);
         return gemini(contents, onText, model, true);
       }
+    }
+    // Search inside Gemini has its own, smaller daily allowance: when that's
+    // what ran out, answer without web search for an hour rather than fail.
+    if (tools && res.status === 429) {
+      noToolsUntil = Date.now() + 3600000;
+      store.set("noToolsUntil", noToolsUntil);
+      return gemini(contents, onText, model, true);
     }
     if ((res.status === 429 || res.status === 503) && model === MODEL) {
       // The main model's free allowance is used up or busy: its lighter
@@ -350,6 +596,72 @@
       }
     }
     return out.trim();
+  }
+
+  /** The chosen other brain (Groq, OpenRouter, Mistral): same prompt, streamed. */
+  async function otherBrain(contents, onText, id) {
+    const b = BRAINS[id || brain];
+    const k = brainKeys[id || brain];
+    const messages = [{ role: "system", content: systemPrompt() }].concat(
+      contents.map((c) => {
+        const role = c.role === "model" ? "assistant" : "user";
+        const pics = c.parts.filter((p) => p.inline_data && /^image\//.test(p.inline_data.mime_type));
+        const words = c.parts.filter((p) => p.text != null).map((p) => p.text).join("\n");
+        if (!pics.length) return { role, content: words };
+        return { role, content: [{ type: "text", text: words }, ...pics.map((p) => ({ type: "image_url", image_url: { url: `data:${p.inline_data.mime_type};base64,${p.inline_data.data}` } }))] };
+      })
+    );
+    const headers = { "Content-Type": "application/json", Authorization: "Bearer " + k };
+    if (b === BRAINS.openrouter) { headers["HTTP-Referer"] = "https://nova-izuki.github.io/izuki/"; headers["X-Title"] = "Izuki"; }
+    const res = await fetch(b.url, { method: "POST", headers, body: JSON.stringify({ model: b.model, messages, stream: true, max_tokens: 900, temperature: 0.7 }) });
+    if (!res.ok) {
+      let why = "";
+      try { why = (await res.json()).error?.message || ""; } catch {}
+      if (res.status === 401 || res.status === 403) throw new Error(`That ${b.name} key doesn't work — check it in Settings.`);
+      if (res.status === 429) throw new Error(`${b.name} is busy right now — try again in a minute.`);
+      throw new Error(why || `${b.name} answered ${res.status}`);
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "", out = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line.startsWith("data:") || line === "data: [DONE]") continue;
+        try {
+          const d = JSON.parse(line.slice(5)).choices?.[0]?.delta?.content;
+          if (d) { out += d; onText?.(out.replace(/<think>[\s\S]*?(<\/think>|$)/g, "")); }
+        } catch {}
+      }
+    }
+    return out.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  }
+
+  /** Whoever answers: the chosen brain, with Gemini standing in if it fails. */
+  async function think(contents, onText) {
+    if (usesGemini()) return gemini(contents, onText);
+    try {
+      return await otherBrain(contents, onText);
+    } catch (e) {
+      if (key) return gemini(contents, onText);
+      throw e;
+    }
+  }
+
+  /** Words from a recording when Gemini can't hear it: Groq's Whisper. */
+  async function groqHear(audio) {
+    const bytes = Uint8Array.from(atob(audio.b64), (c) => c.charCodeAt(0));
+    const form = new FormData();
+    form.append("model", "whisper-large-v3-turbo");
+    form.append("file", new Blob([bytes], { type: audio.type }), "speech." + (audio.type.split("/")[1] || "m4a"));
+    const r = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", { method: "POST", headers: { Authorization: "Bearer " + brainKeys.groq }, body: form });
+    if (!r.ok) throw new Error("I couldn't make that out — try again, or type it.");
+    return ((await r.json()).text || "").trim();
   }
 
   const TAGS = /\s*\[(REMIND|REMEMBER)[^\]]*\]?\s*/gi;
@@ -419,28 +731,94 @@
     return r.json();
   }
 
+  // ------------------------------------------------------------ attachments
+  // Photos, screenshots, PDFs, documents, voice and short videos go with the
+  // next message. Gemini reads them all; the other free brains read pictures
+  // and text files (for anything else, Gemini steps in if there's a key).
+  let attached = []; // [{ name, type, b64, text, url }]
+  const MAX_BYTES = 15 * 1024 * 1024;
+  const isText = (f) => /^text\//.test(f.type) || /\.(txt|md|csv|json|html|xml|log)$/i.test(f.name);
+  function showAttached() {
+    const box = $("attached");
+    box.innerHTML = "";
+    attached.forEach((a, i) => {
+      const row = document.createElement("div");
+      row.className = "att";
+      if (a.url) { const im = document.createElement("img"); im.src = a.url; im.alt = ""; row.appendChild(im); }
+      else { const e = document.createElement("span"); e.className = "ext"; e.textContent = /pdf/.test(a.type) ? "📄" : /audio/.test(a.type) ? "🎵" : /video/.test(a.type) ? "🎬" : "📎"; row.appendChild(e); }
+      const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = a.name;
+      const x = document.createElement("button"); x.type = "button"; x.textContent = "✕"; x.setAttribute("aria-label", "Remove " + a.name);
+      x.onclick = () => { attached.splice(i, 1); showAttached(); };
+      row.append(nm, x);
+      box.appendChild(row);
+    });
+    send.disabled = busy || (!text.value.trim() && !attached.length);
+  }
+  $("clip").onclick = () => $("files").click();
+  $("files").onchange = async () => {
+    for (const f of [...$("files").files]) {
+      const used = attached.reduce((n, a) => n + a.size, 0);
+      if (used + f.size > MAX_BYTES) { setStatus(`${f.name} is too big to send (15 MB in all).`); continue; }
+      const b64 = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(",")[1] || ""); fr.readAsDataURL(f); });
+      const item = { name: f.name, type: f.type || (isText(f) ? "text/plain" : "application/octet-stream"), size: f.size, b64 };
+      if (isText(f)) item.text = await f.text();
+      if (/^image\//.test(item.type)) item.url = URL.createObjectURL(f);
+      attached.push(item);
+    }
+    $("files").value = "";
+    showAttached();
+  };
+  /** An attachment as a Gemini part. */
+  const geminiPart = (a) => (a.text != null
+    ? { text: `[File ${a.name}]\n${a.text.slice(0, 60000)}` }
+    : { inline_data: { mime_type: a.type, data: a.b64 } });
+
   let busy = false;
   async function ask(said, audio) {
     said = (said || "").trim();
-    if (busy || (!said && !audio)) return;
-    if (!key) { openSettings(); return; }
+    const files = attached;
+    if (busy || (!said && !audio && !files.length)) return;
+    if (files.length && !said) said = "Have a look at this and help me with it.";
+    if (!ready()) { openSettings(); return; }
+    // A voice note with no Gemini key: Groq's Whisper turns it into words first.
+    if (audio && !key) {
+      if (!brainKeys.groq) { bubble("izuki", "To talk out loud here, add a free Gemini or Groq key in Settings — or type instead.", { error: true }); return; }
+      try { said = await groqHear(audio); } catch (e) { bubble("izuki", e.message, { error: true }); return; }
+      audio = null;
+      if (!said) return;
+    }
     busy = true;
     send.disabled = true;
     setOrb("thinking");
     setStatus("Thinking…");
     const me = bubble("me", said || "🎙️ …");
+    if (files.length) {
+      const thumbs = document.createElement("div");
+      thumbs.className = "thumbs";
+      for (const a of files) {
+        if (a.url) { const im = document.createElement("img"); im.src = a.url; im.alt = a.name; thumbs.appendChild(im); }
+        else { const t = document.createElement("span"); t.className = "chip"; t.textContent = "📎 " + a.name; thumbs.appendChild(t); }
+      }
+      me.appendChild(thumbs);
+      attached = [];
+      showAttached();
+    }
     const out = bubble("izuki", "…");
 
+    // (A voice note only gets here with a Gemini key, which hears it.)
     const parts = audio
       ? [{ inline_data: { mime_type: audio.type, data: audio.b64 } },
          { text: "The user said this out loud to you. Start your reply with one line [HEARD: their exact words], then answer them." }]
-      : [{ text: said }];
+      : [{ text: said }, ...files.map(geminiPart)];
     const contents = history.slice(-16).map((m) => ({ role: m.role, parts: [{ text: m.text }] }));
     contents.push({ role: "user", parts });
 
     let reply = "";
     try {
-      reply = await gemini(contents, (t) => {
+      // Something only Gemini can open (a PDF, a voice clip, a video): Gemini answers.
+      const geminiOnly = files.some((a) => !/^image\//.test(a.type) && a.text == null);
+      if (geminiOnly && !key) throw new Error("To look at that kind of file, add a free Gemini key in Settings (pictures and text files work with any brain).");
+      reply = await (audio || geminiOnly ? gemini : think)(contents, (t) => {
         const heard = t.match(/^\s*\[HEARD:\s*([^\]]*)\]?/i);
         if (heard) { me.textContent = heard[1].trim() || "🎙️"; t = t.slice(heard[0].length); }
         if (!/^\s*\[?P?C?\]?\s*$/i.test(t)) out.textContent = shown(t) || "…";
@@ -448,7 +826,7 @@
       });
       const heard = reply.match(/^\s*\[HEARD:\s*([^\]]*)\]\s*/i);
       if (heard) { said = heard[1].trim(); reply = reply.slice(heard[0].length); }
-      history.push({ role: "user", text: said || "(voice message)" });
+      history.push({ role: "user", text: (said || "(voice message)") + (files.length ? `\n(attached: ${files.map((a) => a.name).join(", ")})` : "") });
 
       if (/^\s*\[PC\]\s*$/i.test(reply)) {
         out.textContent = "On it — asking your PC…";
@@ -525,17 +903,37 @@
     return URL.createObjectURL(new Blob([out.buffer], { type: "audio/wav" }));
   }
 
+  // Gemini's speech models, newest first; the one that answers is remembered.
+  // Only the 2.5 speech models act on a spoken direction; newer ones read it
+  // out loud word for word, so they get just the words (the voice carries the character).
+  const TTS_MODELS = ["gemini-2.5-flash-preview-tts", "gemini-3.1-flash-tts-preview", "gemini-3.8-flash-tts"];
+  let ttsModel = store.get("ttsModel", "");
   async function geminiVoice(t) {
-    if (Date.now() < voiceRestUntil) return null;
+    if (!key || Date.now() < voiceRestUntil) return null;
+    for (const m of ttsModel ? [ttsModel] : TTS_MODELS) {
+      const url = await geminiVoiceWith(m, t);
+      if (url === "gone") { if (ttsModel) { ttsModel = ""; store.set("ttsModel", ""); return geminiVoice(t); } continue; }
+      if (url && !ttsModel) { ttsModel = m; store.set("ttsModel", m); }
+      return url;
+    }
+    return null;
+  }
+  async function geminiVoiceWith(model, t) {
     try {
-      const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent", {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: "Say warmly and naturally, like a friend: " + t }] }],
-          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } },
+          contents: [{ parts: [{ text: model.startsWith("gemini-2.5") ? `Say it naturally, like a real person — ${person().style}: ` + t : t }] }],
+          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: person().voice } } } },
         }),
       });
+      // Retired, or this model's small daily allowance is used up: the next one.
+      if (r.status === 404 || r.status === 429) return "gone";
+      if (r.status === 400) {
+        const why = await r.text();
+        if (/no longer available|not found|not supported/i.test(why)) return "gone";
+      }
       if (!r.ok) {
         // Not on this key's free plan, or used up for now: the phone's voice
         // for a while instead of asking every time.
@@ -547,6 +945,11 @@
       const part = (v.candidates?.[0]?.content?.parts || []).find((p) => p.inlineData?.data);
       if (!part) return null;
       const rate = Number((part.inlineData.mimeType || "").match(/rate=(\d+)/)?.[1]) || 24000;
+      // Newer speech models send a finished WAV; older ones bare PCM.
+      if (/wav/i.test(part.inlineData.mimeType || "")) {
+        const bytes = Uint8Array.from(atob(part.inlineData.data), (c) => c.charCodeAt(0));
+        return URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+      }
       return pcmToWavUrl(part.inlineData.data, rate);
     } catch {
       return null;
@@ -565,7 +968,8 @@
   }
 
   async function speak(t) {
-    if (!voiceOn || !talking || !t) return;
+    if (!voiceOn || !(talking || readAloud) || !t) return;
+    liveSaid(t);
     setOrb("speaking");
     setStatus("Tap the mic to cut in");
     const url = await geminiVoice(t.replace(/[*_#`]/g, ""));
@@ -608,7 +1012,8 @@
         heardAny = true;
         let interim = "";
         for (const r of e.results) (r.isFinal ? (final += r[0].transcript) : (interim += r[0].transcript));
-        setStatus((final + interim) || "Listening…");
+        setStatus((final + interim) ? "Listening…" : "Listening…");
+        liveHeard(final + interim);
       };
       recog.onerror = (e) => {
         if (e.error === "not-allowed" || e.error === "service-not-allowed") stopTalking("Allow the microphone for Izuki, then tap the mic again.");
@@ -654,8 +1059,70 @@
     }
   }
 
+  // ------------------------------------------------------------ talking live
+  const live = $("live");
+  function openLive() {
+    if (!ready()) return openSettings();
+    $("live-name").textContent = person().name;
+    $("live-style").textContent = person().style;
+    liveHeard(""); liveSaid("");
+    live.hidden = false;
+    if (!talking) {
+      talking = true;
+      unlockAudio();
+      listen();
+    }
+  }
+  function endLive() {
+    live.hidden = true;
+    if (talking) stopTalking("");
+  }
+  $("go-live").onclick = openLive;
+  $("live-end").onclick = endLive;
+  function showMute() {
+    const b = $("live-mute");
+    b.setAttribute("aria-pressed", String(!voiceOn));
+    b.style.color = voiceOn ? "" : "#ff6b81";
+    b.setAttribute("aria-label", voiceOn ? "Mute Izuki's voice" : "Unmute Izuki's voice");
+  }
+  showMute();
+  $("live-mute").onclick = () => {
+    voiceOn = !voiceOn;
+    store.set("voice", voiceOn);
+    showMute();
+    if (!voiceOn) hush();
+    setStatus(voiceOn ? "Sound's back on." : "Muted — I'll reply in text.");
+  };
+  $("live-type").onclick = () => { endLive(); text.focus(); };
+  // Tap the orb: cut Izuki off, or finish what you were saying.
+  $("live-orb").onclick = () => {
+    if (orb.className === "speaking") { hush(); return; }
+    if (recorder) { recorder.stop(); return; }
+    try { recog?.stop(); } catch {}
+  };
+  $("read-aloud").classList.toggle("on", readAloud);
+  $("read-aloud").onclick = () => {
+    readAloud = !readAloud;
+    store.set("readAloud", readAloud);
+    $("read-aloud").classList.toggle("on", readAloud);
+    if (readAloud) unlockAudio(); else hush();
+    setStatus(readAloud ? "I'll read my replies out loud." : "Replies are silent again.");
+    setTimeout(() => setStatus(""), 2000);
+  };
+
+  // Install: one tap on Android (Chrome offers it); on an iPhone, the steps.
+  let installPrompt = null;
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; });
+  $("install").onclick = async () => {
+    if (installPrompt) { installPrompt.prompt(); installPrompt = null; return; }
+    const iOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    alert(iOS
+      ? "In Safari: tap the Share button (square with an arrow), then “Add to Home Screen”, then Add. Izuki opens like an app."
+      : "Open this page in Chrome, tap the ⋮ menu, then “Install app” or “Add to Home screen”.");
+  };
+
   orb.addEventListener("click", () => {
-    if (!key) return openSettings();
+    if (!ready()) return openSettings();
     if (orb.className === "speaking") { hush(); return; }
     if (recorder) { recorder.stop(); return; }
     if (talking) return stopTalking("");
@@ -667,7 +1134,7 @@
 
   // ------------------------------------------------------------ typing
   text.addEventListener("input", () => {
-    send.disabled = busy || !text.value.trim();
+    send.disabled = busy || (!text.value.trim() && !attached.length);
     text.style.height = "auto";
     text.style.height = Math.min(text.scrollHeight, 120) + "px";
   });
@@ -677,7 +1144,7 @@
   $("form").addEventListener("submit", (e) => {
     e.preventDefault();
     const t = text.value.trim();
-    if (!t || busy) return;
+    if ((!t && !attached.length) || busy) return;
     text.value = "";
     text.style.height = "auto";
     send.disabled = true;
@@ -707,8 +1174,46 @@
       box.appendChild(row);
     });
   }
+  function showBrain() {
+    const b = BRAINS[$("brain").value];
+    $("brain-extra").hidden = !b;
+    if (!b) return;
+    $("brain-get").href = b.get;
+    $("brain-get").textContent = `Get a free ${b.name} key ↗`;
+    $("brain-key-label").textContent = `${b.name} key`;
+    $("brain-key").placeholder = b.hint;
+    $("brain-key").value = brainKeys[$("brain").value] || "";
+    $("brain-result").textContent = "";
+  }
+  $("brain").onchange = () => {
+    const v = $("brain").value;
+    // Gemini, or another brain that already has its key: switch straight away.
+    if (v === "gemini" || brainKeys[v]) { brain = v; store.set("brain", brain); }
+    showBrain();
+  };
+  $("save-brain").onclick = async () => {
+    const id = $("brain").value, b = BRAINS[id], k = $("brain-key").value.trim();
+    const out = $("brain-result");
+    if (!k) { out.className = "bad"; out.textContent = "Paste your key first."; return; }
+    out.className = "note"; out.textContent = "Checking…";
+    const old = brainKeys[id];
+    brainKeys[id] = k;
+    try {
+      await otherBrain([{ role: "user", parts: [{ text: "Say hi in three words." }] }], null, id);
+      store.set("brainKeys", brainKeys);
+      brain = id; store.set("brain", brain);
+      out.className = "ok"; out.textContent = `Works! ${b.name} answers now.`;
+    } catch (e) {
+      if (old) brainKeys[id] = old; else delete brainKeys[id];
+      out.className = "bad"; out.textContent = e.message;
+    }
+  };
+
   function openSettings() {
+    peopleRow($("people-settings"));
     $("key").value = key;
+    $("brain").value = brain;
+    showBrain();
     $("pc").value = pc;
     $("siri-url").textContent = location.origin + location.pathname + "?q=";
     renderMemories();
@@ -785,10 +1290,10 @@
   }
   render();
   scheduleReminders();
-  if (!key) openSettings();
+  if (!ready()) openSettings();
   // "Hey Siri, Izuki": the Shortcut opens …?q=what you said.
   const q = new URLSearchParams(location.search).get("q");
-  if (q && key) {
+  if (q && ready()) {
     // Clear it from the address first, so reopening the app doesn't ask again.
     window.history.replaceState(null, "", location.pathname);
     ask(q);

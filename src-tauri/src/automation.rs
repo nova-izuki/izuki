@@ -184,6 +184,42 @@ pub fn drag(from: (i32, i32), to: (i32, i32), duration_ms: u64) -> Result<()> {
     travel
 }
 
+/// Draw one continuous line with the button held down, like a hand with a
+/// pen: through every point in turn, in small even steps (fast enough to
+/// feel live, slow enough for drawing apps to catch every bit of it).
+pub fn stroke(points: &[[i32; 2]], move_ms: u64) -> Result<()> {
+    let Some(first) = points.first() else { return Ok(()) };
+    glide_to(first[0], first[1], move_ms / 2)?;
+    tiny_pause();
+    let mut e = enigo()?;
+    e.button(Button::Left, Direction::Press)
+        .map_err(|err| anyhow!("could not press the mouse: {err:?}"))?;
+    std::thread::sleep(Duration::from_millis(40));
+    let mut at = (first[0] as f64, first[1] as f64);
+    let mut result = Ok(());
+    'outer: for p in &points[1..] {
+        let (tx, ty) = (p[0] as f64, p[1] as f64);
+        let dist = ((tx - at.0).powi(2) + (ty - at.1).powi(2)).sqrt();
+        let n = (dist / 5.0).ceil().max(1.0) as usize;
+        for i in 1..=n {
+            if aborted() {
+                result = Err(anyhow!("stopped"));
+                break 'outer;
+            }
+            let t = i as f64 / n as f64;
+            let (x, y) = (at.0 + (tx - at.0) * t, at.1 + (ty - at.1) * t);
+            e.move_mouse(x.round() as i32, y.round() as i32, Coordinate::Abs).ok();
+            std::thread::sleep(Duration::from_millis(4));
+        }
+        at = (tx, ty);
+    }
+    std::thread::sleep(Duration::from_millis(30));
+    // Always let go — even when stopped — or the button stays held down.
+    e.button(Button::Left, Direction::Release)
+        .map_err(|err| anyhow!("could not release the mouse: {err:?}"))?;
+    result
+}
+
 pub fn type_text(text: &str) -> Result<()> {
     let mut e = enigo()?;
     // Chunked so a long paragraph still responds to the panic key.
@@ -425,6 +461,14 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
             let to = (step.x2.unwrap_or(x), step.y2.unwrap_or(y));
             drag((x, y), to, move_ms)?;
         }
+        Intent::Stroke => {
+            let path = step.path.clone().unwrap_or_default();
+            if path.len() < 2 {
+                return Err(anyhow!("a stroke needs at least two points"));
+            }
+            stroke(&path, move_ms)?;
+            return Ok(format!("drew a line through {} points", path.len()));
+        }
         Intent::Type => {
             // Focus the field first unless the model gave no coordinates.
             if x > 0 || y > 0 {
@@ -527,5 +571,38 @@ mod tests {
         assert_eq!(parse_key("F4"), Some(Key::F4));
         assert_eq!(parse_key("l"), Some(Key::Unicode('l')));
         assert_eq!(parse_key("notakey"), None);
+    }
+}
+
+#[cfg(all(test, windows))]
+mod stroke_tests {
+    /// Draws a smiley in Paint with the real mouse, then saves a screenshot:
+    /// `IZK_OUT=smile.jpg cargo test draws_in_paint -- --ignored`. Moves the
+    /// mouse for a few seconds.
+    #[test]
+    #[ignore]
+    fn draws_in_paint() {
+        let mut paint = std::process::Command::new("mspaint").spawn().unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(4));
+        let b = crate::capture::virtual_bounds();
+        let (cx, cy, r) = (b.x + b.w / 2, b.y + b.h / 2 + 40, 150.0_f64);
+        let ring = |r: f64, from: f64, to: f64, n: usize, ox: i32, oy: i32| -> Vec<[i32; 2]> {
+            (0..=n)
+                .map(|i| {
+                    let a = from + (to - from) * i as f64 / n as f64;
+                    [ox + (r * a.cos()).round() as i32, oy + (r * a.sin()).round() as i32]
+                })
+                .collect()
+        };
+        let tau = std::f64::consts::TAU;
+        super::stroke(&ring(r, 0.0, tau, 24, cx, cy), 400).unwrap(); // face
+        super::stroke(&ring(15.0, 0.0, tau, 10, cx - 55, cy - 40), 300).unwrap(); // eyes
+        super::stroke(&ring(15.0, 0.0, tau, 10, cx + 55, cy - 40), 300).unwrap();
+        super::stroke(&ring(85.0, 0.35, 2.8, 14, cx, cy), 300).unwrap(); // smile
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let f = crate::capture::capture_all().unwrap().downscaled(960);
+        std::fs::write(std::env::var("IZK_OUT").unwrap(), f.to_jpeg(80).unwrap()).unwrap();
+        let _ = paint.kill();
+        let _ = std::process::Command::new("taskkill").args(["/IM", "mspaint.exe", "/F"]).output();
     }
 }

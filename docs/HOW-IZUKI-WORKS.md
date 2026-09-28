@@ -87,10 +87,18 @@ the job is done (the music is playing, the page is open).
   bar for websites (e.g. "Blackboard" → the right login link), the Start menu for apps —
   and click the right result. It never gives up after one look.
 - **Reliable moves first:** keyboard shortcuts, the address bar (Ctrl+L), the Start menu.
+- **Draws and highlights like a hand:** in Paint, a whiteboard or any canvas it draws real
+  strokes (the button held down along a path); to copy text it selects it (double-click, drag,
+  or Shift+click), checks the selection, then Ctrl+C / Ctrl+V.
 - It **says what it's doing** ("Opening Blackboard…") — but only when something new
   happens, never the same line twice.
 - It **asks** when it truly can't tell which thing you mean, and **checks with you**
   before anything final (submit, send, buy, delete, post).
+- **Safety — sensitive things:** if it sees something sensitive or valuable on screen (banking, a
+  payment/card page, a login or password manager, a legal/medical/financial/tax document, an ID,
+  or someone's private data), it won't act on its own — it says what it sees and asks first, and
+  never fills, sends or pays there without a clear yes. Same before closing unsaved work, deleting,
+  or overwriting an important-looking file. When unsure, it treats it as important and asks.
 - **Working memory:** each look, it keeps short notes — its plan and what it's found
   ("Blackboard is under Bookmarks → School") — and sees them again next look, so it
   doesn't lose track halfway.
@@ -110,8 +118,16 @@ the job is done (the music is playing, the page is open).
   1 hour when its daily free quota is used up. Izuki doesn't keep hammering it.
 - If every brain is busy, Izuki says so ("The free AI's busy — give me a second"), retries
   a couple of times, then offers "keep going" later.
-- Best free setup: Gemini (fast) + NVIDIA Gemma 4 (backup). Best reliability: add a paid
-  Claude key.
+- Free brains: Gemini, Groq, OpenRouter, Mistral, NVIDIA, or Ollama on the PC. Best free
+  setup: Gemini + Groq (Groq is the fastest by far — about 0.6 s to a chat reply — and the same
+  key also gives sharper hearing and the Human voice). Best reliability: add a paid Claude key.
+- Gemini is asked by Google's always-current names (`gemini-flash-latest`,
+  `gemini-flash-lite-latest`), never a fixed version — fixed ones get retired ("no longer
+  available to new users"). Old saved names move over by themselves.
+- The phone app can use Gemini, Groq, OpenRouter (`openrouter/free`) or Mistral. Gemini is
+  best there (web search, its voice, hearing voice notes); with only a Groq key, Groq's Whisper
+  hears voice notes. When Gemini's search allowance runs out, it answers without search for
+  an hour instead of failing.
 
 ## 7. Speed
 
@@ -146,7 +162,10 @@ Targets:
 - *Keep listening after I stop talking* — how long a voice session waits for you (5 s – 30 min).
 - *Show my words as I talk* — your words under the orb, live.
 - *Speak responses* / *Captions* — hear Izuki, read Izuki, or both.
-- *Voice* — the on-device voice, or a free cloud voice (Groq key) for the most natural sound.
+- *Voice* — Natural (free, no key), Offline (on this PC), Human (Groq, free key), Gemini (free with
+  the Gemini key), Azure (the Natural voices through Microsoft's official free plan — your own free
+  key + region), ElevenLabs (most human, free monthly allowance — your own free key), or ChatGPT
+  (paid). A keyed voice that can't speak right now falls back to Natural, then Offline.
 
 **Looks**
 - *Chat & caption colours* — Auto (matches your screen), Dark, Light, Gradient, or any colour.

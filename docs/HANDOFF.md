@@ -252,6 +252,65 @@ panel in a browser. Nothing has been run on Windows. Test, in order:
 41. Chat tab never gets stuck on "Something went wrong": a bad saved
     message is dropped; if the tab still crashes twice it starts a fresh
     chat by itself, and the card shows the error text (screenshot it).
+42. Gemini for new users: a brand-new Gemini key → Settings → Test →
+    "ok"; chat and a screen task answer (uses gemini-flash-latest — the
+    old gemini-2.5-* names are moved over by settings heal). Verified on
+    Windows with a real key: chat 4.1 s, screen 4.5 s.
+43. New free brains: Settings → Groq (paste a gsk_ key — the same key
+    fills the Human voice and sharper hearing) → Test → Use this brain →
+    chat and a screen task. Verified with a real key: chat 0.6 s, screen
+    1.9 s (qwen/qwen3.8-27b sees images). Mistral: paste a key from
+    console.mistral.ai (free Experiment plan) → Test → chat.
+    `cargo test live_brains -- --ignored` runs Gemini + Groq for real.
+44. Phone app → Settings → "Other free brains": pick Groq / OpenRouter /
+    Mistral, paste its key, Save and test → it answers. With no Gemini key
+    and a Groq key, a voice note is heard by Groq's Whisper. Verified the
+    exact requests from Node: Groq and OpenRouter (openrouter/free) answer
+    in ~0.3 s; Groq Whisper heard the test clip.
+45. Free voices: Talk → Voice → Azure: make a free Speech resource (F0) in
+    the Azure portal, paste Key 1, pick its region, Save & test → the
+    character's own Natural voice speaks (Ezinne sounds Nigerian). Voice →
+    ElevenLabs: paste a free key, Save & test → Jessica (or Brian for male
+    characters) speaks; "Which voice" lists 8 ready-made voices. Neither
+    could be tried without keys — azure_ssml has a unit test.
+46. Drawing for real: "draw a smiley in Paint" / "draw a house on the
+    whiteboard" → the hand holds the button down and draws (new `stroke`
+    action with a `path`). Verified: `IZK_OUT=x.jpg cargo test
+    draws_in_paint -- --ignored` drew a clean smiley in Paint on Windows.
+    "Highlight this paragraph and copy it into Word" → selects (double-click
+    / drag / shift+click), ctrl+c, clicks in Word, ctrl+v.
+48. Phone app v2 (docs/app): home has the liquid orb, a time-of-day
+    greeting with the user's name, character chips and six action cards;
+    the phone icon (or the orb / "Talk live") opens the full-screen live
+    call — listening/thinking/speaking orb, your words and Izuki's live,
+    tap the orb to interrupt, ✕ to end. The speaker icon reads chat replies
+    aloud. Settings → "Who's your Izuki?" and "Install Izuki on this phone"
+    (Android: the install prompt; iPhone: the steps). Checked in a headless
+    browser at phone size; needs a real iPhone + Android test.
+49. Phone app attachments: the paperclip adds photos, screenshots, PDFs,
+    documents, voice and short videos (15 MB in all) — previews above the
+    box, ✕ to remove, send with or without words. Gemini reads them all;
+    Groq / OpenRouter / Mistral read pictures and text files, and anything
+    else goes to Gemini if there's a key. Checked live: a picture read
+    correctly by Gemini and by openrouter/free.
+50. Discord/Telegram/calls do PC tasks: over Discord, "play some music"
+    or "open chrome" now runs on the PC (needs_screen detects it — the free
+    chat model wasn't emitting [SCREEN]). Unit-tested.
+51. Call mute: the call page and the phone app's live call have a mute
+    button — Izuki still hears you and replies in text, just no voice.
+52. Android control (NEW, off by default, needs the owner's phone to test):
+    Settings → Control my Android → turn on → on the phone enable Wireless
+    debugging (Developer options) and enter its IP:port → Connect & test
+    (downloads Google platform-tools ~15 MB, phone shows an Allow prompt).
+    Then "open YouTube and play lofi on my phone" / "text mum on my phone"
+    from chat, voice, Discord, Telegram or a call. Unit tests cover the
+    element/bounds parsing and shell escaping; the live device path is
+    UNVERIFIED (no phone/adb in the build sandbox). Next: a native Android
+    app so no PC is needed (Composio can be called directly from a native
+    app; browsers are CORS-blocked).
+47. Gemini's newest speech model returns a finished WAV (older ones raw
+    PCM): the Gemini voice on the PC and phone now plays it as-is — check it
+    has no click at the start and isn't sped up.
 
 Running the Rust tests from Linux: `cargo test --target x86_64-pc-windows-gnu
 --lib --no-run`, copy `target/x86_64-pc-windows-gnu/debug/WebView2Loader.dll`

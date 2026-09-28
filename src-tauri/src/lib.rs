@@ -1,5 +1,6 @@
 //! IZUKI — draw on your screen, Izuki does it.
 
+pub mod android;
 pub mod apps;
 pub mod browser;
 pub mod automation;
@@ -197,6 +198,8 @@ pub fn run() {
             commands::import_wakewords,
             commands::chat_stream,
             commands::chat_cancel,
+            commands::android_connect,
+            commands::android_do,
             commands::show_caption_overlay,
             commands::screen_backdrop,
             commands::show_config,

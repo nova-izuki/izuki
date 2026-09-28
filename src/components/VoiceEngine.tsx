@@ -190,7 +190,7 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
 
   // The most human voices first; each falls back to the next if it can't
   // speak right now (no key, out of credits, offline).
-  if (engine === "edge" || engine === "orpheus" || engine === "openai" || engine === "gemini") {
+  if (["edge", "orpheus", "openai", "gemini", "azure", "elevenlabs"].includes(engine)) {
     const spoke = await speakCloud(engine, text, mood, captionOnce).catch(() => false);
     if (spoke) {
       captionOnce();
@@ -202,7 +202,13 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
     const natural = engine !== "edge" && (await speakCloud("edge", speakable(raw, false), mood, captionOnce).catch(() => false));
     if (!cloudProblemsShown.has(why)) {
       cloudProblemsShown.add(why);
-      const label = engine === "edge" ? "natural" : engine === "orpheus" ? "Human (Groq)" : engine === "gemini" ? "Gemini" : "ChatGPT";
+      const label =
+        engine === "edge" ? "natural"
+        : engine === "orpheus" ? "Human (Groq)"
+        : engine === "gemini" ? "Gemini"
+        : engine === "azure" ? "Azure"
+        : engine === "elevenlabs" ? "ElevenLabs"
+        : "ChatGPT";
       showCaption(`Couldn't use the ${label} voice — ${why}. Using the ${natural ? "natural" : "on-device"} voice for now.`, false);
     }
     if (natural) {
@@ -622,6 +628,26 @@ export function VoiceEngine() {
       }
     }
 
+    // "… on my phone": drive the paired Android phone over Wi-Fi.
+    const s0 = useIzuki.getState().settings;
+    if (s0.android_enabled && /on (my|the) (phone|android)/i.test(t)) {
+      startSession(from === "voice", "thinking");
+      thinkingNow.current = true;
+      orb("thinking");
+      try {
+        const said = await api.androidDo(t);
+        if (requestSeq !== at) return;
+        thinkingNow.current = false;
+        await respond(said, "cheerful", true);
+      } catch (e) {
+        if (requestSeq !== at) return;
+        thinkingNow.current = false;
+        await respond(failure(e), "sympathetic");
+      }
+      void afterReply(at, from === "voice" && listenThrough.current());
+      return;
+    }
+
     // Instant skills: "open Notepad", "open YouTube" — through Windows,
     // well under a second, no AI.
     const instant = parseInstant(t);
@@ -882,7 +908,9 @@ export function VoiceEngine() {
   };
   // Keep the mic open while Izuki talks only when talking over it is on.
   const bargeIn = useIzuki((s) => s.settings.barge_in);
-  useEffect(() => setKeepMicWhileTalking(bargeIn), [bargeIn]);
+  useEffect(() => {
+    setKeepMicWhileTalking(bargeIn);
+  }, [bargeIn]);
 
   // Your turn: the orb says so (a listen that runs through Izuki's answer
   // leaves it on "Thinking…"/speaking until then).

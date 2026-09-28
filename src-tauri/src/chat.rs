@@ -152,11 +152,18 @@ assistant at their desk. Same rule — reply with only the tag:\n\
 [FILES: folder] — see what's in a folder (\"Downloads\", \"Desktop/School\", or a full path).\n\
 [OPEN: path] — read a file (text, notes, code, CSV, Word .docx, PowerPoint .pptx).\n\
 [WRITE: path] then, on the next lines, the whole content — save a file (a new one, or a fixed version).\n\
-[RUN: command] — run one PowerShell command (rename or move files, make a zip, check disk space, \
-install something they asked for…).\n\
+[RUN: command] — run one real PowerShell command (a true terminal): manage files, make a zip, check \
+disk space or the system, run a script, install something they asked for, even call python or node \
+(e.g. python -c \"...\"). Chain several [RUN:] across turns to do a multi-step job — run one, read the \
+real output, then the next, like a person at a terminal.\n\
 WRITE and RUN show the user an Allow / No button first and only happen if they allow it, so just use \
 them when it's what they asked for — you'll be told the result. Prefer the smallest, safest command; \
-never delete anything they didn't clearly ask to delete.\n";
+never delete anything they didn't clearly ask to delete.\n\
+CRITICAL: to use a tool, reply with the tag and NOTHING ELSE — no words before it, no results after \
+it. NEVER write file names, folder contents, file text or command output yourself: you don't know them \
+until the real tool runs and hands you the result. Making up a listing or output is a serious mistake. \
+So for \"what's in my Downloads?\" reply exactly [FILES: Downloads] and stop — then use the real result \
+you're given.\n";
 
 fn system_prompt(style: Style, apps: bool) -> String {
     let mut s = match style {
@@ -176,11 +183,23 @@ fn system_prompt(style: Style, apps: bool) -> String {
              chat instead — never reply [APPS].\n",
         );
     }
+    s.push_str(SELF_HELP);
     s.push_str(&crate::reminders::prompt_block());
     s.push_str(&crate::memory::prompt_block());
     s.push_str(&crate::voices::prompt_block());
     s
 }
+
+/// So Izuki can help set ITSELF up. When users ask "how do I connect/set up
+/// X in Izuki", they mean the app's own buttons — never code, API examples or
+/// terminal commands.
+const SELF_HELP: &str = "If they ask how to set up or connect something IN IZUKI (a voice, a brain/AI key, apps, their phone), tell them the actual buttons in the Izuki app — never code, pip/npm, API snippets or a terminal. The app has tabs: Draw, Chat, Apps, Flows, Watchers, Settings. Where things live:
+- A brain/AI key (Gemini, Groq, OpenRouter, Mistral, NVIDIA, OpenAI, Anthropic, Grok): Settings -> Izuki's brain -> pick the provider -> paste the key. Gemini is free at aistudio.google.com/apikey; Groq at console.groq.com/keys.
+- A voice (Natural, Human/Groq, Gemini, Azure, ElevenLabs, ChatGPT): Talk to Izuki -> Voice. Gemini's voice uses the same Gemini key as the brain. For a stronger accent on ElevenLabs, paste a Voice ID from elevenlabs.io/app/voice-library into the box under the ElevenLabs option.
+- Apps (Gmail, calendar, Drive, Slack, Notion, socials...): the Apps tab -> paste a free Composio key (dashboard.composio.dev) -> tap the app to sign in. Then ask normally (like \"what's in my inbox\").
+- Phone: Settings -> Izuki on your phone (Telegram/Discord bot, or the Call link). Control an Android phone: Settings -> Control my Android.
+Give the shortest button path, offer to open the right page, and never show programming.
+";
 
 /// The Chat tab and the phone: a written conversation, not a spoken one.
 fn written_prompt(phone: bool) -> String {
@@ -280,7 +299,7 @@ fn reply_timeout(cfg: &ProviderConfig) -> Duration {
     if cfg.id.is_local() {
         Duration::from_secs(240)
     } else {
-        Duration::from_secs(60)
+        Duration::from_secs(30)
     }
 }
 
@@ -313,14 +332,23 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
                 messages.push(json!({ "role": "user", "content": NO_MORE_TOOLS }));
             }
             // Hold the opening back until it's clear whether it's a tool
-            // tag (run it quietly) or the answer (stream it as it comes).
+            // tag (run it quietly) or the answer. In the Chat tab (files), the
+            // whole answer is buffered rather than streamed live: a weak model
+            // often writes prose then a tool tag then a made-up result, so we
+            // wait, hunt the real tag out and run it, and never show the
+            // invented result. Voice/phone keep streaming.
             let held = Mutex::new(String::new());
             let mode = Mutex::new(if last { Some(false) } else { None::<bool> });
             let tag = Mutex::new(None::<String>);
+            let answered = Mutex::new(String::new());
             race(&chain, &messages, id, &|t: String, done: bool, err: Option<String>| {
                 let mut m = mode.lock();
                 if *m == Some(false) {
                     drop(m);
+                    if files {
+                        answered.lock().push_str(&t);
+                        return;
+                    }
                     return emit(t, done, err);
                 }
                 let mut h = held.lock();
@@ -333,20 +361,54 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
                         let all = std::mem::take(&mut *h);
                         drop(h);
                         drop(m);
-                        emit(all, done, err);
+                        if files {
+                            answered.lock().push_str(&all);
+                        } else {
+                            emit(all, done, err);
+                        }
                     }
                     Some(true) if done => *tag.lock() = Some(h.clone()),
                     _ => {}
                 }
             });
-            let Some(raw) = tag.into_inner() else { return };
-            let Some(tool) = parse_tool(&raw) else {
+            // The tool to run: a clean leading tag, or one buried in the
+            // buffered answer (with the prose before it worth keeping).
+            let (prose, tool) = match tag.into_inner() {
+                Some(raw) => (String::new(), parse_tool(&raw)),
+                None => {
+                    let ans = answered.into_inner();
+                    match find_tool(&ans) {
+                        Some((prose, tool)) => (prose, Some(tool)),
+                        None => {
+                            // A genuine answer — for the Chat tab, show it now.
+                            if files && !ans.trim().is_empty() {
+                                emit(ans, true, None);
+                            }
+                            return;
+                        }
+                    }
+                }
+            };
+            let Some(tool) = tool else {
                 return emit(String::new(), true, Some("the answer got muddled — try again".into()));
             };
+            if !prose.is_empty() {
+                emit(format!("{prose}\n"), false, None);
+            }
             // Changes wait for the user: an Allow / No card, and this reply ends.
+            // Unless auto-run is on (like Claude Code's auto mode): it still
+            // shows the exact command/file, but runs without the card.
             if let Some(ask) = tool.needs_ok() {
                 if !files {
                     return emit("I can only do that from the Chat tab on your PC.".into(), true, None);
+                }
+                if crate::state::store().settings().chat_auto_run {
+                    let head = if ask.kind == "save" { "📄 Saving" } else { "▶ Running" };
+                    emit(format!("{head}: {}\n", ask.detail), false, None);
+                    let out = run_tool(&tool);
+                    messages.push(json!({ "role": "assistant", "content": tool.tag() }));
+                    messages.push(json!({ "role": "user", "content": format!("[result]\n{out}\n[This is the REAL result. Use ONLY this. Carry on: another tag, or your answer.]") }));
+                    continue;
                 }
                 let action_id = rand::random::<u32>() as u64 + 1;
                 let lead = if ask.kind == "save" { "Here's what I'll save — okay?" } else { "I'd like to run this — okay?" };
@@ -369,8 +431,8 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             }
             status(tool.doing());
             let result = if !files && tool.is_files() { "Files can only be used from the Chat tab on the PC.".into() } else { run_tool(&tool) };
-            messages.push(json!({ "role": "assistant", "content": raw.trim() }));
-            messages.push(json!({ "role": "user", "content": format!("[result]\n{result}\n[Now carry on — another tag, or your answer.]") }));
+            messages.push(json!({ "role": "assistant", "content": tool.tag() }));
+            messages.push(json!({ "role": "user", "content": format!("[result]\n{result}\n[This is the REAL result. Use ONLY this — never make up file names, contents or output. Now carry on: another tag, or your answer.]") }));
         }
     });
 }
@@ -379,7 +441,7 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
 // Tools the chat can use mid-conversation
 // ---------------------------------------------------------------------------
 
-const TOOL_ROUNDS: usize = 4;
+const TOOL_ROUNDS: usize = 7;
 const NO_MORE_TOOLS: &str = "[No more tools now — answer with what you have.]";
 const TOOL_WORDS: &[&str] = &["SEARCH", "READ", "BROWSE", "CLICK", "TYPE", "FIND", "FILES", "OPEN", "WRITE", "RUN", "WEATHER", "FLOW"];
 const MOODS: &[&str] = &["cheerful", "excited", "calm", "serious", "sympathetic", "playful", "curious"];
@@ -402,6 +464,24 @@ enum Tool {
 }
 
 impl Tool {
+    /// A canonical tag string, for the conversation history after we run it.
+    fn tag(&self) -> String {
+        match self {
+            Tool::Search(a) => format!("[SEARCH: {a}]"),
+            Tool::Read(a) => format!("[READ: {a}]"),
+            Tool::Browse(a) => format!("[BROWSE: {a}]"),
+            Tool::Click(n) => format!("[CLICK: #{n}]"),
+            Tool::Type(n, t, _) => format!("[TYPE: #{n} | {t}]"),
+            Tool::Find(a) => format!("[FIND: {a}]"),
+            Tool::Files(a) => format!("[FILES: {a}]"),
+            Tool::Open(a) => format!("[OPEN: {a}]"),
+            Tool::Write(p, _) => format!("[WRITE: {p}]"),
+            Tool::Run(c) => format!("[RUN: {c}]"),
+            Tool::Weather(a) => format!("[WEATHER: {a}]"),
+            Tool::Flow(n, w) => format!("[FLOW: {n} | {w}]"),
+        }
+    }
+
     fn doing(&self) -> &'static str {
         match self {
             Tool::Search(_) => "🔎 Searching the web…",
@@ -476,6 +556,26 @@ fn classify(t: &str) -> Option<bool> {
 }
 
 /// The tool a whole reply asks for, if the reply is only a tool tag.
+/// A tool tag buried anywhere in a reply. Weak free models often write prose
+/// first ("Let's check your Downloads.") then the tag, or invent the result
+/// themselves — so we hunt the tag out, run the REAL tool, and drop whatever
+/// the model made up. Returns the prose before the tag (worth keeping) and the tool.
+fn find_tool(reply: &str) -> Option<(String, Tool)> {
+    let up = reply.to_uppercase();
+    let at = TOOL_WORDS.iter().filter_map(|w| up.find(&format!("[{w}"))).min()?;
+    let prose = reply[..at].trim().to_string();
+    let tail = &reply[at..];
+    // WRITE carries a body to the end; every other tag ends at its first ']'.
+    let slice = if tail.len() > 7 && tail[..7].eq_ignore_ascii_case("[WRITE:") {
+        tail.to_string()
+    } else {
+        let end = tail.find(']')?;
+        tail[..=end].to_string()
+    };
+    let tool = parse_tool(&slice)?;
+    Some((prose, tool))
+}
+
 fn parse_tool(reply: &str) -> Option<Tool> {
     let rest = after_mood(reply);
     // [WRITE: path] and then the content, which may hold anything.
@@ -746,13 +846,15 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
     });
     let mut body = body;
     // Conversation wants first words fast, not deliberation.
-    if cfg.id == ProviderId::Gemini && cfg.model.contains("flash") {
+    // (Gemini's main model may be resting — see `vision::gemini_model_now`.)
+    let model_now = crate::vision::gemini_model_now(&cfg.model);
+    let knob = cfg.id == ProviderId::Gemini && crate::vision::gemini_takes_no_think(&model_now);
+    if knob {
         body["reasoning_effort"] = json!("none");
     }
-    // (Gemini's main model may be resting — see `vision::gemini_model_now`.)
     let mut body = body;
     if cfg.id == ProviderId::Gemini {
-        body["model"] = json!(crate::vision::gemini_model_now(&cfg.model));
+        body["model"] = json!(model_now);
     }
     let mut rq = client.post(chat_url(cfg)).json(&body);
     if !cfg.api_key.trim().is_empty() {
@@ -762,16 +864,21 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
         rq = rq.header("HTTP-Referer", "https://github.com/nova-izuki/izuki").header("X-Title", "Izuki");
     }
     let resp = rq.send()?;
+    // This model takes a different "don't think" setting (or none): again without it.
+    if knob && resp.status().as_u16() == 400 {
+        crate::vision::gemini_refused_no_think(&model_now);
+        return stream_one(cfg, messages, stop, on_text);
+    }
     // Gemini's main model is often "experiencing high demand" on the free
     // tier; its lighter sibling usually isn't, and answers even faster.
     let busy = matches!(resp.status().as_u16(), 429 | 503);
     if busy && cfg.id == ProviderId::Gemini && cfg.model.contains("flash") && !cfg.model.contains("lite") {
-        eprintln!("[chat] {} is busy ({}) — using gemini-2.5-flash-lite", cfg.model, resp.status());
+        eprintln!("[chat] {} is busy ({}) — using {}", cfg.model, resp.status(), crate::vision::GEMINI_LITE);
         if resp.status().as_u16() == 429 {
             crate::vision::gemini_main_tired();
         }
         let mut lite = cfg.clone();
-        lite.model = "gemini-2.5-flash-lite".into();
+        lite.model = crate::vision::GEMINI_LITE.into();
         return stream_one(&lite, messages, stop, on_text);
     }
     if !resp.status().is_success() {
@@ -863,6 +970,14 @@ mod tool_tests {
         assert_eq!(parse_tool("Here you go"), None);
         assert_eq!(parse_tool("[SCREEN]"), None);
         assert_eq!(parse_tool("[FIND: resume]"), Some(Tool::Find("resume".into())));
+        // The real bug: prose first, then the tag, then a made-up listing.
+        let muddled = "Let's check your Downloads folder.\n\n[FILES: Downloads]\n\nYou have project.zip, report.pdf.";
+        assert!(parse_tool(muddled).is_none(), "prose-wrapped tag isn't a clean tag");
+        let (prose, tool) = find_tool(muddled).expect("finds the buried tag");
+        assert_eq!(tool, Tool::Files("Downloads".into()));
+        assert!(prose.starts_with("Let's check"));
+        // A plain answer has no tool.
+        assert!(find_tool("Sure, here's a poem about cats.").is_none());
         assert_eq!(parse_tool("[RUN: Get-PSDrive C]"), Some(Tool::Run("Get-PSDrive C".into())));
         assert_eq!(
             parse_tool("[WRITE: Desktop/notes.txt]\n```\nBuy milk [x]\nCall Sam\n```"),

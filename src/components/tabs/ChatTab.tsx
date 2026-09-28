@@ -175,10 +175,17 @@ export function ChatTab() {
   const bottom = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const settings = useIzuki((s) => s.settings);
+  const patch = useIzuki((s) => s.patchSettings);
   const settingsLoaded = useIzuki((s) => s.settingsLoaded);
   const openSetup = useIzuki((s) => s.setSetupOpen);
   const noBrain = settingsLoaded && !brainReady(settings);
-  useEffect(() => bottom.current?.scrollIntoView({ block: "end", behavior: "smooth" }), [msgs]);
+  // Braces, not an arrow that returns: newer WebView2 makes scrollIntoView
+  // return a promise, and a returned promise is taken as the effect's
+  // clean-up — "destroy is not a function", and the Chat tab crashed on every
+  // message.
+  useEffect(() => {
+    bottom.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [msgs]);
 
   const refreshReminders = useCallback(() => void api.remindersList().then(setReminders).catch(() => undefined), []);
   useEffect(() => {
@@ -196,6 +203,13 @@ export function ChatTab() {
     async (text: string, note = false) => {
       const t = text.trim();
       if (!t || busy) return;
+      // "clear chat" / "start over" — just wipe it, don't ask the AI.
+      if (!note && /^(clear|reset|wipe|empty|start over|new)( (the|this|our|my))? ?(chat|conversation|messages|history|it|over)?$/i.test(t)) {
+        stop();
+        setMsgs([]);
+        setDraft("");
+        return;
+      }
       if (!note) setDraft("");
       const history = [...msgs.filter((m) => !m.failed && !m.screen), { role: "user" as const, content: t }].map(
         ({ role, content }) => ({ role, content })
@@ -410,7 +424,18 @@ export function ChatTab() {
       {/* ------------------------------------------------ the chat */}
       <div className="izk-card flex min-h-[420px] flex-col p-0">
         <div className="flex items-center justify-between px-[14px] pt-[12px]">
-          <div className="text-[12px] text-izk-muted">Just chatting — nothing on your screen is touched.</div>
+          <button
+            type="button"
+            onClick={() => patch({ chat_auto_run: !settings.chat_auto_run })}
+            className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
+            title={
+              settings.chat_auto_run
+                ? "Auto: saves and commands run on their own (the command is still shown). Tap to switch to Ask."
+                : "Ask: you tap Allow before any save or command runs. Tap to switch to Auto."
+            }
+          >
+            {settings.chat_auto_run ? "⚡ Auto-run" : "🛡️ Ask first"}
+          </button>
           {msgs.length > 0 && (
             <button
               type="button"

@@ -220,6 +220,8 @@ export type ProviderId =
   | "nvidia"
   | "9router"
   | "xai"
+  | "groq"
+  | "mistral"
   | "custom";
 
 export interface ProviderConfig {
@@ -310,13 +312,18 @@ export interface Settings {
    * this PC), "orpheus" (Groq), "openai" (ChatGPT), "gemini" (Gemini, free key)
    * or "system" (Windows).
    */
-  voice_engine: "edge" | "natural" | "orpheus" | "openai" | "gemini" | "system";
+  voice_engine: "edge" | "natural" | "orpheus" | "openai" | "gemini" | "azure" | "elevenlabs" | "system";
   /** Kokoro voice id, e.g. "af_heart". */
   voice_name: string;
   /** Groq key for the Orpheus voice. */
   groq_api_key: string;
   /** Cloud voice name ("" = the character's own). */
   cloud_voice: string;
+  /** Azure Speech key + region: the official, free route to the Natural voices. */
+  azure_speech_key: string;
+  azure_speech_region: string;
+  /** ElevenLabs key (free plan's monthly allowance). */
+  elevenlabs_key: string;
   /** Izuki's character (voices.rs): "nova", "leo", "rex"… */
   persona: string;
   /** The user's name for it ("" = the character's). */
@@ -353,6 +360,10 @@ export interface Settings {
   discord_user_id: string;
   /** Let the paired phone do things on this PC. */
   phone_controls_pc: boolean;
+  android_enabled: boolean;
+  android_addr: string;
+  adult_ok: boolean;
+  chat_auto_run: boolean;
   /** Your free Composio key — Izuki in Gmail, Calendar, Drive, Slack… */
   composio_api_key: string;
   /** "Call Izuki" — the hands-free phone page through a free tunnel. */

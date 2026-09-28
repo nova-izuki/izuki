@@ -133,13 +133,15 @@ fn chat(c: &ProviderConfig) -> anyhow::Result<String> {
 fn all(base: &str) -> Vec<ProviderConfig> {
     vec![
         cfg(ProviderId::Ollama, base.to_string(), "moondream", ""),
-        cfg(ProviderId::Gemini, base.to_string(), "gemini-2.5-flash", "AIza-test"),
+        cfg(ProviderId::Gemini, base.to_string(), crate::vision::GEMINI_MAIN, "AIza-test"),
         cfg(ProviderId::Openrouter, format!("{base}/api/v1"), "google/gemma-4-31b-it:free", "sk-or-test"),
         cfg(ProviderId::Openai, format!("{base}/v1"), "gpt-4.1-mini", "sk-test"),
         cfg(ProviderId::Anthropic, format!("{base}/v1"), "claude-haiku-4-5-20251001", "sk-ant-test"),
         cfg(ProviderId::Nvidia, format!("{base}/v1"), "strict", "nvapi-test"),
         cfg(ProviderId::NineRouter, format!("{base}/local9/v1"), "kr/claude-haiku-4.5", ""),
         cfg(ProviderId::Xai, format!("{base}/xai/v1"), "grok-4-fast-non-reasoning", "xai-test"),
+        cfg(ProviderId::Groq, format!("{base}/groq/openai/v1"), "qwen/qwen3.8-27b", "gsk_test"),
+        cfg(ProviderId::Mistral, format!("{base}/mistral/v1"), "mistral-small-latest", "mistral-test"),
         cfg(ProviderId::Custom, format!("{base}/local/v1"), "local-vlm", ""),
     ]
 }
@@ -211,4 +213,37 @@ fn nothing_listening_is_a_clear_error() {
     let dead = cfg(ProviderId::Ollama, "http://127.0.0.1:9".into(), "moondream", "");
     let err = vision::probe(&dead).unwrap_err().to_string();
     assert!(err.contains("Ollama isn't running"), "{err}");
+}
+
+/// The real brains with the keys in this PC's Izuki settings: a chat reply
+/// and a plan from a real screenshot, through Izuki's own code. A few free
+/// calls, so only when asked: `cargo test live_brains -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn live_brains() {
+    let path = dirs::config_dir().unwrap().join("Izuki").join("settings.json");
+    let mut s: crate::settings::Settings = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    s.heal();
+    let frame = crate::capture::capture_all().unwrap().downscaled(1280);
+    let shot = VisionRequest {
+        image_jpeg: frame.to_jpeg(80).unwrap(),
+        image_size: (frame.width, frame.height),
+        desktop: Rect { x: 0, y: 0, w: frame.width as i32, h: frame.height as i32 },
+        user_prompt: "What app is in front? Answer in the summary; don't click anything.".into(),
+        ..request()
+    };
+    for id in [ProviderId::Gemini, ProviderId::Groq] {
+        let c = s.provider(id).cloned().unwrap();
+        if c.api_key.trim().is_empty() {
+            eprintln!("{}: no key, skipped", id.as_str());
+            continue;
+        }
+        let t = std::time::Instant::now();
+        let said = chat(&c).unwrap_or_else(|e| panic!("{} chat failed: {e}", id.as_str()));
+        eprintln!("{} ({}) chat in {} ms: {said:?}", id.as_str(), c.model, t.elapsed().as_millis());
+        let t = std::time::Instant::now();
+        let plan = vision::ask(&c, &shot).unwrap_or_else(|e| panic!("{} screen failed: {e}", id.as_str()));
+        eprintln!("{} screen in {} ms: {:?}", id.as_str(), t.elapsed().as_millis(), plan.summary);
+        assert!(!plan.summary.trim().is_empty());
+    }
 }

@@ -148,8 +148,27 @@ unsafe extern "system" fn esc_hook(
     wparam: windows::Win32::Foundation::WPARAM,
     lparam: windows::Win32::Foundation::LPARAM,
 ) -> windows::Win32::Foundation::LRESULT {
-    use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL, VK_ESCAPE, VK_SHIFT};
     use windows::Win32::UI::WindowsAndMessaging::{CallNextHookEx, KBDLLHOOKSTRUCT, LLKHF_INJECTED, WM_KEYDOWN};
+    // Emergency stop (Ctrl+Shift+Q) as a guaranteed backup, even if the
+    // registered global shortcut didn't take (another app owns it) or Izuki is
+    // busy. Ctrl and Shift held, Q pressed. cancel_task() only sets flags, so
+    // it works even when the UI is bogged down.
+    if code >= 0 && wparam.0 as u32 == WM_KEYDOWN {
+        let key = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
+        let ctrl = (GetAsyncKeyState(VK_CONTROL.0 as i32) as u16 & 0x8000) != 0;
+        let shift = (GetAsyncKeyState(VK_SHIFT.0 as i32) as u16 & 0x8000) != 0;
+        if key.vkCode == 0x51 && ctrl && shift && !key_repeat_of_last_stop() {
+            crate::brain::cancel_task();
+            if let Some(app) = ESC_APP.get() {
+                let app = app.clone();
+                std::thread::spawn(move || {
+                    eprintln!("[hotkey] Ctrl+Shift+Q (hook backup) — emergency stop");
+                    stop_everything(&app);
+                });
+            }
+        }
+    }
     if code >= 0 && wparam.0 as u32 == WM_KEYDOWN && esc_armed() {
         let key = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
         if cfg!(debug_assertions) && key.vkCode == VK_ESCAPE.0 as u32 {

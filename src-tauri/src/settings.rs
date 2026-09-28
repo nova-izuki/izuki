@@ -19,6 +19,11 @@ pub enum ProviderId {
     NineRouter,
     /// xAI's Grok (https://console.x.ai) — OpenAI-compatible.
     Xai,
+    /// Groq (https://console.groq.com) — free and very fast; the same key
+    /// Izuki uses for sharper hearing and the Human voice.
+    Groq,
+    /// Mistral (https://console.mistral.ai) — free on its "Experiment" plan.
+    Mistral,
     Custom,
 }
 
@@ -33,6 +38,8 @@ impl ProviderId {
             ProviderId::Nvidia => "nvidia",
             ProviderId::NineRouter => "9router",
             ProviderId::Xai => "xai",
+            ProviderId::Groq => "groq",
+            ProviderId::Mistral => "mistral",
             ProviderId::Custom => "custom",
         }
     }
@@ -47,6 +54,8 @@ impl ProviderId {
             "nvidia" => ProviderId::Nvidia,
             "9router" => ProviderId::NineRouter,
             "xai" | "grok" => ProviderId::Xai,
+            "groq" => ProviderId::Groq,
+            "mistral" => ProviderId::Mistral,
             "custom" => ProviderId::Custom,
             _ => return None,
         })
@@ -196,6 +205,16 @@ pub struct Settings {
     /// Voice for the cloud engines ("" = the character's own).
     #[serde(default)]
     pub cloud_voice: String,
+    /// Azure Speech key (free tier: half a million characters a month) —
+    /// Microsoft's official way to the same neural voices as "Natural".
+    #[serde(default)]
+    pub azure_speech_key: String,
+    /// The region the Azure Speech resource was made in, e.g. "eastus".
+    #[serde(default = "default_azure_region")]
+    pub azure_speech_region: String,
+    /// ElevenLabs key (free plan: a monthly allowance of the most human voices).
+    #[serde(default)]
+    pub elevenlabs_key: String,
     /// Izuki's character (voices.rs): "nova", "leo", "ezinne", "rex"…
     #[serde(default = "default_persona")]
     pub persona: String,
@@ -264,6 +283,19 @@ pub struct Settings {
     /// Let the paired phone ask Izuki to do things on this PC.
     #[serde(default = "default_true")]
     pub phone_controls_pc: bool,
+    /// Let Izuki control an Android phone over Wi-Fi (ADB). Off by default.
+    #[serde(default)]
+    pub android_enabled: bool,
+    /// The paired phone's address from Wireless debugging, e.g. "192.168.1.24:5555".
+    #[serde(default)]
+    pub android_addr: String,
+    /// The user accepted the 18+ terms for the unfiltered characters.
+    #[serde(default)]
+    pub adult_ok: bool,
+    /// Chat tab: run file saves and commands without the Allow card (still
+    /// shown, like Claude Code's auto mode). Off by default — safer.
+    #[serde(default)]
+    pub chat_auto_run: bool,
     /// Your own free Composio key: Izuki's access to Gmail, Calendar, Drive,
     /// Slack, Notion, socials and more (composio.rs).
     /// "Call Izuki": a hands-free voice page for your phone, reached through
@@ -323,6 +355,10 @@ pub struct Settings {
     /// The text colour for `chat_style: "custom"`, e.g. "#7dd3fc".
     #[serde(default = "default_chat_color")]
     pub chat_color: String,
+}
+
+fn default_azure_region() -> String {
+    "eastus".into()
 }
 
 fn default_chat_style() -> String {
@@ -429,7 +465,32 @@ impl Settings {
                 p.api_key = k;
             }
         }
+        // Old fixed Gemini names are being retired ("no longer available to
+        // new users"): move to Google's always-current ones.
+        for p in &mut self.providers {
+            if p.id == ProviderId::Gemini {
+                p.model = crate::vision::gemini_current(&p.model);
+            }
+        }
         self.groq_api_key = clean_key(&self.groq_api_key);
+        self.azure_speech_key = clean_key(&self.azure_speech_key);
+        self.elevenlabs_key = clean_key(&self.elevenlabs_key);
+        // "East US" / "eastus" / " EastUS " all mean the same region.
+        self.azure_speech_region = self.azure_speech_region.trim().to_lowercase().replace(' ', "");
+        if self.azure_speech_region.is_empty() {
+            self.azure_speech_region = default_azure_region();
+        }
+        // One Groq key for everything Groq does (hearing, the Human voice and
+        // now a brain): pasted in either place, it fills the other.
+        let groq_brain_key = self.provider(ProviderId::Groq).map(|p| p.api_key.clone()).unwrap_or_default();
+        if self.groq_api_key.is_empty() && !groq_brain_key.is_empty() {
+            self.groq_api_key = groq_brain_key;
+        } else if groq_brain_key.is_empty() && !self.groq_api_key.is_empty() {
+            let k = self.groq_api_key.clone();
+            if let Some(p) = self.providers.iter_mut().find(|p| p.id == ProviderId::Groq) {
+                p.api_key = k;
+            }
+        }
         self.telegram_token = clean_key(&self.telegram_token);
         self.discord_token = clean_key(&self.discord_token);
         self.composio_api_key = clean_key(&self.composio_api_key);
@@ -483,7 +544,7 @@ impl Default for Settings {
                     id: ProviderId::Gemini,
                     label: "Gemini 2.5 Flash (free tier)".into(),
                     base_url: "https://generativelanguage.googleapis.com".into(),
-                    model: "gemini-2.5-flash".into(),
+                    model: crate::vision::GEMINI_MAIN.into(),
                     api_key: String::new(),
                     enabled: false,
                 },
@@ -541,6 +602,25 @@ impl Default for Settings {
                     enabled: false,
                 },
                 ProviderConfig {
+                    id: ProviderId::Groq,
+                    label: "Groq (free, very fast)".into(),
+                    base_url: "https://api.groq.com/openai/v1".into(),
+                    // Sees pictures (checked: it named a red square in 0.6 s),
+                    // so it does screen tasks too, not just chat.
+                    model: "qwen/qwen3.8-27b".into(),
+                    api_key: String::new(),
+                    enabled: false,
+                },
+                ProviderConfig {
+                    id: ProviderId::Mistral,
+                    label: "Mistral (free plan)".into(),
+                    base_url: "https://api.mistral.ai/v1".into(),
+                    // Mistral's own "always the current Small" name; it reads images.
+                    model: "mistral-small-latest".into(),
+                    api_key: String::new(),
+                    enabled: false,
+                },
+                ProviderConfig {
                     id: ProviderId::Custom,
                     label: "Custom endpoint".into(),
                     base_url: "http://127.0.0.1:8080/v1".into(),
@@ -579,6 +659,9 @@ impl Default for Settings {
             voice_name: default_voice_name(),
             groq_api_key: String::new(),
             cloud_voice: String::new(),
+            azure_speech_key: String::new(),
+            azure_speech_region: default_azure_region(),
+            elevenlabs_key: String::new(),
             persona: default_persona(),
             persona_name: String::new(),
             persona_voice: String::new(),
@@ -598,6 +681,10 @@ impl Default for Settings {
             discord_token: String::new(),
             discord_user_id: String::new(),
             phone_controls_pc: true,
+            android_enabled: false,
+            android_addr: String::new(),
+            adult_ok: false,
+            chat_auto_run: false,
             call_enabled: false,
             call_token: String::new(),
             composio_api_key: String::new(),

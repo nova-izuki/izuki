@@ -128,8 +128,10 @@ fn gemini(base: &str, key: &str, wav: &[u8], mime: &str) -> Result<String> {
     let base = if base.is_empty() { "https://generativelanguage.googleapis.com" } else { base };
     // The light model: quick, and its own free allowance (the screen work
     // uses the main one).
-    let url = format!("{base}/v1beta/models/gemini-2.5-flash-lite:generateContent");
-    let body = json!({
+    let model = crate::vision::GEMINI_LITE;
+    let url = format!("{base}/v1beta/models/{model}:generateContent");
+    let knob = crate::vision::gemini_takes_no_think(model);
+    let mut body = json!({
         "contents": [{
             "role": "user",
             "parts": [
@@ -137,11 +139,18 @@ fn gemini(base: &str, key: &str, wav: &[u8], mime: &str) -> Result<String> {
                 { "inline_data": { "mime_type": mime, "data": base64::engine::general_purpose::STANDARD.encode(wav) } }
             ]
         }],
-        "generationConfig": { "temperature": 0, "maxOutputTokens": 200, "thinkingConfig": { "thinkingBudget": 0 } }
+        "generationConfig": { "temperature": 0, "maxOutputTokens": 200 }
     });
+    if knob {
+        body["generationConfig"]["thinkingConfig"] = json!({ "thinkingBudget": 0 });
+    }
     let res = client()?.post(url).header("x-goog-api-key", key).json(&body).send()?;
     let status = res.status();
     let value: Value = res.json()?;
+    if status.as_u16() == 400 && knob {
+        crate::vision::gemini_refused_no_think(model);
+        return gemini(base, key, wav, mime);
+    }
     if !status.is_success() {
         return Err(anyhow!("Gemini answered {status}"));
     }

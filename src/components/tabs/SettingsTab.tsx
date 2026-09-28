@@ -20,6 +20,7 @@ import {
 import pkg from "../../../package.json";
 import { PhoneCard } from "../PhoneCard";
 import { DiscordCard } from "../DiscordCard";
+import { AndroidCard } from "../AndroidCard";
 import { Badge, Row, Section, Segmented, Slider, Toggle, cx } from "../ui";
 import { useIzuki } from "../../lib/store";
 import { api } from "../../lib/ipc";
@@ -203,6 +204,10 @@ export function SettingsTab() {
                               ? "sk-or-v1-…"
                               : p.id === "xai"
                                 ? "xai-… (from console.x.ai → API Keys)"
+                              : p.id === "groq"
+                                ? "gsk_… (free from console.groq.com → API Keys — same key as the Human voice)"
+                              : p.id === "mistral"
+                                ? "free from console.mistral.ai → API Keys (pick the free Experiment plan)"
                               : p.id === "9router"
                                 ? "not needed — 9Router holds its own provider keys"
                                 : "paste your key"
@@ -454,6 +459,7 @@ export function SettingsTab() {
       <PhoneCard />
 
       <DiscordCard />
+      <AndroidCard />
 
       {/* ------------------------------------------------ help */}
       <Section title="Help">
