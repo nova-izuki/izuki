@@ -1032,8 +1032,13 @@
     if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
     return audioCtx;
   }
+  /** Has the user touched the page yet? Until then a phone won't let it make a sound. */
+  let tapped = false;
+  /** Opened by "Hey Siri, Izuki": say the answer out loud, like Siri would. */
+  let fromSiri = false;
   /** From a tap: lets replies play later without another tap (iPhone rule). */
   function unlockAudio() {
+    tapped = true;
     player.src = SILENT;
     player.play().catch(() => {});
     ensureAudioCtx();
@@ -1158,8 +1163,12 @@
     });
   }
 
-  /** Play a reply's audio file — and never wait on it for longer than it lasts. */
-  function playAudio(url, t) {
+  /**
+   * Play a reply's audio file — and never wait on it for longer than it lasts.
+   * `onBlocked`: the phone refused to play before a tap (NotAllowedError) —
+   * hand it over instead of falling back to the phone's voice (blocked too).
+   */
+  function playAudio(url, t, onBlocked) {
     return new Promise((resolve) => {
       let finished = false, guard = 0;
       const finish = () => {
@@ -1189,13 +1198,24 @@
       player.onerror = () => fallBack("error");
       stopSound = () => { try { player.pause(); } catch {} finish(); };
       player.src = url;
-      player.play().catch((e) => fallBack(e && e.name));
+      player.play().catch((e) => {
+        if (onBlocked && e && e.name === "NotAllowedError" && !finished) {
+          finished = true;
+          clearTimeout(guard);
+          if (stopSound === finish) stopSound = null;
+          onBlocked();
+          return resolve();
+        }
+        fallBack(e && e.name);
+      });
     });
   }
 
   let speakSeq = 0;
   async function speak(t) {
-    if (!voiceOn || !(talking || readAloud) || !t) return;
+    if (!voiceOn || !(talking || readAloud || fromSiri) || !t) return;
+    const siri = fromSiri;
+    fromSiri = false;
     const my = ++speakSeq;
     const words = t.replace(/[*_#`]/g, "");
     liveSaid(t);
@@ -1203,10 +1223,45 @@
     const url = await geminiVoice(words);
     if (my !== speakSeq) { if (url) URL.revokeObjectURL(url); return; } // stopped meanwhile
     note(url ? "speaking (Gemini voice)" : "speaking (phone voice)");
-    if (!url) return speakWithPhone(words);
-    await playAudio(url, words);
-    URL.revokeObjectURL(url);
+    // Opened by Siri and not touched yet: an iPhone won't let a web page
+    // make a sound before a tap. Try anyway (Android often allows it), and
+    // if it's refused, the answer's voice is one tap away.
+    if (!url) {
+      if (siri && !tapped) return offerHear(null, words);
+      return speakWithPhone(words);
+    }
+    let blocked = false;
+    await playAudio(url, words, siri && !tapped ? () => { blocked = true; offerHear(url, words); } : undefined);
+    if (!blocked) URL.revokeObjectURL(url);
   }
+
+  /** The phone won't play sound before a tap: the answer, out loud, in one tap — or talk back. */
+  function offerHear(url, words) {
+    note("voice blocked until a tap (opened by Siri)");
+    const last = [...log.querySelectorAll(".msg.izuki")].pop();
+    const row = el("div", "chip-row");
+    const hear = el("button", "chip primary", "🔊 Tap to hear it");
+    hear.type = "button";
+    const talk = el("button", "chip", "🎙️ Talk back");
+    talk.type = "button";
+    hear.onclick = async () => {
+      unlockAudio();
+      hear.textContent = "🔊 Playing…";
+      setOrb("speaking");
+      if (url) await playAudio(url, words);
+      else await speakWithPhone(words);
+      setOrb("");
+      hear.textContent = "🔊 Hear it again";
+    };
+    talk.onclick = () => { unlockAudio(); openLive(); };
+    row.append(hear, talk);
+    (last || log).appendChild(row);
+    log.scrollTop = log.scrollHeight;
+    setOrb("");
+    setStatus("Tap 🔊 to hear the answer");
+  }
+  // The first touch anywhere unlocks Izuki's voice for the rest of the visit.
+  document.addEventListener("pointerdown", () => { if (!tapped) unlockAudio(); }, { capture: true });
   function hush() {
     speakSeq++;
     const stop = stopSound;
@@ -1639,6 +1694,8 @@
   if (q && ready()) {
     // Clear it from the address first, so reopening the app doesn't ask again.
     window.history.replaceState(null, "", location.pathname);
+    // Asked out loud through Siri: answered out loud too.
+    fromSiri = true;
     ask(q);
   }
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
