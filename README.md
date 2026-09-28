@@ -21,7 +21,7 @@ Free · Open source · Hands-free voice · Works with free AI keys
 [Instagram](https://www.instagram.com/izukiapp) ·
 [TikTok](https://www.tiktok.com/@izukiapp) ·
 [YouTube](https://www.youtube.com/@izukiapp) ·
-[LinkedIn](https://www.linkedin.com/company/izukiapp) ·
+[LinkedIn](https://www.linkedin.com/company/143922746/) ·
 [All links](https://nova-izuki.github.io/izuki/links/)
 
 </div>
@@ -41,6 +41,8 @@ happens to be great with computers. It can:
 - **Remember you** — your name, your preferences, the habits it notices. You can see and delete every memory.
 - **Tap you on the shoulder** — an important email, a meeting in 15 minutes, homework due tomorrow, a morning brief.
 - **Look things up for you** — it searches the web and reads the pages itself, quietly, even sites you're signed in to.
+- **Do everyday things instantly** — “scroll down”, “louder”, “pause”, “next song”, “go back”, “new tab”: done at once, no AI, like Siri.
+- **Work with any AI, even small free ones** — they get a simple menu (Easy Mode) and Izuki finds the real button by name, so they act instead of explaining.
 - **Stop the instant you say so** — **Esc** or **Ctrl+Shift+Q**, any time, in every mode.
 
 <!-- Screenshots / demo: drop a GIF or MP4 of Izuki in action into docs/ and link it here, e.g.
@@ -54,7 +56,9 @@ happens to be great with computers. It can:
 | 🗣️ **A natural voice** | Lifelike free neural voices that pause at commas and full stops like a person — no key needed. Or a voice that runs on your own PC, offline (Kokoro), Groq's expressive Orpheus (free key), Google's Gemini voice (free with your Gemini key), Azure Speech (the same Natural voices through Microsoft's official free plan), ElevenLabs (the most human voices, free monthly allowance), or ChatGPT's voice (needs a little OpenAI credit). |
 | 🎭 **30+ characters** | Pick who Izuki is: warm Nova, deep calm Leo, British Sophie, Nigerian Ezinne, Naija Pidgin Chidi, Spanish Lucía, French, Swahili, Hindi, a hype coach, a butler, a pirate — or **Rex**, unfiltered and sarcastic (it swears and roasts you, only if you pick it). Rename it, pick any of 50+ voices, change speed and pitch, and give it your own personality. It talks that way everywhere — voice, chat, phone and Telegram. |
 | 👀 **Sees your screen** | Understands screenshots *and* the real buttons/fields Windows reports, so clicks land on the right control. |
-| 🔁 **Look → act → look again** | Multi-step tasks keep going across new windows, pages and pop-ups — up to six rounds per request. |
+| 🔁 **Look → act → look again** | Multi-step tasks keep going across new windows, pages and pop-ups until the job is visibly done. |
+| 🚀 **Instant commands** | "Scroll down", "louder", "quieter", "pause", "play", "next song", "go back", "refresh", "new tab", "close tab", "minimise this", "show desktop", "zoom in", "undo", "save" — done at once with no AI, so there's nothing to wait for and nothing to get wrong. Works by voice, typing, and from your phone. |
+| 🧩 **Works with any AI** | Big models (Gemini, GPT, Claude, Grok) get the full playbook. Small and free ones (Llama, Gemma, Qwen, Mistral Small, local models) get **Easy Mode**: a short menu of commands like `CLICK "Sign in"` or `PLAY lofi music`, and Izuki matches the name to the real button itself. And a reply that just talks about the task instead of doing it never wins — Izuki waits for a brain that actually acts. |
 | ✍️ **Draw to show it** | Hold **Ctrl+D**, circle something, let go, then say or type what you want. A circle is a click, an arrow is a drag, a box watches a region. |
 | 🖌️ **It draws and highlights like a person** | "Draw a smiley in Paint", "sketch a house on the whiteboard" — its hand holds the pen and draws. "Highlight this paragraph and paste it into Word" — it selects, copies and pastes like you would. |
 | 🧠 **Any brain you like** | Free: Google Gemini, Groq (the fastest), OpenRouter's free models, Mistral, NVIDIA NIM, or a local model with Ollama. Also OpenAI, Anthropic, Grok (xAI) or any OpenAI-compatible server. Izuki races them and uses whichever answers first if one is slow. The phone app works with Gemini, Groq, OpenRouter or Mistral. |

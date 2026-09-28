@@ -66,23 +66,34 @@ fn tidy(reply: &str) -> String {
 /// search, "what's on my screen"…). Away channels (Discord, Telegram, calls)
 /// route these straight to the PC instead of hoping the free chat model emits
 /// the [SCREEN] tag — small models often just chat back instead.
+/// Words that ask for something to be *done* on the PC.
+const DO: &[&str] = &[
+    "open ", "close ", "click ", "tap ", "type ", "press ", "scroll ", "go to ",
+    "play ", "pause ", "resume ", "skip ", "next song", "previous song", "mute", "unmute",
+    "volume", "search ", "google ", "look up ", "send ", "reply ", "delete ", "remove ",
+    "download ", "install ", "launch ", "run ", "switch to ", "screenshot", "refresh ",
+    "reload ", "log in", "log out", "sign in", "sign out", "submit", "turn on ", "turn off ",
+    "bookmark", "print ", "watch ", "listen to ", "put on ", "buy ", "order ", "fill in",
+    "fill out", "skip the ad", "keep going", "carry on", "do the rest", "on youtube",
+];
+/// Words that ask about what's on the screen.
+const LOOK: &[&str] = &[
+    "on my screen", "my screen", "this page", "this window", "this tab", "this app",
+    "what's this", "whats this", "what is this", "what's on", "whats on", "read this",
+    "look at", "in front of me",
+];
+
 pub fn needs_screen(said: &str) -> bool {
     let t = format!(" {} ", said.to_lowercase());
-    const DO: &[&str] = &[
-        "open ", "close ", "click ", "tap ", "type ", "press ", "scroll ", "go to ",
-        "play ", "pause ", "resume ", "skip ", "next song", "previous song", "mute", "unmute",
-        "volume", "search ", "google ", "look up ", "send ", "reply ", "delete ", "remove ",
-        "download ", "install ", "launch ", "run ", "switch to ", "screenshot", "refresh ",
-        "reload ", "log in", "log out", "sign in", "sign out", "submit", "turn on ", "turn off ",
-        "bookmark", "print ", "watch ", "listen to ", "put on ", "buy ", "order ", "fill in",
-        "fill out", "skip the ad", "keep going", "carry on", "do the rest", "on youtube",
-    ];
-    const LOOK: &[&str] = &[
-        "on my screen", "my screen", "this page", "this window", "this tab", "this app",
-        "what's this", "whats this", "what is this", "what's on", "whats on", "read this",
-        "look at", "in front of me",
-    ];
-    DO.iter().chain(LOOK).any(|k| t.contains(k))
+    DO.iter().chain(LOOK).any(|k| t.contains(k)) || crate::instant::parse(said).is_some()
+}
+
+/// Asks for something to be *done* ("play…", "open…", "scroll…") — not just
+/// a question about the screen. A reply to one of these that does nothing
+/// isn't an answer (brain::good_enough).
+pub fn asks_to_do(said: &str) -> bool {
+    let t = format!(" {} ", said.to_lowercase());
+    DO.iter().any(|k| t.contains(k))
 }
 
 /// "…on my phone" / "on my android" — the request is for the phone, not the PC.
@@ -238,6 +249,9 @@ assert!(hands_over(" [SCREEN] ", "SCREEN"));
         assert!(needs_screen("what's on my screen"));
         assert!(!needs_screen("how are you today"));
         assert!(!needs_screen("what's a good name for a cat"));
+        assert!(needs_screen("louder"));
+        assert!(asks_to_do("play some chill music"));
+        assert!(!asks_to_do("what's on my screen"));
         assert!(hands_over("APPS", "APPS"));
         assert!(!hands_over("Let me check the screen", "SCREEN"));
     }

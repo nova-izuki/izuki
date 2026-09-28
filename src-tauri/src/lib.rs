@@ -8,6 +8,7 @@ pub mod call;
 pub mod brain;
 pub mod capture;
 pub mod duck;
+pub mod easy;
 pub mod chat;
 pub mod commands;
 pub mod discord;
@@ -19,6 +20,7 @@ pub mod follow;
 pub mod headsup;
 pub mod ghost;
 pub mod hotkey;
+pub mod instant;
 pub mod keys;
 pub mod live;
 pub mod memory;
@@ -208,6 +210,7 @@ pub fn run() {
             commands::frozen_frame,
             commands::submit_draw,
             commands::submit_voice_command,
+            commands::instant_command,
             commands::answer_help,
             commands::set_busy,
             commands::cloud_ears_ready,

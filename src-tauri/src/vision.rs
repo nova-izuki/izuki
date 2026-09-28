@@ -245,7 +245,8 @@ const SYSTEM_PROMPT: &str = concat!(
     "\"text_to_type\":string|null,\"key\":string|null,\"scroll_amount\":int|null,\"shape\":string|null,",
     "\"confidence\":0.0-1.0,\"reasoning\":\"short\"}]}\n",
     "Coordinates are pixels in the image you were given: (0,0) is its top-left corner. ",
-    "Keys use names like enter, tab, escape, ctrl+a, ctrl+l, alt+f4, win. ",
+    "Keys use names like enter, tab, escape, ctrl+a, ctrl+l, alt+f4, win — and the media keys ",
+    "volumeup, volumedown, playpause, nexttrack, prevtrack (they work on whatever is playing). ",
     "Order steps in the order they must run. Prefer the smallest number of steps that does the job. ",
     "Keep it compact: leave out any field you don't need (never write null), and keep `reasoning` ",
     "to a few words."
@@ -364,6 +365,53 @@ impl VisionRequest {
     }
 }
 
+/// How a brain is asked: the full rulebook answered in JSON (big models), or
+/// Easy Mode's short menu answered in command lines (small and free ones —
+/// see easy.rs).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Style {
+    Full,
+    Easy,
+}
+
+impl Style {
+    fn of(cfg: &ProviderConfig) -> Style {
+        if crate::easy::is_small(cfg) {
+            Style::Easy
+        } else {
+            Style::Full
+        }
+    }
+
+    fn system(self) -> &'static str {
+        match self {
+            Style::Full => SYSTEM_PROMPT,
+            Style::Easy => crate::easy::EASY_PROMPT,
+        }
+    }
+
+    fn user(self, req: &VisionRequest) -> String {
+        match self {
+            Style::Full => req.user_text(),
+            Style::Easy => crate::easy::user_text(req),
+        }
+    }
+
+    /// Only the full style answers in JSON.
+    fn json(self) -> bool {
+        self == Style::Full
+    }
+
+    /// Said to a text-only model, which gets no screenshot.
+    fn no_picture(self) -> &'static str {
+        match self {
+            Style::Full => "(No screenshot is attached — this model reads text only. Work from the \
+                            window title and the numbered controls list, acting on them with \"target\".)",
+            Style::Easy => "(No screenshot is attached — work from the numbered controls list.)",
+        }
+    }
+}
+
 fn client() -> Result<reqwest::blocking::Client> {
     // Bounded so a stuck cloud call can't freeze "thinking" for long — the
     // agent checks for a stop between calls, so shorter here means a faster stop.
@@ -377,10 +425,11 @@ fn client() -> Result<reqwest::blocking::Client> {
 /// Ask a provider to turn the marks into a plan.
 pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
     let started = Instant::now();
+    let style = Style::of(cfg);
     let raw = match cfg.id {
-        ProviderId::Ollama => ask_ollama(cfg, req)?,
-        ProviderId::Gemini => ask_gemini(cfg, req)?,
-        ProviderId::Anthropic => ask_anthropic(cfg, req)?,
+        ProviderId::Ollama => ask_ollama(cfg, req, style)?,
+        ProviderId::Gemini => ask_gemini(cfg, req, style)?,
+        ProviderId::Anthropic => ask_anthropic(cfg, req, style)?,
         // OpenRouter, OpenAI, NVIDIA NIM, 9Router and anything self-hosted
         // all speak this shape.
         ProviderId::Openrouter
@@ -390,8 +439,15 @@ pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
         | ProviderId::Xai
         | ProviderId::Groq
         | ProviderId::Mistral
-        | ProviderId::Custom => ask_openai_compatible(cfg, req)?,
+        | ProviderId::Custom => ask_openai_compatible(cfg, req, style)?,
     };
+
+    // Command lines (Easy Mode — or any model that answered that way).
+    let cleaned = strip_thinking(&raw);
+    let lines = crate::easy::parse(&cleaned, req, style == Style::Easy);
+    if lines.any && (style == Style::Easy || extract_json(&cleaned).is_none()) {
+        return Ok(plan_from_lines(cfg, req, lines, started));
+    }
 
     let (mut steps, summary) = parse_plan(&raw)?;
     let (mood, remember) = parse_extras(&raw);
@@ -422,6 +478,35 @@ pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
         notes,
         zoom,
     })
+}
+
+/// A plan from Easy Mode's command lines: steps mapped onto the desktop and
+/// pinned to the real controls, like the JSON path.
+fn plan_from_lines(cfg: &ProviderConfig, req: &VisionRequest, reply: crate::easy::Reply, started: Instant) -> VisionPlan {
+    let mut steps = reply.steps;
+    let had_point: Vec<bool> = steps.iter().map(|s| s.x != 0 || s.y != 0).collect();
+    rescale(&mut steps, req);
+    resolve_targets(&mut steps, &req.controls, &had_point);
+    let summary = reply.say.unwrap_or_else(|| {
+        if !steps.is_empty() {
+            "On it.".to_string()
+        } else if reply.done {
+            "Done.".to_string()
+        } else {
+            String::new()
+        }
+    });
+    VisionPlan {
+        summary: spoken_line(&summary, &steps),
+        steps,
+        provider: cfg.id.as_str().to_string(),
+        model: cfg.model.clone(),
+        latency_ms: started.elapsed().as_millis() as u64,
+        ask: reply.ask,
+        done: reply.done,
+        wait: reply.wait,
+        ..Default::default()
+    }
 }
 
 /// A region the model wants to look at up close: `"zoom":[x1,y1,x2,y2]` in
@@ -637,7 +722,7 @@ mod probe_tests {
 // Wire formats
 // ---------------------------------------------------------------------------
 
-fn ask_ollama(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
+fn ask_ollama(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Result<String> {
     let base = cfg.base_url.trim_end_matches('/').trim_end_matches("/v1").trim_end_matches("/api");
     // A model on the PC itself may have to load into memory first, and runs
     // slower than a data centre — give it minutes, not seconds.
@@ -649,19 +734,17 @@ fn ask_ollama(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
     let send = |with_image: bool| -> Result<(reqwest::StatusCode, Value)> {
         let mut body = json!({
             "model": cfg.model,
-            "prompt": format!("{SYSTEM_PROMPT}\n\n{}", req.user_text()),
+            "prompt": format!("{}\n\n{}", style.system(), style.user(req)),
             "stream": false,
-            "format": "json",
             "options": { "temperature": 0.1, "num_predict": 1500 }
         });
+        if style.json() {
+            body["format"] = json!("json");
+        }
         if with_image {
             body["images"] = json!([req.b64()]);
         } else {
-            body["prompt"] = json!(format!(
-                "{SYSTEM_PROMPT}\n\n{}\n(No screenshot is attached — this model reads text only. Work from \
-                 the window title and the numbered controls list, acting on them with \"target\".)",
-                req.user_text()
-            ));
+            body["prompt"] = json!(format!("{}\n\n{}\n{}", style.system(), style.user(req), style.no_picture()));
         }
         let res = client
             .post(format!("{base}/api/generate"))
@@ -750,17 +833,17 @@ pub fn gemini_main_tired() {
     *GEMINI_MAIN_TIRED.lock() = Some(std::time::Instant::now() + std::time::Duration::from_secs(60 * 60));
 }
 
-fn ask_gemini(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
+fn ask_gemini(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Result<String> {
     let now_model = gemini_model_now(&cfg.model);
     if now_model != cfg.model {
         let mut lite = cfg.clone();
         lite.model = now_model;
-        return ask_gemini_as(&lite, req);
+        return ask_gemini_as(&lite, req, style);
     }
-    ask_gemini_as(cfg, req)
+    ask_gemini_as(cfg, req, style)
 }
 
-fn ask_gemini_as(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
+fn ask_gemini_as(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Result<String> {
     let base = cfg.base_url.trim_end_matches('/');
     let key = cfg.api_key.trim();
     if key.is_empty() {
@@ -768,22 +851,23 @@ fn ask_gemini_as(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
     }
 
     let url = format!("{base}/v1beta/models/{}:generateContent", cfg.model);
-    let body = json!({
-        "systemInstruction": { "parts": [{ "text": SYSTEM_PROMPT }] },
+    let mut body = json!({
+        "systemInstruction": { "parts": [{ "text": style.system() }] },
         "contents": [{
             "role": "user",
             "parts": [
-                { "text": req.user_text() },
+                { "text": style.user(req) },
                 { "inline_data": { "mime_type": "image/jpeg", "data": req.b64() } }
             ]
         }],
         "generationConfig": {
             "temperature": 0.1,
-            "responseMimeType": "application/json",
             "maxOutputTokens": 2000
         }
     });
-    let mut body = body;
+    if style.json() {
+        body["generationConfig"]["responseMimeType"] = json!("application/json");
+    }
     // Flash models "think" first by default — seconds (or a timeout) before
     // a word of the plan. Reading a screenshot and picking a click doesn't
     // need it. (Pro models can't switch it off.)
@@ -797,7 +881,7 @@ fn ask_gemini_as(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
     let value: Value = res.json()?;
     if status.as_u16() == 400 && knob {
         gemini_refused_no_think(&cfg.model);
-        return ask_gemini_as(cfg, req);
+        return ask_gemini_as(cfg, req, style);
     }
     // Out of free quota (429) or overloaded (503) on the main Flash model:
     // the lighter one has its own allowance, reads screenshots too, and is
@@ -809,7 +893,7 @@ fn ask_gemini_as(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
         }
         let mut lite = cfg.clone();
         lite.model = GEMINI_LITE.into();
-        return ask_gemini_as(&lite, req);
+        return ask_gemini_as(&lite, req, style);
     }
     if !status.is_success() {
         return Err(anyhow!(
@@ -823,7 +907,7 @@ fn ask_gemini_as(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
         .to_string())
 }
 
-fn ask_anthropic(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
+fn ask_anthropic(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Result<String> {
     let base = cfg.base_url.trim_end_matches('/');
     let key = cfg.api_key.trim();
     if key.is_empty() {
@@ -834,13 +918,13 @@ fn ask_anthropic(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
         "model": cfg.model,
         "max_tokens": 2000,
         "temperature": 0.1,
-        "system": SYSTEM_PROMPT,
+        "system": style.system(),
         "messages": [{
             "role": "user",
             "content": [
                 { "type": "image", "source": {
                     "type": "base64", "media_type": "image/jpeg", "data": req.b64() } },
-                { "type": "text", "text": req.user_text() }
+                { "type": "text", "text": style.user(req) }
             ]
         }]
     });
@@ -864,32 +948,29 @@ fn ask_anthropic(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
     Ok(value["content"][0]["text"].as_str().unwrap_or_default().to_string())
 }
 
-fn ask_openai_compatible(cfg: &ProviderConfig, req: &VisionRequest) -> Result<String> {
+fn ask_openai_compatible(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Result<String> {
     let base = cfg.base_url.trim_end_matches('/');
     let client = client()?;
     let image = format!("data:image/jpeg;base64,{}", req.b64());
+    let text = style.user(req);
 
     let send = |json_mode: bool, with_image: bool| -> Result<(reqwest::StatusCode, Value)> {
         let user = if with_image {
             json!([
-                { "type": "text", "text": req.user_text() },
+                { "type": "text", "text": text },
                 { "type": "image_url", "image_url": { "url": image } }
             ])
         } else {
             // A text-only chat model can't see the screenshot — but with the
             // numbered controls list it can still act precisely by id.
-            json!(format!(
-                "{}\n(No screenshot is attached — this model reads text only. Work from the \
-                 window title and the numbered controls list, acting on them with \"target\".)",
-                req.user_text()
-            ))
+            json!(format!("{text}\n{}", style.no_picture()))
         };
         let mut body = json!({
             "model": cfg.model,
             "temperature": 0.1,
             "max_tokens": 2000,
             "messages": [
-                { "role": "system", "content": SYSTEM_PROMPT },
+                { "role": "system", "content": style.system() },
                 { "role": "user", "content": user }
             ]
         });
@@ -921,8 +1002,8 @@ fn ask_openai_compatible(cfg: &ProviderConfig, req: &VisionRequest) -> Result<St
     // JSON mode first; plenty of free models reject `response_format`
     // outright with a 400/422, and the prompt already demands JSON anyway
     // (the parser tolerates chatter around it), so just ask again without.
-    let (mut status, mut value) = send(true, true)?;
-    if status.as_u16() == 400 || status.as_u16() == 422 {
+    let (mut status, mut value) = send(style.json(), true)?;
+    if style.json() && (status.as_u16() == 400 || status.as_u16() == 422) {
         (status, value) = send(false, true)?;
     }
     // Still refused, and the reason is the picture itself — a text-only chat

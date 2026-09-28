@@ -180,7 +180,7 @@ pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession
     if should_ask_model(&session, &local) {
         if let Some(f) = &frame {
             let _ = app.emit(events::STATUS, StatusEvent::working("Izuki is looking…"));
-            match ask_model(store, &session, f, &local, false) {
+            match ask_model(store, &session, f, &local, false, false) {
                 Ok(refined) if !refined.steps.is_empty() => plan = refined,
                 Ok(_) => {}
                 Err(e) => {
@@ -242,12 +242,15 @@ fn should_ask_model(session: &DrawSession, local: &[ActionStep]) -> bool {
         .any(|m| m.intent == Intent::Auto && !matches!(m.kind, crate::model::ShapeKind::Circle))
 }
 
+/// `wants_action`: the request is something to *do* (not a question), so a
+/// reply that does nothing can't win the race — see [`good_enough`].
 fn ask_model(
     store: &Arc<Store>,
     session: &DrawSession,
     frame: &Frame,
     draft: &[ActionStep],
     zoomed: bool,
+    wants_action: bool,
 ) -> Result<VisionPlan> {
     let _ = store; // brains now come from `brain_chain()`
     let started = std::time::Instant::now();
@@ -316,7 +319,7 @@ fn ask_model(
     if chain.is_empty() {
         return Err(anyhow!("no brain is configured"));
     }
-    let mut plan = ask_racing(&chain, req, prep_ms)?;
+    let mut plan = ask_racing(&chain, req, prep_ms, wants_action)?;
     // "Remind me…" said while it works the screen: set it, don't say the tag.
     if plan.summary.contains("[REMIND") {
         plan.summary = crate::reminders::take_tags(&plan.summary);
@@ -545,7 +548,38 @@ const HEDGE_AFTER: std::time::Duration = std::time::Duration::from_millis(5000);
 /// current brain hasn't answered after `HEDGE_AFTER`, the next one is asked
 /// too and whichever answers first wins. A failure moves straight on.
 /// (A free model that takes 20 s used to mean a 20 s wait.)
-fn ask_racing(chain: &[crate::settings::ProviderConfig], req: VisionRequest, prep_ms: u128) -> Result<VisionPlan> {
+/// Whether a reply may win the race. One that narrates instead of acting
+/// ("The user wants… you can use the following steps") never does; and for
+/// something to *do*, neither does one with no action, question, close-up or
+/// finish in it. A faster free model's essay used to beat the chosen
+/// brain's real click every time.
+fn good_enough(plan: &VisionPlan, wants_action: bool) -> bool {
+    if plan.steps.is_empty() && crate::easy::narrates(&plan.summary) {
+        return false;
+    }
+    !wants_action || !plan.steps.is_empty() || plan.ask.is_some() || plan.zoom.is_some() || plan.done || plan.wait > 0
+}
+
+/// No brain did better: the best of the replies that didn't act — but never
+/// one that narrates, which would be read aloud as if it were an answer.
+fn last_resort(mut plan: VisionPlan, wants_action: bool) -> VisionPlan {
+    if crate::easy::narrates(&plan.summary) || plan.summary.trim().is_empty() {
+        plan.summary = if wants_action {
+            "Sorry, I couldn't work out how to do that on this screen. Can you say it another way, or point at it?".into()
+        } else {
+            "Sorry, I didn't get a proper answer that time. Can you ask me again?".into()
+        };
+        plan.mood = Some("sympathetic".into());
+    }
+    plan
+}
+
+fn ask_racing(
+    chain: &[crate::settings::ProviderConfig],
+    req: VisionRequest,
+    prep_ms: u128,
+    wants_action: bool,
+) -> Result<VisionPlan> {
     use std::sync::{mpsc, Arc};
     use std::time::{Duration, Instant};
 
@@ -558,8 +592,11 @@ fn ask_racing(chain: &[crate::settings::ProviderConfig], req: VisionRequest, pre
             let r = vision::ask(&cfg, &req);
             // Remember how this brain did, even if another one won the race.
             // ("Too many requests" or a bad key isn't slowness — don't rank it down for that.)
+            // A quick reply that did nothing counts as slow: being first with
+            // an essay mustn't put a brain first next time.
             match &r {
-                Ok(_) => note_speed(cfg.id, Some(t.elapsed().as_millis())),
+                Ok(plan) if good_enough(plan, wants_action) => note_speed(cfg.id, Some(t.elapsed().as_millis())),
+                Ok(_) => note_speed(cfg.id, None),
                 Err(e) if rest_for(&e.to_string()).is_none() && !is_hopeless(&e.to_string()) => note_speed(cfg.id, None),
                 Err(_) => {}
             }
@@ -574,9 +611,40 @@ fn ask_racing(chain: &[crate::settings::ProviderConfig], req: VisionRequest, pre
     let mut launched = 1;
     let mut finished = 0;
     let mut errors = Vec::new();
+    // The best reply so far that didn't act (the chosen-est brain's), in case
+    // no brain does better.
+    let mut fallback: Option<(usize, VisionPlan)> = None;
     loop {
-        let wait = if launched < chain.len() { HEDGE_AFTER } else { Duration::from_secs(120) };
+        let wait = if launched < chain.len() {
+            HEDGE_AFTER
+        } else if fallback.is_some() {
+            // Something to say already: wait a while for a better one, not forever.
+            Duration::from_secs(25)
+        } else {
+            Duration::from_secs(120)
+        };
         match rx.recv_timeout(wait) {
+            Ok((i, Ok(plan), took)) if !good_enough(&plan, wants_action) => {
+                eprintln!(
+                    "[brain] {} ({}) answered in {} ms without doing anything — waiting for a better answer: {}",
+                    chain[i].label,
+                    chain[i].model,
+                    took.as_millis(),
+                    plan.summary.chars().take(80).collect::<String>()
+                );
+                errors.push(format!("{}: answered without acting", chain[i].label));
+                if fallback.as_ref().map_or(true, |(j, _)| i < *j) {
+                    fallback = Some((i, plan));
+                }
+                finished += 1;
+                if launched < chain.len() {
+                    launch(launched);
+                    launched += 1;
+                } else if finished == launched {
+                    let (_, plan) = fallback.take().expect("just stored");
+                    return Ok(last_resort(plan, wants_action));
+                }
+            }
             Ok((i, Ok(plan), took)) => {
                 eprintln!(
                     "[brain] {} ({}) answered in {} ms (prep {} ms){}",
@@ -596,7 +664,10 @@ fn ask_racing(chain: &[crate::settings::ProviderConfig], req: VisionRequest, pre
                     launch(launched);
                     launched += 1;
                 } else if finished == launched {
-                    return Err(anyhow!("{}", errors.join("; ")));
+                    return match fallback.take() {
+                        Some((_, plan)) => Ok(last_resort(plan, wants_action)),
+                        None => Err(anyhow!("{}", errors.join("; "))),
+                    };
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) if launched < chain.len() => {
@@ -604,7 +675,12 @@ fn ask_racing(chain: &[crate::settings::ProviderConfig], req: VisionRequest, pre
                 launch(launched);
                 launched += 1;
             }
-            Err(_) => return Err(anyhow!("no brain answered in time")),
+            Err(_) => {
+                return match fallback.take() {
+                    Some((_, plan)) => Ok(last_resort(plan, wants_action)),
+                    None => Err(anyhow!("no brain answered in time")),
+                }
+            }
         }
     }
 }
@@ -794,6 +870,36 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
     submit_task(app, store, prompt, Vec::new(), None)
 }
 
+/// "Scroll down", "louder", "pause", "next song", "go back", "new tab"…:
+/// done at once with no AI — see instant.rs. `None` when `said` isn't one of
+/// those plain everyday commands (or the PC is locked).
+pub fn run_instant(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<VisionPlan> {
+    let (act, say) = crate::instant::parse(said)?;
+    if uia::screen_locked() {
+        return None;
+    }
+    // Like any new task, this replaces one still running.
+    let my_task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    automation::clear_abort();
+    let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted();
+    eprintln!("[instant] \"{said}\" → {act:?}");
+    let steps = crate::instant::steps(act);
+    let worked = if steps.is_empty() {
+        crate::instant::run_direct(act)
+    } else {
+        run_steps_blocking(app, store, &steps, &alive)
+    };
+    Some(VisionPlan {
+        steps,
+        summary: if worked { say.to_string() } else { "Hmm, that didn't work — try asking me another way?".to_string() },
+        provider: "local".into(),
+        model: "instant".into(),
+        mood: Some(if worked { "cheerful" } else { "sympathetic" }.into()),
+        done: true,
+        ..Default::default()
+    })
+}
+
 /// The look → act → check loop behind every request. `marks` are what the
 /// user drew (shown to the model on the first look), and `frame` the screen
 /// they drew them on — `None` takes a fresh look.
@@ -804,6 +910,13 @@ fn submit_task(
     marks: Vec<crate::model::Mark>,
     drawn_on: Option<Frame>,
 ) -> VisionPlan {
+    // "Scroll down", "louder", "next song": done at once, no AI (instant.rs).
+    // Every way in — voice, typing, the phone, Discord — comes through here.
+    if marks.is_empty() && drawn_on.is_none() {
+        if let Some(plan) = run_instant(app, store, &prompt) {
+            return plan;
+        }
+    }
     let settings = store.settings();
     // This task replaces any other: the old one sees the number change and
     // stops, and a question it was waiting on is let go.
@@ -825,6 +938,9 @@ fn submit_task(
         }
         None => (prompt, Vec::new()),
     };
+    // Something to *do* (not a question)? Then an answer that does nothing
+    // — a free model's essay about the request — never wins (good_enough).
+    let wants_action = !resumed.is_empty() || crate::companion::asks_to_do(&prompt);
 
     let focus = matches!(settings.execution_mode, crate::settings::ExecutionMode::Focus);
 
@@ -982,7 +1098,7 @@ fn submit_task(
         // try again rather than dropping the task halfway.
         let mut attempt = 0u64;
         let asked_now = loop {
-            match ask_model(store, &session, &frame, &[], zoomed.is_some()) {
+            match ask_model(store, &session, &frame, &[], zoomed.is_some(), wants_action || round > 0) {
                 Ok(plan) => break Ok(plan),
                 Err(e) => {
                     attempt += 1;

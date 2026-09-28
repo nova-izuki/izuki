@@ -269,6 +269,13 @@ pub fn press_key(name: &str) -> Result<()> {
     tapped.map_err(|err| anyhow!("key press failed: {err:?}"))
 }
 
+/// Whether `press_key` understands this key or combination ("ctrl+t").
+pub fn key_is_known(name: &str) -> bool {
+    let parts: Vec<&str> = name.split('+').map(str::trim).filter(|p| !p.is_empty()).collect();
+    let Some((last, mods)) = parts.split_last() else { return false };
+    mods.iter().all(|m| parse_modifier(m).is_some()) && (parse_modifier(last).is_some() || parse_key(last).is_some())
+}
+
 fn parse_modifier(name: &str) -> Option<Key> {
     Some(match name.trim().to_ascii_lowercase().as_str() {
         "ctrl" | "control" | "ctl" => Key::Control,
@@ -343,6 +350,14 @@ fn parse_key(name: &str) -> Option<Key> {
         "f10" => Key::F10,
         "f11" => Key::F11,
         "f12" => Key::F12,
+        // The keyboard's media keys: every player listens to these (YouTube
+        // in the browser, Spotify, the Films app), whichever window is in front.
+        "volumeup" | "volume_up" => Key::VolumeUp,
+        "volumedown" | "volume_down" => Key::VolumeDown,
+        "volumemute" | "volume_mute" => Key::VolumeMute,
+        "playpause" | "play_pause" | "mediaplaypause" => Key::MediaPlayPause,
+        "nexttrack" | "next_track" | "medianexttrack" => Key::MediaNextTrack,
+        "prevtrack" | "prev_track" | "previoustrack" | "mediaprevtrack" => Key::MediaPrevTrack,
         other => {
             let mut chars = other.chars();
             let c = chars.next()?;

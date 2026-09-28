@@ -309,6 +309,18 @@ pub async fn submit_voice_command(app: AppHandle, prompt: String) -> VisionPlan 
         .unwrap_or_else(failed_plan)
 }
 
+/// "Scroll down", "louder", "next song"…: done at once with no AI, and the
+/// few words to say back — or `None` when it isn't one of those plain
+/// everyday commands (instant.rs).
+#[tauri::command]
+pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
+    crate::instant::parse(&said)?;
+    blocking(move || brain::run_instant(&app, &state::store(), &said).map(|p| p.summary))
+        .await
+        .ok()
+        .flatten()
+}
+
 /// The user's answer to Izuki's "which one? circle it" question — marks in
 /// screen pixels plus anything typed/said; `None` = skipped.
 #[tauri::command]

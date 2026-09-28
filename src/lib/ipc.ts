@@ -418,6 +418,9 @@ export const api = {
     })),
 
   /** "Hey Izuki, …" or a typed chat line — no marks, just a look and an ask. */
+  /** "Scroll down", "louder", "next song"…: done at once in Rust with no AI;
+   *  the few words to say back, or null when it isn't one (instant.rs). */
+  instantCommand: (said: string) => call<string | null>("instant_command", { said }, () => null),
   submitVoiceCommand: (prompt: string) =>
     call<VisionPlan>("submit_voice_command", { prompt }, () => ({
       steps: [],

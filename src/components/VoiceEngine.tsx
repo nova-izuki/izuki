@@ -639,6 +639,17 @@ export function VoiceEngine() {
       }
     }
 
+    // Everyday commands — "scroll down", "louder", "pause", "next song", "go
+    // back", "new tab" — done at once, no AI to wait for or get wrong.
+    const quick = await api.instantCommand(t).catch(() => null);
+    if (requestSeq !== at) return;
+    if (quick) {
+      startSession(from === "voice", "speaking");
+      await respond(quick, "cheerful");
+      void afterReply(at, false);
+      return;
+    }
+
     // "… on my phone": drive the paired Android phone over Wi-Fi.
     const s0 = useIzuki.getState().settings;
     if (s0.android_enabled && /on (my|the) (phone|android)/i.test(t)) {
