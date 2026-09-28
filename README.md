@@ -137,6 +137,19 @@ npm run tauri build    # make the installer (src-tauri/target/release/bundle)
 
 Built with [Tauri 2](https://tauri.app), React and Rust.
 
+## For developers: Safe Hands 🖐️
+
+Building your own AI that uses a Windows PC? Izuki's hands are a separate,
+MIT-licensed Rust library: **[crates/safe-hands](crates/safe-hands)**. It
+gives your model the window's real buttons as a numbered list (so it answers
+"click 7" instead of guessing pixels), checks every click before it happens
+(really there? moved? greyed out? covered — then pressed directly), reads
+typed text back, and places the pointer exactly on any monitor.
+
+```toml
+safe-hands = { git = "https://github.com/nova-izuki/izuki" }
+```
+
 ## Roadmap
 
 - Voice personalities and characters, more voices and languages

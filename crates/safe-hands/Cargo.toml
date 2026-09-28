@@ -1,0 +1,28 @@
+[package]
+name = "safe-hands"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+description = "Accurate, checked mouse and keyboard actions for AI agents on Windows: numbered real controls, pre-click checks, direct presses, typed-text read-back."
+license = "MIT"
+repository = "https://github.com/nova-izuki/izuki"
+homepage = "https://nova-izuki.github.io/izuki/"
+readme = "README.md"
+keywords = ["automation", "windows", "ui-automation", "agent", "computer-use"]
+categories = ["os::windows-apis", "accessibility"]
+
+[dependencies]
+
+[target.'cfg(windows)'.dependencies]
+uiautomation = "0.25"
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+  "Win32_Foundation",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_HiDpi",
+  "Win32_System_Threading",
+  "Win32_System_ProcessStatus",
+]

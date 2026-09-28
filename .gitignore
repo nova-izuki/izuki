@@ -6,6 +6,8 @@ dist-ssr
 .DS_Store
 Thumbs.db
 src-tauri/target
+crates/*/target
+crates/*/Cargo.lock
 src-tauri/gen
 .env
 .env.local
