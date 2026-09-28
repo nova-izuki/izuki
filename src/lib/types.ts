@@ -433,6 +433,8 @@ export interface CaptionPayload {
   text: string;
   /** Reveal word-by-word at speaking pace (voice is on) vs. near-instantly. */
   paced: boolean;
+  /** The voice's real pace, measured from its first audio — the words keep step with it. */
+  msPerWord?: number;
 }
 
 /** Real cursor position, virtual-desktop pixels — driving the hand in follow mode. */

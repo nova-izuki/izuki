@@ -367,6 +367,12 @@ static RESTING: parking_lot::Mutex<Vec<(crate::settings::ProviderId, std::time::
 /// a used-up daily quota for an hour, a per-minute limit for a minute.
 fn rest_for(err: &str) -> Option<std::time::Duration> {
     let e = err.to_ascii_lowercase();
+    // "High demand" / overloaded (503): the free tier is swamped. Asking it
+    // again on the next look cost 5–12 s each time just to get the same
+    // error — rest it a minute and go straight to a brain that's answering.
+    if e.contains("503") || e.contains("high demand") || e.contains("overloaded") || e.contains("unavailable") {
+        return Some(std::time::Duration::from_secs(60));
+    }
     let limited = e.contains("429") || e.contains("too many requests") || e.contains("rate-limit") || e.contains("rate limit");
     if !limited {
         return None;
@@ -610,6 +616,14 @@ fn ask_racing(
         });
     };
 
+    // A chosen brain that's been slow lately (Gemini's free tier on a busy
+    // day: 9–15 s a look) gets company after 1.5 s, not 5 — a fast brain
+    // that's answering (Groq: under 2 s) shouldn't wait on it every look.
+    let hedge_after = if chain.len() > 1 && expected_ms(chain[0].id).is_some_and(|ms| ms > 6_000.0) {
+        Duration::from_millis(1500)
+    } else {
+        HEDGE_AFTER
+    };
     launch(0);
     let mut launched = 1;
     let mut finished = 0;
@@ -619,7 +633,7 @@ fn ask_racing(
     let mut fallback: Option<(usize, VisionPlan)> = None;
     loop {
         let wait = if launched < chain.len() {
-            HEDGE_AFTER
+            hedge_after
         } else if fallback.is_some() {
             // Something to say already: wait a while for a better one, not forever.
             Duration::from_secs(25)
@@ -1654,6 +1668,28 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
 mod speed_tests {
     use super::*;
     use crate::settings::{ProviderId, Settings};
+
+    #[test]
+    fn an_overloaded_brain_rests_instead_of_costing_every_look() {
+        // Gemini's free tier on a busy day, word for word.
+        let busy = "Gemini answered 503 Service Unavailable: This model is currently experiencing high demand.";
+        assert_eq!(rest_for(busy), Some(std::time::Duration::from_secs(60)));
+        assert!(rest_for("gemini: 429 Too Many Requests — quota exceeded per day").unwrap() > std::time::Duration::from_secs(60));
+        assert_eq!(rest_for("the key was rejected (401)"), None);
+    }
+
+    #[test]
+    fn newer_gemini_models_still_skip_thinking() {
+        use crate::vision::{gemini_no_think, gemini_refused_no_think, NoThink};
+        let m = "gemini-test-flash-lite";
+        assert_eq!(gemini_no_think(m), NoThink::Budget);
+        // Gemini 3.x refuses thinkingBudget: 0 — the next try is thinkingLevel: minimal, not "think fully".
+        assert_eq!(gemini_refused_no_think(m, NoThink::Budget), NoThink::Level);
+        assert_eq!(gemini_no_think(m), NoThink::Level);
+        assert_eq!(NoThink::Level.thinking_config().unwrap()["thinkingLevel"], "minimal");
+        assert_eq!(gemini_refused_no_think(m, NoThink::Level), NoThink::Neither);
+        assert_eq!(gemini_no_think("gemini-3-pro"), NoThink::Neither);
+    }
 
     #[test]
     fn a_slow_chosen_brain_yields_to_a_fast_one() {

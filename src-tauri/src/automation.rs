@@ -239,7 +239,19 @@ pub fn type_text(text: &str) -> Result<()> {
 /// "alt+f4", "win+d". Modifiers go down in order, the last key is tapped,
 /// then the modifiers come back up in reverse. A chord of only modifiers
 /// ("win", "ctrl+alt") taps the last one — "win" alone opens Start.
+/// When Izuki itself last pressed Esc (a step closing a menu), so the Esc
+/// watcher (hotkey.rs) doesn't take it for the user asking to stop.
+static OWN_ESC: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
+
+/// Izuki pressed Esc itself within the last moment.
+pub fn pressed_esc_just_now() -> bool {
+    OWN_ESC.lock().is_some_and(|t| t.elapsed() < Duration::from_millis(700))
+}
+
 pub fn press_key(name: &str) -> Result<()> {
+    if name.split('+').next_back().is_some_and(|k| matches!(k.trim().to_ascii_lowercase().as_str(), "esc" | "escape")) {
+        *OWN_ESC.lock() = Some(std::time::Instant::now());
+    }
     let parts: Vec<&str> = name
         .split('+')
         .map(str::trim)

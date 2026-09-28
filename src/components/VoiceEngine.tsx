@@ -135,8 +135,8 @@ async function handleMemoryCommand(cmd: LocalCommand): Promise<boolean> {
   }
 }
 
-function showCaption(text: string, paced: boolean) {
-  const payload: CaptionPayload = { text, paced };
+function showCaption(text: string, paced: boolean, msPerWord?: number) {
+  const payload: CaptionPayload = { text, paced, msPerWord };
   void api
     .showCaptionOverlay()
     .catch(() => undefined)
@@ -179,10 +179,12 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
   const shownText = speakable(raw, false);
   noteSaid(shownText);
   let shown = false;
-  const captionOnce = () => {
+  // Shown the moment the voice starts — never before it (HeyClicky keeps its
+  // spinner until the audio plays) — and typed at the voice's real pace.
+  const captionOnce = (msPerWord?: number) => {
     if (shown || !caption) return;
     shown = true;
-    showCaption(shownText, true);
+    showCaption(shownText, true, msPerWord);
   };
   stopSpeaking();
   const engine = settings.voice_engine;
@@ -250,7 +252,8 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
     }
   }
   speak(shownText, { lang: who.lang, rate: who.speed !== 1 ? who.speed : undefined });
-  if (caption) showCaption(shownText, true);
+  // Windows' voice: ~370 ms a word at normal speed, faster or slower with the character's pace.
+  if (caption) showCaption(shownText, true, 370 / (who.speed || 1));
 }
 
 /**

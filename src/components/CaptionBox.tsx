@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 import { GripHorizontal, X } from "lucide-react";
 import { resizeHandles, useFloating, workArea, type Limits } from "../lib/floating";
 import type { CaptionPayload } from "../lib/types";
+import { EV, on } from "../lib/ipc";
 import { useBackdropTone } from "../lib/tone";
 
 const LIMITS: Limits = { minW: 180, minH: 64, maxW: 720, maxH: 480 };
@@ -43,22 +44,38 @@ export function CaptionBox({
 
   useEffect(() => {
     setShown(0);
-    const step = caption.paced ? SPOKEN_MS_PER_WORD : SILENT_MS_PER_WORD;
+    // The voice's real pace when it's known (measured from its first audio),
+    // so the words keep step with it instead of racing ahead or lagging.
+    const step = caption.paced ? (caption.msPerWord ?? SPOKEN_MS_PER_WORD) : SILENT_MS_PER_WORD;
     let i = 0;
     let linger: ReturnType<typeof setTimeout> | null = null;
+    const finish = () => {
+      clearInterval(tick);
+      if (!linger) linger = setTimeout(() => doneRef.current(), LINGER_MS);
+    };
     const tick = setInterval(() => {
       i++;
       setShown(i);
-      if (i >= words.length) {
-        clearInterval(tick);
-        linger = setTimeout(() => doneRef.current(), LINGER_MS);
-      }
+      if (i >= words.length) finish();
     }, step);
+    // The voice finished: every word is on screen by then, never left behind.
+    let wasSpeaking = false;
+    const off = caption.paced
+      ? on<boolean>(EV.speaking, (talking) => {
+          if (talking) wasSpeaking = true;
+          else if (wasSpeaking && i < words.length) {
+            i = words.length;
+            setShown(i);
+            finish();
+          }
+        })
+      : null;
     return () => {
       clearInterval(tick);
       if (linger) clearTimeout(linger);
+      void off?.then((f) => f());
     };
-  }, [caption.id, caption.paced, words.length]);
+  }, [caption.id, caption.paced, caption.msPerWord, words.length]);
 
   useEffect(() => {
     const el = scroller.current;

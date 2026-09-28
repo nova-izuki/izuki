@@ -119,24 +119,86 @@ fn esc_armed() -> bool {
 }
 
 /// Start the Esc watcher (once, at startup). Costs nothing while idle.
+///
+/// Two ways of noticing Esc, because one wasn't enough: Windows silently
+/// *removes* a keyboard hook whose thread doesn't answer in time — on a busy
+/// or throttled laptop that happened, and from then on Esc (and the Ctrl+Shift+Q
+/// backup) did nothing for the rest of the session, with no error anywhere.
+/// So the hook runs on a high-priority thread and is put back every 30 s, and
+/// a second watcher simply checks the Esc key's state while Izuki is busy —
+/// that one can't be taken away.
 #[cfg(windows)]
 pub fn install_escape_watch(app: &AppHandle) {
-    use windows::Win32::UI::WindowsAndMessaging::{GetMessageW, SetWindowsHookExW, MSG, WH_KEYBOARD_LL};
+    use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetMessageW, SetTimer, SetWindowsHookExW, UnhookWindowsHookEx, MSG, WH_KEYBOARD_LL, WM_TIMER,
+    };
     if ESC_APP.set(app.clone()).is_err() {
         return;
     }
     std::thread::Builder::new()
         .name("izuki-esc".into())
         .spawn(|| unsafe {
-            if SetWindowsHookExW(WH_KEYBOARD_LL, Some(esc_hook), None, 0).is_err() {
-                eprintln!("[hotkey] couldn't watch for Esc");
-                return;
-            }
+            // Answer Windows at once, however busy the rest of the PC is.
+            let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+            let mut hook = match SetWindowsHookExW(WH_KEYBOARD_LL, Some(esc_hook), None, 0) {
+                Ok(h) => h,
+                Err(_) => {
+                    eprintln!("[bug] couldn't watch for Esc");
+                    return;
+                }
+            };
+            // A timer on this thread: every 30 s the hook is put back fresh,
+            // in case Windows quietly dropped it.
+            SetTimer(None, 0, 30_000, None);
             // A low-level hook needs its thread to keep pumping messages.
             let mut msg = MSG::default();
-            while GetMessageW(&mut msg, None, 0, 0).as_bool() {}
+            while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                if msg.message == WM_TIMER {
+                    if let Ok(fresh) = SetWindowsHookExW(WH_KEYBOARD_LL, Some(esc_hook), None, 0) {
+                        let _ = UnhookWindowsHookEx(hook);
+                        hook = fresh;
+                    }
+                }
+            }
         })
         .ok();
+    std::thread::Builder::new().name("izuki-esc-watch".into()).spawn(watch_esc_key).ok();
+}
+
+/// The second Esc watcher: while Izuki is busy, look at the Esc key itself
+/// 25 times a second. Nothing can remove this one. (Izuki's own presses of
+/// Esc — a step that closes a menu — are told apart and ignored.)
+#[cfg(windows)]
+fn watch_esc_key() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL, VK_ESCAPE, VK_SHIFT};
+    let down = |vk: i32| unsafe { (GetAsyncKeyState(vk) as u16 & 0x8000) != 0 };
+    let mut esc_was = false;
+    let mut q_was = false;
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        let esc = down(VK_ESCAPE.0 as i32);
+        let q = down(0x51) && down(VK_CONTROL.0 as i32) && down(VK_SHIFT.0 as i32);
+        let esc_pressed = esc && !esc_was;
+        let q_pressed = q && !q_was;
+        esc_was = esc;
+        q_was = q;
+        if q_pressed && !key_repeat_of_last_stop() {
+            crate::brain::cancel_task();
+            if let Some(app) = ESC_APP.get() {
+                eprintln!("[hotkey] Ctrl+Shift+Q (key watch) — emergency stop");
+                stop_everything(app);
+            }
+            continue;
+        }
+        if esc_pressed && esc_armed() && !crate::automation::pressed_esc_just_now() && !key_repeat_of_last_stop() {
+            ESC_ON.store(false, Ordering::SeqCst);
+            if let Some(app) = ESC_APP.get() {
+                eprintln!("[hotkey] Esc pressed (key watch) — stopping");
+                stop_current(app);
+            }
+        }
+    }
 }
 
 #[cfg(not(windows))]

@@ -848,9 +848,13 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
     // Conversation wants first words fast, not deliberation.
     // (Gemini's main model may be resting — see `vision::gemini_model_now`.)
     let model_now = crate::vision::gemini_model_now(&cfg.model);
-    let knob = cfg.id == ProviderId::Gemini && crate::vision::gemini_takes_no_think(&model_now);
-    if knob {
-        body["reasoning_effort"] = json!("none");
+    let knob = if cfg.id == ProviderId::Gemini {
+        crate::vision::gemini_no_think(&model_now)
+    } else {
+        crate::vision::NoThink::Neither
+    };
+    if let Some(effort) = knob.reasoning_effort() {
+        body["reasoning_effort"] = json!(effort);
     }
     let mut body = body;
     if cfg.id == ProviderId::Gemini {
@@ -865,8 +869,8 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
     }
     let resp = rq.send()?;
     // This model takes a different "don't think" setting (or none): again without it.
-    if knob && resp.status().as_u16() == 400 {
-        crate::vision::gemini_refused_no_think(&model_now);
+    if knob != crate::vision::NoThink::Neither && resp.status().as_u16() == 400 {
+        crate::vision::gemini_refused_no_think(&model_now, knob);
         return stream_one(cfg, messages, stop, on_text);
     }
     // Gemini's main model is often "experiencing high demand" on the free

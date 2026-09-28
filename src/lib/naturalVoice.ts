@@ -378,7 +378,21 @@ async function output(): Promise<{ ctx: AudioContext; out: AnalyserNode } | null
  * speaking state right. `push` returns false once the utterance was
  * superseded (stop, or a newer line).
  */
-function player(mine: number, ctx: AudioContext, out: AnalyserNode, gainValue: number, onStart?: () => void) {
+/**
+ * Told the moment the first audio plays, with how long the voice takes per
+ * word (measured from that first piece of audio) — so the caption can type
+ * at the voice's real pace instead of a guess that drifted ahead or behind.
+ */
+export type OnSpeechStart = (msPerWord?: number) => void;
+
+/** How long `words` took to say, per word — from a piece of audio's length. */
+function paceOf(words: string, seconds: number): number | undefined {
+  const n = words.split(/\s+/).filter(Boolean).length;
+  if (!n || !(seconds > 0)) return undefined;
+  return Math.min(900, Math.max(150, (seconds * 1000) / n));
+}
+
+function player(mine: number, ctx: AudioContext, out: AnalyserNode, gainValue: number, onStart?: OnSpeechStart, firstWords = "") {
   let at = 0; // when the next chunk should start, in ctx time
   let started = false;
   streamOpen = true;
@@ -404,7 +418,7 @@ function player(mine: number, ctx: AudioContext, out: AnalyserNode, gainValue: n
       if (!started) {
         started = true;
         setSpeaking(true);
-        onStart?.();
+        onStart?.(paceOf(firstWords, buf.duration));
       }
       return true;
     },
@@ -517,7 +531,7 @@ export async function prepareLines(lines: string[], voice: string) {
 export async function speakNatural(
   text: string,
   voice: string,
-  onStart?: () => void,
+  onStart?: OnSpeechStart,
   mood?: string | null,
   /** The character's pace (1 = as made). */
   pace = 1
@@ -543,8 +557,11 @@ export async function speakNatural(
   if (mine !== generation) return true; // something newer took over
 
   const m = MOODS[mood ?? ""] ?? MOODS.neutral;
-  const play = player(mine, o.ctx, o.out, m.gain, onStart);
   const cached = ready_lines.get(lineKey(voice, text));
+  // The first audio is a whole ready-made line, or the reply's first
+  // sentence (the voice makes it a sentence at a time).
+  const firstWords = cached ? text : (text.match(/^[^.!?…]+[.!?…]*/)?.[0] ?? text);
+  const play = player(mine, o.ctx, o.out, m.gain, onStart, firstWords);
   if (cached) {
     play.push(cached);
     play.done();
@@ -652,7 +669,7 @@ export async function speakCloud(
   engine: string,
   text: string,
   mood?: string | null,
-  onStart?: () => void
+  onStart?: OnSpeechStart
 ): Promise<boolean> {
   const pieces = cloudPieces(engine, text);
   if (!pieces.length) return true;
@@ -662,7 +679,8 @@ export async function speakCloud(
   const o = await output();
   if (!o) return false;
   if (mine !== generation) return true;
-  const play = player(mine, o.ctx, o.out, 1, onStart);
+  // Each piece comes back as one piece of audio: the first one's length is its words' pace.
+  const play = player(mine, o.ctx, o.out, 1, onStart, pieces[0]);
 
   const fetchOne = (piece: string) => {
     const p = fetchAudio(engine, piece, mood).then((bytes) => o.ctx.decodeAudioData(bytes.slice(0)));

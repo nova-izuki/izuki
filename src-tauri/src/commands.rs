@@ -714,6 +714,9 @@ pub fn reminder_remove(app: AppHandle, id: String) {
 #[tauri::command]
 pub fn prefetch_screen() {
     uia::prefetch_controls(brain::MAX_CONTROLS);
+    // And open the line to the brains while you're still talking, so the
+    // request doesn't also pay for connecting (HeyClicky warms up the same way).
+    crate::vision::warm_up();
 }
 
 /// Keep a recent wake-word clip Izuki couldn't make out, as a WAV, so a

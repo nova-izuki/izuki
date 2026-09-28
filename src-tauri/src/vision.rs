@@ -412,14 +412,49 @@ impl Style {
     }
 }
 
+/// One web client for every look, shared: it keeps the secure connection to
+/// each brain open between requests, so a look doesn't start by connecting
+/// all over again (a new client per request paid that every single time).
+/// It lives for the whole run, so it's never dropped inside async code.
 fn client() -> Result<reqwest::blocking::Client> {
+    static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
+    if let Some(c) = CLIENT.get() {
+        return Ok(c.clone());
+    }
+    crate::tls_ready();
     // Bounded so a stuck cloud call can't freeze "thinking" for long — the
     // agent checks for a stop between calls, so shorter here means a faster stop.
-    reqwest::blocking::Client::builder()
+    let built = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(22))
         .connect_timeout(Duration::from_secs(5))
+        .pool_idle_timeout(Duration::from_secs(90))
         .build()
-        .context("could not start the HTTP client")
+        .context("could not start the HTTP client")?;
+    Ok(CLIENT.get_or_init(|| built).clone())
+}
+
+/// Open the connection to the first brains now (you've started talking), so
+/// the real request finds it ready. Costs one tiny request; never waits.
+pub fn warm_up() {
+    static LAST: parking_lot::Mutex<Option<Instant>> = parking_lot::Mutex::new(None);
+    {
+        let mut last = LAST.lock();
+        // A warm connection stays open about a minute and a half.
+        if last.is_some_and(|t| t.elapsed() < Duration::from_secs(45)) {
+            return;
+        }
+        *last = Some(Instant::now());
+    }
+    std::thread::spawn(|| {
+        let Ok(c) = client() else { return };
+        for cfg in crate::brain::brain_chain().into_iter().take(2) {
+            if cfg.id.is_local() {
+                continue;
+            }
+            let base = cfg.base_url.trim_end_matches('/').to_string();
+            let _ = c.head(&base).timeout(Duration::from_secs(5)).send();
+        }
+    });
 }
 
 /// Ask a provider to turn the marks into a plan.
@@ -803,15 +838,59 @@ pub fn gemini_current(model: &str) -> String {
 
 /// Models that refused the "don't think first" setting (each newer model
 /// takes a different one, and some take none): asked without it from then on.
-static NO_THINK_KNOB: parking_lot::Mutex<Vec<String>> = parking_lot::Mutex::new(Vec::new());
+static NO_THINK_KNOB: parking_lot::Mutex<Vec<(String, NoThink)>> = parking_lot::Mutex::new(Vec::new());
 
-pub fn gemini_takes_no_think(model: &str) -> bool {
-    model.contains("flash") && !NO_THINK_KNOB.lock().iter().any(|m| m == model)
+/// How to ask a Gemini Flash model to answer without "thinking" first.
+/// Gemini 2.5 takes `thinkingBudget: 0`; the 3.x models refuse it ("invalid
+/// argument") and take `thinkingLevel: "minimal"` instead. Dropping the
+/// setting altogether — what Izuki used to do on a refusal — left every newer
+/// model thinking at full length on every look.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NoThink {
+    Budget,
+    Level,
+    Neither,
 }
 
-pub fn gemini_refused_no_think(model: &str) {
-    eprintln!("[brain] {model} doesn't take the no-thinking setting; asking without it");
-    NO_THINK_KNOB.lock().push(model.to_string());
+impl NoThink {
+    /// For `generationConfig.thinkingConfig` (Gemini's own API).
+    pub fn thinking_config(self) -> Option<Value> {
+        match self {
+            NoThink::Budget => Some(json!({ "thinkingBudget": 0 })),
+            NoThink::Level => Some(json!({ "thinkingLevel": "minimal" })),
+            NoThink::Neither => None,
+        }
+    }
+
+    /// For `reasoning_effort` (Gemini's OpenAI-compatible endpoint).
+    pub fn reasoning_effort(self) -> Option<&'static str> {
+        match self {
+            NoThink::Budget => Some("none"),
+            NoThink::Level => Some("minimal"),
+            NoThink::Neither => None,
+        }
+    }
+}
+
+/// The no-thinking setting to try with this model right now.
+pub fn gemini_no_think(model: &str) -> NoThink {
+    if !model.contains("flash") {
+        return NoThink::Neither; // Pro models can't switch it off
+    }
+    NO_THINK_KNOB.lock().iter().find(|(m, _)| m == model).map(|(_, k)| *k).unwrap_or(NoThink::Budget)
+}
+
+/// The model refused `tried` (a 400): the next setting from now on. Returns it.
+pub fn gemini_refused_no_think(model: &str, tried: NoThink) -> NoThink {
+    let next = match tried {
+        NoThink::Budget => NoThink::Level,
+        NoThink::Level | NoThink::Neither => NoThink::Neither,
+    };
+    eprintln!("[brain] {model} refused the {tried:?} no-thinking setting; trying {next:?}");
+    let mut knobs = NO_THINK_KNOB.lock();
+    knobs.retain(|(m, _)| m != model);
+    knobs.push((model.to_string(), next));
+    next
 }
 
 /// Gemini's main Flash model is out of free quota until this time.
@@ -871,16 +950,16 @@ fn ask_gemini_as(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Res
     // Flash models "think" first by default — seconds (or a timeout) before
     // a word of the plan. Reading a screenshot and picking a click doesn't
     // need it. (Pro models can't switch it off.)
-    let knob = gemini_takes_no_think(&cfg.model);
-    if knob {
-        body["generationConfig"]["thinkingConfig"] = json!({ "thinkingBudget": 0 });
+    let knob = gemini_no_think(&cfg.model);
+    if let Some(config) = knob.thinking_config() {
+        body["generationConfig"]["thinkingConfig"] = config;
     }
 
     let res = client()?.post(url).header("x-goog-api-key", key).json(&body).send()?;
     let status = res.status();
     let value: Value = res.json()?;
-    if status.as_u16() == 400 && knob {
-        gemini_refused_no_think(&cfg.model);
+    if status.as_u16() == 400 && knob != NoThink::Neither {
+        gemini_refused_no_think(&cfg.model, knob);
         return ask_gemini_as(cfg, req, style);
     }
     // Out of free quota (429) or overloaded (503) on the main Flash model:

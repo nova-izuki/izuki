@@ -130,7 +130,7 @@ fn gemini(base: &str, key: &str, wav: &[u8], mime: &str) -> Result<String> {
     // uses the main one).
     let model = crate::vision::GEMINI_LITE;
     let url = format!("{base}/v1beta/models/{model}:generateContent");
-    let knob = crate::vision::gemini_takes_no_think(model);
+    let knob = crate::vision::gemini_no_think(model);
     let mut body = json!({
         "contents": [{
             "role": "user",
@@ -141,14 +141,14 @@ fn gemini(base: &str, key: &str, wav: &[u8], mime: &str) -> Result<String> {
         }],
         "generationConfig": { "temperature": 0, "maxOutputTokens": 200 }
     });
-    if knob {
-        body["generationConfig"]["thinkingConfig"] = json!({ "thinkingBudget": 0 });
+    if let Some(config) = knob.thinking_config() {
+        body["generationConfig"]["thinkingConfig"] = config;
     }
     let res = client()?.post(url).header("x-goog-api-key", key).json(&body).send()?;
     let status = res.status();
     let value: Value = res.json()?;
-    if status.as_u16() == 400 && knob {
-        crate::vision::gemini_refused_no_think(model);
+    if status.as_u16() == 400 && knob != crate::vision::NoThink::Neither {
+        crate::vision::gemini_refused_no_think(model, knob);
         return gemini(base, key, wav, mime);
     }
     if !status.is_success() {
