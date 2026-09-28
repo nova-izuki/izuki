@@ -3,6 +3,7 @@
 pub mod android;
 pub mod apps;
 pub mod browser;
+pub mod bugs;
 pub mod automation;
 pub mod call;
 pub mod brain;
@@ -144,11 +145,16 @@ pub fn tls_ready() {
 
 pub fn run() {
     tls_ready();
+    // Every log line to %APPDATA%\Izuki\logs\izuki.log from here on, and
+    // crashes and errors reported (bugs.rs).
+    bugs::start();
+    eprintln!("[izuki] starting v{}", env!("CARGO_PKG_VERSION"));
     // Physical pixels everywhere, so a point drawn on the overlay is the same
     // point the mouse is later moved to.
     automation::make_dpi_aware();
 
     let store = state::init();
+    bugs::set_enabled(store.settings().send_bug_reports);
 
     tauri::Builder::default()
         // Voice model files for the webviews — see models.rs for why they
@@ -211,6 +217,9 @@ pub fn run() {
             commands::submit_draw,
             commands::submit_voice_command,
             commands::instant_command,
+            commands::report_bug,
+            commands::bug_reports_ready,
+            commands::open_log_folder,
             commands::answer_help,
             commands::set_busy,
             commands::cloud_ears_ready,

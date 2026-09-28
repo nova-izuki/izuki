@@ -11,6 +11,12 @@ pub fn init() -> Arc<Store> {
     STORE.get_or_init(|| Arc::new(Store::load())).clone()
 }
 
+/// The store if it's been loaded — for code that can run before `init`
+/// (a crash report at startup).
+pub fn try_store() -> Option<Arc<Store>> {
+    STORE.get().cloned()
+}
+
 /// Panics only if called before `init`, which `run()` does first thing.
 pub fn store() -> Arc<Store> {
     STORE

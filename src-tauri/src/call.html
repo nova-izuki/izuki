@@ -372,13 +372,51 @@
       speechSynthesis.speak(u);
     }
   };
-  const speakWithPhone = (text) => new Promise((done) => {
-    if (!("speechSynthesis" in window) || !text) return done();
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text.replace(/[*_#`]/g, ""));
-    u.rate = 1.05;
-    u.onend = done; u.onerror = done;
-    speechSynthesis.speak(u);
+  /** Something went wrong on the phone: into the PC's log and bug report (bugs.rs). */
+  const bug = (message) => {
+    try {
+      fetch("bug", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: String(message).slice(0, 1500), phone: navigator.userAgent.slice(0, 120) }) }).catch(() => {});
+    } catch {}
+  };
+  addEventListener("error", (e) => e.message && bug(`${e.message} @ ${e.lineno}:${e.colno}`));
+  addEventListener("unhandledrejection", (e) => bug("unhandled: " + ((e.reason && (e.reason.stack || e.reason.message)) || e.reason)));
+
+  /** Stops whatever is being said right now, and lets its promise finish. */
+  let stopSound = null;
+  // The phone's own voice, done safely. A sentence nothing holds on to gets
+  // thrown away by Chrome mid-way — its "finished" never comes, and the call
+  // waiting for it went silent and deaf after the first reply. Chrome also
+  // drops speech started right after cancel(), and cuts long speech off
+  // after ~15 s. So: hold it, a sentence at a time, and never wait longer
+  // than it could take.
+  let utterance = null;
+  const speakWithPhone = (text) => new Promise((resolve) => {
+    if (!("speechSynthesis" in window) || !text) return resolve();
+    const synth = speechSynthesis;
+    const words = text.replace(/[*_#`]/g, "");
+    const pieces = (words.match(/[^.!?…]+[.!?…]*\s*/g) || [words]).map((s) => s.trim()).filter(Boolean);
+    let i = 0, finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(guard);
+      if (stopSound === finish) stopSound = null;
+      resolve();
+    };
+    const guard = setTimeout(() => { bug("phone voice never finished"); try { synth.cancel(); } catch {} finish(); }, 5000 + words.length * 110);
+    stopSound = () => { try { synth.cancel(); } catch {} finish(); };
+    const next = () => {
+      if (finished) return;
+      if (i >= pieces.length) return finish();
+      const u = (utterance = new SpeechSynthesisUtterance(pieces[i++]));
+      u.rate = 1.05;
+      u.onend = next;
+      u.onerror = (e) => (e.error === "interrupted" || e.error === "canceled" ? finish() : next());
+      synth.speak(u);
+    };
+    if (synth.speaking || synth.pending) synth.cancel();
+    setTimeout(next, 80);
   });
   /** "Talk over Izuki" on: your voice (much louder than Izuki's own echo) cuts it off. */
   function watchBarge() {
@@ -398,20 +436,49 @@
       } else loudMs = Math.max(0, loudMs - 60);
     }, 60);
   }
-  const say = (text, audio, type) => new Promise((done) => {
-    if (!text) return done();
-    if (muted) return done();
+  // A reply's audio — and never waited on for longer than it lasts: a
+  // player that never says "ended" must not stop the call listening.
+  const say = (text, audio, type) => new Promise((resolve) => {
+    if (!text) return resolve();
+    if (muted) return resolve();
     setMode("speaking", bargeOn ? "Just talk to cut me off" : "Tap the orb to stop me · hold it to talk");
     watchBarge();
-    if (!audio) return speakWithPhone(text).then(done);
-    player.onended = () => done();
-    player.onerror = () => speakWithPhone(text).then(done);
+    if (!audio) return speakWithPhone(text).then(resolve);
+    let finished = false, guard = 0;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(guard);
+      player.onended = player.onerror = player.onloadedmetadata = null;
+      if (stopSound === finish) stopSound = null;
+      resolve();
+    };
+    const fallBack = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(guard);
+      if (stopSound === finish) stopSound = null;
+      speakWithPhone(text).then(resolve);
+    };
+    guard = setTimeout(() => { bug("reply audio never finished"); try { player.pause(); } catch {} finish(); }, 90000);
+    player.onloadedmetadata = () => {
+      if (isFinite(player.duration) && player.duration > 0) {
+        clearTimeout(guard);
+        guard = setTimeout(() => { try { player.pause(); } catch {} finish(); }, player.duration * 1000 + 3000);
+      }
+    };
+    player.onended = finish;
+    player.onerror = fallBack;
+    stopSound = () => { try { player.pause(); } catch {} finish(); };
     player.src = "data:" + (type || "audio/wav") + ";base64," + audio;
-    player.play().catch(() => speakWithPhone(text).then(done));
+    player.play().catch(fallBack);
   });
   const hush = () => {
     clearInterval(bargeTimer);
-    try { player.pause(); if (player.onended) player.onended(); } catch {}
+    const stop = stopSound;
+    stopSound = null;
+    try { stop && stop(); } catch {}
+    try { player.pause(); } catch {}
     if ("speechSynthesis" in window) speechSynthesis.cancel();
   };
 

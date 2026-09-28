@@ -61,6 +61,7 @@ pub fn get_settings() -> Settings {
 pub fn save_settings(app: AppHandle, settings: Settings) -> Settings {
     let previous = state::store().settings();
     let saved = state::store().set_settings(settings);
+    crate::bugs::set_enabled(saved.send_bug_reports);
 
     if saved.backdrop != previous.backdrop {
         if let Some(w) = app.get_webview_window(overlay::CONFIG_LABEL) {
@@ -307,6 +308,28 @@ pub async fn submit_voice_command(app: AppHandle, prompt: String) -> VisionPlan 
     blocking(move || brain::submit_voice_command(&app, &state::store(), prompt))
         .await
         .unwrap_or_else(failed_plan)
+}
+
+/// "Report a problem": the user's words and Izuki's recent log (cleaned of
+/// keys and personal details) go to the error tracker. `true` if it was sent;
+/// `false` means it's only in the log file for now (bugs.rs).
+#[tauri::command]
+pub async fn report_bug(what: String) -> bool {
+    blocking(move || crate::bugs::user_report(&what)).await.unwrap_or(false)
+}
+
+/// Whether error reports can be sent (the tracker is set up).
+#[tauri::command]
+pub fn bug_reports_ready() -> bool {
+    crate::bugs::can_send()
+}
+
+/// Open the folder with Izuki's log files in Explorer.
+#[tauri::command]
+pub fn open_log_folder() -> R<()> {
+    let dir = crate::bugs::log_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    std::process::Command::new("explorer").arg(&dir).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// "Scroll down", "louder", "next song"…: done at once with no AI, and the

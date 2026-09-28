@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<meta name="theme-color" content="#0e0e13">
+<meta name="theme-color" content="#0b0a14">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -13,182 +13,196 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>Izuki</title>
+<!-- The bug catcher first, so it hears about anything that goes wrong below. -->
+<script src="../shared/bugs.js" data-app="phone" data-version="2.0"></script>
+<script src="orb.js"></script>
 <style>
   :root {
     color-scheme: dark;
-    --ground: #0e0e13;
-    --raised: rgba(255, 255, 255, 0.06);
-    --line: rgba(255, 255, 255, 0.09);
-    --ink: #ecebf5;
-    --muted: #9ea0ad;
-    --violet: #7c5cff;
-    --teal: #4ecdc4;
+    --ground: #0b0a14;
+    --ink: #f4f1fb;
+    --muted: #aaa6bf;
+    --soft: rgba(255, 255, 255, 0.06);
+    --softer: rgba(255, 255, 255, 0.035);
+    --line: rgba(255, 255, 255, 0.1);
+    --violet: #8b6cff;
+    --teal: #3fd7c9;
+    --pink: #ff6fae;
     --danger: #ff6b81;
+    --grad: linear-gradient(135deg, #8b6cff, #3fd7c9);
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { height: 100%; margin: 0; }
+  html, body { height: 100%; margin: 0; overflow-x: hidden; }
   body {
     background:
-      radial-gradient(120% 60% at 0% -10%, rgba(124, 92, 255, 0.26), transparent 60%),
-      radial-gradient(110% 55% at 110% 110%, rgba(78, 205, 196, 0.2), transparent 60%),
+      radial-gradient(90% 50% at 50% -10%, rgba(139, 108, 255, 0.28), transparent 65%),
+      radial-gradient(80% 45% at 100% 105%, rgba(63, 215, 201, 0.14), transparent 60%),
+      radial-gradient(70% 40% at 0% 100%, rgba(255, 111, 174, 0.1), transparent 60%),
       var(--ground);
     color: var(--ink);
-    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    /* Rounded letters on iPhones: friendlier than a plain system face. */
+    font: 16px/1.5 ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     overscroll-behavior: none;
   }
-  button, input, textarea { font: inherit; color: inherit; }
+  button, input, textarea, select { font: inherit; color: inherit; }
   button { cursor: pointer; }
   :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
   a { color: var(--teal); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
   .app { height: 100%; display: flex; flex-direction: column; padding: var(--safe-top) 16px 0; max-width: 640px; margin: 0 auto; }
-  header { display: flex; align-items: center; justify-content: space-between; padding-block: 12px 8px; }
-  .brand { font-size: 17px; font-weight: 700; letter-spacing: 0.14em;
-    background: linear-gradient(90deg, #a78bfa, var(--teal)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .icon-btn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--raised); display: grid; place-items: center; }
-  .icon-btn svg { width: 18px; height: 18px; }
 
-  #log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-block: 8px 12px; }
-  .msg { max-width: 86%; padding: 9px 13px; border-radius: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .me { align-self: flex-end; background: linear-gradient(135deg, rgba(124, 92, 255, 0.9), rgba(78, 205, 196, 0.75)); color: #fff; border-bottom-right-radius: 6px; }
-  .izuki { align-self: flex-start; background: var(--raised); border: 1px solid var(--line); border-bottom-left-radius: 6px; }
-  .izuki.error { color: var(--danger); }
+  /* top: who you're talking to */
+  header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-block: 12px 6px; }
+  .who { display: flex; align-items: center; gap: 10px; border: 0; background: none; padding: 4px 6px 4px 0; text-align: left; min-width: 0; }
+  .avatar { width: 38px; height: 38px; flex: none; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: #fff;
+    background: var(--grad); box-shadow: 0 6px 18px rgba(139, 108, 255, 0.35); }
+  .who-text { min-width: 0; }
+  .who-text b { display: block; font-size: 16px; line-height: 1.2; }
+  .who-text span { display: block; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tools { display: flex; gap: 8px; align-items: center; flex: none; }
+  .icon-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--soft); display: grid; place-items: center; }
+  .icon-btn svg { width: 19px; height: 19px; }
+  .icon-btn.on { background: var(--teal); color: var(--ground); border-color: transparent; }
+  .call-btn { display: flex; align-items: center; gap: 7px; height: 40px; padding: 0 15px; border-radius: 999px; border: 0;
+    background: var(--grad); color: #fff; font-weight: 700; font-size: 14.5px; box-shadow: 0 6px 20px rgba(63, 215, 201, 0.25); }
+  .call-btn svg { width: 17px; height: 17px; }
+
+  /* the conversation */
+  #log { flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 10px; padding-block: 8px 14px; }
+  .msg { max-width: 86%; padding: 10px 15px; border-radius: 22px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 16px; }
+  .me { align-self: flex-end; background: var(--grad); color: #fff; border-bottom-right-radius: 8px; box-shadow: 0 6px 18px rgba(139, 108, 255, 0.22); }
+  .izuki { align-self: flex-start; background: var(--soft); border: 1px solid var(--line); border-bottom-left-radius: 8px; }
+  .izuki.error { color: #ffc2cc; border-color: rgba(255, 107, 129, 0.35); background: rgba(255, 107, 129, 0.08); }
   .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-  .chip { border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); border-radius: 999px; padding: 6px 12px; font-size: 13px; text-decoration: none; color: var(--ink); }
-  .chip.primary { background: var(--teal); color: var(--ground); border-color: transparent; font-weight: 600; }
-  .welcome { margin: auto 0; text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; padding-block: 16px; }
-  .welcome h1 { margin: 0; font-size: 22px; text-wrap: balance; }
-  .welcome p { margin: 0; color: var(--muted); max-width: 34ch; }
+  .chip { border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); border-radius: 999px; padding: 7px 13px; font-size: 13.5px; text-decoration: none; color: var(--ink); white-space: normal; }
+  .chip.primary { background: var(--teal); color: var(--ground); border-color: transparent; font-weight: 700; }
+  .msg .thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .msg .thumbs img { width: 72px; height: 72px; object-fit: cover; border-radius: 12px; }
 
-  footer { padding-block: 8px calc(12px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 10px; align-items: center; }
-  #status { color: var(--muted); font-size: 13px; min-height: 1.3em; text-align: center; }
-  .bar { display: flex; gap: 8px; width: 100%; align-items: flex-end; }
-  #orb {
-    width: 52px; height: 52px; flex: none; border-radius: 50%; border: 0;
-    background: radial-gradient(circle at 35% 30%, #b8a6ff, var(--violet) 45%, #2b6f8f 100%);
-    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45); display: grid; place-items: center; color: #fff;
-  }
-  #orb svg { width: 22px; height: 22px; }
-  #orb.listening { background: radial-gradient(circle at 35% 30%, #a7fff6, var(--teal) 45%, #1d5e6b 100%); animation: pulse 1.3s ease-in-out infinite; }
-  #orb.thinking { animation: spin 1.2s linear infinite; }
-  #orb.speaking { animation: pulse 0.9s ease-in-out infinite; }
-  @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
-  @keyframes spin { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { #orb { animation: none !important; } }
-  #text { flex: 1; min-width: 0; max-height: 120px; resize: none; border-radius: 22px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.35); padding: 13px 16px; }
-  #send { flex: none; height: 52px; padding: 0 18px; border: 0; border-radius: 26px; background: var(--violet); color: #fff; font-weight: 600; }
-  #send[disabled] { opacity: 0.4; }
+  /* home */
+  .welcome { margin: auto 0; text-align: center; display: flex; flex-direction: column; gap: 10px; align-items: center; padding-block: 8px 12px; }
+  .hero-orb { width: min(60vw, 230px, 30vh); aspect-ratio: 1; border: 0; padding: 0; background: none; border-radius: 50%; }
+  .hero-orb canvas, #live-orb canvas { width: 100%; height: 100%; display: block; }
+  .hello { font-size: 14px; color: var(--muted); margin: 0; }
+  .welcome h1 { margin: 0; font-size: 25px; line-height: 1.2; letter-spacing: -0.01em; text-wrap: balance; }
+  .welcome .sub { margin: 0; color: var(--muted); max-width: 32ch; }
+  .suggest { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; max-width: 420px; margin-top: 6px; }
+  .idea { text-align: left; border: 1px solid var(--line); background: var(--softer); border-radius: 20px; padding: 12px 13px; display: flex; gap: 10px; align-items: center; font-size: 14.5px; line-height: 1.25; }
+  .idea i { font-style: normal; font-size: 22px; }
+  .idea small { display: block; color: var(--muted); font-size: 12px; }
+  .people { display: flex; gap: 14px; overflow-x: auto; max-width: 100%; padding: 6px 2px 2px; scrollbar-width: none; }
+  .person { border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 12.5px; color: var(--muted); flex: none; }
+  .person .face { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 18px; color: #fff;
+    background: linear-gradient(135deg, #3b3553, #24212f); border: 2px solid transparent; }
+  .person.on { color: var(--ink); font-weight: 700; }
+  .person.on .face { background: var(--grad); border-color: rgba(255, 255, 255, 0.55); }
 
-  /* settings / setup sheet */
-  .sheet { position: fixed; inset: 0; background: rgba(8, 8, 12, 0.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: flex; align-items: flex-end; justify-content: center; z-index: 10; }
-  .sheet[hidden] { display: none; }
-  .panel { width: 100%; max-width: 640px; max-height: calc(100% - var(--safe-top) - 20px); overflow-y: auto; background: #16161d; border: 1px solid var(--line); border-radius: 22px 22px 0 0; padding: 18px 16px calc(20px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 18px; }
-  .panel h2 { margin: 0; font-size: 18px; }
-  .panel h3 { margin: 0 0 6px; font-size: 15px; }
-  .panel p, .panel li { color: var(--muted); font-size: 14px; margin: 0; }
-  .panel ol { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
-  .panel b { color: var(--ink); }
-  .field { display: flex; flex-direction: column; gap: 6px; }
-  .field label { font-size: 13px; font-weight: 600; }
-  .field input, .field select { width: 100%; border-radius: 14px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.35); padding: 12px 14px; color: inherit; font: inherit; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .btn { border: 0; border-radius: 999px; padding: 11px 18px; background: var(--violet); color: #fff; font-weight: 600; }
-  .btn.ghost { background: var(--raised); border: 1px solid var(--line); color: var(--ink); font-weight: 500; }
-  .btn.danger { background: none; border: 1px solid rgba(255, 107, 129, 0.4); color: var(--danger); font-weight: 500; }
-  .note { font-size: 12.5px; color: var(--muted); }
-  .ok { color: var(--teal); font-size: 13px; }
-  .bad { color: var(--danger); font-size: 13px; }
-  .mem { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
-  .mem button { border: 0; background: none; color: var(--muted); padding: 4px 8px; }
-  code { background: rgba(255, 255, 255, 0.08); padding: 1px 6px; border-radius: 6px; font-size: 13px; overflow-wrap: anywhere; }
+  /* first run: one free key, two steps */
+  .setup { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 10px; margin-top: 8px; text-align: left; }
+  .step { display: flex; align-items: center; gap: 12px; width: 100%; border: 1px solid var(--line); background: var(--soft); color: var(--ink);
+    border-radius: 20px; padding: 14px; text-decoration: none; text-align: left; }
+  .step .n { width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: var(--grad); color: #fff; }
+  .step b { display: block; font-size: 16px; }
+  .step small { display: block; color: var(--muted); font-size: 12.5px; }
+  .step .go { margin-left: auto; font-size: 18px; }
+  .setup input { width: 100%; border-radius: 16px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.35); padding: 13px 15px; }
+  .linkish { border: 0; background: none; color: var(--muted); text-decoration: underline; font-size: 13.5px; align-self: center; padding: 6px; }
 
-  /* a slow aurora behind everything — alive, never distracting */
-  .aurora { position: fixed; inset: -20%; z-index: -1; pointer-events: none; filter: blur(60px); opacity: 0.55; }
-  .aurora i { position: absolute; width: 55vmax; height: 55vmax; border-radius: 50%; mix-blend-mode: screen; animation: drift 22s ease-in-out infinite alternate; }
-  .aurora i:nth-child(1) { background: #6d4aff; left: -10%; top: -10%; }
-  .aurora i:nth-child(2) { background: #16c2b5; right: -15%; bottom: -5%; animation-duration: 27s; animation-delay: -6s; }
-  .aurora i:nth-child(3) { background: #ff5fa2; left: 30%; top: 40%; width: 35vmax; height: 35vmax; opacity: 0.45; animation-duration: 31s; animation-delay: -12s; }
-  @keyframes drift { from { transform: translate(0, 0) scale(1); } to { transform: translate(8vmax, 6vmax) scale(1.15); } }
-
-  /* the liquid orb (home and the live call) */
-  .liquid { position: relative; border-radius: 50%; isolation: isolate; cursor: pointer; border: 0; padding: 0;
-    background: radial-gradient(circle at 32% 28%, #ffffffcc, transparent 18%), radial-gradient(circle at 50% 50%, #7c5cff, #1b9aaa 60%, #0e0e13 100%);
-    box-shadow: 0 0 60px rgba(124, 92, 255, 0.45), inset 0 0 40px rgba(255, 255, 255, 0.12); animation: breathe 4.5s ease-in-out infinite; }
-  .liquid::before, .liquid::after { content: ""; position: absolute; inset: 6%; border-radius: 50%; mix-blend-mode: screen; filter: blur(8px); }
-  .liquid::before { background: conic-gradient(from 0deg, #ff5fa2, #7c5cff, #4ecdc4, #ffd166, #ff5fa2); animation: swirl 7s linear infinite; opacity: 0.75; }
-  .liquid::after { background: conic-gradient(from 180deg, transparent, #4ecdc4, transparent 60%); animation: swirl 4.5s linear infinite reverse; opacity: 0.6; }
-  .liquid.listening { animation: breathe 1.2s ease-in-out infinite; box-shadow: 0 0 80px rgba(78, 205, 196, 0.6); }
-  .liquid.thinking::before { animation-duration: 1.6s; }
-  .liquid.speaking { animation: talk 0.5s ease-in-out infinite; box-shadow: 0 0 90px rgba(255, 95, 162, 0.5); }
-  @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
-  @keyframes talk { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.09); } 70% { transform: scale(0.98); } }
-  @keyframes swirl { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .liquid, .liquid::before, .liquid::after, .aurora i { animation: none !important; } }
-
-  .hero { width: 132px; height: 132px; }
-  .hello { font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin: 0; }
-  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; max-width: 420px; }
-  .card { text-align: left; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    border-radius: 18px; padding: 12px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
-  .card b { font-size: 20px; }
-  .card span { color: var(--muted); font-size: 12px; }
-  .card.live { grid-column: span 2; flex-direction: row; align-items: center; gap: 12px;
-    background: linear-gradient(135deg, rgba(124, 92, 255, 0.35), rgba(78, 205, 196, 0.25)); }
-  .card.live b { font-size: 26px; }
-  .people { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
-  .person { border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); border-radius: 999px; padding: 6px 12px; font-size: 13px; }
-  .person.on { background: linear-gradient(135deg, var(--violet), var(--teal)); border-color: transparent; color: #fff; font-weight: 600; }
-  .icon-btn.on { background: var(--teal); color: var(--ground); }
-  header .tools { display: flex; gap: 8px; }
-
-  /* attachments */
-  #clip { flex: none; width: 44px; height: 52px; border: 1px solid var(--line); border-radius: 22px; background: var(--raised); display: grid; place-items: center; }
-  #clip svg { width: 20px; height: 20px; }
+  /* typing */
+  footer { padding-block: 6px calc(12px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  #status { color: var(--muted); font-size: 13.5px; min-height: 1.3em; text-align: center; }
+  .composer { display: flex; gap: 6px; width: 100%; align-items: flex-end; padding: 6px; border-radius: 28px; border: 1px solid var(--line);
+    background: rgba(20, 18, 32, 0.8); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  #clip { flex: none; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--soft); display: grid; place-items: center; }
+  #clip svg { width: 21px; height: 21px; }
+  #text { flex: 1; min-width: 0; max-height: 120px; resize: none; border: 0; background: none; padding: 10px 4px; outline: none; line-height: 1.4; }
+  #text::placeholder { color: #7f7b95; }
+  #send { flex: none; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--grad); color: #fff; display: grid; place-items: center; }
+  #send svg { width: 20px; height: 20px; }
+  #send:disabled { display: none; }
+  /* The talk button is a tiny live orb — it becomes Send while you type. */
+  #orb { position: relative; flex: none; width: 44px; height: 44px; border: 0; padding: 0; border-radius: 50%; background: none; color: #fff; }
+  #orb canvas { position: absolute; inset: -6px; width: 56px; height: 56px; }
+  #orb svg { position: relative; width: 19px; height: 19px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); }
+  #send:not(:disabled) + #orb { display: none; }
   #attached { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; }
   #attached:empty { display: none; }
-  .att { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.3); border-radius: 12px; padding: 4px 6px 4px 4px; font-size: 12.5px; max-width: 100%; }
-  .att img { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; }
-  .att .ext { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; background: var(--raised); font-size: 16px; }
+  .att { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.3); border-radius: 14px; padding: 4px 6px 4px 4px; font-size: 12.5px; max-width: 100%; }
+  .att img { width: 34px; height: 34px; border-radius: 9px; object-fit: cover; }
+  .att .ext { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--soft); font-size: 16px; }
   .att .nm { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .att button { border: 0; background: none; color: var(--muted); padding: 2px 6px; }
-  .msg .thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-  .msg .thumbs img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; }
 
   /* the live call */
   #live { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-    padding: calc(var(--safe-top) + 18px) 20px calc(var(--safe-bottom) + 24px); background: rgba(8, 8, 14, 0.82); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
+    padding: calc(var(--safe-top) + 20px) 20px calc(var(--safe-bottom) + 26px);
+    background: radial-gradient(80% 50% at 50% 40%, rgba(60, 40, 120, 0.55), transparent 70%), rgba(7, 6, 14, 0.94);
+    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
   #live[hidden] { display: none; }
-  #live .who { text-align: center; }
-  #live .who b { display: block; font-size: 20px; }
-  #live .who span { color: var(--muted); font-size: 13px; }
-  #live-orb { width: min(64vw, 280px); height: min(64vw, 280px); }
-  #live-status { color: var(--muted); font-size: 14px; min-height: 1.4em; text-align: center; }
-  .lines { width: 100%; max-width: 520px; text-align: center; display: flex; flex-direction: column; gap: 10px; min-height: 5.5em; }
-  #live-heard { font-size: 17px; color: var(--ink); }
-  #live-said { font-size: 15px; color: #cfc6ff; max-height: 7.5em; overflow: hidden; }
-  .live-bar { display: flex; gap: 18px; align-items: center; }
-  .round { width: 64px; height: 64px; border-radius: 50%; border: 1px solid var(--line); background: var(--raised); display: grid; place-items: center; }
-  .round svg { width: 24px; height: 24px; }
-  .round.end { background: #ff4d6a; border-color: transparent; color: #fff; width: 72px; height: 72px; }
+  .live-top { text-align: center; }
+  .live-top b { display: block; font-size: 22px; }
+  .live-top span { color: var(--muted); font-size: 13.5px; }
+  #live-orb { width: min(78vw, 330px); aspect-ratio: 1; border: 0; padding: 0; background: none; border-radius: 50%; }
+  .lines { width: 100%; max-width: 520px; text-align: center; display: flex; flex-direction: column; gap: 10px; min-height: 7em; }
+  #live-status { color: var(--muted); font-size: 14.5px; min-height: 1.4em; }
+  #live-heard { font-size: 20px; line-height: 1.35; color: var(--ink); font-weight: 600; }
+  #live-said { font-size: 16px; color: #d8cfff; max-height: 7.5em; overflow: hidden; }
+  .live-bar { display: flex; gap: 26px; align-items: flex-start; }
+  .round { display: flex; flex-direction: column; align-items: center; gap: 7px; border: 0; background: none; color: var(--ink); font-size: 13px; }
+  .round i { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, 0.1); border: 1px solid var(--line); }
+  .round svg { width: 25px; height: 25px; }
+  .round[aria-pressed="true"] i { background: #fff; color: #111; }
+  .round.end i { background: #ff4d6a; border-color: transparent; color: #fff; width: 72px; height: 72px; }
+
+  /* settings */
+  .sheet { position: fixed; inset: 0; background: rgba(8, 8, 12, 0.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: flex; align-items: flex-end; justify-content: center; z-index: 10; }
+  .sheet[hidden] { display: none; }
+  .panel { width: 100%; max-width: 640px; min-width: 0; max-height: calc(100% - var(--safe-top) - 16px); overflow-y: auto; overflow-x: hidden; background: #151320; border: 1px solid var(--line);
+    border-radius: 26px 26px 0 0; padding: 18px 18px calc(22px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 14px; }
+  .panel > * { min-width: 0; }
+  .panel h2 { margin: 0; font-size: 20px; }
+  .panel section { background: var(--softer); border: 1px solid var(--line); border-radius: 20px; padding: 14px; }
+  .panel h3 { margin: 0 0 6px; font-size: 16px; }
+  .panel p, .panel li { color: var(--muted); font-size: 14px; margin: 0; overflow-wrap: anywhere; }
+  .panel ol { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+  .panel b { color: var(--ink); }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 13px; font-weight: 700; }
+  .field input, .field select, .panel textarea { width: 100%; border-radius: 14px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.35); padding: 12px 14px; color: inherit; font: inherit; }
+  .panel textarea { resize: vertical; min-height: 64px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .btn { border: 0; border-radius: 999px; padding: 11px 18px; background: var(--grad); color: #fff; font-weight: 700; }
+  .btn.ghost { background: var(--soft); border: 1px solid var(--line); color: var(--ink); font-weight: 600; }
+  .btn.danger { background: none; border: 1px solid rgba(255, 107, 129, 0.4); color: var(--danger); font-weight: 600; }
+  .note { font-size: 12.5px; color: var(--muted); }
+  .ok { color: var(--teal); font-size: 13.5px; }
+  .bad { color: var(--danger); font-size: 13.5px; }
+  .mem { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .mem button { border: 0; background: none; color: var(--muted); padding: 4px 8px; }
+  code { background: rgba(255, 255, 255, 0.08); padding: 1px 6px; border-radius: 6px; font-size: 13px; overflow-wrap: anywhere; word-break: break-all; }
 </style>
 </head>
 <body>
-<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
 <div class="app">
   <header>
-    <span class="brand">IZUKI</span>
+    <button class="who" id="who" type="button" aria-label="Change who your Izuki is">
+      <span class="avatar" id="who-face">N</span>
+      <span class="who-text"><b id="who-name">Nova</b><span id="who-sub">your Izuki</span></span>
+    </button>
     <span class="tools">
-    <button class="icon-btn" id="read-aloud" type="button" aria-label="Read replies aloud" title="Read replies aloud">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
-    </button>
-    <button class="icon-btn" id="go-live" type="button" aria-label="Talk live" title="Talk live">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>
-    </button>
-    <button class="icon-btn" id="open-settings" type="button" aria-label="Settings">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-    </button>
+      <button class="icon-btn" id="read-aloud" type="button" aria-label="Read replies aloud" title="Read replies aloud">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+      </button>
+      <button class="call-btn" id="go-live" type="button" aria-label="Call Izuki — talk hands-free">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>
+        Call
+      </button>
+      <button class="icon-btn" id="open-settings" type="button" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
     </span>
   </header>
 
@@ -197,59 +211,71 @@
   <footer>
     <div id="status"></div>
     <div id="attached"></div>
-    <form class="bar" id="form" autocomplete="off">
-      <button id="orb" type="button" aria-label="Talk to Izuki">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg>
-      </button>
+    <form class="composer" id="form" autocomplete="off">
       <button id="clip" type="button" aria-label="Add a photo, screenshot or file" title="Add a photo, screenshot or file">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
       </button>
       <input id="files" type="file" multiple hidden accept="image/*,application/pdf,audio/*,video/*,text/*,.txt,.md,.csv,.json,.html,.xml,.log">
-      <textarea id="text" rows="1" placeholder="Message Izuki" aria-label="Message Izuki"></textarea>
-      <button id="send" type="submit" disabled>Send</button>
+      <textarea id="text" rows="1" placeholder="Message Izuki…" aria-label="Message Izuki"></textarea>
+      <button id="send" type="submit" disabled aria-label="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+      <button id="orb" type="button" aria-label="Talk to Izuki">
+        <canvas id="orb-canvas" aria-hidden="true"></canvas>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg>
+      </button>
     </form>
   </footer>
 </div>
 
 <!-- the live call: hands-free, like a phone call with Izuki -->
-<div id="live" hidden role="dialog" aria-modal="true" aria-label="Talking live with Izuki">
-  <div class="who"><b id="live-name">Nova</b><span id="live-style">warm, quick, a little playful</span></div>
-  <button class="liquid" id="live-orb" type="button" aria-label="Tap to interrupt or finish talking"></button>
+<div id="live" hidden role="dialog" aria-modal="true" aria-label="Talking with Izuki">
+  <div class="live-top"><b id="live-name">Nova</b><span id="live-time">Calling…</span><span id="live-style" class="sr"></span></div>
+  <button id="live-orb" type="button" aria-label="Tap to cut in, or to say you're done"><canvas id="live-canvas" aria-hidden="true"></canvas></button>
   <div class="lines"><div id="live-status">Starting…</div><div id="live-heard"></div><div id="live-said"></div></div>
   <div class="live-bar">
-    <button class="round" id="live-mute" type="button" aria-pressed="false" aria-label="Mute Izuki's voice">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m23 9-6 6M17 9l6 6"/></svg>
+    <button class="round" id="live-mute" type="button" aria-pressed="false">
+      <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m23 9-6 6M17 9l6 6"/></svg></i>
+      <span id="live-mute-label">Mute</span>
     </button>
-    <button class="round" id="live-type" type="button" aria-label="Type instead">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+    <button class="round end" id="live-end" type="button">
+      <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></i>
+      <span>End</span>
     </button>
-    <button class="round end" id="live-end" type="button" aria-label="End the call">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    <button class="round" id="live-type" type="button">
+      <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></i>
+      <span>Type</span>
     </button>
   </div>
 </div>
 
-<!-- first run and settings -->
+<!-- settings -->
 <div class="sheet" id="sheet" hidden>
   <div class="panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
     <div class="row" style="justify-content: space-between">
-      <h2 id="sheet-title">Izuki settings</h2>
+      <h2 id="sheet-title">Settings</h2>
       <button class="btn ghost" id="close-settings" type="button">Done</button>
     </div>
 
     <section>
-      <h3>1. Your free AI key</h3>
+      <h3>Who's your Izuki?</h3>
+      <p>Pick a character — its own personality and voice, in chat and on calls.</p>
+      <div class="people" id="people-settings" style="margin-top: 8px"></div>
+    </section>
+
+    <section>
+      <h3>Your free AI key</h3>
       <p>Izuki runs on Google's free Gemini. Get a key (sign in → <b>Create API key</b>), copy it, and paste it here. It stays on this phone only.</p>
-      <div class="row" style="margin-top: 8px"><a class="chip" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">1 · Get a free Gemini key ↗</a><button class="chip" id="paste-key" type="button">2 · 📋 Paste my key</button></div>
+      <div class="row" style="margin-top: 10px"><a class="chip" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">1 · Get a free Gemini key ↗</a><button class="chip" id="paste-key" type="button">2 · 📋 Paste my key</button></div>
       <div class="field" style="margin-top: 10px">
         <label for="key">Gemini key</label>
         <input id="key" type="password" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false">
       </div>
-      <div class="row" style="margin-top: 8px"><button class="btn" id="save-key" type="button">Save and test</button><span id="key-result"></span></div>
+      <div class="row" style="margin-top: 10px"><button class="btn" id="save-key" type="button">Save and test</button><span id="key-result"></span></div>
     </section>
 
     <section>
-      <h3>Other free brains (optional)</h3>
+      <h3>Other free AIs (optional)</h3>
       <p>Gemini is best here — it can search the web and talk out loud. You can also let another free service answer (Groq is the fastest). Any one key is enough to start.</p>
       <div class="field" style="margin-top: 10px">
         <label for="brain">Who answers</label>
@@ -261,57 +287,50 @@
         </select>
       </div>
       <div id="brain-extra" hidden>
-        <div class="row" style="margin-top: 8px"><a class="chip" id="brain-get" href="#" target="_blank" rel="noopener">Get a free key ↗</a></div>
+        <div class="row" style="margin-top: 10px"><a class="chip" id="brain-get" href="#" target="_blank" rel="noopener">Get a free key ↗</a></div>
         <div class="field" style="margin-top: 10px">
           <label for="brain-key" id="brain-key-label">Key</label>
           <input id="brain-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
         </div>
-        <div class="row" style="margin-top: 8px"><button class="btn" id="save-brain" type="button">Save and test</button><span id="brain-result"></span></div>
+        <div class="row" style="margin-top: 10px"><button class="btn" id="save-brain" type="button">Save and test</button><span id="brain-result"></span></div>
       </div>
     </section>
 
     <section>
-      <h3>Who's your Izuki?</h3>
-      <p>Pick a character — its own personality and voice, in chat and on calls.</p>
-      <div class="people" id="people-settings" style="justify-content: flex-start; margin-top: 8px"></div>
-    </section>
-
-    <section>
-      <h3>2. Put Izuki on your home screen</h3>
+      <h3>Put Izuki on your home screen</h3>
       <div class="row" style="margin-bottom: 8px"><button class="btn" id="install" type="button">Install Izuki on this phone</button></div>
       <p><b>iPhone:</b> in Safari tap <b>Share</b> → <b>Add to Home Screen</b>. <b>Android:</b> Chrome menu ⋮ → <b>Add to Home screen</b>. It opens like an app.</p>
     </section>
 
     <section>
-      <h3>3. “Hey Siri, Izuki” (iPhone — optional, skip if you want)</h3>
-      <div style="border:1px solid rgba(78,205,196,.35);background:rgba(78,205,196,.08);border-radius:14px;padding:12px;margin-bottom:12px">
-        <b style="color:var(--teal)">✅ Easiest way (no setup):</b> just open the <b>Izuki</b> app from your home screen and tap the big orb — talk to it hands-free. That's it. You don't need anything below. 👇 The steps below are ONLY if you also want to trigger it by saying “Hey Siri”.
+      <h3>“Hey Siri, Izuki” (iPhone — optional)</h3>
+      <div style="border:1px solid rgba(63,215,201,.35);background:rgba(63,215,201,.08);border-radius:14px;padding:12px;margin-bottom:12px">
+        <b style="color:var(--teal)">✅ Easiest way (no setup):</b> just open the <b>Izuki</b> app from your home screen and tap <b>Call</b> — talk hands-free. You don't need anything below. The steps below are ONLY if you also want to start it by saying “Hey Siri”.
       </div>
-      <p class="note" style="margin-bottom:8px">Optional: this makes “Hey Siri, Izuki, what's the weather” open it with your words. It's a bit fiddly — do it slowly, once, and skip it if it's confusing:</p>
+      <p class="note" style="margin-bottom:8px">Optional: this makes “Hey Siri, Izuki, what's the weather” open it with your words. Do it slowly, once, and skip it if it's confusing:</p>
       <ol>
         <li>Open Apple's <b>Shortcuts</b> app (it's built into every iPhone).</li>
         <li>Tap the <b>+</b> at the top right → then <b>Add Action</b>.</li>
         <li>In the search box type <b>Dictate Text</b> → tap it. (This makes Siri listen to what you say.)</li>
         <li>Tap <b>+ Add Action</b> again → search <b>Text</b> → tap <b>Text</b>. In that text box, paste this exactly:<br>
-          <code id="siri-url" style="display:inline-block;margin-top:4px;word-break:break-all"></code>
+          <code id="siri-url" style="display:inline-block;margin-top:4px"></code>
           <button class="chip" id="copy-siri" type="button" style="margin-top:6px">📋 Copy this link</button>
         </li>
-        <li>Now, right after the link you pasted (no space), tap the little <b>“Dictated Text”</b> chip that appears above the keyboard — so the line reads <i>…?q=</i> then <b>Dictated Text</b>. (It joins your spoken words onto the link.)</li>
+        <li>Now, right after the link you pasted (no space), tap the little <b>“Dictated Text”</b> chip that appears above the keyboard — so the line reads <i>…?q=</i> then <b>Dictated Text</b>.</li>
         <li>Tap <b>+ Add Action</b> again → search <b>Open URLs</b> → tap it. Where it says “URL”, tap it and pick the <b>Text</b> from step 4–5.</li>
         <li>Tap the shortcut's name at the top → rename it to just <b>Izuki</b> → <b>Done</b>.</li>
       </ol>
-      <p class="note" style="margin-top:6px">Now say <b>“Hey Siri, Izuki”</b>, then what you want. Siri listens, then opens Izuki with your words. (Optional: Settings → Accessibility → Touch → <b>Back Tap</b> to run it by tapping the back of your phone.)</p>
-      <p class="note" style="margin-top:6px">Too fiddly? Skip it — just open the Izuki app from your home screen and tap the orb. Same result.</p>
+      <p class="note" style="margin-top:6px">Now say <b>“Hey Siri, Izuki”</b>, then what you want. (Optional: Settings → Accessibility → Touch → <b>Back Tap</b> to run it by tapping the back of your phone.)</p>
     </section>
 
     <section>
-      <h3>4. Link your PC (optional)</h3>
+      <h3>Link your PC (optional)</h3>
       <p>Have Izuki on a Windows PC? In the PC app turn on <b>Call Izuki from your phone</b> and paste its link here. Then “play lofi on my PC”, your email and calendar, and anything else on the PC work from here too.</p>
       <div class="field" style="margin-top: 10px">
         <label for="pc">PC link</label>
         <input id="pc" type="url" placeholder="https://….trycloudflare.com/…/" autocomplete="off" autocapitalize="off" spellcheck="false">
       </div>
-      <div class="row" style="margin-top: 8px"><button class="btn ghost" id="save-pc" type="button">Save link</button><span id="pc-result"></span></div>
+      <div class="row" style="margin-top: 10px"><button class="btn ghost" id="save-pc" type="button">Save link</button><span id="pc-result"></span></div>
     </section>
 
     <section>
@@ -319,11 +338,18 @@
       <div id="memories"></div>
     </section>
 
+    <section>
+      <h3>Something wrong?</h3>
+      <p>Tell us what happened — it goes to Izuki's maker with the details needed to fix it (never your keys or chats).</p>
+      <textarea id="bug-text" placeholder="e.g. On a call it answered once, then stopped listening" style="margin-top:10px"></textarea>
+      <div class="row" style="margin-top: 10px"><button class="btn" id="bug-send" type="button">Send report</button><span id="bug-result" class="note"></span></div>
+    </section>
+
     <section class="row">
       <button class="btn danger" id="clear-chat" type="button">Clear chat</button>
       <button class="btn danger" id="forget-all" type="button">Forget everything</button>
     </section>
-    <p class="note">Free and private: your key, chats, memories and reminders are kept on this phone. Messages go straight to the AI you picked (Google's Gemini unless you chose another) and to your own PC if linked — nowhere else.</p>
+    <p class="note">Free and private: your key, chats, memories and reminders are kept on this phone. Messages go straight to the AI you picked (Google's Gemini unless you chose another) and to your own PC if linked. Error reports carry what went wrong — never keys, chats or recordings.</p>
   </div>
 </div>
 
@@ -331,6 +357,10 @@
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
+  /** Report a problem to Izuki's bug catcher (../shared/bugs.js). */
+  const bug = (message, extra) => { try { window.izukiBugs?.report(message, extra); } catch {} };
+  /** Note what just happened, to go with a later report. */
+  const note = (message) => { try { window.izukiBugs?.crumb(message, "voice"); } catch {} };
 
   // ------------------------------------------------------------ storage
   const store = {
@@ -365,6 +395,8 @@
   let brainKeys = store.get("brainKeys", {});
   /** Can Izuki answer at all — a Gemini key, or the chosen brain's key? */
   const ready = () => !!key || (brain !== "gemini" && !!brainKeys[brain]);
+  /** Can Izuki turn a recording into words (Gemini hears it; Groq's Whisper does too)? */
+  const canHear = () => !!key || !!brainKeys.groq;
   let pc = store.get("pc", "");
   let history = store.get("history", []);   // [{role:"user"|"model", text}]
   let memories = store.get("memories", []); // ["User's name is Sam", …]
@@ -377,18 +409,24 @@
 
   // ------------------------------------------------------------ UI
   const log = $("log"), status = $("status"), orb = $("orb"), text = $("text"), send = $("send");
+  IzukiOrb.add($("orb-canvas"));
+  IzukiOrb.add($("live-canvas"));
+  /** What Izuki is doing: "", "listening", "thinking" or "speaking". */
+  let orbState = "";
+  const LIVE_LABEL = { listening: "Listening…", thinking: "Thinking…", speaking: "Tap the orb to cut in" };
   const setStatus = (s) => {
     status.textContent = s || "";
-    const ls = document.getElementById("live-status");
-    if (ls) ls.textContent = s || (talking ? "Listening…" : "");
+    $("live-status").textContent = s || LIVE_LABEL[orbState] || (talking ? "Listening…" : "");
   };
   const setOrb = (mode) => {
-    orb.className = mode || "";
-    const lo = document.getElementById("live-orb");
-    if (lo) lo.className = "liquid" + (mode ? " " + mode : "");
+    orbState = mode || "";
+    orb.className = orbState;
+    IzukiOrb.mode(orbState || "idle");
+    if (!status.textContent) $("live-status").textContent = LIVE_LABEL[orbState] || "";
   };
-  const liveHeard = (t) => { const e = document.getElementById("live-heard"); if (e) e.textContent = t || ""; };
-  const liveSaid = (t) => { const e = document.getElementById("live-said"); if (e) e.textContent = t || ""; };
+  const liveHeard = (t) => { $("live-heard").textContent = t || ""; };
+  const liveSaid = (t) => { $("live-said").textContent = t || ""; };
+  const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 
   function bubble(who, content, opts = {}) {
     log.querySelector(".welcome")?.remove();
@@ -415,83 +453,115 @@
     return "";
   }
 
+  /** Who you're talking to, at the top. */
+  function showWho() {
+    $("who-face").textContent = person().name[0];
+    $("who-name").textContent = person().name;
+    $("who-sub").textContent = ready() ? person().style : "your free AI friend";
+    text.placeholder = `Message ${person().name}…`;
+  }
+
   function peopleRow(box) {
     box.innerHTML = "";
     for (const p of PEOPLE) {
-      const b = document.createElement("button");
+      const b = el("button", "person" + (p.id === personId ? " on" : ""));
       b.type = "button";
-      b.className = "person" + (p.id === personId ? " on" : "");
-      b.textContent = p.name;
       b.title = p.style;
+      b.setAttribute("aria-pressed", String(p.id === personId));
+      b.append(el("span", "face", p.name[0]), el("span", "", p.name));
       b.onclick = () => {
         personId = p.id;
         store.set("person", personId);
         peopleRow(box);
+        showWho();
         if (!history.length) welcome();
       };
       box.appendChild(b);
     }
   }
 
+  function greeting() {
+    const hr = new Date().getHours();
+    return (hr < 5 ? "Up late" : hr < 12 ? "Good morning" : hr < 17 ? "Good afternoon" : hr < 22 ? "Good evening" : "Good night") + (userName() ? `, ${userName()}` : "") + " 👋";
+  }
+
   function welcome() {
     log.innerHTML = "";
-    const w = document.createElement("div");
-    w.className = "welcome";
-    const orbBtn = document.createElement("button");
-    orbBtn.className = "liquid hero";
+    const w = el("div", "welcome");
+    const orbBtn = el("button", "hero-orb");
     orbBtn.type = "button";
-    orbBtn.setAttribute("aria-label", "Talk live");
-    orbBtn.onclick = () => (ready() ? openLive() : openSettings());
-    const hr = new Date().getHours();
-    const hello = document.createElement("p");
-    hello.className = "hello";
-    hello.textContent = (hr < 5 ? "Up late" : hr < 12 ? "Good morning" : hr < 17 ? "Good afternoon" : hr < 22 ? "Good evening" : "Good night") + (userName() ? `, ${userName()}` : "");
-    const h = document.createElement("h1");
-    h.textContent = ready() ? `I'm ${person().name}. What are we doing today?` : "Hi, I'm Izuki 👋";
-    const p = document.createElement("p");
-    p.textContent = ready()
-      ? "Tap the orb to talk live, or type below. I remember you, set reminders, search the web — and run your PC and apps when it's linked."
-      : "Your free AI companion. Add one free key to start — it takes a minute.";
-    w.append(orbBtn, hello, h, p);
-    if (!ready()) {
-      const row = document.createElement("div");
-      row.className = "chip-row";
-      row.style.justifyContent = "center";
-      const b = document.createElement("button");
-      b.className = "chip primary"; b.type = "button"; b.textContent = "Set me up";
-      b.onclick = openSettings;
-      row.appendChild(b);
-      w.appendChild(row);
-    } else {
-      const people = document.createElement("div");
-      people.className = "people";
-      peopleRow(people);
-      const cards = document.createElement("div");
-      cards.className = "cards";
-      const card = (icon, title, sub, go, cls) => {
-        const c = document.createElement("button");
-        c.type = "button";
-        c.className = "card" + (cls ? " " + cls : "");
-        const i = document.createElement("b"); i.textContent = icon;
-        const t = document.createElement("div"); t.textContent = title;
-        const s2 = document.createElement("span"); s2.textContent = sub;
-        const text = document.createElement("div"); text.append(t, s2);
-        c.append(i, text);
-        c.onclick = go;
-        cards.appendChild(c);
-      };
-      card("🎙️", "Talk live", "Hands-free, like a call", openLive, "live");
-      card("☀️", "Plan my day", "What matters today", () => ask("Help me plan my day — ask me what I've got on if you need to."));
-      card("📰", "What's new?", "News, scores, trends", () => ask("What's the most interesting news today? Keep it short."));
-      card("📬", "My email", pc ? "Through your PC" : "Link your PC first", () => (pc ? ask("What's new in my email?") : openSettings()));
-      card("⏰", "Remind me", "In 20 min: stretch", () => ask("Remind me in 20 minutes to stretch"));
-      card("🧠", "Teach me", "Something cool, fast", () => ask("Teach me one genuinely surprising thing in under a minute."));
-      w.append(people, cards);
-    }
+    orbBtn.setAttribute("aria-label", ready() ? "Talk to Izuki" : "Set Izuki up");
+    const cv = el("canvas");
+    orbBtn.appendChild(cv);
+    orbBtn.onclick = () => (ready() ? openLive() : $("setup-key")?.focus());
+    w.append(
+      orbBtn,
+      el("p", "hello", greeting()),
+      el("h1", "", ready() ? `I'm ${person().name}. What are we doing today?` : "Hi, I'm Izuki"),
+      el("p", "sub", ready() ? "Tap me and just talk — or type below." : "Your free AI friend. I need one free key from Google to wake up — it takes about a minute."),
+    );
     log.appendChild(w);
+    IzukiOrb.add(cv);
+    if (!ready()) { w.appendChild(setupCard()); return; }
+
+    const ideas = el("div", "suggest");
+    const idea = (icon, title, sub, go) => {
+      const c = el("button", "idea");
+      c.type = "button";
+      const words = el("span");
+      words.append(el("span", "", title), el("small", "", sub));
+      c.append(el("i", "", icon), words);
+      c.onclick = go;
+      ideas.appendChild(c);
+    };
+    idea("☀️", "Plan my day", "What matters today", () => ask("Help me plan my day — ask me what I've got on if you need to."));
+    idea("📰", "What's new?", "News, scores, trends", () => ask("What's the most interesting news today? Keep it short."));
+    idea("⏰", "Remind me", "In 20 min: stretch", () => ask("Remind me in 20 minutes to stretch"));
+    idea("🧠", "Teach me", "Something cool, fast", () => ask("Teach me one genuinely surprising thing in under a minute."));
+    if (pc) {
+      idea("📬", "My email", "Through your PC", () => ask("What's new in my email?"));
+      idea("🖥️", "My PC", "Do something on it", () => text.focus());
+    }
+    const people = el("div", "people");
+    peopleRow(people);
+    w.append(ideas, people);
+  }
+
+  /** First run: one free key in two taps, right on the home screen. */
+  function setupCard() {
+    const box = el("div", "setup");
+    const get = el("a", "step");
+    get.id = "setup-get";
+    get.href = "https://aistudio.google.com/apikey";
+    get.target = "_blank"; get.rel = "noopener";
+    const t1 = el("span"); t1.append(el("b", "", "Get my free key"), el("small", "", "Sign in with Google → “Create API key” → copy it"));
+    get.append(el("span", "n", "1"), t1, el("span", "go", "↗"));
+    const paste = el("button", "step");
+    paste.type = "button";
+    const t2 = el("span"); t2.append(el("b", "", "Paste it here"), el("small", "", "Come back and tap — I'll check it works"));
+    paste.append(el("span", "n", "2"), t2, el("span", "go", "📋"));
+    const input = el("input");
+    input.id = "setup-key";
+    input.type = "password";
+    input.placeholder = "…or paste your key here (it starts with AIza)";
+    input.autocomplete = "off";
+    input.setAttribute("autocapitalize", "off");
+    input.spellcheck = false;
+    const out = el("p", "note");
+    const more = el("button", "linkish", "Use a different free AI instead");
+    more.type = "button";
+    more.onclick = openSettings;
+    paste.onclick = () => pasteKey(input, out);
+    input.addEventListener("paste", () => setTimeout(() => {
+      if (/^AIza[0-9A-Za-z_-]{35}$/.test(input.value.trim())) tryKey(input.value.trim(), out);
+    }, 50));
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") tryKey(input.value.trim(), out); });
+    box.append(get, paste, input, out, more);
+    return box;
   }
 
   function render() {
+    showWho();
     if (!history.length) return welcome();
     log.innerHTML = "";
     for (const m of history.slice(-30)) bubble(m.role === "user" ? "me" : "izuki", m.text);
@@ -520,6 +590,22 @@
     ].filter(Boolean).join("\n");
   }
 
+  /**
+   * A stall guard for a streamed answer: gives up when nothing has arrived
+   * for `ms`. Without it a connection that froze mid-answer left Izuki
+   * "thinking" for ever — and a call stopped listening.
+   */
+  function stallGuard(ms) {
+    const ctrl = new AbortController();
+    let timer = setTimeout(() => ctrl.abort(), ms);
+    return {
+      signal: ctrl.signal,
+      alive() { clearTimeout(timer); timer = setTimeout(() => ctrl.abort(), ms); },
+      done() { clearTimeout(timer); },
+    };
+  }
+  const TOO_SLOW = "My AI brain took too long to answer — check your internet and try again?";
+
   // Google's "always the current one" names: fixed ones get retired ("Gemini
   // 2.5 Flash is no longer available to new users").
   const MODEL = "gemini-flash-latest", LITE = "gemini-flash-lite-latest";
@@ -537,77 +623,97 @@
   async function gemini(contents, onText, model, bare) {
     model = model || (Date.now() < liteUntil ? LITE : MODEL);
     const tools = !bare && Date.now() > noToolsUntil;
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt() }] },
-        contents,
-        ...(tools ? { tools: WEB_TOOLS } : {}),
-        generationConfig: {
-          temperature: 0.7, maxOutputTokens: 900,
-          ...(noThinkKnob.includes(model) ? {} : { thinkingConfig: { thinkingBudget: 0 } }),
-        },
-      }),
-    });
-    if (res.status === 400 && !noThinkKnob.includes(model)) {
-      let why = "";
-      try { why = (await res.clone().json()).error?.message || ""; } catch {}
-      if (!/API key|tool|search|url|ground/i.test(why)) {
-        noThinkKnob.push(model);
-        store.set("noThinkKnob", noThinkKnob);
-        return gemini(contents, onText, model, bare);
+    const guard = stallGuard(30000);
+    try {
+      let res;
+      try {
+        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
+          method: "POST",
+          signal: guard.signal,
+          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt() }] },
+            contents,
+            ...(tools ? { tools: WEB_TOOLS } : {}),
+            generationConfig: {
+              temperature: 0.7, maxOutputTokens: 900,
+              ...(noThinkKnob.includes(model) ? {} : { thinkingConfig: { thinkingBudget: 0 } }),
+            },
+          }),
+        });
+      } catch (e) {
+        if (e.name === "AbortError") { bug("gemini: no answer in 30 s", { model }); throw new Error(TOO_SLOW); }
+        throw new Error("I can't reach my AI brain — are you online?");
       }
-    }
-    if (tools && res.status === 400) {
-      let why = "";
-      try { why = (await res.clone().json()).error?.message || ""; } catch {}
-      if (/tool|search|url|ground/i.test(why)) {
-        noToolsUntil = Date.now() + 86400000;
+      if (res.status === 400 && !noThinkKnob.includes(model)) {
+        let why = "";
+        try { why = (await res.clone().json()).error?.message || ""; } catch {}
+        if (!/API key|tool|search|url|ground/i.test(why)) {
+          noThinkKnob.push(model);
+          store.set("noThinkKnob", noThinkKnob);
+          return gemini(contents, onText, model, bare);
+        }
+      }
+      if (tools && res.status === 400) {
+        let why = "";
+        try { why = (await res.clone().json()).error?.message || ""; } catch {}
+        if (/tool|search|url|ground/i.test(why)) {
+          noToolsUntil = Date.now() + 86400000;
+          store.set("noToolsUntil", noToolsUntil);
+          return gemini(contents, onText, model, true);
+        }
+      }
+      // Search inside Gemini has its own, smaller daily allowance: when that's
+      // what ran out, answer without web search for an hour rather than fail.
+      if (tools && res.status === 429) {
+        noToolsUntil = Date.now() + 3600000;
         store.set("noToolsUntil", noToolsUntil);
         return gemini(contents, onText, model, true);
       }
-    }
-    // Search inside Gemini has its own, smaller daily allowance: when that's
-    // what ran out, answer without web search for an hour rather than fail.
-    if (tools && res.status === 429) {
-      noToolsUntil = Date.now() + 3600000;
-      store.set("noToolsUntil", noToolsUntil);
-      return gemini(contents, onText, model, true);
-    }
-    if ((res.status === 429 || res.status === 503) && model === MODEL) {
-      // The main model's free allowance is used up or busy: its lighter
-      // sibling has its own, and is quicker anyway.
-      liteUntil = Date.now() + (res.status === 429 ? 3600000 : 60000);
-      store.set("liteUntil", liteUntil);
-      return gemini(contents, onText, LITE, bare);
-    }
-    if (!res.ok) {
-      let why = "";
-      try { why = (await res.json()).error?.message || ""; } catch {}
-      if (res.status === 400 && /API key/i.test(why)) throw new Error("That Gemini key doesn't work — check it in Settings.");
-      throw new Error(why || `Gemini answered ${res.status}`);
-    }
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    let buf = "", out = "";
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let nl;
-      while ((nl = buf.indexOf("\n")) >= 0) {
-        const line = buf.slice(0, nl).trim();
-        buf = buf.slice(nl + 1);
-        if (!line.startsWith("data:")) continue;
-        try {
-          const v = JSON.parse(line.slice(5));
-          for (const p of v.candidates?.[0]?.content?.parts || []) if (p.text) out += p.text;
-          onText?.(out);
-        } catch {}
+      if ((res.status === 429 || res.status === 503) && model === MODEL) {
+        // The main model's free allowance is used up or busy: its lighter
+        // sibling has its own, and is quicker anyway.
+        liteUntil = Date.now() + (res.status === 429 ? 3600000 : 60000);
+        store.set("liteUntil", liteUntil);
+        return gemini(contents, onText, LITE, bare);
       }
+      if (!res.ok) {
+        let why = "";
+        try { why = (await res.json()).error?.message || ""; } catch {}
+        if (res.status === 400 && /API key/i.test(why)) throw new Error("That Gemini key doesn't work — check it in Settings.");
+        if (res.status >= 500) bug(`gemini answered ${res.status}`, { model, why: why.slice(0, 200) });
+        throw new Error(why || `Gemini answered ${res.status}`);
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "", out = "";
+      for (;;) {
+        let chunk;
+        try { chunk = await reader.read(); }
+        catch (e) {
+          if (e.name === "AbortError") { bug("gemini: answer stalled mid-way", { model, got: out.length }); if (out.trim()) break; throw new Error(TOO_SLOW); }
+          throw e;
+        }
+        const { value, done } = chunk;
+        if (done) break;
+        guard.alive();
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line.startsWith("data:")) continue;
+          try {
+            const v = JSON.parse(line.slice(5));
+            for (const p of v.candidates?.[0]?.content?.parts || []) if (p.text) out += p.text;
+            onText?.(out);
+          } catch {}
+        }
+      }
+      return out.trim();
+    } finally {
+      guard.done();
     }
-    return out.trim();
   }
 
   /** The chosen other brain (Groq, OpenRouter, Mistral): same prompt, streamed. */
@@ -625,33 +731,51 @@
     );
     const headers = { "Content-Type": "application/json", Authorization: "Bearer " + k };
     if (b === BRAINS.openrouter) { headers["HTTP-Referer"] = "https://nova-izuki.github.io/izuki/"; headers["X-Title"] = "Izuki"; }
-    const res = await fetch(b.url, { method: "POST", headers, body: JSON.stringify({ model: b.model, messages, stream: true, max_tokens: 900, temperature: 0.7 }) });
-    if (!res.ok) {
-      let why = "";
-      try { why = (await res.json()).error?.message || ""; } catch {}
-      if (res.status === 401 || res.status === 403) throw new Error(`That ${b.name} key doesn't work — check it in Settings.`);
-      if (res.status === 429) throw new Error(`${b.name} is busy right now — try again in a minute.`);
-      throw new Error(why || `${b.name} answered ${res.status}`);
-    }
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    let buf = "", out = "";
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let nl;
-      while ((nl = buf.indexOf("\n")) >= 0) {
-        const line = buf.slice(0, nl).trim();
-        buf = buf.slice(nl + 1);
-        if (!line.startsWith("data:") || line === "data: [DONE]") continue;
-        try {
-          const d = JSON.parse(line.slice(5)).choices?.[0]?.delta?.content;
-          if (d) { out += d; onText?.(out.replace(/<think>[\s\S]*?(<\/think>|$)/g, "")); }
-        } catch {}
+    const guard = stallGuard(30000);
+    try {
+      let res;
+      try {
+        res = await fetch(b.url, { method: "POST", signal: guard.signal, headers, body: JSON.stringify({ model: b.model, messages, stream: true, max_tokens: 900, temperature: 0.7 }) });
+      } catch (e) {
+        if (e.name === "AbortError") { bug(`${b.name}: no answer in 30 s`); throw new Error(TOO_SLOW); }
+        throw new Error("I can't reach my AI brain — are you online?");
       }
+      if (!res.ok) {
+        let why = "";
+        try { why = (await res.json()).error?.message || ""; } catch {}
+        if (res.status === 401 || res.status === 403) throw new Error(`That ${b.name} key doesn't work — check it in Settings.`);
+        if (res.status === 429) throw new Error(`${b.name} is busy right now — try again in a minute.`);
+        throw new Error(why || `${b.name} answered ${res.status}`);
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "", out = "";
+      for (;;) {
+        let chunk;
+        try { chunk = await reader.read(); }
+        catch (e) {
+          if (e.name === "AbortError") { bug(`${b.name}: answer stalled mid-way`); if (out.trim()) break; throw new Error(TOO_SLOW); }
+          throw e;
+        }
+        const { value, done } = chunk;
+        if (done) break;
+        guard.alive();
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line.startsWith("data:") || line === "data: [DONE]") continue;
+          try {
+            const d = JSON.parse(line.slice(5)).choices?.[0]?.delta?.content;
+            if (d) { out += d; onText?.(out.replace(/<think>[\s\S]*?(<\/think>|$)/g, "")); }
+          } catch {}
+        }
+      }
+      return out.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+    } finally {
+      guard.done();
     }
-    return out.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   }
 
   /** Whoever answers: the chosen brain, with Gemini standing in if it fails. */
@@ -672,7 +796,7 @@
     form.append("model", "whisper-large-v3-turbo");
     form.append("file", new Blob([bytes], { type: audio.type }), "speech." + (audio.type.split("/")[1] || "m4a"));
     const r = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", { method: "POST", headers: { Authorization: "Bearer " + brainKeys.groq }, body: form });
-    if (!r.ok) throw new Error("I couldn't make that out — try again, or type it.");
+    if (!r.ok) { bug(`groq hearing answered ${r.status}`, { type: audio.type }); throw new Error("I couldn't make that out — try again, or type it."); }
     return ((await r.json()).text || "").trim();
   }
 
@@ -750,6 +874,7 @@
   let attached = []; // [{ name, type, b64, text, url }]
   const MAX_BYTES = 15 * 1024 * 1024;
   const isText = (f) => /^text\//.test(f.type) || /\.(txt|md|csv|json|html|xml|log)$/i.test(f.name);
+  const refreshSend = () => { send.disabled = busy || (!text.value.trim() && !attached.length); };
   function showAttached() {
     const box = $("attached");
     box.innerHTML = "";
@@ -764,14 +889,14 @@
       row.append(nm, x);
       box.appendChild(row);
     });
-    send.disabled = busy || (!text.value.trim() && !attached.length);
+    refreshSend();
   }
   $("clip").onclick = () => $("files").click();
   $("files").onchange = async () => {
     for (const f of [...$("files").files]) {
       const used = attached.reduce((n, a) => n + a.size, 0);
       if (used + f.size > MAX_BYTES) { setStatus(`${f.name} is too big to send (15 MB in all).`); continue; }
-      const b64 = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(",")[1] || ""); fr.readAsDataURL(f); });
+      const b64 = await blobToB64(f);
       const item = { name: f.name, type: f.type || (isText(f) ? "text/plain" : "application/octet-stream"), size: f.size, b64 };
       if (isText(f)) item.text = await f.text();
       if (/^image\//.test(item.type)) item.url = URL.createObjectURL(f);
@@ -780,6 +905,9 @@
     $("files").value = "";
     showAttached();
   };
+  function blobToB64(blob) {
+    return new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(",")[1] || ""); fr.onerror = () => ok(""); fr.readAsDataURL(blob); });
+  }
   /** An attachment as a Gemini part. */
   const geminiPart = (a) => (a.text != null
     ? { text: `[File ${a.name}]\n${a.text.slice(0, 60000)}` }
@@ -791,18 +919,21 @@
     const files = attached;
     if (busy || (!said && !audio && !files.length)) return;
     if (files.length && !said) said = "Have a look at this and help me with it.";
-    if (!ready()) { openSettings(); return; }
+    if (!ready()) { render(); return; }
     // A voice note with no Gemini key: Groq's Whisper turns it into words first.
     if (audio && !key) {
       if (!brainKeys.groq) { bubble("izuki", "To talk out loud here, add a free Gemini or Groq key in Settings — or type instead.", { error: true }); return; }
-      try { said = await groqHear(audio); } catch (e) { bubble("izuki", e.message, { error: true }); return; }
+      setOrb("thinking");
+      try { said = await groqHear(audio); } catch (e) { bubble("izuki", e.message, { error: true }); setOrb(""); if (talking) listen(); return; }
       audio = null;
-      if (!said) return;
+      if (!said) { setOrb(""); if (talking) listen(); return; }
+      liveHeard(said);
     }
     busy = true;
-    send.disabled = true;
+    refreshSend();
     setOrb("thinking");
-    setStatus("Thinking…");
+    setStatus("");
+    note(audio ? "asked out loud" : "asked in words");
     const me = bubble("me", said || "🎙️ …");
     if (files.length) {
       const thumbs = document.createElement("div");
@@ -832,7 +963,7 @@
       if (geminiOnly && !key) throw new Error("To look at that kind of file, add a free Gemini key in Settings (pictures and text files work with any brain).");
       reply = await (audio || geminiOnly ? gemini : think)(contents, (t) => {
         const heard = t.match(/^\s*\[HEARD:\s*([^\]]*)\]?/i);
-        if (heard) { me.textContent = heard[1].trim() || "🎙️"; t = t.slice(heard[0].length); }
+        if (heard) { me.textContent = heard[1].trim() || "🎙️"; liveHeard(heard[1].trim()); t = t.slice(heard[0].length); }
         if (!/^\s*\[?P?C?\]?\s*$/i.test(t)) out.textContent = shown(t) || "…";
         log.scrollTop = log.scrollHeight;
       });
@@ -862,25 +993,28 @@
       } else {
         const chips = takeTags(reply);
         reply = shown(reply);
+        if (!reply) note("empty reply");
         out.remove();
         bubble("izuki", reply || "Hmm, I lost my words there — try again?", { chips });
       }
       history.push({ role: "model", text: reply });
       saveAll();
+      setStatus("");
       await speak(reply);
     } catch (e) {
       out.remove();
       bubble("izuki", e.message || "I couldn't reach my AI brain. Check your internet and try again.", { error: true });
+      note("reply failed: " + (e.message || e));
     } finally {
       busy = false;
-      send.disabled = !text.value.trim();
+      refreshSend();
       setOrb("");
       setStatus("");
       if (talking) listen();
     }
   }
 
-  // ------------------------------------------------------------ voice
+  // ------------------------------------------------------------ Izuki's voice
   let voiceOn = store.get("voice", true);
 
   // Izuki's voice is Gemini's own (natural, free with the same key), played
@@ -890,10 +1024,19 @@
   const player = new Audio();
   player.setAttribute("playsinline", "");
   const SILENT = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+  let audioCtx = null;
+  /** One audio context for the page, made (and woken) from a tap. */
+  function ensureAudioCtx() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!audioCtx && AC) { try { audioCtx = new AC(); } catch {} }
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+    return audioCtx;
+  }
   /** From a tap: lets replies play later without another tap (iPhone rule). */
   function unlockAudio() {
     player.src = SILENT;
     player.play().catch(() => {});
+    ensureAudioCtx();
     if ("speechSynthesis" in window) {
       const u = new SpeechSynthesisUtterance(" ");
       u.volume = 0;
@@ -931,9 +1074,13 @@
     return null;
   }
   async function geminiVoiceWith(model, t) {
+    // Never wait long for a voice: the phone's own one is right there.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20000);
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
+        signal: ctrl.signal,
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
         body: JSON.stringify({
           contents: [{ parts: [{ text: model.startsWith("gemini-2.5") ? `Say it naturally, like a real person — ${person().style}: ` + t : t }] }],
@@ -963,122 +1110,275 @@
         return URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
       }
       return pcmToWavUrl(part.inlineData.data, rate);
-    } catch {
+    } catch (e) {
+      if (e.name === "AbortError") note("gemini voice took over 20 s");
       return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
+  /** Stops whatever is being said right now, and lets its promise finish. */
+  let stopSound = null;
+
+  /**
+   * The phone's own voice, done safely. A sentence nothing holds on to gets
+   * thrown away by Chrome mid-way — its "finished" never comes, and a call
+   * waiting for it went silent and deaf. Chrome also drops speech started
+   * right after cancel(), and cuts long speech off after ~15 s. So: hold it,
+   * speak it a sentence at a time, and never wait longer than it could take.
+   */
+  let utterance = null;
   function speakWithPhone(t) {
-    return new Promise((done) => {
-      if (!("speechSynthesis" in window)) return done();
-      speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(t.replace(/[*_#`]/g, ""));
-      u.rate = 1.05;
-      u.onend = done; u.onerror = done;
-      speechSynthesis.speak(u);
+    return new Promise((resolve) => {
+      if (!("speechSynthesis" in window) || !t) return resolve();
+      const synth = speechSynthesis;
+      const pieces = (t.match(/[^.!?…]+[.!?…]*\s*/g) || [t]).map((s) => s.trim()).filter(Boolean);
+      let i = 0, finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(guard);
+        if (stopSound === finish) stopSound = null;
+        resolve();
+      };
+      const guard = setTimeout(() => { bug("phone voice never finished", { chars: t.length }); try { synth.cancel(); } catch {} finish(); }, 5000 + t.length * 110);
+      stopSound = () => { try { synth.cancel(); } catch {} finish(); };
+      const next = () => {
+        if (finished) return;
+        if (i >= pieces.length) return finish();
+        const u = (utterance = new SpeechSynthesisUtterance(pieces[i++]));
+        u.rate = 1.05;
+        u.onend = next;
+        u.onerror = (e) => { if (e.error === "interrupted" || e.error === "canceled") finish(); else { note("phone voice error: " + e.error); next(); } };
+        synth.speak(u);
+      };
+      if (synth.speaking || synth.pending) synth.cancel();
+      setTimeout(next, 80);
     });
   }
 
+  /** Play a reply's audio file — and never wait on it for longer than it lasts. */
+  function playAudio(url, t) {
+    return new Promise((resolve) => {
+      let finished = false, guard = 0;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(guard);
+        player.onended = player.onerror = player.onloadedmetadata = null;
+        if (stopSound === finish) stopSound = null;
+        resolve();
+      };
+      const fallBack = (why) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(guard);
+        if (stopSound === finish) stopSound = null;
+        note("reply audio failed (" + why + "), phone voice instead");
+        speakWithPhone(t).then(resolve);
+      };
+      guard = setTimeout(() => { bug("reply audio never finished"); try { player.pause(); } catch {} finish(); }, 90000);
+      player.onloadedmetadata = () => {
+        if (isFinite(player.duration) && player.duration > 0) {
+          clearTimeout(guard);
+          guard = setTimeout(() => { note("reply audio overran"); try { player.pause(); } catch {} finish(); }, player.duration * 1000 + 3000);
+        }
+      };
+      player.onended = finish;
+      player.onerror = () => fallBack("error");
+      stopSound = () => { try { player.pause(); } catch {} finish(); };
+      player.src = url;
+      player.play().catch((e) => fallBack(e && e.name));
+    });
+  }
+
+  let speakSeq = 0;
   async function speak(t) {
     if (!voiceOn || !(talking || readAloud) || !t) return;
+    const my = ++speakSeq;
+    const words = t.replace(/[*_#`]/g, "");
     liveSaid(t);
     setOrb("speaking");
-    setStatus("Tap the mic to cut in");
-    const url = await geminiVoice(t.replace(/[*_#`]/g, ""));
-    if (!talking) return;
-    if (!url) return speakWithPhone(t);
-    await new Promise((done) => {
-      player.onended = done;
-      player.onerror = () => speakWithPhone(t).then(done);
-      player.src = url;
-      player.play().catch(() => speakWithPhone(t).then(done));
-    });
+    const url = await geminiVoice(words);
+    if (my !== speakSeq) { if (url) URL.revokeObjectURL(url); return; } // stopped meanwhile
+    note(url ? "speaking (Gemini voice)" : "speaking (phone voice)");
+    if (!url) return speakWithPhone(words);
+    await playAudio(url, words);
     URL.revokeObjectURL(url);
   }
   function hush() {
-    try { player.pause(); if (player.onended) player.onended(); } catch {}
+    speakSeq++;
+    const stop = stopSound;
+    stopSound = null;
+    try { stop?.(); } catch {}
+    try { player.pause(); } catch {}
     if ("speechSynthesis" in window) speechSynthesis.cancel();
   }
 
-  // "Talking": a hands-free back-and-forth, started by tapping the mic.
+  // ------------------------------------------------------------ listening
+  // Two ways to hear you. Where the browser's own speech recognition works
+  // (Chrome on Android), it shows your words live. Where it doesn't — an
+  // iPhone home-screen app blocks it — Izuki records, stops by itself when
+  // you finish talking, and the AI hears the recording.
   const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   let talking = false, recog = null, recorder = null;
+  let useRecorder = false;
 
-  function stopTalking(note) {
+  function stopTalking(message) {
     talking = false;
     try { recog?.abort(); } catch {}
     try { recorder?.stop(); } catch {}
     hush();
+    closeMic();
     setOrb("");
-    setStatus(note || "");
+    setStatus(message || "");
+    if (message) note("stopped: " + message);
   }
 
   function listen() {
     if (!talking || busy) return;
-    if (Rec) {
-      recog = new Rec();
-      recog.lang = navigator.language || "en-US";
-      recog.interimResults = true;
-      let final = "", heardAny = false;
-      recog.onresult = (e) => {
-        heardAny = true;
-        let interim = "";
-        for (const r of e.results) (r.isFinal ? (final += r[0].transcript) : (interim += r[0].transcript));
-        setStatus((final + interim) ? "Listening…" : "Listening…");
-        liveHeard(final + interim);
-      };
-      recog.onerror = (e) => {
-        if (e.error === "not-allowed" || e.error === "service-not-allowed") stopTalking("Allow the microphone for Izuki, then tap the mic again.");
-      };
-      recog.onend = () => {
-        recog = null;
-        if (!talking) return;
-        if (final.trim()) ask(final.trim());
-        else setTimeout(listen, heardAny ? 100 : 300);
-      };
-      setOrb("listening");
-      setStatus("Listening… (tap the mic to stop)");
-      try { recog.start(); } catch { setTimeout(listen, 400); }
-    } else {
-      record();
-    }
+    if (useRecorder || !Rec || (isIOS && canHear())) return record();
+    let final = "", heardAny = false, failed = "";
+    try { recog = new Rec(); } catch { useRecorder = true; return record(); }
+    recog.lang = navigator.language || "en-US";
+    recog.interimResults = true;
+    recog.onresult = (e) => {
+      heardAny = true;
+      let interim = "";
+      final = "";
+      for (const r of e.results) (r.isFinal ? (final += r[0].transcript) : (interim += r[0].transcript));
+      liveHeard(final + interim);
+      IzukiOrb.kick(0.55);
+    };
+    recog.onerror = (e) => { failed = e.error; if (e.error !== "no-speech" && e.error !== "aborted") note("speech recognition: " + e.error); };
+    recog.onend = () => {
+      recog = null;
+      if (!talking) return;
+      if (failed === "not-allowed") return stopTalking("Allow the microphone for Izuki, then tap Call again.");
+      if (["service-not-allowed", "audio-capture", "network", "language-not-supported"].includes(failed)) {
+        if (canHear()) { useRecorder = true; return record(); }
+        bug("speech recognition unusable: " + failed);
+        return stopTalking("Your phone won't let me listen here. Add a free Gemini key in Settings and I'll hear you anyway — or type.");
+      }
+      if (final.trim()) return ask(final.trim());
+      // A pause isn't the end of the call: listen again.
+      setTimeout(listen, heardAny ? 120 : 350);
+    };
+    setOrb("listening");
+    setStatus("");
+    try { recog.start(); } catch (e) { note("speech recognition didn't start: " + (e && e.name)); setTimeout(listen, 500); }
   }
 
-  // No speech recognition in this browser: record, and Gemini hears it.
+  // The microphone stays open for the whole call (opened from the tap), so
+  // the phone asks only once and each turn starts at once.
+  let callMic = null, analyser = null;
+  const level = new Float32Array(1024);
+  async function openMic() {
+    if (callMic && callMic.getAudioTracks().some((t) => t.readyState === "live")) return callMic;
+    callMic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    analyser = null;
+    const ac = ensureAudioCtx();
+    if (ac) {
+      try {
+        const src = ac.createMediaStreamSource(callMic);
+        analyser = ac.createAnalyser();
+        analyser.fftSize = 1024;
+        src.connect(analyser);
+      } catch { analyser = null; }
+    }
+    return callMic;
+  }
+  function closeMic() {
+    try { callMic?.getTracks().forEach((t) => t.stop()); } catch {}
+    callMic = null;
+    analyser = null;
+  }
+  /** How loud the mic is right now (0…1), or -1 if it can't be measured. */
+  function loudness() {
+    if (!analyser || !audioCtx || audioCtx.state !== "running") return -1;
+    analyser.getFloatTimeDomainData(level);
+    let sum = 0;
+    for (const v of level) sum += v * v;
+    return Math.sqrt(sum / level.length);
+  }
+  const recordType = () => ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg"].find((t) => window.MediaRecorder?.isTypeSupported?.(t)) || "";
+
   async function record() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const chunks = [];
-      recorder = new MediaRecorder(stream);
-      recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-      recorder.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        recorder = null;
-        if (!talking) return;
-        const blob = new Blob(chunks, { type: chunks[0]?.type || "audio/mp4" });
-        const b64 = await new Promise((ok) => {
-          const fr = new FileReader();
-          fr.onload = () => ok(String(fr.result).split(",")[1] || "");
-          fr.readAsDataURL(blob);
-        });
-        ask("", { type: blob.type.split(";")[0], b64 });
-      };
-      recorder.start();
-      setOrb("listening");
-      setStatus("Listening… tap the mic when you're done");
-    } catch {
-      stopTalking("Allow the microphone for Izuki, then tap the mic again.");
+    if (!talking || busy) return;
+    if (!canHear()) return stopTalking("To talk out loud here, add a free Gemini key in Settings — or type.");
+    if (!window.MediaRecorder || !navigator.mediaDevices?.getUserMedia) {
+      bug("can't record on this phone");
+      return stopTalking("This browser can't record — please type instead.");
     }
+    let stream;
+    try { stream = await openMic(); }
+    catch (e) { note("microphone refused: " + (e && e.name)); return stopTalking("Allow the microphone for Izuki, then tap Call again."); }
+    if (!talking || busy) return;
+    const type = recordType();
+    const chunks = [];
+    let rec;
+    try { rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined); }
+    catch (e) { bug("couldn't start recording: " + (e && e.message)); return stopTalking("I couldn't start listening — please type instead."); }
+    recorder = rec;
+    let discard = false;
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onstop = async () => {
+      clearInterval(vad);
+      if (recorder === rec) recorder = null;
+      if (!talking || busy) return;
+      if (discard || !chunks.length) return listen();
+      const blob = new Blob(chunks, { type: chunks[0].type || type || "audio/mp4" });
+      if (blob.size < 2500) return listen(); // a tap or a cough, not words
+      setOrb("thinking");
+      const b64 = await blobToB64(blob);
+      ask("", { type: (blob.type || "audio/mp4").split(";")[0], b64 });
+    };
+    rec.start(250);
+    setOrb("listening");
+    setStatus(analyser ? "" : "Listening… tap the orb when you're done");
+    // Hands-free: it notices when you start talking and when you've finished.
+    const began = performance.now();
+    let floor = 0.006, spoke = 0, quiet = 0;
+    const vad = setInterval(() => {
+      if (rec.state !== "recording") return clearInterval(vad);
+      const v = loudness();
+      if (v < 0) return; // can't measure here: a tap on the orb finishes
+      IzukiOrb.level(Math.min(1, v * 9));
+      const took = performance.now() - began;
+      if (took < 350) { floor = Math.max(floor, v); return; }
+      if (v > Math.max(0.015, floor * 2.2)) {
+        spoke += 80; quiet = 0;
+        if (spoke === 240) liveHeard("…");
+      } else {
+        quiet += 80;
+        floor = floor * 0.98 + v * 0.02;
+      }
+      if (spoke >= 240 && quiet >= 1300) rec.stop();             // you finished a sentence
+      else if (spoke < 240 && took > 15000) { discard = true; rec.stop(); } // quiet: start a fresh one
+      else if (took > 45000) rec.stop();
+    }, 80);
   }
 
-  // ------------------------------------------------------------ talking live
+  // ------------------------------------------------------------ the call
   const live = $("live");
+  let callStart = 0, callClock = null;
   function openLive() {
-    if (!ready()) return openSettings();
+    if (!ready()) return render();
     $("live-name").textContent = person().name;
     $("live-style").textContent = person().style;
     liveHeard(""); liveSaid("");
     live.hidden = false;
+    callStart = Date.now();
+    clearInterval(callClock);
+    const tick = () => {
+      const s = Math.floor((Date.now() - callStart) / 1000);
+      $("live-time").textContent = `On call · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    };
+    tick();
+    callClock = setInterval(tick, 1000);
+    note("call started");
     if (!talking) {
       talking = true;
       unlockAudio();
@@ -1087,6 +1387,8 @@
   }
   function endLive() {
     live.hidden = true;
+    clearInterval(callClock);
+    note("call ended");
     if (talking) stopTalking("");
   }
   $("go-live").onclick = openLive;
@@ -1094,8 +1396,7 @@
   function showMute() {
     const b = $("live-mute");
     b.setAttribute("aria-pressed", String(!voiceOn));
-    b.style.color = voiceOn ? "" : "#ff6b81";
-    b.setAttribute("aria-label", voiceOn ? "Mute Izuki's voice" : "Unmute Izuki's voice");
+    $("live-mute-label").textContent = voiceOn ? "Mute" : "Unmute";
   }
   showMute();
   $("live-mute").onclick = () => {
@@ -1103,13 +1404,14 @@
     store.set("voice", voiceOn);
     showMute();
     if (!voiceOn) hush();
-    setStatus(voiceOn ? "Sound's back on." : "Muted — I'll reply in text.");
+    setStatus(voiceOn ? "Sound's back on." : "Muted — I'll reply in words.");
+    setTimeout(() => setStatus(""), 2000);
   };
   $("live-type").onclick = () => { endLive(); text.focus(); };
-  // Tap the orb: cut Izuki off, or finish what you were saying.
+  // Tap the orb: cut Izuki off, or say you've finished talking.
   $("live-orb").onclick = () => {
-    if (orb.className === "speaking") { hush(); return; }
-    if (recorder) { recorder.stop(); return; }
+    if (orbState === "speaking") { hush(); return; }
+    if (recorder) { try { recorder.stop(); } catch {} return; }
     try { recog?.stop(); } catch {}
   };
   $("read-aloud").classList.toggle("on", readAloud);
@@ -1127,26 +1429,20 @@
   window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; });
   $("install").onclick = async () => {
     if (installPrompt) { installPrompt.prompt(); installPrompt = null; return; }
-    const iOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-    alert(iOS
+    alert(isIOS
       ? "In Safari: tap the Share button (square with an arrow), then “Add to Home Screen”, then Add. Izuki opens like an app."
       : "Open this page in Chrome, tap the ⋮ menu, then “Install app” or “Add to Home screen”.");
   };
 
+  // The little orb by the message box: tap to talk (a call).
   orb.addEventListener("click", () => {
-    if (!ready()) return openSettings();
-    if (orb.className === "speaking") { hush(); return; }
-    if (recorder) { recorder.stop(); return; }
-    if (talking) return stopTalking("");
-    talking = true;
-    // A silent line from the tap unlocks the phone's voice for the answers.
-    unlockAudio();
-    listen();
+    if (orbState === "speaking") { hush(); return; }
+    openLive();
   });
 
   // ------------------------------------------------------------ typing
   text.addEventListener("input", () => {
-    send.disabled = busy || (!text.value.trim() && !attached.length);
+    refreshSend();
     text.style.height = "auto";
     text.style.height = Math.min(text.scrollHeight, 120) + "px";
   });
@@ -1159,9 +1455,42 @@
     if ((!t && !attached.length) || busy) return;
     text.value = "";
     text.style.height = "auto";
-    send.disabled = true;
     ask(t);
+    refreshSend();
   });
+
+  // ------------------------------------------------------------ keys
+  /** Save and test a Gemini key; `out` shows how it went. */
+  async function tryKey(k, out) {
+    if (!k) { out.className = "bad"; out.textContent = "Paste your key first."; return false; }
+    out.className = "note"; out.textContent = "Checking…";
+    const old = key;
+    key = k;
+    try {
+      await gemini([{ role: "user", parts: [{ text: "Say hi in three words." }] }]);
+      store.set("key", key);
+      out.className = "ok"; out.textContent = "Works! You're all set 🎉";
+      showWho();
+      if (!history.length) setTimeout(() => { if (sheet.hidden) welcome(); }, 900);
+      return true;
+    } catch (e) {
+      key = old;
+      out.className = "bad"; out.textContent = e.message;
+      return false;
+    }
+  }
+  /** Copy the key on Google's page, come back, one tap: pasted, saved, tested. */
+  async function pasteKey(input, out) {
+    try {
+      const t = (await navigator.clipboard.readText()).trim();
+      if (!/^AIza[0-9A-Za-z_-]{35}$/.test(t)) { out.className = "bad"; out.textContent = "That's not a Gemini key yet — copy the key (it starts with AIza), then tap Paste again."; return; }
+      input.value = t;
+      tryKey(t, out);
+    } catch {
+      out.className = "note"; out.textContent = "Long-press the box and choose Paste instead.";
+      input.focus();
+    }
+  }
 
   // ------------------------------------------------------------ settings
   const sheet = $("sheet");
@@ -1215,6 +1544,7 @@
       store.set("brainKeys", brainKeys);
       brain = id; store.set("brain", brain);
       out.className = "ok"; out.textContent = `Works! ${b.name} answers now.`;
+      showWho();
     } catch (e) {
       if (old) brainKeys[id] = old; else delete brainKeys[id];
       out.className = "bad"; out.textContent = e.message;
@@ -1235,46 +1565,22 @@
       catch { copySiri.textContent = "Long-press the link above to copy"; }
     };
     renderMemories();
+    $("bug-result").textContent = "";
     sheet.hidden = false;
   }
+  const closeSettings = () => { sheet.hidden = true; render(); };
   $("open-settings").onclick = openSettings;
-  $("close-settings").onclick = () => { sheet.hidden = true; render(); };
-  sheet.addEventListener("click", (e) => { if (e.target === sheet) { sheet.hidden = true; render(); } });
+  $("who").onclick = openSettings;
+  $("close-settings").onclick = closeSettings;
+  sheet.addEventListener("click", (e) => { if (e.target === sheet) closeSettings(); });
 
-  // Copy the key on Google's page, come back, one tap: pasted, saved, tested.
-  $("paste-key").onclick = async () => {
-    const out = $("key-result");
-    try {
-      const t = (await navigator.clipboard.readText()).trim();
-      if (!/^AIza[0-9A-Za-z_-]{35}$/.test(t)) { out.className = "bad"; out.textContent = "That's not a Gemini key yet — copy the key (it starts with AIza), then tap Paste again."; return; }
-      $("key").value = t;
-      $("save-key").click();
-    } catch {
-      out.className = "note"; out.textContent = "Long-press the box and choose Paste instead.";
-      $("key").focus();
-    }
-  };
+  $("paste-key").onclick = () => pasteKey($("key"), $("key-result"));
   // Pasted straight into the box: save and test it right away.
   $("key").addEventListener("paste", () => setTimeout(() => {
-    if (/^AIza[0-9A-Za-z_-]{35}$/.test($("key").value.trim())) $("save-key").click();
+    if (/^AIza[0-9A-Za-z_-]{35}$/.test($("key").value.trim())) tryKey($("key").value.trim(), $("key-result"));
   }, 50));
+  $("save-key").onclick = () => tryKey($("key").value.trim(), $("key-result"));
 
-  $("save-key").onclick = async () => {
-    const k = $("key").value.trim();
-    const out = $("key-result");
-    if (!k) { out.className = "bad"; out.textContent = "Paste your key first."; return; }
-    out.className = "note"; out.textContent = "Checking…";
-    const old = key;
-    key = k;
-    try {
-      await gemini([{ role: "user", parts: [{ text: "Say hi in three words." }] }]);
-      store.set("key", key);
-      out.className = "ok"; out.textContent = "Works! You're all set.";
-    } catch (e) {
-      key = old;
-      out.className = "bad"; out.textContent = e.message;
-    }
-  };
   $("save-pc").onclick = async () => {
     const v = $("pc").value.trim();
     const out = $("pc-result");
@@ -1290,7 +1596,27 @@
       out.className = "bad"; out.textContent = "Saved, but I can't reach your PC right now — is it on with Izuki open?";
     }
   };
-  $("clear-chat").onclick = () => { history = []; saveAll(); sheet.hidden = true; render(); };
+
+  // "Something wrong?": the user's words + what happened just before.
+  $("bug-send").onclick = async () => {
+    const words = $("bug-text").value.trim();
+    const out = $("bug-result");
+    try { window.izukiBugs?.report("User report: " + (words || "(no details)"), { brain, messages: history.length, voice: voiceOn, standalone: matchMedia("(display-mode: standalone)").matches }, "warning"); } catch {}
+    if (window.izukiBugs?.ready()) {
+      out.className = "ok"; out.textContent = "Thanks — sent! 🙏";
+      $("bug-text").value = "";
+      return;
+    }
+    // Reports aren't switched on yet: copy it, to paste to Izuki's maker.
+    try {
+      await navigator.clipboard.writeText((words ? words + "\n\n" : "") + (window.izukiBugs?.text() || ""));
+      out.className = "ok"; out.textContent = "Copied! Paste it in a message to Izuki's maker.";
+    } catch {
+      out.className = "note"; out.textContent = "Saved on this phone. (Couldn't copy it — try again.)";
+    }
+  };
+
+  $("clear-chat").onclick = () => { history = []; saveAll(); closeSettings(); };
   $("forget-all").onclick = () => {
     if ($("forget-all").dataset.sure !== "1") { $("forget-all").dataset.sure = "1"; $("forget-all").textContent = "Tap again to forget everything"; return; }
     history = []; memories = []; reminders = []; saveAll();
@@ -1308,7 +1634,6 @@
   }
   render();
   scheduleReminders();
-  if (!ready()) openSettings();
   // "Hey Siri, Izuki": the Shortcut opens …?q=what you said.
   const q = new URLSearchParams(location.search).get("q");
   if (q && ready()) {

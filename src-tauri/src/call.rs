@@ -294,6 +294,19 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
             crate::headsup::deliver(app, &title, &text);
             json_reply(req, json!({ "ok": true }))
         }
+        // Something went wrong on the phone (an error, the voice never
+        // finishing): into the PC's log and the bug tracker (bugs.rs).
+        (tiny_http::Method::Post, Some("/bug")) => {
+            let mut body = String::new();
+            let _ = req.as_reader().take(16 * 1024).read_to_string(&mut body);
+            let v = serde_json::from_str::<Value>(&body).unwrap_or_else(|_| json!({ "message": body.trim() }));
+            let msg = v["message"].as_str().unwrap_or("").trim().chars().take(2000).collect::<String>();
+            if !msg.is_empty() {
+                let phone = v["phone"].as_str().unwrap_or("").chars().take(120).collect::<String>();
+                eprintln!("[bug] call page: {msg} ({phone})");
+            }
+            json_reply(req, json!({ "ok": true }))
+        }
         (tiny_http::Method::Post, Some("/hear")) => {
             // For phones whose browser has no speech recognition: the
             // recording comes here and the cloud ears transcribe it.

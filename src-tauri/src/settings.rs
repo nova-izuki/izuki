@@ -253,6 +253,11 @@ pub struct Settings {
     /// headset that keeps its mic open, so replies play in call quality.)
     #[serde(default = "default_true")]
     pub barge_in: bool,
+    /// Send error reports so bugs get fixed (bugs.rs): what went wrong and
+    /// Izuki's recent technical log, with keys, emails and numbers removed.
+    /// Never screenshots, recordings or chats.
+    #[serde(default = "default_true")]
+    pub send_bug_reports: bool,
     /// Turn other apps' sound (music, videos) down while Izuki listens to
     /// you, then back up — like a phone assistant lowering your music.
     #[serde(default = "default_true")]
@@ -673,6 +678,7 @@ impl Default for Settings {
             mic_device: String::new(),
             show_transcript: true,
             barge_in: true,
+            send_bug_reports: true,
             duck_while_listening: true,
             cloud_ears: true,
             telegram_token: String::new(),

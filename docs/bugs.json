@@ -1,0 +1,5 @@
+{
+  "about": "Where Izuki's bug reports go. The PC app, the phone app and the website all read this, so changing it needs no app update. dsn = a Sentry project's DSN. endpoint = Izuki's own backend (e.g. a Floot app) that takes each report as a JSON POST. Both empty = reports stay on the device (PC: %APPDATA%\\Izuki\\logs).",
+  "dsn": "",
+  "endpoint": ""
+}

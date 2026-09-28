@@ -1,10 +1,10 @@
 [package]
 name = "izuki"
-version = "1.0.6"
+version = "1.0.7"
 description = "IZUKI — draw on your screen, Izuki does it."
 authors = ["Izuki"]
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.87"
 default-run = "izuki"
 
 [lib]

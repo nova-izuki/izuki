@@ -563,6 +563,9 @@ fn good_enough(plan: &VisionPlan, wants_action: bool) -> bool {
 /// No brain did better: the best of the replies that didn't act — but never
 /// one that narrates, which would be read aloud as if it were an answer.
 fn last_resort(mut plan: VisionPlan, wants_action: bool) -> VisionPlan {
+    if wants_action {
+        eprintln!("[bug] no brain acted on a request to do something (best was {} {})", plan.provider, plan.model);
+    }
     if crate::easy::narrates(&plan.summary) || plan.summary.trim().is_empty() {
         plan.summary = if wants_action {
             "Sorry, I couldn't work out how to do that on this screen. Can you say it another way, or point at it?".into()
@@ -889,6 +892,9 @@ pub fn run_instant(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<Vi
     } else {
         run_steps_blocking(app, store, &steps, &alive)
     };
+    if !worked && alive() {
+        eprintln!("[bug] instant command didn't work: {act:?}");
+    }
     Some(VisionPlan {
         steps,
         summary: if worked { say.to_string() } else { "Hmm, that didn't work — try asking me another way?".to_string() },
@@ -978,6 +984,9 @@ fn submit_task(
 
     let _ = app.emit(events::STATUS, StatusEvent::working("Izuki is looking…"));
     let Some(frame) = frame else {
+        if !uia::screen_locked() {
+            eprintln!("[bug] couldn't capture the screen");
+        }
         set_frozen(None);
         if focus {
             let _ = overlay::hide_overlay(app);
@@ -1141,6 +1150,12 @@ fn submit_task(
                 set_frozen(None);
                 if focus {
                     let _ = overlay::hide_overlay(app);
+                }
+                // Free brains being busy is expected; anything else is a bug.
+                let why = e.to_string();
+                let low = why.to_lowercase();
+                if !["429", "rate", "quota", "too many", "busy", "overloaded"].iter().any(|w| low.contains(w)) {
+                    eprintln!("[bug] couldn't work out what to do: {why}");
                 }
                 let _ = app.emit(
                     events::STATUS,

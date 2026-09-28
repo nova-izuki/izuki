@@ -344,6 +344,8 @@ export interface Settings {
   show_transcript: boolean;
   /** Talk over Izuki to interrupt it (it listens while it answers). */
   barge_in: boolean;
+  /** Send error reports (no keys, screenshots or chats) so bugs get fixed. */
+  send_bug_reports: boolean;
   /** Turn other apps' sound down while Izuki listens. */
   duck_while_listening: boolean;
   /** Double-check your words with a cloud speech model (Groq or Gemini key). */

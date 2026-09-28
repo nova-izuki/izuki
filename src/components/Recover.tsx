@@ -50,7 +50,8 @@ export class Recover extends Component<Props, State> {
     const now = Date.now();
     this.crashes = [...this.crashes.filter((t) => now - t < WINDOW_MS), now];
     const where = (info.componentStack ?? "").trim().split("\n").slice(0, 6).join(" | ");
-    void api.log(`[${this.props.name}] crashed: ${error?.message ?? error} :: ${where} :: ${(error?.stack ?? "").split("\n").slice(0, 4).join(" | ")}`);
+    // "[error]" marks it for the bug catcher (bugs.rs), which reports it.
+    void api.log(`[error] [${this.props.name}] crashed: ${error?.message ?? error} :: ${where} :: ${(error?.stack ?? "").split("\n").slice(0, 4).join(" | ")}`);
     if (this.crashes.length === 2 && this.props.onReset) {
       void api.log(`[${this.props.name}] starting it fresh`);
       try {
@@ -106,11 +107,12 @@ function RecoverKey({ children }: { children: ReactNode }) {
 /** Errors outside React (timers, promises, listeners) go to the log too. */
 export function logUncaught(name: string) {
   window.addEventListener("error", (e) => {
-    void api.log(`[${name}] error: ${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`);
+    const stack = (e.error as Error | undefined)?.stack?.split("\n").slice(0, 5).join(" | ") ?? "";
+    void api.log(`[error] [${name}] ${e.message} @ ${e.filename}:${e.lineno}:${e.colno}${stack ? " :: " + stack : ""}`);
   });
   window.addEventListener("unhandledrejection", (e) => {
     const r = e.reason as { message?: string; stack?: string } | string | undefined;
     const text = typeof r === "string" ? r : (r?.stack ?? r?.message ?? String(r));
-    void api.log(`[${name}] unhandled: ${String(text).split("\n").slice(0, 4).join(" | ")}`);
+    void api.log(`[error] [${name}] unhandled: ${String(text).split("\n").slice(0, 4).join(" | ")}`);
   });
 }

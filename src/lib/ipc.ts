@@ -212,6 +212,7 @@ export const MOCK_SETTINGS: Settings = {
   mic_device: "",
   show_transcript: true,
   barge_in: true,
+  send_bug_reports: true,
   duck_while_listening: true,
   cloud_ears: true,
   telegram_token: "",
@@ -387,6 +388,11 @@ export const api = {
     void api.prefetchScreen();
   },
 
+  /** "Report a problem": the user's words + recent log to the bug tracker.
+   *  false = saved in the log file only (reports not set up yet). */
+  reportBug: (what: string) => call<boolean>("report_bug", { what }, () => false),
+  bugReportsReady: () => call<boolean>("bug_reports_ready", undefined, () => false),
+  openLogFolder: () => call<void>("open_log_folder", undefined, () => undefined),
   log: (message: string) =>
     call<void>("frontend_log", { message }, () => console.log(message)).catch(() => undefined),
 
