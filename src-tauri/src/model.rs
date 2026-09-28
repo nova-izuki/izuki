@@ -27,6 +27,15 @@ impl Rect {
         x >= self.x && y >= self.y && x < self.x + self.w && y < self.y + self.h
     }
 
+    /// The part of this rectangle inside `other`, if any.
+    pub fn intersect(&self, other: &Rect) -> Option<Rect> {
+        let x = self.x.max(other.x);
+        let y = self.y.max(other.y);
+        let right = (self.x + self.w).min(other.x + other.w);
+        let bottom = (self.y + self.h).min(other.y + other.h);
+        (right > x && bottom > y).then(|| Rect { x, y, w: right - x, h: bottom - y })
+    }
+
     /// Grow by `pad` on every side.
     pub fn inflate(&self, pad: i32) -> Rect {
         Rect {
@@ -447,4 +456,21 @@ pub fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod rect_tests {
+    use super::Rect;
+
+    #[test]
+    fn a_half_hidden_control_is_clicked_on_its_visible_part() {
+        // A link half-scrolled under the browser's toolbar: the page starts at y=120.
+        let page = Rect { x: 0, y: 120, w: 1280, h: 600 };
+        let link = Rect { x: 100, y: 100, w: 200, h: 40 };
+        let seen = link.intersect(&page).expect("partly visible");
+        assert_eq!(seen, Rect { x: 100, y: 120, w: 200, h: 20 });
+        // Its middle is now inside the page, not up in the toolbar.
+        assert!(page.contains(seen.center().0, seen.center().1));
+        assert!(Rect { x: 0, y: 0, w: 50, h: 50 }.intersect(&page).is_none());
+    }
 }

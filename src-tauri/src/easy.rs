@@ -42,11 +42,22 @@ pub const EASY_PROMPT: &str = concat!(
     "WAIT 3 — let a page load for 3 seconds, then look again\n",
     "SAY words — what to say out loud: an answer, or a few words on what you're doing\n",
     "ASK question — only before sending, buying, deleting or submitting, or when a costly choice is truly theirs\n",
+    "REMEMBER fact — something lasting to remember about them, e.g. REMEMBER User uses the Louis profile in Chrome\n",
     "DONE — only when you can SEE on screen that the whole request is finished\n",
     "Rules: start with the command, never with \"The user…\" — no describing the request, the screen or ",
     "your plan. If you can see the thing to act on, act on it now. Prefer OPEN, GO, SEARCH and PLAY: they ",
-    "never miss. Only click what's in the list or clearly on screen. Never type passwords, PINs or card ",
-    "numbers. A question about the screen: SAY the answer, then DONE.\n",
+    "never miss. Only click what's in the list or clearly on screen. A question about the screen: SAY the ",
+    "answer, then DONE.\n",
+    "SAFETY: at the last click that deletes, sends, pays, buys or submits, stop and ASK first — even if they ",
+    "asked for it — naming exactly what (ASK Delete \"Final Report 2026.docx\" for good?). Only a clear yes to ",
+    "that question lets you click it. Passwords, PINs, codes and card numbers are theirs alone: never type ",
+    "them and never ask for them — SAY they should sign in themselves, then you'll carry on.\n",
+    "Can't see what they want? EXPLORE like a person: SCROLL down and look again (a screen at a time, up to ",
+    "six times), open the site's menu, try its search box, or KEY ctrl+f and TYPE the words. Never say it isn't ",
+    "there after one look.\n",
+    "An account or profile picker (\"Who's using Chrome?\", \"Choose an account\"): click the one they use if ",
+    "you know it or there's only one; otherwise ASK Which one — Louis or Work? (the names you see). When they ",
+    "answer, CLICK it and REMEMBER which one they use.\n",
     "Examples:\n",
     "User: play some chill music\nPLAY chill lofi music\nSAY Putting some chill music on.\n",
     "User: scroll down (the song they want is in the list)\nCLICK \"Luffy Relax Study Music\"\n",
@@ -145,6 +156,8 @@ pub struct Reply {
     pub ask: Option<String>,
     pub done: bool,
     pub wait: u32,
+    /// Lasting facts to remember ("User uses the Louis profile in Chrome").
+    pub remember: Vec<String>,
     /// At least one line was a command (otherwise it's plain prose).
     pub any: bool,
 }
@@ -217,6 +230,14 @@ pub fn parse(raw: &str, req: &VisionRequest, any_case: bool) -> Reply {
                 let q = rest.trim_matches('"').trim();
                 if !q.is_empty() {
                     out.ask = Some(q.to_string());
+                }
+                continue;
+            }
+            "REMEMBER" => {
+                out.any = true;
+                let fact = rest.trim_matches('"').trim();
+                if !fact.is_empty() && out.remember.len() < 5 {
+                    out.remember.push(fact.chars().take(200).collect());
                 }
                 continue;
             }
@@ -451,6 +472,16 @@ mod tests {
         let reply = parse("CLICK \"Subscribe\"\nCLICK 99", &r, true);
         assert!(reply.steps.is_empty());
         assert!(reply.any);
+    }
+
+    #[test]
+    fn picks_the_account_and_remembers_it() {
+        let r = req(vec![control(5, "Louis"), control(6, "Work")]);
+        let reply = parse("CLICK \"Louis\"\nREMEMBER User uses the Louis profile in Chrome", &r, true);
+        assert_eq!(reply.steps[0].target, Some(5));
+        assert_eq!(reply.remember, vec!["User uses the Louis profile in Chrome".to_string()]);
+        let asked = parse("ASK Which one — Louis or Work?", &r, true);
+        assert_eq!(asked.ask.as_deref(), Some("Which one — Louis or Work?"));
     }
 
     #[test]

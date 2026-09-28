@@ -60,6 +60,24 @@ fn ease_out_quint(t: f64) -> f64 {
     1.0 - (1.0 - t).powi(5)
 }
 
+/// Put the cursor exactly on (x, y) — physical pixels anywhere on the
+/// virtual desktop, every monitor included. enigo's absolute move scales
+/// against the *main* screen only, so a point on a second monitor (or left
+/// of the main one) landed on the main screen's edge instead. Windows' own
+/// SetCursorPos is exact; a zero-length relative move then sends a real
+/// mouse event, so hover effects and drawing apps see the movement.
+fn place(e: &mut Enigo, x: i32, y: i32) {
+    #[cfg(windows)]
+    {
+        use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
+        if unsafe { SetCursorPos(x, y) }.is_ok() {
+            let _ = e.move_mouse(0, 0, Coordinate::Rel);
+            return;
+        }
+    }
+    let _ = e.move_mouse(x, y, Coordinate::Abs);
+}
+
 /// Glide the real cursor from where it is to (x, y).
 pub fn glide_to(x: i32, y: i32, duration_ms: u64) -> Result<()> {
     let mut e = enigo()?;
@@ -73,7 +91,7 @@ pub fn glide_to(x: i32, y: i32, duration_ms: u64) -> Result<()> {
 
     // Very short hops are not worth animating.
     if dist < 3.0 {
-        e.move_mouse(x, y, Coordinate::Abs).ok();
+        place(&mut e, x, y);
         return Ok(());
     }
 
@@ -105,8 +123,7 @@ pub fn glide_to(x: i32, y: i32, duration_ms: u64) -> Result<()> {
         let linear = i as f64 / steps as f64;
         let t = ease_out_quint(linear);
         let (px, py) = bezier((sx, sy), c1, c2, (tx, ty), t);
-        e.move_mouse(px.round() as i32, py.round() as i32, Coordinate::Abs)
-            .ok();
+        place(&mut e, px.round() as i32, py.round() as i32);
 
         // Sleep against the wall clock so we stay on schedule even if a frame
         // of work ran long.
@@ -117,7 +134,7 @@ pub fn glide_to(x: i32, y: i32, duration_ms: u64) -> Result<()> {
         }
     }
 
-    e.move_mouse(x, y, Coordinate::Abs).ok();
+    place(&mut e, x, y);
     Ok(())
 }
 
@@ -208,7 +225,7 @@ pub fn stroke(points: &[[i32; 2]], move_ms: u64) -> Result<()> {
             }
             let t = i as f64 / n as f64;
             let (x, y) = (at.0 + (tx - at.0) * t, at.1 + (ty - at.1) * t);
-            e.move_mouse(x.round() as i32, y.round() as i32, Coordinate::Abs).ok();
+            place(&mut e, x.round() as i32, y.round() as i32);
             std::thread::sleep(Duration::from_millis(4));
         }
         at = (tx, ty);
@@ -430,6 +447,30 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         }
     }
 
+    // Safe hands: right before a click on a known control, make sure it's
+    // really there and can be pressed. A few milliseconds when all is well.
+    let clicking = matches!(step.action, Intent::Click | Intent::DoubleClick | Intent::RightClick);
+    if let (Some(name), true) = (step.snapped_to.as_deref().filter(|_| !dry_run && !step.hover_first), clicking) {
+        match uia::check_target(x, y, name) {
+            // The page shifted since the screenshot (an ad or picture loaded).
+            uia::AtPoint::Moved(nx, ny) => {
+                eprintln!("[hands] \"{name}\" moved since the look — clicking where it is now");
+                x = nx;
+                y = ny;
+            }
+            uia::AtPoint::Disabled => return Err(anyhow!("disabled: \"{name}\" is greyed out, so clicking it does nothing yet")),
+            uia::AtPoint::Right | uia::AtPoint::Unknown => {}
+        }
+        // Another window or pop-up on top: press it directly, no mouse.
+        if let Some(cover) = uia::covered_at(x, y) {
+            if step.action == Intent::Click && uia::press_named(name) {
+                eprintln!("[hands] \"{name}\" was under {cover} — pressed it directly");
+                return Ok(format!("pressed \"{name}\" directly (it was behind {cover})"));
+            }
+            return Err(anyhow!("covered: {cover} is on top of \"{name}\""));
+        }
+    }
+
     let label = snapped
         .clone()
         .unwrap_or_else(|| format!("{},{}", x, y));
@@ -504,6 +545,9 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
             }
             if let Some(text) = &step.text_to_type {
                 type_text(text)?;
+                if let Some(shown) = check_typed(text)? {
+                    return Ok(format!("typed \"{text}\", but the box shows \"{shown}\""));
+                }
             }
         }
         Intent::Key => {
@@ -534,6 +578,37 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     }
 
     Ok(format!("{} at {}", step.action.as_str(), label))
+}
+
+/// Whether `shown` (what a box holds) has `typed` in it, ignoring case and spacing.
+fn has_typed(shown: &str, typed: &str) -> bool {
+    let n = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+    n(shown).contains(&n(typed))
+}
+
+/// Read the box back after typing: autocorrect, a dropped letter or a slow
+/// page can leave something else there. If so — and the box holds little
+/// more than this text, so nothing of the user's is lost — type it again once.
+/// `Some(what the box shows)` if it's still wrong afterwards.
+fn check_typed(typed: &str) -> Result<Option<String>> {
+    if typed.chars().count() > 200 {
+        return Ok(None);
+    }
+    std::thread::sleep(Duration::from_millis(120));
+    let Some(shown) = uia::focused_value() else { return Ok(None) };
+    if has_typed(&shown, typed) {
+        return Ok(None);
+    }
+    // A long box (a document, an email body) is left alone: select-all
+    // there would wipe the user's own writing.
+    if shown.chars().count() > typed.chars().count() * 2 + 20 {
+        return Ok(Some(shown.chars().take(80).collect()));
+    }
+    eprintln!("[hands] the box shows \"{}\" instead of what was typed — typing it again", shown.chars().take(40).collect::<String>());
+    press_key("ctrl+a")?;
+    type_text(typed)?;
+    std::thread::sleep(Duration::from_millis(120));
+    Ok(uia::focused_value().filter(|again| !has_typed(again, typed)).map(|s| s.chars().take(80).collect()))
 }
 
 /// Ctrl+C, then read what landed on the clipboard.
@@ -631,5 +706,22 @@ mod stroke_tests {
         std::fs::write(std::env::var("IZK_OUT").unwrap(), f.to_jpeg(80).unwrap()).unwrap();
         let _ = paint.kill();
         let _ = std::process::Command::new("taskkill").args(["/IM", "mspaint.exe", "/F"]).output();
+    }
+}
+
+#[cfg(all(test, windows))]
+mod placing_tests {
+    /// The cursor lands on the exact pixel asked for (nudged 5 px, then put back).
+    /// Run on its own: cargo test --lib lands_on_the_exact_pixel -- --ignored
+    #[test]
+    #[ignore]
+    fn lands_on_the_exact_pixel() {
+        let (x0, y0) = crate::capture::cursor_pos();
+        let mut e = super::enigo().expect("mouse");
+        super::place(&mut e, x0 + 5, y0 + 5);
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        let got = crate::capture::cursor_pos();
+        super::place(&mut e, x0, y0);
+        assert_eq!(got, (x0 + 5, y0 + 5), "the cursor didn't land where it was put");
     }
 }

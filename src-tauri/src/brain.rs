@@ -774,9 +774,14 @@ where
         .ok();
 }
 
+/// Why the last run of steps stopped, when it's something the brain can fix
+/// on its next look (a window on top of the button, a greyed-out button).
+static STEP_SNAG: Mutex<Option<String>> = Mutex::new(None);
+
 /// Run `steps` on this thread. `true` if every step ran (not stopped and
 /// no step failed).
 fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> bool {
+            STEP_SNAG.lock().take();
             let settings = store.settings();
             let move_ms = settings.move_duration_ms;
             // No clear_abort() here: each task clears the flag once, when it
@@ -785,6 +790,8 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
             // Esc stops Izuki for as long as it works the screen, whether or
             // not the orb is up (a drawing or a replay has no orb).
             let _esc = crate::hotkey::working();
+            // Izuki's own orb and bubbles let every click through while it works.
+            let _hands = crate::overlay::acting(app);
 
             // If the command came from Izuki's chat bubble, Izuki holds the
             // keyboard right now — hand it back so typing lands in the app.
@@ -841,9 +848,15 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             );
                         }
                         Err(e) => {
+                            let why = e.to_string();
+                            // Something on top, or greyed out: the brain can fix
+                            // that on its next look — the task goes on.
+                            if why.starts_with("covered:") || why.starts_with("disabled:") {
+                                *STEP_SNAG.lock() = Some(why.clone());
+                            }
                             let _ = app.emit(
                                 events::STATUS,
-                                StatusEvent::error(format!("Step {} failed", i + 1), e.to_string()),
+                                StatusEvent::error(format!("Step {} failed", i + 1), why),
                             );
                             return false;
                         }
@@ -885,6 +898,99 @@ pub fn run_flow(app: &AppHandle, store: &Arc<Store>, id: &str) -> Result<()> {
 /// mark list standing in for the geometry-only fast path.
 pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String) -> VisionPlan {
     submit_task(app, store, prompt, Vec::new(), None)
+}
+
+/// "Click Subscribe", "press Sign in", "tap the Settings tab": the button is
+/// named, so find it among the real controls on screen and click it — no AI
+/// (a look takes 2–15 s; this takes a fraction of one). Only when exactly one
+/// control clearly matches; anything unclear, or anything final (delete,
+/// send, pay…, which must be confirmed first), goes to the brain as usual.
+pub fn run_named_click(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<VisionPlan> {
+    let wanted = named_target(said)?;
+    if uia::screen_locked() {
+        return None;
+    }
+    let controls = uia::controls_fresh_or_now(MAX_CONTROLS);
+    let c = unique_named(&wanted, &controls)?.clone();
+    let my_task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    automation::clear_abort();
+    let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted();
+    let (x, y) = c.rect.center();
+    let mut step: ActionStep = serde_json::from_value(serde_json::json!({ "action": "click", "x": x, "y": y, "confidence": 1.0, "reasoning": "named on screen" }))
+        .expect("a click step is always well-formed");
+    step.target = Some(c.id);
+    step.snapped_to = Some(c.name.clone());
+    step.hover_first = c.hidden;
+    step.scroll_first = c.below;
+    eprintln!("[named] \"{said}\" → clicking \"{}\" directly", c.name);
+    let worked = run_steps_blocking(app, store, std::slice::from_ref(&step), &alive);
+    if !worked {
+        // Covered or greyed out: the brain takes it from here.
+        return None;
+    }
+    Some(VisionPlan {
+        steps: vec![step],
+        summary: format!("Done — clicked {}.", c.name.chars().take(40).collect::<String>()),
+        provider: "local".into(),
+        model: "named".into(),
+        mood: Some("cheerful".into()),
+        done: true,
+        ..Default::default()
+    })
+}
+
+/// The name in "click X" / "press the X button", if that's all the request is.
+fn named_target(said: &str) -> Option<String> {
+    let s = said.trim().trim_end_matches(['.', '!', '?']).to_lowercase();
+    let s = s.trim_start_matches("please ").trim_start_matches("can you ").trim_start_matches("could you ").trim();
+    let rest = ["click on ", "click ", "press ", "tap on ", "tap ", "hit ", "select ", "choose "]
+        .iter()
+        .find_map(|v| s.strip_prefix(v))?;
+    let rest = rest.trim_start_matches("the ").trim();
+    let rest = [" button", " link", " tab", " option", " icon", " please"]
+        .iter()
+        .fold(rest.to_string(), |r, suffix| r.strip_suffix(suffix).map(str::to_string).unwrap_or(r));
+    let name = rest.trim().trim_matches(['"', '\'', '“', '”']).to_string();
+    // Several things, a position ("the second one"), or "it": the brain works that out.
+    const VAGUE: &[&str] = &["it", "that", "this", "here", "there", "one", "first", "second", "third", "last", "next"];
+    if name.len() < 2 || name.contains(" and ") || name.contains(" then ") || name.split_whitespace().count() > 6 {
+        return None;
+    }
+    if name.split_whitespace().any(|w| VAGUE.contains(&w)) {
+        return None;
+    }
+    // Final or hard to undo: these are confirmed first, by the brain.
+    const FINAL: &[&str] = &[
+        "delete", "remove", "send", "pay", "buy", "purchase", "order", "checkout", "check out", "submit", "confirm",
+        "sign out", "log out", "uninstall", "erase", "format", "transfer", "post", "publish", "yes",
+    ];
+    if FINAL.iter().any(|f| name.contains(f)) {
+        return None;
+    }
+    Some(name)
+}
+
+/// The one control named `wanted` — the same name, or else the only one
+/// whose name contains it. Two or more candidates: `None` (the brain picks).
+fn unique_named<'a>(wanted: &str, controls: &'a [uia::Control]) -> Option<&'a uia::Control> {
+    let norm = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+    let w = norm(wanted);
+    let exact: Vec<_> = controls.iter().filter(|c| norm(&c.name) == w).collect();
+    if exact.len() == 1 {
+        return Some(exact[0]);
+    }
+    if !exact.is_empty() {
+        return None;
+    }
+    let partial: Vec<_> = controls.iter().filter(|c| !c.name.is_empty() && norm(&c.name).contains(&w)).collect();
+    (partial.len() == 1).then(|| partial[0])
+}
+
+/// The user asked for windows to be minimised or hidden — then a minimised
+/// window is the job done, not a slip to undo.
+fn asked_to_minimise(prompt: &str) -> bool {
+    let p = prompt.to_lowercase();
+    ["minimi", "show desktop", "show my desktop", "hide ", "close "].iter().any(|w| p.contains(w))
 }
 
 /// "Scroll down", "louder", "pause", "next song", "go back", "new tab"…:
@@ -934,6 +1040,10 @@ fn submit_task(
     // Every way in — voice, typing, the phone, Discord — comes through here.
     if marks.is_empty() && drawn_on.is_none() {
         if let Some(plan) = run_instant(app, store, &prompt) {
+            return plan;
+        }
+        // "Click Subscribe": the button is named — clicked directly, no AI.
+        if let Some(plan) = run_named_click(app, store, &prompt) {
             return plan;
         }
     }
@@ -1343,13 +1453,47 @@ fn submit_task(
             break;
         }
 
+        // The window being worked in, so a step that minimises it by mistake
+        // ("clear what's in the way" gone wrong) is caught and undone.
+        let working_in = uia::target_window();
         let finished = run_steps_blocking(app, store, &steps, &alive);
         all_steps.extend(steps.iter().cloned());
         done_so_far.extend(steps.iter().map(describe_step));
+        // A click that couldn't happen (something on top, a greyed-out
+        // button) isn't the end: tell the brain, and it deals with it.
+        let snag = STEP_SNAG.lock().take();
+        if let Some(why) = &snag {
+            eprintln!("[agent] a click couldn't happen — {why}");
+            let note = format!(
+                "Your last click didn't happen — {why}. Deal with it like a person would: close what's on top (its ✕ \
+                 or Close), drag it aside by its title bar, or minimise it; if the button is greyed out, first do what \
+                 turns it on (fill in the required boxes, tick the box, pick an option). Then click it again."
+            );
+            told = Some(match told.take() {
+                Some(t) => format!("{t}\n{note}"),
+                None => note,
+            });
+        }
+        if let Some(raw) = working_in.filter(|_| !asked_to_minimise(&prompt)) {
+            if let Some(title) = uia::restore_if_minimised(raw) {
+                eprintln!("[agent] a step minimised the window it was working in (\"{title}\") — put it back");
+                let note = format!(
+                    "One of your steps minimised the window you were working in (\"{title}\") — Izuki has put it \
+                     back. Say so in a few words, like a person would (\"Oops, I minimised that by mistake — it's \
+                     back\"), and carry on without minimising it again."
+                );
+                told = Some(match told.take() {
+                    Some(t) => format!("{t}\n{note}"),
+                    None => note,
+                });
+            }
+        }
         if done && finished {
             completed = true;
         }
-        if !finished || !alive() || done || round + 1 == MAX_ROUNDS {
+        // A snag (something on top, greyed out) means look again and fix it — not stop.
+        let fixable = snag.is_some();
+        if (!finished && !fixable) || !alive() || (done && !fixable) || round + 1 == MAX_ROUNDS {
             // Ran out of rounds mid-task: "keep going" carries on from here.
             if round + 1 == MAX_ROUNDS && !done && finished {
                 *UNFINISHED.lock() = Some((prompt.clone(), done_so_far.clone()));
@@ -1390,13 +1534,18 @@ fn submit_task(
             if !still {
                 crate::live::wait_until_settled(Duration::from_millis(250), Duration::from_secs(3), || !alive());
             }
-            told = Some(if still {
+            let loading = if still {
                 format!(
                     "It's STILL loading ({why}) — slow internet, not a failure. Don't click again and don't decide \
                      anything is missing: say it's loading, set \"wait\" to a few seconds, and look again."
                 )
             } else {
                 format!("It was loading for a moment ({why}) and has finished now — judge the screen as it is.")
+            };
+            // Added to anything already noted (a window put back), never over it.
+            told = Some(match told.take() {
+                Some(t) => format!("{t}\n{loading}"),
+                None => loading,
             });
         }
         match capture::capture_all() {
@@ -1668,6 +1817,38 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
 mod speed_tests {
     use super::*;
     use crate::settings::{ProviderId, Settings};
+
+    #[test]
+    fn named_clicks_skip_the_brain_only_when_clear_and_safe() {
+        assert_eq!(named_target("click Subscribe").as_deref(), Some("subscribe"));
+        assert_eq!(named_target("Please press the Sign in button.").as_deref(), Some("sign in"));
+        assert_eq!(named_target("tap on the Settings tab").as_deref(), Some("settings"));
+        // Final things are confirmed first, by the brain.
+        assert_eq!(named_target("click delete"), None);
+        assert_eq!(named_target("press send"), None);
+        assert_eq!(named_target("click Pay now"), None);
+        // Positions, "it", several steps: the brain works those out.
+        assert_eq!(named_target("click the second video"), None);
+        assert_eq!(named_target("click it"), None);
+        assert_eq!(named_target("click search and type lofi"), None);
+        assert_eq!(named_target("open youtube"), None);
+
+        let control = |id: u32, name: &str| uia::Control {
+            id,
+            kind: "Button".into(),
+            name: name.into(),
+            rect: Rect { x: 0, y: 0, w: 10, h: 10 },
+            hidden: false,
+            value: String::new(),
+            focused: false,
+            below: false,
+        };
+        let cs = vec![control(1, "Subscribe"), control(2, "Subscribed channels"), control(3, "Sign in")];
+        assert_eq!(unique_named("subscribe", &cs).map(|c| c.id), Some(1), "the exact name wins");
+        assert_eq!(unique_named("sign", &cs).map(|c| c.id), Some(3));
+        let twins = vec![control(1, "Play"), control(2, "Play")];
+        assert!(unique_named("play", &twins).is_none(), "two the same: the brain picks");
+    }
 
     #[test]
     fn an_overloaded_brain_rests_instead_of_costing_every_look() {

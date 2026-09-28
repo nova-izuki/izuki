@@ -309,9 +309,14 @@ fn collect(
     let mut hidden_found = 0usize;
     let mut below_found = 0usize;
     let mut visited = 0usize;
-    let mut stack = vec![root];
+    // Each element travels with the area it can actually be seen in: the
+    // window, narrowed to the page itself inside a browser (a Document). A
+    // link half-scrolled under the address bar used to be clicked at the
+    // middle of its *whole* box — on the address bar or a tab. Now its box
+    // is cut to the visible part, and that's where the click goes.
+    let mut stack: Vec<(uiautomation::UIElement, Option<Rect>)> = vec![(root, window)];
 
-    while let Some(el) = stack.pop() {
+    while let Some((el, view)) = stack.pop() {
         visited += 1;
         if visited > node_budget
             || std::time::Instant::now() > deadline
@@ -364,7 +369,10 @@ fn collect(
                             focused: false,
                             below: true,
                         });
-                    } else if rect.w > 2 && rect.h > 2 && inside && hidden_ok && (!offscreen || hover_only) {
+                    } else if let Some(rect) = rect
+                        .intersect(view.as_ref().unwrap_or(&rect))
+                        .filter(|r| r.w > 2 && r.h > 2 && inside && hidden_ok && (!offscreen || hover_only))
+                    {
                         if offscreen {
                             hidden_found += 1;
                         }
@@ -397,6 +405,19 @@ fn collect(
             }
         }
 
+        // Inside a web page (or any document), only its own area shows its content.
+        let child_view = match el.get_control_type() {
+            Ok(uiautomation::types::ControlType::Document) => el
+                .get_bounding_rectangle()
+                .ok()
+                .map(|r| to_rect(&r))
+                .and_then(|doc| match &view {
+                    Some(v) => doc.intersect(v),
+                    None => Some(doc),
+                })
+                .or(view),
+            _ => view,
+        };
         // Depth-first, children pushed in reverse so they pop in order.
         if let Ok(first) = walker.get_first_child(&el) {
             let mut kids = vec![first];
@@ -406,7 +427,7 @@ fn collect(
                     Err(_) => break,
                 }
             }
-            stack.extend(kids.into_iter().rev());
+            stack.extend(kids.into_iter().rev().map(|k| (k, child_view)));
         }
     }
 }
@@ -437,6 +458,214 @@ pub fn focus_target_window() {
 
 #[cfg(not(windows))]
 pub fn focus_target_window() {}
+
+// ---------------------------------------------------------------------------
+// Safe hands: checks right before a click, each a few milliseconds
+// ---------------------------------------------------------------------------
+
+/// What's really at a click point, compared with the control Izuki means.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AtPoint {
+    /// It's there, and it can be pressed.
+    Right,
+    /// It's there but greyed out — clicking would do nothing.
+    Disabled,
+    /// It moved since the screenshot (the page shifted): it's here now.
+    Moved(i32, i32),
+    /// Can't tell (no name to go by, or the app doesn't say).
+    Unknown,
+}
+
+fn same_name(have: &str, want: &str) -> bool {
+    let n = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+    let (h, w) = (n(have), n(want));
+    // Names in Izuki's list are cut at 60 characters: a longer real name starts with it.
+    !w.is_empty() && (h == w || (w.chars().count() >= 3 && h.starts_with(&w)))
+}
+
+#[cfg(windows)]
+fn find_named(automation: &uiautomation::UIAutomation, name: &str) -> Option<uiautomation::UIElement> {
+    use uiautomation::types::{PropertyConditionFlags, TreeScope, UIProperty};
+    let root = automation.element_from_handle(target_window()?.into()).ok()?;
+    let needle: String = name.chars().take(50).collect();
+    let cond = automation
+        .create_property_condition(UIProperty::Name, needle.as_str().into(), Some(PropertyConditionFlags::All))
+        .ok()?;
+    root.find_first(TreeScope::Descendants, &cond).ok()
+}
+
+/// Right before a click on the control called `name` at (x, y): is it really
+/// there, and can it be pressed? Pages move after the screenshot (an ad or a
+/// picture loads and everything shifts) — then this says where it is now.
+/// One quick question to Windows when all is well; a search only when not.
+#[cfg(windows)]
+pub fn check_target(x: i32, y: i32, name: &str) -> AtPoint {
+    use uiautomation::types::Point;
+    use uiautomation::UIAutomation;
+    if name.trim().chars().count() < 2 {
+        return AtPoint::Unknown;
+    }
+    let Ok(automation) = UIAutomation::new().or_else(|_| UIAutomation::new_direct()) else { return AtPoint::Unknown };
+    // What's under the point — or one of its parents (the text inside a link).
+    if let Ok(hit) = automation.element_from_point(Point::new(x, y)) {
+        let walker = automation.get_control_view_walker().ok();
+        let mut el = Some(hit);
+        for _ in 0..5 {
+            let Some(e) = el else { break };
+            if same_name(&e.get_name().unwrap_or_default(), name) {
+                return if e.is_enabled().unwrap_or(true) { AtPoint::Right } else { AtPoint::Disabled };
+            }
+            el = walker.as_ref().and_then(|w| w.get_parent(&e).ok());
+        }
+    }
+    // Not there: find it again.
+    let Some(el) = find_named(&automation, name) else { return AtPoint::Unknown };
+    if !el.is_enabled().unwrap_or(true) {
+        return AtPoint::Disabled;
+    }
+    let Ok(r) = el.get_bounding_rectangle() else { return AtPoint::Unknown };
+    let r = to_rect(&r);
+    if r.w <= 2 || r.h <= 2 || el.is_offscreen().unwrap_or(false) {
+        return AtPoint::Unknown;
+    }
+    let (cx, cy) = r.center();
+    if (cx - x).abs() + (cy - y).abs() > 8 {
+        AtPoint::Moved(cx, cy)
+    } else {
+        AtPoint::Right
+    }
+}
+
+#[cfg(not(windows))]
+pub fn check_target(_x: i32, _y: i32, _name: &str) -> AtPoint {
+    AtPoint::Unknown
+}
+
+/// Press the control called `name` directly through Windows, no mouse — for
+/// when something sits on top of it. (Microsoft's UFO² desktop agent found
+/// acting on controls directly recovers a quarter of failed clicks.)
+#[cfg(windows)]
+pub fn press_named(name: &str) -> bool {
+    use uiautomation::patterns::{UIInvokePattern, UILegacyIAccessiblePattern, UISelectionItemPattern, UITogglePattern};
+    use uiautomation::UIAutomation;
+    let Ok(automation) = UIAutomation::new().or_else(|_| UIAutomation::new_direct()) else { return false };
+    let Some(el) = find_named(&automation, name) else { return false };
+    if let Ok(p) = el.get_pattern::<UIInvokePattern>() {
+        if p.invoke().is_ok() {
+            return true;
+        }
+    }
+    if let Ok(p) = el.get_pattern::<UITogglePattern>() {
+        if p.toggle().is_ok() {
+            return true;
+        }
+    }
+    if let Ok(p) = el.get_pattern::<UISelectionItemPattern>() {
+        if p.select().is_ok() {
+            return true;
+        }
+    }
+    el.get_pattern::<UILegacyIAccessiblePattern>().is_ok_and(|p| p.do_default_action().is_ok())
+}
+
+#[cfg(not(windows))]
+pub fn press_named(_name: &str) -> bool {
+    false
+}
+
+/// What the text box with the keyboard focus holds now (never a password box).
+#[cfg(windows)]
+pub fn focused_value() -> Option<String> {
+    use uiautomation::patterns::UIValuePattern;
+    use uiautomation::UIAutomation;
+    let automation = UIAutomation::new().or_else(|_| UIAutomation::new_direct()).ok()?;
+    let el = automation.get_focused_element().ok()?;
+    if el.is_password().unwrap_or(true) {
+        return None;
+    }
+    el.get_pattern::<UIValuePattern>().ok()?.get_value().ok()
+}
+
+#[cfg(not(windows))]
+pub fn focused_value() -> Option<String> {
+    None
+}
+
+/// Is something else sitting on top of (x, y) — another app's window, a
+/// notification, a floating chat head — so a click there would land on it
+/// instead of the window Izuki is working in? Its name if so. Menus, pop-ups
+/// and dialogs of the same app don't count (they're what you click), nor do
+/// Izuki's own windows (they let clicks through while Izuki acts).
+#[cfg(windows)]
+pub fn covered_at(x: i32, y: i32) -> Option<String> {
+    use windows::Win32::Foundation::{HWND, POINT};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetAncestor, GetClassNameW, GetWindowTextW, GetWindowThreadProcessId, WindowFromPoint, GA_ROOT,
+    };
+    let target = HWND(target_window()? as *mut core::ffi::c_void);
+    unsafe {
+        let here = WindowFromPoint(POINT { x, y });
+        if here.0.is_null() {
+            return None;
+        }
+        let root = GetAncestor(here, GA_ROOT);
+        if root == target || here == target {
+            return None;
+        }
+        let pid_of = |h: HWND| {
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(h, Some(&mut pid));
+            pid
+        };
+        let theirs = pid_of(root);
+        if theirs == std::process::id() || theirs == pid_of(target) {
+            return None;
+        }
+        let mut buf = [0u16; 256];
+        let n = GetWindowTextW(root, &mut buf);
+        let mut name = String::from_utf16_lossy(&buf[..n.max(0) as usize]).trim().to_string();
+        if name.is_empty() {
+            let n = GetClassNameW(root, &mut buf);
+            let class = String::from_utf16_lossy(&buf[..n.max(0) as usize]);
+            name = match class.as_str() {
+                "Windows.UI.Core.CoreWindow" => "a Windows notification".to_string(),
+                "Shell_TrayWnd" | "Shell_SecondaryTrayWnd" => "the taskbar".to_string(),
+                _ => format!("another window ({})", process_name(theirs)),
+            };
+        }
+        Some(name)
+    }
+}
+
+#[cfg(not(windows))]
+pub fn covered_at(_x: i32, _y: i32) -> Option<String> {
+    None
+}
+
+/// If the window `raw` (from [`target_window`]) has been minimised, put it
+/// back in front and say what it was called. For when one of Izuki's own
+/// steps minimised the very window it was working in.
+#[cfg(windows)]
+pub fn restore_if_minimised(raw: isize) -> Option<String> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowTextW, IsIconic, IsWindow, SetForegroundWindow, ShowWindow, SW_RESTORE};
+    unsafe {
+        let hwnd = HWND(raw as *mut core::ffi::c_void);
+        if !IsWindow(Some(hwnd)).as_bool() || !IsIconic(hwnd).as_bool() {
+            return None;
+        }
+        let _ = ShowWindow(hwnd, SW_RESTORE);
+        let _ = SetForegroundWindow(hwnd);
+        let mut buf = [0u16; 256];
+        let n = GetWindowTextW(hwnd, &mut buf);
+        Some(String::from_utf16_lossy(&buf[..n.max(0) as usize]))
+    }
+}
+
+#[cfg(not(windows))]
+pub fn restore_if_minimised(_raw: isize) -> Option<String> {
+    None
+}
 
 /// Have the app scroll the control named `name` into view (browsers and
 /// most apps can, exactly), and say where it is now. `None` if it couldn't

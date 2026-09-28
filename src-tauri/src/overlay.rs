@@ -362,10 +362,39 @@ pub fn end_quickdraw(app: &AppHandle) {
 /// over one. Deliberately never takes focus: hovering the bubble must not
 /// yank the keyboard away from whatever you're typing in.
 pub fn set_overlay_hit(app: &AppHandle, hit: bool) -> Result<()> {
+    // While Izuki's own hands are working, its orb and bubbles never catch
+    // the click it's making — see `Acting`.
+    if hit && ACTING.load(std::sync::atomic::Ordering::SeqCst) {
+        return Ok(());
+    }
     if let Some(w) = app.get_webview_window(OVERLAY_LABEL) {
         w.set_ignore_cursor_events(!hit)?;
     }
     Ok(())
+}
+
+static ACTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// While this lives, Izuki's own floating orb, chat bubble and caption let
+/// every click through to the app underneath. They catch clicks when the
+/// pointer is over them (so you can drag or close them) — and when Izuki's
+/// hand moved there to click something they happened to sit on, the click
+/// landed on Izuki's own orb instead.
+pub struct Acting(AppHandle);
+
+pub fn acting(app: &AppHandle) -> Acting {
+    ACTING.store(true, std::sync::atomic::Ordering::SeqCst);
+    if let Some(w) = app.get_webview_window(OVERLAY_LABEL) {
+        let _ = w.set_ignore_cursor_events(true);
+    }
+    Acting(app.clone())
+}
+
+impl Drop for Acting {
+    fn drop(&mut self) {
+        ACTING.store(false, std::sync::atomic::Ordering::SeqCst);
+        let _ = &self.0; // the overlay's hit-testing takes over again on the next pointer move
+    }
 }
 
 /// A caption needs somewhere to render even when nothing else has the

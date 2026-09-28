@@ -127,6 +127,12 @@ const SYSTEM_PROMPT: &str = concat!(
     "\"text_to_type\":\"bundle by bundle burna boy\"} finds a video on YouTube and starts it in one go ",
     "(it also skips YouTube ads by itself) — use it for any song or video to play there. They need no x/y. After one, ",
     "set \"wait\": 1 and look again before typing — the new window takes a moment to appear.\n",
+    "EXPLORE LIKE A PERSON when what they want isn't in view: never say you can't find it after one ",
+    "look. Scroll down the page a screen at a time and READ each new screen (up to about six scrolls, ",
+    "then back up if needed); open the site's menu (☰, \"More\", a profile icon, the nav bar and its ",
+    "tabs) and look inside; try the site's own search box; press ctrl+f and type the words to jump to them ",
+    "on a long page. Keep a note of where you've already looked so you don't go round in circles. Only ",
+    "after all that, say plainly what you tried and ask.\n",
     "Finding something (a site, a link, a button, a file): 1) look at what's on screen — open ",
     "tabs, the bookmarks bar, links on the page, desktop icons, the taskbar; 2) if it could be ",
     "further down or in a list, scroll and look again; 3) if it isn't there, search for it — for ",
@@ -170,14 +176,21 @@ const SYSTEM_PROMPT: &str = concat!(
     "screen (titles, channels, views, ratings, dates), match it to what they asked and what you ",
     "remember they like, skip ads, clickbait and anything they've just seen, then commit — click it ",
     "and say in a few words why (\"This one's got two million views and it's exactly that vibe\"). ",
-    "Look at most ONE scroll further for options, then decide; never keep scrolling to compare. ",
+    "When CHOOSING between similar options (videos, songs, results), look at most ONE scroll further, then ",
+    "decide; never keep scrolling to compare. (Looking for one SPECIFIC thing is different — explore, below.) ",
     "\"Another one\", \"something else\", \"next\" means a DIFFERENT pick from the one just ",
     "played or opened (see your notes and the steps already done), in the same spirit — on YouTube ",
     "use play_youtube again (it never repeats one it just played), click a fitting \"Up next\" ",
     "video, or press shift+n on a playing video for YouTube's own next pick. A vague ask (\"play some cool videos\", \"something chill\") is yours to interpret: ",
     "turn it into a great search from what you know about them, and play the best result.\n",
+    "ACCOUNT AND PROFILE PICKERS — Chrome's \"Who's using Chrome?\", Google's \"Choose an account\", ",
+    "Netflix/YouTube/Microsoft profiles: never just stop there. If you remember which one they use ",
+    "(\"User uses the Louis profile\"), or there's only one, click it right away. Otherwise set \"ask\" ",
+    "naming the ones you can see (\"Which one — Louis or Work?\"); when they answer, click that one AND ",
+    "add to `remember` which one they use there, so next time you just click it. Clicking an account ",
+    "that's already on the PC isn't signing in — but if it then asks for a password, stop and say so.\n",
     "`ask` is ONLY for: something final or hard to undo (below); a choice that's costly if wrong ",
-    "and truly theirs (which account, which person to send it to, what to buy); or a request that ",
+    "and truly theirs (which person to send it to, what to buy, an account you can't tell); or a request that ",
     "still makes no sense after your best guess. Then leave `steps` empty and set \"ask\" to one ",
     "short spoken question naming the real choices (\"Want me to sign in with Google or with ",
     "Microsoft?\") — at most three, easy to answer in a word. They'll answer out loud, type it, or ",
@@ -540,6 +553,7 @@ fn plan_from_lines(cfg: &ProviderConfig, req: &VisionRequest, reply: crate::easy
         ask: reply.ask,
         done: reply.done,
         wait: reply.wait,
+        remember: reply.remember,
         ..Default::default()
     }
 }
@@ -1000,10 +1014,13 @@ fn ask_anthropic(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Res
         "system": style.system(),
         "messages": [{
             "role": "user",
+            // The words first, then the picture: knowing what to look for
+            // before seeing the screenshot makes clicks land more accurately
+            // (Anthropic's computer-use guidance).
             "content": [
+                { "type": "text", "text": style.user(req) },
                 { "type": "image", "source": {
-                    "type": "base64", "media_type": "image/jpeg", "data": req.b64() } },
-                { "type": "text", "text": style.user(req) }
+                    "type": "base64", "media_type": "image/jpeg", "data": req.b64() } }
             ]
         }]
     });
