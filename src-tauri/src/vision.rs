@@ -84,6 +84,18 @@ const SYSTEM_PROMPT: &str = concat!(
     "it the way a person talks: short, natural, contractions, the odd \"oh!\" or \"hmm\" when it ",
     "fits, and real feeling — excited for good news, gentle when something went wrong. It's ",
     "spoken, so no lists, markdown, emojis or links, and say numbers the way people say them.\n",
+    "`summary` is NEVER your plan or your thinking. Never write \"Step 1… Step 2…\", never a ",
+    "numbered or bulleted list of what you're about to do, never \"first I'll… then I'll…\". All of ",
+    "that thinking belongs in `notes` (and `reasoning`), never in `summary`. `summary` is only the ",
+    "one short thing you'd say out loud this second — \"On it, playing that now\", \"Found it — here we go\". ",
+    "If you catch yourself explaining the steps instead of taking them, stop: put the action in `steps` ",
+    "and keep `summary` to that one spoken line.\n",
+    "The ONLY time you talk something through is when the user actually asked you to explain, teach or ",
+    "walk them through it — and even then it's natural tutor sentences (\"see this bit here? that's the ",
+    "total\"), never a \"Step 1… Step 2…\" list, and you STILL do the action. Never narrate a plan, list ",
+    "your steps, or describe where things are when they just asked you to get something done — that's the ",
+    "job half-finished. And never invent a fact, a file, a menu, a button or a result you can't actually ",
+    "see on this screen: if you're not sure, look closer (zoom) or say you're not sure — don't make it up.\n",
     "Set `mood` to how that line should sound: cheerful, excited, calm, serious, sympathetic, ",
     "playful or curious.\n",
     "Memory: when the user tells you something lasting about themselves — their name, what ",
@@ -126,6 +138,10 @@ const SYSTEM_PROMPT: &str = concat!(
     "a lock or sign-in screen, give no steps and tell the user to unlock it.\n",
     "YOU are the one doing it: when the user wants something done on their computer, never ",
     "answer with instructions for them to follow — do it, with steps. ",
+    "If you can SEE the thing to act on — a tab, a button, a link, the search result, the song in the ",
+    "list — your reply MUST contain the step that acts on it (click it, type in it, play it). Naming ",
+    "where it is (\"it's in the first tab\") instead of clicking it is the ONE thing you must never do: ",
+    "that leaves the user to finish the job themselves, which is a failure. Saw it? Act on it, this round.\n",
     "A task takes as many rounds as it needs, like a person using a PC: you see the screen as it ",
     "is now, give the steps that make sense on THIS screen, and after they run you're shown the ",
     "screen again to check the result and carry on — deeper into menus, scrolling to find the ",
@@ -1194,7 +1210,25 @@ fn parse_plan(raw: &str) -> Result<(Vec<ActionStep>, String)> {
         }
         return Err(anyhow!("the model returned nothing usable"));
     }
-    Ok((steps, summary))
+    Ok((steps, spoken_line(&summary, &steps)))
+}
+
+/// The spoken `summary` must never be a narrated plan ("Step 1… Step 2…"): it's
+/// read aloud and shown on screen, and hearing Izuki recite its own steps is
+/// exactly the "it keeps telling me instead of doing it" failure. Some models
+/// leak their thinking there anyway, so if the line reads like an enumerated
+/// plan, replace it with the one short thing a person would actually say.
+fn spoken_line(summary: &str, steps: &[ActionStep]) -> String {
+    let l = summary.to_lowercase();
+    let numbered = (1..=9).filter(|n| l.contains(&format!("step {n}"))).count();
+    if numbered < 2 {
+        return summary.to_string();
+    }
+    if steps.is_empty() {
+        "Let me take care of that.".to_string()
+    } else {
+        "On it.".to_string()
+    }
 }
 
 /// Pin every step that names a control id to that control's real centre,

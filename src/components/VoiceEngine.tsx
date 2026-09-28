@@ -547,6 +547,17 @@ export function VoiceEngine() {
     stopAllSpeech(why);
     void api.cancelTask().catch(() => undefined);
     endSession(why);
+    // The orb is also shown for one-off screen tasks with no voice session on.
+    // endSession() bails early then (session isn't "on"), so the ✕ would cancel
+    // the task but leave the orb up — and the meter loop, seeing thinkingNow
+    // still true, would re-show it. Force everything down here, always, so the
+    // ✕ (and Esc, and "stop") always closes the orb no matter what state it's in.
+    thinkingNow.current = false;
+    listeningNow.current = false;
+    cancelListen.current();
+    void emit(EV.orb, "hidden" satisfies OrbState);
+    setBusy(false);
+    showTranscript("", false);
   };
 
   // `listenAgain` / `listenThrough` need the dictation hook, declared below.
