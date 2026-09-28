@@ -1210,7 +1210,8 @@ fn parse_plan(raw: &str) -> Result<(Vec<ActionStep>, String)> {
         }
         return Err(anyhow!("the model returned nothing usable"));
     }
-    Ok((steps, spoken_line(&summary, &steps)))
+    let summary = spoken_line(&summary, &steps);
+    Ok((steps, summary))
 }
 
 /// The spoken `summary` must never be a narrated plan ("Step 1… Step 2…"): it's
