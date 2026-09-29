@@ -348,3 +348,14 @@ Fix whatever breaks; keep each fix small.
   accounts (`wantsAccount` in `docs/app/index.html`). Add keywords rather than
   trusting the prompt. Keep "clear chat" on both — the phone must re-enter
   `if (talking) listen()` on any early return, or a call goes deaf.
+- **Never state anything from the user's apps without a tool that really ran.**
+  A model will invent an inbox and then insist it "checked it directly" — this
+  happened for real. A `search` only finds *tools*; it does not open the app,
+  so it must not license a claim. `composio.rs` sets `executed` only when a
+  `run`/n8n really ran, sends a talk-back answer back up to twice, and on
+  refusal returns an honest "I couldn't open it" plus a sign-in link.
+- The apps snapshot answers a repeat read with **no AI call at all**, from the
+  previous finished answer. Read-only questions only — see `is_read_question`,
+  which must keep rejecting anything that sends, deletes, posts or changes
+  ("delete the last email" is not a question). Keep the stored text as the
+  natural answer, never raw tool JSON.

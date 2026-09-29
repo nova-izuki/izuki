@@ -229,6 +229,14 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
         });
     }
 
+    // A repeat read of an app we already opened: answer from what the tool
+    // actually returned. No AI call, instant, and nothing invented.
+    let latest = history.iter().rev().find(|t| t.role != "assistant").map(|t| t.content.clone()).unwrap_or_default();
+    if let Some(a) = snapshot_answer(&latest) {
+        eprintln!("[apps] answered from snapshot ({})", asked_app(&latest).unwrap_or("?"));
+        return Ok(a);
+    }
+
     let hooks = crate::state::store().settings().n8n_hooks;
     let n8n = if hooks.is_empty() {
         String::new()
@@ -249,6 +257,14 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
     let started = STOPS.load(std::sync::atomic::Ordering::SeqCst);
     let halt = || Answer { text: "Okay, I stopped.".into(), links: Vec::new() };
     let mut links = Vec::new();
+    // Nothing in the user's apps may be claimed until a tool has really run.
+    let mut executed = false;
+    // How many times we have sent a talk-back answer back for using a tool.
+    let mut nagged = 0u8;
+    // An app a search found not linked yet, to offer a sign-in link for.
+    let mut missing: Option<String> = None;
+    // The app a tool actually read, so the finished answer can be kept.
+    let mut read_app: Option<String> = None;
     let began = std::time::Instant::now();
     for round in 0..MAX_ROUNDS {
         // Never keep them waiting for minutes: past this, answer with what
@@ -272,10 +288,53 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
         messages.push(json!({ "role": "assistant", "content": step.to_string() }));
 
         let seen = if let Some(text) = step["reply"].as_str() {
-            return Ok(Answer { text: text.trim().to_string(), links });
+            // An answer that never actually read anything is a guess, not an
+            // answer — and a model will invent an inbox and then insist it
+            // "checked it directly". Searching only finds the *tools*; it does
+            // not open the mailbox. So a claim about the user's data is only
+            // allowed once a tool has really run.
+            if !executed && nagged < 2 {
+                nagged += 1;
+                eprintln!("[apps] answered without running a tool (send-back {nagged})");
+                messages.push(json!({
+                    "role": "user",
+                    "content": "You have not read anything yet. Searching only finds which tools exist — it does \
+                                not open the app, so you cannot know what is in the user's inbox, calendar or files. \
+                                Either {\"run\": {\"tool\": …, \"arguments\": {…}}} to really call a tool and read its \
+                                result, or {\"connect\": \"<app>\"} if that app is not linked yet. Until a tool has run, \
+                                do not describe the user's data.".to_string()
+                }));
+                continue;
+            }
+            if !executed {
+                // It still will not look. Say so honestly instead of inventing.
+                let app = missing.clone().unwrap_or_else(|| "gmail".into());
+                if let Ok(url) = link(&app) {
+                    if !url.is_empty() {
+                        links.push((pretty(&app), url));
+                    }
+                }
+                eprintln!("[apps] no tool ever ran — answering honestly ({app})");
+                return Ok(Answer {
+                    text: format!(
+                        "I couldn't actually open your {app} just now, so I don't want to guess at what's in there. \
+                         Sign in with the link (just once), then ask me again."
+                    ),
+                    links,
+                });
+            }
+            return Ok(Answer {
+                text: remember(read_app.as_deref(), text.trim().to_string()),
+                links,
+            });
         } else if let Some(q) = step["search"].as_str() {
             match router(&key, "search", &json!({ "queries": [{ "use_case": q }] })) {
-                Ok(v) => describe_search(&v),
+                Ok(v) => {
+                    if missing.is_none() {
+                        missing = unconnected(&v);
+                    }
+                    describe_search(&v)
+                }
                 Err(e) => format!("Search failed: {e}"),
             }
         } else if let Some(app) = step["connect"].as_str() {
@@ -297,12 +356,14 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
                 Err(e) => format!("Couldn't make a sign-in link: {e}"),
             }
         } else if step["n8n"].is_object() {
+            executed = true;
             let name = step["n8n"]["name"].as_str().unwrap_or_default();
             match run_n8n(name, &step["n8n"]["data"]) {
                 Ok(r) => format!("n8n \"{name}\" result: {r}"),
                 Err(e) => format!("n8n failed: {e}"),
             }
         } else if step["run"].is_object() {
+            executed = true;
             let tool = step["run"]["tool"].as_str().unwrap_or_default();
             let args = step["run"]["arguments"].clone();
             let args = if args.is_object() { args } else { json!({}) };
@@ -311,7 +372,12 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
                     let err = v["error"].as_str().filter(|e| !e.is_empty());
                     match err {
                         Some(e) => format!("{tool} failed: {e}"),
-                        None => format!("{tool} result: {}", clip(&v["data"].to_string(), RESULT_CHARS)),
+                        None => {
+                            // Note which app was really read, so the finished
+                            // answer can be kept for next time (see below).
+                            read_app = Some(app_of(tool));
+                            format!("{tool} result: {}", clip(&v["data"].to_string(), RESULT_CHARS))
+                        }
                     }
                 }
                 Err(e) => format!("{tool} failed: {e}"),
@@ -327,7 +393,122 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
     let text = parse_step(&raw)
         .and_then(|v| v["reply"].as_str().map(str::to_string))
         .unwrap_or_else(|| plain(&raw));
-    Ok(Answer { text, links })
+    Ok(Answer { text: remember(read_app.as_deref(), text), links })
+}
+
+/// The first app a search said isn't linked yet, so we can offer a sign-in
+/// link instead of the model talking around the gap.
+fn unconnected(v: &Value) -> Option<String> {
+    v["toolkit_connection_statuses"]
+        .as_array()?
+        .iter()
+        .find(|c| !c["has_active_connection"].as_bool().unwrap_or(false))
+        .and_then(|c| c["toolkit"].as_str())
+        .map(str::to_lowercase)
+}
+
+/// Keep the finished answer for that app, so the same question again costs no
+/// AI and still reads naturally (it is the answer, not the raw tool output).
+fn remember(app: Option<&str>, text: String) -> String {
+    if let Some(app) = app {
+        snapshot_put(app, text.clone());
+    }
+    text
+}
+
+// --------------------------------------------------------------- snapshots
+/// The last *real* result read from an app: (toolkit, RFC-ish stamp, text).
+/// Asking again about the same app answers from this — no AI call at all, so
+/// it costs nothing, answers instantly, and cannot invent anything, because
+/// the words came out of a tool rather than out of a model.
+static SNAPSHOTS: Mutex<Vec<(String, u64, String)>> = Mutex::new(Vec::new());
+/// How long a snapshot counts as current.
+const SNAPSHOT_TTL_MINS: u64 = 5;
+const KEPT: usize = 8;
+
+/// The app a tool belongs to: `GMAIL_FETCH_EMAILS` -> "gmail".
+fn app_of(tool: &str) -> String {
+    tool.split('_').next().unwrap_or(tool).to_lowercase()
+}
+
+/// Minutes since the Unix epoch — enough to say "read 4 minutes ago".
+fn now_mins() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() / 60)
+        .unwrap_or(0)
+}
+
+fn ago(then: u64) -> String {
+    match now_mins().saturating_sub(then) {
+        0 => "just now".to_string(),
+        1 => "a minute ago".to_string(),
+        n if n < 60 => format!("{n} minutes ago"),
+        n => format!("{} hours ago", n / 60),
+    }
+}
+
+fn snapshot_put(app: &str, text: String) {
+    let mut s = SNAPSHOTS.lock();
+    s.retain(|(a, _, _)| a != app);
+    s.push((app.to_string(), now_mins(), text));
+    let excess = s.len().saturating_sub(KEPT);
+    s.drain(..excess);
+}
+
+/// The app a read-only question is about, if we recognise it.
+fn asked_app(said: &str) -> Option<&'static str> {
+    let t = said.to_lowercase();
+    const MAP: &[(&str, &str)] = &[
+        ("inbox", "gmail"), ("gmail", "gmail"), ("email", "gmail"),
+        ("mail", "gmail"), ("calendar", "googlecalendar"), ("diary", "googlecalendar"),
+        ("schedule", "googlecalendar"), ("drive", "googledrive"), ("cloud file", "googledrive"),
+        ("notion", "notion"), ("notes", "notion"), ("slack", "slack"),
+        ("github", "github"), ("blackboard", "blackboard"), ("canvas", "canvas"),
+        ("whatsapp", "whatsapp"), ("telegram", "telegram"), ("youtube", "youtube"),
+    ];
+    MAP.iter().find(|(k, _)| t.contains(k)).map(|(_, v)| *v)
+}
+
+/// A question that only *reads* — safe to answer from a snapshot. Anything
+/// that sends, posts, changes or deletes is never served this way, however
+/// innocent it sounds ("delete the last email" is not a question).
+fn is_read_question(said: &str) -> bool {
+    let t = said.to_lowercase();
+    const READ: &[&str] = &["new", "unread", "latest", "any", "check", "what's in", "whats in", "read", "show me", "how many", "last "];
+    const ACTS: &[&str] = &[
+        "send", "delete", "remove", "archive", "reply", "respond", "forward",
+        "post", "schedule", "book", "move", "rename", "add ", "create", "update",
+        "set ", "mark", "star", "unread it", "buy", "pay", "cancel", "confirm",
+        "summarise", "summarize", "explain", "translate",
+    ];
+    if ACTS.iter().any(|k| t.contains(k)) {
+        return false;
+    }
+    // "check again" / "refresh" means they want a fresh look, not the cache.
+    !["again", "refresh", "now", "re-", "update"].iter().any(|k| t.contains(k)) && READ.iter().any(|k| t.contains(k))
+}
+
+/// The snapshot answer for a repeat question, with no AI involved.
+fn snapshot_answer(said: &str) -> Option<Answer> {
+    let app = asked_app(said)?;
+    if !is_read_question(said) {
+        return None;
+    }
+    let s = SNAPSHOTS.lock();
+    let (_, at, text) = s.iter().rev().find(|(a, _, _)| a == app)?;
+    // Stale? Make the model go and look again.
+    if now_mins().saturating_sub(*at) > SNAPSHOT_TTL_MINS {
+        return None;
+    }
+    Some(Answer {
+        text: format!(
+            "{}\n\n(That is what I read {} — say “check again” for a fresh look.)",
+            text,
+            ago(*at)
+        ),
+        links: Vec::new(),
+    })
 }
 
 /// The search result, trimmed to what the model needs to pick and call a
@@ -449,5 +630,62 @@ mod tests {
         assert!(s.contains("GMAIL_SEND_EMAIL") && s.contains("NOT connected") && s.contains("Schema"));
         assert_eq!(pretty("googlecalendar"), "Google Calendar");
         assert_eq!(pretty("slack"), "Slack");
+    }
+
+    #[test]
+    fn finds_an_app_the_search_found_unlinked() {
+        let v = json!({
+            "toolkit_connection_statuses": [
+                { "toolkit": "gmail", "has_active_connection": true },
+                { "toolkit": "notion", "has_active_connection": false }
+            ]
+        });
+        assert_eq!(unconnected(&v).as_deref(), Some("notion"));
+        // Nothing unlinked: no sign-in link to offer.
+        let all_ok = json!({ "toolkit_connection_statuses": [{ "toolkit": "gmail", "has_active_connection": true }] });
+        assert!(unconnected(&all_ok).is_none());
+        assert!(unconnected(&json!({})).is_none());
+    }
+
+    #[test]
+    fn tool_slugs_map_to_their_app() {
+        assert_eq!(app_of("GMAIL_FETCH_EMAILS"), "gmail");
+        assert_eq!(app_of("SLACK_SEND_MESSAGE"), "slack");
+        assert_eq!(app_of("GOOGLECALENDAR_EVENTS"), "googlecalendar");
+        assert_eq!(app_of("gmail"), "gmail");
+    }
+
+    #[test]
+    fn only_reading_questions_can_come_from_a_snapshot() {
+        assert!(is_read_question("what's new in my inbox"));
+        assert!(is_read_question("any unread messages"));
+        assert!(is_read_question("how many emails"));
+        // Sending is never served from a cache.
+        assert!(!is_read_question("send an email to Sam"));
+        assert!(!is_read_question("delete the last email"));
+        // Asking for a fresh look must go to the app.
+        assert!(!is_read_question("check again"));
+        assert!(!is_read_question("refresh my inbox"));
+        assert!(!is_read_question("read and summarise for me"));
+    }
+
+    #[test]
+    fn a_repeat_read_answers_free_and_ages_out() {
+        assert_eq!(asked_app("what's new in my inbox"), Some("gmail"));
+        assert_eq!(asked_app("what's on my calendar"), Some("googlecalendar"));
+        assert_eq!(asked_app("tell me a joke"), None);
+
+        SNAPSHOTS.lock().clear();
+        // Nothing read yet: no snapshot to answer from.
+        assert!(snapshot_answer("what's new in my inbox").is_none());
+        snapshot_put("gmail", "1 unread from Sam.".into());
+        let a = snapshot_answer("what's new in my inbox").expect("answers from the snapshot");
+        assert!(a.text.contains("1 unread from Sam") && a.text.contains("just now"));
+        // A different app is not covered by that snapshot.
+        assert!(snapshot_answer("what's on my calendar").is_none());
+        // An old snapshot is not trusted.
+        SNAPSHOTS.lock().iter_mut().for_each(|(_, at, _)| *at = now_mins() - 60);
+        assert!(snapshot_answer("what's new in my inbox").is_none());
+        SNAPSHOTS.lock().clear();
     }
 }
