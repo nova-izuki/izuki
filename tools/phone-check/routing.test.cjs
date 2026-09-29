@@ -11,7 +11,7 @@ if (start < 0 || end < 0) throw new Error("could not find the rules in index.htm
 const source = html.slice(start, html.lastIndexOf("};", end) + 2);
 
 // eslint-disable-next-line no-new-func
-const { wantsClear, wantsAccount } = new Function(source + "; return { wantsClear, wantsAccount };")();
+const { wantsClear, wantsAccount, wantsPc } = new Function(source + "; return { wantsClear, wantsAccount, wantsPc };")();
 
 let pass = 0;
 let fail = 0;
@@ -58,6 +58,21 @@ is("empty string", wantsAccount(""), false);
 is("undefined", wantsClear(undefined), false);
 is("uppercase email", wantsAccount("check my EMAIL"), true);
 is("null", wantsAccount(null), false);
+
+console.log("PC work goes to the PC:");
+for (const s of [
+  "play lofi on my pc", "open spotify", "close chrome", "scroll down",
+  "search youtube for burna boy", "turn on the lights", "take a screenshot",
+  "what's on my screen", "look at this page", "open this tab", "play the next song",
+  "louder", "install notepad", "go to my downloads", "put on some jazz",
+]) is(JSON.stringify(s), wantsPc(s), true);
+
+console.log("talking stays on the phone:");
+for (const s of [
+  "how are you", "tell me a joke", "what's the weather in Lagos",
+  "explain photosynthesis", "what should I cook", "who won the match",
+  "i had a long day", "clear chat", "remind me to call mum",
+]) is(JSON.stringify(s), wantsPc(s), false);
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

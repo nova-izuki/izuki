@@ -11,6 +11,7 @@
     "tauri": "tauri",
     "icons": "node scripts/make-icons.mjs",
     "test:phone": "node tools/phone-check/routing.test.cjs",
+    "test:html": "node tools/html-check.cjs docs/index.html && node tools/html-check.cjs docs/links/index.html && node tools/html-check.cjs docs/app/index.html",
     "app:dev": "tauri dev",
     "app:build": "tauri build"
   },

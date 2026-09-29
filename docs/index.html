@@ -817,7 +817,7 @@
         <a href="#support">Support</a>
         <a href="https://github.com/nova-izuki/izuki">GitHub</a>
       </div>
-      <a class="btn primary small dl" href="https://github.com/nova-izuki/izuki/releases/latest">Download</a>
+      <a class="btn primary small dl" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">Download</a>
     </div>
   </nav>
 
@@ -875,7 +875,7 @@
         <h1 id="hero-h1" aria-label="The AI that lives on your screen.">The AI that lives on <span class="shine">your screen.</span></h1>
         <p class="lede rv" style="--d:.16s">Say <b>“Hey Nova”</b> and just talk. Izuki sees your screen, answers you out loud, and uses your mouse and keyboard to get things done — it can even grab a pen and draw on your screen to teach you. Like a friend who's brilliant with computers, living right inside your PC.</p>
         <div class="ctas rv" style="--d:.24s" id="download">
-          <a class="btn primary dl" href="https://github.com/nova-izuki/izuki/releases/latest">⬇ Download for Windows — free</a>
+          <a class="btn primary dl" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">⬇ Download for Windows — free</a>
           <a class="btn ghost" href="app/">📱 Izuki on your phone</a>
         </div>
         <p class="fine rv" style="--d:.3s">Free forever · Your own free AI key · <a href="#try" style="color:var(--cyan)">Try it right here ↓</a></p>
@@ -1241,7 +1241,7 @@
       <h2 class="rv">Say <span class="shine">“Hey Nova.”</span></h2>
       <p class="sub rv" style="margin-inline:auto">Your computer's been waiting for someone to talk to.</p>
       <div class="ctas rv">
-        <a class="btn primary dl" href="https://github.com/nova-izuki/izuki/releases/latest">⬇ Download for Windows — free</a>
+        <a class="btn primary dl" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">⬇ Download for Windows — free</a>
         <a class="btn ghost" href="https://github.com/nova-izuki/izuki">⭐ Star on GitHub</a>
       </div>
     </section>
@@ -1258,7 +1258,7 @@
       <span class="handle">@izukiapp everywhere</span>
     </div>
     <span>© 2026 Izuki · MIT licensed · Made with ❤️ by Solomon Nwachukwu · Earth photo: <a href="https://unsplash.com/photos/photo-of-outer-space-Q1p7bh3SHj8?utm_source=izuki&utm_medium=referral">NASA</a> on <a href="https://unsplash.com/?utm_source=izuki&utm_medium=referral">Unsplash</a></span>
-    <span><a href="https://github.com/nova-izuki/izuki">GitHub</a> · <a class="dl" href="https://github.com/nova-izuki/izuki/releases/latest">Download</a> · <a href="app/">Phone app</a> · <a href="links/">All links</a> · <a href="https://github.com/nova-izuki/izuki#privacy">Privacy</a></span>
+    <span><a href="https://github.com/nova-izuki/izuki">GitHub</a> · <a class="dl" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">Download</a> · <a href="app/">Phone app</a> · <a href="links/">All links</a> · <a href="https://github.com/nova-izuki/izuki#privacy">Privacy</a></span>
   </footer>
 
   <dialog class="dl-modal" id="dl-modal" aria-labelledby="dl-title">
@@ -2170,43 +2170,31 @@
   voiceAudio.addEventListener("ended", () => { if (voiceOn) voiceOn.classList.remove("on"); voiceOn = null; });
 
   // ------------------------------------------------ Download: straight to the installer
-  // No GitHub page in between: ask GitHub which file is the newest installer
-  // and download it directly, then show what to do next.
+  // A plain link to the newest finished release. This used to ask GitHub's API
+  // which file was newest and then fire a synthetic click after an await — but
+  // that loses the "user gesture" the browser needs, so Chrome quietly refused
+  // and nothing downloaded. A real link always works, and needs no API at all.
   const RELEASES = "https://github.com/nova-izuki/izuki/releases/latest";
-  let direct = null;
-  try { direct = sessionStorage.getItem("izk.dl"); } catch {}
-  const findInstaller = fetch("https://api.github.com/repos/nova-izuki/izuki/releases/latest", { headers: { Accept: "application/vnd.github+json" } })
-    .then((r) => (r.ok ? r.json() : null))
-    .then((j) => {
-      const assets = (j && j.assets) || [];
-      const a = assets.find((x) => x.name === "Izuki-Setup.exe") || assets.find((x) => /_x64-setup\.exe$/i.test(x.name))
-        || assets.find((x) => /\.exe$/i.test(x.name) && !/portable/i.test(x.name));
-      if (a) { direct = a.browser_download_url; try { sessionStorage.setItem("izk.dl", direct); } catch {} }
-      return direct;
-    })
-    .catch(() => direct);
+  const LATEST_SETUP = "https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe";
   const dlModal = $("dl-modal");
   const onWindows = /Windows NT/i.test(navigator.userAgent) && !/Windows Phone/i.test(navigator.userAgent);
-  async function startDownload() {
-    const url = direct || (await Promise.race([findInstaller, sleep(2500).then(() => null)]));
-    if (!url) { open(RELEASES, "_blank", "noopener"); return false; }
-    const a = document.createElement("a");
-    a.href = url; a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove();
-    return true;
-  }
+  function startDownload() { location.assign(LATEST_SETUP); }
   function showModal(which) {
     $("dl-win").hidden = which !== "win"; $("dl-other").hidden = which === "win";
     if (typeof dlModal.showModal === "function") { if (!dlModal.open) dlModal.showModal(); } else dlModal.setAttribute("open", "");
   }
-  document.querySelectorAll("a.dl").forEach((a) => a.addEventListener("click", async (e) => {
-    e.preventDefault();
-    if (!onWindows) { showModal("other"); return; }
-    const r = a.getBoundingClientRect();
-    burst(r.left + r.width / 2, r.top + r.height / 2, 18);
-    if (await startDownload()) showModal("win");
-  }));
-  $("dl-again").addEventListener("click", (e) => { e.preventDefault(); void startDownload(); });
-  $("dl-anyway").addEventListener("click", async (e) => { e.preventDefault(); if (await startDownload()) showModal("win"); });
+  document.querySelectorAll("a.dl").forEach((a) => {
+    a.href = LATEST_SETUP;
+    a.addEventListener("click", (e) => {
+      // Phones and Macs: point them at the phone app instead of a .exe.
+      if (!onWindows) { e.preventDefault(); showModal("other"); return; }
+      const r = a.getBoundingClientRect();
+      burst(r.left + r.width / 2, r.top + r.height / 2, 18);
+      setTimeout(() => showModal("win"), 400);
+    });
+  });
+  $("dl-again").addEventListener("click", (e) => { e.preventDefault(); startDownload(); });
+  $("dl-anyway").addEventListener("click", (e) => { e.preventDefault(); startDownload(); showModal("win"); });
   $("dl-close").addEventListener("click", () => dlModal.close ? dlModal.close() : dlModal.removeAttribute("open"));
   dlModal.addEventListener("click", (e) => { if (e.target === dlModal) dlModal.close(); });
 

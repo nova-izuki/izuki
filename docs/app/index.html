@@ -907,6 +907,25 @@
   };
 
   /**
+   * Something to do on the computer — the same words the PC uses in
+   * companion.rs's needs_screen, so both sides route identically instead of
+   * one of them hoping a small model remembers to answer [PC].
+   */
+  const PC_DO = [
+    "open ", "close ", "click ", "type ", "press ", "scroll ", "go to ", "play ",
+    "pause ", "resume ", "skip ", "next song", "previous song", "volume", "louder",
+    "quieter", "search ", "google ", "look up ", "download ", "install ", "launch ",
+    "run ", "switch to ", "screenshot", "refresh ", "reload ", "log in", "sign in",
+    "submit", "turn on ", "turn off ", "bookmark", "print ", "watch ", "listen to ",
+    "put on ", "youtube",
+  ];
+  const PC_LOOK = ["on my screen", "my screen", "this page", "this window", "this tab", "what's on"];
+  const wantsPc = (said) => {
+    const t = " " + String(said || "").toLowerCase() + " ";
+    return PC_DO.some((k) => t.includes(k)) || PC_LOOK.some((k) => t.includes(k));
+  };
+
+  /**
    * Answer through the PC: it does the job and hands back the text, plus a
    * "Connect …" chip for any app that isn't linked yet.
    */
@@ -1031,9 +1050,10 @@
 
     let reply = "";
     try {
-      // Accounts and apps: the PC has the signed-in browser and the apps lane,
-      // so go straight there — don't let a small model chat instead of doing it.
-      if (pc && !audio && !files.length && wantsAccount(said)) {
+      // Accounts, apps, and PC work: the PC has the signed-in browser and the
+      // apps lane, so go straight there — don't let a small model chat instead
+      // of doing it.
+      if (pc && !audio && !files.length && (wantsAccount(said) || wantsPc(said))) {
         out.textContent = "Checking your apps…";
         setStatus("Asking your PC…");
         history.push({ role: "user", text: said });
