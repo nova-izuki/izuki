@@ -326,6 +326,7 @@
     <section>
       <h3>Link your PC (optional)</h3>
       <p>Have Izuki on a Windows PC? In the PC app turn on <b>Call Izuki from your phone</b> and paste its link here. Then “play lofi on my PC”, your email and calendar, and anything else on the PC work from here too.</p>
+      <p class="note" style="margin-top:8px">Your accounts (Gmail, Calendar, Drive, Slack, GitHub, Blackboard…) run through that PC link, because it holds the apps Izuki is allowed into. Ask here and it goes straight there — if an app isn’t linked yet you’ll get a <b>Connect</b> button to sign in. Free: your own free key on the PC, nothing hosted.</p>
       <div class="field" style="margin-top: 10px">
         <label for="pc">PC link</label>
         <input id="pc" type="url" placeholder="https://….trycloudflare.com/…/" autocomplete="off" autocapitalize="off" spellcheck="false">
@@ -349,6 +350,7 @@
       <button class="btn danger" id="clear-chat" type="button">Clear chat</button>
       <button class="btn danger" id="forget-all" type="button">Forget everything</button>
     </section>
+    <p class="note">You can also just <b>say “clear chat”</b> — or type it — any time. Same as the PC app.</p>
     <p class="note">Free and private: your key, chats, memories and reminders are kept on this phone. Messages go straight to the AI you picked (Google's Gemini unless you chose another) and to your own PC if linked. Error reports carry what went wrong — never keys, chats or recordings.</p>
   </div>
 </div>
@@ -867,6 +869,68 @@
     return r.json();
   }
 
+  /**
+   * "clear chat" / "start over" — wipe it without asking the AI, exactly as
+   * the PC app does, so it works by voice here too. "forget everything" is
+   * deliberately not here: that's the bigger wipe in Settings, and it should
+   * stay a deliberate double-tap rather than something a stray word can do.
+   */
+  const CLEAR_RE = /^(clear|reset|wipe|empty|start over|new)( (the|this|our|my))? ?(chat|conversation|messages|history|it|over)?$/i;
+  const wantsClear = (said) => CLEAR_RE.test(String(said || "").trim().replace(/[.!?]+$/, "").trim());
+
+  /**
+   * Anything to do with their accounts or apps — email, calendar, cloud files,
+   * notes, chat apps, or a site behind their sign-in. The PC does this (it has
+   * the signed-in browser and the apps lane), so the phone hands it over
+   * straight away instead of gambling that a small model will answer [PC].
+   * The same idea as needs_screen in the PC's companion.rs.
+   */
+  const ACCOUNT_NOUNS = [
+    "inbox", "gmail", "outlook", "calendar", "schedule", "diary", "drive", "notes",
+    "notion", "docs", "sheets", "slack", "whatsapp", "tasks", "todo", "github",
+    "repos", "blackboard", "canvas", "classboard", "classroom", "notebooklm",
+    "contacts", "bookmarks", "subscriptions", "orders", "photos", "mail",
+  ];
+  /** A word that means "do it in my account", not "help me write one". */
+  const ACCOUNT_ACTIONS = [
+    "send ", "email ", "read my", "check my", "check the", "fetch", "search my",
+    "find my", "book ", "schedule ", "add to my", "post to", "reply to", "forward",
+    "archive", "unread", "my email", "my emails", "my mail", "my inbox", "my diary",
+  ];
+  /** Asking for help writing something is the phone's own job, not an app. */
+  const WRITE_RE = /\b(help me (write|draft|compose)|write (me )?(an? )?(email|message|note|reply)|draft (me )?(an? )?(email|message|note|reply))\b/i;
+  const wantsAccount = (said) => {
+    const s = String(said || "");
+    if (WRITE_RE.test(s)) return false;
+    const t = " " + s.toLowerCase() + " ";
+    return ACCOUNT_NOUNS.some((k) => t.includes(k)) || ACCOUNT_ACTIONS.some((k) => t.includes(k));
+  };
+
+  /**
+   * Answer through the PC: it does the job and hands back the text, plus a
+   * "Connect …" chip for any app that isn't linked yet.
+   */
+  async function viaPc(said, out) {
+    try {
+      const v = await askPc(said);
+      const text = v.text || "Done.";
+      const chips = (v.links || []).map(([name, url]) => {
+        const a = document.createElement("a");
+        a.className = "chip primary"; a.href = url; a.target = "_blank"; a.rel = "noopener";
+        a.textContent = "Connect " + name;
+        return a;
+      });
+      out.remove();
+      bubble("izuki", text, { chips });
+      return text;
+    } catch {
+      const text = "I couldn't reach your PC — is it on, with Izuki open? The link also changes when Izuki restarts, so paste the new one in Settings.";
+      out.remove();
+      bubble("izuki", text, { error: true });
+      return text;
+    }
+  }
+
   // ------------------------------------------------------------ attachments
   // Photos, screenshots, PDFs, documents, voice and short videos go with the
   // next message. Gemini reads them all; the other free brains read pictures
@@ -920,6 +984,15 @@
     if (busy || (!said && !audio && !files.length)) return;
     if (files.length && !said) said = "Have a look at this and help me with it.";
     if (!ready()) { render(); return; }
+    // "clear chat" / "start over" — wipe it right here, no AI round trip.
+    if (!audio && !files.length && wantsClear(said)) {
+      hush();
+      history = []; saveAll(); render();
+      bubble("izuki", "Cleared — fresh start. What are we doing?");
+      // Same as every other early return here: a call keeps listening.
+      if (talking) listen();
+      return;
+    }
     // A voice note with no Gemini key: Groq's Whisper turns it into words first.
     if (audio && !key) {
       if (!brainKeys.groq) { bubble("izuki", "To talk out loud here, add a free Gemini or Groq key in Settings — or type instead.", { error: true }); return; }
@@ -958,6 +1031,18 @@
 
     let reply = "";
     try {
+      // Accounts and apps: the PC has the signed-in browser and the apps lane,
+      // so go straight there — don't let a small model chat instead of doing it.
+      if (pc && !audio && !files.length && wantsAccount(said)) {
+        out.textContent = "Checking your apps…";
+        setStatus("Asking your PC…");
+        history.push({ role: "user", text: said });
+        reply = await viaPc(said, out);
+        history.push({ role: "model", text: reply });
+        saveAll();
+        await speak(reply);
+        return;
+      }
       // Something only Gemini can open (a PDF, a voice clip, a video): Gemini answers.
       const geminiOnly = files.some((a) => !/^image\//.test(a.type) && a.text == null);
       if (geminiOnly && !key) throw new Error("To look at that kind of file, add a free Gemini key in Settings (pictures and text files work with any brain).");
@@ -974,22 +1059,7 @@
       if (/^\s*\[PC\]\s*$/i.test(reply)) {
         out.textContent = "On it — asking your PC…";
         setStatus("Working on your PC…");
-        try {
-          const v = await askPc(said);
-          reply = v.text || "Done.";
-          const chips = (v.links || []).map(([name, url]) => {
-            const a = document.createElement("a");
-            a.className = "chip primary"; a.href = url; a.target = "_blank"; a.rel = "noopener";
-            a.textContent = "Connect " + name;
-            return a;
-          });
-          out.remove();
-          bubble("izuki", reply, { chips });
-        } catch {
-          reply = "I couldn't reach your PC — is it on, with Izuki open? The link also changes when Izuki restarts, so paste the new one in Settings.";
-          out.remove();
-          bubble("izuki", reply, { error: true });
-        }
+        reply = await viaPc(said, out);
       } else {
         const chips = takeTags(reply);
         reply = shown(reply);

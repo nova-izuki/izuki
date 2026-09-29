@@ -337,3 +337,14 @@ Fix whatever breaks; keep each fix small.
   and tags (`[SCREEN]`, `[APPS]`, `[REMIND …]`) over extra model calls.
 - User-facing text: short, warm, plain; errors say how to fix it.
 - Never commit secrets. Settings live in `%APPDATA%\Izuki\settings.json`.
+- **The phone app cannot call Composio directly.** `backend.composio.dev` sends
+  no `Access-Control-Allow-Origin` (checked on both the request and the
+  preflight), so a browser blocks it — and a bearer key in a public page would
+  be unsafe anyway. Account/app requests from the phone are therefore handed to
+  the linked PC, which already has the apps lane, and sign-in links come back as
+  "Connect …" chips. Don't re-attempt a direct port without re-checking CORS.
+- Don't gamble on a model emitting a tag: the PC already routes PC-jobs by
+  keyword (`companion.rs` `needs_screen`), and the phone does the same for
+  accounts (`wantsAccount` in `docs/app/index.html`). Add keywords rather than
+  trusting the prompt. Keep "clear chat" on both — the phone must re-enter
+  `if (talking) listen()` on any early return, or a call goes deaf.
