@@ -359,3 +359,15 @@ Fix whatever breaks; keep each fix small.
   which must keep rejecting anything that sends, deletes, posts or changes
   ("delete the last email" is not a question). Keep the stored text as the
   natural answer, never raw tool JSON.
+- **Route to the apps lane by keyword, not by the `[APPS]` tag.** The main chat
+  waited for the model to emit `[APPS]`, so "which gmail are you connected to"
+  was answered by the chat model, which invented an account and then insisted
+  it had full access. `ChatTab.tsx` now has `wantsApps()` (with a `WRITE_ONLY`
+  carve-out so "help me write an email" stays a chat job); the phone has the
+  same rule in `docs/app/apps.js`. Add words there too when a new app appears.
+- Composio **does** send `Access-Control-Allow-Origin` on authenticated calls
+  (it omits it on the 401 path — do not conclude it is CORS-blocked from an
+  unauthenticated test). That is why the phone can reach the user's apps
+  directly, with the PC off, with no proxy.
+- Composio keys start `ak_` and must stay out of error reports: they are in the
+  scrub list in both `bugs.rs` and `docs/shared/bugs.js`.

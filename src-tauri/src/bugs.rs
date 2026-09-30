@@ -437,7 +437,7 @@ pub fn scrub(s: &str) -> String {
 }
 
 fn scrub_word(w: &str) -> String {
-    const KEY_STARTS: &[&str] = &["AIza", "sk-", "sk_", "gsk_", "nvapi-", "xai-", "hf_", "ghp_", "github_pat_", "AKIA"];
+    const KEY_STARTS: &[&str] = &["AIza", "sk-", "sk_", "gsk_", "nvapi-", "xai-", "hf_", "ghp_", "github_pat_", "AKIA", "ak_"];
     let long = w.chars().count() >= 16;
     if long && KEY_STARTS.iter().any(|p| w.starts_with(p)) {
         return "[key]".into();
@@ -510,6 +510,9 @@ mod tests {
         assert!(!s.contains("AIza") && s.contains("[key]") && s.contains("[email]"), "{s}");
         let s = scrub("Authorization: Bearer gsk_abcdefghijklmnopqrstu12345 rejected");
         assert!(!s.contains("gsk_") && s.contains("Bearer [key]"), "{s}");
+        // A Composio key must never ride along in a report either.
+        let s = scrub("composio key ak_hsnUnadgRIF6IfAExJ5m rejected");
+        assert!(!s.contains("ak_hsn") && s.contains("[key]"), "{s}");
         let s = scrub("call link https://x.trycloudflare.com/k3J9sd82JdnQ0zPq7LmA4xYv/ ready");
         assert!(s.contains("[token]") && !s.contains("k3J9sd82"), "{s}");
         let s = scrub("text me on +2348012345678 or 08012345678");

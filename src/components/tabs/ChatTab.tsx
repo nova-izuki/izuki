@@ -48,6 +48,17 @@ const FIRST_WORDS_MS = 45_000;
 const KEY = "izuki.chat.v1";
 const KEEP = 60;
 const SCREEN = /^\s*\[?SCREEN\]?\s*$/i;
+
+// Anything about their own accounts or apps belongs to the apps lane. Do not
+// wait for the model to remember [APPS]: a plain chat answer about someone's
+// inbox is only a guess, and a model will invent one (and an account) rather
+// than admit it has not looked.
+const ACCOUNTS =
+  /\b(inbox|gmail|outlook|e-?mails?|calendar|diary|my schedule|my drive|cloud files?|notion|my notes?|slack|whatsapp|my tasks?|to-?do|github|repos?|blackboard|canvas|classroom|notebooklm|my account|my profile|my bookmarks|my contacts|my subscriptions|my orders)\b/i;
+// Asking for help writing something is the chat lane's own job, not an app.
+const WRITE_ONLY =
+  /\b(help me (write|draft|compose)|write (me )?(an? )?(e-?mail|message|note|reply)|draft (me )?(an? )?(e-?mail|message|note|reply))\b/i;
+const wantsApps = (t: string) => ACCOUNTS.test(t) && !WRITE_ONLY.test(t);
 const APPS = /^\s*\[?APPS\]?\s*$/i;
 const REMIND_TAG = /\s*\[REMIND[^\]]*\]?\s*/gi;
 
@@ -286,7 +297,7 @@ export function ChatTab() {
             void off.then((f) => f());
             if (SCREEN.test(raw)) {
               setLast({ content: "That one needs your PC — want me to do it?", screen: true });
-            } else if (APPS.test(raw)) {
+            } else if (APPS.test(raw) || wantsApps(t)) {
               // Their email, calendar, files…: the apps lane does it. Say so
               // right away — it can take a little while.
               setLast({ content: "Checking your apps… 🔎" });

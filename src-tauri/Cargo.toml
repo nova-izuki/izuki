@@ -1,6 +1,6 @@
 [package]
 name = "izuki"
-version = "1.0.11"
+version = "1.0.12"
 description = "IZUKI — draw on your screen, Izuki does it."
 authors = ["Izuki"]
 edition = "2021"

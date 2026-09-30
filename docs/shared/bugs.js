@@ -27,6 +27,9 @@
   const scrub = (s) => String(s)
     .replace(/AIza[0-9A-Za-z_-]{20,}/g, "[key]")
     .replace(/\b(sk-or-v1|sk-ant|sk|gsk|nvapi|xai|hf|ghp)[-_][0-9A-Za-z_-]{12,}/g, "[key]")
+    // Composio app keys (ak_…) — the phone keeps one, so it must never ride
+    // along in a report.
+    .replace(/\bak_[0-9A-Za-z]{16,}\b/g, "[key]")
     .replace(/Bearer\s+\S+/gi, "Bearer [key]")
     .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "[email]")
     .replace(/\+?\d[\d\s().-]{8,}\d/g, (m) => (m.replace(/\D/g, "").length >= 10 ? "[number]" : m))

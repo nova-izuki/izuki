@@ -16,6 +16,7 @@
 <!-- The bug catcher first, so it hears about anything that goes wrong below. -->
 <script src="../shared/bugs.js" data-app="phone" data-version="2.0"></script>
 <script src="orb.js"></script>
+<script src="apps.js"></script>
 <style>
   :root {
     color-scheme: dark;
@@ -324,9 +325,21 @@
     </section>
 
     <section>
+      <h3>Your apps (optional)</h3>
+      <p>Add your <b>free</b> Composio key and Izuki reads and handles your Gmail, Calendar, Drive, Slack, GitHub, Blackboard and more <b>from this phone</b> — your PC doesn’t need to be on.</p>
+      <div class="field" style="margin-top: 10px">
+        <label for="composio">Composio key</label>
+        <input id="composio" type="password" placeholder="ak_…" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="row" style="margin-top: 10px"><button class="btn ghost" id="save-composio" type="button">Save key</button><span id="composio-result" class="note"></span></div>
+      <div id="apps-list" class="note" style="margin-top:10px"></div>
+      <p class="note" style="margin-top:8px">The key stays on this phone and only ever talks to Composio. Got a new key, or think this one leaked? Delete it at composio.dev, make a new one, and paste it here to swap it over.</p>
+    </section>
+
+    <section>
       <h3>Link your PC (optional)</h3>
-      <p>Have Izuki on a Windows PC? In the PC app turn on <b>Call Izuki from your phone</b> and paste its link here. Then “play lofi on my PC”, your email and calendar, and anything else on the PC work from here too.</p>
-      <p class="note" style="margin-top:8px">Your accounts (Gmail, Calendar, Drive, Slack, GitHub, Blackboard…) run through that PC link, because it holds the apps Izuki is allowed into. Ask here and it goes straight there — if an app isn’t linked yet you’ll get a <b>Connect</b> button to sign in. Free: your own free key on the PC, nothing hosted.</p>
+      <p>Have Izuki on a Windows PC? In the PC app turn on <b>Call Izuki from your phone</b> and paste its link here. Then “play lofi on my PC” and anything else on the PC work from here too.</p>
+      <p class="note" style="margin-top:8px">If you haven’t added a Composio key above, your accounts still work through this PC link — it holds the apps Izuki is allowed into. Either way, if an app isn’t linked yet you’ll get a <b>Connect</b> button to sign in. Free: your own free key, nothing hosted.</p>
       <div class="field" style="margin-top: 10px">
         <label for="pc">PC link</label>
         <input id="pc" type="url" placeholder="https://….trycloudflare.com/…/" autocomplete="off" autocapitalize="off" spellcheck="false">
@@ -621,8 +634,10 @@
   const WEB_TOOLS = [{ google_search: {} }, { url_context: {} }];
   let noToolsUntil = store.get("noToolsUntil", 0);
 
-  /** Stream a reply; onText gets the text so far. Returns the whole reply. */
-  async function gemini(contents, onText, model, bare) {
+  /** Stream a reply; onText gets the text so far. Returns the whole reply.
+   *  `system` overrides the usual chat instructions (the apps lane brings its
+   *  own protocol, and must not also be told it is just a chatty companion). */
+  async function gemini(contents, onText, model, bare, system) {
     model = model || (Date.now() < liteUntil ? LITE : MODEL);
     const tools = !bare && Date.now() > noToolsUntil;
     const guard = stallGuard(30000);
@@ -634,7 +649,7 @@
           signal: guard.signal,
           headers: { "Content-Type": "application/json", "x-goog-api-key": key },
           body: JSON.stringify({
-            systemInstruction: { parts: [{ text: systemPrompt() }] },
+            systemInstruction: { parts: [{ text: system || systemPrompt() }] },
             contents,
             ...(tools ? { tools: WEB_TOOLS } : {}),
             generationConfig: {
@@ -719,10 +734,10 @@
   }
 
   /** The chosen other brain (Groq, OpenRouter, Mistral): same prompt, streamed. */
-  async function otherBrain(contents, onText, id) {
+  async function otherBrain(contents, onText, id, system) {
     const b = BRAINS[id || brain];
     const k = brainKeys[id || brain];
-    const messages = [{ role: "system", content: systemPrompt() }].concat(
+    const messages = [{ role: "system", content: system || systemPrompt() }].concat(
       contents.map((c) => {
         const role = c.role === "model" ? "assistant" : "user";
         const pics = c.parts.filter((p) => p.inline_data && /^image\//.test(p.inline_data.mime_type));
@@ -780,16 +795,25 @@
     }
   }
 
-  /** Whoever answers: the chosen brain, with Gemini standing in if it fails. */
-  async function think(contents, onText) {
-    if (usesGemini()) return gemini(contents, onText);
+  /** Whoever answers: the chosen brain, with Gemini standing in if it fails.
+   *  `system` swaps in different instructions (the apps lane's protocol). */
+  async function think(contents, onText, system) {
+    if (usesGemini()) return gemini(contents, onText, undefined, undefined, system);
     try {
-      return await otherBrain(contents, onText);
+      return await otherBrain(contents, onText, undefined, system);
     } catch (e) {
-      if (key) return gemini(contents, onText);
+      if (key) return gemini(contents, onText, undefined, undefined, system);
       throw e;
     }
   }
+
+  /** OpenAI-style messages (what the apps lane speaks) into the shape this
+   *  phone's brain takes. The system turn is lifted out and passed on as the
+   *  instructions instead of being smuggled in as a user message. */
+  const contentsFor = (messages) => messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+  const systemFor = (messages) => (messages.find((m) => m.role === "system") || {}).content || "";
 
   /** Words from a recording when Gemini can't hear it: Groq's Whisper. */
   async function groqHear(audio) {
@@ -1050,14 +1074,30 @@
 
     let reply = "";
     try {
-      // Accounts, apps, and PC work: the PC has the signed-in browser and the
-      // apps lane, so go straight there — don't let a small model chat instead
-      // of doing it.
-      if (pc && !audio && !files.length && (wantsAccount(said) || wantsPc(said))) {
-        out.textContent = "Checking your apps…";
-        setStatus("Asking your PC…");
+      // Accounts and apps, and PC work: the PC has the signed-in browser and
+      // the apps lane, so go straight there — don't let a small model chat
+      // instead of doing it. With a Composio key on this phone the phone can
+      // do the accounts itself, so it doesn't wait for the PC at all.
+      const haveApps = !!window.izukiApps?.configured();
+      if (!audio && !files.length && (haveApps || pc) && (wantsAccount(said) || (pc && wantsPc(said)))) {
+        out.textContent = haveApps ? "Checking your apps…" : "Asking your PC…";
+        setStatus(haveApps ? "Looking in your apps…" : "Asking your PC…");
         history.push({ role: "user", text: said });
-        reply = await viaPc(said, out);
+        if (haveApps) {
+          // Same protocol the PC uses, run by this phone's own brain.
+          const a = await window.izukiApps.ask(history, (msgs) => think(contentsFor(msgs), null, systemFor(msgs)));
+          reply = a.text || "Done.";
+          const chips = (a.links || []).map(([name, url]) => {
+            const el2 = document.createElement("a");
+            el2.className = "chip primary"; el2.href = url; el2.target = "_blank"; el2.rel = "noopener";
+            el2.textContent = "Connect " + name;
+            return el2;
+          });
+          out.remove();
+          bubble("izuki", reply, { chips });
+        } else {
+          reply = await viaPc(said, out);
+        }
         history.push({ role: "model", text: reply });
         saveAll();
         await speak(reply);
@@ -1711,6 +1751,7 @@
     };
     renderMemories();
     $("bug-result").textContent = "";
+    if (window.izukiApps?.configured()) showApps();
     sheet.hidden = false;
   }
   const closeSettings = () => { sheet.hidden = true; render(); };
@@ -1720,7 +1761,41 @@
   sheet.addEventListener("click", (e) => { if (e.target === sheet) closeSettings(); });
 
   $("paste-key").onclick = () => pasteKey($("key"), $("key-result"));
-  // Pasted straight into the box: save and test it right away.
+
+  // Your apps: a free Composio key, kept on this phone, so accounts work here
+  // even with the PC off. Saving a new one swaps the old over — that is how
+  // you rotate it.
+  function showApps(out) {
+    const box = $("apps-list");
+    if (!window.izukiApps?.configured()) { box.textContent = ""; return; }
+    box.textContent = "Checking what's linked…";
+    window.izukiApps.connected()
+      .then((list) => {
+        box.textContent = list.length
+          ? "Linked: " + list.join(", ")
+          : "No apps linked yet — just ask about your email or calendar and Izuki will offer a Connect button.";
+      })
+      .catch((e) => { box.textContent = "Couldn't read your linked apps: " + (e.message || e); });
+  }
+  $("composio").value = window.izukiApps?.key() || "";
+  $("save-composio").onclick = async () => {
+    const v = $("composio").value.trim();
+    const out = $("composio-result");
+    if (!v) {
+      window.izukiApps.saveKey("");
+      out.className = "ok"; out.textContent = "Key removed from this phone.";
+      showApps(); return;
+    }
+    out.className = "note"; out.textContent = "Checking…";
+    try {
+      await window.izukiApps.testKey(v);
+      window.izukiApps.saveKey(v);
+      out.className = "ok"; out.textContent = "Works! Your apps are ready on this phone.";
+      showApps();
+    } catch (e) {
+      out.className = "bad"; out.textContent = e.message || "That key didn't work.";
+    }
+  };  // Pasted straight into the box: save and test it right away.
   $("key").addEventListener("paste", () => setTimeout(() => {
     if (/^AIza[0-9A-Za-z_-]{35}$/.test($("key").value.trim())) tryKey($("key").value.trim(), $("key-result"));
   }, 50));

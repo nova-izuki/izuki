@@ -26,7 +26,7 @@ use crate::chat::Turn;
 
 const API: &str = "https://backend.composio.dev/api/v3";
 /// Look/act rounds for one request.
-const MAX_ROUNDS: usize = 6;
+const MAX_ROUNDS: usize = 5;
 /// How much of a tool's result the model gets to read.
 const RESULT_CHARS: usize = 6000;
 
@@ -203,8 +203,9 @@ tell them simply what went wrong.";
 
 /// Bumped by the stop keys. A request remembers the number it started with
 /// and never runs another tool (a send, a post) once it has changed.
-/// The most one apps request works for before it answers anyway.
-const BUDGET: std::time::Duration = std::time::Duration::from_secs(70);
+/// The most one apps request works for before it answers anyway. Kept short:
+/// past a minute of "Checking your apps…" it reads as broken, not busy.
+const BUDGET: std::time::Duration = std::time::Duration::from_secs(45);
 
 static STOPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -293,7 +294,9 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
             // "checked it directly". Searching only finds the *tools*; it does
             // not open the mailbox. So a claim about the user's data is only
             // allowed once a tool has really run.
-            if !executed && nagged < 2 {
+            // One send-back only: each one is a whole model round trip, and
+            // the user is already watching "Checking your apps…".
+            if !executed && nagged < 1 {
                 nagged += 1;
                 eprintln!("[apps] answered without running a tool (send-back {nagged})");
                 messages.push(json!({
