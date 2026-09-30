@@ -268,6 +268,11 @@ pub struct Settings {
     /// answers whenever the cloud is slow or offline.
     #[serde(default = "default_true")]
     pub cloud_ears: bool,
+    /// The language Izuki should expect when hearing speech. "auto" lets the
+    /// cloud model identify it; a named choice helps with Pidgin and code
+    /// switching, where small on-device models often guess English words.
+    #[serde(default = "default_speech_language")]
+    pub speech_language: String,
     /// Izuki on your phone: a Telegram bot you made with @BotFather (free).
     /// Izuki on this PC answers it — no server, no app store.
     #[serde(default)]
@@ -390,6 +395,10 @@ fn default_voice_name() -> String {
     "af_heart".into()
 }
 
+fn default_speech_language() -> String {
+    "auto".into()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -485,6 +494,12 @@ impl Settings {
         if self.azure_speech_region.is_empty() {
             self.azure_speech_region = default_azure_region();
         }
+        // This is sent to speech providers as a hint, so keep it a known
+        // label even if an old/corrupt settings file contains something else.
+        self.speech_language = match self.speech_language.trim().to_ascii_lowercase().as_str() {
+            "auto" | "pidgin" | "english" | "yoruba" | "igbo" | "hausa" | "french" | "spanish" | "arabic" | "hindi" | "swahili" | "german" | "japanese" => self.speech_language.trim().to_ascii_lowercase(),
+            _ => default_speech_language(),
+        };
         // One Groq key for everything Groq does (hearing, the Human voice and
         // now a brain): pasted in either place, it fills the other.
         let groq_brain_key = self.provider(ProviderId::Groq).map(|p| p.api_key.clone()).unwrap_or_default();
@@ -681,6 +696,7 @@ impl Default for Settings {
             send_bug_reports: true,
             duck_while_listening: true,
             cloud_ears: true,
+            speech_language: default_speech_language(),
             telegram_token: String::new(),
             telegram_chat_id: 0,
             telegram_code: String::new(),

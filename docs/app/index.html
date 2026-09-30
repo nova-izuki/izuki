@@ -298,6 +298,29 @@
     </section>
 
     <section>
+      <h3>Language I speak</h3>
+      <p><b>Auto</b> hears the language naturally. Pick Nigerian Pidgin or a language below if your phone keeps changing your words into English.</p>
+      <div class="field" style="margin-top: 10px">
+        <label for="speech-language">Listening language</label>
+        <select id="speech-language">
+          <option value="auto">Auto detect</option>
+          <option value="pidgin">Nigerian Pidgin</option>
+          <option value="english">English</option>
+          <option value="yoruba">Yoruba</option>
+          <option value="igbo">Igbo</option>
+          <option value="hausa">Hausa</option>
+          <option value="french">French</option>
+          <option value="spanish">Spanish</option>
+          <option value="arabic">Arabic</option>
+          <option value="hindi">Hindi</option>
+          <option value="swahili">Swahili</option>
+          <option value="german">German</option>
+          <option value="japanese">Japanese</option>
+        </select>
+      </div>
+    </section>
+
+    <section>
       <h3>Put Izuki on your home screen</h3>
       <div class="row" style="margin-bottom: 8px"><button class="btn" id="install" type="button">Install Izuki on this phone</button></div>
       <p><b>iPhone:</b> in Safari tap <b>Share</b> → <b>Add to Home Screen</b>. <b>Android:</b> Chrome menu ⋮ → <b>Add to Home screen</b>. It opens like an app.</p>
@@ -406,6 +429,18 @@
   ];
   let personId = store.get("person", "nova");
   const person = () => PEOPLE.find((p) => p.id === personId) || PEOPLE[0];
+  const HEARING = {
+    auto: { words: "the language they speak; preserve their accent, slang and code-switching", code: "" },
+    pidgin: { words: "Nigerian Pidgin / Nigerian English; keep the Pidgin wording exactly and do not formalise or translate it", code: "en-NG" },
+    english: { words: "English", code: "en" }, yoruba: { words: "Yoruba", code: "yo-NG" },
+    igbo: { words: "Igbo", code: "ig-NG" }, hausa: { words: "Hausa", code: "ha-NG" },
+    french: { words: "French", code: "fr-FR" }, spanish: { words: "Spanish", code: "es-ES" },
+    arabic: { words: "Arabic", code: "ar" }, hindi: { words: "Hindi", code: "hi-IN" },
+    swahili: { words: "Swahili", code: "sw" }, german: { words: "German", code: "de-DE" },
+    japanese: { words: "Japanese", code: "ja-JP" },
+  };
+  let speechLanguage = store.get("speechLanguage", "auto");
+  const hearing = () => HEARING[speechLanguage] || HEARING.auto;
   let readAloud = store.get("readAloud", false);
   let brainKeys = store.get("brainKeys", {});
   /** Can Izuki answer at all — a Gemini key, or the chosen brain's key? */
@@ -820,6 +855,8 @@
     const bytes = Uint8Array.from(atob(audio.b64), (c) => c.charCodeAt(0));
     const form = new FormData();
     form.append("model", "whisper-large-v3-turbo");
+    form.append("prompt", "Transcribe exactly. The speaker uses " + hearing().words + ".");
+    if (hearing().code) form.append("language", hearing().code.split("-")[0]);
     form.append("file", new Blob([bytes], { type: audio.type }), "speech." + (audio.type.split("/")[1] || "m4a"));
     const r = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", { method: "POST", headers: { Authorization: "Bearer " + brainKeys.groq }, body: form });
     if (!r.ok) { bug(`groq hearing answered ${r.status}`, { type: audio.type }); throw new Error("I couldn't make that out — try again, or type it."); }
@@ -1067,7 +1104,7 @@
     // (A voice note only gets here with a Gemini key, which hears it.)
     const parts = audio
       ? [{ inline_data: { mime_type: audio.type, data: audio.b64 } },
-         { text: "The user said this out loud to you. Start your reply with one line [HEARD: their exact words], then answer them." }]
+         { text: "The user said this out loud to you. They speak " + hearing().words + ". Start your reply with one line [HEARD: their exact words], then answer them." }]
       : [{ text: said }, ...files.map(geminiPart)];
     const contents = history.slice(-16).map((m) => ({ role: m.role, parts: [{ text: m.text }] }));
     contents.push({ role: "user", parts });
@@ -1427,7 +1464,9 @@
     if (useRecorder || !Rec || (isIOS && canHear())) return record();
     let final = "", heardAny = false, failed = "";
     try { recog = new Rec(); } catch { useRecorder = true; return record(); }
-    recog.lang = navigator.language || "en-US";
+    // SpeechRecognition needs a BCP-47 code. Auto leaves its browser default
+    // alone; Pidgin uses Nigerian English because browsers have no Pidgin tag.
+    recog.lang = hearing().code || navigator.language || "en-US";
     recog.interimResults = true;
     recog.onresult = (e) => {
       heardAny = true;
@@ -1740,6 +1779,7 @@
     peopleRow($("people-settings"));
     $("key").value = key;
     $("brain").value = brain;
+    $("speech-language").value = HEARING[speechLanguage] ? speechLanguage : "auto";
     showBrain();
     $("pc").value = pc;
     const siriUrl = location.origin + location.pathname + "?q=";
@@ -1800,6 +1840,10 @@
     if (/^AIza[0-9A-Za-z_-]{35}$/.test($("key").value.trim())) tryKey($("key").value.trim(), $("key-result"));
   }, 50));
   $("save-key").onclick = () => tryKey($("key").value.trim(), $("key-result"));
+  $("speech-language").onchange = () => {
+    speechLanguage = HEARING[$("speech-language").value] ? $("speech-language").value : "auto";
+    store.set("speechLanguage", speechLanguage);
+  };
 
   $("save-pc").onclick = async () => {
     const v = $("pc").value.trim();

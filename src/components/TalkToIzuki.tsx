@@ -256,6 +256,35 @@ export function TalkToIzuki() {
 
         <div className="izk-divider" />
 
+        <Row
+          label="Language I speak"
+          hint="Auto detects it. Pick Pidgin or a language when Izuki keeps hearing your words as English."
+          icon={<AudioLines size={14} strokeWidth={2.3} />}
+        >
+          <select
+            value={settings.speech_language}
+            onChange={(e) => patch({ speech_language: e.target.value })}
+            className="izk-field izk-no-drag h-[32px] max-w-[142px] py-0 text-[11.5px]"
+            aria-label="Language Izuki should hear"
+          >
+            <option value="auto">Auto</option>
+            <option value="pidgin">Nigerian Pidgin</option>
+            <option value="english">English</option>
+            <option value="yoruba">Yoruba</option>
+            <option value="igbo">Igbo</option>
+            <option value="hausa">Hausa</option>
+            <option value="french">French</option>
+            <option value="spanish">Spanish</option>
+            <option value="arabic">Arabic</option>
+            <option value="hindi">Hindi</option>
+            <option value="swahili">Swahili</option>
+            <option value="german">German</option>
+            <option value="japanese">Japanese</option>
+          </select>
+        </Row>
+
+        <div className="izk-divider" />
+
         <FollowUpPicker />
 
         <div className="izk-divider" />

@@ -215,6 +215,7 @@ export const MOCK_SETTINGS: Settings = {
   send_bug_reports: true,
   duck_while_listening: true,
   cloud_ears: true,
+  speech_language: "auto",
   telegram_token: "",
   composio_api_key: "",
   call_enabled: false,

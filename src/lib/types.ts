@@ -350,6 +350,8 @@ export interface Settings {
   duck_while_listening: boolean;
   /** Double-check your words with a cloud speech model (Groq or Gemini key). */
   cloud_ears: boolean;
+  /** Language Izuki should expect while listening; "auto" detects it. */
+  speech_language: string;
   /** Telegram bot token from @BotFather — Izuki on your phone. */
   telegram_token: string;
   /** The paired Telegram chat (0 = none). */

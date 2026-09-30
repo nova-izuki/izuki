@@ -23,6 +23,28 @@ If nobody speaks to the assistant, reply with nothing at all. Reply with the wor
 /// A hint for Whisper: the kind of words it's likely to hear.
 const WHISPER_HINT: &str = "Hey Nova, open YouTube and play Burna Boy. Open Chrome, Blackboard, Spotify, Notepad.";
 
+/// A small, fixed vocabulary for the setting instead of sending arbitrary
+/// settings-file text into a transcription prompt. Pidgin deliberately uses
+/// `en-NG` on engines that need a BCP-47 language: it has no universal tag of
+/// its own, while the words in the prompt tell the model not to "correct" it.
+fn language_hint(choice: &str) -> (&'static str, &'static str) {
+    match choice.trim().to_ascii_lowercase().as_str() {
+        "pidgin" => ("Nigerian Pidgin / Nigerian English; keep the speaker's Pidgin wording exactly, do not translate or formalise it.", "en-NG"),
+        "english" => ("English.", "en"),
+        "yoruba" => ("Yoruba; keep Yoruba words and tone marks when clear.", "yo"),
+        "igbo" => ("Igbo; keep Igbo words and tone marks when clear.", "ig"),
+        "hausa" => ("Hausa.", "ha"),
+        "french" => ("French.", "fr"),
+        "spanish" => ("Spanish.", "es"),
+        "arabic" => ("Arabic.", "ar"),
+        "hindi" => ("Hindi.", "hi"),
+        "swahili" => ("Swahili.", "sw"),
+        "german" => ("German.", "de"),
+        "japanese" => ("Japanese.", "ja"),
+        _ => ("Automatically identify the language; preserve any accent, slang or code-switching exactly.", ""),
+    }
+}
+
 fn client() -> Result<reqwest::blocking::Client> {
     Ok(reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(8))
@@ -61,17 +83,17 @@ pub fn transcribe_clip(settings: &Settings, audio: Vec<u8>, mime: &str, file_nam
     let gemini_cfg = settings.provider(ProviderId::Gemini).filter(|g| !g.api_key.trim().is_empty());
     let text = match (groq.is_empty(), gemini_cfg) {
         // Whisper first (fast, great with names); Gemini if Groq is down.
-        (false, g) => match groq_whisper(groq, wav.clone(), mime, file_name) {
+        (false, g) => match groq_whisper(groq, wav.clone(), mime, file_name, &settings.speech_language) {
             Ok(t) => t,
             Err(e) => match g {
                 Some(g) => {
                     eprintln!("[stt] {e} — asking Gemini");
-                    gemini(&g.base_url, g.api_key.trim(), &wav, mime)?
+                    gemini(&g.base_url, g.api_key.trim(), &wav, mime, &settings.speech_language)?
                 }
                 None => return Err(e),
             },
         },
-        (true, Some(g)) => gemini(&g.base_url, g.api_key.trim(), &wav, mime)?,
+        (true, Some(g)) => gemini(&g.base_url, g.api_key.trim(), &wav, mime, &settings.speech_language)?,
         (true, None) => return Err(anyhow!("no cloud ears")),
     };
     let text = clean(&text);
@@ -101,14 +123,16 @@ fn clean(text: &str) -> String {
     }
 }
 
-fn groq_whisper(key: &str, wav: Vec<u8>, mime: &str, file_name: &str) -> Result<String> {
+fn groq_whisper(key: &str, wav: Vec<u8>, mime: &str, file_name: &str, choice: &str) -> Result<String> {
     use reqwest::blocking::multipart::{Form, Part};
+    let (language, code) = language_hint(choice);
     let form = Form::new()
         .text("model", "whisper-large-v3-turbo")
         .text("response_format", "json")
         .text("temperature", "0")
-        .text("prompt", WHISPER_HINT)
+        .text("prompt", format!("{WHISPER_HINT} The speaker uses {language}"))
         .part("file", Part::bytes(wav).file_name(file_name.to_string()).mime_str(mime)?);
+    let form = if code.is_empty() { form } else { form.text("language", code) };
     let res = client()?
         .post("https://api.groq.com/openai/v1/audio/transcriptions")
         .bearer_auth(key)
@@ -122,7 +146,7 @@ fn groq_whisper(key: &str, wav: Vec<u8>, mime: &str, file_name: &str) -> Result<
     Ok(value["text"].as_str().unwrap_or_default().to_string())
 }
 
-fn gemini(base: &str, key: &str, wav: &[u8], mime: &str) -> Result<String> {
+fn gemini(base: &str, key: &str, wav: &[u8], mime: &str, choice: &str) -> Result<String> {
     use base64::Engine;
     let base = base.trim().trim_end_matches('/');
     let base = if base.is_empty() { "https://generativelanguage.googleapis.com" } else { base };
@@ -131,11 +155,13 @@ fn gemini(base: &str, key: &str, wav: &[u8], mime: &str) -> Result<String> {
     let model = crate::vision::GEMINI_LITE;
     let url = format!("{base}/v1beta/models/{model}:generateContent");
     let knob = crate::vision::gemini_no_think(model);
+    let (language, _) = language_hint(choice);
+    let ask = format!("{GEMINI_ASK}\nLanguage preference: {language}");
     let mut body = json!({
         "contents": [{
             "role": "user",
             "parts": [
-                { "text": GEMINI_ASK },
+                { "text": ask },
                 { "inline_data": { "mime_type": mime, "data": base64::engine::general_purpose::STANDARD.encode(wav) } }
             ]
         }],
@@ -149,7 +175,7 @@ fn gemini(base: &str, key: &str, wav: &[u8], mime: &str) -> Result<String> {
     let value: Value = res.json()?;
     if status.as_u16() == 400 && knob != crate::vision::NoThink::Neither {
         crate::vision::gemini_refused_no_think(model, knob);
-        return gemini(base, key, wav, mime);
+        return gemini(base, key, wav, mime, choice);
     }
     if !status.is_success() {
         return Err(anyhow!("Gemini answered {status}"));
@@ -163,7 +189,7 @@ fn gemini(base: &str, key: &str, wav: &[u8], mime: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::clean;
+    use super::{clean, language_hint};
 
     #[test]
     fn filler_is_dropped() {
@@ -192,5 +218,13 @@ mod tests {
     fn real_words_are_kept() {
         assert_eq!(clean("  play Bundle by Bundle\nby Burna Boy "), "play Bundle by Bundle by Burna Boy");
         assert_eq!(clean("\"open YouTube\""), "open YouTube");
+    }
+
+    #[test]
+    fn pidgin_has_a_clear_hint_and_browser_fallback() {
+        let (words, code) = language_hint("pidgin");
+        assert!(words.contains("Pidgin"));
+        assert_eq!(code, "en-NG");
+        assert_eq!(language_hint("anything else").1, "");
     }
 }
