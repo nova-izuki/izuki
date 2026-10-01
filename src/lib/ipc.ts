@@ -297,7 +297,7 @@ export const api = {
       throw new Error("Not running inside Izuki.");
     }),
   /** Turn other apps' sound down while listening (true), back up (false). */
-  duckAudio: (on: boolean) => call<void>("duck_audio", { on }, () => undefined),
+  duckAudio: (on: boolean, source: "listening" | "speaking" = "listening") => call<void>("duck_audio", { on, source }, () => undefined),
 
   /** A key on the clipboard (Gemini, Groq, Composio…), if that's what's there. */
   clipboardKey: () => call<FoundKey | null>("clipboard_key", undefined, () => null),
@@ -352,8 +352,8 @@ export const api = {
   /** Show the Izuki browser (to sign in to a site once), optionally at `url`. */
   browserShow: (url?: string) =>
     call<void>("browser_show", { url: url ?? null }, () => void (url && window.open(url, "_blank"))),
-  browserVideo: (action: "read" | "pause" | "play" | "slow" | "normal", showWindow = false) =>
-    call<{ paused: boolean; rate: number; time: number; title: string; url: string; captions: string; focused: boolean }>("browser_video", { action, showWindow }, () => { throw new Error("Open a video in the desktop Izuki browser first."); }),
+  browserVideo: (action: "read" | "pause" | "play" | "slow" | "normal", showWindow = false, expectedVideo?: string) =>
+    call<{ paused: boolean; rate: number; time: number; title: string; url: string; captions: string; focused: boolean; videoId: string }>("browser_video", { action, showWindow, expectedVideo }, () => { throw new Error("Open a video in the desktop Izuki browser first."); }),
   /** Send a sample heads-up. */
   headsupTest: () => call<void>("headsup_test", undefined, () => undefined),
   callStatus: () => call<CallStatus>("call_status", undefined, () => ({ state: "off", link: "", error: null })),

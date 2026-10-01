@@ -19,6 +19,7 @@ import { useIzuki, type TabId } from "../lib/store";
 import { IS_TAURI } from "../lib/ipc";
 import { Recover } from "./Recover";
 import { UpdateNotice } from "./UpdateNotice";
+import { FeatureFinder } from "./FeatureFinder";
 
 const TABS: Array<{ value: TabId; label: string; icon: React.ReactNode }> = [
   { value: "draw", label: "Draw", icon: <PenLine size={13} strokeWidth={2.4} /> },
@@ -161,6 +162,7 @@ export function GlassConfigPanel() {
         </header>
 
         {/* ---------------- tabs ---------------- */}
+        <div className="izk-no-drag relative px-[18px] pb-3"><FeatureFinder /></div>
         {/* Scrolls sideways rather than cutting the last tab off in a
             narrow window. */}
         <div className="izk-no-drag overflow-x-auto px-[18px] pb-[12px] [scrollbar-width:none]">

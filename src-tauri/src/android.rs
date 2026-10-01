@@ -212,6 +212,7 @@ fn parse_controls(xml: &str, max: usize) -> Vec<crate::uia::Control> {
             value: if editable { text.chars().take(80).collect() } else { String::new() },
             focused: attr(node, "focused") == "true",
             below: false,
+            identity: None,
         });
         if out.len() >= max {
             break;

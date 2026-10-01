@@ -10,8 +10,10 @@ let prompted = false;
 const window = {
   Capacitor: {
     isNativePlatform: () => true,
+    getPlatform: () => "android",
     Plugins: {
       IzukiControl: {
+        haptic: async () => ({ done: true }),
         status: async () => ({ enabled: true }),
         perform: async ({ action }) => calls.push(action),
         openAccessibilitySettings: async () => calls.push("settings"),
@@ -28,6 +30,9 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
 
 (async () => {
   assert.equal(window.IzukiNative.installed(), true);
+  assert.equal(window.IzukiNative.platform(), "android");
+  assert.equal(await window.IzukiNative.haptic(), true);
+  assert.equal(await window.IzukiNative.takeLaunchPrompt(), "");
   assert.equal(await window.IzukiNative.controlStatus(), true);
   assert.equal(await window.IzukiNative.quickDeviceCommand("go home"), "Opened Home.");
   assert.deepEqual(calls, ["home"]);
@@ -38,5 +43,17 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   assert.equal(calls[1].title, "Izuki reminder");
   assert.equal(calls[1].body, "Study");
   assert.equal(calls[1].sound, "default", "native reminders should use the device's configured alert/haptic behavior");
+  let draft = "Explain this & that";
+  window.Capacitor.getPlatform = () => "ios";
+  window.Capacitor.Plugins.IzukiDevice = {
+    haptic: async () => ({ done: true }),
+    takeLaunchPrompt: async () => { const prompt = draft; draft = ""; return { prompt }; },
+  };
+  assert.equal(window.IzukiNative.platform(), "ios");
+  assert.equal(await window.IzukiNative.takeLaunchPrompt(), "Explain this & that");
+  assert.equal(await window.IzukiNative.takeLaunchPrompt(), "", "a Siri draft should only be delivered once");
+  delete window.Capacitor;
+  assert.equal(window.IzukiNative.platform(), "web");
+  assert.equal(await window.IzukiNative.haptic(), false);
   console.log("Native bridge: explicit Android actions and native reminders pass.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -1,0 +1,44 @@
+/* A quiet glass surface. No animated blur, video backgrounds or polling. */
+.app > header {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.17);
+  border-radius: 24px;
+  background: linear-gradient(125deg, rgba(255,255,255,.105), rgba(255,255,255,.025)), rgba(17,18,31,.6);
+  box-shadow: inset 0 1px rgba(255,255,255,.2), 0 10px 32px rgba(0,0,0,.14);
+}
+.composer {
+  border-color: rgba(255,255,255,.24);
+  background: linear-gradient(160deg, rgba(255,255,255,.1), rgba(255,255,255,.025)), rgba(20,21,37,.86);
+  box-shadow: inset 0 1px rgba(255,255,255,.22), 0 12px 32px rgba(0,0,0,.23);
+}
+.panel {
+  background: linear-gradient(145deg, rgba(118,121,182,.18), transparent 40%), #151522;
+  border-top-color: rgba(255,255,255,.28);
+  box-shadow: inset 0 1px rgba(255,255,255,.16), 0 -20px 80px rgba(0,0,0,.3);
+}
+.panel section, .pulse-card, .idea, .izuki:not(.error) {
+  background: linear-gradient(150deg, rgba(255,255,255,.075), rgba(255,255,255,.025));
+  border-color: rgba(255,255,255,.14);
+  box-shadow: inset 0 1px rgba(255,255,255,.09);
+}
+[data-platform="ios"] .app, [data-platform="android"] .app { max-width: 760px; }
+[data-platform="ios"] .app > header, [data-platform="android"] .app > header { margin-bottom: 8px; }
+#native-device { border-color: rgba(63,215,201,.3); }
+#native-ios-limits { margin-top: 12px; }
+/* Five controls plus a persona need a second line on a small phone. */
+@media (max-width: 540px) {
+  .app > header { flex-wrap: wrap; gap: 10px; }
+  .app > header .who { flex: 1 1 100%; }
+  .tools { width: 100%; justify-content: space-between; gap: 6px; }
+  .icon-btn, .call-btn { min-height: 44px; min-width: 44px; }
+  .compact-action { justify-content: center; }
+  .compact-action span { display: inline; }
+  .compact-action { padding-inline: 10px; }
+}
+@media (max-width: 430px) { .compact-action span { display: none; } .compact-action { padding-inline: 0; } }
+@media (max-width: 360px) { .call-btn { width:44px; padding:0; font-size:0; gap:0; justify-content:center; } }
+@media (prefers-reduced-transparency: reduce) {
+  .app > header, .composer, .panel, .sheet, #live { backdrop-filter: none; -webkit-backdrop-filter: none; background: #181825; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }

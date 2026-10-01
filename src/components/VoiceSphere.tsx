@@ -5,6 +5,7 @@ import { api, EV, emit, on } from "../lib/ipc";
 import { resizeHandles, useFloating, workArea, type Limits } from "../lib/floating";
 import type { OrbState, Settings } from "../lib/types";
 import { TranscriptText } from "./TranscriptBar";
+import { drawWaterOrb } from "../../docs/app/water-orb.js";
 
 /**
  * The hands-free voice sphere — "Hey Izuki" summons it.
@@ -233,6 +234,7 @@ function SphereCanvas({
     let t = 0;
     /** Where the colours are in their trip round the orb. */
     let turn = 0;
+    let waterMerge = 0;
     let last = performance.now();
     const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const parse = (col: string) => col.split(",").map(Number);
@@ -271,6 +273,12 @@ function SphereCanvas({
       const R = SIZE * 0.3 * (1 + level * 0.16 + 0.015 * Math.sin(now / 900));
       ctx.clearRect(0, 0, SIZE, SIZE);
 
+      if (style === "ferrofluid") {
+        waterMerge += ((st === "speaking" ? 1 : 0) - waterMerge) * (1 - Math.exp(-dt * 5));
+        drawWaterOrb(ctx, SIZE, reduced ? 0 : t, reduced ? 0 : level, waterMerge, st === "thinking");
+        return;
+      }
+
       // Soft halo behind everything, tinted by whichever colour is passing
       // by — so the glow shifts too.
       const halo = ctx.createRadialGradient(c, c, R * 0.4, c, c, SIZE / 2);
@@ -279,51 +287,6 @@ function SphereCanvas({
       halo.addColorStop(1, rgba(glowMix, 0));
       ctx.fillStyle = halo;
       ctx.fillRect(0, 0, SIZE, SIZE);
-
-      if (style === "ferrofluid") {
-        // Inspired by a ferrofluid speaker: a calm, weighty liquid core while
-        // idle; small droplets orbit it as sound rises; when an answer is
-        // ready (speaking) they fall inward and visibly merge into one body.
-        const merge = st === "speaking" ? 1 : Math.min(0.68, level * 0.72);
-        const orbit = R * (1.5 - merge * 0.78);
-        const body = ctx.createRadialGradient(c - R * 0.3, c - R * 0.34, R * 0.06, c, c, R * 1.18);
-        body.addColorStop(0, "rgba(236,255,255,0.88)");
-        body.addColorStop(0.16, rgba(mix[0], 0.84));
-        body.addColorStop(0.62, rgba(mix[1], 0.45));
-        body.addColorStop(1, "rgba(4,9,24,0.88)");
-        ctx.fillStyle = body;
-        ctx.beginPath();
-        for (let i = 0; i <= 96; i++) {
-          const a = i / 96 * Math.PI * 2;
-          const wobble = 1 + (0.025 + level * 0.13) * Math.sin(a * 3 + t * 3) + level * 0.05 * Math.sin(a * 7 - t * 5);
-          const r = R * wobble;
-          const x = c + Math.cos(a) * r, y = c + Math.sin(a) * r * (0.94 + level * 0.08);
-          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        }
-        ctx.closePath(); ctx.fill();
-        ctx.globalCompositeOperation = "screen";
-        for (let i = 0; i < 9; i++) {
-          const a = turn * (0.75 + (i % 3) * 0.15) + i * (Math.PI * 2 / 9);
-          const pulse = 0.78 + 0.34 * Math.sin(t * 2.2 + i * 1.7);
-          const x = c + Math.cos(a) * orbit, y = c + Math.sin(a) * orbit * 0.88;
-          const dropR = R * (0.08 + level * 0.075) * pulse * (i % 4 === 0 ? 1.35 : 1);
-          if (merge > 0.18) {
-            const grad = ctx.createLinearGradient(c, c, x, y);
-            grad.addColorStop(0, rgba(mix[(i + 1) % 4], 0.08 + merge * 0.35));
-            grad.addColorStop(1, rgba(mix[i % 4], 0));
-            ctx.strokeStyle = grad; ctx.lineWidth = Math.max(1, dropR * 0.75);
-            ctx.beginPath(); ctx.moveTo(c + Math.cos(a) * R * 0.72, c + Math.sin(a) * R * 0.64); ctx.lineTo(x, y); ctx.stroke();
-          }
-          const drop = ctx.createRadialGradient(x - dropR * 0.32, y - dropR * 0.38, 0, x, y, dropR * 1.15);
-          drop.addColorStop(0, "rgba(255,255,255,0.92)"); drop.addColorStop(0.25, rgba(mix[(i + 2) % 4], 0.86));
-          drop.addColorStop(1, "rgba(5,8,24,0.18)");
-          ctx.fillStyle = drop; ctx.beginPath(); ctx.arc(x, y, dropR, 0, Math.PI * 2); ctx.fill();
-        }
-        ctx.globalCompositeOperation = "source-over";
-        const rim = ctx.createConicGradient?.(-turn * 1.1, c, c);
-        if (rim) { for (let k = 0; k <= 4; k++) rim.addColorStop(k / 4, rgba(mix[k % 4], 0.42 + level * 0.42)); ctx.strokeStyle = rim; ctx.lineWidth = 1.2 + level * 1.7; ctx.beginPath(); ctx.arc(c, c, R * 0.99, 0, Math.PI * 2); ctx.stroke(); }
-        return;
-      }
 
       if (style !== "liquid") {
         ctx.lineWidth = 1.5;

@@ -159,7 +159,110 @@ pub struct Control {
     /// Further down the page (scrolled out of view). Acting on it has the
     /// app scroll it into view first — see [`scroll_into_view`].
     pub below: bool,
+    pub identity: Option<ControlIdentity>,
 }
+
+/// Runtime IDs distinguish duplicate names and unnamed radio buttons. The
+/// window and clipped bounds keep an old plan tied to the surface it saw.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ControlIdentity {
+    pub runtime_id: Vec<i32>,
+    pub window: isize,
+    pub rect: Rect,
+    pub kind: String,
+    pub name: String,
+}
+
+fn matches_identity(expected: &ControlIdentity, runtime_id: &[i32], kind: &str, name: &str) -> bool {
+    !expected.runtime_id.is_empty() && expected.runtime_id == runtime_id && expected.kind == kind && expected.name == name
+}
+
+/// Resolve the same control again, never a neighbouring control with the same
+/// label. Bound the relocation walk; failure asks the planner for a fresh look.
+#[cfg(windows)]
+fn grounded_element(identity: &ControlIdentity) -> anyhow::Result<(uiautomation::UIElement, i32, i32)> {
+    use anyhow::anyhow;
+    use uiautomation::{UIAutomation, types::Point};
+    if identity.runtime_id.is_empty() || (target_window() != Some(identity.window) && taskbar_window() != Some(identity.window)) {
+        return Err(anyhow!("target_changed: the target window or control identity changed; parse the screen again"));
+    }
+    let a = UIAutomation::new().or_else(|_| UIAutomation::new_direct())?;
+    let walker = a.get_control_view_walker()?;
+    let root = a.element_from_handle(identity.window.into())?;
+    let is_target = |el: &uiautomation::UIElement| {
+        matches_identity(identity, &el.get_runtime_id().unwrap_or_default(), &el.get_control_type().map(|c| format!("{c:?}")).unwrap_or_default(), &el.get_name().unwrap_or_default())
+    };
+    let at_point = |x, y| {
+        let mut current = a.element_from_point(Point::new(x, y)).ok();
+        for _ in 0..8 {
+            let el = current?;
+            if is_target(&el) { return Some(el); }
+            current = walker.get_parent(&el).ok();
+        }
+        None
+    };
+    let (x, y) = identity.rect.center();
+    let mut found = at_point(x, y);
+    if found.is_none() {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(250);
+        let mut stack = vec![root.clone()];
+        let mut visited = 0;
+        while let Some(el) = stack.pop() {
+            visited += 1;
+            if visited > 1500 || std::time::Instant::now() > deadline { break; }
+            if is_target(&el) { found = Some(el); break; }
+            let mut child = walker.get_first_child(&el).ok();
+            let mut children = Vec::new();
+            while let Some(el) = child {
+                if children.len() >= 400 || std::time::Instant::now() > deadline { break; }
+                child = walker.get_next_sibling(&el).ok();
+                children.push(el);
+            }
+            stack.extend(children.into_iter().rev());
+        }
+    }
+    let el = found.ok_or_else(|| anyhow!("target_changed: the detected control is no longer present; parse the screen again"))?;
+    if !el.is_enabled().unwrap_or(false) { return Err(anyhow!("disabled: the detected control is disabled")); }
+    if el.is_offscreen().unwrap_or(true) { return Err(anyhow!("target_changed: the detected control is not visible")); }
+    let mut visible = to_rect(&el.get_bounding_rectangle()?).intersect(&to_rect(&root.get_bounding_rectangle()?));
+    let mut parent = walker.get_parent(&el).ok();
+    for _ in 0..30 {
+        let Some(p) = parent else { break };
+        if p.get_control_type().ok() == Some(uiautomation::types::ControlType::Document) {
+            visible = visible.and_then(|r| p.get_bounding_rectangle().ok().and_then(|bounds| r.intersect(&to_rect(&bounds))));
+        }
+        parent = walker.get_parent(&p).ok();
+    }
+    let rect = visible.filter(|r| r.w > 2 && r.h > 2).ok_or_else(|| anyhow!("target_changed: control is clipped out of view"))?;
+    let (cx, cy) = rect.center();
+    if at_point(cx, cy).is_none() {
+        return Err(anyhow!("target_changed: another element covers the detected control; parse the screen again"));
+    }
+    Ok((el, cx, cy))
+}
+
+#[cfg(windows)]
+pub fn grounded_point(identity: &ControlIdentity) -> anyhow::Result<(i32, i32)> {
+    grounded_element(identity).map(|(_, x, y)| (x, y))
+}
+
+#[cfg(not(windows))]
+pub fn grounded_point(_identity: &ControlIdentity) -> anyhow::Result<(i32, i32)> {
+    Err(anyhow::anyhow!("target_changed: Windows controls are unavailable"))
+}
+
+#[cfg(windows)]
+pub fn invoke_grounded(identity: &ControlIdentity) -> anyhow::Result<bool> {
+    use uiautomation::patterns::{UIInvokePattern, UISelectionItemPattern, UITogglePattern};
+    let (el, _, _) = grounded_element(identity)?;
+    if let Ok(p) = el.get_pattern::<UIInvokePattern>() { p.invoke()?; return Ok(true); }
+    if let Ok(p) = el.get_pattern::<UISelectionItemPattern>() { p.select()?; return Ok(true); }
+    if let Ok(p) = el.get_pattern::<UITogglePattern>() { p.toggle()?; return Ok(true); }
+    Ok(false)
+}
+
+#[cfg(not(windows))]
+pub fn invoke_grounded(_identity: &ControlIdentity) -> anyhow::Result<bool> { Ok(false) }
 
 /// The window the user is actually working in. Normally the foreground
 /// window — but clicking Izuki's own chat bubble or panel makes *that*
@@ -242,7 +345,7 @@ pub fn list_controls(max: usize) -> Vec<Control> {
     // The app you're working in gets most of the budget…
     if let Some(hwnd) = target_window() {
         if let Ok(root) = automation.element_from_handle(hwnd.into()) {
-            collect(&walker, root, 2500, started + Duration::from_millis(650), max * 2, &mut found);
+            collect(&walker, root, hwnd, 2500, started + Duration::from_millis(900), max * 2, &mut found);
         }
     }
     // …and the taskbar always gets a look too: Start, search, pinned and
@@ -258,7 +361,7 @@ pub fn list_controls(max: usize) -> Vec<Control> {
             if let Some(taskbar) = taskbar_window() {
                 if let Ok(root) = automation.element_from_handle(taskbar.into()) {
                     let mut bar = Vec::new();
-                    collect(&walker, root, 600, Instant::now() + Duration::from_millis(350), 40, &mut bar);
+                    collect(&walker, root, taskbar, 600, Instant::now() + Duration::from_millis(350), 40, &mut bar);
                     *TASKBAR.lock() = Some((Instant::now(), bar.clone()));
                     found.extend(bar);
                 }
@@ -300,6 +403,7 @@ fn taskbar_window() -> Option<isize> {
 fn collect(
     walker: &uiautomation::UITreeWalker,
     root: uiautomation::UIElement,
+    window_id: isize,
     node_budget: usize,
     deadline: std::time::Instant,
     cap: usize,
@@ -369,6 +473,7 @@ fn collect(
                             value: String::new(),
                             focused: false,
                             below: true,
+                            identity: el.get_runtime_id().ok().map(|runtime_id| ControlIdentity { runtime_id, window: window_id, rect, kind: format!("{ct:?}"), name: el.get_name().unwrap_or_default() }),
                         });
                     } else if let Some(rect) = rect
                         .intersect(view.as_ref().unwrap_or(&rect))
@@ -400,6 +505,7 @@ fn collect(
                             value,
                             focused,
                             below: false,
+                            identity: el.get_runtime_id().ok().map(|runtime_id| ControlIdentity { runtime_id, window: window_id, rect, kind: format!("{ct:?}"), name: el.get_name().unwrap_or_default() }),
                         });
                     }
                 }
@@ -481,7 +587,7 @@ fn same_name(have: &str, want: &str) -> bool {
     let n = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
     let (h, w) = (n(have), n(want));
     // Names in Izuki's list are cut at 60 characters: a longer real name starts with it.
-    !w.is_empty() && (h == w || (w.chars().count() >= 3 && h.starts_with(&w)))
+    !w.is_empty() && (h == w || (w.chars().count() == 60 && h.starts_with(&w)))
 }
 
 #[cfg(windows)]
@@ -1018,26 +1124,27 @@ pub fn foreground_title() -> String {
 /// A controls walk started early — while the user is still talking or
 /// typing — so the ~1.3 s it takes is off the critical path by the time
 /// the request goes to the model.
-static PREFETCH: parking_lot::Mutex<Option<(std::time::Instant, std::thread::JoinHandle<Vec<Control>>)>> =
+static PREFETCH: parking_lot::Mutex<Option<(std::time::Instant, Option<isize>, std::thread::JoinHandle<Vec<Control>>)>> =
     parking_lot::Mutex::new(None);
 
 /// Controls just read, handed to the next `controls_fresh_or_now`.
 fn keep_controls(controls: Vec<Control>) {
-    *PREFETCH.lock() = Some((std::time::Instant::now(), std::thread::spawn(move || controls)));
+    *PREFETCH.lock() = Some((std::time::Instant::now(), target_window(), std::thread::spawn(move || controls)));
 }
 
 /// Start walking the target window's controls in the background.
 pub fn prefetch_controls(max: usize) {
+    let window = target_window();
     let handle = std::thread::spawn(move || list_controls(max));
-    *PREFETCH.lock() = Some((std::time::Instant::now(), handle));
+    *PREFETCH.lock() = Some((std::time::Instant::now(), window, handle));
 }
 
 /// The walk started by `prefetch_controls` if it's recent (waiting for it
 /// to finish if need be), otherwise a fresh one.
 pub fn controls_fresh_or_now(max: usize) -> Vec<Control> {
     let pending = PREFETCH.lock().take();
-    if let Some((at, handle)) = pending {
-        if at.elapsed() < std::time::Duration::from_secs(12) {
+    if let Some((at, window, handle)) = pending {
+        if window == target_window() && at.elapsed() < std::time::Duration::from_millis(500) && handle.is_finished() {
             if let Ok(controls) = handle.join() {
                 return controls;
             }
@@ -1046,8 +1153,29 @@ pub fn controls_fresh_or_now(max: usize) -> Vec<Control> {
     list_controls(max)
 }
 
+pub fn invalidate_controls() { PREFETCH.lock().take(); }
+
 #[cfg(test)]
 mod lock_tests {
+    #[test]
+    fn identity_distinguishes_unnamed_options_and_changed_labels() {
+        use super::*;
+        let mut target = ControlIdentity { runtime_id: vec![42, 7], window: 1, rect: Rect::default(), kind: "RadioButton".into(), name: String::new() };
+        assert!(matches_identity(&target, &[42, 7], "RadioButton", ""));
+        assert!(!matches_identity(&target, &[42, 8], "RadioButton", ""));
+        assert!(!matches_identity(&target, &[42, 7], "Button", ""));
+        target.name = "Answer A".into();
+        assert!(!matches_identity(&target, &[42, 7], "RadioButton", "Answer B"));
+        target.runtime_id.clear();
+        assert!(!matches_identity(&target, &[], "RadioButton", "Answer A"));
+    }
+
+    #[test]
+    fn short_names_do_not_match_another_action_prefix() {
+        assert!(super::same_name("NEXT", "Next"));
+        assert!(!super::same_name("Next question", "Next"));
+        assert!(!super::same_name("Answer ABC", "Answer A"));
+    }
     /// `cargo test lock_check -- --ignored --nocapture` — prints whether Windows is locked right now, and how long checking takes.
     #[test]
     #[ignore]

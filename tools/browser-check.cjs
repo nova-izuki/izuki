@@ -17,6 +17,7 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
     const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
     if (pathname === '/fixture') { res.setHeader('Content-Type', 'text/html'); res.end(fixture); return; }
     let file = path.resolve(root, '.' + pathname);
+    if (pathname.startsWith('/assets/')) file = path.resolve(root, 'dist', '.' + pathname);
     if (!file.startsWith(root + path.sep)) { res.writeHead(403); res.end(); return; }
     if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
     try {
@@ -68,7 +69,27 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   assert.match(await evaluate('window.__izukiPage.click(1)'), /page changed/i);
   assert.equal(JSON.parse(await evaluate('window.__izukiPage.video("slow")')).rate, 0.75);
   assert.equal(JSON.parse(await evaluate('window.__izukiPage.video("pause")')).paused, true);
+  const oldVideo = JSON.parse(await evaluate('window.__izukiPage.video("read")'));
+  assert(oldVideo.bounds.w > 0 && oldVideo.bounds.h > 0, 'video bounds missing');
+  await evaluate('document.querySelector("video").replaceWith(document.querySelector("video").cloneNode())');
+  assert.match(JSON.parse(await evaluate(`window.__izukiPage.video('play', ${JSON.stringify(oldVideo.videoId)})`)).error, /video changed/i);
+  await evaluate('document.querySelector("video").volume=.8; window.__izukiPage.duckMedia(true); window.__izukiPage.duckMedia(true)');
+  assert(Math.abs(await evaluate('document.querySelector("video").volume') - .16) < .0001, 'duck heartbeat compounded volume');
+  await evaluate('window.__izukiPage.duckMedia(false)');
+  assert.equal(await evaluate('document.querySelector("video").volume'), .8, 'original volume not restored');
+  await evaluate('window.__izukiPage.duckMedia(true); document.querySelector("video").volume=.4; window.__izukiPage.duckMedia(false)');
+  assert.equal(await evaluate('document.querySelector("video").volume'), .4, 'user volume adjustment was overwritten');
   console.log('Browser: private fields, stale targets, one submission, toolbar and video controls pass.');
+  await evaluate(`(async () => {
+    const { drawWaterOrb } = await import('/docs/app/water-orb.js');
+    document.body.innerHTML = '<main style="display:flex;gap:24px;padding:30px;background:#333"><canvas width="320" height="320" style="background:#0c141d"></canvas><canvas width="320" height="320" style="background:#e9eef1"></canvas></main>';
+    for (const c of document.querySelectorAll('canvas')) drawWaterOrb(c.getContext('2d'), 320, 1.8, .35, .15, true);
+  })()`);
+  assert(await evaluate('document.querySelector("canvas").getContext("2d").getImageData(160,160,1,1).data[3] < 60'), 'water centre is too opaque');
+  const preview = await call('Page.captureScreenshot', { format: 'png' });
+  const previewPath = path.join(os.tmpdir(), 'izuki-water-preview.png');
+  fs.writeFileSync(previewPath, Buffer.from(preview.data, 'base64'));
+  console.log('Water preview: ' + previewPath);
   await navigate('/docs/app/', '!!window.izukiApps && !!document.getElementById("open-settings")');
   assert(await evaluate('!!document.getElementById("go-home") && !!document.getElementById("new-chat")'), 'phone home/new-chat controls missing');
   await evaluate('localStorage.setItem("izuki.history", JSON.stringify([{role:"user",text:"Keep this conversation"},{role:"model",text:"I will."}]))');
@@ -85,6 +106,35 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   assert(await evaluate('!!document.getElementById("apps-refresh")'));
   assert.deepEqual(errors, [], 'browser JavaScript errors');
   console.log('Phone: home/new chat, settings, four orb preferences and account controls pass without JavaScript exceptions.');
+  const nativeMock = await call('Page.addScriptToEvaluateOnNewDocument', { source: `window.Capacitor={isNativePlatform:()=>true,getPlatform:()=>"ios",Plugins:{IzukiDevice:{takeLaunchPrompt:async()=>({prompt:"A draft from Siri"}),haptic:async()=>({done:true})}}};` });
+  await navigate('/docs/app/', 'document.getElementById("text")?.value === "A draft from Siri"');
+  await evaluate('document.getElementById("open-settings").click()');
+  assert(await evaluate('document.getElementById("native-controls").hidden && !document.getElementById("native-device").hidden && document.getElementById("web-install").hidden'), 'iPhone must not show Android controls or PWA installation');
+  assert.equal(await evaluate('document.getElementById("siri-url").textContent'), 'izuki://ask?q=');
+  await evaluate('document.getElementById("test-haptic").click()');
+  await pause(100);
+  assert(await evaluate('document.getElementById("native-feedback").textContent.startsWith("Tap sent")'));
+  await evaluate('document.getElementById("close-settings").click()');
+  for (const width of [320, 390, 768]) {
+    await call('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: false });
+    await pause(150);
+    assert(await evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'phone layout overflow at ' + width);
+    assert(await evaluate('[...document.querySelectorAll("header button")].every(b=>{const r=b.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth})'), 'phone toolbar overflow at ' + width);
+  }
+  fs.writeFileSync(path.join(os.tmpdir(), 'izuki-phone-glass-preview.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  await call('Page.removeScriptToEvaluateOnNewDocument', { identifier: nativeMock.identifier });
+  await navigate('/dist/index.html', '!!document.querySelector(".izk-finder-trigger")');
+  await evaluate('document.querySelector(".izk-finder-trigger").click()');
+  await evaluate(`const input=document.querySelector('.izk-finder input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'screen');input.dispatchEvent(new Event('input',{bubbles:true}));`);
+  await pause(150);
+  assert(await evaluate('document.querySelector(".izk-finder-results").textContent.includes("Screen control")'));
+  await evaluate('[...document.querySelectorAll(".izk-finder-results button")].find(b=>b.textContent.startsWith("Screen control")).click()');
+  await pause(700);
+  assert.equal(await evaluate('document.activeElement.id'), 'settings-execution', 'feature finder must navigate and focus the section');
+  await evaluate('window.dispatchEvent(new KeyboardEvent("keydown",{key:"k",ctrlKey:true,bubbles:true}))');
+  assert(await evaluate('document.querySelector(".izk-finder").open'), 'Ctrl+K should open the finder');
+  fs.writeFileSync(path.join(os.tmpdir(), 'izuki-desktop-glass-preview.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  console.log('Native iPhone settings, Siri draft, small-phone glass layout and desktop feature finder pass.');
   await navigate('/docs/', 'document.readyState === "complete" && !!document.getElementById("features")');
   assert(await evaluate('document.getElementById("features").textContent.includes("Two ways to take control")'));
   assert(await evaluate('[...document.querySelectorAll("a.dl")].every(a => a.href.endsWith("/releases/latest/download/Izuki-Setup.exe"))'));

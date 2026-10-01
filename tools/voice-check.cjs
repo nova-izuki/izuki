@@ -1,0 +1,17 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const ts = require('typescript');
+const path = require('node:path');
+const source = fs.readFileSync(path.join(__dirname, '../src/lib/speakable.ts'), 'utf8');
+const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+const scope = { exports: {} };
+vm.runInNewContext(compiled, scope);
+const { speakable } = scope.exports;
+assert.equal(speakable('[calm] Hey. [calm] Let me explain.'), 'Hey. Let me explain.');
+assert.equal(speakable('[Curious] Why? [END]'), 'Why?');
+assert.equal(speakable('The sea is calm today.'), 'The sea is calm today.');
+assert.equal(speakable('[playful] <laugh> Nice!', true), '<laugh> Nice!');
+assert.equal(speakable('[playful] <laugh> Nice!'), 'Nice!');
+assert.equal(speakable('[calm]'), '');
+console.log('Voice: repeated delivery tags are silent; ordinary words and supported sound effects survive.');

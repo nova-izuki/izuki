@@ -260,7 +260,9 @@ fn ask_model(
         let t = std::time::Instant::now();
         // The page's own words, read alongside the controls (not after).
         let text_job = std::thread::spawn(|| uia::document_text(PAGE_TEXT_CHARS));
-        let c = uia::controls_fresh_or_now(MAX_CONTROLS);
+        // Bind labels and rectangles to this look, not a prefetch made while
+        // the user was still speaking or another page was foreground.
+        let c = uia::list_controls(MAX_CONTROLS);
         let text = text_job.join().unwrap_or_default();
         eprintln!("[brain] screen controls: {}, page text: {} chars, in {} ms", c.len(), text.len(), t.elapsed().as_millis());
         (c, text)
@@ -789,8 +791,9 @@ static STEP_SNAG: Mutex<Option<String>> = Mutex::new(None);
 
 /// Run `steps` on this thread. `true` if every step ran (not stopped and
 /// no step failed).
-fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> bool {
+fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> (bool, usize) {
             STEP_SNAG.lock().take();
+            let executed = std::cell::Cell::new(0usize);
             let settings = store.settings();
             let move_ms = settings.move_duration_ms;
             // No clear_abort() here: each task clears the flag once, when it
@@ -844,6 +847,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     match automation::execute(step, move_ms, settings.magnetic_hand, settings.dry_run)
                     {
                         Ok(detail) => {
+                            executed.set(i + 1);
                             if matches!(step.action, Intent::Click | Intent::DoubleClick) {
                                 ghost::record(&store, &app_name, step.x, step.y);
                             }
@@ -877,11 +881,17 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                 true
             };
 
-            run()
+            (run(), executed.get())
 }
 
 pub fn run_flow(app: &AppHandle, store: &Arc<Store>, id: &str) -> Result<()> {
     let flow = store.flow(id).ok_or_else(|| anyhow!("no such flow"))?;
+    // Runtime IDs belong to the captured screen, not a saved macro. Replan
+    // its original request so each replay gets fresh, verifiable targets.
+    let grounded = flow.steps.iter().any(|s| s.grounding.is_some());
+    if grounded && flow.prompt.trim().is_empty() {
+        return Err(anyhow!("This screen flow has no saved request. Record it again with a description so Izuki can find fresh targets safely."));
+    }
     // A replay is a new task: an old stop no longer applies.
     automation::clear_abort();
     store.mutate_flow(id, |f| {
@@ -893,7 +903,14 @@ pub fn run_flow(app: &AppHandle, store: &Arc<Store>, id: &str) -> Result<()> {
         events::STATUS,
         StatusEvent::working(format!("Replaying “{}”", flow.name)),
     );
-    run_steps(app, store, &flow.steps);
+    if grounded {
+        let (app, store) = (app.clone(), store.clone());
+        std::thread::Builder::new().name("flow-refresh".into()).spawn(move || {
+            submit_voice_command(&app, &store, flow.prompt);
+        })?;
+    } else {
+        run_steps(app, store, &flow.steps);
+    }
     Ok(())
 }
 
@@ -931,8 +948,9 @@ pub fn run_named_click(app: &AppHandle, store: &Arc<Store>, said: &str) -> Optio
     step.snapped_to = Some(c.name.clone());
     step.hover_first = c.hidden;
     step.scroll_first = c.below;
+    step.grounding = c.identity.clone();
     eprintln!("[named] \"{said}\" → clicking \"{}\" directly", c.name);
-    let worked = run_steps_blocking(app, store, std::slice::from_ref(&step), &alive);
+    let (worked, _) = run_steps_blocking(app, store, std::slice::from_ref(&step), &alive);
     if !worked {
         // Covered or greyed out: the brain takes it from here.
         return None;
@@ -1019,7 +1037,7 @@ pub fn run_instant(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<Vi
     let worked = if steps.is_empty() {
         crate::instant::run_direct(act)
     } else {
-        run_steps_blocking(app, store, &steps, &alive)
+        run_steps_blocking(app, store, &steps, &alive).0
     };
     if !worked && alive() {
         eprintln!("[bug] instant command didn't work: {act:?}");
@@ -1090,7 +1108,13 @@ fn submit_task(
     // Look first, before any Izuki UI goes up, so the model sees the user's
     // screen rather than Izuki's own overlay. (A drawing brings the screen
     // it was drawn on — the marks are placed on that picture.)
-    let frame = drawn_on.or_else(|| capture::capture_all().ok());
+    let lesson_bounds = if teaching {
+        crate::browser::video("read", false).ok().filter(|v| v["focused"] == true)
+            .and_then(|v| serde_json::from_value::<Rect>(v["screen_rect"].clone()).ok())
+    } else { None };
+    let frame = drawn_on.or_else(|| capture::capture_all().ok()).map(|f| {
+        lesson_bounds.and_then(|r| f.crop(&r)).unwrap_or(f)
+    });
 
     // Focus mode puts up the overlay as a *live*, click-through viewport so
     // the hand has somewhere to visibly point while it acts. It deliberately
@@ -1323,9 +1347,13 @@ fn submit_task(
                 matches!(s.action, Intent::Draw | Intent::Point)
                     && s.x >= frame_left && s.x < frame_right
                     && s.y >= frame_top && s.y < frame_bottom
+                    && s.x2.is_none_or(|x| x >= frame_left && x < frame_right)
+                    && s.y2.is_none_or(|y| y >= frame_top && y < frame_bottom)
             )
         }).take(if lesson { 2 } else { usize::MAX }).cloned().collect();
-        let done = lesson || plan.done;
+        // An action being planned is not evidence that it succeeded. Check
+        // a fresh screen before accepting "done" for an autonomous task.
+        let done = lesson || (plan.done && steps.is_empty());
         let wait = plan.wait;
         if plan.notes.is_some() {
             notes = plan.notes.clone();
@@ -1459,7 +1487,7 @@ fn submit_task(
         // Say what it's doing as it goes — "Opening Blackboard…" — unless
         // this is the last word (that one is the reply), or it's the same
         // thing again, or just "Got it!".
-        if !steps.is_empty() && !done && worth_saying(&plan.summary, &last_said) {
+        if !steps.is_empty() && !done && !plan.done && worth_saying(&plan.summary, &last_said) {
             last_said = plan.summary.clone();
             let _ = app.emit(
                 "izuki://say",
@@ -1483,19 +1511,21 @@ fn submit_task(
         // The window being worked in, so a step that minimises it by mistake
         // ("clear what's in the way" gone wrong) is caught and undone.
         let working_in = uia::target_window();
-        let finished = run_steps_blocking(app, store, &steps, &alive);
-        all_steps.extend(steps.iter().cloned());
-        done_so_far.extend(steps.iter().map(describe_step));
+        let (finished, executed) = run_steps_blocking(app, store, &steps, &alive);
+        all_steps.extend(steps.iter().take(executed).cloned());
+        done_so_far.extend(steps.iter().take(executed).map(describe_step));
         // A click that couldn't happen (something on top, a greyed-out
         // button) isn't the end: tell the brain, and it deals with it.
         let snag = STEP_SNAG.lock().take();
         if let Some(why) = &snag {
             eprintln!("[agent] a click couldn't happen — {why}");
-            let note = format!(
+            let note = if why.starts_with("target_changed:") {
+                format!("Your last action was NOT executed — {why}. Parse this fresh screenshot and select the intended numbered control by its label and position. Do not reuse old IDs or coordinates. Do not close or minimise windows to fix a changed target. If the intended control is absent, explain that instead of guessing.")
+            } else { format!(
                 "Your last click didn't happen — {why}. Deal with it like a person would: close what's on top (its ✕ \
                  or Close), drag it aside by its title bar, or minimise it; if the button is greyed out, first do what \
                  turns it on (fill in the required boxes, tick the box, pick an option). Then click it again."
-            );
+            ) };
             told = Some(match told.take() {
                 Some(t) => format!("{t}\n{note}"),
                 None => note,
@@ -1869,6 +1899,7 @@ mod speed_tests {
             value: String::new(),
             focused: false,
             below: false,
+            identity: None,
         };
         let cs = vec![control(1, "Subscribe"), control(2, "Subscribed channels"), control(3, "Sign in")];
         assert_eq!(unique_named("subscribe", &cs).map(|c| c.id), Some(1), "the exact name wins");

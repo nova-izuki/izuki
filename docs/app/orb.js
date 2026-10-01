@@ -12,6 +12,9 @@
 // and the page is visible — and slows down when nothing is happening.
 (() => {
   "use strict";
+  let waterRenderer;
+  let waterMerge = 0;
+  import('./water-orb.js').then((m) => { waterRenderer = m.drawWaterOrb; }).catch(() => {});
   const PALETTES = {
     idle:      { colors: ["99,102,241", "34,211,238", "139,92,246", "56,189,248"], glow: "99,102,241", spin: 0.25 },
     listening: { colors: ["6,182,212", "10,132,255", "99,102,241", "34,211,238"], glow: "14,165,233", spin: 0.45 },
@@ -50,6 +53,12 @@
     ctx.globalCompositeOperation = "source-over";
     ctx.clearRect(0, 0, SIZE, SIZE);
 
+    if (style === "ferrofluid") {
+      waterMerge += ((mode === "speaking" ? 1 : 0) - waterMerge) * 0.13;
+      if (waterRenderer) waterRenderer(ctx, SIZE, reduced ? 0 : t, reduced ? 0 : level, waterMerge, mode === "thinking");
+      return;
+    }
+
     if (!small) {
       const halo = ctx.createRadialGradient(c, c, R * 0.4, c, c, SIZE / 2);
       halo.addColorStop(0, rgba(glowMix, 0.42 + level * 0.38));
@@ -59,59 +68,6 @@
       ctx.fillRect(0, 0, SIZE, SIZE);
     }
 
-    if (style === "ferrofluid") {
-      // A glassy liquid pool with deliberately uneven satellite drops. The
-      // quiet state barely moves; thinking pulls water outward, then speaking
-      // gathers it home. That rhythm feels much closer to poured liquid than
-      // a clockwork ring of particles.
-      const merge = mode === "speaking" ? 0.92 : mode === "thinking" ? 0.18 + level * 0.2 : Math.min(0.42, level * 0.5);
-      const coreR = R * (0.92 + level * 0.11);
-      const shadow = ctx.createRadialGradient(c, c + coreR * 1.06, 0, c, c + coreR * 1.06, coreR * 1.55);
-      shadow.addColorStop(0, "rgba(0,0,0,0.28)"); shadow.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = shadow; ctx.beginPath(); ctx.ellipse(c, c + coreR * 1.02, coreR * 1.45, coreR * 0.33, 0, 0, Math.PI * 2); ctx.fill();
-      const body = ctx.createRadialGradient(c - coreR * 0.38, c - coreR * 0.42, coreR * 0.025, c, c, coreR * 1.18);
-      body.addColorStop(0, "rgba(255,255,255,0.94)");
-      body.addColorStop(0.08, "rgba(205,246,255,0.76)");
-      body.addColorStop(0.33, rgba(mix[1], 0.64));
-      body.addColorStop(0.68, "rgba(10,28,55,0.72)");
-      body.addColorStop(1, "rgba(1,5,16,0.94)");
-      ctx.fillStyle = body; ctx.beginPath();
-      for (let i = 0; i <= 96; i++) {
-        const a = i / 96 * Math.PI * 2;
-        const surface = Math.sin(a * 2 + t * 0.7) * (0.012 + level * 0.035) + Math.sin(a * 5 - t * 1.3) * level * 0.02;
-        const rr = coreR * (1 + surface);
-        const x = c + Math.cos(a) * rr, y = c + Math.sin(a) * rr * (0.96 + level * 0.035);
-        if (!i) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.closePath(); ctx.fill();
-      const rim = ctx.createRadialGradient(c, c, coreR * 0.72, c, c, coreR * 1.03);
-      rim.addColorStop(0, "rgba(105,231,255,0)"); rim.addColorStop(0.82, "rgba(117,229,255,0.12)"); rim.addColorStop(1, "rgba(226,252,255,0.6)");
-      ctx.strokeStyle = rim; ctx.lineWidth = Math.max(1, coreR * 0.03); ctx.stroke();
-      const count = small ? 3 : 7;
-      for (let i = 0; i < count; i++) {
-        const phase = i * 2.399 + Math.sin(i * 7.1) * 0.45;
-        const drift = t * (0.22 + (i % 3) * 0.035) + Math.sin(t * 0.32 + i) * 0.18;
-        const angle = phase + drift;
-        const baseDistance = coreR * (1.55 + (i % 4) * 0.19 - merge * 0.88);
-        const distance = baseDistance + coreR * 0.09 * Math.sin(t * 0.75 + i * 3.7);
-        const x = c + Math.cos(angle) * distance;
-        const y = c + Math.sin(angle) * distance * 0.82;
-        const dropR = coreR * (0.085 + (i % 3) * 0.024 + level * 0.045) * (i === 0 ? 1.45 : 1);
-        if (merge > 0.08) {
-          const neck = ctx.createLinearGradient(c, c, x, y);
-          neck.addColorStop(0, "rgba(127,237,255,0.30)"); neck.addColorStop(0.72, rgba(mix[i % 4], 0.12 + merge * 0.22)); neck.addColorStop(1, "rgba(255,255,255,0)");
-          ctx.strokeStyle = neck; ctx.lineWidth = Math.max(1, dropR * (0.55 + merge * 0.75)); ctx.lineCap = "round";
-          ctx.beginPath(); ctx.moveTo(c + Math.cos(angle) * coreR * 0.72, c + Math.sin(angle) * coreR * 0.68); ctx.lineTo(x, y); ctx.stroke();
-        }
-        const drop = ctx.createRadialGradient(x - dropR * 0.42, y - dropR * 0.48, 0, x, y, dropR * 1.18);
-        drop.addColorStop(0, "rgba(255,255,255,0.98)"); drop.addColorStop(0.14, "rgba(224,251,255,0.86)");
-        drop.addColorStop(0.42, rgba(mix[(i + 1) % 4], 0.66)); drop.addColorStop(1, "rgba(4,13,30,0.72)");
-        ctx.fillStyle = drop; ctx.beginPath(); ctx.arc(x, y, dropR, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = "rgba(236,255,255,0.48)"; ctx.lineWidth = Math.max(.7, dropR * .12); ctx.stroke();
-      }
-      ctx.lineCap = "butt";
-      return;
-    }
     if (["ripple", "constellation"].includes(style)) {
       ctx.lineWidth = 1.5;
       if (style === "ripple") {

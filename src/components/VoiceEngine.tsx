@@ -29,7 +29,9 @@ import { api, EV, emit, IS_TAURI, on } from "../lib/ipc";
 import { useIzuki } from "../lib/store";
 import type { CaptionPayload, DrawSession, OrbState, SayPayload, Settings, TranscriptPayload } from "../lib/types";
 
-const ACK = ["On it.", "Got it.", "Sure thing.", "Okay.", "Working on it."];
+// A visible thinking state is enough. Speaking a stock acknowledgement while
+// the answer is still arriving made Izuki sound repetitive and could overlap
+// the useful answer on a slower request.
 const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
 
 async function hideConfigWindow() {
@@ -706,13 +708,9 @@ export function VoiceEngine() {
     // themselves, no screen — read, draft, and send only on a yes.
     const runApps = async (alreadyRemembered: boolean) => {
       if (!alreadyRemembered) remember("user", t);
-      const ack = setTimeout(() => {
-        if (requestSeq === at && !isSpeaking()) respond(pick(ACK));
-      }, 1800);
       try {
         await useIzuki.getState().flushSettings();
         const answer = await api.appsAsk(recentHistory());
-        clearTimeout(ack);
         if (requestSeq !== at) return;
         thinkingNow.current = false;
         // Not linked yet: open the sign-in page right away.
@@ -723,7 +721,6 @@ export function VoiceEngine() {
         await respond(said, null, true);
         void afterReply(at, listeningThrough);
       } catch (e) {
-        clearTimeout(ack);
         if (requestSeq !== at) return;
         thinkingNow.current = false;
         await respond(failure(e), "sympathetic");
@@ -763,16 +760,13 @@ export function VoiceEngine() {
       }
 
       remember("user", t);
-      // "On it." only if the answer is slow to come.
-      const ack = setTimeout(() => {
-        if (requestSeq === at && !helpPending && !isSpeaking()) respond(pick(ACK));
-      }, 1800);
+      // The orb already shows that work is under way. Keep the voice free for
+      // the actual answer instead of adding a canned interruption.
       try {
         // Flush a just-edited setting (a freshly pasted key) before relying on it.
         await useIzuki.getState().flushSettings();
         if (useIzuki.getState().settings.speak_responses) void holdMicForVoice();
         const plan = await api.submitVoiceCommand(t);
-        clearTimeout(ack);
         if (requestSeq !== at) return; // stopped, or you've moved on — don't answer over you
         thinkingNow.current = false;
         if (plan.remember?.length) void emit(EV.memoryChanged);
@@ -780,7 +774,10 @@ export function VoiceEngine() {
         remember("assistant", said);
         await respond(said, plan.mood, true);
         if (teaching) {
-          if (useIzuki.getState().settings.speak_responses) await untilSpoken();
+          // respond awaits cloud/local playback; Windows marks its queued
+          // utterance as speaking synchronously. Don't wait six extra seconds
+          // for an already-finished voice to start again before resuming video.
+          if (useIzuki.getState().settings.speak_responses) await untilQuiet();
           if (requestSeq === at) {
             void emit(EV.penClear);
             await api.closeOverlay().catch(() => undefined);
@@ -788,7 +785,6 @@ export function VoiceEngine() {
         }
         void afterReply(at, listeningThrough);
       } catch (e) {
-        clearTimeout(ack);
         console.error(e);
         if (requestSeq !== at) return;
         thinkingNow.current = false;
@@ -1084,8 +1080,20 @@ export function VoiceEngine() {
   // ---- the orb follows Izuki's voice --------------------------------------------
   useEffect(() => {
     let meter: ReturnType<typeof setInterval> | null = null;
+    let duckHeartbeat: ReturnType<typeof setInterval> | null = null;
+    let restoreMedia: ReturnType<typeof setTimeout> | null = null;
     const update = () => {
       const talking = naturalSpeaking() || systemIsSpeaking();
+      if (restoreMedia) clearTimeout(restoreMedia);
+      if (duckHeartbeat) clearInterval(duckHeartbeat);
+      restoreMedia = null; duckHeartbeat = null;
+      if (talking) {
+        void api.duckAudio(true, "speaking").catch(() => undefined);
+        duckHeartbeat = setInterval(() => void api.duckAudio(true, "speaking").catch(() => undefined), 10_000);
+      } else {
+        // Bridge short gaps between streamed sentences without volume pumping.
+        restoreMedia = setTimeout(() => void api.duckAudio(false, "speaking").catch(() => undefined), 650);
+      }
       void emit(EV.speaking, talking);
       if (talking) orb("speaking");
       else if (thinkingNow.current) orb("thinking");
@@ -1105,6 +1113,9 @@ export function VoiceEngine() {
     return () => {
       offs.forEach((o) => o());
       if (meter) clearInterval(meter);
+      if (duckHeartbeat) clearInterval(duckHeartbeat);
+      if (restoreMedia) clearTimeout(restoreMedia);
+      void api.duckAudio(false, "speaking").catch(() => undefined);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1249,7 +1260,7 @@ export function VoiceEngine() {
     let cancelled = false;
     void (async () => {
       await new Promise((r) => setTimeout(r, 1500));
-      for (const line of [...GREETINGS, ...ACK]) {
+      for (const line of GREETINGS) {
         if (cancelled) return;
         await api.speakCloud("edge", line, null).catch(() => undefined);
       }
@@ -1269,7 +1280,7 @@ export function VoiceEngine() {
     // The saved short lines ("Mhm?", "Okay!") first — they're tiny, need no
     // model, and make the very first wake-word answer instant.
     if (voiceEngine !== "system") {
-      void prepareLines([...GREETINGS, ...GOODBYES, ...ACK], useIzuki.getState().settings.voice_name);
+      void prepareLines([...GREETINGS, ...GOODBYES], useIzuki.getState().settings.voice_name);
     }
     // On a PC known to be too slow for the natural voice (remembered from
     // last time), skip loading its model — it only slowed the start down.
@@ -1284,7 +1295,7 @@ export function VoiceEngine() {
         .catch(() => undefined)
         .finally(() => {
           if (voiceEngine !== "system") {
-            void prepareLines([...GREETINGS, ...GOODBYES, ...ACK], useIzuki.getState().settings.voice_name);
+            void prepareLines([...GREETINGS, ...GOODBYES], useIzuki.getState().settings.voice_name);
           }
         });
     });

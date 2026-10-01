@@ -20,56 +20,81 @@ const DUCKED_TO: f32 = 0.2;
 #[cfg_attr(not(windows), allow(dead_code))]
 const SAFETY: Duration = Duration::from_secs(45);
 
-static WORKER: OnceLock<Sender<bool>> = OnceLock::new();
+#[derive(Clone, Copy)]
+enum Request { Listening(bool), Speaking(bool), Reset }
+
+static WORKER: OnceLock<Sender<Request>> = OnceLock::new();
 
 /// Lower (`true`) or restore (`false`) other apps' sound. Returns at once;
 /// the work happens on Izuki's audio thread.
 pub fn set(on: bool) {
+    send(Request::Listening(on));
+}
+
+pub fn set_speaking(on: bool) { send(Request::Speaking(on)); }
+
+pub fn reset() { send(Request::Reset); }
+
+fn send(request: Request) {
     let tx = WORKER.get_or_init(|| {
-        let (tx, rx) = channel::<bool>();
+        let (tx, rx) = channel::<Request>();
         std::thread::Builder::new()
             .name("izuki-duck".into())
             .spawn(move || worker(rx))
             .ok();
         tx
     });
-    let _ = tx.send(on);
+    let _ = tx.send(request);
+}
+
+#[derive(Default)]
+struct Claims { listening: Option<std::time::Instant>, speaking: Option<std::time::Instant> }
+impl Claims {
+    fn update(&mut self, request: Request, now: std::time::Instant) {
+        let until = |on: bool| on.then_some(now + SAFETY);
+        match request {
+            Request::Listening(on) => self.listening = until(on),
+            Request::Speaking(on) => self.speaking = until(on),
+            Request::Reset => { self.listening = None; self.speaking = None; }
+        }
+    }
+    fn active(&self, now: std::time::Instant) -> bool {
+        self.listening.is_some_and(|t| t > now) || self.speaking.is_some_and(|t| t > now)
+    }
 }
 
 #[cfg(windows)]
-fn worker(rx: std::sync::mpsc::Receiver<bool>) {
+fn worker(rx: std::sync::mpsc::Receiver<Request>) {
     use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
     }
     let mut ducked: Vec<imp::Ducked> = Vec::new();
+    let mut claims = Claims::default();
+    let mut media_down = false;
     loop {
-        let wait = if ducked.is_empty() { Duration::from_secs(3600) } else { SAFETY };
+        let wait = if !media_down { Duration::from_secs(3600) } else { Duration::from_secs(1) };
         match rx.recv_timeout(wait) {
-            Ok(true) => {
-                if ducked.is_empty() {
-                    ducked = imp::duck_all();
-                    if !ducked.is_empty() {
-                        eprintln!("[duck] turned {} app(s) down while listening", ducked.len());
-                    }
-                }
-            }
-            Ok(false) | Err(RecvTimeoutError::Timeout) => {
-                if !ducked.is_empty() {
-                    imp::restore(std::mem::take(&mut ducked));
-                    eprintln!("[duck] sound back up");
-                }
-            }
+            Ok(request) => claims.update(request, std::time::Instant::now()),
+            Err(RecvTimeoutError::Timeout) => {},
             Err(RecvTimeoutError::Disconnected) => {
                 imp::restore(std::mem::take(&mut ducked));
+                crate::browser::duck_media(false);
                 return;
             }
         }
+        let active = claims.active(std::time::Instant::now());
+        if active && !media_down { ducked = imp::duck_all(); }
+        if !active && media_down { imp::restore(std::mem::take(&mut ducked)); }
+        // The Izuki browser shares WebView audio processes with speech: lower
+        // only its HTML media elements, never the whole WebView session.
+        if active || media_down { crate::browser::duck_media(active); }
+        media_down = active;
     }
 }
 
 #[cfg(not(windows))]
-fn worker(rx: std::sync::mpsc::Receiver<bool>) {
+fn worker(rx: std::sync::mpsc::Receiver<Request>) {
     while rx.recv().is_ok() {}
 }
 
@@ -77,7 +102,7 @@ fn worker(rx: std::sync::mpsc::Receiver<bool>) {
 /// never leaves the music quiet.
 pub fn restore_now() {
     if WORKER.get().is_some() {
-        set(false);
+        reset();
         // Give the audio thread a moment before the process goes.
         std::thread::sleep(Duration::from_millis(150));
     }
@@ -172,6 +197,24 @@ mod imp {
 #[cfg(all(test, windows))]
 mod tests {
     use super::imp;
+
+    #[test]
+    fn listening_cannot_restore_audio_during_speech_and_leases_expire() {
+        use super::{Claims, Request, SAFETY};
+        let now = std::time::Instant::now();
+        let mut claims = Claims::default();
+        claims.update(Request::Listening(true), now);
+        claims.update(Request::Speaking(true), now);
+        claims.update(Request::Listening(false), now);
+        assert!(claims.active(now));
+        assert!(!claims.active(now + SAFETY));
+        claims.update(Request::Speaking(false), now);
+        assert!(!claims.active(now));
+        claims.update(Request::Listening(true), now);
+        claims.update(Request::Speaking(true), now);
+        claims.update(Request::Reset, now);
+        assert!(!claims.active(now));
+    }
 
     /// Another app playing (a near-silent WAV looped by PowerShell) is turned
     /// down to a fifth and put back exactly. Needs a sound device, so it only

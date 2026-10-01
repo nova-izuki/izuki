@@ -71,6 +71,18 @@ pub fn draw(img: &mut Frame, desktop: &Rect, controls: &[Control]) {
             }
         }
         placed.push((tx, ty, tw, th));
+        // Keep a moved badge visibly attached to its actual target. Without
+        // bounds/leader lines a collision can put an answer's ID on its neighbour.
+        fill(img, x, y, w, 1, (76, 210, 196));
+        fill(img, x, y + h - 1, w, 1, (76, 210, 196));
+        fill(img, x, y, 1, h, (76, 210, 196));
+        fill(img, x + w - 1, y, 1, h, (76, 210, 196));
+        if tx != x || ty != y {
+            let steps = (tx - x).abs().max((ty - y).abs()).max(1);
+            for i in 0..=steps {
+                fill(img, x + (tx - x) * i / steps, y + (ty - y) * i / steps, 1, 1, (76, 210, 196));
+            }
+        }
         badge(img, tx, ty, tw, th, &text);
     }
 }
@@ -127,6 +139,7 @@ mod tests {
             value: String::new(),
             focused: false,
             below: false,
+            identity: None,
         }
     }
 
@@ -184,7 +197,7 @@ mod look {
         for i in 0..24u32 {
             cs.push(Control { id: i + 1, kind: "Button".into(), name: String::new(),
                 rect: crate::model::Rect { x: 60 + (i as i32 % 4) * 200, y: 120 + (i as i32 / 4) * 180, w: 160, h: 50 },
-                hidden: false, value: String::new(), focused: false, below: false });
+                hidden: false, value: String::new(), focused: false, below: false, identity: None });
         }
         super::draw(&mut f, &desk, &cs);
         for p in f.bgra.chunks_mut(4) {

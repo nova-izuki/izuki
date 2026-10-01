@@ -77,3 +77,20 @@ for (const [name, size] of [["icon-192.png", 192], ["icon-512.png", 512], ["appl
   await png(size).toFile(resolve(mobileDir, name));
   console.log("  mobile icon:", name, `${size}x${size}`);
 }
+
+// Native launcher assets are separate from the PWA icons. Keep them on the
+// same brand source so Capacitor's template icon never ships in an APK/IPA.
+const iosIcon = resolve(root, "ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png");
+await png(1024).flatten({ background: "#181733" }).removeAlpha().toFile(iosIcon);
+for (const [density, size, adaptive] of [["mdpi", 48, 108], ["hdpi", 72, 162], ["xhdpi", 96, 216], ["xxhdpi", 144, 324], ["xxxhdpi", 192, 432]]) {
+  const dir = resolve(root, `android/app/src/main/res/mipmap-${density}`);
+  const opaque = await png(size).flatten({ background: "#181733" }).toBuffer();
+  writeFileSync(resolve(dir, "ic_launcher.png"), opaque);
+  await sharp(opaque).composite([{ input: Buffer.from(`<svg width="${size}" height="${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="white"/></svg>`), blend: "dest-in" }]).png().toFile(resolve(dir, "ic_launcher_round.png"));
+  // Adaptive icons reserve an outer zone for launcher masks and parallax.
+  const inner = Math.round(adaptive * 0.61);
+  const mark = await png(inner).toBuffer();
+  await sharp({ create: { width: adaptive, height: adaptive, channels: 4, background: "#181733" } })
+    .composite([{ input: mark, gravity: "center" }]).png().toFile(resolve(dir, "ic_launcher_foreground.png"));
+}
+console.log("Native Android and iPhone launcher icons generated.");

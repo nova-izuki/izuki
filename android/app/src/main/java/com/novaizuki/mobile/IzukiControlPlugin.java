@@ -11,6 +11,15 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 /** Deliberately small, explicit Android-control bridge for the companion. */
 @CapacitorPlugin(name = "IzukiControl")
 public class IzukiControlPlugin extends Plugin {
+    @PluginMethod
+    public void haptic(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            boolean done = getActivity().getWindow().getDecorView().performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK);
+            JSObject result = new JSObject();
+            result.put("done", done);
+            call.resolve(result);
+        });
+    }
   @PluginMethod
   public void status(PluginCall call) {
     JSObject result = new JSObject();

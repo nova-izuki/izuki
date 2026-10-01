@@ -418,6 +418,14 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     // pixel fallback is useful for canvases in Mouse mode, but it is exactly
     // how a shifted multiple-choice answer turns into the wrong click.
     let precision = crate::state::try_store().is_some_and(|s| s.settings().control_style == "precision");
+    let clicking = matches!(step.action, Intent::Click | Intent::Auto | Intent::DoubleClick | Intent::RightClick);
+    let targeted_type = step.action == Intent::Type && (step.target.is_some() || step.x != 0 || step.y != 0);
+    // Precision must select an element from the parsed screen. Snapping a
+    // guessed answer onto a nearby radio button only verifies the guess.
+    if precision && !dry_run && (clicking || targeted_type) && step.grounding.is_none() {
+        return Err(anyhow!("target_changed: Precision needs a numbered target from the current screen parser; choose its target ID, not guessed coordinates"));
+    }
+    if !dry_run { uia::invalidate_controls(); }
 
     // A step already pinned to a real control (by id) is exact — only guessed
     // pixels need the magnetic snap.
@@ -444,7 +452,7 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
             }
         }
     }
-    if (magnetic || precision) && step.snapped_to.is_none() && !pointless {
+    if magnetic && step.snapped_to.is_none() && !pointless && !matches!(step.action, Intent::Key | Intent::Type) {
         if let Some(hit) = uia::snap_to_control(x, y, if precision { 48 } else { 64 }) {
             x = hit.x;
             y = hit.y;
@@ -454,9 +462,8 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
 
     // Safe hands: right before a click on a known control, make sure it's
     // really there and can be pressed. A few milliseconds when all is well.
-    let clicking = matches!(step.action, Intent::Click | Intent::DoubleClick | Intent::RightClick);
     let verified_name = step.snapped_to.as_deref().or(snapped.as_deref());
-    if clicking && !dry_run && !step.hover_first {
+    if clicking && !dry_run && !step.hover_first && step.grounding.is_none() {
         if verified_name.is_none() && precision {
             return Err(anyhow!("target_changed: Precision mode could not identify a real control at this point; take another look or use Mouse mode for a canvas-only target"));
         }
@@ -491,13 +498,36 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         return Ok(format!("[dry run] {} at {}", step.action.as_str(), label));
     }
 
-    if step.action == Intent::Click && !step.hover_first && precision {
-        if let Some(name) = step.snapped_to.as_deref().or(snapped.as_deref()) {
-            if aborted() { return Err(anyhow!("stopped")); }
-            if uia::press_at(x, y, name)? {
-                return Ok(format!("pressed \"{name}\" through Windows controls"));
+    if let Some(identity) = step.grounding.as_ref().filter(|_| clicking || targeted_type) {
+        if step.hover_first {
+            glide_to(x, y, move_ms)?;
+            std::thread::sleep(Duration::from_millis(180));
+        }
+        if aborted() { return Err(anyhow!("stopped")); }
+        if precision && matches!(step.action, Intent::Click | Intent::Auto) && uia::invoke_grounded(identity)? {
+            return Ok(format!("activated parsed control {} directly", step.target.unwrap_or(0)));
+        }
+        let point = uia::grounded_point(identity)?;
+        glide_to(point.0, point.1, move_ms)?;
+        // Hover/layout effects happen during travel: verify the same identity
+        // at its current position before sending any mouse-down.
+        let final_point = uia::grounded_point(identity)?;
+        if final_point != point {
+            return Err(anyhow!("target_changed: the control moved during pointer travel; parse the screen again"));
+        }
+        if aborted() { return Err(anyhow!("stopped")); }
+        let button = if step.action == Intent::RightClick { Button::Right } else { Button::Left };
+        click_at_here(button, if step.action == Intent::DoubleClick { 2 } else { 1 })?;
+        if targeted_type {
+            std::thread::sleep(Duration::from_millis(90));
+            if let Some(text) = &step.text_to_type {
+                type_text(text)?;
+                if let Some(shown) = check_typed(text)? {
+                    return Err(anyhow!("typed text did not match the focused field: {shown}"));
+                }
             }
         }
+        return Ok(format!("{} on parsed control {}", step.action.as_str(), step.target.unwrap_or(0)));
     }
 
     // Hover-only controls (a tab's ✕) need the pointer over them before
@@ -560,7 +590,7 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         }
         Intent::Type => {
             // Focus the field first unless the model gave no coordinates.
-            if x > 0 || y > 0 {
+            if x != 0 || y != 0 {
                 click_at(x, y, Button::Left, 1, move_ms)?;
                 std::thread::sleep(Duration::from_millis(90));
             }

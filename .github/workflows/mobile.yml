@@ -30,6 +30,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - run: npm ci
+      - run: npm run icons
       - run: npx cap sync android
       - run: chmod +x ./gradlew
         working-directory: android
@@ -67,6 +68,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run icons
       - run: npx cap sync ios
       - run: xcodebuild -list -project ios/App/App.xcodeproj
       - name: Build unsigned iPhone test IPA for AltStore or Sideloadly

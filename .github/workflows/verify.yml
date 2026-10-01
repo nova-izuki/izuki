@@ -20,6 +20,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run test:phone
+      - run: npm run test:voice
       - run: npm run test:html
       - run: node tools/browser-check.cjs
         env:

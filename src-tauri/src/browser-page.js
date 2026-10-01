@@ -15,7 +15,29 @@
     if (t.el.disabled || t.el.getAttribute('aria-disabled') === 'true') throw Error('That control is disabled.');
     return t.el;
   };
+  const duckedMedia = new Map();
+  let duckRestoreTimer;
+  const videoIds = new WeakMap();
+  let videoSequence = 0;
+  const duckMedia = (on) => {
+    clearTimeout(duckRestoreTimer);
+    if (on) {
+      for (const media of document.querySelectorAll('video,audio')) {
+        if (duckedMedia.has(media) || media.muted || media.volume < 0.03) continue;
+        const was = media.volume, lowered = was * 0.2;
+        duckedMedia.set(media, { was, lowered });
+        media.volume = lowered;
+      }
+      duckRestoreTimer = setTimeout(() => duckMedia(false), 50_000);
+    } else {
+      for (const [media, { was, lowered }] of duckedMedia) {
+        if (Math.abs(media.volume - lowered) < 0.001) media.volume = was;
+      }
+      duckedMedia.clear();
+    }
+  };
   window.__izukiPage = {
+    duckMedia,
     snapshot() {
       targets = new Map();
       const items = []; let n = 0;
@@ -58,16 +80,23 @@
         return 'ok';
       } catch (e) { return String(e.message); }
     },
-    video(action) {
+    video(action, expectedVideo) {
       const videos = [...document.querySelectorAll('video')].filter(visible).sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight);
       const v = videos[0];
       if (!v) return JSON.stringify({ error: 'Open a video in the Izuki browser first. Embedded players may need opening on their own website.' });
+      if (!videoIds.has(v)) videoIds.set(v, `${Date.now()}-${++videoSequence}`);
+      const videoId = `${location.href}|${videoIds.get(v)}|${v.currentSrc}`;
+      if (expectedVideo && expectedVideo !== videoId) return JSON.stringify({ error: 'The video changed. Start a new lesson for this video.' });
       if (action === 'pause') v.pause();
       else if (action === 'play') { const p = v.play(); if (p?.catch) p.catch(() => {}); }
       else if (action === 'slow') v.playbackRate = 0.75;
       else if (action === 'normal') v.playbackRate = 1;
-      const captions = [...document.querySelectorAll('.ytp-caption-segment')].map((e) => e.textContent).join(' ').slice(0, 1800);
-      return JSON.stringify({ paused: v.paused, rate: v.playbackRate, time: v.currentTime, title: document.title, url: location.href, captions });
+      const cues = [...v.textTracks].flatMap((track) => [...(track.activeCues || [])].map((cue) => cue.text || ''));
+      const captions = [...new Set([...cues, ...[...document.querySelectorAll('.ytp-caption-segment')].map((e) => e.textContent)])].join(' ').slice(0, 1800);
+      const r = v.getBoundingClientRect();
+      const left = Math.max(0, r.left), top = Math.max(0, r.top);
+      const bounds = { x: left, y: top, w: Math.max(0, Math.min(innerWidth, r.right) - left), h: Math.max(0, Math.min(innerHeight, r.bottom) - top), scale: devicePixelRatio };
+      return JSON.stringify({ paused: v.paused, rate: v.playbackRate, time: v.currentTime, title: document.title, url: location.href, captions, videoId, bounds });
     }
   };
 

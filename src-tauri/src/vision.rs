@@ -307,7 +307,7 @@ impl VisionRequest {
         let fx = iw as f64 / self.desktop.w.max(1) as f64;
         let fy = ih as f64 / self.desktop.h.max(1) as f64;
         let mut s = String::from(
-            "Controls in the active window (act on them with \"target\": id — exact):\n",
+            "Screen parser: Windows accessibility controls. Select \"target\": id from THIS snapshot. Bounds are image pixels, IDs expire on the next look. Match the visible label and bounding box, especially radio answers with repeated names.\n",
         );
         for c in &self.controls {
             let (cx, cy) = c.rect.center();
@@ -315,6 +315,9 @@ impl VisionRequest {
             let iy = ((cy - self.desktop.y) as f64 * fy).round() as i32;
             let kind = c.kind.to_lowercase();
             let mut extra = String::new();
+            let bx = ((c.rect.x - self.desktop.x) as f64 * fx).round() as i32;
+            let by = ((c.rect.y - self.desktop.y) as f64 * fy).round() as i32;
+            extra.push_str(&format!(" bounds=[{},{},{},{}]", bx, by, bx + (c.rect.w as f64 * fx).round() as i32, by + (c.rect.h as f64 * fy).round() as i32));
             if !c.value.is_empty() {
                 extra.push_str(&format!(" = \"{}\"", c.value));
             }
@@ -1420,6 +1423,12 @@ fn resolve_targets(steps: &mut Vec<ActionStep>, controls: &[crate::uia::Control]
     let mut keep = Vec::with_capacity(steps.len());
 
     for (i, s) in steps.iter_mut().enumerate() {
+        // Only the parser can establish identity. Model-supplied metadata
+        // must never make an arbitrary pixel count as a verified control.
+        s.grounding = None;
+        s.snapped_to = None;
+        s.hover_first = false;
+        s.scroll_first = false;
         let mut pinned = false;
         if let Some(c) = s.target.and_then(|id| find(id)) {
             let (cx, cy) = c.rect.center();
@@ -1428,6 +1437,7 @@ fn resolve_targets(steps: &mut Vec<ActionStep>, controls: &[crate::uia::Control]
             s.snapped_to = Some(if c.name.is_empty() { c.kind.clone() } else { c.name.clone() });
             s.hover_first = c.hidden;
             s.scroll_first = c.below;
+            s.grounding = c.identity.clone();
             pinned = true;
         }
         if let Some(c) = s.target2.and_then(|id| find(id)) {
@@ -1477,8 +1487,12 @@ fn rescale(steps: &mut [ActionStep], req: &VisionRequest) {
         if !looks_like_image_space {
             continue;
         }
-        s.x = map(s.x, fx, req.desktop.x);
-        s.y = map(s.y, fy, req.desktop.y);
+        // Omitted coordinates on typing/keys mean "use current focus", not
+        // the virtual desktop's origin (which may be on a left-hand monitor).
+        if s.x != 0 || s.y != 0 || !matches!(s.action, Intent::Type | Intent::Key | Intent::Scroll) {
+            s.x = map(s.x, fx, req.desktop.x);
+            s.y = map(s.y, fy, req.desktop.y);
+        }
         if let Some(x2) = s.x2 {
             s.x2 = Some(map(x2, fx, req.desktop.x));
         }
@@ -1508,7 +1522,7 @@ mod tests {
     use crate::uia::Control;
 
     fn control(id: u32, x: i32, y: i32) -> Control {
-        Control { id, kind: "Button".into(), name: format!("Button {id}"), rect: Rect { x, y, w: 20, h: 10 }, hidden: false, value: String::new(), focused: false, below: false }
+        Control { id, kind: "Button".into(), name: format!("Button {id}"), rect: Rect { x, y, w: 20, h: 10 }, hidden: false, value: String::new(), focused: false, below: false, identity: None }
     }
 
     fn step(v: Value) -> ActionStep {
@@ -1637,6 +1651,26 @@ mod tests {
         ];
         resolve_targets(&mut steps, &[], &[false, false]);
         assert_eq!(steps.len(), 2);
+    }
+
+    #[test]
+    fn omitted_typing_coordinates_stay_omitted_on_a_left_monitor() {
+        let req = request((1280, 720), Rect { x: -2560, y: -300, w: 2560, h: 1440 });
+        let mut steps = vec![step(json!({"action":"type","text_to_type":"hello"})), step(json!({"action":"key","key":"enter"}))];
+        rescale(&mut steps, &req);
+        assert!(steps.iter().all(|s| s.x == 0 && s.y == 0));
+    }
+
+    #[test]
+    fn grounding_only_comes_from_the_selected_parser_control() {
+        let mut c = control(2, -200, 150);
+        c.identity = Some(crate::uia::ControlIdentity { runtime_id: vec![42, 9], window: 7, rect: c.rect, kind: c.kind.clone(), name: c.name.clone() });
+        let mut steps = vec![step(json!({"action":"click","target":2,"x":999,"y":999})),
+            step(json!({"action":"click","target":99,"x":99,"y":99,"snapped_to":"fabricated","hover_first":true}))];
+        resolve_targets(&mut steps, &[c], &[true, true]);
+        assert_eq!(steps[0].grounding.as_ref().unwrap().runtime_id, vec![42, 9]);
+        assert_eq!((steps[0].x, steps[0].y), (-190, 155));
+        assert!(steps[1].grounding.is_none() && steps[1].snapped_to.is_none() && !steps[1].hover_first);
     }
 
     #[test]

@@ -234,8 +234,8 @@ export function TalkToIzuki() {
         <div className="izk-divider" />
 
         <Row
-          label="Turn other sounds down while I listen"
-          hint="Music and videos get quieter while you talk to Izuki, then come back up — so it hears you, not the song."
+          label="Lower media while we talk"
+          hint="Music and videos get quieter while you or Izuki speaks, then return to their previous volume."
           icon={<Volume1 size={14} strokeWidth={2.3} />}
         >
           <Toggle

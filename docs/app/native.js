@@ -5,6 +5,9 @@
   "use strict";
   const plugin = () => window.Capacitor?.Plugins?.LocalNotifications;
   const control = () => window.Capacitor?.Plugins?.IzukiControl;
+  const device = () => window.Capacitor?.Plugins?.IzukiDevice;
+  const platform = () => window.Capacitor?.getPlatform?.() || "web";
+  if (typeof document !== "undefined") document.documentElement.dataset.platform = platform();
   const notificationId = (at, text) => {
     let hash = Math.floor(at / 1000) >>> 0;
     for (const ch of String(text)) hash = ((hash * 33) ^ ch.charCodeAt(0)) >>> 0;
@@ -12,6 +15,13 @@
   };
   window.IzukiNative = {
     installed: () => !!window.Capacitor?.isNativePlatform?.(),
+    platform,
+    async haptic() {
+      try { return !!(await (device() || control())?.haptic())?.done; } catch { return false; }
+    },
+    async takeLaunchPrompt() {
+      try { return String((await device()?.takeLaunchPrompt())?.prompt || "").slice(0, 4000); } catch { return ""; }
+    },
     async scheduleReminder({ at, text }) {
       const local = plugin();
       if (!local || !Number.isFinite(at) || at <= Date.now()) return false;

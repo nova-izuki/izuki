@@ -606,10 +606,10 @@ pub async fn cloud_transcribe(wav_b64: String) -> R<String> {
 
 /// Turn other apps' sound down while Izuki listens (and back up after).
 #[tauri::command]
-pub fn duck_audio(on: bool) {
-    if !on || state::store().settings().duck_while_listening {
-        crate::duck::set(on);
-    }
+pub fn duck_audio(on: bool, source: Option<String>) {
+    let on = on && state::store().settings().duck_while_listening;
+    if source.as_deref() == Some("speaking") { crate::duck::set_speaking(on); }
+    else { crate::duck::set(on); }
 }
 
 // ---------------------------------------------------------------------------
@@ -669,8 +669,8 @@ pub fn discord_status() -> crate::discord::Status {
 }
 
 #[tauri::command]
-pub async fn browser_video(action: String, show_window: bool) -> R<serde_json::Value> {
-    blocking(move || crate::browser::video(&action, show_window).map_err(err)).await?
+pub async fn browser_video(action: String, show_window: bool, expected_video: Option<String>) -> R<serde_json::Value> {
+    blocking(move || crate::browser::video_checked(&action, show_window, expected_video.as_deref()).map_err(err)).await?
 }
 
 #[tauri::command]

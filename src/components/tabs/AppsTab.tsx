@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bell, CheckCircle2, Copy, Download, ExternalLink, Loader2, Plus, RefreshCw, Sparkles, Trash2, Workflow } from "lucide-react";
+import { Bell, CheckCircle2, Copy, Download, ExternalLink, Loader2, Plus, RefreshCw, Search, Sparkles, Trash2, Workflow, X } from "lucide-react";
 import { AppsCard } from "../AppsCard";
 import { Row, Section, Toggle, cx } from "../ui";
 import { useIzuki } from "../../lib/store";
@@ -55,36 +55,36 @@ const APPS: App[] = [
 // account or provider is reported honestly instead of faking a connection.
 const APP_CATALOG: App[] = [
   ...APPS.filter((app) => app.slug !== "tiktok").map((app) => ({ ...app, category: app.slug === "gmail" || app.slug.startsWith("google") ? "Google" : "Popular" })),
-  { slug: "googleslides", name: "Google Slides", emoji: "Slides", what: "presentations", category: "Google" },
-  { slug: "googletasks", name: "Google Tasks", emoji: "Tasks", what: "to-do lists", category: "Google" },
-  { slug: "google_classroom", name: "Google Classroom", emoji: "Class", what: "classes & work", category: "Google" },
-  { slug: "googlephotos", name: "Google Photos", emoji: "Photos", what: "photo library", category: "Google" },
-  { slug: "one_drive", name: "OneDrive", emoji: "Cloud", what: "files & sharing", category: "Microsoft" },
-  { slug: "microsoft_teams", name: "Microsoft Teams", emoji: "Teams", what: "chats & meetings", category: "Microsoft" },
-  { slug: "share_point", name: "SharePoint", emoji: "SP", what: "team files", category: "Microsoft" },
-  { slug: "excel", name: "Excel", emoji: "XL", what: "workbooks", category: "Microsoft" },
-  { slug: "linear", name: "Linear", emoji: "L", what: "issues & projects", category: "Work" },
-  { slug: "jira", name: "Jira", emoji: "J", what: "issues & sprints", category: "Work" },
-  { slug: "clickup", name: "ClickUp", emoji: "CU", what: "tasks & docs", category: "Work" },
-  { slug: "asana", name: "Asana", emoji: "A", what: "projects & tasks", category: "Work" },
-  { slug: "monday", name: "Monday", emoji: "M", what: "work boards", category: "Work" },
-  { slug: "airtable", name: "Airtable", emoji: "AT", what: "bases & records", category: "Work" },
-  { slug: "calendly", name: "Calendly", emoji: "Cal", what: "scheduling", category: "Work" },
-  { slug: "gitlab", name: "GitLab", emoji: "GL", what: "code & CI", category: "Build" },
-  { slug: "bitbucket", name: "Bitbucket", emoji: "BB", what: "code & PRs", category: "Build" },
-  { slug: "figma", name: "Figma", emoji: "F", what: "design files", category: "Create" },
-  { slug: "miro", name: "Miro", emoji: "Mi", what: "whiteboards", category: "Create" },
-  { slug: "googlemeet", name: "Google Meet", emoji: "Meet", what: "meetings", category: "Messages" },
-  { slug: "webex", name: "Webex", emoji: "W", what: "meetings", category: "Messages" },
-  { slug: "box", name: "Box", emoji: "Box", what: "work files", category: "Files" },
-  { slug: "pinterest", name: "Pinterest", emoji: "P", what: "pins & boards", category: "Social" },
-  { slug: "tiktok_ads", name: "TikTok Ads", emoji: "TT", what: "campaigns & reports", category: "Social" },
-  { slug: "twitch", name: "Twitch", emoji: "Tw", what: "stream tools", category: "Social" },
-  { slug: "hubspot", name: "HubSpot", emoji: "H", what: "contacts & CRM", category: "Business" },
-  { slug: "mailchimp", name: "Mailchimp", emoji: "MC", what: "campaigns", category: "Business" },
-  { slug: "salesforce", name: "Salesforce", emoji: "SF", what: "CRM", category: "Business" },
-  { slug: "shopify", name: "Shopify", emoji: "S", what: "store & orders", category: "Business" },
-  { slug: "stripe", name: "Stripe", emoji: "St", what: "payments", category: "Business" },
+  { slug: "googleslides", name: "Google Slides", emoji: "📽️", what: "presentations", category: "Google" },
+  { slug: "googletasks", name: "Google Tasks", emoji: "✅", what: "to-do lists", category: "Google" },
+  { slug: "google_classroom", name: "Google Classroom", emoji: "🏫", what: "classes & work", category: "Google" },
+  { slug: "googlephotos", name: "Google Photos", emoji: "🖼️", what: "photo library", category: "Google" },
+  { slug: "one_drive", name: "OneDrive", emoji: "☁️", what: "files & sharing", category: "Microsoft" },
+  { slug: "microsoft_teams", name: "Microsoft Teams", emoji: "👥", what: "chats & meetings", category: "Microsoft" },
+  { slug: "share_point", name: "SharePoint", emoji: "🗄️", what: "team files", category: "Microsoft" },
+  { slug: "excel", name: "Excel", emoji: "📊", what: "workbooks", category: "Microsoft" },
+  { slug: "linear", name: "Linear", emoji: "📐", what: "issues & projects", category: "Work" },
+  { slug: "jira", name: "Jira", emoji: "🎯", what: "issues & sprints", category: "Work" },
+  { slug: "clickup", name: "ClickUp", emoji: "✅", what: "tasks & docs", category: "Work" },
+  { slug: "asana", name: "Asana", emoji: "🧩", what: "projects & tasks", category: "Work" },
+  { slug: "monday", name: "Monday", emoji: "📅", what: "work boards", category: "Work" },
+  { slug: "airtable", name: "Airtable", emoji: "🗃️", what: "bases & records", category: "Work" },
+  { slug: "calendly", name: "Calendly", emoji: "🗓️", what: "scheduling", category: "Work" },
+  { slug: "gitlab", name: "GitLab", emoji: "🦊", what: "code & CI", category: "Build" },
+  { slug: "bitbucket", name: "Bitbucket", emoji: "🪣", what: "code & PRs", category: "Build" },
+  { slug: "figma", name: "Figma", emoji: "🎨", what: "design files", category: "Create" },
+  { slug: "miro", name: "Miro", emoji: "🧠", what: "whiteboards", category: "Create" },
+  { slug: "googlemeet", name: "Google Meet", emoji: "🎥", what: "meetings", category: "Messages" },
+  { slug: "webex", name: "Webex", emoji: "🎦", what: "meetings", category: "Messages" },
+  { slug: "box", name: "Box", emoji: "📦", what: "work files", category: "Files" },
+  { slug: "pinterest", name: "Pinterest", emoji: "📌", what: "pins & boards", category: "Social" },
+  { slug: "tiktok_ads", name: "TikTok Ads", emoji: "🎵", what: "campaigns & reports", category: "Social" },
+  { slug: "twitch", name: "Twitch", emoji: "🎮", what: "stream tools", category: "Social" },
+  { slug: "hubspot", name: "HubSpot", emoji: "🧲", what: "contacts & CRM", category: "Business" },
+  { slug: "mailchimp", name: "Mailchimp", emoji: "🐵", what: "campaigns", category: "Business" },
+  { slug: "salesforce", name: "Salesforce", emoji: "☁️", what: "CRM", category: "Business" },
+  { slug: "shopify", name: "Shopify", emoji: "🛍️", what: "store & orders", category: "Business" },
+  { slug: "stripe", name: "Stripe", emoji: "💳", what: "payments", category: "Business" },
 ];
 
 /**
@@ -141,11 +141,12 @@ export function AppsTab() {
   const [notifyUrl, setNotifyUrl] = useState("");
   const [tested, setTested] = useState(false);
   const [appSearch, setAppSearch] = useState("");
+  const [connectedOnly, setConnectedOnly] = useState(false);
   const appResults = useMemo(() => {
     const query = appSearch.trim().toLowerCase();
-    if (!query) return APP_CATALOG;
-    return APP_CATALOG.filter((app) => `${app.name} ${app.what} ${app.category ?? ""}`.toLowerCase().includes(query));
-  }, [appSearch]);
+    return APP_CATALOG.filter((app) => (!connectedOnly || linked.includes(app.slug)) &&
+      `${app.name} ${app.what} ${app.category ?? ""}`.toLowerCase().includes(query));
+  }, [appSearch, connectedOnly, linked]);
 
   const refresh = useCallback(async () => {
     if (!hasKey) { setLinked([]); return; }
@@ -251,7 +252,6 @@ export function AppsTab() {
           <span className="block text-[11px] leading-snug text-izk-muted">See what's connected and add the rest in a tap or two.</span>
         </span>
       </button>
-      <AppsCard />
 
       {/* ------------------------------------------------ connect */}
       <Section
@@ -274,13 +274,32 @@ export function AppsTab() {
           ) : undefined
         }
       >
-        <input
-          aria-label="Find an app to connect"
-          value={appSearch}
-          onChange={(e) => setAppSearch(e.target.value)}
-          placeholder="Find an app — Teams, TikTok, Google Tasks…"
-          className="izk-field izk-no-drag mb-2 w-full py-2 text-[12px]"
-        />
+        <div className="relative mb-1.5">
+          <Search aria-hidden="true" size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-izk-muted" />
+          <input
+            aria-label="Search all apps to connect"
+            value={appSearch}
+            onChange={(e) => setAppSearch(e.target.value)}
+            placeholder="Search all apps — Teams, TikTok, Google Tasks…"
+            className="izk-field izk-no-drag w-full py-2 pl-9 pr-16 text-[12px]"
+          />
+          {appSearch && (
+            <button
+              type="button"
+              aria-label="Clear app search"
+              onClick={() => setAppSearch("")}
+              className="izk-no-drag absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-izk-muted transition-colors hover:bg-white/8 hover:text-izk-ink"
+            >
+              <X size={13} /> Clear
+            </button>
+          )}
+        </div>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p role="status" className="text-[10.5px] text-izk-muted">{appResults.length} app{appResults.length === 1 ? "" : "s"}{appSearch.trim() ? " found" : " available"}</p>
+          <button type="button" aria-pressed={connectedOnly} onClick={() => setConnectedOnly((v) => !v)} className={cx("izk-pill izk-no-drag px-2 py-1 text-[10.5px]", connectedOnly && "border-izk-teal/40 text-izk-teal")}>
+            <CheckCircle2 size={11} /> Connected only
+          </button>
+        </div>
         <div className="grid grid-cols-2 gap-1.5 min-[420px]:grid-cols-3">
           {appResults.map((a) => {
             const on = linked.includes(a.slug);
@@ -310,7 +329,7 @@ export function AppsTab() {
             );
           })}
         </div>
-        {appResults.length === 0 && <p className="mt-2 text-[11px] text-izk-muted">Not in the quick catalog yet. Ask for it in chat and Izuki will try the connector catalog, or use the Izuki browser to sign in to the site.</p>}
+        {appResults.length === 0 && <p className="mt-2 text-[11px] text-izk-muted">{connectedOnly ? "No connected apps match. Turn off Connected only to browse apps you can add." : "No matching app in this catalog. Try a different name or open its website in the Izuki browser."}</p>}
         {waitingFor && (
           <div className="mt-2 rounded-[14px] border border-izk-violet/35 bg-izk-violet/10 p-2.5 text-[11.5px] leading-snug text-izk-ink">
             <b>One free key first, then {waitingFor.name}.</b> On the Composio page that just opened: sign up (free), go to{" "}
@@ -334,6 +353,7 @@ export function AppsTab() {
       </Section>
 
       {/* ------------------------------------------------ on your screen */}
+      <AppsCard />
       <Section
         title="School, notes & any website — the Izuki browser"
         hint="Tap one and sign in once in the Izuki browser (it's built into Windows — nothing to install). Close it, and from then on just ask in the chat or from your phone: Izuki opens it in the background, reads it and clicks through."

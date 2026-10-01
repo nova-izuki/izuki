@@ -349,7 +349,7 @@ export function SettingsTab() {
 
       {/* ------------------------------------------------ execution */}
       <Section id="settings-execution" title="Execution" hint="How the hand behaves once the plan comes back.">
-        <Row label="Control style" hint="Precision uses real Windows controls first. Unsupported controls, dragging and typing still use the mouse or keyboard.">
+        <Row label="Control style" hint="Precision parses Windows controls into numbered targets, checks each control's identity and visible bounds, then activates it. A changed or undetected target triggers a fresh look. Canvas-only apps may need Mouse mode.">
           <select aria-label="Control style" className="izk-field izk-no-drag max-w-[165px] py-1 text-[11.5px]" value={settings.control_style} onChange={(e) => patch({ control_style: e.target.value as typeof settings.control_style })}>
             <option value="mouse">Mouse</option>
             <option value="precision">Precision · Jarvis-style</option>
@@ -417,10 +417,10 @@ export function SettingsTab() {
 
       {/* ------------------------------------------------ system */}
       <Section id="settings-look" title="Chat & caption colours" hint="How the chat box, Izuki's replies and your words look on screen.">
-        <Row label="Voice orb" hint="One personality, three looks. Animates only while the voice sphere is visible.">
+        <Row label="Voice orb" hint="Choose your look. Clear water has a transparent centre and silver-blue reflections. Animates only while visible.">
           <select aria-label="Voice orb style" className="izk-field izk-no-drag max-w-[145px] py-1 text-[11.5px]" value={settings.orb_style} onChange={(e) => patch({ orb_style: e.target.value as typeof settings.orb_style })}>
             <option value="liquid">Liquid glass</option>
-            <option value="ferrofluid">Ferrofluid droplets</option>
+            <option value="ferrofluid">Clear water</option>
             <option value="ripple">Water ripple</option>
             <option value="constellation">Constellation</option>
           </select>

@@ -403,6 +403,7 @@ mod tests {
             value: String::new(),
             focused: false,
             below: false,
+            identity: None,
         }
     }
 

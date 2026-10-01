@@ -70,6 +70,13 @@ pub fn hide() {
     }
 }
 
+/// No window creation or navigation: only adjust media in an existing page.
+pub fn duck_media(on: bool) {
+    if let Some(w) = APP.get().and_then(|a| a.get_webview_window(LABEL)) {
+        let _ = w.eval(format!("window.__izukiPage?.duckMedia({on})"));
+    }
+}
+
 #[cfg(windows)]
 pub fn native_window() -> Option<isize> {
     APP.get()?.get_webview_window(LABEL)?.hwnd().ok().map(|h| h.0 as isize)
@@ -121,6 +128,10 @@ pub fn type_into(n: u32, text: &str, submit: bool) -> Result<String> {
 
 /// Control the largest visible video and return its measured state.
 pub fn video(action: &str, show_window: bool) -> Result<serde_json::Value> {
+    video_checked(action, show_window, None)
+}
+
+pub fn video_checked(action: &str, show_window: bool, expected_video: Option<&str>) -> Result<serde_json::Value> {
     if !["read", "pause", "play", "slow", "normal"].contains(&action) {
         return Err(anyhow!("unknown video action"));
     }
@@ -128,7 +139,8 @@ pub fn video(action: &str, show_window: bool) -> Result<serde_json::Value> {
     let w = window()?;
     if show_window { w.show()?; w.unminimize().ok(); w.set_focus().ok(); }
     let encoded = serde_json::to_string(action)?;
-    let raw = run(&w, &format!("window.__izukiPage.video({encoded})"))?;
+    let expected = serde_json::to_string(&expected_video)?;
+    let raw = run(&w, &format!("window.__izukiPage.video({encoded}, {expected})"))?;
     let mut value: serde_json::Value = serde_json::from_str(&raw)?;
     if !value["error"].is_null() { return Err(anyhow!("{}", value["error"].as_str().unwrap_or("video unavailable"))); }
     if action == "play" {
@@ -137,6 +149,17 @@ pub fn video(action: &str, show_window: bool) -> Result<serde_json::Value> {
         if value["paused"] == true { return Err(anyhow!("Tap Play in the video once; this site needs a user gesture.")); }
     }
     value["focused"] = serde_json::json!(w.is_focused().unwrap_or(false));
+    if let Ok(origin) = w.inner_position() {
+        let bounds = &value["bounds"];
+        let scale = bounds["scale"].as_f64().unwrap_or(1.0).clamp(0.5, 8.0);
+        let rect = crate::model::Rect {
+            x: origin.x + (bounds["x"].as_f64().unwrap_or(0.0) * scale).round() as i32,
+            y: origin.y + (bounds["y"].as_f64().unwrap_or(0.0) * scale).round() as i32,
+            w: (bounds["w"].as_f64().unwrap_or(0.0) * scale).round() as i32,
+            h: (bounds["h"].as_f64().unwrap_or(0.0) * scale).round() as i32,
+        };
+        if rect.w > 10 && rect.h > 10 { value["screen_rect"] = serde_json::to_value(rect)?; }
+    }
     Ok(value)
 }
 

@@ -445,7 +445,7 @@ fn halt(app: &AppHandle) {
         let _ = crate::overlay::hide_overlay(app);
     });
     // Bring the music back up if it was lowered for listening.
-    safe("the volume", &|| crate::duck::set(false));
+    safe("the volume", &|| crate::duck::reset());
 }
 
 /// The emergency stop (Ctrl+Shift+Q, the tray's "Stop everything"): all of

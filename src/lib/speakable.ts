@@ -38,7 +38,10 @@ const SPOKEN: Array<[RegExp, string]> = [
 ];
 
 export function speakable(text: string, keepTags = false): string {
-  let s = text;
+  // Models sometimes repeat their delivery tag in a later streamed sentence.
+  // Filter at the speech boundary too, including apps/screen replies which
+  // don't pass through the conversational header parser.
+  let s = text.replace(/\[\s*(?:cheerful|excited|calm|serious|sympathetic|playful|curious|END)\s*\]/gi, " ");
   // Code isn't for reading aloud.
   s = s.replace(/```[\s\S]*?```/g, " ");
   s = s.replace(/`([^`]+)`/g, "$1");

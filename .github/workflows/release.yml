@@ -18,6 +18,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare shared draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IZUKI_RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ($env:IZUKI_RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') { throw "Select a version tag, not a branch, when releasing" }
+          gh release view $env:IZUKI_RELEASE_TAG --json tagName 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:IZUKI_RELEASE_TAG --verify-tag --draft --title "Izuki $env:IZUKI_RELEASE_TAG" --notes "Builds are being verified."
+            if ($LASTEXITCODE -ne 0) { throw "could not prepare shared release" }
+          }
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -105,6 +118,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IZUKI_RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          # Do not move /latest downloads to a release missing either phone
+          # build. A failed iPhone/Android build leaves this release a draft.
+          $ready = $false
+          for ($attempt = 0; $attempt -lt 80; $attempt++) {
+            $assets = gh release view $env:IZUKI_RELEASE_TAG --json assets --jq '.assets[].name'
+            if ($LASTEXITCODE -eq 0 -and $assets -contains 'Izuki-Companion-Android-preview.apk' -and $assets -contains 'Izuki-Companion-iPhone-sideload.ipa' -and $assets -contains 'Izuki-Setup.exe') { $ready = $true; break }
+            Start-Sleep -Seconds 15
+          }
+          if (-not $ready) { throw "Phone builds are not ready; keeping this release a draft" }
           $version = $env:IZUKI_RELEASE_TAG -replace '^v', ''
           $notes = "docs/RELEASE-$version.md"
           if (Test-Path $notes) {

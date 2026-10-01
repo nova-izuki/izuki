@@ -218,6 +218,9 @@ pub struct ActionStep {
     pub reasoning: String,
     #[serde(default)]
     pub snapped_to: Option<String>,
+    /// Captured by the screen parser, never trusted from a model response.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grounding: Option<crate::uia::ControlIdentity>,
     /// The control only appears while the mouse is over it: hover there
     /// and let it show before clicking.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

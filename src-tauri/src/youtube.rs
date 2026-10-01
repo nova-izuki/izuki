@@ -215,7 +215,7 @@ mod tests {
     use crate::uia::Control;
 
     fn c(id: u32, kind: &str, name: &str) -> Control {
-        Control { id, kind: kind.into(), name: name.into(), rect: Rect { x: 0, y: id as i32 * 100, w: 300, h: 40 }, hidden: false, value: String::new(), focused: false, below: false }
+        Control { id, kind: kind.into(), name: name.into(), rect: Rect { x: 0, y: id as i32 * 100, w: 300, h: 40 }, hidden: false, value: String::new(), focused: false, below: false, identity: None }
     }
 
     #[test]

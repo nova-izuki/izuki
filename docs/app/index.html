@@ -195,6 +195,7 @@
   .mem button { border: 0; background: none; color: var(--muted); padding: 4px 8px; }
   code { background: rgba(255, 255, 255, 0.08); padding: 1px 6px; border-radius: 6px; font-size: 13px; overflow-wrap: anywhere; word-break: break-all; }
 </style>
+<link rel="stylesheet" href="companion.css">
 </head>
 <body>
 <div class="app">
@@ -338,13 +339,24 @@
 
     <section>
       <h3>Your orb</h3>
-      <div class="field"><label for="orb-style">Voice companion style</label><select id="orb-style"><option value="liquid">Liquid glass</option><option value="ferrofluid">Living liquid droplets</option><option value="ripple">Water ripple</option><option value="constellation">Constellation</option></select></div>
-      <p class="note">Liquid glass stays the default. Ferrofluid adds a still liquid core and merging droplets. Animation pauses when this page is hidden.</p>
+      <div class="field"><label for="orb-style">Voice companion style</label><select id="orb-style"><option value="liquid">Liquid glass</option><option value="ferrofluid">Clear water</option><option value="ripple">Water ripple</option><option value="constellation">Constellation</option></select></div>
+      <p class="note">Liquid glass stays the default. Clear water has a transparent centre, silver-blue reflections and droplets that merge while speaking. Animation pauses when this page is hidden.</p>
     </section>
-    <section>
+    <section id="web-install">
       <h3>Put Izuki on your home screen</h3>
       <div class="row" style="margin-bottom: 8px"><button class="btn" id="install" type="button">Install Izuki on this phone</button></div>
       <p><b>iPhone:</b> in Safari tap <b>Share</b> → <b>Add to Home Screen</b>. <b>Android:</b> Chrome menu ⋮ → <b>Add to Home screen</b>. It opens like an app.</p>
+    </section>
+
+    <section id="native-device" hidden>
+      <h3 id="native-device-title">Your phone companion</h3>
+      <p>Voice conversations, account connections, PC pairing and reminders — in your installed app.</p>
+      <div class="row" style="margin-top:12px">
+        <button class="btn ghost" id="test-haptic" type="button">Feel a tap</button>
+        <button class="btn ghost" id="test-native-reminder" type="button">Test a reminder</button>
+      </div>
+      <p id="native-feedback" class="note" role="status" style="margin-top:8px">Reminders use your phone's notification permissions, sound and vibration settings.</p>
+      <p id="native-ios-limits" class="note" hidden>Siri Shortcuts can open a question in Izuki. iOS does not allow this app to tap through or read other apps. Connected accounts work through their supported integrations.</p>
     </section>
 
     <section id="native-controls" hidden>
@@ -364,11 +376,11 @@
         <li>Open Apple's <b>Shortcuts</b> app (it's built into every iPhone).</li>
         <li>Tap the <b>+</b> at the top right → then <b>Add Action</b>.</li>
         <li>In the search box type <b>Dictate Text</b> → tap it. (This makes Siri listen to what you say.)</li>
-        <li>Tap <b>+ Add Action</b> again → search <b>Text</b> → tap <b>Text</b>. In that text box, paste this exactly:<br>
+        <li>Add <b>URL Encode</b> for the dictated text (so spaces and “&amp;” are preserved), then add a <b>Text</b> action. In that text box, paste this prefix:<br>
           <code id="siri-url" style="display:inline-block;margin-top:4px"></code>
           <button class="chip" id="copy-siri" type="button" style="margin-top:6px">📋 Copy this link</button>
         </li>
-        <li>Now, right after the link you pasted (no space), tap the little <b>“Dictated Text”</b> chip that appears above the keyboard — so the line reads <i>…?q=</i> then <b>Dictated Text</b>.</li>
+        <li>Right after the prefix (no space), insert the <b>URL Encoded Text</b> variable — so the line reads <i>…?q=</i> then the encoded text.</li>
         <li>Tap <b>+ Add Action</b> again → search <b>Open URLs</b> → tap it. Where it says “URL”, tap it and pick the <b>Text</b> from step 4–5.</li>
         <li>Tap the shortcut's name at the top → rename it to just <b>Izuki</b> → <b>Done</b>.</li>
       </ol>
@@ -1894,7 +1906,9 @@
     $("speech-language").value = HEARING[speechLanguage] ? speechLanguage : "auto";
     showBrain();
     $("pc").value = pc;
-    const siriUrl = location.origin + location.pathname + "?q=";
+    const native = !!window.IzukiNative?.installed?.();
+    const platform = window.IzukiNative?.platform?.();
+    const siriUrl = platform === "ios" ? "izuki://ask?q=" : "https://nova-izuki.github.io/izuki/app/?q=";
     $("siri-url").textContent = siriUrl;
     const copySiri = $("copy-siri");
     if (copySiri) copySiri.onclick = async () => {
@@ -1903,7 +1917,19 @@
     };
     renderMemories();
     const controlPanel = $("native-controls");
-    if (window.IzukiNative?.installed?.()) {
+    $("web-install").hidden = native;
+    $("native-device").hidden = !native;
+    $("native-device-title").textContent = platform === "ios" ? "Your iPhone companion" : "Your Android companion";
+    $("native-ios-limits").hidden = platform !== "ios";
+    $("test-haptic").onclick = async () => {
+      const done = await window.IzukiNative.haptic();
+      $("native-feedback").textContent = done ? "Tap sent. Your phone's haptic settings decide whether you feel it." : "Haptic feedback isn't available on this device or is disabled in system settings.";
+    };
+    $("test-native-reminder").onclick = async () => {
+      const done = await window.IzukiNative.scheduleReminder({ at: Date.now() + 10000, text: "Your Izuki reminders are ready. Come back whenever you need me." });
+      $("native-feedback").textContent = done ? "Scheduled for 10 seconds from now. Lock your phone to test the notification. Focus mode may silence it." : "Reminder unavailable. Check Izuki's notification permission in your phone settings.";
+    };
+    if (native && platform === "android") {
       controlPanel.hidden = false;
       const status = $("native-controls-status");
       window.IzukiNative.controlStatus().then((enabled) => { status.textContent = enabled ? "Android control is enabled. Say “go home”, “go back”, “show recent apps”, “open notifications” or “open quick settings”." : "Android control is off. Enable it once to use direct phone navigation."; });
@@ -2065,6 +2091,17 @@
   }
   render();
   scheduleReminders();
+  // Native Siri links are drafts: opening a link must never silently send
+  // a message, post to an account or run a PC action.
+  async function receiveNativeDraft() {
+    const prompt = await window.IzukiNative?.takeLaunchPrompt?.();
+    if (!prompt) return;
+    text.value = prompt;
+    text.dispatchEvent(new Event("input", { bubbles: true }));
+    setStatus("From Siri — review your question and tap Send.");
+  }
+  window.addEventListener("izuki-launch", receiveNativeDraft);
+  void receiveNativeDraft();
   // "Hey Siri, Izuki": the Shortcut opens …?q=what you said.
   const q = new URLSearchParams(location.search).get("q");
   if (q && ready()) {
