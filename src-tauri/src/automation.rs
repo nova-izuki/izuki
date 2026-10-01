@@ -413,6 +413,11 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
 
     let (mut x, mut y) = (step.x, step.y);
     let mut snapped = None;
+    // Precision mode is deliberately stricter than Mouse mode: it must first
+    // identify a real Windows control at the proposed answer/button. A raw
+    // pixel fallback is useful for canvases in Mouse mode, but it is exactly
+    // how a shifted multiple-choice answer turns into the wrong click.
+    let precision = crate::state::try_store().is_some_and(|s| s.settings().control_style == "precision");
 
     // A step already pinned to a real control (by id) is exact — only guessed
     // pixels need the magnetic snap.
@@ -439,8 +444,8 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
             }
         }
     }
-    if magnetic && step.snapped_to.is_none() && !pointless {
-        if let Some(hit) = uia::snap_to_control(x, y, 64) {
+    if (magnetic || precision) && step.snapped_to.is_none() && !pointless {
+        if let Some(hit) = uia::snap_to_control(x, y, if precision { 48 } else { 64 }) {
             x = hit.x;
             y = hit.y;
             snapped = Some(hit.name);
@@ -450,25 +455,31 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     // Safe hands: right before a click on a known control, make sure it's
     // really there and can be pressed. A few milliseconds when all is well.
     let clicking = matches!(step.action, Intent::Click | Intent::DoubleClick | Intent::RightClick);
-    if let (Some(name), true) = (step.snapped_to.as_deref().filter(|_| !dry_run && !step.hover_first), clicking) {
-        match uia::check_target(x, y, name) {
-            // The page shifted since the screenshot (an ad or picture loaded).
-            uia::AtPoint::Moved(nx, ny) => {
-                eprintln!("[hands] \"{name}\" moved since the look — clicking where it is now");
-                x = nx;
-                y = ny;
-            }
-            uia::AtPoint::Disabled => return Err(anyhow!("disabled: \"{name}\" is greyed out, so clicking it does nothing yet")),
-            uia::AtPoint::Right => {}
-            uia::AtPoint::Unknown => return Err(anyhow!("target_changed: I can't verify \"{name}\" here anymore; take another look before clicking")),
+    let verified_name = step.snapped_to.as_deref().or(snapped.as_deref());
+    if clicking && !dry_run && !step.hover_first {
+        if verified_name.is_none() && precision {
+            return Err(anyhow!("target_changed: Precision mode could not identify a real control at this point; take another look or use Mouse mode for a canvas-only target"));
         }
-        // Another window or pop-up on top: press it directly, no mouse.
-        if let Some(cover) = uia::covered_at(x, y) {
-            if step.action == Intent::Click && uia::press_named(name) {
-                eprintln!("[hands] \"{name}\" was under {cover} — pressed it directly");
-                return Ok(format!("pressed \"{name}\" directly (it was behind {cover})"));
+        if let Some(name) = verified_name {
+            match uia::check_target(x, y, name) {
+                // The page shifted since the screenshot (an ad or picture loaded).
+                uia::AtPoint::Moved(nx, ny) => {
+                    eprintln!("[hands] \"{name}\" moved since the look — clicking where it is now");
+                    x = nx;
+                    y = ny;
+                }
+                uia::AtPoint::Disabled => return Err(anyhow!("disabled: \"{name}\" is greyed out, so clicking it does nothing yet")),
+                uia::AtPoint::Right => {}
+                uia::AtPoint::Unknown => return Err(anyhow!("target_changed: I can't verify \"{name}\" here anymore; take another look before clicking")),
             }
-            return Err(anyhow!("covered: {cover} is on top of \"{name}\""));
+            // Another window or pop-up on top: press it directly, no mouse.
+            if let Some(cover) = uia::covered_at(x, y) {
+                if step.action == Intent::Click && uia::press_named(name) {
+                    eprintln!("[hands] \"{name}\" was under {cover} — pressed it directly");
+                    return Ok(format!("pressed \"{name}\" directly (it was behind {cover})"));
+                }
+                return Err(anyhow!("covered: {cover} is on top of \"{name}\""));
+            }
         }
     }
 
@@ -480,8 +491,7 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         return Ok(format!("[dry run] {} at {}", step.action.as_str(), label));
     }
 
-    if step.action == Intent::Click && !step.hover_first
-        && crate::state::try_store().is_some_and(|s| s.settings().control_style == "precision") {
+    if step.action == Intent::Click && !step.hover_first && precision {
         if let Some(name) = step.snapped_to.as_deref().or(snapped.as_deref()) {
             if aborted() { return Err(anyhow!("stopped")); }
             if uia::press_at(x, y, name)? {

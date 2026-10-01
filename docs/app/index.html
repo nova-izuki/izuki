@@ -370,6 +370,7 @@
       </div>
       <div class="row" style="margin-top: 10px"><button class="btn ghost" id="save-composio" type="button">Save key</button><span id="composio-result" class="note"></span></div>
       <div id="apps-list" class="note" style="margin-top:10px"></div>
+      <div class="field" style="margin-top:10px"><label for="apps-filter">Find an app</label><input id="apps-filter" type="search" placeholder="Teams, tasks, Instagram…" autocomplete="off"></div>
       <div id="apps-connect" class="row" style="margin-top:10px;flex-wrap:wrap"></div>
       <button class="chip" id="apps-refresh" type="button" style="margin-top:10px">Check connections again</button>
       <p class="note">Some social services require a business or creator account. Availability and limits depend on that service and your Composio plan.</p>
@@ -1877,8 +1878,9 @@
     const buttons = $("apps-connect");
     buttons.replaceChildren();
     if (!window.izukiApps?.configured()) { box.textContent = pc ? "Using your linked PC's apps." : "Save a key above, then connect your apps here."; return; }
-    const services = [["gmail", "Gmail"], ["googlecalendar", "Calendar"], ["googledrive", "Drive"], ["outlook", "Outlook"], ["slack", "Slack"], ["notion", "Notion"], ["github", "GitHub"], ["linkedin", "LinkedIn"], ["instagram", "Instagram"], ["twitter", "X"], ["facebook", "Facebook"], ["reddit", "Reddit"], ["discord", "Discord"], ["whatsapp", "WhatsApp"]];
-    for (const [slug, name] of services) {
+    const services = [["gmail", "Gmail"], ["googlecalendar", "Calendar"], ["googledrive", "Drive"], ["googledocs", "Docs"], ["googlesheets", "Sheets"], ["googleslides", "Google Slides"], ["googletasks", "Google Tasks"], ["google_classroom", "Google Classroom"], ["googlephotos", "Google Photos"], ["outlook", "Outlook"], ["one_drive", "OneDrive"], ["microsoft_teams", "Microsoft Teams"], ["share_point", "SharePoint"], ["excel", "Excel"], ["slack", "Slack"], ["discord", "Discord"], ["whatsapp", "WhatsApp Business"], ["zoom", "Zoom"], ["googlemeet", "Google Meet"], ["webex", "Webex"], ["notion", "Notion"], ["linear", "Linear"], ["jira", "Jira"], ["clickup", "ClickUp"], ["asana", "Asana"], ["monday", "Monday"], ["todoist", "Todoist"], ["trello", "Trello"], ["airtable", "Airtable"], ["calendly", "Calendly"], ["github", "GitHub"], ["gitlab", "GitLab"], ["bitbucket", "Bitbucket"], ["figma", "Figma"], ["canva", "Canva"], ["miro", "Miro"], ["linkedin", "LinkedIn"], ["instagram", "Instagram"], ["twitter", "X"], ["facebook", "Facebook"], ["youtube", "YouTube"], ["pinterest", "Pinterest"], ["reddit", "Reddit"], ["tiktok_ads", "TikTok Ads"], ["twitch", "Twitch"], ["dropbox", "Dropbox"], ["box", "Box"], ["hubspot", "HubSpot"], ["mailchimp", "Mailchimp"], ["salesforce", "Salesforce"], ["shopify", "Shopify"], ["stripe", "Stripe"]];
+    const appQuery = $("apps-filter").value.trim().toLowerCase();
+    for (const [slug, name] of services.filter(([slug, name]) => !appQuery || `${slug} ${name}`.toLowerCase().includes(appQuery))) {
       const b = el("button", "chip", "Connect " + name);
       b.type = "button"; b.dataset.toolkit = slug;
       b.onclick = async () => {
@@ -1913,6 +1915,7 @@
       .catch((e) => { box.textContent = "Couldn't read your linked apps: " + (e.message || e); });
   }
   $("apps-refresh").onclick = () => showApps();
+  $("apps-filter").oninput = () => showApps();
   window.addEventListener("focus", () => { if (!sheet.hidden) showApps(); });
   $("composio").value = window.izukiApps?.key() || "";
   $("save-composio").onclick = async () => {

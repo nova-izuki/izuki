@@ -37,7 +37,9 @@ fn window() -> Result<WebviewWindow> {
     if let Some(w) = app.get_webview_window(LABEL) {
         return Ok(w);
     }
-    let w = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::External("about:blank".parse().expect("url")))
+    // The first opening has a useful search page. Subsequent show(None) calls
+    // retain the existing tab and its signed-in context.
+    let w = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::External("https://www.google.com/".parse().expect("url")))
         // Must match every other Izuki window, or WebView2 refuses to start.
         .additional_browser_args(crate::overlay::BROWSER_ARGS)
         .title("Izuki browser — sign in here once, then close this window")

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bell, CheckCircle2, Copy, Download, ExternalLink, Loader2, Plus, RefreshCw, Sparkles, Trash2, Workflow } from "lucide-react";
 import { AppsCard } from "../AppsCard";
 import { Row, Section, Toggle, cx } from "../ui";
@@ -20,6 +20,7 @@ interface App {
   name: string;
   emoji: string;
   what: string;
+  category?: string;
 }
 
 const APPS: App[] = [
@@ -47,6 +48,43 @@ const APPS: App[] = [
   { slug: "dropbox", name: "Dropbox", emoji: "📦", what: "files" },
   { slug: "zoom", name: "Zoom", emoji: "🎥", what: "meetings" },
   { slug: "canva", name: "Canva", emoji: "🎨", what: "designs" },
+];
+
+// Curated, common services whose current Composio toolkit supports managed
+// OAuth. The server still generates the connection link, so an unavailable
+// account or provider is reported honestly instead of faking a connection.
+const APP_CATALOG: App[] = [
+  ...APPS.filter((app) => app.slug !== "tiktok").map((app) => ({ ...app, category: app.slug === "gmail" || app.slug.startsWith("google") ? "Google" : "Popular" })),
+  { slug: "googleslides", name: "Google Slides", emoji: "Slides", what: "presentations", category: "Google" },
+  { slug: "googletasks", name: "Google Tasks", emoji: "Tasks", what: "to-do lists", category: "Google" },
+  { slug: "google_classroom", name: "Google Classroom", emoji: "Class", what: "classes & work", category: "Google" },
+  { slug: "googlephotos", name: "Google Photos", emoji: "Photos", what: "photo library", category: "Google" },
+  { slug: "one_drive", name: "OneDrive", emoji: "Cloud", what: "files & sharing", category: "Microsoft" },
+  { slug: "microsoft_teams", name: "Microsoft Teams", emoji: "Teams", what: "chats & meetings", category: "Microsoft" },
+  { slug: "share_point", name: "SharePoint", emoji: "SP", what: "team files", category: "Microsoft" },
+  { slug: "excel", name: "Excel", emoji: "XL", what: "workbooks", category: "Microsoft" },
+  { slug: "linear", name: "Linear", emoji: "L", what: "issues & projects", category: "Work" },
+  { slug: "jira", name: "Jira", emoji: "J", what: "issues & sprints", category: "Work" },
+  { slug: "clickup", name: "ClickUp", emoji: "CU", what: "tasks & docs", category: "Work" },
+  { slug: "asana", name: "Asana", emoji: "A", what: "projects & tasks", category: "Work" },
+  { slug: "monday", name: "Monday", emoji: "M", what: "work boards", category: "Work" },
+  { slug: "airtable", name: "Airtable", emoji: "AT", what: "bases & records", category: "Work" },
+  { slug: "calendly", name: "Calendly", emoji: "Cal", what: "scheduling", category: "Work" },
+  { slug: "gitlab", name: "GitLab", emoji: "GL", what: "code & CI", category: "Build" },
+  { slug: "bitbucket", name: "Bitbucket", emoji: "BB", what: "code & PRs", category: "Build" },
+  { slug: "figma", name: "Figma", emoji: "F", what: "design files", category: "Create" },
+  { slug: "miro", name: "Miro", emoji: "Mi", what: "whiteboards", category: "Create" },
+  { slug: "googlemeet", name: "Google Meet", emoji: "Meet", what: "meetings", category: "Messages" },
+  { slug: "webex", name: "Webex", emoji: "W", what: "meetings", category: "Messages" },
+  { slug: "box", name: "Box", emoji: "Box", what: "work files", category: "Files" },
+  { slug: "pinterest", name: "Pinterest", emoji: "P", what: "pins & boards", category: "Social" },
+  { slug: "tiktok_ads", name: "TikTok Ads", emoji: "TT", what: "campaigns & reports", category: "Social" },
+  { slug: "twitch", name: "Twitch", emoji: "Tw", what: "stream tools", category: "Social" },
+  { slug: "hubspot", name: "HubSpot", emoji: "H", what: "contacts & CRM", category: "Business" },
+  { slug: "mailchimp", name: "Mailchimp", emoji: "MC", what: "campaigns", category: "Business" },
+  { slug: "salesforce", name: "Salesforce", emoji: "SF", what: "CRM", category: "Business" },
+  { slug: "shopify", name: "Shopify", emoji: "S", what: "store & orders", category: "Business" },
+  { slug: "stripe", name: "Stripe", emoji: "St", what: "payments", category: "Business" },
 ];
 
 /**
@@ -102,6 +140,12 @@ export function AppsTab() {
   const [opening, setOpening] = useState<string | null>(null);
   const [notifyUrl, setNotifyUrl] = useState("");
   const [tested, setTested] = useState(false);
+  const [appSearch, setAppSearch] = useState("");
+  const appResults = useMemo(() => {
+    const query = appSearch.trim().toLowerCase();
+    if (!query) return APP_CATALOG;
+    return APP_CATALOG.filter((app) => `${app.name} ${app.what} ${app.category ?? ""}`.toLowerCase().includes(query));
+  }, [appSearch]);
 
   const refresh = useCallback(async () => {
     if (!hasKey) { setLinked([]); return; }
@@ -230,8 +274,15 @@ export function AppsTab() {
           ) : undefined
         }
       >
+        <input
+          aria-label="Find an app to connect"
+          value={appSearch}
+          onChange={(e) => setAppSearch(e.target.value)}
+          placeholder="Find an app — Teams, TikTok, Google Tasks…"
+          className="izk-field izk-no-drag mb-2 w-full py-2 text-[12px]"
+        />
         <div className="grid grid-cols-2 gap-1.5 min-[420px]:grid-cols-3">
-          {APPS.map((a) => {
+          {appResults.map((a) => {
             const on = linked.includes(a.slug);
             return (
               <button
@@ -259,6 +310,7 @@ export function AppsTab() {
             );
           })}
         </div>
+        {appResults.length === 0 && <p className="mt-2 text-[11px] text-izk-muted">Not in the quick catalog yet. Ask for it in chat and Izuki will try the connector catalog, or use the Izuki browser to sign in to the site.</p>}
         {waitingFor && (
           <div className="mt-2 rounded-[14px] border border-izk-violet/35 bg-izk-violet/10 p-2.5 text-[11.5px] leading-snug text-izk-ink">
             <b>One free key first, then {waitingFor.name}.</b> On the Composio page that just opened: sign up (free), go to{" "}
