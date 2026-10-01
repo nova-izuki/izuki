@@ -21,7 +21,9 @@
         if (permission.display !== "granted") return false;
         await local.schedule({ notifications: [{
           id: notificationId(at, text), title: "Izuki reminder", body: text,
-          schedule: { at: new Date(at), allowWhileIdle: true },
+          // `default` lets iPhone use the person's chosen notification sound
+          // and haptic setting. Izuki never pretends this is a phone call.
+          sound: "default", schedule: { at: new Date(at), allowWhileIdle: true },
           extra: { izukiReminder: true, at, text },
         }] });
         return true;

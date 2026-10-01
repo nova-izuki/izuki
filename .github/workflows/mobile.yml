@@ -69,3 +69,31 @@ jobs:
       - run: npm ci
       - run: npx cap sync ios
       - run: xcodebuild -list -project ios/App/App.xcodeproj
+      - name: Build unsigned iPhone test IPA for AltStore or Sideloadly
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphoneos -derivedDataPath build/ios CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+          app_path=$(find build/ios/Build/Products/Debug-iphoneos -maxdepth 1 -type d -name '*.app' -print -quit)
+          test -n "$app_path"
+          mkdir -p build/ipa/Payload
+          cp -R "$app_path" build/ipa/Payload/
+          (cd build/ipa && zip -qry ../Izuki-Companion-iPhone-sideload.ipa Payload)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Izuki-Companion-iPhone-sideload-IPA
+          path: build/Izuki-Companion-iPhone-sideload.ipa
+          if-no-files-found: error
+          retention-days: 14
+      - name: Attach iPhone sideload IPA to this release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The signed Windows release creates the shared GitHub Release.
+          # This is intentionally an unsigned test IPA; AltStore/Sideloadly
+          # signs it with the tester's own Apple ID.
+          for attempt in {1..80}; do
+            if gh release upload "$GITHUB_REF_NAME" "build/Izuki-Companion-iPhone-sideload.ipa" --clobber; then exit 0; fi
+            sleep 15
+          done
+          echo "The iPhone IPA built, but the matching GitHub Release did not appear in time." >&2
+          exit 1

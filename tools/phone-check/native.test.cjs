@@ -37,5 +37,6 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   assert.equal(prompted, true);
   assert.equal(calls[1].title, "Izuki reminder");
   assert.equal(calls[1].body, "Study");
+  assert.equal(calls[1].sound, "default", "native reminders should use the device's configured alert/haptic behavior");
   console.log("Native bridge: explicit Android actions and native reminders pass.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
