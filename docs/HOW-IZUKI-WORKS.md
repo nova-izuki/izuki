@@ -238,3 +238,10 @@ background mode, confirm before acting, practice mode (dry run).
 - Economy mode avoids speculative parallel screen-model calls; fallbacks happen after a failure. Idle cursor polling slows when the cursor rests. No continuous screen-to-model stream is added.
 - Orb styles: Liquid, Ripple, Constellation. Appearance must not change voice/routing behavior. Hidden orbs do not render; visible animation is capped and respects reduced motion.
 - Reminders require Izuki running and the PC awake for PC/Discord delivery. A closed settings window is not the same as quitting Izuki. Phone websites cannot promise unrestricted OS control or background listening.
+
+## Browser, flows and classroom (v1.0.14)
+
+- Browser targets must still exist and retain their label before acting. Password and sensitive credential inputs are excluded from snapshots. Submission uses one form submission path, not both Enter and submit.
+- Clear flows archives only the IDs confirmed by the user; Undo restores missing IDs without overwriting newer flows. Exact repeat recordings reuse the existing flow and preserve its shortcut.
+- Classroom supports pausing, preserving playback, and slowing to 0.75×. Explanations use visible frames and captions, not an assumed audio feed; their screen actions are restricted to drawing and pointing. They are not saved as reusable flows.
+- Follow lesson schedules at most five explanations over ten minutes, checking every 45 seconds only while the same video is foreground and playing. Leaving the tab cancels future checks; Stop also cancels the active explanation.

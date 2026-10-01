@@ -39,5 +39,5 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run icons
-      - run: cargo test --lib --no-default-features
-        working-directory: src-tauri
+      - name: Windows unit tests (Common Controls v6 manifest)
+        run: ./tools/test-windows.ps1

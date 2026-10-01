@@ -15,9 +15,9 @@ User request: continue the existing work, make the PC, web, phone and Discord ex
 - [x] Add matching Liquid / Ripple / Constellation orb choices and limit animation work.
 - [x] Offer updates for the user to download, without automatic installation/restart.
 - [x] Make local-only bug reporting status honest; offer a GitHub issue link.
-- [ ] Add flow cleanup controls and prevent routine sessions from piling up.
-- [ ] Repair browser convenience, page readiness, stale targets and private input handling.
-- [ ] Add a usable video teaching workflow: pause, inspect, explain/draw, resume on request.
+- [x] Add flow cleanup controls and prevent routine sessions from piling up.
+- [x] Repair browser convenience, page readiness, stale targets and private input handling.
+- [x] Add a usable video teaching workflow: pause, inspect, explain/draw, resume on request.
 - [ ] Finish desktop/phone regression checks and a browser smoke check.
 - [ ] Update README, handoff, website and release notes; publish and verify the release and Pages.
 

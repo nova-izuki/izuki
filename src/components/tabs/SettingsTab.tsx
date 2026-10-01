@@ -328,7 +328,7 @@ export function SettingsTab() {
       {/* ------------------------------------------------ execution */}
       <Section title="Execution" hint="How the hand behaves once the plan comes back.">
         <Row label="Control style" hint="Precision uses real Windows controls first. Unsupported controls, dragging and typing still use the mouse or keyboard.">
-          <select aria-label="Control style" className="izk-input max-w-[165px]" value={settings.control_style} onChange={(e) => patch({ control_style: e.target.value as typeof settings.control_style })}>
+          <select aria-label="Control style" className="izk-field izk-no-drag max-w-[165px] py-1 text-[11.5px]" value={settings.control_style} onChange={(e) => patch({ control_style: e.target.value as typeof settings.control_style })}>
             <option value="mouse">Mouse</option>
             <option value="precision">Precision · Jarvis-style</option>
           </select>
@@ -396,7 +396,7 @@ export function SettingsTab() {
       {/* ------------------------------------------------ system */}
       <Section title="Chat & caption colours" hint="How the chat box, Izuki's replies and your words look on screen.">
         <Row label="Voice orb" hint="One personality, three looks. Animates only while the voice sphere is visible.">
-          <select aria-label="Voice orb style" className="izk-input max-w-[145px]" value={settings.orb_style} onChange={(e) => patch({ orb_style: e.target.value as typeof settings.orb_style })}>
+          <select aria-label="Voice orb style" className="izk-field izk-no-drag max-w-[145px] py-1 text-[11.5px]" value={settings.orb_style} onChange={(e) => patch({ orb_style: e.target.value as typeof settings.orb_style })}>
             <option value="liquid">Liquid glass</option>
             <option value="ripple">Water ripple</option>
             <option value="constellation">Constellation</option>

@@ -1574,7 +1574,7 @@ fn submit_task(
     }
 
     let mut plan = last_plan.unwrap_or_default();
-    if settings.autosave_flows && !all_steps.is_empty() {
+    if settings.autosave_flows && !all_steps.is_empty() && !prompt.starts_with("Explain this video frame on my screen.") {
         let thumbnail = frame.downscaled(360).to_jpeg_data_url(58).ok();
         let app_name = uia::foreground_app();
         store.add_flow(Flow {
