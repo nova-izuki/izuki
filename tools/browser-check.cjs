@@ -70,6 +70,13 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   assert.equal(JSON.parse(await evaluate('window.__izukiPage.video("pause")')).paused, true);
   console.log('Browser: private fields, stale targets, one submission, toolbar and video controls pass.');
   await navigate('/docs/app/', '!!window.izukiApps && !!document.getElementById("open-settings")');
+  assert(await evaluate('!!document.getElementById("go-home") && !!document.getElementById("new-chat")'), 'phone home/new-chat controls missing');
+  await evaluate('localStorage.setItem("izuki.history", JSON.stringify([{role:"user",text:"Keep this conversation"},{role:"model",text:"I will."}]))');
+  await navigate('/docs/app/', '!!document.body && document.body.innerText.includes("Keep this conversation")');
+  await evaluate('document.getElementById("go-home").click()');
+  assert(await evaluate('document.body.innerText.includes("Resume your last chat")'), 'home did not preserve the active chat');
+  await evaluate('document.getElementById("new-chat").click()');
+  assert(!await evaluate('document.body.innerText.includes("Resume your last chat")'), 'new chat did not clear the active chat');
   await evaluate('document.getElementById("open-settings").click()');
   for (const style of ['liquid', 'ferrofluid', 'ripple', 'constellation']) {
     await evaluate(`document.getElementById('orb-style').value='${style}';document.getElementById('orb-style').dispatchEvent(new Event('change'))`);
@@ -77,7 +84,7 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   }
   assert(await evaluate('!!document.getElementById("apps-refresh")'));
   assert.deepEqual(errors, [], 'browser JavaScript errors');
-  console.log('Phone: settings open, four orb preferences persist, account controls load, no JavaScript exceptions.');
+  console.log('Phone: home/new chat, settings, four orb preferences and account controls pass without JavaScript exceptions.');
   await navigate('/docs/', 'document.readyState === "complete" && !!document.getElementById("features")');
   assert(await evaluate('document.getElementById("features").textContent.includes("Two ways to take control")'));
   assert(await evaluate('[...document.querySelectorAll("a.dl")].every(a => a.href.endsWith("/releases/latest/download/Izuki-Setup.exe"))'));

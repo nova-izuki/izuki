@@ -3,12 +3,13 @@ name: Build Izuki Companion mobile apps
 on:
   push:
     branches: ['codex/mobile-foundation']
+    tags: ['v*']
   pull_request:
     paths: ['android/**', 'ios/**', 'docs/app/**', 'capacitor.config.ts', 'package*.json', '.github/workflows/mobile.yml']
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: mobile-${{ github.ref }}
@@ -40,6 +41,20 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Attach Android preview APK to this release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The Windows release and this Android build start together. Wait for
+          # the Windows workflow to create the shared GitHub Release instead
+          # of failing a healthy APK build because it won the race.
+          for attempt in {1..80}; do
+            if gh release upload "$GITHUB_REF_NAME" "android/app/build/outputs/apk/debug/app-debug.apk#Izuki-Companion-Android-preview.apk" --clobber; then exit 0; fi
+            sleep 15
+          done
+          echo "The APK built, but the matching GitHub Release did not appear in time." >&2
+          exit 1
 
   ios-project:
     name: iPhone project integrity
