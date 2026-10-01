@@ -382,6 +382,7 @@ pub fn set_busy(app: AppHandle, busy: bool) {
 #[tauri::command]
 pub fn cancel_task() {
     brain::cancel_task();
+    crate::composio::stop();
 }
 
 /// Self-test mode (developer only): launched with IZUKI_SELFTEST=1, the
@@ -665,6 +666,30 @@ pub fn call_status() -> crate::call::Status {
 #[tauri::command]
 pub fn discord_status() -> crate::discord::Status {
     crate::discord::status()
+}
+
+#[tauri::command]
+pub async fn browser_video(action: String, show_window: bool) -> R<serde_json::Value> {
+    blocking(move || crate::browser::video(&action, show_window).map_err(err)).await?
+}
+
+#[tauri::command]
+pub async fn archive_flows(app: AppHandle, ids: Vec<String>) -> R<String> {
+    let token = blocking(move || state::store().archive_flows(&ids).map_err(err)).await??;
+    let _ = app.emit(events::FLOWS_CHANGED, ());
+    Ok(token)
+}
+
+#[tauri::command]
+pub async fn restore_flows(app: AppHandle, token: String) -> R<usize> {
+    let count = blocking(move || state::store().restore_flows(&token).map_err(err)).await??;
+    let _ = app.emit(events::FLOWS_CHANGED, ());
+    Ok(count)
+}
+
+#[tauri::command]
+pub async fn discord_test() -> R<()> {
+    blocking(|| crate::discord::test_delivery().map_err(err)).await?
 }
 
 /// Forget the paired Discord user; hands back the settings with the new code.

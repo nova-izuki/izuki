@@ -511,8 +511,8 @@ mod tests {
         let s = scrub("Authorization: Bearer gsk_abcdefghijklmnopqrstu12345 rejected");
         assert!(!s.contains("gsk_") && s.contains("Bearer [key]"), "{s}");
         // A Composio key must never ride along in a report either.
-        let s = scrub("composio key ak_hsnUnadgRIF6IfAExJ5m rejected");
-        assert!(!s.contains("ak_hsn") && s.contains("[key]"), "{s}");
+        let s = scrub("composio key ak_example0123456789example rejected");
+        assert!(!s.contains("ak_example") && s.contains("[key]"), "{s}");
         let s = scrub("call link https://x.trycloudflare.com/k3J9sd82JdnQ0zPq7LmA4xYv/ ready");
         assert!(s.contains("[token]") && !s.contains("k3J9sd82"), "{s}");
         let s = scrub("text me on +2348012345678 or 08012345678");

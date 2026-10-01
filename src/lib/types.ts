@@ -116,6 +116,7 @@ export interface DiscordStatus {
   /** Adds the bot to a server of yours (you can DM it after). */
   invite: string;
   paired: boolean;
+  online: boolean;
   code: string;
   error: string | null;
 }
@@ -256,6 +257,9 @@ export interface Settings {
   freeze_screen: boolean;
   /** Snap targets to real UI Automation controls before clicking. */
   magnetic_hand: boolean;
+  control_style: "mouse" | "precision";
+  orb_style: "liquid" | "ripple" | "constellation";
+  economy_mode: boolean;
   /** Show the predicted next click after enough samples. */
   ghost_hand: boolean;
   /** Run OCR over marks before asking the model. */

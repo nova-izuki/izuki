@@ -11,7 +11,7 @@ if (start < 0 || end < 0) throw new Error("could not find the rules in index.htm
 const source = html.slice(start, html.lastIndexOf("};", end) + 2);
 
 // eslint-disable-next-line no-new-func
-const { wantsClear, wantsAccount, wantsPc } = new Function(source + "; return { wantsClear, wantsAccount, wantsPc };")();
+const { wantsClear, wantsAccount, wantsPc, requestLane } = new Function(source + "; return { wantsClear, wantsAccount, wantsPc, requestLane };")();
 
 let pass = 0;
 let fail = 0;
@@ -74,5 +74,11 @@ for (const s of [
   "i had a long day", "clear chat", "remind me to call mum",
 ]) is(JSON.stringify(s), wantsPc(s), false);
 
+is("PC task is not hijacked by phone Composio", requestLane("open spotify", true, true), "pc");
+is("Gmail uses phone connections when configured", requestLane("read Gmail", true, true), "apps");
+is("Gmail uses PC connections without phone key", requestLane("read Gmail", false, true), "pc");
+is("ordinary conversation needs neither bridge", requestLane("hello", true, true), "chat");
+is("PC reminders take precedence over email keywords", requestLane("remind me to email Sam in 20 minutes", true, true), "pc");
+is("standalone phone reminder stays local", requestLane("remind me to email Sam", true, false), "chat");
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

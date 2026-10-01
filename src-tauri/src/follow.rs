@@ -34,6 +34,7 @@ pub fn spawn(app: AppHandle, store: Arc<Store>) {
             let mut last: Option<(i32, i32)> = None;
             let mut follow = store.settings().follow_mode_enabled;
             let mut tick: u32 = 0;
+            let mut moved_at = std::time::Instant::now();
             loop {
                 tick = tick.wrapping_add(1);
                 if tick % SETTINGS_EVERY == 0 {
@@ -47,6 +48,7 @@ pub fn spawn(app: AppHandle, store: Arc<Store>) {
                 if follow || shown {
                     let (x, y) = capture::cursor_pos();
                     if last != Some((x, y)) {
+                        moved_at = std::time::Instant::now();
                         last = Some((x, y));
                         // Scoped to the overlay — the config window has no
                         // use for 80Hz cursor updates and shouldn't pay to
@@ -62,7 +64,11 @@ pub fn spawn(app: AppHandle, store: Arc<Store>) {
                             let _ = w.set_always_on_top(true);
                         }
                     }
-                    std::thread::sleep(POLL);
+                    // A parked cursor needs no 80 Hz polling. Resume full
+                    // cadence on movement, with at most 80 ms wake latency.
+                    std::thread::sleep(if moved_at.elapsed() > Duration::from_secs(2) {
+                        Duration::from_millis(80)
+                    } else { POLL });
                 } else {
                     last = None;
                     std::thread::sleep(IDLE_POLL);

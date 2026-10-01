@@ -18,8 +18,8 @@
 //      model left to itself will invent an inbox and then insist it "checked it
 //      directly". So an answer with no tool behind it is sent back, and if it
 //      still won't look we say so honestly instead of guessing.
-//   2. A repeat read is answered from the last real answer, with no AI call at
-//      all — so asking twice costs nothing, is instant, and cannot invent.
+//   2. Every question reads afresh. An app-wide cached answer can answer a
+//      different question with unrelated data.
 //
 // Nothing is sent, posted, deleted or bought without the user saying yes.
 
@@ -63,8 +63,12 @@
   const sessionId = { id: null, for: "" };
 
   async function post(path, body, useKey) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20000);
+    try {
     const res = await fetch(API + path, {
       method: "POST",
+      signal: ctrl.signal,
       headers: { "Content-Type": "application/json", "x-api-key": useKey },
       body: JSON.stringify(body),
     });
@@ -75,6 +79,7 @@
       throw new Error(`Composio answered ${res.status}: ${msg}`);
     }
     return v;
+    } finally { clearTimeout(timer); }
   }
 
   /** This phone's Composio user — made once and kept. */
@@ -105,7 +110,7 @@
     try {
       return await post(`/tool_router/session/${await session(false)}/${action}`, body, k);
     } catch (e) {
-      if (/404|session/i.test(String(e.message))) {
+      if (/^Composio answered 404\b/.test(String(e.message))) {
         return await post(`/tool_router/session/${await session(true)}/${action}`, body, k);
       }
       throw e;
@@ -126,12 +131,17 @@
     else forget(KEY);
     sessionId.id = null;
     sessionId.for = "";
+    snaps.clear();
   }
 
   /** This phone's linked apps (toolkit slugs like "gmail"). */
   async function connected() {
     if (!configured()) return [];
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20000);
+    try {
     const res = await fetch(`${API}/connected_accounts?user_ids=${encodeURIComponent(userId())}&statuses=ACTIVE&limit=100`, {
+      signal: ctrl.signal,
       headers: { "x-api-key": key(), Accept: "application/json" },
     });
     if (!res.ok) throw new Error(`Composio answered ${res.status}`);
@@ -141,6 +151,7 @@
       .filter(Boolean)
       .map((s) => s.toLowerCase());
     return [...new Set(out)].sort();
+    } finally { clearTimeout(timer); }
   }
 
   /** A sign-in page for one app. */
@@ -220,8 +231,9 @@
     '{"search": "what you need to do, e.g. find unread emails from today"} — finds the right tools and ' +
     "tells you which apps are connected. Always search before using a tool you haven't seen.\n" +
     '{"run": {"tool": "TOOL_SLUG", "arguments": {…}}} — runs a tool you found, with arguments ' +
-    "matching its schema.\n" +
+    "matching its schema. Add an account field with the discovered account ID when selecting an account; ask which one if ambiguous.\n" +
     '{"connect": "gmail"} — when a needed app isn\'t connected: gives the user a sign-in link.\n' +
+    '{"ask": "Which account should I use?"} — ONLY a clarification question or a proposed draft awaiting approval, never a claim about account contents or completed actions.\n' +
     '{"reply": "what you say to the user"} — when you\'re done, or need to ask something.\n' +
     "Rules: keep replies short and friendly, plain text. Summarise results the way a person would " +
     '("You\'ve got 3 new emails — one from Sam about Friday…"), never dump raw data. NEVER send, post, ' +
@@ -245,6 +257,15 @@
   }
 
   const clip = (s, n) => (s.length <= n ? s : s.slice(0, n) + "…");
+
+  function toolError(v) {
+    for (const result of [v, v?.data]) {
+      if (!result || typeof result !== "object") continue;
+      if (result.error) return typeof result.error === "string" ? result.error : JSON.stringify(result.error);
+      if (result.successful === false || result.success === false) return "The app reported that the request failed.";
+    }
+    return v?.data == null ? "The app returned no result." : null;
+  }
 
   const pretty = (app) =>
     ({
@@ -276,6 +297,7 @@
     for (const c of v.toolkit_connection_statuses || []) {
       const on = c.has_active_connection === true;
       s += `App ${c.toolkit || "?"}: ${on ? "connected" : 'NOT connected — use {"connect": "<app>"}'}\n`;
+      if (c.accounts?.length) s += `Accounts (ask which one when ambiguous): ${clip(JSON.stringify(c.accounts.map(({ id, alias, current_user_info }) => ({ id, alias, current_user_info }))), 1200)}\n`;
     }
     const schemas = v.tool_schemas || {};
     for (const slug of wanted.slice(0, 4)) {
@@ -299,16 +321,17 @@
     if (!configured()) {
       return { text: "Link your apps in Settings first, and I can read and handle them from here.", links: [] };
     }
-    const last = [...history].reverse().find((t) => t.role !== "model")?.content || "";
-
-    // A repeat read: answer from the last real answer. No AI, instant, true.
-    const cached = snapAnswer(last);
-    if (cached) return { text: cached, links: [] };
+    // Phone chat stores {role, text}; desktop-style callers use content.
+    // Preserve both assistant roles, so a follow-up has its actual context.
+    const turns = history.map((t) => ({
+      role: ["model", "assistant"].includes(t.role) ? "assistant" : "user",
+      content: String(t.content ?? t.text ?? ""),
+    })).filter((t) => t.content.trim());
+    const last = [...turns].reverse().find((t) => t.role === "user")?.content || "";
+    if (!last) return { text: "Tell me which app to check and what to look for.", links: [] };
 
     const messages = [{ role: "system", content: PROMPT }];
-    for (const t of history.slice(-10)) {
-      messages.push({ role: t.role === "model" ? "assistant" : "user", content: t.content });
-    }
+    messages.push(...turns.slice(-10));
 
     const links = [];
     let executed = false;
@@ -316,19 +339,30 @@
     let missing = null;
     let readApp = null;
     const began = Date.now();
+    const unavailable = () => ({ text: "I couldn't verify a result from your apps. Open Settings → Your apps to check the connection, then try again.", links });
+
+    // Discover tools immediately, saving an entire model round trip.
+    try {
+      const v = await router("search", { queries: [{ use_case: last }] });
+      missing = unconnected(v);
+      messages.push({ role: "user", content: "[tool discovery — not account contents]\n" + describeSearch(v) });
+    } catch (e) {
+      return { text: "I couldn't reach your apps: " + e.message, links };
+    }
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
       if (Date.now() - began > BUDGET_MS) break;
       const raw = await complete(messages);
       const step = parseStep(raw);
-      if (!step) return { text: String(raw || "").trim().replace(/`/g, ""), links };
+      if (!step) return executed ? { text: String(raw || "").trim().replace(/`/g, ""), links } : unavailable();
 
       messages.push({ role: "assistant", content: JSON.stringify(step) });
 
       let seen;
+      if (typeof step.ask === "string" && step.ask.trim()) return { text: step.ask.trim(), links };
       if (typeof step.reply === "string") {
         // An answer that never read anything is a guess, not an answer.
-        if (!executed && nagged < 2) {
+        if (!executed && nagged < 1) {
           nagged++;
           messages.push({
             role: "user",
@@ -343,7 +377,8 @@
         }
         if (!executed) {
           // It still will not look. Say so honestly instead of inventing.
-          const app = missing || "gmail";
+          if (!missing) return unavailable();
+          const app = missing;
           try {
             links.push([pretty(app), await link(app)]);
           } catch {}
@@ -376,14 +411,18 @@
           seen = `Couldn't make a sign-in link: ${e.message}`;
         }
       } else if (step.run && typeof step.run === "object") {
-        executed = true;
+        // A failed latest operation invalidates any earlier success in this turn.
+        executed = false;
         const tool = String(step.run.tool || "");
         const args = step.run.arguments && typeof step.run.arguments === "object" ? step.run.arguments : {};
         try {
-          const v = await router("execute", { tool_slug: tool, arguments: args });
-          if (v.error) {
-            seen = `${tool} failed: ${v.error}`;
+          const v = await router("execute", { tool_slug: tool, arguments: args,
+            ...(typeof step.run.account === "string" ? { account: step.run.account } : {}) });
+          const failure = toolError(v);
+          if (failure) {
+            seen = `${tool} failed: ${failure}`;
           } else {
+            executed = true;
             readApp = String(tool).split("_")[0].toLowerCase();
             seen = `${tool} result: ${clip(JSON.stringify(v.data ?? v), 6000)}`;
           }
@@ -396,6 +435,7 @@
       messages.push({ role: "user", content: `[tool output]\n${seen}` });
     }
 
+    if (!executed) return unavailable();
     // Out of steps: say what it got to rather than nothing.
     messages.push({ role: "user", content: 'Out of steps — reply now with what you found or did, as {"reply": …}.' });
     const raw = await complete(messages);
@@ -414,6 +454,6 @@
     link,
     ask,
     // Exposed for the tests, not for the app.
-    _test: { parseStep, askedApp, isReadQuestion, snapAnswer, snapPut, describeSearch, unconnected, pretty },
+    _test: { parseStep, askedApp, isReadQuestion, snapAnswer, snapPut, describeSearch, unconnected, pretty, toolError },
   };
 })();

@@ -13,6 +13,7 @@ import {
 import { HandCursor } from "../HandCursor";
 import { TalkToIzuki } from "../TalkToIzuki";
 import { MemoryCard } from "../MemoryCard";
+import { TeachingCard } from "../TeachingCard";
 import { Kbd, Row, Section, Segmented, Toggle, Badge, cx } from "../ui";
 import { useIzuki } from "../../lib/store";
 import { api } from "../../lib/ipc";
@@ -153,6 +154,7 @@ export function DrawTab() {
 
       {/* ------------------------------------------------ hands-free */}
       <TalkToIzuki />
+      <TeachingCard />
 
       {/* ------------------------------------------------ memory */}
       <MemoryCard />

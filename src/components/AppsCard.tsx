@@ -55,7 +55,7 @@ export function AppsCard() {
     <Section
       title="Izuki in your apps"
       hint="Email, calendar, Drive, Slack, Notion, GitHub, socials and hundreds more — from chat, voice or your phone. Free with your own Composio key (20,000 actions a month)."
-      right={hasKey ? <Badge tone="good">on</Badge> : undefined}
+      right={hasKey ? <Badge tone="accent">key saved</Badge> : undefined}
     >
       <div className="flex flex-col gap-2 text-[12px] leading-snug text-izk-muted">
         <div>
@@ -99,7 +99,7 @@ export function AppsCard() {
           </div>
           {test === "ok" && (
             <div className="mt-1 flex items-center gap-1.5 text-[11px] text-izk-teal">
-              <CheckCircle2 size={11} strokeWidth={2.4} /> Works! Ask for something below.
+              <CheckCircle2 size={11} strokeWidth={2.4} /> Key works. Now connect Gmail or another app below.
             </div>
           )}
           {test !== "idle" && test !== "ok" && test !== "testing" && (

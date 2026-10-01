@@ -175,6 +175,9 @@ export const MOCK_SETTINGS: Settings = {
   hotkey_quickdraw: "Ctrl+D",
   freeze_screen: true,
   magnetic_hand: true,
+  control_style: "mouse",
+  orb_style: "liquid",
+  economy_mode: true,
   ghost_hand: true,
   ocr_enabled: true,
   autosave_flows: true,
@@ -260,6 +263,8 @@ export const api = {
   listFlows: () => call<Flow[]>("list_flows", undefined, () => []),
   runFlow: (id: string) => call<void>("run_flow", { id }, () => undefined),
   deleteFlow: (id: string) => call<void>("delete_flow", { id }, () => undefined),
+  archiveFlows: (ids: string[]) => call<string>("archive_flows", { ids }, () => { throw new Error("Open the desktop app to clear saved flows."); }),
+  restoreFlows: (token: string) => call<number>("restore_flows", { token }, () => 0),
   renameFlow: (id: string, name: string) =>
     call<void>("rename_flow", { id, name }, () => undefined),
 
@@ -347,11 +352,14 @@ export const api = {
   /** Show the Izuki browser (to sign in to a site once), optionally at `url`. */
   browserShow: (url?: string) =>
     call<void>("browser_show", { url: url ?? null }, () => void (url && window.open(url, "_blank"))),
+  browserVideo: (action: "read" | "pause" | "play" | "slow" | "normal", showWindow = false) =>
+    call<{ paused: boolean; rate: number; time: number; title: string; url: string; captions: string; focused: boolean }>("browser_video", { action, showWindow }, () => { throw new Error("Open a video in the desktop Izuki browser first."); }),
   /** Send a sample heads-up. */
   headsupTest: () => call<void>("headsup_test", undefined, () => undefined),
   callStatus: () => call<CallStatus>("call_status", undefined, () => ({ state: "off", link: "", error: null })),
   discordStatus: () =>
-    call<DiscordStatus>("discord_status", undefined, () => ({ bot: "", invite: "", paired: false, code: "123456", error: null })),
+    call<DiscordStatus>("discord_status", undefined, () => ({ bot: "", invite: "", paired: false, online: false, code: "123456", error: null })),
+  discordTest: () => call<void>("discord_test", undefined, () => { throw new Error("Open the Windows app to test Discord delivery."); }),
   discordUnpair: () => call<Settings>("discord_unpair", undefined, () => MOCK_SETTINGS),
   phoneStatus: () =>
     call<PhoneStatus>("phone_status", undefined, () => ({ bot: "", paired: false, code: "123456", error: null })),

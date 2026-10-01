@@ -104,17 +104,18 @@ export function AppsTab() {
   const [tested, setTested] = useState(false);
 
   const refresh = useCallback(async () => {
-    if (!hasKey) return;
+    if (!hasKey) { setLinked([]); return; }
     setLoading(true);
     setLinkErr(null);
     try {
+      await useIzuki.getState().flushSettings();
       setLinked(await api.appsConnected());
     } catch (e) {
       setLinkErr(String(e));
     } finally {
       setLoading(false);
     }
-  }, [hasKey]);
+  }, [hasKey, settings.composio_api_key]);
 
   useEffect(() => {
     void refresh();
@@ -154,6 +155,7 @@ export function AppsTab() {
     setOpening(app.slug);
     setLinkErr(null);
     try {
+      await useIzuki.getState().flushSettings();
       await openLink(await api.appsConnect(app.slug));
     } catch (e) {
       setLinkErr(`${app.name}: ${String(e)}`);

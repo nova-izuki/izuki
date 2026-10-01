@@ -459,7 +459,8 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
                 y = ny;
             }
             uia::AtPoint::Disabled => return Err(anyhow!("disabled: \"{name}\" is greyed out, so clicking it does nothing yet")),
-            uia::AtPoint::Right | uia::AtPoint::Unknown => {}
+            uia::AtPoint::Right => {}
+            uia::AtPoint::Unknown => return Err(anyhow!("target_changed: I can't verify \"{name}\" here anymore; take another look before clicking")),
         }
         // Another window or pop-up on top: press it directly, no mouse.
         if let Some(cover) = uia::covered_at(x, y) {
@@ -477,6 +478,16 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
 
     if dry_run {
         return Ok(format!("[dry run] {} at {}", step.action.as_str(), label));
+    }
+
+    if step.action == Intent::Click && !step.hover_first
+        && crate::state::try_store().is_some_and(|s| s.settings().control_style == "precision") {
+        if let Some(name) = step.snapped_to.as_deref().or(snapped.as_deref()) {
+            if aborted() { return Err(anyhow!("stopped")); }
+            if uia::press_at(x, y, name)? {
+                return Ok(format!("pressed \"{name}\" through Windows controls"));
+            }
+        }
     }
 
     // Hover-only controls (a tab's ✕) need the pointer over them before

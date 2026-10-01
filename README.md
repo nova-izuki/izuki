@@ -50,6 +50,8 @@ happens to be great with computers. It can:
 
 ## Features
 
+New in **1.0.14**: repaired account routing, Mouse/Precision controls, three matching orb styles, recoverable flow cleanup, Discord delivery checks, and a video classroom. [Release details and test steps](docs/RELEASE-1.0.14.md).
+
 | | |
 |---|---|
 | 🎙️ **Hands-free voice** | Wake word runs on your PC (no audio leaves it until you talk to Izuki). Live transcript of your words, a voice-reactive orb, and you can **talk over Izuki to interrupt it** — like ChatGPT's voice mode. |

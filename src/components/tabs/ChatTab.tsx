@@ -9,6 +9,7 @@ import { cx } from "../ui";
 import type { Reminder } from "../../lib/types";
 import { useIzuki } from "../../lib/store";
 import { brainReady } from "../../lib/setup";
+import { needsApps } from "../../lib/conversation";
 
 /**
  * Izuki as a plain chat companion — no screen, no mouse. Ask anything,
@@ -58,7 +59,7 @@ const ACCOUNTS =
 // Asking for help writing something is the chat lane's own job, not an app.
 const WRITE_ONLY =
   /\b(help me (write|draft|compose)|write (me )?(an? )?(e-?mail|message|note|reply)|draft (me )?(an? )?(e-?mail|message|note|reply))\b/i;
-const wantsApps = (t: string) => ACCOUNTS.test(t) && !WRITE_ONLY.test(t);
+const wantsApps = (t: string) => (ACCOUNTS.test(t) || needsApps(t)) && !WRITE_ONLY.test(t) && !/\b(remind me|set (a |an )?reminder)\b/i.test(t);
 const APPS = /^\s*\[?APPS\]?\s*$/i;
 const REMIND_TAG = /\s*\[REMIND[^\]]*\]?\s*/gi;
 
@@ -232,11 +233,24 @@ export function ChatTab() {
       let raw = "";
       const setLast = (patch: Partial<Msg>) =>
         setMsgs((m) => {
+          if (streamId.current !== id) return m;
           if (!m.length) return m;
           const copy = m.slice();
           copy[copy.length - 1] = { ...copy[copy.length - 1], ...patch };
           return copy;
         });
+      if (wantsApps(t)) {
+        setLast({ content: "Checking your connected apps…" });
+        try {
+          const a = await api.appsAsk(history);
+          setLast({ content: a.text, links: a.links.length ? a.links : undefined });
+        } catch (e) {
+          setLast({ content: `I couldn't reach your apps — ${String(e)}`, failed: true, retry: true });
+        } finally {
+          if (streamId.current === id) { streamId.current = null; setBusy(false); }
+        }
+        return;
+      }
       await new Promise<void>((resolveRaw) => {
         let settled = false;
         const resolve = () => {
@@ -347,6 +361,7 @@ export function ChatTab() {
   );
 
   const stop = () => {
+    void api.cancelTask();
     if (streamId.current !== null) void api.chatCancel(streamId.current);
     streamId.current = null;
     finish.current?.("Stopped.");
@@ -435,6 +450,9 @@ export function ChatTab() {
       {/* ------------------------------------------------ the chat */}
       <div className="izk-card flex min-h-[420px] flex-col p-0">
         <div className="flex items-center justify-between px-[14px] pt-[12px]">
+          <span className="text-[10.5px] text-izk-muted" title="Change control style in Settings → Execution">
+            {settings.control_style === "precision" ? "▣ Precision" : "↗ Mouse"} · {settings.economy_mode ? "Save credits" : "Fast backups"}
+          </span>
           <button
             type="button"
             onClick={() => patch({ chat_auto_run: !settings.chat_auto_run })}

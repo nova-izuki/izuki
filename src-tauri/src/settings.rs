@@ -131,6 +131,12 @@ pub struct Settings {
 
     pub freeze_screen: bool,
     pub magnetic_hand: bool,
+    #[serde(default)]
+    pub control_style: String,
+    #[serde(default)]
+    pub orb_style: String,
+    #[serde(default = "default_true")]
+    pub economy_mode: bool,
     pub ghost_hand: bool,
     pub ocr_enabled: bool,
     pub autosave_flows: bool,
@@ -463,6 +469,8 @@ impl Settings {
     /// Fill in any provider the config file predates, so upgrades never drop
     /// a newly supported brain.
     pub fn heal(&mut self) {
+        if !["mouse", "precision"].contains(&self.control_style.as_str()) { self.control_style = "mouse".into(); }
+        if !["liquid", "ripple", "constellation"].contains(&self.orb_style.as_str()) { self.orb_style = "liquid".into(); }
         let defaults = Self::default();
         for d in defaults.providers {
             if !self.providers.iter().any(|p| p.id == d.id) {
@@ -656,6 +664,9 @@ impl Default for Settings {
             hotkey_quickdraw: default_hotkey_quickdraw(),
             freeze_screen: true,
             magnetic_hand: true,
+            control_style: "mouse".into(),
+            orb_style: "liquid".into(),
+            economy_mode: true,
             ghost_hand: true,
             ocr_enabled: true,
             autosave_flows: true,
@@ -781,5 +792,13 @@ mod tests {
         assert!(s.show_captions && s.speak_responses);
         assert!(s.provider(ProviderId::NineRouter).is_some());
         assert_eq!(s.hotkey_quickdraw, "Ctrl+D");
+        assert_eq!(s.control_style, "mouse");
+        assert_eq!(s.orb_style, "liquid");
+        assert!(s.economy_mode);
+        s.control_style = "unknown".into();
+        s.orb_style = "unknown".into();
+        s.heal();
+        assert_eq!(s.control_style, "mouse");
+        assert_eq!(s.orb_style, "liquid");
     }
 }

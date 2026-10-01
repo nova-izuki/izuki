@@ -160,9 +160,20 @@ impl Store {
         self.flows.read().iter().max_by_key(|f| f.created_at).cloned()
     }
 
-    pub fn add_flow(&self, flow: Flow) {
+    pub fn add_flow(&self, mut flow: Flow) {
         {
             let mut flows = self.flows.write();
+            // Repeating the same saved sequence updates it instead of
+            // filling the library with identical recordings.
+            if let Some(old) = flows.iter().find(|f| f.app == flow.app && f.prompt.trim() == flow.prompt.trim()
+                && serde_json::to_value(&f.steps).ok() == serde_json::to_value(&flow.steps).ok()) {
+                flow.id = old.id.clone();
+                flow.name = old.name.clone();
+                flow.run_count = old.run_count;
+                flow.last_run = old.last_run;
+                flow.hotkey = old.hotkey.clone();
+                flow.created_at = old.created_at;
+            }
             flows.retain(|f| f.id != flow.id);
             flows.push(flow);
             // Keep the library from growing without bound.
@@ -195,6 +206,34 @@ impl Store {
     pub fn remove_flow(&self, id: &str) {
         self.flows.write().retain(|f| f.id != id);
         self.flush_flows();
+    }
+
+    /// Clear only the IDs the user selected. Keep a recoverable archive first.
+    pub fn archive_flows(&self, ids: &[String]) -> Result<String> {
+        let mut flows = self.flows.write();
+        let removed: Vec<Flow> = flows.iter().filter(|f| ids.contains(&f.id)).cloned().collect();
+        if removed.is_empty() { anyhow::bail!("No matching flows to clear."); }
+        let token = uuid::Uuid::new_v4().to_string();
+        write_json(&self.dir.join(format!("flows-archive-{token}.json")), &removed)?;
+        let keep: Vec<Flow> = flows.iter().filter(|f| !ids.contains(&f.id)).cloned().collect();
+        write_json(&self.dir.join("flows.json"), &keep)?;
+        *flows = keep;
+        Ok(token)
+    }
+
+    pub fn restore_flows(&self, token: &str) -> Result<usize> {
+        let token = uuid::Uuid::parse_str(token).context("invalid archive")?;
+        let saved: Vec<Flow> = read_json(&self.dir.join(format!("flows-archive-{token}.json")))
+            .ok_or_else(|| anyhow::anyhow!("That flow archive could not be read."))?;
+        let mut flows = self.flows.write();
+        let mut next = flows.clone();
+        let mut count = 0;
+        for flow in saved {
+            if !next.iter().any(|f| f.id == flow.id) { next.push(flow); count += 1; }
+        }
+        write_json(&self.dir.join("flows.json"), &next)?;
+        *flows = next;
+        Ok(count)
     }
 
     fn flush_flows(&self) {
@@ -257,6 +296,23 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn clearing_flows_is_scoped_and_recoverable() {
+        use super::*;
+        let dir = std::env::temp_dir().join(format!("izuki-flow-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let store = Store { dir: dir.clone(), settings: RwLock::new(Settings::default()), flows: RwLock::new(vec![]), watchers: RwLock::new(vec![]) };
+        let flow = |id: &str| serde_json::from_value::<Flow>(serde_json::json!({"id":id,"name":id,"steps":[],"prompt":id,"created_at":1})).unwrap();
+        store.add_flow(flow("keep")); store.add_flow(flow("clear"));
+        let token = store.archive_flows(&["clear".into()]).unwrap();
+        assert_eq!(store.flows().len(), 1);
+        assert_eq!(store.flows()[0].id, "keep");
+        assert_eq!(store.restore_flows(&token).unwrap(), 1);
+        assert_eq!(store.restore_flows(&token).unwrap(), 0);
+        assert!(store.restore_flows("../settings").is_err());
+        assert_eq!(store.flows().len(), 2);
+        fs::remove_dir_all(dir).unwrap();
+    }
     /// A brain this version doesn't know — even as the chosen one — must not
     /// cost the user their keys.
     #[test]
@@ -281,4 +337,5 @@ mod tests {
         assert_eq!(s.active_provider, crate::settings::ProviderId::Gemini);
         let _ = std::fs::remove_dir_all(&dir);
     }
+
 }

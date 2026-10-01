@@ -8,7 +8,7 @@ import {
 
 export interface PointOut {
   id: string;
-  kind: "circle" | "arrow";
+  kind: "circle" | "arrow" | "box";
   x: number;
   y: number;
   x2?: number;
@@ -35,6 +35,12 @@ export function PointOutLayer({ items }: { items: PointOut[] }) {
         {items.map((p) => {
           const seed = createSeed();
           const strokeWidth = 3.2;
+          if (p.kind === "box") return (
+            <motion.g key={p.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <rect x={p.x - 28} y={p.y - 22} width={56} height={44} rx={8} fill="rgba(78,205,196,0.08)" stroke={p.tone} strokeWidth={2} />
+              <path d={`M${p.x - 34} ${p.y}h10 M${p.x + 24} ${p.y}h10 M${p.x} ${p.y - 28}v10 M${p.x} ${p.y + 18}v10`} stroke={p.tone} strokeWidth={2} />
+            </motion.g>
+          );
 
           if (p.kind === "arrow" && p.x2 !== undefined && p.y2 !== undefined) {
             const shaft = sketchyLine(seed, p.x, p.y, p.x2, p.y2);

@@ -18,6 +18,7 @@ import { brainReady } from "../lib/setup";
 import { useIzuki, type TabId } from "../lib/store";
 import { IS_TAURI } from "../lib/ipc";
 import { Recover } from "./Recover";
+import { UpdateNotice } from "./UpdateNotice";
 
 const TABS: Array<{ value: TabId; label: string; icon: React.ReactNode }> = [
   { value: "draw", label: "Draw", icon: <PenLine size={13} strokeWidth={2.4} /> },
@@ -169,6 +170,7 @@ export function GlassConfigPanel() {
         <div className="izk-divider mx-[18px]" />
 
         {/* ---------------- content ---------------- */}
+        <UpdateNotice />
         <main className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-[18px] py-[16px]">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div

@@ -327,6 +327,16 @@ export function SettingsTab() {
 
       {/* ------------------------------------------------ execution */}
       <Section title="Execution" hint="How the hand behaves once the plan comes back.">
+        <Row label="Control style" hint="Precision uses real Windows controls first. Unsupported controls, dragging and typing still use the mouse or keyboard.">
+          <select aria-label="Control style" className="izk-input max-w-[165px]" value={settings.control_style} onChange={(e) => patch({ control_style: e.target.value as typeof settings.control_style })}>
+            <option value="mouse">Mouse</option>
+            <option value="precision">Precision · Jarvis-style</option>
+          </select>
+        </Row>
+        <Row label="Save AI credits" hint="One screen-model request at a time; try a backup after failure. Off allows a second model to race a slow reply.">
+          <Toggle checked={settings.economy_mode} onChange={(v) => patch({ economy_mode: v })} />
+        </Row>
+        <div className="izk-divider" />
         <Row
           label="Hand travel time"
           hint="Lower is snappier, higher looks more human."
@@ -385,6 +395,13 @@ export function SettingsTab() {
 
       {/* ------------------------------------------------ system */}
       <Section title="Chat & caption colours" hint="How the chat box, Izuki's replies and your words look on screen.">
+        <Row label="Voice orb" hint="One personality, three looks. Animates only while the voice sphere is visible.">
+          <select aria-label="Voice orb style" className="izk-input max-w-[145px]" value={settings.orb_style} onChange={(e) => patch({ orb_style: e.target.value as typeof settings.orb_style })}>
+            <option value="liquid">Liquid glass</option>
+            <option value="ripple">Water ripple</option>
+            <option value="constellation">Constellation</option>
+          </select>
+        </Row>
         <Row
           label="Text colours"
           hint={
@@ -493,6 +510,9 @@ export function SettingsTab() {
       </Section>
 
       <BugCard />
+      <Section title="Updates" hint={`You have v${pkg.version}. Download the newest installer from the website when you're ready; no automatic restart.`}>
+        <button type="button" onClick={() => void api.openUrl("https://nova-izuki.github.io/izuki/#download")} className="izk-btn-primary izk-no-drag h-[32px] px-3 text-[12px]">Get latest version</button>
+      </Section>
 
       <FollowCard />
 

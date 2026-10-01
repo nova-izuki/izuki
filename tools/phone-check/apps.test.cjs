@@ -25,6 +25,9 @@ const sandbox = {
   Set,
   Error,
   Promise,
+  AbortController,
+  setTimeout,
+  clearTimeout,
   encodeURIComponent,
 };
 sandbox.window = sandbox;
@@ -85,4 +88,42 @@ is("calendar", T.pretty("googlecalendar"), "Google Calendar");
 is("unknown", T.pretty("discord"), "Discord");
 
 console.log("\n" + pass + " passed, " + fail + " failed");
-process.exit(fail ? 1 : 0);
+async function integration() {
+  A.saveKey("ak_example_test_only");
+  let executed = [], calls = 0, toolResult = { data: { messages: [{ subject: "Team update" }] }, error: null };
+  sandbox.fetch = async (url, options) => {
+    const body = JSON.parse(options.body || "{}");
+    if (url.endsWith("/execute")) executed.push(body);
+    return { ok: true, json: async () => url.endsWith("/session") ? { session_id: "trs_test" }
+      : url.endsWith("/search") ? { results: [{ primary_tool_slugs: ["GMAIL_FETCH_EMAILS"] }], toolkit_connection_statuses: [{ toolkit: "gmail", has_active_connection: true }] }
+      : toolResult };
+  };
+  let answer = await A.ask([{ role: "user", text: "Read my Gmail" }, { role: "model", text: "Which messages?" }, { role: "user", text: "The latest five" }], async (messages) => {
+    if (calls++ === 0) {
+      is("phone text reaches the apps model", messages.some((m) => m.content === "Read my Gmail"), true);
+      is("model history retains assistant role", messages.some((m) => m.role === "assistant" && m.content === "Which messages?"), true);
+      return JSON.stringify({ run: { tool: "GMAIL_FETCH_EMAILS", arguments: { max_results: 5 }, account: "ca_selected" } });
+    }
+    return JSON.stringify({ reply: "Team update is your latest message." });
+  });
+  is("verified read returns the answer", answer.text.includes("Team update"), true);
+  is("selected account reaches Composio", executed[0].account, "ca_selected");
+
+  calls = 0;
+  answer = await A.ask([{ role: "user", text: "How many emails from Sam?" }], async () => { calls++; return "I have read 100 emails."; });
+  is("another Gmail question does not reuse inbox snapshot", calls, 1);
+  is("unverified prose is not displayed as fact", answer.text.includes("100 emails"), false);
+
+  toolResult = { data: { successful: false, error: "Connection expired" } }; calls = 0;
+  answer = await A.ask([{ role: "user", content: "Check Gmail again" }], async () => calls++ === 0
+    ? JSON.stringify({ run: { tool: "GMAIL_FETCH_EMAILS", arguments: {} } })
+    : JSON.stringify({ reply: "Everything was read successfully." }));
+  is("HTTP 200 tool failure cannot license a success claim", answer.text.includes("Everything was read"), false);
+
+  for (const v of [{ error: { message: "denied" } }, { data: { success: false } }, {}]) is("failure envelope rejected", !!T.toolError(v), true);
+  answer = await A.ask([{ role: "user", text: "Check my Gmail accounts" }], async () => JSON.stringify({ ask: "Work or personal Gmail?" }));
+  is("clarification is allowed without fabricating account data", answer.text, "Work or personal Gmail?");
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exitCode = fail ? 1 : 0;
+}
+integration().catch((e) => { console.error(e); process.exitCode = 1; });

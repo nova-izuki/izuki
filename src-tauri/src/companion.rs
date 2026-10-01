@@ -83,9 +83,31 @@ const LOOK: &[&str] = &[
     "look at", "in front of me",
 ];
 
+fn wants_reminder(said: &str) -> bool {
+    let t = said.to_lowercase();
+    ["remind me", "set a reminder", "set an reminder", "my reminders"].iter().any(|p| t.contains(p))
+}
+
 pub fn needs_screen(said: &str) -> bool {
+    if wants_reminder(said) { return false; }
     let t = format!(" {} ", said.to_lowercase());
     DO.iter().chain(LOOK).any(|k| t.contains(k)) || crate::instant::parse(said).is_some()
+}
+
+/// Connected-account work takes priority over generic verbs such as
+/// "read", "open" and "send" on every remote channel.
+pub fn needs_apps(said: &str) -> bool {
+    if wants_reminder(said) { return false; }
+    let t = said.to_lowercase();
+    if ["help me write", "help me draft", "help me compose", "write an email", "draft an email"]
+        .iter().any(|p| t.contains(p)) { return false; }
+    let words: Vec<&str> = t.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    words.iter().any(|w| matches!(*w,
+        "gmail" | "email" | "emails" | "inbox" | "outlook" | "calendar" | "slack" |
+        "notion" | "github" | "linkedin" | "instagram" | "twitter" | "facebook" |
+        "tiktok" | "reddit" | "discord" | "whatsapp" | "todoist" | "trello" | "dropbox" |
+        "onedrive")) || ["my drive", "google drive", "my schedule", "my contacts", "google docs", "google sheets"]
+        .iter().any(|p| t.contains(p))
 }
 
 /// Asks for something to be *done* ("play…", "open…", "scroll…") — not just
@@ -103,6 +125,17 @@ pub fn on_phone_asked(said: &str) -> bool {
 }
 
 pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str)) -> Reply {
+    if needs_apps(said) {
+        push("user", said);
+        status("Checking your connected apps…");
+        let history = HISTORY.lock().clone();
+        let answer = match crate::composio::ask(&history) {
+            Ok(a) => Reply { text: crate::reminders::take_tags(&a.text), links: a.links },
+            Err(e) => Reply::text(format!("I couldn't reach your apps ({e}).")),
+        };
+        push("assistant", &answer.text);
+        return answer;
+    }
     // "…on my phone": drive the Android phone over Wi-Fi.
     if on_phone_asked(said) && crate::state::store().settings().android_enabled {
         push("user", said);
@@ -166,6 +199,7 @@ pub fn quick(app: &AppHandle, said: &str) -> Option<Quick> {
     Some(match bare {
         "stop" | "cancel" => {
             crate::brain::cancel_task();
+            crate::composio::stop();
             let _ = app.emit(crate::events::STOP_SPEAKING, ());
             Quick::Text("Stopped. ✋".into())
         }
@@ -241,6 +275,8 @@ mod tests {
 
     #[test]
     fn spoken_tags_are_tidied() {
+        assert!(!needs_apps("remind me to email Sam"));
+        assert!(!needs_screen("remind me to open Spotify"));
         assert_eq!(tidy("[cheerful] Sure thing! [END]"), "Sure thing!");
         assert_eq!(tidy("Plain reply."), "Plain reply.");
 assert!(hands_over(" [SCREEN] ", "SCREEN"));
@@ -254,5 +290,15 @@ assert!(hands_over(" [SCREEN] ", "SCREEN"));
         assert!(!asks_to_do("what's on my screen"));
         assert!(hands_over("APPS", "APPS"));
         assert!(!hands_over("Let me check the screen", "SCREEN"));
+    }
+
+    #[test]
+    fn accounts_take_priority_over_screen_verbs() {
+        for text in ["open gmail", "read my emails", "what's on my calendar", "check my Instagram", "send a Slack message"] {
+            assert!(needs_apps(text), "{text}");
+        }
+        for text in ["help me write an email", "open Chrome", "mailbox-shaped cake", "tell me a joke"] {
+            assert!(!needs_apps(text), "{text}");
+        }
     }
 }

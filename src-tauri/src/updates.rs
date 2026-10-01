@@ -1,10 +1,8 @@
 //! Keeping Izuki up to date by itself.
 //!
 //! A little after start-up, Izuki asks GitHub whether there's a newer release
-//! (latest.json, signed — see tauri.conf.json). If there is, it downloads and
-//! installs it (Windows shows a small progress bar, then Izuki opens again).
-//! Never in a development build, and never in the middle of something:
-//! it waits until Izuki isn't busy.
+//! (latest.json, signed — see tauri.conf.json). It offers a download in the
+//! panel; the user chooses when to install. Never interrupts a running task.
 
 use std::time::Duration;
 
@@ -22,11 +20,11 @@ pub fn check_later(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
-        check_and_install(app).await;
+        check_and_notify(app).await;
     });
 }
 
-async fn check_and_install(app: AppHandle) {
+async fn check_and_notify(app: AppHandle) {
     let Ok(updater) = app.updater() else { return };
     let update = match updater.check().await {
         Ok(Some(u)) => u,
@@ -37,21 +35,9 @@ async fn check_and_install(app: AppHandle) {
         }
     };
     eprintln!("[update] {} → {} available", update.current_version, update.version);
-    // Not while Izuki is doing something for you.
-    for _ in 0..120 {
-        if !crate::hotkey::is_busy() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_secs(5)).await;
-    }
+    let _ = app.emit("izuki://update-available", update.version.clone());
     let _ = app.emit(
         events::STATUS,
-        StatusEvent::info(format!("Updating Izuki to {} — it'll open again in a moment.", update.version)),
+        StatusEvent::info(format!("Izuki {} is available — open Settings → Updates when you're ready.", update.version)),
     );
-    if let Err(e) = update.download_and_install(|_, _| {}, || {}).await {
-        eprintln!("[update] couldn't install: {e}");
-        return;
-    }
-    // (On Windows the installer has taken over by now; elsewhere, restart.)
-    app.restart();
 }

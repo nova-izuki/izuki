@@ -95,6 +95,7 @@ export function OverlayCanvas() {
    * then there should be no hand and no chat bubble, just what was asked for.
    */
   const [handOn, setHandOn] = useState(false);
+  const precision = useRef(false);
   const [handSize, setHandSize] = useState(16);
   /** The user's ink colour for drawn marks, or "auto" for per-shape colours. */
   const [ink, setInk] = useState("auto");
@@ -342,6 +343,7 @@ export function OverlayCanvas() {
         resetHit();
         setActing(false);
         void api.getSettings().then((s) => {
+          precision.current = s.control_style === "precision";
           if (p.mode === "follow") setHandOn(s.follow_mode_enabled);
           setHandSize(s.follow_hand_size);
           setInk(s.ink_color);
@@ -387,6 +389,7 @@ export function OverlayCanvas() {
       on<TranscriptPayload>(EV.transcript, (p) => setTranscript(p.text ? { ...p, at: Date.now() } : null)),
       on<void>(EV.settingsChanged, () => {
         void api.getSettings().then((s) => {
+          precision.current = s.control_style === "precision";
           setHandOn(s.follow_mode_enabled);
           setHandSize(s.follow_hand_size);
           setInk(s.ink_color);
@@ -430,7 +433,7 @@ export function OverlayCanvas() {
         } else {
           setPointOuts((prev) => [
             ...prev,
-            { id, kind: "circle", x: cx2, y: cy2, tone: TOOL_COLOUR.circle },
+            { id, kind: precision.current && cmd.action !== "point" ? "box" : "circle", x: cx2, y: cy2, tone: TOOL_COLOUR.circle },
           ]);
         }
         // "Point at it": the circle *is* the answer — leave it up long
@@ -438,7 +441,7 @@ export function OverlayCanvas() {
         const showing = cmd.action === "point";
         setTimeout(() => setPointOuts((prev) => prev.filter((p) => p.id !== id)), showing ? 5000 : 1100);
 
-        void handRef.current?.animateTo(cx2, cy2, cmd.duration_ms).then(() => {
+        if (!precision.current || showing) void handRef.current?.animateTo(cx2, cy2, cmd.duration_ms).then(() => {
           handRef.current?.pulse(cmd.action === "hover" || showing ? "none" : (cmd.action as never));
         });
       }),

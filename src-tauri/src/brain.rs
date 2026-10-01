@@ -592,6 +592,12 @@ fn ask_racing(
     use std::sync::{mpsc, Arc};
     use std::time::{Duration, Instant};
 
+    // Bound spend per look, even when every configured provider is failing.
+    let chain = &chain[..chain.len().min(3)];
+    if chain.is_empty() { return Err(anyhow!("no screen brain is configured")); }
+    let economy = crate::state::try_store().map(|s| s.settings().economy_mode).unwrap_or(true);
+    let began = Instant::now();
+    let mut last_launch = began;
     let req = Arc::new(req);
     let (tx, rx) = mpsc::channel::<(usize, Result<VisionPlan>, Duration)>();
     let launch = |i: usize| {
@@ -632,14 +638,14 @@ fn ask_racing(
     // no brain does better.
     let mut fallback: Option<(usize, VisionPlan)> = None;
     loop {
-        let wait = if launched < chain.len() {
-            hedge_after
-        } else if fallback.is_some() {
-            // Something to say already: wait a while for a better one, not forever.
-            Duration::from_secs(25)
-        } else {
-            Duration::from_secs(120)
-        };
+        if automation::aborted() { return Err(anyhow!("stopped")); }
+        if began.elapsed() > Duration::from_secs(45) {
+            return match fallback.take() {
+                Some((_, plan)) => Ok(last_resort(plan, wants_action)),
+                None => Err(anyhow!("the screen model took too long; try a faster brain in Settings")),
+            };
+        }
+        let wait = Duration::from_millis(100);
         match rx.recv_timeout(wait) {
             Ok((i, Ok(plan), took)) if !good_enough(&plan, wants_action) => {
                 eprintln!(
@@ -687,10 +693,13 @@ fn ask_racing(
                     };
                 }
             }
-            Err(mpsc::RecvTimeoutError::Timeout) if launched < chain.len() => {
-                eprintln!("[brain] {} is slow — asking {} too", chain[launched - 1].label, chain[launched].label);
-                launch(launched);
-                launched += 1;
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if !economy && launched < chain.len() && launched - finished < 2 && last_launch.elapsed() >= hedge_after {
+                    eprintln!("[brain] trying one speculative backup");
+                    launch(launched);
+                    launched += 1;
+                    last_launch = Instant::now();
+                }
             }
             Err(_) => {
                 return match fallback.take() {
@@ -851,7 +860,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             let why = e.to_string();
                             // Something on top, or greyed out: the brain can fix
                             // that on its next look — the task goes on.
-                            if why.starts_with("covered:") || why.starts_with("disabled:") {
+                            if why.starts_with("covered:") || why.starts_with("disabled:") || why.starts_with("target_changed:") {
                                 *STEP_SNAG.lock() = Some(why.clone());
                             }
                             let _ = app.emit(
@@ -1297,8 +1306,9 @@ fn submit_task(
         };
         set_frozen(None);
 
-        let steps = plan.steps.clone();
-        let done = plan.done;
+        let lesson = prompt.starts_with("Explain this video frame on my screen.");
+        let steps: Vec<_> = plan.steps.iter().filter(|s| !lesson || matches!(s.action, Intent::Draw | Intent::Point)).take(if lesson { 6 } else { usize::MAX }).cloned().collect();
+        let done = lesson || plan.done;
         let wait = plan.wait;
         if plan.notes.is_some() {
             notes = plan.notes.clone();

@@ -20,6 +20,8 @@
   };
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const orbs = new Set();
+  let style = "liquid";
+  try { style = localStorage.getItem("izuki.orbStyle") || "liquid"; } catch {}
   let mode = "idle", target = 0, level = 0, t = 0, turn = 0, last = performance.now(), raf = 0, frame = 0;
   const parse = (col) => col.split(",").map(Number);
   let mix = PALETTES.idle.colors.map(parse), glowMix = parse(PALETTES.idle.glow);
@@ -57,6 +59,23 @@
       ctx.fillRect(0, 0, SIZE, SIZE);
     }
 
+    if (["ripple", "constellation"].includes(style)) {
+      ctx.lineWidth = 1.5;
+      if (style === "ripple") {
+        for (let ring = 0; ring < 5; ring++) {
+          const radius = R * (0.3 + ring * 0.16 + 0.04 * Math.sin(t * 2 - ring));
+          ctx.beginPath(); ctx.ellipse(c, c, radius, radius * (0.8 + level * 0.15), turn * 0.15, 0, Math.PI * 2);
+          ctx.strokeStyle = rgba(mix[ring % 4], 0.85 - ring * 0.1); ctx.stroke();
+        }
+      } else {
+        for (let dot = 0; dot < 64; dot++) {
+          const angle = dot * 2.39996 + turn * 0.2, radius = R * Math.sqrt((dot + 1) / 64);
+          ctx.beginPath(); ctx.arc(c + Math.cos(angle) * radius, c + Math.sin(angle) * radius, 1.2 + level * 2 + 0.7 * Math.sin(t + dot), 0, Math.PI * 2);
+          ctx.fillStyle = rgba(mix[dot % 4], 0.85); ctx.fill();
+        }
+      }
+      return;
+    }
     const body = ctx.createRadialGradient(c, c + R * 0.2, R * 0.1, c, c, R * 1.05);
     body.addColorStop(0, rgba(mix[1], 0.16));
     body.addColorStop(1, "rgba(4,8,22,0.78)");
@@ -138,7 +157,7 @@
     if (!shown.length || document.hidden) return; // woken again by add/mode/visibility
     raf = requestAnimationFrame(tick);
     // Resting: half the frames are plenty (and kinder to the battery).
-    if (mode === "idle" && level < 0.08 && ++frame % 2) return;
+    if (now - last < (reduced ? 150 : mode === "idle" ? 80 : 33)) return;
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const pal = PALETTES[mode] || PALETTES.idle;
@@ -167,6 +186,11 @@
   addEventListener("resize", wake);
 
   window.IzukiOrb = {
+    style(value) {
+      style = ["liquid", "ripple", "constellation"].includes(value) ? value : "liquid";
+      try { localStorage.setItem("izuki.orbStyle", style); } catch {}
+      wake();
+    },
     add(canvas) {
       const scratch = document.createElement("canvas");
       const o = { canvas, scratch, ctx: canvas.getContext("2d"), lx: scratch.getContext("2d"), size: 0, dpr: 0 };

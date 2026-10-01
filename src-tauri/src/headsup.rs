@@ -29,6 +29,7 @@ const MEETING_AHEAD_MIN: i64 = 15;
 
 #[derive(Default)]
 struct State {
+    account_scope: String,
     connected: Vec<String>,
     apps_at: Option<Instant>,
     email_at: Option<Instant>,
@@ -44,6 +45,20 @@ struct State {
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
+
+/// Refresh checks after the user returns from connecting an app. `tick`
+/// itself holds STATE while listing accounts, so never block on that lock.
+pub fn connections_checked(list: &[String]) {
+    if let Some(mut guard) = STATE.try_lock() {
+        let st = guard.get_or_insert_with(State::default);
+        if st.connected != list {
+            st.connected = list.to_vec();
+            st.email_at = None;
+            st.calendar_at = None;
+        }
+        st.apps_at = Some(Instant::now());
+    }
+}
 
 pub fn spawn(app: AppHandle) {
     std::thread::Builder::new()
@@ -63,6 +78,13 @@ fn tick(app: &AppHandle) {
     let settings = crate::state::store().settings();
     let mut guard = STATE.lock();
     let st = guard.get_or_insert_with(State::default);
+    let scope = format!("{}:{}", settings.composio_user_id, settings.composio_api_key);
+    if st.account_scope != scope {
+        st.account_scope = scope;
+        st.connected.clear(); st.apps_at = None;
+        st.email_at = None; st.calendar_at = None;
+        st.seen_mail = None; st.told_events.clear();
+    }
 
     // School work: from the calendar links, no app key needed.
     let feeds: Vec<String> = settings.school_feeds.iter().map(|f| f.trim().to_string()).filter(|f| !f.is_empty()).collect();

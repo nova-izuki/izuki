@@ -46,10 +46,14 @@ pub fn configured() -> bool {
 }
 
 fn client() -> Result<reqwest::blocking::Client> {
-    Ok(reqwest::blocking::Client::builder()
+    static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
+    if let Some(client) = CLIENT.get() { return Ok(client.clone()); }
+    let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(45))
         .connect_timeout(Duration::from_secs(8))
-        .build()?)
+        .build()?;
+    let _ = CLIENT.set(client.clone());
+    Ok(client)
 }
 
 fn post(key: &str, path: &str, body: &Value) -> Result<Value> {
@@ -100,6 +104,7 @@ pub fn connected() -> Result<Vec<String>> {
         .unwrap_or_default();
     out.sort();
     out.dedup();
+    crate::headsup::connections_checked(&out);
     Ok(out)
 }
 
@@ -118,10 +123,23 @@ pub fn link(toolkit: &str) -> Result<String> {
 pub fn execute(tool: &str, arguments: Value) -> Result<Value> {
     let key = key()?;
     let v = router(&key, "execute", &json!({ "tool_slug": tool, "arguments": arguments }))?;
-    if let Some(e) = v["error"].as_str().filter(|e| !e.is_empty()) {
+    if let Some(e) = tool_error(&v) {
         return Err(anyhow!("{tool} failed: {e}"));
     }
     Ok(v["data"].clone())
+}
+
+fn tool_error(v: &Value) -> Option<String> {
+    for result in [v, &v["data"]] {
+        let err = &result["error"];
+        if !err.is_null() && err != false && err != "" {
+            return Some(err.as_str().map(str::to_string).unwrap_or_else(|| err.to_string()));
+        }
+        if result["successful"] == false || result["success"] == false {
+            return Some("The app reported that the request failed.".into());
+        }
+    }
+    if v["data"].is_null() { Some("The app returned no result.".into()) } else { None }
 }
 
 /// Start one of the user's n8n workflows by name, with `data` as its input.
@@ -177,7 +195,7 @@ fn session(key: &str, fresh: bool) -> Result<String> {
 fn router(key: &str, action: &str, body: &Value) -> Result<Value> {
     let id = session(key, false)?;
     match post(key, &format!("/tool_router/session/{id}/{action}"), body) {
-        Err(e) if e.to_string().contains("404") || e.to_string().to_lowercase().contains("session") => {
+        Err(e) if e.to_string().starts_with("Composio answered 404 ") => {
             let id = session(key, true)?;
             post(key, &format!("/tool_router/session/{id}/{action}"), body)
         }
@@ -191,8 +209,9 @@ Every reply is ONE JSON object and nothing else, one of:\n\
 {\"search\": \"what you need to do, e.g. find unread emails from today\"} — finds the right tools and \
 tells you which apps are connected. Always search before using a tool you haven't seen.\n\
 {\"run\": {\"tool\": \"TOOL_SLUG\", \"arguments\": {…}}} — runs a tool you found, with arguments \
-matching its schema.\n\
+matching its schema. Add an account field with the discovered account ID when selecting an account; ask which one if ambiguous.\n\
 {\"connect\": \"gmail\"} — when a needed app isn't connected: gives the user a sign-in link.\n\
+{\"ask\": \"Which account should I use?\"} — ONLY a clarification question or a proposed draft awaiting approval, never a claim about account contents or completed actions.\n\
 {\"reply\": \"what you say to the user\"} — when you're done, or need to ask something.\n\
 Rules: keep replies short and friendly, plain text. Summarise results the way a person would \
 (\"You've got 3 new emails — one from Sam about Friday…\"), never dump raw data. NEVER send, post, \
@@ -223,20 +242,16 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
     if key.is_empty() {
         // No apps linked: still help ("plan my week" deserves a plan, not
         // a setup chore), and say once how to let it into their apps.
-        let text = crate::chat::reply_here(history, crate::chat::Style::Text)?;
         return Ok(Answer {
-            text: format!("{text}\n\n(Link your apps in Settings → Apps and I can put things straight into your email and calendar.)"),
+            text: "Open the Apps tab, add your Composio key, then tap Connect for the service you want. A key alone doesn't sign you into Gmail or your other accounts.".into(),
             links: Vec::new(),
         });
     }
 
-    // A repeat read of an app we already opened: answer from what the tool
-    // actually returned. No AI call, instant, and nothing invented.
+    // Always read afresh for the current question.
     let latest = history.iter().rev().find(|t| t.role != "assistant").map(|t| t.content.clone()).unwrap_or_default();
-    if let Some(a) = snapshot_answer(&latest) {
-        eprintln!("[apps] answered from snapshot ({})", asked_app(&latest).unwrap_or("?"));
-        return Ok(a);
-    }
+    // An app-wide snapshot can answer a different question with the wrong
+    // result (e.g. inbox count versus a particular sender). Read afresh.
 
     let hooks = crate::state::store().settings().n8n_hooks;
     let n8n = if hooks.is_empty() {
@@ -267,6 +282,16 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
     // The app a tool actually read, so the finished answer can be kept.
     let mut read_app: Option<String> = None;
     let began = std::time::Instant::now();
+    let unavailable = || Answer { text: "I couldn't verify a result from your apps. Open the Apps tab to check the connection, then try again.".into(), links: Vec::new() };
+    // Search before the first model call: the model can select a real tool
+    // immediately instead of spending a full round asking us to search.
+    match router(&key, "search", &json!({ "queries": [{ "use_case": latest }] })) {
+        Ok(v) => {
+            missing = unconnected(&v);
+            messages.push(json!({ "role": "user", "content": format!("[tool discovery — not account contents]\n{}", describe_search(&v)) }));
+        }
+        Err(e) => return Ok(Answer { text: format!("I couldn't reach your apps: {e}"), links: Vec::new() }),
+    }
     for round in 0..MAX_ROUNDS {
         // Never keep them waiting for minutes: past this, answer with what
         // it has.
@@ -283,11 +308,14 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
         }
         let Some(step) = parse_step(&raw) else {
             // Not JSON: take it as the answer rather than fail.
-            return Ok(Answer { text: plain(&raw), links });
+            return Ok(if executed { Answer { text: plain(&raw), links } } else { unavailable() });
         };
-        eprintln!("[apps] round {}: {}", round + 1, step.to_string().chars().take(160).collect::<String>());
+        eprintln!("[apps] round {}", round + 1);
         messages.push(json!({ "role": "assistant", "content": step.to_string() }));
 
+        if let Some(question) = step["ask"].as_str().filter(|s| !s.trim().is_empty()) {
+            return Ok(Answer { text: question.trim().to_string(), links });
+        }
         let seen = if let Some(text) = step["reply"].as_str() {
             // An answer that never actually read anything is a guess, not an
             // answer — and a model will invent an inbox and then insist it
@@ -311,7 +339,7 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
             }
             if !executed {
                 // It still will not look. Say so honestly instead of inventing.
-                let app = missing.clone().unwrap_or_else(|| "gmail".into());
+                let Some(app) = missing.clone() else { return Ok(unavailable()); };
                 if let Ok(url) = link(&app) {
                     if !url.is_empty() {
                         links.push((pretty(&app), url));
@@ -359,23 +387,26 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
                 Err(e) => format!("Couldn't make a sign-in link: {e}"),
             }
         } else if step["n8n"].is_object() {
-            executed = true;
+            executed = false;
             let name = step["n8n"]["name"].as_str().unwrap_or_default();
             match run_n8n(name, &step["n8n"]["data"]) {
-                Ok(r) => format!("n8n \"{name}\" result: {r}"),
+                Ok(r) => { executed = true; format!("n8n \"{name}\" result: {r}") },
                 Err(e) => format!("n8n failed: {e}"),
             }
         } else if step["run"].is_object() {
-            executed = true;
+            executed = false;
             let tool = step["run"]["tool"].as_str().unwrap_or_default();
             let args = step["run"]["arguments"].clone();
             let args = if args.is_object() { args } else { json!({}) };
-            match router(&key, "execute", &json!({ "tool_slug": tool, "arguments": args })) {
+            let mut body = json!({ "tool_slug": tool, "arguments": args });
+            if let Some(account) = step["run"]["account"].as_str() { body["account"] = json!(account); }
+            match router(&key, "execute", &body) {
                 Ok(v) => {
-                    let err = v["error"].as_str().filter(|e| !e.is_empty());
+                    let err = tool_error(&v);
                     match err {
                         Some(e) => format!("{tool} failed: {e}"),
                         None => {
+                            executed = true;
                             // Note which app was really read, so the finished
                             // answer can be kept for next time (see below).
                             read_app = Some(app_of(tool));
@@ -390,9 +421,12 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
         };
         messages.push(json!({ "role": "user", "content": format!("[tool output]\n{seen}") }));
     }
+    if stopped(started) { return Ok(halt()); }
+    if !executed { return Ok(unavailable()); }
     // Out of rounds: say what it got to rather than nothing.
     messages.push(json!({ "role": "user", "content": "Out of steps — reply now with what you found or did, as {\"reply\": …}." }));
     let raw = crate::chat::complete(&messages)?;
+    if stopped(started) { return Ok(halt()); }
     let text = parse_step(&raw)
         .and_then(|v| v["reply"].as_str().map(str::to_string))
         .unwrap_or_else(|| plain(&raw));
@@ -545,6 +579,12 @@ fn describe_search(v: &Value) -> String {
         let app = c["toolkit"].as_str().unwrap_or("?");
         let on = c["has_active_connection"].as_bool().unwrap_or(false);
         s.push_str(&format!("App {app}: {}\n", if on { "connected" } else { "NOT connected — use {\"connect\": \"<app>\"}" }));
+        if let Some(accounts) = c["accounts"].as_array() {
+            let accounts: Vec<Value> = accounts.iter().map(|a| json!({
+                "id": a["id"], "alias": a["alias"], "current_user_info": a["current_user_info"]
+            })).collect();
+            s.push_str(&format!("Accounts (ask which one when ambiguous): {}\n", clip(&json!(accounts).to_string(), 1200)));
+        }
     }
     if let Some(schemas) = v["tool_schemas"].as_object() {
         for slug in wanted.iter().take(4) {
@@ -613,6 +653,14 @@ pub fn test_key(key: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_results_must_really_succeed() {
+        assert!(tool_error(&json!({"data": {"messages": []}, "error": null})).is_none());
+        for v in [json!({"error": {"message": "expired"}}), json!({"data": {"successful": false}}), json!({"data": {"error": "denied"}}), json!({})] {
+            assert!(tool_error(&v).is_some(), "{v}");
+        }
+    }
 
     #[test]
     fn reads_the_json_step() {

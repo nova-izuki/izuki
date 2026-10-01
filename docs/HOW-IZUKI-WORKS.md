@@ -184,6 +184,15 @@ background mode, confirm before acting, practice mode (dry run).
 
 ## 8b. Chat, reminders and your phone
 
+- Account requests go directly to the apps lane across desktop chat, voice,
+  Discord, Telegram and calls. A PC command stays on the PC even when the phone
+  has a Composio key. App replies require a successful tool result; failed tools
+  and malformed model replies cannot establish access. Each different question
+  is checked afresh rather than receiving a cached answer about the same app.
+- A Composio API key enables setup; each service still needs its own Connect
+  sign-in. Phone and PC use separate connection identities unless phone requests
+  are sent through the linked PC. Discord uses the running PC's connections.
+
 - **Chat tab** — a written chat with the same companion, using the fast chat lane (no
   screenshot, no controls scan — the lightest request Izuki makes). If the reply is `[SCREEN]`,
   the chat offers "Do it on my PC", which runs the normal task loop.
@@ -222,3 +231,10 @@ background mode, confirm before acting, practice mode (dry run).
 8. Voice session, stay quiet → closes only after the follow-up time; coughing doesn't count.
 9. "Quit Izuki" → the app closes completely.
 10. "Open Blackboard" when it isn't on screen → it searches/scrolls and opens it.
+# Companion preferences (v1.0.14)
+
+- Control style is independent of confirmation settings: Mouse uses the existing pointer; Precision (Jarvis-style) first tries a named, enabled Windows control at the verified target. Unsupported controls fall back to the mouse. A failed direct invocation must not be followed by a duplicate click.
+- Precision highlights are target indicators, not a claim of successful execution. Both styles retain the existing approval and stop gates.
+- Economy mode avoids speculative parallel screen-model calls; fallbacks happen after a failure. Idle cursor polling slows when the cursor rests. No continuous screen-to-model stream is added.
+- Orb styles: Liquid, Ripple, Constellation. Appearance must not change voice/routing behavior. Hidden orbs do not render; visible animation is capped and respects reduced motion.
+- Reminders require Izuki running and the PC awake for PC/Discord delivery. A closed settings window is not the same as quitting Izuki. Phone websites cannot promise unrestricted OS control or background listening.

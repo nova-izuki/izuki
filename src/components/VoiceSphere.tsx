@@ -1,9 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { X } from "lucide-react";
-import { EV, emit, on } from "../lib/ipc";
+import { api, EV, emit, on } from "../lib/ipc";
 import { resizeHandles, useFloating, workArea, type Limits } from "../lib/floating";
-import type { OrbState } from "../lib/types";
+import type { OrbState, Settings } from "../lib/types";
 import { TranscriptText } from "./TranscriptBar";
 
 /**
@@ -82,6 +82,14 @@ export function VoiceSphere({
   doing?: string | null;
 }) {
   const visible = state !== "hidden";
+  const [style, setStyle] = useState<Settings["orb_style"]>("liquid");
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => void api.getSettings().then((s) => { if (alive) setStyle(s.orb_style || "liquid"); }).catch(() => {});
+    refresh();
+    const off = on<void>(EV.settingsChanged, refresh);
+    return () => { alive = false; void off.then((f) => f()); };
+  }, []);
   const { box, setBox, begin, reset } = useFloating("izuki.sphere", initialBox, LIMITS);
 
   // Always a circle: whichever side a drag grew, the other follows.
@@ -120,7 +128,7 @@ export function VoiceSphere({
           onPointerDown={(e) => begin(e, "move")}
           onWheel={onWheel}
         >
-          <SphereCanvas state={state as Exclude<OrbState, "hidden">} demo={demo} size={size} />
+          <SphereCanvas state={state as Exclude<OrbState, "hidden">} demo={demo} size={size} style={style} />
           <button
             type="button"
             aria-label="Dismiss"
@@ -180,10 +188,12 @@ function SphereCanvas({
   state,
   demo,
   size: SIZE,
+  style,
 }: {
   state: Exclude<OrbState, "hidden">;
   demo: boolean;
   size: number;
+  style: Settings["orb_style"];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef(state);
@@ -224,6 +234,7 @@ function SphereCanvas({
     /** Where the colours are in their trip round the orb. */
     let turn = 0;
     let last = performance.now();
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const parse = (col: string) => col.split(",").map(Number);
     // Colours ease between states instead of snapping.
     let mix = PALETTES[stateRef.current].colors.map(parse);
@@ -231,6 +242,9 @@ function SphereCanvas({
     const rgba = (rgb: number[], a: number) => `rgba(${rgb.map(Math.round).join(",")},${a})`;
 
     const draw = (now: number) => {
+      if (document.hidden) { raf = 0; return; }
+      raf = requestAnimationFrame(draw);
+      if (now - last < (reduced ? 150 : 33)) return;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       const st = stateRef.current;
@@ -265,6 +279,25 @@ function SphereCanvas({
       halo.addColorStop(1, rgba(glowMix, 0));
       ctx.fillStyle = halo;
       ctx.fillRect(0, 0, SIZE, SIZE);
+
+      if (style !== "liquid") {
+        ctx.lineWidth = 1.5;
+        if (style === "ripple") {
+          for (let ring = 0; ring < 5; ring++) {
+            const radius = R * (0.3 + ring * 0.16 + 0.04 * Math.sin(t * 2 - ring));
+            ctx.beginPath(); ctx.ellipse(c, c, radius, radius * (0.8 + level * 0.15), turn * 0.15, 0, Math.PI * 2);
+            ctx.strokeStyle = rgba(mix[ring % 4], 0.85 - ring * 0.1); ctx.stroke();
+          }
+        } else {
+          for (let dot = 0; dot < 64; dot++) {
+            const angle = dot * 2.39996 + turn * 0.2;
+            const radius = R * Math.sqrt((dot + 1) / 64);
+            ctx.beginPath(); ctx.arc(c + Math.cos(angle) * radius, c + Math.sin(angle) * radius, 1.2 + level * 2 + 0.7 * Math.sin(t + dot), 0, Math.PI * 2);
+            ctx.fillStyle = rgba(mix[dot % 4], 0.85); ctx.fill();
+          }
+        }
+        return;
+      }
 
       // Deep water in the middle so the glowing layers read against it
       // instead of washing out to white.
@@ -366,11 +399,12 @@ function SphereCanvas({
       ctx.lineWidth = 1.4 + level * 1.6;
       ctx.stroke();
 
-      raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
-  }, [demo, SIZE]);
+    const wake = () => { if (!document.hidden && !raf) raf = requestAnimationFrame(draw); };
+    document.addEventListener("visibilitychange", wake);
+    return () => { cancelAnimationFrame(raf); document.removeEventListener("visibilitychange", wake); };
+  }, [demo, SIZE, style]);
 
   return <canvas ref={canvasRef} style={{ width: SIZE, height: SIZE }} />;
 }

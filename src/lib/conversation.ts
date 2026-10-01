@@ -42,11 +42,11 @@ export function recentHistory(): Turn[] {
  * with no screen at all. Only used when apps are linked.
  */
 export function needsApps(text: string): boolean {
-  return APPS.test(text);
+  return APPS.test(text) && !/\b(help me (write|draft|compose)|remind me|set (a |an )?reminder)\b/i.test(text);
 }
 
 const APPS = new RegExp(
-  String.raw`(e-?mails?|inbox|gmail|outlook|mail from|unread|calendar|meetings?|events? (today|tomorrow|this week)|what'?s on my (day|schedule|agenda)|my schedule|agenda|google drive|my drive|dropbox|onedrive|google docs?|google sheets?|slack|discord|notion|trello|asana|todoist|github|linkedin|twitter|tweet|instagram|facebook|reddit|my dms?)`,
+  String.raw`\b(e-?mails?|inbox|gmail|outlook|mail from|unread|calendar|meetings?|events? (today|tomorrow|this week)|what'?s on my (day|schedule|agenda)|my schedule|agenda|google drive|my drive|dropbox|onedrive|google docs?|google sheets?|slack|discord|notion|trello|asana|todoist|github|linkedin|twitter|tweet|instagram|facebook|reddit|my dms?)\b`,
   "i"
 );
 
@@ -56,7 +56,7 @@ const APPS = new RegExp(
  * can still hand over with `[SCREEN]`.
  */
 export function needsScreen(text: string): boolean {
-  return SCREEN.test(text);
+  return SCREEN.test(text) && !/\b(remind me|set (a |an )?reminder)\b/i.test(text);
 }
 
 const SCREEN = new RegExp(

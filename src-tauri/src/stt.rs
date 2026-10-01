@@ -132,7 +132,9 @@ fn groq_whisper(key: &str, wav: Vec<u8>, mime: &str, file_name: &str, choice: &s
         .text("temperature", "0")
         .text("prompt", format!("{WHISPER_HINT} The speaker uses {language}"))
         .part("file", Part::bytes(wav).file_name(file_name.to_string()).mime_str(mime)?);
-    let form = if code.is_empty() { form } else { form.text("language", code) };
+    // Whisper expects ISO language codes, never a browser locale (en-NG).
+    let code = code.split('-').next().unwrap_or_default();
+    let form = if ["en", "fr", "es", "ar", "hi", "sw", "de", "ja"].contains(&code) { form.text("language", code) } else { form };
     let res = client()?
         .post("https://api.groq.com/openai/v1/audio/transcriptions")
         .bearer_auth(key)

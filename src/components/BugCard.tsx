@@ -24,7 +24,7 @@ export function BugCard() {
   };
 
   return (
-    <Section title="Something wrong?" hint="Tell us what happened — it goes straight to Izuki's maker, with the details needed to fix it.">
+    <Section title="Something wrong?" hint="Describe the problem. Reports stay in your local log unless a reporting server is configured. You can also review and submit an issue on GitHub.">
       <textarea
         value={what}
         onChange={(e) => {
@@ -57,13 +57,14 @@ export function BugCard() {
           {state === "sent" && "Thanks — sent! 🙏"}
           {state === "saved" && "Saved in your log. Reports aren't switched on yet — tap “Open my log” to share the file."}
         </span>
+        <button type="button" onClick={() => void api.openUrl("https://github.com/nova-izuki/izuki/issues/new")} className="izk-pill izk-no-drag h-[34px] px-3 text-[11.5px]">Report on GitHub</button>
       </div>
 
       <div className="izk-divider mt-3" />
 
       <Row
         label="Send error reports automatically"
-        hint="When something breaks, Izuki sends what went wrong and its recent technical log — never your keys, screenshots, recordings or chats."
+        hint="When a reporting server is configured, send scrubbed diagnostics automatically. Otherwise errors stay in your local log. Review any log before sharing it publicly."
         icon={<Bug size={14} strokeWidth={2.3} />}
       >
         <Toggle checked={settings.send_bug_reports} onChange={(v) => patch({ send_bug_reports: v })} />

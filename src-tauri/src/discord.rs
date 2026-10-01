@@ -35,12 +35,13 @@ pub struct Status {
     /// DM it).
     pub invite: String,
     pub paired: bool,
+    pub online: bool,
     pub code: String,
     pub error: Option<String>,
 }
 
 static STATUS: Mutex<Status> =
-    Mutex::new(Status { bot: String::new(), invite: String::new(), paired: false, code: String::new(), error: None });
+    Mutex::new(Status { bot: String::new(), invite: String::new(), paired: false, online: false, code: String::new(), error: None });
 static STARTED: AtomicBool = AtomicBool::new(false);
 
 pub fn status() -> Status {
@@ -86,14 +87,32 @@ fn rest(token: &str, method: reqwest::Method, path: &str, body: Option<&Value>) 
 }
 
 fn send_text(token: &str, channel: &str, text: &str) {
+    if let Err(e) = send_text_checked(token, channel, text) {
+        eprintln!("[discord] couldn't send: {e}");
+        STATUS.lock().error = Some("A Discord message could not be delivered. Check your internet and that DMs from the bot are allowed.".into());
+    }
+}
+
+fn send_text_checked(token: &str, channel: &str, text: &str) -> Result<()> {
     // Discord caps a message at 2000 characters.
     let chars: Vec<char> = text.chars().collect();
     for part in chars.chunks(1900) {
         let content: String = part.iter().collect();
-        if let Err(e) = rest(token, reqwest::Method::POST, &format!("/channels/{channel}/messages"), Some(&json!({ "content": content }))) {
-            eprintln!("[discord] couldn't send: {e}");
-        }
+        rest(token, reqwest::Method::POST, &format!("/channels/{channel}/messages"), Some(&json!({ "content": content, "allowed_mentions": { "parse": [] } })))?;
     }
+    Ok(())
+}
+
+/// Called only by the user's Test button. Success means Discord accepted
+/// the DM, not that the phone OS displayed a push notification.
+pub fn test_delivery() -> Result<()> {
+    let s = crate::state::store().settings();
+    if s.discord_token.trim().is_empty() || s.discord_user_id.is_empty() {
+        return Err(anyhow!("Pair Discord with this PC first."));
+    }
+    let dm = rest(s.discord_token.trim(), reqwest::Method::POST, "/users/@me/channels", Some(&json!({ "recipient_id": s.discord_user_id })))?;
+    let channel = dm["id"].as_str().ok_or_else(|| anyhow!("Discord didn't open the conversation."))?;
+    send_text_checked(s.discord_token.trim(), channel, "Izuki connection check: this PC can message you here. Email and calendar alerts use your Apps → Heads-ups settings while Izuki is running.")
 }
 
 fn typing(token: &str, channel: &str) {
@@ -215,6 +234,7 @@ async fn run_forever(app: AppHandle) {
         }
 
         if let Err(e) = session(&app, &token).await {
+            set_status(&app, |s| { s.online = false; s.error = Some("Reconnecting to Discord…".into()); });
             eprintln!("[discord] connection ended: {e}");
             if e.to_string().contains("4004") {
                 set_status(&app, |s| s.error = Some("Discord refused the token — copy it again.".into()));
@@ -222,6 +242,7 @@ async fn run_forever(app: AppHandle) {
                 continue;
             }
         }
+        set_status(&app, |s| s.online = false);
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
@@ -298,7 +319,7 @@ async fn session(app: &AppHandle, token: &str) -> Result<()> {
                     Some(0) => match v["t"].as_str() {
                         Some("READY") => {
                             eprintln!("[discord] connected");
-                            set_status(app, |s| s.error = None);
+                            set_status(app, |s| { s.online = true; s.error = None; });
                         }
                         Some("MESSAGE_CREATE") => {
                             let (app, token, d) = (app.clone(), token.to_string(), v["d"].clone());

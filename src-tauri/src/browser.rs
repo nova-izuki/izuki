@@ -43,6 +43,8 @@ fn window() -> Result<WebviewWindow> {
         .title("Izuki browser — sign in here once, then close this window")
         .inner_size(1180.0, 820.0)
         .visible(false)
+        .focused(false)
+        .initialization_script(include_str!("browser-page.js"))
         .build()?;
     Ok(w)
 }
@@ -64,6 +66,11 @@ pub fn hide() {
     if let Some(w) = APP.get().and_then(|a| a.get_webview_window(LABEL)) {
         let _ = w.hide();
     }
+}
+
+#[cfg(windows)]
+pub fn native_window() -> Option<isize> {
+    APP.get()?.get_webview_window(LABEL)?.hwnd().ok().map(|h| h.0 as isize)
 }
 
 fn normalise(u: &str) -> String {
@@ -93,53 +100,56 @@ pub fn browse(url: &str) -> Result<String> {
 pub fn click(n: u32) -> Result<String> {
     let _one = BUSY.lock();
     let w = window()?;
-    let r = run(&w, &format!(
-        "(() => {{ const el = document.querySelector('[data-izk-n=\"{n}\"]'); if (!el) return 'missing'; \
-         el.scrollIntoView({{block:'center'}}); el.click(); return 'ok'; }})()"
-    ))?;
-    if r.contains("missing") {
-        return Err(anyhow!("there's no number {n} on the page any more — look again with [BROWSE: …]"));
-    }
-    std::thread::sleep(Duration::from_millis(900));
+    let result = run(&w, &format!("window.__izukiPage.click({n})"))?;
+    if result != "ok" { return Err(anyhow!("{result}")); }
     settle(&w);
     snapshot(&w)
 }
 
-/// Type into field number `n` (and press Enter if `submit`).
+/// Type into the exact field from the last snapshot.
 pub fn type_into(n: u32, text: &str, submit: bool) -> Result<String> {
     let _one = BUSY.lock();
     let w = window()?;
     let value = serde_json::to_string(text)?;
-    let r = run(&w, &format!(
-        "(() => {{ const el = document.querySelector('[data-izk-n=\"{n}\"]'); if (!el) return 'missing'; \
-         el.scrollIntoView({{block:'center'}}); el.focus(); const v = {value}; \
-         if (el.isContentEditable) {{ el.textContent = v; }} else {{ \
-           const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype; \
-           Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v); }} \
-         el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); \
-         if ({submit}) {{ const k = {{key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true}}; \
-           el.dispatchEvent(new KeyboardEvent('keydown', k)); el.dispatchEvent(new KeyboardEvent('keyup', k)); \
-           if (el.form) {{ el.form.requestSubmit ? el.form.requestSubmit() : el.form.submit(); }} }} \
-         return 'ok'; }})()"
-    ))?;
-    if r.contains("missing") {
-        return Err(anyhow!("there's no field number {n} on the page any more — look again"));
-    }
-    std::thread::sleep(Duration::from_millis(if submit { 1200 } else { 250 }));
+    let result = run(&w, &format!("window.__izukiPage.type({n}, {value}, {submit})"))?;
+    if result != "ok" { return Err(anyhow!("{result}")); }
     settle(&w);
     snapshot(&w)
 }
 
-/// Wait for the page to finish loading (and a moment for scripts to draw it).
+/// Control the largest visible video and return its measured state.
+pub fn video(action: &str, show_window: bool) -> Result<serde_json::Value> {
+    if !["read", "pause", "play", "slow", "normal"].contains(&action) {
+        return Err(anyhow!("unknown video action"));
+    }
+    let _one = BUSY.lock();
+    let w = window()?;
+    if show_window { w.show()?; w.unminimize().ok(); w.set_focus().ok(); }
+    let encoded = serde_json::to_string(action)?;
+    let raw = run(&w, &format!("window.__izukiPage.video({encoded})"))?;
+    let mut value: serde_json::Value = serde_json::from_str(&raw)?;
+    if !value["error"].is_null() { return Err(anyhow!("{}", value["error"].as_str().unwrap_or("video unavailable"))); }
+    if action == "play" {
+        std::thread::sleep(Duration::from_millis(200));
+        value = serde_json::from_str(&run(&w, "window.__izukiPage.video('read')")?)?;
+        if value["paused"] == true { return Err(anyhow!("Tap Play in the video once; this site needs a user gesture.")); }
+    }
+    value["focused"] = serde_json::json!(w.is_focused().unwrap_or(false));
+    Ok(value)
+}
+
+/// Wait for two stable page readings, bounded to avoid needless delays.
 fn settle(w: &WebviewWindow) {
     let start = Instant::now();
-    while start.elapsed() < Duration::from_secs(20) {
-        match run(w, "document.readyState") {
-            Ok(s) if s.contains("complete") => break,
-            _ => std::thread::sleep(Duration::from_millis(300)),
-        }
+    let mut previous = String::new();
+    let mut calm = 0;
+    while start.elapsed() < Duration::from_secs(8) {
+        std::thread::sleep(Duration::from_millis(200));
+        let Ok(state) = run(w, "document.readyState === 'complete' ? location.href + '|' + (document.body?.innerText || '').slice(0, 9000) : ''") else { break };
+        if !state.is_empty() && state == previous { calm += 1; } else { calm = 0; }
+        previous = state;
+        if calm >= 2 { break; }
     }
-    std::thread::sleep(Duration::from_millis(1200));
 }
 
 #[derive(Deserialize)]
@@ -170,27 +180,7 @@ fn snapshot(w: &WebviewWindow) -> Result<String> {
     Ok(s)
 }
 
-const SNAPSHOT_JS: &str = r#"(() => {
-  const vis = (el) => { const r = el.getBoundingClientRect(); if (r.width < 1 || r.height < 1) return false;
-    const cs = getComputedStyle(el); return cs.visibility !== 'hidden' && cs.display !== 'none'; };
-  document.querySelectorAll('[data-izk-n]').forEach((e) => e.removeAttribute('data-izk-n'));
-  const items = []; let n = 0;
-  for (const el of document.querySelectorAll('a[href],button,input,textarea,select,[role=button],[role=link],[role=tab],[role=menuitem],[contenteditable=true]')) {
-    if (items.length >= 70 || !vis(el)) continue;
-    const t = (el.getAttribute('type') || '').toLowerCase();
-    if (t === 'hidden') continue;
-    const label = (el.innerText || el.value || el.getAttribute('aria-label') || el.placeholder || el.title || el.name || '')
-      .trim().replace(/\s+/g, ' ').slice(0, 80);
-    const field = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable;
-    if (!label && !field) continue;
-    n++; el.setAttribute('data-izk-n', String(n));
-    const kind = el.tagName === 'A' ? 'link' : field ? 'field' + (t ? ':' + t : '') : el.tagName === 'SELECT' ? 'menu' : 'button';
-    items.push(n + '. [' + kind + '] ' + (label || '(empty)'));
-  }
-  const text = (document.body ? document.body.innerText : '').replace(/\n{3,}/g, '\n\n').slice(0, 9000);
-  const password = !!document.querySelector('input[type=password]');
-  return JSON.stringify({ title: document.title || '', url: location.href, text, items, password });
-})()"#;
+const SNAPSHOT_JS: &str = "window.__izukiPage.snapshot()";
 
 // ---------------------------------------------------------------------------
 // Running a script in the page and getting its answer back

@@ -25,6 +25,7 @@ export function DiscordCard() {
   const flush = useIzuki((s) => s.flushSettings);
   const [status, setStatus] = useState<DiscordStatus | null>(null);
   const [copied, setCopied] = useState(false);
+  const [delivery, setDelivery] = useState("");
 
   const refresh = useCallback(() => void api.discordStatus().then(setStatus).catch(() => undefined), []);
   useEffect(() => {
@@ -45,7 +46,7 @@ export function DiscordCard() {
     <Section
       title="Izuki on Discord"
       hint="Same as Telegram, for when Telegram doesn't work for you — Discord signs up with just an email. Free; needs this PC on."
-      right={paired ? <Badge tone="good">connected</Badge> : hasToken && status?.bot ? <Badge tone="accent">almost there</Badge> : undefined}
+      right={paired ? <Badge tone={status?.online ? "good" : "accent"}>{status?.online ? "online" : "reconnecting"}</Badge> : hasToken && status?.bot ? <Badge tone="accent">almost there</Badge> : undefined}
     >
       {!paired && (
         <ol className="flex list-none flex-col gap-2.5 text-[12px] leading-snug text-izk-muted">
@@ -141,6 +142,14 @@ export function DiscordCard() {
 
       {paired && (
         <div className="flex flex-col gap-2 text-[12px] leading-snug text-izk-muted">
+          <p>Discord uses this PC's Izuki version and connected apps. New email and meeting alerts arrive here while the PC is awake, online, and Izuki is running. Enable phone notifications for this Discord conversation.</p>
+          {status?.error && <p className="text-izk-danger">{status.error}</p>}
+          <button type="button" disabled={delivery === "Sending…"} className="izk-pill izk-no-drag h-[28px] px-3 text-[11.5px]" onClick={async () => {
+            setDelivery("Sending…");
+            try { await flush(); await api.discordTest(); setDelivery("Discord accepted the test — check your messages."); }
+            catch (e) { setDelivery(String(e)); }
+          }}>Test phone notification</button>
+          {delivery && <p>{delivery}</p>}
           <div className="flex items-start gap-2">
             <MessagesSquare size={14} strokeWidth={2.3} className="mt-[1px] shrink-0" />
             <span>

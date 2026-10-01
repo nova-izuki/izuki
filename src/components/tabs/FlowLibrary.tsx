@@ -20,6 +20,13 @@ export function FlowLibrary() {
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [clearing, setClearing] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearIds, setClearIds] = useState<string[]>([]);
+  const [archive, setArchive] = useState("");
+  const [error, setError] = useState("");
+  const autosave = useIzuki((s) => s.settings.autosave_flows);
+  const patch = useIzuki((s) => s.patchSettings);
 
   useEffect(() => {
     void reload();
@@ -47,6 +54,27 @@ export function FlowLibrary() {
 
   return (
     <>
+      <Section title="Your flows" hint="Keep useful routines and clear the clutter. Cleared flows are archived on this PC.">
+        <div className="flex flex-wrap items-center gap-2">
+          <button className="izk-pill izk-no-drag px-3 py-1.5 text-[11.5px]" onClick={() => patch({ autosave_flows: !autosave })}>Auto-save: {autosave ? "on" : "off"}</button>
+          <button disabled={!shown.length || clearing} className="izk-pill izk-no-drag px-3 py-1.5 text-[11.5px] disabled:opacity-40" onClick={() => { setClearIds(shown.map((f) => f.id)); setConfirmClear(true); }}>Clear {q.trim() ? "matching" : "all"} flows ({shown.length})</button>
+          {archive && <button disabled={clearing} className="izk-pill izk-no-drag px-3 py-1.5 text-[11.5px]" onClick={async () => {
+            setClearing(true); setError("");
+            try { await api.restoreFlows(archive); setArchive(""); await reload(); } catch (e) { setError(String(e)); } finally { setClearing(false); }
+          }}>Undo clear</button>}
+        </div>
+        {confirmClear && <div className="mt-2 rounded-xl border border-white/15 p-3 text-[12px] text-izk-ink">
+          Archive these {clearIds.length} flows? You can undo this clear.
+          <div className="mt-2 flex gap-2">
+            <button disabled={clearing} className="izk-pill izk-no-drag px-3 py-1" onClick={async () => {
+              setClearing(true); setError("");
+              try { setArchive(await api.archiveFlows(clearIds)); setConfirmClear(false); await reload(); } catch (e) { setError(String(e)); } finally { setClearing(false); }
+            }}>{clearing ? "Clearing…" : "Clear flows"}</button>
+            <button disabled={clearing} className="izk-pill izk-no-drag px-3 py-1" onClick={() => setConfirmClear(false)}>Cancel</button>
+          </div>
+        </div>}
+        {error && <p role="alert" className="mt-2 text-[11.5px] text-izk-danger">{error}</p>}
+      </Section>
       <div className="relative">
         <Search
           size={14}

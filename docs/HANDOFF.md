@@ -6,6 +6,8 @@ then `docs/HOW-IZUKI-WORKS.md`, before changing anything.
 
 ## The owner and the goal
 
+Current work: see [WORKLIST.md](WORKLIST.md) for the complete request and pending checks, and [RELEASE-1.0.14.md](RELEASE-1.0.14.md) for the new behavior. These supersede old notes below about cached app answers, direct Composio CORS, and automatic update installation. App-wide snapshots are not used for answering new questions. Phone Composio uses its own account identity. Updates now notify and offer a download. Do not claim native Android APKs, incoming calls, live OAuth checks, or flawless screen control are finished.
+
 - Owner: Solomon (GitHub `nova-izuki`), building Izuki as a company. Not a
   developer by trade — explain things plainly and keep going without asking
   for permission on small things; ask only for real decisions.

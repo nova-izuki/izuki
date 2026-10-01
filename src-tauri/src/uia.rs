@@ -177,6 +177,7 @@ pub fn target_window() -> Option<isize> {
     };
 
     let me = std::process::id();
+    let browser = crate::browser::native_window();
     unsafe {
         let mut hwnd: HWND = GetForegroundWindow();
         for _ in 0..300 {
@@ -194,7 +195,7 @@ pub fn target_window() -> Option<isize> {
                 std::mem::size_of::<u32>() as u32,
             );
             let usable = pid != 0
-                && pid != me
+                && (pid != me || browser == Some(hwnd.0 as isize))
                 && IsWindowVisible(hwnd).as_bool()
                 && !IsIconic(hwnd).as_bool()
                 && ex & WS_EX_TOOLWINDOW.0 == 0
@@ -491,7 +492,10 @@ fn find_named(automation: &uiautomation::UIAutomation, name: &str) -> Option<uia
     let cond = automation
         .create_property_condition(UIProperty::Name, needle.as_str().into(), Some(PropertyConditionFlags::All))
         .ok()?;
-    root.find_first(TreeScope::Descendants, &cond).ok()
+    let matches = root.find_all(TreeScope::Descendants, &cond).ok()?;
+    // Never relocate to an arbitrary first match (e.g. two "Send" buttons).
+    if matches.len() != 1 { return None; }
+    matches.into_iter().next()
 }
 
 /// Right before a click on the control called `name` at (x, y): is it really
@@ -572,6 +576,35 @@ pub fn press_named(name: &str) -> bool {
 pub fn press_named(_name: &str) -> bool {
     false
 }
+
+/// What the text box with the keyboard focus holds now (never a password box).
+/// Invoke only the named control actually under the verified point. A call
+/// that errors may already have acted: propagate it, never duplicate by click.
+#[cfg(windows)]
+pub fn press_at(x: i32, y: i32, name: &str) -> anyhow::Result<bool> {
+    use uiautomation::patterns::{UIInvokePattern, UISelectionItemPattern, UITogglePattern};
+    use uiautomation::types::Point;
+    use uiautomation::UIAutomation;
+    if name.trim().is_empty() || covered_at(x, y).is_some() { return Ok(false); }
+    let Ok(automation) = UIAutomation::new().or_else(|_| UIAutomation::new_direct()) else { return Ok(false) };
+    let walker = automation.get_control_view_walker().ok();
+    let mut current = automation.element_from_point(Point::new(x, y)).ok();
+    for _ in 0..5 {
+        let Some(el) = current else { break };
+        if same_name(&el.get_name().unwrap_or_default(), name) {
+            if !el.is_enabled().unwrap_or(false) { return Err(anyhow::anyhow!("disabled: target control is not enabled")); }
+            if let Ok(p) = el.get_pattern::<UIInvokePattern>() { p.invoke().map_err(|e| anyhow::anyhow!("direct control failed: {e}"))?; return Ok(true); }
+            if let Ok(p) = el.get_pattern::<UITogglePattern>() { p.toggle().map_err(|e| anyhow::anyhow!("direct toggle failed: {e}"))?; return Ok(true); }
+            if let Ok(p) = el.get_pattern::<UISelectionItemPattern>() { p.select().map_err(|e| anyhow::anyhow!("direct selection failed: {e}"))?; return Ok(true); }
+            return Ok(false);
+        }
+        current = walker.as_ref().and_then(|w| w.get_parent(&el).ok());
+    }
+    Ok(false)
+}
+
+#[cfg(not(windows))]
+pub fn press_at(_x: i32, _y: i32, _name: &str) -> anyhow::Result<bool> { Ok(false) }
 
 /// What the text box with the keyboard focus holds now (never a password box).
 #[cfg(windows)]
