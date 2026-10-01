@@ -49,8 +49,9 @@ jobs:
           # The Windows release and this Android build start together. Wait for
           # the Windows workflow to create the shared GitHub Release instead
           # of failing a healthy APK build because it won the race.
+          cp android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/Izuki-Companion-Android-preview.apk
           for attempt in {1..80}; do
-            if gh release upload "$GITHUB_REF_NAME" "android/app/build/outputs/apk/debug/app-debug.apk#Izuki-Companion-Android-preview.apk" --clobber; then exit 0; fi
+            if gh release upload "$GITHUB_REF_NAME" "android/app/build/outputs/apk/debug/Izuki-Companion-Android-preview.apk" --clobber; then exit 0; fi
             sleep 15
           done
           echo "The APK built, but the matching GitHub Release did not appear in time." >&2
