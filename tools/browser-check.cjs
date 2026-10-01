@@ -78,6 +78,17 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   assert(await evaluate('!!document.getElementById("apps-refresh")'));
   assert.deepEqual(errors, [], 'browser JavaScript errors');
   console.log('Phone: settings open, three orb preferences persist, account controls load, no JavaScript exceptions.');
+  await navigate('/docs/', 'document.readyState === "complete" && !!document.getElementById("features")');
+  assert(await evaluate('document.getElementById("features").textContent.includes("Two ways to take control")'));
+  assert(await evaluate('[...document.querySelectorAll("a.dl")].every(a => a.href.endsWith("/releases/latest/download/Izuki-Setup.exe"))'));
+  for (const width of [390, 1280]) {
+    await call('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: false });
+    await pause(300);
+    const layout = await evaluate('({ scrollWidth: document.documentElement.scrollWidth, innerWidth, offenders: [...document.querySelectorAll("body *")].map(el => { const r = el.getBoundingClientRect(); return { tag: el.tagName, id: el.id, className: String(el.className), left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width), overflow: getComputedStyle(el).overflowX }; }).filter(x => x.right > innerWidth + 1 || x.left < -1).slice(0, 12) })');
+    assert(layout.scrollWidth <= layout.innerWidth + 1, 'landing page horizontal overflow at ' + width + ': ' + JSON.stringify(layout));
+  }
+  assert.deepEqual(errors, [], 'landing page JavaScript errors');
+  console.log('Website: updated feature cards, download links and mobile/desktop widths pass.');
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
   ws?.close();
   if (browser?.pid && process.platform === 'win32') { try { execFileSync('taskkill', ['/PID', String(browser.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); } catch {} }

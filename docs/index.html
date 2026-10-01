@@ -105,7 +105,7 @@
       --wrap: min(1160px, 100% - 32px);
     }
     * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
+    html { scroll-behavior: smooth; overflow-x: clip; }
     body {
       margin: 0;
       background: var(--ground);
@@ -381,7 +381,7 @@
 
 
     /* ---------- hero backdrop: a neon horizon ---------- */
-    .scene { position: absolute; left: calc(50% - 50vw); width: 100vw; top: -90px; bottom: -8vh; overflow: hidden; pointer-events: none; z-index: 0;
+    .scene { position: absolute; left: calc(50% - 50vw); width: 100vw; top: -90px; bottom: -8vh; overflow: hidden; contain: paint; pointer-events: none; z-index: 0;
       mask-image: linear-gradient(transparent, #000 12%, #000 86%, transparent); -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 86%, transparent); }
     .scene canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
     /* the photo: edge to edge, drifting like a slow orbit, leaning with the mouse and sinking as you scroll */
@@ -1124,7 +1124,7 @@
           <div class="wave" aria-hidden="true"><i style="animation-delay:-.1s"></i><i style="animation-delay:-.5s"></i><i style="animation-delay:-.2s"></i><i style="animation-delay:-.8s"></i><i style="animation-delay:-.3s"></i><i style="animation-delay:-.6s"></i><i style="animation-delay:-.05s"></i><i style="animation-delay:-.9s"></i><i style="animation-delay:-.4s"></i><i style="animation-delay:-.7s"></i><i style="animation-delay:-.15s"></i><i style="animation-delay:-.55s"></i></div>
         </article>
         <article class="card rv" style="--d:.06s"><div class="glyph">🖱️</div><h3>Does the work</h3><p>Opens apps, searches, clicks, types, scrolls straight to the right link, skips ads — looking again until it's really done.</p></article>
-        <article class="card rv"><div class="glyph">✏️</div><h3>Teaches with a pen</h3><p>“Explain this maths problem.” It pauses the video, then circles, underlines and writes notes on your screen as it explains.</p></article>
+        <article class="card rv"><div class="glyph">✏️</div><h3>A classroom on your screen</h3><p>Pause a lesson, keep it playing or slow to 0.75×. Izuki explains visible details with pen marks. Follow a lesson for up to five explanations in the Izuki browser.</p></article>
         <article class="card rv" style="--d:.06s"><div class="glyph">👀</div><h3>Sees what you see</h3><p>“What does this error mean?” It reads your screen — and the app's hidden buttons — to answer precisely.</p></article>
         <article class="card rv" style="--d:.12s"><div class="glyph">✍️</div><h3>Draw to show it</h3><p>Hold <kbd>Ctrl</kbd>+<kbd>D</kbd>, circle anything, and ask. One tap to click, copy or explain it.</p></article>
         <article class="card wide rv"><div class="glyph">💬</div><h3>Chat, reminders &amp; memory</h3><p>A chat that never touches your screen, reminders that ring on your PC and phone, and a memory of you that you can see and wipe any time.</p></article>
@@ -1135,10 +1135,12 @@
         <article class="card wide rv"><div class="glyph">🤖</div><h3>Runs your Android phone too</h3><p>Turn on <b>Control my Android</b>, pair once over Wi‑Fi (nothing to install on the phone), then say “open YouTube and play lofi <b>on my phone</b>.” It taps, types and swipes on your phone the way it does on your PC. Free.</p></article>
         <article class="card wide rv"><div class="glyph">🎭</div><h3>30+ voices &amp; characters</h3><p>Warm Nova, deep calm Leo, British Sophie, Nigerian Ezinne, Naija Pidgin Chidi, Spanish Lucía, a hype coach, a butler, a pirate — or Rex, unfiltered and savage, if you dare. Rename it, change the voice, speed and pitch, and give it your own personality.</p></article>
         <article class="card wide rv" style="--d:.06s"><div class="glyph">🗣️</div><h3>Sounds like a person</h3><p>Natural voices that breathe at commas and pause at full stops — free, no key. Or Google's Gemini voice (your Gemini key), Groq, Azure and ElevenLabs for the most human sound. Offline voice on your PC too, in English, Spanish, French, Swahili, Hindi and more.</p></article>
-        <article class="card wide rv"><div class="glyph">🎯</div><h3>Clicks the right thing</h3><p>Izuki reads the real buttons, links and answers behind your screen — not just the picture — so it clicks exactly what you meant. It waits for slow pages and tries another way when something doesn't respond.</p></article>
+        <article class="card wide rv"><div class="glyph">🎯</div><h3>Two ways to take control</h3><p>Choose the familiar mouse or Precision mode: boxed targets and direct actions on supported Windows controls. Changed or ambiguous named targets trigger another look instead of a blind click.</p></article>
+        <article class="card wide rv"><div class="glyph">💧</div><h3>Your companion, your style</h3><p>Liquid glass, Water ripple or Constellation: matching orb choices on PC and phone. Bounded animation and slower idle polling keep the look light; Save AI credits avoids speculative screen-model calls.</p></article>
+        <article class="card wide rv"><div class="glyph">↶</div><h3>Keep your flows tidy</h3><p>Clear matching flows or start fresh, then Undo if you change your mind. Exact repeat recordings reuse the saved flow, and video explanations stay out of your library.</p></article>
         <article class="card wide rv" style="--d:.06s"><div class="glyph">🚀</div><h3>Instant commands</h3><p>Say “scroll down”, “louder”, “pause”, “next song”, “go back”, “new tab” or “minimise this” and it just happens — no AI, no waiting, like Siri. Nothing to get wrong.</p></article>
         <article class="card wide rv"><div class="glyph">🧩</div><h3>Works with any AI — even small free ones</h3><p>Big AIs get the full playbook. Small free ones get <b>Easy Mode</b>: a simple menu, and Izuki finds the real button by its name — so they do the job instead of explaining it. If an AI starts rambling, Izuki ignores it and waits for one that actually acts.</p></article>
-        <article class="card wide rv" style="--d:.06s"><div class="glyph">🐞</div><h3>Bugs get caught by themselves</h3><p>If something breaks — on your PC, your phone or a call — Izuki quietly reports what went wrong so it gets fixed, without you having to explain. Your keys, emails, numbers, screenshots and chats never leave. Or tap <b>Something wrong?</b> and say it in your own words.</p></article>
+        <article class="card wide rv" style="--d:.06s"><div class="glyph">🐞</div><h3>Useful diagnostics, clear reporting</h3><p>Desktop errors are logged locally. <b>Something wrong?</b> shows whether an automatic reporting service is configured; you can also review and submit an issue on GitHub. Central reporting is not enabled in this release.</p></article>
         <article class="card wide rv" style="--d:.06s"><div class="glyph">⚡</div><h3>Set up in a minute</h3><p>Copy a free key on the website that opens, come back — Izuki fills it in by itself. Tap Gmail and it walks you through the rest. No settings to hunt for.</p></article>
         <article class="card stop rv" id="stop-card">
           <div><div class="glyph">🛑</div><h3>One key stops everything</h3><p>Press <kbd>Esc</kbd> and Izuki lets go instantly — the task, the voice, the lot. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Q</kbd> works any time. Go on, try it on this page.</p></div>
@@ -1380,7 +1382,8 @@
     new IntersectionObserver(([e]) => (visible = e.isIntersecting)).observe(canvas);
     function draw(now) {
       requestAnimationFrame(draw);
-      if (!visible) { last = now; return; }
+      if (!visible || document.hidden) { last = now; return; }
+      if (now - last < (reduce ? 150 : 33)) return;
       const dt = Math.min(0.05, (now - last) / 1000); last = now;
       const pal = PALETTES[orb.mode];
       if (orb.mode === "speaking") target = Math.max(target, 0.35 + 0.55 * Math.abs(Math.sin(now / 150) * Math.sin(now / 470)));
@@ -1521,9 +1524,11 @@
       }
     }
 
+    let lastSceneFrame = -Infinity;
     function frame(now) {
       requestAnimationFrame(frame);
-      if (!visible) return;
+      if (!visible || document.hidden || now - lastSceneFrame < (reduce ? 150 : 33)) return;
+      lastSceneFrame = now;
       mx += (tx - mx) * 0.05; my += (ty - my) * 0.05;
       const t = reduce ? 0 : now / 1000;
       const hp = Number(getComputedStyle(cv.parentElement).getPropertyValue("--hp")) || 0;
@@ -1874,6 +1879,7 @@
     }, { passive: true });
     document.addEventListener("pointerleave", () => { ring.classList.remove("on"); dot.classList.remove("on"); });
     const follow = () => {
+      if (document.hidden || Math.abs(px - rx) + Math.abs(py - ry) < 0.1) { requestAnimationFrame(follow); return; }
       rx += (px - rx) * 0.18; ry += (py - ry) * 0.18;
       ring.style.transform = `translate3d(${rx}px,${ry}px,0)`;
       requestAnimationFrame(follow);
@@ -1915,7 +1921,10 @@
     mouseX = e.clientX / innerWidth - 0.5; mouseY = e.clientY / innerHeight - 0.5;
     const spot = $("spot"); spot.style.left = e.clientX + "px"; spot.style.top = e.clientY + "px";
   }, { passive: true });
+  let lastStarFrame = -Infinity;
   const drawStars = (now) => {
+    if (document.hidden || now - lastStarFrame < 50) { if (!reduce) requestAnimationFrame(drawStars); return; }
+    lastStarFrame = now;
     sx.clearRect(0, 0, W, H);
     const sy = scrollY;
     for (const s of stars) {

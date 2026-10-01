@@ -17,6 +17,8 @@
 
 ## Setup and testing
 
+Download the Windows installer from [the Izuki website](https://nova-izuki.github.io/izuki/) or the `Izuki-Setup.exe` release asset. Nothing is installed automatically.
+
 1. Install this version from the website's Windows download.
 2. In Apps, save your Composio key and connect Gmail. Ask “Read my latest five emails.” On the phone, either connect Gmail separately or use the linked PC's connections.
 3. In Settings, select a control style and orb. Try a harmless action in Notepad before using screen control for important work.

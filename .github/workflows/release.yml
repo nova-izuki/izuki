@@ -69,7 +69,8 @@ jobs:
             - `Izuki-portable.exe` — single file, no install
 
             Needs Windows 10 (1809+) or 11. macOS and Linux are coming soon.
-          releaseDraft: false
+          # Don't advertise a release until its stable website download exists.
+          releaseDraft: true
           prerelease: false
           args: --target x86_64-pc-windows-msvc
 
@@ -97,3 +98,18 @@ jobs:
           if (-not $setup) { throw "could not find the NSIS installer" }
           Copy-Item $setup.FullName "Izuki-Setup.exe"
           gh release upload ${{ github.ref_name }} "Izuki-Setup.exe" --clobber
+
+      - name: Publish complete release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IZUKI_RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $version = $env:IZUKI_RELEASE_TAG -replace '^v', ''
+          $notes = "docs/RELEASE-$version.md"
+          if (Test-Path $notes) {
+            gh release edit $env:IZUKI_RELEASE_TAG --notes-file $notes
+            if ($LASTEXITCODE -ne 0) { throw "could not attach release notes" }
+          }
+          gh release edit $env:IZUKI_RELEASE_TAG --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw "could not publish complete release" }
