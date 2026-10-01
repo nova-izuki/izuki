@@ -470,7 +470,7 @@ impl Settings {
     /// a newly supported brain.
     pub fn heal(&mut self) {
         if !["mouse", "precision"].contains(&self.control_style.as_str()) { self.control_style = "mouse".into(); }
-        if !["liquid", "ripple", "constellation"].contains(&self.orb_style.as_str()) { self.orb_style = "liquid".into(); }
+        if !["liquid", "ferrofluid", "ripple", "constellation"].contains(&self.orb_style.as_str()) { self.orb_style = "liquid".into(); }
         let defaults = Self::default();
         for d in defaults.providers {
             if !self.providers.iter().any(|p| p.id == d.id) {

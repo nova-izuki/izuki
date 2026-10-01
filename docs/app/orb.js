@@ -59,6 +59,34 @@
       ctx.fillRect(0, 0, SIZE, SIZE);
     }
 
+    if (style === "ferrofluid") {
+      // Quiet liquid core, live orbiting drops; a reply draws the drops back
+      // into the core so it looks like the liquid is resolving into one body.
+      const merge = mode === "speaking" ? 1 : Math.min(0.68, level * 0.72);
+      const orbit = R * (1.5 - merge * 0.78);
+      const body = ctx.createRadialGradient(c - R * 0.3, c - R * 0.34, R * 0.06, c, c, R * 1.18);
+      body.addColorStop(0, "rgba(236,255,255,0.88)"); body.addColorStop(0.16, rgba(mix[0], 0.84));
+      body.addColorStop(0.62, rgba(mix[1], 0.45)); body.addColorStop(1, "rgba(4,9,24,0.88)");
+      ctx.fillStyle = body; ctx.beginPath();
+      for (let i = 0; i <= 80; i++) {
+        const a = i / 80 * Math.PI * 2;
+        const wobble = 1 + (0.025 + level * 0.13) * Math.sin(a * 3 + t * 3) + level * 0.05 * Math.sin(a * 7 - t * 5);
+        const r = R * wobble, x = c + Math.cos(a) * r, y = c + Math.sin(a) * r * (0.94 + level * 0.08);
+        if (!i) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath(); ctx.fill(); ctx.globalCompositeOperation = "screen";
+      for (let i = 0; i < (small ? 5 : 9); i++) {
+        const a = turn * (0.75 + (i % 3) * 0.15) + i * (Math.PI * 2 / (small ? 5 : 9));
+        const pulse = 0.78 + 0.34 * Math.sin(t * 2.2 + i * 1.7), x = c + Math.cos(a) * orbit, y = c + Math.sin(a) * orbit * 0.88;
+        const dropR = R * (0.08 + level * 0.075) * pulse * (i % 4 === 0 ? 1.35 : 1);
+        if (merge > 0.18) { const g = ctx.createLinearGradient(c, c, x, y); g.addColorStop(0, rgba(mix[(i + 1) % 4], 0.08 + merge * 0.35)); g.addColorStop(1, rgba(mix[i % 4], 0)); ctx.strokeStyle = g; ctx.lineWidth = Math.max(1, dropR * 0.75); ctx.beginPath(); ctx.moveTo(c + Math.cos(a) * R * 0.72, c + Math.sin(a) * R * 0.64); ctx.lineTo(x, y); ctx.stroke(); }
+        const drop = ctx.createRadialGradient(x - dropR * 0.32, y - dropR * 0.38, 0, x, y, dropR * 1.15);
+        drop.addColorStop(0, "rgba(255,255,255,0.92)"); drop.addColorStop(0.25, rgba(mix[(i + 2) % 4], 0.86)); drop.addColorStop(1, "rgba(5,8,24,0.18)");
+        ctx.fillStyle = drop; ctx.beginPath(); ctx.arc(x, y, dropR, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalCompositeOperation = "source-over";
+      return;
+    }
     if (["ripple", "constellation"].includes(style)) {
       ctx.lineWidth = 1.5;
       if (style === "ripple") {
@@ -187,7 +215,7 @@
 
   window.IzukiOrb = {
     style(value) {
-      style = ["liquid", "ripple", "constellation"].includes(value) ? value : "liquid";
+      style = ["liquid", "ferrofluid", "ripple", "constellation"].includes(value) ? value : "liquid";
       try { localStorage.setItem("izuki.orbStyle", style); } catch {}
       wake();
     },

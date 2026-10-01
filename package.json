@@ -10,12 +10,20 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "icons": "node scripts/make-icons.mjs",
-    "test:phone": "node tools/phone-check/routing.test.cjs && node tools/phone-check/apps.test.cjs",
+    "test:phone": "node tools/phone-check/routing.test.cjs && node tools/phone-check/apps.test.cjs && node tools/phone-check/native.test.cjs",
     "test:html": "node tools/html-check.cjs docs/index.html && node tools/html-check.cjs docs/links/index.html && node tools/html-check.cjs docs/app/index.html",
     "app:dev": "tauri dev",
-    "app:build": "tauri build"
+    "app:build": "tauri build",
+    "mobile:sync": "cap sync",
+    "mobile:android": "cap open android",
+    "mobile:ios": "cap open ios"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
+    "@capacitor/local-notifications": "^8.3.1",
     "@huggingface/transformers": "^3.8.1",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-global-shortcut": "2.3.2",

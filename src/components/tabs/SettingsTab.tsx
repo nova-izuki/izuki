@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Brain,
   Check,
@@ -14,6 +14,7 @@ import {
   Loader2,
   Power,
   ScanText,
+  Search,
   Sparkles,
   Wand2,
 } from "lucide-react";
@@ -40,6 +41,21 @@ export function SettingsTab() {
   const [probing, setProbing] = useState<ProviderId | null>(null);
   const [probe, setProbe] = useState<Record<string, string>>({});
   const [reveal, setReveal] = useState<Record<string, boolean>>({});
+  const [settingsSearch, setSettingsSearch] = useState("");
+  const searchMatches = useMemo(() => {
+    const q = settingsSearch.trim().toLowerCase();
+    if (!q) return [];
+    return [
+      { label: "Brain & AI keys", id: "settings-brain", keywords: "model gemini groq ollama provider api" },
+      { label: "Shortcuts & hotkeys", id: "settings-shortcuts", keywords: "wake voice keyboard command" },
+      { label: "Mouse, precision & screen control", id: "settings-execution", keywords: "jarvis click screen accuracy automation" },
+      { label: "Orb, captions & appearance", id: "settings-look", keywords: "liquid ferrofluid water ripple constellation theme visual" },
+      { label: "Window & battery", id: "settings-system", keywords: "power idle background performance speed" },
+      { label: "Phone & Android", id: "settings-phone", keywords: "iphone ios mobile hands free siri accessibility" },
+      { label: "Discord & reminders", id: "settings-discord", keywords: "notify notification calendar alert" },
+      { label: "Updates", id: "settings-updates", keywords: "download version release" },
+    ].filter(({ label, keywords }) => `${label} ${keywords}`.toLowerCase().includes(q)).slice(0, 4);
+  }, [settingsSearch]);
 
   function setProvider(id: ProviderId, fields: Partial<(typeof settings.providers)[number]>) {
     patch({
@@ -71,6 +87,11 @@ export function SettingsTab() {
 
   return (
     <>
+      <div className="relative">
+        <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-izk-muted" size={15} />
+        <input aria-label="Find a setting" value={settingsSearch} onChange={(e) => setSettingsSearch(e.target.value)} placeholder="Find a setting — orb, Android, reminders…" className="izk-field izk-no-drag w-full py-2 pl-9 text-[12px]" />
+        {searchMatches.length > 0 && <div className="mt-1 flex flex-wrap gap-1.5">{searchMatches.map(({ label, id }) => <button key={id} type="button" className="izk-pill izk-no-drag px-2 py-1 text-[10.5px]" onClick={() => { document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" }); setSettingsSearch(""); }}>{label}</button>)}</div>}
+      </div>
       <button
         type="button"
         onClick={() => setSetupOpen(true)}
@@ -87,6 +108,7 @@ export function SettingsTab() {
 
       {/* ------------------------------------------------ brain */}
       <Section
+        id="settings-brain"
         title="Izuki's brain"
         hint="Local first, cloud when you want the smarter answer. Both are free."
         right={<Badge tone="accent">{settings.active_provider}</Badge>}
@@ -293,7 +315,7 @@ export function SettingsTab() {
       </Section>
 
       {/* ------------------------------------------------ hotkeys */}
-      <Section title="Shortcuts" hint="Global — they work from any app, even full-screen games.">
+      <Section id="settings-shortcuts" title="Shortcuts" hint="Global — they work from any app, even full-screen games.">
         <HotkeyRow
           label="Draw overlay"
           value={settings.hotkey_draw}
@@ -326,7 +348,7 @@ export function SettingsTab() {
       </Section>
 
       {/* ------------------------------------------------ execution */}
-      <Section title="Execution" hint="How the hand behaves once the plan comes back.">
+      <Section id="settings-execution" title="Execution" hint="How the hand behaves once the plan comes back.">
         <Row label="Control style" hint="Precision uses real Windows controls first. Unsupported controls, dragging and typing still use the mouse or keyboard.">
           <select aria-label="Control style" className="izk-field izk-no-drag max-w-[165px] py-1 text-[11.5px]" value={settings.control_style} onChange={(e) => patch({ control_style: e.target.value as typeof settings.control_style })}>
             <option value="mouse">Mouse</option>
@@ -394,10 +416,11 @@ export function SettingsTab() {
       </Section>
 
       {/* ------------------------------------------------ system */}
-      <Section title="Chat & caption colours" hint="How the chat box, Izuki's replies and your words look on screen.">
+      <Section id="settings-look" title="Chat & caption colours" hint="How the chat box, Izuki's replies and your words look on screen.">
         <Row label="Voice orb" hint="One personality, three looks. Animates only while the voice sphere is visible.">
           <select aria-label="Voice orb style" className="izk-field izk-no-drag max-w-[145px] py-1 text-[11.5px]" value={settings.orb_style} onChange={(e) => patch({ orb_style: e.target.value as typeof settings.orb_style })}>
             <option value="liquid">Liquid glass</option>
+            <option value="ferrofluid">Ferrofluid droplets</option>
             <option value="ripple">Water ripple</option>
             <option value="constellation">Constellation</option>
           </select>
@@ -444,7 +467,7 @@ export function SettingsTab() {
         )}
       </Section>
 
-      <Section title="Window & system">
+      <Section id="settings-system" title="Window & system">
         <Row
           label="Glass backdrop"
           hint="Acrylic blurs hardest; Mica is calmer and cheaper on battery."
@@ -474,9 +497,9 @@ export function SettingsTab() {
         </Row>
       </Section>
 
-      <PhoneCard />
+      <div id="settings-phone"><PhoneCard /></div>
 
-      <DiscordCard />
+      <div id="settings-discord"><DiscordCard /></div>
       <AndroidCard />
 
       {/* ------------------------------------------------ help */}
@@ -510,7 +533,7 @@ export function SettingsTab() {
       </Section>
 
       <BugCard />
-      <Section title="Updates" hint={`You have v${pkg.version}. Download the newest installer from the website when you're ready; no automatic restart.`}>
+      <Section id="settings-updates" title="Updates" hint={`You have v${pkg.version}. Download the newest installer from the website when you're ready; no automatic restart.`}>
         <button type="button" onClick={() => void api.openUrl("https://nova-izuki.github.io/izuki/#download")} className="izk-btn-primary izk-no-drag h-[32px] px-3 text-[12px]">Get latest version</button>
       </Section>
 

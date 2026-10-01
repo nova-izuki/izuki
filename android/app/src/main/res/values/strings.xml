@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Izuki Companion</string>
+    <string name="title_activity_main">Izuki Companion</string>
+    <string name="package_name">com.novaizuki.mobile</string>
+    <string name="custom_url_scheme">com.novaizuki.mobile</string>
+    <string name="accessibility_service_name">Izuki Companion control</string>
+    <string name="accessibility_service_description">Lets Izuki perform only the Android navigation actions you ask for, such as Home, Back, Recents, Notifications and Quick Settings.</string>
+</resources>

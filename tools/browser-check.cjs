@@ -71,13 +71,13 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   console.log('Browser: private fields, stale targets, one submission, toolbar and video controls pass.');
   await navigate('/docs/app/', '!!window.izukiApps && !!document.getElementById("open-settings")');
   await evaluate('document.getElementById("open-settings").click()');
-  for (const style of ['liquid', 'ripple', 'constellation']) {
+  for (const style of ['liquid', 'ferrofluid', 'ripple', 'constellation']) {
     await evaluate(`document.getElementById('orb-style').value='${style}';document.getElementById('orb-style').dispatchEvent(new Event('change'))`);
     assert.equal(await evaluate('localStorage.getItem("izuki.orbStyle")'), style);
   }
   assert(await evaluate('!!document.getElementById("apps-refresh")'));
   assert.deepEqual(errors, [], 'browser JavaScript errors');
-  console.log('Phone: settings open, three orb preferences persist, account controls load, no JavaScript exceptions.');
+  console.log('Phone: settings open, four orb preferences persist, account controls load, no JavaScript exceptions.');
   await navigate('/docs/', 'document.readyState === "complete" && !!document.getElementById("features")');
   assert(await evaluate('document.getElementById("features").textContent.includes("Two ways to take control")'));
   assert(await evaluate('[...document.querySelectorAll("a.dl")].every(a => a.href.endsWith("/releases/latest/download/Izuki-Setup.exe"))'));

@@ -11,15 +11,17 @@ export function Section({
   right,
   children,
   className,
+  id,
 }: {
   title?: string;
   hint?: string;
   right?: ReactNode;
   children: ReactNode;
   className?: string;
+  id?: string;
 }) {
   return (
-    <div className={cx("izk-card izk-grain p-4", className)}>
+    <div id={id} className={cx("izk-card izk-grain p-4", className)}>
       {(title || right) && (
         <div className="mb-3 flex items-start justify-between gap-3">
           <div className="min-w-0">

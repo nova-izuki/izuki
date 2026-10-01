@@ -258,7 +258,7 @@ export interface Settings {
   /** Snap targets to real UI Automation controls before clicking. */
   magnetic_hand: boolean;
   control_style: "mouse" | "precision";
-  orb_style: "liquid" | "ripple" | "constellation";
+  orb_style: "liquid" | "ferrofluid" | "ripple" | "constellation";
   economy_mode: boolean;
   /** Show the predicted next click after enough samples. */
   ghost_hand: boolean;

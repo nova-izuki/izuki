@@ -245,3 +245,9 @@ background mode, confirm before acting, practice mode (dry run).
 - Clear flows archives only the IDs confirmed by the user; Undo restores missing IDs without overwriting newer flows. Exact repeat recordings reuse the existing flow and preserve its shortcut.
 - Classroom supports pausing, preserving playback, and slowing to 0.75×. Explanations use visible frames and captions, not an assumed audio feed; their screen actions are restricted to drawing and pointing. They are not saved as reusable flows.
 - Follow lesson schedules at most five explanations over ten minutes, checking every 45 seconds only while the same video is foreground and playing. Leaving the tab cancels future checks; Stop also cancels the active explanation.
+
+## Mobile companion foundation
+
+- The shared phone experience remains usable as a PWA. The native Izuki Companion wrapper uses the same local phone settings and adds operating-system reminder delivery when permission is granted.
+- Android navigation control is opt-in through the platform Accessibility settings. Its first supported actions are explicit Home, Back, Recents, Notifications and Quick Settings requests; it does not autonomously act in the background or claim unrestricted access to other apps.
+- iPhone has a native companion project with the shared conversations, account routing, microphone disclosure, reminders and an `izuki://` handoff URL for a user-configured Siri Shortcut. iOS does not expose arbitrary app control through a web app or Siri Shortcut. A distributable iPhone build additionally requires Apple signing.

@@ -15,6 +15,7 @@
 <title>Izuki</title>
 <!-- The bug catcher first, so it hears about anything that goes wrong below. -->
 <script src="../shared/bugs.js" data-app="phone" data-version="2.0"></script>
+<script src="native.js"></script>
 <script src="orb.js"></script>
 <script src="apps.js"></script>
 <style>
@@ -322,13 +323,20 @@
 
     <section>
       <h3>Your orb</h3>
-      <div class="field"><label for="orb-style">Voice companion style</label><select id="orb-style"><option value="liquid">Liquid glass</option><option value="ripple">Water ripple</option><option value="constellation">Constellation</option></select></div>
-      <p class="note">The same three styles as the PC. Animation pauses when this page is hidden.</p>
+      <div class="field"><label for="orb-style">Voice companion style</label><select id="orb-style"><option value="liquid">Liquid glass</option><option value="ferrofluid">Ferrofluid droplets</option><option value="ripple">Water ripple</option><option value="constellation">Constellation</option></select></div>
+      <p class="note">Liquid glass stays the default. Ferrofluid adds a still liquid core and merging droplets. Animation pauses when this page is hidden.</p>
     </section>
     <section>
       <h3>Put Izuki on your home screen</h3>
       <div class="row" style="margin-bottom: 8px"><button class="btn" id="install" type="button">Install Izuki on this phone</button></div>
       <p><b>iPhone:</b> in Safari tap <b>Share</b> → <b>Add to Home Screen</b>. <b>Android:</b> Chrome menu ⋮ → <b>Add to Home screen</b>. It opens like an app.</p>
+    </section>
+
+    <section id="native-controls" hidden>
+      <h3>Android hands-free controls</h3>
+      <p id="native-controls-status" class="note">Checking Android control…</p>
+      <div class="row" style="margin-top:8px"><button class="btn" id="open-android-controls" type="button">Enable Android controls</button></div>
+      <p class="note">Optional and visible: Android opens its own Accessibility settings. When enabled, Izuki can do the phone navigation you directly ask for: Home, Back, recent apps, notifications and Quick Settings. It never acts in the background by itself.</p>
     </section>
 
     <section>
@@ -891,10 +899,13 @@
       const what = m[3].trim();
       if (!isFinite(at) || !what) continue;
       reminders.push({ at, text: what, done: false });
+      void window.IzukiNative?.scheduleReminder({ at, text: what });
       chips.push(calendarChip(at, what));
       const hint = document.createElement("span");
       hint.className = "note";
-      hint.textContent = "For alerts while this page is closed, open the calendar file and save the event with its alert.";
+      hint.textContent = window.IzukiNative?.installed?.()
+        ? "Izuki Companion schedules a phone notification. You can also save the calendar event as a backup."
+        : "For alerts while this page is closed, open the calendar file and save the event with its alert.";
       chips.push(hint);
     }
     saveAll();
@@ -1097,6 +1108,17 @@
       // Same as every other early return here: a call keeps listening.
       if (talking) listen();
       return;
+    }
+    // A tiny, direct Android lane: no AI, no screen guesswork and no hidden
+    // action. Only explicit, allowlisted phone-navigation phrases can use it.
+    if (!audio && !files.length) {
+      const deviceReply = await window.IzukiNative?.quickDeviceCommand?.(said);
+      if (deviceReply) {
+        history.push({ role: "user", text: said }, { role: "model", text: deviceReply }); saveAll();
+        bubble("me", said); bubble("izuki", deviceReply); await speak(deviceReply);
+        if (talking) listen();
+        return;
+      }
     }
     // Route spoken requests through the same rules as typed requests.
     if (audio) {
@@ -1828,6 +1850,13 @@
       catch { copySiri.textContent = "Long-press the link above to copy"; }
     };
     renderMemories();
+    const controlPanel = $("native-controls");
+    if (window.IzukiNative?.installed?.()) {
+      controlPanel.hidden = false;
+      const status = $("native-controls-status");
+      window.IzukiNative.controlStatus().then((enabled) => { status.textContent = enabled ? "Android control is enabled. Say “go home”, “go back”, “show recent apps”, “open notifications” or “open quick settings”." : "Android control is off. Enable it once to use direct phone navigation."; });
+      $("open-android-controls").onclick = () => void window.IzukiNative.openAndroidControlSettings();
+    } else controlPanel.hidden = true;
     $("bug-result").textContent = "";
     if (window.izukiApps?.configured()) showApps();
     sheet.hidden = false;
