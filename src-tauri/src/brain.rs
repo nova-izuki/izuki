@@ -1077,6 +1077,10 @@ fn submit_task(
         }
         None => (prompt, Vec::new()),
     };
+    // Video classroom is a teaching pass, not an autonomous screen task. Its
+    // pen overlay must survive until the frontend has spoken the explanation;
+    // otherwise the marks disappear as soon as this backend plan returns.
+    let teaching = prompt.starts_with("Explain this video frame on my screen.");
     // Something to *do* (not a question)? Then an answer that does nothing
     // — a free model's essay about the request — never wins (good_enough).
     let wants_action = !resumed.is_empty() || crate::companion::asks_to_do(&prompt);
@@ -1095,7 +1099,7 @@ fn submit_task(
     // seemed dead while the model thought, and the result of each action
     // (a menu opening, a page loading) couldn't be seen as it happened.
     // Freezing stays for the draw overlay, where it's what you draw on.
-    if focus {
+    if focus || teaching {
         let b = capture::virtual_bounds();
         let _ = overlay::show_overlay(app, false);
         let _ = app.emit(
@@ -1121,7 +1125,7 @@ fn submit_task(
             eprintln!("[bug] couldn't capture the screen");
         }
         set_frozen(None);
-        if focus {
+        if focus && !teaching {
             let _ = overlay::hide_overlay(app);
         }
         let _ = app.emit(
@@ -1281,7 +1285,7 @@ fn submit_task(
             }
             Err(e) => {
                 set_frozen(None);
-                if focus {
+                if focus && !teaching {
                     let _ = overlay::hide_overlay(app);
                 }
                 // Free brains being busy is expected; anything else is a bug.
@@ -1307,7 +1311,20 @@ fn submit_task(
         set_frozen(None);
 
         let lesson = prompt.starts_with("Explain this video frame on my screen.");
-        let steps: Vec<_> = plan.steps.iter().filter(|s| !lesson || matches!(s.action, Intent::Draw | Intent::Point)).take(if lesson { 6 } else { usize::MAX }).cloned().collect();
+        // A lesson is a short, precise annotation, never a dense screen of
+        // generic circles. Ignore off-frame marks and cap the remaining ones
+        // so the explanation stays readable and truthful to the visible frame.
+        let frame_left = frame.origin.0;
+        let frame_top = frame.origin.1;
+        let frame_right = frame_left.saturating_add(frame.width as i32);
+        let frame_bottom = frame_top.saturating_add(frame.height as i32);
+        let steps: Vec<_> = plan.steps.iter().filter(|s| {
+            !lesson || (
+                matches!(s.action, Intent::Draw | Intent::Point)
+                    && s.x >= frame_left && s.x < frame_right
+                    && s.y >= frame_top && s.y < frame_bottom
+            )
+        }).take(if lesson { 2 } else { usize::MAX }).cloned().collect();
         let done = lesson || plan.done;
         let wait = plan.wait;
         if plan.notes.is_some() {
@@ -1357,7 +1374,7 @@ fn submit_task(
                 asked += 1;
                 repeats = 0;
                 last_round.clear();
-                if focus {
+                if focus && !teaching {
                     let _ = overlay::hide_overlay(app);
                 }
                 let question = "Hmm, I'm stuck on this bit. What should I click? Tell me, or circle it.";
@@ -1395,7 +1412,7 @@ fn submit_task(
         if let (true, Some(question)) = (steps.is_empty(), plan.ask.clone()) {
             if asked < 3 && alive() {
                 asked += 1;
-                if focus {
+                if focus && !teaching {
                     let _ = overlay::hide_overlay(app);
                 }
                 match ask_user(app, &question, &alive) {
@@ -1426,7 +1443,7 @@ fn submit_task(
         }
         if round == 0 && steps.is_empty() {
             // A question, or nothing to do: answered in the summary.
-            if focus {
+            if focus && !teaching {
                 let _ = overlay::hide_overlay(app);
             }
             let _ = app.emit(
@@ -1564,7 +1581,7 @@ fn submit_task(
         }
     }
 
-    if focus {
+    if focus && !teaching {
         let _ = overlay::hide_overlay(app);
     }
 

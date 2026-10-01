@@ -601,6 +601,10 @@ export function VoiceEngine() {
   const handleRequest = async (text: string, from: "voice" | "typed") => {
     const t = text.trim();
     if (!t) return;
+    // Classroom requests deliberately keep the pen overlay open until the
+    // spoken explanation has finished. That also makes the caller wait, so
+    // TeachingCard cannot resume a paused video halfway through a lesson.
+    const teaching = t.startsWith("Explain this video frame on my screen.");
     // Anything new cuts Izuki off — like talking over someone.
     stopAllSpeech("a new request", useIzuki.getState().settings.speak_responses);
     const at = ++requestSeq;
@@ -775,6 +779,13 @@ export function VoiceEngine() {
         const said = sayable(plan.summary, plan.steps.length ? "Done." : "I couldn't find anything to do for that.");
         remember("assistant", said);
         await respond(said, plan.mood, true);
+        if (teaching) {
+          if (useIzuki.getState().settings.speak_responses) await untilSpoken();
+          if (requestSeq === at) {
+            void emit(EV.penClear);
+            await api.closeOverlay().catch(() => undefined);
+          }
+        }
         void afterReply(at, listeningThrough);
       } catch (e) {
         clearTimeout(ack);

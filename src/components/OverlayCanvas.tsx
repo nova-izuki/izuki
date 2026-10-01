@@ -400,8 +400,13 @@ export function OverlayCanvas() {
         setActing(true);
         const sx = Math.max(1, window.innerWidth) / Math.max(1, desktop.w || window.innerWidth);
         const sy = Math.max(1, window.innerHeight) / Math.max(1, desktop.h || window.innerHeight);
-        const cx2 = (cmd.x - desktop.x) * sx;
-        const cy2 = (cmd.y - desktop.y) * sy;
+        // A model may describe an edge one pixel beyond a capture. Keep the
+        // teaching ink inside the actual overlay instead of letting it drift
+        // onto a second monitor or disappear beyond the viewport.
+        const screenX = (x: number) => Math.round(Math.max(0, Math.min(window.innerWidth, (x - desktop.x) * sx)));
+        const screenY = (y: number) => Math.round(Math.max(0, Math.min(window.innerHeight, (y - desktop.y) * sy)));
+        const cx2 = screenX(cmd.x);
+        const cy2 = screenY(cmd.y);
 
         // Izuki sketches what it's about to do before doing it — the same
         // "let me point at this" gesture, in the same rough ink your own
@@ -417,15 +422,15 @@ export function OverlayCanvas() {
               shape,
               x: cx2,
               y: cy2,
-              x2: cmd.x2 != null ? (cmd.x2 - desktop.x) * sx : undefined,
-              y2: cmd.y2 != null ? (cmd.y2 - desktop.y) * sy : undefined,
+              x2: cmd.x2 != null ? screenX(cmd.x2) : undefined,
+              y2: cmd.y2 != null ? screenY(cmd.y2) : undefined,
               text: cmd.text ?? undefined,
               tone: PEN_INKS[prev.length % PEN_INKS.length],
             },
           ]);
         } else if (cmd.action === "drag" && cmd.x2 != null && cmd.y2 != null) {
-          const hx2 = (cmd.x2 - desktop.x) * sx;
-          const hy2 = (cmd.y2 - desktop.y) * sy;
+          const hx2 = screenX(cmd.x2);
+          const hy2 = screenY(cmd.y2);
           setPointOuts((prev) => [
             ...prev,
             { id, kind: "arrow", x: cx2, y: cy2, x2: hx2, y2: hy2, tone: TOOL_COLOUR.arrow },

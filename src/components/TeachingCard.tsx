@@ -6,6 +6,13 @@ import { Section } from "./ui";
 
 type Mode = "pause_resume" | "pause" | "play" | "slow";
 
+// This is deliberately a bounded, low-noise teaching loop. A video gets
+// enough time to advance to a new idea before another screen/model pass, and
+// it cannot quietly turn into an expensive unattended background job.
+const FOLLOW_INTERVAL_MS = 30_000;
+const MAX_EXPLANATIONS = 8;
+const MAX_LESSON_MS = 12 * 60_000;
+
 /** A bounded lesson session, active only while the user watches this video. */
 export function TeachingCard() {
   const [mode, setMode] = useState<Mode>("pause_resume");
@@ -28,7 +35,7 @@ export function TeachingCard() {
       setNote(`Explaining ${Math.floor(v.time / 60)}:${String(Math.floor(v.time % 60)).padStart(2, "0")} · ${v.rate}×`);
       await sendChatCommand("Explain this video frame on my screen. Playback is already handled: " +
         (shouldPause ? "it is paused; do not operate the player while explaining." : "keep its current playback and speed.") +
-        " Teach one useful idea in a short, friendly explanation. Use two or three pen marks to point out the relevant details. Only explain and draw; do not click, type, or press keys. Use visible content and captions; say if the frame lacks enough context.");
+        " Teach one useful idea in a short, friendly explanation. First identify the exact visible idea. Use at most two precise pen marks, only on a readable caption or visible object; keep every mark inside the video frame. If the frame is unclear, say so and draw nothing. Only explain and draw; do not click, type, or press keys.");
       if (mine === generation.current && mode === "pause_resume") {
         try {
           await api.browserVideo("play");
@@ -52,18 +59,18 @@ export function TeachingCard() {
           const current = await api.browserVideo("read");
           if (mine !== generation.current) return;
           if (current.url !== lessonUrl) { setNote("Lesson ended: you changed videos."); setAuto(false); return; }
-          if (Date.now() - began > 10 * 60_000) { setNote("Lesson ended after 10 minutes. Start another when ready."); setAuto(false); return; }
-          if (!current.focused || current.paused || Math.abs(current.time - lastTime) < 15 || useIzuki.getState().voice.busy) {
-            timer.current = setTimeout(() => void tick(false), 45_000); return;
+          if (Date.now() - began > MAX_LESSON_MS) { setNote("Lesson ended after 12 minutes. Start another when ready."); setAuto(false); return; }
+          if (!current.focused || current.paused || Math.abs(current.time - lastTime) < 10 || useIzuki.getState().voice.busy) {
+            timer.current = setTimeout(() => void tick(false), FOLLOW_INTERVAL_MS); return;
           }
         }
         const v = await explain(mine);
         if (mine !== generation.current || !mounted.current) return;
         lessonUrl = v.url; lastTime = v.time; count++;
-        if (automatic && count < 5) {
-          setNote(`Lesson active · ${count}/5 explanations. ${mode === "pause" ? "Resume the video when you're ready." : "Next check in 45 seconds."}`);
-          timer.current = setTimeout(() => void tick(false), 45_000);
-        } else { setAuto(false); setNote(automatic ? "Five explanations complete. Start another lesson when ready." : "Ask a follow-up, or resume the video when ready."); }
+        if (automatic && count < MAX_EXPLANATIONS) {
+          setNote(`Lesson active · ${count}/${MAX_EXPLANATIONS} explanations. ${mode === "pause" ? "Resume the video when you're ready." : "Next check in about 30 seconds."}`);
+          timer.current = setTimeout(() => void tick(false), FOLLOW_INTERVAL_MS);
+        } else { setAuto(false); setNote(automatic ? "Lesson complete. Start another when ready." : "Ask a follow-up, or resume the video when ready."); }
       } catch (e) { if (mounted.current && mine === generation.current) { setNote(String(e)); setAuto(false); } }
     };
     await tick(true);
@@ -97,14 +104,14 @@ export function TeachingCard() {
         <option value="pause">Pause & explain</option><option value="play">Explain while playing</option><option value="slow">Slow to 0.75× & explain</option>
       </select>
       <button disabled={busy || auto} className="izk-btn-primary izk-no-drag px-3 py-1.5 text-[11.5px] disabled:opacity-40" onClick={() => void start(false)}>Explain now</button>
-      <button disabled={busy || auto} className="izk-pill izk-no-drag px-3 py-1.5 text-[11.5px] disabled:opacity-40" onClick={() => void start(true)}>Follow this lesson</button>
+      <button disabled={busy || auto} className="izk-pill izk-no-drag px-3 py-1.5 text-[11.5px] disabled:opacity-40" onClick={() => void start(true)}>Teach in real time</button>
       {(busy || auto) && <button className="izk-pill izk-no-drag px-3 py-1.5 text-[11.5px]" onClick={() => { generation.current++; clearTimeout(timer.current); setAuto(false); setBusy(false); setNote("Lesson stopped."); void emit(EV.stopSpeaking); }}>Stop lesson</button>}
     </div>
     <div className="mt-2 flex flex-wrap gap-2">
       <button className="izk-pill izk-no-drag px-3 py-1 text-[11px]" onClick={() => void control("play")}>Resume video</button>
       <button className="izk-pill izk-no-drag px-3 py-1 text-[11px]" onClick={() => void control("normal")}>Normal speed</button>
     </div>
-    <p className="mt-2 text-[10.5px] leading-relaxed text-izk-muted">Works with the largest visible HTML5 video in the Izuki browser, not just YouTube. Follow checks every 45 seconds while it is playing in the foreground, up to five explanations or ten minutes. Embedded or protected players may require one Play tap before they can resume.</p>
+    <p className="mt-2 text-[10.5px] leading-relaxed text-izk-muted">Works with the largest visible HTML5 video in the Izuki browser, not just YouTube. Real-time teaching checks about every 30 seconds only while the video is playing in front, up to eight explanations or 12 minutes. Embedded or protected players may require one Play tap before they can resume.</p>
     {note && <p role="status" className="mt-2 text-[11.5px] text-izk-teal">{note}</p>}
   </Section>;
 }
