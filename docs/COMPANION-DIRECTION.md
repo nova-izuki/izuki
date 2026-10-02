@@ -39,3 +39,22 @@ Keep these as explicit, unshipped acceptance targets rather than quietly treatin
 - [ ] Notifications need opt-in sources, quiet hours, duplicate suppression and visible delivery status. Native local reminders already exist; that does not imply arbitrary account alerts or PC-to-phone push delivery.
 
 The optional fluid renderer is an original visual approximation of surface tension and magnetic-style movement, not a physical ferrofluid simulation. The original default Liquid glass renderer is retained. No claim of industry-first inventions or unrestricted iPhone control.
+
+## Reference map and next feature batches
+
+The user confirmed Vovy's URL and added Coucou, Taby and HeyClicky during release verification. Keep Izuki's own identity and original default orb; references are interaction ideas, not copied characters, branding or claims of measured superiority.
+
+| Reference | Publicly described emphasis | Concrete Izuki target, not a v1.0.20 completion claim |
+| --- | --- | --- |
+| [Vovy](https://www.vovy.ai/) | Screen-context explanation and task execution | Explain / Teach / Act choices that retain the same target and clearly separate permission to explain from permission to act |
+| [Coucou](https://github.com/Louis-CFM/coucou) | Small desktop presence, session events and approvals | An activity dock showing working / needs approval / verified done / failed, with a receipt and a way to return to the relevant task |
+| [Taby](https://www.heytaby.com/) | Tasks, notes, habits, focus and calendar | A daily companion view with genuinely connected sources, freshness labels and editable local memory; its advertised desktop actions are marked coming soon |
+| [HeyClicky](https://www.heyclicky.com/) / [original source](https://github.com/farzaa/clicky) | Hotkey-triggered screen teaching, drawing and separate agent tasks | Persistent, target-anchored lesson marks; pause/resume/slow controls; check-understanding and “let me try” steps |
+| [TinyNature](https://natura.inc/tinypeople) | Proactive briefings and channel continuity | Opt-in verified account digests, deduplicated delivery, quiet hours, and explicit cross-device sync permission |
+| [FatihMakes](https://github.com/FatihMakes/Mark-LV) | Voice-first computer use and persistent companion state | Benchmark target accuracy, cancellation, context continuity and latency; evaluate a visual-parser fallback separately |
+| TechInSixty | Exact demo not yet identified | Ask for the specific video before attributing any product or capability |
+| Pino | Exact project not yet identified | Keep the original reference; do not silently substitute Pine or another similarly named product |
+
+Additional research surfaced [Skilly](https://github.com/tryskilly/skilly) (structured screen teaching) and [Clacky](https://raynanwuyep.com/clacky) (Windows actions and a described file-operation undo journal). Potential original Izuki additions: a verified action receipt with before/after evidence and scoped Undo where genuinely reversible; a lesson checkpoint that restores the same video/time; and a notification inbox with per-source mute and delivery status. These require implementation and tests before being advertised as features. No third-party executable was downloaded or run.
+
+Suggested order: (1) device validation of v1.0.20 fixes; (2) grounded-control benchmark and parser evaluation; (3) activity dock and completion receipts; (4) player-aware teaching; (5) supported background phone delivery and connected-account digests. Preserve confirmation for external posting, destructive actions and other sensitive operations.
