@@ -21,6 +21,7 @@ import {
 import pkg from "../../../package.json";
 import { PhoneCard } from "../PhoneCard";
 import { OrbStudio } from "../OrbStudio";
+import { UpdateControls } from '../UpdateControls';
 import { DiscordCard } from "../DiscordCard";
 import { AndroidCard } from "../AndroidCard";
 import { BugCard } from "../BugCard";
@@ -535,8 +536,8 @@ export function SettingsTab() {
       </Section>
 
       <BugCard />
-      <Section id="settings-updates" title="Updates" hint={`You have v${pkg.version}. Download the newest installer from the website when you're ready; no automatic restart.`}>
-        <button type="button" onClick={() => void api.openUrl("https://nova-izuki.github.io/izuki/#download")} className="izk-btn-primary izk-no-drag h-[32px] px-3 text-[12px]">Get latest version</button>
+      <Section id="settings-updates" title="Updates" hint={`You have v${pkg.version}. Automatic checks, signed downloads, installation when you choose.`}>
+        <UpdateControls />
       </Section>
 
       <FollowCard />

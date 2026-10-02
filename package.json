@@ -1,7 +1,7 @@
 {
   "name": "izuki",
   "private": true,
-  "version": "1.0.20",
+  "version": "1.0.21",
   "type": "module",
   "description": "IZUKI — YO IZUKI, DO IT. Draw on your screen, Izuki does it.",
   "scripts": {
@@ -10,10 +10,10 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "icons": "node scripts/make-icons.mjs",
-    "test:phone": "node tools/phone-check/routing.test.cjs && node tools/phone-check/apps.test.cjs && node tools/phone-check/native.test.cjs",
+    "test:phone": "node tools/phone-check/routing.test.cjs && node tools/phone-check/apps.test.cjs && node tools/phone-check/native.test.cjs && node tools/phone-check/audio.test.cjs",
     "test:voice": "node tools/voice-check.cjs",
     "test:companion": "node tools/companion-check.mjs",
-    "test:html": "node tools/html-check.cjs docs/index.html && node tools/html-check.cjs docs/links/index.html && node tools/html-check.cjs docs/app/index.html",
+    "test:html": "node tools/html-check.cjs docs/index.html && node tools/html-check.cjs docs/links/index.html && node tools/html-check.cjs docs/app/index.html && node tools/html-check.cjs src-tauri/src/call.html",
     "app:dev": "tauri dev",
     "app:build": "tauri build",
     "mobile:sync": "cap sync",

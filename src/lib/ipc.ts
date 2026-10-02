@@ -178,6 +178,7 @@ export const MOCK_SETTINGS: Settings = {
   control_style: "mouse",
   orb_style: "liquid",
   orb_response: 1,
+  automatic_update_checks: true,
   economy_mode: true,
   ghost_hand: true,
   ocr_enabled: true,

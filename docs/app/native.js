@@ -53,11 +53,11 @@
       try { await control().openAccessibilitySettings(); return true; } catch { return false; }
     },
     async quickDeviceCommand(words) {
-      const text = String(words || "").trim().toLowerCase();
+      const text = String(words || "").trim().toLowerCase().replace(/\s+on (?:my |the |this )?(?:phone|android)[.!?]*$/, "").replace(/[.!?]+$/, "");
       const matches = [[/^(go )?home$/, "home", "Opened Home."], [/^(go )?back$/, "back", "Went back."], [/^(show )?(recent|recent apps|app switcher)$/, "recents", "Opened recent apps."], [/^(show |open )?notifications$/, "notifications", "Opened notifications."], [/^(show |open )?(quick settings|controls)$/, "quick_settings", "Opened Quick Settings."]];
       const found = matches.find(([pattern]) => pattern.test(text));
       if (!found || !control()) return null;
-      try { await control().perform({ action: found[1] }); return found[2]; } catch { return null; }
+      try { await control().perform({ action: found[1] }); return found[2]; } catch { return "I couldn't perform that phone action. Check Android accessibility permission in Settings. I haven't sent it to your PC."; }
     },
   };
 })();

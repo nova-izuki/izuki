@@ -11,7 +11,7 @@ import {
   Type,
 } from "lucide-react";
 import { HandCursor } from "../HandCursor";
-import { TalkToIzuki } from "../TalkToIzuki";
+import { TalkToIzuki, DrawCommandBar } from "../TalkToIzuki";
 import { MemoryCard } from "../MemoryCard";
 import { TeachingCard } from "../TeachingCard";
 import { Kbd, Row, Section, Segmented, Toggle, Badge, cx } from "../ui";
@@ -82,6 +82,7 @@ export function DrawTab() {
 
   return (
     <>
+      <DrawCommandBar />
       {/* ------------------------------------------------ hero */}
       <div className="izk-card izk-grain relative overflow-hidden p-0">
         <div

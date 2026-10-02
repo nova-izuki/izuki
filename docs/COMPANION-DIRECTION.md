@@ -8,6 +8,10 @@ Izuki's direction is a companion that explains what it knows, remembers what you
 
 ## This update
 
+- [x] Visible playback recovery in both phone/call UIs, start watchdogs, and saved-mute feedback.
+- [x] Explicit phone intent before desktop automation; ambiguous remote screen actions ask for a device.
+- [x] Top-of-Draw typing and continuous optional water-orbit transitions; original default unchanged.
+- [x] Automatic desktop update checks, signed downloads and user-confirmed installation.
 - [x] Ground explicit drawn clicks against real controls inside the mark; refuse ambiguous targets.
 - [x] Preserve a stop across drawing preparation and model handoff; add a focused-window Escape fallback.
 - [x] Larger non-shrinking QR codes and a read-only phone connection check.
@@ -18,6 +22,7 @@ Izuki's direction is a companion that explains what it knows, remembers what you
 ## Still needs validation or separate implementation
 
 - [ ] Real-device testing of phone notifications, haptics and camera scanning on the user's devices.
+- [ ] Physical iPhone Siri/autoplay/locked-state testing; no promise that browser calls run reliably in the background.
 - [ ] Tests on the specific Chrome training page the user reported; no universal click-accuracy guarantee.
 - [ ] Permission-scoped, cross-device memory sync with export/delete controls.
 - [ ] Verified connected-account daily digest, freshness/source labels and opt-in quiet hours across channels.

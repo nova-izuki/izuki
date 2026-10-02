@@ -43,6 +43,9 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   assert.equal(calls[1].title, "Izuki reminder");
   assert.equal(calls[1].body, "Study");
   assert.equal(calls[1].sound, "default", "native reminders should use the device's configured alert/haptic behavior");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("go home on my phone"), "Opened Home.");
+  window.Capacitor.Plugins.IzukiControl.perform = async () => { throw new Error("permission denied"); };
+  assert.match(await window.IzukiNative.quickDeviceCommand("go back on my Android"), /haven't sent it to your PC/, "failed phone action must not fall through to a PC command");
   let draft = "Explain this & that";
   window.Capacitor.getPlatform = () => "ios";
   window.Capacitor.Plugins.IzukiDevice = {

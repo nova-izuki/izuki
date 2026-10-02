@@ -612,6 +612,24 @@ export function VoiceEngine() {
     const at = ++requestSeq;
     listenErrors.current = 0;
 
+    // Choose the device BEFORE any Windows shortcuts or local app commands.
+    if (/\b(?:my|the|this|on|open) (?:phone|iphone|android|mobile)\b/i.test(t)) {
+      startSession(from === "voice", "thinking");
+      const paired = useIzuki.getState().settings.android_enabled;
+      const explicitAndroid = /\bon (?:my|the) android\b/i.test(t) && !/\biphone\b/i.test(t);
+      const said = paired && explicitAndroid
+        ? await api.androidDo(t).catch(failure)
+        : /\biphone\b/i.test(t)
+          ? "That's for your iPhone, not this PC. Use a supported Siri Shortcut on your iPhone; I can't unlock it or control every iPhone app."
+          : paired
+            ? "Do you mean your paired Android phone? Tell me the action, for example ‘open Chrome on my Android’. I haven't changed your PC."
+            : "Which phone action do you want? Connect Android in Settings → Phone, or use a supported Siri Shortcut on iPhone. I haven't changed your PC.";
+      if (requestSeq !== at) return;
+      await respond(said);
+      void afterReply(at, false);
+      return;
+    }
+
     const local = matchLocalCommand(t);
     if (local) {
       switch (local.kind) {
@@ -659,25 +677,6 @@ export function VoiceEngine() {
       return;
     }
 
-    // "… on my phone": drive the paired Android phone over Wi-Fi.
-    const s0 = useIzuki.getState().settings;
-    if (s0.android_enabled && /on (my|the) (phone|android)/i.test(t)) {
-      startSession(from === "voice", "thinking");
-      thinkingNow.current = true;
-      orb("thinking");
-      try {
-        const said = await api.androidDo(t);
-        if (requestSeq !== at) return;
-        thinkingNow.current = false;
-        await respond(said, "cheerful", true);
-      } catch (e) {
-        if (requestSeq !== at) return;
-        thinkingNow.current = false;
-        await respond(failure(e), "sympathetic");
-      }
-      void afterReply(at, from === "voice" && listenThrough.current());
-      return;
-    }
 
     // Instant skills: "open Notepad", "open YouTube" — through Windows,
     // well under a second, no AI.

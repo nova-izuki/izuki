@@ -149,6 +149,7 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   fs.writeFileSync(path.join(os.tmpdir(), 'izuki-phone-glass-preview.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
   await call('Page.removeScriptToEvaluateOnNewDocument', { identifier: nativeMock.identifier });
   await navigate('/dist/index.html', '!!document.querySelector(".izk-finder-trigger")');
+  assert(await evaluate('(() => { const bar=document.getElementById("draw-command");return !!bar && bar.parentElement.firstElementChild===bar && bar.getBoundingClientRect().top<innerHeight; })()'), 'typing must be first in the Draw panel, not buried under voice settings');
   await evaluate('document.querySelector(".izk-finder-trigger").click()');
   await evaluate(`const input=document.querySelector('.izk-finder input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'screen');input.dispatchEvent(new Event('input',{bubbles:true}));`);
   await pause(150);

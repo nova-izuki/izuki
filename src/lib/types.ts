@@ -260,6 +260,7 @@ export interface Settings {
   control_style: "mouse" | "precision";
   orb_style: "liquid" | "ferrofluid" | "ripple" | "constellation";
   orb_response: number;
+  automatic_update_checks: boolean;
   economy_mode: boolean;
   /** Show the predicted next click after enough samples. */
   ghost_hand: boolean;

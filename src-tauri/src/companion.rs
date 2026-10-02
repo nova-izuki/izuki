@@ -120,11 +120,39 @@ pub fn asks_to_do(said: &str) -> bool {
 
 /// "…on my phone" / "on my android" — the request is for the phone, not the PC.
 pub fn on_phone_asked(said: &str) -> bool {
-    let t = said.to_lowercase();
-    t.contains("on my phone") || t.contains("on the phone") || t.contains("on my android")
+    let words = said.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_owned).collect::<Vec<_>>();
+    words.windows(2).any(|w| matches!(w[0].as_str(), "my" | "the" | "this" | "on" | "open") && matches!(w[1].as_str(), "phone" | "iphone" | "android" | "mobile"))
 }
 
+/// Never redirect an unavailable phone action onto Windows.
+pub fn phone_guidance(said: &str, android_enabled: bool) -> Option<String> {
+    if !on_phone_asked(said) { return None; }
+    let t=said.to_lowercase();
+    Some(if t.contains("iphone") {
+        "That request is for your iPhone, not this PC. Use a supported Siri Shortcut on the iPhone; I can't unlock it or control arbitrary iPhone apps.".into()
+    } else if android_enabled {
+        "Do you mean the paired Android phone? Say the specific action, for example ‘open Chrome on my Android’. I haven't changed this PC.".into()
+    } else {
+        "That request is for your phone, not this PC. Which phone action do you want? Connect Android in Settings → Phone, or use a supported Siri Shortcut on iPhone. I haven't changed either device.".into()
+    })
+}
+fn pc_asked(said: &str) -> bool {
+    let t=format!(" {} ", said.to_lowercase().replace(|c: char| !c.is_alphanumeric(), " "));
+    [" my pc ", " the pc ", " on pc ", " my computer ", " the computer ", " my laptop ", " the laptop ", " on windows ", " on desktop "].iter().any(|p|t.contains(p))
+}
+const CHOOSE_DEVICE: &str = "Do you mean your phone or your PC? Repeat the action with ‘on my PC’ or ‘on my Android’. I haven't changed either device.";
+
 pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str)) -> Reply {
+    if on_phone_asked(said) && pc_asked(said) { return Reply::text(CHOOSE_DEVICE); }
+    if let Some(guidance) = phone_guidance(said, crate::state::store().settings().android_enabled) {
+        push("user", said);
+        let t=said.to_lowercase();
+        let explicit_android=t.contains("on my android") || t.contains("on the android");
+        let text=if explicit_android && !t.contains("iphone") && crate::state::store().settings().android_enabled {
+            status("Working on your paired Android…"); crate::android::run_on_phone(said)
+        } else { guidance };
+        push("assistant", &text); return Reply::text(text);
+    }
     if needs_apps(said) {
         push("user", said);
         status("Checking your connected apps…");
@@ -136,15 +164,8 @@ pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str))
         push("assistant", &answer.text);
         return answer;
     }
-    // "…on my phone": drive the Android phone over Wi-Fi.
-    if on_phone_asked(said) && crate::state::store().settings().android_enabled {
-        push("user", said);
-        status("On it — doing that on your phone…");
-        let out = Reply::text(crate::android::run_on_phone(said));
-        push("assistant", &out.text);
-        return out;
-    }
     // Plainly a PC job? Do it — don't gamble on the chat model tagging it.
+    if needs_screen(said) && !pc_asked(said) { return Reply::text(CHOOSE_DEVICE); }
     if needs_screen(said) && crate::state::store().settings().phone_controls_pc && !crate::uia::screen_locked() {
         push("user", said);
         let out = on_pc(app, said, status);
@@ -163,6 +184,7 @@ pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str))
     };
 
     if hands_over(&reply, "SCREEN") {
+        if !pc_asked(said) { push("assistant", CHOOSE_DEVICE); return Reply::text(CHOOSE_DEVICE); }
         HISTORY.lock().pop();
         let out = on_pc(app, said, status);
         push("user", said);
@@ -272,6 +294,19 @@ fn on_pc(app: &AppHandle, said: &str, status: &dyn Fn(&str)) -> Reply {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn phone_intent_cannot_fall_through_to_windows() {
+        for s in ["open my phone", "Open my iPhone!", "open Gmail on my phone", "scroll on my Android", "open phone", "look at this phone"] {
+            assert!(on_phone_asked(s), "{s}");
+            assert!(phone_guidance(s, false).is_some(), "{s}");
+            assert!(phone_guidance(s, true).is_some(), "{s}");
+        }
+        for s in ["open Chrome on my PC", "explain phonetics", "write an essay about phones"] {
+            assert!(!on_phone_asked(s), "{s}");
+        }
+        assert!(phone_guidance("open my iPhone", true).unwrap().contains("Siri"));
+    }
 
     #[test]
     fn spoken_tags_are_tidied() {

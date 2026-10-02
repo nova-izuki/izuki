@@ -173,6 +173,10 @@ pub fn run() {
             Some(vec!["--minimised"]),
         ))
         .invoke_handler(tauri::generate_handler![
+            updates::update_status,
+            updates::check_updates,
+            updates::download_update,
+            updates::install_update,
             commands::get_settings,
             commands::save_settings,
             commands::list_flows,

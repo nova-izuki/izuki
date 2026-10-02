@@ -961,6 +961,7 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
 /// control clearly matches; anything unclear, or anything final (delete,
 /// send, pay…, which must be confirmed first), goes to the brain as usual.
 pub fn run_named_click(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<VisionPlan> {
+    if crate::companion::on_phone_asked(said) { return None; }
     let wanted = named_target(said)?;
     if uia::screen_locked() {
         return None;
@@ -1053,6 +1054,7 @@ fn asked_to_minimise(prompt: &str) -> bool {
 /// done at once with no AI — see instant.rs. `None` when `said` isn't one of
 /// those plain everyday commands (or the PC is locked).
 pub fn run_instant(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<VisionPlan> {
+    if crate::companion::on_phone_asked(said) { return None; }
     let (act, say) = crate::instant::parse(said)?;
     if uia::screen_locked() {
         return None;
@@ -1093,6 +1095,9 @@ fn submit_task(
     drawn_on: Option<Frame>,
     inherited_task: Option<u64>,
 ) -> VisionPlan {
+    if let Some(summary) = crate::companion::phone_guidance(&prompt, store.settings().android_enabled) {
+        return VisionPlan { summary, provider: "local".into(), model: "device-routing".into(), done: true, ..Default::default() };
+    }
     // "Scroll down", "louder", "next song": done at once, no AI (instant.rs).
     // Every way in — voice, typing, the phone, Discord — comes through here.
     if marks.is_empty() && drawn_on.is_none() {

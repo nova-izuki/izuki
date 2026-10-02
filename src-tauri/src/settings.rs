@@ -138,6 +138,8 @@ pub struct Settings {
     #[serde(default = "default_orb_response")]
     pub orb_response: f64,
     #[serde(default = "default_true")]
+    pub automatic_update_checks: bool,
+    #[serde(default = "default_true")]
     pub economy_mode: bool,
     pub ghost_hand: bool,
     pub ocr_enabled: bool,
@@ -672,6 +674,7 @@ impl Default for Settings {
             control_style: "mouse".into(),
             orb_style: "liquid".into(),
             orb_response: 1.0,
+            automatic_update_checks: true,
             economy_mode: true,
             ghost_hand: true,
             ocr_enabled: true,

@@ -135,6 +135,8 @@
       <div id="you"></div>
       <div id="izuki">Hi — tap the orb and just talk. I can chat, remind you, check your apps, or do things on your PC.</div>
       <div id="links"></div>
+      <div id="audio-recovery" aria-live="polite"></div>
+      <div id="muted-notice" hidden>Voice is muted. Tap the speaker button to unmute.</div>
     </div>
   </main>
 
@@ -362,10 +364,15 @@
   player.setAttribute("playsinline", "");
   // A tiny silent WAV played from the tap unlocks the player, so later
   // replies can play without another tap (an iPhone rule).
-  const SILENT = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+  const SILENT = (() => {
+    const bytes = new Uint8Array(364);
+    bytes.set(Uint8Array.from(atob("UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA="), c => c.charCodeAt(0)));
+    const view = new DataView(bytes.buffer);
+    view.setUint32(4, 356, true); view.setUint32(40, 320, true);
+    return "data:audio/wav;base64," + btoa(String.fromCharCode(...bytes));
+  })();
   const unlockAudio = () => {
-    player.src = SILENT;
-    player.play().catch(() => {});
+    if (!player.src) { player.src = SILENT; player.play().catch(() => {}); }
     if ("speechSynthesis" in window) {
       const u = new SpeechSynthesisUtterance(" ");
       u.volume = 0;
@@ -392,31 +399,38 @@
   // than it could take.
   let utterance = null;
   const speakWithPhone = (text) => new Promise((resolve) => {
-    if (!("speechSynthesis" in window) || !text) return resolve();
+    if (!text) return resolve();
+    if (!("speechSynthesis" in window)) { offerAudio(text); return resolve(); }
     const synth = speechSynthesis;
     const words = text.replace(/[*_#`]/g, "");
     const pieces = (words.match(/[^.!?…]+[.!?…]*\s*/g) || [words]).map((s) => s.trim()).filter(Boolean);
-    let i = 0, finished = false;
+    let i = 0, finished = false, startGuard = 0;
     const finish = () => {
       if (finished) return;
       finished = true;
       clearTimeout(guard);
-      if (stopSound === finish) stopSound = null;
+      clearTimeout(startGuard);
+      if (stopSound === stop) stopSound = null;
       resolve();
     };
-    const guard = setTimeout(() => { bug("phone voice never finished"); try { synth.cancel(); } catch {} finish(); }, 5000 + words.length * 110);
-    stopSound = () => { try { synth.cancel(); } catch {} finish(); };
+    const stop = () => { finish(); try { synth.cancel(); } catch {} };
+    const blocked = () => { if (finished) return; stop(); offerAudio(text); };
+    const guard = setTimeout(blocked, Math.min(120000, 5000 + words.length * 110));
+    stopSound = stop;
     const next = () => {
       if (finished) return;
       if (i >= pieces.length) return finish();
       const u = (utterance = new SpeechSynthesisUtterance(pieces[i++]));
       u.rate = 1.05;
-      u.onend = next;
-      u.onerror = (e) => (e.error === "interrupted" || e.error === "canceled" ? finish() : next());
-      synth.speak(u);
+      clearTimeout(startGuard);
+      startGuard = setTimeout(blocked, 3000);
+      u.onstart = () => clearTimeout(startGuard);
+      u.onend = () => { clearTimeout(startGuard); next(); };
+      u.onerror = (e) => (e.error === "interrupted" || e.error === "canceled" ? finish() : blocked());
+      try { synth.speak(u); } catch { blocked(); }
     };
     if (synth.speaking || synth.pending) synth.cancel();
-    setTimeout(next, 80);
+    next();
   });
   /** "Talk over Izuki" on: your voice (much louder than Izuki's own echo) cuts it off. */
   function watchBarge() {
@@ -440,7 +454,8 @@
   // player that never says "ended" must not stop the call listening.
   const say = (text, audio, type) => new Promise((resolve) => {
     if (!text) return resolve();
-    if (muted) return resolve();
+    $("audio-recovery").replaceChildren();
+    if (muted) { offerAudio(text, audio, type); return resolve(); }
     setMode("speaking", bargeOn ? "Just talk to cut me off" : "Tap the orb to stop me · hold it to talk");
     watchBarge();
     if (!audio) return speakWithPhone(text).then(resolve);
@@ -450,14 +465,16 @@
       finished = true;
       clearTimeout(guard);
       player.onended = player.onerror = player.onloadedmetadata = null;
-      if (stopSound === finish) stopSound = null;
+      if (stopSound === stop) stopSound = null;
       resolve();
     };
     const fallBack = () => {
       if (finished) return;
       finished = true;
       clearTimeout(guard);
-      if (stopSound === finish) stopSound = null;
+      player.onended = player.onerror = player.onloadedmetadata = null;
+      if (stopSound === stop) stopSound = null;
+      try { player.pause(); } catch {}
       speakWithPhone(text).then(resolve);
     };
     guard = setTimeout(() => { bug("reply audio never finished"); try { player.pause(); } catch {} finish(); }, 90000);
@@ -469,10 +486,31 @@
     };
     player.onended = finish;
     player.onerror = fallBack;
-    stopSound = () => { try { player.pause(); } catch {} finish(); };
+    const stop = () => { try { player.pause(); } catch {} finish(); };
+    stopSound = stop;
     player.src = "data:" + (type || "audio/wav") + ";base64," + audio;
-    player.play().catch(fallBack);
+    player.play().catch((e) => {
+      if (finished) return;
+      if (e?.name === "NotAllowedError") { finish(); offerAudio(text, audio, type); }
+      else fallBack();
+    });
   });
+  function offerAudio(text, audio, type) {
+    const button = document.createElement("button");
+    button.type = "button"; button.textContent = "🔊 Tap to hear reply";
+    button.className = "side";
+    button.onclick = async () => {
+      if (busy) return;
+      // Pause the call loop before replay; do not record the reply itself.
+      endCall();
+      unlockAudio();
+      const wasMuted = muted;
+      muted = false; busy = true;
+      try { await say(text, audio, type); }
+      finally { muted = wasMuted; busy = false; showMute(); setMode("idle", "Tap the orb to continue the call"); }
+    };
+    $("audio-recovery").replaceChildren(button);
+  }
   const hush = () => {
     clearInterval(bargeTimer);
     const stop = stopSound;
@@ -562,6 +600,7 @@
   function showMute() {
     const b = $("mute");
     b.setAttribute("aria-pressed", String(muted));
+    $("muted-notice").hidden = !muted;
     b.style.color = muted ? "#ff6b81" : "";
     b.setAttribute("aria-label", muted ? "Unmute Izuki's voice" : "Mute Izuki's voice");
   }
@@ -570,7 +609,7 @@
     muted = !muted;
     try { localStorage.setItem("izuki.call.muted", muted ? "1" : "0"); } catch {}
     showMute();
-    if (muted) hush();
+    if (muted) hush(); else unlockAudio();
     $("hint").textContent = muted ? "Muted — I'll reply in text" : "Sound's back on";
   });
 

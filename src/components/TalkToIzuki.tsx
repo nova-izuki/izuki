@@ -33,18 +33,26 @@ import { hasNaturalVoice, openVoiceSettings } from "../lib/speak";
  * switches and the window being hidden to the tray. This component only
  * flips settings and reads the engine's broadcast state back out of the store.
  */
+export function DrawCommandBar() {
+  const busy=useIzuki(s=>s.voice.busy);
+  const [text,setText]=useState('');
+  const input=useRef<HTMLInputElement>(null);
+  const submit=()=>{const value=text.trim();if(!value||busy)return;setText('');void sendChatCommand(value);};
+  return <section id="draw-command" className="izk-card relative overflow-hidden p-3.5" aria-label="Type a command">
+    <div className="mb-2 flex items-center justify-between text-[11px] text-izk-muted"><label htmlFor="draw-command-input" className="font-semibold text-izk-ink">Or type it</label><span>Enter to send · Esc to stop</span></div>
+    <form className="izk-inset flex items-center gap-2 rounded-[16px] p-1.5" onSubmit={e=>{e.preventDefault();submit();}}>
+      <input ref={input} id="draw-command-input" value={text} onChange={e=>{setText(e.target.value);api.prefetchWhileTyping();}} onKeyDown={e=>{if(e.key==='Enter'&&e.nativeEvent.isComposing)e.preventDefault();}} disabled={busy} placeholder="Ask Izuki to do something…" className="h-[38px] min-w-0 flex-1 bg-transparent px-2 text-[12.5px] text-izk-ink outline-none placeholder:text-izk-muted/55"/>
+      <button type="submit" aria-label="Send command" disabled={busy||!text.trim()} className="izk-btn-primary flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[12px] disabled:opacity-40"><Send size={15}/></button>
+    </form>
+  </section>;
+}
+
 export function TalkToIzuki() {
   const settings = useIzuki((s) => s.settings);
   const patch = useIzuki((s) => s.patchSettings);
   const voice = useIzuki((s) => s.voice);
-  const [chatText, setChatText] = useState("");
   // Optimistic default so the nudge doesn't flash in before voices load.
   const [naturalVoice, setNaturalVoice] = useState(true);
-  const chatRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (settings.chat_mode) setTimeout(() => chatRef.current?.focus(), 60);
-  }, [settings.chat_mode]);
 
   useEffect(() => {
     const check = () => setNaturalVoice(hasNaturalVoice());
@@ -54,12 +62,6 @@ export function TalkToIzuki() {
     return () => synth?.removeEventListener("voiceschanged", check);
   }, []);
 
-  const submitChat = () => {
-    const t = chatText.trim();
-    if (!t || voice.busy) return;
-    setChatText("");
-    void sendChatCommand(t);
-  };
 
   return (
     <div className="izk-card izk-grain relative overflow-hidden p-[16px]">
@@ -302,42 +304,6 @@ export function TalkToIzuki() {
 
         {settings.speak_responses && <VoicePicker />}
 
-        <AnimatePresence>
-          {settings.chat_mode && (
-            <motion.div
-              initial={{ opacity: 0, height: 0, marginTop: 0 }}
-              animate={{ opacity: 1, height: "auto", marginTop: 10 }}
-              exit={{ opacity: 0, height: 0, marginTop: 0 }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="overflow-hidden"
-            >
-              <div className="izk-inset flex items-center gap-2 rounded-[16px] p-1.5">
-                <input
-                  ref={chatRef}
-                  value={chatText}
-                  onChange={(e) => {
-                    setChatText(e.target.value);
-                    api.prefetchWhileTyping();
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") submitChat();
-                  }}
-                  disabled={voice.busy}
-                  placeholder='Type it — "open the search box and type cats"'
-                  className="h-[34px] min-w-0 flex-1 bg-transparent px-2 text-[12.5px] text-izk-ink outline-none placeholder:text-izk-muted/55"
-                />
-                <button
-                  type="button"
-                  onClick={submitChat}
-                  disabled={voice.busy || !chatText.trim()}
-                  className="izk-btn-primary flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[12px] disabled:opacity-40"
-                >
-                  <Send size={14} strokeWidth={2.6} />
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         <AnimatePresence>
           {(voice.lastHeard || voice.error) && (

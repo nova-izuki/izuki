@@ -24,7 +24,7 @@ export function waveEnvelope(buffer) {
   return {levels,rate:rate/block};
 }
 export function createOrbMotion() {
-  return { time: 0, energy: 0, onset: 0, waiting: 0, blobs: Array.from({ length: 5 }, (_, i) => ({ x: 0, y: 0, vx: 0, vy: 0, r: i ? .055 : .24 })) };
+  return { time: 0, phase: 0, energy: 0, onset: 0, waiting: 0, blobs: Array.from({ length: 5 }, (_, i) => ({ x: 0, y: 0, vx: 0, vy: 0, r: i ? .055 : .24 })) };
 }
 export function stepOrbMotion(s, seconds, input, mode, response = 1) {
   const dt = clamp(seconds, 0, .05), signal = clamp(input, 0, 1) * clamp(response, .5, 1.5);
@@ -32,10 +32,13 @@ export function stepOrbMotion(s, seconds, input, mode, response = 1) {
   s.onset += (Math.max(0, signal - s.energy) - s.onset) * (1 - Math.exp(-dt * 24));
   s.energy += (Math.min(1, signal) - s.energy) * (1 - Math.exp(-dt * (signal > s.energy ? 24 : 5)));
   s.waiting += ((mode === 'thinking' ? 1 : 0) - s.waiting) * (1 - Math.exp(-dt * 5));
+  // Integrate the orbit rather than multiplying elapsed time by a changing
+  // blend: the old formula whipped droplets backwards after a long wait.
+  s.phase = ((s.phase || 0) + dt * s.waiting * .8) % (Math.PI * 2);
   for (let i = 0; i < s.blobs.length; i++) {
     const b = s.blobs[i], e = s.energy, t = s.time;
-    const angle = i * 2.39996 + Math.sin(t * .53 + i) * .35 + s.waiting * t * .8;
-    const reach = i ? .085 + e * (.12 + .045 * Math.sin(t * 2.8 + i)) + s.onset * .25 + s.waiting * .255 : .025 * e;
+    const angle = i * 2.39996 + Math.sin(t * .53 + i) * .22 * e + s.phase;
+    const reach = i ? Math.min(.32, .075 + e * (.10 + .025 * Math.sin(t * 2.8 + i)) + s.onset * .10 + s.waiting * .235) : .008 * e;
     const tx = Math.cos(angle) * reach;
     const ty = Math.sin(angle) * reach * (1 + e * .15);
     // Inertia gives the fluid a delayed recoil rather than a sine-wave wobble.

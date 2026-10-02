@@ -251,7 +251,7 @@
 <div id="live" hidden role="dialog" aria-modal="true" aria-label="Talking with Izuki">
   <div class="live-top"><b id="live-name">Nova</b><span id="live-time">Calling…</span><span id="live-style" class="sr"></span></div>
   <button id="live-orb" type="button" aria-label="Tap to cut in, or to say you're done"><canvas id="live-canvas" aria-hidden="true"></canvas></button>
-  <div class="lines"><div id="live-status">Starting…</div><div id="live-heard"></div><div id="live-said"></div></div>
+  <div class="lines"><div id="live-status">Starting…</div><div id="live-heard"></div><div id="live-said"></div><div id="live-audio-recovery" aria-live="polite"></div><div id="live-muted" hidden>Replies are muted. Tap Unmute below to hear Izuki.</div></div>
   <div class="live-bar">
     <button class="round" id="live-mute" type="button" aria-pressed="false">
       <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m23 9-6 6M17 9l6 6"/></svg></i>
@@ -716,6 +716,7 @@
       `You are ${person().name}, the user's Izuki — their AI companion on their phone: ${person().style}, like a close friend who's brilliant at everything. Stay in character.`,
       "Keep replies short and natural (a few sentences) unless they ask for detail. Plain text; a short dash list only when it really helps; an emoji now and then at most.",
       "What you write may be read aloud, so write the way a person talks.",
+      "Respect the requested device. Phone means phone, never silently PC. If a screen action has no clear device, ask which device and do not claim it was done. iPhone web pages cannot unlock or freely control other apps.",
       `It is now ${now.toLocaleString([], { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })} on the user's phone.`,
       `If they ask to be reminded of something, confirm it and add on its own line at the very end: [REMIND YYYY-MM-DD HH:MM | what to remind them] in their local time, 24-hour clock ("in 20 minutes" is ${stamp(in20)}).`,
       "If they tell you something lasting about themselves (name, likes, work, people in their life, how they want you to act), add a line [REMEMBER short third-person fact]. Never passwords, codes or card numbers.",
@@ -1088,10 +1089,14 @@
     return PC_DO.some((k) => t.includes(k)) || PC_LOOK.some((k) => t.includes(k));
   };
   const wantsReminder = (said) => /\b(remind me|set (a |an )?reminder|my reminders)\b/i.test(String(said || ""));
+  // Explicit device intent wins over app names and generic action verbs.
+  const phoneTarget = (said) => /\b(?:my phone|the phone|this phone|my iphone|the iphone|this iphone|my android|the android|this android|on (?:phone|iphone|android|mobile)|open (?:phone|iphone|android))\b/i.test(String(said || ""));
+  const pcTarget = (said) => /\b(?:my pc|the pc|my computer|the computer|my laptop|the laptop|on (?:pc|desktop|windows))\b/i.test(String(said || ""));
   const requestLane = (said, haveApps, havePc) => {
+    if (phoneTarget(said)) return pcTarget(said) ? "clarify" : "phone";
     if (wantsReminder(said)) return havePc ? "pc" : "chat";
     if (wantsAccount(said)) return haveApps ? "apps" : havePc ? "pc" : "chat";
-    return havePc && wantsPc(said) ? "pc" : "chat";
+    return havePc && wantsPc(said) ? pcTarget(said) ? "pc" : "clarify" : "chat";
   };
 
   /**
@@ -1246,6 +1251,14 @@
       // do the accounts itself, so it doesn't wait for the PC at all.
       const haveApps = !!window.izukiApps?.configured();
       const lane = requestLane(said, haveApps, !!pc);
+      if (!files.length && (lane === "phone" || lane === "clarify")) {
+        reply = lane === "clarify"
+          ? "Do you want that on your phone or your PC? Please repeat the action with ‘on my phone’ or ‘on my PC’. I haven't changed either device."
+          : "What exactly would you like to do on your phone? I haven't sent this to your PC. The Android app can use enabled phone navigation controls; iPhone actions need a supported Siri Shortcut. I can't unlock a phone or control every app from this web page.";
+        out.textContent = reply;
+        history.push({ role: "user", text: said }, { role: "model", text: reply }); saveAll();
+        await speak(reply); return;
+      }
       const useApps = lane === "apps";
       if (!audio && !files.length && lane !== "chat") {
         out.textContent = useApps ? "Checking your apps…" : "Asking your PC…";
@@ -1285,9 +1298,15 @@
       history.push({ role: "user", text: (said || "(voice message)") + (files.length ? `\n(attached: ${files.map((a) => a.name).join(", ")})` : "") });
 
       if (/^\s*\[PC\]\s*$/i.test(reply)) {
-        out.textContent = "On it — asking your PC…";
-        setStatus("Working on your PC…");
-        reply = await viaPc(said, out);
+        // A model tag is not permission to choose another device.
+        if (pcTarget(said) && !phoneTarget(said) && pc) {
+          out.textContent = "On it — asking your PC…";
+          setStatus("Working on your PC…");
+          reply = await viaPc(said, out);
+        } else {
+          reply = "Which device should I use — your phone or your PC? Please include the device with your request.";
+          out.textContent = reply;
+        }
       } else {
         const chips = takeTags(reply);
         reply = shown(reply);
@@ -1321,7 +1340,8 @@
   // voice is the fallback when Gemini's isn't available.
   const player = new Audio();
   player.setAttribute("playsinline", "");
-  const SILENT = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+  // A real, short PCM file (not a zero-frame WAV).
+  const SILENT = pcmToWavUrl(btoa("\0".repeat(320)), 8000);
   let audioCtx = null;
   /** One audio context for the page, made (and woken) from a tap. */
   function ensureAudioCtx() {
@@ -1337,8 +1357,11 @@
   /** From a tap: lets replies play later without another tap (iPhone rule). */
   function unlockAudio() {
     tapped = true;
-    player.src = SILENT;
-    player.play().catch(() => {});
+    // Never replace a reply that is playing or waiting for its play tap.
+    if (!player.src) {
+      player.src = SILENT;
+      player.play().catch(() => {});
+    }
     ensureAudioCtx();
     if ("speechSynthesis" in window) {
       const u = new SpeechSynthesisUtterance(" ");
@@ -1432,32 +1455,40 @@
    * speak it a sentence at a time, and never wait longer than it could take.
    */
   let utterance = null;
-  function speakWithPhone(t) {
+  function speakWithPhone(t, onBlocked = () => offerHear(null, t)) {
     return new Promise((resolve) => {
-      if (!("speechSynthesis" in window) || !t) return resolve();
+      if (!t) return resolve();
+      if (!("speechSynthesis" in window)) { onBlocked(); return resolve(); }
       const synth = speechSynthesis;
       const pieces = (t.match(/[^.!?…]+[.!?…]*\s*/g) || [t]).map((s) => s.trim()).filter(Boolean);
-      let i = 0, finished = false;
+      let i = 0, finished = false, startGuard = 0;
       const finish = () => {
         if (finished) return;
         finished = true;
         clearTimeout(guard);
-        if (stopSound === finish) stopSound = null;
+        clearTimeout(startGuard);
+        if (stopSound === stop) stopSound = null;
         resolve();
       };
-      const guard = setTimeout(() => { bug("phone voice never finished", { chars: t.length }); try { synth.cancel(); } catch {} finish(); }, 5000 + t.length * 110);
-      stopSound = () => { try { synth.cancel(); } catch {} finish(); };
+      const stop = () => { finish(); try { synth.cancel(); } catch {} };
+      const blocked = () => { if (finished) return; stop(); onBlocked(); };
+      const guard = setTimeout(blocked, Math.min(120000, 5000 + t.length * 110));
+      stopSound = stop;
       const next = () => {
         if (finished) return;
         if (i >= pieces.length) return finish();
         const u = (utterance = new SpeechSynthesisUtterance(pieces[i++]));
         u.rate = 1.05;
-        u.onend = next;
-        u.onerror = (e) => { if (e.error === "interrupted" || e.error === "canceled") finish(); else { note("phone voice error: " + e.error); next(); } };
-        synth.speak(u);
+        clearTimeout(startGuard);
+        startGuard = setTimeout(blocked, 3000);
+        u.onstart = () => clearTimeout(startGuard);
+        u.onend = () => { clearTimeout(startGuard); next(); };
+        u.onerror = (e) => { if (e.error === "interrupted" || e.error === "canceled") finish(); else { note("phone voice error: " + e.error); blocked(); } };
+        try { synth.speak(u); } catch { blocked(); }
       };
       if (synth.speaking || synth.pending) synth.cancel();
-      setTimeout(next, 80);
+      // Keep the first utterance inside the actual tap's activation window.
+      next();
     });
   }
 
@@ -1466,7 +1497,7 @@
    * `onBlocked`: the phone refused to play before a tap (NotAllowedError) —
    * hand it over instead of falling back to the phone's voice (blocked too).
    */
-  function playAudio(url, t, onBlocked) {
+  function playAudio(url, t, onBlocked = () => offerHear(url, t)) {
     return new Promise((resolve) => {
       let finished = false, guard = 0;
       const finish = () => {
@@ -1474,16 +1505,18 @@
         finished = true;
         clearTimeout(guard);
         player.onended = player.onerror = player.onloadedmetadata = null;
-        if (stopSound === finish) stopSound = null;
+        if (stopSound === stop) stopSound = null;
         resolve();
       };
       const fallBack = (why) => {
         if (finished) return;
         finished = true;
         clearTimeout(guard);
-        if (stopSound === finish) stopSound = null;
+        player.onended = player.onerror = player.onloadedmetadata = null;
+        if (stopSound === stop) stopSound = null;
         note("reply audio failed (" + why + "), phone voice instead");
-        speakWithPhone(t).then(resolve);
+        try { player.pause(); } catch {}
+        speakWithPhone(t, onBlocked).then(resolve);
       };
       guard = setTimeout(() => { bug("reply audio never finished"); try { player.pause(); } catch {} finish(); }, 90000);
       player.onloadedmetadata = () => {
@@ -1494,16 +1527,15 @@
       };
       player.onended = finish;
       player.onerror = () => fallBack("error");
-      stopSound = () => { try { player.pause(); } catch {} finish(); };
+      const stop = () => { try { player.pause(); } catch {} finish(); };
+      stopSound = stop;
       player.src = url;
       window.IzukiOrb?.trackAudio(player, url);
       player.play().catch((e) => {
         if (onBlocked && e && e.name === "NotAllowedError" && !finished) {
-          finished = true;
-          clearTimeout(guard);
-          if (stopSound === finish) stopSound = null;
+          finish();
           onBlocked();
-          return resolve();
+          return;
         }
         fallBack(e && e.name);
       });
@@ -1511,10 +1543,18 @@
   }
 
   let speakSeq = 0;
+  let pendingVoice = null, manualPlayback = false;
   async function speak(t) {
-    if (!voiceOn || !(talking || readAloud || fromSiri) || !t) return;
+    const wanted = talking || readAloud || fromSiri;
     const siri = fromSiri;
     fromSiri = false;
+    if (!wanted || !t) return;
+    if (!voiceOn) {
+      liveSaid(t);
+      offerHear(null, t.replace(/[*_#`]/g, ""));
+      return;
+    }
+    clearVoiceRecovery();
     const my = ++speakSeq;
     const words = t.replace(/[*_#`]/g, "");
     liveSaid(t);
@@ -1527,37 +1567,63 @@
     // if it's refused, the answer's voice is one tap away.
     if (!url) {
       if (siri && !tapped) return offerHear(null, words);
-      return speakWithPhone(words);
+      return speakWithPhone(words, () => offerHear(null, words));
     }
     let blocked = false;
-    await playAudio(url, words, siri && !tapped ? () => { blocked = true; offerHear(url, words); } : undefined);
+    await playAudio(url, words, () => { blocked = true; offerHear(url, words); });
     if (!blocked) URL.revokeObjectURL(url);
   }
 
   /** The phone won't play sound before a tap: the answer, out loud, in one tap — or talk back. */
   function offerHear(url, words) {
-    note("voice blocked until a tap (opened by Siri)");
+    clearVoiceRecovery();
+    pendingVoice = { url, words };
+    note("voice needs a play tap");
     const last = [...log.querySelectorAll(".msg.izuki")].pop();
-    const row = el("div", "chip-row");
+    const row = el("div", "chip-row voice-recovery");
     const hear = el("button", "chip primary", "🔊 Tap to hear it");
     hear.type = "button";
     const talk = el("button", "chip", "🎙️ Talk back");
     talk.type = "button";
-    hear.onclick = async () => {
+    const replay = async () => {
+      const pending = pendingVoice;
+      if (!pending || manualPlayback || busy) return;
+      hush();
+      manualPlayback = true;
+      // Don't transcribe Izuki's own voice during a manual replay.
+      if (recog) { recog.onend = null; try { recog.abort(); } catch {} recog = null; }
+      if (recorder) { recorder.onstop = null; try { recorder.stop(); } catch {} recorder = null; }
+      closeMic();
       unlockAudio();
       hear.textContent = "🔊 Playing…";
       setOrb("speaking");
-      if (url) await playAudio(url, words);
-      else await speakWithPhone(words);
-      setOrb("");
-      hear.textContent = "🔊 Hear it again";
+      const blocked = () => { setStatus("Sound is still blocked. Check media volume and browser audio permission, then tap again."); };
+      try {
+        if (pending.url) await playAudio(pending.url, pending.words, blocked);
+        else await speakWithPhone(pending.words, blocked);
+      } finally {
+        manualPlayback = false;
+        setOrb("");
+        hear.textContent = "🔊 Hear it again";
+        if (talking) listen();
+      }
     };
+    hear.onclick = replay;
     talk.onclick = () => { unlockAudio(); openLive(); };
     row.append(hear, talk);
     (last || log).appendChild(row);
+    const liveHear = el("button", "chip primary", voiceOn ? "🔊 Tap to hear reply" : "🔊 Play this reply once (muted)");
+    liveHear.type = "button"; liveHear.onclick = replay;
+    $("live-audio-recovery").appendChild(liveHear);
     log.scrollTop = log.scrollHeight;
     setOrb("");
     setStatus("Tap 🔊 to hear the answer");
+  }
+  function clearVoiceRecovery() {
+    if (pendingVoice?.url) URL.revokeObjectURL(pendingVoice.url);
+    pendingVoice = null;
+    document.querySelectorAll(".voice-recovery").forEach((row) => row.remove());
+    $("live-audio-recovery").replaceChildren();
   }
   // The first touch anywhere unlocks Izuki's voice for the rest of the visit.
   document.addEventListener("pointerdown", () => { if (!tapped) unlockAudio(); }, { capture: true });
@@ -1592,7 +1658,7 @@
   }
 
   function listen() {
-    if (!talking || busy) return;
+    if (!talking || busy || manualPlayback) return;
     if (useRecorder || !Rec || (isIOS && canHear())) return record();
     let final = "", heardAny = false, failed = "";
     try { recog = new Rec(); } catch { useRecorder = true; return record(); }
@@ -1662,7 +1728,7 @@
   const recordType = () => ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg"].find((t) => window.MediaRecorder?.isTypeSupported?.(t)) || "";
 
   async function record() {
-    if (!talking || busy) return;
+    if (!talking || busy || manualPlayback) return;
     if (!canHear()) return stopTalking("To talk out loud here, add a free Gemini key in Settings — or type.");
     if (!window.MediaRecorder || !navigator.mediaDevices?.getUserMedia) {
       bug("can't record on this phone");
@@ -1671,7 +1737,7 @@
     let stream;
     try { stream = await openMic(); }
     catch (e) { note("microphone refused: " + (e && e.name)); return stopTalking("Allow the microphone for Izuki, then tap Call again."); }
-    if (!talking || busy) return;
+    if (!talking || busy || manualPlayback) return;
     const type = recordType();
     const chunks = [];
     let rec;
@@ -1726,6 +1792,7 @@
     $("live-style").textContent = person().style;
     liveHeard(""); liveSaid("");
     live.hidden = false;
+    showMute();
     callStart = Date.now();
     clearInterval(callClock);
     const tick = () => {
@@ -1753,13 +1820,14 @@
     const b = $("live-mute");
     b.setAttribute("aria-pressed", String(!voiceOn));
     $("live-mute-label").textContent = voiceOn ? "Mute" : "Unmute";
+    $("live-muted").hidden = voiceOn;
   }
   showMute();
   $("live-mute").onclick = () => {
     voiceOn = !voiceOn;
     store.set("voice", voiceOn);
     showMute();
-    if (!voiceOn) hush();
+    if (!voiceOn) hush(); else unlockAudio();
     setStatus(voiceOn ? "Sound's back on." : "Muted — I'll reply in words.");
     setTimeout(() => setStatus(""), 2000);
   };
@@ -2118,6 +2186,7 @@
   async function receiveNativeDraft() {
     const prompt = await window.IzukiNative?.takeLaunchPrompt?.();
     if (!prompt) return;
+    fromSiri = true;
     text.value = prompt;
     text.dispatchEvent(new Event("input", { bubbles: true }));
     setStatus("From Siri — review your question and tap Send.");
@@ -2133,7 +2202,7 @@
     fromSiri = true;
     ask(q);
   }
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  if ("serviceWorker" in navigator && !window.IzukiNative?.installed()) navigator.serviceWorker.register("sw.js").catch(() => {});
 })();
 </script>
 </body>

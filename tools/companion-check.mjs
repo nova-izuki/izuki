@@ -28,6 +28,11 @@ const rings=fluidOutline(state.blobs,72);assert(rings.length>0&&rings.every(r=>r
 for(let i=0;i<240;i++)stepOrbMotion(state,1/60,0,'idle');
 assert(state.energy<.0001,'fluid must settle between/after speech');
 stepOrbMotion(state,NaN,NaN,'speaking',Infinity);assert(Number.isFinite(state.time));
+const waiting=createOrbMotion();
+for(let i=0;i<7200;i++)stepOrbMotion(waiting,1/60,0,'thinking');
+const before=waiting.phase;
+stepOrbMotion(waiting,1/60,0,'idle');
+assert(Math.abs(waiting.phase-before)<.02,'finishing a long thought must not rewind the orbit');
 const times=[];for(let i=0;i<30;i++){const t=performance.now();fluidOutline(state.blobs,72);times.push(performance.now()-t);}times.sort((a,b)=>a-b);
 console.log(`Fluid geometry p95: ${times[28].toFixed(2)} ms (this test machine, not a device-wide FPS guarantee)`);
 const wav=new ArrayBuffer(44+16000*2), v=new DataView(wav), word=(at,s)=>[...s].forEach((c,i)=>v.setUint8(at+i,c.charCodeAt(0)));

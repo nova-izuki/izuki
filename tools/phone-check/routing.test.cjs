@@ -74,7 +74,13 @@ for (const s of [
   "i had a long day", "clear chat", "remind me to call mum",
 ]) is(JSON.stringify(s), wantsPc(s), false);
 
-is("PC task is not hijacked by phone Composio", requestLane("open spotify", true, true), "pc");
+is("ambiguous screen action asks which device", requestLane("open spotify", true, true), "clarify");
+is("explicit PC task is not hijacked by phone Composio", requestLane("open spotify on my PC", true, true), "pc");
+for (const request of ["open my phone", "open Gmail on my phone", "click this on my iPhone", "scroll on my Android", "open phone", "read my phone screen"]) {
+  for (const connected of [true, false]) is(request + " paired=" + connected, requestLane(request, true, connected), "phone");
+}
+is("two named devices ask before acting", requestLane("open my phone from my PC", true, true), "clarify");
+is("word fragments aren't device names", requestLane("tell me about my phonetic alphabet", false, true), "chat");
 is("Gmail uses phone connections when configured", requestLane("read Gmail", true, true), "apps");
 is("Gmail uses PC connections without phone key", requestLane("read Gmail", false, true), "pc");
 is("ordinary conversation needs neither bridge", requestLane("hello", true, true), "chat");
