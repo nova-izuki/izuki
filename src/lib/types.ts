@@ -259,6 +259,7 @@ export interface Settings {
   magnetic_hand: boolean;
   control_style: "mouse" | "precision";
   orb_style: "liquid" | "ferrofluid" | "ripple" | "constellation";
+  orb_response: number;
   economy_mode: boolean;
   /** Show the predicted next click after enough samples. */
   ghost_hand: boolean;

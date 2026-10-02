@@ -293,10 +293,11 @@ pub async fn frozen_frame() -> R<Option<String>> {
 
 #[tauri::command]
 pub async fn submit_draw(app: AppHandle, session: DrawSession) -> VisionPlan {
+    let task = brain::reserve_draw_task();
     // The overlay should disappear the instant the user commits; the work
     // continues underneath.
     let _ = overlay::hide_overlay(&app);
-    blocking(move || brain::submit_draw(&app, &state::store(), session))
+    blocking(move || brain::submit_draw(&app, &state::store(), session, task))
         .await
         .unwrap_or_else(failed_plan)
 }

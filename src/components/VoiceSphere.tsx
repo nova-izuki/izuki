@@ -6,6 +6,8 @@ import { resizeHandles, useFloating, workArea, type Limits } from "../lib/floati
 import type { OrbState, Settings } from "../lib/types";
 import { TranscriptText } from "./TranscriptBar";
 import { drawWaterOrb } from "../../docs/app/water-orb.js";
+import { createOrbMotion, stepOrbMotion } from "../../docs/app/orb-motion.js";
+import { drawConstellationOrb, drawRippleOrb } from "../../docs/app/orb-materials.js";
 
 /**
  * The hands-free voice sphere — "Hey Izuki" summons it.
@@ -84,9 +86,10 @@ export function VoiceSphere({
 }) {
   const visible = state !== "hidden";
   const [style, setStyle] = useState<Settings["orb_style"]>("liquid");
+  const [response, setResponse] = useState(1);
   useEffect(() => {
     let alive = true;
-    const refresh = () => void api.getSettings().then((s) => { if (alive) setStyle(s.orb_style || "liquid"); }).catch(() => {});
+    const refresh = () => void api.getSettings().then((s) => { if (alive) { setStyle(s.orb_style || "liquid"); setResponse(s.orb_response ?? 1); } }).catch(() => {});
     refresh();
     const off = on<void>(EV.settingsChanged, refresh);
     return () => { alive = false; void off.then((f) => f()); };
@@ -129,7 +132,7 @@ export function VoiceSphere({
           onPointerDown={(e) => begin(e, "move")}
           onWheel={onWheel}
         >
-          <SphereCanvas state={state as Exclude<OrbState, "hidden">} demo={demo} size={size} style={style} />
+          <SphereCanvas state={state as Exclude<OrbState, "hidden">} demo={demo} size={size} style={style} response={response} />
           <button
             type="button"
             aria-label="Dismiss"
@@ -185,16 +188,20 @@ export function VoiceSphere({
   );
 }
 
-function SphereCanvas({
+export function SphereCanvas({
   state,
   demo,
   size: SIZE,
   style,
+  response = 1,
+  preview = false,
 }: {
   state: Exclude<OrbState, "hidden">;
   demo: boolean;
   size: number;
   style: Settings["orb_style"];
+  response?: number;
+  preview?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef(state);
@@ -203,12 +210,13 @@ function SphereCanvas({
   const target = useRef(0);
 
   useEffect(() => {
+    if (preview) return;
     const off = on<number>(EV.voiceLevel, (l) => {
       // A bad reading (NaN) would poison the smoothing for good.
       target.current = Number.isFinite(l) ? Math.max(0, Math.min(1, l)) : 0;
     });
     return () => void off.then((f) => f());
-  }, []);
+  }, [preview]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -234,7 +242,8 @@ function SphereCanvas({
     let t = 0;
     /** Where the colours are in their trip round the orb. */
     let turn = 0;
-    let waterMerge = 0;
+    const physics = createOrbMotion();
+    let inView = true;
     let last = performance.now();
     const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const parse = (col: string) => col.split(",").map(Number);
@@ -244,7 +253,7 @@ function SphereCanvas({
     const rgba = (rgb: number[], a: number) => `rgba(${rgb.map(Math.round).join(",")},${a})`;
 
     const draw = (now: number) => {
-      if (document.hidden) { raf = 0; return; }
+      if (document.hidden || !inView) { raf = 0; return; }
       raf = requestAnimationFrame(draw);
       if (now - last < (reduced ? 150 : 33)) return;
       const dt = Math.min(0.05, (now - last) / 1000);
@@ -256,6 +265,7 @@ function SphereCanvas({
       // bus goes quiet between words; decay the target so it settles.
       if (demo) target.current = Math.max(target.current, Math.abs(Math.sin(now / 170) * Math.sin(now / 530)));
       const goal = st === "thinking" ? 0.22 + 0.08 * Math.sin(now / 380) : target.current;
+      if (style !== "liquid") stepOrbMotion(physics, dt, reduced || st === "thinking" ? 0 : target.current, reduced ? "idle" : st, response);
       level += (goal - level) * (goal > level ? 0.45 : 0.08);
       target.current *= 0.9;
       t += dt * (st === "thinking" ? 1.6 : 1 + level * 2.2);
@@ -274,8 +284,11 @@ function SphereCanvas({
       ctx.clearRect(0, 0, SIZE, SIZE);
 
       if (style === "ferrofluid") {
-        waterMerge += ((st === "speaking" ? 1 : 0) - waterMerge) * (1 - Math.exp(-dt * 5));
-        drawWaterOrb(ctx, SIZE, reduced ? 0 : t, reduced ? 0 : level, waterMerge, st === "thinking");
+        drawWaterOrb(ctx, SIZE, physics.time, physics.energy, 0, st === "thinking", physics);
+        return;
+      }
+      if (style === "constellation" || style === "ripple") {
+        (style === "constellation" ? drawConstellationOrb : drawRippleOrb)(ctx, SIZE, reduced ? 0 : physics.time, physics.energy);
         return;
       }
 
@@ -287,25 +300,6 @@ function SphereCanvas({
       halo.addColorStop(1, rgba(glowMix, 0));
       ctx.fillStyle = halo;
       ctx.fillRect(0, 0, SIZE, SIZE);
-
-      if (style !== "liquid") {
-        ctx.lineWidth = 1.5;
-        if (style === "ripple") {
-          for (let ring = 0; ring < 5; ring++) {
-            const radius = R * (0.3 + ring * 0.16 + 0.04 * Math.sin(t * 2 - ring));
-            ctx.beginPath(); ctx.ellipse(c, c, radius, radius * (0.8 + level * 0.15), turn * 0.15, 0, Math.PI * 2);
-            ctx.strokeStyle = rgba(mix[ring % 4], 0.85 - ring * 0.1); ctx.stroke();
-          }
-        } else {
-          for (let dot = 0; dot < 64; dot++) {
-            const angle = dot * 2.39996 + turn * 0.2;
-            const radius = R * Math.sqrt((dot + 1) / 64);
-            ctx.beginPath(); ctx.arc(c + Math.cos(angle) * radius, c + Math.sin(angle) * radius, 1.2 + level * 2 + 0.7 * Math.sin(t + dot), 0, Math.PI * 2);
-            ctx.fillStyle = rgba(mix[dot % 4], 0.85); ctx.fill();
-          }
-        }
-        return;
-      }
 
       // Deep water in the middle so the glowing layers read against it
       // instead of washing out to white.
@@ -410,9 +404,11 @@ function SphereCanvas({
     };
     raf = requestAnimationFrame(draw);
     const wake = () => { if (!document.hidden && !raf) raf = requestAnimationFrame(draw); };
+    const observer = new IntersectionObserver(([entry]) => { inView = entry.isIntersecting; if (inView) wake(); });
+    observer.observe(canvas);
     document.addEventListener("visibilitychange", wake);
-    return () => { cancelAnimationFrame(raf); document.removeEventListener("visibilitychange", wake); };
-  }, [demo, SIZE, style]);
+    return () => { cancelAnimationFrame(raf); observer.disconnect(); document.removeEventListener("visibilitychange", wake); };
+  }, [demo, SIZE, style, response]);
 
   return <canvas ref={canvasRef} style={{ width: SIZE, height: SIZE }} />;
 }

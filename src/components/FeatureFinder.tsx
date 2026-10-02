@@ -10,7 +10,7 @@ const FEATURES: { label: string; hint: string; tab: TabId; id?: string }[] = [
   { label: "Watchers", hint: "Screen changes and background checks", tab: "watchers" },
   { label: "Brain & AI keys", hint: "Models, providers and local Ollama", tab: "settings", id: "settings-brain" },
   { label: "Screen control", hint: "Jarvis precision, mouse, approval and clicking", tab: "settings", id: "settings-execution" },
-  { label: "Orb & appearance", hint: "Clear water, liquid, captions and colours", tab: "settings", id: "settings-look" },
+  { label: "Orb & appearance", hint: "Orb Studio, clear water, star crystal, tidal pearl, liquid, motion, captions and colours", tab: "settings", id: "settings-look" },
   { label: "Window & battery", hint: "Glass backdrop, background and power", tab: "settings", id: "settings-system" },
   { label: "Keyboard shortcuts", hint: "Hotkeys and voice commands", tab: "settings", id: "settings-shortcuts" },
   { label: "Phone companion", hint: "Android, iPhone, Siri and PC pairing", tab: "settings", id: "settings-phone" },

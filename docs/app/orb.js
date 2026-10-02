@@ -12,9 +12,12 @@
 // and the page is visible — and slows down when nothing is happening.
 (() => {
   "use strict";
-  let waterRenderer;
-  let waterMerge = 0;
-  import('./water-orb.js').then((m) => { waterRenderer = m.drawWaterOrb; }).catch(() => {});
+  let material, motionModule, physics;
+  Promise.all([import('./water-orb.js'), import('./orb-materials.js'), import('./orb-motion.js')]).then(([water, looks, motion]) => {
+    material = { ...water, ...looks }; motionModule=motion; physics=motion.createOrbMotion(); wake();
+  }).catch(() => {});
+  let response = 1, audioTrack = null, audioGeneration = 0;
+  try { const value=Number(localStorage.getItem('izuki.orbResponse') || 1); if(Number.isFinite(value)) response=Math.max(.5,Math.min(1.5,value)); } catch {}
   const PALETTES = {
     idle:      { colors: ["99,102,241", "34,211,238", "139,92,246", "56,189,248"], glow: "99,102,241", spin: 0.25 },
     listening: { colors: ["6,182,212", "10,132,255", "99,102,241", "34,211,238"], glow: "14,165,233", spin: 0.45 },
@@ -40,11 +43,19 @@
     o.lx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  const visible = (o) => o.canvas.isConnected && o.canvas.getClientRects().length > 0;
+  const visible = (o) => { const r=o.canvas.getBoundingClientRect();return o.canvas.isConnected && r.width>0 && r.height>0 && r.bottom>0 && r.top<innerHeight; };
+
+  function visualState(o) {
+    if (!o.preview || !o.physics) return { level, t, turn, mix, glowMix };
+    const pal=PALETTES[o.preview.mode] || PALETTES.idle;
+    return { level:o.physics.energy, t:reduced?0:o.physics.time, turn:reduced?0:o.physics.time*pal.spin,
+      mix:pal.colors.map(parse), glowMix:parse(pal.glow) };
+  }
 
   function paint(o, now) {
     fit(o);
     const { ctx, lx, size: SIZE } = o;
+    const { level, t, turn, mix, glowMix } = visualState(o);
     if (!SIZE) return;
     // Small orbs (the talk button) get fewer points — they're tiny anyway.
     const small = SIZE < 90;
@@ -53,9 +64,11 @@
     ctx.globalCompositeOperation = "source-over";
     ctx.clearRect(0, 0, SIZE, SIZE);
 
-    if (style === "ferrofluid") {
-      waterMerge += ((mode === "speaking" ? 1 : 0) - waterMerge) * 0.13;
-      if (waterRenderer) waterRenderer(ctx, SIZE, reduced ? 0 : t, reduced ? 0 : level, waterMerge, mode === "thinking");
+    const selectedStyle = o.preview ? o.preview.style : style;
+    const state = o.preview ? o.physics : physics;
+    if (selectedStyle !== 'liquid' && material && state) {
+      if (selectedStyle === 'ferrofluid') material.drawWaterOrb(ctx,SIZE,state.time,state.energy,0,(o.preview?.mode || mode)==='thinking',state);
+      else (selectedStyle === 'ripple' ? material.drawRippleOrb : material.drawConstellationOrb)(ctx,SIZE,reduced?0:state.time,state.energy);
       return;
     }
 
@@ -68,23 +81,6 @@
       ctx.fillRect(0, 0, SIZE, SIZE);
     }
 
-    if (["ripple", "constellation"].includes(style)) {
-      ctx.lineWidth = 1.5;
-      if (style === "ripple") {
-        for (let ring = 0; ring < 5; ring++) {
-          const radius = R * (0.3 + ring * 0.16 + 0.04 * Math.sin(t * 2 - ring));
-          ctx.beginPath(); ctx.ellipse(c, c, radius, radius * (0.8 + level * 0.15), turn * 0.15, 0, Math.PI * 2);
-          ctx.strokeStyle = rgba(mix[ring % 4], 0.85 - ring * 0.1); ctx.stroke();
-        }
-      } else {
-        for (let dot = 0; dot < 64; dot++) {
-          const angle = dot * 2.39996 + turn * 0.2, radius = R * Math.sqrt((dot + 1) / 64);
-          ctx.beginPath(); ctx.arc(c + Math.cos(angle) * radius, c + Math.sin(angle) * radius, 1.2 + level * 2 + 0.7 * Math.sin(t + dot), 0, Math.PI * 2);
-          ctx.fillStyle = rgba(mix[dot % 4], 0.85); ctx.fill();
-        }
-      }
-      return;
-    }
     const body = ctx.createRadialGradient(c, c + R * 0.2, R * 0.1, c, c, R * 1.05);
     body.addColorStop(0, rgba(mix[1], 0.16));
     body.addColorStop(1, "rgba(4,8,22,0.78)");
@@ -160,21 +156,28 @@
     // An orb whose screen was taken away (the home screen redraws) is dropped.
     for (const o of orbs) {
       if (o.canvas.isConnected) o.seen = true;
-      else if (o.seen) orbs.delete(o);
+      else if (o.seen) { o.observer?.disconnect(); orbs.delete(o); }
     }
     const shown = [...orbs].filter(visible);
     if (!shown.length || document.hidden) return; // woken again by add/mode/visibility
     raf = requestAnimationFrame(tick);
     // Resting: half the frames are plenty (and kinder to the battery).
-    if (now - last < (reduced ? 150 : mode === "idle" ? 80 : 33)) return;
+    if (now - last < (reduced ? 150 : mode === "idle" && !shown.some(o=>o.preview) ? 80 : 33)) return;
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const pal = PALETTES[mode] || PALETTES.idle;
-    // Izuki's voice plays as a file, which can't be measured: a
-    // syllable-like rhythm stands in for it.
-    if (mode === "speaking") kick(0.35 + 0.55 * Math.abs(Math.sin(now / 150) * Math.sin(now / 470)));
+    const measured = audioTrack && !audioTrack.player.paused && !audioTrack.player.ended ? (audioTrack.envelope.levels[Math.floor(audioTrack.player.currentTime*audioTrack.envelope.rate)] || 0) : 0;
+    // Keep the original default's fallback. Optional materials only react
+    // to measured sound; no pretend syllable sync when OS speech is opaque.
+    if (mode === "speaking" && style === 'liquid') kick(0.35 + 0.55 * Math.abs(Math.sin(now / 150) * Math.sin(now / 470)));
     if (mode === "listening") kick(0.08 + 0.05 * Math.sin(now / 600));
     const goal = mode === "thinking" ? 0.22 + 0.08 * Math.sin(now / 380) : mode === "idle" ? 0.05 : target;
+    if(physics) motionModule.stepOrbMotion(physics,dt,reduced?0:mode==='speaking'?measured:mode==='listening'?target:0,reduced?'idle':mode,response);
+    for(const o of shown) if(o.preview && motionModule) {
+      o.physics ||= motionModule.createOrbMotion();
+      const m=o.preview.mode, simulated=m==='speaking'?Math.abs(Math.sin(now/170)*Math.sin(now/530)):0;
+      motionModule.stepOrbMotion(o.physics,dt,reduced?0:simulated,reduced?'idle':m,response);
+    }
     level += (goal - level) * (goal > level ? 0.45 : 0.08);
     target *= 0.9;
     const pace = reduced ? 0.25 : 1;
@@ -193,8 +196,17 @@
 
   document.addEventListener("visibilitychange", wake);
   addEventListener("resize", wake);
+  document.addEventListener('scroll', wake, { capture:true, passive:true });
 
   window.IzukiOrb = {
+    response(value) { response=Number.isFinite(value)?Math.max(.5,Math.min(1.5,value)):1; try{localStorage.setItem('izuki.orbResponse',String(response));}catch{} wake(); },
+    preview(canvas, selectedStyle, selectedMode) { const o=[...orbs].find(o=>o.canvas===canvas); if(o) o.preview={style:selectedStyle,mode:selectedMode}; wake(); },
+    trackAudio(player,url) {
+      const generation=++audioGeneration; audioTrack=null;
+      // Only the local WAV already generated for this reply; no extra API call.
+      if(!String(url).startsWith('blob:'))return;
+      fetch(url).then(r=>r.arrayBuffer()).then(buffer=>{const envelope=motionModule?.waveEnvelope(buffer);if(generation===audioGeneration&&envelope)audioTrack={player,envelope};}).catch(()=>{});
+    },
     style(value) {
       style = ["liquid", "ferrofluid", "ripple", "constellation"].includes(value) ? value : "liquid";
       try { localStorage.setItem("izuki.orbStyle", style); } catch {}
@@ -206,7 +218,7 @@
       orbs.add(o);
       wake();
       // A canvas that just appeared (a screen opening) starts the loop too.
-      if (window.ResizeObserver) new ResizeObserver(wake).observe(canvas);
+      if (window.ResizeObserver) { o.observer=new ResizeObserver(wake);o.observer.observe(canvas); }
       return canvas;
     },
     mode(m) { mode = PALETTES[m] ? m : "idle"; wake(); },

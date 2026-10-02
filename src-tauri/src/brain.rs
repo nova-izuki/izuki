@@ -61,9 +61,11 @@ pub fn capture_frozen() -> Result<String> {
 // The main pass
 // ---------------------------------------------------------------------------
 
-pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession) -> VisionPlan {
+pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession, task: u64) -> VisionPlan {
     let settings = store.settings();
-    automation::clear_abort();
+    if !task_alive(task) { return stopped_plan(); }
+    let direct_click = planner::explicit_draw_click(&session.prompt) && session.marks.len() == 1;
+    if direct_click { session.marks[0].intent = Intent::Click; }
     // Esc stops it from here on — while the model looks, too.
     let _esc = crate::hotkey::working();
 
@@ -76,9 +78,10 @@ pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession
     let frame = frozen().or_else(|| capture::capture_all().ok());
 
     // ---- read any text inside the marks -------------------------------
-    if settings.ocr_enabled {
+    if settings.ocr_enabled && !direct_click {
         if let Some(f) = &frame {
             for m in &mut session.marks {
+                if !task_alive(task) { return stopped_plan(); }
                 // Only worth doing for regions the user outlined.
                 if m.rect.w < 6 || m.rect.h < 6 {
                     continue;
@@ -95,11 +98,14 @@ pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession
     }
 
     // Scribbles are instructions — fold their transcription into the prompt.
+    if !task_alive(task) { return stopped_plan(); }
     let scribbled: Vec<String> = session
         .marks
         .iter()
         .filter(|m| matches!(m.kind, crate::model::ShapeKind::Pen))
-        .filter_map(|m| m.text.clone().or_else(|| m.ocr.clone()))
+        // OCR reads the page UNDER a highlight, not the user's handwriting.
+        // Never turn those page words into additional user instructions.
+        .filter_map(|m| m.text.clone())
         .filter(|t| !t.trim().is_empty())
         .collect();
     if !scribbled.is_empty() {
@@ -143,7 +149,22 @@ pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession
     }
 
     // ---- the instant, local plan --------------------------------------
-    let local = planner::local_plan(&session);
+    let mut local = planner::local_plan(&session);
+    if !should_ask_model(&session, &local) && !local.is_empty() {
+        let controls = uia::list_controls(MAX_CONTROLS);
+        for step in &mut local {
+            if !matches!(step.action, Intent::Click | Intent::DoubleClick | Intent::RightClick | Intent::Type) { continue; }
+            let region = session.marks.iter().find(|m| m.rect.contains(step.x, step.y)).map(|m| m.rect).unwrap_or_default();
+            if let Some(control) = planner::drawn_target(&controls, &region, step.x, step.y) {
+                let (x, y) = control.rect.center();
+                step.x = x; step.y = y; step.target = Some(control.id);
+                step.snapped_to = Some(control.name.clone()); step.grounding = control.identity.clone();
+            } else {
+                return VisionPlan { summary: "I couldn't identify one clickable control inside your mark. Make a smaller circle around the button; I haven't clicked anything.".into(), ..Default::default() };
+            }
+        }
+    }
+    if !task_alive(task) { return stopped_plan(); }
 
     // ---- refine with a model, if one is worth asking ------------------
     let mut plan = VisionPlan {
@@ -172,7 +193,7 @@ pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession
         };
         let _ = app.emit(events::STATUS, StatusEvent::working("Izuki is looking…"));
         drop(_esc);
-        let plan = submit_task(app, store, prompt, session.marks.clone(), frame);
+        let plan = submit_task(app, store, prompt, session.marks.clone(), frame, Some(task));
         set_frozen(None);
         return plan;
     }
@@ -194,6 +215,7 @@ pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession
     }
 
     // ---- remember it as a flow ----------------------------------------
+    if !task_alive(task) { return stopped_plan(); }
     if settings.autosave_flows && !plan.steps.is_empty() {
         let thumbnail = frame
             .as_ref()
@@ -220,7 +242,7 @@ pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession
 
     // ---- act ------------------------------------------------------------
     if !settings.confirm_before_act && !plan.steps.is_empty() {
-        run_steps(app, store, &plan.steps);
+        run_steps_for_task(app, store, &plan.steps, task, || {});
     }
 
     set_frozen(None);
@@ -229,6 +251,7 @@ pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession
 
 /// Only pay for a model when the marks leave something genuinely open.
 fn should_ask_model(session: &DrawSession, local: &[ActionStep]) -> bool {
+    if session.marks.len() == 1 && planner::explicit_draw_click(&session.prompt) && !local.is_empty() { return false; }
     if !session.prompt.trim().is_empty() {
         return true;
     }
@@ -772,6 +795,12 @@ pub fn run_steps_then<F>(app: &AppHandle, store: &Arc<Store>, steps: &[ActionSte
 where
     F: FnOnce() + Send + 'static,
 {
+    run_steps_for_task(app, store, steps, TASK_GEN.load(std::sync::atomic::Ordering::SeqCst), on_done);
+}
+
+fn run_steps_for_task<F>(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], task: u64, on_done: F)
+where F: FnOnce() + Send + 'static,
+{
     let steps = steps.to_vec();
     let app = app.clone();
     let store = store.clone();
@@ -779,7 +808,7 @@ where
     std::thread::Builder::new()
         .name("izuki-act".into())
         .spawn(move || {
-            run_steps_blocking(&app, &store, &steps, &|| !automation::aborted());
+            run_steps_blocking(&app, &store, &steps, &|| task_alive(task));
             on_done();
         })
         .ok();
@@ -923,7 +952,7 @@ pub fn run_flow(app: &AppHandle, store: &Arc<Store>, id: &str) -> Result<()> {
 /// model gets — the same pipeline `submit_draw` uses, just with an empty
 /// mark list standing in for the geometry-only fast path.
 pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String) -> VisionPlan {
-    submit_task(app, store, prompt, Vec::new(), None)
+    submit_task(app, store, prompt, Vec::new(), None, None)
 }
 
 /// "Click Subscribe", "press Sign in", "tap the Settings tab": the button is
@@ -1062,6 +1091,7 @@ fn submit_task(
     prompt: String,
     marks: Vec<crate::model::Mark>,
     drawn_on: Option<Frame>,
+    inherited_task: Option<u64>,
 ) -> VisionPlan {
     // "Scroll down", "louder", "next song": done at once, no AI (instant.rs).
     // Every way in — voice, typing, the phone, Discord — comes through here.
@@ -1078,8 +1108,15 @@ fn submit_task(
     // This task replaces any other: the old one sees the number change and
     // stops, and a question it was waiting on is let go.
     answer_help(None);
-    let my_task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-    automation::clear_abort();
+    let my_task = match inherited_task {
+        Some(task) if task_alive(task) => task,
+        Some(_) => return stopped_plan(),
+        None => {
+            let task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            automation::clear_abort();
+            task
+        }
+    };
     let _esc = crate::hotkey::working();
     // A new task: whatever was drawn to explain the last one goes.
     let _ = app.emit("izuki://pen-clear", ());
@@ -1688,6 +1725,14 @@ const MAX_ROUNDS: usize = 16;
 /// stops it instead of just muting it.
 static TASK_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+fn task_is_current(task: u64, generation: u64, aborted: bool) -> bool { generation == task && !aborted }
+fn task_alive(task: u64) -> bool { task_is_current(task, TASK_GEN.load(std::sync::atomic::Ordering::SeqCst), automation::aborted()) }
+fn stopped_plan() -> VisionPlan { VisionPlan { summary: "Stopped.".into(), ..Default::default() } }
+pub fn reserve_draw_task() -> u64 {
+    automation::clear_abort();
+    TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+}
+
 /// Stop the task in progress, forget any half-done one, and let go of a
 /// question it was waiting on. (Stop hotkey, Esc, the orb's ✕, "stop".)
 pub fn cancel_task() {
@@ -1874,6 +1919,16 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
 mod speed_tests {
     use super::*;
     use crate::settings::{ProviderId, Settings};
+
+    #[test]
+    fn stopped_draw_cannot_revive_when_the_next_task_clears_abort() {
+        let draw = 7;
+        assert!(task_is_current(draw, 7, false));
+        assert!(!task_is_current(draw, 7, true), "immediate Escape abort wins before cancellation cleanup");
+        assert!(!task_is_current(draw, 8, true), "stop invalidates the generation");
+        assert!(!task_is_current(draw, 9, false), "a new task clearing abort cannot revive queued clicks");
+        assert!(task_is_current(9, 9, false));
+    }
 
     #[test]
     fn named_clicks_skip_the_brain_only_when_clear_and_safe() {

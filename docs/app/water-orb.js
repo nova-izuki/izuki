@@ -1,14 +1,25 @@
+import { createOrbMotion, stepOrbMotion, fluidOutline } from './orb-motion.js';
 /** Clear-water material shared by desktop, web and the native phone bundle. */
 export function drawWaterOrb(
-  ctx, size, time, level, merge, thinking,
+  ctx, size, time, level, merge, thinking, motion,
 ) {
   const c = size / 2;
   const radius = size * 0.285;
   const tau = Math.PI * 2;
-  const droplet = (x, y, r, energy) => {
+  const droplet = (x, y, r, energy, outline) => {
     ctx.save();
     const surface = new Path2D();
-    for (let i = 0; i <= 96; i++) {
+    if (outline) {
+      for (const points of outline) {
+        const last = points[points.length - 1], first = points[0];
+        surface.moveTo((last[0]+first[0])*size/2, (last[1]+first[1])*size/2);
+        for (let i = 0; i < points.length; i++) {
+          const p = points[i], next = points[(i+1)%points.length];
+          surface.quadraticCurveTo(p[0]*size, p[1]*size, (p[0]+next[0])*size/2, (p[1]+next[1])*size/2);
+        }
+        surface.closePath();
+      }
+    } else for (let i = 0; i <= 96; i++) {
       const a = i / 96 * tau;
       const wave = 1 + energy * (0.045 * Math.sin(a * 3 + time * 2.3) + 0.021 * Math.sin(a * 5 - time * 1.7));
       const px = x + Math.cos(a) * r * wave, py = y + Math.sin(a) * r * wave;
@@ -24,6 +35,9 @@ export function drawWaterOrb(
     body.addColorStop(0.975, "rgba(222,247,255,0.78)");
     body.addColorStop(1, "rgba(80,133,151,0.16)");
     ctx.fillStyle = body; ctx.fill(surface);
+    const edge = ctx.createLinearGradient(0, 0, size, size);
+    edge.addColorStop(0, 'rgba(251,255,255,.92)'); edge.addColorStop(.38, 'rgba(145,195,211,.24)'); edge.addColorStop(.65, 'rgba(14,39,52,.7)'); edge.addColorStop(1, 'rgba(234,251,255,.85)');
+    ctx.strokeStyle = edge; ctx.lineWidth = Math.max(.8, size * .005); ctx.stroke(surface);
     ctx.clip(surface);
     // A soft reflected window above and a focused caustic beneath it.
     const reflection = ctx.createLinearGradient(x, y - r, x, y + r);
@@ -45,15 +59,12 @@ export function drawWaterOrb(
     ctx.fillStyle = glint; ctx.fillRect(x - r, y - r, r * 2, r * 2);
     ctx.restore();
   };
-  // Orbit only while waiting/listening. Droplets smoothly tuck into the
-  // silhouette on speech, transferring their movement to the main surface.
-  for (let i = 0; i < 5; i++) {
-    const a = time * (thinking ? 1.1 : 0.22) + i * tau / 5;
-    const orbit = radius * (1.43 - merge * 0.56);
-    const r = radius * (0.07 + (i % 3) * 0.026) * (1 - merge * 0.65);
-    ctx.globalAlpha = 1 - merge * 0.8;
-    droplet(c + Math.cos(a) * orbit, c + Math.sin(a) * orbit * 0.95, r, level * 0.8);
+  // Legacy callers get a deterministic settled snapshot. Live callers share
+  // one spring update per frame, independent of the number of canvases.
+  if (!motion) {
+    motion = createOrbMotion(); motion.time = time;
+    for (let i = 0; i < 45; i++) stepOrbMotion(motion, 1/60, level, thinking ? 'thinking' : 'speaking');
   }
-  ctx.globalAlpha = 1;
-  droplet(c, c, radius * (1 + level * 0.07), 0.16 + level * 0.9);
+  const outline = fluidOutline(motion.blobs, size < 100 ? 32 : 72);
+  droplet(c, c, radius, motion.energy, outline);
 }

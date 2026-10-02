@@ -90,6 +90,19 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   const previewPath = path.join(os.tmpdir(), 'izuki-water-preview.png');
   fs.writeFileSync(previewPath, Buffer.from(preview.data, 'base64'));
   console.log('Water preview: ' + previewPath);
+  await call('Emulation.setDeviceMetricsOverride', {width:1000,height:700,deviceScaleFactor:1,mobile:false});
+  const materials = await evaluate(`(async()=>{
+    const water=await import('/docs/app/water-orb.js'), looks=await import('/docs/app/orb-materials.js'), motion=await import('/docs/app/orb-motion.js');
+    document.body.innerHTML='<main style="display:flex;flex-wrap:wrap;background:#0c141d;padding:20px;color:white">'+['Fluid / voice','Star crystal','Tidal pearl'].map(t=>'<section><h3>'+t+'</h3><canvas width="280" height="280"></canvas></section>').join('')+'</main>';
+    const canvases=[...document.querySelectorAll('canvas')],s=motion.createOrbMotion();
+    for(let i=0;i<90;i++)motion.stepOrbMotion(s,1/60,.85,'speaking');
+    water.drawWaterOrb(canvases[0].getContext('2d'),280,1,.8,0,false,s);
+    looks.drawConstellationOrb(canvases[1].getContext('2d'),280,1,.8);
+    looks.drawRippleOrb(canvases[2].getContext('2d'),280,1,.8);
+    return canvases.map(c=>{const d=c.getContext('2d').getImageData(0,0,280,280).data;return d.filter((v,i)=>i%4===3&&v>20).length});
+  })()`);
+  assert(materials.every(n=>n>1500),'premium materials failed to render');
+  fs.writeFileSync(path.join(os.tmpdir(),'izuki-orb-materials.png'),Buffer.from((await call('Page.captureScreenshot',{format:'png'})).data,'base64'));
   await navigate('/docs/app/', '!!window.izukiApps && !!document.getElementById("open-settings")');
   assert(await evaluate('!!document.getElementById("go-home") && !!document.getElementById("new-chat")'), 'phone home/new-chat controls missing');
   await evaluate('localStorage.setItem("izuki.history", JSON.stringify([{role:"user",text:"Keep this conversation"},{role:"model",text:"I will."}]))');
@@ -104,6 +117,18 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
     assert.equal(await evaluate('localStorage.getItem("izuki.orbStyle")'), style);
   }
   assert(await evaluate('!!document.getElementById("apps-refresh")'));
+  await evaluate('document.getElementById("orb-preview").scrollIntoView({block:"center"})');
+  await pause(250);
+  assert(await evaluate('document.getElementById("orb-preview").getContext("2d").getImageData(0,0,100,100).data.some((v,i)=>i%4===3&&v>0)'), 'visible Orb Studio should render');
+  await evaluate('document.getElementById("orb-response").value="0.7";document.getElementById("orb-response").dispatchEvent(new Event("input"))');
+  assert.equal(await evaluate('localStorage.getItem("izuki.orbResponse")'),'0.7');
+  await evaluate('document.getElementById("orb-surface").click()');
+  assert(await evaluate('document.getElementById("orb-studio").classList.contains("light")'));
+  await call('Emulation.setDeviceMetricsOverride', {width:390,height:844,deviceScaleFactor:1,mobile:false});
+  await evaluate('document.getElementById("orb-studio").scrollIntoView({block:"center"})');
+  await pause(250);
+  assert(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'),'Orb Studio must fit a phone');
+  fs.writeFileSync(path.join(os.tmpdir(),'izuki-orb-studio-phone.png'),Buffer.from((await call('Page.captureScreenshot',{format:'png'})).data,'base64'));
   assert.deepEqual(errors, [], 'browser JavaScript errors');
   console.log('Phone: home/new chat, settings, four orb preferences and account controls pass without JavaScript exceptions.');
   const nativeMock = await call('Page.addScriptToEvaluateOnNewDocument', { source: `window.Capacitor={isNativePlatform:()=>true,getPlatform:()=>"ios",Plugins:{IzukiDevice:{takeLaunchPrompt:async()=>({prompt:"A draft from Siri"}),haptic:async()=>({done:true})}}};` });

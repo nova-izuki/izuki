@@ -243,6 +243,9 @@ unsafe extern "system" fn esc_hook(
         let ours = key.flags.0 & LLKHF_INJECTED.0 != 0 && key.dwExtraInfo == enigo::EVENT_MARKER as usize;
         if key.vkCode == VK_ESCAPE.0 as u32 && !ours && !key_repeat_of_last_stop() {
             ESC_ON.store(false, Ordering::SeqCst);
+            // Flip the abort flag inside the hook; cleanup may wait for a
+            // worker, but another queued click must not get that head start.
+            crate::automation::request_abort();
             if let Some(app) = ESC_APP.get() {
                 let app = app.clone();
                 // Never do real work inside the hook — Windows drops slow hooks.

@@ -172,6 +172,7 @@ fn click_at_here(button: Button, times: u8) -> Result<()> {
     tiny_pause();
     let mut e = enigo()?;
     for i in 0..times.max(1) {
+        if aborted() { return Err(anyhow!("stopped")); }
         e.button(button, Direction::Click)
             .map_err(|err| anyhow!("click failed: {err:?}"))?;
         if i + 1 < times {

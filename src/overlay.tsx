@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { OverlayCanvas } from "./components/OverlayCanvas";
 import { Recover, logUncaught } from "./components/Recover";
 import "./styles.css";
+import "./lib/escapeStop";
 
 // Nothing in the overlay should ever show the webview's own menus or selection.
 window.addEventListener("contextmenu", (e) => e.preventDefault());

@@ -135,6 +135,8 @@ pub struct Settings {
     pub control_style: String,
     #[serde(default)]
     pub orb_style: String,
+    #[serde(default = "default_orb_response")]
+    pub orb_response: f64,
     #[serde(default = "default_true")]
     pub economy_mode: bool,
     pub ghost_hand: bool,
@@ -405,6 +407,8 @@ fn default_speech_language() -> String {
     "auto".into()
 }
 
+fn default_orb_response() -> f64 { 1.0 }
+
 fn default_true() -> bool {
     true
 }
@@ -471,6 +475,7 @@ impl Settings {
     pub fn heal(&mut self) {
         if !["mouse", "precision"].contains(&self.control_style.as_str()) { self.control_style = "mouse".into(); }
         if !["liquid", "ferrofluid", "ripple", "constellation"].contains(&self.orb_style.as_str()) { self.orb_style = "liquid".into(); }
+        self.orb_response = if self.orb_response.is_finite() { self.orb_response.clamp(0.5, 1.5) } else { 1.0 };
         let defaults = Self::default();
         for d in defaults.providers {
             if !self.providers.iter().any(|p| p.id == d.id) {
@@ -666,6 +671,7 @@ impl Default for Settings {
             magnetic_hand: true,
             control_style: "mouse".into(),
             orb_style: "liquid".into(),
+            orb_response: 1.0,
             economy_mode: true,
             ghost_hand: true,
             ocr_enabled: true,
@@ -795,9 +801,12 @@ mod tests {
         assert_eq!(s.control_style, "mouse");
         assert_eq!(s.orb_style, "liquid");
         assert!(s.economy_mode);
+        assert_eq!(s.orb_response, 1.0);
+        s.orb_response = 99.0;
         s.control_style = "unknown".into();
         s.orb_style = "unknown".into();
         s.heal();
+        assert_eq!(s.orb_response, 1.5);
         assert_eq!(s.control_style, "mouse");
         assert_eq!(s.orb_style, "liquid");
     }

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import pkg from "../../../package.json";
 import { PhoneCard } from "../PhoneCard";
+import { OrbStudio } from "../OrbStudio";
 import { DiscordCard } from "../DiscordCard";
 import { AndroidCard } from "../AndroidCard";
 import { BugCard } from "../BugCard";
@@ -421,10 +422,11 @@ export function SettingsTab() {
           <select aria-label="Voice orb style" className="izk-field izk-no-drag max-w-[145px] py-1 text-[11.5px]" value={settings.orb_style} onChange={(e) => patch({ orb_style: e.target.value as typeof settings.orb_style })}>
             <option value="liquid">Liquid glass</option>
             <option value="ferrofluid">Clear water</option>
-            <option value="ripple">Water ripple</option>
-            <option value="constellation">Constellation</option>
+            <option value="ripple">Tidal pearl</option>
+            <option value="constellation">Star crystal</option>
           </select>
         </Row>
+        <OrbStudio />
         <Row
           label="Text colours"
           hint={

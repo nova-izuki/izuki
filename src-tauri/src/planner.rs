@@ -103,6 +103,52 @@ pub fn local_plan(session: &DrawSession) -> Vec<ActionStep> {
     steps
 }
 
+/// Resolve an explicitly drawn target, never a nearby candidate outside it.
+pub fn drawn_target<'a>(controls: &'a [crate::uia::Control], region: &Rect, x: i32, y: i32) -> Option<&'a crate::uia::Control> {
+    let eligible = |c: &&crate::uia::Control| !c.hidden && !c.below && c.identity.is_some()
+        && matches!(c.kind.as_str(), "Button" | "Hyperlink" | "MenuItem" | "ListItem" | "TabItem" | "CheckBox" | "RadioButton" | "ComboBox" | "Edit" | "SplitButton" | "TreeItem");
+    let mut hit: Vec<_> = controls.iter().filter(eligible).filter(|c| c.rect.contains(x,y)).collect();
+    hit.sort_by_key(|c| c.rect.area());
+    if let Some(first) = hit.first() {
+        // Nested parent controls are fine; overlapping peers are ambiguous.
+        if hit.iter().skip(1).all(|c| c.rect.intersect(&first.rect) == Some(first.rect) && c.rect.area() > first.rect.area()) { return Some(first); }
+        return None;
+    }
+    let mut enclosed = controls.iter().filter(eligible).filter(|c| region.intersect(&c.rect) == Some(c.rect));
+    let first = enclosed.next()?;
+    enclosed.next().is_none().then_some(first)
+}
+
+pub fn explicit_draw_click(prompt: &str) -> bool {
+    matches!(prompt.trim().trim_end_matches(['.', '!']).to_ascii_lowercase().as_str(), "click" | "click here" | "click this" | "click that" | "click it" | "press this" | "tap this")
+}
+
+#[cfg(test)]
+mod drawn_target_tests {
+    use super::*;
+    fn control(id: u32, rect: Rect) -> crate::uia::Control {
+        crate::uia::Control { id, kind: "RadioButton".into(), name: "Option".into(), rect, hidden: false, value: String::new(), focused: false, below: false,
+            identity: Some(crate::uia::ControlIdentity { runtime_id: vec![id as i32], window: 1, rect, kind: "RadioButton".into(), name: "Option".into() }) }
+    }
+    #[test]
+    fn marks_never_snap_to_neighbours_or_ambiguous_answers() {
+        let a=Rect{x:-350,y:180,w:22,h:22}; let b=Rect{x:-350,y:230,w:22,h:22};
+        let controls=vec![control(1,a),control(2,b)];
+        assert_eq!(drawn_target(&controls,&a,-339,191).unwrap().id,1);
+        let between=Rect{x:-355,y:206,w:35,h:18};
+        assert!(drawn_target(&controls,&between,-339,215).is_none());
+        let both=Rect{x:-360,y:170,w:45,h:95};
+        assert!(drawn_target(&controls,&both,-339,217).is_none());
+        assert_eq!(drawn_target(&controls,&a.inflate(5),-353,178).unwrap().id,1);
+    }
+    #[test]
+    fn only_explicit_clicks_skip_reasoning() {
+        assert!(explicit_draw_click("Click here!"));
+        assert!(!explicit_draw_click("click the right answer"));
+        assert!(!explicit_draw_click("don't click this"));
+    }
+}
+
 /// Marks the user explicitly tagged as `watch` — these become watchers rather
 /// than one-shot actions.
 pub fn watch_marks(session: &DrawSession) -> Vec<&Mark> {

@@ -16,6 +16,7 @@
 <!-- The bug catcher first, so it hears about anything that goes wrong below. -->
 <script src="../shared/bugs.js" data-app="phone" data-version="2.1"></script>
 <script src="native.js"></script>
+<script src="pairing.js"></script>
 <script src="orb.js"></script>
 <script src="apps.js"></script>
 <style>
@@ -339,8 +340,15 @@
 
     <section>
       <h3>Your orb</h3>
-      <div class="field"><label for="orb-style">Voice companion style</label><select id="orb-style"><option value="liquid">Liquid glass</option><option value="ferrofluid">Clear water</option><option value="ripple">Water ripple</option><option value="constellation">Constellation</option></select></div>
-      <p class="note">Liquid glass stays the default. Clear water has a transparent centre, silver-blue reflections and droplets that merge while speaking. Animation pauses when this page is hidden.</p>
+      <div class="field"><label for="orb-style">Voice companion style</label><select id="orb-style"><option value="liquid">Liquid glass</option><option value="ferrofluid">Clear water</option><option value="ripple">Tidal pearl</option><option value="constellation">Star crystal</option></select></div>
+      <p class="note">Liquid glass stays the default. Clear water pulls apart and rejoins with sound. Star crystal has rotating depth; Tidal pearl has a nacre surface and fine wavefronts.</p>
+      <div class="orb-studio" id="orb-studio">
+        <canvas id="orb-preview" width="200" height="200" aria-label="Silent orb preview"></canvas>
+        <div class="row"><b>Orb Studio</b><button class="chip" id="orb-surface" type="button" aria-pressed="false">Light surface</button></div>
+        <div class="field"><label for="orb-preview-state">Preview state</label><select id="orb-preview-state"><option value="speaking">Voice demo</option><option value="listening">Rest</option><option value="thinking">Thinking</option></select></div>
+        <div class="field" id="orb-response-field"><label for="orb-response">Motion intensity <span id="orb-response-value">100%</span></label><input id="orb-response" type="range" min="0.5" max="1.5" step="0.1" value="1"></div>
+        <p class="note">Silent demo — no mic, model calls or credits. Cloud WAV replies animate from their real waveform. System voices use a quiet fallback because their audio isn't available to measure.</p>
+      </div>
     </section>
     <section id="web-install">
       <h3>Put Izuki on your home screen</h3>
@@ -1488,6 +1496,7 @@
       player.onerror = () => fallBack("error");
       stopSound = () => { try { player.pause(); } catch {} finish(); };
       player.src = url;
+      window.IzukiOrb?.trackAudio(player, url);
       player.play().catch((e) => {
         if (onBlocked && e && e.name === "NotAllowedError" && !finished) {
           finished = true;
@@ -1900,6 +1909,9 @@
 
   function openSettings(focusId = "") {
     try { $("orb-style").value = localStorage.getItem("izuki.orbStyle") || "liquid"; } catch { $("orb-style").value = "liquid"; }
+    try { $("orb-response").value = localStorage.getItem("izuki.orbResponse") || "1"; } catch {}
+    $("orb-response-value").textContent = Math.round(Number($("orb-response").value)*100)+'%';
+    updateOrbPreview();
     peopleRow($("people-settings"));
     $("key").value = key;
     $("brain").value = brain;
@@ -2036,21 +2048,30 @@
     speechLanguage = HEARING[$("speech-language").value] ? $("speech-language").value : "auto";
     store.set("speechLanguage", speechLanguage);
   };
-  $("orb-style").onchange = () => window.IzukiOrb.style($("orb-style").value);
+  window.IzukiOrb.add($("orb-preview"));
+  function updateOrbPreview() {
+    window.IzukiOrb.preview($("orb-preview"),$("orb-style").value,$("orb-preview-state").value);
+    $("orb-response-field").hidden = $("orb-style").value === 'liquid';
+  }
+  $("orb-style").onchange = () => { window.IzukiOrb.style($("orb-style").value); updateOrbPreview(); };
+  $("orb-preview-state").onchange = updateOrbPreview;
+  $("orb-response").oninput = () => { const v=Number($("orb-response").value);window.IzukiOrb.response(v);$("orb-response-value").textContent=Math.round(v*100)+'%'; };
+  $("orb-surface").onclick = () => { const light=$("orb-studio").classList.toggle('light');$("orb-surface").setAttribute('aria-pressed',String(light));$("orb-surface").textContent=light?'Dark surface':'Light surface'; };
 
   $("save-pc").onclick = async () => {
     const v = $("pc").value.trim();
     const out = $("pc-result");
     if (!v) { pc = ""; store.set("pc", ""); out.className = "note"; out.textContent = "PC unlinked."; return; }
-    if (!/^https:\/\/[^\s]+$/.test(v)) { out.className = "bad"; out.textContent = "That doesn't look like the link from Izuki on your PC."; return; }
-    pc = v; store.set("pc", pc);
+      const link=window.IzukiPairing.parse(v);
+      if (!link) { out.className = "bad"; out.textContent = "Paste the complete Call Izuki or phone-app pairing link, including its private code."; return; }
+      pc = link; store.set("pc", pc);
     out.className = "note"; out.textContent = "Checking…";
     try {
-      const r = await fetch((pc.endsWith("/") ? pc : pc + "/") + "talk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "" }) });
-      out.className = r.ok ? "ok" : "bad";
-      out.textContent = r.ok ? "Linked to your PC!" : "Your PC answered oddly — is Izuki up to date?";
-    } catch {
-      out.className = "bad"; out.textContent = "Saved, but I can't reach your PC right now — is it on with Izuki open?";
+        const result=await window.IzukiPairing.check(pc);
+        out.className = "ok";
+        out.textContent = "PC connected · " + result.version + " · checked just now";
+      } catch (error) {
+        out.className = "bad"; out.textContent = error.message;
     }
   };
 
@@ -2083,14 +2104,15 @@
 
   // ------------------------------------------------------------ start
   // Scanned the "Link the phone app" QR on the PC: linked, nothing to paste.
-  const linked = new URLSearchParams(location.hash.slice(1)).get("pc");
-  if (linked && /^https:\/\/[^\s]+$/.test(linked)) {
+  const linked = window.IzukiPairing.parse(new URLSearchParams(location.hash.slice(1)).get("pc")||'');
+  if (linked) {
     pc = linked;
     store.set("pc", pc);
     window.history.replaceState(null, "", location.pathname + location.search);
   }
   render();
   scheduleReminders();
+  if(linked) { setStatus('QR scanned · checking your PC…'); window.IzukiPairing.check(linked).then(()=>setStatus('PC connected. Tap Call to talk, or ask for a PC task.')).catch(e=>setStatus(e.message)); }
   // Native Siri links are drafts: opening a link must never silently send
   // a message, post to an account or run a PC action.
   async function receiveNativeDraft() {

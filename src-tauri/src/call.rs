@@ -198,6 +198,10 @@ fn find_tunnel_url(line: &str) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 fn handle(app: &AppHandle, mut req: tiny_http::Request) {
+    if !crate::state::store().settings().call_enabled {
+        let _ = req.respond(tiny_http::Response::from_string("Phone connection is switched off").with_status_code(503));
+        return;
+    }
     let token = crate::state::store().settings().call_token;
     let url = req.url().split('?').next().unwrap_or("").to_string();
     let base = format!("/{token}");
@@ -218,6 +222,7 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
     let json_reply = |req: tiny_http::Request, v: Value| respond(req, 200, "application/json", v.to_string().into_bytes());
 
     match (method, path) {
+        (tiny_http::Method::Get, Some("/health")) => json_reply(req, json!({ "ok": true, "service": "izuki", "version": env!("CARGO_PKG_VERSION") })),
         // The Izuki phone app (another web address) asking first.
         (tiny_http::Method::Options, Some(_)) => {
             let mut r = tiny_http::Response::empty(204);

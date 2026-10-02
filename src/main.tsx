@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { GlassConfigPanel } from "./components/GlassConfigPanel";
 import { Recover, logUncaught } from "./components/Recover";
 import "./styles.css";
+import "./lib/escapeStop";
 
 // The panel is chrome-less; stop the webview's own context menu and the
 // browser drag-select from ever showing up on the glass.

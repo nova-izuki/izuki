@@ -23,12 +23,14 @@ export function QrCode({ text, size = 148, label }: { text: string; size?: numbe
 
   const quiet = 4; // the blank border scanners need
   const view = cells.n + quiet * 2;
+  const pixels = view * Math.max(4, Math.ceil(Math.max(size, 220) / view));
   return (
     <svg
       role="img"
       aria-label={label}
-      width={size}
-      height={size}
+      width={pixels}
+      height={pixels}
+      style={{ flexShrink: 0, minWidth: pixels, minHeight: pixels }}
       viewBox={`${-quiet} ${-quiet} ${view} ${view}`}
       shapeRendering="crispEdges"
       className="rounded-[12px] shadow-[0_8px_24px_rgba(0,0,0,0.45)]"

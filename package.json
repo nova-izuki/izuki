@@ -1,7 +1,7 @@
 {
   "name": "izuki",
   "private": true,
-  "version": "1.0.19",
+  "version": "1.0.20",
   "type": "module",
   "description": "IZUKI — YO IZUKI, DO IT. Draw on your screen, Izuki does it.",
   "scripts": {
@@ -12,12 +12,17 @@
     "icons": "node scripts/make-icons.mjs",
     "test:phone": "node tools/phone-check/routing.test.cjs && node tools/phone-check/apps.test.cjs && node tools/phone-check/native.test.cjs",
     "test:voice": "node tools/voice-check.cjs",
+    "test:companion": "node tools/companion-check.mjs",
     "test:html": "node tools/html-check.cjs docs/index.html && node tools/html-check.cjs docs/links/index.html && node tools/html-check.cjs docs/app/index.html",
     "app:dev": "tauri dev",
     "app:build": "tauri build",
     "mobile:sync": "cap sync",
     "mobile:android": "cap open android",
     "mobile:ios": "cap open ios"
+  },
+  "overrides": {
+    "sharp": "$sharp",
+    "xcode": { "uuid": "11.1.1" }
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
@@ -46,6 +51,7 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
     "esbuild": "^0.28.2",
+    "jsqr": "^1.4.0",
     "sharp": "0.35.4",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",

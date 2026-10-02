@@ -59,7 +59,7 @@ export function CallCard() {
         <div className="mb-1 ml-[24px] text-[12px] leading-snug text-izk-muted">
           {status.state === "ready" ? (
             <div className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col items-start gap-3">
                 <QrCode text={status.link} label="QR code for the Call Izuki link" />
                 <span className="min-w-0 flex-1">
                   Point your phone's camera at this, then tap the link that pops up.
@@ -69,10 +69,9 @@ export function CallCard() {
               <div className="flex flex-wrap gap-1.5">
                 <button
                   type="button"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(status.link).catch(() => undefined);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
+                  onClick={async () => {
+                    try { await navigator.clipboard.writeText(status.link); setCopied(true); setTimeout(() => setCopied(false), 1500); }
+                    catch { setCopied(false); }
                   }}
                   className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
                 >
@@ -94,16 +93,16 @@ export function CallCard() {
                 </button>
               </div>
               {appQr && (
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col items-start gap-3">
                   <QrCode text={`${PHONE_APP}#pc=${encodeURIComponent(status.link)}`} label="QR code that links the Izuki phone app to this PC" />
                   <span className="min-w-0 flex-1">
-                    Scan this with your phone: the Izuki phone app opens already linked to this PC — your email, calendar
-                    and “do it on my PC” work from it. Add it to your home screen from there.
+                    Scan to open the web companion and check its connection to this PC. “Do it on my PC” uses your
+                    PC’s configured accounts and permissions; signing into an account is still required.
                   </span>
                 </div>
               )}
               <span>
-                The link changes when Izuki restarts — a paired phone gets the new one by text, or send the bot /call.
+                Keep this link private: it grants access to your PC. It changes when the call tunnel restarts. If an older scan fails, scan the current code; a connected messaging bot can also send the new /call link.
               </span>
             </div>
           ) : status.state === "error" ? (
