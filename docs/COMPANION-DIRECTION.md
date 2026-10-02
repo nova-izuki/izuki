@@ -25,4 +25,17 @@ Izuki's direction is a companion that explains what it knows, remembers what you
 - [ ] Continuous, player-aware tutoring beyond bounded screenshot/caption checks.
 - [ ] Production-signed phone distribution and stable Android update signing.
 
+## Jarvis and Vovy reference follow-up
+
+On 2026-10-02 the user reinforced the Jarvis direction and named “Jacksatel / Vovy.” Likely references: [FatihMakes Mark-LV](https://github.com/FatihMakes/Mark-LV), [Vovy](https://www.vovy.ai/) and [Jack Saltel's Vovy post](https://www.linkedin.com/posts/jacksaltel_vovy-hit-the-boxing-ring-at-startup-mania-activity-7437618180551970816-aKC5). These public descriptions are product claims, not comparative benchmarks. No code or branded assets were copied.
+
+Keep these as explicit, unshipped acceptance targets rather than quietly treating them as completed:
+
+- [ ] Distinct explain/teach/act controls using the same current screen context; explanation alone must never authorize a click.
+- [ ] Evaluate a licensed visual-parser fallback for controls inaccessible through UI Automation/DOM, with ambiguity thresholds, stale-screen rejection and measured latency. v1.0.20 does not bundle OmniParser.
+- [ ] Test small answer buttons, browser zoom, multiple monitor scaling, moving/covered targets and page transitions. Record incorrect-click rate, refusals and median/p95 time to action; never advertise zero mistakes from a demo.
+- [ ] Action-completion alerts must follow verified outcomes, not merely model-generated plans. Mobile background delivery needs a supported transport and an actual-device delivery test.
+- [ ] Player-aware teaching must preserve the selected video, coordinate pause/resume and volume, and keep pen marks attached to the relevant frame/element. Existing bounded checks are not continuous understanding.
+- [ ] Notifications need opt-in sources, quiet hours, duplicate suppression and visible delivery status. Native local reminders already exist; that does not imply arbitrary account alerts or PC-to-phone push delivery.
+
 The optional fluid renderer is an original visual approximation of surface tension and magnetic-style movement, not a physical ferrofluid simulation. The original default Liquid glass renderer is retained. No claim of industry-first inventions or unrestricted iPhone control.
