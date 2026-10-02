@@ -1818,15 +1818,17 @@ fn is_yes(said: &str) -> bool {
     ["yes", "yeah", "yep", "yup", "sure", "go ahead", "go on", "do it", "please do", "affirmative"]
         .iter()
         .any(|k| {
-            if s == *k {
-                return true;
+            let Some(rest) = s.strip_prefix(k) else { return false };
+            // A whole word only: "yes" answers, "yesterday" is a new request.
+            if rest.chars().next().is_some_and(|c| c.is_alphanumeric()) {
+                return false;
             }
-            // "yes, open the file" answers a question; "yes I know, but can you…"
-            // is a new sentence that merely starts the same way. "Continue" is
-            // rare enough that a prefix match is safe, but "yes" opens all
-            // sorts of ordinary sentences — so the rest has to stay short.
-            let Some(rest) = s.strip_prefix(&format!("{k} ")) else { return false };
-            rest.split_whitespace().count() <= 5
+            // Bare "yes", or a short instruction after it ("yes, open the
+            // file"). "Continue" is rare enough that a prefix match is safe,
+            // but "yes" opens all sorts of ordinary sentences — so the rest has
+            // to stay short or it is read as a new request instead.
+            let rest = rest.trim_start_matches([' ', ',', '.', '!', '?', ';', ':']);
+            rest.is_empty() || rest.split_whitespace().count() <= 3
         })
 }
 
@@ -2062,6 +2064,7 @@ mod speed_tests {
             assert!(is_yes(said), "{said}");
         }
         assert!(is_yes("yes, open the file"), "a short instruction after it still counts");
+        assert!(!is_yes("yesterday's meeting"), "a longer word that starts 'yes' is not an answer");
         assert!(!is_yes("no"));
         assert!(!is_yes("not yet"));
         // A real sentence that merely begins "yes" is a new request, not an answer.
