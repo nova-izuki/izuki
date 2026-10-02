@@ -50,7 +50,11 @@ const SYSTEM_PROMPT: &str = concat!(
     "explain with {\"action\":\"draw\",\"shape\":\"circle|underline|arrow|box|note\",\"x\":…,\"y\":…} — ",
     "circle/box: x,y is one corner and x2,y2 the other, around the thing; underline: x,y to x2,y2 under the ",
     "words; arrow: from x,y to x2,y2; note: a few words in text_to_type written at x,y (a working step, an ",
-    "answer, a label). Nothing gets clicked. Draw in the order you explain, 2 to 6 marks, and put the ",
+    "answer, a label). Nothing gets clicked. When the thing you are marking is one of the listed controls, set \
+\"target\" to its number on the draw step too (add \"target2\" for the far end of an arrow): Izuki then takes \
+the exact bounds of that real control and draws the box, circle or underline around it, instead of your \
+guessed corners landing somewhere near it. Prefer that whenever the list contains it — guessing corners on a \
+downscaled screenshot is what makes marks land badly. Draw in the order you explain, 2 to 6 marks, and put the ",
     "explanation itself in `summary` step by step, the way a patient teacher talks — the marks stay on screen ",
     "while it's said. Follow the user's playback preference: keep playing or slow down if requested. ",
     "If asked to pause, use a verified Pause control, never a toggle key that might resume an already paused video. ",
@@ -1418,6 +1422,13 @@ fn spoken_line(summary: &str, steps: &[ActionStep]) -> String {
 /// then drop pointer steps left with no genuine position — a made-up target
 /// number and no coordinates of its own. Clicking wherever (0,0) lands is
 /// the one thing worse than doing nothing.
+/// Whether a drawn shape is a rectangle around a thing (two corners from the
+/// real control) rather than a point or a free label. A `note` is words
+/// written at a spot, so it keeps the centre.
+fn drawn_as_box(shape: Option<&str>) -> bool {
+    !matches!(shape.map(str::trim), Some("note"))
+}
+
 fn resolve_targets(steps: &mut Vec<ActionStep>, controls: &[crate::uia::Control], had_point: &[bool]) {
     let find = |id: u32| controls.iter().find(|c| c.id == id);
     let mut keep = Vec::with_capacity(steps.len());
@@ -1429,11 +1440,24 @@ fn resolve_targets(steps: &mut Vec<ActionStep>, controls: &[crate::uia::Control]
         s.snapped_to = None;
         s.hover_first = false;
         s.scroll_first = false;
-        let mut pinned = false;
+let mut pinned = false;
         if let Some(c) = s.target.and_then(|id| find(id)) {
             let (cx, cy) = c.rect.center();
-            s.x = cx;
-            s.y = cy;
+            // A box, circle, underline or arrow is a rectangle drawn *around*
+            // something — two corners, not a point. Snapping only the first
+            // corner to the centre left the model's guessed second corner in
+            // place, so the shape landed small, lopsided or on the wrong thing.
+            // Taking both corners from the real bounds is what makes underlining
+            // and boxing land on the text they were aimed at.
+            if s.action == Intent::Draw && drawn_as_box(s.shape.as_deref()) {
+                s.x = c.rect.x;
+                s.y = c.rect.y;
+                s.x2 = Some(c.rect.x + c.rect.w);
+                s.y2 = Some(c.rect.y + c.rect.h);
+            } else {
+                s.x = cx;
+                s.y = cy;
+            }
             s.snapped_to = Some(if c.name.is_empty() { c.kind.clone() } else { c.name.clone() });
             s.hover_first = c.hidden;
             s.scroll_first = c.below;
@@ -1625,6 +1649,42 @@ mod tests {
         resolve_targets(&mut steps, &controls, &[false]);
         assert_eq!((steps[0].x, steps[0].y), (10, 5));
         assert_eq!((steps[0].x2, steps[0].y2), (Some(110), Some(105)));
+    }
+
+    #[test]
+    fn a_box_around_a_control_uses_its_real_bounds_not_its_centre() {
+        // Underlining and boxing landed badly because the first corner snapped
+        // to the control's centre while the second stayed a guess. Both corners
+        // have to come from the real bounds (control() is 20x10).
+        let mut steps = vec![step(json!({ "action": "draw", "shape": "box", "target": 7, "x": 1, "y": 2, "x2": 3, "y2": 4 }))];
+        resolve_targets(&mut steps, &[control(7, 100, 200)], &[true]);
+        assert_eq!((steps[0].x, steps[0].y), (100, 200), "top-left of the real control");
+        assert_eq!((steps[0].x2, steps[0].y2), (Some(120), Some(210)), "bottom-right of the real control");
+    }
+
+    #[test]
+    fn an_underline_around_a_control_spans_the_whole_thing() {
+        let mut steps = vec![step(json!({ "action": "draw", "shape": "underline", "target": 7, "x": 0, "y": 0 }))];
+        resolve_targets(&mut steps, &[control(7, 100, 200)], &[true]);
+        assert_eq!((steps[0].x, steps[0].y), (100, 200));
+        assert_eq!((steps[0].x2, steps[0].y2), (Some(120), Some(210)));
+    }
+
+    #[test]
+    fn a_note_still_lands_on_the_centre_and_keeps_no_second_corner() {
+        // A note is words written at a spot, not a rectangle around something.
+        let mut steps = vec![step(json!({ "action": "draw", "shape": "note", "target": 7 }))];
+        resolve_targets(&mut steps, &[control(7, 100, 200)], &[false]);
+        assert_eq!((steps[0].x, steps[0].y), (110, 205), "the centre, as before");
+        assert_eq!(steps[0].x2, None);
+    }
+
+    #[test]
+    fn a_click_on_a_control_is_still_its_centre() {
+        // Guard the existing behaviour: only drawn shapes changed.
+        let mut steps = vec![step(json!({ "action": "click", "target": 7 }))];
+        resolve_targets(&mut steps, &[control(7, 100, 200)], &[false]);
+        assert_eq!((steps[0].x, steps[0].y), (110, 205));
     }
 
     #[test]
