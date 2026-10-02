@@ -1366,19 +1366,28 @@ async function handleInstant(local: LocalCommand) {
 /** Set by the mounted `VoiceEngine` — the one pipeline for every request. */
 let runRequest: (text: string, from: "voice" | "typed") => Promise<void> = async () => {};
 
-/** Send a typed chat line through the exact same pipeline a spoken one uses. */
-export async function sendChatCommand(text: string) {
+/**
+ * Send a typed chat line through the exact same pipeline a spoken one uses.
+ *
+ * Resolves true once something has handled it. False means the overlay handed
+ * the line to the config panel and nothing ever answered — the chat must show
+ * that and let the message be sent again, rather than spin forever.
+ */
+export async function sendChatCommand(text: string): Promise<boolean> {
   const t = text.trim();
-  if (!t) return;
+  if (!t) return false;
   // Typed in the overlay's floating chat: the voice, the mic and the real
   // settings all live in the config panel — hand the message over and wait
   // for it to be handled, so there's exactly one place this logic runs.
   if (!useIzuki.getState().settingsLoaded) {
     const id = Date.now() + Math.random();
+    let handled = false;
     await new Promise<void>((resolve) => {
       const timer = setTimeout(done, 180_000);
       const off = on<{ id: number }>(EV.chatDone, (d) => {
-        if (d.id === id) done();
+        if (d.id !== id) return;
+        handled = true;
+        done();
       });
       function done() {
         clearTimeout(timer);
@@ -1387,7 +1396,8 @@ export async function sendChatCommand(text: string) {
       }
       void off.then(() => emit(EV.runChat, { id, text: t }));
     });
-    return;
+    return handled;
   }
   await runRequest(t, "typed");
+  return true;
 }

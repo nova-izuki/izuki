@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Loader2, MessageCircle, Send } from "lucide-react";
+import { Loader2, MessageCircle, RotateCcw, Send, X } from "lucide-react";
 import { api, EV, on } from "../lib/ipc";
 import { markHit } from "../lib/hitTest";
 import { resizeHandles, useFloating, workArea, type Limits } from "../lib/floating";
@@ -45,6 +45,12 @@ export function FloatingChat() {
     });
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  /** The message that never got answered — shown with a way to send it again. */
+  const [stuck, setStuck] = useState("");
+  /** The one-tap replies that carry the conversation on (from the config panel,
+   *  which is the window that actually keeps the thread). */
+  const [chips, setChips] = useState<string[]>([]);
+  const live = useRef<object | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const bubble = useFloating(
@@ -100,18 +106,54 @@ export function FloatingChat() {
     return () => void off.then((f) => f());
   }, []);
 
-  const submit = async () => {
-    const t = text.trim();
+  const submit = async (value?: string) => {
+    const t = (value ?? text).trim();
     if (!t || busy) return;
     setText("");
+    setStuck("");
     setBusy(true);
+    // Marks this exact request, so closing the chat mid-flight abandons the
+    // wait instead of the reply arriving later into a box that's gone.
+    const mine = {};
+    live.current = mine;
     try {
-      await sendChatCommand(t);
+      const handled = await sendChatCommand(t);
+      if (live.current !== mine) return;
+      if (!handled) {
+        setStuck(t);
+        setText(t);
+      }
+    } catch {
+      if (live.current !== mine) return;
+      setStuck(t);
+      setText(t);
     } finally {
-      setBusy(false);
-      focusInput();
+      if (live.current === mine) {
+        live.current = null;
+        setBusy(false);
+        focusInput();
+      }
     }
   };
+
+  /**
+   * The one way out, and it always works — even mid-request. Closing drops the
+   * wait for a reply that may never come, so the chat can never be left
+   * spinning with no way to escape it.
+   */
+  const closeChat = () => {
+    live.current = null;
+    setBusy(false);
+    setStuck("");
+    setChips([]);
+    setOpen(false);
+  };
+
+  // The conversation lives in the config panel, so it's told what to offer.
+  useEffect(() => {
+    const off = on<string[]>(EV.suggestions, (list) => setChips(Array.isArray(list) ? list.slice(0, 4) : []));
+    return () => void off.then((f) => f());
+  }, []);
 
   const tall = pill.box.h > 60;
   // Readable over whatever is behind it — or the look picked in Settings.
@@ -171,7 +213,9 @@ export function FloatingChat() {
                     e.preventDefault();
                     void submit();
                   }
-                  if (e.key === "Escape") setOpen(false);
+                  // Esc always leaves — including mid-request, so a chat that's
+                  // stuck waiting can't trap you here.
+                  if (e.key === "Escape") closeChat();
                 }}
                 placeholder="Tell Izuki what to do…"
                 className={cx(
@@ -183,16 +227,47 @@ export function FloatingChat() {
                 type="button"
                 onClick={() => void submit()}
                 disabled={busy || !text.trim()}
-                aria-label="Send"
+                aria-label={stuck ? "Send again" : "Send"}
                 className="izk-btn-primary flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full disabled:opacity-40"
               >
                 {busy ? (
                   <Loader2 size={14} className="animate-spin" />
+                ) : stuck ? (
+                  <RotateCcw size={14} strokeWidth={2.6} />
                 ) : (
                   <Send size={14} strokeWidth={2.6} />
                 )}
               </button>
+              <button
+                type="button"
+                onClick={closeChat}
+                aria-label="Close chat"
+                title="Close (Esc)"
+                className="izk-no-drag flex h-[34px] w-[22px] shrink-0 items-center justify-center rounded-full text-izk-muted transition-colors duration-150 hover:bg-white/10 hover:text-izk-ink"
+              >
+                <X size={14} strokeWidth={2.6} />
+              </button>
             </div>
+            {(chips.length > 0 || stuck) && (
+              <div className="absolute left-1 top-full z-50 mt-1.5 flex flex-col items-start gap-1">
+                {chips.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void submit(s)}
+                    className="izk-card izk-grain max-w-full truncate px-2.5 py-1 text-[11px] text-izk-ink transition-colors duration-150 hover:bg-white/12 disabled:opacity-40"
+                  >
+                    {s}
+                  </button>
+                ))}
+                {stuck && (
+                  <p className="izk-tone-text rounded-[10px] bg-black/70 px-2 py-1 text-[10.5px] leading-snug text-izk-ink/90">
+                    Izuki didn't answer that one. Press ↻ to send it again, or X to close.
+                  </p>
+                )}
+              </div>
+            )}
             {HANDLES.map((h) => (
               <div key={h.edge} style={h.style} onPointerDown={(e) => pill.begin(e, h.edge)} />
             ))}

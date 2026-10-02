@@ -14,7 +14,8 @@
 use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use parking_lot::Mutex;
@@ -114,15 +115,30 @@ fn cloudflared_path() -> PathBuf {
     crate::store::data_dir().join("bin").join(name)
 }
 
+/// Cloudflared is about 60 MB, so anything much smaller is a download that was
+/// cut short, an error page saved as the file, or a program Windows blocked.
+/// Either way it's re-fetched instead of being trusted — a bad file used to
+/// leave the call line broken for good, with nothing the user could do but
+/// reinstall the app.
+const MIN_CLOUDFLARED_BYTES: u64 = 1_000_000;
+
+fn usable(path: &std::path::Path) -> bool {
+    std::fs::metadata(path).is_ok_and(|m| m.len() > MIN_CLOUDFLARED_BYTES)
+}
+
 /// Cloudflare's tunnel program, downloaded once (about 60 MB) from its
 /// official GitHub releases.
 fn ensure_cloudflared(app: &AppHandle) -> anyhow::Result<PathBuf> {
     let path = cloudflared_path();
-    if path.exists() {
+    if usable(&path) {
         return Ok(path);
     }
     if !cfg!(windows) {
         anyhow::bail!("install cloudflared first");
+    }
+    if path.exists() {
+        eprintln!("[call] the saved cloudflared is broken — downloading it again");
+        let _ = std::fs::remove_file(&path);
     }
     set(app, "downloading", "", None);
     eprintln!("[call] downloading cloudflared");
@@ -133,7 +149,7 @@ fn ensure_cloudflared(app: &AppHandle) -> anyhow::Result<PathBuf> {
         .send()?
         .error_for_status()?
         .bytes()?;
-    if bytes.len() < 1_000_000 {
+    if (bytes.len() as u64) <= MIN_CLOUDFLARED_BYTES {
         anyhow::bail!("the tunnel download looks broken — try again later");
     }
     std::fs::create_dir_all(path.parent().expect("bin dir"))?;
@@ -149,7 +165,7 @@ fn start_tunnel(app: &AppHandle, port: u16) -> anyhow::Result<()> {
     let mut cmd = Command::new(exe);
     cmd.args(["tunnel", "--no-autoupdate", "--url", &format!("http://127.0.0.1:{port}")])
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     #[cfg(windows)]
     {
@@ -157,32 +173,84 @@ fn start_tunnel(app: &AppHandle, port: u16) -> anyhow::Result<()> {
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: no console pops up
     }
     let mut child = cmd.spawn()?;
-    let stderr = child.stderr.take().ok_or_else(|| anyhow::anyhow!("no tunnel output"))?;
+    let stderr = child.stderr.take();
+    let stdout = child.stdout.take();
     *TUNNEL.lock() = Some(child);
 
-    // cloudflared prints its address to stderr; keep reading so it never
-    // blocks on a full pipe.
-    let app = app.clone();
-    std::thread::spawn(move || {
-        let mut announced = false;
-        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-            if announced {
-                continue;
+    // Cloudflared prints its address as it starts — but which of its two output
+    // streams that lands on has moved between releases, so both are read and
+    // both are kept drained, or the child blocks on a full pipe. Whatever it
+    // complains about is kept too, so the reason a call line wouldn't start is
+    // shown instead of a bare "it didn't work".
+    let announced = Arc::new(AtomicBool::new(false));
+    let closed = Arc::new(AtomicUsize::new(0));
+    let watching = usize::from(stderr.is_some()) + usize::from(stdout.is_some());
+    for stream in [stdout.map(Stream::Out), stderr.map(Stream::Err)] {
+        let Some(stream) = stream else { continue };
+        let (announced, closed) = (Arc::clone(&announced), Arc::clone(&closed));
+        let app = app.clone();
+        std::thread::spawn(move || {
+            let mut complaint = String::new();
+            for line in BufReader::new(stream.reader()).lines().map_while(Result::ok) {
+                if announced.load(Ordering::SeqCst) {
+                    continue;
+                }
+                if let Some(base) = find_tunnel_url(&line) {
+                    announced.store(true, Ordering::SeqCst);
+                    let token = crate::state::store().settings().call_token;
+                    let link = format!("{base}/{token}/");
+                    eprintln!("[call] ready at {base}/…");
+                    set(&app, "ready", &link, None);
+                    crate::companion::notify_everywhere(&format!("📞 Call Izuki — open this on your phone and tap to talk:\n{link}"));
+                    continue;
+                }
+                if looks_like_a_complaint(&line) {
+                    complaint = line;
+                }
             }
-            if let Some(base) = find_tunnel_url(&line) {
-                announced = true;
-                let token = crate::state::store().settings().call_token;
-                let link = format!("{base}/{token}/");
-                eprintln!("[call] ready at {base}/…");
-                set(&app, "ready", &link, None);
-                crate::companion::notify_everywhere(&format!("📞 Call Izuki — open this on your phone and tap to talk:\n{link}"));
+            // Only a tunnel that got no address *and* finished saying why is
+            // worth reporting; the other stream may still be opening.
+            if closed.fetch_add(1, Ordering::SeqCst) + 1 == watching && !announced.load(Ordering::SeqCst) {
+                let why = if complaint.is_empty() {
+                    "The tunnel stopped before it was ready — is the internet on?".to_string()
+                } else {
+                    complaint
+                };
+                eprintln!("[call] tunnel never opened: {why}");
+                set(&app, "error", "", Some(why));
             }
-        }
-        if !announced {
-            set(&app, "error", "", Some("The tunnel stopped before it was ready — is the internet on?".into()));
-        }
-    });
+        });
+    }
     Ok(())
+}
+
+/// Either of cloudflared's two output streams, so both can be read the same way.
+enum Stream {
+    Out(std::process::ChildStdout),
+    Err(std::process::ChildStderr),
+}
+
+impl Stream {
+    fn reader(self) -> impl Read {
+        match self {
+            Stream::Out(o) => Box::new(o) as Box<dyn Read + Send>,
+            Stream::Err(e) => Box::new(e) as Box<dyn Read + Send>,
+        }
+    }
+}
+
+/// The lines worth showing the user when the line never opens: an error or a
+/// refused connection, not the cheerful banner it prints while starting.
+fn looks_like_a_complaint(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    lower.contains("err")
+        || lower.contains("fail")
+        || lower.contains("unable to")
+        || lower.contains("could not")
+        || lower.contains("denied")
+        || lower.contains("refused")
+        || lower.contains("rate")
+        || lower.contains("try again")
 }
 
 fn find_tunnel_url(line: &str) -> Option<String> {
@@ -351,7 +419,7 @@ fn cors<R: std::io::Read>(r: &mut tiny_http::Response<R>) {
 
 #[cfg(test)]
 mod tests {
-    use super::find_tunnel_url;
+    use super::{find_tunnel_url, looks_like_a_complaint};
 
     #[test]
     fn finds_the_quick_tunnel_address() {
@@ -359,5 +427,37 @@ mod tests {
         assert_eq!(find_tunnel_url(line).as_deref(), Some("https://calm-otter-lake.trycloudflare.com"));
         assert!(find_tunnel_url("INF Requesting new quick Tunnel on trycloudflare.com...").is_none());
         assert!(find_tunnel_url("see https://www.cloudflare.com/website-terms/").is_none());
+    }
+
+    #[test]
+    fn keeps_the_address_whichever_stream_it_arrives_on() {
+        // Cloudflared has printed this on stdout and stderr in different
+        // releases; both have to be read or the link never appears.
+        let url = "https://quiet-river-fern.trycloudflare.com";
+        for line in [format!("INF |  {url}  |"), format!("{url}\n"), format!("INF Your quick Tunnel: {url}")] {
+            assert_eq!(find_tunnel_url(&line).as_deref(), Some(url), "{line}");
+        }
+    }
+
+    #[test]
+    fn a_broken_tunnel_explains_itself() {
+        // The reason the line didn't open is shown, not swallowed.
+        for line in [
+            "2026-09-26T10:00:00Z ERR failed to create tunnel: too many active quick tunnels",
+            "2026-09-26T10:00:00Z INF Unable to reach the origin service",
+            "2026-09-26T10:00:00Z ERR connection refused",
+            "2026-09-26T10:00:00Z WRN rate limited, try again shortly",
+        ] {
+            assert!(looks_like_a_complaint(line), "{line}");
+        }
+        // The cheerful banner it prints while starting is not an error.
+        for line in [
+            "INF Thank you for trying Cloudflare Tunnel.",
+            "INF +----------------------------------------+",
+            "INF Your quick Tunnel has been created!",
+            "INF Cannot determine default configuration path.",
+        ] {
+            assert!(!looks_like_a_complaint(line), "{line}");
+        }
     }
 }

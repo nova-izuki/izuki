@@ -529,6 +529,8 @@ export const EV = {
   chatDone: "izuki://chat-done",
   /** Streamed words of a conversation reply (chat.rs). */
   chatDelta: "izuki://chat-delta",
+  /** The one-tap replies to offer next (string[]). */
+  suggestions: "izuki://suggestions",
   /** Custom wake words were added or removed — the detector reloads. */
   wakewordsChanged: "izuki://wakewords-changed",
   /** The hands-free voice sphere: OrbState. */

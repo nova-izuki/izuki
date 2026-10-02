@@ -42,6 +42,10 @@ struct State {
     school: Vec<Due>,
     /// (assignment, "24h" / "2h") already told.
     told_school: HashSet<String>,
+    /// Why nothing is arriving, said once when it changes. Every failure below
+    /// is otherwise only a line in the log, so the switches read "on" while
+    /// nothing can possibly arrive.
+    reason: String,
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -74,6 +78,24 @@ fn due(at: Option<Instant>, every: Duration) -> bool {
     at.is_none_or(|t| t.elapsed() >= every)
 }
 
+/// Say once — and only when it changes — why no heads-up is arriving, so the
+/// switches in the Apps tab can't sit "on" while nothing can possibly come.
+/// Empty means everything it needs is there.
+fn set_reason(app: &AppHandle, st: &mut State, why: &str) {
+    if st.reason == why {
+        return;
+    }
+    st.reason = why.to_string();
+    if why.is_empty() {
+        return;
+    }
+    eprintln!("[headsup] idle: {why}");
+    let _ = app.emit(
+        crate::events::STATUS,
+        StatusEvent { kind: "info", message: "Heads-ups are on but can't run yet".into(), detail: Some(why.to_string()) },
+    );
+}
+
 fn tick(app: &AppHandle) {
     let settings = crate::state::store().settings();
     let mut guard = STATE.lock();
@@ -84,6 +106,7 @@ fn tick(app: &AppHandle) {
         st.connected.clear(); st.apps_at = None;
         st.email_at = None; st.calendar_at = None;
         st.seen_mail = None; st.told_events.clear();
+        st.reason.clear();
     }
 
     // School work: from the calendar links, no app key needed.
@@ -108,6 +131,11 @@ fn tick(app: &AppHandle) {
     }
 
     if !crate::composio::configured() {
+        set_reason(
+            app,
+            st,
+            "Email and calendar heads-ups need your accounts connected. Add your free Composio key in Izuki → Apps, then connect Gmail or Google Calendar.",
+        );
         if settings.morning_brief && brief_due(&settings.morning_brief_at) {
             let text = morning_brief(false, false, &st.school);
             mark_brief_sent();
@@ -125,6 +153,19 @@ fn tick(app: &AppHandle) {
     }
     let linked = st.connected.clone();
     let has = |slug: &str| linked.iter().any(|c| c == slug);
+
+    // Connected, but not to anything this watches: say so rather than leaving
+    // every switch on and nothing arriving.
+    set_reason(
+        app,
+        st,
+        match (!has("gmail"), !has("googlecalendar")) {
+            (true, true) => "Connected, but Gmail and Google Calendar aren't linked yet. Link either one and heads-ups start on their own.",
+            (true, false) => "Google Calendar is linked, but Gmail isn't — link Gmail for new-mail heads-ups.",
+            (false, true) => "Gmail is linked, but Google Calendar isn't — link it for meeting heads-ups.",
+            (false, false) => "",
+        },
+    );
 
     if settings.heads_up_email && has("gmail") && due(st.email_at, EMAIL_EVERY) {
         st.email_at = Some(Instant::now());

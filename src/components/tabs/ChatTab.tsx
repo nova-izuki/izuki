@@ -9,7 +9,7 @@ import { cx } from "../ui";
 import type { Reminder } from "../../lib/types";
 import { useIzuki } from "../../lib/store";
 import { brainReady } from "../../lib/setup";
-import { needsApps } from "../../lib/conversation";
+import { needsApps, recentHistory, shareHistory } from "../../lib/conversation";
 
 /**
  * Izuki as a plain chat companion — no screen, no mouse. Ask anything,
@@ -210,6 +210,35 @@ export function ChatTab() {
       clearInterval(tick);
     };
   }, [refreshReminders]);
+
+  /**
+   * One conversation, not two. This tab keeps its own saved transcript for
+   * display, but every turn is also published to the conversation the orb, the
+   * hands-free bar and the floating chat share — so typing "continue" there
+   * carries on this thread instead of opening a fresh one. It works both ways:
+   * the first time the tab is opened with nothing in it, the orb's conversation
+   * is brought in, so the thread the user was already on is where they land.
+   */
+  const importedRef = useRef(false);
+  useEffect(() => {
+    if (importedRef.current) return;
+    importedRef.current = true;
+    const shared = recentHistory().filter((t) => t.content.trim());
+    if (!shared.length) return;
+    setMsgs((m) => (m.length ? m : shared.map((t) => ({ role: t.role, content: t.content }))));
+  }, []);
+  // Only what this tab adds from here on. Publishing the whole saved
+  // transcript would push the live conversation out of the short shared
+  // window the orb is using — so opening this tab would end the thread the
+  // user was in the middle of.
+  const baseline = useRef<number | null>(null);
+  useEffect(() => {
+    if (baseline.current === null) {
+      baseline.current = msgs.length;
+      return;
+    }
+    shareHistory(msgs.slice(baseline.current).map(({ role, content }) => ({ role, content })));
+  }, [msgs]);
 
   const send = useCallback(
     async (text: string, note = false) => {

@@ -1129,7 +1129,7 @@ fn submit_task(
 
     // "Keep going" after a task had to stop: pick it up where it left off.
     let (prompt, resumed) = match UNFINISHED.lock().take() {
-        Some((task, done)) if is_keep_going(&prompt) => (task, done),
+        Some((task, done)) if is_keep_going(&prompt) || is_yes(&prompt) => (task, done),
         Some(t) => {
             // Something new — forget the old one.
             let _ = t;
@@ -1805,6 +1805,21 @@ fn is_keep_going(said: &str) -> bool {
     .any(|k| s == *k || s.starts_with(&format!("{k} ")))
 }
 
+/// "Yes", "yeah", "sure"… — answering the question Izuki just asked ("want me
+/// to scroll and continue?") is the same as telling it to carry on. Without
+/// this, a plain "yes" is taken as the start of a fresh conversation and the
+/// thing it offered to do never happens.
+///
+/// Only ever consulted when a task is actually waiting on an answer, so "yes"
+/// in ordinary conversation is untouched.
+fn is_yes(said: &str) -> bool {
+    let s = said.trim().trim_end_matches(['.', '!', '?']).to_lowercase();
+    let s = s.trim_start_matches("okay ").trim_start_matches("ok ").trim_start_matches("please ");
+    ["yes", "yeah", "yep", "yup", "sure", "go ahead", "go on", "do it", "please do", "affirmative"]
+        .iter()
+        .any(|k| s == *k || s.starts_with(&format!("{k} ")))
+}
+
 /// The answer to a pending "which one? circle it" question, when it comes.
 static HELP: parking_lot::Mutex<Option<std::sync::mpsc::Sender<Option<DrawSession>>>> =
     parking_lot::Mutex::new(None);
@@ -2027,6 +2042,19 @@ mod speed_tests {
         assert_eq!((z.width, z.height), (720, 480));
         // Most of the screen: no point.
         assert!(zoom_region(&frame, Rect { x: -1900, y: 10, w: 1800, h: 1000 }).is_none());
+    }
+
+    #[test]
+    fn yes_carries_on_a_pending_task() {
+        // Izuki asked "want me to scroll and continue?" — a plain "yes" has to
+        // resume it, not read as the start of a new conversation.
+        for said in ["yes", "Yes.", "yes please", "yeah", "yep", "sure", "ok yes", "go ahead", "do it"] {
+            assert!(is_yes(said), "{said}");
+        }
+        assert!(!is_yes("no"));
+        assert!(!is_yes("not yet"));
+        assert!(!is_yes("yes tell me about the weather")); // too long to be an answer
+        assert!(!is_yes(""));
     }
 
     #[test]

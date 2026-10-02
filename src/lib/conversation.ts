@@ -9,7 +9,7 @@
  * if the chat model realises it needs the screen after all, it says
  * `[SCREEN]` and the request is handed over.
  */
-import { api, EV, on } from "./ipc";
+import { api, EV, emit, on } from "./ipc";
 
 export interface Turn {
   role: "user" | "assistant";
@@ -29,11 +29,99 @@ export function remember(role: Turn["role"], content: string) {
   lastAt = Date.now();
   history.push({ role, content: t });
   if (history.length > 16) history.splice(0, history.length - 16);
+  publish();
+}
+
+/**
+ * Send the next-step chips to the windows that can't work them out for
+ * themselves. The floating chat and the phone run in their own webviews and
+ * keep no copy of this conversation, so it's told what to offer.
+ */
+function publish() {
+  try {
+    void emit(EV.suggestions, suggestions());
+  } catch {
+    // A window that isn't there yet isn't a reason to drop the turn.
+  }
 }
 
 /** The conversation so far (oldest first) — for the apps lane. */
 export function recentHistory(): Turn[] {
   return history.slice();
+}
+
+/** Keep only the tail, so a long transcript can't flood the window. */
+const MAX_TURNS = 16;
+
+/**
+ * Another lane — the Chat tab — is holding the conversation. Take its recent
+ * turns as ours, so a short reply typed at the orb ("continue", "yes, the
+ * second one") carries on the same thread instead of opening a fresh one.
+ *
+ * Merged rather than replaced: the Chat tab renders one saved transcript while
+ * the orb hears another, and a reply spoken at one of them must never drop what
+ * the other just said. Duplicates are skipped, newest wins the order.
+ */
+export function shareHistory(turns: Turn[]): void {
+  const incoming = turns
+    .slice(-MAX_TURNS)
+    .map((t) => ({ role: t.role, content: (t.content ?? "").trim() }))
+    .filter((t) => t.content && (t.role === "user" || t.role === "assistant"));
+  if (!incoming.length) return;
+  const seen = new Set(history.map((t) => `${t.role}\u0000${t.content}`));
+  for (const t of incoming) {
+    const key = `${t.role}\u0000${t.content}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    history.push(t);
+  }
+  // Shared, so it counts as just now — otherwise the 15-minute reset would wipe
+  // a thread the user is still typing into.
+  lastAt = Date.now();
+  if (history.length > MAX_TURNS) history.splice(0, history.length - MAX_TURNS);
+  publish();
+}
+
+/**
+ * What they might want to say next, as one-tap chips — so the reply that
+ * carries on the conversation is a tap rather than something to type. This is
+ * read off the thread itself rather than asked of the model on purpose: the
+ * chips have to be there the instant the reply lands, on every lane (voice,
+ * typed, the phone), without spending a token or risking a tag flashing up
+ * halfway through an answer.
+ *
+ * At most four, in the order they'd most likely be wanted. "Keep going" and
+ * "Start over" are never squeezed out by a contextual chip: carrying on is the
+ * point, and being able to leave a thread that went the wrong way matters more
+ * than any suggestion.
+ */
+export function suggestions(): string[] {
+  const said = history[history.length - 1];
+  if (!said || said.role !== "assistant") return [];
+  const reply = said.content.trim();
+  if (!reply) return [];
+  const out: string[] = [];
+  const add = (s: string) => {
+    if (out.length < 4 && !out.includes(s)) out.push(s);
+  };
+
+  // It asked something, or offered to do something: yes is the obvious next word.
+  if (/\?\s*$/.test(reply) || /\b(want me to|shall i|should i|would you like|do you want me to|ready to)\b/i.test(reply)) {
+    add("Yes, do that");
+  }
+  // Something was done on their PC — checking it is what comes next.
+  if (/\b(done|opened|closed|finished|saved|created|sent|typed|clicked|searched)\b/i.test(reply)) {
+    add("Check that");
+  }
+  // A long one gets shortened instead of just continued.
+  if (reply.length > 140) add("Say that shorter");
+  // Whatever it just said, the commonest next word is asking for more of it.
+  add("Tell me more");
+  // Keep going is what the keep-going lane already understands; start over is
+  // the way out of a thread that went the wrong way.
+  add("Keep going");
+  add("Start over");
+  return out;
 }
 
 /**
