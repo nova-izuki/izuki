@@ -1817,7 +1817,17 @@ fn is_yes(said: &str) -> bool {
     let s = s.trim_start_matches("okay ").trim_start_matches("ok ").trim_start_matches("please ");
     ["yes", "yeah", "yep", "yup", "sure", "go ahead", "go on", "do it", "please do", "affirmative"]
         .iter()
-        .any(|k| s == *k || s.starts_with(&format!("{k} ")))
+        .any(|k| {
+            if s == *k {
+                return true;
+            }
+            // "yes, open the file" answers a question; "yes I know, but can you…"
+            // is a new sentence that merely starts the same way. "Continue" is
+            // rare enough that a prefix match is safe, but "yes" opens all
+            // sorts of ordinary sentences — so the rest has to stay short.
+            let Some(rest) = s.strip_prefix(&format!("{k} ")) else { return false };
+            rest.split_whitespace().count() <= 5
+        })
 }
 
 /// The answer to a pending "which one? circle it" question, when it comes.
@@ -2051,9 +2061,12 @@ mod speed_tests {
         for said in ["yes", "Yes.", "yes please", "yeah", "yep", "sure", "ok yes", "go ahead", "do it"] {
             assert!(is_yes(said), "{said}");
         }
+        assert!(is_yes("yes, open the file"), "a short instruction after it still counts");
         assert!(!is_yes("no"));
         assert!(!is_yes("not yet"));
-        assert!(!is_yes("yes tell me about the weather")); // too long to be an answer
+        // A real sentence that merely begins "yes" is a new request, not an answer.
+        assert!(!is_yes("yes tell me about the weather"));
+        assert!(!is_yes("yes I know that, but can you open my Downloads folder instead"));
         assert!(!is_yes(""));
     }
 
