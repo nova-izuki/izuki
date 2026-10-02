@@ -52,6 +52,7 @@ The user confirmed Vovy's URL and added Coucou, Taby and HeyClicky during releas
 | [HeyClicky](https://www.heyclicky.com/) / [original source](https://github.com/farzaa/clicky) | Hotkey-triggered screen teaching, drawing and separate agent tasks | Persistent, target-anchored lesson marks; pause/resume/slow controls; check-understanding and “let me try” steps |
 | [TinyNature](https://natura.inc/tinypeople) | Proactive briefings and channel continuity | Opt-in verified account digests, deduplicated delivery, quiet hours, and explicit cross-device sync permission |
 | [FatihMakes](https://github.com/FatihMakes/Mark-LV) | Voice-first computer use and persistent companion state | Benchmark target accuracy, cancellation, context continuity and latency; evaluate a visual-parser fallback separately |
+| [Zenzap](https://www.zenzap.co/product) / [notification hours](https://knowledge.zenzap.co/en/articles/8369473) | Organized chat, task tracking, connected workflows and notification schedules | Conversation-to-task cards, source-scoped notifications, quiet hours and explicit progress/delivery states; no claim of a Zenzap integration |
 | TechInSixty | Exact demo not yet identified | Ask for the specific video before attributing any product or capability |
 | Pino | Exact project not yet identified | Keep the original reference; do not silently substitute Pine or another similarly named product |
 
