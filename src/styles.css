@@ -601,3 +601,87 @@ html[data-backdrop="tabbed"] .izk-card {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
+
+/* ------------------------------------------------------------ the Island */
+/* Near-black glass, like a phone's island: a hair of light on the rim and a
+   soft drop shadow so it reads on white pages and dark ones alike. */
+.izk-island {
+  background: rgba(6, 6, 9, 0.94);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 10px 30px rgba(0, 0, 0, 0.35),
+    0 2px 8px rgba(0, 0, 0, 0.25);
+  -webkit-font-smoothing: antialiased;
+}
+/* Nothing to say: just a faint glowing line showing where it lives. */
+.izk-island-rest {
+  /* Static on purpose: this sits over live video all day, and a moving
+     background would repaint every frame. */
+  background: linear-gradient(90deg, #22d3ee, #6366f1, #d946ef);
+  opacity: 0.35;
+  box-shadow: 0 0 10px rgba(129, 140, 248, 0.45);
+}
+
+/* The face: Izuki's liquid orb, always drifting. */
+.izk-face::after {
+  /* The shine stays put while the colours turn underneath. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.5), transparent 42%);
+  pointer-events: none;
+}
+.izk-face-liquid {
+  background: conic-gradient(from 0deg, #22d3ee, #6366f1, #d946ef, #f472b6, #22d3ee);
+  animation: izk-spin 7s linear infinite;
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.55);
+}
+.izk-face-busy .izk-face-liquid {
+  animation-duration: 1.4s;
+  box-shadow: 0 0 18px rgba(217, 70, 239, 0.75);
+}
+@keyframes izk-spin {
+  to { transform: rotate(360deg); }
+}
+.izk-eye {
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);
+  animation: izk-blink 5.2s infinite;
+  transform-origin: center;
+}
+.izk-eye + .izk-eye { animation-delay: 0.02s; }
+@keyframes izk-blink {
+  0%, 93%, 100% { transform: scaleY(1); }
+  95.5% { transform: scaleY(0.12); }
+}
+.izk-dizzy {
+  display: inline-block;
+  animation: izk-spin 0.6s linear infinite;
+}
+
+/* Music: four bars dancing; still when paused. */
+.izk-bars span {
+  height: 100%;
+  transform-origin: bottom;
+  animation: izk-bar 0.85s ease-in-out infinite alternate;
+}
+.izk-bars-still span {
+  animation: none;
+  transform: scaleY(0.3);
+}
+@keyframes izk-bar {
+  0% { transform: scaleY(0.25); }
+  50% { transform: scaleY(1); }
+  100% { transform: scaleY(0.45); }
+}
+.izk-dots span {
+  animation: izk-dot 1s ease-in-out infinite;
+}
+@keyframes izk-dot {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .izk-face-liquid, .izk-eye, .izk-dizzy, .izk-bars span, .izk-dots span { animation: none; }
+}

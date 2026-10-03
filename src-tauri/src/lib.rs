@@ -22,6 +22,7 @@ pub mod headsup;
 pub mod ghost;
 pub mod hotkey;
 pub mod instant;
+pub mod island;
 pub mod keys;
 pub mod live;
 pub mod media;
@@ -246,6 +247,8 @@ pub fn run() {
             commands::browser_video,
             commands::chat_action,
             commands::phone_unpair,
+            commands::island_status,
+            commands::media_control,
             commands::reminders_list,
             commands::reminder_remove,
             commands::cancel_task,
@@ -357,7 +360,7 @@ pub fn run() {
 
                 // Pick follow mode back up if it was left on last time Izuki
                 // closed — that's the entire point of it persisting.
-                if state::store().settings().follow_mode_enabled {
+                if overlay::stays_up(&state::store().settings()) {
                     let _ = overlay::show_follow(app);
                 }
             }

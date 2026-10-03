@@ -79,10 +79,10 @@ pub fn save_settings(app: AppHandle, settings: Settings) -> Settings {
     if saved.start_with_windows != previous.start_with_windows {
         crate::set_autostart(&app, saved.start_with_windows);
     }
-    if saved.follow_mode_enabled != previous.follow_mode_enabled {
+    if overlay::stays_up(&saved) != overlay::stays_up(&previous) || saved.follow_mode_enabled != previous.follow_mode_enabled {
         // The follow thread notices the setting on its own next tick either
         // way; only the overlay's own visibility needs a nudge right now.
-        let _ = if saved.follow_mode_enabled {
+        let _ = if overlay::stays_up(&saved) {
             overlay::show_follow(&app)
         } else {
             overlay::hide_overlay(&app)
@@ -722,6 +722,19 @@ pub fn phone_unpair(app: AppHandle) -> Settings {
     );
     let _ = app.emit(crate::telegram::PHONE_CHANGED, ());
     s
+}
+
+/// The Island's look at the world: what's playing, and whether a film or
+/// game has the screen. Off the UI thread — it's asked every few seconds.
+#[tauri::command]
+pub async fn island_status() -> R<crate::island::IslandStatus> {
+    blocking(crate::island::status).await
+}
+
+/// The Island's ⏮ ⏯ ⏭ buttons: "play", "pause", "next", "previous".
+#[tauri::command]
+pub async fn media_control(action: String) -> R<bool> {
+    blocking(move || crate::island::control(&action)).await
 }
 
 #[tauri::command]

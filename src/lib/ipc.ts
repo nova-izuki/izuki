@@ -18,6 +18,7 @@ import type {
   CallStatus,
   AppsAnswer,
   Reminder,
+  IslandStatus,
   VoiceCatalog,
   FoundKey,
   N8nImport,
@@ -190,6 +191,7 @@ export const MOCK_SETTINGS: Settings = {
   chat_mode: false,
   execution_mode: "focus",
   follow_mode_enabled: false,
+  island_enabled: true,
   follow_hand_size: 16,
   backdrop: "acrylic",
   start_with_windows: false,
@@ -367,6 +369,10 @@ export const api = {
     call<PhoneStatus>("phone_status", undefined, () => ({ bot: "", paired: false, code: "123456", error: null })),
   phoneUnpair: () => call<Settings>("phone_unpair", undefined, () => MOCK_SETTINGS),
   remindersList: () => call<Reminder[]>("reminders_list", undefined, () => []),
+  /** The Island's look: what's playing, and whether a film/game is full screen. */
+  islandStatus: () => call<IslandStatus>("island_status", undefined, () => ({ media: null, fullscreen: false })),
+  /** ⏮ ⏯ ⏭ for whatever is playing on the PC. */
+  mediaControl: (action: "play" | "pause" | "next" | "previous") => call<boolean>("media_control", { action }, () => false),
   reminderRemove: (id: string) => call<void>("reminder_remove", { id }, () => undefined),
   chatCancel: (id: number) => call<void>("chat_cancel", { id }, () => undefined).catch(() => undefined),
   /** Connect to the paired Android phone. */

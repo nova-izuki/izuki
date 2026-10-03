@@ -166,6 +166,11 @@ pub struct Settings {
     /// Izuki from "an app you open" into "a companion that's just there."
     #[serde(default)]
     pub follow_mode_enabled: bool,
+    /// The Island: the pill at the top of the screen that shows what Izuki
+    /// is doing, what's playing and what's coming up — like a phone's live
+    /// activities. Keeps the (click-through) overlay up while it's on.
+    #[serde(default = "default_true")]
+    pub island_enabled: bool,
     /// Size of the follow-mode hand, in px.
     #[serde(default = "default_follow_hand_size")]
     pub follow_hand_size: u32,
@@ -686,6 +691,7 @@ impl Default for Settings {
             chat_mode: false,
             execution_mode: ExecutionMode::Focus,
             follow_mode_enabled: false,
+            island_enabled: true,
             follow_hand_size: default_follow_hand_size(),
             backdrop: BackdropMode::Acrylic,
             start_with_windows: false,

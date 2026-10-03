@@ -15,6 +15,7 @@ import {
   Timer,
   Volume1,
   Volume2,
+  PanelTop,
 } from "lucide-react";
 import { Row, Segmented, Slider, Toggle, cx } from "./ui";
 import { useIzuki } from "../lib/store";
@@ -121,6 +122,14 @@ export function TalkToIzuki() {
         <MicPicker />
 
         <div className="izk-divider" />
+
+        <Row
+          label="Island at the top of the screen"
+          hint="A little pill that shows what I'm doing, what's playing and your next reminder. Push your mouse to the top of the screen to open it."
+          icon={<PanelTop size={14} strokeWidth={2.3} />}
+        >
+          <Toggle checked={settings.island_enabled} onChange={(v) => patch({ island_enabled: v })} />
+        </Row>
 
         <Row
           label="Always show the hand"

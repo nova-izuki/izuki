@@ -112,7 +112,7 @@ fn try_resume() -> windows_core::Result<Option<bool>> {
 
 /// Waits for a Windows answer, giving up (None) after `PATIENCE`.
 #[cfg(windows)]
-fn wait<T>(op: windows_future::IAsyncOperation<T>) -> windows_core::Result<Option<T>>
+pub(crate) fn wait<T>(op: windows_future::IAsyncOperation<T>) -> windows_core::Result<Option<T>>
 where
     T: windows_core::RuntimeType + 'static,
 {
@@ -130,7 +130,7 @@ where
 
 /// Izuki's own voice can show up as a media session; never pause it.
 #[cfg_attr(not(windows), allow(dead_code))]
-fn is_izuki(app_id: &str) -> bool {
+pub(crate) fn is_izuki(app_id: &str) -> bool {
     app_id.to_lowercase().contains("izuki")
 }
 

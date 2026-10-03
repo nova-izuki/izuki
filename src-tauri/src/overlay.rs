@@ -275,7 +275,7 @@ pub fn show_overlay(app: &AppHandle, interactive: bool) -> Result<WebviewWindow>
 /// [`show_follow`] instead of actually hiding the window.
 pub fn hide_overlay(app: &AppHandle) -> Result<()> {
     // The orb is up: back to the plain click-through state, orb and all.
-    let follow = crate::state::store().settings().follow_mode_enabled || ORB_UP.load(Ordering::Relaxed);
+    let follow = stays_up(&crate::state::store().settings()) || ORB_UP.load(Ordering::Relaxed);
     if let Some(w) = app.get_webview_window(OVERLAY_LABEL) {
         w.set_ignore_cursor_events(true).ok();
         if follow {
@@ -286,6 +286,12 @@ pub fn hide_overlay(app: &AppHandle) -> Result<()> {
         OVERLAY_SHOWN.store(false, Ordering::Relaxed);
     }
     Ok(())
+}
+
+/// The overlay stays on screen (click-through) for the always-on hand or the
+/// Island; otherwise it's put away when there's nothing to show.
+pub fn stays_up(s: &crate::settings::Settings) -> bool {
+    s.follow_mode_enabled || s.island_enabled
 }
 
 /// Show just the glowing hand, click-through, tracking the real cursor,

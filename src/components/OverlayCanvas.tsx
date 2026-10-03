@@ -14,6 +14,7 @@ import {
 import { CaptionBox } from "./CaptionBox";
 import { FloatingChat } from "./FloatingChat";
 import { HandCursor, type HandCursorHandle } from "./HandCursor";
+import { Island, islandPointer } from "./Island";
 import { HandGlyph } from "./IzukiMark";
 import { PointOutLayer, type PointOut } from "./PointOutLayer";
 import { PenLayer, PEN_INKS, type PenMark } from "./PenLayer";
@@ -95,6 +96,8 @@ export function OverlayCanvas() {
    * then there should be no hand and no chat bubble, just what was asked for.
    */
   const [handOn, setHandOn] = useState(false);
+  // The Island at the top of the screen (on unless switched off in Talk).
+  const [islandOn, setIslandOn] = useState(true);
   const precision = useRef(false);
   const [handSize, setHandSize] = useState(16);
   /** The user's ink colour for drawn marks, or "auto" for per-shape colours. */
@@ -363,6 +366,7 @@ export function OverlayCanvas() {
         void api.getSettings().then((s) => {
           precision.current = s.control_style === "precision";
           if (p.mode === "follow") setHandOn(s.follow_mode_enabled);
+          setIslandOn(s.island_enabled);
           setHandSize(s.follow_hand_size);
           setInk(s.ink_color);
         });
@@ -409,6 +413,7 @@ export function OverlayCanvas() {
         void api.getSettings().then((s) => {
           precision.current = s.control_style === "precision";
           setHandOn(s.follow_mode_enabled);
+          setIslandOn(s.island_enabled);
           setHandSize(s.follow_hand_size);
           setInk(s.ink_color);
         });
@@ -488,6 +493,7 @@ export function OverlayCanvas() {
         const cx = (x - desktop.x) * sx;
         const cy = (y - desktop.y) * sy;
         handRef.current?.setPointer(cx, cy);
+        islandPointer(cx, cy);
         hitTest(cx, cy);
       }),
       // Quickdraw's key-up — commit() already closes with nothing to send
@@ -627,7 +633,7 @@ export function OverlayCanvas() {
     return () => clearTimeout(t);
   }, [transcript]);
 
-  const idle = open && mode === "follow" && !handOn && !listening && !caption && orb === "hidden" && !transcript;
+  const idle = open && mode === "follow" && !handOn && !islandOn && !listening && !caption && orb === "hidden" && !transcript;
   useEffect(() => {
     if (!idle) return;
     const t = setTimeout(() => void api.closeOverlay(), 1500);
@@ -651,6 +657,7 @@ export function OverlayCanvas() {
             <PenLayer marks={penMarks} />
           </div>
         )}
+        {islandOn && <Island orb={orb} doing={doing} thinking={thinking} />}
         <VoiceSphere state={orb} transcript={transcript} doing={doing} />
         {orb === "hidden" && <TranscriptBar text={transcript?.text ?? null} final={!!transcript?.final} />}
         {caption && <CaptionBox caption={caption} onDone={() => setCaption(null)} />}

@@ -294,6 +294,8 @@ export interface Settings {
    * mode.
    */
   follow_mode_enabled: boolean;
+  /** The Island at the top of the screen (live activities). On by default. */
+  island_enabled: boolean;
   /** Size of the follow-mode hand, in px. */
   follow_hand_size: number;
 
@@ -522,4 +524,21 @@ export interface N8nImport {
   hooks: N8nHook[];
   /** Workflows left out, and why. */
   skipped: string[];
+}
+
+/** What's playing on the PC, as the Island shows it. */
+export interface NowPlaying {
+  title: string;
+  artist: string;
+  /** "Spotify", "Chrome", "Media Player"… */
+  app: string;
+  playing: boolean;
+  /** Cover art as a data: URL, when the player shares one. */
+  art?: string;
+}
+
+export interface IslandStatus {
+  media: NowPlaying | null;
+  /** A film or game fills the screen — the Island steps aside. */
+  fullscreen: boolean;
 }

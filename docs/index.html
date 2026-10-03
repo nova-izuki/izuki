@@ -529,6 +529,15 @@
     @keyframes ans { 0%, 45% { opacity: 0; } 55%, 90% { opacity: 1; } 100% { opacity: 0; } }
 
     /* reel 5: it's free */
+    .a-island { background: radial-gradient(60% 40% at 50% 30%, rgba(139, 92, 246, 0.3), transparent 70%), linear-gradient(180deg, #0b0a18, #04030a); }
+    .a-island .pill { position: absolute; left: 50%; top: 30%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 16px 8px 8px; border-radius: 999px; background: #050507; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08), 0 14px 40px rgba(0,0,0,.6); color: #fff; font: 600 15px/1 var(--display, system-ui); white-space: nowrap; animation: islandGrow 6s ease-in-out infinite; }
+    .a-island .face { width: 30px; height: 30px; border-radius: 50%; background: conic-gradient(#22d3ee, #6366f1, #d946ef, #f472b6, #22d3ee); box-shadow: 0 0 16px rgba(168, 85, 247, .7); display: grid; place-items: center; animation: spin 7s linear infinite; }
+    .a-island .face i { display: inline-block; width: 4px; height: 7px; margin: 0 2px; border-radius: 3px; background: #fff; }
+    .a-island .eq { display: inline-flex; gap: 2px; align-items: flex-end; height: 14px; }
+    .a-island .eq i { width: 3px; height: 100%; border-radius: 2px; background: linear-gradient(#67e8f9, #e879f9); transform-origin: bottom; animation: eq .8s ease-in-out infinite alternate; }
+    .a-island .eq i:nth-child(2) { animation-delay: -.3s; } .a-island .eq i:nth-child(3) { animation-delay: -.55s; }
+    @keyframes eq { from { transform: scaleY(.3); } to { transform: scaleY(1); } }
+    @keyframes islandGrow { 0%, 40%, 100% { padding-right: 16px; } 55%, 85% { padding-right: 34px; } }
     .a-free { background: linear-gradient(180deg, #120c02, #050300); display: grid; place-items: center; overflow: hidden; }
     .a-free .rays { position: absolute; left: 50%; top: 50%; width: 180%; aspect-ratio: 1; transform: translate(-50%, -50%); animation: spin 18s linear infinite;
       background: repeating-conic-gradient(from 0deg, rgba(253, 230, 138, 0.18) 0 8deg, transparent 8deg 22deg); mask-image: radial-gradient(circle, #000 10%, transparent 60%); -webkit-mask-image: radial-gradient(circle, #000 10%, transparent 60%); }
@@ -1095,6 +1104,13 @@
               <h3 class="slam">It teaches.</h3>
               <div class="side"><span>♥<small>301K</small></span><span>💬<small>12K</small></span><span>↗<small>Share</small></span></div>
               <div class="cap"><b>izuki</b><p>“Explain this.” It grabs a pen and underlines the exact words it's explaining — found right on your screen, at any size — step by step.</p><span class="snd">♪ maths just clicked — Izuki</span></div>
+            </article>
+            <article class="reel">
+              <div class="art a-island"><div class="pill"><span class="face"><i></i><i></i></span>Last Last · Burna Boy <span class="eq"><i></i><i></i><i></i></span></div></div>
+              <div class="shade"></div><div class="bar"><i></i></div>
+              <h3 class="slam">It lives up top.</h3>
+              <div class="side"><span>♥<small>220K</small></span><span>💬<small>9.4K</small></span><span>↗<small>Share</small></span></div>
+              <div class="cap"><b>izuki</b><p>A little island at the top of your screen: what it's doing (with Stop), what's playing, your next reminder. Push your mouse up to open it.</p><span class="snd">♪ always there, never in the way — Izuki</span></div>
             </article>
             <article class="reel">
               <div class="art a-free"><div class="rays"></div><b>$0</b></div>
