@@ -192,6 +192,8 @@ export const MOCK_SETTINGS: Settings = {
   execution_mode: "focus",
   follow_mode_enabled: false,
   island_enabled: true,
+  flows_keep_days: 1,
+  wake_sensitivity: "normal",
   keep_reply: false,
   island_suggestions: true,
   follow_hand_size: 16,

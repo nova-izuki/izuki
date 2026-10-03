@@ -8,6 +8,8 @@
 //   ferrofluid  "Water"  — a clear water droplet with moving caustics
 //   ripple      "Pearl"  — iridescent nacre; voice rings run across it
 //   constellation "Galaxy" — dark glass holding a nebula and twinkling stars
+//   dew         "Pure water" — truly see-through water: your screen shows
+//               through the middle, the world bends only near the rim
 //
 // One hidden WebGL canvas per size renders a frame, then it's copied onto
 // the caller's ordinary 2D canvas — a drop-in for the old 2D drawers.
@@ -26,6 +28,17 @@ float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); 
 float noise(vec2 p){
   vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
   return mix(mix(hash(i), hash(i + vec2(1., 0.)), f.x), mix(hash(i + vec2(0., 1.)), hash(i + vec2(1., 1.)), f.x), f.y);
+}
+// Smooth currents for surfaces and caustics: rotated waves, no grid, so no
+// square-looking lines (value noise's grid showed through on the water).
+float flow(vec2 p){
+  float s = 0., a = .5;
+  for (int i = 0; i < 4; i++) {
+    s += a * sin(p.x) * sin(p.y);
+    p = mat2(1.6, 1.2, -1.2, 1.6) * p + vec2(1.3, .7);
+    a *= .5;
+  }
+  return s * .5 + .5;
 }
 float fbm(vec2 p){
   float s = 0., a = .5;
@@ -59,19 +72,20 @@ void main(){
   float r = .6 * (1. + uLevel * .07) * (1. + w);
   float d = length(p);
 
-  vec3 glowCol = uStyle == 0 ? vec3(.35, .75, 1.) : (uStyle == 1 ? vec3(1., .78, .95) : vec3(.55, .42, 1.));
-  float glow = exp(-max(d - r, 0.) * 8.) * (.28 + uLevel * .55 + uThink * .15);
+  vec3 glowCol = uStyle == 0 ? vec3(.35, .75, 1.) : (uStyle == 1 ? vec3(1., .78, .95) : (uStyle == 2 ? vec3(.55, .42, 1.) : vec3(.62, .86, 1.)));
+  float glow = exp(-max(d - r, 0.) * 8.) * (.28 + uLevel * .55 + uThink * .15) * (uStyle == 3 ? .6 : 1.);
 
   vec2 q = p / r;
   float z = sqrt(max(0., 1. - dot(q, q)));
   vec3 N = normalize(vec3(q, z));
   // Surface detail: slow currents, plus rings that run outward as it talks.
   vec2 rp = q * 2.6 + vec2(uTime * .18, -uTime * .12);
-  float h = fbm(rp);
-  vec2 grad = vec2(fbm(rp + vec2(.04, 0.)) - h, fbm(rp + vec2(0., .04)) - h) * (.7 + uLevel * 2.);
+  float h = flow(rp);
+  vec2 grad = vec2(flow(rp + vec2(.04, 0.)) - h, flow(rp + vec2(0., .04)) - h) * (.7 + uLevel * 2.);
   float rings = sin(length(q) * 16. - uTime * 7.) * uLevel * (uStyle == 1 ? .1 : .06);
   // Water's surface is glassy-smooth; pearl and galaxy can be more textured.
-  N = normalize(N + vec3(grad * (uStyle == 0 ? .5 : 1.3) + q * rings, 0.));
+  bool water = uStyle == 0 || uStyle == 3;
+  N = normalize(N + vec3(grad * (water ? .5 : 1.3) + q * rings, 0.));
   vec3 V = vec3(0., 0., 1.);
   float ndv = max(dot(N, V), 0.);
   float F = .04 + .96 * pow(1. - ndv, 5.);
@@ -89,15 +103,27 @@ void main(){
     // Light gathered at the bottom, the way a real drop focuses it.
     vec2 fq = q - vec2(.18, -.52);
     inside += vec3(.7, .95, 1.) * exp(-dot(fq, fq) * 9.) * .55;
-    // Thin, slow caustic lines drifting inside.
-    float ca = fbm(q * 2.2 + uTime * .35);
-    inside += vec3(.5, .85, 1.) * smoothstep(.05, 0., abs(ca - .5)) * (.10 + uLevel * .35) * z;
+    // Soft caustic light drifting inside.
+    float ca = flow(q * 3. + vec2(uTime * .4, -uTime * .3));
+    inside += vec3(.5, .85, 1.) * pow(ca, 6.) * (.25 + uLevel * .6) * z;
   } else if (uStyle == 1) {
     // Pearl: thin-film colour that shifts with the angle you see it at.
-    vec3 irid = .5 + .5 * cos(6.2832 * (vec3(0., .33, .67) + ndv * 1.7 + fbm(q * 2. + uTime * .1) * 1.1 + uTime * .04));
+    vec3 irid = .5 + .5 * cos(6.2832 * (vec3(0., .33, .67) + ndv * 1.7 + flow(q * 2. + uTime * .1) * 1.1 + uTime * .04));
     inside = mix(vec3(.95, .92, .96), irid, .2) * (.55 + .45 * z);
     inside += vec3(.06, .02, .05) * (1. - z);
     inside += irid * (sin(length(q) * 20. - uTime * 5.) * .5 + .5) * uLevel * .18;
+  } else if (uStyle == 3) {
+    // Pure water: what's behind shows straight through the middle (see the
+    // alpha below); near the rim the world bends upside-down, with a
+    // rainbow fringe, and light gathers at the bottom.
+    vec3 flip = vec3(-1., -1., 1.);
+    vec3 rr = refract(-V, N, .74), rg = refract(-V, N, .755), rb = refract(-V, N, .77);
+    inside = vec3(env(rr * flip).r, env(rg * flip).g, env(rb * flip).b) * 1.5;
+    inside += vec3(.05, .14, .22) * (1. - z);
+    vec2 fq = q - vec2(.14, -.62);
+    inside += vec3(.85, .97, 1.) * exp(-dot(fq, fq) * 14.) * .7;
+    float ca = flow(q * 3.4 + vec2(-uTime * .35, uTime * .25));
+    inside += vec3(.7, .92, 1.) * pow(ca, 7.) * (.3 + uLevel * .7);
   } else {
     // Galaxy: a nebula far inside the glass, stars that twinkle with the voice.
     vec3 rd = refract(-V, N, .69);
@@ -118,13 +144,17 @@ void main(){
   col += glowCol * pow(1. - z, 3.) * (.22 + uLevel * .5);
 
   float edge = smoothstep(r + 1.5 / uPx, r - 1.5 / uPx, d);
-  float body = uStyle == 0 ? .88 : 1.;
+  // Pure water is clear in the middle and solid only where light bends or
+  // glints: the rim, the Fresnel edge and the highlights.
+  float clear = mix(.08, .9, smoothstep(.3, 1., length(q)));
+  clear = max(clear, max(F * .85, min(1., s1 * 1.6 + s2 * .6)));
+  float body = uStyle == 0 ? .88 : (uStyle == 3 ? clear : 1.);
   vec3 outCol = col * edge * body + glowCol * glow * (1. - edge);
   float outA = edge * body + glow * (1. - edge);
   gl_FragColor = vec4(outCol, clamp(outA, 0., 1.));
 }`;
 
-const STYLES = { ferrofluid: 0, ripple: 1, constellation: 2 };
+const STYLES = { ferrofluid: 0, ripple: 1, constellation: 2, dew: 3 };
 const renderers = new Map();
 let unsupported = false;
 

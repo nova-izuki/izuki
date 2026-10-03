@@ -14,11 +14,22 @@ import { api } from "../lib/ipc";
  * It used to be torn down and rebuilt around every conversation — a second
  * of heavy CPU (and a reloaded model) each time a session ended.
  */
-export function useWakeEngine(listen: boolean, custom: string[], onWake: (name: string) => void, loaded = true) {
+/** "Wake-up strictness" → how sure the detector must be. */
+export const WAKE_THRESHOLD = { relaxed: 0.32, normal: 0.4, strict: 0.55 } as const;
+
+export function useWakeEngine(
+  listen: boolean,
+  custom: string[],
+  onWake: (name: string) => void,
+  loaded = true,
+  threshold: number = WAKE_THRESHOLD.normal
+) {
   const [words, setWords] = useState<string[]>([]);
   const onWakeRef = useRef(onWake);
   onWakeRef.current = onWake;
   const worker = useRef<Worker | null>(null);
+  const thresholdRef = useRef(threshold);
+  thresholdRef.current = threshold;
   const [ready, setReady] = useState(false);
   const key = custom.join("|");
   const log = (m: string) => void api.log(`wake engine: ${m}`).catch(() => undefined);
@@ -41,7 +52,7 @@ export function useWakeEngine(listen: boolean, custom: string[], onWake: (name: 
         log(`heard "${m.name}" (score ${m.score?.toFixed(2)})`);
         onWakeRef.current(m.name);
       } else if (m.kind === "near") {
-        log(`near miss: "${m.name}" scored ${m.score?.toFixed(2)} (needs 0.40)`);
+        log(`near miss: "${m.name}" scored ${m.score?.toFixed(2)} (needs ${thresholdRef.current.toFixed(2)})`);
       } else if (m.kind === "load") {
         log(`${m.msPerFrame?.toFixed(1)} ms per 80 ms of sound`);
       } else if (m.kind === "error") {
@@ -49,6 +60,7 @@ export function useWakeEngine(listen: boolean, custom: string[], onWake: (name: 
       }
     };
     w.postMessage({ kind: "start", custom });
+    w.postMessage({ kind: "threshold", value: thresholdRef.current });
     return () => {
       w.terminate();
       worker.current = null;
@@ -57,6 +69,11 @@ export function useWakeEngine(listen: boolean, custom: string[], onWake: (name: 
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, key]);
+
+  // The strictness can change while it runs.
+  useEffect(() => {
+    worker.current?.postMessage({ kind: "threshold", value: threshold });
+  }, [threshold, ready]);
 
   // ---- feeding it the mic: only while it should be listening ----------------
   useEffect(() => {

@@ -256,9 +256,15 @@ export function FloatingChat() {
                     type="button"
                     disabled={busy}
                     onClick={() => void submit(s)}
-                    className="izk-card izk-grain max-w-full truncate px-2.5 py-1 text-[11px] text-izk-ink transition-colors duration-150 hover:bg-white/12 disabled:opacity-40"
+                    // Same automatic colours as the chat box, so the chips read
+                    // on a white page as well as a dark one.
+                    className={cx(
+                      "izk-card izk-grain max-w-full truncate px-2.5 py-1 text-[11px] text-izk-ink transition-[filter,opacity] duration-150 hover:brightness-110 disabled:opacity-40",
+                      look.className
+                    )}
+                    style={look.style}
                   >
-                    {s}
+                    <span className="izk-tone-text">{s}</span>
                   </button>
                 ))}
                 {stuck && (

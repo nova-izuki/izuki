@@ -17,7 +17,7 @@ ort.env.wasm.numThreads = 1;
  * speech the models are benchmarked on, and a false wake is harmless here
  * (Izuki says "Mhm?" and closes again), so a little lower.
  */
-const THRESHOLD = 0.4;
+let THRESHOLD = 0.4;
 /** Scores this high that didn't trigger are logged, to tune the above. */
 const NEAR = 0.12;
 let nearBest: { name: string; score: number } | null = null;
@@ -36,7 +36,12 @@ const fetchModel = async (path: string) => {
   return new Uint8Array(await r.arrayBuffer());
 };
 
-type Msg = { kind: "start"; custom: string[] } | { kind: "audio"; samples: Float32Array } | { kind: "reset" };
+type Msg =
+  | { kind: "start"; custom: string[] }
+  | { kind: "audio"; samples: Float32Array }
+  | { kind: "reset" }
+  /** How sure it must be (the user's "wake-up strictness"). */
+  | { kind: "threshold"; value: number };
 
 self.onmessage = async (e: MessageEvent<Msg>) => {
   const msg = e.data;
@@ -49,6 +54,10 @@ self.onmessage = async (e: MessageEvent<Msg>) => {
       }
       engine = await WakeEngine.create(ort, fetchModel, wake, { executionProviders: ["wasm"], graphOptimizationLevel: "all" });
       self.postMessage({ kind: "ready", words: engine.models.map((m) => m.name) });
+      return;
+    }
+    if (msg.kind === "threshold") {
+      if (Number.isFinite(msg.value)) THRESHOLD = Math.max(0.2, Math.min(0.8, msg.value));
       return;
     }
     if (msg.kind === "reset") {

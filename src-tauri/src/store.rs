@@ -88,7 +88,8 @@ impl Store {
         let mut settings: Settings = read_settings(&dir.join("settings.json"));
         settings.heal();
 
-        let flows: Vec<Flow> = read_json(&dir.join("flows.json")).unwrap_or_default();
+        let all: Vec<Flow> = read_json(&dir.join("flows.json")).unwrap_or_default();
+        let flows = fresh_flows(all, crate::model::now_ms(), settings.flows_keep_days);
         let mut watchers: Vec<Watcher> = read_json(&dir.join("watchers.json")).unwrap_or_default();
 
         // Nothing is mid-trigger at boot.
@@ -176,6 +177,9 @@ impl Store {
             }
             flows.retain(|f| f.id != flow.id);
             flows.push(flow);
+            let keep_days = self.settings.read().flows_keep_days;
+            let kept = fresh_flows(std::mem::take(&mut *flows), crate::model::now_ms(), keep_days);
+            *flows = kept;
             // Keep the library from growing without bound.
             if flows.len() > 500 {
                 flows.sort_by_key(|f| f.created_at);
@@ -209,6 +213,38 @@ impl Store {
     }
 
     /// Clear only the IDs the user selected. Keep a recoverable archive first.
+    /// The daily tidy-up: drop flows unused past the setting, and "undo"
+    /// archives older than a week, so saved flows (screenshots included)
+    /// never pile up on the user's drive. Returns how many flows went.
+    pub fn prune_flows(&self) -> usize {
+        let keep_days = self.settings.read().flows_keep_days;
+        let removed = {
+            let mut flows = self.flows.write();
+            let before = flows.len();
+            let kept = fresh_flows(std::mem::take(&mut *flows), crate::model::now_ms(), keep_days);
+            let removed = before - kept.len();
+            if removed > 0 {
+                let _ = write_json(&self.dir.join("flows.json"), &kept);
+            }
+            *flows = kept;
+            removed
+        };
+        if let Ok(entries) = fs::read_dir(&self.dir) {
+            let week = std::time::Duration::from_secs(7 * 86_400);
+            for e in entries.flatten() {
+                let name = e.file_name().to_string_lossy().to_string();
+                let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > week);
+                if name.starts_with("flows-archive-") && name.ends_with(".json") && old {
+                    let _ = fs::remove_file(e.path());
+                }
+            }
+        }
+        if removed > 0 {
+            eprintln!("[flows] cleared {removed} unused flow(s)");
+        }
+        removed
+    }
+
     pub fn archive_flows(&self, ids: &[String]) -> Result<String> {
         let mut flows = self.flows.write();
         let removed: Vec<Flow> = flows.iter().filter(|f| ids.contains(&f.id)).cloned().collect();
@@ -301,7 +337,9 @@ mod tests {
         use super::*;
         let dir = std::env::temp_dir().join(format!("izuki-flow-test-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
-        let store = Store { dir: dir.clone(), settings: RwLock::new(Settings::default()), flows: RwLock::new(vec![]), watchers: RwLock::new(vec![]) };
+        // Keep everything: these test flows are dated 1970.
+        let settings = Settings { flows_keep_days: 0, ..Settings::default() };
+        let store = Store { dir: dir.clone(), settings: RwLock::new(settings), flows: RwLock::new(vec![]), watchers: RwLock::new(vec![]) };
         let flow = |id: &str| serde_json::from_value::<Flow>(serde_json::json!({"id":id,"name":id,"steps":[],"prompt":id,"created_at":1})).unwrap();
         store.add_flow(flow("keep")); store.add_flow(flow("clear"));
         let token = store.archive_flows(&["clear".into()]).unwrap();
@@ -338,4 +376,46 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+}
+
+/// Flows that are still wanted: run (or made) within `keep_days`, or given a
+/// shortcut key. `keep_days` 0 keeps everything. Every Ctrl+D used to stay
+/// in the library for good; most are one-offs.
+pub fn fresh_flows(flows: Vec<Flow>, now_ms: i64, keep_days: u32) -> Vec<Flow> {
+    if keep_days == 0 {
+        return flows;
+    }
+    let cutoff = now_ms - i64::from(keep_days) * 86_400_000;
+    flows
+        .into_iter()
+        .filter(|f| f.hotkey.as_deref().is_some_and(|k| !k.trim().is_empty()) || f.last_run.unwrap_or(f.created_at).max(f.created_at) >= cutoff)
+        .collect()
+}
+
+#[cfg(test)]
+mod fresh_flow_tests {
+    use super::*;
+
+    fn flow(id: &str, created: i64, last: Option<i64>, hotkey: Option<&str>) -> Flow {
+        serde_json::from_value(serde_json::json!({
+            "id": id, "name": id, "steps": [], "created_at": created, "last_run": last, "run_count": 1, "hotkey": hotkey,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn old_one_offs_clear_but_saved_ones_stay() {
+        let day = 86_400_000;
+        let now = 100 * day;
+        let flows = vec![
+            flow("old", now - 3 * day, None, None),
+            flow("used-today", now - 5 * day, Some(now - 3_600_000), None),
+            flow("new", now - 60_000, None, None),
+            flow("hotkeyed", now - 30 * day, None, Some("Ctrl+1")),
+        ];
+        let kept: Vec<String> = fresh_flows(flows.clone(), now, 1).into_iter().map(|f| f.id).collect();
+        assert_eq!(kept, vec!["used-today", "new", "hotkeyed"]);
+        assert_eq!(fresh_flows(flows.clone(), now, 0).len(), 4);
+        assert_eq!(fresh_flows(flows, now, 7).len(), 4);
+    }
 }

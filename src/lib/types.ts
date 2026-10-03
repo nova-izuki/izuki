@@ -258,7 +258,7 @@ export interface Settings {
   /** Snap targets to real UI Automation controls before clicking. */
   magnetic_hand: boolean;
   control_style: "mouse" | "precision";
-  orb_style: "liquid" | "ferrofluid" | "ripple" | "constellation";
+  orb_style: "liquid" | "ferrofluid" | "dew" | "ripple" | "constellation";
   orb_response: number;
   automatic_update_checks: boolean;
   economy_mode: boolean;
@@ -296,6 +296,10 @@ export interface Settings {
   follow_mode_enabled: boolean;
   /** The Island at the top of the screen (live activities). On by default. */
   island_enabled: boolean;
+  /** Saved flows clear after this many days unused (0 = keep). */
+  flows_keep_days: number;
+  /** How sure the wake-word detector must be before it wakes. */
+  wake_sensitivity: "relaxed" | "normal" | "strict";
   /** The Island may briefly offer help on its own (an error, a question, a video). */
   island_suggestions: boolean;
   /** Size of the follow-mode hand, in px. */

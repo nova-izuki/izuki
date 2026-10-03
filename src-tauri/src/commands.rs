@@ -76,6 +76,9 @@ pub fn save_settings(app: AppHandle, settings: Settings) -> Settings {
     {
         crate::hotkey::rebind(&app, &saved);
     }
+    if saved.flows_keep_days != previous.flows_keep_days {
+        crate::state::store().prune_flows();
+    }
     if saved.start_with_windows != previous.start_with_windows {
         crate::set_autostart(&app, saved.start_with_windows);
     }

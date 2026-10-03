@@ -69,7 +69,7 @@
     if (selectedStyle !== 'liquid' && material && state) {
       // The realistic GPU look first; the 2D drawers if this phone can't.
       if (material.drawGlassOrb && material.drawGlassOrb(ctx, SIZE, selectedStyle, reduced ? 0 : state.time, state.energy, state.waiting || 0)) return;
-      if (selectedStyle === 'ferrofluid') material.drawWaterOrb(ctx,SIZE,state.time,state.energy,0,(o.preview?.mode || mode)==='thinking',state);
+      if (selectedStyle === 'ferrofluid' || selectedStyle === 'dew') material.drawWaterOrb(ctx,SIZE,state.time,state.energy,0,(o.preview?.mode || mode)==='thinking',state);
       else (selectedStyle === 'ripple' ? material.drawRippleOrb : material.drawConstellationOrb)(ctx,SIZE,reduced?0:state.time,state.energy);
       return;
     }
@@ -210,7 +210,7 @@
       fetch(url).then(r=>r.arrayBuffer()).then(buffer=>{const envelope=motionModule?.waveEnvelope(buffer);if(generation===audioGeneration&&envelope)audioTrack={player,envelope};}).catch(()=>{});
     },
     style(value) {
-      style = ["liquid", "ferrofluid", "ripple", "constellation"].includes(value) ? value : "liquid";
+      style = ["liquid", "ferrofluid", "dew", "ripple", "constellation"].includes(value) ? value : "liquid";
       try { localStorage.setItem("izuki.orbStyle", style); } catch {}
       wake();
     },

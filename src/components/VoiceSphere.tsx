@@ -286,7 +286,7 @@ export function SphereCanvas({
 
       // The realistic, GPU-drawn materials; the 2D ones are the fallback.
       if (style !== "liquid" && drawGlassOrb(ctx, SIZE, style, reduced ? 0 : physics.time, physics.energy, physics.waiting)) return;
-      if (style === "ferrofluid") {
+      if (style === "ferrofluid" || style === "dew") {
         drawWaterOrb(ctx, SIZE, physics.time, physics.energy, 0, st === "thinking", physics);
         return;
       }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useWakeEngine } from "../hooks/useWakeEngine";
+import { useWakeEngine, WAKE_THRESHOLD } from "../hooks/useWakeEngine";
 import { useDictation } from "../hooks/useDictation";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
 import { cancelChat, chatLane, needsApps, needsScreen, recentHistory, remember, type LaneResult } from "../lib/conversation";
@@ -447,6 +447,37 @@ function chime(up = true) {
  * the talk hotkey, the typed chat and Ctrl+D. The rules it follows are
  * written down in docs/HOW-IZUKI-WORKS.md; change that first.
  */
+
+// ---- teacher mode -----------------------------------------------------------
+// A lesson, not an answer key: Izuki explains each question with the pen,
+// lets the student answer, says whether they're right and why, and moves on
+// when they're ready. It never picks answers by itself.
+const TUTOR_START =
+  /^(?:(?:hey |ok |okay )?(?:nova|izuki|atlas)[,. ]*)?(?:please )?(?:(?:start|turn on|use|go into|switch to) )?(?:teacher|tutor|teaching) mode\b|^(?:please )?teach me (?:this|the|my) (?:quiz|test|questions?|worksheet)\b|^(?:be|act as|act like) my (?:teacher|tutor)\b|^help me (?:through|with) (?:this|the|my) (?:quiz|test|worksheet)\b/i;
+const TUTOR_STOP = /^(?:please )?(?:stop|end|exit|quit|turn off|leave|close) (?:the )?(?:teacher|tutor|teaching) mode\b|^stop (?:teaching|tutoring)( me)?\b|^(?:that's|thats) enough (?:teaching|for today)\b/i;
+const TUTOR_FOR_MS = 20 * 60_000;
+
+function tutorPrompt(said: string, first: boolean): string {
+  if (first) {
+    return (
+      "TEACHER MODE — a quiz or worksheet is on the screen and you are the student's patient teacher. " +
+      "Look at the current question. Explain it step by step like a great teacher: what it's really asking, the key idea " +
+      "behind it, and how to think about each option — marking the important words on the screen with the pen as you go. " +
+      "Do NOT say, hint which option fits, pick or click the right answer yet — explain each option on its own and let them connect it. Finish by asking which answer they think is right. " +
+      `(They said: "${said}")`
+    );
+  }
+  return (
+    "TEACHER MODE — you are the student's patient teacher for the quiz on the screen. " +
+    `The student just said: "${said}". ` +
+    "If that's their answer to the current question: tell them warmly whether it's right and explain why; if it's wrong, " +
+    "show them the right answer and the reasoning, kindly, with the pen. Select an answer on the page only if they ask you " +
+    "to choose theirs. If they say next / ready / continue / move on: click the quiz's Next (or Continue) button, then " +
+    "explain the new question the same way — pen on the key words, no answer given — and ask what they think. " +
+    "If they ask anything else, answer it as their teacher."
+  );
+}
+
 export function VoiceEngine() {
   const enabled = useIzuki((s) => s.settings.voice_wake_enabled);
   const setVoice = useIzuki((s) => s.setVoice);
@@ -600,7 +631,11 @@ export function VoiceEngine() {
    * fast chat lane for plain talk, or the screen agent for anything to see
    * or do.
    */
+  /** Teacher mode: on while set; `first` until the first question is explained. */
+  const tutor = useRef<{ first: boolean; at: number } | null>(null);
   const handleRequest = async (text: string, from: "voice" | "typed") => {
+    // Teacher mode lapses after a long break, like a lesson ending.
+    if (tutor.current && Date.now() - tutor.current.at > TUTOR_FOR_MS) tutor.current = null;
     const t = text.trim();
     if (!t) return;
     // Classroom requests deliberately keep the pen overlay open until the
@@ -698,6 +733,20 @@ export function VoiceEngine() {
       // Nothing installed by that name and not a known site: the agent finds it.
     }
 
+    // Teacher mode: on, off, or a turn of the lesson.
+    if (TUTOR_STOP.test(t) && tutor.current) {
+      tutor.current = null;
+      startSession(from === "voice", "speaking");
+      remember("user", t);
+      remember("assistant", "Teacher mode off.");
+      await respond("Okay — teacher mode's off. Nice work today.", "cheerful");
+      void afterReply(at, false);
+      return;
+    }
+    if (TUTOR_START.test(t)) tutor.current = { first: true, at: Date.now() };
+    const tutoring = tutor.current;
+    if (tutoring) tutoring.at = Date.now();
+
     rememberInPassing(t);
     startSession(from === "voice", "thinking");
     thinkingNow.current = true;
@@ -737,13 +786,13 @@ export function VoiceEngine() {
       // "Yes, send it" / "change the time to 4" right after an apps answer
       // is about that draft — not a screen task.
       const followUp = Date.now() - lastAppsAt < 3 * 60_000 && t.split(/\s+/).length <= 14 && APPS_FOLLOW_UP.test(t);
-      if (appsOn && (needsApps(t) || followUp)) {
+      if (!tutoring && appsOn && (needsApps(t) || followUp)) {
         await runApps(false);
         return;
       }
       // Just talking? The fast lane — no screenshot, the voice starts on the
       // first sentence. It hands over if it needs the screen after all.
-      if (!needsScreen(t)) {
+      if (!tutoring && !needsScreen(t)) {
         const lane = await talkFast(t);
         if (requestSeq !== at) return;
         if (lane === "end") {
@@ -770,7 +819,8 @@ export function VoiceEngine() {
         // Flush a just-edited setting (a freshly pasted key) before relying on it.
         await useIzuki.getState().flushSettings();
         if (useIzuki.getState().settings.speak_responses) void holdMicForVoice();
-        const plan = await api.submitVoiceCommand(t);
+        const plan = await api.submitVoiceCommand(tutoring ? tutorPrompt(t, tutoring.first) : t);
+        if (tutoring) tutoring.first = false;
         if (requestSeq !== at) return; // stopped, or you've moved on — don't answer over you
         thinkingNow.current = false;
         if (plan.remember?.length) void emit(EV.memoryChanged);
@@ -1000,8 +1050,15 @@ export function VoiceEngine() {
     const off = on<void>(EV.wakewordsChanged, load);
     return () => void off.then((f) => f());
   }, []);
+  const wakeSensitivity = useIzuki((st) => st.settings.wake_sensitivity) ?? "normal";
   // Loaded while hands-free is on; only *listening* while no session is on.
-  const wakeWords = useWakeEngine(wakeActive, customWake, () => onWake(), enabled);
+  const wakeWords = useWakeEngine(
+    wakeActive,
+    customWake,
+    () => onWake(),
+    enabled,
+    WAKE_THRESHOLD[wakeSensitivity] ?? WAKE_THRESHOLD.normal
+  );
 
   // For the "Talk to Izuki" status line: listening for the wake word, in a
   // conversation, or missing a wake word altogether.

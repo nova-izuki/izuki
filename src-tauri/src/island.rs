@@ -34,7 +34,30 @@ pub fn status() -> IslandStatus {
     let media = now_playing();
     let music = media.as_ref().is_some_and(|m| m.playing);
     let context = format!("{}|{}", crate::uia::foreground_app(), crate::uia::foreground_title());
-    IslandStatus { media, fullscreen: front_is_fullscreen(), suggestions: crate::suggest::now(music), context }
+    let question = question_on_screen(&context);
+    IslandStatus { media, fullscreen: front_is_fullscreen(), suggestions: crate::suggest::now(music, question), context }
+}
+
+/// Is a question with answers to pick on screen (two or more radio buttons
+/// or check boxes in the window in front)? Page titles often don't say
+/// "quiz", but the answer buttons give it away. Looked at once per page or
+/// app, not on every glance — reading a page's controls takes a moment.
+fn question_on_screen(context: &str) -> bool {
+    static SEEN: parking_lot::Mutex<Option<(String, bool, std::time::Instant)>> = parking_lot::Mutex::new(None);
+    if let Some((c, q, at)) = SEEN.lock().as_ref() {
+        // A quiz often swaps questions without the title changing, so look
+        // again now and then even on the same page.
+        if c == context && at.elapsed() < std::time::Duration::from_secs(20) {
+            return *q;
+        }
+    }
+    let choices = crate::uia::list_controls(160)
+        .iter()
+        .filter(|c| !c.hidden && matches!(c.kind.as_str(), "RadioButton" | "CheckBox"))
+        .count();
+    let q = choices >= 2;
+    *SEEN.lock() = Some((context.to_string(), q, std::time::Instant::now()));
+    q
 }
 
 /// "play", "pause", "next" or "previous" for what's playing. `false` if

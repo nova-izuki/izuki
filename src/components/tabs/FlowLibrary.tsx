@@ -26,6 +26,7 @@ export function FlowLibrary() {
   const [archive, setArchive] = useState("");
   const [error, setError] = useState("");
   const autosave = useIzuki((s) => s.settings.autosave_flows);
+  const keepDays = useIzuki((s) => s.settings.flows_keep_days ?? 1);
   const patch = useIzuki((s) => s.patchSettings);
 
   useEffect(() => {
@@ -185,6 +186,23 @@ export function FlowLibrary() {
           ))}
         </div>
       )}
+
+      <Section
+        title="Tidy up by itself"
+        hint="Flows you haven't used clear away on their own. Ones you gave a shortcut key always stay."
+      >
+        <select
+          aria-label="Clear unused flows after"
+          value={keepDays}
+          onChange={(e) => patch({ flows_keep_days: Number(e.target.value) })}
+          className="izk-field izk-no-drag h-[32px] py-0 text-[12px]"
+        >
+          <option value={1}>Clear after 1 day</option>
+          <option value={7}>Clear after 1 week</option>
+          <option value={30}>Clear after 1 month</option>
+          <option value={0}>Never clear</option>
+        </select>
+      </Section>
 
       <Section
         title="Chain draw"

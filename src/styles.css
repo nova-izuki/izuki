@@ -614,6 +614,24 @@ html[data-backdrop="tabbed"] .izk-card {
     0 2px 8px rgba(0, 0, 0, 0.25);
   -webkit-font-smoothing: antialiased;
 }
+/* Open: a soft aurora drifts behind the card. Turned, never repainted —
+   the blur is drawn once and the layer just rotates. */
+.izk-island-open::before {
+  content: "";
+  position: absolute;
+  inset: -45%;
+  background:
+    radial-gradient(38% 32% at 24% 22%, rgba(34, 211, 238, 0.26), transparent 70%),
+    radial-gradient(42% 36% at 80% 28%, rgba(217, 70, 239, 0.22), transparent 70%),
+    radial-gradient(50% 42% at 50% 96%, rgba(99, 102, 241, 0.3), transparent 70%);
+  filter: blur(16px);
+  animation: izk-spin 26s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .izk-island-open::before { animation: none; }
+}
 /* Nothing to say: just a faint glowing line showing where it lives. */
 .izk-island-rest {
   /* Static on purpose: this sits over live video all day, and a moving

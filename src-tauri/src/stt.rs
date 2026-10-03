@@ -31,6 +31,7 @@ fn language_hint(choice: &str) -> (&'static str, &'static str) {
     match choice.trim().to_ascii_lowercase().as_str() {
         "pidgin" => ("Nigerian Pidgin / Nigerian English; keep the speaker's Pidgin wording exactly, do not translate or formalise it.", "en-NG"),
         "english" => ("English.", "en"),
+        "nigerian" => ("Nigerian English; keep the speaker's Nigerian expressions, names and phrasing exactly — don't Americanise or formalise them.", "en"),
         "yoruba" => ("Yoruba; keep Yoruba words and tone marks when clear.", "yo"),
         "igbo" => ("Igbo; keep Igbo words and tone marks when clear.", "ig"),
         "hausa" => ("Hausa.", "ha"),

@@ -121,6 +121,10 @@ pub struct Settings {
     pub hotkey_panic: String,
     /// Push-to-talk: hold nothing, just press it and speak — a one-shot
     /// voice command from anywhere, no wake word, no window to focus first.
+    /// How sure the wake-word detector must be: "relaxed", "normal" or
+    /// "strict" (fewer wake-ups on words that only sound like it).
+    #[serde(default = "default_wake_sensitivity")]
+    pub wake_sensitivity: String,
     #[serde(default = "default_hotkey_voice")]
     pub hotkey_voice: String,
     /// Hold this anywhere — even with the app closed, even in follow mode —
@@ -166,6 +170,10 @@ pub struct Settings {
     /// Izuki from "an app you open" into "a companion that's just there."
     #[serde(default)]
     pub follow_mode_enabled: bool,
+    /// Saved flows clear themselves after this many days without being run
+    /// (0 = keep them). Flows with a shortcut key are always kept.
+    #[serde(default = "default_flows_keep_days")]
+    pub flows_keep_days: u32,
     /// The Island: the pill at the top of the screen that shows what Izuki
     /// is doing, what's playing and what's coming up — like a phone's live
     /// activities. Keeps the (click-through) overlay up while it's on.
@@ -468,6 +476,14 @@ fn default_execution_mode() -> ExecutionMode {
     ExecutionMode::Focus
 }
 
+fn default_flows_keep_days() -> u32 {
+    1
+}
+
+fn default_wake_sensitivity() -> String {
+    "normal".into()
+}
+
 fn default_hotkey_voice() -> String {
     // As close as a real OS global hotkey gets to "just Ctrl+Windows" — a
     // bare two-modifier chord can't be registered as a system-wide shortcut
@@ -489,7 +505,7 @@ impl Settings {
     /// a newly supported brain.
     pub fn heal(&mut self) {
         if !["mouse", "precision"].contains(&self.control_style.as_str()) { self.control_style = "mouse".into(); }
-        if !["liquid", "ferrofluid", "ripple", "constellation"].contains(&self.orb_style.as_str()) { self.orb_style = "liquid".into(); }
+        if !["liquid", "ferrofluid", "dew", "ripple", "constellation"].contains(&self.orb_style.as_str()) { self.orb_style = "liquid".into(); }
         self.orb_response = if self.orb_response.is_finite() { self.orb_response.clamp(0.5, 1.5) } else { 1.0 };
         let defaults = Self::default();
         for d in defaults.providers {
@@ -681,6 +697,7 @@ impl Default for Settings {
             hotkey_replay: "Ctrl+Shift+R".into(),
             hotkey_panic: "Ctrl+Shift+Q".into(),
             hotkey_voice: default_hotkey_voice(),
+            wake_sensitivity: default_wake_sensitivity(),
             hotkey_quickdraw: default_hotkey_quickdraw(),
             freeze_screen: true,
             magnetic_hand: true,
@@ -700,6 +717,7 @@ impl Default for Settings {
             execution_mode: ExecutionMode::Focus,
             follow_mode_enabled: false,
             island_enabled: true,
+            flows_keep_days: default_flows_keep_days(),
             island_suggestions: true,
             follow_hand_size: default_follow_hand_size(),
             backdrop: BackdropMode::Acrylic,

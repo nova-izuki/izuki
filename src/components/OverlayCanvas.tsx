@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   Circle,
   CornerDownLeft,
+  GripVertical,
   Mic,
   PenTool,
   Send,
@@ -100,6 +101,42 @@ export function OverlayCanvas() {
   const [islandOn, setIslandOn] = useState(true);
   const [islandPeeks, setIslandPeeks] = useState(true);
   const [keepReply, setKeepReply] = useState(false);
+  // Where you dragged the drawing tools to (null = top centre). Remembered.
+  const [toolsAt, setToolsAt] = useState<{ x: number; y: number } | null>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem("izk.drawTools") || "null");
+      return v && Number.isFinite(v.x) && Number.isFinite(v.y) ? v : null;
+    } catch {
+      return null;
+    }
+  });
+  const startToolsDrag = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const bar = (e.currentTarget as HTMLElement).closest(".izk-card")?.parentElement?.getBoundingClientRect();
+    if (!bar) return;
+    const dx = e.clientX - bar.left;
+    const dy = e.clientY - bar.top;
+    let at = { x: bar.left, y: bar.top };
+    const move = (ev: PointerEvent) => {
+      at = {
+        x: Math.max(0, Math.min(window.innerWidth - bar.width, ev.clientX - dx)),
+        y: Math.max(0, Math.min(window.innerHeight - bar.height, ev.clientY - dy)),
+      };
+      setToolsAt(at);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      try {
+        localStorage.setItem("izk.drawTools", JSON.stringify(at));
+      } catch {
+        /* not remembered — fine */
+      }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
   const precision = useRef(false);
   const [handSize, setHandSize] = useState(16);
   /** The user's ink colour for drawn marks, or "auto" for per-shape colours. */
@@ -813,7 +850,7 @@ export function OverlayCanvas() {
           className="pointer-events-none absolute inset-0"
           style={{
             background:
-              "radial-gradient(120% 90% at 50% 45%, rgba(8,8,12,0.18) 0%, rgba(8,8,12,0.52) 100%)",
+              "radial-gradient(120% 90% at 50% 45%, rgba(8,8,12,0.05) 0%, rgba(8,8,12,0.28) 100%)",
           }}
         />
       )}
@@ -891,12 +928,24 @@ export function OverlayCanvas() {
         animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
         className={cx(
-          "pointer-events-auto absolute left-1/2 top-6 z-40 -translate-x-1/2",
-          drawing && "opacity-35"
+          // While a stroke is going the bars let it pass straight through
+          // and all but vanish — they never block the page you're marking.
+          "absolute z-40",
+          drawing ? "pointer-events-none opacity-15" : "pointer-events-auto",
+          !toolsAt && "left-1/2 top-6 -translate-x-1/2"
         )}
-        style={{ transition: "opacity 180ms ease" }}
+        style={{ transition: "opacity 180ms ease", ...(toolsAt ? { left: toolsAt.x, top: toolsAt.y } : null) }}
       >
         <div className="izk-card izk-grain flex items-center gap-1 p-1.5">
+          <button
+            type="button"
+            title="Drag the tools out of the way"
+            aria-label="Move the tools"
+            onPointerDown={startToolsDrag}
+            className="flex h-[34px] w-[20px] cursor-grab items-center justify-center rounded-[10px] text-izk-muted hover:bg-white/8 hover:text-izk-ink active:cursor-grabbing"
+          >
+            <GripVertical size={14} />
+          </button>
           {TOOLS.map((t) => {
             const active = tool === t.kind;
             return (
@@ -950,8 +999,8 @@ export function OverlayCanvas() {
         animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
         transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1], delay: 0.04 }}
         className={cx(
-          "pointer-events-auto absolute bottom-8 left-1/2 z-40 w-[min(620px,72vw)] -translate-x-1/2",
-          drawing && "opacity-35"
+          "absolute bottom-8 left-1/2 z-40 w-[min(620px,72vw)] -translate-x-1/2",
+          drawing ? "pointer-events-none opacity-15" : "pointer-events-auto"
         )}
         style={{ transition: "opacity 180ms ease" }}
       >

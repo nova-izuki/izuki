@@ -115,6 +115,16 @@ const SCENES = [
     why: "draws on the words it explains, without clicking",
   },
   {
+    name: "tutor: explains a quiz question without giving it away",
+    html: page("Quiz", `<div style="padding:50px;font:28px Segoe UI,sans-serif"><p><b>Question 3 of 10</b></p><p>Which device forwards packets between different networks?</p><p>( ) A. Hub</p><p>( ) B. Switch</p><p>( ) C. Router</p><p>( ) D. Repeater</p><p style="margin-top:40px">[ Next ]</p></div>`),
+    controls: ['[1] radio "A. Hub"', '[2] radio "B. Switch"', '[3] radio "C. Router"', '[4] radio "D. Repeater"', '[5] button "Next"'],
+    say: "TEACHER MODE — a quiz or worksheet is on the screen and you are the student's patient teacher. Look at the current question. Explain it step by step like a great teacher: what it's really asking, the key idea behind it, and how to think about each option — marking the important words on the screen with the pen as you go. Do NOT say, hint which option fits, pick or click the right answer yet — explain each option on its own and let them connect it. Finish by asking which answer they think is right. (They said: \"teach me this quiz\")",
+    // Teaches with the pen, never clicks an option or Next, and asks them.
+    must: /^DRAW /im,
+    mustNot: /^CLICK|^TYPE|answer is (c|router)|correct answer is/im,
+    why: "explains with the pen and asks, without answering or clicking",
+  },
+  {
     name: "oops: it minimised the window by mistake",
     url: "https://nova-izuki.github.io/izuki/",
     controls: ['[1] link "Download"', '[2] link "Features"'],

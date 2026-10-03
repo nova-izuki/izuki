@@ -158,6 +158,17 @@ pub fn run() {
     automation::make_dpi_aware();
 
     let store = state::init();
+    // The flow tidy-up: once now, then every hour while Izuki runs.
+    {
+        let store = store.clone();
+        std::thread::Builder::new()
+            .name("izuki-flow-tidy".into())
+            .spawn(move || loop {
+                store.prune_flows();
+                std::thread::sleep(std::time::Duration::from_secs(3600));
+            })
+            .ok();
+    }
     bugs::set_enabled(store.settings().send_bug_reports);
 
     tauri::Builder::default()

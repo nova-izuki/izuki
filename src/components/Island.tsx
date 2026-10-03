@@ -218,13 +218,14 @@ export function Island({
         className={
           "izk-island relative overflow-hidden text-white " +
           (open ? "pointer-events-auto" : "pointer-events-none") +
-          (live.kind === "rest" && !open ? " izk-island-rest" : "")
+          (live.kind === "rest" && !open ? " izk-island-rest" : "") +
+          (open ? " izk-island-open" : "")
         }
         style={{ borderRadius: open ? 28 : 22 }}
       >
         <AnimatePresence mode="popLayout" initial={false}>
           {open ? (
-            <motion.div key="open" {...fade} className="w-[372px] max-w-[calc(100vw-32px)] p-3.5">
+            <motion.div key="open" {...fade} className="relative z-10 w-[372px] max-w-[calc(100vw-32px)] p-3.5">
               <Expanded
                 live={live}
                 media={media}

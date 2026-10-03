@@ -75,7 +75,7 @@ pub fn for_context(app: &str, title: &str, hour: u32, music: bool) -> Vec<Sugges
             "✏️",
             "Explain the question on my screen like a teacher, step by step, marking the important words with the pen. Help me understand it — don't just give the answer.",
         ));
-        out.push(s("Make me a study plan", "🗓️", "Look at what's on my screen and make me a simple study plan for it."));
+        out.push(s("Teach me through this quiz", "👩‍🏫", "teach me this quiz"));
     }
     if has(&[
         "ucertify", "coursera", "udemy", "edx", "brightspace", "d2l", "schoology", "pearson", "mcgraw", "cengage",
@@ -153,13 +153,33 @@ pub fn for_context(app: &str, title: &str, hour: u32, music: bool) -> Vec<Sugges
     out
 }
 
-/// Suggestions for whatever is in front right now.
-pub fn now(music: bool) -> Vec<Suggestion> {
+/// Suggestions for whatever is in front right now. `question`: answer
+/// choices are showing (see island.rs), whatever the page is called.
+pub fn now(music: bool, question: bool) -> Vec<Suggestion> {
     if crate::uia::screen_locked() {
         return Vec::new();
     }
     let hour = local_hour();
-    for_context(&crate::uia::foreground_app(), &crate::uia::foreground_title(), hour, music)
+    let title = crate::uia::foreground_title();
+    with_question(for_context(&crate::uia::foreground_app(), &title, hour, music), question, &title)
+}
+
+/// A question with answers to choose is on screen: the teaching help goes
+/// first, and is worth a peek — even when the title didn't give it away.
+pub fn with_question(mut out: Vec<Suggestion>, question: bool, title: &str) -> Vec<Suggestion> {
+    let t = title.to_lowercase();
+    if !question || ["sign in", "log in", "login", "password"].iter().any(|w| t.contains(w)) {
+        return out;
+    }
+    out.retain(|s| s.label != "Explain this question" && s.label != "Teach me through this quiz");
+    out.insert(0, s("Teach me through this quiz", "👩‍🏫", "teach me this quiz"));
+    out.insert(0, strong(
+        "Explain this question",
+        "✏️",
+        "Explain the question on my screen like a teacher, step by step, marking the important words with the pen. Help me understand it — don't just give the answer.",
+    ));
+    out.truncate(3);
+    out
 }
 
 fn local_hour() -> u32 {
@@ -222,6 +242,18 @@ mod tests {
     }
 
     #[test]
+    fn answer_choices_mean_a_question_whatever_the_title() {
+        let base = for_context("chrome.exe", "Performance Labs : ITSY-2345 en-uCertify - Google Chrome", 14, false);
+        let q = with_question(base.clone(), true, "Performance Labs");
+        assert_eq!(q[0].label, "Explain this question");
+        assert!(q[0].strong);
+        assert_eq!(q[1].label, "Teach me through this quiz");
+        assert!(q.len() <= 3);
+        assert_eq!(with_question(base.clone(), false, "x"), base);
+        assert_eq!(with_question(Vec::new(), true, "Sign in - Google"), Vec::new());
+    }
+
+    #[test]
     fn music_offers_more_like_it() {
         let m: Vec<_> = for_context("explorer.exe", "", 14, true).into_iter().map(|s| s.label).collect();
         assert_eq!(m, vec!["Play something like this"]);
@@ -235,7 +267,7 @@ mod live {
     #[ignore]
     fn suggests_for_the_real_screen() {
         println!("front: {} | {}", crate::uia::foreground_app(), crate::uia::foreground_title());
-        for s in super::now(false) {
+        for s in super::now(false, false) {
             println!("suggest: {} {} (strong: {})", s.icon, s.label, s.strong);
         }
     }

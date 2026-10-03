@@ -108,17 +108,43 @@ export function TalkToIzuki() {
 
       <div className="relative mt-3.5">
         <Row
-          label="Hey Izuki (hands-free)"
-          hint='Say your wake word (like "Hey Nova") from anywhere — the voice sphere pops up and you just talk, back and forth.'
+          label="How do you start talking?"
+          hint={
+            settings.voice_wake_enabled
+              ? 'Say your wake word (like "Hey Nova") from anywhere — the orb pops up and you just talk. The talk key works too.'
+              : `Hold ${prettyKeys(settings.hotkey_voice)}, talk while the orb moves with your voice, and let go — it sends. Nothing listens until you press it.`
+          }
           icon={<Sparkles size={14} strokeWidth={2.3} />}
         >
-          <Toggle
-            checked={settings.voice_wake_enabled}
-            onChange={(v) => patch({ voice_wake_enabled: v })}
+          <Segmented
+            value={settings.voice_wake_enabled ? "wake" : "key"}
+            onChange={(v) => patch({ voice_wake_enabled: v === "wake" })}
+            size="sm"
+            options={[
+              { value: "wake", label: "Say “Hey Nova”" },
+              { value: "key", label: "Hold a key" },
+            ]}
           />
         </Row>
 
         {settings.voice_wake_enabled && <WakeWords />}
+        {settings.voice_wake_enabled && (
+          <Row
+            label="Wake-up strictness"
+            hint="Waking up on words that only sound like your wake word? Pick Strict. Not hearing you? Pick Relaxed."
+          >
+            <Segmented
+              value={settings.wake_sensitivity ?? "normal"}
+              onChange={(v) => patch({ wake_sensitivity: v })}
+              size="sm"
+              options={[
+                { value: "relaxed", label: "Relaxed" },
+                { value: "normal", label: "Normal" },
+                { value: "strict", label: "Strict" },
+              ]}
+            />
+          </Row>
+        )}
         <MicPicker />
 
         <div className="izk-divider" />
@@ -285,7 +311,7 @@ export function TalkToIzuki() {
 
         <Row
           label="Language I speak"
-          hint="Auto detects it. Pick Pidgin or a language when Izuki keeps hearing your words as English."
+          hint="Auto detects it. Pick Nigerian English, Pidgin or a language when Izuki keeps mishearing your accent or words."
           icon={<AudioLines size={14} strokeWidth={2.3} />}
         >
           <select
@@ -295,6 +321,7 @@ export function TalkToIzuki() {
             aria-label="Language Izuki should hear"
           >
             <option value="auto">Auto</option>
+            <option value="nigerian">Nigerian English</option>
             <option value="pidgin">Nigerian Pidgin</option>
             <option value="english">English</option>
             <option value="yoruba">Yoruba</option>
@@ -456,4 +483,12 @@ function FollowUpPicker() {
       </div>
     </div>
   );
+}
+
+/** "Ctrl+Super+Space" → "Ctrl + Windows + Space", in words people know. */
+function prettyKeys(combo: string): string {
+  return (combo || "Ctrl+Super+Space")
+    .split("+")
+    .map((k) => (/^(super|meta|win|cmd)$/i.test(k.trim()) ? "Windows" : k.trim()))
+    .join(" + ");
 }
