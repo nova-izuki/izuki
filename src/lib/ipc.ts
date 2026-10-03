@@ -192,6 +192,7 @@ export const MOCK_SETTINGS: Settings = {
   execution_mode: "focus",
   follow_mode_enabled: false,
   island_enabled: true,
+  keep_reply: false,
   island_suggestions: true,
   follow_hand_size: 16,
   backdrop: "acrylic",

@@ -99,6 +99,7 @@ export function OverlayCanvas() {
   // The Island at the top of the screen (on unless switched off in Talk).
   const [islandOn, setIslandOn] = useState(true);
   const [islandPeeks, setIslandPeeks] = useState(true);
+  const [keepReply, setKeepReply] = useState(false);
   const precision = useRef(false);
   const [handSize, setHandSize] = useState(16);
   /** The user's ink colour for drawn marks, or "auto" for per-shape colours. */
@@ -369,6 +370,7 @@ export function OverlayCanvas() {
           if (p.mode === "follow") setHandOn(s.follow_mode_enabled);
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
+          setKeepReply(s.keep_reply);
           setHandSize(s.follow_hand_size);
           setInk(s.ink_color);
         });
@@ -417,6 +419,7 @@ export function OverlayCanvas() {
           setHandOn(s.follow_mode_enabled);
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
+          setKeepReply(s.keep_reply);
           setHandSize(s.follow_hand_size);
           setInk(s.ink_color);
         });
@@ -663,7 +666,7 @@ export function OverlayCanvas() {
         {islandOn && <Island orb={orb} doing={doing} thinking={thinking} peeks={islandPeeks} />}
         <VoiceSphere state={orb} transcript={transcript} doing={doing} />
         {orb === "hidden" && <TranscriptBar text={transcript?.text ?? null} final={!!transcript?.final} />}
-        {caption && <CaptionBox caption={caption} onDone={() => setCaption(null)} />}
+        {caption && <CaptionBox caption={caption} stay={keepReply} onDone={() => setCaption(null)} />}
         {handOn && <FloatingChat />}
       </>
     ) : null;

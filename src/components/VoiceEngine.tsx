@@ -671,6 +671,9 @@ export function VoiceEngine() {
     const quick = await api.instantCommand(t).catch(() => null);
     if (requestSeq !== at) return;
     if (quick) {
+      // Part of the conversation too, so "and again" / "now the next one" follows on.
+      remember("user", t);
+      remember("assistant", quick);
       startSession(from === "voice", "speaking");
       await respond(quick, "cheerful");
       void afterReply(at, false);
@@ -685,6 +688,8 @@ export function VoiceEngine() {
       const said = await runInstant(instant);
       if (requestSeq !== at) return;
       if (said) {
+        remember("user", t);
+        remember("assistant", said);
         startSession(from === "voice", "speaking");
         await respond(said, "cheerful");
         void afterReply(at, false);

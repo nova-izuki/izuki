@@ -119,6 +119,47 @@ pub fn drawn_target<'a>(controls: &'a [crate::uia::Control], region: &Rect, x: i
     enclosed.next().is_none().then_some(first)
 }
 
+/// A circle plus "next", "click next", "press the submit button", "click it"
+/// is a click on what was circled — no thinking needed. Returns the words
+/// that name the button ("next"; "" for "click it"), or `None` when the
+/// request is about something else ("explain this", "what's the answer").
+pub fn draw_click_words(prompt: &str) -> Option<String> {
+    const VERBS: &[&str] = &["click", "press", "tap", "hit", "select", "choose", "pick"];
+    const FILLER: &[&str] = &[
+        "on", "the", "this", "that", "it", "here", "there", "button", "link", "please", "for", "me", "now", "go", "to", "just",
+        "can", "you", "could", "a",
+    ];
+    const BUTTONS: &[&str] = &[
+        "next", "continue", "submit", "ok", "okay", "done", "back", "previous", "finish", "start", "skip", "confirm",
+        "accept", "save", "close", "cancel", "retry", "check",
+    ];
+    let p = prompt.trim().trim_end_matches(['.', '!', '?']).to_lowercase();
+    let words: Vec<&str> = p.split(|c: char| !c.is_alphanumeric() && c != '\'').filter(|w| !w.is_empty()).collect();
+    let verb_at = words.iter().position(|w| VERBS.contains(w));
+    // Only a request that *is* a click: everything before the verb is
+    // politeness ("please", "can you", "go"), nothing else.
+    if let Some(i) = verb_at {
+        if words[..i].iter().all(|w| FILLER.contains(w)) {
+            let rest: Vec<&str> = words[i + 1..].iter().filter(|w| !FILLER.contains(w)).copied().collect();
+            return Some(rest.join(" "));
+        }
+        return None;
+    }
+    // A bare button word: "next", "go next", "submit please".
+    let core: Vec<&str> = words.iter().filter(|w| !FILLER.contains(w)).copied().collect();
+    (core.len() == 1 && BUTTONS.contains(&core[0])).then(|| core[0].to_string())
+}
+
+/// Does a control's name fit the words the user said ("next" fits "Next
+/// question ›")? No words means any one control in the circle.
+pub fn name_fits(name: &str, words: &str) -> bool {
+    let tidy = |s: &str| s.to_lowercase().chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect::<String>();
+    let name = tidy(name);
+    let have: Vec<&str> = name.split_whitespace().collect();
+    let words = tidy(words);
+    words.split_whitespace().all(|w| have.iter().any(|h| *h == w || (w.len() >= 4 && h.starts_with(w))))
+}
+
 pub fn explicit_draw_click(prompt: &str) -> bool {
     matches!(prompt.trim().trim_end_matches(['.', '!']).to_ascii_lowercase().as_str(), "click" | "click here" | "click this" | "click that" | "click it" | "press this" | "tap this")
 }
@@ -141,6 +182,24 @@ mod drawn_target_tests {
         assert!(drawn_target(&controls,&both,-339,217).is_none());
         assert_eq!(drawn_target(&controls,&a.inflate(5),-353,178).unwrap().id,1);
     }
+    #[test]
+    fn circled_buttons_are_clicked_by_their_words() {
+        assert_eq!(draw_click_words("next").as_deref(), Some("next"));
+        assert_eq!(draw_click_words("Click next").as_deref(), Some("next"));
+        assert_eq!(draw_click_words("please press the Submit button.").as_deref(), Some("submit"));
+        assert_eq!(draw_click_words("click it").as_deref(), Some(""));
+        assert_eq!(draw_click_words("go next").as_deref(), Some("next"));
+        assert_eq!(draw_click_words("explain this"), None);
+        assert_eq!(draw_click_words("what's the answer"), None);
+        assert_eq!(draw_click_words("why can't I click this"), None);
+        assert_eq!(draw_click_words(""), None);
+        assert!(name_fits("Next question ›", "next"));
+        assert!(name_fits("Submit", "submit"));
+        assert!(name_fits("Anything", ""));
+        assert!(!name_fits("Search", "next"));
+        assert!(!name_fits("Previous", "next"));
+    }
+
     #[test]
     fn only_explicit_clicks_skip_reasoning() {
         assert!(explicit_draw_click("Click here!"));

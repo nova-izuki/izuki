@@ -419,7 +419,7 @@ export function SettingsTab() {
 
       {/* ------------------------------------------------ system */}
       <Section id="settings-look" title="Chat & caption colours" hint="How the chat box, Izuki's replies and your words look on screen.">
-        <Row label="Voice orb" hint="Choose your look. Clear water has a transparent centre and silver-blue reflections. Animates only while visible.">
+        <Row label="Voice orb" hint="Choose your look. Clear water, Tidal pearl and Star crystal are drawn in 3D with real light — they bend the world behind them and ripple with every word. Animates only while visible.">
           <select aria-label="Voice orb style" className="izk-field izk-no-drag max-w-[145px] py-1 text-[11.5px]" value={settings.orb_style} onChange={(e) => patch({ orb_style: e.target.value as typeof settings.orb_style })}>
             <option value="liquid">Liquid glass</option>
             <option value="ferrofluid">Clear water</option>

@@ -908,6 +908,29 @@ pub fn foreground_app() -> String {
     String::new()
 }
 
+/// Is (x, y) on the Windows taskbar (main or a second screen's)?
+#[cfg(windows)]
+pub fn on_taskbar(x: i32, y: i32) -> bool {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GetClassNameW, WindowFromPoint, GA_ROOT};
+    unsafe {
+        let hwnd = WindowFromPoint(POINT { x, y });
+        if hwnd.0.is_null() {
+            return false;
+        }
+        let root = GetAncestor(hwnd, GA_ROOT);
+        let root = if root.0.is_null() { hwnd } else { root };
+        let mut class = [0u16; 64];
+        let n = GetClassNameW(root, &mut class) as usize;
+        matches!(String::from_utf16_lossy(&class[..n.min(class.len())]).as_str(), "Shell_TrayWnd" | "Shell_SecondaryTrayWnd")
+    }
+}
+
+#[cfg(not(windows))]
+pub fn on_taskbar(_x: i32, _y: i32) -> bool {
+    false
+}
+
 /// Whether Windows is locked (or at its sign-in screen): its lock screen
 /// (LogonUI.exe) is running. Izuki never clicks or types while it is — a
 /// keystroke there lands in the PIN / password box.
@@ -1183,5 +1206,21 @@ mod lock_tests {
         let t = std::time::Instant::now();
         let locked = super::screen_locked();
         println!("locked: {locked} (checked in {} ms)", t.elapsed().as_millis());
+    }
+}
+
+#[cfg(all(test, windows))]
+mod taskbar_live {
+    /// Run by hand: the taskbar is at the bottom of the main screen, the
+    /// middle of the screen isn't.
+    #[test]
+    #[ignore]
+    fn knows_the_taskbar() {
+        use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+        let (w, h) = unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
+        println!("bottom middle on taskbar: {}", super::on_taskbar(w / 2, h - 5));
+        println!("screen middle on taskbar: {}", super::on_taskbar(w / 2, h / 2));
+        assert!(super::on_taskbar(w / 2, h - 5));
+        assert!(!super::on_taskbar(w / 2, h / 2));
     }
 }

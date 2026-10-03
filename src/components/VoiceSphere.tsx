@@ -8,6 +8,7 @@ import { TranscriptText } from "./TranscriptBar";
 import { drawWaterOrb } from "../../docs/app/water-orb.js";
 import { createOrbMotion, stepOrbMotion } from "../../docs/app/orb-motion.js";
 import { drawConstellationOrb, drawRippleOrb } from "../../docs/app/orb-materials.js";
+import { drawGlassOrb } from "../../docs/app/glass-orb.js";
 
 /**
  * The hands-free voice sphere — "Hey Izuki" summons it.
@@ -283,6 +284,8 @@ export function SphereCanvas({
       const R = SIZE * 0.3 * (1 + level * 0.16 + 0.015 * Math.sin(now / 900));
       ctx.clearRect(0, 0, SIZE, SIZE);
 
+      // The realistic, GPU-drawn materials; the 2D ones are the fallback.
+      if (style !== "liquid" && drawGlassOrb(ctx, SIZE, style, reduced ? 0 : physics.time, physics.energy, physics.waiting)) return;
       if (style === "ferrofluid") {
         drawWaterOrb(ctx, SIZE, physics.time, physics.energy, 0, st === "thinking", physics);
         return;

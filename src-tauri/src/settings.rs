@@ -205,6 +205,10 @@ pub struct Settings {
     /// it works — the "subtitles" for its actions.
     #[serde(default = "default_true")]
     pub show_captions: bool,
+    /// Keep Izuki's last answer on screen after the orb goes, to read it
+    /// again — until it's closed with × or a new answer replaces it.
+    #[serde(default)]
+    pub keep_reply: bool,
     /// Speak responses out loud. Independent of `show_captions` — you can
     /// have captions with no voice, voice with no captions, or both.
     #[serde(default = "default_true")]
@@ -705,6 +709,7 @@ impl Default for Settings {
             default_draw_shape: default_draw_shape(),
             ink_color: default_ink_color(),
             show_captions: true,
+            keep_reply: false,
             speak_responses: true,
             voice_engine: default_voice_engine(),
             voice_name: default_voice_name(),

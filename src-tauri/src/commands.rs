@@ -338,6 +338,10 @@ pub fn open_log_folder() -> R<()> {
 /// everyday commands (instant.rs).
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
+    // "Hey Nova, wake up" / "status report": the briefing, straight off this PC.
+    if crate::briefing::is_briefing(&said) {
+        return blocking(crate::briefing::compose).await.ok();
+    }
     crate::instant::parse(&said)?;
     blocking(move || brain::run_instant(&app, &state::store(), &said).map(|p| p.summary))
         .await

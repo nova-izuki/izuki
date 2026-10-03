@@ -13,8 +13,8 @@
 (() => {
   "use strict";
   let material, motionModule, physics;
-  Promise.all([import('./water-orb.js'), import('./orb-materials.js'), import('./orb-motion.js')]).then(([water, looks, motion]) => {
-    material = { ...water, ...looks }; motionModule=motion; physics=motion.createOrbMotion(); wake();
+  Promise.all([import('./water-orb.js'), import('./orb-materials.js'), import('./orb-motion.js'), import('./glass-orb.js')]).then(([water, looks, motion, glass]) => {
+    material = { ...water, ...looks, ...glass }; motionModule=motion; physics=motion.createOrbMotion(); wake();
   }).catch(() => {});
   let response = 1, audioTrack = null, audioGeneration = 0;
   try { const value=Number(localStorage.getItem('izuki.orbResponse') || 1); if(Number.isFinite(value)) response=Math.max(.5,Math.min(1.5,value)); } catch {}
@@ -67,6 +67,8 @@
     const selectedStyle = o.preview ? o.preview.style : style;
     const state = o.preview ? o.physics : physics;
     if (selectedStyle !== 'liquid' && material && state) {
+      // The realistic GPU look first; the 2D drawers if this phone can't.
+      if (material.drawGlassOrb && material.drawGlassOrb(ctx, SIZE, selectedStyle, reduced ? 0 : state.time, state.energy, state.waiting || 0)) return;
       if (selectedStyle === 'ferrofluid') material.drawWaterOrb(ctx,SIZE,state.time,state.energy,0,(o.preview?.mode || mode)==='thinking',state);
       else (selectedStyle === 'ripple' ? material.drawRippleOrb : material.drawConstellationOrb)(ctx,SIZE,reduced?0:state.time,state.energy);
       return;

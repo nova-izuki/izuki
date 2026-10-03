@@ -226,6 +226,14 @@ export function TalkToIzuki() {
         >
           <Toggle checked={settings.show_captions} onChange={(v) => patch({ show_captions: v })} />
         </Row>
+        {settings.show_captions && (
+          <Row
+            label="Keep my last answer on screen"
+            hint="Izuki's answer stays up after the orb goes, so you can read it again (or copy it). Close it with ×."
+          >
+            <Toggle checked={settings.keep_reply} onChange={(v) => patch({ keep_reply: v })} />
+          </Row>
+        )}
 
         <div className="izk-divider" />
 

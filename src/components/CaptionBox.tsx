@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
-import { GripHorizontal, X } from "lucide-react";
+import { Check, Copy, GripHorizontal, X } from "lucide-react";
 import { resizeHandles, useFloating, workArea, type Limits } from "../lib/floating";
 import type { CaptionPayload } from "../lib/types";
 import { EV, on } from "../lib/ipc";
@@ -23,10 +23,16 @@ const LINGER_MS = 4000;
 export function CaptionBox({
   caption,
   onDone,
+  stay = false,
 }: {
   caption: CaptionPayload & { id: number };
   onDone: () => void;
+  /** Keep the answer up once it's said (setting), until × or a new one. */
+  stay?: boolean;
 }) {
+  const stayRef = useRef(stay);
+  stayRef.current = stay;
+  const [copied, setCopied] = useState(false);
   const { box, begin } = useFloating(
     "izk.caption",
     () => {
@@ -51,7 +57,7 @@ export function CaptionBox({
     let linger: ReturnType<typeof setTimeout> | null = null;
     const finish = () => {
       clearInterval(tick);
-      if (!linger) linger = setTimeout(() => doneRef.current(), LINGER_MS);
+      if (!linger && !stayRef.current) linger = setTimeout(() => doneRef.current(), LINGER_MS);
     };
     const tick = setInterval(() => {
       i++;
@@ -109,6 +115,23 @@ export function CaptionBox({
           </span>
           <span className="text-[10px] font-semibold tracking-[0.12em] text-izk-muted">IZUKI</span>
           <GripHorizontal size={12} className="ml-auto text-izk-muted/60" />
+          {stay && shown >= words.length && (
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => {
+                void navigator.clipboard?.writeText(caption.text).then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1400);
+                });
+              }}
+              aria-label="Copy the answer"
+              title="Copy"
+              className="flex h-[18px] w-[18px] items-center justify-center rounded-full text-izk-muted transition-colors hover:bg-white/10 hover:text-izk-ink"
+            >
+              {copied ? <Check size={11} strokeWidth={2.6} /> : <Copy size={11} strokeWidth={2.4} />}
+            </button>
+          )}
           <button
             type="button"
             onPointerDown={(e) => e.stopPropagation()}

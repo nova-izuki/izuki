@@ -64,6 +64,11 @@ pub fn capture_frozen() -> Result<String> {
 pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession, task: u64) -> VisionPlan {
     let settings = store.settings();
     if !task_alive(task) { return stopped_plan(); }
+    // Circled one button and said "next" / "click it": click that button
+    // now — no AI to wait for, nothing for a busy free model to get wrong.
+    if let Some(plan) = click_what_was_circled(app, store, &session, task) {
+        return plan;
+    }
     let direct_click = planner::explicit_draw_click(&session.prompt) && session.marks.len() == 1;
     if direct_click { session.marks[0].intent = Intent::Click; }
     // Esc stops it from here on — while the model looks, too.
@@ -247,6 +252,77 @@ pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession
 
     set_frozen(None);
     plan
+}
+
+/// One circle round one button, and a request that's just a click on it
+/// ("next", "click next", "press submit", "click it"): find the real button
+/// inside the circle and click its centre. `None` hands over to the usual
+/// path (the AI) — when the words don't fit the button, or the circle holds
+/// no single clickable thing.
+fn click_what_was_circled(app: &AppHandle, store: &Arc<Store>, session: &DrawSession, task: u64) -> Option<VisionPlan> {
+    let [mark] = session.marks.as_slice() else { return None };
+    let words = planner::draw_click_words(&session.prompt)?;
+    let started = std::time::Instant::now();
+    let controls = uia::list_controls(MAX_CONTROLS);
+    let (cx, cy) = mark.rect.center();
+    let target = planner::drawn_target(&controls, &mark.rect, cx, cy)?;
+    if !planner::name_fits(&target.name, &words) {
+        eprintln!("[draw] circled \"{}\" but asked for \"{words}\" — asking the AI", target.name);
+        return None;
+    }
+    let (x, y) = target.rect.center();
+    let step: ActionStep = serde_json::from_value(serde_json::json!({
+        "action": "click", "x": x, "y": y, "confidence": 1.0, "reasoning": "the button the user circled",
+    }))
+    .ok()?;
+    let step = ActionStep { target: Some(target.id), snapped_to: Some(target.name.clone()), grounding: target.identity.clone(), ..step };
+    eprintln!("[draw] clicking circled \"{}\" with no AI ({} ms to find it)", target.name, started.elapsed().as_millis());
+    let name = target.name.trim().to_string();
+    run_steps_for_task(app, store, std::slice::from_ref(&step), task, || {});
+    set_frozen(None);
+    Some(VisionPlan {
+        steps: vec![step],
+        summary: if name.is_empty() { "Clicked it.".into() } else { format!("Clicked “{name}”.") },
+        provider: "local".into(),
+        model: "circle".into(),
+        done: true,
+        ..Default::default()
+    })
+}
+
+/// When the user drew on the screen, the AI's clicks belong where they
+/// pointed — never on the taskbar (a free model once clicked Windows'
+/// Search icon instead of the circled "Next"). A stray taskbar click moves
+/// onto the one button inside the user's mark, or is dropped.
+fn keep_clicks_off_taskbar(steps: &mut Vec<ActionStep>, marks: &[crate::model::Mark], controls: Option<&[uia::Control]>) -> usize {
+    if marks.is_empty() || marks.iter().any(|m| { let (x, y) = m.rect.center(); uia::on_taskbar(x, y) }) {
+        return 0;
+    }
+    let mut fixed = 0;
+    steps.retain_mut(|s| {
+        let clicks = matches!(s.action, Intent::Click | Intent::DoubleClick | Intent::RightClick | Intent::Type | Intent::Drag);
+        if !clicks || !uia::on_taskbar(s.x, s.y) {
+            return true;
+        }
+        fixed += 1;
+        let only = match (controls, marks) {
+            (Some(cs), [m]) => { let (cx, cy) = m.rect.center(); planner::drawn_target(cs, &m.rect, cx, cy) }
+            _ => None,
+        };
+        match only {
+            Some(c) if matches!(s.action, Intent::Click | Intent::DoubleClick) => {
+                eprintln!("[draw] the AI aimed at the taskbar — clicking the circled \"{}\" instead", c.name);
+                let (x, y) = c.rect.center();
+                s.x = x; s.y = y; s.target = Some(c.id); s.snapped_to = Some(c.name.clone()); s.grounding = c.identity.clone();
+                true
+            }
+            _ => {
+                eprintln!("[draw] dropped a click on the taskbar the user never pointed at ({},{})", s.x, s.y);
+                false
+            }
+        }
+    });
+    fixed
 }
 
 /// Only pay for a model when the marks leave something genuinely open.
@@ -958,7 +1034,66 @@ pub fn run_flow(app: &AppHandle, store: &Arc<Store>, id: &str) -> Result<()> {
 /// model gets — the same pipeline `submit_draw` uses, just with an empty
 /// mark list standing in for the geometry-only fast path.
 pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String) -> VisionPlan {
-    submit_task(app, store, prompt, Vec::new(), None, None)
+    let asked = with_what_came_before(&prompt);
+    let plan = submit_task(app, store, asked, Vec::new(), None, None);
+    remember_task(&prompt, &plan.summary);
+    plan
+}
+
+/// The last thing asked of the screen, what Izuki said about it, and when —
+/// so "continue", "play the next one" or "now pause it" carries on with it,
+/// the way a conversation does, instead of starting from nothing.
+static LAST_TASK: parking_lot::Mutex<Option<(String, String, std::time::Instant)>> = parking_lot::Mutex::new(None);
+/// After this long, a short message is a new start, not a follow-on.
+const FOLLOW_ON_FOR: Duration = Duration::from_secs(10 * 60);
+
+/// A short message that probably leans on what came before ("continue",
+/// "the next one", "now pause it", "and send it to Sam").
+fn is_follow_on(said: &str) -> bool {
+    let s = said.trim().to_lowercase();
+    let words = s.split_whitespace().count();
+    words > 0 && (is_keep_going(&s) || words <= 10)
+}
+
+/// The prompt, with the task it follows on from when it looks like a
+/// follow-on. A "keep going" for a task that had to stop is left alone —
+/// that one resumes exactly where it stopped (UNFINISHED).
+fn with_what_came_before(prompt: &str) -> String {
+    if UNFINISHED.lock().is_some() && (is_keep_going(prompt) || is_yes(prompt)) {
+        return prompt.to_string();
+    }
+    let last = LAST_TASK.lock().clone();
+    let Some((task, said, at)) = last.filter(|(_, _, at)| at.elapsed() < FOLLOW_ON_FOR) else {
+        return prompt.to_string();
+    };
+    if !is_follow_on(prompt) {
+        return prompt.to_string();
+    }
+    let _ = at;
+    let said = said.chars().take(300).collect::<String>();
+    if is_keep_going(prompt) {
+        format!(
+            "{prompt}\n\n(This continues what the user asked just before: \"{task}\". You said: \"{said}\". \
+             Carry on with that same task from the screen as it is now — don't start something new.)"
+        )
+    } else {
+        format!(
+            "{prompt}\n\n(Just before, the user asked: \"{task}\", and you said: \"{said}\". \
+             If this message follows on from that — \"it\", \"the next one\", \"now…\", \"again\" — carry that on; \
+             if it's clearly something new, just do the new thing.)"
+        )
+    }
+}
+
+/// Keep the task a follow-on belongs to: a follow-on keeps the original
+/// task (so "continue", "continue" still means the same job).
+fn remember_task(prompt: &str, summary: &str) {
+    let mut last = LAST_TASK.lock();
+    let base = match last.as_ref() {
+        Some((task, _, at)) if at.elapsed() < FOLLOW_ON_FOR && is_keep_going(prompt) => task.clone(),
+        _ => prompt.trim().to_string(),
+    };
+    *last = Some((base, summary.trim().to_string(), std::time::Instant::now()));
 }
 
 /// The teaching pen, precise: a circle, box, underline or arrow aimed at
@@ -1323,6 +1458,8 @@ fn submit_task(
     let mut frame = frame;
     let mut done_so_far: Vec<String> = resumed;
     // What the user showed or told Izuki when it asked, for the next look.
+    // What the user drew, kept for the whole task: its clicks belong there.
+    let user_marks: Vec<crate::model::Mark> = marks.clone();
     let mut shown: Vec<crate::model::Mark> = marks;
     let mut told: Option<String> = None;
     let mut asked = 0;
@@ -1500,6 +1637,13 @@ fn submit_task(
                     && s.y2.is_none_or(|y| y >= frame_top && y < frame_bottom)
             )
         }).take(if lesson { 2 } else { usize::MAX }).cloned().collect();
+        let mut steps = steps;
+        if !user_marks.is_empty() && steps.iter().any(|s| uia::on_taskbar(s.x, s.y)) {
+            let controls = (round == 0).then(|| uia::list_controls(MAX_CONTROLS));
+            if keep_clicks_off_taskbar(&mut steps, &user_marks, controls.as_deref()) > 0 {
+                told = Some("A click you planned was on the Windows taskbar, which the user never pointed at — it wasn't made. Act on what they marked.".into());
+            }
+        }
         // An action being planned is not evidence that it succeeded. Check
         // a fresh screen before accepting "done" for an autonomous task.
         let done = lesson || (plan.done && steps.is_empty());
@@ -2215,6 +2359,9 @@ mod speed_tests {
 
     #[test]
     fn keep_going_resumes() {
+        assert!(is_follow_on("continue"));
+        assert!(is_follow_on("now play the next one"));
+        assert!(!is_follow_on("open youtube and search for the best lofi music for studying late at night please"));
         for said in ["keep going", "Keep going.", "okay continue", "carry on please", "do the rest", "go on!"] {
             assert!(is_keep_going(said), "{said}");
         }

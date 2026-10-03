@@ -2,6 +2,7 @@
 
 pub mod android;
 pub mod apps;
+pub mod briefing;
 pub mod browser;
 pub mod bugs;
 pub mod automation;

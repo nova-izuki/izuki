@@ -315,6 +315,8 @@ export interface Settings {
   ink_color: string;
   /** Show a live caption of what Izuki is doing/saying near the hand. */
   show_captions: boolean;
+  /** Keep Izuki's last answer on screen after the orb goes (until ×). */
+  keep_reply: boolean;
   /** Speak responses out loud, independent of `show_captions`. */
   speak_responses: boolean;
   /**
