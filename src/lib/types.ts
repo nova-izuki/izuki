@@ -464,6 +464,8 @@ export interface HandCommand {
   /** For "draw": circle, box, underline, arrow or note — and a note's words. */
   shape?: string | null;
   text?: string | null;
+  /** The desktop's real pixel bounds when sent — the overlay maps points with these. */
+  desktop?: DesktopBounds | null;
 }
 
 export interface StatusEvent {

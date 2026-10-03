@@ -54,9 +54,17 @@ const SYSTEM_PROMPT: &str = concat!(
 \"target\" to its number on the draw step too (add \"target2\" for the far end of an arrow): Izuki then takes \
 the exact bounds of that real control and draws the box, circle or underline around it, instead of your \
 guessed corners landing somewhere near it. Prefer that whenever the list contains it — guessing corners on a \
-downscaled screenshot is what makes marks land badly. Draw in the order you explain, 2 to 6 marks, and put the ",
+downscaled screenshot is what makes marks land badly. ",
+    "When you circle, box, underline or point an arrow at WORDS on screen (a word in a question, a line of code, ",
+    "a total, a heading, a slide's text, a subtitle), put those exact words, as they appear, in `text_to_type` on ",
+    "that draw step (e.g. {\"action\":\"draw\",\"shape\":\"underline\",\"text_to_type\":\"total cost\"}): Izuki finds them ",
+    "on the full-resolution screen and draws exactly round, under or at them — far more accurate than corners. ",
+    "Give your best x,y guess as well when the same words appear more than once (the nearest copy is used). ",
+    "Draw in the order you explain, 2 to 6 marks, and put the ",
     "explanation itself in `summary` step by step, the way a patient teacher talks — the marks stay on screen ",
-    "while it's said. Follow the user's playback preference: keep playing or slow down if requested. ",
+    "while it's said. If they ask you to explain MORE, further, deeper or again, give a fuller explanation than ",
+    "before (6 to 12 sentences, with an example) and new marks — never a shorter one, and don't stop after one line. ",
+    "Follow the user's playback preference: keep playing or slow down if requested. ",
     "If asked to pause, use a verified Pause control, never a toggle key that might resume an already paused video. ",
     "When the request says playback is already handled, only explain and draw; do not click or press keys. ",
     "Explain only visible content or provided captions; never pretend to have heard audio you did not receive.\n",
@@ -1429,6 +1437,18 @@ fn drawn_as_box(shape: Option<&str>) -> bool {
     !matches!(shape.map(str::trim), Some("note"))
 }
 
+/// A circle, box, underline or arrow that names the words it goes round
+/// (`text_to_type`) — placed by finding those words on screen.
+pub fn marks_words(s: &ActionStep) -> bool {
+    s.shape.as_deref() != Some("note") && s.text_to_type.as_deref().is_some_and(|t| !t.trim().is_empty())
+}
+
+/// A note with words but no place of its own — written under the words
+/// marked just before it (brain::anchor_marks).
+pub fn note_to_place(s: &ActionStep) -> bool {
+    s.shape.as_deref() == Some("note") && s.x == 0 && s.y == 0 && s.text_to_type.as_deref().is_some_and(|t| !t.trim().is_empty())
+}
+
 fn resolve_targets(steps: &mut Vec<ActionStep>, controls: &[crate::uia::Control], had_point: &[bool]) {
     let find = |id: u32| controls.iter().find(|c| c.id == id);
     let mut keep = Vec::with_capacity(steps.len());
@@ -1482,7 +1502,20 @@ let mut pinned = false;
                 | Intent::Copy
                 | Intent::Auto
         );
-        keep.push(!needs_point || pinned || had_point.get(i).copied().unwrap_or(true));
+        // A mark aimed at words needs no coordinates of its own: Izuki finds
+        // the words on the full-resolution screen (brain::anchor_marks). With
+        // no point given, keep it at exactly (0,0) — rescaling moved "none" to
+        // the desktop's corner, which isn't (0,0) on every monitor layout.
+        let own_point = had_point.get(i).copied().unwrap_or(true);
+        let words_mark = s.action == Intent::Draw && !pinned && (marks_words(s) || s.shape.as_deref() == Some("note"));
+        if words_mark && !own_point {
+            s.x = 0;
+            s.y = 0;
+            s.x2 = None;
+            s.y2 = None;
+        }
+        let on_words = s.action == Intent::Draw && (marks_words(s) || note_to_place(s));
+        keep.push(!needs_point || pinned || on_words || had_point.get(i).copied().unwrap_or(true));
     }
 
     let mut i = 0;

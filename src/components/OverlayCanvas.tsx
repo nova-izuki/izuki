@@ -111,6 +111,24 @@ export function OverlayCanvas() {
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
+  // Know the screen's real size by itself — on start (a reloaded overlay
+  // otherwise mapped points 1:1, 1.5× off at 150 % scaling) and whenever the
+  // display changes (resolution, scaling, a monitor plugged in or out).
+  useEffect(() => {
+    const learn = () =>
+      void api
+        .desktopBounds()
+        .then((b) => {
+          if (b && b.w > 0 && b.h > 0) {
+            setDesktop((prev) => (prev.x === b.x && prev.y === b.y && prev.w === b.w && prev.h === b.h ? prev : { ...prev, ...b }));
+          }
+        })
+        .catch(() => undefined);
+    learn();
+    window.addEventListener("resize", learn);
+    return () => window.removeEventListener("resize", learn);
+  }, []);
+
   // Outside drawing, the overlay must never swallow the whole screen's
   // clicks (it looked like a frozen, blurred screen). Re-check it steadily.
   useEffect(() => {
@@ -398,13 +416,19 @@ export function OverlayCanvas() {
       on<boolean>(EV.thinking, setThinking),
       on<HandCommand>(EV.hand, (cmd) => {
         setActing(true);
-        const sx = Math.max(1, window.innerWidth) / Math.max(1, desktop.w || window.innerWidth);
-        const sy = Math.max(1, window.innerHeight) / Math.max(1, desktop.h || window.innerHeight);
+        // The screen's real size travels with every command. Without it a
+        // never-told or reloaded overlay mapped 1:1 — 1.5× off at 150 % scaling.
+        const d = cmd.desktop && cmd.desktop.w > 0 ? cmd.desktop : desktop;
+        if (cmd.desktop && cmd.desktop.w > 0 && (d.x !== desktop.x || d.y !== desktop.y || d.w !== desktop.w || d.h !== desktop.h)) {
+          setDesktop(cmd.desktop);
+        }
+        const sx = Math.max(1, window.innerWidth) / Math.max(1, d.w || window.innerWidth);
+        const sy = Math.max(1, window.innerHeight) / Math.max(1, d.h || window.innerHeight);
         // A model may describe an edge one pixel beyond a capture. Keep the
         // teaching ink inside the actual overlay instead of letting it drift
         // onto a second monitor or disappear beyond the viewport.
-        const screenX = (x: number) => Math.round(Math.max(0, Math.min(window.innerWidth, (x - desktop.x) * sx)));
-        const screenY = (y: number) => Math.round(Math.max(0, Math.min(window.innerHeight, (y - desktop.y) * sy)));
+        const screenX = (x: number) => Math.round(Math.max(0, Math.min(window.innerWidth, (x - d.x) * sx)));
+        const screenY = (y: number) => Math.round(Math.max(0, Math.min(window.innerHeight, (y - d.y) * sy)));
         const cx2 = screenX(cmd.x);
         const cy2 = screenY(cmd.y);
 

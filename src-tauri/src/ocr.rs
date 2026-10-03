@@ -34,22 +34,70 @@ where
 /// region holds no recognisable text — that is a normal outcome, not an error.
 #[cfg(windows)]
 pub fn read_frame(frame: &Frame) -> Result<String> {
+    match recognize(frame)? {
+        Some((result, _)) => Ok(result.Text()?.to_string_lossy().trim().to_string()),
+        None => Ok(String::new()),
+    }
+}
+
+/// One word seen on the screen, and exactly where — in real desktop pixels.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Word {
+    pub text: String,
+    pub rect: crate::model::Rect,
+    /// Which line of text it's on (words of one phrase share a line).
+    pub line: usize,
+}
+
+/// Every word in `frame`, with its exact position on the desktop. This is how
+/// Izuki marks text precisely: instead of a model guessing pixels on a
+/// shrunken screenshot, the words are found where they really are — in a
+/// browser, a PDF, a video's slide, at any screen size and scaling.
+#[cfg(windows)]
+pub fn read_words(frame: &Frame) -> Result<Vec<Word>> {
+    let Some((result, factor)) = recognize(frame)? else { return Ok(Vec::new()) };
+    let mut out = Vec::new();
+    for (line_no, line) in result.Lines()?.into_iter().enumerate() {
+        for word in line.Words()? {
+            let r = word.BoundingRect()?;
+            let f = factor as f32;
+            out.push(Word {
+                text: word.Text()?.to_string_lossy(),
+                rect: crate::model::Rect {
+                    x: frame.origin.0 + (r.X / f).round() as i32,
+                    y: frame.origin.1 + (r.Y / f).round() as i32,
+                    w: (r.Width / f).round().max(1.0) as i32,
+                    h: (r.Height / f).round().max(1.0) as i32,
+                },
+                line: line_no,
+            });
+        }
+    }
+    Ok(out)
+}
+
+#[cfg(not(windows))]
+pub fn read_words(_frame: &Frame) -> Result<Vec<Word>> {
+    Ok(Vec::new())
+}
+
+/// Run the OCR engine on a frame. `None` for an empty frame; otherwise the
+/// result and how much the image was enlarged first (positions divide by it).
+#[cfg(windows)]
+fn recognize(frame: &Frame) -> Result<Option<(windows::Media::Ocr::OcrResult, u32)>> {
     use windows::Graphics::Imaging::BitmapDecoder;
     use windows::Media::Ocr::OcrEngine;
     use windows::Storage::Streams::{DataWriter, InMemoryRandomAccessStream};
     use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
 
     if frame.width == 0 || frame.height == 0 {
-        return Ok(String::new());
+        return Ok(None);
     }
 
     // The engine wants a reasonably sized image; tiny crops are upscaled so a
     // single word in a small button is still legible to it.
-    let working = if frame.width < 64 || frame.height < 40 {
-        upscale(frame, 3)
-    } else {
-        frame.clone()
-    };
+    let factor = if frame.width < 64 || frame.height < 40 { 3 } else { 1 };
+    let working = if factor > 1 { upscale(frame, factor) } else { frame.clone() };
 
     unsafe {
         // Worker threads have no apartment yet. RPC_E_CHANGED_MODE just means
@@ -75,7 +123,59 @@ pub fn read_frame(frame: &Frame) -> Result<String> {
         .map_err(|e| anyhow!("no OCR language pack is installed: {e}"))?;
 
     let result = wait(engine.RecognizeAsync(&bitmap)?)?;
-    Ok(result.Text()?.to_string_lossy().trim().to_string())
+    Ok(Some((result, factor)))
+}
+
+/// Where the words `phrase` are on screen: the run of consecutive words on
+/// one line that matches best (spelling slips forgiven), nearest to `near`
+/// when it appears more than once. The box round all of them.
+pub fn find_phrase(words: &[Word], phrase: &str, near: Option<(i32, i32)>) -> Option<crate::model::Rect> {
+    let tidy = |s: &str| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase();
+    let want: Vec<String> = phrase.split_whitespace().map(tidy).filter(|w| !w.is_empty()).collect();
+    if want.is_empty() || want.len() > 16 {
+        return None;
+    }
+    let close = |a: &str, b: &str| a == b || (a.len() >= 4 && b.len() >= 4 && edits(a, b) <= 1) || (b.len() >= 3 && a.starts_with(b) && a.len() <= b.len() + 2);
+    let mut best: Option<(crate::model::Rect, i64)> = None;
+    for start in 0..words.len() {
+        if start + want.len() > words.len() {
+            break;
+        }
+        let run = &words[start..start + want.len()];
+        if run.iter().any(|w| w.line != run[0].line) {
+            continue;
+        }
+        if !run.iter().zip(&want).all(|(w, t)| close(&tidy(&w.text), t)) {
+            continue;
+        }
+        let x = run.iter().map(|w| w.rect.x).min().unwrap_or(0);
+        let y = run.iter().map(|w| w.rect.y).min().unwrap_or(0);
+        let right = run.iter().map(|w| w.rect.x + w.rect.w).max().unwrap_or(0);
+        let bottom = run.iter().map(|w| w.rect.y + w.rect.h).max().unwrap_or(0);
+        let rect = crate::model::Rect { x, y, w: right - x, h: bottom - y };
+        let (cx, cy) = rect.center();
+        let distance = near.map_or(0, |(nx, ny)| ((cx - nx) as i64).pow(2) + ((cy - ny) as i64).pow(2));
+        if best.as_ref().map_or(true, |(_, d)| distance < *d) {
+            best = Some((rect, distance));
+        }
+    }
+    best.map(|(r, _)| r)
+}
+
+/// How many single-letter changes turn `a` into `b`.
+fn edits(a: &str, b: &str) -> usize {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for i in 1..=a.len() {
+        let mut prev = row[0];
+        row[0] = i;
+        for j in 1..=b.len() {
+            let cur = row[j];
+            row[j] = (row[j] + 1).min(row[j - 1] + 1).min(prev + usize::from(a[i - 1] != b[j - 1]));
+            prev = cur;
+        }
+    }
+    row[b.len()]
 }
 
 #[cfg(not(windows))]
@@ -121,4 +221,62 @@ pub fn contains_loose(haystack: &str, needle: &str) -> bool {
     }
     let n = norm(needle);
     !n.is_empty() && norm(haystack).contains(&n)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Rect;
+
+    fn word(text: &str, x: i32, y: i32, line: usize) -> Word {
+        Word { text: text.into(), rect: Rect { x, y, w: 10 * text.len() as i32, h: 20 }, line }
+    }
+
+    #[test]
+    fn finds_the_words_and_boxes_all_of_them() {
+        let words = vec![word("Find", 100, 50, 0), word("the", 150, 50, 0), word("total", 190, 50, 0), word("cost", 245, 50, 0)];
+        let r = find_phrase(&words, "total cost", None).expect("on screen");
+        assert_eq!(r, Rect { x: 190, y: 50, w: 95, h: 20 });
+    }
+
+    #[test]
+    fn forgives_ocr_slips_and_punctuation() {
+        let words = vec![word("Speed", 10, 10, 0), word("of", 70, 10, 0), word("the", 95, 10, 0), word("tra1n,", 130, 10, 0)];
+        assert!(find_phrase(&words, "speed of the train", None).is_some(), "one wrong letter and a comma");
+        assert!(find_phrase(&words, "speed of a plane", None).is_none(), "different words aren't a match");
+    }
+
+    #[test]
+    fn picks_the_copy_nearest_where_the_model_looked() {
+        let words = vec![word("total", 100, 100, 0), word("total", 100, 600, 3)];
+        let r = find_phrase(&words, "total", Some((110, 590))).expect("on screen");
+        assert_eq!(r.y, 600);
+    }
+
+    #[test]
+    fn a_phrase_never_spans_two_lines() {
+        let words = vec![word("total", 100, 100, 0), word("cost", 100, 130, 1)];
+        assert!(find_phrase(&words, "total cost", None).is_none());
+    }
+
+    /// The real engine on a real screenshot: words come back where they are,
+    /// in real pixels — at 100 % and at 150 % display scaling alike.
+    /// IZUKI_OCR_PNG=<screenshot> IZUKI_OCR_AT=<x,y of "total cost"> cargo test --lib ocr_on_a_real_screenshot -- --ignored
+    #[test]
+    #[ignore]
+    fn ocr_on_a_real_screenshot() {
+        let path = std::env::var("IZUKI_OCR_PNG").expect("IZUKI_OCR_PNG");
+        let at: Vec<i32> = std::env::var("IZUKI_OCR_AT").expect("IZUKI_OCR_AT").split(',').map(|v| v.trim().parse().unwrap()).collect();
+        let img = image::open(&path).expect("png").to_rgba8();
+        let (w, h) = img.dimensions();
+        let mut bgra = img.into_raw();
+        for px in bgra.chunks_exact_mut(4) {
+            px.swap(0, 2);
+        }
+        let frame = Frame { width: w, height: h, origin: (0, 0), bgra };
+        let words = read_words(&frame).expect("ocr");
+        let r = find_phrase(&words, "total cost", None).expect("\"total cost\" found");
+        println!("found \"total cost\" at {},{} {}x{} in a {w}x{h} screenshot", r.x, r.y, r.w, r.h);
+        assert!((r.x - at[0]).abs() <= 12 && (r.y - at[1]).abs() <= 14, "expected near {},{}", at[0], at[1]);
+    }
 }

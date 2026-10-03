@@ -104,6 +104,17 @@ const SCENES = [
     why: "uses the control it was told is further down, in one move",
   },
   {
+    name: "teach: marks the words it explains",
+    html: page("Worksheet", `<div style="padding:60px;font:32px Segoe UI,sans-serif"><p>Question 4: A shop sells apples for $2 each.</p><p>Work out the <b>total cost</b> of 3 apples.</p><p style="margin-top:80px">Show your working below.</p></div>`),
+    controls: [],
+    say: "explain this question to me like a teacher",
+    // Names the words to mark (Izuki finds them on screen) and explains out loud.
+    must: /^DRAW (underline|box|circle|arrow) "?[a-z$0-9]/im,
+    // Never copies the example's coordinates for a note.
+    mustNot: /^(CLICK|TYPE)|^DRAW note 320,180/im,
+    why: "draws on the words it explains, without clicking",
+  },
+  {
     name: "oops: it minimised the window by mistake",
     url: "https://nova-izuki.github.io/izuki/",
     controls: ['[1] link "Download"', '[2] link "Features"'],

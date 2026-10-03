@@ -43,6 +43,9 @@ pub const EASY_PROMPT: &str = concat!(
     "SAY words — what to say out loud: an answer, or a few words on what you're doing\n",
     "ASK question — only before sending, buying, deleting or submitting, or when a costly choice is truly theirs\n",
     "REMEMBER fact — something lasting to remember about them, e.g. REMEMBER User uses the Louis profile in Chrome\n",
+    "DRAW underline \"total cost\" — teaching with a pen: circle, box, underline or arrow round the WORDS you name ",
+    "(Izuki finds them on screen); DRAW circle 7 marks control 7; DRAW note \"x = 4\" writes a short working note ",
+    "just under the words you marked last. Nothing is clicked. Explain in SAY lines while you draw.\n",
     "DONE — only when you can SEE on screen that the whole request is finished\n",
     "Rules: start with the command, never with \"The user…\" — no describing the request, the screen or ",
     "your plan. If you can see the thing to act on, act on it now. Prefer OPEN, GO, SEARCH and PLAY: they ",
@@ -63,6 +66,8 @@ pub const EASY_PROMPT: &str = concat!(
     "User: scroll down (the song they want is in the list)\nCLICK \"Luffy Relax Study Music\"\n",
     "User: what does this error mean?\nSAY It says the file is missing, so the app can't start. Reinstalling it should fix that.\nDONE\n",
     "User: open notepad and write hello\nOPEN notepad\nWAIT 1\n",
+    "User: explain this question to me\nDRAW underline \"speed of the train\"\nSAY First, look at what it asks: the speed of the train.\n",
+    "DRAW box \"120 km in 2 hours\"\nSAY We know it went 120 kilometres in 2 hours, so speed is distance over time — 60 km per hour.\nDONE\n",
 );
 
 /// Small or free models that do better with Easy Mode than the full rulebook.
@@ -209,6 +214,7 @@ pub fn parse(raw: &str, req: &VisionRequest, any_case: bool) -> Reply {
             }
             "SEARCH" => skill("search", rest),
             "PLAY" => skill("play_youtube", rest),
+            "DRAW" | "MARK" => drawing(rest, req),
             "WAIT" => {
                 out.any = true;
                 out.wait = rest.split_whitespace().next().and_then(|n| n.parse::<f64>().ok()).map(|n| n.clamp(0.0, 20.0) as u32).unwrap_or(2);
@@ -359,6 +365,42 @@ fn scroll(rest: &str, req: &VisionRequest) -> ActionStep {
     }
 }
 
+/// `DRAW underline "total cost"` (round the words, found on screen),
+/// `DRAW circle 7` (round control 7), `DRAW note 320,180 "x = 4"`.
+fn drawing(rest: &str, req: &VisionRequest) -> Option<ActionStep> {
+    const SHAPES: &[&str] = &["circle", "box", "underline", "arrow", "note"];
+    let rest = rest.trim();
+    let (first, after) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+    let (shape, what) = match SHAPES.iter().find(|s| first.eq_ignore_ascii_case(s)) {
+        Some(s) => (*s, after.trim()),
+        None => ("circle", rest),
+    };
+    if what.is_empty() {
+        return None;
+    }
+    if shape == "note" {
+        // `x,y "words"` writes it there; just `"words"` writes it under the
+        // words marked last (brain::anchor_marks places it).
+        let (at, words) = what.split_once('"').map(|(a, w)| (a.trim(), w.trim_end_matches('"'))).unwrap_or(("", what));
+        let words = unquote(words);
+        if words.is_empty() {
+            return None;
+        }
+        return Some(match point(at) {
+            Some((x, y)) => step(json!({ "action": "draw", "shape": "note", "x": x, "y": y, "text_to_type": words })),
+            None => step(json!({ "action": "draw", "shape": "note", "text_to_type": words })),
+        });
+    }
+    if let Some(id) = number(what).filter(|id| req.controls.iter().any(|c| c.id == *id)) {
+        return Some(step(json!({ "action": "draw", "shape": shape, "target": id })));
+    }
+    if let Some((x, y)) = point(what) {
+        return Some(step(json!({ "action": "draw", "shape": shape, "x": x, "y": y })));
+    }
+    let words = unquote(what);
+    (!words.is_empty()).then(|| step(json!({ "action": "draw", "shape": shape, "text_to_type": words })))
+}
+
 fn skill(action: &str, what: &str) -> Option<ActionStep> {
     let what = unquote(what);
     (!what.is_empty()).then(|| step(json!({ "action": action, "text_to_type": what })))
@@ -473,6 +515,20 @@ mod tests {
         let reply = parse("CLICK \"Subscribe\"\nCLICK 99", &r, true);
         assert!(reply.steps.is_empty());
         assert!(reply.any);
+    }
+
+    #[test]
+    fn small_models_can_teach_with_the_pen() {
+        let r = req(vec![control(7, "Submit")]);
+        let reply = parse("DRAW underline \"total cost\"\nDRAW box 7\nDRAW note 320,180 \"x = 4\"\nDRAW note \"= $6\"\nSAY Look here.", &r, true);
+        assert_eq!(reply.steps.len(), 4);
+        assert_eq!((reply.steps[3].x, reply.steps[3].y), (0, 0), "placed under the last marked words later");
+        assert_eq!(reply.steps[0].shape.as_deref(), Some("underline"));
+        assert_eq!(reply.steps[0].text_to_type.as_deref(), Some("total cost"), "words to find on screen");
+        assert_eq!(reply.steps[1].target, Some(7), "a control's real bounds");
+        assert_eq!((reply.steps[2].x, reply.steps[2].y), (320, 180));
+        assert_eq!(reply.steps[2].text_to_type.as_deref(), Some("x = 4"));
+        assert_eq!(reply.say.as_deref(), Some("Look here."));
     }
 
     #[test]

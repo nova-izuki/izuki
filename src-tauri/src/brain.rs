@@ -345,6 +345,8 @@ fn ask_model(
         return Err(anyhow!("no brain is configured"));
     }
     let mut plan = ask_racing(&chain, req, prep_ms, wants_action)?;
+    // Marks aimed at words go exactly where those words really are.
+    anchor_marks(&mut plan.steps, frame);
     // "Remind me…" said while it works the screen: set it, don't say the tag.
     if plan.summary.contains("[REMIND") {
         plan.summary = crate::reminders::take_tags(&plan.summary);
@@ -869,6 +871,10 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             label: Some(format!("{}/{}", i + 1, steps.len())),
                             shape: step.shape.clone(),
                             text: if step.action == Intent::Draw { step.text_to_type.clone() } else { None },
+                            desktop: Some({
+                                let b = capture::virtual_bounds();
+                                crate::model::DesktopBounds { x: b.x, y: b.y, w: b.w, h: b.h, scale: 1.0 }
+                            }),
                         },
                     );
                     }
@@ -953,6 +959,107 @@ pub fn run_flow(app: &AppHandle, store: &Arc<Store>, id: &str) -> Result<()> {
 /// mark list standing in for the geometry-only fast path.
 pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String) -> VisionPlan {
     submit_task(app, store, prompt, Vec::new(), None, None)
+}
+
+/// The teaching pen, precise: a circle, box, underline or arrow aimed at
+/// WORDS (the model names them in `text_to_type`) is placed where those words
+/// really are — read off the full-resolution screen with Windows' own OCR, in
+/// real desktop pixels. A model guessing corners on a shrunken screenshot of a
+/// scaled (150 %, 4K) screen could never land an underline under the right
+/// words; this does, in a browser, a PDF or a paused video. A mark whose words
+/// can't be found and that has no place of its own is dropped, never drawn in
+/// a corner. Marks already pinned to a real control keep its bounds.
+fn anchor_marks(steps: &mut Vec<ActionStep>, frame: &Frame) {
+    let on_words = |s: &ActionStep| s.action == Intent::Draw && s.snapped_to.is_none() && vision::marks_words(s);
+    let wants_words = steps.iter().any(on_words);
+    let wants_notes = steps.iter().any(|s| s.action == Intent::Draw && vision::note_to_place(s));
+    if !wants_words && !wants_notes {
+        return;
+    }
+    let started = std::time::Instant::now();
+    let words = if wants_words {
+        crate::ocr::read_words(frame).unwrap_or_else(|e| {
+            eprintln!("[pen] couldn't read the screen's words: {e}");
+            Vec::new()
+        })
+    } else {
+        Vec::new()
+    };
+    let mut lost = Vec::new();
+    // The last thing marked, so a note without a place goes just under it.
+    let mut last: Option<Rect> = None;
+    for (i, s) in steps.iter_mut().enumerate() {
+        if s.action != Intent::Draw {
+            continue;
+        }
+        if vision::note_to_place(s) {
+            match last {
+                Some(r) => {
+                    s.x = r.x;
+                    s.y = r.y + r.h + 34;
+                }
+                None => lost.push(i),
+            }
+            continue;
+        }
+        if !on_words(s) {
+            // A mark with a place of its own (a control's bounds, the model's corners).
+            if s.x != 0 || s.y != 0 {
+                let (x2, y2) = (s.x2.unwrap_or(s.x), s.y2.unwrap_or(s.y));
+                last = Some(Rect { x: s.x.min(x2), y: s.y.min(y2), w: (x2 - s.x).abs(), h: (y2 - s.y).abs() });
+            }
+            continue;
+        }
+        let phrase = s.text_to_type.clone().unwrap_or_default();
+        let guessed = s.x != 0 || s.y != 0;
+        let near = guessed.then(|| ((s.x + s.x2.unwrap_or(s.x)) / 2, (s.y + s.y2.unwrap_or(s.y)) / 2));
+        match crate::ocr::find_phrase(&words, &phrase, near) {
+            Some(r) => {
+                place_mark(s, r);
+                s.snapped_to = Some(phrase.clone());
+                last = Some(r);
+                eprintln!("[pen] \"{phrase}\" found on screen at {},{} {}x{}", r.x, r.y, r.w, r.h);
+            }
+            None if !guessed => {
+                eprintln!("[pen] \"{phrase}\" isn't on screen — not drawing it");
+                lost.push(i);
+            }
+            None => eprintln!("[pen] \"{phrase}\" not found — drawing where the model aimed"),
+        }
+    }
+    for i in lost.into_iter().rev() {
+        steps.remove(i);
+    }
+    eprintln!("[pen] placed marks on words in {} ms ({} words read)", started.elapsed().as_millis(), words.len());
+}
+
+/// Fit a mark to the box round its words: round it (circle, box), under it
+/// (underline), or pointing at its left edge (arrow).
+fn place_mark(s: &mut ActionStep, r: Rect) {
+    match s.shape.as_deref() {
+        Some("underline") => {
+            s.x = r.x;
+            s.y = r.y + r.h;
+            s.x2 = Some(r.x + r.w);
+            s.y2 = Some(r.y + r.h);
+        }
+        Some("arrow") => {
+            let (tx, ty) = (r.x - 6, r.y + r.h / 2);
+            // Keep the model's starting point if it gave one; else come in from above-left.
+            if s.x2.is_none() || (s.x == 0 && s.y == 0) {
+                s.x = tx - 130;
+                s.y = ty - 80;
+            }
+            s.x2 = Some(tx);
+            s.y2 = Some(ty);
+        }
+        _ => {
+            s.x = r.x;
+            s.y = r.y;
+            s.x2 = Some(r.x + r.w);
+            s.y2 = Some(r.y + r.h);
+        }
+    }
 }
 
 /// "Click Subscribe", "press Sign in", "tap the Settings tab": the button is
@@ -1960,6 +2067,39 @@ mod speed_tests {
         assert!(!task_is_current(draw, 8, true), "stop invalidates the generation");
         assert!(!task_is_current(draw, 9, false), "a new task clearing abort cannot revive queued clicks");
         assert!(task_is_current(9, 9, false));
+    }
+
+    #[test]
+    fn marks_fit_the_words_they_are_aimed_at() {
+        let words = Rect { x: 400, y: 300, w: 180, h: 30 };
+        let mark = |shape: &str| -> ActionStep {
+            serde_json::from_value(serde_json::json!({ "action": "draw", "shape": shape, "text_to_type": "total cost" })).unwrap()
+        };
+        let mut b = mark("box");
+        place_mark(&mut b, words);
+        assert_eq!((b.x, b.y, b.x2, b.y2), (400, 300, Some(580), Some(330)), "round the words");
+        let mut u = mark("underline");
+        place_mark(&mut u, words);
+        assert_eq!((u.x, u.y, u.x2, u.y2), (400, 330, Some(580), Some(330)), "along the bottom of the words");
+        let mut a = mark("arrow");
+        place_mark(&mut a, words);
+        assert_eq!((a.x2, a.y2), (Some(394), Some(315)), "the arrow's head at the words' left edge");
+    }
+
+    #[test]
+    fn a_note_without_a_place_goes_under_the_last_mark() {
+        let mark: ActionStep = serde_json::from_value(serde_json::json!({ "action": "draw", "shape": "box", "x": 400, "y": 300, "x2": 580, "y2": 330 })).unwrap();
+        let note: ActionStep = serde_json::from_value(serde_json::json!({ "action": "draw", "shape": "note", "text_to_type": "= $6" })).unwrap();
+        let lone: ActionStep = serde_json::from_value(serde_json::json!({ "action": "draw", "shape": "note", "text_to_type": "?" })).unwrap();
+        let empty = Frame { width: 0, height: 0, origin: (0, 0), bgra: Vec::new() };
+
+        let mut steps = vec![mark, note];
+        anchor_marks(&mut steps, &empty);
+        assert_eq!((steps[1].x, steps[1].y), (400, 364), "written just under the box");
+
+        let mut alone = vec![lone];
+        anchor_marks(&mut alone, &empty);
+        assert!(alone.is_empty(), "nothing marked before it: not drawn in a corner");
     }
 
     #[test]

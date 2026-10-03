@@ -426,6 +426,11 @@ pub struct HandCommand {
     pub shape: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// The whole desktop's real pixel bounds when this was sent. The overlay
+    /// maps every point with these, so a mark can never be drawn with a stale
+    /// or missing screen size (which put marks 1.5× off on a 150 % display).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub desktop: Option<DesktopBounds>,
 }
 
 #[derive(Debug, Clone, Serialize)]
