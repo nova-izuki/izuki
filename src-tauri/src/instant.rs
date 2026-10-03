@@ -25,6 +25,9 @@ pub enum Act {
     /// Sound on or off for the whole PC — set, not toggled, so "unmute"
     /// never mutes a PC that was already playing.
     Mute(bool),
+    /// Music or video playing (`true`) or paused — set, not toggled, so
+    /// "pause" never starts something that was quiet.
+    Playing(bool),
 }
 
 /// The command in `said`, and the few words said back — or `None` when it's
@@ -62,10 +65,10 @@ pub fn parse(said: &str) -> Option<(Act, &'static str)> {
 
         "pause" | "pause it" | "pause the music" | "pause the video" | "pause the song" | "pause music"
         | "pause video" | "pause that" | "stop the music" | "stop the video" | "stop the song" => {
-            (keys("playpause", 1), "Paused.")
+            (Act::Playing(false), "Paused.")
         }
         "play" | "play it" | "resume" | "resume it" | "unpause" | "unpause it" | "keep playing"
-        | "resume the music" | "resume the video" | "resume the song" | "play it again" => (keys("playpause", 1), "Playing."),
+        | "resume the music" | "resume the video" | "resume the song" | "play it again" => (Act::Playing(true), "Playing."),
         "next song" | "next track" | "skip song" | "skip this song" | "skip the song" | "skip this track"
         | "skip track" | "skip the track" | "play the next song" => (keys("nexttrack", 1), "Next one."),
         "previous song" | "previous track" | "last song" | "go back a song" | "play the previous song"
@@ -173,7 +176,7 @@ fn step(v: serde_json::Value) -> ActionStep {
 }
 
 /// The steps for `act`, for the same runner every task uses (the hand goes
-/// there, Esc stops it). `Minimize` and `Mute` aren't steps — see [`run_direct`].
+/// there, Esc stops it). `Minimize`, `Mute` and `Playing` aren't steps — see [`run_direct`].
 pub fn steps(act: Act) -> Vec<ActionStep> {
     match act {
         Act::Scroll { down, notches } => {
@@ -191,7 +194,7 @@ pub fn steps(act: Act) -> Vec<ActionStep> {
             let key = if crate::uia::foreground_title().to_lowercase().contains("youtube") { "f" } else { "f11" };
             vec![step(json!({ "action": "key", "key": key, "confidence": 1.0, "reasoning": "instant command" }))]
         }
-        Act::Minimize | Act::Mute(_) => Vec::new(),
+        Act::Minimize | Act::Mute(_) | Act::Playing(_) => Vec::new(),
     }
 }
 
@@ -200,6 +203,9 @@ pub fn run_direct(act: Act) -> bool {
     match act {
         Act::Minimize => minimize_front(),
         Act::Mute(on) => set_mute(on),
+        // Windows couldn't say what's playing: the media key, as before.
+        Act::Playing(play) => crate::media::set_playing(play)
+            .unwrap_or_else(|| crate::automation::press_key("playpause").is_ok()),
         _ => true,
     }
 }
@@ -277,7 +283,8 @@ mod tests {
         assert_eq!(act("scroll up"), Some(Act::Scroll { down: false, notches: 5 }));
         assert_eq!(act("louder"), Some(Act::Keys { key: "volumeup", times: 5 }));
         assert_eq!(act("turn it down please"), Some(Act::Keys { key: "volumedown", times: 5 }));
-        assert_eq!(act("pause the video"), Some(Act::Keys { key: "playpause", times: 1 }));
+        assert_eq!(act("pause the video"), Some(Act::Playing(false)));
+        assert_eq!(act("resume the music"), Some(Act::Playing(true)));
         assert_eq!(act("next song"), Some(Act::Keys { key: "nexttrack", times: 1 }));
         assert_eq!(act("go back"), Some(Act::Keys { key: "alt+left", times: 1 }));
         assert_eq!(act("open a new tab"), Some(Act::Keys { key: "ctrl+t", times: 1 }));

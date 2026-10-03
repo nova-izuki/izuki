@@ -44,6 +44,8 @@ pub fn search_url(query: &str) -> String {
 /// the most-watched of the top results. `Some(title)` once it clicked one;
 /// `None` if the results never showed (they're left on screen).
 pub fn play(query: &str) -> Result<Option<String>> {
+    // One song at a time: whatever else is playing stops first.
+    crate::media::pause_others();
     crate::apps::open_url(&search_url(query))?;
     watch_ads(AD_WATCH);
     let words = words(query);

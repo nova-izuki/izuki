@@ -24,6 +24,7 @@ pub mod hotkey;
 pub mod instant;
 pub mod keys;
 pub mod live;
+pub mod media;
 pub mod memory;
 pub mod model;
 pub mod models;
