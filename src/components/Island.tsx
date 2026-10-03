@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { AlarmClock, Check, Mic, Pause, Pencil, Play, Settings2, SkipBack, SkipForward, Square } from "lucide-react";
 import { api, emit, EV, on } from "../lib/ipc";
 import { workArea } from "../lib/floating";
-import type { IslandStatus, NowPlaying, OrbState, Reminder } from "../lib/types";
+import type { IslandStatus, NowPlaying, OrbState, Reminder, Suggestion } from "../lib/types";
 
 /**
  * The Island: a black pill at the top of the screen, like a phone's live
@@ -39,16 +39,37 @@ const CLOSE_AFTER_MS = 700;
 const EDGE_BAND = 260;
 const FINISHED_MS = 2200;
 const REMINDER_SOON_MS = 30 * 60_000;
+/** A helpful suggestion peeks out this long, then tucks away. */
+const PEEK_MS = 7000;
+/** The same page or app never gets a second peek this soon… */
+const PEEK_SAME_MS = 10 * 60_000;
+/** …and peeks are never closer together than this. */
+const PEEK_GAP_MS = 90_000;
 
 type Live =
   | { kind: "finished" }
   | { kind: "working"; text: string }
   | { kind: "reminder"; r: Reminder; urgent: boolean }
+  | { kind: "suggest"; s: Suggestion }
   | { kind: "music"; m: NowPlaying }
   | { kind: "rest" };
 
-export function Island({ orb, doing, thinking }: { orb: OrbState; doing: string | null; thinking: boolean }) {
-  const [status, setStatus] = useState<IslandStatus>({ media: null, fullscreen: false });
+export function Island({
+  orb,
+  doing,
+  thinking,
+  peeks = true,
+}: {
+  orb: OrbState;
+  doing: string | null;
+  thinking: boolean;
+  /** Let a helpful suggestion peek out on its own (setting). */
+  peeks?: boolean;
+}) {
+  const [status, setStatus] = useState<IslandStatus>({ media: null, fullscreen: false, suggestions: [], context: "" });
+  const [peek, setPeek] = useState<Suggestion | null>(null);
+  const peeked = useRef(new Map<string, number>());
+  const lastPeek = useRef(0);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [open, setOpen] = useState(false);
   const [finished, setFinished] = useState(false);
@@ -145,6 +166,29 @@ export function Island({ orb, doing, thinking }: { orb: OrbState; doing: string 
     };
   }, []);
 
+  // ---- a gentle peek when something worth helping with comes up
+  useEffect(() => {
+    const strong = status.suggestions.find((x) => x.strong);
+    if (!peeks || !strong || busy || status.fullscreen || !status.context) return;
+    const t = Date.now();
+    const key = `${status.context}|${strong.label}`;
+    if (t - (peeked.current.get(key) ?? 0) < PEEK_SAME_MS || t - lastPeek.current < PEEK_GAP_MS) return;
+    peeked.current.set(key, t);
+    lastPeek.current = t;
+    setPeek(strong);
+    // Only a new page/app (or new suggestion) is news — not every look.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status.context, status.suggestions[0]?.label, peeks]);
+  // Its own timer, so a page change mid-peek can't leave it stuck up.
+  useEffect(() => {
+    if (!peek) return;
+    const hide = setTimeout(() => setPeek(null), PEEK_MS);
+    return () => clearTimeout(hide);
+  }, [peek]);
+  useEffect(() => {
+    if (busy) setPeek(null);
+  }, [busy]);
+
   const media = status.media;
   const live: Live = finished
     ? { kind: "finished" }
@@ -152,7 +196,9 @@ export function Island({ orb, doing, thinking }: { orb: OrbState; doing: string 
       ? { kind: "working", text: doing || "Thinking…" }
       : soon && soon.at - now <= 5 * 60_000
         ? { kind: "reminder", r: soon, urgent: true }
-        : media?.playing
+        : peek
+          ? { kind: "suggest", s: peek }
+          : media?.playing
           ? { kind: "music", m: media }
           : soon
             ? { kind: "reminder", r: soon, urgent: false }
@@ -182,6 +228,7 @@ export function Island({ orb, doing, thinking }: { orb: OrbState; doing: string 
               <Expanded
                 live={live}
                 media={media}
+                suggestions={busy ? [] : status.suggestions}
                 next={next}
                 now={now}
                 dancing={dancing}
@@ -248,6 +295,13 @@ function Compact({ live, dancing }: { live: Live; dancing: boolean }) {
           <Bars playing={live.m.playing} />
         </>
       );
+    case "suggest":
+      return (
+        <>
+          <span className="izk-sparkle flex h-[24px] w-[24px] items-center justify-center rounded-full text-[13px]">{live.s.icon}</span>
+          <span className="max-w-[240px] truncate text-[13px] font-medium text-white/90">{live.s.label}?</span>
+        </>
+      );
     case "reminder":
       return (
         <>
@@ -269,6 +323,7 @@ function Compact({ live, dancing }: { live: Live; dancing: boolean }) {
 function Expanded({
   live,
   media,
+  suggestions,
   next,
   now,
   dancing,
@@ -278,6 +333,7 @@ function Expanded({
 }: {
   live: Live;
   media: NowPlaying | null;
+  suggestions: Suggestion[];
   next: Reminder | undefined;
   now: number;
   dancing: boolean;
@@ -345,6 +401,30 @@ function Expanded({
           <AlarmClock size={18} className="shrink-0 text-amber-400" />
           <div className="min-w-0 flex-1 truncate text-[13.5px]">{next.text}</div>
           <div className="shrink-0 text-[12.5px] text-white/55">{when(next.at, now)}</div>
+        </div>
+      )}
+
+      {suggestions.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/40">Suggested for you</div>
+          {suggestions.map((sg) => (
+            <button
+              key={sg.label}
+              type="button"
+              onClick={() => {
+                onDone();
+                void emit(EV.runChat, { id: Date.now(), text: sg.ask });
+              }}
+              className={
+                "flex h-11 items-center gap-2.5 rounded-2xl px-3 text-left text-[13.5px] font-medium transition active:scale-[0.98] " +
+                (sg.strong ? "izk-suggest-strong" : "bg-white/[0.07] hover:bg-white/[0.12]")
+              }
+            >
+              <span className="text-[17px]">{sg.icon}</span>
+              <span className="min-w-0 flex-1 truncate">{sg.label}</span>
+              <span className="text-white/35">›</span>
+            </button>
+          ))}
         </div>
       )}
 

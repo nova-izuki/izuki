@@ -171,6 +171,10 @@ pub struct Settings {
     /// activities. Keeps the (click-through) overlay up while it's on.
     #[serde(default = "default_true")]
     pub island_enabled: bool,
+    /// Let the Island offer help on its own when something worth it comes
+    /// up (an error box, a question, a video) — a short peek, rarely.
+    #[serde(default = "default_true")]
+    pub island_suggestions: bool,
     /// Size of the follow-mode hand, in px.
     #[serde(default = "default_follow_hand_size")]
     pub follow_hand_size: u32,
@@ -692,6 +696,7 @@ impl Default for Settings {
             execution_mode: ExecutionMode::Focus,
             follow_mode_enabled: false,
             island_enabled: true,
+            island_suggestions: true,
             follow_hand_size: default_follow_hand_size(),
             backdrop: BackdropMode::Acrylic,
             start_with_windows: false,

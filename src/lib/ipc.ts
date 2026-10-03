@@ -192,6 +192,7 @@ export const MOCK_SETTINGS: Settings = {
   execution_mode: "focus",
   follow_mode_enabled: false,
   island_enabled: true,
+  island_suggestions: true,
   follow_hand_size: 16,
   backdrop: "acrylic",
   start_with_windows: false,
@@ -370,7 +371,7 @@ export const api = {
   phoneUnpair: () => call<Settings>("phone_unpair", undefined, () => MOCK_SETTINGS),
   remindersList: () => call<Reminder[]>("reminders_list", undefined, () => []),
   /** The Island's look: what's playing, and whether a film/game is full screen. */
-  islandStatus: () => call<IslandStatus>("island_status", undefined, () => ({ media: null, fullscreen: false })),
+  islandStatus: () => call<IslandStatus>("island_status", undefined, () => ({ media: null, fullscreen: false, suggestions: [], context: "" })),
   /** ⏮ ⏯ ⏭ for whatever is playing on the PC. */
   mediaControl: (action: "play" | "pause" | "next" | "previous") => call<boolean>("media_control", { action }, () => false),
   reminderRemove: (id: string) => call<void>("reminder_remove", { id }, () => undefined),

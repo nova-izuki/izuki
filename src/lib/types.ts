@@ -296,6 +296,8 @@ export interface Settings {
   follow_mode_enabled: boolean;
   /** The Island at the top of the screen (live activities). On by default. */
   island_enabled: boolean;
+  /** The Island may briefly offer help on its own (an error, a question, a video). */
+  island_suggestions: boolean;
   /** Size of the follow-mode hand, in px. */
   follow_hand_size: number;
 
@@ -541,4 +543,17 @@ export interface IslandStatus {
   media: NowPlaying | null;
   /** A film or game fills the screen — the Island steps aside. */
   fullscreen: boolean;
+  /** One-tap help for what's in front ("Explain this video"). */
+  suggestions: Suggestion[];
+  /** Changes when the app or page in front changes. */
+  context: string;
+}
+
+export interface Suggestion {
+  label: string;
+  /** What Izuki is asked when it's tapped. */
+  ask: string;
+  icon: string;
+  /** Worth a gentle peek without being asked (an error, a question, a video). */
+  strong: boolean;
 }

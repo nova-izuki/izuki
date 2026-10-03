@@ -23,10 +23,18 @@ pub struct NowPlaying {
 pub struct IslandStatus {
     pub media: Option<NowPlaying>,
     pub fullscreen: bool,
+    /// One-tap help for what's in front (see suggest.rs).
+    pub suggestions: Vec<crate::suggest::Suggestion>,
+    /// Changes when the app or page in front does — the Island offers a
+    /// strong suggestion once per change, not on every look.
+    pub context: String,
 }
 
 pub fn status() -> IslandStatus {
-    IslandStatus { media: now_playing(), fullscreen: front_is_fullscreen() }
+    let media = now_playing();
+    let music = media.as_ref().is_some_and(|m| m.playing);
+    let context = format!("{}|{}", crate::uia::foreground_app(), crate::uia::foreground_title());
+    IslandStatus { media, fullscreen: front_is_fullscreen(), suggestions: crate::suggest::now(music), context }
 }
 
 /// "play", "pause", "next" or "previous" for what's playing. `false` if

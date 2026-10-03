@@ -99,6 +99,26 @@
   .pulse { border: 1px solid var(--line); background: rgba(255,255,255,.035); border-radius: 16px; padding: 9px 8px; text-align: left; }
   .pulse b { display: block; font-size: 13px; }
   .pulse span { display: block; color: var(--muted); font-size: 11.5px; margin-top: 1px; line-height: 1.25; }
+  /* The Island: a live pill under the header, like a phone's live activities -
+     only there while something is happening (listening, thinking, a reminder soon). */
+  .island { align-self: center; display: inline-flex; align-items: center; gap: 9px; max-width: min(92%, 380px); margin: 2px auto 4px; padding: 6px 14px 6px 6px;
+    border-radius: 999px; background: #050507; color: #fff; font: inherit; font-size: 13.5px; font-weight: 600; border: 0;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.08), 0 8px 24px rgba(0,0,0,.45); animation: islandIn .32s cubic-bezier(.16,1,.3,1); }
+  .island[hidden] { display: none; }
+  .island .face { position: relative; width: 24px; height: 24px; flex: none; border-radius: 50%;
+    background: conic-gradient(#3fd7c9, #8b6cff, #ff6fae, #3fd7c9); box-shadow: 0 0 12px rgba(139,108,255,.6); animation: islandSpin 7s linear infinite; }
+  .island.busy .face { animation-duration: 1.3s; }
+  .island .face::before, .island .face::after { content: ""; position: absolute; top: 8px; width: 3.5px; height: 6px; border-radius: 3px; background: #fff; }
+  .island .face::before { left: 7px; } .island .face::after { right: 7px; }
+  .island span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .island .dots { display: inline-flex; gap: 3px; flex: none; }
+  .island .dots i { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,.7); animation: islandDot 1s ease-in-out infinite; }
+  .island .dots i:nth-child(2) { animation-delay: .16s; } .island .dots i:nth-child(3) { animation-delay: .32s; }
+  @keyframes islandIn { from { opacity: 0; transform: scale(.85); filter: blur(4px); } }
+  @keyframes islandSpin { to { transform: rotate(360deg); } }
+  @keyframes islandDot { 0%, 100% { opacity: .25; } 40% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .island, .island .face, .island .dots i { animation: none; } }
+  .home-label.smart::before { content: "\2728  "; }
   .home-label { width: 100%; max-width: 420px; margin: 5px 0 -3px; color: var(--muted); font-size: 12px; font-weight: 700; text-align: left; letter-spacing: .04em; text-transform: uppercase; }
   .home-resume { border: 1px solid rgba(63,215,201,.38); background: rgba(63,215,201,.08); border-radius: 999px; padding: 9px 14px; color: var(--ink); font-weight: 700; }
   .suggest { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; max-width: 420px; margin-top: 6px; }
@@ -225,6 +245,7 @@
     </span>
   </header>
 
+  <button class="island" id="island" type="button" hidden aria-live="polite"></button>
   <main id="log" aria-live="polite"></main>
 
   <footer>
@@ -511,6 +532,7 @@
     store.set("history", history.slice(-40));
     store.set("memories", memories.slice(-80));
     store.set("reminders", reminders.filter((r) => !r.done || Date.now() - r.at < 86400000));
+    refreshIsland();
   };
 
   // ------------------------------------------------------------ UI
@@ -527,6 +549,7 @@
   const setOrb = (mode) => {
     orbState = mode || "";
     orb.className = orbState;
+    refreshIsland();
     IzukiOrb.mode(orbState || "idle");
     if (!status.textContent) $("live-status").textContent = LIVE_LABEL[orbState] || "";
   };
@@ -640,7 +663,7 @@
     pulseItem(pendingReminders ? "Reminder set" : "No reminders", pendingReminders ? "Izuki will nudge you" : "Ask me to remember something");
     pulseItem(pc ? "PC linked" : "Phone first", pc ? "Ready when your PC is on" : "Link a PC whenever you want");
     w.appendChild(pulse);
-    w.appendChild(el("p", "home-label", "Start something"));
+    w.appendChild(el("p", "home-label smart", "Suggested for you"));
     const ideas = el("div", "suggest");
     const idea = (icon, title, sub, go) => {
       const c = el("button", "idea");
@@ -651,10 +674,7 @@
       c.onclick = go;
       ideas.appendChild(c);
     };
-    idea("☀️", "Plan my day", "What matters today", () => ask("Help me plan my day — ask me what I've got on if you need to."));
-    idea("📰", "What's new?", "News, scores, trends", () => ask("What's the most interesting news today? Keep it short."));
-    idea("⏰", "Remind me", "In 20 min: stretch", () => ask("Remind me in 20 minutes to stretch"));
-    idea("🧠", "Teach me", "Something cool, fast", () => ask("Teach me one genuinely surprising thing in under a minute."));
+    for (const [icon, title, sub, go] of smartIdeas()) idea(icon, title, sub, go);
     if (pc) {
       idea("📬", "My email", "Through your PC", () => ask("What's new in my email?"));
       idea("🖥️", "My PC", "Do something on it", () => text.focus());
@@ -665,6 +685,69 @@
     peopleRow(people);
     w.append(ideas, el("p", "home-label", "Choose your companion"), people);
   }
+
+  /**
+   * Suggestions that fit the moment - the time of day, the weekend, your
+   * next reminder - the way a phone suggests what you'll
+   * want next. All worked out on this phone; nothing is sent anywhere.
+   */
+  function smartIdeas() {
+    const now = new Date(), h = now.getHours(), day = now.getDay();
+    const short = (t, n) => (t.length > n ? t.slice(0, n - 1).trimEnd() + "…" : t);
+    const clock = (t) => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const out = [];
+    const next = reminders.filter((r) => !r.done && r.at > Date.now()).sort((a, b) => a.at - b.at)[0];
+    if (next && next.at - Date.now() < 3 * 3600e3) out.push(["⏰", "Coming up", short(next.text, 22) + " · " + clock(next.at), () => ask("What reminders do I have coming up?")]);
+    if (h >= 5 && h < 11) {
+      out.push(["☀️", "Plan my day", "What matters today", () => ask("Help me plan my day — ask me what I've got on if you need to.")]);
+      out.push(["🌤️", "What should I wear?", "Today's weather", () => ask("What's the weather like today, and what should I wear?")]);
+    } else if (h >= 11 && h < 14) {
+      out.push(["🥗", "Lunch idea", "Quick and easy", () => ask("Give me a quick, easy lunch idea.")]);
+      out.push(["🎯", "Focus for 25 min", "I'll call time", () => ask("Remind me in 25 minutes to take a break.")]);
+    } else if (h >= 14 && h < 18) {
+      out.push(["🎯", "Focus for 25 min", "I'll call time", () => ask("Remind me in 25 minutes to take a break.")]);
+      out.push(["📰", "What's new?", "News, scores, trends", () => ask("What's the most interesting news today? Keep it short.")]);
+    } else if (h >= 18 && h < 22) {
+      out.push(["🍲", "Dinner tonight", "From what you have", () => ask("Help me decide what to cook tonight — ask me what I have.")]);
+      out.push(["📝", "Recap my day", "Talk it through", () => ask("Help me recap my day — ask me how it went.")]);
+    } else {
+      out.push(["🌙", "Wind down", "A calm minute", () => ask("Help me wind down with a calm one-minute breathing exercise.")]);
+      out.push(["⏰", "Wake-up reminder", "For tomorrow", () => ask("Remind me tomorrow at 7am to get up.")]);
+    }
+    if (day === 0 || day === 6) out.push(["🎉", "Something fun", "For this weekend", () => ask("Suggest something fun to do this weekend — ask me where I am if you need to.")]);
+    out.push(["🧠", "Teach me", "Something cool, fast", () => ask("Teach me one genuinely surprising thing in under a minute.")]);
+    return out.slice(0, 4);
+  }
+
+  /** The Island under the header: what's live right now, or hidden. */
+  function refreshIsland() {
+    const box = $("island");
+    if (!box) return;
+    const next = reminders.filter((r) => !r.done && r.at > Date.now()).sort((a, b) => a.at - b.at)[0];
+    const mins = next ? Math.round((next.at - Date.now()) / 60000) : Infinity;
+    let line = "", dots = false, tap = null;
+    if (orbState === "thinking") { line = "Thinking"; dots = true; }
+    else if (orbState === "listening") line = "Listening…";
+    else if (orbState === "speaking") line = "Talking — tap the orb to cut in";
+    else if (mins <= 30) {
+      line = "⏰ " + next.text + " · " + (mins <= 0 ? "now" : "in " + mins + " min");
+      tap = () => ask("What reminders do I have coming up?");
+    }
+    box.hidden = !line;
+    box.onclick = tap;
+    if (!line) return;
+    const sig = line + (dots ? "…" : "");
+    if (box.dataset.key === sig) return;
+    box.dataset.key = sig;
+    box.textContent = "";
+    const face = document.createElement("i"); face.className = "face";
+    const words = document.createElement("span"); words.textContent = line;
+    box.append(face, words);
+    if (dots) { const d = document.createElement("span"); d.className = "dots"; d.innerHTML = "<i></i><i></i><i></i>"; box.append(d); }
+    box.classList.toggle("busy", dots);
+  }
+  setInterval(refreshIsland, 30000);
+  setTimeout(refreshIsland, 0);
 
   /** First run: one free key in two taps, right on the home screen. */
   function setupCard() {

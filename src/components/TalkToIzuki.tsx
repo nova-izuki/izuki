@@ -130,6 +130,14 @@ export function TalkToIzuki() {
         >
           <Toggle checked={settings.island_enabled} onChange={(v) => patch({ island_enabled: v })} />
         </Row>
+        {settings.island_enabled && (
+          <Row
+            label="Suggest help by itself"
+            hint='When an error pops up, or you are on a question or a video, the Island briefly offers help ("Explain this video?"). Never more than once per page.'
+          >
+            <Toggle checked={settings.island_suggestions} onChange={(v) => patch({ island_suggestions: v })} />
+          </Row>
+        )}
 
         <Row
           label="Always show the hand"

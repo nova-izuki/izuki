@@ -171,6 +171,22 @@
     .lede b { color: var(--ink); }
     .ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: clamp(16px, 3.4vh, 30px); }
     .fine { margin-top: 18px; font-size: 13.5px; color: var(--faint); }
+    /* The live release badge: version, freshness, size — read from GitHub so it never goes stale. */
+    .rel { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 16px; }
+    .rel-chip { display: inline-flex; align-items: center; gap: 10px; padding: 8px 14px 8px 12px; border-radius: 999px; background: rgba(5, 6, 12, 0.72);
+      border: 1px solid var(--line); color: var(--muted); font-size: 13.5px; text-decoration: none; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      transition: border-color 0.2s, transform 0.2s; }
+    .rel-chip:hover { border-color: rgba(103, 232, 249, 0.45); transform: translateY(-1px); }
+    .rel-chip b { color: var(--cyan); font-weight: 700; }
+    .rel-chip #rel-text { color: var(--ink); }
+    .rel-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6); animation: relPulse 2.4s ease-out infinite; }
+    @keyframes relPulse { 0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); } 70%, 100% { box-shadow: 0 0 0 9px rgba(52, 211, 153, 0); } }
+    .plats { display: inline-flex; gap: 6px; padding: 4px; border-radius: 999px; background: var(--glass); border: 1px solid var(--line); }
+    .plats a { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; color: var(--ink); font-size: 13.5px; font-weight: 600; text-decoration: none; transition: background 0.2s; }
+    .plats a:hover { background: rgba(255, 255, 255, 0.08); }
+    .plats small { color: var(--faint); font-weight: 500; }
+    @media (max-width: 520px) { .plats { width: 100%; justify-content: space-between; } .plats a { padding: 6px 8px; } }
+    @media (prefers-reduced-motion: reduce) { .rel-dot { animation: none; } }
 
     .stage { position: relative; aspect-ratio: 1; width: 100%; max-width: min(540px, 66vh); justify-self: center; }
     #hero-orb { width: 100%; height: 100%; display: block; }
@@ -886,10 +902,17 @@
         <div class="ctas rv" style="--d:.24s" id="download">
           <a class="btn primary dl" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">⬇ Download for Windows — free</a>
           <a class="btn ghost" href="app/">📱 Izuki on your phone</a>
-          <a class="btn ghost" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Companion-Android-preview.apk">🤖 Android preview APK</a>
-          <a class="btn ghost" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Companion-iPhone-sideload.ipa">🍎 iPhone test IPA</a>
         </div>
-        <p class="fine">New in 1.0.21: clearer call audio recovery, phone-aware routing, typing at the top of Draw, smoother optional water motion and signed desktop updates with install confirmation. Default orb unchanged. Android and iPhone testing downloads below. <a href="https://github.com/nova-izuki/izuki/blob/main/docs/RELEASE-1.0.21.md" style="color:var(--cyan)">See what's changed</a></p>
+        <div class="rel rv" style="--d:.28s">
+          <a class="rel-chip" id="rel-chip" href="https://github.com/nova-izuki/izuki/releases/latest">
+            <i class="rel-dot"></i><span id="rel-text">Newest version, straight from the source</span><b>What's new ›</b>
+          </a>
+          <div class="plats" aria-label="Other devices">
+            <a href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Companion-Android-preview.apk"><span>🤖</span>Android <small>preview</small></a>
+            <a href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Companion-iPhone-sideload.ipa"><span>🍎</span>iPhone <small>test</small></a>
+            <a href="app/"><span>🌐</span>Any browser</a>
+          </div>
+        </div>
         <p class="fine rv" style="--d:.3s">Free forever · Your own free AI key · <a href="#try" style="color:var(--cyan)">Try it right here ↓</a></p>
       </div>
       <div class="hero-art">
@@ -2226,6 +2249,23 @@
   $("dl-close").addEventListener("click", () => dlModal.close ? dlModal.close() : dlModal.removeAttribute("open"));
   dlModal.addEventListener("click", (e) => { if (e.target === dlModal) dlModal.close(); });
 
+  // ------------------------------------------------ the live release badge
+  // Only decoration: the download links above stay plain links (see the note
+  // on them). If GitHub doesn't answer, the badge keeps its friendly default.
+  fetch("https://api.github.com/repos/nova-izuki/izuki/releases/latest", { headers: { Accept: "application/vnd.github+json" } })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((rel) => {
+      if (!rel || !rel.tag_name) return;
+      const v = String(rel.tag_name).replace(/^v/, "");
+      const setup = (rel.assets || []).find((a) => a.name === "Izuki-Setup.exe");
+      const days = Math.floor((Date.now() - Date.parse(rel.published_at)) / 86400000);
+      const fresh = days <= 0 ? "updated today" : days === 1 ? "updated yesterday" : days < 30 ? `updated ${days} days ago` : "";
+      const size = setup ? `${(setup.size / 1048576).toFixed(0)} MB` : "";
+      $("rel-text").textContent = ["Version " + v, fresh, size].filter(Boolean).join(" · ");
+      $("rel-chip").href = `https://github.com/nova-izuki/izuki/blob/main/docs/RELEASE-${v}.md`;
+    })
+    .catch(() => {});
+
   // ------------------------------------------------ type "hey nova" anywhere
   let heard = "";
   addEventListener("keydown", (e) => {
@@ -2247,6 +2287,6 @@
   });
 })();
 </script>
-<script src="shared/bugs.js" data-app="website" data-version="1.0.7" defer></script>
+<script src="shared/bugs.js" data-app="website" data-version="site" defer></script>
 </body>
 </html>

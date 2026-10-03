@@ -37,6 +37,7 @@ pub mod reminders;
 pub mod settings;
 pub mod state;
 pub mod store;
+pub mod suggest;
 pub mod stt;
 pub mod tags;
 pub mod telegram;
