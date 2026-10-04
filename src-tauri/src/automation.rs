@@ -499,6 +499,23 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         return Ok(format!("[dry run] {} at {}", step.action.as_str(), label));
     }
 
+    // A page element from the Izuki browser extension, in Jarvis mode: click
+    // or type right inside the page — exact, and no mouse at all.
+    if precision && (matches!(step.action, Intent::Click | Intent::Auto) || targeted_type) {
+        if let Some(dom) = step.target.and_then(crate::ext::dom_id_for) {
+            if aborted() { return Err(anyhow!("stopped")); }
+            let done = if targeted_type {
+                crate::ext::type_into(&dom, step.text_to_type.as_deref().unwrap_or_default()).map(|_| "typed into")
+            } else {
+                crate::ext::click(&dom).map(|_| "clicked")
+            };
+            match done {
+                Ok(what) => return Ok(format!("{what} page element {} directly (browser extension)", step.target.unwrap_or(0))),
+                Err(e) => eprintln!("[ext] couldn't act inside the page ({e}) — using the screen instead"),
+            }
+        }
+    }
+
     if let Some(identity) = step.grounding.as_ref().filter(|_| clicking || targeted_type) {
         if step.hover_first {
             glide_to(x, y, move_ms)?;

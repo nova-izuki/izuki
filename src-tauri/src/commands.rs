@@ -770,6 +770,12 @@ pub async fn tv_find(fresh: bool) -> Option<crate::tv::TvInfo> {
     .flatten()
 }
 
+/// Is the Izuki browser extension connected?
+#[tauri::command]
+pub fn ext_status() -> bool {
+    crate::ext::connected()
+}
+
 /// Nova Notes, newest first.
 #[tauri::command]
 pub fn notes_list() -> Vec<crate::notes::Note> {

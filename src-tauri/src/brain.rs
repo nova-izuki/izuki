@@ -341,6 +341,52 @@ fn should_ask_model(session: &DrawSession, local: &[ActionStep]) -> bool {
         .any(|m| m.intent == Intent::Auto && !matches!(m.kind, crate::model::ShapeKind::Circle))
 }
 
+fn is_browser(app: &str) -> bool {
+    let a = app.to_lowercase();
+    ["chrome", "msedge", "brave", "opera", "vivaldi", "firefox", "arc"].iter().any(|b| a.trim_end_matches(".exe") == *b)
+}
+
+/// The page's elements from the extension, numbered after the window's own
+/// controls; Windows' copies of the same page elements are dropped.
+fn merge_page(controls: &mut Vec<uia::Control>, page_text: &mut String, page: crate::ext::Page) {
+    if page.elements.is_empty() {
+        return;
+    }
+    let v = page.viewport;
+    controls.retain(|c| {
+        let (x, y) = c.rect.center();
+        !(x >= v.x && x < v.x + v.w && y >= v.y && y < v.y + v.h)
+    });
+    let mut next = controls.iter().map(|c| c.id).max().unwrap_or(0).max(899) + 1;
+    let mut listed = Vec::new();
+    for e in page.elements.into_iter().take(120) {
+        let name = match &e.href {
+            Some(h) if !h.is_empty() && !e.name.is_empty() => format!("{} → {}", e.name, h.chars().take(80).collect::<String>()),
+            Some(h) if !h.is_empty() => h.chars().take(80).collect(),
+            _ => e.name.clone(),
+        };
+        listed.push((next, e.dom_id.clone()));
+        controls.push(uia::Control {
+            id: next,
+            kind: e.kind.clone(),
+            name,
+            rect: e.rect,
+            hidden: false,
+            value: String::new(),
+            focused: false,
+            below: false,
+            identity: None,
+        });
+        next += 1;
+    }
+    crate::ext::remember_listed(listed);
+    if !page.text.trim().is_empty() {
+        *page_text = format!("Page: {}
+{}", page.url, page.text.chars().take(PAGE_TEXT_CHARS).collect::<String>());
+    }
+    eprintln!("[ext] the page's own elements: {} (from the browser extension)", controls.len());
+}
+
 /// `wants_action`: the request is something to *do* (not a question), so a
 /// reply that does nothing can't win the race — see [`good_enough`].
 fn ask_model(
@@ -378,7 +424,15 @@ fn ask_model(
     let desktop = Rect { x: frame.origin.0, y: frame.origin.1, w: frame.width as i32, h: frame.height as i32 };
     // Each control's number printed on the picture itself (tags.rs), so the
     // brain points at the real button instead of guessing pixels.
-    let (mut controls, page_text) = controls_job.join().unwrap_or_default();
+    let (mut controls, mut page_text) = controls_job.join().unwrap_or_default();
+    // With the Izuki browser extension: the page's real elements — names,
+    // where links go, exact places — instead of the screen reader's rougher
+    // view of the page. The browser's own buttons (tabs, address bar) stay.
+    if crate::ext::connected() && is_browser(&uia::foreground_app()) {
+        if let Some(page) = crate::ext::snapshot() {
+            merge_page(&mut controls, &mut page_text, page);
+        }
+    }
     if zoomed {
         // Only what's in the close-up — the rest would have coordinates
         // off the picture.

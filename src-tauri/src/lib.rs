@@ -17,6 +17,7 @@ pub mod discord;
 pub mod companion;
 pub mod composio;
 pub mod events;
+pub mod ext;
 pub mod files;
 pub mod follow;
 pub mod headsup;
@@ -161,6 +162,8 @@ pub fn run() {
     automation::make_dpi_aware();
 
     let store = state::init();
+    // The bridge to the Izuki browser extension (localhost only).
+    ext::spawn();
     // The flow tidy-up: once now, then every hour while Izuki runs.
     {
         let store = store.clone();
@@ -267,6 +270,7 @@ pub fn run() {
             commands::tv_do,
             commands::tv_show,
             commands::chat_allow_last,
+            commands::ext_status,
             commands::notes_list,
             commands::notes_delete,
             commands::notes_capture,

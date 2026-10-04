@@ -26,6 +26,7 @@ import { DiscordCard } from "../DiscordCard";
 import { AndroidCard } from "../AndroidCard";
 import { TvCard } from "../TvCard";
 import { ThemePicker } from "../ThemePicker";
+import { ExtensionCard } from "../ExtensionCard";
 import { BugCard } from "../BugCard";
 import { Badge, Row, Section, Segmented, Slider, Toggle, cx } from "../ui";
 import { useIzuki } from "../../lib/store";
@@ -512,6 +513,7 @@ export function SettingsTab() {
       <div id="settings-discord"><DiscordCard /></div>
       <AndroidCard />
       <div id="settings-tv"><TvCard /></div>
+      <ExtensionCard />
 
       {/* ------------------------------------------------ help */}
       <Section title="Help">

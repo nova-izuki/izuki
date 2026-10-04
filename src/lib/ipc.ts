@@ -341,6 +341,8 @@ export const api = {
   /** Fast conversation lane: stream a reply (words arrive as EV.chatDelta). */
   chatStream: (id: number, history: Array<{ role: string; content: string }>, expressive = false) =>
     call<void>("chat_stream", { id, history, expressive }, () => undefined),
+  /** Is the Izuki browser extension connected? */
+  extStatus: () => call<boolean>("ext_status", undefined, () => false),
   /** Nova Notes. */
   notesList: () => call<Note[]>("notes_list", undefined, () => []),
   notesDelete: (id: string) => call<void>("notes_delete", { id }, () => undefined),
