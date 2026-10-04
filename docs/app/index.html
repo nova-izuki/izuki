@@ -14,6 +14,13 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>Izuki</title>
 <!-- The bug catcher first, so it hears about anything that goes wrong below. -->
+<script>
+  // On a TV (Android TV, Google TV, Fire TV, smart TVs): bigger text and a
+  // strong highlight for the remote.
+  if (/(Android TV|GoogleTV|Google TV|AFT[A-Z]|BRAVIA|SMART-TV|SmartTV|Tizen|Web0S|webOS|AppleTV|CrKey)/i.test(navigator.userAgent) || matchMedia("(pointer: none)").matches) {
+    document.documentElement.classList.add("tv");
+  }
+</script>
 <script src="../shared/bugs.js" data-app="phone" data-version="2.1"></script>
 <script src="native.js"></script>
 <script src="pairing.js"></script>
@@ -37,6 +44,12 @@
     --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  /* A TV remote (or a keyboard) moves a highlight from button to button —
+     it must be easy to see from the sofa. */
+  :focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; border-radius: 14px; }
+  html.tv { font-size: 125%; }
+  html.tv .app { max-width: 900px; }
+  html.tv :focus-visible { outline-width: 4px; box-shadow: 0 0 0 8px rgba(63, 215, 201, 0.25); }
   html, body { height: 100%; margin: 0; overflow-x: hidden; }
   body {
     background:
