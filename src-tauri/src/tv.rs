@@ -160,6 +160,8 @@ pub enum TvAct {
     Type(String),
     Key(&'static str, u32),
     Power(bool),
+    /// "Control my TV": check it's there and ready, press nothing.
+    Ready,
 }
 
 /// "open netflix on the tv" → Open("netflix"); "turn the tv up" → VolumeUp ×4…
@@ -224,13 +226,32 @@ pub fn parse(said: &str) -> Option<TvAct> {
             return Some(TvAct::Type(t.trim().to_string()));
         }
     }
-    for lead in ["open ", "launch ", "start ", "put on ", "go to ", "switch to ", "play "] {
+    // "play stranger things on netflix", "watch the news" — find it.
+    for lead in ["play ", "watch ", "put on "] {
+        if let Some(what) = core.strip_prefix(lead) {
+            let what = what.trim();
+            // Just an app ("play netflix") opens it; anything else is searched.
+            if !what.is_empty() && !KNOWN.iter().any(|(k, _)| what == *k || what.trim_end_matches(" app") == *k) {
+                let what = what.split(" on ").next().unwrap_or(what).trim();
+                return Some(TvAct::Search(what.to_string()));
+            }
+        }
+    }
+    for lead in ["open ", "launch ", "start ", "put on ", "go to ", "switch to ", "play ", "watch "] {
         if let Some(app) = core.strip_prefix(lead) {
             let app = app.trim().trim_start_matches("the ").trim_end_matches(" app").trim();
             if !app.is_empty() {
                 return Some(TvAct::Open(app.to_string()));
             }
         }
+    }
+    // Just an app's name ("TV, Netflix"), or "control my TV".
+    let app = core.trim_start_matches("the ").trim_end_matches(" app").trim();
+    if KNOWN.iter().any(|(k, _)| app == *k) {
+        return Some(TvAct::Open(app.to_string()));
+    }
+    if core.is_empty() || ["control", "control it", "connect", "connect to", "use"].contains(&core.as_str()) {
+        return Some(TvAct::Ready);
     }
     None
 }
@@ -284,6 +305,14 @@ pub fn run(said: &str) -> Result<String> {
             }
             .into())
         }
+        TvAct::Ready => {
+            let tv = info(&host)?;
+            Ok(if tv.allowed {
+                format!("Connected to {} — what should I put on?", tv.name)
+            } else {
+                format!("I can see {}, but it's only allowing limited control. {ALLOW_STEPS}", tv.name)
+            })
+        }
         TvAct::Power(on) => {
             key(&host, if on { "PowerOn" } else { "PowerOff" })?;
             Ok(if on { "Turning the TV on." } else { "Turning the TV off." }.into())
@@ -306,6 +335,10 @@ mod tests {
         assert_eq!(parse("turn off the tv"), Some(TvAct::Power(false)));
         assert_eq!(parse("tv go home"), Some(TvAct::Key("Home", 1)));
         assert_eq!(parse("mute the tv"), Some(TvAct::Key("VolumeMute", 1)));
+        assert_eq!(parse("tv netflix"), Some(TvAct::Open("netflix".into())));
+        assert_eq!(parse("play stranger things on netflix on the tv"), Some(TvAct::Search("stranger things".into())));
+        assert_eq!(parse("watch youtube on tv"), Some(TvAct::Open("youtube".into())));
+        assert_eq!(parse("control my tv"), Some(TvAct::Ready));
         assert_eq!(parse("open netflix"), None);
         assert_eq!(parse("what's on tv tonight in my city"), None);
     }

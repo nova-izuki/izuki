@@ -74,6 +74,18 @@ export function OverlayCanvas() {
   const [tool, setTool] = useState<ShapeKind>("pen");
   const [marks, setMarks] = useState<Mark[]>([]);
   const [drawing, setDrawing] = useState(false);
+  // However a stroke ends (even off the canvas), it's over: never leave the
+  // bars stuck faded.
+  useEffect(() => {
+    if (!drawing) return;
+    const end = () => setDrawing(false);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => {
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    };
+  }, [drawing]);
   const [menu, setMenu] = useState<{ x: number; y: number; markId: string | null } | null>(null);
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
@@ -991,10 +1003,11 @@ export function OverlayCanvas() {
         animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
         className={cx(
-          // While a stroke is going the bars let it pass straight through
-          // and all but vanish — they never block the page you're marking.
-          "absolute z-40",
-          drawing ? "pointer-events-none opacity-15" : "pointer-events-auto",
+          // While a stroke is going the bars fade right back. They stay
+          // clickable, so ✕ / Cancel always works (a stuck "drawing" state
+          // used to leave them dead).
+          "pointer-events-auto absolute z-40",
+          drawing && "opacity-25",
           !toolsAt && "left-1/2 top-6 -translate-x-1/2"
         )}
         style={{ transition: "opacity 180ms ease", ...(toolsAt ? { left: toolsAt.x, top: toolsAt.y } : null) }}
@@ -1062,8 +1075,8 @@ export function OverlayCanvas() {
         animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
         transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1], delay: 0.04 }}
         className={cx(
-          "absolute bottom-8 left-1/2 z-40 w-[min(620px,72vw)] -translate-x-1/2",
-          drawing ? "pointer-events-none opacity-15" : "pointer-events-auto"
+          "pointer-events-auto absolute bottom-8 left-1/2 z-40 w-[min(620px,72vw)] -translate-x-1/2",
+          drawing && "opacity-25"
         )}
         style={{ transition: "opacity 180ms ease" }}
       >

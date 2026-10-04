@@ -36,12 +36,17 @@ pub fn parse(said: &str) -> Option<Look> {
         return None;
     }
     // "switch to Atlas", "be Kiki", "talk like Alfred", "change your voice to Sophie".
+    if ["jarvis voice", "be jarvis", "talk like jarvis", "sound like jarvis", "switch to jarvis"].iter().any(|k| s.contains(k)) {
+        return Some(Look::Persona("atlas", "Atlas"));
+    }
     let persona_ask = ["switch to ", "change to ", "be ", "become ", "talk like ", "sound like ", "voice to ", "turn into "];
     let rest = persona_ask.iter().find_map(|lead| s.find(lead).map(|i| &s[i + lead.len()..]))?;
     let first = rest.split_whitespace().next()?.trim_matches(|c: char| !c.is_alphanumeric());
     if s.split_whitespace().count() > 7 {
         return None;
     }
+    // "Jarvis" means the Jarvis-style voice, Atlas.
+    let first = if first.eq_ignore_ascii_case("jarvis") { "atlas" } else { first };
     crate::voices::PERSONAS.iter().find(|p| p.name.eq_ignore_ascii_case(first) || p.id.eq_ignore_ascii_case(first)).map(|p| Look::Persona(p.id, p.name))
 }
 
@@ -83,6 +88,8 @@ mod tests {
         assert_eq!(parse("what is an orb"), None);
         assert_eq!(parse("switch to Atlas"), Some(Look::Persona("atlas", "Atlas")));
         assert_eq!(parse("be kiki"), Some(Look::Persona("kiki", "Kiki")));
+        assert_eq!(parse("jarvis voice"), Some(Look::Persona("atlas", "Atlas")));
+        assert_eq!(parse("switch to jarvis"), Some(Look::Persona("atlas", "Atlas")));
         assert_eq!(parse("switch to chrome"), None);
         assert_eq!(parse("please switch to the next tab in my browser now and also scroll"), None);
     }

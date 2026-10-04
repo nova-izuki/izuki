@@ -21,6 +21,10 @@ export interface HudData {
   reminders: Array<[string, string]>;
   playing: string | null;
   apps: string[];
+  /** Unread emails today and the first few (from, subject). */
+  inbox?: [number, Array<[string, string]>] | null;
+  /** The rest of today's calendar: (time, title). */
+  calendar?: Array<[string, string]>;
   said: string;
 }
 
@@ -123,12 +127,27 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
             {/* ---- right: your day */}
             <motion.div initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.45, duration: 0.6, ease: [0.16, 1, 0.3, 1] }} className="flex flex-col gap-4">
               <Panel title="TODAY">
-                {data.reminders.length ? (
-                  data.reminders.map(([at, text], i) => <Line key={i} k={at} v={text} />)
-                ) : (
-                  <div className="text-[13px] text-cyan-100/70">Nothing else on your reminders.</div>
+                {(data.calendar ?? []).map(([at, title], i) => (
+                  <Line key={`c${i}`} k={at} v={`📅 ${title}`} />
+                ))}
+                {data.reminders.map(([at, text], i) => (
+                  <Line key={`r${i}`} k={at} v={`⏰ ${text}`} />
+                ))}
+                {!data.reminders.length && !(data.calendar ?? []).length && (
+                  <div className="text-[13px] text-cyan-100/70">Nothing else on today.</div>
                 )}
               </Panel>
+              {data.inbox && (
+                <Panel title="INBOX">
+                  <div className="flex items-baseline gap-2">
+                    <span className="izk-hud-time text-[30px] font-extralight leading-none text-white">{data.inbox[0] >= 20 ? "20+" : data.inbox[0]}</span>
+                    <span className="text-[12px] tracking-[0.14em] text-cyan-100/70">NEW TODAY</span>
+                  </div>
+                  {data.inbox[1].map(([from, subject], i) => (
+                    <Line key={i} k={from} v={subject || "(no subject)"} />
+                  ))}
+                </Panel>
+              )}
               <Panel title="LINKED APPS">
                 {data.apps.length ? (
                   <div className="flex flex-wrap gap-1.5">

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { sendChatCommand } from "./VoiceEngine";
 import { CheckCircle2, ExternalLink, Loader2, Plug } from "lucide-react";
 import { Badge, Section } from "./ui";
 import { useIzuki } from "../lib/store";
@@ -112,9 +113,15 @@ export function AppsCard() {
         </div>
         <div className="flex flex-wrap gap-1">
           {EXAMPLES.map((e) => (
-            <span key={e} className="izk-inset rounded-full px-2.5 py-1 text-[11px] text-izk-ink">
+            <button
+              key={e}
+              type="button"
+              title="Tap to ask"
+              onClick={() => void sendChatCommand(e)}
+              className="izk-inset izk-no-drag rounded-full px-2.5 py-1 text-[11px] text-izk-ink transition-colors hover:bg-white/10"
+            >
               “{e}”
-            </span>
+            </button>
           ))}
         </div>
       </div>

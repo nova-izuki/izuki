@@ -20,6 +20,10 @@ pub struct Hud {
     pub reminders: Vec<(String, String)>,
     pub playing: Option<String>,
     pub apps: Vec<String>,
+    /// Unread emails today, and the first few (from, subject) — when Gmail is linked.
+    pub inbox: Option<(usize, Vec<(String, String)>)>,
+    /// The rest of today's calendar (time, title) — when Google Calendar is linked.
+    pub calendar: Vec<(String, String)>,
     /// What Izuki says, so the screen can show it too.
     pub said: String,
 }
@@ -92,8 +96,38 @@ pub fn report() -> Hud {
         lines.push(format!("{}{by} is playing.", m.title));
         hud.playing = Some(format!("{}{by}", m.title));
     }
-    let (line, apps) = apps();
+    // Linked apps, the inbox and the calendar, asked at the same time so
+    // the briefing stays quick.
+    let ((line, apps), inbox, calendar) = std::thread::scope(|sc| {
+        let linked = sc.spawn(apps);
+        let ready = crate::state::try_store().is_some_and(|s| !s.settings().composio_api_key.trim().is_empty());
+        let mail = sc.spawn(move || ready.then(|| crate::headsup::inbox_today().ok()).flatten());
+        let cal = sc.spawn(move || ready.then(|| crate::headsup::calendar_today().ok()).flatten());
+        (linked.join().unwrap_or_default(), mail.join().ok().flatten(), cal.join().ok().flatten())
+    });
+    let has = |slug: &str| apps.iter().any(|a| a.eq_ignore_ascii_case(slug) || a.to_lowercase().replace(' ', "") == slug);
     lines.push(line);
+    if has("gmail") {
+        if let Some((n, first)) = &inbox {
+            lines.push(match (n, first.first()) {
+                (0, _) => "No new email today.".into(),
+                (1, Some((from, subject))) => format!("One new email, from {from}{}.", if subject.is_empty() { String::new() } else { format!(" — \"{subject}\"") }),
+                (n, Some((from, _))) => format!("{}{n} new emails today — the latest from {from}.", if *n >= 20 { "Over " } else { "" }),
+                (n, None) => format!("{n} new emails today."),
+            });
+            hud.inbox = inbox.clone();
+        }
+    }
+    if has("googlecalendar") {
+        if let Some(cal) = &calendar {
+            lines.push(match cal.as_slice() {
+                [] => "Nothing else on your calendar today.".into(),
+                [(at, title)] => format!("On your calendar: {title} at {at}."),
+                [(at, title), rest @ ..] => format!("{} things on your calendar — next is {title} at {at}.", rest.len() + 1),
+            });
+            hud.calendar = cal.clone();
+        }
+    }
     hud.apps = apps;
     lines.push("What are we doing first?".into());
     hud.said = lines.into_iter().filter(|l| !l.trim().is_empty()).collect::<Vec<_>>().join(" ");

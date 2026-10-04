@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { AlarmClock, Link2, Loader2, Mic, MonitorSmartphone, RotateCcw, Send, Sparkles, Square, X } from "lucide-react";
 import { api, EV, on } from "../../lib/ipc";
 import { useDictation } from "../../hooks/useDictation";
+import { useSmartIdeas } from "../../lib/smartIdeas";
 import { sendChatCommand } from "../VoiceEngine";
 import { VoiceOrb } from "../VoiceOrb";
 import { cx } from "../ui";
@@ -168,15 +169,11 @@ function useChatState() {
   return { msgs: chatMsgs, busy: chatBusy };
 }
 
-const IDEAS = [
-  "Remind me in 20 minutes to stretch",
-  "Help me plan my week",
-  "Draft a polite email asking for an extension",
-  "Explain this like I'm 12: how do vaccines work?",
-];
 
 export function ChatTab() {
   const { msgs, busy } = useChatState();
+  // Suggestions that fit what's on screen and the time of day.
+  const ideas = useSmartIdeas(4);
   const setMsgs = setChatMsgs;
   const setBusy = setChatBusy;
   const [draft, setDraft] = useState("");
@@ -534,14 +531,14 @@ export function ChatTab() {
             <div className="flex flex-1 flex-col items-center justify-center gap-3 py-6 text-center">
               <div className="text-[15px] font-semibold text-izk-ink">Hey! What's on your mind?</div>
               <div className="flex flex-wrap justify-center gap-1.5">
-                {IDEAS.map((idea) => (
+                {ideas.map((idea) => (
                   <button
-                    key={idea}
+                    key={idea.label}
                     type="button"
-                    onClick={() => void send(idea)}
+                    onClick={() => void send(idea.ask)}
                     className="izk-pill izk-no-drag h-auto px-3 py-1.5 text-left text-[11.5px]"
                   >
-                    {idea}
+                    {idea.label}
                   </button>
                 ))}
               </div>

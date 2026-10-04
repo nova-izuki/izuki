@@ -216,6 +216,29 @@ fn new_emails(st: &mut State) -> anyhow::Result<Vec<String>> {
     Ok(lines)
 }
 
+/// What's in the inbox right now, for the "wake up" briefing: how many
+/// unread emails came today (primary inbox), and who the first few are
+/// from, with their subjects.
+pub fn inbox_today() -> anyhow::Result<(usize, Vec<(String, String)>)> {
+    let data = crate::composio::execute(
+        "GMAIL_FETCH_EMAILS",
+        json!({ "query": "is:unread in:inbox category:primary newer_than:1d", "max_results": 20, "include_payload": false, "verbose": false }),
+    )?;
+    let mails = messages(&data);
+    Ok((mails.len(), mails.into_iter().take(3).map(|m| (m.from, m.subject)).collect()))
+}
+
+/// The rest of today's calendar: (time, title), for the briefing.
+pub fn calendar_today() -> anyhow::Result<Vec<(String, String)>> {
+    let now = Local::now();
+    let end = now.date_naive().and_hms_opt(23, 59, 0).and_then(|t| Local.from_local_datetime(&t).single()).unwrap_or(now);
+    Ok(events_between(now, end)?
+        .into_iter()
+        .take(4)
+        .map(|e| (e.start.with_timezone(&Local).format("%-I:%M %p").to_string(), e.title))
+        .collect())
+}
+
 struct Mail {
     id: String,
     from: String,
