@@ -416,9 +416,15 @@ fn ask_model(
     };
     let prep_ms = started.elapsed().as_millis();
 
-    let chain = brain_chain();
+    let mut chain = brain_chain();
     if chain.is_empty() {
         return Err(anyhow!("no brain is configured"));
+    }
+    // A question to answer (a quiz, "what's this?") needs the smartest brain
+    // to hand; small models are quick but got quiz answers wrong. Clicks are
+    // fine with them — they pick from Izuki's exact list of buttons.
+    if !wants_action {
+        smartest_first(&mut chain);
     }
     let mut plan = ask_racing(&chain, req, prep_ms, wants_action)?;
     // Marks aimed at words go exactly where those words really are.
@@ -461,6 +467,24 @@ pub fn brain_chain() -> Vec<crate::settings::ProviderConfig> {
     chain
 }
 
+/// A small model (roughly 12B parameters or fewer): fast, but weak at
+/// reasoning — fine for "click #7", not for working out a quiz answer.
+fn small_model(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    let size = m
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '.'))
+        .filter_map(|part| part.strip_suffix('b').and_then(|n| n.parse::<f32>().ok()))
+        .next();
+    size.is_some_and(|b| b <= 12.0) || ["-nano", "gemma-3-4b", "gemma-3n", "phi-3", "phi-4-mini", "tinyllama"].iter().any(|k| m.contains(k))
+}
+
+/// Small models move behind every bigger one (order otherwise kept).
+fn smartest_first(chain: &mut Vec<crate::settings::ProviderConfig>) {
+    if chain.iter().any(|c| !small_model(&c.model)) {
+        chain.sort_by_key(|c| small_model(&c.model));
+    }
+}
+
 /// Brains told to slow down ("too many requests"), and until when. Asking
 /// them again right away only burns more of the quota and adds a failure.
 static RESTING: parking_lot::Mutex<Vec<(crate::settings::ProviderId, std::time::Instant)>> =
@@ -470,6 +494,13 @@ static RESTING: parking_lot::Mutex<Vec<(crate::settings::ProviderId, std::time::
 /// a used-up daily quota for an hour, a per-minute limit for a minute.
 fn rest_for(err: &str) -> Option<std::time::Duration> {
     let e = err.to_ascii_lowercase();
+    // A brain on this PC that isn't running (9Router, Ollama, LM Studio
+    // closed): every look spent ~2.4 s failing to reach it. Leave it be for
+    // five minutes; it's picked up again once it's back.
+    let local = e.contains("localhost") || e.contains("127.0.0.1");
+    if local && (e.contains("error sending request") || e.contains("connection refused") || e.contains("actively refused")) {
+        return Some(std::time::Duration::from_secs(300));
+    }
     // "High demand" / overloaded (503): the free tier is swamped. Asking it
     // again on the next look cost 5–12 s each time just to get the same
     // error — rest it a minute and go straight to a brain that's answering.
@@ -2211,6 +2242,29 @@ mod speed_tests {
         assert!(!task_is_current(draw, 8, true), "stop invalidates the generation");
         assert!(!task_is_current(draw, 9, false), "a new task clearing abort cannot revive queued clicks");
         assert!(task_is_current(9, 9, false));
+    }
+
+    #[test]
+    fn small_models_step_back_for_questions() {
+        assert!(small_model("meta/llama-3.2-11b-vision-instruct"));
+        assert!(small_model("llama-3.1-8b-instant"));
+        assert!(!small_model("qwen/qwen3.8-27b"));
+        assert!(!small_model("gemini-flash-latest"));
+        assert!(!small_model("google/gemma-4-31b-it:free"));
+        assert!(!small_model("meta/llama-4-maverick-17b-128e-instruct"));
+        let cfg = |id: crate::settings::ProviderId, model: &str| {
+            let mut c = crate::settings::Settings::default().provider(id).cloned().unwrap();
+            c.model = model.into();
+            c
+        };
+        let mut chain = vec![
+            cfg(crate::settings::ProviderId::Nvidia, "meta/llama-3.2-11b-vision-instruct"),
+            cfg(crate::settings::ProviderId::Gemini, "gemini-flash-latest"),
+        ];
+        smartest_first(&mut chain);
+        assert_eq!(chain[0].id, crate::settings::ProviderId::Gemini);
+        assert!(rest_for("error sending request for url (http://localhost:20128/v1/chat/completions)").is_some_and(|d| d.as_secs() == 300));
+        assert!(rest_for("error sending request for url (https://integrate.api.nvidia.com/v1)").is_none());
     }
 
     #[test]

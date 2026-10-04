@@ -426,6 +426,7 @@ export function SettingsTab() {
             <option value="dew">Pure water</option>
             <option value="ripple">Tidal pearl</option>
             <option value="constellation">Star crystal</option>
+            <option value="particles">Stardust</option>
           </select>
         </Row>
         <OrbStudio />

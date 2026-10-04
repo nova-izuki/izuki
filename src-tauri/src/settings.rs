@@ -505,7 +505,7 @@ impl Settings {
     /// a newly supported brain.
     pub fn heal(&mut self) {
         if !["mouse", "precision"].contains(&self.control_style.as_str()) { self.control_style = "mouse".into(); }
-        if !["liquid", "ferrofluid", "dew", "ripple", "constellation"].contains(&self.orb_style.as_str()) { self.orb_style = "liquid".into(); }
+        if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles"].contains(&self.orb_style.as_str()) { self.orb_style = "liquid".into(); }
         self.orb_response = if self.orb_response.is_finite() { self.orb_response.clamp(0.5, 1.5) } else { 1.0 };
         let defaults = Self::default();
         for d in defaults.providers {

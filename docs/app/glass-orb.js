@@ -10,6 +10,9 @@
 //   constellation "Galaxy" — dark glass holding a nebula and twinkling stars
 //   dew         "Pure water" — truly see-through water: your screen shows
 //               through the middle, the world bends only near the rim
+//   particles   "Stardust" — thousands of glowing dots in a sphere that
+//               pulse out with the voice and, while thinking, stream into
+//               a looping infinity sign
 //
 // One hidden WebGL canvas per size renders a frame, then it's copied onto
 // the caller's ordinary 2D canvas — a drop-in for the old 2D drawers.
@@ -154,7 +157,50 @@ void main(){
   gl_FragColor = vec4(outCol, clamp(outA, 0., 1.));
 }`;
 
-const STYLES = { ferrofluid: 0, ripple: 1, constellation: 2, dew: 3 };
+// ---- Stardust: points, not a surface -----------------------------------
+const DOTS = 3600;
+const DOT_VERT = `
+attribute vec2 a;
+uniform float uTime, uLevel, uThink, uPx;
+varying float vB;
+varying vec3 vC;
+void main(){
+  float i = a.x * ${DOTS}.;
+  float y = 1. - 2. * (i + .5) / ${DOTS}.;
+  float rr = sqrt(max(0., 1. - y * y));
+  float th = i * 2.399963;
+  vec3 s = vec3(cos(th) * rr, y, sin(th) * rr);
+  // A wave runs round the sphere as it talks; it breathes when quiet.
+  float wave = sin(y * 7. + uTime * 5. + a.y * 6.2832) * .5 + .5;
+  s *= 1. + uLevel * (.2 * wave + .12 * a.y) + .018 * sin(uTime * 1.3 + a.y * 20.);
+  float ry = uTime * .3;
+  s.xz = mat2(cos(ry), -sin(ry), sin(ry), cos(ry)) * s.xz;
+  s.yz = mat2(cos(.35), -sin(.35), sin(.35), cos(.35)) * s.yz;
+  // Thinking: every dot streams along an infinity loop, like loading.
+  float t = a.x * 18.85 + uTime * 1.6;
+  float den = 1. + sin(t) * sin(t);
+  vec3 inf = vec3(cos(t) / den * 1.25, sin(t) * cos(t) / den * 1.25, (a.y - .5) * .3);
+  inf.xy += vec2(sin(a.y * 40. + uTime), cos(a.y * 33. - uTime)) * .045;
+  vec3 p = mix(s, inf, smoothstep(0., 1., uThink));
+  float depth = p.z * .5 + .5;
+  gl_Position = vec4(p.xy * .6, 0., 1.);
+  gl_PointSize = (1.1 + depth * 2.3 + uLevel * 1.3) * uPx / 260.;
+  vB = (.32 + .78 * depth) * (.8 + uLevel * .6);
+  vC = mix(vec3(.35, .82, 1.), vec3(.96, .45, 1.), clamp(a.y * .6 + (1. - depth) * .45 + uThink * .3, 0., 1.));
+}`;
+const DOT_FRAG = `
+precision mediump float;
+varying float vB;
+varying vec3 vC;
+void main(){
+  vec2 c = gl_PointCoord * 2. - 1.;
+  float d = dot(c, c);
+  if (d > 1.) discard;
+  float k = exp(-d * 3.2) * vB;
+  gl_FragColor = vec4(vC * k, k);
+}`;
+
+const STYLES = { ferrofluid: 0, ripple: 1, constellation: 2, dew: 3, particles: 4 };
 const renderers = new Map();
 let unsupported = false;
 
@@ -170,20 +216,36 @@ function make(px) {
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) || "shader");
     return s;
   };
-  const prog = gl.createProgram();
-  gl.attachShader(prog, shader(gl.VERTEX_SHADER, VERT));
-  gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FRAG));
-  gl.linkProgram(prog);
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) || "link");
-  gl.useProgram(prog);
-  const buf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  const link = (vs, fs) => {
+    const prog = gl.createProgram();
+    gl.attachShader(prog, shader(gl.VERTEX_SHADER, vs));
+    gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) || "link");
+    return prog;
+  };
+  const glass = link(VERT, FRAG);
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-  const at = gl.getAttribLocation(prog, "p");
-  gl.enableVertexAttribArray(at);
-  gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
-  const u = (n) => gl.getUniformLocation(prog, n);
-  return { canvas, gl, px, uTime: u("uTime"), uLevel: u("uLevel"), uThink: u("uThink"), uPx: u("uPx"), uStyle: u("uStyle"), lost: false };
+  const dots = link(DOT_VERT, DOT_FRAG);
+  const seeds = new Float32Array(DOTS * 2);
+  for (let i = 0; i < DOTS; i++) {
+    seeds[i * 2] = i / DOTS;
+    seeds[i * 2 + 1] = (Math.sin(i * 12.9898) * 43758.5453) % 1 + (Math.sin(i * 12.9898) < 0 ? 1 : 0);
+  }
+  const points = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, points);
+  gl.bufferData(gl.ARRAY_BUFFER, seeds, gl.STATIC_DRAW);
+  const uniforms = (prog) => {
+    const u = (n) => gl.getUniformLocation(prog, n);
+    return { uTime: u("uTime"), uLevel: u("uLevel"), uThink: u("uThink"), uPx: u("uPx"), uStyle: u("uStyle") };
+  };
+  return {
+    canvas, gl, px, lost: false,
+    glass: { prog: glass, buf: quad, attr: gl.getAttribLocation(glass, "p"), mode: gl.TRIANGLE_STRIP, count: 4, ...uniforms(glass) },
+    dots: { prog: dots, buf: points, attr: gl.getAttribLocation(dots, "a"), mode: gl.POINTS, count: DOTS, ...uniforms(dots) },
+  };
 }
 
 function renderer(px) {
@@ -215,15 +277,27 @@ export function drawGlassOrb(ctx, size, style, time, energy, thinking) {
     const r = renderer(px);
     if (!r) { unsupported = true; return false; }
     const { gl } = r;
+    const pass = style === "particles" ? r.dots : r.glass;
+    gl.useProgram(pass.prog);
+    gl.bindBuffer(gl.ARRAY_BUFFER, pass.buf);
+    gl.enableVertexAttribArray(pass.attr);
+    gl.vertexAttribPointer(pass.attr, 2, gl.FLOAT, false, 0, 0);
     gl.viewport(0, 0, px, px);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.uniform1f(r.uTime, Number.isFinite(time) ? time % 1000 : 0);
-    gl.uniform1f(r.uLevel, Math.max(0, Math.min(1, energy || 0)));
-    gl.uniform1f(r.uThink, Math.max(0, Math.min(1, Number(thinking) || 0)));
-    gl.uniform1f(r.uPx, px);
-    gl.uniform1i(r.uStyle, STYLES[style]);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    if (pass === r.dots) {
+      // Light adds up where dots overlap, like real glowing specks.
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+    } else {
+      gl.disable(gl.BLEND);
+    }
+    gl.uniform1f(pass.uTime, Number.isFinite(time) ? time % 1000 : 0);
+    gl.uniform1f(pass.uLevel, Math.max(0, Math.min(1, energy || 0)));
+    gl.uniform1f(pass.uThink, Math.max(0, Math.min(1, Number(thinking) || 0)));
+    gl.uniform1f(pass.uPx, px);
+    if (pass.uStyle) gl.uniform1i(pass.uStyle, STYLES[style]);
+    gl.drawArrays(pass.mode, 0, pass.count);
     ctx.drawImage(r.canvas, 0, 0, size, size);
     return true;
   } catch (e) {

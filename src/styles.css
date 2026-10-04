@@ -720,3 +720,50 @@ html[data-backdrop="tabbed"] .izk-card {
 @media (prefers-reduced-motion: reduce) {
   .izk-face-liquid, .izk-eye, .izk-dizzy, .izk-bars span, .izk-dots span { animation: none; }
 }
+
+/* ------------------------------------------------------- the status HUD */
+.izk-hud {
+  background: radial-gradient(70% 70% at 50% 50%, rgba(4, 18, 34, 0.72), rgba(2, 6, 16, 0.86));
+  font-family: inherit;
+}
+/* Faint scan lines — static, so nothing repaints over a video. */
+.izk-hud-scan {
+  background: repeating-linear-gradient(0deg, rgba(103, 232, 249, 0.035) 0 1px, transparent 1px 4px);
+  pointer-events: none;
+}
+.izk-hud-panel {
+  background: linear-gradient(160deg, rgba(14, 40, 64, 0.62), rgba(6, 16, 30, 0.7));
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 14px;
+  box-shadow: inset 0 0 24px rgba(34, 211, 238, 0.07), 0 0 30px rgba(34, 211, 238, 0.08);
+}
+/* HUD corner brackets. */
+.izk-hud-panel::before,
+.izk-hud-panel::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-color: #67e8f9;
+  border-style: solid;
+  filter: drop-shadow(0 0 4px #22d3ee);
+}
+.izk-hud-panel::before { left: -1px; top: -1px; border-width: 2px 0 0 2px; border-radius: 6px 0 0 0; }
+.izk-hud-panel::after { right: -1px; bottom: -1px; border-width: 0 2px 2px 0; border-radius: 0 0 6px 0; }
+.izk-hud-glow { filter: drop-shadow(0 0 6px rgba(34, 211, 238, 0.55)); }
+.izk-hud-time { text-shadow: 0 0 24px rgba(103, 232, 249, 0.6); }
+.izk-hud-spin-slow { animation: izk-spin 40s linear infinite; }
+.izk-hud-spin-rev { animation: izk-spin 22s linear infinite reverse; }
+.izk-hud-spin-fast { animation: izk-spin 9s linear infinite; }
+.izk-hud-eq i {
+  display: block;
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(#67e8f9, #a78bfa);
+  transform-origin: bottom;
+  animation: izk-bar 0.8s ease-in-out infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .izk-hud-spin-slow, .izk-hud-spin-rev, .izk-hud-spin-fast, .izk-hud-eq i { animation: none; }
+}

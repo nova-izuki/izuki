@@ -343,7 +343,13 @@ pub fn open_log_folder() -> R<()> {
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     // "Hey Nova, wake up" / "status report": the briefing, straight off this PC.
     if crate::briefing::is_briefing(&said) {
-        return blocking(crate::briefing::compose).await.ok();
+        let hud = blocking(crate::briefing::report).await.ok()?;
+        // The holographic status screen, while it's read out.
+        if !overlay::overlay_shown() {
+            let _ = overlay::show_follow(&app);
+        }
+        let _ = app.emit_to(overlay::OVERLAY_LABEL, "izuki://hud", &hud);
+        return Some(hud.said);
     }
     crate::instant::parse(&said)?;
     blocking(move || brain::run_instant(&app, &state::store(), &said).map(|p| p.summary))

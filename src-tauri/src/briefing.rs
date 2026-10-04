@@ -4,6 +4,25 @@
 //! doing first?". Instant: read straight off this PC, no AI to wait for.
 
 use chrono::{Datelike, Local, Timelike};
+use serde::Serialize;
+
+/// The same report as numbers, for the holographic status screen.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Hud {
+    pub greeting: String,
+    pub time: String,
+    pub date: String,
+    /// Battery percent and whether it's charging (`None` on a desktop PC).
+    pub battery: Option<(u8, bool)>,
+    pub memory: Option<u32>,
+    pub disk_free_gb: Option<u64>,
+    /// Today's remaining reminders: (time, text).
+    pub reminders: Vec<(String, String)>,
+    pub playing: Option<String>,
+    pub apps: Vec<String>,
+    /// What Izuki says, so the screen can show it too.
+    pub said: String,
+}
 
 /// Is this asking for the report? ("wake up", "status report", "how are the
 /// apps doing", "catch me up", "good morning"…) Short requests only — "wake
@@ -36,7 +55,13 @@ pub fn is_briefing(said: &str) -> bool {
 
 /// The report, ready to say.
 pub fn compose() -> String {
+    report().said
+}
+
+/// The report: what to say, and the numbers behind it for the screen.
+pub fn report() -> Hud {
     let now = Local::now();
+    let mut hud = Hud::default();
     let mut lines: Vec<String> = Vec::new();
     let hello = match now.hour() {
         0..=4 => "Up late, I see. I'm here.",
@@ -45,24 +70,37 @@ pub fn compose() -> String {
         _ => "Good evening. Online and ready.",
     };
     lines.push(hello.into());
+    hud.greeting = hello.split('.').next().unwrap_or(hello).to_string();
     let weekday = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][now.weekday().num_days_from_monday() as usize];
     lines.push(format!("It's {} on {weekday}.", now.format("%-I:%M %p")));
+    hud.time = now.format("%-I:%M").to_string();
+    hud.date = format!("{weekday}, {}", now.format("%-d %B"));
 
-    if let Some(b) = battery() {
+    hud.battery = battery_raw();
+    if let Some(b) = battery_line(hud.battery) {
         lines.push(b);
     }
-    lines.push(pc_health());
-    lines.push(reminders_today(now.timestamp_millis()));
+    let (memory, disk) = health_raw();
+    hud.memory = memory;
+    hud.disk_free_gb = disk;
+    lines.push(health_line(memory, disk));
+    let (line, todays) = reminders_today(now.timestamp_millis());
+    lines.push(line);
+    hud.reminders = todays;
     if let Some(m) = crate::island::status().media.filter(|m| m.playing) {
         let by = if m.artist.trim().is_empty() { String::new() } else { format!(" by {}", m.artist) };
         lines.push(format!("{}{by} is playing.", m.title));
+        hud.playing = Some(format!("{}{by}", m.title));
     }
-    lines.push(apps());
+    let (line, apps) = apps();
+    lines.push(line);
+    hud.apps = apps;
     lines.push("What are we doing first?".into());
-    lines.into_iter().filter(|l| !l.trim().is_empty()).collect::<Vec<_>>().join(" ")
+    hud.said = lines.into_iter().filter(|l| !l.trim().is_empty()).collect::<Vec<_>>().join(" ");
+    hud
 }
 
-fn reminders_today(now_ms: i64) -> String {
+fn reminders_today(now_ms: i64) -> (String, Vec<(String, String)>) {
     let today = Local::now().date_naive();
     let mut todays: Vec<_> = crate::reminders::list()
         .into_iter()
@@ -70,11 +108,12 @@ fn reminders_today(now_ms: i64) -> String {
         .filter(|r| chrono::DateTime::from_timestamp_millis(r.at).is_some_and(|d| d.with_timezone(&Local).date_naive() == today))
         .collect();
     todays.sort_by_key(|r| r.at);
-    match todays.as_slice() {
+    let line = match todays.as_slice() {
         [] => "Nothing else on your reminders today.".into(),
         [r] => format!("One reminder left today: {} at {}.", r.text.trim_end_matches('.'), at(r.at)),
         [r, rest @ ..] => format!("{} reminders left today — next is {} at {}.", rest.len() + 1, r.text.trim_end_matches('.'), at(r.at)),
-    }
+    };
+    (line, todays.iter().take(4).map(|r| (at(r.at), r.text.clone())).collect())
 }
 
 fn at(ms: i64) -> String {
@@ -83,12 +122,14 @@ fn at(ms: i64) -> String {
         .unwrap_or_default()
 }
 
-fn apps() -> String {
-    let Some(store) = crate::state::try_store() else { return String::new() };
+fn apps() -> (String, Vec<String>) {
+    let Some(store) = crate::state::try_store() else { return (String::new(), Vec::new()) };
     if store.settings().composio_api_key.trim().is_empty() {
-        return "No apps linked yet — say \"connect Gmail\" whenever you want me in your email.".into();
+        return ("No apps linked yet — say \"connect Gmail\" whenever you want me in your email.".into(), Vec::new());
     }
-    match crate::composio::connected() {
+    let linked = crate::composio::connected();
+    let names = linked.as_ref().map(|l| l.iter().map(|s| pretty(s)).collect()).unwrap_or_default();
+    let line = match linked {
         Ok(list) if list.is_empty() => "Your apps key is set, but nothing's linked yet.".into(),
         Ok(list) => {
             let names: Vec<String> = list.iter().take(5).map(|s| pretty(s)).collect();
@@ -103,7 +144,8 @@ fn apps() -> String {
             }
         }
         Err(_) => "I couldn't reach your linked apps just now — the connection may be down.".into(),
-    }
+    };
+    (line, names)
 }
 
 /// "googlecalendar" → "Google Calendar", "gmail" → "Gmail".
@@ -135,7 +177,7 @@ fn join(items: &[String]) -> String {
 }
 
 #[cfg(windows)]
-fn battery() -> Option<String> {
+fn battery_raw() -> Option<(u8, bool)> {
     use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
     let mut s = SYSTEM_POWER_STATUS::default();
     unsafe { GetSystemPowerStatus(&mut s).ok()? };
@@ -143,8 +185,16 @@ fn battery() -> Option<String> {
     if s.BatteryFlag & 128 != 0 || s.BatteryLifePercent > 100 {
         return None;
     }
-    let pct = s.BatteryLifePercent;
-    let plugged = s.ACLineStatus == 1;
+    Some((s.BatteryLifePercent, s.ACLineStatus == 1))
+}
+
+#[cfg(not(windows))]
+fn battery_raw() -> Option<(u8, bool)> {
+    None
+}
+
+fn battery_line(b: Option<(u8, bool)>) -> Option<String> {
+    let (pct, plugged) = b?;
     Some(match (pct, plugged) {
         (p, true) if p >= 99 => "Battery's full.".into(),
         (p, true) => format!("Battery's at {p}% and charging."),
@@ -153,25 +203,20 @@ fn battery() -> Option<String> {
     })
 }
 
-#[cfg(not(windows))]
-fn battery() -> Option<String> {
-    None
-}
-
 #[cfg(windows)]
-fn pc_health() -> String {
+fn health_raw() -> (Option<u32>, Option<u64>) {
     use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
     use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
     let mut mem = MEMORYSTATUSEX { dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32, ..Default::default() };
     let memory = unsafe { GlobalMemoryStatusEx(&mut mem).ok().map(|_| mem.dwMemoryLoad) };
     let mut free = 0u64;
     let disk = unsafe { GetDiskFreeSpaceExW(windows::core::w!("C:\\"), Some(&mut free), None, None).ok().map(|_| free / 1_000_000_000) };
-    health_line(memory, disk)
+    (memory, disk)
 }
 
 #[cfg(not(windows))]
-fn pc_health() -> String {
-    health_line(None, None)
+fn health_raw() -> (Option<u32>, Option<u64>) {
+    (None, None)
 }
 
 fn health_line(memory: Option<u32>, disk_gb: Option<u64>) -> String {

@@ -258,7 +258,7 @@ export interface Settings {
   /** Snap targets to real UI Automation controls before clicking. */
   magnetic_hand: boolean;
   control_style: "mouse" | "precision";
-  orb_style: "liquid" | "ferrofluid" | "dew" | "ripple" | "constellation";
+  orb_style: "liquid" | "ferrofluid" | "dew" | "ripple" | "constellation" | "particles";
   orb_response: number;
   automatic_update_checks: boolean;
   economy_mode: boolean;

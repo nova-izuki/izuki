@@ -16,6 +16,7 @@ import { CaptionBox } from "./CaptionBox";
 import { FloatingChat } from "./FloatingChat";
 import { HandCursor, type HandCursorHandle } from "./HandCursor";
 import { Island, islandPointer } from "./Island";
+import { Hud } from "./Hud";
 import { HandGlyph } from "./IzukiMark";
 import { PointOutLayer, type PointOut } from "./PointOutLayer";
 import { PenLayer, PEN_INKS, type PenMark } from "./PenLayer";
@@ -700,6 +701,7 @@ export function OverlayCanvas() {
             <PenLayer marks={penMarks} />
           </div>
         )}
+        <Hud />
         {islandOn && <Island orb={orb} doing={doing} thinking={thinking} peeks={islandPeeks} />}
         <VoiceSphere state={orb} transcript={transcript} doing={doing} />
         {orb === "hidden" && <TranscriptBar text={transcript?.text ?? null} final={!!transcript?.final} />}
