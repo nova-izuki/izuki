@@ -821,6 +821,83 @@
       .show-track { height: auto; }
       .show-sticky { position: relative; height: auto; }
     }
+    /* ---- What's new (live) ---- */
+    .nw-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-top: 44px; }
+    .nw-card { position: relative; grid-column: span 2; padding: 24px; border-radius: 24px; border: 1px solid var(--line); background: rgba(255,255,255,0.03); overflow: hidden; }
+    .nw-card h3 { font-size: 20px; font-weight: 700; }
+    .nw-card p { margin-top: 8px; color: var(--muted); font-size: 15px; }
+    .nw-card .glyph { font-size: 26px; }
+    .nw-orbs { grid-column: span 6; display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: center;
+      background: radial-gradient(60% 80% at 20% 50%, rgba(56, 189, 248, 0.08), transparent 70%), rgba(255,255,255,0.03); }
+    .nw-stage { width: 340px; height: 340px; border-radius: 22px; background: radial-gradient(circle at 50% 50%, #1b2738, #070a10 72%); display: grid; place-items: center; }
+    .nw-stage canvas { width: 340px; height: 340px; }
+    .nw-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .nw-chips button { border: 1px solid var(--line); background: var(--glass); color: var(--ink); border-radius: 999px; padding: 8px 14px; font: 600 13.5px var(--body); cursor: pointer; transition: all .2s; }
+    .nw-chips button:hover { border-color: rgba(103,232,249,.4); }
+    .nw-chips button.on { background: linear-gradient(120deg, #67e8f9, #a78bfa 55%, #f0abfc); color: #06060f; border-color: transparent; }
+    .nw-acts { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+    .nw-acts button[aria-pressed="true"] { border-color: #67e8f9; box-shadow: 0 0 0 2px rgba(103,232,249,.25); }
+    .nw-island-card, .nw-hud-card { grid-column: span 3; }
+    .nw-screen { position: relative; margin-top: 16px; height: 380px; border-radius: 18px; background: linear-gradient(180deg, #e9eef6, #cfd7e4); overflow: hidden; }
+    .nw-quiz { position: absolute; left: 18px; right: 18px; bottom: 14px; padding: 10px 14px; border-radius: 12px; background: #fff; color: #222; font: 500 13px/1.6 var(--body); box-shadow: 0 6px 20px rgba(0,0,0,.12); }
+    .nw-island { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); border: 0; padding: 0; cursor: pointer; background: #050507; color: #fff; border-radius: 22px;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.08), 0 10px 30px rgba(0,0,0,.35); transition: width .45s cubic-bezier(.16,1,.3,1), height .45s cubic-bezier(.16,1,.3,1), border-radius .45s; width: 230px; height: 38px; overflow: hidden; text-align: left; font: inherit; }
+    .nw-pill { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 14px 0 7px; font: 600 13px var(--body); white-space: nowrap; transition: opacity .2s; }
+    .nw-open { position: absolute; inset: 0; padding: 14px; display: flex; flex-direction: column; gap: 9px; opacity: 0; pointer-events: none; transition: opacity .25s .1s; }
+    .nw-island.open { width: min(340px, 92%); height: 272px; border-radius: 28px; }
+    .nw-island.open .nw-pill { opacity: 0; }
+    .nw-island.open .nw-open { opacity: 1; }
+    .nw-face { position: relative; display: inline-flex; gap: 4px; align-items: center; justify-content: center; width: 24px; height: 24px; flex: none; border-radius: 50%;
+      background: conic-gradient(#22d3ee, #6366f1, #d946ef, #f472b6, #22d3ee); box-shadow: 0 0 12px rgba(168,85,247,.6); }
+    .nw-face b { width: 3px; height: 6px; border-radius: 2px; background: #fff; animation: nwBlink 4.6s infinite; }
+    .nw-face.big { width: 38px; height: 38px; gap: 6px; } .nw-face.big b { width: 5px; height: 9px; }
+    @keyframes nwBlink { 0%, 94%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+    .nw-eq { display: inline-flex; gap: 2px; align-items: flex-end; height: 14px; }
+    .nw-eq i { width: 3px; height: 100%; border-radius: 2px; background: linear-gradient(#67e8f9, #e879f9); transform-origin: bottom; animation: eq .8s ease-in-out infinite alternate; }
+    .nw-eq i:nth-child(2) { animation-delay: -.3s; } .nw-eq i:nth-child(3) { animation-delay: -.55s; } .nw-eq i:nth-child(4) { animation-delay: -.15s; }
+    .nw-row { display: flex; align-items: center; gap: 10px; }
+    .nw-row strong, .nw-media strong { display: block; font-size: 14px; } .nw-row small, .nw-media small { display: block; font-size: 11.5px; color: rgba(255,255,255,.55); }
+    .nw-row em { margin-left: auto; font: 600 19px var(--body); font-style: normal; }
+    .nw-media { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 14px; background: rgba(255,255,255,.07); }
+    .nw-art { width: 38px; height: 38px; border-radius: 8px; background: linear-gradient(135deg, #f97316, #7c3aed); flex: none; }
+    .nw-play { margin-left: auto; width: 32px; height: 32px; border-radius: 50%; background: #fff; color: #000; display: grid; place-items: center; font-size: 11px; }
+    .nw-sug { padding: 7px 11px; border-radius: 12px; font-size: 12.5px; font-weight: 600; background: linear-gradient(rgba(14,12,24,.9), rgba(14,12,24,.9)) padding-box, linear-gradient(100deg, #22d3ee, #6366f1, #d946ef) border-box; border: 1px solid transparent; }
+    .nw-big { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: auto; }
+    .nw-big span { display: grid; place-items: center; padding: 6px 0; border-radius: 12px; background: rgba(255,255,255,.08); font-size: 15px; }
+    .nw-big small { font-size: 10.5px; color: rgba(255,255,255,.8); }
+    .nw-hud-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+    .nw-hud-card .btn { margin-top: 12px; }
+    .nw-hud { position: relative; align-self: stretch; margin-top: 16px; height: 230px; border-radius: 18px; overflow: hidden; display: grid; place-items: center;
+      background: radial-gradient(70% 70% at 50% 40%, rgba(6, 24, 44, .95), #02060f); border: 1px solid rgba(103,232,249,.25); animation: nwIn .5s ease;
+      height: 300px; place-items: start center; }
+    .nw-hud::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(103,232,249,.04) 0 1px, transparent 1px 4px); pointer-events: none; }
+    .nw-rings { position: absolute; top: 14px; left: calc(50% - 90px); width: 180px; height: 180px; filter: drop-shadow(0 0 6px rgba(34,211,238,.6)); animation: spin 18s linear infinite; }
+    .nw-time { position: relative; font: 200 44px var(--display); color: #fff; text-shadow: 0 0 20px rgba(103,232,249,.7); margin-top: 72px; }
+    .nw-hud-lines { position: absolute; bottom: 12px; left: 0; right: 0; text-align: center; font: 500 10.5px/1.7 var(--mono); letter-spacing: .14em; color: rgba(165,243,252,.85); }
+    .nw-hud-lines div { animation: nwIn .3s ease both; }
+    @keyframes nwIn { from { opacity: 0; transform: translateY(6px); } }
+    .nw-feat { grid-column: span 3; }
+    @media (min-width: 900px) { .nw-feat { grid-column: span 2; } .nw-feat:nth-last-child(-n+2) { grid-column: span 3; } }
+    .nw-log { margin-top: 26px; padding: 22px 24px; border-radius: 24px; border: 1px solid var(--line); background: rgba(255,255,255,0.025); }
+    .nw-log-head { display: flex; justify-content: space-between; align-items: baseline; }
+    .nw-log-head a { color: var(--cyan); font-size: 14px; text-decoration: none; }
+    .nw-log ol { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 12px; }
+    .nw-log li { display: grid; grid-template-columns: 110px 1fr; gap: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .nw-log li:first-child { border-top: 0; padding-top: 0; }
+    .nw-log .v { font: 700 15px var(--display); } .nw-log .v small { display: block; font: 500 12px var(--body); color: var(--faint); }
+    .nw-log b { color: var(--ink); } .nw-log p { color: var(--muted); font-size: 14.5px; margin: 0; }
+    .nw-log .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .nw-log .tags span { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: rgba(103,232,249,.08); border: 1px solid rgba(103,232,249,.2); color: #cffafe; }
+    .nw-log .nw-loading { display: block; color: var(--faint); }
+    @media (max-width: 860px) {
+      .nw-grid { grid-template-columns: 1fr; }
+      .nw-card, .nw-orbs, .nw-island-card, .nw-hud-card, .nw-feat { grid-column: auto; }
+      .nw-orbs { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+      .nw-chips, .nw-acts { justify-content: center; }
+      .nw-stage, .nw-stage canvas { width: min(300px, 80vw); height: min(300px, 80vw); }
+      .nw-log li { grid-template-columns: 1fr; gap: 4px; }
+    }
+    @media (prefers-reduced-motion: reduce) { .nw-rings, .nw-face b, .nw-eq i { animation: none; } }
   </style>
 </head>
 <body>
@@ -835,6 +912,7 @@
     <div class="nav-in">
       <a class="brand" href="#top"><i></i>IZUKI</a>
       <div class="nav-links">
+        <a href="#new">What's new</a>
         <a href="#try">Try it</a>
         <a href="#app">The app</a>
         <a href="#demo">See it work</a>
@@ -1155,6 +1233,92 @@
       <div class="band-row outline" id="band2"><span>FREE</span><span>HANDS‑FREE</span><span>OPEN SOURCE</span><span>FREE</span><span>HANDS‑FREE</span><span>OPEN SOURCE</span><span>FREE</span><span>HANDS‑FREE</span><span>OPEN SOURCE</span></div>
     </div>
 
+    <!-- ========== what's new (live) ========== -->
+    <section id="new">
+      <div class="kicker rv">Just landed</div>
+      <h2 class="rv">New this week. Try it right here.</h2>
+      <p class="sub rv">Everything below is running live on this page — the same code the app uses.</p>
+
+      <div class="nw-grid">
+        <!-- the orb gallery -->
+        <article class="nw-card nw-orbs rv">
+          <div class="nw-stage"><canvas id="nw-orb" width="340" height="340" aria-label="Izuki's orb"></canvas></div>
+          <div class="nw-side">
+            <h3>Orbs that look real</h3>
+            <p>Drawn in 3D with real light — the water bends the world behind it, ferrofluid spikes with every beat, stardust streams into an infinity sign while it thinks.</p>
+            <div class="nw-chips" id="nw-styles" role="radiogroup" aria-label="Orb style">
+              <button type="button" data-s="ferrofluid" class="on">Clear water</button>
+              <button type="button" data-s="dew">Pure water</button>
+              <button type="button" data-s="ferro">Ferrofluid</button>
+              <button type="button" data-s="particles">Stardust</button>
+              <button type="button" data-s="face">Hologram face</button>
+              <button type="button" data-s="ripple">Tidal pearl</button>
+              <button type="button" data-s="constellation">Star crystal</button>
+            </div>
+            <div class="nw-acts">
+              <button type="button" class="btn ghost small" id="nw-talk" aria-pressed="false">🎙️ Make it talk</button>
+              <button type="button" class="btn ghost small" id="nw-think" aria-pressed="false">💭 Make it think</button>
+            </div>
+          </div>
+        </article>
+
+        <!-- the Island -->
+        <article class="nw-card nw-island-card rv">
+          <h3>The Island</h3>
+          <p>A pill at the top of your screen, like a phone's live activities. <b>Hover or tap it.</b></p>
+          <div class="nw-screen">
+            <button type="button" class="nw-island" id="nw-island" aria-expanded="false">
+              <span class="nw-pill">
+                <i class="nw-face"><b></b><b></b></i>
+                <span>Last Last · Burna Boy</span>
+                <span class="nw-eq"><i></i><i></i><i></i><i></i></span>
+              </span>
+              <span class="nw-open">
+                <span class="nw-row"><i class="nw-face big"><b></b><b></b></i><span><strong>Good evening</strong><small>Ask me anything — or show me.</small></span><em>7:42</em></span>
+                <span class="nw-media"><i class="nw-art"></i><span><strong>Last Last</strong><small>Burna Boy · Spotify</small></span><span class="nw-play">❚❚</span></span>
+                <span class="nw-sug">✏️ Explain this question</span>
+                <span class="nw-sug">👩‍🏫 Teach me through this quiz</span>
+                <span class="nw-big"><span>🎙️<small>Talk</small></span><span>✏️<small>Draw</small></span><span>⚙️<small>Open Izuki</small></span></span>
+              </span>
+            </button>
+            <div class="nw-quiz">Question 3 of 10 — Which device forwards packets between networks?<br />( ) Hub &nbsp; ( ) Switch &nbsp; ( ) Router</div>
+          </div>
+        </article>
+
+        <!-- the status screen -->
+        <article class="nw-card nw-hud-card rv">
+          <h3>“Hey Nova, wake up.”</h3>
+          <p>A holographic status screen while it reports: time, battery, memory, today's reminders, what's playing, your apps.</p>
+          <button type="button" class="btn primary small" id="nw-wake">Say “wake up”</button>
+          <div class="nw-hud" id="nw-hud" hidden>
+            <svg viewBox="0 0 200 200" class="nw-rings" aria-hidden="true">
+              <circle cx="100" cy="100" r="92" fill="none" stroke="#67e8f9" stroke-width="1.5" stroke-dasharray="2 7" />
+              <circle cx="100" cy="100" r="78" fill="none" stroke="#22d3ee" stroke-width="2.5" stroke-dasharray="70 30 15 30" />
+              <circle cx="100" cy="100" r="66" fill="none" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="30 170" />
+            </svg>
+            <div class="nw-time" id="nw-time">7:42</div>
+            <div class="nw-hud-lines" id="nw-hud-lines"></div>
+          </div>
+        </article>
+
+        <!-- what's new, in a few words -->
+        <article class="nw-card nw-feat rv"><div class="glyph">👩‍🏫</div><h3>Teacher mode</h3><p>On any quiz: explains each question with the pen, lets you answer, tells you why, clicks Next when you're ready.</p></article>
+        <article class="nw-card nw-feat rv"><div class="glyph">📺</div><h3>Control your TV</h3><p>“Open Netflix on the TV.” “Turn it up.” “Search for Stranger Things.” Roku over your Wi-Fi — nothing to install.</p></article>
+        <article class="nw-card nw-feat rv"><div class="glyph">⚡</div><h3>Jarvis mode</h3><p>Presses buttons and types into boxes straight through Windows — no mouse flying around, and your own mouse stays free.</p></article>
+        <article class="nw-card nw-feat rv"><div class="glyph">🎵</div><h3>Music mode</h3><p>The orb flows with whatever's playing. Ask “about this song”. Only the volume is read — nothing recorded.</p></article>
+        <article class="nw-card nw-feat rv"><div class="glyph">✨</div><h3>Suggests what you need</h3><p>Spots a quiz, an error, a video or an email and offers the right one-tap help. Instant and private — no AI.</p></article>
+        <article class="nw-card nw-feat rv"><div class="glyph">⌨️</div><h3>Say it, or hold a key</h3><p>“Hey Nova” hands-free — or hold Ctrl + Windows + Space, talk, let go. Wake-up strictness stops false wake-ups.</p></article>
+        <article class="nw-card nw-feat rv"><div class="glyph">🎩</div><h3>Atlas &amp; change by voice</h3><p>A calm British AI-assistant voice. “Switch to Atlas.” “Change your orb to stardust.” Done instantly.</p></article>
+        <article class="nw-card nw-feat rv"><div class="glyph">⭕</div><h3>Circle it, say “next”</h3><p>It clicks that exact button at once — no AI to wait for — and never clicks your taskbar by mistake.</p></article>
+      </div>
+
+      <!-- the live changelog -->
+      <div class="nw-log rv">
+        <div class="nw-log-head"><span class="kicker">Latest updates</span><a href="https://github.com/nova-izuki/izuki/releases" target="_blank" rel="noopener">All releases ↗</a></div>
+        <ol id="nw-log"><li class="nw-loading">Loading the latest releases…</li></ol>
+      </div>
+    </section>
+
     <!-- ========== features ========== -->
     <section id="features">
       <div class="kicker rv">What it can do</div>
@@ -1179,8 +1343,8 @@
         <article class="card wide rv"><div class="glyph">🤖</div><h3>Companion on your phone</h3><p>Use Izuki on any phone from the web app today. The native Android companion adds opt-in Home, Back, Recents, Notifications and Quick Settings; the iPhone companion brings conversations, reminders and Siri handoff within iOS rules. Free core companion.</p></article>
         <article class="card wide rv"><div class="glyph">🎭</div><h3>30+ voices &amp; characters</h3><p>Warm Nova, deep calm Leo, British Sophie, Nigerian Ezinne, Naija Pidgin Chidi, Spanish Lucía, a hype coach, a butler, a pirate — or Rex, unfiltered and savage, if you dare. Rename it, change the voice, speed and pitch, and give it your own personality.</p></article>
         <article class="card wide rv" style="--d:.06s"><div class="glyph">🗣️</div><h3>Sounds like a person</h3><p>Natural voices that breathe at commas and pause at full stops — free, no key. Or Google's Gemini voice (your Gemini key), Groq, Azure and ElevenLabs for the most human sound. Offline voice on your PC too, in English, Spanish, French, Swahili, Hindi and more.</p></article>
-        <article class="card wide rv"><div class="glyph">🎯</div><h3>Two ways to take control</h3><p>Choose the familiar mouse or verified Precision mode. Precision checks the live Windows control immediately before acting and refuses an unverified click instead of guessing.</p></article>
-        <article class="card wide rv"><div class="glyph">💧</div><h3>Your companion, your style</h3><p>Liquid glass stays the default, with Water ripple, Constellation and Ferrofluid droplets as extra choices on PC and phone. Bounded animation and slower idle polling keep the look light.</p></article>
+        <article class="card wide rv"><div class="glyph">🎯</div><h3>Two ways to take control</h3><p>Mouse mode moves a visible hand like a person would. <b>Jarvis mode</b> presses buttons and types into boxes straight through Windows — no pointer flying around, faster, and your own mouse stays free. It checks the real control before acting and never guesses.</p></article>
+        <article class="card wide rv"><div class="glyph">💧</div><h3>Your companion, your style</h3><p>Liquid glass, Clear water, Pure water, Ferrofluid, Stardust, a Hologram face, Tidal pearl and Star crystal — real 3D light on your graphics card, on PC and phone. <a href="#new" style="color:var(--cyan)">Try them above ↑</a></p></article>
         <article class="card wide rv"><div class="glyph">↶</div><h3>Keep your flows tidy</h3><p>Clear matching flows or start fresh, then Undo if you change your mind. Exact repeat recordings reuse the saved flow, and video explanations stay out of your library.</p></article>
         <article class="card wide rv" style="--d:.06s"><div class="glyph">🚀</div><h3>Instant commands</h3><p>Say “scroll down”, “louder”, “pause”, “next song”, “go back”, “new tab” or “minimise this” and it just happens — no AI, no waiting, like Siri. Nothing to get wrong.</p></article>
         <article class="card wide rv"><div class="glyph">🧩</div><h3>Works with any AI — even small free ones</h3><p>Big AIs get the full playbook. Small free ones get <b>Easy Mode</b>: a simple menu, and Izuki finds the real button by its name — so they do the job instead of explaining it. If an AI starts rambling, Izuki ignores it and waits for one that actually acts.</p></article>
@@ -1338,6 +1502,7 @@
   </button>
   <nav class="dots-nav" id="dots-nav" aria-label="Jump to a section">
     <a href="#top"><span>Home</span></a>
+    <a href="#new"><span>What's new</span></a>
     <a href="#try"><span>Try it</span></a>
     <a href="#app"><span>The app</span></a>
     <a href="#demo"><span>See it work</span></a>
@@ -2291,5 +2456,125 @@
 })();
 </script>
 <script src="shared/bugs.js" data-app="website" data-version="site" defer></script>
+<script type="module">
+// ---- What's new: the live orb gallery, the Island, "wake up", the changelog
+import { drawGlassOrb } from "./app/glass-orb.js";
+import { createOrbMotion, stepOrbMotion } from "./app/orb-motion.js";
+const $ = (id) => document.getElementById(id);
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// The orb: the same 3D materials the app draws, driven by a pretend voice.
+const canvas = $("nw-orb");
+if (canvas) {
+  const S = canvas.getBoundingClientRect().width || 340;
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  canvas.width = canvas.height = Math.round(S * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  const motion = createOrbMotion();
+  let style = "ferrofluid", talking = false, thinking = false, visible = false, last = performance.now(), raf = 0;
+  const paint = (now, dt) => {
+    const voice = talking ? Math.abs(Math.sin(now / 160) * Math.sin(now / 470)) * 0.9 + 0.1 : 0;
+    stepOrbMotion(motion, dt, thinking ? 0 : voice, thinking ? "thinking" : talking ? "speaking" : "idle", 1);
+    ctx.clearRect(0, 0, S, S);
+    const ok = drawGlassOrb(ctx, S, style, reduce ? 0 : motion.time, motion.energy, motion.waiting, talking ? 0.8 : 0.1);
+    if (!ok) { ctx.fillStyle = "#a3a9c7"; ctx.font = "14px sans-serif"; ctx.textAlign = "center"; ctx.fillText("3D orbs need WebGL", S / 2, S / 2); }
+    return ok;
+  };
+  const draw = (now) => {
+    raf = 0;
+    if (!visible || document.hidden) return;
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (paint(now, dt)) raf = requestAnimationFrame(draw);
+  };
+  // Never an empty box: one frame right away (and on every change), then
+  // it animates while it's on screen.
+  paint(performance.now(), 1 / 60);
+  const wake = () => { if (!raf && visible) { last = performance.now(); raf = requestAnimationFrame(draw); } };
+  new IntersectionObserver(([e]) => { visible = e.isIntersecting; wake(); }).observe(canvas);
+  document.addEventListener("visibilitychange", wake);
+  $("nw-styles").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-s]");
+    if (!b) return;
+    style = b.dataset.s;
+    for (const x of $("nw-styles").children) x.classList.toggle("on", x === b);
+    paint(performance.now(), 1 / 60);
+    wake();
+  });
+  const toggle = (id, set) => $(id).addEventListener("click", (e) => {
+    const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
+    e.currentTarget.setAttribute("aria-pressed", String(on));
+    set(on);
+    paint(performance.now(), 1 / 60);
+    wake();
+  });
+  toggle("nw-talk", (on) => { talking = on; });
+  toggle("nw-think", (on) => { thinking = on; });
+}
+
+// The Island: opens on hover (and tap), like the real one.
+const island = $("nw-island");
+if (island) {
+  let timer = 0;
+  const set = (open) => { island.classList.toggle("open", open); island.setAttribute("aria-expanded", String(open)); };
+  island.addEventListener("mouseenter", () => { clearTimeout(timer); timer = setTimeout(() => set(true), 220); });
+  island.addEventListener("mouseleave", () => { clearTimeout(timer); timer = setTimeout(() => set(false), 600); });
+  island.addEventListener("click", () => set(!island.classList.contains("open")));
+}
+
+// "Wake up": the status screen, with the real time and this device's battery.
+$("nw-wake")?.addEventListener("click", async () => {
+  const hud = $("nw-hud"), lines = $("nw-hud-lines");
+  hud.hidden = false;
+  $("nw-time").textContent = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(/\s?[AP]M$/i, "");
+  lines.textContent = "";
+  let battery = null;
+  try { const b = await navigator.getBattery?.(); if (b) battery = `BATTERY ${Math.round(b.level * 100)}%${b.charging ? " · CHARGING" : ""}`; } catch {}
+  const say = ["VOICE ONLINE", "SCREEN LINKED", battery || "SYSTEMS NORMAL", "WHAT ARE WE DOING FIRST?"];
+  say.forEach((t, i) => setTimeout(() => { const d = document.createElement("div"); d.style.animationDelay = "0s"; d.textContent = "✓ " + t; lines.appendChild(d); }, 350 + i * 380));
+});
+
+// The changelog: read live from the releases, so this page is never behind.
+(async () => {
+  const list = $("nw-log");
+  if (!list) return;
+  try {
+    const r = await fetch("https://api.github.com/repos/nova-izuki/izuki/releases?per_page=6", { headers: { Accept: "application/vnd.github+json" } });
+    const rels = (await r.json()).filter((x) => !x.draft).slice(0, 5);
+    if (!rels.length) throw new Error("none");
+    list.textContent = "";
+    for (const rel of rels) {
+      const v = String(rel.tag_name).replace(/^v/, "");
+      const li = document.createElement("li");
+      const when = new Date(rel.published_at).toLocaleDateString([], { day: "numeric", month: "short" });
+      li.innerHTML = `<div class="v">${v}<small>${when}</small></div><div><p class="sum">See what's new →</p><div class="tags"></div></div>`;
+      li.querySelector(".sum").innerHTML = "";
+      const a = document.createElement("a");
+      a.href = `https://github.com/nova-izuki/izuki/blob/main/docs/RELEASE-${v}.md`;
+      a.target = "_blank"; a.rel = "noopener"; a.style.color = "inherit"; a.style.textDecoration = "none";
+      a.textContent = "What's new in " + v;
+      li.querySelector(".sum").appendChild(a);
+      list.appendChild(li);
+      // The notes themselves live on this site: their summary and headings.
+      fetch(`RELEASE-${v}.md`).then((x) => (x.ok ? x.text() : "")).then((md) => {
+        if (!md) return;
+        const blocks = md.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+        const summary = blocks.find((b) => !b.startsWith("#") && !b.startsWith("-"));
+        if (summary) a.textContent = summary.replace(/\s+/g, " ");
+        const tags = li.querySelector(".tags");
+        for (const h of md.match(/^## .+$/gm)?.slice(0, 5) ?? []) {
+          const t = document.createElement("span");
+          t.textContent = h.replace(/^## (\(\d[\d.]*\) )?/, "");
+          tags.appendChild(t);
+        }
+      }).catch(() => {});
+    }
+  } catch {
+    list.innerHTML = '<li class="nw-loading">See every update on <a href="https://github.com/nova-izuki/izuki/releases" style="color:var(--cyan)">GitHub</a>.</li>';
+  }
+})();
+</script>
+
 </body>
 </html>
