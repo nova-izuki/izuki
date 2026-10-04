@@ -174,6 +174,13 @@ pub struct Settings {
     /// (0 = keep them). Flows with a shortcut key are always kept.
     #[serde(default = "default_flows_keep_days")]
     pub flows_keep_days: u32,
+    /// The app's colour theme: "auto" (changes with the time of day),
+    /// "nova", "ocean", "sunset", "forest", "rose", "gold", "graphite" or
+    /// "custom" (from `app_theme_color`).
+    #[serde(default = "default_app_theme")]
+    pub app_theme: String,
+    #[serde(default)]
+    pub app_theme_color: String,
     /// The TV's address on the home Wi-Fi (found by itself; "" = look).
     #[serde(default)]
     pub tv_host: String,
@@ -482,6 +489,10 @@ fn default_execution_mode() -> ExecutionMode {
     ExecutionMode::Focus
 }
 
+fn default_app_theme() -> String {
+    "nova".into()
+}
+
 fn default_flows_keep_days() -> u32 {
     1
 }
@@ -725,6 +736,8 @@ impl Default for Settings {
             island_enabled: true,
             music_visuals: false,
             tv_host: String::new(),
+            app_theme: default_app_theme(),
+            app_theme_color: String::new(),
             flows_keep_days: default_flows_keep_days(),
             island_suggestions: true,
             follow_hand_size: default_follow_hand_size(),

@@ -21,6 +21,7 @@ import { Recover } from "./Recover";
 import { UpdateNotice } from "./UpdateNotice";
 import { FeatureFinder } from "./FeatureFinder";
 import { WhatsNew, WhatsNewButton, useWhatsNew } from "./WhatsNew";
+import { applyTheme } from "../lib/themes";
 
 const TABS: Array<{ value: TabId; label: string; icon: React.ReactNode }> = [
   { value: "draw", label: "Draw", icon: <PenLine size={13} strokeWidth={2.4} /> },
@@ -56,6 +57,15 @@ export function GlassConfigPanel() {
   const patchSettings = useIzuki((s) => s.patchSettings);
   const tourOpen = useIzuki((s) => s.tourOpen);
   const setupOpen = useIzuki((s) => s.setupOpen);
+  // The app's colours — and "auto" moves with the time of day.
+  const appTheme = useIzuki((s) => s.settings.app_theme) ?? "nova";
+  const appThemeColor = useIzuki((s) => s.settings.app_theme_color) ?? "";
+  useEffect(() => {
+    applyTheme(appTheme, appThemeColor);
+    if (appTheme !== "auto") return;
+    const t = setInterval(() => applyTheme(appTheme, appThemeColor), 10 * 60_000);
+    return () => clearInterval(t);
+  }, [appTheme, appThemeColor]);
   // After each update: what's new, once (not over the first-run tour or setup).
   const whatsNew = useWhatsNew(!settingsLoaded || !onboardingSeen || tourOpen || setupOpen);
   const setSetupOpen = useIzuki((s) => s.setSetupOpen);

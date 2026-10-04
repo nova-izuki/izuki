@@ -77,6 +77,17 @@ pub fn answer_action(id: u64, allow: bool) -> anyhow::Result<String> {
     }
 }
 
+/// The change asked for by voice or the orb's chat bar (no Allow card there):
+/// waiting for the user to say or type "allow".
+static VOICE_PENDING: Mutex<Option<u64>> = Mutex::new(None);
+
+/// "Allow" / "no" said or typed for the change Izuki just asked about out
+/// loud. `None` when nothing is waiting.
+pub fn answer_last(allow: bool) -> Option<anyhow::Result<String>> {
+    let id = VOICE_PENDING.lock().take()?;
+    Some(answer_action(id, allow))
+}
+
 /// Streams the user cut off (a new message, "stop") — checked between tokens.
 static CANCELLED: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 
@@ -420,8 +431,18 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             // Unless auto-run is on (like Claude Code's auto mode): it still
             // shows the exact command/file, but runs without the card.
             if let Some(ask) = tool.needs_ok() {
-                if !files {
+                // From the phone: never run things on the PC this way.
+                if style == Style::Phone {
                     return emit("I can only do that from the Chat tab on your PC.".into(), true, None);
+                }
+                // Voice or the orb's chat bar: no Allow card there, so ask out
+                // loud — "allow" (said or typed) runs it. Auto-run skips asking.
+                if !files && !crate::state::store().settings().chat_auto_run {
+                    let action_id = rand::random::<u32>() as u64 + 1;
+                    PENDING.lock().push((action_id, tool));
+                    *VOICE_PENDING.lock() = Some(action_id);
+                    let what = if ask.kind == "save" { "save this" } else { "run this" };
+                    return emit(format!("I'd like to {what}: {} — say or type “allow” to go ahead, or “no”.", ask.detail), true, None);
                 }
                 if crate::state::store().settings().chat_auto_run {
                     let head = if ask.kind == "save" { "📄 Saving" } else { "▶ Running" };

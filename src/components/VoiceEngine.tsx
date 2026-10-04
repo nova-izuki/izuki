@@ -766,6 +766,34 @@ export function VoiceEngine() {
       // Nothing installed by that name and not a known site: the agent finds it.
     }
 
+    // "Allow" / "no" for a command Izuki just asked about out loud (voice or
+    // the orb's chat bar, where there's no Allow button).
+    {
+      const bare = t.trim().replace(/[.!]+$/, "").toLowerCase();
+      const yes = /^(?:allow|allow it|yes,? (?:allow|run|do) it|go ahead|run it|do it|okay,? (?:run|do) it)$/.test(bare);
+      const no = /^(?:no|nope|don'?t|do not|cancel|no,? don'?t)(?: (?:it|that|run it|do it))?$/.test(bare);
+      if (yes || no) {
+        const result = await api.chatAllowLast(yes).catch(() => null);
+        if (result !== null) {
+          remember("user", t);
+          startSession(from === "voice", yes ? "thinking" : "speaking");
+          if (!yes) {
+            remember("assistant", "Okay — I won't.");
+            await respond("Okay — I won't.", "calm");
+            void afterReply(at, false);
+            return;
+          }
+          // It ran: let Izuki say how it went, in its own words.
+          const lane = await talkFast(`[I allowed it. Result:]
+${result}`);
+          if (requestSeq !== at) return;
+          if (lane !== "done") await respond(result.length > 240 ? "Done — that ran." : `Done. ${result}`, "cheerful");
+          void afterReply(at, false);
+          return;
+        }
+      }
+    }
+
     // Teacher mode: on, off, or a turn of the lesson.
     if (TUTOR_STOP.test(t) && tutor.current) {
       tutor.current = null;

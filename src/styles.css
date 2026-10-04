@@ -25,6 +25,11 @@
 }
 
 :root {
+  /* The app's colour theme (set from Settings → App colours): three
+     "r, g, b" colours that tint the glow behind the glass. */
+  --izk-a: 138, 108, 255;
+  --izk-b: 78, 205, 196;
+  --izk-c: 91, 141, 255;
   --izk-accent: linear-gradient(135deg, #8a6cff 0%, #5b8dff 55%, #4ecdc4 100%);
   --izk-hairline: rgba(255, 255, 255, 0.14);
   --izk-fill: rgba(255, 255, 255, 0.06);
@@ -55,8 +60,8 @@ body {
    backdrop lives behind it, so the page paints only the glass layers. */
 html.izuki-config body {
   background:
-    radial-gradient(120% 90% at 12% -10%, rgba(124, 92, 255, 0.22) 0%, rgba(124, 92, 255, 0) 58%),
-    radial-gradient(110% 80% at 108% 106%, rgba(78, 205, 196, 0.18) 0%, rgba(78, 205, 196, 0) 60%),
+    radial-gradient(120% 90% at 12% -10%, rgba(var(--izk-a), 0.22) 0%, rgba(var(--izk-a), 0) 58%),
+    radial-gradient(110% 80% at 108% 106%, rgba(var(--izk-b), 0.18) 0%, rgba(var(--izk-b), 0) 60%),
     rgba(14, 14, 17, 0.62);
 }
 
@@ -468,7 +473,7 @@ select.izk-field {
   top: -12%;
   width: 62%;
   height: 46%;
-  background: radial-gradient(circle, rgba(138, 108, 255, 0.42), transparent 72%);
+  background: radial-gradient(circle, rgba(var(--izk-a), 0.42), transparent 72%);
 }
 
 .izk-aurora span:nth-child(2) {
@@ -476,7 +481,7 @@ select.izk-field {
   bottom: -14%;
   width: 58%;
   height: 44%;
-  background: radial-gradient(circle, rgba(78, 205, 196, 0.32), transparent 72%);
+  background: radial-gradient(circle, rgba(var(--izk-b), 0.32), transparent 72%);
 }
 
 .izk-aurora span:nth-child(3) {
@@ -484,7 +489,7 @@ select.izk-field {
   top: -6%;
   width: 34%;
   height: 28%;
-  background: radial-gradient(circle, rgba(91, 141, 255, 0.24), transparent 72%);
+  background: radial-gradient(circle, rgba(var(--izk-c), 0.24), transparent 72%);
 }
 
 .izk-blink {

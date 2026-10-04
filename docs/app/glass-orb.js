@@ -258,21 +258,48 @@ attribute float seed; // here: relief, how far this point stands out
 uniform float uTime, uLevel, uThink, uPx, uMood;
 varying float vB;
 varying vec3 vC;
+float h1(float n){ return fract(sin(n * 12.9898) * 43758.5453); }
 void main(){
   vec3 p = pos;
-  // Talking: the jaw opens with the voice; the lips widen and narrow a little.
-  float talk = uLevel * (0.75 + 0.25 * sin(uTime * 17.0));
-  p.y -= f.y * talk * 0.16;
-  p.x *= 1.0 + f.w * (sin(uTime * 9.0) * 0.06 * uLevel);
-  // Mood: corners of the mouth up (happy) or down (sad); brows rise when curious.
+  // Speech: a syllable rhythm (two beats against each other) scaled by the
+  // voice, so the mouth opens and closes like talking, not a wobble.
+  float syll = 0.55 + 0.45 * sin(uTime * 11.0) * sin(uTime * 3.7 + 0.6);
+  float open = uLevel * clamp(syll, 0.0, 1.0);
+  p.y -= f.y * open * 0.17;
+  // The upper lip lifts a little as the mouth opens.
+  float upperLip = f.w * step(-0.37, pos.y);
+  p.y += upperLip * open * 0.025;
+  // Lips narrow into an "o" when wide open, widen for "ee" sounds.
+  float ee = 0.5 + 0.5 * sin(uTime * 5.3 + 1.7);
+  p.x *= 1.0 + f.w * uLevel * (0.07 * ee - 0.09 * open);
+  // Mood: corners up (happy) or down (sad); brows rise when curious, and
+  // jump a touch on loud, emphatic words.
   p.y += f.w * uMood * 0.035 * (p.x / 0.18) * (p.x / 0.18);
-  p.y += f.z * (0.02 * abs(uMood) + 0.015 * uThink);
-  // Blink every few seconds.
-  float blink = smoothstep(0.0, 0.06, abs(mod(uTime, 4.3) - 4.15));
-  p.y = mix(0.14 + (p.y - 0.14) * blink, p.y, 1.0 - f.x);
-  // The head turns slowly, looks up a touch while thinking, breathes.
+  p.y += f.z * (0.02 * abs(uMood) + 0.015 * uThink + 0.018 * uLevel * step(0.7, syll));
+  // Blinks like a person: quick (~0.15 s), at irregular moments, sometimes
+  // two in a row.
+  float seg = floor(uTime / 3.6);
+  float r = h1(seg);
+  float t0 = uTime - (seg * 3.6 + r * 2.4);
+  float closed = smoothstep(0.0, 0.05, t0) * (1.0 - smoothstep(0.07, 0.15, t0));
+  if (r > 0.78) {
+    float t1 = t0 - 0.3;
+    closed = max(closed, smoothstep(0.0, 0.05, t1) * (1.0 - smoothstep(0.07, 0.15, t1)));
+  }
+  p.y = mix(p.y, 0.14 + (p.y - 0.14) * (1.0 - 0.9 * closed), f.x);
+  // Gaze: the eyes lead the head, and dart now and then.
+  float dartSeg = floor(uTime / 2.2);
+  vec2 dart = (vec2(h1(dartSeg + 3.0), h1(dartSeg + 7.0)) - 0.5) * 0.05;
   float yaw = sin(uTime * 0.45) * 0.28 + uThink * sin(uTime * 1.3) * 0.15;
-  float pitch = -0.08 + uThink * 0.12 + sin(uTime * 0.6) * 0.04;
+  vec2 eyeC = vec2(sign(pos.x) * 0.22, 0.14);
+  vec2 gaze = vec2(-yaw * 0.08, uThink * 0.02) + dart;
+  vec2 inEye = (pos.xy - eyeC - gaze) / vec2(0.075, 0.035);
+  float rr = length(inEye);
+  // Pupil dark, iris a bright ring, the white soft around it.
+  float iris = smoothstep(0.75, 0.45, rr) * (1.0 - smoothstep(0.25, 0.1, rr));
+  float pupil = 1.0 - smoothstep(0.08, 0.28, rr);
+  // The head nods a little on emphasis, turns slowly, breathes.
+  float pitch = -0.08 + uThink * 0.12 + sin(uTime * 0.6) * 0.04 + uLevel * 0.035 * sin(uTime * 3.1);
   p.xz = mat2(cos(yaw), -sin(yaw), sin(yaw), cos(yaw)) * p.xz;
   p.yz = mat2(cos(pitch), -sin(pitch), sin(pitch), cos(pitch)) * p.yz;
   p *= 1.0 + 0.012 * sin(uTime * 1.4);
@@ -280,11 +307,12 @@ void main(){
   gl_Position = vec4(p.x * 0.92, p.y * 0.92 + 0.02, 0.0, 1.0);
   float scan = 0.82 + 0.18 * sin(p.y * 90.0 - uTime * 6.0);
   gl_PointSize = (0.9 + depth * 1.7) * uPx / 260.0;
-  // Lit from the front-left: raised features (nose, cheeks, lips) glow,
-  // sockets fall into shadow — that's what makes it read as a face.
+  // Lit from the front-left: raised features glow, sockets fall into shadow.
   float light = clamp(0.35 + seed * 7.0 + (0.5 - pos.x) * 0.25, 0.08, 1.4);
-  vB = 1.75 * (0.12 + 0.6 * depth) * light * scan * (0.85 + uLevel * 0.4) + f.x * 0.9 + f.w * uLevel * 0.5;
-  vC = mix(vec3(0.3, 0.75, 1.0), vec3(0.85, 0.95, 1.0), f.x);
+  float eyeLight = f.x * (1.0 - closed) * (0.5 + 1.1 * iris - 0.9 * pupil);
+  vB = 1.75 * (0.12 + 0.6 * depth) * light * scan * (0.85 + uLevel * 0.4) + eyeLight + f.w * uLevel * 0.5;
+  vC = mix(vec3(0.3, 0.75, 1.0), vec3(0.85, 0.95, 1.0), f.x * (1.0 - iris));
+  vC = mix(vC, vec3(0.45, 0.95, 1.0), f.x * iris);
   vC = mix(vC, vec3(1.0, 0.55, 0.85), f.w * 0.35);
 }`;
 

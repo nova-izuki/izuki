@@ -18,6 +18,7 @@ const FEATURES: { label: string; hint: string; tab: TabId; id?: string }[] = [
   { label: "App updates", hint: "Download the newest installer", tab: "settings", id: "settings-updates" },
   { label: "Control my TV", hint: "Roku, Netflix, volume, the Izuki TV channel, Android TV", tab: "settings", id: "settings-tv" },
   { label: "Talk: Hey Nova or hold a key", hint: "Wake word, hold-to-talk, strictness, voice, language, Island, music mode, keep answer", tab: "draw", id: "talk-card" },
+  { label: "App colours", hint: "Theme, background colour, auto by time of day, your own colour", tab: "settings", id: "settings-theme" },
   { label: "New orbs", hint: "Stardust, ferrofluid, hologram face, pure water, music, orb style", tab: "settings", id: "settings-look" },
 ];
 

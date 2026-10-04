@@ -24,6 +24,8 @@ interface Item {
 const ITEMS: Item[] = [
   { icon: "🎛️", title: "Status screen", how: "Say “wake up” or “status report”: time, battery, inbox, calendar, reminders, music and apps on a holographic screen.", try: { label: "Show me", say: "wake up" } },
   { icon: "🏝️", title: "The Island", how: "Push your mouse to the very top-middle of the screen. It shows what Izuki's doing, what's playing, reminders and smart suggestions." },
+  { icon: "🎨", title: "App colours", how: "Pick a colour theme for the app — or Auto, which changes with the time of day.", try: { label: "Pick colours", tab: "settings", id: "settings-theme" } },
+  { icon: "🛡️", title: "Ask first or Auto-run — in the chat bar too", how: "The orb's chat bar has an Ask / Auto button. On Ask, Izuki says what it wants to run and waits for you to say or type “allow”." },
   { icon: "🫧", title: "Real 3D orbs & a hologram face", how: "Clear water, Pure water, Ferrofluid, Stardust, Hologram face… or just say “change your orb to stardust”.", try: { label: "Pick one", tab: "settings", id: "settings-look" } },
   { icon: "📺", title: "Your TV", how: "“Open Netflix on the TV”, “turn the TV up”. Roku over Wi-Fi, plus an Izuki channel for the TV screen.", try: { label: "Set up my TV", tab: "settings", id: "settings-tv" } },
   { icon: "⚡", title: "Jarvis mode (no mouse)", how: "Izuki presses buttons and types straight through Windows — no pointer, nothing flashing. Tap the mode name at the top of Chat to switch.", try: { label: "Open Chat", tab: "chat" } },

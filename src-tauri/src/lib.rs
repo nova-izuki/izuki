@@ -265,6 +265,7 @@ pub fn run() {
             commands::tv_find,
             commands::tv_do,
             commands::tv_show,
+            commands::chat_allow_last,
             commands::island_status,
             commands::media_control,
             commands::music_meter,

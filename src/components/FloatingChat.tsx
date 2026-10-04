@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Loader2, MessageCircle, RotateCcw, Send, X } from "lucide-react";
-import { api, EV, on } from "../lib/ipc";
+import { api, emit, EV, on } from "../lib/ipc";
 import { markHit } from "../lib/hitTest";
 import { resizeHandles, useFloating, workArea, type Limits } from "../lib/floating";
 import { sendChatCommand } from "./VoiceEngine";
@@ -199,6 +199,7 @@ export function FloatingChat() {
                 <HandGlyph size={16} sparkle={false} />
               </div>
               <ChatColorPicker />
+              <RunMode />
               <textarea
                 ref={inputRef}
                 value={text}
@@ -305,5 +306,35 @@ export function FloatingChat() {
         <MessageCircle size={19} strokeWidth={2} />
       </button>
     </>
+  );
+}
+
+/**
+ * Ask first ↔ Auto-run, right on the chat bar (like Claude Code's modes).
+ * Ask first: Izuki says what it wants to run and waits for "allow".
+ * Auto-run: it runs straight away and still shows the command.
+ */
+function RunMode() {
+  const [auto, setAuto] = useState<boolean | null>(null);
+  useEffect(() => {
+    const read = () => void api.getSettings().then((s) => setAuto(!!s.chat_auto_run)).catch(() => undefined);
+    read();
+    const off = on<void>(EV.settingsChanged, read);
+    return () => void off.then((f) => f());
+  }, []);
+  if (auto === null) return null;
+  return (
+    <button
+      type="button"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={() => {
+        setAuto(!auto);
+        void emit(EV.patchSettings, { chat_auto_run: !auto });
+      }}
+      title={auto ? "Auto-run: commands run straight away (you still see them). Tap for Ask first." : "Ask first: Izuki asks before running anything — say or type “allow”. Tap for Auto-run."}
+      className="izk-no-drag flex h-[34px] shrink-0 items-center rounded-full border border-white/10 bg-white/6 px-2 text-[11px] font-semibold text-izk-ink transition-colors hover:bg-white/12"
+    >
+      {auto ? "⚡ Auto" : "🛡️ Ask"}
+    </button>
   );
 }

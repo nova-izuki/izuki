@@ -298,6 +298,10 @@ export interface Settings {
   island_enabled: boolean;
   /** When music plays, the orb comes up and flows with it. */
   music_visuals: boolean;
+  /** App colour theme: auto, nova, ocean, sunset, forest, rose, gold, graphite, custom. */
+  app_theme: string;
+  /** The colour for the "custom" theme (#rrggbb). */
+  app_theme_color: string;
   /** The TV's address on the home Wi-Fi ("" = find it). */
   tv_host: string;
   /** Saved flows clear after this many days unused (0 = keep). */

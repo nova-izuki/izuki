@@ -194,6 +194,8 @@ export const MOCK_SETTINGS: Settings = {
   island_enabled: true,
   music_visuals: false,
   tv_host: "",
+  app_theme: "nova",
+  app_theme_color: "",
   flows_keep_days: 1,
   wake_sensitivity: "normal",
   keep_reply: false,
@@ -338,6 +340,8 @@ export const api = {
   /** Fast conversation lane: stream a reply (words arrive as EV.chatDelta). */
   chatStream: (id: number, history: Array<{ role: string; content: string }>, expressive = false) =>
     call<void>("chat_stream", { id, history, expressive }, () => undefined),
+  /** "Allow"/"no" for the change Izuki asked about out loud (null: none waiting). */
+  chatAllowLast: (allow: boolean) => call<string | null>("chat_allow_last", { allow }, () => null),
   /** The Chat tab: the same lane, written rather than spoken. */
   chatStreamWritten: (id: number, history: Array<{ role: string; content: string }>) =>
     call<void>("chat_stream", { id, history, expressive: false, written: true }, () => undefined),

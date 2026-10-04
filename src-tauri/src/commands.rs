@@ -988,6 +988,13 @@ pub fn chat_stream(
     crate::chat::stream(app, id, history, style);
 }
 
+/// "Allow" / "no" for the change Izuki asked about out loud. The result to
+/// carry on from, or `None` if nothing was waiting.
+#[tauri::command]
+pub async fn chat_allow_last(allow: bool) -> R<Option<String>> {
+    blocking(move || crate::chat::answer_last(allow).map(|r| r.unwrap_or_else(|e| format!("It didn't work: {e}")))).await
+}
+
 #[tauri::command]
 pub fn chat_cancel(id: u64) {
     crate::chat::cancel(id);
