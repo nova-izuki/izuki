@@ -276,6 +276,12 @@ fn friendly_error(service: &str, status: reqwest::StatusCode, body: &str) -> Str
     let said = serde_json::from_str::<serde_json::Value>(body)
         .ok()
         .and_then(|v| v["error"]["message"].as_str().map(|m| m.chars().take(160).collect::<String>()));
+    // Out of credits — ElevenLabs says so with a 401, which made it look like
+    // a bad key. It isn't: the month's free credits are used up.
+    let lower = body.to_lowercase();
+    if lower.contains("quota_exceeded") || lower.contains("credits remaining") || lower.contains("exceeds your quota") {
+        return format!("{service} has used up this month's free credits — it'll work again when they renew. Using the free voice until then");
+    }
     match status.as_u16() {
         401 | 403 => format!("{service} rejected the key — check it in Talk to Izuki"),
         402 => format!("{service} needs credits on the account"),
@@ -290,6 +296,9 @@ fn friendly_error(service: &str, status: reqwest::StatusCode, body: &str) -> Str
         },
     }
 }
+
+/// ElevenLabs out of credits: left alone until then.
+static ELEVEN_RESTING_UNTIL: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
 
 /// ElevenLabs' ready-made voices (free on every plan).
 pub const ELEVEN_VOICES: &[(&str, &str)] = &[
@@ -367,6 +376,11 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
         if key.is_empty() {
             return Err("add your free ElevenLabs key to use the ElevenLabs voice".into());
         }
+        // Out of credits: don't ask again on every line for the next hour —
+        // each failed try delayed the voice before the free one took over.
+        if ELEVEN_RESTING_UNTIL.lock().is_some_and(|t| std::time::Instant::now() < t) {
+            return Err("ElevenLabs has used up this month's free credits — using the free voice".into());
+        }
         let persona = crate::voices::active(settings).persona;
         // A pasted voice ID (any voice from ElevenLabs' library — e.g. a strong
         // Nigerian one) is used as-is; otherwise the character's default.
@@ -382,6 +396,11 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
         if !status.is_success() {
             let body = resp.text().unwrap_or_default();
             eprintln!("[tts] elevenlabs HTTP {status}: {}", body.chars().take(200).collect::<String>());
+            let lower = body.to_lowercase();
+            if lower.contains("quota_exceeded") || lower.contains("credits remaining") || status.as_u16() == 402 {
+                *ELEVEN_RESTING_UNTIL.lock() = Some(std::time::Instant::now() + std::time::Duration::from_secs(3600));
+                eprintln!("[tts] elevenlabs is out of credits — resting it for an hour");
+            }
             return Err(friendly_error("ElevenLabs", status, &body));
         }
         let pcm = resp.bytes().map_err(|e| e.to_string())?;

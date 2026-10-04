@@ -378,6 +378,8 @@ export const api = {
   /** Find the TV on the Wi-Fi (fresh = look again). */
   tvFind: (fresh: boolean) =>
     call<{ host: string; name: string; on: boolean; allowed: boolean } | null>("tv_find", { fresh }, () => null),
+  /** Show the orb's state (and words) on the Izuki TV channel, if it's open. */
+  tvShow: (state: string, text?: string) => call<void>("tv_show", { state, text: text ?? null }, () => undefined),
   /** "Open Netflix on the TV". What Izuki says back. */
   tvDo: (said: string) => call<string>("tv_do", { said }, () => "TV control works in the Izuki app on your PC."),
   /** The Island's look: what's playing, and whether a film/game is full screen. */

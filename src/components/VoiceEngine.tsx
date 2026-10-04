@@ -52,6 +52,8 @@ async function hideConfigWindow() {
  */
 async function respond(text: string, mood?: string | null, reply = false, quick = false) {
   const state = useIzuki.getState();
+  // What Izuki says shows on the Izuki TV channel too (if it's open there).
+  if (state.settingsLoaded && state.settings.tv_host && text.trim()) void api.tvShow("talk", text).catch(() => undefined);
   // The floating chat runs in the overlay window, whose store never loads
   // real settings — and speech must come from one place, or two voices talk
   // over each other. Hand the line to the config panel's engine.
@@ -531,6 +533,10 @@ export function VoiceEngine() {
     // finishing, the draw layer closing) — bring it back first.
     void api.showCaptionOverlay().catch(() => undefined);
     void emit(EV.orb, state);
+    // The Izuki channel on the TV follows along (only if it's open there).
+    if (useIzuki.getState().settings.tv_host) {
+      void api.tvShow(state === "listening" ? "listen" : state === "thinking" ? "think" : state === "speaking" ? "talk" : "idle").catch(() => undefined);
+    }
   };
 
   const startSession = (voice: boolean, state: OrbState) => {

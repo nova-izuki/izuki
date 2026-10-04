@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Izuki's TV screen: the orb in the middle, what Izuki says underneath,
+     and a quiet hint of what to say. Driven from the PC/phone (main.brs). -->
+<component name="MainScene" extends="Scene">
+  <interface>
+    <function name="setState" />
+    <function name="setText" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/MainScene.brs" />
+  <children>
+    <Rectangle id="bg" width="1920" height="1080" color="#04050CFF" />
+    <Poster id="glowA" uri="pkg:/images/orb_idle.png" width="1100" height="1100" translation="[410,-60]" opacity="0.10" />
+
+    <Label id="brand" text="IZUKI" translation="[96,72]" color="#A78BFAFF" font="font:SmallBoldSystemFont" />
+    <Label id="clock" translation="[1600,64]" width="224" horizAlign="right" color="#EEF0FFFF" font="font:MediumBoldSystemFont" />
+
+    <Group id="orbGroup" translation="[960,470]">
+      <Poster id="orb" uri="pkg:/images/orb_idle.png" width="560" height="560" translation="[-280,-280]" />
+    </Group>
+
+    <Label id="state" text="Ready" translation="[0,790]" width="1920" horizAlign="center" color="#67E8F9FF" font="font:SmallBoldSystemFont" />
+    <Label id="said" text="" translation="[260,840]" width="1400" height="150" wrap="true" maxLines="3" horizAlign="center" color="#EEF0FFFF" font="font:MediumSystemFont" />
+    <Label id="hint" text="Say “Hey Nova, open Netflix on the TV” to your PC or phone" translation="[0,1000]" width="1920" horizAlign="center" color="#6B7194FF" font="font:SmallestSystemFont" />
+
+    <!-- breathing at rest, faster and bigger while talking -->
+    <Animation id="breathe" duration="3.2" repeat="true" easeFunction="inOutQuad">
+      <Vector2DFieldInterpolator key="[0.0, 0.5, 1.0]" keyValue="[[1.0,1.0],[1.04,1.04],[1.0,1.0]]" fieldToInterp="orbGroup.scale" />
+    </Animation>
+    <Animation id="pulse" duration="0.55" repeat="true" easeFunction="inOutQuad">
+      <Vector2DFieldInterpolator key="[0.0, 0.5, 1.0]" keyValue="[[1.0,1.0],[1.1,1.1],[1.0,1.0]]" fieldToInterp="orbGroup.scale" />
+    </Animation>
+    <Animation id="spin" duration="2.4" repeat="true" easeFunction="linear">
+      <FloatFieldInterpolator key="[0.0, 1.0]" keyValue="[0.0, 6.2832]" fieldToInterp="orbGroup.rotation" />
+    </Animation>
+    <Timer id="tick" duration="20" repeat="true" />
+  </children>
+</component>

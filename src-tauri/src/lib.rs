@@ -264,6 +264,7 @@ pub fn run() {
             commands::phone_unpair,
             commands::tv_find,
             commands::tv_do,
+            commands::tv_show,
             commands::island_status,
             commands::media_control,
             commands::music_meter,

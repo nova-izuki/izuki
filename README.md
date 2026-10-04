@@ -76,6 +76,7 @@ New in **1.0.14**: repaired account routing, Mouse/Precision controls, three mat
 | 🎵 **Music mode** | When music plays, tap ✨ Flow with it on the Island (or turn on Talk → Dance with my music) and the orb moves with the music. Only the volume level is read. "About this song" tells you about what's playing. |
 | ⚡ **Jarvis mode (no mouse)** | Izuki presses buttons and types into boxes directly through Windows — no pointer moving, faster, and your mouse stays yours. Switch it on in Settings → Execution (Mouse mode stays for games and drawing apps). |
 | 📺 **Control your TV** | "Open Netflix on the TV", "turn the TV up", "pause the TV", "search the TV for Stranger Things" — from voice, chat, the phone, Telegram or Discord. Roku works over your Wi-Fi with nothing to install; Izuki finds it by itself (other TVs coming). |
+| 📺 **The Izuki channel for Roku** | The orb and Izuki's words on your TV while it works — installs free in Roku's developer mode (Settings → Control my TV walks you through it). |
 | 📺 **Izuki on Android TV / Fire TV** | Free: on the TV, install the Downloader app, type **nova-izuki.github.io/tv**, press Install. Izuki appears on the TV's home screen with big text and a clear highlight for the remote. |
 | 🗿 **Hologram face** | Pick it instead of an orb: a head of light whose jaw moves with the voice, that blinks, smiles or softens with Izuki's mood, and turns its head. |
 | 🎛️ **Change it by voice** | "Change your orb to stardust", "switch to the hologram face", "switch to Atlas", "be Kiki" — done instantly. |

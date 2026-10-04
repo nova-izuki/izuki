@@ -84,6 +84,34 @@ export function TvCard() {
         </div>
       )}
       {said && <p className="mt-2 text-[11.5px] text-izk-muted">{said}</p>}
+
+      {found && (
+        <details className="mt-3 rounded-[14px] border border-white/10 bg-white/[0.04] p-3 text-[12px] leading-relaxed text-izk-ink">
+          <summary className="cursor-pointer font-semibold">📺 Put the Izuki screen on your Roku (free)</summary>
+          <p className="mt-2 text-izk-muted">
+            The Izuki channel shows the orb and what Izuki says right on your TV while it works. It installs in Roku's
+            free developer mode:
+          </p>
+          <ol className="mt-2 list-decimal space-y-1.5 pl-5">
+            <li>
+              On the Roku remote press <b>Home ×3, Up ×2, Right, Left, Right, Left, Right</b>. Choose <b>Enable installer and
+              restart</b>, agree, and pick a password you'll remember.
+            </li>
+            <li>
+              <button type="button" onClick={() => void api.openUrl("https://nova-izuki.github.io/izuki/tv/izuki-roku.zip")} className="izk-pill px-2.5 py-1 text-[11.5px]">
+                ⬇ Download the Izuki channel
+              </button>
+            </li>
+            <li>
+              <button type="button" onClick={() => void api.openUrl(`http://${found.host}`)} className="izk-pill px-2.5 py-1 text-[11.5px]">
+                Open your Roku's installer
+              </button>{" "}
+              — sign in as <b>rokudev</b> with that password, choose the file you downloaded, press <b>Install</b>.
+            </li>
+          </ol>
+          <p className="mt-2 text-izk-muted">Then open Izuki on the TV — it follows along whenever you talk to Izuki.</p>
+        </details>
+      )}
     </Section>
   );
 }

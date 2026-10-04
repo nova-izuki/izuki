@@ -762,6 +762,12 @@ pub async fn tv_find(fresh: bool) -> Option<crate::tv::TvInfo> {
     .flatten()
 }
 
+/// The orb's state and words, to the Izuki channel on the TV (if it's open).
+#[tauri::command]
+pub async fn tv_show(state: String, text: Option<String>) {
+    let _ = blocking(move || crate::tv::show(&state, text.as_deref())).await;
+}
+
 /// "Open Netflix on the TV" and friends. What to say back.
 #[tauri::command]
 pub async fn tv_do(said: String) -> R<String> {

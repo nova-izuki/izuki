@@ -256,6 +256,39 @@ pub fn parse(said: &str) -> Option<TvAct> {
     None
 }
 
+/// Is Izuki's own channel the one open on the TV? (A side-loaded channel
+/// is "dev".) Checked at most every 8 s — it's asked on every orb change.
+fn izuki_open(host: &str) -> bool {
+    static SEEN: parking_lot::Mutex<Option<(bool, Instant)>> = parking_lot::Mutex::new(None);
+    if let Some((open, at)) = *SEEN.lock() {
+        if at.elapsed() < Duration::from_secs(8) {
+            return open;
+        }
+    }
+    let open = client()
+        .and_then(|c| Ok(c.get(format!("{}/query/active-app", base(host))).send()?.text()?))
+        .map(|xml| xml.contains("<app id=\"dev\"") || xml.contains(">Izuki<"))
+        .unwrap_or(false);
+    *SEEN.lock() = Some((open, Instant::now()));
+    open
+}
+
+/// Show Izuki's state and words on the TV — only when the Izuki channel is
+/// the one open, so it never interrupts a film. Quietly does nothing else.
+pub fn show(state: &str, text: Option<&str>) {
+    let Some(store) = crate::state::try_store() else { return };
+    let host = store.settings().tv_host.trim().to_string();
+    if host.is_empty() || !izuki_open(&host) {
+        return;
+    }
+    let mut path = format!("/input?state={}", urlencode(state));
+    if let Some(t) = text {
+        let t: String = t.chars().take(400).collect();
+        path.push_str(&format!("&text={}", urlencode(&t)));
+    }
+    let _ = post(&host, &path);
+}
+
 /// The address to use: the saved one, or one found now (and saved).
 pub fn host() -> Option<String> {
     let store = crate::state::try_store()?;
