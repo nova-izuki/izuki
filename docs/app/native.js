@@ -42,6 +42,26 @@
         return false;
       }
     },
+    /** A newer Izuki app than this one, if there is: { latest, current, url }. */
+    async checkUpdate() {
+      try {
+        const s = await control()?.status();
+        const current = String(s?.version || "");
+        if (!current) return null;
+        const r = await fetch("https://api.github.com/repos/nova-izuki/izuki/releases/latest", { cache: "no-store" });
+        if (!r.ok) return null;
+        const latest = String((await r.json()).tag_name || "").replace(/^v/, "");
+        const n = (v) => v.split(".").map((x) => parseInt(x, 10) || 0);
+        const [a, b] = [n(latest), n(current)];
+        const newer = a.some((x, i) => x !== (b[i] || 0)) && a.find((x, i) => x !== (b[i] || 0)) > b[a.findIndex((x, i) => x !== (b[i] || 0))];
+        return newer ? { latest, current, url: "https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Companion-Android-preview.apk" } : null;
+      } catch { return null; }
+    },
+    /** Download it and open Android's installer. "allow" = Android wants permission first. */
+    async installUpdate(url) {
+      try { await control()?.installUpdate({ url }); return "ok"; }
+      catch (e) { return String(e?.message || e) === "allow" ? "allow" : String(e?.message || e); }
+    },
     async controlStatus() {
       try {
         const status = await control()?.status();

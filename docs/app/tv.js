@@ -61,10 +61,11 @@ const tv = {
     if (done) return { done: true, said: s, say: done };
     return { said: s };
   },
-  orb(m) { setState(m === "listening" ? "listen" : m === "thinking" ? "think" : m === "speaking" ? "talk" : "idle"); },
-  heard(t) { if (t) showHeard(t); },
-  said(t) { if (t) showSaid(t); },
+  orb(m) { if (!tv.active) return; setState(m === "listening" ? "listen" : m === "thinking" ? "think" : m === "speaking" ? "talk" : "idle"); },
+  heard(t) { if (tv.active && t) showHeard(t); },
+  said(t) { if (tv.active && t) showSaid(t); },
   line(who, t) {
+    if (!tv.active) return;
     if (who === "me") showHeard(t);
     else if (who === "izuki") { showSaid(t); lastSpoke = Date.now(); }
   },
@@ -535,4 +536,23 @@ function start() {
   // Back from another app: the corner orb goes away; leaving: it can show.
   document.addEventListener("visibilitychange", () => { if (!document.hidden) N()?.orb({ state: "idle" }).catch(() => {}); });
   if (link) follow();
+  checkForUpdate();
+}
+
+/** A newer Izuki app: a tile to update it in one press. */
+async function checkForUpdate() {
+  const u = await window.IzukiNative?.checkUpdate?.();
+  if (!u) return;
+  const tile = document.createElement("button");
+  tile.className = "tv-tile tv-update";
+  tile.innerHTML = `<span>⬆️</span><b>Update Izuki</b><small>Version ${u.latest} is ready</small>`;
+  tile.onclick = async () => {
+    tile.querySelector("small").textContent = "Downloading…";
+    const r = await window.IzukiNative.installUpdate(u.url);
+    tile.querySelector("small").textContent =
+      r === "ok" ? "Press Install on the next screen" : r === "allow" ? "Allow Izuki to install, then press again" : r;
+  };
+  document.querySelector(".tv-tiles")?.prepend(tile);
+  document.querySelector(".tv-tiles").style.gridTemplateColumns = "repeat(7, 1fr)";
+  tile.focus();
 }

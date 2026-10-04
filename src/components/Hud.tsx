@@ -2,13 +2,23 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Pause, Play, SkipForward, X } from "lucide-react";
 import { api, emit, EV, on } from "../lib/ipc";
+import { markHit } from "../lib/hitTest";
 
 type Pulse = { cpu: number | null; memory: number | null; disk_free_gb: number | null; battery: [number, boolean] | null; online: boolean };
 type LaterItem = { id: string; text: string; done: boolean };
 
+/** What was just asked from the status screen, so a second click doesn't send it again. */
+let lastAsk = { text: "", at: 0 };
+/** Shown at once on the status screen ("On it: Tidy my PC…"). */
+let showAsked: (label: string) => void = () => undefined;
+
 /** Ask Izuki something from the status screen (it answers out loud). */
-function ask(text: string) {
-  void emit(EV.runChat, { id: Date.now(), text });
+function ask(text: string, label?: string) {
+  const now = Date.now();
+  if (text === lastAsk.text && now - lastAsk.at < 15000) return;
+  lastAsk = { text, at: now };
+  showAsked(label ?? (text.length > 60 ? text.slice(0, 58).replace(/[\s,.:;—-]+\S*$/, "") + "…" : text));
+  void emit(EV.runChat, { id: now, text });
 }
 
 /**
@@ -54,6 +64,18 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
   const [command, setCommand] = useState("");
   /** Being used (hovered, typed in): it stays until you're done. */
   const [held, setHeld] = useState(false);
+  /** What was just asked — shown at once, until Izuki starts answering. */
+  const [asked, setAsked] = useState<string | null>(null);
+  useEffect(() => {
+    showAsked = (label) => setAsked(label);
+    const off = on<boolean>(EV.speaking, (talking) => talking && setAsked(null));
+    const done = setTimeout(() => setAsked(null), 60000);
+    return () => {
+      showAsked = () => undefined;
+      void off.then((f) => f());
+      clearTimeout(done);
+    };
+  }, [asked]);
 
   useEffect(() => {
     if (!data) return;
@@ -270,11 +292,19 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
               <input
                 value={command}
                 onFocus={() => setHeld(true)}
+                // The overlay doesn't take the keyboard by itself: ask for it.
+                onMouseDown={() => void api.setOverlayInteractive(true).then(() => markHit())}
                 onChange={(e) => setCommand(e.target.value)}
                 placeholder="Ask Izuki anything — “plan my evening”, “clean up my PC”…"
                 className="min-w-0 flex-1 bg-transparent text-[14px] text-cyan-50 outline-none placeholder:text-cyan-100/40"
               />
             </form>
+            {asked && (
+              <div className="izk-hud-panel flex items-center gap-2 px-3 py-1.5 text-[12.5px] text-cyan-50">
+                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-cyan-300 border-t-transparent" />
+                On it: {asked}
+              </div>
+            )}
             <div className="flex flex-wrap justify-center gap-2">
               {[
                 ["🗓️ Plan my day", "Plan my day: what's on, what's due, and what I should do first."],
@@ -283,7 +313,7 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
                 ["🌤️ Weather", "What's the weather today?"],
                 ["🎵 Play music", "Play some chill music."],
               ].map(([label, said]) => (
-                <HudChip key={label} onClick={() => ask(said)}>{label}</HudChip>
+                <HudChip key={label} onClick={() => ask(said, label.replace(/^\S+\s/, ""))}>{label}</HudChip>
               ))}
             </div>
           </motion.div>

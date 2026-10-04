@@ -575,6 +575,14 @@ fn rest_for(err: &str) -> Option<std::time::Duration> {
 /// credits) or just resting (rate limits).
 fn note_failure(id: crate::settings::ProviderId, err: &str) {
     if is_hopeless(err) {
+        let e = err.to_ascii_lowercase();
+        if ["no credits", "insufficient_quota", "billing", "rejected the key", "unauthorized", "401", "402"].iter().any(|w| e.contains(w)) {
+            let mut o = OUT_OF_CREDIT.lock();
+            if !o.contains(&id) {
+                o.push(id);
+                eprintln!("[brain] {id:?} can't answer (no credits or a bad key) — leaving it out for 6 hours");
+            }
+        }
         mark_broken(id);
     } else if let Some(d) = rest_for(err) {
         let mut r = RESTING.lock();
@@ -697,6 +705,19 @@ fn mark_broken(id: crate::settings::ProviderId) {
     b.push((id, std::time::Instant::now()));
 }
 
+/// Out of credits / a rejected key won't fix itself soon — leave that brain
+/// alone for hours (it was being asked on every message, costing seconds
+/// each time). Anything else broken is tried again after ten minutes.
+static OUT_OF_CREDIT: parking_lot::Mutex<Vec<crate::settings::ProviderId>> = parking_lot::Mutex::new(Vec::new());
+
+fn broken_for(id: crate::settings::ProviderId) -> std::time::Duration {
+    if OUT_OF_CREDIT.lock().contains(&id) {
+        std::time::Duration::from_secs(6 * 3600)
+    } else {
+        BROKEN_FOR
+    }
+}
+
 /// Leave out brains known to be unable to answer (for a while) — asking
 /// them only burned the racing slots. That includes the chosen brain: a
 /// local one that isn't running (9Router, Ollama closed) used to be asked
@@ -704,7 +725,7 @@ fn mark_broken(id: crate::settings::ProviderId) {
 /// If every brain is down, the chosen one is kept so there's still a try.
 fn skip_broken(chain: &mut Vec<crate::settings::ProviderConfig>) {
     let mut b = BROKEN.lock();
-    b.retain(|(_, at)| at.elapsed() < BROKEN_FOR);
+    b.retain(|(p, at)| at.elapsed() < broken_for(*p));
     let working: Vec<_> = chain.iter().filter(|c| !b.iter().any(|(p, _)| *p == c.id)).cloned().collect();
     if !working.is_empty() {
         if working.len() < chain.len() {

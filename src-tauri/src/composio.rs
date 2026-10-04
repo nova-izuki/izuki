@@ -49,7 +49,7 @@ fn client() -> Result<reqwest::blocking::Client> {
     static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
     if let Some(client) = CLIENT.get() { return Ok(client.clone()); }
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(45))
+        .timeout(Duration::from_secs(20))
         .connect_timeout(Duration::from_secs(8))
         .build()?;
     let _ = CLIENT.set(client.clone());
@@ -211,6 +211,10 @@ tells you which apps are connected. Always search before using a tool you haven'
 {\"run\": {\"tool\": \"TOOL_SLUG\", \"arguments\": {…}}} — runs a tool you found, with arguments \
 matching its schema. Add an account field with the discovered account ID when selecting an account; ask which one if ambiguous.\n\
 {\"connect\": \"gmail\"} — when a needed app isn't connected: gives the user a sign-in link.\n\
+{\"browse\": \"https://www.linkedin.com/notifications/\"} — when no tool can do it (an app's tools often \
+can't read notifications, messages or a feed — LinkedIn, Instagram, X, Facebook, TikTok…): opens that page \
+in the Izuki browser, where the user is signed in, and gives you what's on it. Use the app's real address \
+for the thing they want. Never say the app \"doesn't have\" something — read the page instead.\n\
 {\"ask\": \"Which account should I use?\"} — ONLY a clarification question or a proposed draft awaiting approval, never a claim about account contents or completed actions.\n\
 {\"reply\": \"what you say to the user\"} — when you're done, or need to ask something.\n\
 Rules: keep replies short and friendly, plain text. Summarise results the way a person would \
@@ -385,6 +389,15 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
                     }
                 }
                 Err(e) => format!("Couldn't make a sign-in link: {e}"),
+            }
+        } else if let Some(url) = step["browse"].as_str().filter(|u| u.starts_with("http")) {
+            // The app's tools can't reach it: read the page in the signed-in Izuki browser.
+            match crate::browser::browse(url) {
+                Ok(page) => {
+                    executed = true;
+                    format!("[page {url} — what's on it]\n{}", crate::web::clip(&page, 6000))
+                }
+                Err(e) => format!("Couldn't open {url}: {e}"),
             }
         } else if step["n8n"].is_object() {
             executed = false;

@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { motion } from "motion/react";
-import { Brain, CheckCircle2, ExternalLink, Loader2, Plug, Smartphone, Sparkles, AudioLines, Workflow, X } from "lucide-react";
+import { ArrowLeft, Brain, CheckCircle2, ExternalLink, Globe, HeartHandshake, Link2, Loader2, Mic, Palette, Plug, Smartphone, Sparkles, AudioLines, Tv, Workflow, X } from "lucide-react";
 import { cx } from "./ui";
 import { useIzuki } from "../lib/store";
 import { applyKey, brainReady, getKey } from "../lib/setup";
@@ -23,10 +23,28 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
   const brainName = settings.providers.find((p) => p.id === settings.active_provider)?.label ?? "";
   const apps = !!settings.composio_api_key.trim();
   const flows = (settings.n8n_hooks ?? []).filter((h) => h.name && h.url).length;
-  const go = (tab: Parameters<typeof setTab>[0]) => {
+  const patch = useIzuki((s) => s.patchSettings);
+  const [ext, setExt] = useState(false);
+  useEffect(() => {
+    void api.extStatus().then(setExt).catch(() => undefined);
+  }, []);
+  // Esc (or the remote's Back) goes back, like everywhere else.
+  useEffect(() => {
+    const back = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", back);
+    return () => window.removeEventListener("keydown", back);
+  }, [onClose]);
+  /** Open the right tab and land on the exact setting. */
+  const go = (tab: Parameters<typeof setTab>[0], id?: string) => {
     setTab(tab);
     onClose();
+    if (id) setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }), 350);
   };
+  const handsFree = settings.voice_wake_enabled;
+  const tv = !!settings.tv_host || settings.linked_devices.some((d) => d.kind === "tv");
+  const linked = settings.linked_devices.length > 0;
+  const steps = [brain, true, apps, handsFree, tv, linked, ext, settings.buddy_speaks, flows > 0];
+  const doneCount = steps.filter(Boolean).length;
 
   // Pasted instead: the same recognising as the clipboard, via the backend.
   const usePasted = async () => {
@@ -48,10 +66,19 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="izk-no-drag absolute inset-0 z-[60] flex flex-col rounded-[inherit] bg-black/60 p-4 backdrop-blur-md"
+      // The dim edge around the card still moves the window, like the title bar.
+      data-tauri-drag-region
+      className="absolute inset-0 z-[60] flex flex-col rounded-[inherit] bg-black/60 p-4 backdrop-blur-md"
     >
-      <div className="relative mx-auto flex max-h-full w-full max-w-[520px] flex-col overflow-hidden rounded-[22px] border border-white/12 bg-[#11131f]/95 shadow-[0_24px_70px_rgba(0,0,0,0.6)]">
-        <div className="flex items-start gap-3 border-b border-white/8 p-4">
+      <div className="izk-no-drag relative mx-auto flex min-h-0 max-h-full w-full max-w-[520px] flex-col overflow-hidden rounded-[22px] border border-white/12 bg-[#11131f]/95 shadow-[0_24px_70px_rgba(0,0,0,0.6)]">
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex items-center gap-1.5 px-4 pt-3 text-[12px] font-semibold text-izk-muted transition hover:text-izk-ink"
+        >
+          <ArrowLeft size={14} /> Back
+        </button>
+        <div className="flex items-start gap-3 border-b border-white/8 p-4 pt-2">
           <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[13px] bg-gradient-to-br from-izk-violet/60 to-izk-teal/50">
             <Sparkles size={18} className="text-white" />
           </span>
@@ -60,6 +87,12 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
             <p className="mt-0.5 text-[11.5px] leading-snug text-izk-muted">
               All free. Tap a button, copy the key on the page that opens, and come back — Izuki picks it up by itself.
             </p>
+            <div className="mt-2 flex items-center gap-2">
+              <div className="h-[6px] flex-1 overflow-hidden rounded-full bg-white/8">
+                <div className="h-full rounded-full bg-gradient-to-r from-izk-violet to-izk-teal transition-all" style={{ width: `${(doneCount / steps.length) * 100}%` }} />
+              </div>
+              <span className="shrink-0 text-[10.5px] font-semibold text-izk-muted">{doneCount} of {steps.length} ready</span>
+            </div>
           </div>
           <button
             type="button"
@@ -71,7 +104,7 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <div className="flex flex-col gap-2 overflow-y-auto p-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">
           <Step
             icon={<Brain size={16} />}
             title="A brain"
@@ -98,9 +131,27 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
             doneText="A natural voice is on — nothing to do"
             text="Pick who Izuki is: 30+ characters and accents."
           >
-            <button type="button" onClick={() => go("draw")} className="izk-pill h-[30px] px-3 text-[11.5px]">
+            <button type="button" onClick={() => go("draw", "talk-card")} className="izk-pill h-[30px] px-3 text-[11.5px]">
               Pick a character
             </button>
+          </Step>
+
+          <Step
+            icon={<Mic size={16} />}
+            title="Talk hands-free"
+            done={handsFree}
+            doneText="On — just say “Hey Nova”"
+            text="Say “Hey Nova” from across the room — or hold a key to talk if you prefer."
+          >
+            {handsFree ? (
+              <button type="button" onClick={() => go("draw", "talk-card")} className="izk-pill h-[30px] px-3 text-[11.5px]">
+                Change how I start
+              </button>
+            ) : (
+              <button type="button" onClick={() => patch({ voice_wake_enabled: true })} className="izk-btn-primary inline-flex h-[34px] items-center gap-1.5 px-4 text-[12.5px]">
+                <Mic size={13} /> Turn on “Hey Nova”
+              </button>
+            )}
           </Step>
 
           <Step
@@ -126,8 +177,71 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
             title="Your phone"
             text="Call Izuki from your phone, or add the free phone app to your home screen."
           >
-            <button type="button" onClick={() => go("settings")} className="izk-pill h-[30px] px-3 text-[11.5px]">
+            <button type="button" onClick={() => go("settings", "settings-phone")} className="izk-pill h-[30px] px-3 text-[11.5px]">
               Set up my phone
+            </button>
+          </Step>
+
+          <Step
+            icon={<Tv size={16} />}
+            title="Your TV"
+            done={tv}
+            doneText="Connected — “open Netflix on the TV”"
+            text="Roku, Samsung and LG over your Wi-Fi with nothing to install — or the Izuki app on Android TV, Google TV and Fire TV for full control."
+          >
+            <button type="button" onClick={() => go("settings", "settings-tv")} className="izk-pill h-[30px] px-3 text-[11.5px]">
+              Set up my TV
+            </button>
+          </Step>
+
+          <Step
+            icon={<Link2 size={16} />}
+            title="One setup for phone & TV"
+            done={linked}
+            doneText={`${settings.linked_devices.length} device${settings.linked_devices.length === 1 ? "" : "s"} linked — they work even with this PC off`}
+            text="Link your phone or TV once and it copies your AI, apps and memories."
+          >
+            {settings.lan_link ? (
+              <button type="button" onClick={() => go("settings", "settings-tv")} className="izk-pill h-[30px] px-3 text-[11.5px]">
+                See linked devices
+              </button>
+            ) : (
+              <button type="button" onClick={() => { patch({ lan_link: true }); go("settings", "settings-tv"); }} className="izk-pill h-[30px] px-3 text-[11.5px]">
+                Let them link
+              </button>
+            )}
+          </Step>
+
+          <Step
+            icon={<Globe size={16} />}
+            title="Browser extension"
+            done={ext}
+            doneText="Connected — clicks on web pages never miss"
+            text="Lets Izuki see web pages exactly — every link and button — for Chrome and Edge."
+          >
+            <button type="button" onClick={() => go("settings", "settings-extension")} className="izk-pill h-[30px] px-3 text-[11.5px]">
+              {ext ? "See it" : "Add it"}
+            </button>
+          </Step>
+
+          <Step
+            icon={<HeartHandshake size={16} />}
+            title="Buddy mode"
+            done={settings.buddy_speaks}
+            doneText="On — I'll speak up about what matters"
+            text="Izuki tells you about important emails, meetings, low battery and more — by itself."
+          >
+            <button type="button" onClick={() => patch({ buddy_speaks: !settings.buddy_speaks })} className="izk-pill h-[30px] px-3 text-[11.5px]">
+              {settings.buddy_speaks ? "Turn off" : "Turn on"}
+            </button>
+          </Step>
+
+          <Step icon={<Palette size={16} />} title="Make it yours" text="Pick the app's colours and your orb — water, stardust, a friendly face…">
+            <button type="button" onClick={() => go("settings", "settings-theme")} className="izk-pill h-[30px] px-3 text-[11.5px]">
+              Colours
+            </button>
+            <button type="button" onClick={() => go("settings", "settings-look")} className="izk-pill h-[30px] px-3 text-[11.5px]">
+              Orb
             </button>
           </Step>
 
@@ -140,6 +254,12 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
           >
             <button type="button" onClick={() => go("apps")} className="izk-pill h-[30px] px-3 text-[11.5px]">
               {flows ? "Manage" : "Import"}
+            </button>
+          </Step>
+
+          <Step icon={<Sparkles size={16} />} title="Take the tour" text="A one-minute look at everything Izuki can do.">
+            <button type="button" onClick={() => { onClose(); useIzuki.getState().setTourOpen?.(true); }} className="izk-pill h-[30px] px-3 text-[11.5px]">
+              Show me around
             </button>
           </Step>
 

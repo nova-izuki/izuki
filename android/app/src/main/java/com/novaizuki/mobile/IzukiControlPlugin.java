@@ -6,6 +6,11 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
+import android.net.Uri;
+import android.os.Build;
+import androidx.core.content.FileProvider;
+import java.io.File;
+import java.io.FileOutputStream;
 import android.media.AudioManager;
 import android.os.SystemClock;
 import android.provider.Settings;
@@ -61,7 +66,60 @@ public class IzukiControlPlugin extends Plugin {
     result.put("enabled", IzukiAccessibilityService.isEnabled(getContext()));
     result.put("running", IzukiAccessibilityService.running());
     result.put("tv", isTv());
+    try {
+      android.content.pm.PackageInfo info = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
+      result.put("version", info.versionName);
+    } catch (Exception ignored) { }
     call.resolve(result);
+  }
+
+  // ---- updating itself ---------------------------------------------------------
+
+  /** Download the newer app and hand it to Android's installer (one press to update). */
+  @PluginMethod
+  public void installUpdate(PluginCall call) {
+    String url = call.getString("url", "");
+    if (!url.startsWith("https://github.com/nova-izuki/izuki/releases/")) { call.reject("not an Izuki update"); return; }
+    if (Build.VERSION.SDK_INT >= 26 && !getContext().getPackageManager().canRequestPackageInstalls()) {
+      // Android asks once: "allow Izuki to install updates".
+      Intent allow = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getContext().getPackageName()));
+      allow.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+      getContext().startActivity(allow);
+      call.reject("allow");
+      return;
+    }
+    work.execute(() -> {
+      try {
+        File apk = new File(getContext().getCacheDir(), "izuki-update.apk");
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setInstanceFollowRedirects(true);
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(60000);
+        // GitHub hands the file over from another address: follow it.
+        for (int hop = 0; hop < 5; hop++) {
+          int code = c.getResponseCode();
+          if (code < 300 || code >= 400) break;
+          String next = c.getHeaderField("Location");
+          c.disconnect();
+          c = (HttpURLConnection) new URL(next).openConnection();
+          c.setConnectTimeout(15000);
+          c.setReadTimeout(60000);
+        }
+        try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(apk)) {
+          byte[] buf = new byte[65536];
+          int n;
+          while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        }
+        Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", apk);
+        Intent install = new Intent(Intent.ACTION_VIEW);
+        install.setDataAndType(uri, "application/vnd.android.package-archive");
+        install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(install);
+        call.resolve();
+      } catch (Exception e) {
+        call.reject("The update didn't download: " + e.getMessage());
+      }
+    });
   }
 
   private boolean isTv() {

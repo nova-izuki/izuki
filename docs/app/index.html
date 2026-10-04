@@ -546,10 +546,21 @@
   let homeView = !history.length;
   let memories = store.get("memories", []); // ["User's name is Sam", …]
   let reminders = store.get("reminders", []); // [{at, text, done}]
+  let later = store.get("later", []);         // the Later list: [{text, done, at}]
+  let chats = store.get("chats", []);         // recent chats: [{id, title, at, history}]
+  /** Keep the chat you're leaving, so it's in Recent chats. */
+  function archiveChat() {
+    if (!history.some((m) => m.role === "user")) return;
+    const first = history.find((m) => m.role === "user")?.text || "Chat";
+    const title = first.replace(/\s+/g, " ").trim().slice(0, 60);
+    chats = [{ id: Date.now().toString(36), title, at: Date.now(), history: history.slice(-40) }, ...chats].slice(0, 20);
+    store.set("chats", chats);
+  }
   const saveAll = () => {
     store.set("history", history.slice(-40));
     store.set("memories", memories.slice(-80));
     store.set("reminders", reminders.filter((r) => !r.done || Date.now() - r.at < 86400000));
+    store.set("later", later.filter((l) => !l.done || Date.now() - l.at < 2 * 86400000).slice(-40));
     refreshIsland();
   };
 
@@ -672,6 +683,7 @@
       resume.onclick = () => { homeView = false; render(); };
       w.appendChild(resume);
     }
+    recentChats(w);
     const pulse = el("div", "home-pulse");
     const pulseItem = (title, sub) => {
       const item = el("div", "pulse");
@@ -706,6 +718,44 @@
     w.append(ideas, el("p", "home-label", "Choose your companion"), people);
   }
 
+  /** Recent chats on the home screen: tap to pick one up again, × to delete it. */
+  function recentChats(w) {
+    if (!chats.length) return;
+    const head = el("div", "recent-head");
+    head.append(el("p", "home-label", "Recent chats"));
+    const clearAll = el("button", "recent-clear", "Clear all");
+    clearAll.type = "button";
+    clearAll.onclick = () => { chats = []; store.set("chats", chats); welcome(); };
+    head.appendChild(clearAll);
+    const list = el("div", "recent-list");
+    const when = (t) => {
+      const d = Date.now() - t;
+      return d < 3600e3 ? Math.max(1, Math.round(d / 60e3)) + " min ago" : d < 86400e3 ? Math.round(d / 3600e3) + " h ago" : new Date(t).toLocaleDateString([], { month: "short", day: "numeric" });
+    };
+    for (const c of chats.slice(0, 6)) {
+      const row = el("div", "recent-row");
+      const open = el("button", "recent-open");
+      open.type = "button";
+      open.append(el("span", "recent-title", c.title), el("small", "", when(c.at)));
+      open.onclick = () => {
+        archiveChat();
+        chats = chats.filter((x) => x.id !== c.id);
+        history = c.history.slice();
+        store.set("chats", chats);
+        saveAll();
+        homeView = false;
+        render();
+      };
+      const del = el("button", "recent-del", "×");
+      del.type = "button";
+      del.setAttribute("aria-label", "Delete this chat");
+      del.onclick = () => { chats = chats.filter((x) => x.id !== c.id); store.set("chats", chats); welcome(); };
+      row.append(open, del);
+      list.appendChild(row);
+    }
+    w.append(head, list);
+  }
+
   /**
    * Suggestions that fit the moment - the time of day, the weekend, your
    * next reminder - the way a phone suggests what you'll
@@ -718,6 +768,8 @@
     const out = [];
     const next = reminders.filter((r) => !r.done && r.at > Date.now()).sort((a, b) => a.at - b.at)[0];
     if (next && next.at - Date.now() < 3 * 3600e3) out.push(["⏰", "Coming up", short(next.text, 22) + " · " + clock(next.at), () => ask("What reminders do I have coming up?")]);
+    const open = later.filter((l) => !l.done);
+    if (open.length) out.push(["🗒️", "Your Later list", short(open.map((l) => l.text).join(", "), 26), () => ask("What's on my Later list?")]);
     if (h >= 5 && h < 11) {
       out.push(["☀️", "Plan my day", "What matters today", () => ask("Help me plan my day — ask me what I've got on if you need to.")]);
       out.push(["🌤️", "What should I wear?", "Today's weather", () => ask("What's the weather like today, and what should I wear?")]);
@@ -823,6 +875,8 @@
       `It is now ${now.toLocaleString([], { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })} on the user's phone.`,
       `If they ask to be reminded of something, confirm it and add on its own line at the very end: [REMIND YYYY-MM-DD HH:MM | what to remind them] in their local time, 24-hour clock ("in 20 minutes" is ${stamp(in20)}).`,
       "If they tell you something lasting about themselves (name, likes, work, people in their life, how they want you to act), add a line [REMEMBER short third-person fact]. Never passwords, codes or card numbers.",
+      "If they want something kept for later with no time (\"remind me later I'm buying Sensodyne and milk\", \"add bread to my list\", \"don't let me forget the charger\"), confirm it warmly and add one line per thing: [LATER the thing]. If they've done one (\"I got the toothpaste\"), add [LATER-DONE the thing]. " +
+        (later.some((l) => !l.done) ? "Their Later list right now: " + later.filter((l) => !l.done).map((l) => l.text).join(", ") + "." : "Their Later list is empty."),
       usesGemini()
         ? "You can search the web and read links — do it whenever it helps: news, scores, prices, opening hours, facts, anything recent, or a link they send. Say where it came from."
         : "You can't search the web from here; for something recent, say so kindly and suggest they add a free Gemini key in Settings.",
@@ -1060,7 +1114,7 @@
     } finally { guard.done(); }
   }
 
-  const TAGS = /\s*\[(REMIND|REMEMBER)[^\]]*\]?\s*/gi;
+  const TAGS = /\s*\[(REMIND|REMEMBER|LATER-DONE|LATER)[^\]]*\]?\s*/gi;
   const shown = (t) => t.replace(TAGS, " ").replace(/\s+\n/g, "\n").trim();
 
   /** Pull [REMIND …] and [REMEMBER …] out of a reply; returns chips to show. */
@@ -1069,6 +1123,15 @@
     for (const m of reply.matchAll(/\[REMEMBER\s+([^\]]+)\]/gi)) {
       const fact = m[1].trim();
       if (fact && !memories.includes(fact)) memories.push(fact);
+    }
+    // The Later list: kept on this phone, brought up on the home screen.
+    for (const m of reply.matchAll(/\[LATER\s+([^\]]+)\]/gi)) {
+      const thing = m[1].trim().replace(/^./, (c) => c.toUpperCase());
+      if (thing && !later.some((l) => !l.done && l.text.toLowerCase() === thing.toLowerCase())) later.push({ text: thing, done: false, at: Date.now() });
+    }
+    for (const m of reply.matchAll(/\[LATER-DONE\s+([^\]]+)\]/gi)) {
+      const words = m[1].toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+      for (const l of later) if (!l.done && words.some((w) => l.text.toLowerCase().includes(w))) { l.done = true; l.at = Date.now(); }
     }
     for (const m of reply.matchAll(/\[REMIND\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})\s*\|\s*([^\]]+)\]/gi)) {
       const at = new Date(`${m[1]}T${m[2]}:00`).getTime();
@@ -2190,6 +2253,7 @@
   $("who").onclick = openSettings;
   $("go-home").onclick = () => welcome();
   $("new-chat").onclick = () => {
+    archiveChat();
     history = [];
     homeView = true;
     saveAll();
@@ -2330,6 +2394,21 @@
       out.textContent = e instanceof TypeError ? "I couldn't reach your PC — is Izuki open there?" : String(e.message || e);
     }
   };
+
+  // A newer Izuki app on the phone: one tap to update (Android installer).
+  setTimeout(async () => {
+    if (window.IzukiTv?.active) return;
+    const u = await window.IzukiNative?.checkUpdate?.();
+    if (!u) return;
+    const bar = el("button", "update-bar", `⬆️ Izuki ${u.latest} is ready — tap to update`);
+    bar.type = "button";
+    bar.onclick = async () => {
+      bar.textContent = "Downloading the update…";
+      const r = await window.IzukiNative.installUpdate(u.url);
+      bar.textContent = r === "ok" ? "Press Install on the next screen" : r === "allow" ? "Allow Izuki to install updates, then tap again" : r;
+    };
+    document.body.appendChild(bar);
+  }, 3000);
 
   // "Something wrong?": the user's words + what happened just before.
   $("bug-send").onclick = async () => {

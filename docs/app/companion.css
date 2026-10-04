@@ -56,3 +56,18 @@
   .app > header, .composer, .panel, .sheet, #live { backdrop-filter: none; -webkit-backdrop-filter: none; background: #181825; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }
+
+/* Recent chats on the home screen. */
+.recent-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 14px; }
+.recent-clear { background: none; border: 0; color: var(--muted, #9aa0c8); font: inherit; font-size: 12px; cursor: pointer; padding: 4px 6px; }
+.recent-list { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.recent-row { display: flex; align-items: stretch; gap: 6px; }
+.recent-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; justify-content: space-between; text-align: left; padding: 11px 14px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.08); background: rgba(255, 255, 255, 0.05); color: inherit; font: inherit; cursor: pointer; }
+.recent-open:active { transform: scale(0.99); }
+.recent-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.recent-open small { flex-shrink: 0; color: var(--muted, #9aa0c8); font-size: 11px; }
+.recent-del { width: 40px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.08); background: rgba(255, 255, 255, 0.04); color: var(--muted, #9aa0c8); font-size: 18px; cursor: pointer; }
+
+/* A newer version of the app is ready. */
+.update-bar { position: fixed; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); z-index: 50; padding: 12px 16px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.18); background: linear-gradient(135deg, rgba(124, 92, 255, 0.95), rgba(78, 205, 196, 0.9)); color: #fff; font: inherit; font-weight: 600; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); }
+.tv-update { border-color: rgba(103, 232, 249, 0.7) !important; }

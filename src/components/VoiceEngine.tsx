@@ -3,7 +3,7 @@ import { useWakeEngine, WAKE_THRESHOLD } from "../hooks/useWakeEngine";
 import { expandShortWords } from "../lib/shortWords";
 import { useDictation } from "../hooks/useDictation";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
-import { cancelChat, chatLane, needsApps, needsScreen, recentHistory, wantsToWatch, remember, type LaneResult } from "../lib/conversation";
+import { answersInBackground, cancelChat, chatLane, needsApps, needsScreen, recentHistory, remember, wantsBackground, wantsToWatch, type LaneResult } from "../lib/conversation";
 import { speakable } from "../lib/speakable";
 import { parseInstant, type Instant } from "../lib/instant";
 import { isEcho, noteSaid, noteStillSaying } from "../lib/echo";
@@ -881,7 +881,13 @@ ${result}`);
       // Just talking? The fast lane — no screenshot, the voice starts on the
       // first sentence. It hands over if it needs the screen after all.
       if (!tutoring && !needsScreen(t)) {
-        const lane = await talkFast(t);
+        // Asked to keep it in the background: say so to the AI, so it checks
+        // with its quiet tools instead of handing the job to the screen.
+        const quietly = wantsBackground(t) || answersInBackground(t);
+        let lane = await talkFast(t);
+        if (lane === "screen" && quietly && requestSeq === at) {
+          lane = await talkFast(`${t}\n[Do this yourself in the background with [RUN:] / [FIND:] checks and tell me the answer — do NOT hand it to the screen.]`);
+        }
         if (requestSeq !== at) return;
         if (lane === "end") {
           thinkingNow.current = false;

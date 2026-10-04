@@ -232,6 +232,7 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.18 }}
+      data-tauri-drag-region
       className="izk-no-drag absolute inset-0 z-[60] flex flex-col items-center justify-center rounded-[inherit] bg-black/55 p-6 backdrop-blur-md"
     >
       <button

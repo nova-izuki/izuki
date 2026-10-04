@@ -22,6 +22,12 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "⬆️", title: "Phone & TV apps update themselves", how: "The Android phone and TV apps now show “Update Izuki” when there's a new version — one press. (If you installed an older one, uninstall it once first.)" },
+  { icon: "🛡️", title: "Ask or Auto in the chat", how: "The Chat tab has the Ask / Auto switch now: Ask waits for your Allow; Auto runs it and still shows each step.", try: { label: "Open chat", tab: "chat" } },
+  { icon: "⚡", title: "Faster replies", how: "Brains that are out of credits are skipped for hours, stuck apps give up sooner, and the status screen's buttons react the moment you tap them." },
+  { icon: "🔎", title: "Apps read what their connections can't", how: "LinkedIn notifications, an Instagram feed and more: Izuki opens the page in its signed-in browser and reads it for you." },
+  { icon: "😊", title: "A friendlier hologram face", how: "Big shiny eyes, a smile and rosy cheeks — pick it under Orb.", try: { label: "Pick it", tab: "settings", id: "settings-look" } },
+  { icon: "🧭", title: "A fuller Quick setup", how: "A Back button, a progress bar, and TV, phone & TV link, the extension, buddy mode and colours — all from one place." },
   { icon: "🎛️", title: "A status screen you can use", how: "Say “wake up”: live CPU, memory, battery and network; tap a gauge, an email, a meeting or an app to ask about it; music controls; your Later list; and an Ask bar with one-tap actions.", try: { label: "Show me", say: "wake up" } },
   { icon: "🎯", title: "Catches its own misclicks", how: "If a click slips onto the taskbar and opens Search or Start by mistake, Izuki closes it and aims again." },
   { icon: "📺", title: "Izuki TV — full control of your TV", how: "On Android TV, Google TV and Fire TV: a big-screen Izuki that opens any app, plays and pauses, changes the volume, and reads what's on the TV to press, search and pick shows for you. Say “Hey Nova” or hold OK on the remote. A small orb floats over Netflix while it listens.", try: { label: "Set up my TV", tab: "settings", id: "settings-tv" } },
@@ -105,6 +111,7 @@ export function WhatsNew({ onClose }: { onClose: () => void }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
+      data-tauri-drag-region
       className="izk-no-drag absolute inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/55 p-4 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >

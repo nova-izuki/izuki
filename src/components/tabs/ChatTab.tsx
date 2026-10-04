@@ -703,6 +703,22 @@ export function ChatTab() {
                 <Mic size={15} strokeWidth={2.3} className="text-izk-ink" />
               )}
             </button>
+            {/* Ask first ↔ Auto-run, like Claude Code's modes (the same switch as the orb's chat bar). */}
+            <button
+              type="button"
+              onClick={() => patch({ chat_auto_run: !settings.chat_auto_run })}
+              title={
+                settings.chat_auto_run
+                  ? "Auto: commands and file saves run straight away (you still see each one). Tap for Ask first."
+                  : "Ask first: Izuki shows what it wants to run and waits for your Allow. Tap for Auto."
+              }
+              className={cx(
+                "flex h-[36px] shrink-0 items-center gap-1 rounded-full border px-2.5 text-[11px] font-semibold transition-colors",
+                settings.chat_auto_run ? "border-amber-300/40 bg-amber-300/12 text-amber-200" : "border-white/10 bg-white/6 text-izk-ink hover:bg-white/10"
+              )}
+            >
+              {settings.chat_auto_run ? "⚡ Auto" : "🛡️ Ask"}
+            </button>
             <textarea
               ref={input}
               value={draft}
