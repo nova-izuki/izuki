@@ -5,6 +5,8 @@
   <interface>
     <function name="setState" />
     <function name="setText" />
+    <function name="setLook" />
+    <function name="playVoice" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/MainScene.brs" />
   <children>
@@ -15,12 +17,14 @@
     <Label id="clock" translation="[1600,64]" width="224" horizAlign="right" color="#EEF0FFFF" font="font:MediumBoldSystemFont" />
 
     <Group id="orbGroup" translation="[960,470]">
+      <!-- the halo glows behind; the glass orb is tinted per look -->
+      <Poster id="halo" uri="pkg:/images/orb_halo.png" width="900" height="900" translation="[-450,-450]" opacity="0" />
       <Poster id="orb" uri="pkg:/images/orb_idle.png" width="560" height="560" translation="[-280,-280]" />
     </Group>
 
     <Label id="state" text="Ready" translation="[0,790]" width="1920" horizAlign="center" color="#67E8F9FF" font="font:SmallBoldSystemFont" />
     <Label id="said" text="" translation="[260,840]" width="1400" height="150" wrap="true" maxLines="3" horizAlign="center" color="#EEF0FFFF" font="font:MediumSystemFont" />
-    <Label id="hint" text="Say “Hey Nova, open Netflix on the TV” to your PC or phone" translation="[0,1000]" width="1920" horizAlign="center" color="#6B7194FF" font="font:SmallestSystemFont" />
+    <Label id="hint" text="Say “Hey Nova, open Netflix on the TV” — Izuki answers right here" translation="[0,1000]" width="1920" horizAlign="center" color="#6B7194FF" font="font:SmallestSystemFont" />
 
     <!-- breathing at rest, faster and bigger while talking -->
     <Animation id="breathe" duration="3.2" repeat="true" easeFunction="inOutQuad">
@@ -33,5 +37,12 @@
       <FloatFieldInterpolator key="[0.0, 1.0]" keyValue="[0.0, 6.2832]" fieldToInterp="orbGroup.rotation" />
     </Animation>
     <Timer id="tick" duration="20" repeat="true" />
+    <!-- Aurora / Nebula: the colour drifts on its own -->
+    <Animation id="drift" duration="9" repeat="true" easeFunction="linear">
+      <ColorFieldInterpolator id="driftOrb" key="[0.0, 0.33, 0.66, 1.0]" keyValue="[0x5EF2C2FF, 0x67C8F9FF, 0xB18CFFFF, 0x5EF2C2FF]" fieldToInterp="orb.blendColor" />
+      <ColorFieldInterpolator id="driftHalo" key="[0.0, 0.33, 0.66, 1.0]" keyValue="[0x5EF2C2FF, 0x67C8F9FF, 0xB18CFFFF, 0x5EF2C2FF]" fieldToInterp="halo.blendColor" />
+    </Animation>
+    <!-- Izuki's voice, played from the TV's own speakers -->
+    <Audio id="voice" />
   </children>
 </component>

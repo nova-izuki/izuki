@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { AlarmClock, Check, Copy, Link2, Loader2, Mic, MonitorSmartphone, RotateCcw, Send, Sparkles, Square, Volume2, X } from "lucide-react";
 import { api, emit, EV, on } from "../../lib/ipc";
 import { ChatText } from "../ChatText";
+import { LaterCard } from "../LaterCard";
 import { useDictation } from "../../hooks/useDictation";
 import { useSmartIdeas } from "../../lib/smartIdeas";
 import { sendChatCommand } from "../VoiceEngine";
@@ -68,6 +69,7 @@ const WRITE_ONLY =
 const wantsApps = (t: string) => (ACCOUNTS.test(t) || needsApps(t)) && !WRITE_ONLY.test(t) && !/\b(remind me|set (a |an )?reminder)\b/i.test(t);
 const APPS = /^\s*\[?APPS\]?\s*$/i;
 const REMIND_TAG = /\s*\[REMIND[^\]]*\]?\s*/gi;
+const LATER = /^(?:hey nova,?\s*)?(?:remind me later|remember for later|don'?t let me forget|add .+ to (?:my|the) (?:shopping |later )?list|what'?s on my (?:shopping |later )?list|what do i need to (?:buy|get)|i (?:got|bought) )/i;
 
 /**
  * Only well-formed messages: a saved chat from an older version, or a reply
@@ -293,6 +295,15 @@ export function ChatTab() {
           copy[copy.length - 1] = { ...last, ...(typeof patch === "function" ? patch(last) : patch) };
           return copy;
         });
+      // The Later list ("remind me later I'm buying…", "what's on my list"): done at once.
+      if (LATER.test(t)) {
+        const said = await api.instantCommand(t).catch(() => null);
+        if (said) {
+          setLast({ content: said, status: undefined });
+          if (streamId.current === id) { streamId.current = null; setBusy(false); }
+          return;
+        }
+      }
       if (wantsApps(t)) {
         setLast({ content: "Checking your connected apps…" });
         try {
@@ -486,6 +497,9 @@ export function ChatTab() {
 
   return (
     <>
+      {/* ------------------------------------------------ the Later list */}
+      <LaterCard />
+
       {/* ------------------------------------------------ reminders */}
       <AnimatePresence initial={false}>
         {reminders.length > 0 && (

@@ -26,6 +26,7 @@
 <script src="pairing.js"></script>
 <script src="orb.js"></script>
 <script src="apps.js"></script>
+<script type="module" src="tv.js"></script>
 <style>
   :root {
     color-scheme: dark;
@@ -455,6 +456,9 @@
         <input id="pc" type="url" placeholder="https://….trycloudflare.com/…/" autocomplete="off" autocapitalize="off" spellcheck="false">
       </div>
       <div class="row" style="margin-top: 10px"><button class="btn ghost" id="save-pc" type="button">Save link</button><span id="pc-result"></span></div>
+      <h3 style="margin-top:16px">One setup for everything</h3>
+      <p>Copy your PC's setup to this phone in one go — your AI keys, your connected apps (Gmail and the rest), your character, language and what Izuki remembers. Then this phone works on its own, even when the PC is off.</p>
+      <div class="row" style="margin-top: 10px"><button class="btn" id="copy-setup" type="button">Copy my PC's setup</button><span id="setup-result" class="note"></span></div>
     </section>
 
     <section>
@@ -562,16 +566,18 @@
   };
   const setOrb = (mode) => {
     orbState = mode || "";
+    try { window.IzukiTv?.orb?.(orbState); } catch {}
     orb.className = orbState;
     refreshIsland();
     IzukiOrb.mode(orbState || "idle");
     if (!status.textContent) $("live-status").textContent = LIVE_LABEL[orbState] || "";
   };
-  const liveHeard = (t) => { $("live-heard").textContent = t || ""; };
-  const liveSaid = (t) => { $("live-said").textContent = t || ""; };
+  const liveHeard = (t) => { $("live-heard").textContent = t || ""; try { window.IzukiTv?.heard?.(t || ""); } catch {} };
+  const liveSaid = (t) => { $("live-said").textContent = t || ""; try { window.IzukiTv?.said?.(t || ""); } catch {} };
   const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 
   function bubble(who, content, opts = {}) {
+    try { window.IzukiTv?.line?.(who, String(content || "")); } catch {}
     homeView = false;
     log.querySelector(".welcome")?.remove();
     const div = document.createElement("div");
@@ -1272,6 +1278,20 @@
     said = (said || "").trim();
     const files = attached;
     if (busy || (!said && !audio && !files.length)) return;
+    // On a TV: "Hey Nova" mode only answers when called, and TV requests
+    // ("open Netflix", "play the second one") are done on the TV itself.
+    if (said && !audio && !files.length && window.IzukiTv?.active) {
+      let g = null;
+      try { g = await window.IzukiTv.gate(said); } catch (e) { g = { done: true, say: String(e && e.message || e) }; }
+      if (g === null) { if (talking) listen(); return; }
+      if (g.done) {
+        history.push({ role: "user", text: g.said || said }, { role: "model", text: g.say }); saveAll();
+        bubble("me", g.said || said); bubble("izuki", g.say); liveSaid(g.say); await speak(g.say);
+        if (talking) listen();
+        return;
+      }
+      said = g.said || said;
+    }
     if (files.length && !said) said = "Have a look at this and help me with it.";
     if (!ready()) { render(); return; }
     // "clear chat" / "start over" — wipe it right here, no AI round trip.
@@ -1912,6 +1932,54 @@
     if (talking) stopTalking("");
   }
   $("go-live").onclick = openLive;
+
+  /** Hear a recorded clip: its words (Groq's Whisper, else Gemini). */
+  async function hearClip(audio) {
+    if (brainKeys.groq) return groqHear(audio);
+    return gemini([{ role: "user", parts: [{ inline_data: { mime_type: audio.type, data: audio.b64 } }] }], null, LITE, true,
+      "Transcribe only the words spoken to the assistant. The speaker uses " + hearing().words + ". Return just the transcript, or nothing if nobody speaks.");
+  }
+
+  /**
+   * The setup copied from the PC when linking (link.rs): the brains and their
+   * keys, the apps key, the character, the language and what Izuki remembers.
+   */
+  function applySetup(s) {
+    if (!s || typeof s !== "object") return false;
+    if (s.gemini) { key = String(s.gemini); store.set("key", key); }
+    if (s.brains && typeof s.brains === "object") {
+      for (const [k, v] of Object.entries(s.brains)) if (BRAINS[k] && v) brainKeys[k] = String(v);
+      store.set("brainKeys", brainKeys);
+    }
+    if (!key && !brainKeys[brain]) { const first = Object.keys(brainKeys).find((k) => brainKeys[k]); if (first) { brain = first; store.set("brain", brain); } }
+    try {
+      if (s.composio) localStorage.setItem("izuki.composio", String(s.composio));
+      if (s.composioUser) localStorage.setItem("izuki.composioUser", String(s.composioUser));
+    } catch {}
+    if (s.persona && PEOPLE.some((p) => p.id === s.persona)) { personId = s.persona; store.set("person", personId); }
+    if (s.language && HEARING[s.language]) { speechLanguage = s.language; store.set("speechLanguage", speechLanguage); }
+    if (Array.isArray(s.memories)) for (const m of s.memories) if (typeof m === "string" && m && !memories.includes(m)) memories.push(m);
+    saveAll();
+    render();
+    return true;
+  }
+
+  window.IzukiCore = {
+    ask: (t) => ask(String(t || "")),
+    think: (prompt, system) => think([{ role: "user", parts: [{ text: String(prompt) }] }], null, system),
+    hear: hearClip,
+    speak: (t) => speak(String(t || "")),
+    hush: () => hush(),
+    startCall: () => openLive(),
+    stopCall: () => endLive(),
+    calling: () => talking,
+    busy: () => busy,
+    ready: () => ready(),
+    canHear: () => canHear(),
+    applySetup,
+    name: () => person().name,
+    setReadAloud: (on) => { readAloud = !!on; store.set("readAloud", readAloud); },
+  };
   $("live-end").onclick = endLive;
   function showMute() {
     const b = $("live-mute");
@@ -2237,6 +2305,29 @@
         out.textContent = "PC connected · " + result.version + " · checked just now";
       } catch (error) {
         out.className = "bad"; out.textContent = error.message;
+    }
+  };
+
+  // One setup for everything: the PC asks you (a box with this code), then
+  // hands over its keys, apps and memories.
+  $("copy-setup").onclick = async () => {
+    const out = $("setup-result");
+    const base = pc ? (pc.endsWith("/") ? pc : pc + "/") : "";
+    if (!base) { out.className = "bad"; out.textContent = "Paste and save your PC link above first."; return; }
+    const code = String(1000 + Math.floor(Math.random() * 9000));
+    out.className = "note";
+    out.textContent = `A box is popping up on your PC — check it shows ${code}, then press Yes.`;
+    try {
+      const r = await fetch(base + "link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: isIOS ? "iPhone" : "Android phone", kind: "phone", code }) });
+      const v = await r.json();
+      if (!v.ok) throw new Error(v.error || "The PC didn't allow it.");
+      window.IzukiCore?.applySetup(v.setup);
+      out.className = "ok";
+      out.textContent = "Done — this phone has your setup now.";
+      try { $("composio").value = window.izukiApps?.key() || ""; } catch {}
+    } catch (e) {
+      out.className = "bad";
+      out.textContent = e instanceof TypeError ? "I couldn't reach your PC — is Izuki open there?" : String(e.message || e);
     }
   };
 

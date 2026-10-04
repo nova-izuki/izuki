@@ -188,6 +188,20 @@ pub struct Settings {
     /// (so it doesn't ask again). Roku needs none.
     #[serde(default)]
     pub tv_pair: String,
+    /// While the Izuki screen is open on the TV, Izuki talks from the TV.
+    #[serde(default = "default_true")]
+    pub tv_voice: bool,
+    /// The TV orb's look: "" = the same as here, else an orb style name.
+    #[serde(default)]
+    pub tv_orb: String,
+    /// Let Izuki's phone and TV apps find this PC on the home Wi-Fi and link
+    /// to it (link.rs). Off until the user turns it on (Windows asks once
+    /// about the firewall).
+    #[serde(default)]
+    pub lan_link: bool,
+    /// Phones and TVs that were allowed to link, with their passes.
+    #[serde(default)]
+    pub linked_devices: Vec<crate::link::LinkedDevice>,
     /// When music plays, the orb comes up and flows with it (music mode).
     #[serde(default)]
     pub music_visuals: bool,
@@ -753,6 +767,10 @@ impl Default for Settings {
             music_visuals: false,
             tv_host: String::new(),
             tv_pair: String::new(),
+            tv_voice: true,
+            tv_orb: String::new(),
+            lan_link: false,
+            linked_devices: Vec::new(),
             app_theme: default_app_theme(),
             app_theme_color: String::new(),
             flows_keep_days: default_flows_keep_days(),

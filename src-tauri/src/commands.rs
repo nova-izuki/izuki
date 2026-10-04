@@ -341,6 +341,12 @@ pub fn open_log_folder() -> R<()> {
 /// everyday commands (instant.rs).
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
+    // The Later list: "remind me later I'm buying…", "what's on my list".
+    if let Some(ask) = crate::later::parse(&said) {
+        let said = crate::later::run(ask);
+        let _ = app.emit("izuki://later-changed", ());
+        return Some(said);
+    }
     // "Change your orb to stardust", "switch to Atlas": done at once.
     if let Some(look) = crate::looks::parse(&said) {
         return crate::looks::apply(&look);
@@ -807,8 +813,52 @@ pub async fn notes_flashcards(id: String) -> R<crate::notes::Note> {
 
 /// The orb's state and words, to the Izuki channel on the TV (if it's open).
 #[tauri::command]
-pub async fn tv_show(state: String, text: Option<String>) {
-    let _ = blocking(move || crate::tv::show(&state, text.as_deref())).await;
+pub async fn tv_show(state: String, text: Option<String>) -> bool {
+    blocking(move || crate::tv::show(&state, text.as_deref())).await.unwrap_or(false)
+}
+
+/// The Later list (things to remember, no time attached).
+#[tauri::command]
+pub fn later_list() -> Vec<crate::later::Item> {
+    crate::later::list()
+}
+
+#[tauri::command]
+pub fn later_add(app: AppHandle, text: String) -> String {
+    let said = match crate::later::parse(&text) {
+        Some(ask @ crate::later::Ask::Add(_)) => crate::later::run(ask),
+        _ => crate::later::run(crate::later::Ask::Add(vec![text])),
+    };
+    let _ = app.emit("izuki://later-changed", ());
+    said
+}
+
+#[tauri::command]
+pub fn later_done(app: AppHandle, id: String, done: bool) {
+    crate::later::set_done(&id, done);
+    let _ = app.emit("izuki://later-changed", ());
+}
+
+#[tauri::command]
+pub fn later_remove(app: AppHandle, id: String) {
+    crate::later::remove(&id);
+    let _ = app.emit("izuki://later-changed", ());
+}
+
+/// Phones and TVs linked to this PC (names only), and whether the link is up.
+#[tauri::command]
+pub fn link_status() -> serde_json::Value {
+    serde_json::json!({ "running": crate::link::running(), "ip": crate::link::lan_ip(), "devices": crate::link::devices() })
+}
+
+/// Forget a linked phone or TV (it has to ask again).
+#[tauri::command]
+pub fn link_forget(name: String) {
+    let store = state::store();
+    let mut s = store.settings();
+    s.linked_devices.retain(|d| d.name != name);
+    store.set_settings(s);
+    crate::state::settings_changed_elsewhere();
 }
 
 /// "Open Netflix on the TV" and friends. What to say back.

@@ -1,0 +1,114 @@
+/* Izuki TV — the ten-foot screen. Everything is sized in vh/vw so it reads
+   from the sofa on any TV, kept inside the 5% "safe area" TVs may crop, and
+   every tile shows a big, obvious glow when the remote is on it. */
+
+.is-tv body { overflow: hidden; background: #03040b; }
+/* The phone screens stay underneath; the call card is drawn by the TV. */
+.is-tv #live { display: none !important; }
+
+#tv {
+  position: fixed; inset: 0; z-index: 9000;
+  display: grid; grid-template-rows: auto 1fr auto auto;
+  padding: 5vh 5vw 4.5vh;
+  color: #eef0ff;
+  font-family: "Segoe UI", Roboto, system-ui, sans-serif;
+  background:
+    radial-gradient(120vh 80vh at 50% 120%, rgba(124, 92, 255, 0.22), transparent 60%),
+    radial-gradient(90vh 70vh at 15% -10%, rgba(78, 205, 196, 0.16), transparent 60%),
+    linear-gradient(180deg, #05061a 0%, #03040b 70%);
+  overflow: hidden;
+}
+#tv[hidden] { display: none; }
+
+/* A slow sky of light behind everything. */
+.tv-sky { position: absolute; inset: -20%; pointer-events: none; filter: blur(60px); opacity: 0.55; }
+.tv-sky i { position: absolute; width: 60vh; height: 60vh; border-radius: 50%; mix-blend-mode: screen; animation: tv-drift 38s ease-in-out infinite alternate; }
+.tv-sky i:nth-child(1) { left: 10%; top: 20%; background: radial-gradient(circle, rgba(103, 232, 249, 0.35), transparent 70%); }
+.tv-sky i:nth-child(2) { right: 8%; top: 35%; background: radial-gradient(circle, rgba(167, 139, 250, 0.35), transparent 70%); animation-duration: 46s; }
+.tv-sky i:nth-child(3) { left: 40%; bottom: 0; background: radial-gradient(circle, rgba(255, 122, 217, 0.22), transparent 70%); animation-duration: 54s; }
+@keyframes tv-drift { to { transform: translate(8vw, -6vh) scale(1.15); } }
+
+.tv-top { position: relative; display: flex; align-items: center; gap: 2vw; }
+.tv-brand { font-weight: 800; letter-spacing: 0.5em; font-size: 2.2vh; color: #a78bfa; }
+.tv-chips { flex: 1; display: flex; gap: 1vw; }
+.tv-chip { padding: 0.6vh 1.2vw; border-radius: 99px; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.1); font-size: 1.8vh; color: #cfd3f5; }
+.tv-chip:empty, .tv-chip[hidden] { display: none; }
+.tv-time { text-align: right; line-height: 1.1; }
+.tv-time b { display: block; font-size: 5vh; font-weight: 300; letter-spacing: -0.02em; }
+.tv-time span { font-size: 1.9vh; color: #9aa0c8; }
+
+.tv-stage { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
+.tv-orb-wrap { position: relative; width: 44vh; height: 44vh; }
+#tv-orb {
+  position: relative; width: 100%; height: 100%;
+  /* a reflection on a dark glass floor */
+  -webkit-box-reflect: below 2vh linear-gradient(transparent 62%, rgba(255, 255, 255, 0.18));
+  transition: transform 0.6s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+.tv-bloom { position: absolute; inset: -18%; border-radius: 50%; background: radial-gradient(circle, rgba(124, 92, 255, 0.45), rgba(78, 205, 196, 0.12) 45%, transparent 70%); filter: blur(30px); transition: opacity 0.5s, transform 0.5s; }
+#tv[data-state="talk"] .tv-bloom { transform: scale(1.12); opacity: 1; }
+#tv[data-state="listen"] .tv-bloom { background: radial-gradient(circle, rgba(103, 232, 249, 0.5), transparent 68%); }
+#tv[data-state="think"] #tv-orb { transform: scale(0.96); }
+#tv[data-state="idle"] .tv-bloom { opacity: 0.7; }
+
+/* TV-only looks: a colour grade on a glass orb that drifts on its own. */
+#tv-orb.tv-aurora { animation: tv-aurora 14s linear infinite; }
+#tv-orb.tv-nebula { animation: tv-nebula 18s linear infinite; }
+@keyframes tv-aurora { from { filter: hue-rotate(0deg) saturate(1.4); } to { filter: hue-rotate(360deg) saturate(1.4); } }
+@keyframes tv-nebula { 0% { filter: hue-rotate(250deg) saturate(1.6) brightness(1.1); } 50% { filter: hue-rotate(320deg) saturate(1.8) brightness(1.2); } 100% { filter: hue-rotate(250deg) saturate(1.6) brightness(1.1); } }
+
+.tv-state { margin-top: 6vh; font-size: 2.6vh; font-weight: 600; letter-spacing: 0.06em; color: #67e8f9; min-height: 3.2vh; }
+.tv-wave { width: 46vw; height: 6vh; margin-top: 1vh; }
+.tv-wave[hidden] { display: none; }
+.tv-heard { margin-top: 1.2vh; font-size: 2.6vh; color: #9aa0c8; font-style: italic; max-width: 70vw; text-align: center; min-height: 3vh; }
+.tv-said { margin-top: 1vh; font-size: 3.6vh; line-height: 1.3; font-weight: 500; max-width: 74vw; text-align: center; text-wrap: balance; text-shadow: 0 2px 24px rgba(0, 0, 0, 0.6); }
+.tv-steps { margin-top: 1.4vh; display: flex; gap: 1vw; flex-wrap: wrap; justify-content: center; }
+.tv-steps div { padding: 0.5vh 1vw; border-radius: 99px; background: rgba(103, 232, 249, 0.1); border: 1px solid rgba(103, 232, 249, 0.25); font-size: 1.8vh; color: #bdf6ff; }
+
+.tv-tiles { position: relative; display: grid; grid-template-columns: repeat(6, 1fr); gap: 1.4vw; margin-top: 3vh; }
+.tv-tile {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.4vh;
+  padding: 2vh 1.4vw; border-radius: 2.2vh; text-align: left; cursor: pointer;
+  color: #eef0ff; background: rgba(255, 255, 255, 0.06); border: 2px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  transition: transform 0.18s ease, background 0.18s, border-color 0.18s, box-shadow 0.18s;
+}
+.tv-tile span { font-size: 3.6vh; line-height: 1; }
+.tv-tile b { font-size: 2.3vh; font-weight: 650; }
+.tv-tile small { font-size: 1.6vh; color: #9aa0c8; }
+.tv-tile:focus, .tv-tile:hover {
+  outline: none; transform: scale(1.07);
+  background: linear-gradient(140deg, rgba(124, 92, 255, 0.45), rgba(78, 205, 196, 0.32));
+  border-color: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 0.4vh rgba(167, 139, 250, 0.35), 0 1.6vh 4vh rgba(0, 0, 0, 0.5);
+}
+.tv-tile:focus small, .tv-tile:hover small { color: #eef0ff; }
+.tv-hint { position: relative; margin-top: 2vh; text-align: center; font-size: 1.9vh; color: #6b7194; }
+
+/* Ambient: nothing for a while — the tiles fade and the orb drifts, like a screensaver. */
+#tv.ambient .tv-tiles, #tv.ambient .tv-hint, #tv.ambient .tv-chips { opacity: 0.08; transition: opacity 2s; }
+#tv.ambient .tv-orb-wrap { animation: tv-float 24s ease-in-out infinite alternate; }
+@keyframes tv-float { 0% { transform: translate(-14vw, -2vh); } 50% { transform: translate(10vw, 3vh); } 100% { transform: translate(-4vw, -4vh); } }
+
+/* Pop-up sheets (linking, orb picker). */
+.tv-sheet {
+  position: absolute; z-index: 5; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(70vw, 120vh); padding: 4vh 3.4vw; border-radius: 3vh;
+  background: rgba(10, 11, 30, 0.94); border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 4vh 12vh rgba(0, 0, 0, 0.7);
+  display: flex; flex-direction: column; gap: 1.6vh;
+}
+.tv-sheet[hidden] { display: none; }
+.tv-sheet h2 { margin: 0; font-size: 3.6vh; }
+.tv-sheet p { margin: 0; font-size: 2.3vh; line-height: 1.45; color: #cfd3f5; }
+.tv-sheet button {
+  font: inherit; font-size: 2.3vh; padding: 1.6vh 2vw; border-radius: 1.6vh; text-align: left;
+  color: #eef0ff; background: rgba(255, 255, 255, 0.07); border: 2px solid rgba(255, 255, 255, 0.1);
+}
+.tv-sheet button:focus, .tv-sheet button.on { outline: none; border-color: #fff; background: linear-gradient(140deg, rgba(124, 92, 255, 0.5), rgba(78, 205, 196, 0.35)); }
+.tv-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2vh 1vw; }
+.tv-code { font-size: 9vh; font-weight: 800; letter-spacing: 0.3em; text-align: center; color: #67e8f9; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tv-sky i, #tv.ambient .tv-orb-wrap, #tv-orb.tv-aurora, #tv-orb.tv-nebula { animation: none; }
+}

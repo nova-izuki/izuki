@@ -151,6 +151,13 @@ pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str))
         push("assistant", &text);
         return Reply::text(text);
     }
+    // The Later list, from the phone or Telegram too.
+    if let Some(ask) = crate::later::parse(said) {
+        push("user", said);
+        let text = crate::later::run(ask);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // "Wake up" / "status report" from anywhere.
     if crate::briefing::is_briefing(said) {
         push("user", said);

@@ -3,6 +3,7 @@
 ' Izuki is doing here (Roku's "input" messages), so the orb and Izuki's words
 ' show on the TV:  POST http://<roku>:8060/input?state=talk&text=Hello
 '   state: idle | listen | think | talk      text: what Izuki says
+'   look: the orb ("" = Izuki colours)       audio: Izuki's voice to play (an address on the PC)
 
 sub Main(args as dynamic)
     screen = CreateObject("roSGScreen")
@@ -30,6 +31,8 @@ end sub
 
 sub ShowMessage(scene as object, info as object)
     if info = invalid then return
+    if info.look <> invalid then scene.callFunc("setLook", info.look)
     if info.state <> invalid then scene.callFunc("setState", info.state)
+    if info.audio <> invalid then scene.callFunc("playVoice", info.audio)
     if info.text <> invalid then scene.callFunc("setText", info.text)
 end sub

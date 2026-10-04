@@ -305,6 +305,10 @@ export interface Settings {
   /** The TV's address on the home Wi-Fi ("" = find it). */
   tv_host: string;
   tv_pair: string;
+  tv_voice: boolean;
+  tv_orb: string;
+  lan_link: boolean;
+  linked_devices: Array<{ name: string; kind: string; token: string; added: number }>;
   buddy_speaks: boolean;
   buddy_acts: boolean;
   buddy_breaks: boolean;

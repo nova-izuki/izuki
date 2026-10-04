@@ -303,18 +303,37 @@ fn izuki_open(host: &str) -> bool {
 
 /// Show Izuki's state and words on the TV — only when the Izuki channel is
 /// the one open, so it never interrupts a film. Quietly does nothing else.
-pub fn show(state: &str, text: Option<&str>) {
-    let Some(store) = crate::state::try_store() else { return };
-    let host = store.settings().tv_host.trim().to_string();
-    if host.is_empty() || !izuki_open(&host) {
-        return;
+pub fn show(state: &str, text: Option<&str>) -> bool {
+    // Linked Izuki TV apps follow along too (link.rs).
+    crate::link::publish(state, text);
+    let Some(store) = crate::state::try_store() else { return false };
+    let settings = store.settings();
+    let host = settings.tv_host.trim().to_string();
+    if host.is_empty() || make(&host).is_some() || !izuki_open(&host) {
+        return false;
     }
-    let mut path = format!("/input?state={}", urlencode(state));
+    let look = tv_look(&settings);
+    let mut path = format!("/input?state={}&look={}", urlencode(state), urlencode(&look));
+    let mut speaks = false;
     if let Some(t) = text {
         let t: String = t.chars().take(400).collect();
         path.push_str(&format!("&text={}", urlencode(&t)));
+        // Said from the TV's own speakers, in Izuki's voice.
+        if settings.tv_voice {
+            if let Some(url) = crate::link::audio_url(&t) {
+                path.push_str(&format!("&audio={}", urlencode(&url)));
+                speaks = true;
+            }
+        }
     }
     let _ = post(&host, &path);
+    speaks
+}
+
+/// The TV orb's colours: its own pick, or the PC's.
+fn tv_look(s: &crate::settings::Settings) -> String {
+    let style = if s.tv_orb.trim().is_empty() { s.orb_style.trim() } else { s.tv_orb.trim() };
+    style.to_string()
 }
 
 /// The address to use: the saved one, or one found now (and saved).
@@ -335,6 +354,15 @@ pub fn host() -> Option<String> {
 /// Do a TV request. What to say back, or why it couldn't.
 pub fn run(said: &str) -> Result<String> {
     let act = parse(said).ok_or_else(|| anyhow!("I can open apps, search, type, change the volume, pause and play, and press the remote's buttons on your TV — try \"open Netflix on the TV\"."))?;
+    // An Izuki TV app linked to this PC (Android TV / Google TV / Fire TV)
+    // and no other TV set up: the job goes to it, and it does it on the TV.
+    if let Some(store) = crate::state::try_store() {
+        let s = store.settings();
+        if s.tv_host.trim().is_empty() && crate::link::running() && s.linked_devices.iter().any(|d| d.kind == "tv") {
+            crate::link::publish("tvdo", Some(said));
+            return Ok("On it — doing that on your TV.".into());
+        }
+    }
     let host = host().ok_or_else(|| anyhow!("I couldn't find a TV on your Wi-Fi. Make sure the TV is on and on the same Wi-Fi as this PC (Roku, Samsung and LG work)."))?;
     eprintln!("[tv] {act:?} on {host}");
     if let Some(m) = make(&host) {

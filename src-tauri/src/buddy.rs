@@ -147,6 +147,7 @@ fn tick(app: &AppHandle) {
         break_nudge(app, idle);
     }
     battery(app, settings.buddy_acts);
+    later_list(app);
     disk_and_memory(app);
     internet(app);
 }
@@ -171,9 +172,27 @@ fn welcome_back(app: &AppHandle, idle: Duration) {
     if more > 0 {
         text.push_str(&format!(" And {more} more — ask me if you want them."));
     }
+    if let Some(later) = crate::later::nudge_line() {
+        text.push(' ');
+        text.push_str(&later);
+    }
     // Straight out — the user has just come back, this is the moment.
     with(|s| s.last_spoke = Some(Instant::now()));
     let _ = app.emit(EVENT, Say { text, urgent: false });
+}
+
+/// The Later list, at the moments it's useful: late afternoon (before the
+/// shops close) and the first time you're at the PC in the morning.
+fn later_list(app: &AppHandle) {
+    let now = chrono::Local::now();
+    let slot = match now.hour() {
+        8..=10 => "morning",
+        17 => "evening",
+        _ => return,
+    };
+    if let Some(line) = crate::later::nudge_line() {
+        say(app, &format!("later-{slot}-{}", now.format("%Y%m%d")), &line, Level::Chat);
+    }
 }
 
 fn break_nudge(app: &AppHandle, idle: Duration) {

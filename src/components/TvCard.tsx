@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Home, Loader2, Play, Search, Tv, Volume2 } from "lucide-react";
-import { Badge, Section } from "./ui";
+import { Badge, Row, Section, Toggle } from "./ui";
 import { api } from "../lib/ipc";
+import { useIzuki } from "../lib/store";
 
 type Found = { host: string; name: string; on: boolean; allowed: boolean } | null;
 
@@ -85,6 +86,8 @@ export function TvCard() {
       )}
       {said && <p className="mt-2 text-[11.5px] text-izk-muted">{said}</p>}
 
+      <LinkAndLook />
+
       {found && (
         <details className="mt-3 rounded-[14px] border border-white/10 bg-white/[0.04] p-3 text-[12px] leading-relaxed text-izk-ink">
           <summary className="cursor-pointer font-semibold">📺 Put the Izuki screen on your Roku (free)</summary>
@@ -113,5 +116,72 @@ export function TvCard() {
         </details>
       )}
     </Section>
+  );
+}
+
+/**
+ * The Izuki TV and phone apps: link them to this PC (they copy the setup and
+ * then work on their own), Izuki's voice from the TV, and the TV's orb.
+ */
+function LinkAndLook() {
+  const settings = useIzuki((s) => s.settings);
+  const patch = useIzuki((s) => s.patchSettings);
+  const [link, setLink] = useState<{ running: boolean; ip: string | null; devices: Array<{ name: string; kind: string }> } | null>(null);
+  useEffect(() => {
+    const look = () => void api.linkStatus().then(setLink).catch(() => undefined);
+    look();
+    const t = setInterval(look, 4000);
+    return () => clearInterval(t);
+  }, [settings.lan_link, settings.linked_devices.length]);
+
+  return (
+    <div className="mt-3 flex flex-col gap-1">
+      <Row
+        label="Let my phone and TV link to this PC"
+        hint="Open Izuki on your Android TV, Google TV, Fire TV or phone and it finds this PC on your Wi-Fi. Press Allow here, and it copies your setup — your AI, your connected apps, your voice and what Izuki remembers — so it works on its own, even when this PC is off. (Windows may ask once about the firewall — choose Allow.)"
+      >
+        <Toggle checked={settings.lan_link} onChange={(v) => patch({ lan_link: v })} />
+      </Row>
+      {settings.lan_link && link && (
+        <div className="rounded-[14px] border border-white/10 bg-white/[0.04] p-3 text-[12px] text-izk-ink">
+          <div className="text-izk-muted">
+            {link.running ? <>This PC is ready to link{link.ip ? <> at <b className="text-izk-ink">{link.ip}</b></> : null}.</> : "Starting…"}
+          </div>
+          {link.devices.length > 0 ? (
+            <ul className="mt-2 flex flex-col gap-1">
+              {link.devices.map((d) => (
+                <li key={d.name + d.kind} className="flex items-center gap-2">
+                  <span>{d.kind === "tv" ? "📺" : "📱"}</span>
+                  <span className="min-w-0 flex-1 truncate">{d.name}</span>
+                  <button type="button" className="izk-pill px-2 py-0.5 text-[10.5px]" onClick={() => void api.linkForget(d.name)}>
+                    Unlink
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="mt-1 text-izk-muted">No phone or TV linked yet.</div>
+          )}
+        </div>
+      )}
+      <Row label="Talk from the TV" hint="While the Izuki screen is open on the TV, Izuki's voice comes out of the TV's speakers instead of this PC's.">
+        <Toggle checked={settings.tv_voice} onChange={(v) => patch({ tv_voice: v })} />
+      </Row>
+      <Row label="Orb on the TV" hint="The orb the TV shows — the same as here, or its own.">
+        <select aria-label="TV orb style" className="izk-field izk-no-drag max-w-[145px] py-1 text-[11.5px]" value={settings.tv_orb} onChange={(e) => patch({ tv_orb: e.target.value })}>
+          <option value="">Same as here</option>
+          <option value="liquid">Liquid glass</option>
+          <option value="ferrofluid">Clear water</option>
+          <option value="dew">Pure water</option>
+          <option value="ripple">Tidal pearl</option>
+          <option value="constellation">Star crystal</option>
+          <option value="particles">Stardust</option>
+          <option value="face">Hologram face</option>
+          <option value="ferro">Ferrofluid</option>
+          <option value="aurora">Aurora (TV)</option>
+          <option value="nebula">Nebula (TV)</option>
+        </select>
+      </Row>
+    </div>
   );
 }

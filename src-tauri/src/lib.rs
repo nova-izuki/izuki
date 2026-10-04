@@ -49,6 +49,8 @@ pub mod tray;
 pub mod tv;
 pub mod tvlink;
 pub mod buddy;
+pub mod link;
+pub mod later;
 pub mod tts;
 pub mod uia;
 pub mod updates;
@@ -245,6 +247,12 @@ pub fn run() {
             commands::frozen_frame,
             commands::submit_draw,
             commands::submit_voice_command,
+            commands::link_status,
+            commands::later_list,
+            commands::later_add,
+            commands::later_done,
+            commands::later_remove,
+            commands::link_forget,
             commands::instant_command,
             commands::report_bug,
             commands::bug_reports_ready,
@@ -324,6 +332,7 @@ pub fn run() {
             call::spawn(handle.clone());
             headsup::spawn(handle.clone());
             buddy::spawn(handle.clone());
+            link::spawn(handle.clone());
             browser::init(&handle);
 
             Ok(())

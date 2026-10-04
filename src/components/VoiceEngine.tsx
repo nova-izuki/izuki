@@ -52,8 +52,15 @@ async function hideConfigWindow() {
  */
 async function respond(text: string, mood?: string | null, reply = false, quick = false) {
   const state = useIzuki.getState();
-  // What Izuki says shows on the Izuki TV channel too (if it's open there).
-  if (state.settingsLoaded && state.settings.tv_host && text.trim()) void api.tvShow("talk", text).catch(() => undefined);
+  // What Izuki says shows on the Izuki TV channel too (if it's open there) —
+  // and when the TV says it out loud, this PC only shows the words.
+  if (state.settingsLoaded && text.trim() && (state.settings.tv_host || state.settings.lan_link)) {
+    const onTv = await api.tvShow("talk", text).catch(() => false);
+    if (onTv) {
+      await say(text, { ...state.settings, speak_responses: false }, mood, reply, quick);
+      return;
+    }
+  }
   // The floating chat runs in the overlay window, whose store never loads
   // real settings — and speech must come from one place, or two voices talk
   // over each other. Hand the line to the config panel's engine.
@@ -278,6 +285,8 @@ function followUpMs() {
 let requestSeq = 0;
 /** Izuki asked "which one? circle it" and is waiting (see brain::ask_user). */
 let helpPending = false;
+/** A linked TV/phone heard the wake word: this PC doesn't answer it too. */
+let wakeHeardElsewhereUntil = 0;
 
 /** Every time Izuki is cut off; lets a pending follow-up listen stand down. */
 let interruptions = 0;
@@ -534,7 +543,7 @@ export function VoiceEngine() {
     void api.showCaptionOverlay().catch(() => undefined);
     void emit(EV.orb, state);
     // The Izuki channel on the TV follows along (only if it's open there).
-    if (useIzuki.getState().settings.tv_host) {
+    if (useIzuki.getState().settings.tv_host || useIzuki.getState().settings.lan_link) {
       void api.tvShow(state === "listening" ? "listen" : state === "thinking" ? "think" : state === "speaking" ? "talk" : "idle").catch(() => undefined);
     }
   };
@@ -1101,6 +1110,11 @@ ${result}`);
   // one you just talk), and rests for a moment after one ends.
   const onWake = () => {
     if (session.current.on) return;
+    // A linked TV or phone heard "Hey Nova" first — it answers, not this PC.
+    if (Date.now() < wakeHeardElsewhereUntil) {
+      void api.log("wake: heard here too, but a linked device already answered");
+      return;
+    }
     stopAllSpeech("you said the wake word");
     void api.prefetchScreen();
     startSession(true, "listening");
@@ -1197,6 +1211,9 @@ ${result}`);
         void (typeof p === "string" ? respond(p) : respond(p.text, p.mood, p.reply, p.quick))
       ),
       on<Partial<Settings>>(EV.patchSettings, (patch) => useIzuki.getState().patchSettings(patch)),
+      on<string>("izuki://wake-elsewhere", () => {
+        wakeHeardElsewhereUntil = Date.now() + 8000;
+      }),
       // Buddy mode: something worth saying, unasked — the orb comes up, says
       // it, and listens for a reply ("read it to me", "close it"). Never over
       // the user mid-conversation: it waits for a quiet moment.

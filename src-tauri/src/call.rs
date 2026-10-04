@@ -308,6 +308,17 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
             let settings = crate::state::store().settings();
             json_reply(req, json!({ "hear": crate::stt::has_key(&settings) }))
         }
+        // "Set me up from my PC": the phone app (through the private link it
+        // already has) asks for a copy of the setup; the PC asks the user first.
+        (tiny_http::Method::Post, Some("/link")) => {
+            let mut body = String::new();
+            let _ = req.as_reader().take(16 * 1024).read_to_string(&mut body);
+            let asked = serde_json::from_str::<Value>(&body).unwrap_or(Value::Null);
+            let name = asked["name"].as_str().unwrap_or("My phone");
+            let kind = asked["kind"].as_str().unwrap_or("phone");
+            let code = asked["code"].as_str().unwrap_or("");
+            json_reply(req, crate::link::link_request(name, kind, code))
+        }
         (tiny_http::Method::Get, Some("/icon.png")) => respond(req, 200, "image/png", ICON.to_vec()),
         (tiny_http::Method::Get, Some("/manifest.webmanifest")) => {
             respond(req, 200, "application/manifest+json", MANIFEST.as_bytes().to_vec())

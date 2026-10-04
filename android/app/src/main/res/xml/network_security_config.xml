@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Izuki on the PC, and TVs' own remotes, answer on the home network over
+     plain HTTP (a home address has no certificate), and Android can't name
+     "any home address" here — so plain HTTP is allowed, and Izuki's native
+     bridge itself only ever sends it to home-network addresses
+     (IzukiControlPlugin.http). Everything on the internet uses HTTPS. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

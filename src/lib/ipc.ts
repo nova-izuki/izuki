@@ -196,6 +196,10 @@ export const MOCK_SETTINGS: Settings = {
   music_visuals: false,
   tv_host: "",
   tv_pair: "",
+  tv_voice: true,
+  tv_orb: "",
+  lan_link: false,
+  linked_devices: [],
   buddy_speaks: true,
   buddy_acts: true,
   buddy_breaks: true,
@@ -396,7 +400,15 @@ export const api = {
   tvFind: (fresh: boolean) =>
     call<{ host: string; name: string; on: boolean; allowed: boolean } | null>("tv_find", { fresh }, () => null),
   /** Show the orb's state (and words) on the Izuki TV channel, if it's open. */
-  tvShow: (state: string, text?: string) => call<void>("tv_show", { state, text: text ?? null }, () => undefined),
+  /** True when the TV is saying it (so the PC stays quiet). */
+  tvShow: (state: string, text?: string) => call<boolean>("tv_show", { state, text: text ?? null }, () => false),
+  linkStatus: () =>
+    call<{ running: boolean; ip: string | null; devices: Array<{ name: string; kind: string; added: string }> }>("link_status", {}, () => ({ running: false, ip: null, devices: [] })),
+  linkForget: (name: string) => call<void>("link_forget", { name }, () => undefined),
+  laterList: () => call<Array<{ id: string; text: string; done: boolean; added: number }>>("later_list", {}, () => []),
+  laterAdd: (text: string) => call<string>("later_add", { text }, () => ""),
+  laterDone: (id: string, done: boolean) => call<void>("later_done", { id, done }, () => undefined),
+  laterRemove: (id: string) => call<void>("later_remove", { id }, () => undefined),
   /** "Open Netflix on the TV". What Izuki says back. */
   tvDo: (said: string) => call<string>("tv_do", { said }, () => "TV control works in the Izuki app on your PC."),
   /** The Island's look: what's playing, and whether a film/game is full screen. */
