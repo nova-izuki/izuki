@@ -429,6 +429,7 @@ export function SettingsTab() {
             <option value="constellation">Star crystal</option>
             <option value="particles">Stardust</option>
             <option value="face">Hologram face</option>
+            <option value="ferro">Ferrofluid</option>
           </select>
         </Row>
         <OrbStudio />

@@ -31,6 +31,20 @@ pub fn track_orb(app: &AppHandle) {
     app.listen_any("izuki://orb", |e| {
         ORB_UP.store(!e.payload().contains("hidden"), Ordering::Relaxed);
     });
+    // The last "show yourself like this", kept for an overlay that wasn't
+    // listening yet: at start-up it's told to show before its page has
+    // loaded, and used to stay blank until the hand was toggled off and on.
+    app.listen_any(crate::events::OVERLAY_OPEN, |e| {
+        *LAST_OPEN.lock() = Some(e.payload().to_string());
+    });
+}
+
+static LAST_OPEN: parking_lot::Mutex<Option<String>> = parking_lot::Mutex::new(None);
+
+/// What the overlay should be showing right now (the last open request, as
+/// JSON), if it's up — asked by the overlay page once it has loaded.
+pub fn current_open() -> Option<String> {
+    overlay_shown().then(|| LAST_OPEN.lock().clone()).flatten()
 }
 
 /// A stop closes the orb. Said here first, because the webview's own

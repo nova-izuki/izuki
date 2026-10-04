@@ -177,6 +177,9 @@ pub struct Settings {
     /// The TV's address on the home Wi-Fi (found by itself; "" = look).
     #[serde(default)]
     pub tv_host: String,
+    /// When music plays, the orb comes up and flows with it (music mode).
+    #[serde(default)]
+    pub music_visuals: bool,
     /// The Island: the pill at the top of the screen that shows what Izuki
     /// is doing, what's playing and what's coming up — like a phone's live
     /// activities. Keeps the (click-through) overlay up while it's on.
@@ -508,7 +511,7 @@ impl Settings {
     /// a newly supported brain.
     pub fn heal(&mut self) {
         if !["mouse", "precision"].contains(&self.control_style.as_str()) { self.control_style = "mouse".into(); }
-        if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face"].contains(&self.orb_style.as_str()) { self.orb_style = "liquid".into(); }
+        if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro"].contains(&self.orb_style.as_str()) { self.orb_style = "liquid".into(); }
         self.orb_response = if self.orb_response.is_finite() { self.orb_response.clamp(0.5, 1.5) } else { 1.0 };
         let defaults = Self::default();
         for d in defaults.providers {
@@ -720,6 +723,7 @@ impl Default for Settings {
             execution_mode: ExecutionMode::Focus,
             follow_mode_enabled: false,
             island_enabled: true,
+            music_visuals: false,
             tv_host: String::new(),
             flows_keep_days: default_flows_keep_days(),
             island_suggestions: true,

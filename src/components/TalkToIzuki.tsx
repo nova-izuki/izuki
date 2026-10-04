@@ -156,6 +156,12 @@ export function TalkToIzuki() {
         >
           <Toggle checked={settings.island_enabled} onChange={(v) => patch({ island_enabled: v })} />
         </Row>
+        <Row
+          label="Dance with my music"
+          hint="When music plays on this PC, the orb comes up and flows with it. Close it any time with ×. (Only the volume is read — nothing is recorded.)"
+        >
+          <Toggle checked={settings.music_visuals} onChange={(v) => patch({ music_visuals: v })} />
+        </Row>
         {settings.island_enabled && (
           <Row
             label="Suggest help by itself"

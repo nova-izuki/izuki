@@ -110,6 +110,71 @@ fn try_resume() -> windows_core::Result<Option<bool>> {
     Ok(Some(wait(pick.TryPlayAsync()?)?.unwrap_or(false)))
 }
 
+// ---- music mode: the orb moves with what's playing --------------------------
+
+static METER_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Start or stop sending the PC's sound level to the overlay (~30 times a
+/// second) as the orb's "voice", so it flows with the music. Only the
+/// loudness meter is read — nothing is recorded.
+pub fn music_meter(app: &tauri::AppHandle, on: bool) {
+    use std::sync::atomic::Ordering;
+    let was = METER_ON.swap(on, Ordering::SeqCst);
+    if !on || was {
+        return;
+    }
+    let app = app.clone();
+    std::thread::Builder::new()
+        .name("izuki-music-meter".into())
+        .spawn(move || {
+            use tauri::Emitter;
+            let meter = Meter::open();
+            let mut smooth = 0f32;
+            while METER_ON.load(Ordering::SeqCst) {
+                let peak = meter.as_ref().and_then(|m| m.peak()).unwrap_or(0.0);
+                // A touch of compression, so quiet songs still move it.
+                let level = peak.clamp(0.0, 1.0).powf(0.6);
+                smooth = if level > smooth { level } else { smooth * 0.82 + level * 0.18 };
+                let _ = app.emit_to(crate::overlay::OVERLAY_LABEL, "izuki://voice-level", smooth);
+                std::thread::sleep(Duration::from_millis(33));
+            }
+        })
+        .ok();
+}
+
+#[cfg(windows)]
+struct Meter(windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation);
+
+#[cfg(windows)]
+impl Meter {
+    fn open() -> Option<Self> {
+        use windows::Win32::Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
+        use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            let devices: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+            let speaker = devices.GetDefaultAudioEndpoint(eRender, eConsole).ok()?;
+            speaker.Activate(CLSCTX_ALL, None).ok().map(Meter)
+        }
+    }
+    fn peak(&self) -> Option<f32> {
+        unsafe { self.0.GetPeakValue().ok() }
+    }
+}
+
+#[cfg(not(windows))]
+struct Meter;
+
+#[cfg(not(windows))]
+impl Meter {
+    fn open() -> Option<Self> {
+        None
+    }
+    fn peak(&self) -> Option<f32> {
+        None
+    }
+}
+
 /// Waits for a Windows answer, giving up (None) after `PATIENCE`.
 #[cfg(windows)]
 pub(crate) fn wait<T>(op: windows_future::IAsyncOperation<T>) -> windows_core::Result<Option<T>>
@@ -144,6 +209,16 @@ mod tests {
         assert!(is_izuki("C:\\Program Files\\Izuki\\Izuki.exe"));
         assert!(!is_izuki("Spotify.exe"));
         assert!(!is_izuki("MSEdge"));
+    }
+
+    /// Run by hand: the speaker's level meter opens and reads (0 when quiet).
+    #[test]
+    #[ignore]
+    fn reads_the_speaker_level() {
+        let m = Meter::open().expect("the default speaker's meter");
+        let peaks: Vec<f32> = (0..5).map(|_| { std::thread::sleep(Duration::from_millis(50)); m.peak().unwrap_or(-1.0) }).collect();
+        println!("speaker peaks: {peaks:?}");
+        assert!(peaks.iter().all(|p| (0.0..=1.0).contains(p)));
     }
 
     /// Run by hand: lists the players Windows knows, touching none of them.

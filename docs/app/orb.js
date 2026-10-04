@@ -210,7 +210,7 @@
       fetch(url).then(r=>r.arrayBuffer()).then(buffer=>{const envelope=motionModule?.waveEnvelope(buffer);if(generation===audioGeneration&&envelope)audioTrack={player,envelope};}).catch(()=>{});
     },
     style(value) {
-      style = ["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face"].includes(value) ? value : "liquid";
+      style = ["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro"].includes(value) ? value : "liquid";
       try { localStorage.setItem("izuki.orbStyle", style); } catch {}
       wake();
     },

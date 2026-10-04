@@ -59,12 +59,20 @@ export function Island({
   doing,
   thinking,
   peeks = true,
+  visualizing = false,
+  onVisualize,
+  onPlaying,
 }: {
   orb: OrbState;
   doing: string | null;
   thinking: boolean;
   /** Let a helpful suggestion peek out on its own (setting). */
   peeks?: boolean;
+  /** Music mode is showing (the orb flowing with the music). */
+  visualizing?: boolean;
+  onVisualize?: () => void;
+  /** Music started or stopped on the PC. */
+  onPlaying?: (playing: boolean) => void;
 }) {
   const [status, setStatus] = useState<IslandStatus>({ media: null, fullscreen: false, suggestions: [], context: "" });
   const [peek, setPeek] = useState<Suggestion | null>(null);
@@ -190,6 +198,10 @@ export function Island({
   }, [busy]);
 
   const media = status.media;
+  const musicOn = !!media?.playing;
+  const onPlayingRef = useRef(onPlaying);
+  onPlayingRef.current = onPlaying;
+  useEffect(() => onPlayingRef.current?.(musicOn), [musicOn]);
   const live: Live = finished
     ? { kind: "finished" }
     : busy
@@ -235,6 +247,8 @@ export function Island({
                 dancing={dancing}
                 busy={busy}
                 doing={doing}
+                visualizing={visualizing}
+                onVisualize={onVisualize}
                 onDone={() => setOpen(false)}
               />
             </motion.div>
@@ -330,8 +344,12 @@ function Expanded({
   dancing,
   busy,
   doing,
+  visualizing,
+  onVisualize,
   onDone,
 }: {
+  visualizing?: boolean;
+  onVisualize?: () => void;
   live: Live;
   media: NowPlaying | null;
   suggestions: Suggestion[];
@@ -382,6 +400,31 @@ function Expanded({
           <div className="min-w-0 flex-1">
             <div className="truncate text-[14px] font-semibold">{media.title}</div>
             <div className="truncate text-[12px] text-white/55">{[media.artist, media.app].filter(Boolean).join(" · ")}</div>
+            <div className="mt-1 flex gap-1.5">
+              {onVisualize && (
+                <button
+                  type="button"
+                  onClick={onVisualize}
+                  className={
+                    "rounded-full px-2 py-[3px] text-[11px] font-semibold transition " +
+                    (visualizing ? "bg-fuchsia-500/80 text-white" : "bg-white/10 text-white/80 hover:bg-white/16")
+                  }
+                >
+                  {visualizing ? "✨ Flowing" : "✨ Flow with it"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  onDone();
+                  const by = media.artist ? ` by ${media.artist}` : "";
+                  void emit(EV.runChat, { id: Date.now(), text: `Tell me about the song "${media.title}"${by} — what it's about, and one interesting thing about it. Keep it short.` });
+                }}
+                className="rounded-full bg-white/10 px-2 py-[3px] text-[11px] font-semibold text-white/80 transition hover:bg-white/16"
+              >
+                About this song
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <RoundButton label="Previous" onClick={() => control("previous")}>

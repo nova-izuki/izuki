@@ -266,6 +266,8 @@ pub fn run() {
             commands::tv_do,
             commands::island_status,
             commands::media_control,
+            commands::music_meter,
+            commands::overlay_state,
             commands::reminders_list,
             commands::reminder_remove,
             commands::cancel_task,

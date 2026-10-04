@@ -16,6 +16,7 @@ const ORBS: &[(&[&str], &str, &str)] = &[
     (&["pearl"], "ripple", "Tidal pearl"),
     (&["crystal", "galaxy", "stars", "nebula", "constellation"], "constellation", "Star crystal"),
     (&["face", "hologram", "head"], "face", "Hologram face"),
+    (&["ferrofluid", "ferro", "magnetic", "black liquid"], "ferro", "Ferrofluid"),
     (&["liquid", "glass", "default", "normal", "original"], "liquid", "Liquid glass"),
 ];
 

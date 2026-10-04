@@ -775,6 +775,19 @@ pub async fn island_status() -> R<crate::island::IslandStatus> {
     blocking(crate::island::status).await
 }
 
+/// The overlay page asks this once it has loaded: what it should be
+/// showing (it may have missed being told while it was still loading).
+#[tauri::command]
+pub fn overlay_state() -> Option<String> {
+    overlay::current_open()
+}
+
+/// Music mode: the orb flows with what's playing (on) — or stops (off).
+#[tauri::command]
+pub fn music_meter(app: AppHandle, on: bool) {
+    crate::media::music_meter(&app, on);
+}
+
 /// The Island's ⏮ ⏯ ⏭ buttons: "play", "pause", "next", "previous".
 #[tauri::command]
 pub async fn media_control(action: String) -> R<bool> {

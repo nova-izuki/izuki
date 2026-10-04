@@ -258,7 +258,7 @@ export interface Settings {
   /** Snap targets to real UI Automation controls before clicking. */
   magnetic_hand: boolean;
   control_style: "mouse" | "precision";
-  orb_style: "liquid" | "ferrofluid" | "dew" | "ripple" | "constellation" | "particles" | "face";
+  orb_style: "liquid" | "ferrofluid" | "dew" | "ripple" | "constellation" | "particles" | "face" | "ferro";
   orb_response: number;
   automatic_update_checks: boolean;
   economy_mode: boolean;
@@ -296,6 +296,8 @@ export interface Settings {
   follow_mode_enabled: boolean;
   /** The Island at the top of the screen (live activities). On by default. */
   island_enabled: boolean;
+  /** When music plays, the orb comes up and flows with it. */
+  music_visuals: boolean;
   /** The TV's address on the home Wi-Fi ("" = find it). */
   tv_host: string;
   /** Saved flows clear after this many days unused (0 = keep). */

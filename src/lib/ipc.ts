@@ -192,6 +192,7 @@ export const MOCK_SETTINGS: Settings = {
   execution_mode: "focus",
   follow_mode_enabled: false,
   island_enabled: true,
+  music_visuals: false,
   tv_host: "",
   flows_keep_days: 1,
   wake_sensitivity: "normal",
@@ -381,6 +382,10 @@ export const api = {
   tvDo: (said: string) => call<string>("tv_do", { said }, () => "TV control works in the Izuki app on your PC."),
   /** The Island's look: what's playing, and whether a film/game is full screen. */
   islandStatus: () => call<IslandStatus>("island_status", undefined, () => ({ media: null, fullscreen: false, suggestions: [], context: "" })),
+  /** What the overlay should be showing now (JSON of the last open), if it's up. */
+  overlayState: () => call<string | null>("overlay_state", undefined, () => null),
+  /** Music mode: the PC's sound level drives the orb (on/off). */
+  musicMeter: (on: boolean) => call<void>("music_meter", { on }, () => undefined),
   /** ⏮ ⏯ ⏭ for whatever is playing on the PC. */
   mediaControl: (action: "play" | "pause" | "next" | "previous") => call<boolean>("media_control", { action }, () => false),
   reminderRemove: (id: string) => call<void>("reminder_remove", { id }, () => undefined),

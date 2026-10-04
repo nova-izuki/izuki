@@ -102,6 +102,13 @@ export function OverlayCanvas() {
   const [islandOn, setIslandOn] = useState(true);
   const [islandPeeks, setIslandPeeks] = useState(true);
   const [keepReply, setKeepReply] = useState(false);
+  // Music mode: the orb comes up and flows with what's playing — when asked
+  // from the Island, or by itself when "Dance with my music" is on.
+  const [musicAuto, setMusicAuto] = useState(false);
+  const [musicAsked, setMusicAsked] = useState(false);
+  const [musicPlaying, setMusicPlaying] = useState(false);
+  // Closed with × while the music plays: stays closed until it stops.
+  const [musicSnoozed, setMusicSnoozed] = useState(false);
   // Where you dragged the drawing tools to (null = top centre). Remembered.
   const [toolsAt, setToolsAt] = useState<{ x: number; y: number } | null>(() => {
     try {
@@ -389,7 +396,18 @@ export function OverlayCanvas() {
 
   useEffect(() => {
     const offs: Array<Promise<() => void>> = [
-      on<OverlayOpenPayload>(EV.overlayOpen, (p) => {
+      on<OverlayOpenPayload>(EV.overlayOpen, (p) => openWith(p)),
+    ];
+    // Told to show before this page had loaded (start-up)? Catch up now.
+    void api.overlayState().then((json) => {
+      if (!json) return;
+      try {
+        openWith(JSON.parse(json) as OverlayOpenPayload);
+      } catch {
+        /* nothing to catch up on */
+      }
+    });
+    function openWith(p: OverlayOpenPayload) {
         setAsk(null);
         releasedRef.current = false;
         setDesktop(p.desktop);
@@ -409,6 +427,7 @@ export function OverlayCanvas() {
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
           setKeepReply(s.keep_reply);
+          setMusicAuto(s.music_visuals);
           setHandSize(s.follow_hand_size);
           setInk(s.ink_color);
         });
@@ -417,7 +436,8 @@ export function OverlayCanvas() {
         if (p.mode === "draw") {
           setTimeout(() => promptRef.current?.focus({ preventScroll: true }), 40);
         }
-      }),
+    }
+    offs.push(
       on<void>(EV.overlayClose, () => close()),
       on<void>(EV.penClear, () => setPenMarks([])),
       // "Which one? Circle it for me." — draw with the mouse (no key held),
@@ -458,6 +478,7 @@ export function OverlayCanvas() {
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
           setKeepReply(s.keep_reply);
+          setMusicAuto(s.music_visuals);
           setHandSize(s.follow_hand_size);
           setInk(s.ink_color);
         });
@@ -556,7 +577,7 @@ export function OverlayCanvas() {
         // Start reading the screen while you type (or just press Enter).
         void api.prefetchScreen();
       }),
-    ];
+    );
     return () => {
       offs.forEach((p) => void p.then((off) => off()));
     };
@@ -684,6 +705,29 @@ export function OverlayCanvas() {
     return () => clearTimeout(t);
   }, [idle]);
 
+  // Music mode runs only while music plays and Izuki isn't busy talking.
+  const musicShowing = (musicAsked || (musicAuto && !musicSnoozed)) && musicPlaying && orb === "hidden";
+  useEffect(() => {
+    void api.musicMeter(musicShowing);
+    return () => {
+      if (musicShowing) void api.musicMeter(false);
+    };
+  }, [musicShowing]);
+  useEffect(() => {
+    // Closing the orb (its ×, Esc, "stop") ends music mode too.
+    const off = on<void>(EV.stopSpeaking, () => {
+      setMusicAsked(false);
+      setMusicSnoozed(true);
+    });
+    return () => void off.then((f) => f());
+  }, []);
+  useEffect(() => {
+    if (!musicPlaying) {
+      setMusicAsked(false);
+      setMusicSnoozed(false);
+    }
+  }, [musicPlaying]);
+
   // ------------------------------------------------------------- rendering
 
   if (!open) return null;
@@ -702,8 +746,19 @@ export function OverlayCanvas() {
           </div>
         )}
         <Hud />
-        {islandOn && <Island orb={orb} doing={doing} thinking={thinking} peeks={islandPeeks} />}
-        <VoiceSphere state={orb} transcript={transcript} doing={doing} />
+        {islandOn && <Island
+            orb={orb}
+            doing={doing}
+            thinking={thinking}
+            peeks={islandPeeks}
+            visualizing={musicShowing}
+            onVisualize={() => {
+              setMusicSnoozed(false);
+              setMusicAsked((v) => !v);
+            }}
+            onPlaying={setMusicPlaying}
+          />}
+        <VoiceSphere state={musicShowing ? "speaking" : orb} transcript={transcript} doing={doing} />
         {orb === "hidden" && <TranscriptBar text={transcript?.text ?? null} final={!!transcript?.final} />}
         {caption && <CaptionBox caption={caption} stay={keepReply} onDone={() => setCaption(null)} />}
         {handOn && <FloatingChat />}
