@@ -449,6 +449,15 @@ function chime(up = true) {
  * written down in docs/HOW-IZUKI-WORKS.md; change that first.
  */
 
+/** "ans", "answer?", "what's the answer", "answer pls" — on its own, that's
+ * the question on the screen. */
+function answerOnScreen(t: string): string {
+  const bare = t.trim().replace(/[?.!]+$/, "").toLowerCase();
+  return /^(?:(?:the|what'?s the|whats the|give me the|tell me the|say the)\s+)?answers?(?:\s+(?:it|this|that|please|pls|now|quick|fast))?$/.test(bare)
+    ? "What's the answer to the question on my screen? Tell me the answer and, in one or two sentences, why."
+    : t;
+}
+
 // ---- teacher mode -----------------------------------------------------------
 // A lesson, not an answer key: Izuki explains each question with the pen,
 // lets the student answer, says whether they're right and why, and moves on
@@ -637,8 +646,10 @@ export function VoiceEngine() {
   const handleRequest = async (text: string, from: "voice" | "typed") => {
     // Teacher mode lapses after a long break, like a lesson ending.
     if (tutor.current && Date.now() - tutor.current.at > TUTOR_FOR_MS) tutor.current = null;
-    // Chat shorthand ("wats the ans", "pls open yt") read as plain words.
-    const t = expandShortWords(text.trim());
+    // Chat shorthand ("wats the ans", "pls open yt") read as plain words —
+    // and a bare "answer" / "what's the answer" means the question on screen,
+    // not "answer what?".
+    const t = answerOnScreen(expandShortWords(text.trim()));
     if (!t) return;
     // Classroom requests deliberately keep the pen overlay open until the
     // spoken explanation has finished. That also makes the caller wait, so

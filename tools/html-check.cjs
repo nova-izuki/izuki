@@ -18,8 +18,14 @@ while ((m = re.exec(html)) !== null) {
     continue;
   }
   n++;
-  const code = m[2];
+  let code = m[2];
   if (!code.trim()) continue;
+  // A module: its import lines can't be checked here (no other files are
+  // loaded), so set them aside and check the rest — as an async body, since
+  // modules may use top-level await.
+  if (/type\s*=\s*["']module["']/i.test(attrs)) {
+    code = "(async () => {\n" + code.replace(/^\s*import\s[^;]*;?\s*$/gm, "") + "\n})";
+  }
   try {
     new vm.Script(code, { filename: `${file}#script${n}` });
     console.log(`  ok   script block ${n} (${code.length} chars)`);

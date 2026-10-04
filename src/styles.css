@@ -614,6 +614,15 @@ html[data-backdrop="tabbed"] .izk-card {
     0 2px 8px rgba(0, 0, 0, 0.25);
   -webkit-font-smoothing: antialiased;
 }
+/* Performance: the overlay covers the whole screen, so any endless animation
+   on it makes the graphics card redraw a screen-sized layer ~60 times a
+   second — for as long as it shows (a music pill can show for hours). The
+   small pill stays perfectly still; it only animates while you've opened it. */
+.izk-island:not(.izk-island-open) *,
+.izk-island:not(.izk-island-open)::before {
+  animation: none !important;
+}
+
 /* Open: a soft aurora drifts behind the card. Turned, never repainted —
    the blur is drawn once and the layer just rotates. */
 .izk-island-open::before {

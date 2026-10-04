@@ -406,6 +406,18 @@ export function drawGlassOrb(ctx, size, style, time, energy, thinking, mood = 0)
     if (pass.uStyle) gl.uniform1i(pass.uStyle, STYLES[style]);
     if (pass.uMood) gl.uniform1f(pass.uMood, Math.max(-1, Math.min(1, Number(mood) || 0)));
     gl.drawArrays(pass.mode, 0, pass.count);
+    if (style === "face" || style === "particles") {
+      // Light points only add light — on a white page they'd vanish. A soft
+      // dark field behind them (like a hologram projector's) keeps them
+      // visible on any screen.
+      const c = size / 2;
+      const field = ctx.createRadialGradient(c, c, 0, c, c, size * 0.5);
+      field.addColorStop(0, "rgba(2, 6, 16, 0.82)");
+      field.addColorStop(0.62, "rgba(2, 6, 16, 0.6)");
+      field.addColorStop(1, "rgba(2, 6, 16, 0)");
+      ctx.fillStyle = field;
+      ctx.fillRect(0, 0, size, size);
+    }
     ctx.drawImage(r.canvas, 0, 0, size, size);
     return true;
   } catch (e) {

@@ -394,19 +394,26 @@ export function OverlayCanvas() {
 
   // ------------------------------------------------------------ backend bus
 
+  // Told to show before this page had loaded (start-up)? Catch up — ONCE.
+  // (It used to sit in the effect below, which re-runs as you draw: each
+  // re-run re-opened Ctrl+D mode and wiped the mark being drawn.)
+  const openWithRef = useRef<((p: OverlayOpenPayload) => void) | null>(null);
   useEffect(() => {
-    const offs: Array<Promise<() => void>> = [
-      on<OverlayOpenPayload>(EV.overlayOpen, (p) => openWith(p)),
-    ];
-    // Told to show before this page had loaded (start-up)? Catch up now.
     void api.overlayState().then((json) => {
-      if (!json) return;
+      if (!json || !openWithRef.current) return;
       try {
-        openWith(JSON.parse(json) as OverlayOpenPayload);
+        openWithRef.current(JSON.parse(json) as OverlayOpenPayload);
       } catch {
         /* nothing to catch up on */
       }
     });
+  }, []);
+
+  useEffect(() => {
+    const offs: Array<Promise<() => void>> = [
+      on<OverlayOpenPayload>(EV.overlayOpen, (p) => openWith(p)),
+    ];
+    openWithRef.current = openWith;
     function openWith(p: OverlayOpenPayload) {
         setAsk(null);
         releasedRef.current = false;
@@ -529,11 +536,10 @@ export function OverlayCanvas() {
             ...prev,
             { id, kind: "arrow", x: cx2, y: cy2, x2: hx2, y2: hy2, tone: TOOL_COLOUR.arrow },
           ]);
-        } else {
-          setPointOuts((prev) => [
-            ...prev,
-            { id, kind: precision.current && cmd.action !== "point" ? "box" : "circle", x: cx2, y: cy2, tone: TOOL_COLOUR.circle },
-          ]);
+        } else if (!precision.current || cmd.action === "point") {
+          // Jarvis mode shows nothing for a click — it just happens. (A
+          // "point at it" answer still circles, since the circle IS the answer.)
+          setPointOuts((prev) => [...prev, { id, kind: "circle", x: cx2, y: cy2, tone: TOOL_COLOUR.circle }]);
         }
         // "Point at it": the circle *is* the answer — leave it up long
         // enough to look at while Izuki explains.

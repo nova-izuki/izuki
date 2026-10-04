@@ -44,10 +44,11 @@ pub fn status() -> IslandStatus {
 /// app, not on every glance — reading a page's controls takes a moment.
 fn question_on_screen(context: &str) -> bool {
     static SEEN: parking_lot::Mutex<Option<(String, bool, std::time::Instant)>> = parking_lot::Mutex::new(None);
-    if let Some((c, q, at)) = SEEN.lock().as_ref() {
-        // A quiz often swaps questions without the title changing, so look
-        // again now and then even on the same page.
-        if c == context && at.elapsed() < std::time::Duration::from_secs(20) {
+    if let Some((c, q, _)) = SEEN.lock().as_ref() {
+        // Once per page or app. Reading a page's controls makes Chrome switch
+        // on its accessibility machinery, which slows the whole browser —
+        // re-reading every 20 s kept it on all the time and caused lag.
+        if c == context {
             return *q;
         }
     }

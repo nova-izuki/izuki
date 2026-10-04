@@ -156,9 +156,9 @@ pub fn for_context(app: &str, title: &str, hour: u32, music: bool) -> Vec<Sugges
 /// Suggestions for whatever is in front right now. `question`: answer
 /// choices are showing (see island.rs), whatever the page is called.
 pub fn now(music: bool, question: bool) -> Vec<Suggestion> {
-    if crate::uia::screen_locked() {
-        return Vec::new();
-    }
+    // (No lock-screen check here: it walks every running process, and this
+    // runs every couple of seconds. On the lock screen the window in front
+    // is the lock screen itself, which gets no suggestions anyway.)
     let hour = local_hour();
     let title = crate::uia::foreground_title();
     with_question(for_context(&crate::uia::foreground_app(), &title, hour, music), question, &title)

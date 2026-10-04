@@ -645,12 +645,22 @@ fn mark_broken(id: crate::settings::ProviderId) {
 }
 
 /// Leave out brains known to be unable to answer (for a while) — asking
-/// them only burned the racing slots. The chosen brain always stays.
+/// them only burned the racing slots. That includes the chosen brain: a
+/// local one that isn't running (9Router, Ollama closed) used to be asked
+/// first on every look and every chat message, ~2.4 s wasted each time.
+/// If every brain is down, the chosen one is kept so there's still a try.
 fn skip_broken(chain: &mut Vec<crate::settings::ProviderConfig>) {
     let mut b = BROKEN.lock();
     b.retain(|(_, at)| at.elapsed() < BROKEN_FOR);
-    let first = chain.first().map(|c| c.id);
-    chain.retain(|c| Some(c.id) == first || !b.iter().any(|(p, _)| *p == c.id));
+    let working: Vec<_> = chain.iter().filter(|c| !b.iter().any(|(p, _)| *p == c.id)).cloned().collect();
+    if !working.is_empty() {
+        if working.len() < chain.len() {
+            eprintln!("[brain] skipping {} brain(s) that can't be reached right now", chain.len() - working.len());
+        }
+        *chain = working;
+    } else {
+        chain.truncate(1);
+    }
 }
 
 /// Keep the user's chosen brain first — unless it has been slow and
