@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useWakeEngine, WAKE_THRESHOLD } from "../hooks/useWakeEngine";
+import { expandShortWords } from "../lib/shortWords";
 import { useDictation } from "../hooks/useDictation";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
 import { cancelChat, chatLane, needsApps, needsScreen, recentHistory, remember, type LaneResult } from "../lib/conversation";
@@ -636,7 +637,8 @@ export function VoiceEngine() {
   const handleRequest = async (text: string, from: "voice" | "typed") => {
     // Teacher mode lapses after a long break, like a lesson ending.
     if (tutor.current && Date.now() - tutor.current.at > TUTOR_FOR_MS) tutor.current = null;
-    const t = text.trim();
+    // Chat shorthand ("wats the ans", "pls open yt") read as plain words.
+    const t = expandShortWords(text.trim());
     if (!t) return;
     // Classroom requests deliberately keep the pen overlay open until the
     // spoken explanation has finished. That also makes the caller wait, so

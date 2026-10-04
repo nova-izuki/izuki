@@ -508,6 +508,14 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         if precision && matches!(step.action, Intent::Click | Intent::Auto) && uia::invoke_grounded(identity)? {
             return Ok(format!("activated parsed control {} directly", step.target.unwrap_or(0)));
         }
+        // Jarvis mode types straight into the box too — your mouse stays put.
+        if precision && targeted_type {
+            if let Some(text) = &step.text_to_type {
+                if uia::set_text_grounded(identity, text).unwrap_or(false) {
+                    return Ok(format!("typed into parsed control {} directly", step.target.unwrap_or(0)));
+                }
+            }
+        }
         let point = uia::grounded_point(identity)?;
         glide_to(point.0, point.1, move_ms)?;
         // Hover/layout effects happen during travel: verify the same identity

@@ -479,9 +479,14 @@ export function ChatTab() {
       {/* ------------------------------------------------ the chat */}
       <div className="izk-card flex min-h-[420px] flex-col p-0">
         <div className="flex items-center justify-between px-[14px] pt-[12px]">
-          <span className="text-[10.5px] text-izk-muted" title="Change control style in Settings → Execution">
-            {settings.control_style === "precision" ? "▣ Precision" : "↗ Mouse"} · {settings.economy_mode ? "Save credits" : "Fast backups"}
-          </span>
+          <button
+            type="button"
+            onClick={() => patch({ control_style: settings.control_style === "precision" ? "mouse" : "precision" })}
+            className="izk-no-drag text-[10.5px] text-izk-muted transition-colors hover:text-izk-ink"
+            title="Tap to switch: Jarvis mode works without moving the mouse; Mouse mode moves a visible hand."
+          >
+            {settings.control_style === "precision" ? "⚡ Jarvis mode (no mouse)" : "↗ Mouse"} · {settings.economy_mode ? "Save credits" : "Fast backups"}
+          </button>
           <button
             type="button"
             onClick={() => patch({ chat_auto_run: !settings.chat_auto_run })}

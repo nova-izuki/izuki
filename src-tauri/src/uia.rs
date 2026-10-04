@@ -264,6 +264,29 @@ pub fn invoke_grounded(identity: &ControlIdentity) -> anyhow::Result<bool> {
 #[cfg(not(windows))]
 pub fn invoke_grounded(_identity: &ControlIdentity) -> anyhow::Result<bool> { Ok(false) }
 
+/// Type into a text box without the mouse: give it the keyboard focus and
+/// set its text through Windows (the box's Value pattern). `false` when the
+/// box won't take it that way — then the caller clicks and types as usual.
+/// Never for password boxes.
+#[cfg(windows)]
+pub fn set_text_grounded(identity: &ControlIdentity, text: &str) -> anyhow::Result<bool> {
+    use uiautomation::patterns::UIValuePattern;
+    let (el, _, _) = grounded_element(identity)?;
+    if el.is_password().unwrap_or(true) || !el.is_enabled().unwrap_or(false) {
+        return Ok(false);
+    }
+    let Ok(p) = el.get_pattern::<UIValuePattern>() else { return Ok(false) };
+    if p.is_readonly().unwrap_or(true) {
+        return Ok(false);
+    }
+    let _ = el.set_focus();
+    p.set_value(text)?;
+    Ok(true)
+}
+
+#[cfg(not(windows))]
+pub fn set_text_grounded(_identity: &ControlIdentity, _text: &str) -> anyhow::Result<bool> { Ok(false) }
+
 /// The window the user is actually working in. Normally the foreground
 /// window — but clicking Izuki's own chat bubble or panel makes *that*
 /// foreground, so Izuki's windows (and invisible, minimised, tool and
