@@ -132,7 +132,11 @@ jobs:
           $version = $env:IZUKI_RELEASE_TAG -replace '^v', ''
           $notes = "docs/RELEASE-$version.md"
           if (Test-Path $notes) {
-            gh release edit $env:IZUKI_RELEASE_TAG --notes-file $notes
+            # Every release page leads to the website first — so search
+            # engines see the site as Izuki's home, not 40 GitHub pages.
+            $page = "🌐 **Izuki's website — download, phone app and TV app: [nova-izuki.github.io/izuki](https://nova-izuki.github.io/izuki/)**`n`n" + (Get-Content $notes -Raw)
+            $page | Set-Content -Encoding utf8 release-notes.md
+            gh release edit $env:IZUKI_RELEASE_TAG --notes-file release-notes.md
             if ($LASTEXITCODE -ne 0) { throw "could not attach release notes" }
           }
           gh release edit $env:IZUKI_RELEASE_TAG --draft=false --latest
