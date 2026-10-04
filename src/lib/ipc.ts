@@ -405,6 +405,8 @@ export const api = {
   linkStatus: () =>
     call<{ running: boolean; ip: string | null; devices: Array<{ name: string; kind: string; added: string }> }>("link_status", {}, () => ({ running: false, ip: null, devices: [] })),
   linkForget: (name: string) => call<void>("link_forget", { name }, () => undefined),
+  systemPulse: () =>
+    call<{ cpu: number | null; memory: number | null; disk_free_gb: number | null; battery: [number, boolean] | null; online: boolean } | null>("system_pulse", {}, () => null),
   laterList: () => call<Array<{ id: string; text: string; done: boolean; added: number }>>("later_list", {}, () => []),
   laterAdd: (text: string) => call<string>("later_add", { text }, () => ""),
   laterDone: (id: string, done: boolean) => call<void>("later_done", { id, done }, () => undefined),

@@ -343,3 +343,45 @@ mod tests {
         println!("{}", compose());
     }
 }
+
+/// The status screen's live pulse, asked every couple of seconds while it's up.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Pulse {
+    pub cpu: Option<u32>,
+    pub memory: Option<u32>,
+    pub disk_free_gb: Option<u64>,
+    pub battery: Option<(u8, bool)>,
+    pub online: bool,
+}
+
+pub fn pulse() -> Pulse {
+    let (memory, disk_free_gb) = health_raw();
+    let online = ["1.1.1.1:443", "8.8.8.8:53"].iter().any(|a| {
+        a.parse::<std::net::SocketAddr>().is_ok_and(|addr| std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(900)).is_ok())
+    });
+    Pulse { cpu: cpu_load(), memory, disk_free_gb, battery: battery_raw(), online }
+}
+
+/// CPU in use since the last ask, 0–100.
+#[cfg(windows)]
+fn cpu_load() -> Option<u32> {
+    use windows::Win32::Foundation::FILETIME;
+    use windows::Win32::System::Threading::GetSystemTimes;
+    static LAST: parking_lot::Mutex<Option<(u64, u64)>> = parking_lot::Mutex::new(None);
+    let (mut idle, mut kernel, mut user) = (FILETIME::default(), FILETIME::default(), FILETIME::default());
+    unsafe { GetSystemTimes(Some(&mut idle), Some(&mut kernel), Some(&mut user)).ok()? };
+    let n = |f: FILETIME| ((f.dwHighDateTime as u64) << 32) | f.dwLowDateTime as u64;
+    let (idle, total) = (n(idle), n(kernel) + n(user));
+    let mut last = LAST.lock();
+    let out = last.and_then(|(pi, pt)| {
+        let dt = total.saturating_sub(pt);
+        (dt > 0).then(|| (100 - (idle.saturating_sub(pi) * 100 / dt).min(100)) as u32)
+    });
+    *last = Some((idle, total));
+    out
+}
+
+#[cfg(not(windows))]
+fn cpu_load() -> Option<u32> {
+    None
+}

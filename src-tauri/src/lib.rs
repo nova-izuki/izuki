@@ -249,6 +249,7 @@ pub fn run() {
             commands::submit_voice_command,
             commands::link_status,
             commands::later_list,
+            commands::system_pulse,
             commands::later_add,
             commands::later_done,
             commands::later_remove,

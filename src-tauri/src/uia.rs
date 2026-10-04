@@ -889,6 +889,28 @@ pub fn foreground_app() -> String {
     }
 }
 
+/// Windows' own pop-ups have come to the front — the Start menu, Search,
+/// the notification centre — which is what a click that slipped onto the
+/// taskbar opens. Their name, if so.
+#[cfg(windows)]
+pub fn shell_popup_in_front() -> Option<&'static str> {
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    let mut pid: u32 = 0;
+    unsafe { GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut pid)) };
+    let name = process_name(pid).to_ascii_lowercase();
+    match name.as_str() {
+        "searchhost.exe" | "searchapp.exe" | "searchui.exe" => Some("Windows Search"),
+        "startmenuexperiencehost.exe" => Some("the Start menu"),
+        "shellexperiencehost.exe" => Some("the notification centre"),
+        _ => None,
+    }
+}
+
+#[cfg(not(windows))]
+pub fn shell_popup_in_front() -> Option<&'static str> {
+    None
+}
+
 /// A process's file name, e.g. "chrome.exe" ("" if it can't be read).
 #[cfg(windows)]
 pub fn process_name(pid: u32) -> String {

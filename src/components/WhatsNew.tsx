@@ -22,6 +22,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🎛️", title: "A status screen you can use", how: "Say “wake up”: live CPU, memory, battery and network; tap a gauge, an email, a meeting or an app to ask about it; music controls; your Later list; and an Ask bar with one-tap actions.", try: { label: "Show me", say: "wake up" } },
+  { icon: "🎯", title: "Catches its own misclicks", how: "If a click slips onto the taskbar and opens Search or Start by mistake, Izuki closes it and aims again." },
   { icon: "📺", title: "Izuki TV — full control of your TV", how: "On Android TV, Google TV and Fire TV: a big-screen Izuki that opens any app, plays and pauses, changes the volume, and reads what's on the TV to press, search and pick shows for you. Say “Hey Nova” or hold OK on the remote. A small orb floats over Netflix while it listens.", try: { label: "Set up my TV", tab: "settings", id: "settings-tv" } },
   { icon: "🔗", title: "One setup for everything", how: "Link your phone or TV to this PC (Settings → Control my TV → “Let my phone and TV link”). Press Allow here and it copies your AI keys, connected apps and memories — then it works on its own, even when this PC is off.", try: { label: "Turn it on", tab: "settings", id: "settings-tv" } },
   { icon: "🗒️", title: "Later list", how: "“Remind me later I'm buying Scrubbing Bubbles and Sensodyne.” No time needed — it lands on your Later list (in the Chat tab), and Izuki brings it up when you're back, in the morning and before the shops close. “I got the toothpaste” ticks it off.", try: { label: "Try it", say: "what's on my list?" } },
@@ -31,7 +33,6 @@ const ITEMS: Item[] = [
   { icon: "✅", title: "Proof check", how: "After every change (uninstall, install, delete, close an app) Izuki looks again and shows “✓ Checked: Zoom is no longer installed” before saying it's done. It also catches itself if it ever claims something it didn't do." },
   { icon: "💬", title: "One clean reply in the chat", how: "Each job is one message: the steps it took, then the answer — with a live status line, Copy, Read aloud and Again, tidy lists and code boxes. Quick checks run without asking." },
   { icon: "📺", title: "Samsung & LG TVs too", how: "“Open Netflix on the TV”, “turn the TV up”, “pause the TV” — Roku, Samsung and LG over your Wi-Fi. Press Allow on the TV the first time.", try: { label: "Set up my TV", tab: "settings", id: "settings-tv" } },
-  { icon: "🎛️", title: "Status screen", how: "Say “wake up” or “status report”: time, battery, inbox, calendar, reminders, music and apps on a holographic screen.", try: { label: "Show me", say: "wake up" } },
   { icon: "🏝️", title: "The Island", how: "Push your mouse to the very top-middle of the screen. It shows what Izuki's doing, what's playing, reminders and smart suggestions." },
   { icon: "🧩", title: "Browser extension", how: "Add it to Chrome or Edge and Izuki sees web pages exactly — every link and button — so clicks never miss. In Jarvis mode it clicks inside the page itself.", try: { label: "Add it", tab: "settings", id: "settings-extension" } },
   { icon: "📝", title: "Nova Notes", how: "Say “take notes on this” on any page, PDF or quiz — or open the Notes tab. Then flashcards, quiz me, summarise or ask about them. Teacher mode saves lessons by itself.", try: { label: "Open Notes", tab: "notes" } },

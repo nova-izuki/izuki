@@ -18,3 +18,9 @@ The PC also hands TV jobs to a linked TV app ("Hey Nova, open YouTube on the TV"
 
 ## Izuki talks from the TV
 With the Izuki channel open on a Roku, Izuki's voice now plays from the TV's own speakers (switchable: **Talk from the TV**), and the TV orb can have its own look — glass orbs tinted to match, plus Aurora and Nebula that drift through their colours.
+
+## A status screen you can use
+"Hey Nova, wake up" now brings up a live, hands-on status screen: the clock ticks, and CPU, memory, battery, free space and your connection update every two seconds. Tap a gauge and Izuki checks what's using it (in the background); tap an email to have it read with what you need to do; tap a meeting for who's in it and what to prepare; tap a linked app for what's new; play, pause and skip your music; tick off your Later list. An "Ask" bar and one-tap actions (plan my day, tidy my PC, today's news, weather, music) sit along the bottom, and the screen stays up while you use it.
+
+## Catches its own misclicks
+If a click slips onto the taskbar and opens Windows Search or the Start menu by mistake, Izuki notices, closes it and aims again — instead of carrying on in the wrong place.

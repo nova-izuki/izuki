@@ -817,6 +817,12 @@ pub async fn tv_show(state: String, text: Option<String>) -> bool {
     blocking(move || crate::tv::show(&state, text.as_deref())).await.unwrap_or(false)
 }
 
+/// The status screen's live numbers (CPU, memory, space, battery, online).
+#[tauri::command]
+pub async fn system_pulse() -> Option<crate::briefing::Pulse> {
+    blocking(crate::briefing::pulse).await.ok()
+}
+
 /// The Later list (things to remember, no time attached).
 #[tauri::command]
 pub fn later_list() -> Vec<crate::later::Item> {

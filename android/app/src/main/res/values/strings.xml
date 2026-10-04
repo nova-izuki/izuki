@@ -5,5 +5,5 @@
     <string name="package_name">com.novaizuki.mobile</string>
     <string name="custom_url_scheme">com.novaizuki.mobile</string>
     <string name="accessibility_service_name">Izuki Companion control</string>
-    <string name="accessibility_service_description">Lets Izuki see what is on the screen and press, type, scroll, go Back or Home there — only when you ask it to (&quot;open Netflix&quot;, &quot;play the second one&quot;). It never reads passwords, and nothing is collected in the background. On a TV it also shows Izuki&apos;s small orb over other apps while it listens or talks.</string>
+    <string name="accessibility_service_description">Lets Izuki see what is on the screen and press, type, scroll, go Back or Home there, only when you ask it to (for example: open Netflix, play the second one). It never reads passwords, and nothing is collected in the background. On a TV it also shows the small Izuki orb over other apps while it listens or talks.</string>
 </resources>

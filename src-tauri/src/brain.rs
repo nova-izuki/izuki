@@ -1605,6 +1605,31 @@ fn submit_task(
             last_plan = Some(plan);
             break;
         }
+        // A click that slipped onto the taskbar opens Windows Search or the
+        // Start menu — notice it the way a person would, close it, and aim
+        // again (unless that's what was asked for).
+        if round > 0 && !last_round.is_empty() {
+            if let Some(popup) = crate::uia::shell_popup_in_front() {
+                let p = prompt.to_lowercase();
+                let wanted = ["start menu", "search", "windows menu", "notification", "start button"].iter().any(|w| p.contains(w));
+                if !wanted {
+                    eprintln!("[agent] a step opened {popup} by mistake — closing it");
+                    let _ = crate::automation::press_key("esc");
+                    std::thread::sleep(Duration::from_millis(350));
+                    if let Ok(f) = capture::capture_all() {
+                        frame = f;
+                    }
+                    let note = format!(
+                        "Mistake caught: your last click opened {popup} instead (it landed on the taskbar), so it was closed again. \
+                         The thing you meant is in the window above the taskbar — aim higher, use its target id, or a keyboard route."
+                    );
+                    told = Some(match told.take() {
+                        Some(t) => format!("{t}\n{note}"),
+                        None => note,
+                    });
+                }
+            }
+        }
         // Did the last steps actually do anything? A person notices at once
         // when a click did nothing — and says so, and tries again smarter.
         if round > 0 && !last_round.is_empty() {
