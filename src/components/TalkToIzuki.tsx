@@ -65,7 +65,7 @@ export function TalkToIzuki() {
 
 
   return (
-    <div className="izk-card izk-grain relative overflow-hidden p-[16px]">
+    <div id="talk-card" className="izk-card izk-grain relative overflow-hidden p-[16px]">
       <div
         className="pointer-events-none absolute -left-10 -top-16 h-40 w-40 rounded-full blur-[46px]"
         style={{ background: "radial-gradient(circle,rgba(255,230,109,0.35),transparent 70%)" }}

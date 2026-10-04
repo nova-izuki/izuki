@@ -57,6 +57,31 @@ pub fn is_briefing(said: &str) -> bool {
         || ASKS.iter().any(|a| s == *a || s.starts_with(&format!("{a} ")) || s.ends_with(&format!(" {a}")) || s.contains(&format!(" {a} ")))
 }
 
+/// The apps that carry messages (beyond Gmail and Calendar, read directly).
+const MESSAGING: &[&str] = &[
+    "slack", "discord", "whatsapp", "telegram", "outlook", "microsoft teams", "teams", "twitter", "x", "instagram",
+    "facebook", "linkedin", "reddit", "notion", "github", "asana", "trello", "jira", "linear", "clickup",
+];
+
+/// What's new across the other linked apps (Slack, Discord, Outlook, GitHub…),
+/// asked of the apps assistant in one go — a few seconds, so the status
+/// screen shows it when it arrives. `None` when there's nothing to ask.
+pub fn across_apps(apps: &[String]) -> Option<String> {
+    let others: Vec<&String> = apps
+        .iter()
+        .filter(|a| MESSAGING.iter().any(|m| a.to_lowercase() == *m || a.to_lowercase().contains(m)))
+        .collect();
+    if others.is_empty() {
+        return None;
+    }
+    let names = others.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+    let ask = format!(
+        "Quick status for my wake-up briefing: what's new for me today in {names}? Up to 4 short lines, each starting with the app's name (\"Slack — Sam: can we move the call?\"). Only read — don't send, post or change anything. If nothing's new, say so in one line."
+    );
+    let turn = crate::chat::Turn { role: "user".into(), content: ask };
+    crate::composio::ask(&[turn]).ok().map(|a| a.text.trim().to_string()).filter(|t| !t.is_empty())
+}
+
 /// The report, ready to say.
 pub fn compose() -> String {
     report().said

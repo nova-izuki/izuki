@@ -353,6 +353,14 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
             let _ = overlay::show_follow(&app);
         }
         let _ = app.emit_to(overlay::OVERLAY_LABEL, "izuki://hud", &hud);
+        // Then everything else that's linked (Slack, Discord, Outlook…) —
+        // slower, so it joins the screen when it's ready.
+        let (apps, app2) = (hud.apps.clone(), app.clone());
+        std::thread::spawn(move || {
+            if let Some(text) = crate::briefing::across_apps(&apps) {
+                let _ = app2.emit_to(overlay::OVERLAY_LABEL, "izuki://hud-apps", text);
+            }
+        });
         return Some(hud.said);
     }
     crate::instant::parse(&said)?;

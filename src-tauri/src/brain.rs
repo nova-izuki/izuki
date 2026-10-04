@@ -420,12 +420,11 @@ fn ask_model(
     if chain.is_empty() {
         return Err(anyhow!("no brain is configured"));
     }
-    // A question to answer (a quiz, "what's this?") needs the smartest brain
-    // to hand; small models are quick but got quiz answers wrong. Clicks are
-    // fine with them — they pick from Izuki's exact list of buttons.
-    if !wants_action {
-        smartest_first(&mut chain);
-    }
+    // The smartest brain to hand goes first. Small models are quick, but they
+    // got quiz answers wrong — and on tasks they mostly described the job
+    // instead of doing it ("no brain acted" 35 times in one user's log, all
+    // from an 11B model). They stay as backups.
+    smartest_first(&mut chain);
     let mut plan = ask_racing(&chain, req, prep_ms, wants_action)?;
     // Marks aimed at words go exactly where those words really are.
     anchor_marks(&mut plan.steps, frame);

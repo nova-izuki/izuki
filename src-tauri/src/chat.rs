@@ -344,12 +344,18 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             let mode = Mutex::new(if last { Some(false) } else { None::<bool> });
             let tag = Mutex::new(None::<String>);
             let answered = Mutex::new(String::new());
+            // A brain failing here (busy, rate-limited) must still be told —
+            // it used to vanish, leaving the chat silent after a command ran.
+            let failed = Mutex::new(None::<String>);
             race(&chain, &messages, id, &|t: String, done: bool, err: Option<String>| {
                 let mut m = mode.lock();
                 if *m == Some(false) {
                     drop(m);
                     if files {
                         answered.lock().push_str(&t);
+                        if err.is_some() {
+                            *failed.lock() = err;
+                        }
                         return;
                     }
                     return emit(t, done, err);
@@ -366,6 +372,9 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
                         drop(m);
                         if files {
                             answered.lock().push_str(&all);
+                            if err.is_some() {
+                                *failed.lock() = err;
+                            }
                         } else {
                             emit(all, done, err);
                         }
@@ -386,6 +395,15 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
                             // A genuine answer — for the Chat tab, show it now.
                             if files && !ans.trim().is_empty() {
                                 emit(ans, true, None);
+                            } else if files {
+                                // Nothing came back. Never end in silence: after
+                                // a command ran, say it's done; otherwise why.
+                                match failed.into_inner() {
+                                    Some(e) if round > 0 => emit(format!("Done — that ran. (I couldn't write the summary: {e})"), true, None),
+                                    Some(e) => emit(String::new(), true, Some(e)),
+                                    None if round > 0 => emit("Done — that ran without any problems. Anything else?".into(), true, None),
+                                    None => emit(String::new(), true, Some("no answer came back — try again".into())),
+                                }
                             }
                             return;
                         }

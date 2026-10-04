@@ -20,6 +20,7 @@ import { IS_TAURI, on } from "../lib/ipc";
 import { Recover } from "./Recover";
 import { UpdateNotice } from "./UpdateNotice";
 import { FeatureFinder } from "./FeatureFinder";
+import { WhatsNew, WhatsNewButton, useWhatsNew } from "./WhatsNew";
 
 const TABS: Array<{ value: TabId; label: string; icon: React.ReactNode }> = [
   { value: "draw", label: "Draw", icon: <PenLine size={13} strokeWidth={2.4} /> },
@@ -55,6 +56,8 @@ export function GlassConfigPanel() {
   const patchSettings = useIzuki((s) => s.patchSettings);
   const tourOpen = useIzuki((s) => s.tourOpen);
   const setupOpen = useIzuki((s) => s.setupOpen);
+  // After each update: what's new, once (not over the first-run tour or setup).
+  const whatsNew = useWhatsNew(!settingsLoaded || !onboardingSeen || tourOpen || setupOpen);
   const setSetupOpen = useIzuki((s) => s.setSetupOpen);
   const [maxed, setMaxed] = useState(false);
   // Six tabs don't fit with names at the panel's usual width.
@@ -152,6 +155,7 @@ export function GlassConfigPanel() {
           </div>
 
           <div className="izk-no-drag flex items-center gap-1.5">
+            <WhatsNewButton onOpen={whatsNew.show} />
             <WinButton onClick={() => void windowAction("minimize")} label="Minimise">
               <Minus size={13} strokeWidth={2.6} />
             </WinButton>
@@ -211,6 +215,7 @@ export function GlassConfigPanel() {
 
         <AnimatePresence>{setupOpen && !tourOpen && <SetupGuide onClose={() => setSetupOpen(false)} />}</AnimatePresence>
         <AnimatePresence>{tourOpen && <OnboardingTour onDone={closeTour} />}</AnimatePresence>
+        <AnimatePresence>{whatsNew.open && !tourOpen && <WhatsNew onClose={whatsNew.close} />}</AnimatePresence>
       </div>
     </div>
   );

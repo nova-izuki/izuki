@@ -16,6 +16,9 @@ const FEATURES: { label: string; hint: string; tab: TabId; id?: string }[] = [
   { label: "Phone companion", hint: "Android, iPhone, Siri and PC pairing", tab: "settings", id: "settings-phone" },
   { label: "Discord & reminders", hint: "Notifications and alerts", tab: "settings", id: "settings-discord" },
   { label: "App updates", hint: "Download the newest installer", tab: "settings", id: "settings-updates" },
+  { label: "Control my TV", hint: "Roku, Netflix, volume, the Izuki TV channel, Android TV", tab: "settings", id: "settings-tv" },
+  { label: "Talk: Hey Nova or hold a key", hint: "Wake word, hold-to-talk, strictness, voice, language, Island, music mode, keep answer", tab: "draw", id: "talk-card" },
+  { label: "New orbs", hint: "Stardust, ferrofluid, hologram face, pure water, music, orb style", tab: "settings", id: "settings-look" },
 ];
 
 /** Local navigation only: searching never calls an AI or spends credits. */

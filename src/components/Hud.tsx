@@ -35,6 +35,8 @@ const MAX_MS = 45_000;
 
 export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
   const [data, setData] = useState<HudData | null>(preview);
+  /** What's new across the other linked apps — arrives a few seconds later. */
+  const [acrossApps, setAcrossApps] = useState<string | null>(null);
   const timer = useRef(0);
 
   useEffect(() => {
@@ -45,8 +47,10 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
     const offs = [
       on<HudData>("izuki://hud", (d) => {
         setData(d);
+        setAcrossApps(null);
         close(MAX_MS);
       }),
+      on<string>("izuki://hud-apps", (t) => setAcrossApps(t)),
       on<boolean>(EV.speaking, (talking) => {
         if (!talking) close(LINGER_MS);
       }),
@@ -137,6 +141,20 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
                   <div className="text-[13px] text-cyan-100/70">Nothing else on today.</div>
                 )}
               </Panel>
+              {acrossApps && (
+                <Panel title="ACROSS YOUR APPS">
+                  {acrossApps
+                    .split(/\n+/)
+                    .map((l) => l.replace(/^[-•*\s]+/, "").trim())
+                    .filter(Boolean)
+                    .slice(0, 4)
+                    .map((l, i) => (
+                      <div key={i} className="text-[12.5px] leading-snug text-cyan-50/90">
+                        {l}
+                      </div>
+                    ))}
+                </Panel>
+              )}
               {data.inbox && (
                 <Panel title="INBOX">
                   <div className="flex items-baseline gap-2">
