@@ -24,6 +24,7 @@ import { OrbStudio } from "../OrbStudio";
 import { UpdateControls } from '../UpdateControls';
 import { DiscordCard } from "../DiscordCard";
 import { AndroidCard } from "../AndroidCard";
+import { TvCard } from "../TvCard";
 import { BugCard } from "../BugCard";
 import { Badge, Row, Section, Segmented, Slider, Toggle, cx } from "../ui";
 import { useIzuki } from "../../lib/store";
@@ -427,6 +428,7 @@ export function SettingsTab() {
             <option value="ripple">Tidal pearl</option>
             <option value="constellation">Star crystal</option>
             <option value="particles">Stardust</option>
+            <option value="face">Hologram face</option>
           </select>
         </Row>
         <OrbStudio />
@@ -506,6 +508,7 @@ export function SettingsTab() {
 
       <div id="settings-discord"><DiscordCard /></div>
       <AndroidCard />
+      <div id="settings-tv"><TvCard /></div>
 
       {/* ------------------------------------------------ help */}
       <Section title="Help">

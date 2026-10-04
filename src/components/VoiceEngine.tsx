@@ -647,6 +647,19 @@ export function VoiceEngine() {
     const at = ++requestSeq;
     listenErrors.current = 0;
 
+    // The TV: "open Netflix on the TV", "turn the TV up" — straight to it,
+    // no AI. (Questions about TV — "what's on TV tonight" — go on as usual.)
+    if (/(?:on|the|my) (?:tv|television|roku)|(?:tv|roku) (?:go|volume|home|up|down)/i.test(t) && !/^(?:what|what's|whats|who|when|why|how|is|are|do|does|which)/i.test(t)) {
+      startSession(from === "voice", "thinking");
+      const said = await api.tvDo(t).catch(failure);
+      if (requestSeq !== at) return;
+      remember("user", t);
+      remember("assistant", said);
+      await respond(said, "cheerful");
+      void afterReply(at, false);
+      return;
+    }
+
     // Choose the device BEFORE any Windows shortcuts or local app commands.
     if (/\b(?:my|the|this|on|open) (?:phone|iphone|android|mobile)\b/i.test(t)) {
       startSession(from === "voice", "thinking");

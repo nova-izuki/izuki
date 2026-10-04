@@ -10,6 +10,8 @@
 //   constellation "Galaxy" — dark glass holding a nebula and twinkling stars
 //   dew         "Pure water" — truly see-through water: your screen shows
 //               through the middle, the world bends only near the rim
+//   face        "Hologram face" — a head of light points: the jaw moves
+//               with the voice, it blinks, smiles or frowns with the mood
 //   particles   "Stardust" — thousands of glowing dots in a sphere that
 //               pulse out with the voice and, while thinking, stream into
 //               a looping infinity sign
@@ -200,7 +202,78 @@ void main(){
   gl_FragColor = vec4(vC * k, k);
 }`;
 
-const STYLES = { ferrofluid: 0, ripple: 1, constellation: 2, dew: 3, particles: 4 };
+
+// ---- Hologram face: a head of light points that talks ---------------------
+// A face shape made from points (no photo, no 3D model file): an egg-shaped
+// head with eye sockets, a nose, lips and a jaw. The jaw drops with the
+// voice, the eyes blink, the mouth curves with the mood and the head turns.
+function facePoints() {
+  const pts = [], STEP = 0.016;
+  const A = 0.6, B = 0.8;
+  const g = (x, y, cx, cy, sx, sy) => Math.exp(-(((x - cx) / sx) ** 2 + ((y - cy) / sy) ** 2));
+  for (let y = -B; y <= B; y += STEP) {
+    for (let x = -A; x <= A; x += STEP) {
+      // An egg: a little narrower at the chin.
+      const w = A * (y < 0 ? 1 - 0.28 * (y / -B) ** 2 : 1);
+      const e = (x / w) ** 2 + (y / B) ** 2;
+      if (e >= 1) continue;
+      const shell = 0.55 * Math.sqrt(1 - e);
+      let z = shell;
+      z -= 0.07 * (g(x, y, -0.22, 0.14, 0.11, 0.07) + g(x, y, 0.22, 0.14, 0.11, 0.07)); // eye sockets
+      z += 0.13 * g(x, y, 0, -0.06, 0.05, 0.17); // nose
+      z += 0.05 * g(x, y, 0, -0.36, 0.17, 0.05); // lips
+      z += 0.03 * (g(x, y, -0.3, -0.1, 0.12, 0.1) + g(x, y, 0.3, -0.1, 0.12, 0.1)); // cheeks
+      const eye = Math.max(g(x, y, -0.22, 0.14, 0.075, 0.035), g(x, y, 0.22, 0.14, 0.075, 0.035));
+      const brow = Math.max(g(x, y, -0.22, 0.27, 0.1, 0.03), g(x, y, 0.22, 0.27, 0.1, 0.03));
+      // Everything below the lips moves with the jaw, more toward the chin.
+      const jaw = y < -0.37 ? Math.min(1, (-0.37 - y) / 0.06) * Math.max(0, 1 - Math.abs(x) / 0.48) : 0;
+      const lip = g(x, y, 0, -0.37, 0.2, 0.05);
+      // Leave the line between the lips open, so the mouth reads.
+      if (Math.abs(y + 0.37) < 0.008 && Math.abs(x) < 0.17) continue;
+      // How far the features stand out from a plain egg: lit by it below.
+      pts.push(x, y, z, eye, jaw, brow, lip, z - shell);
+    }
+  }
+  return new Float32Array(pts);
+}
+const FACE_VERT = `
+attribute vec3 pos;
+attribute vec4 f; // eye, jaw, brow, lip
+attribute float seed; // here: relief, how far this point stands out
+uniform float uTime, uLevel, uThink, uPx, uMood;
+varying float vB;
+varying vec3 vC;
+void main(){
+  vec3 p = pos;
+  // Talking: the jaw opens with the voice; the lips widen and narrow a little.
+  float talk = uLevel * (0.75 + 0.25 * sin(uTime * 17.0));
+  p.y -= f.y * talk * 0.16;
+  p.x *= 1.0 + f.w * (sin(uTime * 9.0) * 0.06 * uLevel);
+  // Mood: corners of the mouth up (happy) or down (sad); brows rise when curious.
+  p.y += f.w * uMood * 0.035 * (p.x / 0.18) * (p.x / 0.18);
+  p.y += f.z * (0.02 * abs(uMood) + 0.015 * uThink);
+  // Blink every few seconds.
+  float blink = smoothstep(0.0, 0.06, abs(mod(uTime, 4.3) - 4.15));
+  p.y = mix(0.14 + (p.y - 0.14) * blink, p.y, 1.0 - f.x);
+  // The head turns slowly, looks up a touch while thinking, breathes.
+  float yaw = sin(uTime * 0.45) * 0.28 + uThink * sin(uTime * 1.3) * 0.15;
+  float pitch = -0.08 + uThink * 0.12 + sin(uTime * 0.6) * 0.04;
+  p.xz = mat2(cos(yaw), -sin(yaw), sin(yaw), cos(yaw)) * p.xz;
+  p.yz = mat2(cos(pitch), -sin(pitch), sin(pitch), cos(pitch)) * p.yz;
+  p *= 1.0 + 0.012 * sin(uTime * 1.4);
+  float depth = clamp(p.z / 0.6 + 0.5, 0.0, 1.0);
+  gl_Position = vec4(p.x * 0.92, p.y * 0.92 + 0.02, 0.0, 1.0);
+  float scan = 0.82 + 0.18 * sin(p.y * 90.0 - uTime * 6.0);
+  gl_PointSize = (0.9 + depth * 1.7) * uPx / 260.0;
+  // Lit from the front-left: raised features (nose, cheeks, lips) glow,
+  // sockets fall into shadow — that's what makes it read as a face.
+  float light = clamp(0.35 + seed * 7.0 + (0.5 - pos.x) * 0.25, 0.08, 1.4);
+  vB = 1.75 * (0.12 + 0.6 * depth) * light * scan * (0.85 + uLevel * 0.4) + f.x * 0.9 + f.w * uLevel * 0.5;
+  vC = mix(vec3(0.3, 0.75, 1.0), vec3(0.85, 0.95, 1.0), f.x);
+  vC = mix(vC, vec3(1.0, 0.55, 0.85), f.w * 0.35);
+}`;
+
+const STYLES = { ferrofluid: 0, ripple: 1, constellation: 2, dew: 3, particles: 4, face: 5 };
 const renderers = new Map();
 let unsupported = false;
 
@@ -239,12 +312,22 @@ function make(px) {
   gl.bufferData(gl.ARRAY_BUFFER, seeds, gl.STATIC_DRAW);
   const uniforms = (prog) => {
     const u = (n) => gl.getUniformLocation(prog, n);
-    return { uTime: u("uTime"), uLevel: u("uLevel"), uThink: u("uThink"), uPx: u("uPx"), uStyle: u("uStyle") };
+    return { uTime: u("uTime"), uLevel: u("uLevel"), uThink: u("uThink"), uPx: u("uPx"), uStyle: u("uStyle"), uMood: u("uMood") };
   };
+  const headProg = link(FACE_VERT, DOT_FRAG);
+  const head = facePoints();
+  const headBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, headBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, head, gl.STATIC_DRAW);
   return {
     canvas, gl, px, lost: false,
     glass: { prog: glass, buf: quad, attr: gl.getAttribLocation(glass, "p"), mode: gl.TRIANGLE_STRIP, count: 4, ...uniforms(glass) },
     dots: { prog: dots, buf: points, attr: gl.getAttribLocation(dots, "a"), mode: gl.POINTS, count: DOTS, ...uniforms(dots) },
+    face: {
+      prog: headProg, buf: headBuf, mode: gl.POINTS, count: head.length / 8, ...uniforms(headProg),
+      // Interleaved: pos (3), flags (4), seed (1).
+      layout: [[gl.getAttribLocation(headProg, "pos"), 3, 0], [gl.getAttribLocation(headProg, "f"), 4, 12], [gl.getAttribLocation(headProg, "seed"), 1, 28]],
+    },
   };
 }
 
@@ -269,7 +352,7 @@ function renderer(px) {
  * screen's pixel density) filling `size`×`size`. `energy` 0…1 is the voice,
  * `thinking` 0…1 how much it's thinking. False if WebGL isn't available.
  */
-export function drawGlassOrb(ctx, size, style, time, energy, thinking) {
+export function drawGlassOrb(ctx, size, style, time, energy, thinking, mood = 0) {
   if (unsupported || !(style in STYLES)) return false;
   try {
     const scale = typeof ctx.getTransform === "function" ? ctx.getTransform().a || 1 : 1;
@@ -277,15 +360,24 @@ export function drawGlassOrb(ctx, size, style, time, energy, thinking) {
     const r = renderer(px);
     if (!r) { unsupported = true; return false; }
     const { gl } = r;
-    const pass = style === "particles" ? r.dots : r.glass;
+    const pass = style === "particles" ? r.dots : style === "face" ? r.face : r.glass;
     gl.useProgram(pass.prog);
     gl.bindBuffer(gl.ARRAY_BUFFER, pass.buf);
-    gl.enableVertexAttribArray(pass.attr);
-    gl.vertexAttribPointer(pass.attr, 2, gl.FLOAT, false, 0, 0);
+    for (let i = 0; i < 8; i++) gl.disableVertexAttribArray(i);
+    if (pass.layout) {
+      for (const [at, n, off] of pass.layout) {
+        if (at < 0) continue;
+        gl.enableVertexAttribArray(at);
+        gl.vertexAttribPointer(at, n, gl.FLOAT, false, 32, off);
+      }
+    } else {
+      gl.enableVertexAttribArray(pass.attr);
+      gl.vertexAttribPointer(pass.attr, 2, gl.FLOAT, false, 0, 0);
+    }
     gl.viewport(0, 0, px, px);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    if (pass === r.dots) {
+    if (pass === r.dots || pass === r.face) {
       // Light adds up where dots overlap, like real glowing specks.
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
@@ -297,6 +389,7 @@ export function drawGlassOrb(ctx, size, style, time, energy, thinking) {
     gl.uniform1f(pass.uThink, Math.max(0, Math.min(1, Number(thinking) || 0)));
     gl.uniform1f(pass.uPx, px);
     if (pass.uStyle) gl.uniform1i(pass.uStyle, STYLES[style]);
+    if (pass.uMood) gl.uniform1f(pass.uMood, Math.max(-1, Math.min(1, Number(mood) || 0)));
     gl.drawArrays(pass.mode, 0, pass.count);
     ctx.drawImage(r.canvas, 0, 0, size, size);
     return true;

@@ -108,6 +108,15 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
                 <div className="text-[11px] font-semibold tracking-[0.42em] text-cyan-300/80">{data.greeting.toUpperCase()}</div>
                 <div className="izk-hud-time mt-1 text-[clamp(52px,6.5vw,86px)] font-extralight leading-none tracking-[0.04em] text-white">{data.time}</div>
                 <div className="mt-2 text-[13px] tracking-[0.18em] text-cyan-100/75">{data.date.toUpperCase()}</div>
+                {/* The boot check-in: each system reports in, one by one. */}
+                <div className="mt-3 flex flex-col items-center gap-1 font-mono text-[10px] tracking-[0.2em] text-cyan-200/80">
+                  {["VOICE ONLINE", "SCREEN LINKED", data.apps.length ? `${data.apps.length} APPS CONNECTED` : "APPS STANDING BY"].map((line, i) => (
+                    <motion.div key={line} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.9 + i * 0.28, duration: 0.25 }}>
+                      <span className="mr-1.5 text-emerald-300">✓</span>
+                      {line}
+                    </motion.div>
+                  ))}
+                </div>
               </div>
             </motion.div>
 

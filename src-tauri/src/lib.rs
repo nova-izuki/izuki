@@ -26,6 +26,7 @@ pub mod instant;
 pub mod island;
 pub mod keys;
 pub mod live;
+pub mod looks;
 pub mod media;
 pub mod memory;
 pub mod model;
@@ -43,6 +44,7 @@ pub mod stt;
 pub mod tags;
 pub mod telegram;
 pub mod tray;
+pub mod tv;
 pub mod tts;
 pub mod uia;
 pub mod updates;
@@ -260,6 +262,8 @@ pub fn run() {
             commands::browser_video,
             commands::chat_action,
             commands::phone_unpair,
+            commands::tv_find,
+            commands::tv_do,
             commands::island_status,
             commands::media_control,
             commands::reminders_list,
@@ -280,6 +284,7 @@ pub fn run() {
             commands::foreground_app,
         ])
         .setup(move |app| {
+            state::set_app(app.handle());
             let handle = app.handle().clone();
             let settings = store.settings();
 

@@ -192,6 +192,7 @@ export const MOCK_SETTINGS: Settings = {
   execution_mode: "focus",
   follow_mode_enabled: false,
   island_enabled: true,
+  tv_host: "",
   flows_keep_days: 1,
   wake_sensitivity: "normal",
   keep_reply: false,
@@ -373,6 +374,11 @@ export const api = {
     call<PhoneStatus>("phone_status", undefined, () => ({ bot: "", paired: false, code: "123456", error: null })),
   phoneUnpair: () => call<Settings>("phone_unpair", undefined, () => MOCK_SETTINGS),
   remindersList: () => call<Reminder[]>("reminders_list", undefined, () => []),
+  /** Find the TV on the Wi-Fi (fresh = look again). */
+  tvFind: (fresh: boolean) =>
+    call<{ host: string; name: string; on: boolean; allowed: boolean } | null>("tv_find", { fresh }, () => null),
+  /** "Open Netflix on the TV". What Izuki says back. */
+  tvDo: (said: string) => call<string>("tv_do", { said }, () => "TV control works in the Izuki app on your PC."),
   /** The Island's look: what's playing, and whether a film/game is full screen. */
   islandStatus: () => call<IslandStatus>("island_status", undefined, () => ({ media: null, fullscreen: false, suggestions: [], context: "" })),
   /** ⏮ ⏯ ⏭ for whatever is playing on the PC. */

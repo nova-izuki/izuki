@@ -341,6 +341,10 @@ pub fn open_log_folder() -> R<()> {
 /// everyday commands (instant.rs).
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
+    // "Change your orb to stardust", "switch to Atlas": done at once.
+    if let Some(look) = crate::looks::parse(&said) {
+        return crate::looks::apply(&look);
+    }
     // "Hey Nova, wake up" / "status report": the briefing, straight off this PC.
     if crate::briefing::is_briefing(&said) {
         let hud = blocking(crate::briefing::report).await.ok()?;
@@ -735,6 +739,33 @@ pub fn phone_unpair(app: AppHandle) -> Settings {
     );
     let _ = app.emit(crate::telegram::PHONE_CHANGED, ());
     s
+}
+
+/// Find the TV on the Wi-Fi (or check the saved one): its name, whether
+/// it's on, and whether it allows control. `None` if there's none.
+#[tauri::command]
+pub async fn tv_find(fresh: bool) -> Option<crate::tv::TvInfo> {
+    blocking(move || {
+        if fresh {
+            let host = crate::tv::discover()?;
+            let store = state::store();
+            let mut s = store.settings();
+            s.tv_host = host.clone();
+            store.set_settings(s);
+            crate::state::settings_changed_elsewhere();
+        }
+        let host = crate::tv::host()?;
+        crate::tv::info(&host).ok()
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// "Open Netflix on the TV" and friends. What to say back.
+#[tauri::command]
+pub async fn tv_do(said: String) -> R<String> {
+    blocking(move || crate::tv::run(&said).map_err(|e| e.to_string())).await?
 }
 
 /// The Island's look at the world: what's playing, and whether a film or

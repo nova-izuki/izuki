@@ -143,6 +143,21 @@ fn pc_asked(said: &str) -> bool {
 const CHOOSE_DEVICE: &str = "Do you mean your phone or your PC? Repeat the action with ‘on my PC’ or ‘on my Android’. I haven't changed either device.";
 
 pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str)) -> Reply {
+    // The TV, from the phone, Telegram or Discord too: "open Netflix on the TV".
+    if crate::tv::parse(said).is_some() {
+        push("user", said);
+        status("Talking to your TV…");
+        let text = crate::tv::run(said).unwrap_or_else(|e| e.to_string());
+        push("assistant", &text);
+        return Reply::text(text);
+    }
+    // "Wake up" / "status report" from anywhere.
+    if crate::briefing::is_briefing(said) {
+        push("user", said);
+        let text = crate::briefing::compose();
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     if on_phone_asked(said) && pc_asked(said) { return Reply::text(CHOOSE_DEVICE); }
     if let Some(guidance) = phone_guidance(said, crate::state::store().settings().android_enabled) {
         push("user", said);

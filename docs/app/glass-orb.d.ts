@@ -5,4 +5,6 @@ export function drawGlassOrb(
   time: number,
   energy: number,
   thinking: number | boolean,
+  /** -1 sad … 0 calm … 1 happy (the face's mouth and brows). */
+  mood?: number,
 ): boolean;

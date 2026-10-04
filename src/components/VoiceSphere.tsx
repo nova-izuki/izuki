@@ -209,6 +209,16 @@ export function SphereCanvas({
   stateRef.current = state;
   /** Latest raw level from the bus; the draw loop smooths it. */
   const target = useRef(0);
+  /** How Izuki feels as it speaks (-1 sad … 1 happy) — the face shows it. */
+  const mood = useRef(0);
+  useEffect(() => {
+    if (preview) return;
+    const off = on<{ mood?: string | null } | string>(EV.say, (p) => {
+      const m = typeof p === "string" ? "" : (p.mood ?? "");
+      mood.current = /cheer|excit|happy|proud|playful/.test(m) ? 1 : /sympath|sad|sorry|concern/.test(m) ? -0.7 : /curious|surpris/.test(m) ? 0.35 : 0.1;
+    });
+    return () => void off.then((f) => f());
+  }, [preview]);
 
   useEffect(() => {
     if (preview) return;
@@ -285,7 +295,7 @@ export function SphereCanvas({
       ctx.clearRect(0, 0, SIZE, SIZE);
 
       // The realistic, GPU-drawn materials; the 2D ones are the fallback.
-      if (style !== "liquid" && drawGlassOrb(ctx, SIZE, style, reduced ? 0 : physics.time, physics.energy, physics.waiting)) return;
+      if (style !== "liquid" && drawGlassOrb(ctx, SIZE, style, reduced ? 0 : physics.time, physics.energy, physics.waiting, demo ? 0.8 : mood.current)) return;
       if (style === "ferrofluid" || style === "dew") {
         drawWaterOrb(ctx, SIZE, physics.time, physics.energy, 0, st === "thinking", physics);
         return;

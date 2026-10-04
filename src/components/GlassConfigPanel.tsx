@@ -16,7 +16,7 @@ import { SetupGuide } from "./SetupGuide";
 import { KeyCatcher } from "./KeyCatcher";
 import { brainReady } from "../lib/setup";
 import { useIzuki, type TabId } from "../lib/store";
-import { IS_TAURI } from "../lib/ipc";
+import { IS_TAURI, on } from "../lib/ipc";
 import { Recover } from "./Recover";
 import { UpdateNotice } from "./UpdateNotice";
 import { FeatureFinder } from "./FeatureFinder";
@@ -78,7 +78,13 @@ export function GlassConfigPanel() {
     void reloadWatchers();
     let off: (() => void) | undefined;
     void bind().then((f) => (off = f));
-    return () => off?.();
+    // Changed in the core (by voice, or the TV being found): reload, so an
+    // older copy here is never saved back over it.
+    const offExternal = on<void>("izuki://settings-external", () => void reloadSettings());
+    return () => {
+      off?.();
+      void offExternal.then((f) => f());
+    };
   }, [bind, reloadFlows, reloadSettings, reloadWatchers]);
 
   // First run only — once settings are in and the tour has never been seen,
