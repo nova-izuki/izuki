@@ -12,7 +12,7 @@
 //   constellation "Galaxy" — dark glass holding a nebula and twinkling stars
 //   dew         "Pure water" — truly see-through water: your screen shows
 //               through the middle, the world bends only near the rim
-//   face        "Hologram face" — a friendly face of light points: the smile moves
+//   face        "Hologram face" — a head of light points: the jaw moves
 //               with the voice, it blinks, smiles or frowns with the mood
 //   particles   "Stardust" — thousands of glowing dots in a sphere that
 //               pulse out with the voice and, while thinking, stream into
@@ -218,33 +218,34 @@ void main(){
 }`;
 
 
-// ---- Hologram face: a friendly face of light that talks ---------------------
-// A companion face made from points (no photo, no 3D model file) — drawn the
-// way animated characters are, not like a real head, so it feels warm rather
-// than eerie: a round face, big shiny eyes with a sparkle, a gentle smile at
-// rest, rosy cheeks, and a soft mouth that talks with the voice. The eyes
-// blink, the smile follows the mood, and the head tilts and turns.
+// ---- Hologram face: a head of light points that talks ---------------------
+// A face shape made from points (no photo, no 3D model file): an egg-shaped
+// head with eye sockets, a nose, lips and a jaw. The jaw drops with the
+// voice, the eyes blink, the mouth curves with the mood and the head turns.
 function facePoints() {
   const pts = [], STEP = 0.016;
-  const A = 0.62, B = 0.68;
+  const A = 0.6, B = 0.8;
   const g = (x, y, cx, cy, sx, sy) => Math.exp(-(((x - cx) / sx) ** 2 + ((y - cy) / sy) ** 2));
   for (let y = -B; y <= B; y += STEP) {
     for (let x = -A; x <= A; x += STEP) {
-      // Round, just a touch softer at the chin.
-      const w = A * (y < 0 ? 1 - 0.1 * (y / -B) ** 2 : 1);
+      // An egg: a little narrower at the chin.
+      const w = A * (y < 0 ? 1 - 0.28 * (y / -B) ** 2 : 1);
       const e = (x / w) ** 2 + (y / B) ** 2;
       if (e >= 1) continue;
-      const shell = 0.5 * Math.sqrt(1 - e);
+      const shell = 0.55 * Math.sqrt(1 - e);
       let z = shell;
-      z += 0.03 * (g(x, y, -0.34, -0.14, 0.12, 0.1) + g(x, y, 0.34, -0.14, 0.12, 0.1)); // round cheeks
-      // Big round eyes, a little apart and low — like a friendly character.
-      const eye = Math.max(g(x, y, -0.22, 0.07, 0.11, 0.12), g(x, y, 0.22, 0.07, 0.11, 0.12));
-      const brow = Math.max(g(x, y, -0.22, 0.28, 0.09, 0.022), g(x, y, 0.22, 0.28, 0.09, 0.022)) * 0.6;
-      // The mouth: a soft smile curve (corners up).
-      const curve = -0.28 + 1.7 * x * x;
-      const lip = Math.exp(-(((y - curve) / 0.034) ** 2)) * Math.max(0, 1 - (Math.abs(x) / 0.2) ** 3);
-      // Below the mouth moves with the voice, gently.
-      const jaw = y < curve - 0.02 && Math.abs(x) < 0.2 && y > -0.48 ? Math.max(0, 1 - Math.abs(x) / 0.2) : 0;
+      z -= 0.07 * (g(x, y, -0.22, 0.14, 0.11, 0.07) + g(x, y, 0.22, 0.14, 0.11, 0.07)); // eye sockets
+      z += 0.13 * g(x, y, 0, -0.06, 0.05, 0.17); // nose
+      z += 0.05 * g(x, y, 0, -0.36, 0.17, 0.05); // lips
+      z += 0.03 * (g(x, y, -0.3, -0.1, 0.12, 0.1) + g(x, y, 0.3, -0.1, 0.12, 0.1)); // cheeks
+      const eye = Math.max(g(x, y, -0.22, 0.14, 0.075, 0.035), g(x, y, 0.22, 0.14, 0.075, 0.035));
+      const brow = Math.max(g(x, y, -0.22, 0.27, 0.1, 0.03), g(x, y, 0.22, 0.27, 0.1, 0.03));
+      // Everything below the lips moves with the jaw, more toward the chin.
+      const jaw = y < -0.37 ? Math.min(1, (-0.37 - y) / 0.06) * Math.max(0, 1 - Math.abs(x) / 0.48) : 0;
+      const lip = g(x, y, 0, -0.37, 0.2, 0.05);
+      // Leave the line between the lips open, so the mouth reads.
+      if (Math.abs(y + 0.37) < 0.008 && Math.abs(x) < 0.17) continue;
+      // How far the features stand out from a plain egg: lit by it below.
       pts.push(x, y, z, eye, jaw, brow, lip, z - shell);
     }
   }
@@ -260,15 +261,23 @@ varying vec3 vC;
 float h1(float n){ return fract(sin(n * 12.9898) * 43758.5453); }
 void main(){
   vec3 p = pos;
-  // Talking: a syllable rhythm scaled by the voice — the mouth opens softly.
+  // Speech: a syllable rhythm (two beats against each other) scaled by the
+  // voice, so the mouth opens and closes like talking, not a wobble.
   float syll = 0.55 + 0.45 * sin(uTime * 11.0) * sin(uTime * 3.7 + 0.6);
   float open = uLevel * clamp(syll, 0.0, 1.0);
-  p.y -= f.y * open * 0.07;
-  // Always a little smile; brighter when happy, softer when sad.
-  float mood = clamp(uMood + 0.6, -1.0, 1.4);
-  p.y += f.w * mood * 0.03 * (p.x / 0.19) * (p.x / 0.19);
-  p.y += f.z * (0.02 * abs(uMood) + 0.015 * uThink + 0.012 * uLevel * step(0.7, syll));
-  // Blinks: quick, at irregular moments, sometimes two in a row.
+  p.y -= f.y * open * 0.17;
+  // The upper lip lifts a little as the mouth opens.
+  float upperLip = f.w * step(-0.37, pos.y);
+  p.y += upperLip * open * 0.025;
+  // Lips narrow into an "o" when wide open, widen for "ee" sounds.
+  float ee = 0.5 + 0.5 * sin(uTime * 5.3 + 1.7);
+  p.x *= 1.0 + f.w * uLevel * (0.07 * ee - 0.09 * open);
+  // Mood: corners up (happy) or down (sad); brows rise when curious, and
+  // jump a touch on loud, emphatic words.
+  p.y += f.w * uMood * 0.035 * (p.x / 0.18) * (p.x / 0.18);
+  p.y += f.z * (0.02 * abs(uMood) + 0.015 * uThink + 0.018 * uLevel * step(0.7, syll));
+  // Blinks like a person: quick (~0.15 s), at irregular moments, sometimes
+  // two in a row.
   float seg = floor(uTime / 3.6);
   float r = h1(seg);
   float t0 = uTime - (seg * 3.6 + r * 2.4);
@@ -277,43 +286,34 @@ void main(){
     float t1 = t0 - 0.3;
     closed = max(closed, smoothstep(0.0, 0.05, t1) * (1.0 - smoothstep(0.07, 0.15, t1)));
   }
-  p.y = mix(p.y, 0.07 + (p.y - 0.07) * (1.0 - 0.92 * closed), f.x);
-  // Where it's looking: following along, glancing now and then.
-  float dartSeg = floor(uTime / 2.6);
-  vec2 dart = (vec2(h1(dartSeg + 3.0), h1(dartSeg + 7.0)) - 0.5) * 0.04;
-  float yaw = sin(uTime * 0.45) * 0.22 + uThink * sin(uTime * 1.3) * 0.12;
-  vec2 eyeC = vec2(sign(pos.x) * 0.22, 0.07);
-  vec2 gaze = vec2(-yaw * 0.07, uThink * 0.02) + dart;
-  vec2 inEye = (pos.xy - eyeC - gaze) / vec2(0.11, 0.12);
+  p.y = mix(p.y, 0.14 + (p.y - 0.14) * (1.0 - 0.9 * closed), f.x);
+  // Gaze: the eyes lead the head, and dart now and then.
+  float dartSeg = floor(uTime / 2.2);
+  vec2 dart = (vec2(h1(dartSeg + 3.0), h1(dartSeg + 7.0)) - 0.5) * 0.05;
+  float yaw = sin(uTime * 0.45) * 0.28 + uThink * sin(uTime * 1.3) * 0.15;
+  vec2 eyeC = vec2(sign(pos.x) * 0.22, 0.14);
+  vec2 gaze = vec2(-yaw * 0.08, uThink * 0.02) + dart;
+  vec2 inEye = (pos.xy - eyeC - gaze) / vec2(0.075, 0.035);
   float rr = length(inEye);
-  // A big dark pupil with a bright sparkle — the cartoon "alive" look.
-  float pupil = 1.0 - smoothstep(0.58, 0.74, rr);
-  float iris = smoothstep(0.3, 0.6, rr) * pupil;
-  float sparkle = 1.0 - smoothstep(0.0, 0.22, length(inEye - vec2(-0.2, 0.24)));
-  float sparkle2 = 1.0 - smoothstep(0.0, 0.1, length(inEye - vec2(0.2, -0.18)));
-  // A gentle head tilt and breath.
-  float pitch = -0.05 + uThink * 0.1 + sin(uTime * 0.6) * 0.035 + uLevel * 0.025 * sin(uTime * 3.1);
-  float roll = sin(uTime * 0.37) * 0.05;
+  // Pupil dark, iris a bright ring, the white soft around it.
+  float iris = smoothstep(0.75, 0.45, rr) * (1.0 - smoothstep(0.25, 0.1, rr));
+  float pupil = 1.0 - smoothstep(0.08, 0.28, rr);
+  // The head nods a little on emphasis, turns slowly, breathes.
+  float pitch = -0.08 + uThink * 0.12 + sin(uTime * 0.6) * 0.04 + uLevel * 0.035 * sin(uTime * 3.1);
   p.xz = mat2(cos(yaw), -sin(yaw), sin(yaw), cos(yaw)) * p.xz;
   p.yz = mat2(cos(pitch), -sin(pitch), sin(pitch), cos(pitch)) * p.yz;
-  p.xy = mat2(cos(roll), -sin(roll), sin(roll), cos(roll)) * p.xy;
-  p *= 1.0 + 0.015 * sin(uTime * 1.4);
-  float depth = clamp(p.z / 0.55 + 0.5, 0.0, 1.0);
-  gl_Position = vec4(p.x * 0.95, p.y * 0.95, 0.0, 1.0);
-  float shimmer = 0.94 + 0.06 * sin(p.y * 40.0 - uTime * 2.0);
-  gl_PointSize = (1.0 + depth * 1.6) * uPx / 260.0;
-  // Soft, even light — no dark hollows.
-  float light = clamp(0.6 + seed * 3.0 + (0.5 - pos.x) * 0.12, 0.35, 1.2);
-  float eyeOn = f.x * (1.0 - closed);
-  float eyeLight = eyeOn * (1.1 - 1.0 * pupil + 1.6 * sparkle + 0.8 * sparkle2);
-  float blush = exp(-(pow((abs(pos.x) - 0.36) / 0.09, 2.0) + pow((pos.y + 0.13) / 0.06, 2.0)));
-  vB = 1.5 * (0.3 + 0.6 * depth) * light * shimmer * (0.9 + uLevel * 0.3) * (1.0 - 0.75 * eyeOn * pupil) + eyeLight + iris * eyeOn * 0.55 + f.w * (1.1 + uLevel * 0.5) + blush * 0.5;
-  // Warm violet–teal, white eyes, a pink smile and rosy cheeks.
-  vC = mix(vec3(0.55, 0.62, 1.0), vec3(0.45, 0.95, 0.95), clamp(0.5 - pos.y, 0.0, 1.0) * 0.6);
-  vC = mix(vC, vec3(1.0, 1.0, 1.0), eyeOn * (1.0 - pupil));
-  vC = mix(vC, vec3(0.62, 0.52, 1.0), eyeOn * pupil);
-  vC = mix(vC, vec3(0.45, 0.9, 1.0), eyeOn * iris);
-  vC = mix(vC, vec3(1.0, 0.58, 0.82), max(f.w * 0.75, blush * 0.85));
+  p *= 1.0 + 0.012 * sin(uTime * 1.4);
+  float depth = clamp(p.z / 0.6 + 0.5, 0.0, 1.0);
+  gl_Position = vec4(p.x * 0.92, p.y * 0.92 + 0.02, 0.0, 1.0);
+  float scan = 0.82 + 0.18 * sin(p.y * 90.0 - uTime * 6.0);
+  gl_PointSize = (0.9 + depth * 1.7) * uPx / 260.0;
+  // Lit from the front-left: raised features glow, sockets fall into shadow.
+  float light = clamp(0.35 + seed * 7.0 + (0.5 - pos.x) * 0.25, 0.08, 1.4);
+  float eyeLight = f.x * (1.0 - closed) * (0.5 + 1.1 * iris - 0.9 * pupil);
+  vB = 1.75 * (0.12 + 0.6 * depth) * light * scan * (0.85 + uLevel * 0.4) + eyeLight + f.w * uLevel * 0.5;
+  vC = mix(vec3(0.3, 0.75, 1.0), vec3(0.85, 0.95, 1.0), f.x * (1.0 - iris));
+  vC = mix(vC, vec3(0.45, 0.95, 1.0), f.x * iris);
+  vC = mix(vC, vec3(1.0, 0.55, 0.85), f.w * 0.35);
 }`;
 
 const STYLES = { ferrofluid: 0, ripple: 1, constellation: 2, dew: 3, particles: 4, face: 5, ferro: 6 };

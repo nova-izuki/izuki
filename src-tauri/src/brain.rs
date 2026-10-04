@@ -560,6 +560,12 @@ fn rest_for(err: &str) -> Option<std::time::Duration> {
     if e.contains("503") || e.contains("high demand") || e.contains("overloaded") || e.contains("unavailable") {
         return Some(std::time::Duration::from_secs(60));
     }
+    // "Request too large for model" (Groq's free tier caps one request's
+    // size): only this big request didn't fit — the brain is fine for the
+    // next, smaller one. Resting it a minute lost the fastest brain.
+    if e.contains("request too large") || e.contains("too large for model") || e.contains("context length") {
+        return None;
+    }
     let limited = e.contains("429") || e.contains("too many requests") || e.contains("rate-limit") || e.contains("rate limit");
     if !limited {
         return None;
@@ -2522,6 +2528,7 @@ mod speed_tests {
         let busy = "Gemini answered 503 Service Unavailable: This model is currently experiencing high demand.";
         assert_eq!(rest_for(busy), Some(std::time::Duration::from_secs(60)));
         assert!(rest_for("gemini: 429 Too Many Requests — quota exceeded per day").unwrap() > std::time::Duration::from_secs(60));
+        assert!(rest_for("groq is rate-limiting you (429 Too Many Requests): Request too large for model `qwen`").is_none());
         assert_eq!(rest_for("the key was rejected (401)"), None);
     }
 

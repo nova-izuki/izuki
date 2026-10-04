@@ -74,9 +74,25 @@ pub fn spawn() {
     std::thread::Builder::new()
         .name("izuki-ext-bridge".into())
         .spawn(|| {
-            let Ok(server) = tiny_http::Server::http(("127.0.0.1", PORT)) else {
-                eprintln!("[ext] port {PORT} is busy — browser extension bridge off");
-                return;
+            // Right after an update the old Izuki can still hold the port for
+            // a few seconds — wait for it rather than going without the
+            // extension for the whole session.
+            let mut tries = 0;
+            let server = loop {
+                match tiny_http::Server::http(("127.0.0.1", PORT)) {
+                    Ok(s) => break s,
+                    Err(_) if tries < 60 => {
+                        if tries == 0 {
+                            eprintln!("[ext] port {PORT} is busy — waiting for it to free up");
+                        }
+                        tries += 1;
+                        std::thread::sleep(Duration::from_secs(5));
+                    }
+                    Err(_) => {
+                        eprintln!("[ext] port {PORT} stayed busy — browser extension bridge off");
+                        return;
+                    }
+                }
             };
             let (wake_tx, wake_rx) = channel::<()>();
             *WAKE.lock() = Some(wake_tx);

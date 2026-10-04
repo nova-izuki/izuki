@@ -22,12 +22,13 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🧹", title: "Smoother on websites", how: "Pop-ups are closed once and then ignored, so tasks don't get stuck on them; the browser extension reconnects by itself after an update." },
+  { icon: "✍️", title: "Writes like a person", how: "Notes, messages and posts come out in plain everyday words and short sentences — ask for formal when you want it." },
   { icon: "🎯", title: "Fewer wrong taps", how: "Izuki asks “Did you mean…?” when it isn't sure what you said, closes anything it opened by mistake, and sticks to the task." },
   { icon: "⬆️", title: "Phone & TV apps update themselves", how: "The Android phone and TV apps now show “Update Izuki” when there's a new version — one press. (If you installed an older one, uninstall it once first.)" },
   { icon: "🛡️", title: "Ask or Auto in the chat", how: "The Chat tab has the Ask / Auto switch now: Ask waits for your Allow; Auto runs it and still shows each step.", try: { label: "Open chat", tab: "chat" } },
   { icon: "⚡", title: "Faster replies", how: "Brains that are out of credits are skipped for hours, stuck apps give up sooner, and the status screen's buttons react the moment you tap them." },
   { icon: "🔎", title: "Apps read what their connections can't", how: "LinkedIn notifications, an Instagram feed and more: Izuki opens the page in its signed-in browser and reads it for you." },
-  { icon: "😊", title: "A friendlier hologram face", how: "Big shiny eyes, a smile and rosy cheeks — pick it under Orb.", try: { label: "Pick it", tab: "settings", id: "settings-look" } },
   { icon: "🧭", title: "A fuller Quick setup", how: "A Back button, a progress bar, and TV, phone & TV link, the extension, buddy mode and colours — all from one place." },
   { icon: "🎛️", title: "A status screen you can use", how: "Say “wake up”: live CPU, memory, battery and network; tap a gauge, an email, a meeting or an app to ask about it; music controls; your Later list; and an Ask bar with one-tap actions.", try: { label: "Show me", say: "wake up" } },
   { icon: "🎯", title: "Catches its own misclicks", how: "If a click slips onto the taskbar and opens Search or Start by mistake, Izuki closes it and aims again." },
