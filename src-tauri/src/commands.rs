@@ -770,6 +770,35 @@ pub async fn tv_find(fresh: bool) -> Option<crate::tv::TvInfo> {
     .flatten()
 }
 
+/// Nova Notes, newest first.
+#[tauri::command]
+pub fn notes_list() -> Vec<crate::notes::Note> {
+    crate::notes::list()
+}
+
+#[tauri::command]
+pub fn notes_delete(id: String) -> R<()> {
+    crate::notes::delete(&id).map_err(err)
+}
+
+/// "Take notes on this": read the screen and write study notes.
+#[tauri::command]
+pub async fn notes_capture() -> R<crate::notes::Note> {
+    blocking(|| crate::notes::from_screen().map_err(err)).await?
+}
+
+/// Teacher mode adds what it just explained to today's lesson notes.
+#[tauri::command]
+pub async fn notes_lesson(text: String) -> R<crate::notes::Note> {
+    blocking(move || crate::notes::add_to_lesson(&text).map_err(err)).await?
+}
+
+/// Flashcards for a note (made by the AI, kept with it).
+#[tauri::command]
+pub async fn notes_flashcards(id: String) -> R<crate::notes::Note> {
+    blocking(move || crate::notes::flashcards(&id).map_err(err)).await?
+}
+
 /// The orb's state and words, to the Izuki channel on the TV (if it's open).
 #[tauri::command]
 pub async fn tv_show(state: String, text: Option<String>) {

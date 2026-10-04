@@ -19,6 +19,7 @@ import type {
   AppsAnswer,
   Reminder,
   IslandStatus,
+  Note,
   VoiceCatalog,
   FoundKey,
   N8nImport,
@@ -340,6 +341,12 @@ export const api = {
   /** Fast conversation lane: stream a reply (words arrive as EV.chatDelta). */
   chatStream: (id: number, history: Array<{ role: string; content: string }>, expressive = false) =>
     call<void>("chat_stream", { id, history, expressive }, () => undefined),
+  /** Nova Notes. */
+  notesList: () => call<Note[]>("notes_list", undefined, () => []),
+  notesDelete: (id: string) => call<void>("notes_delete", { id }, () => undefined),
+  notesCapture: () => call<Note>("notes_capture", undefined, () => { throw new Error("Notes work in the Izuki app on your PC."); }),
+  notesLesson: (text: string) => call<Note>("notes_lesson", { text }, () => { throw new Error("no app"); }),
+  notesFlashcards: (id: string) => call<Note>("notes_flashcards", { id }, () => { throw new Error("no app"); }),
   /** "Allow"/"no" for the change Izuki asked about out loud (null: none waiting). */
   chatAllowLast: (allow: boolean) => call<string | null>("chat_allow_last", { allow }, () => null),
   /** The Chat tab: the same lane, written rather than spoken. */

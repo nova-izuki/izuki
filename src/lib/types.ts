@@ -542,6 +542,20 @@ export interface N8nImport {
   skipped: string[];
 }
 
+/** A Nova Note: study notes kept on this PC. */
+export interface Note {
+  id: string;
+  title: string;
+  text: string;
+  source: string;
+  created_at: number;
+  updated_at: number;
+  /** Flashcards: [question, answer]. */
+  cards: Array<[string, string]>;
+  /** Teacher mode's running lesson note. */
+  lesson: boolean;
+}
+
 /** What's playing on the PC, as the Island shows it. */
 export interface NowPlaying {
   title: string;

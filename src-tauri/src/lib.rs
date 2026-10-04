@@ -31,6 +31,7 @@ pub mod media;
 pub mod memory;
 pub mod model;
 pub mod models;
+pub mod notes;
 pub mod ocr;
 pub mod overlay;
 pub mod planner;
@@ -266,6 +267,11 @@ pub fn run() {
             commands::tv_do,
             commands::tv_show,
             commands::chat_allow_last,
+            commands::notes_list,
+            commands::notes_delete,
+            commands::notes_capture,
+            commands::notes_lesson,
+            commands::notes_flashcards,
             commands::island_status,
             commands::media_control,
             commands::music_meter,

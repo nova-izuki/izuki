@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Layers, MessageCircle, Minus, PenLine, Settings2, X, Eye, Blocks, Maximize2, Minimize2 } from "lucide-react";
+import { Layers, MessageCircle, Minus, PenLine, Settings2, X, Eye, Blocks, Maximize2, Minimize2, NotebookPen } from "lucide-react";
 import { IzukiMark } from "./IzukiMark";
 import { Segmented, cx } from "./ui";
 import { DrawTab } from "./tabs/DrawTab";
 import { ChatTab, resetChat } from "./tabs/ChatTab";
 import { AppsTab } from "./tabs/AppsTab";
+import { NotesTab } from "./tabs/NotesTab";
 import { FlowLibrary } from "./tabs/FlowLibrary";
 import { WatcherManager } from "./tabs/WatcherManager";
 import { SettingsTab } from "./tabs/SettingsTab";
@@ -27,6 +28,7 @@ const TABS: Array<{ value: TabId; label: string; icon: React.ReactNode }> = [
   { value: "draw", label: "Draw", icon: <PenLine size={13} strokeWidth={2.4} /> },
   { value: "chat", label: "Chat", icon: <MessageCircle size={13} strokeWidth={2.4} /> },
   { value: "apps", label: "Apps", icon: <Blocks size={13} strokeWidth={2.4} /> },
+  { value: "notes", label: "Notes", icon: <NotebookPen size={13} strokeWidth={2.4} /> },
   { value: "flows", label: "Flows", icon: <Layers size={13} strokeWidth={2.4} /> },
   { value: "watchers", label: "Watchers", icon: <Eye size={13} strokeWidth={2.4} /> },
   { value: "settings", label: "Settings", icon: <Settings2 size={13} strokeWidth={2.4} /> },
@@ -207,6 +209,7 @@ export function GlassConfigPanel() {
                 {tab === "draw" && <DrawTab />}
                 {tab === "chat" && <ChatTab />}
                 {tab === "apps" && <AppsTab />}
+                {tab === "notes" && <NotesTab />}
                 {tab === "flows" && <FlowLibrary />}
                 {tab === "watchers" && <WatcherManager />}
                 {tab === "settings" && <SettingsTab />}

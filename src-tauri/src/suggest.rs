@@ -88,6 +88,7 @@ pub fn for_context(app: &str, title: &str, hour: u32, music: bool) -> Vec<Sugges
             "Explain what's on my screen like a teacher, step by step, marking the key parts with the pen.",
         ));
         out.push(s("Quiz me on this", "🧠", "Quiz me on what's on my screen — one question at a time, and tell me if I'm right."));
+        out.push(s("Save notes from this", "📝", "take notes on this"));
     }
     if has(&["gmail", "inbox", "outlook", "yahoo mail", "proton mail"]) || app_is(&["outlook", "olk", "hxoutlook", "thunderbird"]) {
         out.push(s(
@@ -111,6 +112,7 @@ pub fn for_context(app: &str, title: &str, hour: u32, music: bool) -> Vec<Sugges
     }
     if has(&[".pdf"]) || app_is(&["acrord32", "acrobat", "sumatrapdf"]) {
         out.push(s("Explain this page", "📄", "Explain this page to me simply, marking the key parts with the pen."));
+        out.push(s("Save notes from this", "📝", "take notes on this"));
     }
     if app_is(&["excel"]) || has(&["google sheets", "- excel"]) {
         out.push(s("Explain this formula", "🧮", "Explain the formula or numbers on my screen in plain words."));
@@ -205,7 +207,7 @@ mod tests {
         assert_eq!(labels("WhatsApp.exe", "WhatsApp")[0], "Help me reply");
         assert_eq!(labels("chrome.exe", "Some news article - Google Chrome"), vec!["Sum up this page"]);
         let lab = labels("chrome.exe", "Performance Labs : ITSY-2345 [Network Defense 4e] en-uCertify - Google Chrome");
-        assert_eq!(lab, vec!["Explain this like a teacher", "Quiz me on this"]);
+        assert_eq!(lab, vec!["Explain this like a teacher", "Quiz me on this", "Save notes from this"]);
         // Hidden inside other words, school words don't count.
         assert_eq!(labels("chrome.exe", "Contest results - Google Chrome"), vec!["Sum up this page"]);
     }

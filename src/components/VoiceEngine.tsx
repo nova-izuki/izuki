@@ -794,6 +794,24 @@ ${result}`);
       }
     }
 
+    // Nova Notes: "take notes on this", "save this to my notes", "jot this down".
+    if (/^(?:please\s+)?(?:take|make|write)\s+(?:some\s+|study\s+)?notes?(?:\s+(?:on|about|from|of)\s+(?:this|that|it|the page|the screen|my screen))?$|^(?:save|add|put)\s+(?:this|that|it)\s+(?:to|in|into)\s+(?:my\s+)?notes$|^jot\s+(?:this|that|it)\s+down$|^note\s+(?:this|that)(?:\s+down)?$/i.test(t.trim().replace(/[.!]+$/, ""))) {
+      startSession(from === "voice", "thinking");
+      remember("user", t);
+      try {
+        const note = await api.notesCapture();
+        if (requestSeq !== at) return;
+        const said = `Saved to your notes: “${note.title}”. Open the Notes tab for flashcards or a quiz.`;
+        remember("assistant", said);
+        await respond(said, "cheerful");
+      } catch (e) {
+        if (requestSeq !== at) return;
+        await respond(failure(e), "sympathetic");
+      }
+      void afterReply(at, false);
+      return;
+    }
+
     // Teacher mode: on, off, or a turn of the lesson.
     if (TUTOR_STOP.test(t) && tutor.current) {
       tutor.current = null;
@@ -881,7 +899,11 @@ ${result}`);
         await useIzuki.getState().flushSettings();
         if (useIzuki.getState().settings.speak_responses) void holdMicForVoice();
         const plan = await api.submitVoiceCommand(tutoring ? tutorPrompt(t, tutoring.first) : t);
-        if (tutoring) tutoring.first = false;
+        if (tutoring) {
+          tutoring.first = false;
+          // Every explanation goes into today's lesson notes, to study later.
+          if (plan.summary?.trim()) void api.notesLesson(plan.summary).catch(() => undefined);
+        }
         if (requestSeq !== at) return; // stopped, or you've moved on — don't answer over you
         thinkingNow.current = false;
         if (plan.remember?.length) void emit(EV.memoryChanged);
