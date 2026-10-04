@@ -911,6 +911,24 @@ pub fn shell_popup_in_front() -> Option<&'static str> {
     None
 }
 
+/// The app in front: its file name without ".exe", lower-case ("chrome",
+/// "systemsettings", "explorer"), or "" if it can't be read.
+#[cfg(windows)]
+pub fn front_app() -> String {
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    let mut pid: u32 = 0;
+    unsafe { GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut pid)) };
+    if pid == std::process::id() {
+        return String::new(); // Izuki's own overlay: not "an app in front"
+    }
+    process_name(pid).to_ascii_lowercase().trim_end_matches(".exe").to_string()
+}
+
+#[cfg(not(windows))]
+pub fn front_app() -> String {
+    String::new()
+}
+
 /// A process's file name, e.g. "chrome.exe" ("" if it can't be read).
 #[cfg(windows)]
 pub fn process_name(pid: u32) -> String {

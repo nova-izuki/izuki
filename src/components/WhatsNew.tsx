@@ -22,6 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🎯", title: "Fewer wrong taps", how: "Izuki asks “Did you mean…?” when it isn't sure what you said, closes anything it opened by mistake, and sticks to the task." },
   { icon: "⬆️", title: "Phone & TV apps update themselves", how: "The Android phone and TV apps now show “Update Izuki” when there's a new version — one press. (If you installed an older one, uninstall it once first.)" },
   { icon: "🛡️", title: "Ask or Auto in the chat", how: "The Chat tab has the Ask / Auto switch now: Ask waits for your Allow; Auto runs it and still shows each step.", try: { label: "Open chat", tab: "chat" } },
   { icon: "⚡", title: "Faster replies", how: "Brains that are out of credits are skipped for hours, stuck apps give up sooner, and the status screen's buttons react the moment you tap them." },

@@ -33,10 +33,31 @@ fn path() -> PathBuf {
 }
 
 fn read() -> Vec<Memory> {
-    fs::read_to_string(path())
+    let all: Vec<Memory> = fs::read_to_string(path())
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // Older versions sometimes took a command for a name ("go back" →
+    // "User wants to be called Back"): those never come back out.
+    all.into_iter().filter(|m| !is_misheard_name(&m.text)).collect()
+}
+
+/// Words people say to Izuki all the time — never someone's name. "Check
+/// again", "go back", "to check" were being saved as "User's name is Again".
+const NOT_NAMES: &[&str] = &[
+    "back", "again", "to", "check", "to check", "next", "done", "stop", "go", "ok", "okay", "yes", "no", "please",
+    "it", "that", "this", "there", "here", "me", "more", "now", "later", "up", "down", "on", "off", "open", "close",
+    "the", "a", "an", "and", "but", "so", "then", "continue", "keep going", "again with spark", "nova", "izuki",
+    "atlas", "hey", "hi", "hello", "thanks", "thank you", "bye", "sure", "right", "left", "first", "second", "last",
+];
+
+fn is_misheard_name(text: &str) -> bool {
+    let l = text.to_lowercase();
+    let name = ["user's name is ", "users name is ", "user wants to be called ", "call the user ", "the user is called "]
+        .iter()
+        .find_map(|p| l.find(p).map(|i| l[i + p.len()..].trim().trim_end_matches(['.', '!']).to_string()));
+    let Some(name) = name else { return false };
+    NOT_NAMES.contains(&name.as_str()) || name.split_whitespace().next().is_some_and(|w| NOT_NAMES.contains(&w) && ["again", "back", "to", "check"].contains(&w))
 }
 
 fn write(all: &[Memory]) {
@@ -84,7 +105,7 @@ pub fn list() -> Vec<Memory> {
 /// or something that shouldn't be stored.
 pub fn add(text: &str) -> Option<Memory> {
     let text: String = text.trim().trim_end_matches('.').chars().take(MAX_LEN).collect();
-    if text.len() < 3 || looks_secret(&text) {
+    if text.len() < 3 || looks_secret(&text) || is_misheard_name(&text) {
         return None;
     }
     let _g = LOCK.lock();
@@ -161,6 +182,17 @@ pub fn prompt_block() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn commands_are_never_taken_for_a_name() {
+        assert!(is_misheard_name("User wants to be called Back"));
+        assert!(is_misheard_name("User's name is Again"));
+        assert!(is_misheard_name("User wants to be called To Check"));
+        assert!(is_misheard_name("User wants to be called Again With Spark"));
+        assert!(!is_misheard_name("User's name is Sam"));
+        assert!(!is_misheard_name("User wants to be called Ada"));
+        assert!(!is_misheard_name("User likes jazz"));
+    }
 
     #[test]
     fn refuses_secrets() {

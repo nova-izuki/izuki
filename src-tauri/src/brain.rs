@@ -1579,6 +1579,8 @@ fn submit_task(
     // didn't exist yet when the plan was made. So after each batch of steps
     // the model can say there's `more`, and it gets a fresh look.
     let mut frame = frame;
+    // The app that was in front before this round's steps (see unexpected_app_note).
+    let mut front_before = String::new();
     let mut done_so_far: Vec<String> = resumed;
     // What the user showed or told Izuki when it asked, for the next look.
     // What the user drew, kept for the whole task: its clicks belong there.
@@ -1625,6 +1627,22 @@ fn submit_task(
             plan.mood = Some("calm".into());
             last_plan = Some(plan);
             break;
+        }
+        // A step brought a different app to the front that the task never
+        // mentioned (Settings while looking for the Recycle Bin): a likely
+        // detour. Say so, so it closes it instead of working around it.
+        let front = crate::uia::front_app();
+        if round > 0 && !last_round.is_empty() && !front.is_empty() && !front_before.is_empty() && front != front_before {
+            if let Some(note) = unexpected_app_note(&prompt, &front) {
+                eprintln!("[agent] a step brought {front} to the front, which the task didn't mention");
+                told = Some(match told.take() {
+                    Some(t) => format!("{t}\n{note}"),
+                    None => note,
+                });
+            }
+        }
+        if !front.is_empty() {
+            front_before = front.clone();
         }
         // A click that slipped onto the taskbar opens Windows Search or the
         // Start menu — notice it the way a person would, close it, and aim
@@ -2111,6 +2129,44 @@ fn zoom_region(frame: &Frame, region: Rect) -> Option<Frame> {
 }
 
 /// Told to the agent when its last steps visibly changed nothing.
+/// When a step put an app in front that the request has nothing to do with,
+/// the note that tells the model so. Apps a task naturally lands in (a
+/// browser for a website, Explorer for files) don't count.
+fn unexpected_app_note(prompt: &str, front: &str) -> Option<String> {
+    let p = prompt.to_lowercase();
+    let friendly = match front {
+        "systemsettings" => "Settings",
+        "explorer" => "File Explorer",
+        "msedge" => "Edge",
+        "chrome" => "Chrome",
+        "winword" => "Word",
+        "excel" => "Excel",
+        "powerpnt" => "PowerPoint",
+        "notepad" => "Notepad",
+        "taskmgr" => "Task Manager",
+        "control" => "Control Panel",
+        "mspaint" => "Paint",
+        "calc" | "calculatorapp" => "Calculator",
+        other => other,
+    };
+    let mentioned = p.contains(front) || p.contains(&friendly.to_lowercase());
+    // Where tasks naturally go: a browser for anything web, Explorer for
+    // files and folders, Settings for settings.
+    let browser = ["chrome", "msedge", "firefox", "brave", "opera"].contains(&front);
+    let natural = (browser && ["http", ".com", "site", "web", "search", "google", "youtube", "gmail", "blackboard", "canvas", "online", "browser", "page", "link", "netflix", "spotify", "chatgpt"].iter().any(|w| p.contains(w)))
+        || (front == "explorer" && ["file", "folder", "download", "document", "desktop", "recycle", "bin", "drive", "picture", "photo"].iter().any(|w| p.contains(w)))
+        || (front == "systemsettings" && ["setting", "wifi", "wi-fi", "bluetooth", "display", "sound", "update", "network", "battery", "brightness"].iter().any(|w| p.contains(w)))
+        || front == "applicationframehost" || front == "shellexperiencehost" || front == "searchhost";
+    if mentioned || natural {
+        return None;
+    }
+    Some(format!(
+        "Check yourself: your last step brought {friendly} to the front, and this task didn't ask for it. If that was a mistake, \
+         close it now (press alt+f4 while it's in front, or esc for a menu) and go back to what you were doing; if the task \
+         really needs it, carry on."
+    ))
+}
+
 const NO_EFFECT: &str = "Your last step(s) didn't visibly change anything — the screen looks the same as before. \
 Work out why, like a person would: still loading (a spinner, blank or grey boxes) → set \"wait\" and look again; \
 the click missed → use the control's target id, zoom in to see it exactly, or a keyboard route (tab/enter, ctrl+l); \
@@ -2350,6 +2406,16 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
 mod speed_tests {
     use super::*;
     use crate::settings::{ProviderId, Settings};
+
+    #[test]
+    fn notices_apps_the_task_never_asked_for() {
+        assert!(unexpected_app_note("open the recycle bin so I can check", "systemsettings").is_some());
+        assert!(unexpected_app_note("open the recycle bin", "explorer").is_none());
+        assert!(unexpected_app_note("turn on bluetooth", "systemsettings").is_none());
+        assert!(unexpected_app_note("open my blackboard", "chrome").is_none());
+        assert!(unexpected_app_note("open spotify and play lofi", "spotify").is_none());
+        assert!(unexpected_app_note("write a poem in notepad", "winword").is_some());
+    }
 
     #[test]
     fn stopped_draw_cannot_revive_when_the_next_task_clears_abort() {
