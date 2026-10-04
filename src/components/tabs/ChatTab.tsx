@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, Link2, Loader2, Mic, MonitorSmartphone, RotateCcw, Send, Sparkles, Square, X } from "lucide-react";
-import { api, EV, on } from "../../lib/ipc";
+import { AlarmClock, Check, Copy, Link2, Loader2, Mic, MonitorSmartphone, RotateCcw, Send, Sparkles, Square, Volume2, X } from "lucide-react";
+import { api, emit, EV, on } from "../../lib/ipc";
+import { ChatText } from "../ChatText";
 import { useDictation } from "../../hooks/useDictation";
 import { useSmartIdeas } from "../../lib/smartIdeas";
 import { sendChatCommand } from "../VoiceEngine";
@@ -39,6 +40,10 @@ interface Msg {
   note?: boolean;
   /** It failed for want of a (working) brain: offer the setup guide. */
   setup?: boolean;
+  /** What it did on the way ("▶ Ran: …", "🔎 Searched the web: …"). */
+  steps?: string[];
+  /** What an allowed command really answered (so later turns know it ran). */
+  ran?: string;
 }
 
 /** A failure that setting up a brain would fix. */
@@ -90,6 +95,8 @@ function clean(v: unknown): Msg[] {
       content: text(m.content),
       status: typeof m.status === "string" ? m.status : undefined,
       links: links.length ? links : undefined,
+      ran: typeof m.ran === "string" ? m.ran : undefined,
+      steps: Array.isArray(m.steps) ? (m.steps as unknown[]).filter((s): s is string => typeof s === "string").slice(-12) : undefined,
       action:
         a && typeof a === "object" && typeof a.id === "number"
           ? ({ ...a, title: text(a.title), detail: text(a.detail) } as Msg["action"])
@@ -238,7 +245,12 @@ export function ChatTab() {
   }, [msgs]);
 
   const send = useCallback(
-    async (text: string, note = false) => {
+    /**
+     * `here`: carry on in the last reply instead of starting a new one —
+     * after Allow / No, the result and the answer land in the same message
+     * as the card, the way Claude Code shows a job: steps, then the answer.
+     */
+    async (text: string, note = false, here = false) => {
       const t = text.trim();
       if (!t || busy) return;
       // "clear chat" / "start over" — just wipe it, don't ask the AI.
@@ -249,20 +261,36 @@ export function ChatTab() {
         return;
       }
       if (!note) setDraft("");
-      const history = [...msgs.filter((m) => !m.failed && !m.screen), { role: "user" as const, content: t }].map(
-        ({ role, content }) => ({ role, content })
-      );
-      setMsgs((m) => [...m, { role: "user", content: t, note }, { role: "assistant", content: "" }]);
+      // Earlier replies carry what really happened (the steps, an allowed
+      // command's output), so "u done?" is answered from facts, not memory.
+      const history = [...msgs.filter((m) => !m.failed && !m.screen), { role: "user" as const, content: t }].map((m) => ({
+        role: m.role,
+        content:
+          m.role === "assistant" && ("steps" in m || "ran" in m) && (m.steps?.length || m.ran)
+            ? `${m.content}\n[Done for real: ${[...(m.steps ?? []), ...(m.ran ? [`result: ${m.ran}`] : [])].join(" | ")}]`
+            : m.content,
+      }));
+      if (here) {
+        setMsgs((m) => {
+          if (!m.length) return m;
+          const copy = m.slice();
+          copy[copy.length - 1] = { ...copy[copy.length - 1], content: "", status: undefined, failed: undefined, retry: undefined };
+          return copy;
+        });
+      } else {
+        setMsgs((m) => [...m, { role: "user", content: t, note }, { role: "assistant", content: "", status: firstStatus(t) }]);
+      }
       setBusy(true);
       const id = Date.now();
       streamId.current = id;
       let raw = "";
-      const setLast = (patch: Partial<Msg>) =>
+      const setLast = (patch: Partial<Msg> | ((last: Msg) => Partial<Msg>)) =>
         setMsgs((m) => {
           if (streamId.current !== id) return m;
           if (!m.length) return m;
           const copy = m.slice();
-          copy[copy.length - 1] = { ...copy[copy.length - 1], ...patch };
+          const last = copy[copy.length - 1];
+          copy[copy.length - 1] = { ...last, ...(typeof patch === "function" ? patch(last) : patch) };
           return copy;
         });
       if (wantsApps(t)) {
@@ -315,12 +343,27 @@ export function ChatTab() {
           });
           resolve();
         };
-        const off = on<{ id: number; text: string; done: boolean; error: string | null; status?: string; action?: Msg["action"] }>(EV.chatDelta, (d) => {
+        const off = on<{ id: number; text: string; done: boolean; error: string | null; status?: string; action?: Msg["action"]; step?: string }>(EV.chatDelta, (d) => {
           if (d.id !== id || settled) return;
+          // A step it took: a line in this reply, and the wait starts over.
+          if (d.step) {
+            clearTimeout(slow);
+            slow = setTimeout(giveUp, FIRST_WORDS_MS);
+            const step = d.step;
+            setLast((last) => ({ steps: [...(last.steps ?? []), step].slice(-12) }));
+            return;
+          }
           // It wants to save a file or run a command: ask, and stop here.
           if (d.action) {
             void off.then((f) => f());
-            setLast({ content: d.text || "Okay to do this?", action: d.action, status: undefined });
+            // An earlier card in this same reply (a second command) moves into
+            // the steps, so the reply keeps one card: the one waiting.
+            setLast((last) => ({
+              content: d.text || "Okay to do this?",
+              action: d.action,
+              status: undefined,
+              steps: last.action ? [...(last.steps ?? []), `${last.action.state === "denied" ? "✕ Skipped" : "▶ Ran"}: ${last.action.detail.slice(0, 160)}`].slice(-12) : last.steps,
+            }));
             resolve();
             return;
           }
@@ -407,9 +450,14 @@ export function ChatTab() {
     } catch (e) {
       result = `It didn't work: ${String(e)}`;
     }
-    if (allow) mark("allowed");
+    if (allow) {
+      mark("allowed");
+      // Izuki's proof check ("✓ Checked: Zoom is no longer installed") shows as a step.
+      const proof = /\[Proof check: ([^\]]+)\]/.exec(result)?.[1];
+      setMsgs((m) => m.map((x, j) => (j === i ? { ...x, ran: result.slice(0, 600), steps: proof ? [...(x.steps ?? []), proof] : x.steps } : x)));
+    }
     setTimeout(
-      () => void sendRef.current(allow ? `[I allowed it. Result:]\n${result}` : "[I said no — don't do that.]", true),
+      () => void sendRef.current(allow ? `[I allowed it. Result:]\n${result}` : "[I said no — don't do that.]", true, true),
       40
     );
   };
@@ -564,10 +612,17 @@ export function ChatTab() {
                     : undefined
                 }
               >
-                {m.content || (
-                  <span className="flex items-center gap-1.5 text-izk-muted">
+                {m.steps && m.steps.length > 0 && <Steps steps={m.steps} />}
+                {m.action && <ActionCard action={m.action} busy={busy} onAnswer={(allow) => void answer(i, allow)} />}
+                {m.content ? (
+                  m.role === "assistant" ? <ChatText text={m.content} /> : m.content
+                ) : busy && i === msgs.length - 1 ? (
+                  <span className={cx("flex items-center gap-1.5 text-izk-muted", (!!m.steps?.length || !!m.action) && "mt-1.5")}>
                     <Loader2 size={13} className="animate-spin" /> {m.status ?? "Thinking…"}
                   </span>
+                ) : null}
+                {m.role === "assistant" && m.content && !m.failed && !(busy && i === msgs.length - 1) && (
+                  <ReplyTools text={m.content} onRetry={i === msgs.length - 1 ? () => retry(i) : undefined} />
                 )}
                 {m.setup && i === msgs.length - 1 && (
                   <button
@@ -605,41 +660,6 @@ export function ChatTab() {
                   >
                     <MonitorSmartphone size={12} strokeWidth={2.4} /> Do it on my PC
                   </button>
-                )}
-                {m.action && (
-                  <div className="mt-2 rounded-[12px] border border-white/10 bg-black/25 p-2">
-                    <div className="text-[11.5px] font-semibold text-izk-ink">
-                      {m.action.kind === "save" ? "💾 " : "⚡ "}
-                      {m.action.title}
-                    </div>
-                    <pre className="mt-1 max-h-[160px] overflow-auto whitespace-pre-wrap break-words rounded-[8px] bg-black/30 p-1.5 font-mono text-[10.5px] leading-snug text-izk-muted">
-                      {m.action.detail}
-                    </pre>
-                    {!m.action.state ? (
-                      <div className="mt-1.5 flex gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => void answer(i, true)}
-                          disabled={busy}
-                          className="izk-btn-primary flex h-[26px] items-center rounded-full px-3 text-[11.5px] disabled:opacity-50"
-                        >
-                          Allow
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void answer(i, false)}
-                          disabled={busy}
-                          className="izk-pill izk-no-drag h-[26px] px-3 text-[11.5px] disabled:opacity-50"
-                        >
-                          No
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="mt-1.5 text-[10.5px] text-izk-muted">
-                        {m.action.state === "working" ? "Doing it…" : m.action.state === "allowed" ? "✓ Allowed" : "✕ Not done"}
-                      </div>
-                    )}
-                  </div>
                 )}
               </div>
             </div>
@@ -719,4 +739,119 @@ function when(at: number): string {
   if (days <= 0) return time;
   if (days === 1) return `Tomorrow ${time}`;
   return `${d.toLocaleDateString([], { weekday: "short" })} ${time}`;
+}
+
+/**
+ * What it's about to do, guessed from the request — so the line under the
+ * reply says something real from the first moment ("Checking your apps…")
+ * and then follows each step, instead of sitting on "Thinking…".
+ */
+function firstStatus(t: string): string {
+  const s = t.toLowerCase();
+  if (/\buninstall|remove (the )?app|get rid of\b/.test(s)) return "🧹 Getting ready to uninstall…";
+  if (/\binstall\b/.test(s)) return "📦 Finding it to install…";
+  if (/\b(how (many|much) (gb|mb|space|storage)|how big|size of|disk|storage|space left|free space)\b/.test(s)) return "📏 Measuring…";
+  if (/\b(unwanted|unused|bloat|junk|clean ?up|what apps|installed apps|my apps)\b/.test(s)) return "🗂️ Checking your apps…";
+  if (/\b(file|folder|downloads|documents|desktop|pdf)\b/.test(s)) return "🗂️ Looking through your files…";
+  if (/\b(battery|cpu|ram|memory|running|slow|lag)\b/.test(s)) return "🩺 Checking your PC…";
+  if (/\b(wifi|wi-fi|internet|network|ip address)\b/.test(s)) return "📶 Checking your network…";
+  if (/\b(weather|forecast|rain)\b/.test(s)) return "🌤️ Checking the weather…";
+  if (/\b(news|latest|today|price|search|look up|who is|what is the)\b/.test(s)) return "🔎 Looking it up…";
+  if (/\b(write|draft|email|essay|letter|poem|story|caption)\b/.test(s)) return "✍️ Writing…";
+  if (/\b(explain|why|how does|teach|help me understand)\b/.test(s)) return "💡 Working it out…";
+  if (/\b(plan|schedule|organi[sz]e|list)\b/.test(s)) return "🗓️ Putting it together…";
+  return "Thinking…";
+}
+
+/** What it did on the way, as quiet lines above the answer. */
+function Steps({ steps }: { steps: string[] }) {
+  return (
+    <div className="mb-1.5 flex flex-col gap-0.5 border-l-2 border-white/10 pl-2">
+      {steps.map((s, j) => (
+        <div key={j} className="truncate text-[11px] text-izk-muted" title={s}>
+          {s}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A change it wants to make — Allow / No — or, once answered, what happened. */
+function ActionCard({ action, busy, onAnswer }: { action: NonNullable<Msg["action"]>; busy: boolean; onAnswer: (allow: boolean) => void }) {
+  if (action.state === "allowed" || action.state === "denied") {
+    return (
+      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-izk-muted" title={action.detail}>
+        <span className={action.state === "allowed" ? "text-izk-teal" : "text-izk-danger"}>{action.state === "allowed" ? "✓" : "✕"}</span>
+        <span className="truncate">
+          {action.state === "allowed" ? (action.kind === "save" ? "Saved" : "Ran") : "Skipped"}: {action.detail.split("\n")[0].slice(0, 140)}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="mb-2 rounded-[12px] border border-white/10 bg-black/25 p-2">
+      <div className="text-[11.5px] font-semibold text-izk-ink">
+        {action.kind === "save" ? "💾 " : "⚡ "}
+        {action.title}
+      </div>
+      <pre className="mt-1 max-h-[160px] overflow-auto whitespace-pre-wrap break-words rounded-[8px] bg-black/30 p-1.5 font-mono text-[10.5px] leading-snug text-izk-muted">
+        {action.detail}
+      </pre>
+      {action.state === "working" ? (
+        <div className="mt-1.5 flex items-center gap-1.5 text-[10.5px] text-izk-muted">
+          <Loader2 size={11} className="animate-spin" /> Doing it…
+        </div>
+      ) : (
+        <div className="mt-1.5 flex gap-1.5">
+          <button
+            type="button"
+            onClick={() => onAnswer(true)}
+            disabled={busy}
+            className="izk-btn-primary flex h-[26px] items-center rounded-full px-3 text-[11.5px] disabled:opacity-50"
+          >
+            Allow
+          </button>
+          <button
+            type="button"
+            onClick={() => onAnswer(false)}
+            disabled={busy}
+            className="izk-pill izk-no-drag h-[26px] px-3 text-[11.5px] disabled:opacity-50"
+          >
+            No
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Copy, read it out loud, or ask again — under each finished reply. */
+function ReplyTools({ text, onRetry }: { text: string; onRetry?: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const btn = "flex h-[22px] items-center gap-1 rounded-full px-1.5 text-[10.5px] text-izk-muted hover:bg-white/10 hover:text-izk-ink";
+  return (
+    <div className="-mb-1 mt-1 flex gap-0.5 opacity-70 hover:opacity-100">
+      <button
+        type="button"
+        className={btn}
+        title="Copy"
+        onClick={() =>
+          void navigator.clipboard.writeText(text).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1400);
+          })
+        }
+      >
+        {copied ? <Check size={11} /> : <Copy size={11} />} {copied ? "Copied" : "Copy"}
+      </button>
+      <button type="button" className={btn} title="Read it out loud" onClick={() => void emit(EV.say, { text, reply: true })}>
+        <Volume2 size={11} /> Read aloud
+      </button>
+      {onRetry && (
+        <button type="button" className={btn} title="Ask again for a different answer" onClick={onRetry}>
+          <RotateCcw size={11} /> Again
+        </button>
+      )}
+    </div>
+  );
 }

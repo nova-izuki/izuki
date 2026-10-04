@@ -144,7 +144,36 @@ const APPS = new RegExp(
  * can still hand over with `[SCREEN]`.
  */
 export function needsScreen(text: string): boolean {
+  // The user's say wins: "while I watch" / "on my screen" → the screen;
+  // "in the background" / "don't open anything" → behind the scenes.
+  if (wantsToWatch(text)) return true;
+  if (wantsBackground(text) || answersInBackground(text)) return false;
   return SCREEN.test(text) && !/\b(remind me|set (a |an )?reminder)\b/i.test(text);
+}
+
+/**
+ * A question about this PC that Izuki can work out behind the scenes and just
+ * say — "how many GB is Zoom", "check for apps I don't use and tell me",
+ * "how much space is left" — with no windows opened. Asking to SEE it ("show
+ * me", "open it", "on my screen") still goes to the screen.
+ */
+/** "Check my files in the background", "quietly", "without opening anything". */
+export function wantsBackground(text: string): boolean {
+  return /\b(in the background|in (the )?backend|behind the scenes|without opening|don'?t open (it|anything|them)|no need to open|quietly|silently|off ?screen)\b/i.test(text);
+}
+
+/** "Do it on my screen", "while I watch", "show me as you do it". */
+export function wantsToWatch(text: string): boolean {
+  return /\b(while i watch|so i can (see|watch)|let me (see|watch)|on (my|the) screen|in front of me|show me (how|as|while)|in (the )?frontend|where i can see)\b/i.test(text);
+}
+
+export function answersInBackground(text: string): boolean {
+  const s = text.toLowerCase();
+  if (/\b(show me|open (it|them|that|settings|the)|on (my|the) screen|so i can see|let me see|click)\b/.test(s)) return false;
+  const pcFact =
+    /\b(how (many|much) (gb|mb|tb|gigs?|space|storage|ram|memory)|how big|size of|(disk|storage|drive) space|space (left|free)|free space|unwanted|unused|don'?t use|bloat ?ware|junk|biggest (files?|apps?|folders?)|large files|installed apps|what apps|which apps|apps (do )?i have|what'?s (using|eating|slowing)|slowing (down )?my (pc|computer|laptop)|battery (health|life|level)|my ip|ip address|wifi (name|speed)|what'?s running|how long (has )?my pc|uptime|windows version|specs|cpu|graphics card|gpu)\b/;
+  const tellOnly = /\b(tell me|let me know|how many|how much|what|which|is there|are there|do i have|check)\b/;
+  return pcFact.test(s) && tellOnly.test(s);
 }
 
 const SCREEN = new RegExp(

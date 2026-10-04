@@ -2,7 +2,8 @@
 //! the TV for Stranger Things", "pause the TV". Roku first — its built-in
 //! network remote (ECP, port 8060) needs nothing installed on the TV: Izuki
 //! finds it on the home Wi-Fi and presses its buttons, opens its apps and
-//! types into it. (Other makes speak different remotes; they come next.)
+//! types into it. Samsung and LG TVs work the same way through their own
+//! built-in remotes (see `tvlink`).
 //!
 //! Newer Roku software ships with outside control set to "Limited", which
 //! answers every command with 403. Izuki notices and says exactly where to
@@ -39,12 +40,18 @@ fn base(host: &str) -> String {
     if h.contains(':') { format!("http://{h}") } else { format!("http://{h}:{PORT}") }
 }
 
-/// Find a Roku on the home network (SSDP, ~2 s). Its address, e.g. "192.168.1.7".
+/// What each make answers to when asked "who's there?" on the network.
+const LOOK_FOR: &[&str] = &["roku:ecp", "urn:samsung.com:device:RemoteControlReceiver:1", "urn:lge-com:service:webos-second-screen:1"];
+
+/// Find a Roku, Samsung or LG TV on the home network (SSDP, ~2 s). Its
+/// address, e.g. "192.168.1.7".
 pub fn discover() -> Option<String> {
     let sock = UdpSocket::bind("0.0.0.0:0").ok()?;
     sock.set_read_timeout(Some(Duration::from_millis(400))).ok()?;
-    let ask = "M-SEARCH * HTTP/1.1\r\nHost: 239.255.255.250:1900\r\nMan: \"ssdp:discover\"\r\nST: roku:ecp\r\nMX: 2\r\n\r\n";
-    let _ = sock.send_to(ask.as_bytes(), "239.255.255.250:1900");
+    for st in LOOK_FOR {
+        let ask = format!("M-SEARCH * HTTP/1.1\r\nHost: 239.255.255.250:1900\r\nMan: \"ssdp:discover\"\r\nST: {st}\r\nMX: 2\r\n\r\n");
+        let _ = sock.send_to(ask.as_bytes(), "239.255.255.250:1900");
+    }
     let until = Instant::now() + Duration::from_millis(2500);
     let mut buf = [0u8; 2048];
     while Instant::now() < until {
@@ -71,7 +78,25 @@ fn tag(xml: &str, name: &str) -> Option<String> {
     Some(xml[i..j].trim().to_string())
 }
 
+/// Which make the TV at this address is — `None` for a Roku. Asked once
+/// per address.
+pub fn make(host: &str) -> Option<crate::tvlink::Make> {
+    static KNOWN_MAKE: parking_lot::Mutex<Option<(String, Option<crate::tvlink::Make>)>> = parking_lot::Mutex::new(None);
+    if let Some((h, m)) = KNOWN_MAKE.lock().clone() {
+        if h == host {
+            return m;
+        }
+    }
+    let roku = client().ok().and_then(|c| c.get(format!("{}/query/device-info", base(host))).timeout(Duration::from_millis(1500)).send().ok()).is_some();
+    let m = if roku { None } else { crate::tvlink::identify(host).map(|(m, _)| m) };
+    *KNOWN_MAKE.lock() = Some((host.to_string(), m));
+    m
+}
+
 pub fn info(host: &str) -> Result<TvInfo> {
+    if make(host).is_some() {
+        return crate::tvlink::identify(host).map(|(_, i)| i).ok_or_else(|| anyhow!("the TV didn't answer"));
+    }
     let c = client()?;
     let xml = c.get(format!("{}/query/device-info", base(host))).send()?.text()?;
     let name = tag(&xml, "user-device-name").or_else(|| tag(&xml, "friendly-device-name")).unwrap_or_else(|| "Roku".into());
@@ -196,7 +221,10 @@ pub fn parse(said: &str) -> Option<TvAct> {
     if has("quieter") || has("volume down") || has("turn down") || has("turn it down") {
         return Some(TvAct::Key("VolumeDown", 4));
     }
-    if has("pause") || has("play") && words.len() == 1 || has("resume") || has("unpause") {
+    if has("pause") && !has("unpause") {
+        return Some(TvAct::Key("Pause", 1));
+    }
+    if has("play") && words.len() == 1 || has("resume") || has("unpause") {
         return Some(TvAct::Key("Play", 1));
     }
     if has("fast forward") || has("skip ahead") || has("forward") {
@@ -307,8 +335,11 @@ pub fn host() -> Option<String> {
 /// Do a TV request. What to say back, or why it couldn't.
 pub fn run(said: &str) -> Result<String> {
     let act = parse(said).ok_or_else(|| anyhow!("I can open apps, search, type, change the volume, pause and play, and press the remote's buttons on your TV — try \"open Netflix on the TV\"."))?;
-    let host = host().ok_or_else(|| anyhow!("I couldn't find a Roku on your Wi-Fi. Make sure the TV is on and on the same Wi-Fi as this PC."))?;
+    let host = host().ok_or_else(|| anyhow!("I couldn't find a TV on your Wi-Fi. Make sure the TV is on and on the same Wi-Fi as this PC (Roku, Samsung and LG work)."))?;
     eprintln!("[tv] {act:?} on {host}");
+    if let Some(m) = make(&host) {
+        return crate::tvlink::run(m, &host, act);
+    }
     match act {
         TvAct::Open(app) => {
             let (id, name) = find_app(&host, &app).ok_or_else(|| anyhow!("I couldn't find {app} on your TV."))?;
@@ -324,6 +355,8 @@ pub fn run(said: &str) -> Result<String> {
             Ok("Typed it.".into())
         }
         TvAct::Key(k, times) => {
+            // Roku's one Play button pauses too.
+            let k = if k == "Pause" { "Play" } else { k };
             for _ in 0..times {
                 key(&host, k)?;
                 std::thread::sleep(Duration::from_millis(120));
@@ -363,7 +396,8 @@ mod tests {
         assert_eq!(parse("put on youtube on my tv"), Some(TvAct::Open("youtube".into())));
         assert_eq!(parse("turn the TV up"), Some(TvAct::Key("VolumeUp", 4)));
         assert_eq!(parse("make the tv quieter"), Some(TvAct::Key("VolumeDown", 4)));
-        assert_eq!(parse("pause the TV"), Some(TvAct::Key("Play", 1)));
+        assert_eq!(parse("pause the TV"), Some(TvAct::Key("Pause", 1)));
+        assert_eq!(parse("resume the TV"), Some(TvAct::Key("Play", 1)));
         assert_eq!(parse("search the tv for stranger things"), Some(TvAct::Search("stranger things".into())));
         assert_eq!(parse("turn off the tv"), Some(TvAct::Power(false)));
         assert_eq!(parse("tv go home"), Some(TvAct::Key("Home", 1)));

@@ -22,6 +22,11 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🫶", title: "Izuki speaks up by itself", how: "Buddy mode: an important email (a job, money, a deadline), a meeting soon, low battery, the internet dropping — said out loud, and “welcome back” with what you missed. Important things reach your phone while you're away.", try: { label: "Choose", tab: "draw", id: "talk-card" } },
+  { icon: "🧠", title: "Answers in the background", how: "Ask “how many GB is Zoom?” or “which apps don't I use?” and Izuki checks quietly and just tells you — no windows opened. Say “while I watch” to see it done on screen.", try: { label: "Try it", say: "how much free space is on my PC?" } },
+  { icon: "✅", title: "Proof check", how: "After every change (uninstall, install, delete, close an app) Izuki looks again and shows “✓ Checked: Zoom is no longer installed” before saying it's done. It also catches itself if it ever claims something it didn't do." },
+  { icon: "💬", title: "One clean reply in the chat", how: "Each job is one message: the steps it took, then the answer — with a live status line, Copy, Read aloud and Again, tidy lists and code boxes. Quick checks run without asking." },
+  { icon: "📺", title: "Samsung & LG TVs too", how: "“Open Netflix on the TV”, “turn the TV up”, “pause the TV” — Roku, Samsung and LG over your Wi-Fi. Press Allow on the TV the first time.", try: { label: "Set up my TV", tab: "settings", id: "settings-tv" } },
   { icon: "🎛️", title: "Status screen", how: "Say “wake up” or “status report”: time, battery, inbox, calendar, reminders, music and apps on a holographic screen.", try: { label: "Show me", say: "wake up" } },
   { icon: "🏝️", title: "The Island", how: "Push your mouse to the very top-middle of the screen. It shows what Izuki's doing, what's playing, reminders and smart suggestions." },
   { icon: "🧩", title: "Browser extension", how: "Add it to Chrome or Edge and Izuki sees web pages exactly — every link and button — so clicks never miss. In Jarvis mode it clicks inside the page itself.", try: { label: "Add it", tab: "settings", id: "settings-extension" } },
@@ -29,7 +34,6 @@ const ITEMS: Item[] = [
   { icon: "🎨", title: "App colours", how: "Pick a colour theme for the app — or Auto, which changes with the time of day.", try: { label: "Pick colours", tab: "settings", id: "settings-theme" } },
   { icon: "🛡️", title: "Ask first or Auto-run — in the chat bar too", how: "The orb's chat bar has an Ask / Auto button. On Ask, Izuki says what it wants to run and waits for you to say or type “allow”." },
   { icon: "🫧", title: "Real 3D orbs & a hologram face", how: "Clear water, Pure water, Ferrofluid, Stardust, Hologram face… or just say “change your orb to stardust”.", try: { label: "Pick one", tab: "settings", id: "settings-look" } },
-  { icon: "📺", title: "Your TV", how: "“Open Netflix on the TV”, “turn the TV up”. Roku over Wi-Fi, plus an Izuki channel for the TV screen.", try: { label: "Set up my TV", tab: "settings", id: "settings-tv" } },
   { icon: "⚡", title: "Jarvis mode (no mouse)", how: "Izuki presses buttons and types straight through Windows — no pointer, nothing flashing. Tap the mode name at the top of Chat to switch.", try: { label: "Open Chat", tab: "chat" } },
   { icon: "🎩", title: "Jarvis voice", how: "Atlas — a calm, witty British AI assistant voice. Say “Jarvis voice” any time.", try: { label: "Switch to it", say: "switch to jarvis" } },
   { icon: "👩‍🏫", title: "Teacher mode", how: "On any quiz, say “teacher mode”: it explains each question with the pen, checks your answer, and clicks Next when you're ready." },

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowRight, Brain, Check, ExternalLink, Heart, Mic, MousePointerClick, PenTool, X } from "lucide-react";
+import { ArrowRight, Brain, Check, ExternalLink, Heart, Mic, MousePointerClick, PenTool, X, BellRing, Tv } from "lucide-react";
 import { IzukiMark } from "./IzukiMark";
 import { Kbd, cx } from "./ui";
 import { useIzuki } from "../lib/store";
@@ -192,6 +192,24 @@ function buildSteps(hotkeyDraw: string, hotkeyVoice: string, hotkeyQuick: string
       ),
       title: "I get to know you",
       body: "Tell me things — “remember I use my work Chrome profile” — and I'll keep them, along with the habits I notice. See or delete everything I remember any time under Draw → What Izuki remembers.",
+    },
+    {
+      icon: (
+        <IconTile tone="#F5B14C">
+          <BellRing size={24} strokeWidth={2.1} />
+        </IconTile>
+      ),
+      title: "I speak up — like a buddy",
+      body: "An important email, a meeting soon, the battery getting low, the internet dropping — I'll tell you out loud, and “welcome back” you with what you missed. Ask about your PC (“how big is Zoom?”) and I'll check quietly in the background; say “while I watch” and I'll do it on your screen. Every change I make, I double-check before I say it's done.",
+    },
+    {
+      icon: (
+        <IconTile tone="#67E8F9">
+          <Tv size={24} strokeWidth={2.1} />
+        </IconTile>
+      ),
+      title: "And your TV",
+      body: "“Hey Nova, open Netflix on the TV.” Roku, Samsung and LG TVs work over your Wi-Fi with nothing to install — the first time, press Allow on the TV.",
     },
   ];
 }

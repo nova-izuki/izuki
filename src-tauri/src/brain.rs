@@ -1128,6 +1128,14 @@ pub fn run_flow(app: &AppHandle, store: &Arc<Store>, id: &str) -> Result<()> {
 /// model gets — the same pipeline `submit_draw` uses, just with an empty
 /// mark list standing in for the geometry-only fast path.
 pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String) -> VisionPlan {
+    // A TV request that reached the screen path (a hand-over from the chat
+    // lane, a follow-up mid-conversation) still goes to the TV — never "I
+    // can't control your TV" while it opens Netflix on the PC instead.
+    if crate::tv::parse(&prompt).is_some() {
+        let said = crate::tv::run(&prompt).unwrap_or_else(|e| e.to_string());
+        remember_task(&prompt, &said);
+        return VisionPlan { summary: said, provider: "tv".into(), ..Default::default() };
+    }
     let asked = with_what_came_before(&prompt);
     let plan = submit_task(app, store, asked, Vec::new(), None, None);
     remember_task(&prompt, &plan.summary);

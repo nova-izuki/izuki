@@ -157,6 +157,25 @@ export function TalkToIzuki() {
           <Toggle checked={settings.island_enabled} onChange={(v) => patch({ island_enabled: v })} />
         </Row>
         <Row
+          label="Speak up by itself (buddy mode)"
+          hint="Like a friend at your desk: I'll tell you about an important email (a job, money, a deadline), a meeting coming up, the battery getting low, the internet dropping — and say “welcome back” with what you missed. Never over a film or game unless it's urgent, and quiet at night. While you're away, important things go to your phone too."
+        >
+          <Toggle checked={settings.buddy_speaks} onChange={(v) => patch({ buddy_speaks: v })} />
+        </Row>
+        {settings.buddy_speaks && (
+          <>
+            <Row
+              label="Handle small things on my own"
+              hint="Undoable things only, and I'll always say what I did — like switching on battery saver when the battery's nearly empty (it switches back when you plug in)."
+            >
+              <Toggle checked={settings.buddy_acts} onChange={(v) => patch({ buddy_acts: v })} />
+            </Row>
+            <Row label="Remind me to take breaks" hint="A friendly nudge after about two and a half hours without a break.">
+              <Toggle checked={settings.buddy_breaks} onChange={(v) => patch({ buddy_breaks: v })} />
+            </Row>
+          </>
+        )}
+        <Row
           label="Dance with my music"
           hint="When music plays on this PC, the orb comes up and flows with it. Close it any time with ×. (Only the volume is read — nothing is recorded.)"
         >

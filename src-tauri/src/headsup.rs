@@ -170,7 +170,11 @@ fn tick(app: &AppHandle) {
     if settings.heads_up_email && has("gmail") && due(st.email_at, EMAIL_EVERY) {
         st.email_at = Some(Instant::now());
         match new_emails(st) {
-            Ok(lines) => deliver_many(app, "📧", &lines, "new emails"),
+            Ok(lines) => {
+                deliver_many(app, "📧", &lines, "new emails");
+                // The ones that matter, Izuki also says out loud (buddy mode).
+                crate::buddy::new_mail(app, &lines);
+            }
             Err(e) => eprintln!("[headsup] email check: {e}"),
         }
     }
@@ -181,6 +185,7 @@ fn tick(app: &AppHandle) {
             Ok(lines) => {
                 for l in lines {
                     deliver(app, "Coming up", &format!("📅 {l}"));
+                    crate::buddy::say(app, &format!("meeting-{l}"), &format!("Coming up: {l}."), crate::buddy::Level::Important);
                 }
             }
             Err(e) => eprintln!("[headsup] calendar check: {e}"),

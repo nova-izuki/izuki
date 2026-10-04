@@ -47,6 +47,8 @@ pub mod tags;
 pub mod telegram;
 pub mod tray;
 pub mod tv;
+pub mod tvlink;
+pub mod buddy;
 pub mod tts;
 pub mod uia;
 pub mod updates;
@@ -321,6 +323,7 @@ pub fn run() {
             discord::spawn(handle.clone());
             call::spawn(handle.clone());
             headsup::spawn(handle.clone());
+            buddy::spawn(handle.clone());
             browser::init(&handle);
 
             Ok(())

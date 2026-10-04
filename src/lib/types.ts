@@ -304,6 +304,10 @@ export interface Settings {
   app_theme_color: string;
   /** The TV's address on the home Wi-Fi ("" = find it). */
   tv_host: string;
+  tv_pair: string;
+  buddy_speaks: boolean;
+  buddy_acts: boolean;
+  buddy_breaks: boolean;
   /** Saved flows clear after this many days unused (0 = keep). */
   flows_keep_days: number;
   /** How sure the wake-word detector must be before it wakes. */

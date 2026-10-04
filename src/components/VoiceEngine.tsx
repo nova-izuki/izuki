@@ -3,7 +3,7 @@ import { useWakeEngine, WAKE_THRESHOLD } from "../hooks/useWakeEngine";
 import { expandShortWords } from "../lib/shortWords";
 import { useDictation } from "../hooks/useDictation";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
-import { cancelChat, chatLane, needsApps, needsScreen, recentHistory, remember, type LaneResult } from "../lib/conversation";
+import { cancelChat, chatLane, needsApps, needsScreen, recentHistory, wantsToWatch, remember, type LaneResult } from "../lib/conversation";
 import { speakable } from "../lib/speakable";
 import { parseInstant, type Instant } from "../lib/instant";
 import { isEcho, noteSaid, noteStillSaying } from "../lib/echo";
@@ -865,7 +865,7 @@ ${result}`);
       // "Yes, send it" / "change the time to 4" right after an apps answer
       // is about that draft — not a screen task.
       const followUp = Date.now() - lastAppsAt < 3 * 60_000 && t.split(/\s+/).length <= 14 && APPS_FOLLOW_UP.test(t);
-      if (!tutoring && appsOn && (needsApps(t) || followUp)) {
+      if (!tutoring && appsOn && (needsApps(t) || followUp) && !wantsToWatch(t)) {
         await runApps(false);
         return;
       }
@@ -1197,6 +1197,25 @@ ${result}`);
         void (typeof p === "string" ? respond(p) : respond(p.text, p.mood, p.reply, p.quick))
       ),
       on<Partial<Settings>>(EV.patchSettings, (patch) => useIzuki.getState().patchSettings(patch)),
+      // Buddy mode: something worth saying, unasked — the orb comes up, says
+      // it, and listens for a reply ("read it to me", "close it"). Never over
+      // the user mid-conversation: it waits for a quiet moment.
+      on<{ text: string; urgent: boolean }>(EV.buddy, (b) => {
+        const began = Date.now();
+        const tryNow = () => {
+          const busyNow = thinkingNow.current || isSpeaking() || listeningNow.current;
+          if (busyNow && !b.urgent) {
+            if (Date.now() - began < 120_000) setTimeout(tryNow, 4000);
+            return;
+          }
+          const at = ++requestSeq;
+          chime();
+          startSession(true, "speaking");
+          remember("assistant", b.text);
+          void respond(b.text, b.urgent ? "serious" : "calm", true).then(() => afterReply(at, false));
+        };
+        tryNow();
+      }),
       // Typed in the overlay's chat.
       on<{ id: number; text: string }>(EV.runChat, (m) => {
         void handleRequest(m.text, "typed").finally(() => emit(EV.chatDone, { id: m.id }));

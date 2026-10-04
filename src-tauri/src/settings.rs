@@ -184,6 +184,10 @@ pub struct Settings {
     /// The TV's address on the home Wi-Fi (found by itself; "" = look).
     #[serde(default)]
     pub tv_host: String,
+    /// The pass a Samsung or LG TV gave Izuki when "Allow" was pressed on it
+    /// (so it doesn't ask again). Roku needs none.
+    #[serde(default)]
+    pub tv_pair: String,
     /// When music plays, the orb comes up and flows with it (music mode).
     #[serde(default)]
     pub music_visuals: bool,
@@ -382,6 +386,18 @@ pub struct Settings {
     /// …and/or the paired phone (Telegram / Discord).
     #[serde(default = "default_true")]
     pub heads_up_phone: bool,
+    /// Buddy mode: Izuki speaks up by itself — an important message, the
+    /// battery running low, the internet dropping, "welcome back" with what
+    /// you missed — with the orb, like a friend at your desk.
+    #[serde(default = "default_true")]
+    pub buddy_speaks: bool,
+    /// …and handles small, undoable things on its own (battery saver when
+    /// the battery's nearly empty), saying what it did.
+    #[serde(default = "default_true")]
+    pub buddy_acts: bool,
+    /// …and nudges you to take a break after a long stretch.
+    #[serde(default = "default_true")]
+    pub buddy_breaks: bool,
     /// The user's own n8n workflows Izuki can start by name ("run my
     /// invoice flow"), each a webhook address.
     #[serde(default)]
@@ -736,6 +752,7 @@ impl Default for Settings {
             island_enabled: true,
             music_visuals: false,
             tv_host: String::new(),
+            tv_pair: String::new(),
             app_theme: default_app_theme(),
             app_theme_color: String::new(),
             flows_keep_days: default_flows_keep_days(),
@@ -792,6 +809,9 @@ impl Default for Settings {
             morning_brief_at: default_brief_at(),
             heads_up_pc: true,
             heads_up_phone: true,
+            buddy_speaks: true,
+            buddy_acts: true,
+            buddy_breaks: true,
             n8n_hooks: Vec::new(),
             n8n_url: String::new(),
             n8n_api_key: String::new(),

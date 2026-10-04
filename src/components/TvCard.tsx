@@ -6,7 +6,7 @@ import { api } from "../lib/ipc";
 type Found = { host: string; name: string; on: boolean; allowed: boolean } | null;
 
 /**
- * The TV: Izuki finds a Roku on the Wi-Fi by itself — nothing to install on
+ * The TV: Izuki finds a Roku, Samsung or LG TV on the Wi-Fi by itself — nothing to install on
  * the TV — then "… on the TV" works from voice and chat. If the TV is set to
  * "Limited" control, it says exactly where to change that.
  */
@@ -32,7 +32,7 @@ export function TvCard() {
   return (
     <Section
       title="Control my TV"
-      hint="Say “open Netflix on the TV”, “turn the TV up”, “search the TV for Stranger Things” or “pause the TV”. Works with Roku over your Wi-Fi — nothing to install on the TV."
+      hint="Say “open Netflix on the TV”, “turn the TV up”, “search the TV for Stranger Things” or “pause the TV”. Works with Roku, Samsung and LG TVs over your Wi-Fi — nothing to install on the TV. (Samsung and LG ask you to press Allow on the TV the first time.)"
       right={found ? <Badge tone={found.allowed ? "good" : "warn"}>{found.allowed ? "ready" : "needs ok"}</Badge> : undefined}
     >
       <div className="flex items-center gap-3 rounded-[14px] border border-white/10 bg-white/5 p-3">
@@ -48,7 +48,7 @@ export function TvCard() {
               <div className="text-izk-muted">{found.allowed ? "Connected — just ask." : "Found it, but it's only allowing limited control."}</div>
             </>
           ) : (
-            <span className="text-izk-muted">No Roku found. Make sure the TV is on and on the same Wi-Fi as this PC.</span>
+            <span className="text-izk-muted">No TV found. Make sure the TV is on and on the same Wi-Fi as this PC (Roku, Samsung or LG).</span>
           )}
         </div>
         <button type="button" onClick={() => void look(true)} className="izk-pill shrink-0 px-3 py-1.5 text-[11.5px]">

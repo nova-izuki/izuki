@@ -236,7 +236,7 @@ fn join(items: &[String]) -> String {
 }
 
 #[cfg(windows)]
-fn battery_raw() -> Option<(u8, bool)> {
+pub(crate) fn battery_raw() -> Option<(u8, bool)> {
     use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
     let mut s = SYSTEM_POWER_STATUS::default();
     unsafe { GetSystemPowerStatus(&mut s).ok()? };
@@ -248,7 +248,7 @@ fn battery_raw() -> Option<(u8, bool)> {
 }
 
 #[cfg(not(windows))]
-fn battery_raw() -> Option<(u8, bool)> {
+pub(crate) fn battery_raw() -> Option<(u8, bool)> {
     None
 }
 
@@ -263,7 +263,7 @@ fn battery_line(b: Option<(u8, bool)>) -> Option<String> {
 }
 
 #[cfg(windows)]
-fn health_raw() -> (Option<u32>, Option<u64>) {
+pub(crate) fn health_raw() -> (Option<u32>, Option<u64>) {
     use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
     use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
     let mut mem = MEMORYSTATUSEX { dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32, ..Default::default() };
@@ -274,7 +274,7 @@ fn health_raw() -> (Option<u32>, Option<u64>) {
 }
 
 #[cfg(not(windows))]
-fn health_raw() -> (Option<u32>, Option<u64>) {
+pub(crate) fn health_raw() -> (Option<u32>, Option<u64>) {
     (None, None)
 }
 

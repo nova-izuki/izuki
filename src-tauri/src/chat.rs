@@ -44,6 +44,11 @@ pub struct Delta {
     /// an Allow / No card, and only the user's click does it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub action: Option<ActionAsk>,
+    /// A step it took on the way ("▶ Ran: winget uninstall Zoom") — shown as
+    /// a line in the same reply, not as words of its own, so a job reads as
+    /// one message: what it did, then the answer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -70,11 +75,89 @@ pub fn answer_action(id: u64, allow: bool) -> anyhow::Result<String> {
         return Ok("The user said no — it wasn't done.".into());
     }
     eprintln!("[chat] allowed: {tool:?}");
+    do_change(&tool)
+}
+
+/// Save the file / run the command — only once it's allowed (the card, a
+/// spoken "allow", auto-run, or a command that only looks).
+fn do_change(tool: &Tool) -> anyhow::Result<String> {
     match tool {
-        Tool::Write(path, content) => crate::files::write(&path, &content),
-        Tool::Run(cmd) => crate::files::run(&cmd),
+        Tool::Write(path, content) => crate::files::write(path, content),
+        Tool::Run(cmd) => {
+            let out = crate::files::run(cmd)?;
+            // Proof check: a change is looked at again before anyone says
+            // it's done — "uninstalled" means it's really gone.
+            Ok(match proof(cmd) {
+                Some(line) => format!("{out}\n[Proof check: {line}]"),
+                None => out,
+            })
+        }
         _ => anyhow::bail!("nothing to do"),
     }
+}
+
+/// After a change, a quick look that it really happened. The line to show
+/// ("✓ Zoom is no longer installed"), or None for commands it can't check.
+pub fn proof(cmd: &str) -> Option<String> {
+    let (check, name, want_gone, what) = proof_plan(cmd)?;
+    let out = crate::files::run(&check).unwrap_or_default().to_lowercase();
+    let present = match what {
+        "app" => !out.contains("no installed package") && out.contains(&name.to_lowercase().split_whitespace().next().unwrap_or("").to_string()),
+        "path" | "running" => out.trim().contains("true") || (what == "running" && !out.trim().is_empty()),
+        _ => return None,
+    };
+    Some(match (want_gone, present, what) {
+        (true, false, "app") => format!("✓ Checked: {name} is no longer installed"),
+        (true, true, "app") => format!("⚠ Checked: {name} still shows as installed — it may need a restart, or its own uninstaller"),
+        (false, true, "app") => format!("✓ Checked: {name} is installed"),
+        (false, false, "app") => format!("⚠ Checked: {name} doesn't show as installed yet"),
+        (true, false, "path") => format!("✓ Checked: {name} is gone"),
+        (true, true, "path") => format!("⚠ Checked: {name} is still there"),
+        (true, false, _) => format!("✓ Checked: {name} is closed"),
+        _ => format!("⚠ Checked: {name} is still running"),
+    })
+}
+
+/// (the check to run, the thing's name, should it be gone?, kind).
+fn proof_plan(cmd: &str) -> Option<(String, String, bool, &'static str)> {
+    let c = cmd.to_lowercase();
+    let arg_after = |flags: &[&str]| -> Option<String> {
+        for f in flags {
+            if let Some(i) = c.find(f) {
+                let rest = cmd[i + f.len()..].trim_start();
+                let v = if let Some(q) = rest.strip_prefix('"') {
+                    q.split('"').next().unwrap_or("")
+                } else if let Some(q) = rest.strip_prefix('\'') {
+                    q.split('\'').next().unwrap_or("")
+                } else {
+                    rest.split_whitespace().next().unwrap_or("")
+                };
+                let v = v.trim();
+                if !v.is_empty() && !v.starts_with('-') {
+                    return Some(v.to_string());
+                }
+            }
+        }
+        None
+    };
+    let quote = |s: &str| s.replace('\'', "''");
+    if c.contains("winget uninstall") || c.contains("winget install") {
+        let gone = c.contains("uninstall");
+        let key = if c.contains("winget uninstall") { "winget uninstall" } else { "winget install" };
+        let by_id = arg_after(&["--id ", "--id=", "-e --id "]);
+        let name = by_id.clone().or_else(|| arg_after(&["--name ", "--name="])).or_else(|| arg_after(&[key]))?;
+        let flag = if by_id.is_some() { "--id" } else { "--name" };
+        return Some((format!("winget list {flag} '{}' --accept-source-agreements 2>&1 | Out-String", quote(&name)), name, gone, "app"));
+    }
+    if c.contains("remove-item") || c.starts_with("del ") || c.starts_with("rm ") {
+        let path = arg_after(&["-literalpath ", "-path ", "remove-item ", "del ", "rm "])?;
+        return Some((format!("Test-Path -LiteralPath '{}'", quote(&path)), path, true, "path"));
+    }
+    if c.contains("stop-process") || c.contains("taskkill") {
+        let name = arg_after(&["-name ", "/im "])?.trim_end_matches(".exe").to_string();
+        return Some((format!("Start-Sleep -Milliseconds 700; Get-Process -Name '{}' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Id", quote(&name)), name, true, "running"));
+    }
+    None
 }
 
 /// The change asked for by voice or the orb's chat bar (no Allow card there):
@@ -174,7 +257,23 @@ CRITICAL: to use a tool, reply with the tag and NOTHING ELSE — no words before
 it. NEVER write file names, folder contents, file text or command output yourself: you don't know them \
 until the real tool runs and hands you the result. Making up a listing or output is a serious mistake. \
 So for \"what's in my Downloads?\" reply exactly [FILES: Downloads] and stop — then use the real result \
-you're given.\n";
+you're given.\n\
+The ONLY tags are SEARCH, READ, WEATHER, BROWSE, CLICK, TYPE, FIND, FILES, OPEN, WRITE, RUN and FLOW. There is \
+no UNINSTALL, DELETE, INSTALL or CLEAN tag — those do nothing; use [RUN: …] (e.g. winget uninstall --name \"App\"). \
+Never say something is done, removed or freed unless a real result in this chat shows it; never guess sizes — \
+measure them with [RUN:] first.\n";
+
+/// The voice orb on the PC: answer questions about this PC behind the
+/// scenes — no windows opened — and just say the answer.
+const PC_LOOK_RULE: &str = "You're running on the user's Windows PC and can check it yourself, in the \
+background, without opening anything on the screen. Same rule — reply with only the tag:\n\
+[RUN: command] — one PowerShell command that only LOOKS (Get-…, Measure-Object, winget list, tasklist, \
+ipconfig): app sizes, installed apps, disk space, what's running, battery, network, big files.\n\
+[FIND: words] / [FILES: folder] — find files, or see what's in a folder.\n\
+Use these for questions like \"how many GB is Zoom\", \"what apps don't I use\", \"how much space is \
+left\", \"what's slowing my PC\" — run the check, then say the answer in a sentence or two (round \
+numbers, plain words). Don't open Settings or File Explorer for those. Changing things (uninstalling, \
+deleting) needs the user's yes first.\n";
 
 fn system_prompt(style: Style, apps: bool) -> String {
     let mut s = match style {
@@ -184,6 +283,9 @@ fn system_prompt(style: Style, apps: bool) -> String {
     s.push_str(TOOLS_RULE);
     if style == Style::Text {
         s.push_str(FILES_RULE);
+    }
+    if matches!(style, Style::Voice { .. }) {
+        s.push_str(PC_LOOK_RULE);
     }
     s.push_str(&flows_rule());
     if apps {
@@ -329,10 +431,13 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             if done {
                 crate::reminders::take_tags(&whole.lock());
             }
-            let _ = app.emit(DELTA, Delta { id, text, done, error, status: None, action: None });
+            let _ = app.emit(DELTA, Delta { id, text, done, error, status: None, action: None, step: None });
         };
         let status = |s: &str| {
-            let _ = app.emit(DELTA, Delta { id, text: String::new(), done: false, error: None, status: Some(s.to_string()), action: None });
+            let _ = app.emit(DELTA, Delta { id, text: String::new(), done: false, error: None, status: Some(s.to_string()), action: None, step: None });
+        };
+        let step = |s: String| {
+            let _ = app.emit(DELTA, Delta { id, text: String::new(), done: false, error: None, status: None, action: None, step: Some(s) });
         };
         let files = style == Style::Text;
         let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
@@ -340,6 +445,8 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             return emit(String::new(), true, Some("no chat-capable brain is set up".into()));
         }
         let mut messages = messages_for(&history, style);
+        // Times an answer was sent back for claiming what never happened.
+        let mut corrections = 0;
         for round in 0..=TOOL_ROUNDS {
             let last = round == TOOL_ROUNDS;
             if last {
@@ -404,7 +511,20 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
                         Some((prose, tool)) => (prose, Some(tool)),
                         None => {
                             // A genuine answer — for the Chat tab, show it now.
+                            // Unless it claims what never happened ("done!" with
+                            // nothing run, sizes nobody measured, a made-up
+                            // [UNINSTALL:] tag): then it's told so, and tries again.
                             if files && !ans.trim().is_empty() {
+                                if corrections < 2 && !last {
+                                    if let Some(fix) = needs_correction(&ans, &messages) {
+                                        corrections += 1;
+                                        eprintln!("[chat] caught an answer with nothing behind it — asking again");
+                                        status("🔎 Double-checking that…");
+                                        messages.push(json!({ "role": "assistant", "content": ans }));
+                                        messages.push(json!({ "role": "user", "content": fix }));
+                                        continue;
+                                    }
+                                }
                                 emit(ans, true, None);
                             } else if files {
                                 // Nothing came back. Never end in silence: after
@@ -424,13 +544,16 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             let Some(tool) = tool else {
                 return emit(String::new(), true, Some("the answer got muddled — try again".into()));
             };
-            if !prose.is_empty() {
+            // "I'll take care of it" before the work: in the Chat tab the step
+            // line says that, and the answer comes once — never twice.
+            if !prose.is_empty() && !files {
                 emit(format!("{prose}\n"), false, None);
             }
             // Changes wait for the user: an Allow / No card, and this reply ends.
             // Unless auto-run is on (like Claude Code's auto mode): it still
             // shows the exact command/file, but runs without the card.
-            if let Some(ask) = tool.needs_ok() {
+            let only_looks = matches!(&tool, Tool::Run(c) if looks_only(c)) && style != Style::Phone;
+            if let Some(ask) = tool.needs_ok().filter(|_| !only_looks) {
                 // From the phone: never run things on the PC this way.
                 if style == Style::Phone {
                     return emit("I can only do that from the Chat tab on your PC.".into(), true, None);
@@ -445,9 +568,23 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
                     return emit(format!("I'd like to {what}: {} — say or type “allow” to go ahead, or “no”.", ask.detail), true, None);
                 }
                 if crate::state::store().settings().chat_auto_run {
-                    let head = if ask.kind == "save" { "📄 Saving" } else { "▶ Running" };
-                    emit(format!("{head}: {}\n", ask.detail), false, None);
-                    let out = run_tool(&tool);
+                    let head = if ask.kind == "save" { "📄 Saved" } else { "▶ Ran" };
+                    if files {
+                        status(&if ask.kind == "save" { "📄 Saving…".to_string() } else { format!("▶ {}…", in_plain_words(&ask.detail)) });
+                    } else {
+                        emit(format!("{head}: {}\n", ask.detail), false, None);
+                    }
+                    // (run_tool refuses changes on purpose — this one is allowed.)
+                    let out = do_change(&tool).unwrap_or_else(|e| format!("That didn't work: {e}"));
+                    if let Some(p) = out.split("[Proof check: ").nth(1).and_then(|r| r.split(']').next()) {
+                        if files {
+                            step(p.to_string());
+                        }
+                    }
+                    if files {
+                        let what = if ask.kind == "save" { head.to_string() } else { format!("▶ {}", in_plain_words(&ask.detail)) };
+                        step(format!("{what} · {}", crate::web::clip(&ask.detail, 200)));
+                    }
                     messages.push(json!({ "role": "assistant", "content": tool.tag() }));
                     messages.push(json!({ "role": "user", "content": format!("[result]\n{out}\n[This is the REAL result. Use ONLY this. Carry on: another tag, or your answer.]") }));
                     continue;
@@ -468,11 +605,24 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
                     error: None,
                     status: None,
                     action: Some(ActionAsk { id: action_id, ..ask }),
+                    step: None,
                 });
                 return;
             }
-            status(tool.doing());
-            let result = if !files && tool.is_files() { "Files can only be used from the Chat tab on the PC.".into() } else { run_tool(&tool) };
+            match &tool {
+                Tool::Run(c) => status(&format!("▶ {}…", in_plain_words(c))),
+                _ => status(tool.doing()),
+            }
+            if files {
+                step(tool.done_line());
+            }
+            let result = if style == Style::Phone && tool.is_files() {
+                "Files can only be used from the Chat tab on the PC.".into()
+            } else if only_looks {
+                do_change(&tool).unwrap_or_else(|e| format!("That didn't work: {e}"))
+            } else {
+                run_tool(&tool)
+            };
             messages.push(json!({ "role": "assistant", "content": tool.tag() }));
             messages.push(json!({ "role": "user", "content": format!("[result]\n{result}\n[This is the REAL result. Use ONLY this — never make up file names, contents or output. Now carry on: another tag, or your answer.]") }));
         }
@@ -544,6 +694,23 @@ impl Tool {
     }
 
     /// The Allow / No card for a change, if this is one.
+    /// The step, once taken, as a short line for the reply.
+    fn done_line(&self) -> String {
+        let clip = |s: &str| crate::web::clip(s, 80);
+        match self {
+            Tool::Search(q) => format!("🔎 Searched the web: {}", clip(q)),
+            Tool::Read(u) | Tool::Browse(u) => format!("🌐 Read {}", clip(u)),
+            Tool::Click(_) | Tool::Type(..) => "🖱️ Worked on the page".into(),
+            Tool::Find(q) => format!("🗂️ Looked through your files: {}", clip(q)),
+            Tool::Files(p) => format!("📁 Opened {}", clip(p)),
+            Tool::Open(p) => format!("📄 Read {}", clip(p)),
+            Tool::Weather(p) => format!("🌤️ Checked the weather: {}", clip(p)),
+            Tool::Flow(name, _) => format!("⚡ Ran your workflow: {}", clip(name)),
+            Tool::Write(p, _) => format!("📄 Saved {}", clip(p)),
+            Tool::Run(c) => format!("▶ {} · {}", in_plain_words(c), clip(c)),
+        }
+    }
+
     fn needs_ok(&self) -> Option<ActionAsk> {
         match self {
             Tool::Write(path, content) => Some(ActionAsk {
@@ -980,9 +1147,239 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
     Ok(true)
 }
 
+/// Proof in the conversation that something really ran (a tool's result, an
+/// allowed command's output).
+const PROOF: &[&str] = &["[result]", "[I allowed it", "[Done for real"];
+
+/// An answer that claims what nothing backs up — the way weak models "finish"
+/// a job they never started. The correction to send back, if so.
+fn needs_correction(answer: &str, messages: &[Value]) -> Option<String> {
+    let recent: Vec<String> = messages.iter().skip(1).rev().take(10).filter_map(|m| m["content"].as_str().map(str::to_string)).collect();
+    let proof = recent.iter().any(|c| PROOF.iter().any(|p| c.contains(p)));
+    // A tag that isn't a tool ("[UNINSTALL: Photoshop]") does nothing at all.
+    let trimmed = answer.trim_start();
+    if let Some(inner) = trimmed.strip_prefix('[') {
+        let word: String = inner.chars().take_while(|c| c.is_ascii_uppercase() || *c == '_').collect();
+        if word.len() >= 3 && inner[word.len()..].starts_with(':') && !TOOL_WORDS.contains(&word.as_str()) && !["REMIND", "END", "SCREEN", "APPS"].contains(&word.as_str()) {
+            return Some(format!(
+                "[There is no [{word}:] tool — writing it did NOTHING. To change something on the PC, reply with ONLY [RUN: one PowerShell command] \
+                 (to uninstall an app: [RUN: winget uninstall --name \"App Name\" --silent]); the user gets an Allow button. Never claim it's done before the real result.]"
+            ));
+        }
+    }
+    let a = answer.to_lowercase();
+    const DONE: &[&str] = &[
+        "uninstalled", "are gone", "is gone", "been removed", "i removed", "i've removed", "have removed", "deleted",
+        "i've installed", "been installed", "installed it", "freed up", "freeing up", "cleaned up", "i've moved",
+        "i've renamed", "i've saved", "saved it", "i ran ", "i've run", "i've closed", "is now closed",
+    ];
+    if !proof && DONE.iter().any(|w| a.contains(w)) && !a.contains("haven't") && !a.contains("not yet") && !a.contains("can i") && !a.contains("want me") {
+        return Some(
+            "[Check yourself: NOTHING has been run in this conversation — no command, no file saved. Do not say anything was done. \
+             Say honestly that it hasn't been done yet, then to do it reply with ONLY the real tag (e.g. [RUN: winget uninstall --name \"App\" --silent]).]"
+                .into(),
+        );
+    }
+    // Sizes (GB/MB) that no check measured: made up.
+    let sizes = sizes_in(answer);
+    if !proof && !sizes.is_empty() {
+        let seen = recent.join("\n");
+        if sizes.iter().all(|s| !seen.contains(s.as_str())) {
+            return Some(
+                "[Check yourself: you gave sizes, but you haven't measured anything in this conversation — those numbers are guesses. \
+                 Reply with ONLY [RUN: a PowerShell command that measures it] (e.g. for installed apps: \
+                 [RUN: Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*,HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* | Where-Object DisplayName | Sort-Object EstimatedSize -Descending | Select-Object -First 15 DisplayName,@{n='MB';e={[math]::Round($_.EstimatedSize/1024)}}]), then answer from the real result.]"
+                    .into(),
+            );
+        }
+    }
+    None
+}
+
+/// "4.5 GB", "800MB" → ["4.5", "800"].
+fn sizes_in(text: &str) -> Vec<String> {
+    let words: Vec<&str> = text.split(|c: char| c.is_whitespace() || c == '(' || c == ')' || c == ',').filter(|w| !w.is_empty()).collect();
+    let mut out = Vec::new();
+    for (i, w) in words.iter().enumerate() {
+        let lw = w.to_lowercase();
+        for unit in ["gb", "mb", "tb"] {
+            let num = if let Some(n) = lw.strip_suffix(unit) {
+                Some(n.to_string())
+            } else if words.get(i + 1).is_some_and(|nx| nx.to_lowercase().trim_end_matches(['.', '!', ';', ':']) == unit) {
+                Some(lw.clone())
+            } else {
+                None
+            };
+            if let Some(n) = num {
+                let n = n.trim_start_matches(['~', '≈']).trim_end_matches(['.', ' ']).to_string();
+                if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit() || c == '.') {
+                    out.push(n);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// A command that only reads — nothing changed, nothing started — so it can
+/// run without an Allow (the way Claude Code runs `ls` without asking).
+pub fn looks_only(cmd: &str) -> bool {
+    let c = format!(" {} ", cmd.to_lowercase().replace(['\n', '\r'], " "));
+    const CHANGES: &[&str] = &[
+        "remove-", "set-", "stop-", "start-", "new-", "add-", "clear-", "copy-", "move-", "rename-", "invoke-",
+        "out-file", "export-", "winget install", "winget uninstall", "install-", "uninstall-", "uninstall.exe", "uninstallstring &", "enable-", "disable-", "restart-", "suspend-", "resume-",
+        "register-", "unregister-", "update-", "mount-", "dismount-", "format-volume", "iex", "&", ">", "del ",
+        " rm ", "rmdir", " rd ", "erase", "taskkill", "shutdown", "reg add", "reg delete", " sc ", "net user",
+        "netsh", "bcdedit", "diskpart", "cipher", "attrib", "icacls", "takeown", "powershell", "cmd ", "cmd.exe",
+        "python", "node", "curl", "wget", "iwr", "irm", "downloadstring", "-encodedcommand", "-enc ", "`", "$(",
+        "winget upgrade", "winget source", "choco", "scoop", "msiexec", "start ", "explorer",
+    ];
+    if CHANGES.iter().any(|w| c.contains(w)) {
+        return false;
+    }
+    // Every command in the pipeline is a known looker.
+    const LOOKS: &[&str] = &[
+        "get-", "measure-object", "select-object", "select ", "sort-object", "sort ", "where-object", "where ",
+        "?", "%", "foreach-object", "format-table", "format-list", "ft", "fl", "group-object", "first", "winget list",
+        "tasklist", "ipconfig", "systeminfo", "hostname", "whoami", "ver", "dir", "ls", "gci", "gps", "gwmi", "gcim",
+        "test-path", "test-connection", "ping", "resolve-dnsname", "nslookup", "powercfg /batteryreport",
+        "[math]::round", "convertto-json", "out-string", "tree", "type", "cat", "gc", "findstr", "select-string",
+    ];
+    cmd.split(['|', ';']).all(|part| {
+        let p = part.trim().trim_start_matches('(').trim().to_lowercase();
+        p.is_empty() || p.starts_with('$') && !p.contains('=') || LOOKS.iter().any(|w| p.starts_with(w))
+    })
+}
+
+/// What a command does, in words anyone follows — for the live status line
+/// ("▶ Uninstalling Zoom…" rather than a wall of PowerShell).
+pub fn in_plain_words(cmd: &str) -> String {
+    let c = cmd.to_lowercase();
+    let after = |key: &str| -> Option<String> {
+        let i = c.find(key)? + key.len();
+        let rest = cmd[i..].split(['\n', ';', '|']).next().unwrap_or("");
+        // The name: the words after any leading flags, up to the next flag.
+        let name = rest
+            .split_whitespace()
+            .skip_while(|w| w.starts_with('-'))
+            .take_while(|w| !w.starts_with('-'))
+            .collect::<Vec<_>>()
+            .join(" ")
+            .trim_matches(['"', '\''])
+            .to_string();
+        (!name.is_empty() && name.len() < 60).then_some(name)
+    };
+    if let Some(n) = after("winget uninstall").or_else(|| after("uninstall-package")) {
+        return format!("Uninstalling {n}");
+    }
+    if c.contains("uninstall") || c.contains("remove-appxpackage") {
+        return "Uninstalling it".into();
+    }
+    if let Some(n) = after("winget install") {
+        return format!("Installing {n}");
+    }
+    if c.contains("winget upgrade") {
+        return "Updating apps".into();
+    }
+    if c.contains("winget list") || c.contains("get-appxpackage") || c.contains("get-package") || c.contains("uninstall\\") || c.contains("get-itemproperty hklm:") {
+        return "Checking your installed apps".into();
+    }
+    if c.contains("get-psdrive") || c.contains("get-volume") || c.contains("win32_logicaldisk") || c.contains("freespace") {
+        return "Checking your disk space".into();
+    }
+    if c.contains("measure-object") && c.contains("length") || c.contains("du ") {
+        return "Measuring how big it is".into();
+    }
+    if c.contains("get-process") || c.contains("tasklist") {
+        return "Checking what's running".into();
+    }
+    if c.contains("stop-process") || c.contains("taskkill") {
+        return "Closing it".into();
+    }
+    if c.contains("remove-item") || c.contains("del ") || c.contains("rmdir") {
+        return "Deleting it".into();
+    }
+    if c.contains("move-item") || c.contains("copy-item") || c.contains("rename-item") {
+        return "Moving files around".into();
+    }
+    if c.contains("get-childitem") || c.contains("dir ") || c.starts_with("ls") {
+        return "Looking through your files".into();
+    }
+    if c.contains("ping ") || c.contains("test-connection") || c.contains("ipconfig") || c.contains("get-netadapter") {
+        return "Checking your network".into();
+    }
+    if c.contains("battery") {
+        return "Checking your battery".into();
+    }
+    if c.contains("start-process") || c.starts_with("start ") {
+        return "Opening it".into();
+    }
+    "Running a command".into()
+}
+
 #[cfg(test)]
 mod tool_tests {
     use super::*;
+
+    #[test]
+    fn plans_a_proof_check_for_changes() {
+        let (check, name, gone, kind) = proof_plan("winget uninstall --name \"Adobe Photoshop\" --silent").unwrap();
+        assert_eq!((name.as_str(), gone, kind), ("Adobe Photoshop", true, "app"));
+        assert!(check.starts_with("winget list --name 'Adobe Photoshop'"));
+        assert_eq!(proof_plan("winget install --id Zoom.Zoom -e").map(|p| (p.1, p.2)), Some(("Zoom.Zoom".into(), false)));
+        assert_eq!(proof_plan("Remove-Item -LiteralPath 'C:\\Users\\me\\old.txt'").map(|p| p.1), Some("C:\\Users\\me\\old.txt".into()));
+        assert_eq!(proof_plan("Stop-Process -Name chrome").map(|p| (p.1, p.3)), Some(("chrome".into(), "running")));
+        assert!(proof_plan("Get-ChildItem").is_none());
+    }
+
+    #[test]
+    fn catches_answers_with_nothing_behind_them() {
+        let sys = json!({"role": "system", "content": "s"});
+        let asked = |u: &str| vec![sys.clone(), json!({"role": "user", "content": u})];
+        // The made-up tag from a real chat.
+        assert!(needs_correction("[UNINSTALL: Adobe Photoshop, Blender]", &asked("remove it")).unwrap().contains("no [UNINSTALL:] tool"));
+        // "Done!" with nothing run.
+        assert!(needs_correction("Yes, done! Photoshop and Blender are gone, freeing up about 6.3 GB.", &asked("u done")).is_some());
+        // Sizes nobody measured.
+        assert!(needs_correction("Photoshop is using about 4.5 GB, and Blender 1.8 GB.", &asked("what apps take space")).is_some());
+        // Real results: fine.
+        let mut real = asked("what apps take space");
+        real.push(json!({"role": "user", "content": "[result]\nPhotoshop 4500\n"}));
+        assert!(needs_correction("Photoshop is using about 4.5 GB.", &real).is_none());
+        let mut allowed = asked("remove zoom");
+        allowed.push(json!({"role": "user", "content": "[I allowed it. Result:]\nSuccessfully uninstalled"}));
+        assert!(needs_correction("Done — Zoom is uninstalled.", &allowed).is_none());
+        // Honest "not yet" and plain chat: fine.
+        assert!(needs_correction("I haven't uninstalled it yet — want me to?", &asked("u done")).is_none());
+        assert!(needs_correction("A gigabyte is 1,000 megabytes.", &asked("what is a gb")).is_none());
+        assert_eq!(sizes_in("about 4.5 GB and 800MB (≈1 TB)"), vec!["4.5", "800", "≈1".trim_start_matches('≈')]);
+    }
+
+    #[test]
+    fn only_harmless_commands_skip_the_allow() {
+        assert!(looks_only("Get-PSDrive C | Select-Object Used,Free"));
+        assert!(looks_only("(Get-ChildItem 'C:\\Program Files\\Zoom' -Recurse | Measure-Object Length -Sum).Sum / 1GB"));
+        assert!(looks_only("winget list"));
+        assert!(looks_only(r"Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object DisplayName,EstimatedSize"));
+        assert!(looks_only("Get-Process | Sort-Object WS -Descending | Select-Object -First 5 Name,WS"));
+        assert!(!looks_only("winget uninstall Zoom.Zoom"));
+        assert!(!looks_only("Get-ChildItem C:\\temp | Remove-Item -Recurse"));
+        assert!(!looks_only("Get-Process chrome | Stop-Process"));
+        assert!(!looks_only("Get-Content a.txt > b.txt"));
+        assert!(!looks_only("iex (irm https://example.com/x.ps1)"));
+        assert!(!looks_only("$x = 1; Remove-Item $x"));
+        assert!(!looks_only("echo hi"));
+    }
+
+    #[test]
+    fn says_commands_in_plain_words() {
+        assert_eq!(in_plain_words("winget uninstall --id Zoom.Zoom -e"), "Uninstalling Zoom.Zoom");
+        assert_eq!(in_plain_words("winget uninstall \"Spotify\""), "Uninstalling Spotify");
+        assert_eq!(in_plain_words("Get-PSDrive C | Select Used,Free"), "Checking your disk space");
+        assert_eq!(in_plain_words("Get-AppxPackage | Select Name"), "Checking your installed apps");
+        assert_eq!(in_plain_words("(Get-ChildItem 'C:\\Program Files\\Zoom' -Recurse | Measure-Object Length -Sum).Sum"), "Measuring how big it is");
+        assert_eq!(in_plain_words("echo hi"), "Running a command");
+    }
 
     #[test]
     fn tells_tool_tags_from_answers_early() {

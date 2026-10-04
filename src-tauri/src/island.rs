@@ -255,3 +255,9 @@ mod tests {
         println!("now playing: {m:?}\nfullscreen: {}", s.fullscreen);
     }
 }
+
+/// A film, game or slideshow has the whole screen (for Izuki deciding
+/// whether now is a good moment to speak up).
+pub fn fullscreen_now() -> bool {
+    front_is_fullscreen()
+}

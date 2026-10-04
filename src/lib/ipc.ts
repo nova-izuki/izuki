@@ -195,6 +195,10 @@ export const MOCK_SETTINGS: Settings = {
   island_enabled: true,
   music_visuals: false,
   tv_host: "",
+  tv_pair: "",
+  buddy_speaks: true,
+  buddy_acts: true,
+  buddy_breaks: true,
   app_theme: "nova",
   app_theme_color: "",
   flows_keep_days: 1,
@@ -553,6 +557,8 @@ export const EV = {
   /** Frontend-only: the overlay asks the config panel (where the voice
    * engine lives) to say a line — one voice, never two talking at once. */
   say: "izuki://say",
+  /** Buddy mode: Izuki speaking up by itself (buddy.rs). */
+  buddy: "izuki://buddy",
   /** A request is on its way — get the voice ready (Bluetooth mic hold). */
   prepareVoice: "izuki://prepare-voice",
   /** Overlay → config panel: save these settings (the overlay can't). */
