@@ -587,6 +587,8 @@ function Expanded({
         </div>
       )}
 
+      <QuickGrid onDone={onDone} />
+
       <div className="grid grid-cols-3 gap-2">
         <BigAction
           label="Talk"
@@ -616,6 +618,52 @@ function Expanded({
           <Settings2 size={19} />
         </BigAction>
       </div>
+    </div>
+  );
+}
+
+/** One tap, done: the things people reach for most. Instant ones answer
+ *  out loud without opening anything; the rest go to Izuki as a request. */
+const QUICK: { icon: string; label: string; instant?: string; ask?: string }[] = [
+  { icon: "⏱️", label: "5 min", instant: "set a timer for 5 minutes" },
+  { icon: "🎯", label: "Focus", instant: "focus for 25 minutes" },
+  { icon: "🔊", label: "Read this", instant: "read this to me" },
+  { icon: "🔍", label: "Explain", ask: "Look at my screen and explain what I'm looking at in plain words — point at the important parts." },
+  { icon: "📝", label: "Later", instant: "what's on my later list" },
+  { icon: "📬", label: "Email", instant: "What's important in my email?" },
+];
+
+function QuickGrid({ onDone }: { onDone: () => void }) {
+  const [hit, setHit] = useState<string | null>(null);
+  return (
+    <div className="grid grid-cols-6 gap-1.5">
+      {QUICK.map((q) => (
+        <button
+          key={q.label}
+          type="button"
+          title={q.instant ?? q.ask}
+          onClick={() => {
+            setHit(q.label);
+            setTimeout(() => setHit((h) => (h === q.label ? null : h)), 900);
+            if (q.ask) {
+              onDone();
+              void emit(EV.runChat, { id: Date.now(), text: q.ask });
+              return;
+            }
+            void api.instantCommand(q.instant!).then((said) => {
+              if (said) void emit(EV.say, { text: said });
+              else void emit(EV.runChat, { id: Date.now(), text: q.instant! });
+            });
+          }}
+          className={
+            "flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[10.5px] font-medium text-white/75 transition active:scale-[0.94] " +
+            (hit === q.label ? "bg-white/[0.2]" : "bg-white/[0.06] hover:bg-white/[0.12]")
+          }
+        >
+          <span className="text-[16px] leading-none">{q.icon}</span>
+          {q.label}
+        </button>
+      ))}
     </div>
   );
 }

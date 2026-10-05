@@ -22,6 +22,12 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🧘", title: "Patient, like a person", how: "Izuki opens each app or page once and waits for it — as long as your PC needs (it learns how fast yours is). No more piles of the same window. In a browser it stays in the same tab: it searches right there instead of opening new ones." },
+  { icon: "🧰", title: "See every tool it uses", how: "In the Chat tab, each command, search or file it touches shows as a card — what it ran (IN) and what came back (OUT), like a real coding agent. “Show all” opens long output.", try: { label: "Open chat", tab: "chat" } },
+  { icon: "📬", title: "It really goes through your email", how: "“What's important in my email?” — Izuki reads the last few days, skips the noise, and tells you the real to-dos: bills with amounts, replies people are waiting on, deliveries, deadlines. Also on the status screen.", try: { label: "Go through it", say: "What's important in my email?" } },
+  { icon: "📺", title: "Ask your TV like a person", how: "“Put on something funny for the kids” or “a dinosaur cartoon” — Izuki picks a real title from the apps on your Roku. If it's on more than one, it asks “Disney Plus or Prime Video?” and you just say “Disney”. Misspelled app names work too." },
+  { icon: "🏝️", title: "A fuller Island", how: "One-tap tiles: 5-minute timer, Focus, Read this, Explain my screen, your Later list and email. Been reading one page for a few minutes? It offers to sum it up." },
+  { icon: "🎛️", title: "A smarter status screen", how: "“Wake up” now shows INBOX — WHAT MATTERS (tap one for help with it) and more one-tap buttons; apps you haven't signed in to are left out.", try: { label: "Show me", say: "wake up" } },
   { icon: "🧩", title: "The browser extension got smart", how: "Right-click any text → Izuki: Explain, Translate, Sum up, Read aloud, Save to Notes, Remind me later. Alt+Shift+I asks about the page. And a Focus guard during Focus mode.", try: { label: "Get it", tab: "settings", id: "settings-extension" } },
   { icon: "🔊", title: "Read it to me", how: "Select text anywhere and say “read this to me” — or just ask with a page open. “Keep reading” carries on.", try: { label: "Read this", say: "read this to me" } },
   { icon: "🎙️", title: "Talk to type, anywhere", how: "Say “type what I say”, click into any text box and talk — commas, full stops and new lines included. “Stop typing” ends it." },

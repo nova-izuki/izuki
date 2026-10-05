@@ -151,6 +151,13 @@ pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str))
         push("assistant", &text);
         return Reply::text(text);
     }
+    // "What's important in my email?", from the phone and Telegram too.
+    if crate::headsup::is_inbox_question(said) && crate::composio::configured() {
+        push("user", said);
+        let text = crate::headsup::inbox_spoken();
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // Screen time, asked from the phone too.
     if crate::screentime::is_question(said) {
         push("user", said);

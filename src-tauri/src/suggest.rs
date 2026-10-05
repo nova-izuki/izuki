@@ -163,7 +163,47 @@ pub fn now(music: bool, question: bool) -> Vec<Suggestion> {
     // is the lock screen itself, which gets no suggestions anyway.)
     let hour = local_hour();
     let title = crate::uia::foreground_title();
-    with_question(for_context(&crate::uia::foreground_app(), &title, hour, music), question, &title)
+    let app = crate::uia::foreground_app();
+    let out = with_question(for_context(&app, &title, hour, music), question, &title);
+    with_dwell(out, &app, &title)
+}
+
+/// The page in front, and since when — for noticing a long read.
+static DWELL: parking_lot::Mutex<Option<(String, std::time::Instant)>> = parking_lot::Mutex::new(None);
+
+/// Been on the same web page for a few minutes: offer to sum it up, the way
+/// a friend reading over your shoulder would — with a peek the first minute,
+/// then quietly in the list.
+fn with_dwell(mut out: Vec<Suggestion>, app: &str, title: &str) -> Vec<Suggestion> {
+    let secs = {
+        let mut d = DWELL.lock();
+        match d.as_ref() {
+            Some((t, at)) if t == title => at.elapsed().as_secs(),
+            _ => {
+                *d = Some((title.to_string(), std::time::Instant::now()));
+                0
+            }
+        }
+    };
+    if let Some(offer) = dwell_offer(app, title, secs) {
+        out.retain(|s| s.label != offer.label);
+        out.insert(0, offer);
+        out.truncate(3);
+    }
+    out
+}
+
+/// "Sum up this page?" after three minutes on one article in a browser.
+fn dwell_offer(app: &str, title: &str, secs: u64) -> Option<Suggestion> {
+    let a = app.to_lowercase();
+    let t = title.to_lowercase();
+    let browser = BROWSERS.iter().any(|b| a.trim_end_matches(".exe") == *b);
+    let skip = ["youtube", "netflix", "new tab", "sign in", "log in", "password", "inbox", "gmail", "outlook", "docs", "sheets", "slides", "quiz", "exam", "test", "game"];
+    if !browser || t.trim().is_empty() || skip.iter().any(|w| t.contains(w)) || secs < 180 {
+        return None;
+    }
+    let ask = "Sum up the page on my screen in a few short points — the main idea first, then anything I should do or remember.";
+    Some(if secs < 240 { strong("Sum up this page?", "📰", ask) } else { s("Sum up this page", "📰", ask) })
 }
 
 /// A question with answers to choose is on screen: the teaching help goes
@@ -192,6 +232,16 @@ fn local_hour() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offers_to_sum_up_a_long_read() {
+        let title = "How solar panels work - BBC News - Google Chrome";
+        assert!(dwell_offer("chrome.exe", title, 60).is_none());
+        assert!(dwell_offer("chrome.exe", title, 200).is_some_and(|s| s.strong));
+        assert!(dwell_offer("chrome.exe", title, 600).is_some_and(|s| !s.strong));
+        assert!(dwell_offer("chrome.exe", "Inbox (3) - Gmail - Google Chrome", 600).is_none());
+        assert!(dwell_offer("notepad.exe", "notes.txt - Notepad", 600).is_none());
+    }
 
     fn labels(app: &str, title: &str) -> Vec<&'static str> {
         for_context(app, title, 14, false).into_iter().map(|s| s.label).collect()

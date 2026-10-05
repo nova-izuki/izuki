@@ -49,6 +49,21 @@ pub struct Delta {
     /// one message: what it did, then the answer.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub step: Option<String>,
+    /// A tool it used, shown the way Claude Code shows one: the tool, what
+    /// it was for, the exact input (IN) and what came back (OUT).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub call: Option<ToolCall>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ToolCall {
+    /// "PowerShell", "Web search", "Read file"…
+    pub name: String,
+    /// What it was for, in plain words ("Checking your disk space").
+    pub title: String,
+    pub input: String,
+    pub output: String,
+    pub ok: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -432,13 +447,13 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             if done {
                 crate::reminders::take_tags(&whole.lock());
             }
-            let _ = app.emit(DELTA, Delta { id, text, done, error, status: None, action: None, step: None });
+            let _ = app.emit(DELTA, Delta { id, text, done, error, status: None, action: None, step: None, call: None });
         };
         let status = |s: &str| {
-            let _ = app.emit(DELTA, Delta { id, text: String::new(), done: false, error: None, status: Some(s.to_string()), action: None, step: None });
+            let _ = app.emit(DELTA, Delta { id, text: String::new(), done: false, error: None, status: Some(s.to_string()), action: None, step: None, call: None });
         };
-        let step = |s: String| {
-            let _ = app.emit(DELTA, Delta { id, text: String::new(), done: false, error: None, status: None, action: None, step: Some(s) });
+        let call = |c: ToolCall| {
+            let _ = app.emit(DELTA, Delta { id, text: String::new(), done: false, error: None, status: None, action: None, step: None, call: Some(c) });
         };
         let files = style == Style::Text;
         let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
@@ -578,15 +593,10 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
                     }
                     // (run_tool refuses changes on purpose — this one is allowed.)
                     let out = do_change(&tool).unwrap_or_else(|e| format!("That didn't work: {e}"));
-                    if let Some(p) = out.split("[Proof check: ").nth(1).and_then(|r| r.split(']').next()) {
-                        if files {
-                            step(p.to_string());
-                        }
-                    }
                     if files {
-                        let what = if ask.kind == "save" { head.to_string() } else { format!("▶ {}", in_plain_words(&ask.detail)) };
-                        step(format!("{what} · {}", crate::web::clip(&ask.detail, 200)));
+                        call(tool.as_call(&out));
                     }
+                    let _ = head;
                     messages.push(json!({ "role": "assistant", "content": tool.tag() }));
                     messages.push(json!({ "role": "user", "content": format!("[result]\n{out}\n[This is the REAL result. Use ONLY this. Carry on: another tag, or your answer.]") }));
                     continue;
@@ -608,15 +618,13 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
                     status: None,
                     action: Some(ActionAsk { id: action_id, ..ask }),
                     step: None,
+                    call: None,
                 });
                 return;
             }
             match &tool {
                 Tool::Run(c) => status(&format!("▶ {}…", in_plain_words(c))),
                 _ => status(tool.doing()),
-            }
-            if files {
-                step(tool.done_line());
             }
             let result = if style == Style::Phone && tool.is_files() {
                 "Files can only be used from the Chat tab on the PC.".into()
@@ -625,6 +633,9 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             } else {
                 run_tool(&tool)
             };
+            if files {
+                call(tool.as_call(&result));
+            }
             messages.push(json!({ "role": "assistant", "content": tool.tag() }));
             messages.push(json!({ "role": "user", "content": format!("[result]\n{result}\n[This is the REAL result. Use ONLY this — never make up file names, contents or output. Now carry on: another tag, or your answer.]") }));
         }
@@ -696,6 +707,33 @@ impl Tool {
     }
 
     /// The Allow / No card for a change, if this is one.
+    /// This tool, once run, as a card for the chat (Claude Code style).
+    fn as_call(&self, output: &str) -> ToolCall {
+        let (name, input) = match self {
+            Tool::Search(q) => ("Web search", q.clone()),
+            Tool::Read(u) => ("Read page", u.clone()),
+            Tool::Browse(u) => ("Browser", u.clone()),
+            Tool::Click(n) => ("Click", format!("item {n}")),
+            Tool::Type(n, t, _) => ("Type", format!("item {n}: {t}")),
+            Tool::Find(w) => ("Find files", w.clone()),
+            Tool::Files(p) => ("Folder", p.clone()),
+            Tool::Open(p) => ("Read file", p.clone()),
+            Tool::Weather(p) => ("Weather", p.clone()),
+            Tool::Flow(n, what) => ("Workflow", format!("{n}: {what}")),
+            Tool::Write(p, body) => ("Save file", format!("{p}\n{}", crate::web::clip(body, 600))),
+            Tool::Run(c) => ("PowerShell", c.clone()),
+        };
+        let title = match self {
+            Tool::Run(c) => in_plain_words(c),
+            other => {
+                let line = other.done_line();
+                line.split_once(' ').map(|(_, rest)| rest.split(':').next().unwrap_or(rest).trim().to_string()).unwrap_or(line)
+            }
+        };
+        let ok = !(output.starts_with("That didn't work") || output.starts_with("It finished with an error") || output.contains("\nErrors:"));
+        ToolCall { name: name.into(), title, input, output: crate::web::clip(output.trim(), 4000), ok }
+    }
+
     /// The step, once taken, as a short line for the reply.
     fn done_line(&self) -> String {
         let clip = |s: &str| crate::web::clip(s, 80);

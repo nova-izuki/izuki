@@ -165,12 +165,74 @@ const KNOWN: &[(&str, &str)] = &[
 ];
 
 fn find_app(host: &str, wanted: &str) -> Option<(String, String)> {
-    let w = wanted.to_lowercase();
     let installed = apps(host);
-    if let Some((id, name)) = installed.iter().find(|(_, n)| n.to_lowercase() == w).or_else(|| installed.iter().find(|(_, n)| n.to_lowercase().contains(&w))) {
-        return Some((id.clone(), name.clone()));
+    if let Some((id, name)) = best_app(&installed, wanted) {
+        return Some((id, name));
     }
+    let w = wanted.to_lowercase();
     KNOWN.iter().find(|(k, _)| w.contains(k) || k.contains(w.as_str())).map(|(k, id)| (id.to_string(), title(k)))
+}
+
+/// The installed app a spoken name means — every word matched, in any order
+/// and with small mishearings forgiven: "fox live" → "FOX One: Live News,
+/// Sports, TV", "netflixx" → "Netflix", "disney" → "Disney Plus".
+pub fn best_app(installed: &[(String, String)], wanted: &str) -> Option<(String, String)> {
+    // "netflix tv" means Netflix; "youtube tv" means YouTube TV — try with
+    // the "tv", then without.
+    best_app_words(installed, wanted).or_else(|| {
+        let w = wanted.to_lowercase();
+        let without = w.trim_end_matches(" tv").trim().to_string();
+        (without != w).then(|| best_app_words(installed, &without)).flatten()
+    })
+}
+
+fn best_app_words(installed: &[(String, String)], wanted: &str) -> Option<(String, String)> {
+    let words = |s: &str| -> Vec<String> {
+        s.to_lowercase().replace("&amp;", "and").replace('+', " plus").split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_string).collect()
+    };
+    let want: Vec<String> = words(wanted).into_iter().filter(|w| !["the", "app", "channel", "on", "my"].contains(&w.as_str())).collect();
+    if want.is_empty() {
+        return None;
+    }
+    let close = |a: &str, b: &str| a == b || (a.len() >= 4 && b.starts_with(a)) || (a.len() >= 5 && edits(a, b) <= 1) || (a.len() >= 8 && edits(a, b) <= 2);
+    let mut best: Option<(f32, &(String, String))> = None;
+    for app in installed {
+        // TV inputs ("HDMI 1") only when asked for by name.
+        if app.0.starts_with("tvinput") && !wanted.to_lowercase().contains("hdmi") && !wanted.to_lowercase().contains("live tv") && !wanted.to_lowercase().contains(" av") {
+            continue;
+        }
+        let have = words(&app.1);
+        let hits = want.iter().filter(|w| have.iter().any(|h| close(w, h))).count();
+        if hits == 0 {
+            continue;
+        }
+        // All the words said, in fewest extra words, earliest in the name.
+        let mut score = hits as f32 / want.len() as f32;
+        if have.first().is_some_and(|f| close(&want[0], f)) {
+            score += 0.15;
+        }
+        score -= have.len() as f32 * 0.005;
+        if best.is_none_or(|(s, _)| score > s) {
+            best = Some((score, app));
+        }
+    }
+    best.filter(|(s, _)| *s >= 0.75).map(|(_, a)| a.clone())
+}
+
+/// How many letters differ (insert, delete, change) — for misheard names.
+fn edits(a: &str, b: &str) -> usize {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for i in 1..=a.len() {
+        let mut prev = row[0];
+        row[0] = i;
+        for j in 1..=b.len() {
+            let cur = row[j];
+            row[j] = (row[j] + 1).min(row[j - 1] + 1).min(prev + usize::from(a[i - 1] != b[j - 1]));
+            prev = cur;
+        }
+    }
+    row[b.len()]
 }
 
 fn title(s: &str) -> String {
@@ -189,6 +251,8 @@ pub enum TvAct {
     Ready,
     /// "Turn the TV off in 30 minutes" — a sleep timer (minutes).
     SleepIn(u64),
+    /// "Play Ice Age 3 (on Disney)": find a film or show, in that app if said.
+    Play { title: String, app: Option<String> },
 }
 
 /// "open netflix on the tv" → Open("netflix"); "turn the tv up" → VolumeUp ×4…
@@ -201,9 +265,13 @@ pub fn parse(said: &str) -> Option<TvAct> {
     }
     // Strip the "on the TV" part to get the request itself.
     let mut core = s.to_string();
-    for w in ["hey nova", "hey izuki", "on my tv", "on the tv", "on tv", "the tv", "my tv", "on the television", "the television", "on roku", "the roku", "roku", "tv", ","] {
+    for w in ["hey nova", "hey izuki", "on my tv", "on the tv", "on tv", "the tv", "my tv", "on the television", "the television", "on roku", "the roku", "roku", ","] {
         core = core.replace(w, " ");
     }
+    // A bare "tv" at the start ("tv, go home") goes; elsewhere it may be part
+    // of an app's name — YouTube TV, Live TV, Apple TV.
+    let core = core.trim().strip_prefix("tv ").map(str::to_string).unwrap_or(core);
+    let core = if core.trim() == "tv" { String::new() } else { core };
     let core = core.split_whitespace().filter(|w| !["please", "can", "you", "could", "for", "me"].contains(w)).collect::<Vec<_>>().join(" ");
     let words: Vec<&str> = core.split_whitespace().collect();
     let has = |k: &str| core == k || core.starts_with(&format!("{k} ")) || core.contains(&format!(" {k}")) || core.ends_with(k);
@@ -281,8 +349,11 @@ pub fn parse(said: &str) -> Option<TvAct> {
             let what = what.trim();
             // Just an app ("play netflix") opens it; anything else is searched.
             if !what.is_empty() && !KNOWN.iter().any(|(k, _)| what == *k || what.trim_end_matches(" app") == *k) {
-                let what = what.split(" on ").next().unwrap_or(what).trim();
-                return Some(TvAct::Search(what.to_string()));
+                // "play ice age 3 on disney" → that app straight away.
+                if let Some((title, app)) = what.rsplit_once(" on ") {
+                    return Some(TvAct::Play { title: title.trim().to_string(), app: Some(app.trim().to_string()) });
+                }
+                return Some(TvAct::Play { title: what.to_string(), app: None });
             }
         }
     }
@@ -296,6 +367,7 @@ pub fn parse(said: &str) -> Option<TvAct> {
     }
     // Just an app's name ("TV, Netflix"), or "control my TV".
     let app = core.trim_start_matches("the ").trim_end_matches(" app").trim();
+    let app = if KNOWN.iter().any(|(k, _)| app == *k) { app } else { app.trim_end_matches(" tv").trim() };
     if KNOWN.iter().any(|(k, _)| app == *k) {
         return Some(TvAct::Open(app.to_string()));
     }
@@ -372,9 +444,116 @@ pub fn host() -> Option<String> {
     Some(found)
 }
 
+// ---- the smart part: loose requests, worked out with the AI -----------------
+//
+// "Put on something funny for the kids", "a dinosaur cartoon", "what's good
+// tonight?", "continue my show" — not commands, so the AI picks a title and
+// one of the apps actually installed on this TV. When it's on more than one,
+// Izuki asks which, and "Disney" (no "TV" needed) plays it there.
+
+/// A choice Izuki asked about: (title, apps, when asked).
+static CHOICE: parking_lot::Mutex<Option<(String, Vec<String>, Instant)>> = parking_lot::Mutex::new(None);
+
+/// A loose wish rather than a title ("something funny", "a cartoon for the kids").
+fn vague(title: &str) -> bool {
+    let t = title.to_lowercase();
+    ["something", "anything", "a movie", "a film", "a show", "cartoon", "for the kids", "for kids", "funny", "scary", "good", "new", "popular", "like ", "with ", "about "]
+        .iter()
+        .any(|w| t.contains(w))
+}
+
+/// The answer to "which app?", if one is waiting — "Disney", "the first one", "Prime".
+pub fn answer_choice(said: &str) -> Option<String> {
+    let (title, choices, at) = CHOICE.lock().clone()?;
+    if at.elapsed() > Duration::from_secs(150) {
+        return None;
+    }
+    let s = said.to_lowercase();
+    let ordinal = [("first", 0usize), ("1st", 0), ("one", 0), ("second", 1), ("2nd", 1), ("third", 2), ("3rd", 2), ("last", choices.len().saturating_sub(1))];
+    let picked = choices
+        .iter()
+        .find(|c| best_app(&[(String::new(), (*c).clone())], &s).is_some())
+        .cloned()
+        .or_else(|| ordinal.iter().find(|(w, _)| s.split_whitespace().any(|x| x == *w)).and_then(|(_, i)| choices.get(*i).cloned()))?;
+    *CHOICE.lock() = None;
+    Some(run(&format!("play {title} on {picked} on the tv")).unwrap_or_else(|e| e.to_string()))
+}
+
+/// Ask the AI what to put on, given the apps on this TV; then do it.
+fn smart(host: &str, said: &str) -> Result<String> {
+    let installed: Vec<String> = apps(host).into_iter().filter(|(id, _)| !id.starts_with("tvinput") && id != "dev").map(|(_, n)| n.replace("&amp;", "&")).collect();
+    if installed.is_empty() {
+        return Err(anyhow!("I can't see which apps are on your TV right now. {ALLOW_STEPS}"));
+    }
+    let prompt = format!(
+        "You help the user watch things on their TV. The apps installed on it: {}.\n\
+         They said: \"{said}\".\n\
+         Pick something real that fits (a specific film or show title) and one installed app that has it — if you're not sure which app, \
+         list the likely installed apps as choices. Kids → kid-safe. If they only want an app, just open it. If they ask for ideas, answer.\n\
+         Reply with ONLY JSON: {{\"kind\": \"play|open|choose|answer\", \"say\": \"one short friendly spoken line\", \
+         \"title\": \"exact title or empty\", \"app\": \"one installed app name or empty\", \"choices\": [\"installed app\", ...]}}",
+        installed.join(", ")
+    );
+    let reply = crate::chat::complete(&[
+        serde_json::json!({ "role": "system", "content": "You are Izuki, a friendly TV companion. JSON only." }),
+        serde_json::json!({ "role": "user", "content": prompt }),
+    ])?;
+    let v: serde_json::Value = reply
+        .find('{')
+        .and_then(|a| reply.rfind('}').map(|b| &reply[a..=b]))
+        .and_then(|j| serde_json::from_str(j).ok())
+        .ok_or_else(|| anyhow!("I wasn't sure what to put on — try naming a show or an app."))?;
+    let get = |k: &str| v[k].as_str().unwrap_or("").trim().to_string();
+    let (kind, say, title, app) = (get("kind"), get("say"), get("title"), get("app"));
+    let choices: Vec<String> = v["choices"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
+    let all: Vec<(String, String)> = apps(host);
+    match kind.as_str() {
+        "open" if !app.is_empty() => {
+            let (id, name) = best_app(&all, &app).ok_or_else(|| anyhow!("I couldn't find {app} on your TV."))?;
+            post(host, &format!("/launch/{id}"))?;
+            Ok(if say.is_empty() { format!("Opening {name}.") } else { say })
+        }
+        "play" if !title.is_empty() && !app.is_empty() => {
+            if let Some((id, _)) = best_app(&all, &app) {
+                post(host, &format!("/search/browse?keyword={}&provider-id={id}&launch=true&match-any=true", urlencode(&title)))?;
+            } else {
+                post(host, &format!("/search/browse?keyword={}&match-any=true", urlencode(&title)))?;
+            }
+            Ok(if say.is_empty() { format!("Putting on {title}.") } else { say })
+        }
+        "choose" | "play" if !title.is_empty() => {
+            post(host, &format!("/search/browse?keyword={}&match-any=true", urlencode(&title)))?;
+            let real: Vec<String> = choices.iter().filter_map(|c| best_app(&all, c).map(|(_, n)| n.replace("&amp;", "&"))).take(4).collect();
+            if real.len() >= 2 {
+                *CHOICE.lock() = Some((title.clone(), real.clone(), Instant::now()));
+                let list = format!("{} or {}", real[..real.len() - 1].join(", "), real[real.len() - 1]);
+                return Ok(format!("{} It's on {list} — which one?", if say.is_empty() { format!("{title} it is.") } else { say }));
+            }
+            Ok(if say.is_empty() { format!("Here's {title} — pick where to watch it.") } else { say })
+        }
+        _ => Ok(if say.is_empty() { "I'm not sure what to put on — name a show or an app?".into() } else { say }),
+    }
+}
+
 /// Do a TV request. What to say back, or why it couldn't.
 pub fn run(said: &str) -> Result<String> {
-    let act = parse(said).ok_or_else(|| anyhow!("I can open apps, search, type, change the volume, pause and play, and press the remote's buttons on your TV — try \"open Netflix on the TV\"."))?;
+    let Some(act) = parse(said) else {
+        // Not a quick command: on a Roku, let the AI work it out.
+        let host = host().ok_or_else(|| anyhow!("I couldn't find a TV on your Wi-Fi."))?;
+        if make(&host).is_none() {
+            return smart(&host, said);
+        }
+        return Err(anyhow!("I can open apps, search, type, change the volume, pause and play, and press the remote's buttons on your TV — try \"open Netflix on the TV\"."));
+    };
+    if let TvAct::Play { title, app: None } = &act {
+        if vague(title) {
+            if let Some(host) = host() {
+                if make(&host).is_none() {
+                    return smart(&host, said);
+                }
+            }
+        }
+    }
     // An Izuki TV app linked to this PC (Android TV / Google TV / Fire TV)
     // and no other TV set up: the job goes to it, and it does it on the TV.
     if let Some(store) = crate::state::try_store() {
@@ -407,6 +586,18 @@ pub fn run(said: &str) -> Result<String> {
         TvAct::Search(q) => {
             post(&host, &format!("/search/browse?keyword={}", urlencode(&q)))?;
             Ok(format!("Searching the TV for {q}."))
+        }
+        TvAct::Play { title, app } => {
+            // Roku's own search knows which apps have it. Said with an app:
+            // straight into that app, playing.
+            if let Some(a) = app {
+                if let Some((id, name)) = find_app(&host, &a) {
+                    post(&host, &format!("/search/browse?keyword={}&provider-id={id}&launch=true&match-any=true", urlencode(&title)))?;
+                    return Ok(format!("Putting on {title} in {name}."));
+                }
+            }
+            post(&host, &format!("/search/browse?keyword={}&match-any=true", urlencode(&title)))?;
+            Ok(format!("Here's {title} — the TV's showing which apps have it. Tell me which one, like “play {title} on Disney Plus”, or pick it with the remote."))
         }
         TvAct::Type(t) => {
             type_text(&host, &t)?;
@@ -465,7 +656,28 @@ mod tests {
         assert_eq!(parse("tv go home"), Some(TvAct::Key("Home", 1)));
         assert_eq!(parse("mute the tv"), Some(TvAct::Key("VolumeMute", 1)));
         assert_eq!(parse("tv netflix"), Some(TvAct::Open("netflix".into())));
-        assert_eq!(parse("play stranger things on netflix on the tv"), Some(TvAct::Search("stranger things".into())));
+        assert_eq!(parse("play stranger things on netflix on the tv"), Some(TvAct::Play { title: "stranger things".into(), app: Some("netflix".into()) }));
+        assert_eq!(parse("play ice age 3 on the tv"), Some(TvAct::Play { title: "ice age 3".into(), app: None }));
+        let installed = vec![
+            ("808732".to_string(), "FOX One: Live News, Sports, TV".to_string()),
+            ("12".to_string(), "Netflix".to_string()),
+            ("291097".to_string(), "Disney Plus".to_string()),
+            ("tvinput.dtv".to_string(), "Live TV".to_string()),
+            ("837".to_string(), "YouTube".to_string()),
+            ("195316".to_string(), "YouTube TV".to_string()),
+        ];
+        assert_eq!(best_app(&installed, "fox live").map(|a| a.0), Some("808732".into()));
+        assert_eq!(best_app(&installed, "netflixx").map(|a| a.0), Some("12".into()));
+        assert_eq!(best_app(&installed, "disney+").map(|a| a.0), Some("291097".into()));
+        assert_eq!(best_app(&installed, "youtube").map(|a| a.0), Some("837".into()));
+        assert_eq!(best_app(&installed, "youtube tv").map(|a| a.0), Some("195316".into()));
+        assert_eq!(best_app(&installed, "live tv").map(|a| a.0), Some("tvinput.dtv".into()));
+        assert_eq!(best_app(&installed, "spotify"), None);
+        assert!(vague("something funny for the kids"));
+        assert!(vague("a dinosaur cartoon"));
+        assert!(!vague("ice age 3"));
+        assert_eq!(best_app(&installed, "netflix tv").map(|a| a.0), Some("12".into()));
+        assert_eq!(parse("open youtube tv"), Some(TvAct::Open("youtube tv".into())));
         assert_eq!(parse("watch youtube on tv"), Some(TvAct::Open("youtube".into())));
         assert_eq!(parse("control my tv"), Some(TvAct::Ready));
         assert_eq!(parse("open netflix"), None);

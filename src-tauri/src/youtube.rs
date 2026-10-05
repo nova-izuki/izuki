@@ -46,7 +46,8 @@ pub fn search_url(query: &str) -> String {
 pub fn play(query: &str) -> Result<Option<String>> {
     // One song at a time: whatever else is playing stops first.
     crate::media::pause_others();
-    crate::apps::open_url(&search_url(query))?;
+    // The YouTube tab it already has up, rather than a new tab per song.
+    crate::patience::go_to(&search_url(query))?;
     watch_ads(AD_WATCH);
     let words = words(query);
     let started = Instant::now();

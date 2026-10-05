@@ -577,18 +577,19 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
             return Ok(format!("drew a {} on screen", step.shape.as_deref().unwrap_or("mark")));
         }
         // Instant skills: straight through Windows, no clicking around.
+        // Patiently: each thing once, waited for as long as this PC needs,
+        // and in the browser tab it's already using (patience.rs).
         Intent::OpenApp => {
             let what = step.text_to_type.as_deref().unwrap_or_default();
-            let shown = crate::apps::open_app(what)?;
-            return Ok(format!("opened {shown}"));
+            return crate::patience::open_app(what);
         }
         Intent::OpenUrl => {
             let url = step.text_to_type.as_deref().unwrap_or_default();
-            crate::apps::open_url(url)?;
+            let said = crate::patience::open_url(url)?;
             if url.contains("youtube.com") || url.contains("youtu.be") {
                 crate::youtube::watch_ads(crate::youtube::AD_WATCH);
             }
-            return Ok(format!("opened {url}"));
+            return Ok(said);
         }
         Intent::PlayYoutube => {
             let what = step.text_to_type.as_deref().unwrap_or_default();
@@ -599,8 +600,7 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         }
         Intent::Search => {
             let q = step.text_to_type.as_deref().unwrap_or_default();
-            crate::apps::web_search(q)?;
-            return Ok(format!("searched the web for {q}"));
+            return crate::patience::search(q);
         }
         Intent::Drag => {
             let to = (step.x2.unwrap_or(x), step.y2.unwrap_or(y));

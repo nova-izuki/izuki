@@ -80,10 +80,19 @@ pub fn across_apps(apps: &[String]) -> Option<String> {
     }
     let names = others.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
     let ask = format!(
-        "Quick status for my wake-up briefing: what's new for me today in {names}? Up to 4 short lines, each starting with the app's name (\"Slack — Sam: can we move the call?\"). Only read — don't send, post or change anything. If nothing's new, say so in one line."
+        "Quick status for my wake-up briefing: what's new for me today in {names}? Up to 4 short lines, each starting with the app's name (\"Slack — Sam: can we move the call?\"). Only read — don't send, post or change anything. Leave out any app you can't read or that needs signing in — don't mention it. If nothing's new, say so in one line."
     );
     let turn = crate::chat::Turn { role: "user".into(), content: ask };
-    crate::composio::ask(&[turn]).ok().map(|a| a.text.trim().to_string()).filter(|t| !t.is_empty())
+    let text = crate::composio::ask(&[turn]).ok().map(|a| a.text.trim().to_string()).filter(|t| !t.is_empty())?;
+    // Lines about signing in or connecting aren't news.
+    let kept: Vec<&str> = text
+        .lines()
+        .filter(|l| {
+            let l = l.to_lowercase();
+            !(l.contains("sign in") || l.contains("log in") || l.contains("connect") || l.contains("couldn't") || l.contains("can't access") || l.contains("need to") && l.contains("first"))
+        })
+        .collect();
+    (!kept.is_empty()).then(|| kept.join("\n"))
 }
 
 /// The report, ready to say.

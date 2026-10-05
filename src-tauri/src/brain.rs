@@ -2067,7 +2067,8 @@ fn submit_task(
         // Not the full 6 s it used to be: with a video playing the screen
         // never "settles", and every round of a task waited the whole time.
         // A page still loading is caught just below (busy cursor, Stop button).
-        let max = Duration::from_millis(2500 + u64::from(wait) * 1000);
+        // A slow PC gets longer (patience.rs learns how long its windows take).
+        let max = Duration::from_millis((2500.0 * crate::patience::slowness()) as u64 + u64::from(wait) * 1000);
         let settled = crate::live::wait_until_settled(min, max, || !alive());
         eprintln!(
             "[agent] screen {} after {} ms",
@@ -2080,7 +2081,7 @@ fn submit_task(
         // (A finished page's controls are kept for the next look — read once.)
         if let Some(why) = uia::loading(true) {
             let _ = app.emit(events::STATUS, StatusEvent::working("Waiting for it to load…"));
-            let until = std::time::Instant::now() + Duration::from_secs(12);
+            let until = std::time::Instant::now() + Duration::from_secs_f32(12.0 * crate::patience::slowness());
             while std::time::Instant::now() < until && alive() && uia::loading(false).is_some() {
                 std::thread::sleep(Duration::from_millis(400));
             }

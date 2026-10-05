@@ -341,6 +341,17 @@ pub fn open_log_folder() -> R<()> {
 /// everyday commands (instant.rs).
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
+    // Answering Izuki's "which app?" for the TV ("Disney", "the first one").
+    {
+        let s2 = said.clone();
+        if let Ok(Some(text)) = blocking(move || crate::tv::answer_choice(&s2)).await {
+            return Some(text);
+        }
+    }
+    // "What's important in my email?" — gone through properly, not just counted.
+    if crate::headsup::is_inbox_question(&said) && crate::composio::configured() {
+        return blocking(crate::headsup::inbox_spoken).await.ok();
+    }
     // Read it to me: the selection, else the page — in parts.
     if crate::readaloud::is_keep_reading(&said) {
         return Some(crate::readaloud::keep_going());
@@ -390,6 +401,12 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         std::thread::spawn(move || {
             if let Some(text) = crate::briefing::across_apps(&apps) {
                 let _ = app2.emit_to(overlay::OVERLAY_LABEL, "izuki://hud-apps", text);
+            }
+            // The inbox, gone through properly (it takes a few seconds).
+            if apps.iter().any(|a| a.to_lowercase().contains("gmail")) {
+                if let Ok(d) = crate::headsup::inbox_digest(false) {
+                    let _ = app2.emit_to(overlay::OVERLAY_LABEL, "izuki://hud-inbox", d);
+                }
             }
         });
         return Some(hud.said);

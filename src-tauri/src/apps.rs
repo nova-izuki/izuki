@@ -174,6 +174,20 @@ pub fn open_url(url: &str) -> Result<()> {
     start(&full)
 }
 
+/// The address of a web search for `query`.
+pub fn search_url(query: &str) -> String {
+    let q: String = query
+        .trim()
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            b' ' => "+".to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect();
+    format!("https://www.google.com/search?q={q}")
+}
+
 /// A web search in the default browser.
 pub fn web_search(query: &str) -> Result<()> {
     let q: String = query

@@ -35,6 +35,7 @@ pub mod models;
 pub mod notes;
 pub mod ocr;
 pub mod overlay;
+pub mod patience;
 pub mod planner;
 pub mod recipes;
 pub mod reminders;

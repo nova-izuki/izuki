@@ -177,6 +177,7 @@ async fn samsung(host: &str, act: TvAct) -> Result<String> {
             "Typed it.".into()
         }
         TvAct::Search(q) => format!("Open the search in the app on your TV, then say \"type {q} on the TV\" and I'll fill it in."),
+        TvAct::Play { title, .. } => format!("Open the app you want on your TV and its search, then say \"type {title} on the TV\" and I'll fill it in."),
         TvAct::Ready => "Connected to your Samsung TV — what should I put on?".into(),
         // Handled in tv::run before it gets here.
         TvAct::SleepIn(_) => "Okay.".into(),
@@ -308,6 +309,7 @@ async fn lg(host: &str, act: TvAct) -> Result<String> {
             "Typed it.".into()
         }
         TvAct::Search(q) => format!("Open the search in the app on your TV, then say \"type {q} on the TV\" and I'll fill it in."),
+        TvAct::Play { title, .. } => format!("Open the app you want on your TV and its search, then say \"type {title} on the TV\" and I'll fill it in."),
         TvAct::Ready => "Connected to your LG TV — what should I put on?".into(),
         // Handled in tv::run before it gets here.
         TvAct::SleepIn(_) => "Okay.".into(),

@@ -43,6 +43,8 @@ interface Msg {
   setup?: boolean;
   /** What it did on the way ("▶ Ran: …", "🔎 Searched the web: …"). */
   steps?: string[];
+  /** The tools it used, Claude Code style: tool, what for, IN and OUT. */
+  calls?: ToolCall[];
   /** What an allowed command really answered (so later turns know it ran). */
   ran?: string;
 }
@@ -100,6 +102,7 @@ function clean(v: unknown): Msg[] {
       status: typeof m.status === "string" ? m.status : undefined,
       links: links.length ? links : undefined,
       ran: typeof m.ran === "string" ? m.ran : undefined,
+      calls: Array.isArray(m.calls) ? (m.calls as ToolCall[]).filter((c) => c && typeof c.name === "string").slice(-12) : undefined,
       steps: Array.isArray(m.steps) ? (m.steps as unknown[]).filter((s): s is string => typeof s === "string").slice(-12) : undefined,
       action:
         a && typeof a === "object" && typeof a.id === "number"
@@ -376,8 +379,16 @@ export function ChatTab() {
           });
           resolve();
         };
-        const off = on<{ id: number; text: string; done: boolean; error: string | null; status?: string; action?: Msg["action"]; step?: string }>(EV.chatDelta, (d) => {
+        const off = on<{ id: number; text: string; done: boolean; error: string | null; status?: string; action?: Msg["action"]; step?: string; call?: ToolCall }>(EV.chatDelta, (d) => {
           if (d.id !== id || settled) return;
+          // A tool it used: a card in this reply, and the wait starts over.
+          if (d.call) {
+            clearTimeout(slow);
+            slow = setTimeout(giveUp, FIRST_WORDS_MS);
+            const c = d.call;
+            setLast((last) => ({ calls: [...(last.calls ?? []), c].slice(-12) }));
+            return;
+          }
           // A step it took: a line in this reply, and the wait starts over.
           if (d.step) {
             clearTimeout(slow);
@@ -650,8 +661,9 @@ export function ChatTab() {
                     : undefined
                 }
               >
-                {m.steps && m.steps.length > 0 && <Steps steps={m.steps} />}
-                {m.action && <ActionCard action={m.action} busy={busy} onAnswer={(allow) => void answer(i, allow)} />}
+                {m.calls && m.calls.length > 0 && <ToolCards calls={m.calls} />}
+                {m.steps && m.steps.length > 0 && !m.calls?.length && <Steps steps={m.steps} />}
+                {m.action && <ActionCard action={m.action} busy={busy} onAnswer={(allow) => void answer(i, allow)} ran={m.ran} />}
                 {m.content ? (
                   m.role === "assistant" ? <ChatText text={m.content} /> : m.content
                 ) : busy && i === msgs.length - 1 ? (
@@ -831,7 +843,76 @@ function Steps({ steps }: { steps: string[] }) {
 }
 
 /** A change it wants to make — Allow / No — or, once answered, what happened. */
-function ActionCard({ action, busy, onAnswer }: { action: NonNullable<Msg["action"]>; busy: boolean; onAnswer: (allow: boolean) => void }) {
+interface ToolCall {
+  name: string;
+  title: string;
+  input: string;
+  output: string;
+  ok: boolean;
+}
+
+/** The tools it used — each a card with IN and OUT, like Claude Code. */
+function ToolCards({ calls }: { calls: ToolCall[] }) {
+  return (
+    <div className="mb-2 flex flex-col gap-1.5">
+      {calls.map((c, i) => (
+        <ToolCard key={i} call={c} />
+      ))}
+    </div>
+  );
+}
+
+function ToolCard({ call }: { call: ToolCall }) {
+  const [open, setOpen] = useState(false);
+  const lines = call.output.split("\n");
+  const long = lines.length > 6 || call.output.length > 500;
+  const shown = open || !long ? call.output : lines.slice(0, 6).join("\n").slice(0, 500);
+  return (
+    <div className="overflow-hidden rounded-[10px] border border-white/10 bg-black/30 font-mono text-[11px] leading-snug">
+      <div className="flex items-center gap-2 border-b border-white/[0.06] px-2.5 py-1.5 font-sans">
+        <span className={call.ok ? "text-izk-teal" : "text-izk-danger"}>{call.ok ? "●" : "▲"}</span>
+        <span className="font-semibold text-izk-ink">{call.name}</span>
+        <span className="min-w-0 flex-1 truncate text-[11.5px] text-izk-muted">{call.title}</span>
+      </div>
+      <div className="grid grid-cols-[34px_1fr] gap-x-1 px-2.5 py-1.5">
+        <span className="text-[10px] text-izk-muted/70">IN</span>
+        <pre className="max-h-[90px] overflow-auto whitespace-pre-wrap break-all text-izk-ink/90">{call.input}</pre>
+        {call.output.trim() && (
+          <>
+            <span className="mt-1 text-[10px] text-izk-muted/70">OUT</span>
+            <div className="mt-1 min-w-0">
+              <pre className={"whitespace-pre-wrap break-words rounded-[6px] bg-white/[0.04] p-1.5 " + (call.ok ? "text-izk-muted" : "text-izk-danger/90")}>{shown}</pre>
+              {long && (
+                <button type="button" onClick={() => setOpen(!open)} className="mt-0.5 font-sans text-[10.5px] text-izk-muted underline-offset-2 hover:text-izk-ink hover:underline">
+                  {open ? "Show less" : `Show all (${lines.length} lines)`}
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ActionCard({ action, busy, onAnswer, ran }: { action: NonNullable<Msg["action"]>; busy: boolean; onAnswer: (allow: boolean) => void; ran?: string }) {
+  // Allowed and done: the same card as any other tool, with what it printed.
+  if (action.state === "allowed" && ran !== undefined) {
+    const proof = /\[Proof check: ([^\]]+)\]/.exec(ran)?.[1];
+    return (
+      <div className="mb-2">
+        <ToolCard
+          call={{
+            name: action.kind === "save" ? "Save file" : "PowerShell",
+            title: proof ?? action.title,
+            input: action.detail,
+            output: ran.replace(/\n?\[Proof check: [^\]]+\]/, "").trim(),
+            ok: !/^(That didn't work|It didn't work|It finished with an error)/.test(ran) && !ran.includes("\nErrors:"),
+          }}
+        />
+      </div>
+    );
+  }
   if (action.state === "allowed" || action.state === "denied") {
     return (
       <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-izk-muted" title={action.detail}>

@@ -4,6 +4,10 @@ import { Pause, Play, SkipForward, X } from "lucide-react";
 import { api, emit, EV, on } from "../lib/ipc";
 import { markHit } from "../lib/hitTest";
 
+type InboxItem = { from: string; subject: string; kind: string; action: string; urgent: boolean };
+type InboxDigest = { summary: string; items: InboxItem[]; looked_at: number; skipped: number };
+const KIND_ICON: Record<string, string> = { reply: "↩️", money: "💳", delivery: "📦", school: "🎓", work: "💼", meeting: "📅", security: "🔐", personal: "💬" };
+
 type Pulse = { cpu: number | null; memory: number | null; disk_free_gb: number | null; battery: [number, boolean] | null; online: boolean };
 type LaterItem = { id: string; text: string; done: boolean };
 
@@ -59,6 +63,8 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
   const [data, setData] = useState<HudData | null>(preview);
   /** What's new across the other linked apps — arrives a few seconds later. */
   const [acrossApps, setAcrossApps] = useState<string | null>(null);
+  /** The inbox, gone through by the AI — arrives a few seconds after opening. */
+  const [digest, setDigest] = useState<InboxDigest | null>(null);
   const timer = useRef(0);
   /** Live numbers while it's up, and a clock that ticks. */
   const [pulse, setPulse] = useState<Pulse | null>(null);
@@ -106,10 +112,12 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
       on<HudData>("izuki://hud", (d) => {
         setData(d);
         setAcrossApps(null);
+        setDigest(null);
         setHeld(false);
         close(MAX_MS);
       }),
       on<string>("izuki://hud-apps", (t) => setAcrossApps(t)),
+      on<InboxDigest>("izuki://hud-inbox", (d) => setDigest(d)),
       on<boolean>(EV.speaking, (talking) => {
         if (!talking && !heldRef.current) close(LINGER_MS);
       }),
@@ -238,7 +246,29 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
                     ))}
                 </Panel>
               )}
-              {data.inbox && (
+              {digest && (
+                <Panel title="INBOX — WHAT MATTERS">
+                  <div className="text-[12.5px] leading-snug text-cyan-50/90">{digest.summary}</div>
+                  {digest.items.slice(0, 5).map((it, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      data-izk-hit
+                      onClick={() => ask(`Help me with the email from ${it.from} about "${it.subject}"${it.action ? ` — ${it.action}` : ""}. Read it and tell me what to do; draft a reply if it needs one, but don't send anything.`)}
+                      className="pointer-events-auto flex w-full items-start gap-2 rounded-[6px] border-b border-cyan-300/10 pb-1.5 text-left text-[12.5px] transition last:border-0 hover:bg-cyan-300/10"
+                    >
+                      <span className="shrink-0">{KIND_ICON[it.kind] ?? "✉️"}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-cyan-50">{it.action || it.subject}</span>
+                        <span className="block truncate text-[11px] text-cyan-100/55">{it.from}</span>
+                      </span>
+                      {it.urgent && <span className="shrink-0 rounded-full bg-amber-400/20 px-1.5 text-[10px] font-semibold text-amber-300">URGENT</span>}
+                    </button>
+                  ))}
+                  {digest.skipped > 0 && <div className="text-[11px] text-cyan-100/45">Skipped {digest.skipped} that didn't need you.</div>}
+                </Panel>
+              )}
+              {data.inbox && !digest && (
                 <Panel title="INBOX">
                   <div className="flex items-baseline gap-2">
                     <span className="izk-hud-time text-[30px] font-extralight leading-none text-white">{data.inbox[0] >= 20 ? "20+" : data.inbox[0]}</span>
@@ -321,6 +351,10 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
             )}
             <div className="flex flex-wrap justify-center gap-2">
               {[
+                ["📬 Go through my email", "What's important in my email?"],
+                ["🎯 Focus 25", "focus for 25 minutes"],
+                ["⏱️ 5-min timer", "set a timer for 5 minutes"],
+                ["🔊 Read this page", "read this to me"],
                 ["🗓️ Plan my day", "Plan my day: what's on, what's due, and what I should do first."],
                 ["🧹 Tidy my PC", "Check my PC in the background: what's taking space, what's slowing it down, and what I could clean up. Don't delete anything yet."],
                 ["📰 Today's news", "Give me today's top news in 4 short lines."],

@@ -221,6 +221,123 @@ fn new_emails(st: &mut State) -> anyhow::Result<Vec<String>> {
     Ok(lines)
 }
 
+// ---------------------------------------------------------------------------
+// Digging through the inbox
+// ---------------------------------------------------------------------------
+
+/// One email that matters, and what to do about it.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct InboxItem {
+    pub from: String,
+    pub subject: String,
+    /// "reply", "money", "delivery", "school", "work", "meeting", "security", "personal".
+    pub kind: String,
+    /// The to-do, in plain words ("Pay the electric bill by Friday").
+    #[serde(default)]
+    pub action: String,
+    #[serde(default)]
+    pub urgent: bool,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct InboxDigest {
+    /// One or two spoken sentences.
+    pub summary: String,
+    pub items: Vec<InboxItem>,
+    /// How many emails were looked at, and how many were just noise.
+    pub looked_at: usize,
+    pub skipped: usize,
+}
+
+static DIGEST: Mutex<Option<(InboxDigest, Instant)>> = Mutex::new(None);
+
+/// Read the last few days of email (not promotions or social) and have the
+/// AI pick out what actually matters and the real to-dos — the way a good
+/// assistant goes through your inbox, not just a count. Cached ten minutes.
+pub fn inbox_digest(fresh: bool) -> anyhow::Result<InboxDigest> {
+    if !fresh {
+        if let Some((d, at)) = DIGEST.lock().clone() {
+            if at.elapsed() < Duration::from_secs(600) {
+                return Ok(d);
+            }
+        }
+    }
+    let data = crate::composio::execute(
+        "GMAIL_FETCH_EMAILS",
+        json!({ "query": "in:inbox newer_than:3d -category:promotions -category:social", "max_results": 25, "include_payload": false, "verbose": false }),
+    )?;
+    let mails = messages(&data);
+    if mails.is_empty() {
+        let d = InboxDigest { summary: "Your inbox is quiet — nothing new in the last few days.".into(), ..Default::default() };
+        *DIGEST.lock() = Some((d.clone(), Instant::now()));
+        return Ok(d);
+    }
+    let list: String = mails
+        .iter()
+        .enumerate()
+        .map(|(i, m)| format!("{}. From: {} | Subject: {} | {}\n", i + 1, m.from, m.subject, m.snippet))
+        .collect();
+    let reply = crate::chat::complete(&[
+        json!({ "role": "system", "content": DIGEST_PROMPT }),
+        json!({ "role": "user", "content": format!("Today is {}.\nEmails:\n{list}", chrono::Local::now().format("%A %-d %B %Y")) }),
+    ])?;
+    let mut d = parse_digest(&reply).unwrap_or_else(|| InboxDigest { summary: reply.trim().chars().take(400).collect(), ..Default::default() });
+    d.looked_at = mails.len();
+    d.skipped = mails.len().saturating_sub(d.items.len());
+    *DIGEST.lock() = Some((d.clone(), Instant::now()));
+    Ok(d)
+}
+
+const DIGEST_PROMPT: &str = "You go through the user's recent emails like a sharp personal assistant. \
+Pick ONLY the ones that matter to them as a person: someone waiting for a reply, money (bills, payments, \
+refunds, invoices, bank), deliveries, school or work tasks and deadlines, meetings and appointments, \
+security alerts about their accounts, and personal messages from real people. Skip newsletters, marketing, \
+receipts with nothing to do, and automated noise. For each one that matters, write the real to-do in plain \
+words with any date or amount (\"Pay the £42 electric bill by Friday\", \"Reply to Sam about Saturday's \
+shift\"). Reply with ONLY JSON: {\"summary\": \"one or two friendly spoken sentences about what matters most\", \
+\"items\": [{\"from\": \"name\", \"subject\": \"subject\", \"kind\": \"reply|money|delivery|school|work|meeting|security|personal\", \
+\"action\": \"the to-do, or empty\", \"urgent\": true or false}]}. Most important first, at most 8 items. \
+If nothing matters, items is [] and the summary says the inbox is all clear.";
+
+fn parse_digest(reply: &str) -> Option<InboxDigest> {
+    let a = reply.find('{')?;
+    let b = reply.rfind('}')?;
+    let v: Value = serde_json::from_str(&reply[a..=b]).ok()?;
+    let items: Vec<InboxItem> = v["items"].as_array().map(|arr| arr.iter().filter_map(|x| serde_json::from_value(x.clone()).ok()).take(8).collect()).unwrap_or_default();
+    Some(InboxDigest { summary: v["summary"].as_str().unwrap_or("").trim().to_string(), items, looked_at: 0, skipped: 0 })
+}
+
+/// "What's important in my email?", "go through my inbox", "anything I need to do in my email?"
+pub fn is_inbox_question(said: &str) -> bool {
+    let s = said.to_lowercase();
+    let mail = ["email", "e-mail", "inbox", "gmail", "mail"].iter().any(|w| s.contains(w));
+    let dig = [
+        "important", "anything i need", "what do i need", "go through", "dig through", "check my", "summar", "catch me up",
+        "what's new", "whats new", "anything new", "to do", "todo", "need to do", "anything urgent", "urgent",
+    ]
+    .iter()
+    .any(|w| s.contains(w));
+    mail && dig && !["send", "write", "reply to", "draft", "delete", "archive"].iter().any(|w| s.contains(w))
+}
+
+/// The digest, said out loud.
+pub fn inbox_spoken() -> String {
+    match inbox_digest(false) {
+        Ok(d) => {
+            let mut s = d.summary.clone();
+            let todo: Vec<String> = d.items.iter().filter(|i| !i.action.trim().is_empty()).take(3).map(|i| i.action.trim().trim_end_matches('.').to_string()).collect();
+            if !todo.is_empty() && !s.to_lowercase().contains(&todo[0].to_lowercase()) {
+                s.push_str(&format!(" To do: {}.", todo.join("; ")));
+            }
+            if d.skipped > 0 {
+                s.push_str(&format!(" I skipped {} that didn't need you.", d.skipped));
+            }
+            s
+        }
+        Err(e) => format!("I couldn't read your email just now: {e}"),
+    }
+}
+
 /// What's in the inbox right now, for the "wake up" briefing: how many
 /// unread emails came today (primary inbox), and who the first few are
 /// from, with their subjects.
@@ -248,6 +365,8 @@ struct Mail {
     id: String,
     from: String,
     subject: String,
+    /// The start of the email itself, when the tool gives it.
+    snippet: String,
 }
 
 /// The messages in a Gmail tool result, however it nests them.
@@ -258,7 +377,8 @@ fn messages(data: &Value) -> Vec<Mail> {
             let id = str_of(m, &["messageId", "message_id", "id", "threadId"])?;
             let from = str_of(m, &["sender", "from"]).map(|f| display_name(&f)).unwrap_or_else(|| "someone".into());
             let subject = str_of(m, &["subject"]).unwrap_or_default();
-            Some(Mail { id, from, subject: clip(&subject, 90) })
+            let snippet = str_of(m, &["preview", "snippet", "messageText", "body", "text"]).map(|s| clip(&s.split_whitespace().collect::<Vec<_>>().join(" "), 400)).unwrap_or_default();
+            Some(Mail { id, from, subject: clip(&subject, 90), snippet })
         })
         .collect()
 }
@@ -625,6 +745,19 @@ fn clip(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_a_digest_and_hears_inbox_questions() {
+        let d = parse_digest(r#"Sure! {"summary":"Two things need you.","items":[{"from":"EDF","subject":"Your bill","kind":"money","action":"Pay the £42 bill by Friday","urgent":true},{"from":"Sam","subject":"Saturday","kind":"reply","action":"Reply to Sam","urgent":false}]}"#).unwrap();
+        assert_eq!(d.items.len(), 2);
+        assert_eq!(d.items[0].kind, "money");
+        assert!(d.items[0].urgent);
+        assert!(is_inbox_question("what's important in my email?"));
+        assert!(is_inbox_question("go through my inbox"));
+        assert!(is_inbox_question("anything urgent in my gmail"));
+        assert!(!is_inbox_question("send an email to sam"));
+        assert!(!is_inbox_question("what is email"));
+    }
 
     #[test]
     fn reads_gmail_results() {
