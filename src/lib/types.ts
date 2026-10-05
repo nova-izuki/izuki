@@ -312,6 +312,7 @@ export interface Settings {
   buddy_speaks: boolean;
   buddy_acts: boolean;
   buddy_breaks: boolean;
+  recall_enabled: boolean;
   /** Saved flows clear after this many days unused (0 = keep). */
   flows_keep_days: number;
   /** How sure the wake-word detector must be before it wakes. */
@@ -583,6 +584,10 @@ export interface IslandStatus {
   suggestions: Suggestion[];
   /** Changes when the app or page in front changes. */
   context: string;
+  /** Something just copied, and what to do with it ("Translate what you copied"). */
+  clip?: Suggestion[];
+  /** Seconds left in a focus session. */
+  focus_left?: number | null;
 }
 
 export interface Suggestion {

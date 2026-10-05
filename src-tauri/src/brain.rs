@@ -472,7 +472,7 @@ fn ask_model(
 
     let mut chain = brain_chain();
     if chain.is_empty() {
-        return Err(anyhow!("no brain is configured"));
+        return Err(anyhow!("{}", if online() { "no brain is configured" } else { OFFLINE }));
     }
     // The smartest brain to hand goes first. Small models are quick, but they
     // got quiz answers wrong — and on tasks they mostly described the job
@@ -498,7 +498,40 @@ fn ask_model(
 /// with a much faster one moved ahead of a slow choice. A broken or
 /// misnamed model (common with free routers) shouldn't leave Izuki with
 /// nothing to say. Shared by the screen path and the chat lane (chat.rs).
+/// Is this PC on the internet? Asked before every AI request, so it's cached
+/// for a few seconds and fails in about a second: offline, a cloud brain used
+/// to sit on "thinking" for ~22 s before giving up — every time.
+pub fn online() -> bool {
+    static LAST: parking_lot::Mutex<Option<(bool, std::time::Instant)>> = parking_lot::Mutex::new(None);
+    if let Some((up, at)) = *LAST.lock() {
+        if at.elapsed() < std::time::Duration::from_secs(if up { 20 } else { 4 }) {
+            return up;
+        }
+    }
+    let up = ["1.1.1.1:443", "8.8.8.8:53", "208.67.222.222:443"].iter().any(|a| {
+        a.parse::<std::net::SocketAddr>()
+            .is_ok_and(|addr| std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(900)).is_ok())
+    });
+    if !up {
+        eprintln!("[brain] this PC looks offline — only brains on this PC can answer");
+    }
+    *LAST.lock() = Some((up, std::time::Instant::now()));
+    up
+}
+
+/// What to say when the internet's down and no brain on this PC can answer.
+pub const OFFLINE: &str = "You're offline right now — check your Wi-Fi, then ask me again.";
+
 pub fn brain_chain() -> Vec<crate::settings::ProviderConfig> {
+    let mut chain = brain_chain_inner();
+    // Offline: only brains running on this PC can answer — don't wait on the rest.
+    if chain.iter().any(|c| !c.id.is_local()) && !online() {
+        chain.retain(|c| c.id.is_local());
+    }
+    chain
+}
+
+fn brain_chain_inner() -> Vec<crate::settings::ProviderConfig> {
     let settings = crate::state::store().settings();
     let Some(primary) = settings.provider(settings.active_provider).cloned() else {
         return Vec::new();

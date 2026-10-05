@@ -17,6 +17,8 @@ const FEATURES: { label: string; hint: string; tab: TabId; id?: string }[] = [
   { label: "Discord & reminders", hint: "Notifications and alerts", tab: "settings", id: "settings-discord" },
   { label: "App updates", hint: "Download the newest installer", tab: "settings", id: "settings-updates" },
   { label: "Control my TV", hint: "Roku, Netflix, volume, the Izuki TV channel, Android TV", tab: "settings", id: "settings-tv" },
+  { label: "Focus mode", hint: "Focus for 25 minutes, pomodoro, countdown, do not disturb", tab: "draw", id: "talk-card" },
+  { label: "Recall: what was on my screen", hint: "What was that site, what was I doing, history, timeline, privacy", tab: "draw", id: "talk-card" },
   { label: "Later list", hint: "Remind me later, shopping list, don't let me forget, tick off", tab: "chat" },
   { label: "Link phone & TV to this PC", hint: "One setup for everything — copy keys, apps and memories; Izuki TV; talk from the TV; TV orb", tab: "settings", id: "settings-tv" },
   { label: "Buddy mode: speak up by itself", hint: "Important emails, meetings, low battery, internet down, welcome back, break reminders, battery saver", tab: "draw", id: "talk-card" },

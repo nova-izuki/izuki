@@ -52,6 +52,7 @@ type Live =
   | { kind: "reminder"; r: Reminder; urgent: boolean }
   | { kind: "suggest"; s: Suggestion }
   | { kind: "music"; m: NowPlaying }
+  | { kind: "focus"; secs: number }
   | { kind: "rest" };
 
 export function Island({
@@ -176,17 +177,18 @@ export function Island({
 
   // ---- a gentle peek when something worth helping with comes up
   useEffect(() => {
-    const strong = status.suggestions.find((x) => x.strong);
+    // Something just copied counts too: "Translate what you copied?"
+    const strong = status.clip?.[0] ?? status.suggestions.find((x) => x.strong);
     if (!peeks || !strong || busy || status.fullscreen || !status.context) return;
     const t = Date.now();
-    const key = `${status.context}|${strong.label}`;
+    const key = `${status.context}|${strong.label}|${strong.ask.slice(0, 60)}`;
     if (t - (peeked.current.get(key) ?? 0) < PEEK_SAME_MS || t - lastPeek.current < PEEK_GAP_MS) return;
     peeked.current.set(key, t);
     lastPeek.current = t;
     setPeek(strong);
     // Only a new page/app (or new suggestion) is news — not every look.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status.context, status.suggestions[0]?.label, peeks]);
+  }, [status.context, status.suggestions[0]?.label, status.clip?.[0]?.ask, peeks]);
   // Its own timer, so a page change mid-peek can't leave it stuck up.
   useEffect(() => {
     if (!peek) return;
@@ -210,6 +212,8 @@ export function Island({
         ? { kind: "reminder", r: soon, urgent: true }
         : peek
           ? { kind: "suggest", s: peek }
+          : status.focus_left
+          ? { kind: "focus", secs: status.focus_left }
           : media?.playing
           ? { kind: "music", m: media }
           : soon
@@ -241,7 +245,7 @@ export function Island({
               <Expanded
                 live={live}
                 media={media}
-                suggestions={busy ? [] : status.suggestions}
+                suggestions={busy ? [] : [...(status.clip ?? []), ...status.suggestions].slice(0, 4)}
                 next={next}
                 now={now}
                 dancing={dancing}
@@ -275,8 +279,16 @@ const fade = {
 function same(a: IslandStatus, b: IslandStatus) {
   const m = a.media;
   const n = b.media;
+  const labels = (s?: Suggestion[]) => (s ?? []).map((x) => x.label + x.ask.length).join("|");
   return (
     a.fullscreen === b.fullscreen &&
+    // A different window in front, something copied, the focus clock ticking:
+    // all changes. (Only music used to count, so the suggestions stayed on
+    // whatever app was in front first.)
+    a.context === b.context &&
+    labels(a.suggestions) === labels(b.suggestions) &&
+    labels(a.clip) === labels(b.clip) &&
+    Math.floor((a.focus_left ?? -60) / 60) === Math.floor((b.focus_left ?? -60) / 60) &&
     (m === n || (!!m && !!n && m.title === n.title && m.artist === n.artist && m.playing === n.playing && m.app === n.app && m.art === n.art))
   );
 }
@@ -300,6 +312,15 @@ function Compact({ live, dancing }: { live: Live; dancing: boolean }) {
           <Face size={24} mood="busy" />
           <span className="max-w-[300px] truncate text-[13px] font-medium text-white/90">{live.text}</span>
           <Dots />
+        </>
+      );
+    case "focus":
+      return (
+        <>
+          <span className="flex h-[24px] w-[24px] items-center justify-center rounded-full bg-violet-500/80 text-[13px]">🎯</span>
+          <span className="text-[13px] font-semibold tabular-nums text-white/90">
+            Focus · {Math.ceil(live.secs / 60)} min left
+          </span>
         </>
       );
     case "music":

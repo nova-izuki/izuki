@@ -678,7 +678,7 @@ export function VoiceEngine() {
     // The TV: "open Netflix on the TV", "turn the TV up" — straight to it,
     // no AI. (Questions about TV — "what's on TV tonight" — go on as usual.)
     // Any request that mentions the TV is for the TV — never the PC.
-    if (/(?:tv|television|roku)/i.test(t) && !/^(?:what|what's|whats|who|when|why|how|is|are|do|does|which|can you see)/i.test(t)) {
+    if (/\b(?:tv|television|roku)\b/i.test(t) && !/^(?:what|what's|whats|who|when|why|how|is|are|do|does|which|can you see)\b/i.test(t)) {
       startSession(from === "voice", "thinking");
       const said = await api.tvDo(t).catch(failure);
       if (requestSeq !== at) return;

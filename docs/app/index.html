@@ -17,7 +17,7 @@
 <script>
   // On a TV (Android TV, Google TV, Fire TV, smart TVs): bigger text and a
   // strong highlight for the remote.
-  if (/(Android TV|GoogleTV|Google TV|AFT[A-Z]|BRAVIA|SMART-TV|SmartTV|Tizen|Web0S|webOS|AppleTV|CrKey)/i.test(navigator.userAgent) || matchMedia("(pointer: none)").matches) {
+  if (/\b(Android TV|GoogleTV|Google TV|AFT[A-Z]|BRAVIA|SMART-TV|SmartTV|Tizen|Web0S|webOS|AppleTV|CrKey)\b/i.test(navigator.userAgent) || matchMedia("(pointer: none)").matches) {
     document.documentElement.classList.add("tv");
   }
 </script>

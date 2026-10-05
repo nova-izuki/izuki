@@ -28,6 +28,10 @@ pub struct IslandStatus {
     /// Changes when the app or page in front does — the Island offers a
     /// strong suggestion once per change, not on every look.
     pub context: String,
+    /// Something just copied, and what to do with it (see clip.rs).
+    pub clip: Vec<crate::clip::Idea>,
+    /// Seconds left in a focus session.
+    pub focus_left: Option<u64>,
 }
 
 pub fn status() -> IslandStatus {
@@ -35,7 +39,14 @@ pub fn status() -> IslandStatus {
     let music = media.as_ref().is_some_and(|m| m.playing);
     let context = format!("{}|{}", crate::uia::foreground_app(), crate::uia::foreground_title());
     let question = question_on_screen(&context);
-    IslandStatus { media, fullscreen: front_is_fullscreen(), suggestions: crate::suggest::now(music, question), context }
+    IslandStatus {
+        media,
+        fullscreen: front_is_fullscreen(),
+        suggestions: crate::suggest::now(music, question),
+        context,
+        clip: crate::clip::ideas(),
+        focus_left: crate::focus::left(),
+    }
 }
 
 /// Is a question with answers to pick on screen (two or more radio buttons

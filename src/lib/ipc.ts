@@ -203,6 +203,7 @@ export const MOCK_SETTINGS: Settings = {
   buddy_speaks: true,
   buddy_acts: true,
   buddy_breaks: true,
+  recall_enabled: false,
   app_theme: "nova",
   app_theme_color: "",
   flows_keep_days: 1,
@@ -407,6 +408,7 @@ export const api = {
   linkForget: (name: string) => call<void>("link_forget", { name }, () => undefined),
   systemPulse: () =>
     call<{ cpu: number | null; memory: number | null; disk_free_gb: number | null; battery: [number, boolean] | null; online: boolean } | null>("system_pulse", {}, () => null),
+  recallForget: () => call<void>("recall_forget", {}, () => undefined),
   laterList: () => call<Array<{ id: string; text: string; done: boolean; added: number }>>("later_list", {}, () => []),
   laterAdd: (text: string) => call<string>("later_add", { text }, () => ""),
   laterDone: (id: string, done: boolean) => call<void>("later_done", { id, done }, () => undefined),

@@ -288,6 +288,22 @@ pub fn run(command: &str) -> Result<String> {
         cmd.creation_flags(0x0800_0000); // no console window
     }
     let mut child = cmd.spawn().map_err(|e| anyhow!("couldn't start PowerShell: {e}"))?;
+    // Read what it prints *while* it runs: a command with a lot to say (the
+    // installed-apps list) otherwise fills the pipe, stalls, and hits the
+    // 90-second limit with half an answer.
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut text = String::new();
+            if let Some(mut p) = pipe {
+                let mut bytes = Vec::new();
+                let _ = p.read_to_end(&mut bytes);
+                text = String::from_utf8_lossy(&bytes).into_owned();
+            }
+            text
+        })
+    };
+    let out_reader = drain(child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let err_reader = drain(child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
     let started = std::time::Instant::now();
     let status = loop {
         if let Some(s) = child.try_wait()? {
@@ -299,14 +315,8 @@ pub fn run(command: &str) -> Result<String> {
         }
         std::thread::sleep(Duration::from_millis(100));
     };
-    let mut out = String::new();
-    let mut err = String::new();
-    if let Some(mut o) = child.stdout.take() {
-        let _ = o.read_to_string(&mut out);
-    }
-    if let Some(mut e) = child.stderr.take() {
-        let _ = e.read_to_string(&mut err);
-    }
+    let out = out_reader.join().unwrap_or_default();
+    let err = err_reader.join().unwrap_or_default();
     let mut s = match status {
         None => "It took over 90 seconds, so I stopped it.\n".to_string(),
         Some(st) if st.success() => "Done.\n".to_string(),
@@ -323,9 +333,28 @@ pub fn run(command: &str) -> Result<String> {
     Ok(s)
 }
 
+/// Run a command and say whether it really worked (finished cleanly, no
+/// errors printed) — for Izuki's own actions, which must not claim success
+/// when Windows said no.
+pub fn run_ok(command: &str) -> bool {
+    run(command).is_ok_and(|s| s.starts_with("Done.") && !s.contains("Errors:"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(windows)]
+    fn long_output_does_not_stall() {
+        // ~200 KB of output: used to fill the pipe and hang until the 90 s limit.
+        let started = std::time::Instant::now();
+        let out = run("1..4000 | ForEach-Object { 'line number ' + $_ + ' of a long listing that keeps going' }").unwrap();
+        assert!(started.elapsed() < Duration::from_secs(30), "took {:?}", started.elapsed());
+        assert!(out.starts_with("Done."));
+        assert!(!run_ok("exit 3"));
+        assert!(run_ok("Write-Output ok"));
+    }
 
     #[test]
     fn named_folders_resolve() {

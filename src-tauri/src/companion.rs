@@ -151,8 +151,22 @@ pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str))
         push("assistant", &text);
         return Reply::text(text);
     }
+    // Focus mode and Recall, from the phone or Telegram too.
+    if let Some(ask) = crate::focus::parse(said) {
+        push("user", said);
+        let text = crate::focus::run(app, ask);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
+    if crate::recall::is_recall_question(said) {
+        if let Some(text) = crate::recall::answer(said) {
+            push("user", said);
+            push("assistant", &text);
+            return Reply::text(text);
+        }
+    }
     // The Later list, from the phone or Telegram too.
-    if let Some(ask) = crate::later::parse(said) {
+    if let Some(ask) = crate::later::parse_for_list(said) {
         push("user", said);
         let text = crate::later::run(ask);
         push("assistant", &text);

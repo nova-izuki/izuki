@@ -69,6 +69,8 @@ const WRITE_ONLY =
 const wantsApps = (t: string) => (ACCOUNTS.test(t) || needsApps(t)) && !WRITE_ONLY.test(t) && !/\b(remind me|set (a |an )?reminder)\b/i.test(t);
 const APPS = /^\s*\[?APPS\]?\s*$/i;
 const REMIND_TAG = /\s*\[REMIND[^\]]*\]?\s*/gi;
+// Focus mode and Recall are answered on the PC itself, at once.
+const INSTANT_ASK = /^(?:hey nova,?\s*)?(?:focus\b|stop focus|end focus|pomodoro|help me focus|i need to focus)|\bwhat was (?:i doing|i looking at|i working on|i reading|i watching|that (?:site|page|website|video|document|file))|\bwhat did i have open|\bfind (?:the|that) (?:page|site) i/i;
 const LATER = /^(?:hey nova,?\s*)?(?:remind me later|remember for later|don'?t let me forget|add .+ to (?:my|the) (?:shopping |later )?list|what'?s on my (?:shopping |later )?list|what do i need to (?:buy|get)|i (?:got|bought) )/i;
 
 /**
@@ -296,7 +298,7 @@ export function ChatTab() {
           return copy;
         });
       // The Later list ("remind me later I'm buying…", "what's on my list"): done at once.
-      if (LATER.test(t)) {
+      if (LATER.test(t) || INSTANT_ASK.test(t)) {
         const said = await api.instantCommand(t).catch(() => null);
         if (said) {
           setLast({ content: said, status: undefined });
@@ -411,7 +413,7 @@ export function ChatTab() {
                       setup: true,
                     }
                   : {
-                      content: d.error ? `I couldn't reach my AI brain — ${d.error}` : "Hmm, I lost my words there. Try again?",
+                      content: d.error ? (/offline/i.test(d.error) ? d.error : `I couldn't reach my AI brain — ${d.error}`) : "Hmm, I lost my words there. Try again?",
                       failed: true,
                       retry: true,
                     }

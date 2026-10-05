@@ -442,7 +442,8 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
         let files = style == Style::Text;
         let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
         if chain.is_empty() {
-            return emit(String::new(), true, Some("no chat-capable brain is set up".into()));
+            let why = if crate::brain::online() { "no chat-capable brain is set up" } else { crate::brain::OFFLINE };
+            return emit(String::new(), true, Some(why.into()));
         }
         let mut messages = messages_for(&history, style);
         // Times an answer was sent back for claiming what never happened.
@@ -900,6 +901,9 @@ pub fn reply_here(history: &[Turn], style: Style) -> anyhow::Result<String> {
 pub fn complete(messages: &[Value]) -> anyhow::Result<String> {
     let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
     if chain.is_empty() {
+        if !crate::brain::online() {
+            anyhow::bail!("{}", crate::brain::OFFLINE);
+        }
         anyhow::bail!("no AI brain is set up yet — add a free Gemini key in Izuki's Settings");
     }
     let id = 1_000_000_000 + rand::random::<u32>() as u64;

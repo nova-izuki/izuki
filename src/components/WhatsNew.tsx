@@ -22,6 +22,10 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🎯", title: "Focus mode", how: "Say “focus for 25 minutes”: a countdown on the Island, nothing but urgent things get through, and a catch-up when time's up.", try: { label: "Focus 25 min", say: "focus for 25 minutes" } },
+  { icon: "📋", title: "Smart clipboard", how: "Copy a foreign sentence, a link, an address, code or an error — the Island offers Translate, Sum up, Directions, Explain or Fix. Nothing's sent unless you tap." },
+  { icon: "🕰️", title: "Recall", how: "Turn it on and ask “what was that site I was on this morning?”. Only window titles, a week, this PC only — never private windows.", try: { label: "Turn on", tab: "draw", id: "talk-card" } },
+  { icon: "📺", title: "TV requests go to the TV", how: "A hidden bug sent “open Netflix on the TV” to your PC since 1.0.34 — fixed for good, with a check so it can't come back." },
   { icon: "🧹", title: "Smoother on websites", how: "Pop-ups are closed once and then ignored, so tasks don't get stuck on them; the browser extension reconnects by itself after an update." },
   { icon: "✍️", title: "Writes like a person", how: "Notes, messages and posts come out in plain everyday words and short sentences — ask for formal when you want it." },
   { icon: "🎯", title: "Fewer wrong taps", how: "Izuki asks “Did you mean…?” when it isn't sure what you said, closes anything it opened by mistake, and sticks to the task." },

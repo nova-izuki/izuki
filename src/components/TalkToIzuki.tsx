@@ -157,6 +157,19 @@ export function TalkToIzuki() {
           <Toggle checked={settings.island_enabled} onChange={(v) => patch({ island_enabled: v })} />
         </Row>
         <Row
+          label="Recall (what was on my screen)"
+          hint="Ask “what was that site I was on this morning?” or “what was I doing at 3?”. Izuki notes only the titles of the windows you had open — never what's in them, never private or sign-in windows — keeps a week, on this PC only. Off until you turn it on."
+        >
+          <Toggle checked={settings.recall_enabled} onChange={(v) => patch({ recall_enabled: v })} />
+        </Row>
+        {settings.recall_enabled && (
+          <div className="-mt-1 flex justify-end">
+            <button type="button" className="izk-pill izk-no-drag px-2.5 py-1 text-[11px]" onClick={() => void api.recallForget()}>
+              Forget everything Recall noted
+            </button>
+          </div>
+        )}
+        <Row
           label="Speak up by itself (buddy mode)"
           hint="Like a friend at your desk: I'll tell you about an important email (a job, money, a deadline), a meeting coming up, the battery getting low, the internet dropping — and say “welcome back” with what you missed. Never over a film or game unless it's urgent, and quiet at night. While you're away, important things go to your phone too."
         >

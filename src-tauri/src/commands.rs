@@ -341,8 +341,17 @@ pub fn open_log_folder() -> R<()> {
 /// everyday commands (instant.rs).
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
+    // Focus mode: "focus for 25 minutes", "stop focus".
+    if let Some(ask) = crate::focus::parse(&said) {
+        return Some(crate::focus::run(&app, ask));
+    }
+    // Recall: "what was that site I was on this morning?"
+    if crate::recall::is_recall_question(&said) {
+        let s2 = said.clone();
+        return blocking(move || crate::recall::answer(&s2)).await.ok().flatten();
+    }
     // The Later list: "remind me later I'm buying…", "what's on my list".
-    if let Some(ask) = crate::later::parse(&said) {
+    if let Some(ask) = crate::later::parse_for_list(&said) {
         let said = crate::later::run(ask);
         let _ = app.emit("izuki://later-changed", ());
         return Some(said);
@@ -815,6 +824,12 @@ pub async fn notes_flashcards(id: String) -> R<crate::notes::Note> {
 #[tauri::command]
 pub async fn tv_show(state: String, text: Option<String>) -> bool {
     blocking(move || crate::tv::show(&state, text.as_deref())).await.unwrap_or(false)
+}
+
+/// Forget everything Recall noted.
+#[tauri::command]
+pub fn recall_forget() {
+    crate::recall::forget();
 }
 
 /// The status screen's live numbers (CPU, memory, space, battery, online).

@@ -282,7 +282,7 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
     // How many times we have sent a talk-back answer back for using a tool.
     let mut nagged = 0u8;
     // An app a search found not linked yet, to offer a sign-in link for.
-    let mut missing: Option<String> = None;
+    let mut missing: Option<String>;
     // The app a tool actually read, so the finished answer can be kept.
     let mut read_app: Option<String> = None;
     let began = std::time::Instant::now();

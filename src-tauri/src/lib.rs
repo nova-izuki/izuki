@@ -51,6 +51,9 @@ pub mod tvlink;
 pub mod buddy;
 pub mod link;
 pub mod later;
+pub mod focus;
+pub mod clip;
+pub mod recall;
 pub mod tts;
 pub mod uia;
 pub mod updates;
@@ -250,6 +253,7 @@ pub fn run() {
             commands::link_status,
             commands::later_list,
             commands::system_pulse,
+            commands::recall_forget,
             commands::later_add,
             commands::later_done,
             commands::later_remove,
@@ -334,6 +338,7 @@ pub fn run() {
             headsup::spawn(handle.clone());
             buddy::spawn(handle.clone());
             link::spawn(handle.clone());
+            recall::spawn();
             browser::init(&handle);
 
             Ok(())

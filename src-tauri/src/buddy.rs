@@ -113,6 +113,12 @@ pub fn say(app: &AppHandle, key: &str, text: &str, level: Level) {
             }
             return Some((level >= Level::Important, level == Level::Urgent));
         }
+        // Focus mode: everything that isn't urgent waits for "time's up".
+        if crate::focus::active() && level < Level::Urgent {
+            s.missed.push(text.to_string());
+            s.missed.truncate(8);
+            return Some((false, false));
+        }
         let busy = crate::island::fullscreen_now();
         let too_soon = s.last_spoke.is_some_and(|t| t.elapsed() < GAP);
         let speak_now = level == Level::Urgent || (!quiet && !busy && (level == Level::Important || !too_soon));
@@ -195,6 +201,35 @@ fn later_list(app: &AppHandle) {
     }
 }
 
+/// A focus session ended (`minutes` 0 = stopped early): say so, and what
+/// came in meanwhile.
+pub fn focus_over(app: &AppHandle, minutes: u64) {
+    let missed = with(|s| {
+        s.last_spoke = Some(Instant::now());
+        // Back at the desk, focused — no "welcome back" on top of this.
+        s.away_since = None;
+        s.streak_since = Some(Instant::now());
+        std::mem::take(&mut s.missed)
+    });
+    let mut text = if minutes > 0 {
+        format!("Time's up — {minutes} minutes of focus done. Nice work!")
+    } else {
+        "Focus mode's off.".to_string()
+    };
+    if missed.is_empty() {
+        if minutes > 0 {
+            text.push_str(" Nothing came in meanwhile. Take a quick stretch?");
+        }
+    } else {
+        let shown: Vec<String> = missed.iter().take(3).map(|m| m.trim_end_matches('.').to_string()).collect();
+        text.push_str(&format!(" While you were focused: {}.", shown.join("; ")));
+        if missed.len() > 3 {
+            text.push_str(&format!(" And {} more.", missed.len() - 3));
+        }
+    }
+    let _ = app.emit(EVENT, Say { text, urgent: false });
+}
+
 fn break_nudge(app: &AppHandle, idle: Duration) {
     let due = with(|s| {
         if idle >= AWAY_AFTER {
@@ -228,7 +263,7 @@ fn battery(app: &AppHandle, may_act: bool) {
             std::mem::take(&mut s.saver_on)
         });
         if restore {
-            let _ = crate::files::run("powercfg /setdcvalueindex SCHEME_CURRENT SUB_ENERGYSAVER ESBATTTHRESHOLD 20; powercfg /setactive SCHEME_CURRENT");
+            let _ = crate::files::run_ok("powercfg /setdcvalueindex SCHEME_CURRENT SUB_ENERGYSAVER ESBATTTHRESHOLD 20; powercfg /setactive SCHEME_CURRENT");
         }
         return;
     }
@@ -247,7 +282,8 @@ fn battery(app: &AppHandle, may_act: bool) {
     match stage {
         1 => say(app, "battery-20", &format!("Heads up — the battery's at {pct}%. Might be time to find the charger."), Level::Important),
         2 => {
-            let saver = may_act && crate::files::run("powercfg /setdcvalueindex SCHEME_CURRENT SUB_ENERGYSAVER ESBATTTHRESHOLD 100; powercfg /setactive SCHEME_CURRENT").is_ok();
+            // Only say it's on if Windows really did it.
+            let saver = may_act && crate::files::run_ok("powercfg /setdcvalueindex SCHEME_CURRENT SUB_ENERGYSAVER ESBATTTHRESHOLD 100; powercfg /setactive SCHEME_CURRENT");
             if saver {
                 with(|s| s.saver_on = true);
             }

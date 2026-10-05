@@ -180,6 +180,23 @@ fn join(items: &[String]) -> String {
     }
 }
 
+/// `parse`, for real requests: "I got …" only counts as ticking something
+/// off when it matches a thing on the list — "I got an email from my boss"
+/// is a conversation, not a list update.
+pub fn parse_for_list(said: &str) -> Option<Ask> {
+    match parse(said)? {
+        Ask::Tick(what) => {
+            let w = what.to_lowercase();
+            let hit = open_items().iter().any(|i| {
+                let t = i.to_lowercase();
+                t.split_whitespace().filter(|x| x.len() > 3).any(|x| w.contains(x)) || w.split_whitespace().filter(|x| x.len() > 3).any(|x| t.contains(x))
+            });
+            hit.then_some(Ask::Tick(what))
+        }
+        other => Some(other),
+    }
+}
+
 /// Do it; what to say back.
 pub fn run(ask: Ask) -> String {
     match ask {

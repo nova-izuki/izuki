@@ -412,6 +412,11 @@ pub struct Settings {
     /// …and nudges you to take a break after a long stretch.
     #[serde(default = "default_true")]
     pub buddy_breaks: bool,
+    /// Recall: note the titles of windows you had in front (this PC only, a
+    /// week, never private or sign-in windows) so "what was that site I was
+    /// on this morning?" can be answered. Off until turned on.
+    #[serde(default)]
+    pub recall_enabled: bool,
     /// The user's own n8n workflows Izuki can start by name ("run my
     /// invoice flow"), each a webhook address.
     #[serde(default)]
@@ -830,6 +835,7 @@ impl Default for Settings {
             buddy_speaks: true,
             buddy_acts: true,
             buddy_breaks: true,
+            recall_enabled: false,
             n8n_hooks: Vec::new(),
             n8n_url: String::new(),
             n8n_api_key: String::new(),
