@@ -473,6 +473,7 @@ fn remember(app: Option<&str>, text: String) -> String {
 /// the words came out of a tool rather than out of a model.
 static SNAPSHOTS: Mutex<Vec<(String, u64, String)>> = Mutex::new(Vec::new());
 /// How long a snapshot counts as current.
+#[cfg_attr(not(test), allow(dead_code))] // snapshots answer only in tests now: a cached read could answer a different question
 const SNAPSHOT_TTL_MINS: u64 = 5;
 const KEPT: usize = 8;
 
@@ -489,6 +490,7 @@ fn now_mins() -> u64 {
         .unwrap_or(0)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn ago(then: u64) -> String {
     match now_mins().saturating_sub(then) {
         0 => "just now".to_string(),
@@ -507,6 +509,7 @@ fn snapshot_put(app: &str, text: String) {
 }
 
 /// The app a read-only question is about, if we recognise it.
+#[cfg_attr(not(test), allow(dead_code))]
 fn asked_app(said: &str) -> Option<&'static str> {
     let t = said.to_lowercase();
     const MAP: &[(&str, &str)] = &[
@@ -523,6 +526,7 @@ fn asked_app(said: &str) -> Option<&'static str> {
 /// A question that only *reads* — safe to answer from a snapshot. Anything
 /// that sends, posts, changes or deletes is never served this way, however
 /// innocent it sounds ("delete the last email" is not a question).
+#[cfg_attr(not(test), allow(dead_code))]
 fn is_read_question(said: &str) -> bool {
     let t = said.to_lowercase();
     const READ: &[&str] = &["new", "unread", "latest", "any", "check", "what's in", "whats in", "read", "show me", "how many", "last "];
@@ -540,6 +544,7 @@ fn is_read_question(said: &str) -> bool {
 }
 
 /// The snapshot answer for a repeat question, with no AI involved.
+#[cfg_attr(not(test), allow(dead_code))]
 fn snapshot_answer(said: &str) -> Option<Answer> {
     let app = asked_app(said)?;
     if !is_read_question(said) {

@@ -375,7 +375,17 @@
 
     <section>
       <h3>Your orb</h3>
-      <div class="field"><label for="orb-style">Voice companion style</label><select id="orb-style"><option value="liquid">Liquid glass</option><option value="ferrofluid">Clear water</option><option value="dew">Pure water</option><option value="ripple">Tidal pearl</option><option value="constellation">Star crystal</option><option value="particles">Stardust</option><option value="face">Hologram face</option><option value="ferro">Ferrofluid</option></select></div>
+      <div class="field"><label for="orb-style">Voice companion style</label><select id="orb-style"><option value="liquid">Liquid glass</option><option value="ferrofluid">Clear water</option><option value="dew">Pure water</option><option value="ripple">Tidal pearl</option><option value="constellation">Star crystal</option><option value="particles">Stardust</option><option value="face">Hologram face</option><option value="holo3d">Hologram bust (3D)</option><option value="avatar">3D avatar</option><option value="ferro">Ferrofluid</option></select></div>
+      <div id="avatar-fields" hidden>
+        <div class="field"><label for="av-gender">Face</label><select id="av-gender"><option value="auto">Auto · follows the voice</option><option value="female">Woman</option><option value="male">Man</option></select></div>
+        <div class="field"><label for="av-hair">Hair</label><select id="av-hair"></select></div>
+        <div class="field av-full"><label for="av-hairColor">Hair colour</label><select id="av-hairColor"></select></div>
+        <div class="field av-full"><label for="av-skin">Skin</label><select id="av-skin"></select></div>
+        <div class="field av-full"><label for="av-eyes">Eyes</label><select id="av-eyes"></select></div>
+        <div class="field"><label for="av-beard">Beard</label><select id="av-beard"></select></div>
+        <div class="field"><label for="av-glasses">Glasses</label><select id="av-glasses"></select></div>
+        <div class="row"><button class="chip" id="av-random" type="button">🎲 Surprise me</button></div>
+      </div>
       <p class="note">Liquid glass stays the default. Clear water pulls apart and rejoins with sound. Star crystal has rotating depth; Tidal pearl has a nacre surface and fine wavefronts.</p>
       <div class="orb-studio" id="orb-studio">
         <canvas id="orb-preview" width="200" height="200" aria-label="Silent orb preview"></canvas>
@@ -556,7 +566,14 @@
     chats = [{ id: Date.now().toString(36), title, at: Date.now(), history: history.slice(-40) }, ...chats].slice(0, 20);
     store.set("chats", chats);
   }
+  // Gemini voices that are men's — the 3D face's "auto" follows the voice.
+  const MALE_VOICES = ["Puck", "Charon", "Fenrir", "Orus", "Enceladus", "Iapetus", "Umbriel", "Algieba", "Algenib", "Rasalgethi", "Alnilam", "Schedar", "Achird", "Zubenelgenubi", "Sadachbia", "Sadaltager"];
+  const noteVoiceGender = () => {
+    const p = PEOPLE.find((x) => x.id === personId);
+    try { localStorage.setItem("izuki.voiceGender", p && MALE_VOICES.includes(p.voice) ? "male" : "female"); } catch {}
+  };
   const saveAll = () => {
+    noteVoiceGender();
     store.set("history", history.slice(-40));
     store.set("memories", memories.slice(-80));
     store.set("reminders", reminders.filter((r) => !r.done || Date.now() - r.at < 86400000));
@@ -633,6 +650,7 @@
       b.onclick = () => {
         personId = p.id;
         store.set("person", personId);
+        noteVoiceGender();
         peopleRow(box);
         showWho();
         if (!history.length) welcome();
@@ -2030,6 +2048,10 @@
     if (s.language && HEARING[s.language]) { speechLanguage = s.language; store.set("speechLanguage", speechLanguage); }
     if (Array.isArray(s.memories)) for (const m of s.memories) if (typeof m === "string" && m && !memories.includes(m)) memories.push(m);
     if (s.homeCity) store.set("homeCity", String(s.homeCity));
+    try {
+      if (s.orbStyle) { localStorage.setItem("izuki.orbStyle", String(s.orbStyle)); window.IzukiOrb?.style(String(s.orbStyle)); }
+      if (s.avatar) localStorage.setItem("izuki.avatar", String(s.avatar));
+    } catch {}
     saveAll();
     render();
     return true;
@@ -2357,7 +2379,34 @@
   function updateOrbPreview() {
     window.IzukiOrb.preview($("orb-preview"),$("orb-style").value,$("orb-preview-state").value);
     $("orb-response-field").hidden = $("orb-style").value === 'liquid';
+    const face = $("orb-style").value === "holo3d" || $("orb-style").value === "avatar";
+    $("avatar-fields").hidden = !face;
+    document.querySelectorAll("#avatar-fields .av-full").forEach((f) => (f.hidden = $("orb-style").value !== "avatar"));
   }
+  // The 3D face's look: saved here, and used by the orb straight away.
+  import("./face3d.js").then((F) => {
+    const lists = { "av-hair": F.HAIR_STYLES, "av-hairColor": F.HAIR_COLOURS, "av-skin": F.SKIN_TONES, "av-eyes": F.EYE_COLOURS, "av-beard": F.BEARDS, "av-glasses": F.GLASSES };
+    const nice = (k) => k.replace(/^./, (c) => c.toUpperCase()).replace("Darkbrown", "Dark brown");
+    const load = () => { try { return JSON.parse(localStorage.getItem("izuki.avatar") || "{}") || {}; } catch { return {}; } };
+    const look = load();
+    for (const [id, list] of Object.entries(lists)) {
+      const sel = $(id);
+      sel.innerHTML = "";
+      const colours = id !== "av-hair" && id !== "av-beard" && id !== "av-glasses";
+      for (const [k, v] of Object.entries(list)) { const o = document.createElement("option"); o.value = k; o.textContent = colours ? nice(k) : v; sel.appendChild(o); }
+    }
+    const fields = { "av-gender": "gender", "av-hair": "hair", "av-hairColor": "hairColor", "av-skin": "skin", "av-eyes": "eyes", "av-beard": "beard", "av-glasses": "glasses" };
+    for (const [id, k] of Object.entries(fields)) {
+      if (look[k]) $(id).value = look[k];
+      $(id).onchange = () => { const now = load(); now[k] = $(id).value; try { localStorage.setItem("izuki.avatar", JSON.stringify(now)); } catch {} };
+    }
+    $("av-random").onclick = () => {
+      const pick = (o) => { const k = Object.keys(o); return k[Math.floor(Math.random() * k.length)]; };
+      const now = { ...load(), hair: pick(F.HAIR_STYLES), hairColor: pick(F.HAIR_COLOURS), skin: pick(F.SKIN_TONES), eyes: pick(F.EYE_COLOURS), beard: Math.random() < 0.5 ? "none" : pick(F.BEARDS), glasses: Math.random() < 0.7 ? "none" : pick(F.GLASSES) };
+      try { localStorage.setItem("izuki.avatar", JSON.stringify(now)); } catch {}
+      for (const [id, k] of Object.entries(fields)) if (now[k]) $(id).value = now[k];
+    };
+  }).catch(() => {});
   $("orb-style").onchange = () => { window.IzukiOrb.style($("orb-style").value); updateOrbPreview(); };
   $("orb-preview-state").onchange = updateOrbPreview;
   $("orb-response").oninput = () => { const v=Number($("orb-response").value);window.IzukiOrb.response(v);$("orb-response-value").textContent=Math.round(v*100)+'%'; };

@@ -432,6 +432,8 @@ export function SettingsTab() {
             <option value="constellation">Star crystal</option>
             <option value="particles">Stardust</option>
             <option value="face">Hologram face</option>
+            <option value="holo3d">Hologram bust (3D)</option>
+            <option value="avatar">3D avatar</option>
             <option value="ferro">Ferrofluid</option>
           </select>
         </Row>

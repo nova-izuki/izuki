@@ -1,47 +1,90 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Izuki's TV screen: the orb in the middle, what Izuki says underneath,
-     and a quiet hint of what to say. Driven from the PC/phone (main.brs). -->
+<!-- Izuki on the TV. At rest: a home screen — the time, the weather, a
+     greeting and things to try. While Izuki works: the orb (or a 3D face)
+     moves to the corner and what you said and what Izuki says fill the
+     screen in big, easy-to-read captions. Driven from the PC/phone (main.brs). -->
 <component name="MainScene" extends="Scene">
   <interface>
     <function name="setState" />
     <function name="setText" />
     <function name="setLook" />
     <function name="playVoice" />
+    <function name="setInfo" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/MainScene.brs" />
   <children>
-    <Rectangle id="bg" width="1920" height="1080" color="#04050CFF" />
-    <Poster id="glowA" uri="pkg:/images/orb_idle.png" width="1100" height="1100" translation="[410,-60]" opacity="0.10" />
+    <Poster id="bg" uri="pkg:/images/bg.jpg" width="1920" height="1080" />
 
-    <Label id="brand" text="IZUKI" translation="[96,72]" color="#A78BFAFF" font="font:SmallBoldSystemFont" />
-    <Label id="clock" translation="[1600,64]" width="224" horizAlign="right" color="#EEF0FFFF" font="font:MediumBoldSystemFont" />
+    <Label id="brand" text="IZUKI" translation="[96,70]" color="#A78BFAFF" font="font:MediumBoldSystemFont" />
+    <Label id="tagline" text="your AI, on your TV" translation="[96,118]" color="#6B7194FF" font="font:SmallestSystemFont" />
+    <Label id="clock" translation="[1300,56]" width="524" horizAlign="right" color="#EEF0FFFF" font="font:LargeBoldSystemFont" />
+    <Label id="date" translation="[1300,124]" width="524" horizAlign="right" color="#9AA3C7FF" font="font:SmallSystemFont" />
+    <Label id="weather" text="" translation="[1300,162]" width="524" horizAlign="right" color="#67E8F9FF" font="font:SmallSystemFont" />
 
-    <Group id="orbGroup" translation="[960,470]">
-      <!-- the halo glows behind; the glass orb is tinted per look -->
-      <Poster id="halo" uri="pkg:/images/orb_halo.png" width="900" height="900" translation="[-450,-450]" opacity="0" />
-      <Poster id="orb" uri="pkg:/images/orb_idle.png" width="560" height="560" translation="[-280,-280]" />
+    <!-- The orb or face. orbGroup places it (home: big in the middle; working:
+         small in the corner); orbInner breathes, pulses and spins. -->
+    <Group id="orbGroup" translation="[960,400]">
+      <Group id="orbInner">
+        <Poster id="halo" uri="pkg:/images/orb_halo.png" width="860" height="860" translation="[-430,-430]" opacity="0" />
+        <Poster id="orb" uri="pkg:/images/orb_idle.png" width="520" height="520" translation="[-260,-260]" />
+      </Group>
     </Group>
 
-    <Label id="state" text="Ready" translation="[0,790]" width="1920" horizAlign="center" color="#67E8F9FF" font="font:SmallBoldSystemFont" />
-    <Label id="said" text="" translation="[260,840]" width="1400" height="150" wrap="true" maxLines="3" horizAlign="center" color="#EEF0FFFF" font="font:MediumSystemFont" />
-    <Label id="hint" text="Say “Hey Nova, open Netflix on the TV” — Izuki answers right here" translation="[0,1000]" width="1920" horizAlign="center" color="#6B7194FF" font="font:SmallestSystemFont" />
+    <Group id="home">
+      <Label id="greeting" text="Hello" translation="[0,690]" width="1920" horizAlign="center" color="#EEF0FFFF" font="font:LargeBoldSystemFont" />
+      <Label id="sub" text="Talk to Izuki on your PC or phone. I'll show everything right here." translation="[0,756]" width="1920" horizAlign="center" color="#9AA3C7FF" font="font:SmallSystemFont" />
+      <Label id="tryLabel" text="TRY SAYING" translation="[112,836]" color="#6B7194FF" font="font:SmallestBoldSystemFont" />
+      <Poster id="card0" uri="pkg:/images/card.png" width="400" height="112" translation="[112,872]" />
+      <Poster id="card1" uri="pkg:/images/card.png" width="400" height="112" translation="[544,872]" />
+      <Poster id="card2" uri="pkg:/images/card.png" width="400" height="112" translation="[976,872]" />
+      <Poster id="card3" uri="pkg:/images/card.png" width="400" height="112" translation="[1408,872]" />
+      <Label id="tip0" translation="[132,872]" width="360" height="112" vertAlign="center" horizAlign="center" wrap="true" maxLines="2" color="#EEF0FFFF" font="font:SmallSystemFont" />
+      <Label id="tip1" translation="[564,872]" width="360" height="112" vertAlign="center" horizAlign="center" wrap="true" maxLines="2" color="#EEF0FFFF" font="font:SmallSystemFont" />
+      <Label id="tip2" translation="[996,872]" width="360" height="112" vertAlign="center" horizAlign="center" wrap="true" maxLines="2" color="#EEF0FFFF" font="font:SmallSystemFont" />
+      <Label id="tip3" translation="[1428,872]" width="360" height="112" vertAlign="center" horizAlign="center" wrap="true" maxLines="2" color="#EEF0FFFF" font="font:SmallSystemFont" />
+    </Group>
 
-    <!-- breathing at rest, faster and bigger while talking -->
+    <Group id="talk" visible="false">
+      <Label id="you" text="" translation="[440,560]" width="1380" wrap="true" maxLines="2" color="#9AA3C7FF" font="font:MediumSystemFont" />
+      <Poster id="panel" uri="pkg:/images/panel.png" width="1420" height="380" translation="[420,640]" />
+      <Label id="who" text="IZUKI" translation="[470,668]" color="#67E8F9FF" font="font:SmallestBoldSystemFont" />
+      <Label id="said" text="" translation="[470,706]" width="1320" height="290" wrap="true" maxLines="5" color="#EEF0FFFF" font="font:LargeSystemFont" />
+    </Group>
+
+    <Label id="state" text="" translation="[40,1004]" width="380" horizAlign="center" color="#67E8F9FF" font="font:SmallBoldSystemFont" />
+    <Label id="hint" text="OK clears" translation="[1300,1020]" width="524" horizAlign="right" color="#4B5174FF" font="font:SmallestSystemFont" />
+
+    <!-- breathing at rest, quicker while listening or talking, a slow turn while thinking -->
     <Animation id="breathe" duration="3.2" repeat="true" easeFunction="inOutQuad">
-      <Vector2DFieldInterpolator key="[0.0, 0.5, 1.0]" keyValue="[[1.0,1.0],[1.04,1.04],[1.0,1.0]]" fieldToInterp="orbGroup.scale" />
+      <Vector2DFieldInterpolator key="[0.0, 0.5, 1.0]" keyValue="[[1.0,1.0],[1.04,1.04],[1.0,1.0]]" fieldToInterp="orbInner.scale" />
     </Animation>
     <Animation id="pulse" duration="0.55" repeat="true" easeFunction="inOutQuad">
-      <Vector2DFieldInterpolator key="[0.0, 0.5, 1.0]" keyValue="[[1.0,1.0],[1.1,1.1],[1.0,1.0]]" fieldToInterp="orbGroup.scale" />
+      <Vector2DFieldInterpolator key="[0.0, 0.5, 1.0]" keyValue="[[1.0,1.0],[1.08,1.08],[1.0,1.0]]" fieldToInterp="orbInner.scale" />
     </Animation>
     <Animation id="spin" duration="2.4" repeat="true" easeFunction="linear">
-      <FloatFieldInterpolator key="[0.0, 1.0]" keyValue="[0.0, 6.2832]" fieldToInterp="orbGroup.rotation" />
+      <FloatFieldInterpolator key="[0.0, 1.0]" keyValue="[0.0, 6.2832]" fieldToInterp="orbInner.rotation" />
     </Animation>
-    <Timer id="tick" duration="20" repeat="true" />
+    <!-- moving between the home screen and the working view -->
+    <Animation id="toTalk" duration="0.45" repeat="false" easeFunction="outCubic">
+      <Vector2DFieldInterpolator key="[0.0, 1.0]" keyValue="[[960,400],[230,800]]" fieldToInterp="orbGroup.translation" />
+      <Vector2DFieldInterpolator key="[0.0, 1.0]" keyValue="[[1.0,1.0],[0.5,0.5]]" fieldToInterp="orbGroup.scale" />
+    </Animation>
+    <Animation id="toHome" duration="0.55" repeat="false" easeFunction="outCubic">
+      <Vector2DFieldInterpolator key="[0.0, 1.0]" keyValue="[[230,800],[960,400]]" fieldToInterp="orbGroup.translation" />
+      <Vector2DFieldInterpolator key="[0.0, 1.0]" keyValue="[[0.5,0.5],[1.0,1.0]]" fieldToInterp="orbGroup.scale" />
+    </Animation>
     <!-- Aurora / Nebula: the colour drifts on its own -->
     <Animation id="drift" duration="9" repeat="true" easeFunction="linear">
       <ColorFieldInterpolator id="driftOrb" key="[0.0, 0.33, 0.66, 1.0]" keyValue="[0x5EF2C2FF, 0x67C8F9FF, 0xB18CFFFF, 0x5EF2C2FF]" fieldToInterp="orb.blendColor" />
       <ColorFieldInterpolator id="driftHalo" key="[0.0, 0.33, 0.66, 1.0]" keyValue="[0x5EF2C2FF, 0x67C8F9FF, 0xB18CFFFF, 0x5EF2C2FF]" fieldToInterp="halo.blendColor" />
     </Animation>
+
+    <Timer id="tick" duration="15" repeat="true" />
+    <Timer id="rotate" duration="12" repeat="true" />
+    <Timer id="homeAfter" duration="25" repeat="false" />
+    <Timer id="mouth" duration="0.13" repeat="true" />
+    <Timer id="blink" duration="3.6" repeat="true" />
+    <Timer id="blinkEnd" duration="0.14" repeat="false" />
     <!-- Izuki's voice, played from the TV's own speakers -->
     <Audio id="voice" />
   </children>

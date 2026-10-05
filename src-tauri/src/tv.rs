@@ -407,6 +407,22 @@ pub fn show(state: &str, text: Option<&str>) -> bool {
     }
     let look = tv_look(&settings);
     let mut path = format!("/input?state={}&look={}", urlencode(state), urlencode(&look));
+    // The 3D faces: a man or a woman, matching the voice (or the choice).
+    if look == "holo3d" || look == "avatar" {
+        path.push_str(&format!("&face={}", if avatar_is_male(&settings) { "m" } else { "f" }));
+    }
+    // What you just said, shown above Izuki's answer.
+    if state == "think" {
+        if let Some(you) = HEARD.lock().take().filter(|(_, at)| at.elapsed() < Duration::from_secs(30)).map(|(t, _)| t) {
+            path.push_str(&format!("&you={}", urlencode(&you.chars().take(160).collect::<String>())));
+        }
+    }
+    // The weather for the home screen's corner (cached, so this stays quick).
+    if state == "idle" {
+        if let Some((place, temp, sky)) = crate::web::weather_now(&crate::web::home_city()) {
+            path.push_str(&format!("&weather={}", urlencode(&format!("{temp}° {sky} · {place}"))));
+        }
+    }
     let mut speaks = false;
     if let Some(t) = text {
         let t: String = t.chars().take(400).collect();
@@ -421,6 +437,31 @@ pub fn show(state: &str, text: Option<&str>) -> bool {
     }
     let _ = post(&host, &path);
     speaks
+}
+
+/// What the user said last, for the TV's "You: …" line.
+static HEARD: parking_lot::Mutex<Option<(String, Instant)>> = parking_lot::Mutex::new(None);
+
+pub fn heard(said: &str) {
+    let s = said.trim();
+    if !s.is_empty() {
+        *HEARD.lock() = Some((s.to_string(), Instant::now()));
+    }
+}
+
+/// The 3D face is a man's: chosen, or (on auto) the voice is a man's.
+pub fn avatar_is_male(s: &crate::settings::Settings) -> bool {
+    let picked = serde_json::from_str::<serde_json::Value>(&s.avatar).ok().and_then(|v| v["gender"].as_str().map(str::to_string)).unwrap_or_default();
+    if picked == "male" || picked == "female" {
+        return picked == "male";
+    }
+    let own = s.persona_voice.trim();
+    if !own.is_empty() {
+        if let Some((_, label)) = crate::voices::VOICES.iter().find(|(id, _)| *id == own) {
+            return label.contains("(male)");
+        }
+    }
+    crate::voices::persona(&s.persona).kokoro.chars().nth(1) == Some('m')
 }
 
 /// The TV orb's colours: its own pick, or the PC's.

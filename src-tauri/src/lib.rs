@@ -36,6 +36,7 @@ pub mod notes;
 pub mod ocr;
 pub mod overlay;
 pub mod patience;
+pub mod rokudev;
 pub mod planner;
 pub mod recipes;
 pub mod reminders;
@@ -292,6 +293,8 @@ pub fn run() {
             commands::tv_find,
             commands::tv_do,
             commands::tv_show,
+            commands::tv_channel_status,
+            commands::tv_channel_update,
             commands::chat_allow_last,
             commands::ext_status,
             commands::notes_list,
@@ -345,6 +348,16 @@ pub fn run() {
             call::spawn(handle.clone());
             headsup::spawn(handle.clone());
             buddy::spawn(handle.clone());
+            // The TV's Izuki channel, kept up to date (Roku, when the user said so).
+            {
+                let app = handle.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(40));
+                    if let Some(done) = rokudev::update_if_needed() {
+                        buddy::say(&app, "tv-channel-updated", &done, buddy::Level::Chat);
+                    }
+                });
+            }
             link::spawn(handle.clone());
             recall::spawn();
             activity::spawn();

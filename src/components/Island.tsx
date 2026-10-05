@@ -28,6 +28,12 @@ import type { Activity, IslandStatus, NowPlaying, OrbState, Reminder, Suggestion
 type PointerFn = (x: number, y: number) => void;
 const pointerFns = new Set<PointerFn>();
 /** Feed a cursor position in overlay client px (called by OverlayCanvas). */
+/** Follow the pointer too (the 3D face looks at it). Returns a stop function. */
+export function watchPointer(fn: (x: number, y: number) => void): () => void {
+  pointerFns.add(fn);
+  return () => void pointerFns.delete(fn);
+}
+
 export function islandPointer(x: number, y: number) {
   pointerFns.forEach((f) => f(x, y));
 }

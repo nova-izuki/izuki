@@ -141,6 +141,17 @@ pub struct Settings {
     pub orb_style: String,
     #[serde(default = "default_orb_response")]
     pub orb_response: f64,
+    /// The 3D face's look, as JSON: gender ("auto" follows the voice), hair,
+    /// hair colour, skin, eyes, beard, glasses, glowing seams, accent colour.
+    #[serde(default)]
+    pub avatar: String,
+    /// The Roku's developer password (the one picked when turning developer
+    /// mode on), so Izuki can update its TV channel. Stays on this PC.
+    #[serde(default)]
+    pub roku_dev_password: String,
+    /// Update the TV channel by itself when a new one comes with an update.
+    #[serde(default = "default_true")]
+    pub tv_channel_auto: bool,
     #[serde(default = "default_true")]
     pub automatic_update_checks: bool,
     #[serde(default = "default_true")]
@@ -564,7 +575,7 @@ impl Settings {
     /// a newly supported brain.
     pub fn heal(&mut self) {
         if !["mouse", "precision"].contains(&self.control_style.as_str()) { self.control_style = "mouse".into(); }
-        if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro"].contains(&self.orb_style.as_str()) { self.orb_style = "liquid".into(); }
+        if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro", "holo3d", "avatar"].contains(&self.orb_style.as_str()) { self.orb_style = "liquid".into(); }
         self.orb_response = if self.orb_response.is_finite() { self.orb_response.clamp(0.5, 1.5) } else { 1.0 };
         let defaults = Self::default();
         for d in defaults.providers {
@@ -763,6 +774,9 @@ impl Default for Settings {
             control_style: "mouse".into(),
             orb_style: "liquid".into(),
             orb_response: 1.0,
+            avatar: String::new(),
+            roku_dev_password: String::new(),
+            tv_channel_auto: true,
             automatic_update_checks: true,
             economy_mode: true,
             ghost_hand: true,

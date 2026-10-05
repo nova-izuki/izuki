@@ -30,7 +30,7 @@ const store = {
 
 const ORBS = [
   ["ripple", "Tidal pearl"], ["ferrofluid", "Clear water"], ["dew", "Pure water"], ["constellation", "Star crystal"],
-  ["particles", "Stardust"], ["face", "Hologram face"], ["ferro", "Ferrofluid"], ["aurora", "Aurora"], ["nebula", "Nebula"],
+  ["particles", "Stardust"], ["face", "Hologram face"], ["holo3d", "Hologram bust"], ["avatar", "3D avatar"], ["ferro", "Ferrofluid"], ["aurora", "Aurora"], ["nebula", "Nebula"],
 ];
 /** TV looks built on a glass orb plus a colour grade. */
 const GRADE = { aurora: ["ripple", "tv-aurora"], nebula: ["particles", "tv-nebula"] };

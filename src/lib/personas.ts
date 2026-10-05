@@ -50,3 +50,8 @@ export function voiceFor(settings: Settings): {
 }
 
 void loadCatalog();
+
+/** The catalog as loaded so far (empty lists until it arrives). */
+export function catalogNow(): VoiceCatalog {
+  return catalog;
+}

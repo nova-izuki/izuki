@@ -280,6 +280,7 @@ pub fn setup() -> Value {
         "persona": s.persona,
         "language": s.speech_language,
         "orbStyle": s.orb_style,
+        "avatar": s.avatar,
         "homeCity": crate::web::home_city(),
         "memories": memories,
     })

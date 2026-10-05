@@ -100,19 +100,20 @@ export function TvCard() {
               On the Roku remote press <b>Home ×3, Up ×2, Right, Left, Right, Left, Right</b>. Choose <b>Enable installer and
               restart</b>, agree, and pick a password you'll remember.
             </li>
-            <li>
-              <button type="button" onClick={() => void api.openUrl("https://nova-izuki.github.io/izuki/tv/izuki-roku.zip")} className="izk-pill px-2.5 py-1 text-[11.5px]">
-                ⬇ Download the Izuki channel
-              </button>
-            </li>
-            <li>
-              <button type="button" onClick={() => void api.openUrl(`http://${found.host}`)} className="izk-pill px-2.5 py-1 text-[11.5px]">
-                Open your Roku's installer
-              </button>{" "}
-              — sign in as <b>rokudev</b> with that password, choose the file you downloaded, press <b>Install</b>.
-            </li>
+            <li>Type that password below and press <b>Install on my TV</b> — Izuki puts the channel on the TV for you.</li>
           </ol>
-          <p className="mt-2 text-izk-muted">Then open Izuki on the TV — it follows along whenever you talk to Izuki.</p>
+          <RokuChannel />
+          <p className="mt-2 text-izk-muted">
+            Then open Izuki on the TV — it follows along whenever you talk to Izuki.{" "}
+            <button type="button" className="underline-offset-2 hover:underline" onClick={() => void api.openUrl("https://nova-izuki.github.io/izuki/tv/izuki-roku.zip")}>
+              Or install it by hand
+            </button>{" "}
+            at{" "}
+            <button type="button" className="underline-offset-2 hover:underline" onClick={() => void api.openUrl(`http://${found.host}`)}>
+              your Roku's installer
+            </button>{" "}
+            (user <b>rokudev</b>).
+          </p>
         </details>
       )}
     </Section>
@@ -123,6 +124,69 @@ export function TvCard() {
  * The Izuki TV and phone apps: link them to this PC (they copy the setup and
  * then work on their own), Izuki's voice from the TV, and the TV's orb.
  */
+/** The Izuki channel on the Roku: which version it has, and one press to update. */
+function RokuChannel() {
+  const settings = useIzuki((s) => s.settings);
+  const patch = useIzuki((s) => s.patchSettings);
+  const [status, setStatus] = useState<{ installed: string; latest: string; roku: boolean } | null>(null);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState("");
+  const check = () => void api.tvChannelStatus().then(setStatus).catch(() => undefined);
+  useEffect(check, []);
+  const saved = !!settings.roku_dev_password;
+  const behind = !!status?.installed && !!status.latest && status.installed !== status.latest;
+  return (
+    <div className="mt-2 space-y-2 rounded-[12px] border border-white/10 bg-white/[0.03] p-2.5">
+      <div className="text-[11.5px] text-izk-muted">
+        {status?.installed ? (
+          <>
+            On your TV: <b className="text-izk-ink">{status.installed}</b> · newest: <b className="text-izk-ink">{status.latest}</b>{" "}
+            {behind ? <span className="text-amber-300">— an update is ready</span> : <span className="text-izk-teal">— up to date</span>}
+          </>
+        ) : (
+          <>Not on your TV yet{status?.latest ? ` · newest: ${status.latest}` : ""}.</>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="password"
+          aria-label="Roku developer password"
+          placeholder={saved ? "Password saved ✓" : "Roku developer password"}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="izk-field izk-no-drag min-w-0 flex-1 py-1 text-[11.5px]"
+        />
+        <button
+          type="button"
+          disabled={busy || (!saved && !password.trim())}
+          onClick={() => {
+            setBusy(true);
+            setSaid("Installing… the TV switches to Izuki when it's done.");
+            void api
+              .tvChannelUpdate(password.trim() || undefined)
+              .then((t) => {
+                setSaid(t);
+                setPassword("");
+                check();
+              })
+              .catch((e) => setSaid(String(e)))
+              .finally(() => setBusy(false));
+          }}
+          className="izk-pill px-2.5 py-1 text-[11.5px] disabled:opacity-50"
+        >
+          {busy ? <Loader2 size={12} className="inline animate-spin" /> : status?.installed ? "Update my TV" : "Install on my TV"}
+        </button>
+      </div>
+      <label className="flex items-center gap-2 text-[11.5px]">
+        <input type="checkbox" className="accent-izk-teal" checked={settings.tv_channel_auto !== false} onChange={(e) => patch({ tv_channel_auto: e.target.checked })} />
+        Keep it updated by itself (when Izuki updates, the TV does too)
+      </label>
+      {said && <div className="text-[11.5px] text-izk-ink">{said}</div>}
+    </div>
+  );
+}
+
 function LinkAndLook() {
   const settings = useIzuki((s) => s.settings);
   const patch = useIzuki((s) => s.patchSettings);
@@ -177,6 +241,8 @@ function LinkAndLook() {
           <option value="constellation">Star crystal</option>
           <option value="particles">Stardust</option>
           <option value="face">Hologram face</option>
+          <option value="holo3d">Hologram bust (3D)</option>
+          <option value="avatar">3D avatar</option>
           <option value="ferro">Ferrofluid</option>
           <option value="aurora">Aurora (TV)</option>
           <option value="nebula">Nebula (TV)</option>

@@ -31,6 +31,8 @@ const FEATURES: { label: string; hint: string; tab: TabId; id?: string }[] = [
   { label: "Nova Notes", hint: "Study notes from your screen, flashcards, quiz me, summarise", tab: "notes" },
   { label: "App colours", hint: "Theme, background colour, auto by time of day, your own colour", tab: "settings", id: "settings-theme" },
   { label: "New orbs", hint: "Stardust, ferrofluid, hologram face, pure water, music, orb style", tab: "settings", id: "settings-look" },
+  { label: "3D avatar", hint: "3D face, hologram bust, hair, dreads, braids, beard, glasses, visor, skin, eyes, character, avatar studio", tab: "settings", id: "settings-look" },
+  { label: "Update the TV channel", hint: "Roku, update TV, install on my TV, developer password, channel version", tab: "settings", id: "settings-tv" },
 ];
 
 /** Local navigation only: searching never calls an AI or spends credits. */

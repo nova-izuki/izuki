@@ -1,3 +1,19 @@
+import { drawFace3D, genderOfVoice } from "./face3d.js";
+
+/** The 3D face's look as saved on this device (phone and TV keep it here;
+ *  the PC passes its own). Gender "auto" follows the voice when known. */
+export function avatarFromStorage() {
+  let a = {};
+  try { a = JSON.parse(localStorage.getItem("izuki.avatar") || "{}") || {}; } catch {}
+  let gender = a.gender;
+  if (gender !== "male" && gender !== "female") {
+    let voice = "";
+    try { voice = localStorage.getItem("izuki.voiceGender") || ""; } catch {}
+    gender = voice === "male" || voice === "female" ? voice : genderOfVoice(a.voice || "");
+  }
+  return { gender, avatar: a };
+}
+
 // Realistic orbs, drawn on the graphics card and shared by the PC app, the
 // website and the phone. Light really behaves here: the glass bends what's
 // behind it (refraction, with a little rainbow fringing), the rim brightens
@@ -416,7 +432,12 @@ function renderer(px) {
  * screen's pixel density) filling `size`×`size`. `energy` 0…1 is the voice,
  * `thinking` 0…1 how much it's thinking. False if WebGL isn't available.
  */
-export function drawGlassOrb(ctx, size, style, time, energy, thinking, mood = 0) {
+export function drawGlassOrb(ctx, size, style, time, energy, thinking, mood = 0, face = null) {
+  // The 3D faces: a hologram bust, or a full 3D character (face3d.js).
+  if (style === "holo3d" || style === "avatar") {
+    const f = face || avatarFromStorage();
+    return drawFace3D(ctx, size, { mode: style === "avatar" ? "avatar" : "holo", gender: f.gender, look: f.look, avatar: f.avatar, time, energy, thinking, mood });
+  }
   if (unsupported || !(style in STYLES)) return false;
   try {
     const scale = typeof ctx.getTransform === "function" ? ctx.getTransform().a || 1 : 1;

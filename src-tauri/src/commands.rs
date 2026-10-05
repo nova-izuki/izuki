@@ -309,6 +309,7 @@ pub async fn submit_draw(app: AppHandle, session: DrawSession) -> VisionPlan {
 /// it. Izuki looks at the whole screen instead.
 #[tauri::command]
 pub async fn submit_voice_command(app: AppHandle, prompt: String) -> VisionPlan {
+    crate::tv::heard(&prompt);
     blocking(move || brain::submit_voice_command(&app, &state::store(), prompt))
         .await
         .unwrap_or_else(failed_plan)
@@ -341,6 +342,7 @@ pub fn open_log_folder() -> R<()> {
 /// everyday commands (instant.rs).
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
+    crate::tv::heard(&said);
     // Answering Izuki's "which app?" for the TV ("Disney", "the first one").
     {
         let s2 = said.clone();
@@ -851,6 +853,43 @@ pub async fn notes_lesson(text: String) -> R<crate::notes::Note> {
 #[tauri::command]
 pub async fn notes_flashcards(id: String) -> R<crate::notes::Note> {
     blocking(move || crate::notes::flashcards(&id).map_err(err)).await?
+}
+
+#[derive(serde::Serialize)]
+pub struct TvChannel {
+    /// The Izuki channel's version on the TV ("" if it isn't there or can't be read).
+    installed: String,
+    /// The one that comes with this app.
+    latest: String,
+    /// The TV is a Roku (the only kind this applies to).
+    roku: bool,
+}
+
+#[tauri::command]
+pub async fn tv_channel_status() -> TvChannel {
+    blocking(|| {
+        let host = state::store().settings().tv_host.trim().to_string();
+        let roku = !host.is_empty() && crate::tv::make(&host).is_none();
+        TvChannel { installed: if roku { crate::rokudev::installed(&host).unwrap_or_default() } else { String::new() }, latest: crate::rokudev::latest(), roku }
+    })
+    .await
+    .unwrap_or(TvChannel { installed: String::new(), latest: crate::rokudev::latest(), roku: false })
+}
+
+/// Put this app's channel on the Roku now (password: the Roku's developer password).
+#[tauri::command]
+pub async fn tv_channel_update(password: Option<String>) -> R<String> {
+    blocking(move || {
+        let store = state::store();
+        let mut s = store.settings();
+        if let Some(p) = password.filter(|p| !p.trim().is_empty()) {
+            s.roku_dev_password = p.trim().to_string();
+            store.set_settings(s.clone());
+        }
+        let host = crate::tv::host().ok_or_else(|| "I couldn't find your Roku on the Wi-Fi.".to_string())?;
+        crate::rokudev::install(&host, &s.roku_dev_password).map_err(|e| e.to_string())
+    })
+    .await?
 }
 
 /// The orb's state and words, to the Izuki channel on the TV (if it's open).

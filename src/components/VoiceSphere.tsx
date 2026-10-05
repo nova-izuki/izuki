@@ -8,7 +8,9 @@ import { TranscriptText } from "./TranscriptBar";
 import { drawWaterOrb } from "../../docs/app/water-orb.js";
 import { createOrbMotion, stepOrbMotion } from "../../docs/app/orb-motion.js";
 import { drawConstellationOrb, drawRippleOrb } from "../../docs/app/orb-materials.js";
-import { drawGlassOrb } from "../../docs/app/glass-orb.js";
+import { drawGlassOrb, type FaceOptions } from "../../docs/app/glass-orb.js";
+import { faceFor } from "../lib/avatar";
+import { watchPointer } from "./Island";
 
 /**
  * The hands-free voice sphere — "Hey Izuki" summons it.
@@ -88,9 +90,10 @@ export function VoiceSphere({
   const visible = state !== "hidden";
   const [style, setStyle] = useState<Settings["orb_style"]>("liquid");
   const [response, setResponse] = useState(1);
+  const [face, setFace] = useState<FaceOptions | null>(null);
   useEffect(() => {
     let alive = true;
-    const refresh = () => void api.getSettings().then((s) => { if (alive) { setStyle(s.orb_style || "liquid"); setResponse(s.orb_response ?? 1); } }).catch(() => {});
+    const refresh = () => void api.getSettings().then((s) => { if (alive) { setStyle(s.orb_style || "liquid"); setResponse(s.orb_response ?? 1); setFace(faceFor(s)); } }).catch(() => {});
     refresh();
     const off = on<void>(EV.settingsChanged, refresh);
     return () => { alive = false; void off.then((f) => f()); };
@@ -133,7 +136,7 @@ export function VoiceSphere({
           onPointerDown={(e) => begin(e, "move")}
           onWheel={onWheel}
         >
-          <SphereCanvas state={state as Exclude<OrbState, "hidden">} demo={demo} size={size} style={style} response={response} />
+          <SphereCanvas state={state as Exclude<OrbState, "hidden">} demo={demo} size={size} style={style} response={response} face={face} />
           <button
             type="button"
             aria-label="Dismiss"
@@ -196,7 +199,10 @@ export function SphereCanvas({
   style,
   response = 1,
   preview = false,
+  face = null,
 }: {
+  /** The 3D faces: who, and how they look. */
+  face?: FaceOptions | null;
   state: Exclude<OrbState, "hidden">;
   demo: boolean;
   size: number;
@@ -205,6 +211,29 @@ export function SphereCanvas({
   preview?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const faceRef = useRef(face);
+  faceRef.current = face;
+  /** Where the 3D face looks: at the pointer while it moves, else around. */
+  const lookRef = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (style !== "holo3d" && style !== "avatar") return;
+    let idle: ReturnType<typeof setTimeout> | undefined;
+    const stop = watchPointer((x, y) => {
+      const r = canvasRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      lookRef.current = {
+        x: Math.max(-1, Math.min(1, (x - cx) / Math.max(200, window.innerWidth * 0.35))),
+        y: Math.max(-1, Math.min(1, (y - cy) / Math.max(200, window.innerHeight * 0.4))),
+      };
+      clearTimeout(idle);
+      idle = setTimeout(() => (lookRef.current = null), 3500);
+    });
+    return () => {
+      stop();
+      clearTimeout(idle);
+    };
+  }, [style]);
   const stateRef = useRef(state);
   stateRef.current = state;
   /** Latest raw level from the bus; the draw loop smooths it. */
@@ -295,7 +324,8 @@ export function SphereCanvas({
       ctx.clearRect(0, 0, SIZE, SIZE);
 
       // The realistic, GPU-drawn materials; the 2D ones are the fallback.
-      if (style !== "liquid" && drawGlassOrb(ctx, SIZE, style, reduced ? 0 : physics.time, physics.energy, physics.waiting, demo ? 0.8 : mood.current)) return;
+      const faceNow = faceRef.current ? { ...faceRef.current, look: lookRef.current } : null;
+      if (style !== "liquid" && drawGlassOrb(ctx, SIZE, style, reduced ? 0 : physics.time, physics.energy, physics.waiting, demo ? 0.8 : mood.current, faceNow)) return;
       if (style === "ferrofluid" || style === "dew") {
         drawWaterOrb(ctx, SIZE, physics.time, physics.energy, 0, st === "thinking", physics);
         return;
