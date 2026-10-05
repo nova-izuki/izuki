@@ -409,6 +409,9 @@ export const api = {
   systemPulse: () =>
     call<{ cpu: number | null; memory: number | null; disk_free_gb: number | null; battery: [number, boolean] | null; online: boolean } | null>("system_pulse", {}, () => null),
   recallForget: () => call<void>("recall_forget", {}, () => undefined),
+  /** A live activity's button: "open:…", "show:…", "copytext:…", "unzip:…". What to say back, if anything. */
+  activityDo: (op: string) => call<string | null>("activity_do", { op }, () => null),
+  copyAgain: (index: number) => call<boolean>("copy_again", { index }, () => false),
   laterList: () => call<Array<{ id: string; text: string; done: boolean; added: number }>>("later_list", {}, () => []),
   laterAdd: (text: string) => call<string>("later_add", { text }, () => ""),
   laterDone: (id: string, done: boolean) => call<void>("later_done", { id, done }, () => undefined),

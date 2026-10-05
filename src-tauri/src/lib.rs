@@ -54,6 +54,8 @@ pub mod later;
 pub mod focus;
 pub mod clip;
 pub mod recall;
+pub mod timers;
+pub mod activity;
 pub mod tts;
 pub mod uia;
 pub mod updates;
@@ -254,6 +256,8 @@ pub fn run() {
             commands::later_list,
             commands::system_pulse,
             commands::recall_forget,
+            commands::activity_do,
+            commands::copy_again,
             commands::later_add,
             commands::later_done,
             commands::later_remove,
@@ -339,6 +343,7 @@ pub fn run() {
             buddy::spawn(handle.clone());
             link::spawn(handle.clone());
             recall::spawn();
+            activity::spawn();
             browser::init(&handle);
 
             Ok(())

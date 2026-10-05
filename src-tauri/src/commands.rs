@@ -341,6 +341,10 @@ pub fn open_log_folder() -> R<()> {
 /// everyday commands (instant.rs).
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
+    // Timers: "set a pasta timer for 12 minutes", "cancel the timer".
+    if let Some(ask) = crate::timers::parse(&said) {
+        return Some(crate::timers::run(&app, ask));
+    }
     // Focus mode: "focus for 25 minutes", "stop focus".
     if let Some(ask) = crate::focus::parse(&said) {
         return Some(crate::focus::run(&app, ask));
@@ -824,6 +828,18 @@ pub async fn notes_flashcards(id: String) -> R<crate::notes::Note> {
 #[tauri::command]
 pub async fn tv_show(state: String, text: Option<String>) -> bool {
     blocking(move || crate::tv::show(&state, text.as_deref())).await.unwrap_or(false)
+}
+
+/// One of the Island's live-activity buttons (Open, Copy the text, Unzip…).
+#[tauri::command]
+pub async fn activity_do(app: AppHandle, op: String) -> Option<String> {
+    blocking(move || crate::activity::act(&app, &op)).await.ok().flatten()
+}
+
+/// Copy one of the recent copies again.
+#[tauri::command]
+pub fn copy_again(index: usize) -> bool {
+    crate::activity::copy_again(index)
 }
 
 /// Forget everything Recall noted.

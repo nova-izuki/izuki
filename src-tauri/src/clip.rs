@@ -34,7 +34,10 @@ pub fn ideas() -> Vec<Idea> {
             *last = Some((now, Instant::now() - FRESH));
             return Vec::new();
         }
-        _ => *last = Some((now.clone(), Instant::now())),
+        _ => {
+            crate::activity::copied(&now);
+            *last = Some((now.clone(), Instant::now()));
+        }
     }
     let Some((text, at)) = last.clone() else { return Vec::new() };
     if at.elapsed() > FRESH {
@@ -82,7 +85,11 @@ pub fn for_text(text: &str) -> Vec<Idea> {
     out
 }
 
-/// Passwords, keys and codes never become suggestions.
+/// Passwords, keys and codes never become suggestions (or recent copies).
+pub fn is_secret(t: &str) -> bool {
+    looks_secret(t)
+}
+
 fn looks_secret(t: &str) -> bool {
     let one_word = !t.contains(char::is_whitespace);
     let mixed = t.chars().any(|c| c.is_ascii_digit()) && t.chars().any(|c| c.is_ascii_alphabetic());

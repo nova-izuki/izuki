@@ -32,6 +32,10 @@ pub struct IslandStatus {
     pub clip: Vec<crate::clip::Idea>,
     /// Seconds left in a focus session.
     pub focus_left: Option<u64>,
+    /// Live activities: timers, downloads, screenshots, charging.
+    pub activities: Vec<crate::activity::Activity>,
+    /// The last few things copied.
+    pub copies: Vec<String>,
 }
 
 pub fn status() -> IslandStatus {
@@ -46,6 +50,8 @@ pub fn status() -> IslandStatus {
         context,
         clip: crate::clip::ideas(),
         focus_left: crate::focus::left(),
+        activities: crate::activity::now(),
+        copies: crate::activity::recent_copies().into_iter().map(|c| c.chars().take(90).collect()).collect(),
     }
 }
 

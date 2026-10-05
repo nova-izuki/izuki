@@ -187,6 +187,8 @@ pub enum TvAct {
     Power(bool),
     /// "Control my TV": check it's there and ready, press nothing.
     Ready,
+    /// "Turn the TV off in 30 minutes" — a sleep timer (minutes).
+    SleepIn(u64),
 }
 
 /// "open netflix on the tv" → Open("netflix"); "turn the tv up" → VolumeUp ×4…
@@ -206,7 +208,26 @@ pub fn parse(said: &str) -> Option<TvAct> {
     let words: Vec<&str> = core.split_whitespace().collect();
     let has = |k: &str| core == k || core.starts_with(&format!("{k} ")) || core.contains(&format!(" {k}")) || core.ends_with(k);
 
-    if has("turn off") || has("switch off") || core == "off" || has("power off") {
+    if has("turn off") || has("switch off") || core == "off" || has("power off") || has("sleep") {
+        // "turn off the TV in 30 minutes", "TV sleep timer 1 hour".
+        if core.contains("half an hour") {
+            return Some(TvAct::SleepIn(30));
+        }
+        let words: Vec<&str> = core.split_whitespace().collect();
+        for (i, w) in words.iter().enumerate() {
+            if let Ok(n) = w.parse::<u64>() {
+                let unit = words.get(i + 1).copied().unwrap_or("");
+                if unit.starts_with("hour") {
+                    return Some(TvAct::SleepIn(n * 60));
+                }
+                if unit.starts_with("min") {
+                    return Some(TvAct::SleepIn(n));
+                }
+            }
+        }
+        if core.contains("an hour") {
+            return Some(TvAct::SleepIn(60));
+        }
         return Some(TvAct::Power(false));
     }
     if has("turn on") && words.len() <= 2 || has("switch on") || core == "on" || has("power on") {
@@ -363,6 +384,15 @@ pub fn run(said: &str) -> Result<String> {
             return Ok("On it — doing that on your TV.".into());
         }
     }
+    // A sleep timer: wait, then switch off whichever TV this is.
+    if let TvAct::SleepIn(m) = act {
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(m * 60));
+            let _ = run("turn off the tv");
+            eprintln!("[tv] sleep timer done after {m} min");
+        });
+        return Ok(format!("Okay — I'll turn the TV off in {m} minutes."));
+    }
     let host = host().ok_or_else(|| anyhow!("I couldn't find a TV on your Wi-Fi. Make sure the TV is on and on the same Wi-Fi as this PC (Roku, Samsung and LG work)."))?;
     eprintln!("[tv] {act:?} on {host}");
     if let Some(m) = make(&host) {
@@ -407,6 +437,8 @@ pub fn run(said: &str) -> Result<String> {
                 format!("I can see {}, but it's only allowing limited control. {ALLOW_STEPS}", tv.name)
             })
         }
+        // Handled at the top of run.
+        TvAct::SleepIn(_) => Ok("Okay.".into()),
         TvAct::Power(on) => {
             key(&host, if on { "PowerOn" } else { "PowerOff" })?;
             Ok(if on { "Turning the TV on." } else { "Turning the TV off." }.into())
@@ -428,6 +460,8 @@ mod tests {
         assert_eq!(parse("resume the TV"), Some(TvAct::Key("Play", 1)));
         assert_eq!(parse("search the tv for stranger things"), Some(TvAct::Search("stranger things".into())));
         assert_eq!(parse("turn off the tv"), Some(TvAct::Power(false)));
+        assert_eq!(parse("turn off the tv in 30 minutes"), Some(TvAct::SleepIn(30)));
+        assert_eq!(parse("tv sleep timer 1 hour"), Some(TvAct::SleepIn(60)));
         assert_eq!(parse("tv go home"), Some(TvAct::Key("Home", 1)));
         assert_eq!(parse("mute the tv"), Some(TvAct::Key("VolumeMute", 1)));
         assert_eq!(parse("tv netflix"), Some(TvAct::Open("netflix".into())));

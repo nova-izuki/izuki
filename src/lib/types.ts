@@ -588,6 +588,20 @@ export interface IslandStatus {
   clip?: Suggestion[];
   /** Seconds left in a focus session. */
   focus_left?: number | null;
+  /** Live activities: timers, downloads, screenshots, charging. */
+  activities?: Activity[];
+  /** The last few things copied (newest first). */
+  copies?: string[];
+}
+
+/** Something happening right now, with its smart next steps. */
+export interface Activity {
+  id: string;
+  kind: "timer" | "download" | "downloading" | "screenshot" | "charging";
+  icon: string;
+  title: string;
+  detail: string;
+  actions: Array<{ label: string; op: string }>;
 }
 
 export interface Suggestion {

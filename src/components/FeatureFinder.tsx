@@ -17,6 +17,7 @@ const FEATURES: { label: string; hint: string; tab: TabId; id?: string }[] = [
   { label: "Discord & reminders", hint: "Notifications and alerts", tab: "settings", id: "settings-discord" },
   { label: "App updates", hint: "Download the newest installer", tab: "settings", id: "settings-updates" },
   { label: "Control my TV", hint: "Roku, Netflix, volume, the Izuki TV channel, Android TV", tab: "settings", id: "settings-tv" },
+  { label: "Timers", hint: "Set a timer, pasta timer, countdown, cancel the timer, how long left", tab: "draw", id: "talk-card" },
   { label: "Focus mode", hint: "Focus for 25 minutes, pomodoro, countdown, do not disturb", tab: "draw", id: "talk-card" },
   { label: "Recall: what was on my screen", hint: "What was that site, what was I doing, history, timeline, privacy", tab: "draw", id: "talk-card" },
   { label: "Later list", hint: "Remind me later, shopping list, don't let me forget, tick off", tab: "chat" },

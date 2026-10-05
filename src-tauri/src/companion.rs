@@ -151,6 +151,13 @@ pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str))
         push("assistant", &text);
         return Reply::text(text);
     }
+    // Timers, from the phone or Telegram too.
+    if let Some(ask) = crate::timers::parse(said) {
+        push("user", said);
+        let text = crate::timers::run(app, ask);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // Focus mode and Recall, from the phone or Telegram too.
     if let Some(ask) = crate::focus::parse(said) {
         push("user", said);

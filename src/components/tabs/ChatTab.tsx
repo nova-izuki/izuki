@@ -265,6 +265,26 @@ export function ChatTab() {
         return;
       }
       if (!note) setDraft("");
+      // Typing "allow" / "yes" / "no" answers the card that's waiting — the
+      // way the orb's chat bar does — instead of asking the AI about it.
+      if (!note) {
+        const bare = t.toLowerCase().replace(/[.!]+$/, "").trim();
+        const last = msgs.length - 1;
+        const waiting = !!msgs[last]?.action && !msgs[last]?.action?.state;
+        const yes = /^(?:allow|allow it|yes|yep|yeah|yes do it|go ahead|do it|run it|ok|okay|sure|please do)$/.test(bare);
+        const no = /^(?:no|nope|don'?t|do not|cancel|stop|don'?t do it)$/.test(bare);
+        if (waiting && (yes || no)) {
+          void answerRef.current(last, yes);
+          return;
+        }
+        if (!waiting && /^(?:allow|allow it)$/.test(bare)) {
+          setMsgs((m) => [...m, { role: "user", content: t }, { role: "assistant", content: "Nothing's waiting for your OK right now — tell me what you'd like me to do, and I'll show you before anything runs (or turn on ⚡ Auto to skip asking)." }]);
+          return;
+        }
+      }
+      // A just-flipped Ask/Auto switch is saved before the request goes out,
+      // so Auto really runs without asking.
+      await useIzuki.getState().flushSettings().catch(() => undefined);
       // Earlier replies carry what really happened (the steps, an allowed
       // command's output), so "u done?" is answered from facts, not memory.
       const history = [...msgs.filter((m) => !m.failed && !m.screen), { role: "user" as const, content: t }].map((m) => ({
@@ -485,6 +505,8 @@ export function ChatTab() {
     setTimeout(() => void sendRef.current(ask), 40);
   };
 
+  const answerRef = useRef(answer);
+  answerRef.current = answer;
   const sendRef = useRef(send);
   sendRef.current = send;
 

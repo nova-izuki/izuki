@@ -223,29 +223,45 @@ void main(){
 // head with eye sockets, a nose, lips and a jaw. The jaw drops with the
 // voice, the eyes blink, the mouth curves with the mood and the head turns.
 function facePoints() {
-  const pts = [], STEP = 0.016;
-  const A = 0.6, B = 0.8;
+  // Denser points than before (finer detail), on a real face's oval: a little
+  // narrower at the temples, widest at the cheekbones, tapering through the
+  // jaw to a defined chin — plus a neck, so it reads as a head, not a mask.
+  const pts = [], STEP = 0.0125;
+  const A = 0.52, B = 0.78;
   const g = (x, y, cx, cy, sx, sy) => Math.exp(-(((x - cx) / sx) ** 2 + ((y - cy) / sy) ** 2));
-  for (let y = -B; y <= B; y += STEP) {
+  for (let y = -1.0; y <= B; y += STEP) {
     for (let x = -A; x <= A; x += STEP) {
-      // An egg: a little narrower at the chin.
-      const w = A * (y < 0 ? 1 - 0.28 * (y / -B) ** 2 : 1);
+      // The neck, below the chin: a soft column, a little wider at the base.
+      if (y < -0.7) {
+        const nw = 0.16 + 0.06 * Math.max(0, (-0.85 - y) / 0.15);
+        if (Math.abs(x) > nw) continue;
+        const nz = 0.12 * Math.sqrt(Math.max(0, 1 - (x / nw) ** 2));
+        pts.push(x, y, nz, 0, 0, 0, 0, -0.02);
+        continue;
+      }
+      // The oval: temples, cheekbones, jaw, chin.
+      const top = y > 0.45 ? 1 - 0.16 * ((y - 0.45) / (B - 0.45)) ** 2 : 1;
+      const jawTaper = y < -0.05 ? 1 - 0.42 * ((-0.05 - y) / (B - 0.05)) ** 1.5 : 1;
+      const w = A * top * jawTaper;
       const e = (x / w) ** 2 + (y / B) ** 2;
       if (e >= 1) continue;
       const shell = 0.55 * Math.sqrt(1 - e);
       let z = shell;
       z -= 0.07 * (g(x, y, -0.22, 0.14, 0.11, 0.07) + g(x, y, 0.22, 0.14, 0.11, 0.07)); // eye sockets
-      z += 0.13 * g(x, y, 0, -0.06, 0.05, 0.17); // nose
-      z += 0.05 * g(x, y, 0, -0.36, 0.17, 0.05); // lips
-      z += 0.03 * (g(x, y, -0.3, -0.1, 0.12, 0.1) + g(x, y, 0.3, -0.1, 0.12, 0.1)); // cheeks
+      z += 0.035 * (g(x, y, -0.22, 0.25, 0.13, 0.03) + g(x, y, 0.22, 0.25, 0.13, 0.03)); // brow ridge
+      z += 0.1 * g(x, y, 0, 0.02, 0.035, 0.15) + 0.07 * g(x, y, 0, -0.17, 0.06, 0.05); // nose bridge and tip
+      z -= 0.02 * (g(x, y, -0.06, -0.2, 0.025, 0.02) + g(x, y, 0.06, -0.2, 0.025, 0.02)); // nostrils
+      z += 0.035 * g(x, y, 0, -0.33, 0.15, 0.03) + 0.05 * g(x, y, 0, -0.41, 0.14, 0.035); // upper and lower lip
+      z += 0.04 * (g(x, y, -0.3, 0.0, 0.12, 0.07) + g(x, y, 0.3, 0.0, 0.12, 0.07)); // cheekbones
+      z += 0.05 * g(x, y, 0, -0.64, 0.1, 0.07); // chin
       const eye = Math.max(g(x, y, -0.22, 0.14, 0.075, 0.035), g(x, y, 0.22, 0.14, 0.075, 0.035));
       const brow = Math.max(g(x, y, -0.22, 0.27, 0.1, 0.03), g(x, y, 0.22, 0.27, 0.1, 0.03));
       // Everything below the lips moves with the jaw, more toward the chin.
-      const jaw = y < -0.37 ? Math.min(1, (-0.37 - y) / 0.06) * Math.max(0, 1 - Math.abs(x) / 0.48) : 0;
+      const jaw = y < -0.37 ? Math.min(1, (-0.37 - y) / 0.06) * Math.max(0, 1 - Math.abs(x) / 0.44) : 0;
       const lip = g(x, y, 0, -0.37, 0.2, 0.05);
       // Leave the line between the lips open, so the mouth reads.
-      if (Math.abs(y + 0.37) < 0.008 && Math.abs(x) < 0.17) continue;
-      // How far the features stand out from a plain egg: lit by it below.
+      if (Math.abs(y + 0.37) < 0.007 && Math.abs(x) < 0.16) continue;
+      // How far the features stand out from a plain oval: lit by it below.
       pts.push(x, y, z, eye, jaw, brow, lip, z - shell);
     }
   }
@@ -310,7 +326,12 @@ void main(){
   // Lit from the front-left: raised features glow, sockets fall into shadow.
   float light = clamp(0.35 + seed * 7.0 + (0.5 - pos.x) * 0.25, 0.08, 1.4);
   float eyeLight = f.x * (1.0 - closed) * (0.5 + 1.1 * iris - 0.9 * pupil);
-  vB = 1.75 * (0.12 + 0.6 * depth) * light * scan * (0.85 + uLevel * 0.4) + eyeLight + f.w * uLevel * 0.5;
+  // The outline glows like a projected hologram's edge, and a bright scan
+  // sweeps down the face every few seconds.
+  float rim = 1.0 - smoothstep(0.03, 0.2, pos.z);
+  float sweepY = 1.0 - mod(uTime * 0.42, 2.6);
+  float sweep = exp(-pow((pos.y - sweepY) * 11.0, 2.0));
+  vB = 1.75 * (0.12 + 0.6 * depth) * light * scan * (0.85 + uLevel * 0.4) + eyeLight + f.w * uLevel * 0.5 + rim * 0.55 + sweep * 0.5;
   vC = mix(vec3(0.3, 0.75, 1.0), vec3(0.85, 0.95, 1.0), f.x * (1.0 - iris));
   vC = mix(vC, vec3(0.45, 0.95, 1.0), f.x * iris);
   vC = mix(vC, vec3(1.0, 0.55, 0.85), f.w * 0.35);

@@ -178,6 +178,8 @@ async fn samsung(host: &str, act: TvAct) -> Result<String> {
         }
         TvAct::Search(q) => format!("Open the search in the app on your TV, then say \"type {q} on the TV\" and I'll fill it in."),
         TvAct::Ready => "Connected to your Samsung TV — what should I put on?".into(),
+        // Handled in tv::run before it gets here.
+        TvAct::SleepIn(_) => "Okay.".into(),
         TvAct::Open(app) => {
             ws.send(Message::text(json!({"method": "ms.channel.emit", "params": {"event": "ed.installedApp.get", "to": "host"}}).to_string())).await?;
             let listed: Vec<(String, String)> = wait_for(&mut ws, 4, |v| {
@@ -307,6 +309,8 @@ async fn lg(host: &str, act: TvAct) -> Result<String> {
         }
         TvAct::Search(q) => format!("Open the search in the app on your TV, then say \"type {q} on the TV\" and I'll fill it in."),
         TvAct::Ready => "Connected to your LG TV — what should I put on?".into(),
+        // Handled in tv::run before it gets here.
+        TvAct::SleepIn(_) => "Okay.".into(),
         TvAct::Open(app) => {
             let r = lg_ask(&mut ws, &mut n, "ssap://com.webos.applicationManager/listLaunchPoints", json!({})).await.unwrap_or_default();
             let listed: Vec<(String, String)> = r["launchPoints"]

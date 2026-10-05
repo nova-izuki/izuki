@@ -270,6 +270,7 @@ background, without opening anything on the screen. Same rule — reply with onl
 [RUN: command] — one PowerShell command that only LOOKS (Get-…, Measure-Object, winget list, tasklist, \
 ipconfig): app sizes, installed apps, disk space, what's running, battery, network, big files.\n\
 [FIND: words] / [FILES: folder] — find files, or see what's in a folder.\n\
+[OPEN: path] — read a file (PDF, Word, text, slides, a spreadsheet) to sum it up or answer about it.\n\
 Use these for questions like \"how many GB is Zoom\", \"what apps don't I use\", \"how much space is \
 left\", \"what's slowing my PC\" — run the check, then say the answer in a sentence or two (round \
 numbers, plain words). Don't open Settings or File Explorer for those. Changing things (uninstalling, \
@@ -1172,6 +1173,29 @@ fn needs_correction(answer: &str, messages: &[Value]) -> Option<String> {
         }
     }
     let a = answer.to_lowercase();
+    // "On it." with no tool: a promise, and nothing happens — then later it
+    // claims to be "waiting for your approval" that was never asked for.
+    const PROMISE: &[&str] = &[
+        "on it", "i'll do", "i will do", "doing it now", "doing that now", "let me do", "working on it", "give me a sec",
+        "i'll take care", "i'll delete", "i'll clear", "i'll clean", "i'll run", "i'll remove", "starting now", "right away",
+    ];
+    if answer.len() < 200 && !a.contains('?') && PROMISE.iter().any(|w| a.contains(w)) {
+        return Some(
+            "[You said you'd do it, but you didn't use a tool — so nothing happened. Do it now: reply with ONLY the tag \
+             that does it (e.g. [RUN: …] — the user will see it run). If you can't do it, say so honestly.]"
+                .into(),
+        );
+    }
+    if ["waiting for your approval", "waiting for you to allow", "hit \"allow\"", "tap \"allow\"", "tap allow", "click allow", "needs your approval", "just needs that"]
+        .iter()
+        .any(|w| a.contains(w))
+    {
+        return Some(
+            "[Nothing is waiting for approval — you never started a command. To do it, reply with ONLY the tag \
+             (e.g. [RUN: …]); the user's own Allow / Auto setting decides whether it runs straight away.]"
+                .into(),
+        );
+    }
     const DONE: &[&str] = &[
         "uninstalled", "are gone", "is gone", "been removed", "i removed", "i've removed", "have removed", "deleted",
         "i've installed", "been installed", "installed it", "freed up", "freeing up", "cleaned up", "i've moved",
@@ -1353,6 +1377,10 @@ mod tool_tests {
         let mut allowed = asked("remove zoom");
         allowed.push(json!({"role": "user", "content": "[I allowed it. Result:]\nSuccessfully uninstalled"}));
         assert!(needs_correction("Done — Zoom is uninstalled.", &allowed).is_none());
+        // Promises with nothing done, and invented "waiting for approval".
+        assert!(needs_correction("On it.", &asked("delete my temp files")).is_some());
+        assert!(needs_correction("Still waiting for your approval on the command. It's queued up, just needs that \"Allow\" tap.", &asked("are u done")).is_some());
+        assert!(needs_correction("Want me to clear them? I'll need your OK first.", &asked("delete temp files")).is_none());
         // Honest "not yet" and plain chat: fine.
         assert!(needs_correction("I haven't uninstalled it yet — want me to?", &asked("u done")).is_none());
         assert!(needs_correction("A gigabyte is 1,000 megabytes.", &asked("what is a gb")).is_none());

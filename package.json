@@ -1,7 +1,7 @@
 {
   "name": "izuki",
   "private": true,
-  "version": "1.0.45",
+  "version": "1.0.46",
   "type": "module",
   "description": "IZUKI — YO IZUKI, DO IT. Draw on your screen, Izuki does it.",
   "scripts": {

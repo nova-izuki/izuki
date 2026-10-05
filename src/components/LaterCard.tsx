@@ -29,23 +29,9 @@ export function LaterCard() {
   };
 
   const open = items.filter((i) => !i.done);
-  if (!items.length && !draft) {
-    return (
-      <div className="izk-card flex items-center gap-2 p-[10px] text-[11.5px] text-izk-muted">
-        <ListChecks size={13} className="shrink-0 text-izk-teal" />
-        <span className="min-w-0 flex-1">
-          Your <b className="text-izk-ink">Later list</b> is empty — say “remind me later I'm buying toothpaste”, or add one:
-        </span>
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && void add()}
-          placeholder="Add…"
-          className="izk-field izk-no-drag w-[110px] py-1 text-[11.5px]"
-        />
-      </div>
-    );
-  }
+  // Nothing on it: stay out of the way. It appears as soon as something's
+  // added ("remind me later I'm buying toothpaste").
+  if (!items.length) return null;
   return (
     <div className="izk-card p-[12px]">
       <div className="mb-1.5 flex items-center gap-2 text-[12px] font-semibold text-izk-ink">

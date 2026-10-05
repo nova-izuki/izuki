@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { AlarmClock, Check, Mic, Pause, Pencil, Play, Settings2, SkipBack, SkipForward, Square } from "lucide-react";
 import { api, emit, EV, on } from "../lib/ipc";
 import { workArea } from "../lib/floating";
-import type { IslandStatus, NowPlaying, OrbState, Reminder, Suggestion } from "../lib/types";
+import type { Activity, IslandStatus, NowPlaying, OrbState, Reminder, Suggestion } from "../lib/types";
 
 /**
  * The Island: a black pill at the top of the screen, like a phone's live
@@ -53,6 +53,7 @@ type Live =
   | { kind: "suggest"; s: Suggestion }
   | { kind: "music"; m: NowPlaying }
   | { kind: "focus"; secs: number }
+  | { kind: "activity"; a: Activity }
   | { kind: "rest" };
 
 export function Island({
@@ -199,6 +200,13 @@ export function Island({
     if (busy) setPeek(null);
   }, [busy]);
 
+  // A new download, screenshot or charge: news on the pill for ~10 s, then
+  // it waits in the open Island. Timers count down on the pill throughout.
+  const firstSeen = useRef(new Map<string, number>());
+  const acts = status.activities ?? [];
+  for (const a of acts) if (!firstSeen.current.has(a.id)) firstSeen.current.set(a.id, Date.now());
+  const fresh = acts.find((a) => a.kind !== "timer" && (a.kind === "downloading" || Date.now() - (firstSeen.current.get(a.id) ?? 0) < 10_000));
+  const timer = acts.find((a) => a.kind === "timer");
   const media = status.media;
   const musicOn = !!media?.playing;
   const onPlayingRef = useRef(onPlaying);
@@ -212,6 +220,10 @@ export function Island({
         ? { kind: "reminder", r: soon, urgent: true }
         : peek
           ? { kind: "suggest", s: peek }
+          : fresh
+          ? { kind: "activity", a: fresh }
+          : timer
+          ? { kind: "activity", a: timer }
           : status.focus_left
           ? { kind: "focus", secs: status.focus_left }
           : media?.playing
@@ -246,6 +258,8 @@ export function Island({
                 live={live}
                 media={media}
                 suggestions={busy ? [] : [...(status.clip ?? []), ...status.suggestions].slice(0, 4)}
+                activities={acts}
+                copies={status.copies ?? []}
                 next={next}
                 now={now}
                 dancing={dancing}
@@ -288,6 +302,8 @@ function same(a: IslandStatus, b: IslandStatus) {
     a.context === b.context &&
     labels(a.suggestions) === labels(b.suggestions) &&
     labels(a.clip) === labels(b.clip) &&
+    JSON.stringify(a.activities ?? []) === JSON.stringify(b.activities ?? []) &&
+    (a.copies ?? []).join("\u0001") === (b.copies ?? []).join("\u0001") &&
     Math.floor((a.focus_left ?? -60) / 60) === Math.floor((b.focus_left ?? -60) / 60) &&
     (m === n || (!!m && !!n && m.title === n.title && m.artist === n.artist && m.playing === n.playing && m.app === n.app && m.art === n.art))
   );
@@ -312,6 +328,14 @@ function Compact({ live, dancing }: { live: Live; dancing: boolean }) {
           <Face size={24} mood="busy" />
           <span className="max-w-[300px] truncate text-[13px] font-medium text-white/90">{live.text}</span>
           <Dots />
+        </>
+      );
+    case "activity":
+      return (
+        <>
+          <span className="flex h-[24px] w-[24px] items-center justify-center rounded-full bg-white/12 text-[13px]">{live.a.icon}</span>
+          <span className="max-w-[200px] truncate text-[13px] font-medium text-white/90">{live.a.title}</span>
+          <span className={"text-[12.5px] text-white/60" + (live.a.kind === "timer" ? " tabular-nums" : "")}>{live.a.detail}</span>
         </>
       );
     case "focus":
@@ -368,7 +392,11 @@ function Expanded({
   visualizing,
   onVisualize,
   onDone,
+  activities = [],
+  copies = [],
 }: {
+  activities?: Activity[];
+  copies?: string[];
   visualizing?: boolean;
   onVisualize?: () => void;
   live: Live;
@@ -466,6 +494,63 @@ function Expanded({
           <AlarmClock size={18} className="shrink-0 text-amber-400" />
           <div className="min-w-0 flex-1 truncate text-[13.5px]">{next.text}</div>
           <div className="shrink-0 text-[12.5px] text-white/55">{when(next.at, now)}</div>
+        </div>
+      )}
+
+      {activities.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/40">Happening now</div>
+          {activities.map((a) => (
+            <div key={a.id} className="rounded-2xl bg-white/[0.07] px-3 py-2.5">
+              <div className="flex items-center gap-2.5">
+                <span className="text-[17px]">{a.icon}</span>
+                <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{a.title}</span>
+                <span className={"shrink-0 text-[12.5px] text-white/55" + (a.kind === "timer" ? " tabular-nums" : "")}>{a.detail}</span>
+              </div>
+              {a.actions.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {a.actions.map((x) => (
+                    <button
+                      key={x.label}
+                      type="button"
+                      onClick={() => {
+                        if (x.op.startsWith("ask:")) {
+                          onDone();
+                          void emit(EV.runChat, { id: Date.now(), text: x.op.slice(4) });
+                        } else {
+                          void api.activityDo(x.op).then((said) => {
+                            if (said) void emit(EV.say, { text: said });
+                          });
+                        }
+                      }}
+                      className="rounded-full bg-white/[0.1] px-3 py-1 text-[12px] font-medium transition hover:bg-white/[0.18] active:scale-[0.97]"
+                    >
+                      {x.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {copies.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/40">Recent copies</div>
+          <div className="flex flex-wrap gap-1.5">
+            {copies.slice(0, 4).map((c, i) => (
+              <button
+                key={i + c}
+                type="button"
+                title="Copy this again"
+                onClick={() => void api.copyAgain(i)}
+                className="max-w-[160px] truncate rounded-full bg-white/[0.07] px-3 py-1 text-[12px] text-white/80 transition hover:bg-white/[0.14]"
+              >
+                {c}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

@@ -22,6 +22,11 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "⏱️", title: "Timers on the Island", how: "“Set a pasta timer for 12 minutes” — it counts down on the Island and tells you when it's done. Several at once.", try: { label: "5-minute timer", say: "set a timer for 5 minutes" } },
+  { icon: "⬇️", title: "Downloads, screenshots & charging", how: "Finished downloads get Open, Sum it up (documents), Install (apps) or Unzip. Screenshots get Copy the text — and Fix, Explain or Translate when that fits. Plus a glance at the battery when you plug in." },
+  { icon: "📋", title: "Recent copies", how: "Open the Island to copy any of your last few copies again." },
+  { icon: "💬", title: "The chat shows its work", how: "Type “allow” to approve, Auto really skips asking, and it can't say “On it” and do nothing anymore." },
+  { icon: "🗿", title: "A more lifelike hologram face", how: "A real face's oval, a neck, finer detail, a glowing outline and a scan sweep.", try: { label: "Pick it", tab: "settings", id: "settings-look" } },
   { icon: "🎯", title: "Focus mode", how: "Say “focus for 25 minutes”: a countdown on the Island, nothing but urgent things get through, and a catch-up when time's up.", try: { label: "Focus 25 min", say: "focus for 25 minutes" } },
   { icon: "📋", title: "Smart clipboard", how: "Copy a foreign sentence, a link, an address, code or an error — the Island offers Translate, Sum up, Directions, Explain or Fix. Nothing's sent unless you tap." },
   { icon: "🕰️", title: "Recall", how: "Turn it on and ask “what was that site I was on this morning?”. Only window titles, a week, this PC only — never private windows.", try: { label: "Turn on", tab: "draw", id: "talk-card" } },
