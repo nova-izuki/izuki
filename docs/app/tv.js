@@ -18,7 +18,7 @@
 // (home Wi-Fi + Allow on the PC), it copies the PC's setup and memories, and
 // the PC can hand it TV jobs ("Hey Nova, open YouTube on the TV").
 
-import { drawGlassOrb } from "./glass-orb.js";
+import { drawGlassOrb, avatarFromStorage } from "./glass-orb.js";
 
 const N = () => window.Capacitor?.Plugins?.IzukiControl;
 const core = () => window.IzukiCore;
@@ -205,13 +205,16 @@ function animate() {
   c.className = grade;
   let t0 = performance.now();
   let idleSince = Date.now();
+  // The 3D face's saved look, re-read every few seconds, not parsed every frame.
+  let face = null, faceAt = -1e9;
   const frame = (now) => {
+    if (now - faceAt > 3000) { face = avatarFromStorage(); faceAt = now; }
     const t = (now - t0) / 1000;
     const target = state === "talk" ? 0.45 + 0.35 * Math.abs(Math.sin(t * 7.3)) * Math.abs(Math.sin(t * 2.1)) : state === "listen" ? 0.18 + energy : 0.05;
     energy *= 0.9;
     const e = target;
     ctx.clearRect(0, 0, c.width, c.height);
-    const ok = drawGlassOrb(ctx, c.width, GRADE[orbStyle]?.[0] || orbStyle, t, e, state === "think" ? 1 : 0, state === "talk" ? 0.4 : 0);
+    const ok = drawGlassOrb(ctx, c.width, GRADE[orbStyle]?.[0] || orbStyle, t, e, state === "think" ? 1 : 0, state === "talk" ? 0.4 : 0, face);
     if (!ok) {
       // No WebGL on this TV: a soft painted orb instead.
       const g = ctx.createRadialGradient(c.width * 0.42, c.height * 0.38, 10, c.width / 2, c.height / 2, c.width * 0.48 * (1 + e * 0.1));

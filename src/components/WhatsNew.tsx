@@ -22,7 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
-  { icon: "✨", title: "Better-looking 3D faces", how: "Three times the detail around the eyes, nose and lips — almond eyes, a refined nose, natural lips. Tap the face and it reacts.", try: { label: "See it", tab: "settings", id: "settings-look" } },
+  { icon: "✨", title: "Better-looking 3D faces", how: "Three times the detail around the eyes, nose and lips — almond eyes, a refined nose, natural lips. Tap the face and it reacts — on the phone too, where it now moves at a smooth 30 fps even at rest.", try: { label: "See it", tab: "settings", id: "settings-look" } },
   { icon: "📺", title: "Your TV on the status screen", how: "“Wake up” shows what's on your Roku with play/pause, volume, home and What should I watch? Or just ask “what's on my TV?”.", try: { label: "Show me", say: "wake up" } },
   { icon: "🧑‍🚀", title: "Two new 3D faces", how: "Pick “3D avatar” or “Hologram bust (3D)” under Voice orb. A real 3D head that follows your mouse, blinks, talks with the voice and smiles with the mood. On Auto it's a man for a male voice and a woman for a female one. The hologram face you had is still there too.", try: { label: "Pick one", tab: "settings", id: "settings-look" } },
   { icon: "💇", title: "Style it like a game character", how: "Hair (dreads, long dreads, box braids, afro, high-top, mohawk, fade, waves, bun, ponytail and more), hair colour, skin, eyes, beards, glasses or a glowing visor, and cyber seams. Or 🎲 Surprise me.", try: { label: "Open the studio", tab: "settings", id: "settings-look" } },

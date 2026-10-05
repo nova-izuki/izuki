@@ -43,6 +43,16 @@
     o.lx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
+  // The 3D faces (holo3d, avatar) need a steady 30 fps even at rest — blinks and
+  // breathing at 12 fps look like a slideshow.
+  const isFace = (s) => s === "holo3d" || s === "avatar";
+  // The saved look, read once a second rather than parsed every frame.
+  let faceCache = null, faceAt = 0;
+  const savedFace = (now) => {
+    if (!faceCache || now - faceAt > 1000) { faceCache = material.avatarFromStorage ? material.avatarFromStorage() : null; faceAt = now; }
+    return faceCache;
+  };
+
   const visible = (o) => { const r=o.canvas.getBoundingClientRect();return o.canvas.isConnected && r.width>0 && r.height>0 && r.bottom>0 && r.top<innerHeight; };
 
   function visualState(o) {
@@ -68,7 +78,9 @@
     const state = o.preview ? o.physics : physics;
     if (selectedStyle !== 'liquid' && material && state) {
       // The realistic GPU look first; the 2D drawers if this phone can't.
-      if (material.drawGlassOrb && material.drawGlassOrb(ctx, SIZE, selectedStyle, reduced ? 0 : state.time, state.energy, state.waiting || 0)) return;
+      const face = isFace(selectedStyle) && material.avatarFromStorage ? { ...savedFace(now), poke: o.poke } : null;
+      const smile = (o.preview ? o.preview.mode : mode) === "speaking" ? 0.4 : 0;
+      if (material.drawGlassOrb && material.drawGlassOrb(ctx, SIZE, selectedStyle, reduced ? 0 : state.time, state.energy, state.waiting || 0, smile, face)) return;
       if (selectedStyle === 'ferrofluid' || selectedStyle === 'dew') material.drawWaterOrb(ctx,SIZE,state.time,state.energy,0,(o.preview?.mode || mode)==='thinking',state);
       else (selectedStyle === 'ripple' ? material.drawRippleOrb : material.drawConstellationOrb)(ctx,SIZE,reduced?0:state.time,state.energy);
       return;
@@ -164,7 +176,8 @@
     if (!shown.length || document.hidden) return; // woken again by add/mode/visibility
     raf = requestAnimationFrame(tick);
     // Resting: half the frames are plenty (and kinder to the battery).
-    if (now - last < (reduced ? 150 : mode === "idle" && !shown.some(o=>o.preview) ? 80 : 33)) return;
+    const steady = shown.some((o) => o.preview || isFace(o.preview ? o.preview.style : style));
+    if (now - last < (reduced ? 150 : mode === "idle" && !steady ? 80 : 33)) return;
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const pal = PALETTES[mode] || PALETTES.idle;
@@ -209,6 +222,8 @@
       if(!String(url).startsWith('blob:'))return;
       fetch(url).then(r=>r.arrayBuffer()).then(buffer=>{const envelope=motionModule?.waveEnvelope(buffer);if(generation===audioGeneration&&envelope)audioTrack={player,envelope};}).catch(()=>{});
     },
+    /** The 3D face's look changed (setup saved it): show it now. */
+    face() { faceCache = null; wake(); },
     style(value) {
       style = ["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro", "holo3d", "avatar"].includes(value) ? value : "liquid";
       try { localStorage.setItem("izuki.orbStyle", style); } catch {}
@@ -219,6 +234,13 @@
       const o = { canvas, scratch, ctx: canvas.getContext("2d"), lx: scratch.getContext("2d"), size: 0, dpr: 0 };
       orbs.add(o);
       wake();
+      // A quick tap (not a drag or a hold) pokes the 3D face: it reacts.
+      let down = null;
+      canvas.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY, at: performance.now() }; }, { passive: true });
+      canvas.addEventListener("pointerup", (e) => {
+        if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 8 && performance.now() - down.at < 350) { o.poke = Date.now(); wake(); }
+        down = null;
+      }, { passive: true });
       // A canvas that just appeared (a screen opening) starts the loop too.
       if (window.ResizeObserver) { o.observer=new ResizeObserver(wake);o.observer.observe(canvas); }
       return canvas;

@@ -571,6 +571,7 @@
   const noteVoiceGender = () => {
     const p = PEOPLE.find((x) => x.id === personId);
     try { localStorage.setItem("izuki.voiceGender", p && MALE_VOICES.includes(p.voice) ? "male" : "female"); } catch {}
+    window.IzukiOrb?.face?.();
   };
   const saveAll = () => {
     noteVoiceGender();
@@ -2050,7 +2051,7 @@
     if (s.homeCity) store.set("homeCity", String(s.homeCity));
     try {
       if (s.orbStyle) { localStorage.setItem("izuki.orbStyle", String(s.orbStyle)); window.IzukiOrb?.style(String(s.orbStyle)); }
-      if (s.avatar) localStorage.setItem("izuki.avatar", String(s.avatar));
+      if (s.avatar) { localStorage.setItem("izuki.avatar", String(s.avatar)); window.IzukiOrb?.face?.(); }
     } catch {}
     saveAll();
     render();
@@ -2398,12 +2399,13 @@
     const fields = { "av-gender": "gender", "av-hair": "hair", "av-hairColor": "hairColor", "av-skin": "skin", "av-eyes": "eyes", "av-beard": "beard", "av-glasses": "glasses" };
     for (const [id, k] of Object.entries(fields)) {
       if (look[k]) $(id).value = look[k];
-      $(id).onchange = () => { const now = load(); now[k] = $(id).value; try { localStorage.setItem("izuki.avatar", JSON.stringify(now)); } catch {} };
+      $(id).onchange = () => { const now = load(); now[k] = $(id).value; try { localStorage.setItem("izuki.avatar", JSON.stringify(now)); } catch {} window.IzukiOrb?.face?.(); };
     }
     $("av-random").onclick = () => {
       const pick = (o) => { const k = Object.keys(o); return k[Math.floor(Math.random() * k.length)]; };
       const now = { ...load(), hair: pick(F.HAIR_STYLES), hairColor: pick(F.HAIR_COLOURS), skin: pick(F.SKIN_TONES), eyes: pick(F.EYE_COLOURS), beard: Math.random() < 0.5 ? "none" : pick(F.BEARDS), glasses: Math.random() < 0.7 ? "none" : pick(F.GLASSES) };
       try { localStorage.setItem("izuki.avatar", JSON.stringify(now)); } catch {}
+      window.IzukiOrb?.face?.();
       for (const [id, k] of Object.entries(fields)) if (now[k]) $(id).value = now[k];
     };
   }).catch(() => {});
