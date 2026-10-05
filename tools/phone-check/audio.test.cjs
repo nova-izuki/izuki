@@ -24,9 +24,10 @@ function harness(callPage = false) {
     btoa: s => Buffer.from(s, 'binary').toString('base64'), atob: s => Buffer.from(s, 'base64').toString('binary'),
     setTimeout: (fn, ms) => { timers.set(++timerId, {fn, ms}); return timerId; },
     clearTimeout: id => timers.delete(id), clearInterval() {},
-    store: { get: (_, value) => value }, document: { addEventListener() {} },
+    store: { get: (_, value) => value }, document: { addEventListener() {}, querySelectorAll: () => [] },
     note() {}, bug() {}, liveSaid() {}, setOrb() {}, setMode() {}, watchBarge() {},
-    $: () => ({ replaceChildren() {} }), talking: true, readAloud: true, key: '',
+    $: () => ({ replaceChildren() {}, getBoundingClientRect: () => ({ top: 0 }), clientHeight: 0, scrollTop: 0 }),
+    el: () => ({ textContent: '', getClientRects: () => [] }), performance, setInterval: () => 0, talking: true, readAloud: true, key: '',
     muted: false, bargeOn: false, recoveries, console,
   });
   if (callPage) {
@@ -36,7 +37,7 @@ function harness(callPage = false) {
     vm.runInContext('let stopSound = null;\n' + speech + say + '\nofferAudio=(...args)=>recoveries.push(args);globalThis.test={speech:speakWithPhone,play:say,stop:()=>stopSound?.()};', ctx);
   } else {
     const voice = html.slice(html.indexOf('  let voiceOn = '), html.indexOf('  // ------------------------------------------------------------ listening'));
-    vm.runInContext(voice + '\nofferHear=(...args)=>recoveries.push(args);globalThis.test={speech:speakWithPhone,play:playAudio,speak,unlockAudio,stop:hush,muted:()=>{voiceOn=false}};', ctx);
+    vm.runInContext(voice + '\nofferHear=(...args)=>recoveries.push(args);globalThis.test={speech:speakWithPhone,play:playAudio,speak,unlockAudio,stop:hush,muted:()=>{voiceOn=false},stream:voiceStream,voice:(f)=>{geminiVoice=f;}};', ctx);
   }
   return { ctx, player, synth, timers, recoveries, spoken, test:ctx.test,
     behavior: v => behavior=v,
@@ -75,6 +76,34 @@ function harness(callPage = false) {
       assert.equal(h.player.src,'blob:playing-reply','unlock must not replace reply audio');
       h.test.muted();await h.test.speak('Muted reply.');
       assert.equal(h.recoveries.length,1,'saved mute needs visible per-reply recovery');
+    }
+    if(!callPage) {
+      // A call's reply: the first sentence is voiced while the rest is still
+      // being written, the rest as one more request — never more than two.
+      const tick = () => new Promise((r) => setImmediate(r));
+      h=harness(false); const asked=[];
+      h.test.voice(async (w) => { asked.push(w); return 'blob:' + asked.length; });
+      const s=h.test.stream();
+      s.feed('Sure thing');
+      s.feed('Sure thing, it is sunny today. And tomorrow loo');
+      assert.deepEqual(asked,['Sure thing, it is sunny today.'],'first sentence goes to the voice at once');
+      s.feed('Sure thing, it is sunny today. And tomorrow looks warm too, about 24.');
+      assert.equal(asked.length,1,'later text waits for the end');
+      done=s.end('Sure thing, it is sunny today. And tomorrow looks warm too, about 24.');
+      await tick(); await tick();
+      assert.deepEqual(asked,['Sure thing, it is sunny today.','And tomorrow looks warm too, about 24.'],'the rest is one more request');
+      assert.equal(h.player.src,'blob:1','the first piece plays first');
+      h.player.onended(); await tick(); await tick();
+      assert.equal(h.player.src,'blob:2','then the rest');
+      h.player.onended(); await done;
+      // A short reply is one request; a stopped stream stops.
+      h=harness(false); asked.length=0;
+      h.test.voice(async (w) => { asked.push(w); return 'blob:x'; });
+      const one=h.test.stream(); one.feed('Hi there.'); done=one.end('Hi there.');
+      await tick(); assert.deepEqual(asked,['Hi there.']);
+      h.test.stop(); await done;
+      const gone=h.test.stream(); gone.cancel(); await gone.end('Never said.');
+      assert.deepEqual(asked,['Hi there.'],'a cancelled stream asks for nothing');
     }
     console.log((callPage?'PC call':'Phone app')+': synchronous tap playback, autoplay refusal, stalled TTS, mute, stop and cleanup pass.');
   }

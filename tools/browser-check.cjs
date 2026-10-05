@@ -155,8 +155,10 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   await pause(150);
   assert(await evaluate('document.querySelector(".izk-finder-results").textContent.includes("Screen control")'));
   await evaluate('[...document.querySelectorAll(".izk-finder-results button")].find(b=>b.textContent.startsWith("Screen control")).click()');
-  await pause(700);
-  assert.equal(await evaluate('document.activeElement.id'), 'settings-execution', 'feature finder must navigate and focus the section');
+  // The settings tab loads lazily: wait for it (a busy PC can take a few seconds).
+  let focused = '';
+  for (let i = 0; i < 60 && focused !== 'settings-execution'; i++) { await pause(100); focused = await evaluate('document.activeElement.id'); }
+  assert.equal(focused, 'settings-execution', 'feature finder must navigate and focus the section');
   await evaluate('window.dispatchEvent(new KeyboardEvent("keydown",{key:"k",ctrlKey:true,bubbles:true}))');
   assert(await evaluate('document.querySelector(".izk-finder").open'), 'Ctrl+K should open the finder');
   fs.writeFileSync(path.join(os.tmpdir(), 'izuki-desktop-glass-preview.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' })).data, 'base64'));

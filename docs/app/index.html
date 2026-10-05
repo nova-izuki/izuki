@@ -196,6 +196,7 @@
   #live-status { color: var(--muted); font-size: 14.5px; min-height: 1.4em; }
   #live-heard { font-size: 20px; line-height: 1.35; color: var(--ink); font-weight: 600; }
   #live-said { font-size: 16px; color: #d8cfff; max-height: 7.5em; overflow: hidden; }
+  #live-said .next { opacity: 0.32; transition: opacity 0.2s; }
   .live-bar { display: flex; gap: 26px; align-items: flex-start; }
   .round { display: flex; flex-direction: column; align-items: center; gap: 7px; border: 0; background: none; color: var(--ink); font-size: 13px; }
   .round i { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, 0.1); border: 1px solid var(--line); }
@@ -897,6 +898,7 @@
       `You are ${person().name}, the user's Izuki — their AI companion on their phone: ${person().style}, like a close friend who's brilliant at everything. Stay in character.`,
       "Keep replies short and natural (a few sentences) unless they ask for detail. Plain text; a short dash list only when it really helps; an emoji now and then at most.",
       "What you write may be read aloud, so write the way a person talks.",
+      talking ? "You're on a live voice call right now: answer in one to three short spoken sentences, the most important thing first. No lists, no markdown, no emoji." : "",
       "Respect the requested device. Phone means phone, never silently PC. If a screen action has no clear device, ask which device and do not claim it was done. iPhone web pages cannot unlock or freely control other apps.",
       `It is now ${now.toLocaleString([], { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })} on the user's phone.`,
       `If they ask to be reminded of something, confirm it and add on its own line at the very end: [REMIND YYYY-MM-DD HH:MM | what to remind them] in their local time, 24-hour clock ("in 20 minutes" is ${stamp(in20)}).`,
@@ -1449,7 +1451,7 @@
     const contents = history.slice(-16).map((m) => ({ role: m.role, parts: [{ text: m.text }] }));
     contents.push({ role: "user", parts });
 
-    let reply = "";
+    let reply = "", early = null;
     try {
       // Accounts and apps, and PC work: the PC has the signed-in browser and
       // the apps lane, so go straight there — don't let a small model chat
@@ -1493,10 +1495,12 @@
       // Something only Gemini can open (a PDF, a voice clip, a video): Gemini answers.
       const geminiOnly = files.some((a) => !/^image\//.test(a.type) && a.text == null);
       if (geminiOnly && !key) throw new Error("To look at that kind of file, add a free Gemini key in Settings (pictures and text files work with any brain).");
+      // On a call, Izuki starts talking as soon as the first sentence is written.
+      early = talking && voiceOn && !files.length ? voiceStream() : null;
       reply = await (audio || geminiOnly ? gemini : think)(contents, (t) => {
         const heard = t.match(/^\s*\[HEARD:\s*([^\]]*)\]?/i);
         if (heard) { me.textContent = heard[1].trim() || "🎙️"; liveHeard(heard[1].trim()); t = t.slice(heard[0].length); }
-        if (!/^\s*\[?P?C?\]?\s*$/i.test(t)) out.textContent = shown(t) || "…";
+        if (!/^\s*\[?P?C?\]?\s*$/i.test(t)) { out.textContent = shown(t) || "…"; early?.feed(shown(t)); }
         log.scrollTop = log.scrollHeight;
       });
       const heard = reply.match(/^\s*\[HEARD:\s*([^\]]*)\]\s*/i);
@@ -1523,8 +1527,9 @@
       history.push({ role: "model", text: reply });
       saveAll();
       setStatus("");
-      await speak(reply);
+      await speak(reply, early);
     } catch (e) {
+      early?.cancel();
       out.remove();
       bubble("izuki", e.message || "I couldn't reach my AI brain. Check your internet and try again.", { error: true });
       note("reply failed: " + (e.message || e));
@@ -1668,9 +1673,18 @@
       const synth = speechSynthesis;
       const pieces = (t.match(/[^.!?…]+[.!?…]*\s*/g) || [t]).map((s) => s.trim()).filter(Boolean);
       let i = 0, finished = false, startGuard = 0;
+      // Where the voice is: word boundaries when the phone reports them, else the time.
+      let base = 0, at = 0, pieceAt = 0, bounds = false;
+      const stopCaption = followCaption(t, () => {
+        if (!pieceAt) return base / t.length;
+        const len = (pieces[i - 1] || "").length;
+        const into = bounds ? at : Math.min(len, ((performance.now() - pieceAt) / 1000) * 14);
+        return (base + into) / t.length;
+      });
       const finish = () => {
         if (finished) return;
         finished = true;
+        stopCaption();
         clearTimeout(guard);
         clearTimeout(startGuard);
         if (stopSound === stop) stopSound = null;
@@ -1683,11 +1697,14 @@
       const next = () => {
         if (finished) return;
         if (i >= pieces.length) return finish();
+        if (i > 0) base += pieces[i - 1].length + 1;
+        pieceAt = 0; at = 0;
         const u = (utterance = new SpeechSynthesisUtterance(pieces[i++]));
         u.rate = 1.05;
         clearTimeout(startGuard);
         startGuard = setTimeout(blocked, 3000);
-        u.onstart = () => clearTimeout(startGuard);
+        u.onstart = () => { clearTimeout(startGuard); pieceAt = performance.now(); };
+        u.onboundary = (e) => { bounds = true; at = e.charIndex; };
         u.onend = () => { clearTimeout(startGuard); next(); };
         u.onerror = (e) => { if (e.error === "interrupted" || e.error === "canceled") finish(); else { note("phone voice error: " + e.error); blocked(); } };
         try { synth.speak(u); } catch { blocked(); }
@@ -1706,10 +1723,12 @@
   function playAudio(url, t, onBlocked = () => offerHear(url, t)) {
     return new Promise((resolve) => {
       let finished = false, guard = 0;
+      const stopCaption = followCaption(t, () => (isFinite(player.duration) && player.duration > 0 ? player.currentTime / player.duration : 0));
       const finish = () => {
         if (finished) return;
         finished = true;
         clearTimeout(guard);
+        stopCaption();
         player.onended = player.onerror = player.onloadedmetadata = null;
         if (stopSound === stop) stopSound = null;
         resolve();
@@ -1718,6 +1737,7 @@
         if (finished) return;
         finished = true;
         clearTimeout(guard);
+        stopCaption();
         player.onended = player.onerror = player.onloadedmetadata = null;
         if (stopSound === stop) stopSound = null;
         note("reply audio failed (" + why + "), phone voice instead");
@@ -1750,34 +1770,135 @@
 
   let speakSeq = 0;
   let pendingVoice = null, manualPlayback = false;
-  async function speak(t) {
+  /**
+   * Say a reply. `stream` is a voiceStream already speaking it while it was
+   * written (a call); it's finished with the rest of the words.
+   */
+  async function speak(t, stream = null) {
     const wanted = talking || readAloud || fromSiri;
     const siri = fromSiri;
     fromSiri = false;
-    if (!wanted || !t) return;
+    if (!wanted || !t) return stream?.cancel();
     if (!voiceOn) {
+      stream?.cancel();
       liveSaid(t);
       offerHear(null, t.replace(/[*_#`]/g, ""));
       return;
     }
+    const s = stream || voiceStream({ siri });
+    if (!stream) s.feed(t);
+    await s.end(t);
+  }
+
+  /**
+   * A reply spoken in two pieces: its first sentence goes to the voice the
+   * moment it's written, and the rest is fetched while that plays — so Izuki
+   * starts talking in a moment instead of after the whole answer and the
+   * whole recording. Never more than two voice requests a reply (free keys
+   * have small allowances). The call's caption follows the voice.
+   */
+  function voiceStream(opts = {}) {
     clearVoiceRecovery();
     const my = ++speakSeq;
-    const words = t.replace(/[*_#`]/g, "");
-    liveSaid(t);
-    setOrb("speaking");
-    const url = await geminiVoice(words);
-    if (my !== speakSeq) { if (url) URL.revokeObjectURL(url); return; } // stopped meanwhile
-    note(url ? "speaking (Gemini voice)" : "speaking (phone voice)");
-    // Opened by Siri and not touched yet: an iPhone won't let a web page
-    // make a sound before a tap. Try anyway (Android often allows it), and
-    // if it's refused, the answer's voice is one tap away.
-    if (!url) {
-      if (siri && !tapped) return offerHear(null, words);
-      return speakWithPhone(words, () => offerHear(null, words));
+    const pieces = [];
+    let first = "", closed = false, cancelled = false, ended = false, kick = null, playing = null;
+    const alive = () => my === speakSeq && !cancelled;
+    const wake = () => { const k = kick; kick = null; k?.(); };
+    const push = (w) => {
+      w = w.replace(/[*_#`]/g, "").trim();
+      if (w && alive() && !ended) pieces.push({ words: w, url: geminiVoice(w) });
+      if (!playing && pieces.length) playing = run();
+      wake();
+    };
+    async function run() {
+      let i = 0;
+      while (alive()) {
+        if (i >= pieces.length) {
+          if (closed) break;
+          await new Promise((r) => (kick = r));
+          continue;
+        }
+        const p = pieces[i++];
+        setOrb("speaking");
+        const url = await p.url;
+        if (!alive()) { if (url) URL.revokeObjectURL(url); break; }
+        note(url ? "speaking (Gemini voice)" : "speaking (phone voice)");
+        const rest = () => pieces.slice(i - 1).map((x) => x.words).join(" ");
+        // Opened by Siri and not touched yet: an iPhone won't let a web page
+        // make a sound before a tap — the answer's voice is one tap away.
+        if (!url && opts.siri && !tapped) { offerHear(null, rest()); break; }
+        let blocked = false;
+        if (url) {
+          await playAudio(url, p.words, () => {
+            blocked = true;
+            const last = closed && i === pieces.length;
+            if (last) offerHear(url, p.words); else { URL.revokeObjectURL(url); offerHear(null, rest()); }
+          });
+          if (!blocked) URL.revokeObjectURL(url);
+        } else {
+          await speakWithPhone(p.words, () => { blocked = true; offerHear(null, rest()); });
+        }
+        if (blocked) break;
+      }
+      ended = true;
+      for (const p of pieces.slice(i)) p.url.then((u) => u && URL.revokeObjectURL(u));
     }
-    let blocked = false;
-    await playAudio(url, words, () => { blocked = true; offerHear(url, words); });
-    if (!blocked) URL.revokeObjectURL(url);
+    return {
+      /** The reply so far, while it's written: the first full sentence starts the voice. */
+      feed(text) {
+        if (closed || first || !alive()) return;
+        const m = text.match(/^[\s\S]{15,}?[.!?…](?=\s)/);
+        if (m && text.slice(m[0].length).trim().length >= 6) { first = m[0].trim(); push(first); }
+      },
+      /** The whole reply: say whatever hasn't been said, and wait till it's done. */
+      async end(text) {
+        if (!closed) {
+          let rest = text;
+          if (first) { const at = text.indexOf(first); rest = at >= 0 ? text.slice(at + first.length) : ""; }
+          closed = true;
+          push(rest);
+        }
+        await playing;
+      },
+      cancel() { cancelled = true; closed = true; wake(); },
+    };
+  }
+
+  /**
+   * The call's caption follows the voice: the words light up as they're said
+   * (dim until then), and a long answer scrolls along with them.
+   * `progress` is 0…1, or null for "estimate from the time".
+   */
+  let captionTimer = 0;
+  function followCaption(words, progress) {
+    clearInterval(captionTimer);
+    try { window.IzukiTv?.said?.(words); } catch {}
+    const box = $("live-said");
+    const said = el("span", "said"), next = el("span", "next");
+    box.replaceChildren(said, next);
+    box.scrollTop = 0;
+    const began = performance.now();
+    let upTo = -1;
+    const draw = () => {
+      let p = progress();
+      if (p == null || !isFinite(p)) p = ((performance.now() - began) / 1000) * 15 / Math.max(1, words.length);
+      let n = Math.round(Math.min(1, Math.max(0, p)) * words.length);
+      if (n > 0) { const sp = words.indexOf(" ", n); n = sp < 0 ? words.length : sp; } // whole words
+      if (n === upTo) return;
+      upTo = n;
+      said.textContent = words.slice(0, n);
+      next.textContent = words.slice(n);
+      const r = said.getClientRects();
+      const last = r[r.length - 1];
+      if (last) box.scrollTop = Math.max(0, last.bottom - box.getBoundingClientRect().top + box.scrollTop - box.clientHeight * 0.6);
+    };
+    draw();
+    captionTimer = setInterval(draw, 90);
+    return () => {
+      clearInterval(captionTimer);
+      said.textContent = words;
+      next.textContent = "";
+    };
   }
 
   /** The phone won't play sound before a tap: the answer, out loud, in one tap — or talk back. */
@@ -1901,31 +2022,47 @@
 
   // The microphone stays open for the whole call (opened from the tap), so
   // the phone asks only once and each turn starts at once.
-  let callMic = null, analyser = null;
+  let callMic = null, analyser = null, meterCtx = null;
   const level = new Float32Array(1024);
   async function openMic() {
     if (callMic && callMic.getAudioTracks().some((t) => t.readyState === "live")) return callMic;
     callMic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-    analyser = null;
-    const ac = ensureAudioCtx();
-    if (ac) {
-      try {
-        const src = ac.createMediaStreamSource(callMic);
-        analyser = ac.createAnalyser();
-        analyser.fftSize = 1024;
-        src.connect(analyser);
-      } catch { analyser = null; }
-    }
+    buildMeter();
     return callMic;
+  }
+  /**
+   * The loudness meter that notices when you start and stop talking. It has
+   * its own audio context, made after the mic opened: a context made before
+   * hears only silence on some phones, and playing a reply could put a shared
+   * one to sleep — and then the call waited for a tap instead of listening.
+   */
+  function buildMeter() {
+    analyser = null;
+    try { meterCtx?.close(); } catch {}
+    meterCtx = null;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC || !callMic) return;
+    try {
+      meterCtx = new AC();
+      const src = meterCtx.createMediaStreamSource(callMic);
+      analyser = meterCtx.createAnalyser();
+      analyser.fftSize = 1024;
+      src.connect(analyser);
+      if (meterCtx.state !== "running") meterCtx.resume().catch(() => {});
+    } catch { analyser = null; }
   }
   function closeMic() {
     try { callMic?.getTracks().forEach((t) => t.stop()); } catch {}
     callMic = null;
     analyser = null;
+    try { meterCtx?.close(); } catch {}
+    meterCtx = null;
   }
   /** How loud the mic is right now (0…1), or -1 if it can't be measured. */
   function loudness() {
-    if (!analyser || !audioCtx || audioCtx.state !== "running") return -1;
+    if (!analyser || !meterCtx) return -1;
+    // Asleep (a reply played, the phone paused it): wake it and measure next time.
+    if (meterCtx.state !== "running") { meterCtx.resume().catch(() => {}); return -1; }
     analyser.getFloatTimeDomainData(level);
     let sum = 0;
     for (const v of level) sum += v * v;
@@ -1965,16 +2102,26 @@
     };
     rec.start(250);
     setOrb("listening");
-    setStatus(analyser ? "" : "Listening… tap the orb when you're done");
+    setStatus("");
     // Hands-free: it notices when you start talking and when you've finished.
     const began = performance.now();
-    let floor = 0.006, spoke = 0, quiet = 0;
+    let floor = 0.006, spoke = 0, quiet = 0, blind = 0, flat = 0, rebuilt = false;
     const vad = setInterval(() => {
       if (rec.state !== "recording") return clearInterval(vad);
-      const v = loudness();
-      if (v < 0) return; // can't measure here: a tap on the orb finishes
-      IzukiOrb.level(Math.min(1, v * 9));
       const took = performance.now() - began;
+      if (took > 45000) return rec.stop();
+      const v = loudness();
+      if (v < 0) {
+        // Can't measure for a while: a tap on the orb finishes instead.
+        if ((blind += 80) === 2400) setStatus("Listening… tap the orb when you're done");
+        return;
+      }
+      if (blind >= 2400) setStatus("");
+      blind = 0;
+      // A meter that hears perfect silence is broken, not a quiet room: rebuild it once.
+      flat = v === 0 ? flat + 80 : 0;
+      if (flat >= 1500 && !rebuilt) { rebuilt = true; flat = 0; buildMeter(); return; }
+      IzukiOrb.level(Math.min(1, v * 9));
       if (took < 350) { floor = Math.max(floor, v); return; }
       if (v > Math.max(0.015, floor * 2.2)) {
         spoke += 80; quiet = 0;
@@ -1983,9 +2130,8 @@
         quiet += 80;
         floor = floor * 0.98 + v * 0.02;
       }
-      if (spoke >= 240 && quiet >= 1300) rec.stop();             // you finished a sentence
+      if (spoke >= 240 && quiet >= 1100) rec.stop();             // you finished a sentence
       else if (spoke < 240 && took > 15000) { discard = true; rec.stop(); } // quiet: start a fresh one
-      else if (took > 45000) rec.stop();
     }, 80);
   }
 
