@@ -436,7 +436,7 @@ export function drawGlassOrb(ctx, size, style, time, energy, thinking, mood = 0,
   // The 3D faces: a hologram bust, or a full 3D character (face3d.js).
   if (style === "holo3d" || style === "avatar") {
     const f = face || avatarFromStorage();
-    return drawFace3D(ctx, size, { mode: style === "avatar" ? "avatar" : "holo", gender: f.gender, look: f.look, avatar: f.avatar, time, energy, thinking, mood });
+    return drawFace3D(ctx, size, { mode: style === "avatar" ? "avatar" : "holo", gender: f.gender, look: f.look, avatar: f.avatar, poke: f.poke, time, energy, thinking, mood });
   }
   if (unsupported || !(style in STYLES)) return false;
   try {

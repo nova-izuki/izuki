@@ -91,6 +91,8 @@ export function VoiceSphere({
   const [style, setStyle] = useState<Settings["orb_style"]>("liquid");
   const [response, setResponse] = useState(1);
   const [face, setFace] = useState<FaceOptions | null>(null);
+  const [poke, setPoke] = useState(0);
+  const pressed = useRef<{ x: number; y: number; at: number } | null>(null);
   useEffect(() => {
     let alive = true;
     const refresh = () => void api.getSettings().then((s) => { if (alive) { setStyle(s.orb_style || "liquid"); setResponse(s.orb_response ?? 1); setFace(faceFor(s)); } }).catch(() => {});
@@ -133,10 +135,18 @@ export function VoiceSphere({
           transition={{ type: "spring", stiffness: 260, damping: 24 }}
           className="group fixed"
           style={{ left: box.x, top: box.y, width: size, height: size, cursor: "grab" }}
-          onPointerDown={(e) => begin(e, "move")}
+          onPointerDown={(e) => {
+            pressed.current = { x: e.clientX, y: e.clientY, at: performance.now() };
+            begin(e, "move");
+          }}
+          onPointerUp={(e) => {
+            // A tap, not a drag: the 3D face reacts.
+            const p = pressed.current;
+            if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) < 5 && performance.now() - p.at < 350) setPoke(Date.now());
+          }}
           onWheel={onWheel}
         >
-          <SphereCanvas state={state as Exclude<OrbState, "hidden">} demo={demo} size={size} style={style} response={response} face={face} />
+          <SphereCanvas state={state as Exclude<OrbState, "hidden">} demo={demo} size={size} style={style} response={response} face={face ? { ...face, poke } : null} />
           <button
             type="button"
             aria-label="Dismiss"

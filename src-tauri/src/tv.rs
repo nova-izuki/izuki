@@ -377,6 +377,24 @@ pub fn parse(said: &str) -> Option<TvAct> {
     None
 }
 
+/// "What's on my TV?", "what am I watching on the TV?"
+pub fn asks_what_is_on(said: &str) -> bool {
+    let low = said.to_lowercase();
+    ["what's on", "whats on", "what is on", "what's playing", "what is playing", "what am i watching"].iter().any(|w| low.contains(w))
+        && (low.contains("tv") || low.contains("television"))
+}
+
+/// What's open on the TV right now ("Netflix", "the home screen"). Roku only.
+pub fn now_on() -> Option<String> {
+    let host = crate::state::try_store()?.settings().tv_host.trim().to_string();
+    if host.is_empty() || make(&host).is_some() {
+        return None;
+    }
+    let xml = client().ok()?.get(format!("{}/query/active-app", base(&host))).send().ok()?.text().ok()?;
+    let name = xml.split("<app").nth(1)?.split('>').nth(1)?.split('<').next()?.replace("&amp;", "&").trim().to_string();
+    Some(if name.is_empty() || name == "Roku" { "the home screen".into() } else if name == "Izuki" { "Izuki".into() } else { name })
+}
+
 /// Is Izuki's own channel the one open on the TV? (A side-loaded channel
 /// is "dev".) Checked at most every 8 s — it's asked on every orb change.
 fn izuki_open(host: &str) -> bool {
@@ -578,6 +596,10 @@ fn smart(host: &str, said: &str) -> Result<String> {
 
 /// Do a TV request. What to say back, or why it couldn't.
 pub fn run(said: &str) -> Result<String> {
+    // "What's on my TV?" — read it, press nothing.
+    if asks_what_is_on(said) {
+        return now_on().map(|n| format!("Your TV is on {n}.")).ok_or_else(|| anyhow!("I can't see what's on your TV right now."));
+    }
     let Some(act) = parse(said) else {
         // Not a quick command: on a Roku, let the AI work it out.
         let host = host().ok_or_else(|| anyhow!("I couldn't find a TV on your Wi-Fi."))?;
@@ -714,6 +736,8 @@ mod tests {
         assert_eq!(best_app(&installed, "youtube tv").map(|a| a.0), Some("195316".into()));
         assert_eq!(best_app(&installed, "live tv").map(|a| a.0), Some("tvinput.dtv".into()));
         assert_eq!(best_app(&installed, "spotify"), None);
+        assert!(asks_what_is_on("what's on my tv?"));
+        assert!(!asks_what_is_on("open netflix on the tv"));
         assert!(vague("something funny for the kids"));
         assert!(vague("a dinosaur cartoon"));
         assert!(!vague("ice age 3"));

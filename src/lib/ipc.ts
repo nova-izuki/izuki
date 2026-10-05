@@ -405,6 +405,8 @@ export const api = {
   /** Show the orb's state (and words) on the Izuki TV channel, if it's open. */
   /** True when the TV is saying it (so the PC stays quiet). */
   tvShow: (state: string, text?: string) => call<boolean>("tv_show", { state, text: text ?? null }, () => false),
+  /** What's open on the TV (Roku), for the status screen. */
+  tvNow: () => call<string | null>("tv_now", undefined, () => null),
   /** The Izuki channel on the Roku: its version there, and this app's. */
   tvChannelStatus: () => call<{ installed: string; latest: string; roku: boolean }>("tv_channel_status", undefined, () => ({ installed: "", latest: "", roku: false })),
   /** Put this app's channel on the Roku (password: its developer password, saved here). */

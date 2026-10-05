@@ -4,6 +4,8 @@ export interface FaceOptions {
   gender: Gender;
   look?: { x: number; y: number } | null;
   avatar: AvatarOptions;
+  /** Tapped (a new value each time): the 3D face reacts. */
+  poke?: number;
 }
 
 export function drawGlassOrb(

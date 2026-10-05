@@ -27,6 +27,8 @@ export function drawFace3D(
     mood?: number;
     look?: { x: number; y: number } | null;
     avatar?: AvatarOptions;
+    /** A new value (e.g. a timestamp) each time it's tapped: it reacts. */
+    poke?: number;
   },
 ): boolean;
 

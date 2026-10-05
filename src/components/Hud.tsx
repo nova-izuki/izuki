@@ -76,6 +76,8 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
   const [held, setHeld] = useState(false);
   /** What was just asked — shown at once, until Izuki starts answering. */
   const [asked, setAsked] = useState<string | null>(null);
+  /** What's on the TV (Roku), if there is one. */
+  const [tvNow, setTvNow] = useState<string | null>(null);
   useEffect(() => {
     showAsked = (label) => setAsked(label);
     const off = on<boolean>(EV.speaking, (talking) => talking && setAsked(null));
@@ -95,6 +97,7 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
     };
     look();
     void api.laterList().then((l) => setLater(l.filter((i) => !i.done).slice(0, 5))).catch(() => undefined);
+    void api.tvNow().then(setTvNow).catch(() => undefined);
     const t = setInterval(look, 2000);
     return () => clearInterval(t);
   }, [data]);
@@ -185,6 +188,31 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
                       <SkipForward size={14} />
                     </HudButton>
                   </div>
+                </Panel>
+              )}
+              {tvNow && (
+                <Panel title="ON YOUR TV">
+                  <div className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-[14px] text-cyan-50">📺 {tvNow}</span>
+                    {[
+                      ["⏯", "Play or pause", "pause the tv"],
+                      ["🔉", "Quieter", "turn the tv down"],
+                      ["🔊", "Louder", "turn the tv up"],
+                      ["🏠", "Home", "go home on the tv"],
+                    ].map(([icon, label, say]) => (
+                      <HudButton key={label} label={label} onClick={() => void api.tvDo(say).catch(() => undefined)}>
+                        <span className="text-[13px] leading-none">{icon}</span>
+                      </HudButton>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    data-izk-hit
+                    onClick={() => ask("What's good to watch tonight on my TV? Pick from the apps I have.")}
+                    className="pointer-events-auto mt-1 w-full rounded-[6px] text-left text-[12px] text-cyan-100/70 transition hover:bg-cyan-300/10 hover:text-cyan-50"
+                  >
+                    🍿 What should I watch?
+                  </button>
                 </Panel>
               )}
             </motion.div>

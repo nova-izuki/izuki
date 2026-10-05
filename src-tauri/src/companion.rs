@@ -144,7 +144,7 @@ const CHOOSE_DEVICE: &str = "Do you mean your phone or your PC? Repeat the actio
 
 pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str)) -> Reply {
     // The TV, from the phone, Telegram or Discord too: "open Netflix on the TV".
-    if crate::tv::parse(said).is_some() {
+    if crate::tv::parse(said).is_some() || crate::tv::asks_what_is_on(said) {
         push("user", said);
         status("Talking to your TV…");
         let text = crate::tv::run(said).unwrap_or_else(|e| e.to_string());

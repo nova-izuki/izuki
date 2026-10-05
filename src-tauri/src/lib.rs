@@ -294,6 +294,7 @@ pub fn run() {
             commands::tv_do,
             commands::tv_show,
             commands::tv_channel_status,
+            commands::tv_now,
             commands::tv_channel_update,
             commands::chat_allow_last,
             commands::ext_status,

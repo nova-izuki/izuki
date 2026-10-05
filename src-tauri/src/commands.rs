@@ -892,6 +892,12 @@ pub async fn tv_channel_update(password: Option<String>) -> R<String> {
     .await?
 }
 
+/// What's on the TV now, for the status screen (Roku; None otherwise).
+#[tauri::command]
+pub async fn tv_now() -> Option<String> {
+    blocking(crate::tv::now_on).await.ok().flatten()
+}
+
 /// The orb's state and words, to the Izuki channel on the TV (if it's open).
 #[tauri::command]
 pub async fn tv_show(state: String, text: Option<String>) -> bool {

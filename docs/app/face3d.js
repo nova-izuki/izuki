@@ -42,12 +42,12 @@ const smax = (a, b, k) => -smin(-a, -b, k);
 const BODY = {
   male: {
     cr: [0.69, 0.8, 0.84], fw: 0.5, jawX: 0.35, jawY: -0.6, jawR: [0.17, 0.19, 0.3], chin: [0.19, 0.13, 0.16], chinZ: 0.42,
-    brow: 0.075, browZ: 0.575, eyeR: 0.102, noseZ: 0.92, noseR: 0.044, tipR: 0.066, lipW: 0.17, ulip: 0.028, llip: 0.036,
+    brow: 0.075, browZ: 0.575, eyeR: 0.102, noseZ: 0.92, noseR: 0.044, tipR: 0.066, lipW: 0.165, ulip: 0.026, llip: 0.034,
     cheek: [0.15, 0.1, 0.14], cheekY: -0.02, ear: [0.05, 0.2, 0.12], neck: [0.31, 0.75, 0.3], sh: [1.34, 0.46, 0.55], arch: 0.012,
   },
   female: {
     cr: [0.66, 0.79, 0.82], fw: 0.46, jawX: 0.26, jawY: -0.56, jawR: [0.14, 0.17, 0.26], chin: [0.13, 0.11, 0.14], chinZ: 0.39,
-    brow: 0.05, browZ: 0.555, eyeR: 0.108, noseZ: 0.86, noseR: 0.033, tipR: 0.052, lipW: 0.155, ulip: 0.036, llip: 0.046,
+    brow: 0.05, browZ: 0.555, eyeR: 0.108, noseZ: 0.86, noseR: 0.033, tipR: 0.052, lipW: 0.152, ulip: 0.034, llip: 0.044,
     cheek: [0.16, 0.11, 0.15], cheekY: 0.01, ear: [0.045, 0.18, 0.11], neck: [0.245, 0.75, 0.24], sh: [1.06, 0.4, 0.44], arch: 0.03,
   },
 };
@@ -57,44 +57,57 @@ const MOUTH = -0.47;
 function bodySDF(x, y, z, B) {
   const ax = Math.abs(x);
   let d = y > -1.25 ? ell(x, y, z, 0, 0.32, -0.08, B.cr[0], B.cr[1], B.cr[2]) : 9;
-  if (y < 0.75 && y > -1.3) {
+  // (Each part is only worked out where it can reach — its size plus its blend.)
+  if (y < 0.95 && y > -1.3) {
     // The face tapers from the cheekbones down to the chin — a V, not a box.
-    d = smin(d, ell(x, y, z, 0, -0.16, 0.12, B.fw * (1 - 0.1 * clamp((-0.1 - y) / 0.7, 0, 1)), 0.72, 0.6), 0.22);
+    d = smin(d, ell(x, y, z, 0, -0.16, 0.12, B.fw * (1 - 0.1 * clamp((-0.1 - y) / 0.7, 0, 1)), 0.72, 0.6), 0.32);
     if (y < -0.1) {
       // The jawline: from the angle of the jaw (under the ear) forward to the chin.
       d = smin(d, cone(ax, y, z, B.jawX + 0.05, B.jawY + 0.06, -0.2, 0.1, -0.8, B.chinZ - 0.07, B.jawR[0] * 0.42, B.chin[0] * 0.5), 0.22);
       d = smin(d, ell(x, y, z, 0, -0.79, B.chinZ, B.chin[0], B.chin[1], B.chin[2]), 0.14);
     }
-    if (z > 0.15) {
-      if (y > -0.25 && y < 0.25) d = smin(d, ell(ax, y, z, 0.35, B.cheekY, 0.4, B.cheek[0], B.cheek[1], B.cheek[2]), 0.12);
+    if (z > -0.1) {
+      if (y > -0.35 && y < 0.35) d = smin(d, ell(ax, y, z, 0.35, B.cheekY, 0.4, B.cheek[0], B.cheek[1], B.cheek[2]), 0.12);
       // The soft fullness of the cheek between the cheekbone and the jaw.
-      if (y > -0.7 && y < 0.0) d = smin(d, ell(ax, y, z, 0.29, -0.34, 0.3, 0.17, 0.2, 0.22), 0.16);
-      if (y > 0.0 && y < 0.45) {
-        d = smin(d, ell(x, y, z, 0, 0.25, B.browZ, 0.46, B.brow, 0.13), 0.1);
-        d = smax(d, -ell(ax, y, z, EYE[0], 0.11, 0.7, 0.16, 0.1, 0.16), 0.07);
+      if (y > -0.8 && y < 0.1) d = smin(d, ell(ax, y, z, 0.29, -0.34, 0.3, 0.17, 0.2, 0.22), 0.16);
+      if (y > -0.15 && y < 0.5) {
+        d = smin(d, ell(x, y, z, 0, 0.25, B.browZ, 0.5, B.brow, 0.13), 0.14);
+        d = smax(d, -ell(ax, y, z, EYE[0], 0.11, 0.7, 0.15, 0.095, 0.16), 0.1);
       }
-      if (y > -0.05 && y < 0.25) d = smin(d, sph(ax, y, z, EYE[0], EYE[1], EYE[2], B.eyeR), 0.015);
-      if (ax < 0.25 && y > -0.36 && y < 0.25) {
-        d = smin(d, cone(x, y, z, 0, 0.12, 0.66, 0, -0.19, B.noseZ - 0.03, B.noseR * 0.8, B.noseR), 0.06);
-        d = smin(d, ell(x, y, z, 0, -0.22, B.noseZ - 0.035, B.tipR, 0.062, 0.068), 0.04);
-        d = smin(d, ell(ax, y, z, 0.07, -0.262, 0.75, B.tipR * 0.72, 0.042, 0.055), 0.03);
+      if (y > -0.1 && y < 0.3) d = smin(d, sph(ax, y, z, EYE[0], EYE[1], EYE[2], B.eyeR), 0.015);
+      if (ax < 0.3 && y > -0.42 && y < 0.3) {
+        d = smin(d, cone(x, y, z, 0, 0.12, 0.66, 0, -0.19, B.noseZ - 0.035, B.noseR * 0.75, B.noseR), 0.08);
+        d = smin(d, ell(x, y, z, 0, -0.215, B.noseZ - 0.045, B.tipR * 0.9, 0.055, 0.058), 0.05);
+        d = smin(d, ell(ax, y, z, 0.062, -0.25, 0.735, B.tipR * 0.62, 0.038, 0.048), 0.05);
       }
-      if (ax < 0.3 && y > -0.62 && y < -0.33) {
-        d = smin(d, ell(x, y, z, 0, -0.435, 0.645, B.lipW, B.ulip, 0.07), 0.04);
-        d = smin(d, ell(x, y, z, 0, -0.51, 0.625, B.lipW * 0.88, B.llip, 0.07), 0.04);
+      if (ax < 0.32 && y > -0.68 && y < -0.3) {
+        d = smin(d, ell(x, y, z, 0, -0.435, 0.625, B.lipW, B.ulip, 0.055), 0.05);
+        d = smin(d, ell(x, y, z, 0, -0.508, 0.607, B.lipW * 0.86, B.llip, 0.055), 0.05);
         d = smax(d, -ell(x, y, z, 0, MOUTH, 0.75, B.lipW * 0.95, 0.007, 0.08), 0.008);
       }
     }
     if (ax > 0.5 && y > -0.3 && y < 0.35 && z < 0.2) d = smin(d, ell(ax, y, z, 0.655, 0.03, -0.1, B.ear[0], B.ear[1], B.ear[2]), 0.05);
   }
   if (y < -0.25) {
-    const torso = smin(ell(x, y, z, 0, -1.05, -0.1, B.neck[0], B.neck[1], B.neck[2]), y < -1.1 ? ell(x, y, z, 0, -1.82, -0.08, B.sh[0], B.sh[1], B.sh[2]) : 9, 0.35);
+    const torso = smin(ell(x, y, z, 0, -1.05, -0.1, B.neck[0], B.neck[1], B.neck[2]), y < -0.95 ? ell(x, y, z, 0, -1.82, -0.08, B.sh[0], B.sh[1], B.sh[2]) : 9, 0.35);
     d = smin(d, torso, 0.12);
   }
   return d;
 }
 
-const NA = 128;
+const NA = 160;
+
+/** Column i's angle (0 = straight ahead), in [0, 2π): columns crowd the front,
+ *  where the face's detail is, and spread out round the back. */
+function colAngle(i) {
+  const t = (2 * i) / NA - 1; // -1 … 1, 0 = the back
+  const k = 0.35;
+  // Warp so the middle of the range (the back) is sparse and the ends (the front) dense:
+  // du/dt = (1 + k) - 3k·t² — 1.35 at the back, 0.3 at the front.
+  const u = t * (1 + k) - k * t * t * t;
+  const th = Math.PI + u * Math.PI; // 0 … 2π, π at the back
+  return ((th % TAU) + TAU) % TAU;
+}
 const AXIS_Z = -0.08;
 const BOTTOM = -1.78;
 
@@ -134,9 +147,12 @@ function buildBody(gender) {
   let top = 0.5;
   while (sdf(0, top, AXIS_Z) < 0) top += 0.01;
   top -= 0.012;
-  const NY = 132;
+  // Rows crowd through the face (brow to chin), where eyes, nose and lips need them.
   const rows = [];
-  for (let j = 0; j < NY; j++) rows.push(top - ((top - BOTTOM) * j) / (NY - 1));
+  const bands = [[top, 0.38, 26], [0.38, -0.66, 104], [-0.66, BOTTOM, 40]];
+  for (const [a, b, n] of bands) for (let j = 0; j < n; j++) rows.push(a + ((b - a) * j) / n);
+  rows.push(BOTTOM);
+  const NY = rows.length;
   // The rows either side of the line between the lips: everything below it
   // moves with the jaw, and the strip between them is the mouth.
   const below = rows.findIndex((y) => y < MOUTH);
@@ -148,7 +164,7 @@ function buildBody(gender) {
     const y = rows[j];
     let guess = j > 0 ? R[(j - 1) * NA] : 0.1;
     for (let i = 0; i < NA; i++) {
-      const th = (i / NA) * TAU;
+      const th = colAngle(i);
       const r = hit(sdf, y, th, i > 0 ? R[j * NA + i - 1] : guess);
       R[j * NA + i] = r;
       const x = Math.sin(th) * r, z = AXIS_Z + Math.cos(th) * r;
@@ -158,7 +174,7 @@ function buildBody(gender) {
       const eye = Math.exp(-(((ax - EYE[0]) / 0.13) ** 2) - (((y - EYE[1]) / 0.075) ** 2)) * (z > 0.4 ? 1 : 0);
       const lip = Math.exp(-((x / (B.lipW * 1.15)) ** 2) - (((y - MOUTH) / 0.09) ** 2)) * (z > 0.45 ? 1 : 0);
       // Cavities (eye sockets, nostrils, under the jaw) catch less light.
-      const ao = clamp(0.3 + 0.7 * Math.min(1, sdf(x + n[0] * 0.09, y + n[1] * 0.09, z + n[2] * 0.09) / 0.09), 0.25, 1);
+      const ao = clamp(0.5 + 0.5 * Math.min(1, sdf(x + n[0] * 0.09, y + n[1] * 0.09, z + n[2] * 0.09) / 0.09), 0.45, 1);
       v.set([x, y, z, n[0], n[1], n[2], jaw, eye, lip, 0, ao], k);
       k += STRIDE;
     }
@@ -171,12 +187,18 @@ function buildBody(gender) {
     tris.push(a, c, b, b, c, d);
   }
   for (let i = 0; i < NA; i++) tris.push(capIndex, i, (i + 1) % NA);
-  const lines = (every) => {
+  // The hologram's contour lines: evenly spaced in height, whatever the rows.
+  const lines = (gap) => {
     const out = [];
-    for (let j = 1; j < NY; j += every) for (let i = 0; i < NA; i++) out.push(j * NA + i, j * NA + ((i + 1) % NA));
+    let last = Infinity;
+    for (let j = 1; j < NY; j++) {
+      if (last - rows[j] < gap) continue;
+      last = rows[j];
+      for (let i = 0; i < NA; i++) out.push(j * NA + i, j * NA + ((i + 1) % NA));
+    }
     return new Uint16Array(out);
   };
-  return { B, sdf, rows, R, NY, top, mouthY, band, verts: v, tris: new Uint16Array(tris), lines2: lines(2), lines3: lines(3) };
+  return { B, sdf, rows, R, NY, top, mouthY, band, verts: v, tris: new Uint16Array(tris), lines2: lines(0.038), lines3: lines(0.055) };
 }
 
 // ---- hair -------------------------------------------------------------------
@@ -293,7 +315,7 @@ function buildHair(body, style) {
   const v = new Float32Array((NY * NA + 1 + extra) * STRIDE);
   const P = new Float32Array(NY * NA * 3);
   for (let i = 0; i < NA; i++) {
-    const th = (i / NA) * TAU;
+    const th = colAngle(i);
     const a = Math.min(th, TAU - th);
     const dx = Math.sin(th), dz = Math.cos(th);
     const jitter = 0.05 * Math.sin(i * 1.7) + 0.035 * Math.sin(i * 4.3 + 1.1);
@@ -526,7 +548,7 @@ function buildGlasses(body, style) {
       const inBand = y > -0.03 && y < 0.25 && Math.abs(x) < 0.67 && z > -0.1;
       on[idx] = inBand ? 1 : 0;
       // Out from the middle of the head, clearing the brow and nose bridge.
-      const ang = (i / NA) * TAU;
+      const ang = colAngle(i);
       const rr = 0.9 + 0.03 * Math.cos(ang);
       const vx = Math.sin(ang) * rr, vz = AXIS_Z + Math.cos(ang) * rr;
       v.set([vx, y, vz, Math.sin(ang), 0, Math.cos(ang), 0, 2, 0, 4, 1], k);
@@ -603,7 +625,7 @@ void main(){
   if (vKind > .5 && vKind < 1.5) {
     float th = atan(o.x, o.z + .08);
     float a = abs(th);
-    float hl = hairline(a) + (hash(vec2(floor(th * 260.), 1.)) - .5) * .014 + .006 * sin(th * 40.);
+    float hl = hairline(a) + (hash(vec2(floor(th * 320.), 1.)) - .5) * .008 + .004 * sin(th * 40.);
     if (o.y < hl && a < uHairOpen) discard;
   }
   // The eye under this point, if any.
@@ -663,11 +685,11 @@ void main(){
   if (uMode == 3 && vKind > 2.5) {
     // A beard: soft at the edges, made of short dark hairs; stubble is a shadow of dots.
     float dens = vS.y;
-    float h = hash(floor(o.xy * vec2(420., 300.)) + floor(o.z * 300.));
-    if (dens * (uStubble > .5 ? .62 : 1.3) < h) discard;
+    float h = uStubble > .5 ? hash(floor(o.xy * vec2(1100., 900.)) + floor(o.z * 600.)) : hash(floor(o.xy * vec2(420., 300.)) + floor(o.z * 300.));
+    if (dens * (uStubble > .5 ? .5 : 1.3) < h) discard;
     float st = hash(floor(o.xy * vec2(700., 140.)));
     vec3 bc = uHair * (.6 + .6 * st);
-    if (uStubble > .5) bc = mix(uSkin * .45, uHair, .75);
+    if (uStubble > .5) bc = mix(uSkin * .5, uHair, .55);
     float diff = clamp(d1 * .5 + .5, 0., 1.);
     col = bc * (diff * .95 + .14) * vAO + uAccent * fres * .2;
     gl_FragColor = vec4(toScreen(col), 1.);
@@ -741,6 +763,7 @@ void main(){
   col = mix(col, inside * (.4 + .6 * d), mouth * clamp(.55 + uOpen * 4., 0., 1.));
   // Eyes: white, an iris with fine fibres, a pupil, a catchlight, and lids.
   if (onEye > .5) {
+    float ex = clamp(le.x / (uEyeR * 1.02), -1., 1.);
     vec3 t = normalize(le) - g * ca;
     float ang = atan(t.y, t.x);
     float fib = .7 + .3 * sin(ang * 46. + sin(ang * 7.) * 2.);
@@ -749,11 +772,14 @@ void main(){
     vec3 sclera = mix(vec3(.82, .8, .78), vec3(.75, .5, .48), smoothstep(.5, .85, 1. - le.z / uEyeR));
     vec3 e = mix(sclera, ir, iris);
     e = mix(e, vec3(.003), pupil);
-    e *= .5 + .5 * smoothstep(lidTop, lidTop - .035, le.y);
+    e *= .5 + .5 * smoothstep(lidTop * (1. - .55 * ex * ex), lidTop * (1. - .55 * ex * ex) - .035, le.y);
     e += pow(max(dot(N, H1), 0.), 260.) * 1.6 + uEye * iris * uTech * .7;
-    float open = smoothstep(lidTop + .004, lidTop - .004, le.y) * step(lidLow, le.y);
-    col = mix(col * .85, e, open);
-    float lash = smoothstep(.014, .0, abs(le.y - lidTop)) * step(abs(le.x), uEyeR * 1.05);
+    float outer = step(0., le.x * sign(o.x));
+    float topX = lidTop * (1. - .55 * ex * ex) + .012 * ex * ex * outer;
+    float lowX = lidLow * (1. - .65 * ex * ex) + .008 * ex * ex * outer;
+    float open = smoothstep(topX + .004, topX - .004, le.y) * smoothstep(lowX - .004, lowX + .004, le.y) * step(abs(le.x), uEyeR * 1.0);
+    col = mix(col, e, open);
+    float lash = smoothstep(.014, .0, abs(le.y - topX)) * step(abs(le.x), uEyeR * 1.05);
     col = mix(col, vec3(.004), lash * (.5 + .45 * uFemale));
   }
   // A cool rim of light, and (if on) glowing seams like a cyborg's.
@@ -893,6 +919,15 @@ function animate(key, o) {
   s.yaw += s.yv * dt;
   s.pv += ((tp - s.pitch) * 30 - s.pv * 9) * dt;
   s.pitch += s.pv * dt;
+  // Poked: a little jolt back, a blink and a grin, then it settles.
+  if (o.poke && o.poke !== s.pokeSeen) {
+    s.pokeSeen = o.poke;
+    s.pv -= 2.2;
+    s.yv += (Math.random() - 0.5) * 3;
+    s.blinkAt = t;
+    s.grinUntil = t + 1.6;
+  }
+  if (s.grinUntil && t < s.grinUntil) tr += 0.12 * Math.sin((s.grinUntil - t) * 9) * ((s.grinUntil - t) / 1.6);
   s.roll += (tr - s.roll) * Math.min(1, dt * 3);
   s.hv += ((s.yaw - s.hair) * 22 - s.hv * 3.2) * dt;
   s.hair += s.hv * dt;
@@ -900,7 +935,8 @@ function animate(key, o) {
   const syll = clamp(0.55 + 0.45 * Math.sin(t * 11) * Math.sin(t * 3.7 + 0.6), 0, 1);
   const targetOpen = energy * syll;
   s.open += (targetOpen - s.open) * Math.min(1, dt * (targetOpen > s.open ? 28 : 16));
-  s.smile += (clamp(o.mood || 0, -1, 1) - s.smile) * Math.min(1, dt * 3);
+  const grin = s.grinUntil && t < s.grinUntil ? 1 : clamp(o.mood || 0, -1, 1);
+  s.smile += (grin - s.smile) * Math.min(1, dt * 3);
   // Blinks at uneven moments, now and then twice.
   if (t > s.blinkAt) { s.blinkT = t; s.blinkAt = t + 2 + Math.random() * 4; if (Math.random() < 0.2) s.blinkAt = t + 0.32; }
   const bt = t - s.blinkT;
