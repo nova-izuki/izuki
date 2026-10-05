@@ -700,6 +700,18 @@ pub fn copy_selection() -> Result<String> {
     read_clipboard()
 }
 
+/// The text selected in the app in front — and the clipboard put back as it
+/// was. Empty when nothing is selected (Ctrl+C on nothing used to return
+/// whatever was copied before, as if it were the selection).
+pub fn selected_text() -> Result<String> {
+    let before = read_clipboard().unwrap_or_default();
+    let marker = format!("\u{2063}izuki-{}", rand::random::<u32>());
+    let _ = write_clipboard(&marker);
+    let got = copy_selection().unwrap_or_default();
+    let _ = write_clipboard(&before);
+    Ok(if got == marker { String::new() } else { got })
+}
+
 pub fn read_clipboard() -> Result<String> {
     let mut cb = arboard::Clipboard::new().map_err(|e| anyhow!("clipboard unavailable: {e}"))?;
     cb.get_text().map_err(|e| anyhow!("clipboard is not text: {e}"))

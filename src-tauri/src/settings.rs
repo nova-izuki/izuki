@@ -417,6 +417,13 @@ pub struct Settings {
     /// on this morning?" can be answered. Off until turned on.
     #[serde(default)]
     pub recall_enabled: bool,
+    /// Screen time: count minutes per app and big site (names only, this PC,
+    /// two weeks) for "how long was I on YouTube today?".
+    #[serde(default = "default_true")]
+    pub screen_time_enabled: bool,
+    /// The user's town or city, for the weather glance ("" = from memory).
+    #[serde(default)]
+    pub home_city: String,
     /// The user's own n8n workflows Izuki can start by name ("run my
     /// invoice flow"), each a webhook address.
     #[serde(default)]
@@ -836,6 +843,8 @@ impl Default for Settings {
             buddy_acts: true,
             buddy_breaks: true,
             recall_enabled: false,
+            screen_time_enabled: true,
+            home_city: String::new(),
             n8n_hooks: Vec::new(),
             n8n_url: String::new(),
             n8n_api_key: String::new(),

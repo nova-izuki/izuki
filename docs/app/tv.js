@@ -94,7 +94,7 @@ function build() {
     <div class="tv-sky"><i></i><i></i><i></i></div>
     <header class="tv-top">
       <div class="tv-brand">IZUKI</div>
-      <div class="tv-chips"><span id="tv-link-chip" class="tv-chip"></span><span id="tv-mode-chip" class="tv-chip"></span></div>
+      <div class="tv-chips"><span id="tv-link-chip" class="tv-chip"></span><span id="tv-mode-chip" class="tv-chip"></span><span id="tv-timer-chip" class="tv-chip" hidden></span><span id="tv-weather" class="tv-chip" hidden></span></div>
       <div class="tv-time"><b id="tv-clock"></b><span id="tv-date"></span></div>
     </header>
     <main class="tv-stage">
@@ -149,6 +149,45 @@ function refresh() {
       ? "Try: “Hey Nova, open Netflix” · “Hey Nova, play the next episode” · “Hey Nova, what's the weather?”"
       : "Hold OK and say: “open YouTube” · “search for cooking videos” · “turn it down”";
   if (state === "idle") setState("idle");
+}
+
+/** The weather in the top bar (the PC's town, once linked). */
+async function weather() {
+  const wx = await window.IzukiWeather?.now();
+  const chip = $("tv-weather");
+  if (!wx || !chip) return;
+  chip.textContent = `${wx.icon} ${wx.temp}° · ${wx.place}`;
+  chip.hidden = false;
+}
+
+// ---- timers ("set a timer for 10 minutes"): a countdown chip, said out loud when done
+const timers = [];
+function timerTick() {
+  const chip = $("tv-timer-chip");
+  const now = Date.now();
+  for (const t of timers.filter((x) => x.ends <= now)) {
+    timers.splice(timers.indexOf(t), 1);
+    void say(`⏰ ${t.label} — time's up!`);
+  }
+  if (!timers.length) { chip.hidden = true; return; }
+  const t = timers.reduce((a, b) => (a.ends < b.ends ? a : b));
+  const left = Math.max(0, Math.round((t.ends - now) / 1000));
+  chip.textContent = `⏱ ${t.label} ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+  chip.hidden = false;
+}
+function timerAsk(s) {
+  const t = s.toLowerCase();
+  if (!/\btimer\b/.test(t)) return null;
+  if (/\b(cancel|stop|clear)\b/.test(t)) { const had = timers.length; timers.length = 0; return had ? "Timer cancelled." : "There's no timer running."; }
+  const m = t.match(/(\d+(?:\.\d+)?)\s*(hours?|hrs?|minutes?|mins?|seconds?|secs?)/);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  const secs = Math.round(n * (/^h/.test(m[2]) ? 3600 : /^m/.test(m[2]) ? 60 : 1));
+  const named = t.match(/(\w+) timer/);
+  const label = named && !/^(a|the|my|set|start|\d+)$/.test(named[1]) ? named[1][0].toUpperCase() + named[1].slice(1) : "Timer";
+  timers.push({ label, ends: Date.now() + secs * 1000 });
+  timerTick();
+  return `${label} set for ${m[1]} ${m[2]}.`;
 }
 
 function tick() {
@@ -324,6 +363,8 @@ async function quick(s) {
 const SCREEN_JOB = /\b(open|play|watch|put on|search|find|look for|select|choose|pick|click|press|tap|go to|start|next|episode|season|movie|show|channel|subtitles?|captions?|settings|sign in|profile|resume|continue watching|type|scroll|home|back)\b/i;
 
 async function tvDo(s) {
+  const timed = timerAsk(s);
+  if (timed) return timed;
   const fast = await quick(s).catch(() => null);
   if (fast) return fast;
   if (!N() || !control || !SCREEN_JOB.test(s)) return null;
@@ -525,6 +566,9 @@ function start() {
   keys();
   tick();
   setInterval(tick, 15000);
+  setInterval(timerTick, 1000);
+  void weather();
+  setInterval(weather, 30 * 60000);
   animate();
   refresh();
   core()?.setReadAloud(true);

@@ -26,6 +26,10 @@ pub struct Hud {
     pub calendar: Vec<(String, String)>,
     /// What Izuki says, so the screen can show it too.
     pub said: String,
+    /// Today's screen time, most first: (app or site, minutes).
+    pub screen_time: Vec<(String, u64)>,
+    /// The weather now: (place, °C, "🌤️ partly cloudy").
+    pub weather: Option<(String, i64, String)>,
 }
 
 /// Is this asking for the report? ("wake up", "status report", "how are the
@@ -91,6 +95,8 @@ pub fn compose() -> String {
 pub fn report() -> Hud {
     let now = Local::now();
     let mut hud = Hud::default();
+    hud.screen_time = crate::screentime::top_today(4);
+    hud.weather = crate::web::weather_now(&crate::web::home_city());
     let mut lines: Vec<String> = Vec::new();
     let hello = match now.hour() {
         0..=4 => "Up late, I see. I'm here.",

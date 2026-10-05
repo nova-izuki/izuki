@@ -428,6 +428,11 @@ fn judge(lines: &[String]) -> (Vec<usize>, Option<String>) {
 
 // ---- how long since the keyboard or mouse was touched -------------------------------
 
+/// Seconds since the keyboard or mouse was last touched.
+pub fn idle_secs() -> u64 {
+    idle_for().as_secs()
+}
+
 #[cfg(windows)]
 fn idle_for() -> Duration {
     use windows::Win32::System::SystemInformation::GetTickCount;

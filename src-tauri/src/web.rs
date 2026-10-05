@@ -365,6 +365,76 @@ pub fn weather(place: &str) -> Result<String> {
     Ok(weather_text(&name, &w))
 }
 
+/// The weather right now in `place`, short: ("Lagos", 29, "🌤️ partly cloudy").
+/// Cached for half an hour — the Island asks every few seconds.
+pub fn weather_now(place: &str) -> Option<(String, i64, String)> {
+    static CACHE: parking_lot::Mutex<Option<(String, std::time::Instant, Option<(String, i64, String)>)>> = parking_lot::Mutex::new(None);
+    let place = place.trim();
+    if place.is_empty() {
+        return None;
+    }
+    if let Some((p, at, v)) = CACHE.lock().clone() {
+        if p == place && at.elapsed() < std::time::Duration::from_secs(1800) {
+            return v;
+        }
+    }
+    let fetch = || -> Result<(String, i64, String)> {
+        let c = client()?;
+        let geo: serde_json::Value = c
+            .get(format!("https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&name={}", enc(place)))
+            .send()?
+            .json()?;
+        let hit = geo["results"].get(0).ok_or_else(|| anyhow!("no such place"))?;
+        let (lat, lon) = (hit["latitude"].as_f64().unwrap_or(0.0), hit["longitude"].as_f64().unwrap_or(0.0));
+        let name = hit["name"].as_str().unwrap_or(place).to_string();
+        let w: serde_json::Value = c
+            .get(format!("https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&timezone=auto&current=temperature_2m,weather_code"))
+            .send()?
+            .json()?;
+        let t = w["current"]["temperature_2m"].as_f64().map(|x| x.round() as i64).ok_or_else(|| anyhow!("no reading"))?;
+        let code = w["current"]["weather_code"].as_i64().unwrap_or(-1);
+        Ok((name, t, format!("{} {}", sky_icon(code), sky(code))))
+    };
+    let v = fetch().ok();
+    *CACHE.lock() = Some((place.to_string(), std::time::Instant::now(), v.clone()));
+    v
+}
+
+fn sky_icon(code: i64) -> &'static str {
+    match code {
+        0 => "☀️",
+        1 | 2 => "🌤️",
+        3 => "☁️",
+        45 | 48 => "🌫️",
+        51..=67 | 80..=82 => "🌧️",
+        71..=77 | 85 | 86 => "❄️",
+        95..=99 => "⛈️",
+        _ => "🌡️",
+    }
+}
+
+/// Where the user lives: the city they set, else what Izuki remembers
+/// ("User lives in Lagos").
+pub fn home_city() -> String {
+    let set = crate::state::try_store().map(|s| s.settings().home_city).unwrap_or_default();
+    if !set.trim().is_empty() {
+        return set.trim().to_string();
+    }
+    for m in crate::memory::list() {
+        let l = m.text.to_lowercase();
+        for p in ["lives in ", "is based in ", "is from ", "lives at ", "located in "] {
+            if let Some(i) = l.find(p) {
+                let rest = &m.text[i + p.len()..];
+                let city: String = rest.split([',', '.', ';', '(']).next().unwrap_or("").trim().chars().take(40).collect();
+                if !city.is_empty() {
+                    return city;
+                }
+            }
+        }
+    }
+    String::new()
+}
+
 fn weather_text(name: &str, w: &serde_json::Value) -> String {
     let cur = &w["current"];
     let num = |v: &serde_json::Value| v.as_f64().map(|x| x.round() as i64);

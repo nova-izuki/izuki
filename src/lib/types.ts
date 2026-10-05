@@ -313,6 +313,8 @@ export interface Settings {
   buddy_acts: boolean;
   buddy_breaks: boolean;
   recall_enabled: boolean;
+  screen_time_enabled: boolean;
+  home_city: string;
   /** Saved flows clear after this many days unused (0 = keep). */
   flows_keep_days: number;
   /** How sure the wake-word detector must be before it wakes. */
@@ -592,6 +594,8 @@ export interface IslandStatus {
   activities?: Activity[];
   /** The last few things copied (newest first). */
   copies?: string[];
+  /** The weather now where the user lives: [place, °C, "🌤️ partly cloudy"]. */
+  weather?: [string, number, string] | null;
 }
 
 /** Something happening right now, with its smart next steps. */

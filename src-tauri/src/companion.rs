@@ -151,6 +151,13 @@ pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str))
         push("assistant", &text);
         return Reply::text(text);
     }
+    // Screen time, asked from the phone too.
+    if crate::screentime::is_question(said) {
+        push("user", said);
+        let text = crate::screentime::answer(said);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // Timers, from the phone or Telegram too.
     if let Some(ask) = crate::timers::parse(said) {
         push("user", said);

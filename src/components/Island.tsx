@@ -259,6 +259,7 @@ export function Island({
                 media={media}
                 suggestions={busy ? [] : [...(status.clip ?? []), ...status.suggestions].slice(0, 4)}
                 activities={acts}
+                weather={status.weather ?? null}
                 copies={status.copies ?? []}
                 next={next}
                 now={now}
@@ -394,7 +395,9 @@ function Expanded({
   onDone,
   activities = [],
   copies = [],
+  weather = null,
 }: {
+  weather?: [string, number, string] | null;
   activities?: Activity[];
   copies?: string[];
   visualizing?: boolean;
@@ -424,7 +427,13 @@ function Expanded({
         <div className="min-w-0 flex-1">
           <div className="text-[15px] font-semibold leading-tight">{busy ? "On it" : greeting(now)}</div>
           <div className="truncate text-[12.5px] text-white/60">
-            {busy ? doing || "Thinking…" : live.kind === "finished" ? "All finished." : "Ask me anything — or show me."}
+            {busy
+              ? doing || "Thinking…"
+              : live.kind === "finished"
+                ? "All finished."
+                : weather
+                  ? `${weather[2].split(" ")[0]} ${weather[1]}° in ${weather[0]} · ask me anything`
+                  : "Ask me anything — or show me."}
           </div>
         </div>
         <div className="text-[22px] font-semibold tabular-nums tracking-tight text-white/90">{clock(now)}</div>

@@ -695,6 +695,13 @@
     pulseItem(pendingReminders ? "Reminder set" : "No reminders", pendingReminders ? "Izuki will nudge you" : "Ask me to remember something");
     pulseItem(pc ? "PC linked" : "Phone first", pc ? "Ready when your PC is on" : "Link a PC whenever you want");
     w.appendChild(pulse);
+    // The weather, when Izuki knows your town (from your PC, or what you've told it).
+    window.IzukiWeather?.now().then((wx) => {
+      if (!wx || !homeView) return;
+      const item = el("div", "pulse");
+      item.append(el("b", "", `${wx.icon} ${wx.temp}°`), el("span", "", wx.place));
+      pulse.prepend(item);
+    });
     w.appendChild(el("p", "home-label smart", "Suggested for you"));
     const ideas = el("div", "suggest");
     const idea = (icon, title, sub, go) => {
@@ -2022,6 +2029,7 @@
     if (s.persona && PEOPLE.some((p) => p.id === s.persona)) { personId = s.persona; store.set("person", personId); }
     if (s.language && HEARING[s.language]) { speechLanguage = s.language; store.set("speechLanguage", speechLanguage); }
     if (Array.isArray(s.memories)) for (const m of s.memories) if (typeof m === "string" && m && !memories.includes(m)) memories.push(m);
+    if (s.homeCity) store.set("homeCity", String(s.homeCity));
     saveAll();
     render();
     return true;

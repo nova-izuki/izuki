@@ -157,6 +157,20 @@ export function TalkToIzuki() {
           <Toggle checked={settings.island_enabled} onChange={(v) => patch({ island_enabled: v })} />
         </Row>
         <Row
+          label="Screen time"
+          hint="Ask “how long was I on YouTube today?” — Izuki counts minutes per app and big site (only names and minutes, never what was on screen), on this PC, for two weeks. It's on the status screen too."
+        >
+          <Toggle checked={settings.screen_time_enabled} onChange={(v) => patch({ screen_time_enabled: v })} />
+        </Row>
+        <Row label="Your town or city" hint="For the weather on the Island and the status screen. Leave empty and I'll use what I remember about where you live.">
+          <input
+            value={settings.home_city}
+            onChange={(e) => patch({ home_city: e.target.value })}
+            placeholder="e.g. Lagos"
+            className="izk-field izk-no-drag w-[140px] py-1 text-[12px]"
+          />
+        </Row>
+        <Row
           label="Recall (what was on my screen)"
           hint="Ask “what was that site I was on this morning?” or “what was I doing at 3?”. Izuki notes only the titles of the windows you had open — never what's in them, never private or sign-in windows — keeps a week, on this PC only. Off until you turn it on."
         >

@@ -36,6 +36,24 @@ pub struct IslandStatus {
     pub activities: Vec<crate::activity::Activity>,
     /// The last few things copied.
     pub copies: Vec<String>,
+    /// The weather now where the user lives: (place, °C, "🌤️ partly cloudy").
+    pub weather: Option<(String, i64, String)>,
+}
+
+/// The weather for the Island — fetched off to the side so a slow network
+/// never holds the Island up; it appears on the next look.
+fn weather_glance() -> Option<(String, i64, String)> {
+    static LAST: parking_lot::Mutex<(Option<(String, i64, String)>, Option<std::time::Instant>)> = parking_lot::Mutex::new((None, None));
+    let (shown, asked) = LAST.lock().clone();
+    if asked.is_none_or(|t| t.elapsed() > std::time::Duration::from_secs(600)) {
+        LAST.lock().1 = Some(std::time::Instant::now());
+        std::thread::spawn(|| {
+            let city = crate::web::home_city();
+            let v = crate::web::weather_now(&city);
+            LAST.lock().0 = v;
+        });
+    }
+    shown
 }
 
 pub fn status() -> IslandStatus {
@@ -52,6 +70,7 @@ pub fn status() -> IslandStatus {
         focus_left: crate::focus::left(),
         activities: crate::activity::now(),
         copies: crate::activity::recent_copies().into_iter().map(|c| c.chars().take(90).collect()).collect(),
+        weather: weather_glance(),
     }
 }
 

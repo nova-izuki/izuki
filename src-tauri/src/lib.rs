@@ -56,6 +56,8 @@ pub mod clip;
 pub mod recall;
 pub mod timers;
 pub mod activity;
+pub mod screentime;
+pub mod readaloud;
 pub mod tts;
 pub mod uia;
 pub mod updates;
@@ -258,6 +260,7 @@ pub fn run() {
             commands::recall_forget,
             commands::activity_do,
             commands::copy_again,
+            commands::type_here,
             commands::later_add,
             commands::later_done,
             commands::later_remove,
@@ -344,6 +347,7 @@ pub fn run() {
             link::spawn(handle.clone());
             recall::spawn();
             activity::spawn();
+            screentime::spawn();
             browser::init(&handle);
 
             Ok(())

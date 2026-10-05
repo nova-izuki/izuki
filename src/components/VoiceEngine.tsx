@@ -288,6 +288,40 @@ let helpPending = false;
 /** A linked TV/phone heard the wake word: this PC doesn't answer it too. */
 let wakeHeardElsewhereUntil = 0;
 
+// ---- talk to type -------------------------------------------------------------
+// "Hey Nova, type what I say": until "stop typing", what you say is typed
+// where your cursor is, in whatever app is in front — Word, WhatsApp, Docs.
+let dictating = false;
+let dictatedEnd = "";
+const DICTATE_START = /^(?:please\s+)?(?:type what i say|start (?:dictation|dictating|typing for me)|dictate|dictation mode|take dictation|write what i say|type for me)\b/i;
+const DICTATE_STOP = /^(?:stop|end|finish|done|cancel)(?:\s+(?:typing|dictation|dictating|writing))?\.?$|^(?:that's all|that is all|i'?m done)\.?$/i;
+
+/** Spoken punctuation ("comma", "new line"), and tidy capitals and spacing. */
+export function spokenToTyped(said: string, before: string): string {
+  let t = " " + said.trim() + " ";
+  // Marks first (each keeps the space after it), then the line breaks.
+  const marks: Array<[RegExp, string]> = [
+    [/\s+(?:full stop|period)(?=\s)/gi, "."],
+    [/\s+comma(?=\s)/gi, ","],
+    [/\s+question mark(?=\s)/gi, "?"],
+    [/\s+exclamation (?:mark|point)(?=\s)/gi, "!"],
+    [/\s+colon(?=\s)/gi, ":"],
+    [/\s+semicolon(?=\s)/gi, ";"],
+    [/\s+new paragraph\s+/gi, "\n\n"],
+    [/\s+new line\s+/gi, "\n"],
+  ];
+  for (const [re, to] of marks) t = t.replace(re, to);
+  t = t.replace(/ +\n/g, "\n").replace(/\n +/g, "\n").replace(/ {2,}/g, " ").trim();
+  if (!t) return "";
+  // A capital at the start of a sentence (after . ! ? or a new line, or at the very start).
+  const startsSentence = !before || /[.!?]\s*$|\n\s*$/.test(before);
+  if (startsSentence) t = t[0].toUpperCase() + t.slice(1);
+  t = t.replace(/([.!?]\s+|\n)([a-z])/g, (_, a: string, b: string) => a + b.toUpperCase());
+  // A space between this bit and the last, unless one ended a line.
+  if (before && !/\s$/.test(before) && !t.startsWith("\n")) t = " " + t;
+  return t;
+}
+
 /** Every time Izuki is cut off; lets a pending follow-up listen stand down. */
 let interruptions = 0;
 
@@ -674,6 +708,35 @@ export function VoiceEngine() {
     stopAllSpeech("a new request", useIzuki.getState().settings.speak_responses);
     const at = ++requestSeq;
     listenErrors.current = 0;
+
+    // Talk to type: "type what I say" … "stop typing".
+    if (!dictating && DICTATE_START.test(t.trim())) {
+      dictating = true;
+      dictatedEnd = "";
+      startSession(from === "voice", "speaking");
+      await respond("Okay — click where you want the words, then talk. I'll type what you say. Say “stop typing” when you're done.", "cheerful");
+      void afterReply(at, false);
+      return;
+    }
+    if (dictating) {
+      if (DICTATE_STOP.test(t.trim())) {
+        dictating = false;
+        startSession(from === "voice", "speaking");
+        await respond("Done typing.", "cheerful");
+        void afterReply(at, false);
+        return;
+      }
+      const words = spokenToTyped(t, dictatedEnd);
+      if (words) {
+        orb("thinking");
+        const ok = await api.typeHere(words).catch(() => false);
+        if (ok) dictatedEnd = words;
+        else await respond("I couldn't type there — click into a text box and say it again.", "calm");
+      }
+      orb("listening");
+      void afterReply(at, false);
+      return;
+    }
 
     // The TV: "open Netflix on the TV", "turn the TV up" — straight to it,
     // no AI. (Questions about TV — "what's on TV tonight" — go on as usual.)

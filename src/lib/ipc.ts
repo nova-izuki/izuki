@@ -204,6 +204,8 @@ export const MOCK_SETTINGS: Settings = {
   buddy_acts: true,
   buddy_breaks: true,
   recall_enabled: false,
+  screen_time_enabled: true,
+  home_city: "",
   app_theme: "nova",
   app_theme_color: "",
   flows_keep_days: 1,
@@ -412,6 +414,8 @@ export const api = {
   /** A live activity's button: "open:…", "show:…", "copytext:…", "unzip:…". What to say back, if anything. */
   activityDo: (op: string) => call<string | null>("activity_do", { op }, () => null),
   copyAgain: (index: number) => call<boolean>("copy_again", { index }, () => false),
+  /** Talk-to-type: put these words where the cursor is, in the app in front. */
+  typeHere: (text: string) => call<boolean>("type_here", { text }, () => false),
   laterList: () => call<Array<{ id: string; text: string; done: boolean; added: number }>>("later_list", {}, () => []),
   laterAdd: (text: string) => call<string>("later_add", { text }, () => ""),
   laterDone: (id: string, done: boolean) => call<void>("later_done", { id, done }, () => undefined),

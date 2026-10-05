@@ -341,6 +341,18 @@ pub fn open_log_folder() -> R<()> {
 /// everyday commands (instant.rs).
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
+    // Read it to me: the selection, else the page — in parts.
+    if crate::readaloud::is_keep_reading(&said) {
+        return Some(crate::readaloud::keep_going());
+    }
+    if crate::readaloud::is_read_request(&said) {
+        return blocking(crate::readaloud::start).await.ok();
+    }
+    // Screen time: "how long was I on YouTube today?"
+    if crate::screentime::is_question(&said) {
+        let s2 = said.clone();
+        return blocking(move || crate::screentime::answer(&s2)).await.ok();
+    }
     // Timers: "set a pasta timer for 12 minutes", "cancel the timer".
     if let Some(ask) = crate::timers::parse(&said) {
         return Some(crate::timers::run(&app, ask));
@@ -834,6 +846,18 @@ pub async fn tv_show(state: String, text: Option<String>) -> bool {
 #[tauri::command]
 pub async fn activity_do(app: AppHandle, op: String) -> Option<String> {
     blocking(move || crate::activity::act(&app, &op)).await.ok().flatten()
+}
+
+/// Talk-to-type: the words go where the cursor is, in the app in front.
+#[tauri::command]
+pub async fn type_here(text: String) -> bool {
+    blocking(move || {
+        crate::uia::focus_target_window();
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        crate::automation::type_text(&text).is_ok()
+    })
+    .await
+    .unwrap_or(false)
 }
 
 /// Copy one of the recent copies again.

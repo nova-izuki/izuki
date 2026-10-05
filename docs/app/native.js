@@ -13,6 +13,43 @@
     for (const ch of String(text)) hash = ((hash * 33) ^ ch.charCodeAt(0)) >>> 0;
     return (hash % 2147483646) + 1;
   };
+  // The weather now, for the phone home and the TV's top bar — free
+  // (Open-Meteo, no key), cached for half an hour.
+  const ICONS = [[0, "☀️"], [2, "🌤️"], [3, "☁️"], [48, "🌫️"], [67, "🌧️"], [77, "❄️"], [82, "🌧️"], [86, "❄️"], [99, "⛈️"]];
+  window.IzukiWeather = {
+    /** The town to use: set by linking to the PC, else remembered ("lives in Lagos"). */
+    city() {
+      try {
+        const set = localStorage.getItem("izuki.homeCity");
+        if (set) return JSON.parse(set) || "";
+        const mem = JSON.parse(localStorage.getItem("izuki.memories") || "[]");
+        for (const m of mem) {
+          const hit = String(m).match(/(?:lives in|is based in|is from|located in)\s+([^,.;(]+)/i);
+          if (hit) return hit[1].trim();
+        }
+      } catch {}
+      return "";
+    },
+    async now(city) {
+      city = (city || this.city() || "").trim();
+      if (!city) return null;
+      try {
+        const cached = JSON.parse(localStorage.getItem("izuki.weatherNow") || "null");
+        if (cached && cached.city === city && Date.now() - cached.at < 30 * 60000) return cached.w;
+      } catch {}
+      try {
+        const geo = await (await fetch("https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&name=" + encodeURIComponent(city))).json();
+        const hit = geo.results && geo.results[0];
+        if (!hit) return null;
+        const f = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${hit.latitude}&longitude=${hit.longitude}&timezone=auto&current=temperature_2m,weather_code`)).json();
+        const code = f.current.weather_code;
+        const w = { place: hit.name, temp: Math.round(f.current.temperature_2m), icon: (ICONS.find(([max]) => code <= max) || [0, "🌡️"])[1] };
+        try { localStorage.setItem("izuki.weatherNow", JSON.stringify({ city, at: Date.now(), w })); } catch {}
+        return w;
+      } catch { return null; }
+    },
+  };
+
   window.IzukiNative = {
     installed: () => !!window.Capacitor?.isNativePlatform?.(),
     platform,

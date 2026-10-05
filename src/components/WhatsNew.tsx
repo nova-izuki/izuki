@@ -22,6 +22,10 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🔊", title: "Read it to me", how: "Select text anywhere and say “read this to me” — or just ask with a page open. “Keep reading” carries on.", try: { label: "Read this", say: "read this to me" } },
+  { icon: "🎙️", title: "Talk to type, anywhere", how: "Say “type what I say”, click into any text box and talk — commas, full stops and new lines included. “Stop typing” ends it." },
+  { icon: "📊", title: "Screen time", how: "“How long was I on YouTube today?” — minutes per app and site, names only, on this PC.", try: { label: "My screen time", say: "what's my screen time today" } },
+  { icon: "🌤️", title: "The weather, everywhere", how: "On the Island, the status screen, the phone and the TV — set your town under Talk to Izuki.", try: { label: "Set my town", tab: "draw", id: "talk-card" } },
   { icon: "⏱️", title: "Timers on the Island", how: "“Set a pasta timer for 12 minutes” — it counts down on the Island and tells you when it's done. Several at once.", try: { label: "5-minute timer", say: "set a timer for 5 minutes" } },
   { icon: "⬇️", title: "Downloads, screenshots & charging", how: "Finished downloads get Open, Sum it up (documents), Install (apps) or Unzip. Screenshots get Copy the text — and Fix, Explain or Translate when that fits. Plus a glance at the battery when you plug in." },
   { icon: "📋", title: "Recent copies", how: "Open the Island to copy any of your last few copies again." },

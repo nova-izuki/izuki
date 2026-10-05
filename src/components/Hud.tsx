@@ -30,6 +30,10 @@ function ask(text: string, label?: string) {
  */
 
 export interface HudData {
+  /** Today's screen time, most first: [app or site, minutes]. */
+  screen_time?: Array<[string, number]>;
+  /** The weather now: [place, °C, "🌤️ partly cloudy"]. */
+  weather?: [string, number, string] | null;
   greeting: string;
   time: string;
   date: string;
@@ -244,6 +248,16 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
                     <Line key={i} k={from} v={subject || "(no subject)"} onClick={() => ask(`Read me the email from ${from} about "${subject}" and tell me if I need to do anything.`)} />
                   ))}
                   <HudChip onClick={() => ask("Summarise my inbox from today — what matters and what can wait?")}>Summarise my inbox</HudChip>
+                </Panel>
+              )}
+              {(data.weather || (data.screen_time ?? []).length > 0) && (
+                <Panel title="YOUR DAY">
+                  {data.weather && (
+                    <Line k="Weather" v={`${data.weather[2]} · ${data.weather[1]}° in ${data.weather[0]}`} onClick={() => ask("What's the weather today, and what should I wear?")} />
+                  )}
+                  {(data.screen_time ?? []).slice(0, 3).map(([name, mins]) => (
+                    <Line key={name} k={name} v={mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`} onClick={() => ask(`How long was I on ${name} today?`)} />
+                  ))}
                 </Panel>
               )}
               <Panel title="LINKED APPS">
