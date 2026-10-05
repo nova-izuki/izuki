@@ -22,6 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🧩", title: "The browser extension got smart", how: "Right-click any text → Izuki: Explain, Translate, Sum up, Read aloud, Save to Notes, Remind me later. Alt+Shift+I asks about the page. And a Focus guard during Focus mode.", try: { label: "Get it", tab: "settings", id: "settings-extension" } },
   { icon: "🔊", title: "Read it to me", how: "Select text anywhere and say “read this to me” — or just ask with a page open. “Keep reading” carries on.", try: { label: "Read this", say: "read this to me" } },
   { icon: "🎙️", title: "Talk to type, anywhere", how: "Say “type what I say”, click into any text box and talk — commas, full stops and new lines included. “Stop typing” ends it." },
   { icon: "📊", title: "Screen time", how: "“How long was I on YouTube today?” — minutes per app and site, names only, on this PC.", try: { label: "My screen time", say: "what's my screen time today" } },

@@ -121,6 +121,38 @@ pub fn from_screen() -> Result<Note> {
     })
 }
 
+/// A note from the browser extension: the selected text kept as it is, or a
+/// whole page turned into study notes.
+pub fn from_text(title: &str, source: &str, text: &str, make_notes: bool) -> Result<Note> {
+    let text: String = text.trim().chars().take(12_000).collect();
+    if text.len() < 3 {
+        bail!("there was nothing to save");
+    }
+    let body = if make_notes {
+        let n = crate::chat::complete(&[
+            json!({ "role": "system", "content": NOTES_PROMPT }),
+            json!({ "role": "user", "content": format!("From: {title}\n\n{text}") }),
+        ])?;
+        if n.trim().is_empty() {
+            bail!("the AI didn't write anything — try again");
+        }
+        n
+    } else {
+        text
+    };
+    let now = crate::model::now_ms();
+    save(Note {
+        id: uuid::Uuid::new_v4().to_string(),
+        title: tidy_title(title),
+        text: body,
+        source: source.to_string(),
+        created_at: now,
+        updated_at: now,
+        cards: Vec::new(),
+        lesson: false,
+    })
+}
+
 /// Teacher mode: add what was just explained to today's lesson notes for
 /// this page (one running note per page per day).
 pub fn add_to_lesson(text: &str) -> Result<Note> {

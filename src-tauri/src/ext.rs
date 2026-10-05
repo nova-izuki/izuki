@@ -104,6 +104,20 @@ pub fn spawn() {
                 }
                 *LAST_SEEN.lock() = Some(Instant::now());
                 let url = req.url().to_string();
+                // The extension's own smart features: Explain / Translate /
+                // Sum up / Ask about this page, Save to Notes, Remind me later,
+                // and the Focus guard. Answers take a few seconds, so each runs
+                // on its own thread and the bridge stays free.
+                if url.starts_with("/izuki/ask") || url.starts_with("/izuki/note") || url.starts_with("/izuki/later") || url.starts_with("/izuki/focus") {
+                    let mut body = String::new();
+                    let _ = req.as_reader().take(400_000).read_to_string(&mut body);
+                    let v: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+                    std::thread::spawn(move || {
+                        let out = page_helper(&url, &v);
+                        let _ = req.respond(json_response(out));
+                    });
+                    continue;
+                }
                 if url.starts_with("/izuki/ping") {
                     let _ = req.respond(json_response(json!({ "ok": true, "name": "Izuki" })));
                 } else if url.starts_with("/izuki/next") {
@@ -143,6 +157,58 @@ pub fn spawn() {
             }
         })
         .ok();
+}
+
+/// What the extension asked for, done here on the PC with the user's own
+/// brains — the extension holds no keys.
+fn page_helper(url: &str, v: &Value) -> Value {
+    let s = |k: &str| v[k].as_str().unwrap_or("").trim().to_string();
+    if url.starts_with("/izuki/focus") {
+        return json!({ "ok": true, "left": crate::focus::left() });
+    }
+    if url.starts_with("/izuki/later") {
+        let said = crate::later::run(crate::later::Ask::Add(vec![s("text").chars().take(140).collect()]));
+        return json!({ "ok": true, "text": said });
+    }
+    if url.starts_with("/izuki/note") {
+        let whole = v["page"].as_bool().unwrap_or(false);
+        return match crate::notes::from_text(&s("title"), &s("url"), &s("text"), whole) {
+            Ok(n) => json!({ "ok": true, "text": format!("Saved to Nova Notes: “{}”.", n.title) }),
+            Err(e) => json!({ "ok": false, "text": format!("I couldn't save that: {e}") }),
+        };
+    }
+    // /izuki/ask
+    let task = s("task");
+    let mut text = s("text");
+    let title = s("title");
+    if task == "link" {
+        text = match crate::web::read(&s("text")) {
+            Ok(t) => t,
+            Err(e) => return json!({ "ok": false, "text": format!("I couldn't open that link: {e}") }),
+        };
+    }
+    let text: String = text.chars().take(14_000).collect();
+    if text.trim().is_empty() && task != "ask" {
+        return json!({ "ok": false, "text": "There's nothing to work with — select some text first." });
+    }
+    let job = match task.as_str() {
+        "explain" => "Explain this in plain, friendly words, as briefly as you can (2–5 sentences). If it's a word or name, say what it means.".to_string(),
+        "translate" => "Translate this into English, keeping the meaning and tone. If it's already English, say so and give its meaning in one simple line.".to_string(),
+        "summarise" | "link" => "Sum this up in 3–5 short bullet points, the way a friend would tell it. Plain words.".to_string(),
+        "define" => "Define this word or phrase simply, with one example sentence.".to_string(),
+        _ => format!(
+            "Answer the user's question about this web page: \"{}\". Use the page; if the answer isn't there, say so and answer from what you know, saying which is which. Be brief.",
+            s("question")
+        ),
+    };
+    let msgs = [
+        json!({ "role": "system", "content": format!("You are Izuki, a warm, sharp helper inside the user's web browser. {job} Plain text only, no markdown headings.") }),
+        json!({ "role": "user", "content": format!("Page: {title}\n\n{text}") }),
+    ];
+    match crate::chat::complete(&msgs) {
+        Ok(t) => json!({ "ok": true, "text": t.trim() }),
+        Err(e) => json!({ "ok": false, "text": format!("My AI brain didn't answer: {e}") }),
+    }
 }
 
 fn json_response(v: Value) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {

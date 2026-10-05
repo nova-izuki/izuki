@@ -3,19 +3,34 @@
 <head>
   <meta charset="utf-8" />
   <style>
-    body { margin: 0; width: 280px; padding: 16px; background: #0b0a14; color: #f4f1fb; font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+    body { margin: 0; width: 320px; padding: 16px; background: #0b0a14; color: #f4f1fb; font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
     .row { display: flex; align-items: center; gap: 10px; }
     img { width: 36px; height: 36px; }
     b { font-size: 16px; }
-    .status { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: #161427; }
+    .status { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: #161427; font-size: 13px; }
     .ok { color: #34d399; } .no { color: #fbbf24; }
-    small { color: #aaa6bf; display: block; margin-top: 8px; }
+    form { margin-top: 12px; display: flex; gap: 6px; }
+    input { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 8px 10px; border-radius: 10px; border: 1px solid #2c2846; background: #120f22; color: #f4f1fb; outline: none; }
+    input:focus { border-color: #7c5cff; }
+    button { font: inherit; font-size: 13px; padding: 8px 12px; border-radius: 10px; border: 0; cursor: pointer; color: #fff; background: linear-gradient(135deg, #7c5cff, #4ecdc4); }
+    .quick { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+    .quick button { background: #1b1830; border: 1px solid #2c2846; text-align: left; }
+    .quick button:hover { background: #241f40; }
+    small { color: #aaa6bf; display: block; margin-top: 10px; font-size: 11.5px; }
+    kbd { background: #1b1830; border: 1px solid #2c2846; border-radius: 5px; padding: 0 4px; font-size: 11px; }
   </style>
 </head>
 <body>
   <div class="row"><img src="icons/icon-48.png" alt="" /><b>Izuki</b></div>
   <div class="status" id="status">Checking…</div>
-  <small>Izuki on your PC uses this to see web pages exactly — every link and button — and to click and type inside them. Nothing leaves your PC.</small>
+  <form id="ask"><input id="q" placeholder="Ask about this page…" autocomplete="off" /><button type="submit">Ask</button></form>
+  <div class="quick">
+    <button data-task="summarise">📝 Sum up this page</button>
+    <button data-read="1">🔊 Read it aloud</button>
+    <button data-q="What are the key points and anything I need to do?">✅ What should I do?</button>
+    <button data-note="1">🗒️ Save to Notes</button>
+  </div>
+  <small>Tip: select text and right-click → <b>Izuki</b> to explain, translate, sum up or save it. <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd> asks about any page. Answers come from Izuki on this PC — nothing else leaves it.</small>
   <script src="popup.js"></script>
 </body>
 </html>

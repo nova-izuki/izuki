@@ -5,6 +5,9 @@
 // and posts the result back. Nothing leaves your PC; nothing runs unless
 // Izuki asks.
 
+// The smart features (right-click menu, answer bubble, focus guard).
+importScripts("smart.js");
+
 const BRIDGE = "http://127.0.0.1:47615/izuki";
 const HEADERS = { "X-Izuki-Extension": "1", "Content-Type": "application/json" };
 let running = false;

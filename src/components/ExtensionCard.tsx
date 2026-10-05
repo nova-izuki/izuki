@@ -21,13 +21,24 @@ export function ExtensionCard() {
     <Section
       id="settings-extension"
       title="Browser extension"
-      hint="Lets Izuki see web pages exactly — every link and button, and where links go — so clicks never miss. In Jarvis mode it clicks and types right inside the page."
+      hint="Izuki in your browser: right-click any text to Explain, Translate, Sum up, Read aloud, Save to Nova Notes or Remind me later; Alt+Shift+I asks about the page; a Focus guard during Focus mode. It also lets Izuki see pages exactly, so clicks never miss."
       right={<Badge tone={on ? "good" : "warn"}>{on ? "connected" : "not added"}</Badge>}
     >
       {on ? (
-        <p className="text-[12.5px] text-izk-ink">
-          ✅ Connected. When a browser is in front, Izuki uses the page's real buttons and links.
-        </p>
+        <div className="flex flex-col gap-1.5 text-[12.5px] text-izk-ink">
+          <p>✅ Connected. Try it: select some text on any page, right-click → <b>Izuki</b>.</p>
+          <p className="text-[11.5px] text-izk-muted">
+            Added it before version 1.1? To get the new right-click menu:{" "}
+            <button
+              type="button"
+              onClick={() => void api.openUrl("https://nova-izuki.github.io/izuki/extension/izuki-extension.zip")}
+              className="underline decoration-izk-muted/50 underline-offset-2 hover:text-izk-ink"
+            >
+              download it again
+            </button>
+            , unzip it over the old folder, then press the ↻ reload button on Izuki in <b>chrome://extensions</b> (or edge://extensions).
+          </p>
+        </div>
       ) : (
         <ol className="list-decimal space-y-2 pl-5 text-[12.5px] leading-relaxed text-izk-ink">
           <li>
