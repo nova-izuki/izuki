@@ -29,7 +29,9 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   profile = fs.mkdtempSync(path.join(os.tmpdir(), 'izuki-browser-check-'));
   browser = spawn(edge, ['--headless=new', '--disable-gpu', '--disable-background-networking', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', '--user-data-dir=' + profile, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
   const portFile = path.join(profile, 'DevToolsActivePort');
-  for (let i = 0; i < 80 && !fs.existsSync(portFile); i++) await pause(250);
+  // A busy CI machine can take a while to start a browser: up to a minute.
+  for (let i = 0; i < 240 && !fs.existsSync(portFile); i++) await pause(250);
+  if (!fs.existsSync(portFile)) throw new Error('the browser did not start within 60 s (' + edge + ')');
   const port = fs.readFileSync(portFile, 'utf8').split('\n')[0].trim();
   const page = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' })).json();
   ws = new WebSocket(page.webSocketDebuggerUrl);
