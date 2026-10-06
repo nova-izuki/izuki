@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Pause, Play, SkipForward, X } from "lucide-react";
-import { api, emit, EV, on } from "../lib/ipc";
+import { api, emit, EV, on, type BoostHealth } from "../lib/ipc";
 import { markHit } from "../lib/hitTest";
 
 type InboxItem = { from: string; subject: string; kind: string; action: string; urgent: boolean };
@@ -78,6 +78,12 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
   const [asked, setAsked] = useState<string | null>(null);
   /** What's on the TV (Roku), if there is one. */
   const [tvNow, setTvNow] = useState<string | null>(null);
+  /** PC Boost's look: the heaviest apps right now (every few seconds). */
+  const [health, setHealth] = useState<BoostHealth | null>(null);
+  /** The processor over the last two minutes, for the live trace. */
+  const [cpuTrace, setCpuTrace] = useState<number[]>([]);
+  /** Autopilot: which fixes are running / done. */
+  const [fixing, setFixing] = useState<Record<string, "run" | "done">>({});
   useEffect(() => {
     showAsked = (label) => setAsked(label);
     const off = on<boolean>(EV.speaking, (talking) => talking && setAsked(null));
@@ -91,8 +97,18 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
 
   useEffect(() => {
     if (!data) return;
+    let n = 0;
     const look = () => {
-      void api.systemPulse().then((p) => p && setPulse(p)).catch(() => undefined);
+      void api
+        .systemPulse()
+        .then((p) => {
+          if (!p) return;
+          setPulse(p);
+          if (p.cpu != null) setCpuTrace((t) => [...t, p.cpu as number].slice(-60));
+        })
+        .catch(() => undefined);
+      // The process list is a bigger look: every other tick.
+      if (n++ % 2 === 0) void api.boostHealth().then(setHealth).catch(() => undefined);
       setNow(new Date());
     };
     look();
@@ -141,6 +157,40 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
   const memory = pulse?.memory ?? data?.memory ?? null;
   const free = pulse?.disk_free_gb ?? data?.disk_free_gb ?? null;
   const clock = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+  // Autopilot: what needs you right now, worked out from what's on this
+  // screen — each with the fix one tap away ("Handle it all" runs them all).
+  type Rec = { id: string; icon: string; text: string; fix: string; run: () => Promise<unknown> };
+  const recs: Rec[] = [];
+  const cpuNow = pulse?.cpu ?? 0;
+  if (health?.lagging || cpuNow >= 85 || (memory ?? 0) >= 88) {
+    recs.push({ id: "boost", icon: "⚡", text: `PC working hard — processor ${cpuNow}%, memory ${memory ?? "?"}%`, fix: "Speed it up", run: () => api.boostNow().then((t) => ask(`Tell me this in one line: ${t}`, "PC Boost")) });
+  }
+  if (free != null && free < 15) {
+    recs.push({ id: "space", icon: "💾", text: `Only ${free} GB free`, fix: "Clear junk", run: () => api.boostNow().then(() => ask("What else is taking the most space on my PC? Check in the background and tell me what I could remove — don't delete anything.", "Free up space")) });
+  }
+  if (battery && !battery[1] && battery[0] <= 25) {
+    recs.push({ id: "battery", icon: "🔋", text: `Battery at ${battery[0]}%`, fix: "Make it last", run: async () => ask("My battery is low. Check in the background what's draining it and tell me what to close to make it last.", "Battery") });
+  }
+  if (pulse && !pulse.online) {
+    recs.push({ id: "net", icon: "📡", text: "You're offline", fix: "Fix my internet", run: async () => ask("My internet isn't working. Check what's wrong on this PC and help me fix it, step by step.", "Fix the internet") });
+  }
+  const next = (data?.calendar ?? [])[0];
+  if (next) {
+    recs.push({ id: "next", icon: "📅", text: `Next: ${next[1]} at ${next[0]}`, fix: "Get me ready", run: async () => ask(`Get me ready for "${next[1]}" at ${next[0]}: who's in it, what it's about, and anything I should prepare or open.`, "Get ready") });
+  }
+  const urgent = digest?.items.filter((i) => i.urgent) ?? [];
+  if (urgent.length) {
+    recs.push({ id: "mail", icon: "✉️", text: `${urgent.length} urgent ${urgent.length === 1 ? "email" : "emails"}`, fix: "Draft replies", run: async () => ask(`Draft replies to my urgent emails (${urgent.map((u) => u.from).join(", ")}). Show me the drafts — don't send anything.`, "Draft replies") });
+  }
+  const runFix = async (r: Rec) => {
+    setFixing((f) => ({ ...f, [r.id]: "run" }));
+    try {
+      await r.run();
+    } finally {
+      setFixing((f) => ({ ...f, [r.id]: "done" }));
+    }
+  };
   const seconds = String(now.getSeconds()).padStart(2, "0");
 
   return (
@@ -169,8 +219,62 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
                 {free != null && (
                   <Line k="Free space" v={`${free} GB`} warn={free < 10} onClick={() => ask("What's taking the most space on my PC? Check in the background and tell me.")} />
                 )}
+                {cpuTrace.length > 2 && <Trace values={cpuTrace} />}
+                {health && health.hogs.length > 0 && (
+                  <div className="flex flex-col gap-1">
+                    {health.hogs.slice(0, 3).map((h) => (
+                      <button
+                        key={`${h.name}-${h.window}`}
+                        type="button"
+                        data-izk-hit
+                        onClick={() => ask(`${h.name} is using ${h.mem_mb} MB of memory${h.cpu >= 5 ? ` and ${Math.round(h.cpu)}% of the processor` : ""}. Is that normal, and what can I do about it? Check in the background.`)}
+                        className="pointer-events-auto flex items-center gap-2 rounded-[6px] text-left text-[11.5px] text-cyan-50 transition hover:bg-cyan-300/10"
+                      >
+                        <span className="w-[86px] shrink-0 truncate">{h.name}</span>
+                        <span className="h-[5px] flex-1 overflow-hidden rounded-full bg-cyan-300/10">
+                          <span className="block h-full rounded-full bg-gradient-to-r from-cyan-300 to-violet-400" style={{ width: `${Math.min(100, (h.mem_mb / Math.max(1, health.hogs[0].mem_mb)) * 100)}%` }} />
+                        </span>
+                        <span className="w-[54px] shrink-0 text-right text-cyan-100/70">{h.mem_mb >= 1024 ? `${(h.mem_mb / 1024).toFixed(1)} GB` : `${h.mem_mb} MB`}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <Line k="Network" v={pulse ? (pulse.online ? "Online" : "Offline") : "…"} warn={pulse ? !pulse.online : false} />
                 <Line k="Status" v={(memory ?? 0) >= 85 || (free ?? 99) < 10 || (pulse ? !pulse.online : false) ? "Needs attention" : "All systems normal"} />
+              </Panel>
+              <Panel title="AUTOPILOT" live>
+                {recs.length === 0 ? (
+                  <div className="text-[13px] text-cyan-100/75">✓ All clear — nothing needs you right now.</div>
+                ) : (
+                  <>
+                    {recs.map((r) => (
+                      <div key={r.id} className="flex items-center gap-2 border-b border-cyan-300/10 pb-1.5 text-[12.5px] last:border-0">
+                        <span className="shrink-0">{r.icon}</span>
+                        <span className="min-w-0 flex-1 truncate text-cyan-50">{r.text}</span>
+                        <button
+                          type="button"
+                          data-izk-hit
+                          disabled={!!fixing[r.id]}
+                          onClick={() => void runFix(r)}
+                          className="pointer-events-auto shrink-0 rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2.5 py-0.5 text-[11.5px] text-cyan-50 transition hover:bg-cyan-300/25 disabled:opacity-60"
+                        >
+                          {fixing[r.id] === "run" ? "…" : fixing[r.id] === "done" ? "✓ Done" : r.fix}
+                        </button>
+                      </div>
+                    ))}
+                    {recs.length > 1 && (
+                      <HudChip
+                        onClick={() =>
+                          void (async () => {
+                            for (const r of recs) if (!fixing[r.id]) await runFix(r);
+                          })()
+                        }
+                      >
+                        🤖 Handle it all
+                      </HudChip>
+                    )}
+                  </>
+                )}
               </Panel>
               {data.playing && (
                 <Panel title="NOW PLAYING">
@@ -517,6 +621,21 @@ function Rings() {
         <circle cx="200" cy="200" r="140" fill="none" stroke="#f0abfc" strokeWidth="1.5" strokeDasharray="20 420" strokeDashoffset="-300" opacity="0.8" />
       </g>
       <circle cx="200" cy="200" r="128" fill="rgba(8,30,48,0.35)" stroke="rgba(103,232,249,0.25)" strokeWidth="1" />
+    </svg>
+  );
+}
+
+/** The processor over the last two minutes — a live trace, newest on the right. */
+function Trace({ values }: { values: number[] }) {
+  const w = 220;
+  const h = 34;
+  const step = w / Math.max(1, 59);
+  const pts = values.map((v, i) => `${(i + 60 - values.length) * step},${h - (Math.max(0, Math.min(100, v)) / 100) * (h - 2) - 1}`).join(" ");
+  const last = values[values.length - 1] ?? 0;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="izk-hud-glow h-[34px] w-full" preserveAspectRatio="none" aria-label={`Processor ${last}%`}>
+      <line x1="0" y1={h * 0.12} x2={w} y2={h * 0.12} stroke="rgba(251,191,36,0.25)" strokeDasharray="3 4" />
+      <polyline points={pts} fill="none" stroke={last >= 88 ? "#fbbf24" : "#67e8f9"} strokeWidth="1.6" strokeLinejoin="round" />
     </svg>
   );
 }
