@@ -5,9 +5,15 @@ export interface FaceOptions {
   look?: { x: number; y: number } | null;
   /** Tapped (a new value each time): the face reacts. */
   poke?: number;
-  /** How this face is set up (tint, glow, size…). */
-  custom?: Partial<FaceLook> | null;
+  /** How this face is set up (tint, glow, size…; for 2D characters render, framing, orb). */
+  custom?: (Partial<FaceLook> & { render?: "flat" | "comic"; framing?: "full" | "half" | "bust" | "head"; orb?: boolean }) | null;
+  /** 2D characters: whose character (the voice in use). */
+  persona?: string;
+  /** What's being said right now — the character's mouth and gestures follow it. */
+  say?: { text: string } | null;
 }
+
+export function isToon(style: string): boolean;
 
 export function drawGlassOrb(
   ctx: CanvasRenderingContext2D,

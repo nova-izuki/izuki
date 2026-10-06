@@ -597,7 +597,8 @@ impl Settings {
         if self.orb_style == "avatar" { self.orb_style = if male { "model:black-male" } else { "model:lightskin-female" }.into(); }
         if self.tv_orb == "holo3d" || self.tv_orb == "avatar" { self.tv_orb = "model:holo-female".into(); }
         let face_ok = |s: &str| s.strip_prefix("model:").is_some_and(|id| (1..=40).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
-        if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro"].contains(&self.orb_style.as_str()) && !face_ok(&self.orb_style) { self.orb_style = "liquid".into(); }
+        let toon_ok = |s: &str| s == "toon" || s.strip_prefix("toon:").is_some_and(|id| (1..=24).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric()));
+        if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro"].contains(&self.orb_style.as_str()) && !face_ok(&self.orb_style) && !toon_ok(&self.orb_style) { self.orb_style = "liquid".into(); }
         self.orb_response = if self.orb_response.is_finite() { self.orb_response.clamp(0.5, 1.5) } else { 1.0 };
         let defaults = Self::default();
         for d in defaults.providers {
@@ -803,7 +804,7 @@ impl Default for Settings {
             freeze_screen: true,
             magnetic_hand: true,
             control_style: "mouse".into(),
-            orb_style: "liquid".into(),
+            orb_style: "toon".into(),
             orb_response: 1.0,
             avatar: String::new(),
             roku_dev_password: String::new(),

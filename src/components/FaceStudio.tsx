@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Plus, Trash2, Upload, X } from "lucide-react";
 import { useIzuki } from "../lib/store";
-import { faceGender, faceId, faceLooks, isFace, withLook } from "../lib/faces";
+import { faceGender, faceId, faceLooks, isFace, isToon, withLook } from "../lib/faces";
+import { loadCatalog } from "../lib/personas";
 import { api } from "../lib/ipc";
 import { Toggle } from "./ui";
 import type { Settings } from "../lib/types";
@@ -47,6 +48,81 @@ function Tile({ on, label, img, onClick, children }: { on: boolean; label: strin
   );
 }
 
+type ToonModule = typeof import("../../docs/app/toon.js");
+
+/** The 2D characters: one for every voice, Flat vector or Comic. */
+function ToonSection({ style, pick }: { style: string; pick: (s: Settings["orb_style"]) => void }) {
+  const [mod, setMod] = useState<ToonModule | null>(null);
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const persona = useIzuki((s) => s.settings.persona);
+  const raw = useIzuki((s) => s.settings.avatar);
+  const render = (faceLooks(raw).toon as { render?: string } | undefined)?.render === "comic" ? "comic" : "flat";
+  useEffect(() => {
+    let alive = true;
+    void import("../../docs/app/toon.js").then((m) => alive && setMod(m));
+    return () => { alive = false; };
+  }, []);
+  // Card pictures, a few at a time so the page never stutters.
+  useEffect(() => {
+    if (!mod) return;
+    let alive = true;
+    const ids = Object.keys(mod.CHARACTERS);
+    let i = 0;
+    const step = () => {
+      if (!alive) return;
+      const batch: Record<string, string> = {};
+      for (const id of ids.slice(i, i + 4)) batch[id] = mod.toonThumb(id, render, 120, "bust");
+      i += 4;
+      setThumbs((t) => ({ ...t, ...batch }));
+      if (i < ids.length) setTimeout(step, 30);
+    };
+    setThumbs({});
+    step();
+    return () => { alive = false; };
+  }, [mod, render]);
+  if (!mod) return null;
+  return (
+    <section>
+      <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-izk-muted">2D characters</h4>
+      <div className="grid grid-cols-4 gap-1.5">
+        <Tile on={style === "toon"} label="My voice's" img={thumbs[persona] ?? thumbs.nova} onClick={() => pick("toon")} />
+        {Object.entries(mod.CHARACTERS).map(([id, c]) => (
+          <Tile key={id} on={style === `toon:${id}`} label={c.name} img={thumbs[id]} onClick={() => pick(`toon:${id}`)} />
+        ))}
+      </div>
+      <p className="mt-1 text-[10.5px] text-izk-muted">“My voice's” changes with the voice. Picking a character also gives Izuki their voice (while “Match voice and character” is on).</p>
+    </section>
+  );
+}
+
+/** How the 2D characters look: Flat or Comic, how much of them, in the orb or free. */
+function ToonTuner() {
+  const raw = useIzuki((s) => s.settings.avatar);
+  const patch = useIzuki((s) => s.patchSettings);
+  const look = (faceLooks(raw).toon ?? {}) as { render?: string; framing?: string; orb?: boolean };
+  const set = (change: Record<string, unknown>) => patch({ avatar: withLook(raw, "toon", change as never) });
+  const pill = (on: boolean) => `izk-pill px-2.5 py-1 text-[11px] ${on ? "border-izk-teal/70 bg-izk-teal/15" : ""}`;
+  return (
+    <section className="space-y-2 rounded-[14px] border border-white/10 bg-white/5 p-3">
+      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-izk-muted">Character style</h4>
+      <div className="flex flex-wrap gap-1.5">
+        {[["flat", "Flat vector"], ["comic", "Comic (Spider-Verse)"]].map(([k, l]) => (
+          <button key={k} type="button" aria-pressed={(look.render ?? "flat") === k} className={pill((look.render ?? "flat") === k)} onClick={() => set({ render: k })}>{l}</button>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {[["full", "Full body"], ["half", "Half"], ["bust", "Head & shoulders"], ["head", "Head"]].map(([k, l]) => (
+          <button key={k} type="button" aria-pressed={(look.framing ?? "half") === k} className={pill((look.framing ?? "half") === k)} onClick={() => set({ framing: k })}>{l}</button>
+        ))}
+      </div>
+      <label className="flex items-center gap-2 text-[11px] text-izk-muted">
+        <input type="checkbox" checked={look.orb === true} onChange={(e) => set({ orb: e.target.checked })} className="accent-izk-teal" />
+        Inside a round orb (off: the character stands free)
+      </label>
+    </section>
+  );
+}
+
 /** Pick Izuki's look: an orb, one of the 3D faces, one you added, or your own. */
 export function LookPicker() {
   const style = useIzuki((s) => s.settings.orb_style);
@@ -61,6 +137,16 @@ export function LookPicker() {
   const match = useIzuki((s) => s.settings.match_voice_face);
   const pick = (s: Settings["orb_style"]) => {
     patch({ orb_style: s });
+    // A 2D character picked by name brings its own voice (when matching is on).
+    if (s.startsWith("toon:") && match) {
+      const id = s.slice(5);
+      void loadCatalog().then((cat) => {
+        const p = cat.personas.find((x) => x.id === id);
+        if (!p) return;
+        patch({ persona: p.id, persona_name: "", persona_voice: "", cloud_voice: "", voice_rate: 0, voice_pitch: 0, voice_name: p.kokoro });
+        setNote(`${p.name}'s voice too, to match. (Turn off "Match voice and character" to keep your own.)`);
+      }).catch(() => undefined);
+    }
     if (isFace(s)) void mod?.preloadFace(faceId(s)).catch(() => {});
     // "Match voice and character": a woman's face speaks with a woman's voice.
     const g = faceGender(s);
@@ -102,6 +188,8 @@ export function LookPicker() {
 
   return (
     <div className="space-y-3">
+      <ToonSection style={style} pick={pick} />
+      {isToon(style) && <ToonTuner />}
       <section>
         <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-izk-muted">Orbs</h4>
         <div className="flex flex-wrap gap-1.5">
@@ -235,8 +323,8 @@ function FaceTuner({ id, mod, rigged }: { id: string; mod: FaceModule; rigged: b
         )}
       </div>
       <label className="mb-2 flex items-center gap-2 text-[11px] text-izk-muted">
-        <input type="checkbox" checked={!!look.bare} onChange={(e) => set({ bare: e.target.checked })} className="accent-izk-teal" />
-        Without the orb (just the character)
+        <input type="checkbox" checked={look.bare === true || (look.bare !== false && look.frame === "full")} onChange={(e) => set({ bare: e.target.checked })} className="accent-izk-teal" />
+        Without the orb — standing right on your screen (full body does this by default)
       </label>
       <div className="grid grid-cols-3 gap-2">
         {colour("accent", "Glow colour", "#a78bfa")}

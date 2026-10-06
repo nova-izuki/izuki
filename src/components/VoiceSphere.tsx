@@ -9,7 +9,7 @@ import { drawWaterOrb } from "../../docs/app/water-orb.js";
 import { createOrbMotion, stepOrbMotion } from "../../docs/app/orb-motion.js";
 import { drawConstellationOrb, drawRippleOrb } from "../../docs/app/orb-materials.js";
 import { drawGlassOrb, type FaceOptions } from "../../docs/app/glass-orb.js";
-import { faceFor, isFace } from "../lib/faces";
+import { faceFor, isFace, isToon } from "../lib/faces";
 import { watchPointer } from "./Island";
 
 /**
@@ -226,7 +226,7 @@ export function SphereCanvas({
   /** Where the 3D face looks: at the pointer while it moves, else around. */
   const lookRef = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => {
-    if (!isFace(style)) return;
+    if (!isFace(style) && !isToon(style)) return;
     let idle: ReturnType<typeof setTimeout> | undefined;
     const stop = watchPointer((x, y) => {
       const r = canvasRef.current?.getBoundingClientRect();
@@ -250,10 +250,26 @@ export function SphereCanvas({
   const target = useRef(0);
   /** How Izuki feels as it speaks (-1 sad … 1 happy) — the face shows it. */
   const mood = useRef(0);
+  /** What Izuki is saying: a 2D character's mouth and gestures follow the words. */
+  const sayRef = useRef<{ text: string } | null>(null);
+  useEffect(() => {
+    if (!preview || !demo) return;
+    // The studio's voice demo: a line to act out.
+    const lines = [
+      "Hey! Here's what I can do. First, I open your apps. Second, I find anything. You ready? Let's go!",
+      "Hmm, I think that's a great idea. Want me to start now?",
+    ];
+    let i = 0;
+    sayRef.current = { text: lines[0] };
+    const iv = setInterval(() => { i = (i + 1) % lines.length; sayRef.current = { text: lines[i] }; }, 9000);
+    return () => clearInterval(iv);
+  }, [preview, demo]);
   useEffect(() => {
     if (preview) return;
     const off = on<{ mood?: string | null } | string>(EV.say, (p) => {
       const m = typeof p === "string" ? "" : (p.mood ?? "");
+      const text = typeof p === "string" ? p : (p as { text?: string }).text;
+      if (text) sayRef.current = { text };
       mood.current = /cheer|excit|happy|proud|playful/.test(m) ? 1 : /sympath|sad|sorry|concern/.test(m) ? -0.7 : /curious|surpris/.test(m) ? 0.35 : 0.1;
     });
     return () => void off.then((f) => f());
@@ -334,7 +350,7 @@ export function SphereCanvas({
       ctx.clearRect(0, 0, SIZE, SIZE);
 
       // The realistic, GPU-drawn materials; the 2D ones are the fallback.
-      const faceNow = faceRef.current ? { ...faceRef.current, look: lookRef.current } : null;
+      const faceNow = faceRef.current ? { ...faceRef.current, look: lookRef.current, say: sayRef.current } : null;
       if (style !== "liquid" && drawGlassOrb(ctx, SIZE, style, reduced ? 0 : physics.time, physics.energy, physics.waiting, demo ? 0.8 : mood.current, faceNow)) return;
       if (style === "ferrofluid" || style === "dew") {
         drawWaterOrb(ctx, SIZE, physics.time, physics.energy, 0, st === "thinking", physics);

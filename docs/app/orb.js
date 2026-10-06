@@ -34,7 +34,7 @@
     v = String(v || "");
     if (v === "holo3d") return "model:holo-female";
     if (v === "avatar") return "model:lightskin-female";
-    return STYLES.includes(v) || /^model:[a-z0-9-]{1,40}$/i.test(v) ? v : "liquid";
+    return STYLES.includes(v) || v === "toon" || /^toon:[a-z0-9]{1,24}$/i.test(v) || /^model:[a-z0-9-]{1,40}$/i.test(v) ? v : "liquid";
   };
   try { style = known(localStorage.getItem("izuki.orbStyle") || "liquid"); } catch {}
   let mode = "idle", target = 0, level = 0, t = 0, turn = 0, last = performance.now(), raf = 0, frame = 0;
@@ -54,7 +54,9 @@
 
   // The 3D faces (holo3d, avatar) need a steady 30 fps even at rest — blinks and
   // breathing at 12 fps look like a slideshow.
-  const isFace = (s) => typeof s === "string" && s.startsWith("model:");
+  const isFace = (s) => typeof s === "string" && (s.startsWith("model:") || s === "toon" || s.startsWith("toon:"));
+  /** What Izuki is saying right now: a 2D character's mouth and hands follow it. */
+  let sayNow = null;
   // The saved look, read once a second rather than parsed every frame.
   let faceCache = {}, faceAt = 0;
   const savedFace = (now, s) => {
@@ -88,7 +90,7 @@
     const state = o.preview ? o.physics : physics;
     if (selectedStyle !== 'liquid' && material && state) {
       // The realistic GPU look first; the 2D drawers if this phone can't.
-      const face = isFace(selectedStyle) ? { ...savedFace(now, selectedStyle), poke: o.poke } : null;
+      const face = isFace(selectedStyle) ? { ...savedFace(now, selectedStyle), poke: o.poke, say: sayNow } : null;
       const smile = (o.preview ? o.preview.mode : mode) === "speaking" ? 0.4 : 0;
       if (material.drawGlassOrb && material.drawGlassOrb(ctx, SIZE, selectedStyle, reduced ? 0 : state.time, state.energy, state.waiting || 0, smile, face)) return;
       if (selectedStyle === 'ferrofluid' || selectedStyle === 'dew') material.drawWaterOrb(ctx,SIZE,state.time,state.energy,0,(o.preview?.mode || mode)==='thinking',state);
@@ -234,6 +236,8 @@
     },
     /** The 3D face's look changed (setup saved it): show it now. */
     face() { faceCache = {}; wake(); },
+    /** The words being said now (each piece of a reply as it starts). */
+    say(text) { sayNow = text ? { text: String(text) } : null; wake(); },
     style(value) {
       style = known(value);
       try { localStorage.setItem("izuki.orbStyle", style); } catch {}

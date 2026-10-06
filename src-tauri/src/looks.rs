@@ -98,6 +98,14 @@ fn parse_face(s: &str) -> Option<Look> {
     if has("matte") || s.contains("less shiny") { changes.push(("gloss", num(0.1))); named.push("matte"); }
     if s.contains("just your head") || s.contains("only your head") || s.contains("head only") { changes.push(("headOnly", serde_json::Value::Bool(true))); named.push("just my head"); }
     if s.contains("your body") || s.contains("full body") || s.contains("your shoulders") { changes.push(("headOnly", serde_json::Value::Bool(false))); named.push("head and shoulders"); }
+    // The 2D characters' style.
+    if s.contains("comic") || s.contains("spider-verse") || s.contains("spiderverse") || s.contains("spider verse") || s.contains("miles morales") {
+        changes.push(("render", serde_json::Value::String("comic".into())));
+        named.push("comic style");
+    } else if s.contains("flat") || s.contains("vector") {
+        changes.push(("render", serde_json::Value::String("flat".into())));
+        named.push("flat vector style");
+    }
     if changes.is_empty() {
         return None;
     }
@@ -126,6 +134,7 @@ const ORBS: &[(&[&str], &str, &str)] = &[
     (&["my face", "my avatar"], "model:me", "your face"),
     (&["3d woman", "3d girl"], "model:lightskin-female", "the woman"),
     (&["3d man", "3d guy", "3d face", "3d avatar", "avatar"], "model:black-male", "the man"),
+    (&["cartoon", "2d character", "2d", "animated character", "my character", "comic character", "vector character"], "toon", "your 2D character"),
     (&["face", "hologram", "head"], "face", "Hologram face"),
     (&["ferrofluid", "ferro", "magnetic", "black liquid"], "ferro", "Ferrofluid"),
     (&["liquid", "glass", "default", "normal", "original"], "liquid", "Liquid glass"),
@@ -145,6 +154,10 @@ pub fn parse(said: &str) -> Option<Look> {
             }
         }
         return None;
+    }
+    // "Switch to your 2D character", "be a cartoon".
+    if ["2d character", "cartoon", "animated character", "comic character", "vector character"].iter().any(|w| s.contains(w)) && verb {
+        return Some(Look::Orb("toon", "your 2D character"));
     }
     // Which 3D face, then how it looks (glow, skin, hair, size, head only).
     if let Some(face) = parse_face_switch(s) {
@@ -184,19 +197,34 @@ pub fn apply(look: &Look) -> Option<String> {
             }
         }
         Look::Avatar(changes, named) => {
-            // Changes go to the face in use (a plain orb switches to a face first).
-            let id = match s.orb_style.strip_prefix("model:") {
-                Some(id) => id.to_string(),
-                None => {
-                    s.orb_style = "model:holo-female".into();
-                    "holo-female".to_string()
+            // Changes go to the face in use (a plain orb switches to a face first);
+            // the 2D characters share one look, "toon".
+            let toon = s.orb_style == "toon" || s.orb_style.starts_with("toon:") || changes.iter().any(|(k, _)| *k == "render");
+            let id = if toon {
+                if !(s.orb_style == "toon" || s.orb_style.starts_with("toon:")) {
+                    s.orb_style = "toon".into();
+                }
+                "toon".to_string()
+            } else {
+                match s.orb_style.strip_prefix("model:") {
+                    Some(id) => id.to_string(),
+                    None => {
+                        s.orb_style = "model:holo-female".into();
+                        "holo-female".to_string()
+                    }
                 }
             };
+            // "Just your head" / "full body" mean framing for a 2D character.
+            let changes: Vec<(&str, serde_json::Value)> = changes
+                .iter()
+                .map(|(k, v)| if toon && *k == "headOnly" { ("framing", serde_json::Value::String(if v.as_bool() == Some(true) { "head" } else { "full" }.into())) } else { (*k, v.clone()) })
+                .collect();
+            let changes = &changes;
             let mut v: serde_json::Value = serde_json::from_str(&s.avatar).unwrap_or_else(|_| serde_json::json!({}));
             // A sculpted face's own hair is part of the sculpt: only a haircut
             // put on it (or a rigged face, yours) can change colour.
             let has_cut = v[&id]["cut"].as_str().is_some_and(|c| !c.is_empty());
-            if changes.len() == 1 && changes[0].0 == "hair" && id != "me" && !id.starts_with("u-") && !has_cut {
+            if !toon && changes.len() == 1 && changes[0].0 == "hair" && id != "me" && !id.starts_with("u-") && !has_cut {
                 return Some("This face's own hair is sculpted in, so it can't change colour — but give it a haircut first (\"give yourself an afro\") and that can be any colour.".into());
             }
             if !v.is_object() {
@@ -267,5 +295,9 @@ mod tests {
         assert!(c.iter().any(|(k, _)| *k == "cut") && c.iter().any(|(k, _)| *k == "hair"));
         assert_eq!(parse("open my face wash shopping list"), None);
         assert_eq!(parse("open my dreads tutorial video"), None);
+        assert_eq!(parse("switch to your 2d character"), Some(Look::Orb("toon", "your 2D character")));
+        assert_eq!(parse("change your orb to the cartoon"), Some(Look::Orb("toon", "your 2D character")));
+        let Some(Look::Avatar(c, _)) = parse("make your style comic") else { panic!("comic") };
+        assert_eq!(c[0], ("render", serde_json::Value::String("comic".into())));
     }
 }

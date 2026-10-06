@@ -22,6 +22,7 @@ import {
   LineBasicMaterial,
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { follow, gestureAt, visemeAt } from "./speech.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
@@ -288,7 +289,7 @@ function prepare(id, gltf) {
   // The head's resting turn in the world (facing +Z), to undo an idle's glance.
   const headRest = bones.Head ? bones.Head.getWorldQuaternion(new Quaternion()).invert() : null;
   const rest = new Map();
-  for (const name of ["Head", "Neck", "Spine1", "Spine2", "LeftEye", "RightEye"]) if (bones[name]) rest.set(name, bones[name].quaternion.clone());
+  for (const name of ["Head", "Neck", "Spine1", "Spine2", "LeftEye", "RightEye", "LeftArm", "LeftForeArm", "RightArm", "RightForeArm"]) if (bones[name]) rest.set(name, bones[name].quaternion.clone());
 
   const setMorph = (name, v) => {
     for (const m of morphed) {
@@ -1027,25 +1028,59 @@ function animate(model, s, o, dt) {
       if (!B[eye]) continue;
       rotateWorld(B[eye], _q.setFromEuler(_e.set((lk ? lk.y * 0.3 : 0) + s.sy - thinking * 0.15, (lk ? lk.x * 0.45 : 0) + s.sx + thinking * 0.2, 0)));
     }
-    // The mouth: open with the voice, its shape wandering through the vowels.
-    const open = clamp(s.e * 1.15, 0, 1);
-    const ph = t * 8.3;
-    const vow = [0.5 + 0.5 * Math.sin(ph), 0.5 + 0.5 * Math.sin(ph * 0.71 + 2), 0.5 + 0.5 * Math.sin(ph * 1.37 + 4), 0.5 + 0.5 * Math.sin(ph * 0.53 + 1)];
-    const sum = vow.reduce((a, b) => a + b, 0) || 1;
-    model.setMorph("jawOpen", open * 0.42);
-    model.setMorph("mouthOpen", open * 0.25);
-    model.setMorph("viseme_aa", (open * vow[0]) / sum * 1.4);
-    model.setMorph("viseme_O", (open * vow[1]) / sum * 1.2);
-    model.setMorph("viseme_E", (open * vow[2]) / sum * 1.2);
-    model.setMorph("viseme_I", (open * vow[3]) / sum * 0.9);
-    model.setMorph("viseme_sil", 1 - open);
-    const smile = grin ? 0.8 : clamp(o.mood || 0, -1, 1) * 0.45 + 0.12;
-    model.setMorph("mouthSmileLeft", Math.max(0, smile));
-    model.setMorph("mouthSmileRight", Math.max(0, smile));
-    model.setMorph("mouthSmile", Math.max(0, smile));
-    model.setMorph("mouthFrownLeft", Math.max(0, -smile) * 0.6);
-    model.setMorph("mouthFrownRight", Math.max(0, -smile) * 0.6);
-    model.setMorph("browInnerUp", thinking * 0.35 + (grin ? 0.2 : 0));
+    // The words: mouth shapes from what's being said, gestures from what it means.
+    const F = follow(s, o.say, s.e, t);
+    const g = F.talking ? gestureAt(F.plan, F.st) : null;
+    const kind = grin ? "cheer" : g ? g.kind : thinking > 0.5 ? "think" : "rest";
+    const want = {};
+    let jaw = 0;
+    if (F.talking && F.st >= 0 && !F.quiet) {
+      const v = visemeAt(F.timeline, F.st);
+      want[v] = clamp(0.6 + s.e * 0.7, 0, 1);
+      jaw = (JAW[v] || 0) * clamp(0.6 + s.e, 0, 1.3);
+    } else if (s.e > 0.08) {
+      // A voice with no words to follow: real shapes in turn, not just open-close.
+      const v = ["aa", "E", "O", "DD", "I", "PP", "aa", "U"][Math.floor(t * 9) % 8];
+      want[v] = clamp(s.e * 1.3, 0, 1);
+      jaw = (JAW[v] || 0) * clamp(s.e * 1.4, 0, 1);
+    }
+    s.vis = s.vis || {};
+    const k = Math.min(1, dt * 20);
+    for (const v of VISEMES) {
+      const w = want[v] || 0;
+      s.vis[v] = (s.vis[v] || 0) + (w - (s.vis[v] || 0)) * k;
+      model.setMorph("viseme_" + v, s.vis[v]);
+    }
+    s.jaw = (s.jaw || 0) + (jaw - (s.jaw || 0)) * Math.min(1, dt * 18);
+    model.setMorph("jawOpen", s.jaw);
+    model.setMorph("mouthOpen", 0);
+    // Nods on the stressed bits.
+    if (F.talking && s.e > 0.45 && t - (s.beatAt || 0) > 0.4) { s.beatAt = t; s.pitchv += 1.4; }
+    // The face: the mood in the mouth, cheeks and eyes; questions and surprise in the brows.
+    const happy = kind === "cheer" || kind === "pump";
+    const smile = grin ? 0.85 : clamp(o.mood || 0, -1, 1) * 0.45 + 0.12 + (happy ? 0.35 : 0);
+    s.smile = (s.smile ?? smile) + (smile - (s.smile ?? smile)) * Math.min(1, dt * 4);
+    const sm = s.smile;
+    model.setMorph("mouthSmileLeft", Math.max(0, sm));
+    model.setMorph("mouthSmileRight", Math.max(0, sm));
+    model.setMorph("mouthSmile", Math.max(0, sm));
+    model.setMorph("cheekSquintLeft", Math.max(0, sm) * 0.6);
+    model.setMorph("cheekSquintRight", Math.max(0, sm) * 0.6);
+    model.setMorph("eyeSquintLeft", Math.max(0, sm) * 0.3);
+    model.setMorph("eyeSquintRight", Math.max(0, sm) * 0.3);
+    model.setMorph("mouthFrownLeft", Math.max(0, -sm) * 0.6);
+    model.setMorph("mouthFrownRight", Math.max(0, -sm) * 0.6);
+    const browUp = (kind === "ask" ? 0.45 : 0) + (kind === "shrug" ? 0.4 : 0) + (happy || grin ? 0.35 : 0);
+    s.brow = (s.brow || 0) + (browUp - (s.brow || 0)) * Math.min(1, dt * 6);
+    model.setMorph("browInnerUp", thinking * 0.35 + s.brow * 0.6 + Math.max(0, -(o.mood || 0)) * 0.35);
+    model.setMorph("browOuterUpLeft", s.brow);
+    model.setMorph("browOuterUpRight", s.brow);
+    model.setMorph("browDownLeft", kind === "chin" ? 0.3 : 0);
+    model.setMorph("browDownRight", kind === "chin" ? 0.3 : 0);
+    model.setMorph("eyeWideLeft", happy || grin ? 0.3 : 0);
+    model.setMorph("eyeWideRight", happy || grin ? 0.3 : 0);
+    // The arms act it out (the idle animation underneath, blended).
+    gesture(model, s, kind, g ? g.n : 0, t, dt);
     if (model.hasBlink) { model.setMorph("eyeBlinkLeft", blink); model.setMorph("eyeBlinkRight", blink); }
     else model.setMorph("eyesClosed", blink);
     model.root.position.y = 0;
@@ -1067,6 +1102,67 @@ function animate(model, s, o, dt) {
   model.uniforms.uTime.value = t;
 }
 
+/** The 15 standard mouth shapes, and how far each opens the jaw. */
+const VISEMES = ["sil", "PP", "FF", "TH", "DD", "kk", "CH", "SS", "nn", "RR", "aa", "E", "I", "O", "U"];
+const JAW = { aa: 0.5, O: 0.38, E: 0.26, I: 0.16, U: 0.22, RR: 0.2, CH: 0.16, kk: 0.2, DD: 0.16, nn: 0.12, SS: 0.08, TH: 0.15, FF: 0.06, PP: 0, sil: 0 };
+
+/**
+ * Arm gestures for a rigged body: [upper arm, forearm] as angles from straight
+ * down (+ out to the side), and how far each comes forward. Index 0 is the arm
+ * on the viewer's left, 1 on the right — the same poses the 2D characters use.
+ */
+const ARM_POSES = {
+  wave: [null, [1.2, 2.9, 0.1, 0.15]],
+  ask: [[0.35, 1.3, 0.35, 0.9], [0.35, 1.3, 0.35, 0.9]],
+  shrug: [[0.45, 1.5, 0.3, 0.7], [0.45, 1.5, 0.3, 0.7]],
+  chin: [null, [-0.1, -2.5, 0.5, 1.2]],
+  count: [null, [0, -2.2, 0.6, 1.4]],
+  pump: [null, [2.4, 3.0, 0.2, 0.2]],
+  cheer: [[2.3, 2.9, 0.2, 0.2], [2.3, 2.9, 0.2, 0.2]],
+  point: [null, [0.3, -1.6, 0.8, 2.2]],
+  chest: [null, [-0.25, -2.4, 0.5, 1.4]],
+  present: [null, [0.55, 1.15, 0.5, 1.0]],
+  explain: [[0.3, 1.2, 0.5, 1.1], null],
+  explain2: [null, [0.3, 1.2, 0.5, 1.1]],
+  think: [[-0.15, -2.4, 0.5, 1.3], [-0.1, -2.5, 0.5, 1.2]],
+};
+const _a = new Vector3(), _b = new Vector3(), _cur = new Vector3(), _d = new Vector3(), _gq = new Quaternion();
+
+function aimBone(bone, child, dir, w) {
+  if (!bone || !child || w < 0.01) return;
+  bone.getWorldPosition(_a);
+  child.getWorldPosition(_b);
+  _cur.subVectors(_b, _a).normalize();
+  // Turn part of the way along the arc (not a straight blend, which cuts
+  // through the side when the arm swings from down to up).
+  _gq.setFromUnitVectors(_cur, dir);
+  rotateWorld(bone, _q.identity().slerp(_gq, w));
+}
+
+function gesture(model, s, kind, n, t, dt) {
+  const B = model.bones;
+  if (!B.LeftArm || !B.RightArm || !B.LeftForeArm || !B.RightForeArm || !B.LeftHand || !B.RightHand) return;
+  // Which arm is on the viewer's left (the body faces +Z).
+  const lx = B.LeftArm.getWorldPosition(_a).x, rx = B.RightArm.getWorldPosition(_b).x;
+  const arms = lx < rx ? [["Left", -1], ["Right", 1]] : [["Right", -1], ["Left", 1]];
+  const pose = ARM_POSES[kind] || [null, null];
+  s.gw = s.gw || [0, 0];
+  for (let i = 0; i < 2; i++) {
+    const p = pose[i];
+    s.gw[i] += ((p ? 1 : 0) - s.gw[i]) * Math.min(1, dt * 5);
+    if (s.gw[i] < 0.01) continue;
+    const [side, sx] = arms[i];
+    const q = p || s.lastPose?.[i] || [0.1, 0.05, 0, 0];
+    const fore = q[1] + (kind === "wave" && i === 1 ? Math.sin(t * 12) * 0.25 : 0);
+    const dirOf = (ang, fwd) => _d.set(Math.sin(ang) * sx, -Math.cos(ang), fwd).normalize();
+    aimBone(B[side + "Arm"], B[side + "ForeArm"], dirOf(q[0], q[2]).clone(), s.gw[i]);
+    aimBone(B[side + "ForeArm"], B[side + "Hand"], dirOf(fore, q[3]).clone(), s.gw[i]);
+  }
+  s.lastPose = [pose[0] || s.lastPose?.[0], pose[1] || s.lastPose?.[1]];
+  // A little hop when it cheers.
+  if (B.Hips && kind === "cheer") B.Hips.position.y += Math.abs(Math.sin(t * 7)) * 0.015;
+}
+
 function placeCamera(model, L, aspect = 1) {
   const f = model.frame;
   // A sculpt is framed on its nose (headH = top of head to nose); a rig on its
@@ -1075,12 +1171,13 @@ function placeCamera(model, L, aspect = 1) {
   const framing = L.headOnly ? "head" : L.frame || "shoulders";
   if (f.sculpt) { viewH = f.headH * 3.1; cy = f.head.y - f.headH * 0.12; }
   else if (framing === "head") { viewH = f.headH * 1.6; cy = f.head.y + f.headH * 0.4; }
-  else if (framing === "full" && f.full) { viewH = (f.top - f.bottom) * 1.06; cy = (f.top + f.bottom) / 2; }
+  else if (framing === "full" && f.full) { const top = Math.max(f.top, f.head.y + f.headH * 0.8); viewH = (top - f.bottom) * 1.2; cy = (top + f.bottom) / 2; }
   else if (framing === "half" && f.full) {
-    // Waist up: about three heads below the head's centre.
+    // Waist up: about three heads below the head's centre, with room above it.
+    const top = Math.max(f.top, f.head.y + f.headH * 0.8);
     const waist = Math.max(f.bottom, f.head.y - f.headH * 3.3);
-    viewH = (f.top - waist) * 1.08;
-    cy = (f.top + waist) / 2;
+    viewH = (top - waist) * 1.32;
+    cy = (top + waist) / 2;
   } else { viewH = f.headH * 2.6; cy = f.head.y + f.headH * 0.02; }
   viewH /= clamp(L.scale || 1, 0.4, 2.5);
   const target = new Vector3(f.head.x, cy - (L.y || 0) * viewH * 0.5, f.head.z);
@@ -1115,7 +1212,8 @@ export function drawModelOrb(ctx, size, opts) {
   const accent = new Color(L.accent);
   const rgb = `${Math.round(accent.r * 255)},${Math.round(accent.g * 255)},${Math.round(accent.b * 255)}`;
   const e = clamp(opts.energy || 0, 0, 1);
-  const bare = !!L.bare;
+  // A full body stands free, right on the screen (no round orb) — unless the orb is asked for.
+  const bare = L.bare === true || (!(opts.custom && opts.custom.bare === false) && L.frame === "full");
 
   if (bare) {
     // No orb: only the character (a faint glow at its feet while it talks).

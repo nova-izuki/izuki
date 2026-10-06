@@ -22,6 +22,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🎨", title: "A 2D character for every voice", how: "39 characters in Flat vector or Comic (Spider-Verse) style — they stand right on your screen, breathe, blink, wave, count on their fingers, shrug and cheer as they talk, and their mouths make the real shapes of the words.", try: { label: "Pick one", tab: "settings", id: "settings-look" } },
+  { icon: "🪞", title: "Your face acts it out", how: "Your Avaturn face now talks with real mouth shapes, smiles with its cheeks and eyes, raises its brows at a question, and gestures with its arms. Full body stands free on your screen." },
   { icon: "📸", title: "Screenshots and screen recording", how: "Say or type “take a screenshot” (saved to Pictures › Screenshots and copied), “record my screen” and “stop recording” (saved to Videos › Izuki Recordings).", try: { label: "Try it", say: "take a screenshot" } },
   { icon: "▶️", title: "YouTube, straight away", how: "“Open Chrome and play how to make money, skip the ads” now plays at once — no thinking — and the ads are skipped. Chrome opens in your usual account, not the “Who's using Chrome?” screen.", try: { label: "Try it", say: "play lofi beats on youtube" } },
   { icon: "🎤", title: "Dre and Nia", how: "Two new characters: Dre and Nia talk with real Black American slang — smooth, funny and real. Their faces match their voices." },

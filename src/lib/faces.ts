@@ -9,6 +9,8 @@ import type { Settings } from "./types";
 export type Looks = Record<string, Partial<FaceLook>>;
 
 export const isFace = (style?: string | null) => !!style && style.startsWith("model:");
+/** A 2D character: "toon" (the voice's own) or "toon:<character>". */
+export const isToon = (style?: string | null) => !!style && (style === "toon" || style.startsWith("toon:"));
 export const faceId = (style: string) => style.replace(/^model:/, "");
 
 /** Every face's saved look (anything else in the JSON is ignored). */
@@ -26,6 +28,8 @@ export function faceLooks(raw?: string | null): Looks {
 
 /** What the orb needs to draw the face in use (null for a plain orb). */
 export function faceFor(settings: Settings, style: string = settings.orb_style): FaceOptions | null {
+  // 2D characters share one look; the character is the voice's.
+  if (isToon(style)) return { custom: faceLooks(settings.avatar).toon ?? null, persona: settings.persona };
   if (!isFace(style)) return null;
   return { custom: faceLooks(settings.avatar)[faceId(style)] ?? null };
 }
@@ -63,6 +67,9 @@ const PERSONA_FACE: Record<string, string> = {
 
 /** The face that fits this character — in the family already in use (a hologram stays a hologram). */
 export function faceForPersona(style: string, persona: string, male: boolean): string | null {
+  // A chosen 2D character becomes the new voice's character; "toon" follows it anyway.
+  if (style.startsWith("toon:")) return `toon:${persona}` === style ? null : `toon:${persona}`;
+  if (style === "toon") return null;
   const own = PERSONA_FACE[persona];
   // Only when a built-in face is showing: a plain orb or your own face is left alone.
   if (!faceGender(style)) return null;

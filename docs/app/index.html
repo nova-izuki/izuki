@@ -393,7 +393,7 @@
 
     <section>
       <h3>Your orb</h3>
-      <div class="field"><label for="orb-style">Voice companion style</label><select id="orb-style"><optgroup label="Orbs"><option value="liquid">Liquid glass</option><option value="ferrofluid">Clear water</option><option value="dew">Pure water</option><option value="ripple">Tidal pearl</option><option value="constellation">Star crystal</option><option value="particles">Stardust</option><option value="face">Hologram face</option><option value="ferro">Ferrofluid</option></optgroup><optgroup label="3D faces" id="orb-faces"><option value="model:holo-female">Hologram woman</option><option value="model:holo-male">Hologram man</option><option value="model:lightskin-female">Woman</option><option value="model:black-male">Man</option></optgroup></select></div>
+      <div class="field"><label for="orb-style">Voice companion style</label><select id="orb-style"><optgroup label="Orbs"><option value="liquid">Liquid glass</option><option value="ferrofluid">Clear water</option><option value="dew">Pure water</option><option value="ripple">Tidal pearl</option><option value="constellation">Star crystal</option><option value="particles">Stardust</option><option value="face">Hologram face</option><option value="ferro">Ferrofluid</option></optgroup><optgroup label="2D characters"><option value="toon">My character (follows the voice)</option></optgroup><optgroup label="3D faces" id="orb-faces"><option value="model:holo-female">Hologram woman</option><option value="model:holo-male">Hologram man</option><option value="model:lightskin-female">Woman</option><option value="model:black-male">Man</option></optgroup></select></div>
       <div class="face-picker">
         <div class="face-grid" id="face-grid" aria-label="3D faces"></div>
         <input type="file" id="face-add-file" accept=".glb,model/gltf-binary" hidden>
@@ -404,6 +404,11 @@
         </details>
         <label class="swatch"><input type="checkbox" id="ft-match" checked> Match voice and character</label>
         <p class="note" id="face-note" aria-live="polite"></p>
+      </div>
+      <div id="toon-tune" hidden>
+        <div class="field"><label for="toon-render">Character style</label><select id="toon-render"><option value="flat">Flat vector</option><option value="comic">Comic (Spider-Verse)</option></select></div>
+        <div class="field"><label for="toon-framing">Show</label><select id="toon-framing"><option value="half">Half body</option><option value="full">Full body</option><option value="bust">Head &amp; shoulders</option><option value="head">Head</option></select></div>
+        <label class="swatch"><input type="checkbox" id="toon-orb"> Inside a round orb</label>
       </div>
       <div id="face-tune" hidden>
         <div class="tones" aria-label="Skin tone"><span>Skin tone</span><button class="tone" type="button" data-tint="#ffffff" title="As made" aria-label="As made" style="background:#ffffff"></button><button class="tone" type="button" data-tint="#fff1ea" title="Porcelain" aria-label="Porcelain" style="background:#fff1ea"></button><button class="tone" type="button" data-tint="#f6d9c4" title="Fair" aria-label="Fair" style="background:#f6d9c4"></button><button class="tone" type="button" data-tint="#d9a77e" title="Tan" aria-label="Tan" style="background:#d9a77e"></button><button class="tone" type="button" data-tint="#c09468" title="Olive" aria-label="Olive" style="background:#c09468"></button><button class="tone" type="button" data-tint="#9a6845" title="Brown" aria-label="Brown" style="background:#9a6845"></button><button class="tone" type="button" data-tint="#6e4630" title="Deep" aria-label="Deep" style="background:#6e4630"></button><button class="tone" type="button" data-tint="#4a2f22" title="Ebony" aria-label="Ebony" style="background:#4a2f22"></button></div>
@@ -1901,6 +1906,8 @@
         // Opened by Siri and not touched yet: an iPhone won't let a web page
         // make a sound before a tap — the answer's voice is one tap away.
         if (!url && opts.siri && !tapped) { offerHear(null, rest()); break; }
+        // The character's mouth and hands follow these words.
+        window.IzukiOrb?.say?.(p.words);
         let blocked = false;
         if (url) {
           await playAudio(url, p.words, () => {
@@ -2604,6 +2611,28 @@
     window.IzukiOrb.preview($("orb-preview"),$("orb-style").value,$("orb-preview-state").value);
     $("orb-response-field").hidden = $("orb-style").value === 'liquid';
     faceUi.show();
+    toonUi();
+  }
+  // The 2D characters: one look for all of them (izuki.avatar.toon).
+  function toonUi() {
+    const on = /^toon(:|$)/.test($("orb-style").value);
+    $("toon-tune").hidden = !on;
+    if (!on) return;
+    let all = {};
+    try { all = JSON.parse(localStorage.getItem("izuki.avatar") || "{}") || {}; } catch {}
+    const look = all.toon || {};
+    $("toon-render").value = look.render || "flat";
+    $("toon-framing").value = look.framing || "half";
+    $("toon-orb").checked = look.orb === true;
+  }
+  for (const [id, key] of [["toon-render", "render"], ["toon-framing", "framing"], ["toon-orb", "orb"]]) {
+    $(id).onchange = () => {
+      let all = {};
+      try { all = JSON.parse(localStorage.getItem("izuki.avatar") || "{}") || {}; } catch {}
+      all.toon = { ...(all.toon || {}), [key]: id === "toon-orb" ? $(id).checked : $(id).value };
+      try { localStorage.setItem("izuki.avatar", JSON.stringify(all)); } catch {}
+      window.IzukiOrb?.face?.();
+    };
   }
   // The 3D faces: the four that come with Izuki, ones added here, and your own
   // (Avaturn). The models and three.js load only once this screen is opened.

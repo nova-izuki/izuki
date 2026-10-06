@@ -6,14 +6,26 @@ function faceModule() {
   return faces;
 }
 
+// The 2D characters (orb styles "toon" — the voice's own — and "toon:<id>")
+// live in toon.js, loaded when one is picked.
+let toons = null, toonsLoading = null;
+function toonModule() {
+  if (!toonsLoading) toonsLoading = import("./toon.js").then((m) => (toons = m), () => (toons = false));
+  return toons;
+}
+export const isToon = (style) => typeof style === "string" && (style === "toon" || style.startsWith("toon:"));
+
 /** How a face is set up on this device (izuki.avatar: { faceId: look }) —
- *  the phone and the TV page keep it here; the PC passes its own. */
+ *  the phone and the TV page keep it here; the PC passes its own. The 2D
+ *  characters share one look ("toon"); the character is the voice's. */
 export function faceFromStorage(style) {
   let all = {};
   try { all = JSON.parse(localStorage.getItem("izuki.avatar") || "{}") || {}; } catch {}
-  const id = String(style || "").replace(/^model:/, "");
+  const id = isToon(style) ? "toon" : String(style || "").replace(/^model:/, "");
   const custom = all && typeof all[id] === "object" ? all[id] : null;
-  return { custom };
+  let persona = "";
+  try { persona = JSON.parse(localStorage.getItem("izuki.person") || '""') || ""; } catch {}
+  return { custom, persona };
 }
 
 // Realistic orbs, drawn on the graphics card and shared by the PC app, the
@@ -435,6 +447,17 @@ function renderer(px) {
  * `thinking` 0…1 how much it's thinking. False if WebGL isn't available.
  */
 export function drawGlassOrb(ctx, size, style, time, energy, thinking, mood = 0, face = null) {
+  // A 2D character (vector art, no WebGL needed).
+  if (isToon(style)) {
+    const m = toonModule();
+    if (m === false) return false;
+    const f = face || faceFromStorage(style);
+    if (!m) return true; // a blink while it loads
+    const c = f.custom || {};
+    const persona = style.startsWith("toon:") ? style.slice(5) : f.persona || "nova";
+    // Characters stand free by default (no round orb) — unless asked for.
+    return m.drawToon(ctx, size, { persona, render: c.render, framing: c.framing, orb: c.orb === true, accent: c.accent || undefined, time, energy, thinking, mood, look: f.look, poke: f.poke, say: f.say });
+  }
   // A 3D face (a GLB model): drawn by model-orb.js once it has loaded.
   if (typeof style === "string" && style.startsWith("model:")) {
     const m = faceModule();
@@ -449,7 +472,7 @@ export function drawGlassOrb(ctx, size, style, time, energy, thinking, mood = 0,
       ctx.fillRect(0, 0, size, size);
       return true;
     }
-    return m.drawModelOrb(ctx, size, { id: style.slice(6), time, energy, thinking, mood, look: f.look, poke: f.poke, custom: f.custom });
+    return m.drawModelOrb(ctx, size, { id: style.slice(6), time, energy, thinking, mood, look: f.look, poke: f.poke, custom: f.custom, say: f.say });
   }
   if (unsupported || !(style in STYLES)) return false;
   try {
