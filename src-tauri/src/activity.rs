@@ -69,6 +69,12 @@ pub fn now() -> Vec<Activity> {
     let mut s = SHOWN.lock();
     s.retain(|x| x.at.elapsed() < SHOW_FOR);
     out.extend(s.iter().rev().map(|x| x.activity.clone()));
+    // A downloaded update stays on the Island until it's installed.
+    if let Some(v) = crate::updates::ready_version() {
+        if !out.iter().any(|a| a.id == "update") {
+            out.insert(0, update_activity(&v));
+        }
+    }
     out.truncate(4);
     out
 }
@@ -96,6 +102,22 @@ pub fn show_boost(text: &str, offer: bool) {
             Vec::new()
         },
     });
+}
+
+/// A new version downloaded and ready: one tap to update.
+pub fn show_update(version: &str) {
+    push(update_activity(version));
+}
+
+fn update_activity(version: &str) -> Activity {
+    Activity {
+        id: "update".into(),
+        kind: "update",
+        icon: "⬆️",
+        title: format!("Izuki {version} is ready"),
+        detail: "New features and fixes".into(),
+        actions: vec![Action { label: "Update now".into(), op: "update:now".into() }],
+    }
 }
 
 /// The last few things copied (newest first), never anything secret.
@@ -330,6 +352,16 @@ pub fn act(app: &tauri::AppHandle, op: &str) -> Option<String> {
         "open" => {
             let _ = app.opener().open_path(arg, None::<&str>);
             None
+        }
+        "update" => {
+            let app = app.clone();
+            let _ = arg;
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = crate::updates::install_now(app).await {
+                    eprintln!("[update] {e}");
+                }
+            });
+            Some("Updating now — I'll be right back.".into())
         }
         "show" => {
             #[cfg(windows)]

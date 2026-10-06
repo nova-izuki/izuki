@@ -47,7 +47,7 @@ pub fn check_later(app: &AppHandle) {
         tokio::time::sleep(Duration::from_secs(8)).await;
         loop {
             if crate::state::store().settings().automatic_update_checks { auto_update(&app).await; }
-            tokio::time::sleep(Duration::from_secs(6*60*60)).await;
+            tokio::time::sleep(Duration::from_secs(2*60*60)).await;
         }
     });
 }
@@ -64,9 +64,38 @@ async fn auto_update(app: &AppHandle) {
             if let Some(bytes) = p.bytes.as_ref() {
                 publish(app, |s| { s.phase = "installing".into(); s.error = None; });
                 if let Err(e) = p.update.install(bytes) { failed(app, e); }
+                return;
             }
         }
     }
+    if status.phase == "ready" { alert(&status.version); }
+}
+
+/// The version downloaded and waiting to be installed, if any.
+pub fn ready_version() -> Option<String> {
+    let s = STATUS.lock();
+    (s.phase == "ready" && !s.version.is_empty()).then(|| s.version.clone())
+}
+
+/// Tell you once per version that it's downloaded and ready: on the Island
+/// (with Update now) and on your phone.
+fn alert(version: &str) {
+    static TOLD: Mutex<String> = Mutex::new(String::new());
+    if version.is_empty() || *TOLD.lock() == version { return; }
+    *TOLD.lock() = version.to_string();
+    crate::activity::show_update(version);
+    crate::companion::notify_everywhere(&format!("⬆️ Izuki {version} is ready on your PC — open the Island and tap Update now (it takes a few seconds)."));
+}
+
+/// "Update now" from the Island: download if needed, then install (unless Izuki is mid-task).
+pub async fn install_now(app: AppHandle) -> Result<(), String> {
+    if crate::hotkey::is_busy() { return Err("I'm in the middle of something — I'll be ready to update when it's done.".into()); }
+    if STATUS.lock().phase != "ready" { fetch(&app).await?; }
+    let package = PACKAGE.try_lock().map_err(|_| "An update operation is already running.".to_string())?;
+    let p = package.as_ref().ok_or("There's no update waiting.")?;
+    let bytes = p.bytes.as_ref().ok_or("The update hasn't finished downloading.")?;
+    publish(&app, |s| { s.phase = "installing".into(); s.error = None; });
+    p.update.install(bytes).map_err(|e| failed(&app, e))
 }
 
 /// Ask for the newest version. A download already held for an older one is
