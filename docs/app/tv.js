@@ -43,6 +43,8 @@ let state = "idle";
 let energy = 0;
 let lastSpoke = 0;
 let control = false;
+/** Paywall guard: on unless switched off (it only reads the screen's words, here on the TV). */
+let watchOn = store.get("watch", true);
 const FOLLOW_ON_MS = 30000;
 
 const tv = {
@@ -110,6 +112,7 @@ function build() {
       <button class="tv-tile" id="tv-talk"><span>🎙️</span><b>Talk</b><small>Hold OK and speak</small></button>
       <button class="tv-tile" id="tv-mode"><span>👂</span><b>Hey Nova</b><small id="tv-mode-sub"></small></button>
       <button class="tv-tile" id="tv-control"><span>🧭</span><b>Control this TV</b><small id="tv-control-sub"></small></button>
+      <button class="tv-tile" id="tv-watch"><span>🛡️</span><b>Paywall guard</b><small id="tv-watch-sub"></small></button>
       <button class="tv-tile" id="tv-orb-pick"><span>🫧</span><b>Orb</b><small id="tv-orb-sub"></small></button>
       <button class="tv-tile" id="tv-link"><span>💻</span><b>My PC</b><small id="tv-link-sub"></small></button>
       <button class="tv-tile" id="tv-more"><span>⚙️</span><b>Settings</b><small>Keys, voice, apps</small></button>
@@ -146,6 +149,7 @@ function refresh() {
   $("tv-mode-sub").textContent = mode === "wake" ? "On — just say it" : "Off — hold OK instead";
   $("tv-mode-chip").textContent = mode === "wake" ? "👂 Say “Hey Nova”" : "🎙️ Hold OK to talk";
   $("tv-control-sub").textContent = control ? "On — I can open and press things" : "Off — turn it on";
+  $("tv-watch-sub").textContent = !N()?.watch ? "Needs the Izuki TV app" : !control ? "Needs “Control this TV”" : watchOn ? "On — I'll tell you when an app wants money" : "Off";
   $("tv-orb-sub").textContent = (ORBS.find(([k]) => k === orbStyle) || ORBS[0])[1];
   $("tv-link-sub").textContent = link ? `Linked to ${link.name}` : "Link to copy your setup";
   $("tv-link-chip").textContent = link ? `💻 ${link.name}` : "";
@@ -372,9 +376,30 @@ async function quick(s) {
 /** A request about the TV screen ("play the second one", "search for…"). */
 const SCREEN_JOB = /\b(open|play|watch|put on|search|find|look for|select|choose|pick|click|press|tap|go to|start|next|episode|season|movie|show|channel|subtitles?|captions?|settings|sign in|profile|resume|continue watching|type|scroll|home|back)\b/i;
 
+/** "What's on my screen?", "is this free?" — it looks. */
+const LOOK = /\b(what(?:'s| is) on (?:my |the |this )?(?:screen|tv)|what am i (?:looking at|watching|seeing)|describe (?:the|my|this) screen|read (?:the|my|this) screen|what does (?:it|the screen|this) say|is (?:this|it) free|do i (?:have|need) to pay)\b/i;
+
+async function look(question) {
+  const n = N();
+  if (!n?.snapshot && !n?.screen) return null;
+  if (!control) return "Switch on “Control this TV” first (on the Izuki screen) — then I can see what's on it.";
+  if (!document.hidden) return "Right now you're on Izuki's own screen — open what you're watching and ask me again.";
+  let shot = null, why = "";
+  try { shot = await n.snapshot(); } catch (e) { why = String(e?.message || e); }
+  let words = "";
+  try { const scr = await n.screen(); words = `App: ${scr.app || "?"}\n` + (scr.items || []).slice(0, 80).map((it) => it.text).join("\n"); } catch {}
+  const ask = `The user, watching TV, asked: "${question}". Answer in one or two short spoken sentences. If it's a subscription, sign-up, rent or buy screen, say so plainly.`;
+  try {
+    if (shot?.image && core()?.see) return String((await core().see(ask + (words ? `\nWords on screen:\n${words}` : ""), shot.image, shot.type)) || "").trim() || "I couldn't make it out.";
+    if (words) return String((await core().think(`${ask}\nThere's no picture${why === "protected" ? " (this app blocks screenshots)" : ""} — here are the words on the screen:\n${words}`, "You describe a TV screen from the words on it, briefly.")) || "").trim();
+  } catch (e) { return `My AI brain didn't answer — ${String(e?.message || e)}`; }
+  return why === "protected" ? "This app hides its picture (copy protection) and shows no words I can read." : "I can't see anything on the screen right now.";
+}
+
 async function tvDo(s) {
   const timed = timerAsk(s);
   if (timed) return timed;
+  if (LOOK.test(s)) { const seen = await look(s); if (seen) return seen; }
   const fast = await quick(s).catch(() => null);
   if (fast) return fast;
   if (!N() || !control || !SCREEN_JOB.test(s)) return null;
@@ -539,6 +564,15 @@ function tiles() {
     $("tv-go").onclick = () => { N()?.openAccessibilitySettings(); closeSheet(); };
     $("tv-x").onclick = closeSheet;
   };
+  $("tv-watch").onclick = async () => {
+    if (!N()?.watch) return say("The paywall guard needs the Izuki app on an Android TV, Google TV or Fire TV.");
+    if (!control) return $("tv-control").click();
+    watchOn = !watchOn;
+    store.set("watch", watchOn);
+    try { await N().watch({ on: watchOn }); } catch {}
+    refresh();
+    void say(watchOn ? "Paywall guard is on — when an app asks for a subscription, I'll tell you, and which apps here are free." : "Paywall guard is off.");
+  };
   $("tv-orb-pick").onclick = () => {
     sheet(`<h2>Pick an orb</h2><div class="tv-grid">${ORBS.map(([k, label]) => `<button data-k="${k}" class="${k === orbStyle ? "on" : ""}">${label}</button>`).join("")}</div>`);
     $("tv-sheet").querySelectorAll("button[data-k]").forEach((b) => (b.onclick = () => {
@@ -591,6 +625,11 @@ function start() {
   document.addEventListener("visibilitychange", () => { if (!document.hidden) N()?.orb({ state: "idle" }).catch(() => {}); });
   if (link) follow();
   checkForUpdate();
+  // The paywall guard runs in the TV's own service; keep it in step, and say it out loud too.
+  if (N()?.watch) {
+    void N().watch({ on: watchOn }).catch(() => {});
+    N().addListener?.("paywall", (d) => { if (d?.say && mode === "wake") void core()?.speak(d.say); });
+  }
 }
 
 /** A newer Izuki app: a tile to update it in one press. */

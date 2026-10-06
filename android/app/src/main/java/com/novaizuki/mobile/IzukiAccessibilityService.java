@@ -11,9 +11,24 @@ import android.graphics.PixelFormat;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.Shader;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.graphics.Bitmap;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Base64;
+import android.view.Display;
+import androidx.annotation.RequiresApi;
+import java.io.ByteArrayOutputStream;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.function.Consumer;
+import java.util.regex.Pattern;
 import android.provider.Settings;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -34,16 +49,37 @@ import org.json.JSONObject;
  * in Accessibility settings, and only ever used when they ask for something.
  *
  * It can read what's on the screen (the text and the buttons — never
- * passwords), press, type and scroll there, use Back / Home, and show
- * Izuki's little orb over other apps while it listens or talks.
+ * passwords), take a picture of it when asked ("what's on my screen?"),
+ * press, type and scroll there, use Back / Home, and show Izuki's little orb
+ * over other apps while it listens or talks.
+ *
+ * Paywall guard (on/off on the Izuki screen): when an app changes screen,
+ * its words are checked here on the TV for "start free trial", "choose a
+ * plan", "$9.99/month"… and Izuki says so, with the free apps on this TV.
+ * Nothing is kept or sent anywhere.
  */
 public class IzukiAccessibilityService extends AccessibilityService {
   private static volatile IzukiAccessibilityService active;
   /** What the last screen read listed, by number, for "press number 4". */
   private static final List<AccessibilityNodeInfo> listed = new ArrayList<>();
 
-  @Override public void onServiceConnected() { active = this; }
-  @Override public void onAccessibilityEvent(AccessibilityEvent event) { /* nothing is collected in the background */ }
+  @Override public void onServiceConnected() {
+    active = this;
+    watching = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("watch", false);
+  }
+
+  @Override public void onAccessibilityEvent(AccessibilityEvent event) {
+    // Only the paywall guard listens, and only to "a new screen opened".
+    if (!watching || event == null || event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
+    CharSequence pkg = event.getPackageName();
+    if (pkg == null) return;
+    String p = pkg.toString();
+    if (p.equals(getPackageName()) || p.startsWith("com.android.systemui") || p.contains("launcher") || p.contains("tvlauncher")) return;
+    ui.removeCallbacks(checkPaywall);
+    // A paywall can take a moment to draw: look now-ish and once more.
+    ui.postDelayed(checkPaywall, 1500);
+    ui.postDelayed(checkPaywall, 5000);
+  }
   @Override public void onInterrupt() { }
   @Override public boolean onUnbind(android.content.Intent intent) {
     hideOrb();
@@ -174,6 +210,125 @@ public class IzukiAccessibilityService extends AccessibilityService {
       if (f != null) return f;
     }
     return null;
+  }
+
+  // ---- a picture of the screen ------------------------------------------------
+
+  /** A JPEG of the screen (≤1024 px), base64 — Android 11+. Apps with copy
+   *  protection (Netflix's video…) refuse: "protected". */
+  static void snapshot(Consumer<String> done, Consumer<String> fail) {
+    IzukiAccessibilityService service = active;
+    if (service == null) { fail.accept("off"); return; }
+    if (Build.VERSION.SDK_INT < 30) { fail.accept("old"); return; }
+    service.shoot(done, fail);
+  }
+
+  @RequiresApi(30)
+  private void shoot(Consumer<String> done, Consumer<String> fail) {
+    takeScreenshot(Display.DEFAULT_DISPLAY, getMainExecutor(), new TakeScreenshotCallback() {
+      @Override public void onSuccess(ScreenshotResult r) {
+        try {
+          Bitmap hw = Bitmap.wrapHardwareBuffer(r.getHardwareBuffer(), r.getColorSpace());
+          if (hw == null) { fail.accept("failed"); return; }
+          Bitmap bmp = hw.copy(Bitmap.Config.ARGB_8888, false);
+          r.getHardwareBuffer().close();
+          int w = bmp.getWidth(), h = bmp.getHeight();
+          float k = Math.min(1f, 1024f / Math.max(w, h));
+          Bitmap small = k < 1f ? Bitmap.createScaledBitmap(bmp, Math.round(w * k), Math.round(h * k), true) : bmp;
+          ByteArrayOutputStream out = new ByteArrayOutputStream();
+          small.compress(Bitmap.CompressFormat.JPEG, 72, out);
+          done.accept(Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP));
+        } catch (Exception e) {
+          fail.accept("failed");
+        }
+      }
+      @Override public void onFailure(int code) {
+        fail.accept(code == ERROR_TAKE_SCREENSHOT_SECURE_WINDOW ? "protected" : code == ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT ? "busy" : "failed");
+      }
+    });
+  }
+
+  // ---- the paywall guard ----------------------------------------------------------
+
+  static final String PREFS = "izuki";
+  static volatile boolean watching = false;
+
+  static void watch(Context c, boolean on) {
+    watching = on;
+    c.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("watch", on).apply();
+  }
+
+  private static final String[] PAYWALL = {
+    "start free trial", "start your free trial", "free trial", "choose a plan", "choose your plan", "select a plan", "select your plan",
+    "plans start", "subscribe to watch", "subscribe to continue", "subscribe now", "subscription required", "requires a subscription",
+    "sign up to watch", "join now", "upgrade to premium", "upgrade now", "get premium", "rent for", "buy for", "rent hd", "buy hd",
+    "unlock with", "become a member", "start membership", "add this channel to your subscription",
+  };
+  private static final Pattern PRICE = Pattern.compile("(\\$|£|€|₦|₹)\\s?\\d+([.,]\\d{2})?\\s*(/|per|a|every)?\\s*(mo|month|yr|year|week)\\b", Pattern.CASE_INSENSITIVE);
+  private static final String[] FREE = { "tubi", "pluto", "roku channel", "plex", "crackle", "freevee", "kanopy", "hoopla", "pbs", "xumo", "youtube", "freestream", "vix", "filmrise", "haystack", "samsung tv plus", "lg channels", "google tv free" };
+  private static final String[] PAID = { "netflix", "disney", "hulu", "max", "hbo", "prime video", "peacock", "paramount", "apple tv", "starz", "showtime", "youtube tv", "sling", "fubo", "espn", "discovery" };
+  private static final Map<String, Long> told = new HashMap<>();
+
+  private final Runnable checkPaywall = () -> {
+    if (!watching) return;
+    AccessibilityNodeInfo root = getRootInActiveWindow();
+    if (root == null || root.getPackageName() == null) return;
+    String pkg = root.getPackageName().toString();
+    if (pkg.equals(getPackageName())) return;
+    StringBuilder words = new StringBuilder();
+    gather(root, words, 0);
+    String all = words.toString().toLowerCase(Locale.ROOT);
+    String hit = null;
+    for (String w : PAYWALL) if (all.contains(w)) { hit = w; break; }
+    if (hit == null && PRICE.matcher(all).find()) hit = "price";
+    if (hit == null) return;
+    Long last = told.get(pkg);
+    if (last != null && System.currentTimeMillis() - last < 10 * 60 * 1000) return;
+    told.put(pkg, System.currentTimeMillis());
+    String app = label(pkg);
+    List<String> free = freeApps(pkg);
+    String say = app + " wants a subscription or payment here."
+      + (free.isEmpty() ? " Tubi, Pluto TV and YouTube are free instead." : " Free on this TV: " + String.join(", ", free) + " — say “Hey Nova, open " + free.get(0) + "”.");
+    orb("talk", say);
+    ui.postDelayed(IzukiAccessibilityService::hideOrb, 10000);
+    IzukiControlPlugin.emit("paywall", app, pkg, say);
+  };
+
+  private static void gather(AccessibilityNodeInfo node, StringBuilder out, int depth) {
+    if (node == null || depth > 40 || out.length() > 6000) return;
+    if (!node.isVisibleToUser()) return;
+    if (!node.isPassword()) {
+      if (node.getText() != null) out.append(node.getText()).append(' ');
+      if (node.getContentDescription() != null) out.append(node.getContentDescription()).append(' ');
+    }
+    for (int i = 0; i < node.getChildCount(); i++) gather(node.getChild(i), out, depth + 1);
+  }
+
+  private String label(String pkg) {
+    try {
+      PackageManager pm = getPackageManager();
+      return pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString();
+    } catch (Exception e) { return "This app"; }
+  }
+
+  /** Apps on this TV that are free to watch (not the one that asked for money). */
+  private List<String> freeApps(String except) {
+    List<String> out = new ArrayList<>();
+    PackageManager pm = getPackageManager();
+    List<ResolveInfo> all = new ArrayList<>(pm.queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0));
+    all.addAll(pm.queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0));
+    for (ResolveInfo r : all) {
+      if (out.size() >= 3) break;
+      String pkg = r.activityInfo.packageName;
+      if (pkg.equals(except)) continue;
+      String name = r.loadLabel(pm).toString();
+      String low = name.toLowerCase(Locale.ROOT);
+      boolean paid = false, free = false;
+      for (String w : PAID) if (low.contains(w)) { paid = true; break; }
+      if (!paid) for (String w : FREE) if (low.contains(w)) { free = true; break; }
+      if (free && !out.contains(name)) out.add(name);
+    }
+    return out;
   }
 
   // ---- the little orb over other apps ----------------------------------------
