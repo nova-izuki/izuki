@@ -363,7 +363,7 @@ export const api = {
   /** "Allow"/"no" for the change Izuki asked about out loud (null: none waiting). */
   chatAllowLast: (allow: boolean) => call<string | null>("chat_allow_last", { allow }, () => null),
   /** The Chat tab: the same lane, written rather than spoken. */
-  chatStreamWritten: (id: number, history: Array<{ role: string; content: string }>) =>
+  chatStreamWritten: (id: number, history: Array<{ role: string; content: string; images?: string[] }>) =>
     call<void>("chat_stream", { id, history, expressive: false, written: true }, () => undefined),
   /** A request in the user's apps (email, calendar, …) — the Composio lane. */
   appsAsk: (history: Array<{ role: string; content: string }>) =>
@@ -437,6 +437,7 @@ export const api = {
   /** ⏮ ⏯ ⏭ for whatever is playing on the PC. */
   mediaControl: (action: "play" | "pause" | "next" | "previous") => call<boolean>("media_control", { action }, () => false),
   reminderRemove: (id: string) => call<void>("reminder_remove", { id }, () => undefined),
+  alarmSnooze: (text: string, minutes: number) => call<Reminder>("alarm_snooze", { text, minutes }, () => ({ id: "", at: 0, text })),
   chatCancel: (id: number) => call<void>("chat_cancel", { id }, () => undefined).catch(() => undefined),
   /** Connect to the paired Android phone. */
   androidConnect: () => call<string>("android_connect", undefined, () => { throw new Error("not in Izuki"); }),
@@ -609,6 +610,7 @@ export const EV = {
   /** Memories were added or removed — the Memory list refreshes. */
   memoryChanged: "izuki://memory-changed",
   remindersChanged: "izuki://reminders-changed",
+  alarm: "izuki://alarm",
   phoneChanged: "izuki://phone-changed",
   callChanged: "izuki://call-changed",
   discordChanged: "izuki://discord-changed",

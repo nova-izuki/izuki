@@ -483,7 +483,7 @@ fn ask_model(
     // Marks aimed at words go exactly where those words really are.
     anchor_marks(&mut plan.steps, frame);
     // "Remind me…" said while it works the screen: set it, don't say the tag.
-    if plan.summary.contains("[REMIND") {
+    if plan.summary.contains("[REMIND") || plan.summary.contains("[ALARM") {
         plan.summary = crate::reminders::take_tags(&plan.summary);
     }
     // Anything lasting the user just mentioned about themselves.

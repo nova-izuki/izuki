@@ -29,10 +29,29 @@ impl Reply {
 }
 
 fn push(role: &str, content: &str) {
+    push_with(role, content, Vec::new());
+}
+
+fn push_with(role: &str, content: &str, images: Vec<String>) {
     let mut h = HISTORY.lock();
-    h.push(Turn { role: role.into(), content: content.to_string() });
+    h.push(Turn { role: role.into(), content: content.to_string(), images });
     let excess = h.len().saturating_sub(KEEP);
     h.drain(..excess);
+}
+
+/// Pictures are big: only the last two turns that had any keep them.
+fn forget_old_pictures() {
+    let mut h = HISTORY.lock();
+    let mut seen = 0;
+    for t in h.iter_mut().rev() {
+        if !t.images.is_empty() {
+            seen += 1;
+            if seen > 2 {
+                t.images.clear();
+                t.content = format!("{} [sent a picture]", t.content).trim().to_string();
+            }
+        }
+    }
 }
 
 pub fn forget() {
@@ -143,6 +162,34 @@ fn pc_asked(said: &str) -> bool {
 const CHOOSE_DEVICE: &str = "Do you mean your phone or your PC? Repeat the action with ‘on my PC’ or ‘on my Android’. I haven't changed either device.";
 
 pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str)) -> Reply {
+    respond_with(app, said, Vec::new(), spoken, status)
+}
+
+/// The same, with pictures they sent (a photo in Discord or Telegram): the
+/// brain looks at them with the words — "what's this?", "fix this error",
+/// "solve question 3".
+pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bool, status: &dyn Fn(&str)) -> Reply {
+    if !images.is_empty() {
+        push_with("user", said, images);
+        forget_old_pictures();
+        let history = HISTORY.lock().clone();
+        let reply = match crate::chat::reply(&history, Style::Phone) {
+            Ok(r) => crate::reminders::take_tags(&r),
+            Err(e) => {
+                HISTORY.lock().pop();
+                return Reply::text(format!("I couldn't look at that just now ({e}). Try again in a moment?"));
+            }
+        };
+        // A picture about the PC ("do this on my screen"): hand it over.
+        if hands_over(&reply, "SCREEN") {
+            let out = on_pc(app, said, status);
+            push("assistant", &out.text);
+            return out;
+        }
+        let text = tidy(&reply);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // The TV, from the phone, Telegram or Discord too: "open Netflix on the TV".
     if crate::tv::handles(said) {
         push("user", said);

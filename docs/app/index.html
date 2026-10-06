@@ -415,6 +415,17 @@
         <p class="note">Silent demo — no mic, model calls or credits. Cloud WAV replies animate from their real waveform. System voices use a quiet fallback because their audio isn't available to measure.</p>
       </div>
     </section>
+    <section>
+      <h3>Alarms (iPhone — one-time setup)</h3>
+      <p>Say "wake me up at 7" and Izuki gives you a button that puts it straight into your Clock. On iPhone that needs one small shortcut, made once:</p>
+      <ol style="margin: 8px 0 0 18px; line-height: 1.6">
+        <li>Open <b>Shortcuts</b>, tap <b>+</b>, name it <b>Izuki Alarm</b>.</li>
+        <li>Add <b>Split Text</b> → split <b>Shortcut Input</b> by <b>Custom</b> <code>|</code>.</li>
+        <li>Add <b>Get Item from List</b> → <b>First Item</b>.</li>
+        <li>Add <b>Create Alarm</b> (Clock) → time: <b>Item from List</b>. Tap Done.</li>
+      </ol>
+      <p style="margin-top: 6px">Android needs nothing — the button opens your Clock with the time filled in. Either way there's also an "Add to calendar" button that always works.</p>
+    </section>
     <section id="web-install">
       <h3>Put Izuki on your home screen</h3>
       <div class="row" style="margin-bottom: 8px"><button class="btn" id="install" type="button">Install Izuki on this phone</button></div>
@@ -921,6 +932,7 @@
       "Respect the requested device. Phone means phone, never silently PC. If a screen action has no clear device, ask which device and do not claim it was done. iPhone web pages cannot unlock or freely control other apps.",
       `It is now ${now.toLocaleString([], { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })} on the user's phone.`,
       `If they ask to be reminded of something, confirm it and add on its own line at the very end: [REMIND YYYY-MM-DD HH:MM | what to remind them] in their local time, 24-hour clock ("in 20 minutes" is ${stamp(in20)}).`,
+      "For an ALARM (\"wake me up at 7\", \"set an alarm for 6:30\") add [ALARM YYYY-MM-DD HH:MM | label | repeat] instead (repeat: empty, daily, weekdays, weekends) — the first time is the next time that clock time comes round. If they share their plans or ask you to plan their day, lay it out briefly and add a [REMIND] a few minutes before each thing (an [ALARM] for getting up), one tag per line.",
       "If they tell you something lasting about themselves (name, likes, work, people in their life, how they want you to act), add a line [REMEMBER short third-person fact]. Never passwords, codes or card numbers.",
       "If they want something kept for later with no time (\"remind me later I'm buying Sensodyne and milk\", \"add bread to my list\", \"don't let me forget the charger\"), confirm it warmly and add one line per thing: [LATER the thing]. If they've done one (\"I got the toothpaste\"), add [LATER-DONE the thing]. " +
         (later.some((l) => !l.done) ? "Their Later list right now: " + later.filter((l) => !l.done).map((l) => l.text).join(", ") + "." : "Their Later list is empty."),
@@ -1161,7 +1173,7 @@
     } finally { guard.done(); }
   }
 
-  const TAGS = /\s*\[(REMIND|REMEMBER|LATER-DONE|LATER)[^\]]*\]?\s*/gi;
+  const TAGS = /\s*\[(REMIND|REMEMBER|LATER-DONE|LATER|ALARM)[^\]]*\]?\s*/gi;
   const shown = (t) => t.replace(TAGS, " ").replace(/\s+\n/g, "\n").trim();
 
   /** Pull [REMIND …] and [REMEMBER …] out of a reply; returns chips to show. */
@@ -1194,6 +1206,17 @@
         : "For alerts while this page is closed, open the calendar file and save the event with its alert.";
       chips.push(hint);
     }
+    // Alarms go into the phone's own Clock (a web app can't ring one when
+    // it's closed): an iPhone Shortcut or Android's alarm screen, plus the
+    // calendar as a fallback that always works.
+    for (const m of reply.matchAll(/\[ALARM\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2})\s*(?:\|\s*([^|\]]*))?(?:\|\s*([^\]]*))?\]/gi)) {
+      const at = new Date(`${m[1]}T${m[2]}:${m[3]}:00`).getTime();
+      const label = (m[4] || "").trim() || "Alarm";
+      if (!isFinite(at)) continue;
+      reminders.push({ at, text: "⏰ " + label, done: false });
+      chips.push(clockChip(+m[2], +m[3], label));
+      chips.push(calendarChip(at, label));
+    }
     saveAll();
     scheduleReminders();
     return chips;
@@ -1217,6 +1240,21 @@
     a.download = "izuki-reminder.ics";
     const when = new Date(at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
     a.textContent = `⏰ Add to calendar (${when})`;
+    return a;
+  }
+
+  /** One tap to put an alarm in the phone's Clock. */
+  function clockChip(hour, minute, label) {
+    const a = document.createElement("a");
+    a.className = "chip primary";
+    const hhmm = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    if (isIOS) {
+      // The "Izuki Alarm" shortcut (Settings → Alarms on iPhone) makes it.
+      a.href = `shortcuts://run-shortcut?name=${encodeURIComponent("Izuki Alarm")}&input=text&text=${encodeURIComponent(hhmm + "|" + label)}`;
+    } else {
+      a.href = `intent:#Intent;action=android.intent.action.SET_ALARM;i.android.intent.extra.alarm.HOUR=${hour};i.android.intent.extra.alarm.MINUTES=${minute};S.android.intent.extra.alarm.MESSAGE=${encodeURIComponent(label)};end`;
+    }
+    a.textContent = `⏰ Set ${hhmm} in my Clock`;
     return a;
   }
 

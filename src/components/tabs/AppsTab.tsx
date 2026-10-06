@@ -88,6 +88,24 @@ const APP_CATALOG: App[] = [
 ];
 
 /**
+ * Apps whose owners only let approved business apps sign in for you — the
+ * free Composio link can't reach them. Izuki does them on screen instead.
+ */
+const STRICT_APPS: Record<string, string> = {
+  tiktok:
+    "TikTok only lets approved business apps sign in for you, so it can't be linked here. It works on your screen instead: I've opened TikTok in the Izuki browser — sign in once, then just ask (\"post my video\", \"check my stats\").",
+  instagram:
+    "Instagram only links business or creator accounts here. It works on your screen instead: I've opened Instagram in the Izuki browser — sign in once, then just ask.",
+  whatsapp:
+    "WhatsApp only links WhatsApp Business here. It works on your screen instead: I've opened WhatsApp Web — scan the code with your phone once, then just ask.",
+};
+const STRICT_URL: Record<string, string> = {
+  tiktok: "https://www.tiktok.com/login",
+  instagram: "https://www.instagram.com/accounts/login/",
+  whatsapp: "https://web.whatsapp.com/",
+};
+
+/**
  * Sites with no sign-in API for personal accounts (NotebookLM's is for
  * paid Google Cloud only; Blackboard's has to be registered by the school).
  * Izuki uses them the way you do — on your screen: it opens them, reads
@@ -203,7 +221,15 @@ export function AppsTab() {
       await useIzuki.getState().flushSettings();
       await openLink(await api.appsConnect(app.slug));
     } catch (e) {
-      setLinkErr(`${app.name}: ${String(e)}`);
+      // TikTok, Instagram and WhatsApp don't hand out sign-ins to apps like
+      // this without their own approval — say so plainly, and offer the way
+      // that works: Izuki using the site on screen.
+      if (STRICT_APPS[app.slug]) {
+        setLinkErr(STRICT_APPS[app.slug]);
+        void api.browserShow(STRICT_URL[app.slug]);
+      } else {
+        setLinkErr(`${app.name}: ${String(e)}`);
+      }
     } finally {
       setOpening(null);
     }

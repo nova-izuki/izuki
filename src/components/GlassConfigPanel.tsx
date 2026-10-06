@@ -14,6 +14,7 @@ import { StatusToast } from "./StatusToast";
 import { VoiceEngine } from "./VoiceEngine";
 import { OnboardingTour } from "./OnboardingTour";
 import { SetupGuide } from "./SetupGuide";
+import { AlarmRinger } from "./AlarmRinger";
 import { KeyCatcher } from "./KeyCatcher";
 import { brainReady } from "../lib/setup";
 import { useIzuki, type TabId } from "../lib/store";
@@ -224,6 +225,9 @@ export function GlassConfigPanel() {
 
         <Recover name="keys" silent>
           <KeyCatcher />
+        </Recover>
+        <Recover name="alarm" silent>
+          <AlarmRinger />
         </Recover>
 
         <AnimatePresence>{setupOpen && !tourOpen && <SetupGuide onClose={() => setSetupOpen(false)} />}</AnimatePresence>

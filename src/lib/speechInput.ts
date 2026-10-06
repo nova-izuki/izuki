@@ -14,6 +14,8 @@
  * with the first.
  */
 import { api } from "./ipc";
+import { naturalOutputRms } from "./naturalVoice";
+import { EchoGate } from "../../packages/voice-turns/src/index.ts";
 import { transformers } from "./localModels";
 
 const MODEL = "onnx-community/moonshine-base-ONNX";
@@ -751,6 +753,15 @@ export function listen(opts: ListenOptions = {}): Listening {
     let voiced = 0;
     let lastPartial = 0;
     let waitedWhileBusy = 0;
+    /**
+     * Talking over Izuki: how much of its own voice comes back into the mic
+     * (mic level ÷ voice level), learned while it talks and you don't. You
+     * cut in when the mic hears clearly more than that echo — so a laptop's
+     * speakers no longer drown you out, and Izuki's voice never stops itself.
+     */
+    const echo = new EchoGate();
+    /** The room without Izuki talking. */
+    let roomFloor = 0.004;
     /** A freshly opened mic clicks and its gain settles — not speech. */
     const warmupUntil = mic.openedAt + 350;
 
@@ -781,9 +792,25 @@ export function listen(opts: ListenOptions = {}): Listening {
       // Capped, so a room with a TV or people talking doesn't push the bar
       // so high that your own voice stops counting.
       const busy = speechAt < 0 && !!opts.cutIn?.busy();
-      // While Izuki talks, its own voice may reach the mic: the bar is
-      // relative to that (the floor learns it) and not capped.
-      const threshold = busy ? Math.max(0.03, floor * 2.5) : Math.max(0.012, Math.min(floor * 3, 0.045));
+      const out = busy ? naturalOutputRms() : -1;
+      if (!busy && speechAt < 0) roomFloor = rms < roomFloor ? roomFloor * 0.8 + rms * 0.2 : roomFloor * 0.98 + rms * 0.02;
+      // While Izuki talks, its own voice may reach the mic. With its voice
+      // level known, the bar is its expected echo (plus the room); without,
+      // relative to what the mic has been hearing.
+      let threshold: number;
+      if (!busy) echo.reset();
+      if (busy && out >= 0) {
+        // Its first half second only learns how much of its voice comes
+        // back — nothing counts as you yet (packages/voice-turns).
+        const bar = echo.threshold(rms, out, chunkMs, roomFloor);
+        if (bar === null) {
+          waitedWhileBusy += chunkMs;
+          return;
+        }
+        threshold = bar;
+      } else {
+        threshold = busy ? Math.max(0.03, floor * 2.5) : Math.max(0.012, Math.min(floor * 3, 0.045));
+      }
       const loud = rms > threshold;
       // Waiting on Izuki doesn't use up your time to answer.
       if (busy) waitedWhileBusy += chunkMs;
@@ -800,7 +827,7 @@ export function listen(opts: ListenOptions = {}): Listening {
           // Speech already under way when we started listening — let it
           // finish and wait for the next pause.
           loudRun = 0;
-        } else if (loudRun >= (busy ? 5 : 2)) {
+        } else if (loudRun >= (busy ? 4 : 2)) {
           // Keep ~300 ms from before the first loud chunk — the start of
           // most words is quieter than the middle.
           speechAt = Math.max(0, chunks.length - loudRun - 5);

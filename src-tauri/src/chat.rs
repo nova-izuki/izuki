@@ -24,10 +24,42 @@ use crate::settings::{ProviderConfig, ProviderId};
 
 pub const DELTA: &str = "izuki://chat-delta";
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct Turn {
     pub role: String,
     pub content: String,
+    /// Pictures sent with it (a photo in Discord or Telegram, one pasted
+    /// into the chat), as `data:image/…;base64,…` URLs.
+    #[serde(default)]
+    pub images: Vec<String>,
+}
+
+impl Turn {
+    pub fn new(role: &str, content: &str) -> Self {
+        Turn { role: role.into(), content: content.to_string(), images: Vec::new() }
+    }
+}
+
+/// Only the latest pictures go to the brain (each is big): the ones on the
+/// last two turns that had any. Older ones become a note.
+const PICTURE_TURNS: usize = 2;
+
+/// A picture made small enough to send: at most 1280 px on its long side,
+/// as a JPEG data URL. Pictures that can't be read here (a GIF, WebP) are
+/// sent as they are when they're small, or skipped.
+pub fn picture_data_url(bytes: &[u8], mime: &str) -> Option<String> {
+    use base64::Engine;
+    let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
+    match image::load_from_memory(bytes) {
+        Ok(img) => {
+            let img = if img.width().max(img.height()) > 1280 { img.resize(1280, 1280, image::imageops::FilterType::Triangle) } else { img };
+            let mut out = Vec::new();
+            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 82).encode_image(&img.to_rgb8()).ok()?;
+            Some(format!("data:image/jpeg;base64,{}", b64(&out)))
+        }
+        Err(_) if bytes.len() <= 4 * 1024 * 1024 && mime.starts_with("image/") => Some(format!("data:{mime};base64,{}", b64(bytes))),
+        Err(_) => None,
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -916,9 +948,31 @@ fn messages_for(history: &[Turn], style: Style) -> Vec<Value> {
 
 fn with_system(history: &[Turn], system: String) -> Vec<Value> {
     let mut messages = vec![json!({ "role": "system", "content": system })];
-    for t in history.iter().rev().take(12).rev() {
+    let recent: Vec<&Turn> = history.iter().rev().take(12).rev().collect();
+    // Which turns still send their pictures: the latest few that have any.
+    let with_pictures: Vec<usize> = recent
+        .iter()
+        .enumerate()
+        .rev()
+        .filter(|(_, t)| !t.images.is_empty())
+        .take(PICTURE_TURNS)
+        .map(|(i, _)| i)
+        .collect();
+    for (i, t) in recent.iter().enumerate() {
         let role = if t.role == "assistant" { "assistant" } else { "user" };
-        messages.push(json!({ "role": role, "content": t.content }));
+        if t.images.is_empty() || role == "assistant" {
+            messages.push(json!({ "role": role, "content": t.content }));
+        } else if with_pictures.contains(&i) {
+            let text = if t.content.trim().is_empty() { "What's in this picture?" } else { t.content.as_str() };
+            let mut parts = vec![json!({ "type": "text", "text": text })];
+            for url in t.images.iter().take(4) {
+                parts.push(json!({ "type": "image_url", "image_url": { "url": url } }));
+            }
+            messages.push(json!({ "role": role, "content": parts }));
+        } else {
+            let note = if t.images.len() == 1 { "[sent a picture]" } else { "[sent some pictures]" };
+            messages.push(json!({ "role": role, "content": format!("{} {note}", t.content).trim() }));
+        }
     }
     messages
 }
@@ -1449,6 +1503,30 @@ mod tool_tests {
         assert_eq!(in_plain_words("Get-AppxPackage | Select Name"), "Checking your installed apps");
         assert_eq!(in_plain_words("(Get-ChildItem 'C:\\Program Files\\Zoom' -Recurse | Measure-Object Length -Sum).Sum"), "Measuring how big it is");
         assert_eq!(in_plain_words("echo hi"), "Running a command");
+    }
+
+    #[test]
+    fn pictures_go_with_their_words_and_only_the_latest() {
+        let pic = |c: &str| Turn { role: "user".into(), content: c.into(), images: vec!["data:image/jpeg;base64,AAAA".into()] };
+        let history = vec![pic("first"), Turn::new("assistant", "a cat"), pic("second"), Turn::new("assistant", "a dog"), pic("")];
+        let m = with_system(&history, "sys".into());
+        // The oldest picture is only mentioned; the last two are sent.
+        assert_eq!(m[1]["content"], "first [sent a picture]");
+        assert_eq!(m[3]["content"][0]["text"], "second");
+        assert_eq!(m[3]["content"][1]["image_url"]["url"], "data:image/jpeg;base64,AAAA");
+        assert_eq!(m[5]["content"][0]["text"], "What's in this picture?");
+        // A real picture is shrunk and sent as a JPEG.
+        let mut png = Vec::new();
+        image::DynamicImage::new_rgb8(3000, 1500)
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let url = picture_data_url(&png, "image/png").unwrap();
+        assert!(url.starts_with("data:image/jpeg;base64,"));
+        use base64::Engine;
+        let jpeg = base64::engine::general_purpose::STANDARD.decode(&url[23..]).unwrap();
+        let back = image::load_from_memory(&jpeg).unwrap();
+        assert_eq!((back.width(), back.height()), (1280, 640));
+        assert!(picture_data_url(b"not a picture", "application/pdf").is_none());
     }
 
     #[test]

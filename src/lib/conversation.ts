@@ -148,7 +148,7 @@ export function needsScreen(text: string): boolean {
   // "in the background" / "don't open anything" → behind the scenes.
   if (wantsToWatch(text)) return true;
   if (wantsBackground(text) || answersInBackground(text)) return false;
-  return SCREEN.test(text) && !/\b(remind me|set (a |an )?reminder)\b/i.test(text);
+  return (SCREEN.test(text) && !/\b(remind me|set (a |an )?reminder)\b/i.test(text)) || looksLikeDirections(text);
 }
 
 /**
@@ -176,6 +176,38 @@ export function answersInBackground(text: string): boolean {
   return pcFact.test(s) && tellOnly.test(s);
 }
 
+/**
+ * Steps pasted from somewhere else — another AI's answer, a tutorial, a
+ * teacher's instructions: "1. Open Settings 2. Click Privacy…". Two or more
+ * numbered or bulleted lines that tell someone to do things on a computer.
+ */
+export function looksLikeDirections(text: string): boolean {
+  const lines = text
+    .split(/\n|(?=\s\d+[.)]\s)/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const steps = lines.filter((l) => /^(\d+[.)]|step\s*\d+[:.)]?|[-•*]\s)/i.test(l));
+  return steps.length >= 2 && steps.filter((l) => DOING.test(l)).length >= 2;
+}
+
+const DOING =
+  /\b(click|open|go to|select|choose|type|press|tap|navigate|enter|enable|disable|toggle|scroll|find|search|right[- ]click|drag|copy|paste|install|download|upload|sign in|log in|settings|menu|tab|button|save|create|add|run|launch)\b/i;
+
+/**
+ * What the screen agent is asked for pasted directions: do them, in order,
+ * on the real screen — adapting, not blindly.
+ */
+export function directionsTask(text: string): string {
+  return (
+    "Do these steps for me on my screen, in order, checking each one worked before the next. " +
+    "Someone else wrote them (another AI or a guide), so they may not match my screen exactly: " +
+    "adapt to what's really there (names and menus move between versions), skip any that are already done, " +
+    "keep track of which step you're on in your notes, and tell me plainly if one can't be done. " +
+    "Stop right before anything final (submit, pay, send, delete) and ask me.\n\n" +
+    text.trim()
+  );
+}
+
 const SCREEN = new RegExp(
   [
     // doing things
@@ -193,7 +225,7 @@ export type LaneResult = "done" | "end" | "screen" | "apps" | "failed" | "cancel
 
 /** The model's "this conversation is over" tag — never spoken. */
 /** [END], and any [REMIND … | …] (the core sets the reminder; it's never read out). */
-const END_TAG = /\s*\[\s*(?:END|REMIND[^\]]*)\]\s*/gi;
+const END_TAG = /\s*\[\s*(?:END|REMIND[^\]]*|ALARM[^\]]*)\]\s*/gi;
 
 let seq = Date.now();
 let activeId: number | null = null;

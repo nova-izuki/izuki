@@ -309,6 +309,7 @@ pub fn run() {
             commands::overlay_state,
             commands::reminders_list,
             commands::reminder_remove,
+            commands::alarm_snooze,
             commands::cancel_task,
             commands::quit_app,
             commands::selftest_enabled,

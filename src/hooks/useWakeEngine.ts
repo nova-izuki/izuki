@@ -42,7 +42,7 @@ export function useWakeEngine(
     }
     const w = new Worker(new URL("../lib/wakeWorker.ts", import.meta.url), { type: "module" });
     worker.current = w;
-    w.onmessage = (e: MessageEvent<{ kind: string; name?: string; score?: number; words?: string[]; msPerFrame?: number; error?: string }>) => {
+    w.onmessage = (e: MessageEvent<{ kind: string; name?: string; score?: number; words?: string[]; msPerFrame?: number; rested?: number; error?: string }>) => {
       const m = e.data;
       if (m.kind === "ready") {
         setWords(m.words ?? []);
@@ -54,7 +54,7 @@ export function useWakeEngine(
       } else if (m.kind === "near") {
         log(`near miss: "${m.name}" scored ${m.score?.toFixed(2)} (needs ${thresholdRef.current.toFixed(2)})`);
       } else if (m.kind === "load") {
-        log(`${m.msPerFrame?.toFixed(1)} ms per 80 ms of sound`);
+        log(`${m.msPerFrame?.toFixed(1)} ms per 80 ms of sound${m.rested ? ` (rested through ${m.rested} quiet moments)` : ""}`);
       } else if (m.kind === "error") {
         log(`error — ${m.error}`);
       }

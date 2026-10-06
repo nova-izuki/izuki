@@ -1022,6 +1022,11 @@ pub fn reminders_list() -> Vec<crate::reminders::Reminder> {
 }
 
 #[tauri::command]
+pub fn alarm_snooze(text: String, minutes: i64) -> crate::reminders::Reminder {
+    crate::reminders::snooze(&text, minutes.clamp(1, 60))
+}
+
+#[tauri::command]
 pub fn reminder_remove(app: AppHandle, id: String) {
     crate::reminders::remove(&id);
     let _ = app.emit(crate::reminders::CHANGED, ());

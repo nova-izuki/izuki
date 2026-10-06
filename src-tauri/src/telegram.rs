@@ -208,6 +208,35 @@ fn handle(app: &AppHandle, token: &str, msg: &Value) -> Result<()> {
         return Ok(());
     }
 
+    // ---- a photo (or a picture sent as a file), with its caption --------
+    let photo_id = msg["photo"]
+        .as_array()
+        .and_then(|sizes| {
+            // The biggest size that's still sensible to send (≤ ~1600 px).
+            sizes
+                .iter()
+                .filter(|p| p["width"].as_u64().unwrap_or(0).max(p["height"].as_u64().unwrap_or(0)) <= 1600)
+                .last()
+                .or(sizes.first())
+        })
+        .and_then(|p| p["file_id"].as_str())
+        .or_else(|| {
+            let d = &msg["document"];
+            d["mime_type"].as_str().filter(|t| t.starts_with("image/")).and(d["file_id"].as_str())
+        });
+    if let Some(file_id) = photo_id {
+        typing(token, chat);
+        let caption = msg["caption"].as_str().unwrap_or_default().trim().to_string();
+        let mime = msg["document"]["mime_type"].as_str().unwrap_or("image/jpeg");
+        let Some(picture) = download(token, file_id).ok().and_then(|b| crate::chat::picture_data_url(&b, mime)) else {
+            send_text(token, chat, "I couldn't open that picture — try sending it again?");
+            return Ok(());
+        };
+        let reply = crate::companion::respond_with(app, &caption, vec![picture], false, &|line| send_text(token, chat, line));
+        send_text(token, chat, &reply.text);
+        return Ok(());
+    }
+
     // ---- what they said (typed, or a voice note) -------------------------
     let said = if !text.is_empty() {
         text
@@ -227,7 +256,7 @@ fn handle(app: &AppHandle, token: &str, msg: &Value) -> Result<()> {
             }
         }
     } else {
-        send_text(token, chat, "I can read text and voice notes 🙂");
+        send_text(token, chat, "I can read text, voice notes and pictures 🙂");
         return Ok(());
     };
 

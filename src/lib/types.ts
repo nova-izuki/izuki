@@ -96,6 +96,10 @@ export interface Reminder {
   /** Due, Unix ms. */
   at: number;
   text: string;
+  /** Rings until stopped (an alarm), rather than being said once. */
+  alarm?: boolean;
+  /** "" once, "daily", "weekdays", "weekends" or "mon,wed,fri". */
+  repeat?: string;
 }
 
 export interface AppsAnswer {

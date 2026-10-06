@@ -392,6 +392,29 @@ fn handle(app: &AppHandle, token: &str, m: &Value) -> Result<()> {
         return Ok(());
     }
 
+    // ---- pictures they sent (a photo, a screenshot of an error…) --------
+    let pictures: Vec<String> = m["attachments"]
+        .as_array()
+        .map(|all| {
+            all.iter()
+                .filter(|a| a["content_type"].as_str().is_some_and(|t| t.starts_with("image/")))
+                .filter(|a| a["size"].as_u64().unwrap_or(0) <= 20 * 1024 * 1024)
+                .take(4)
+                .filter_map(|a| {
+                    let bytes = client().ok()?.get(a["url"].as_str()?).send().ok()?.bytes().ok()?;
+                    crate::chat::picture_data_url(&bytes, a["content_type"].as_str().unwrap_or("image/jpeg"))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    // ("/stop" with a picture attached is still just /stop — handled below.)
+    if !pictures.is_empty() && !text.starts_with('/') {
+        typing(token, channel);
+        let reply = crate::companion::respond_with(app, &text, pictures, false, &|line| send_text(token, channel, line));
+        send_text(token, channel, &reply.text);
+        return Ok(());
+    }
+
     // ---- what they said (typed, or a voice message) --------------------
     let said = if !text.is_empty() {
         text
@@ -415,7 +438,7 @@ fn handle(app: &AppHandle, token: &str, m: &Value) -> Result<()> {
             }
         }
     } else {
-        send_text(token, channel, "I can read text and voice messages 🙂");
+        send_text(token, channel, "I can read text, voice messages and pictures 🙂");
         return Ok(());
     };
 

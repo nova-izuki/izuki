@@ -310,6 +310,19 @@ export function naturalOutputLevel(): number {
 }
 
 /**
+ * How loud Izuki's voice is right now as plain signal level (RMS, 0..1), or
+ * -1 when it isn't talking through this player — so listening can tell how
+ * much of what the mic hears is Izuki's own voice coming back.
+ */
+export function naturalOutputRms(): number {
+  if (!analyser || !levelBuf || !speakingNow) return -1;
+  analyser.getFloatTimeDomainData(levelBuf);
+  let sum = 0;
+  for (let i = 0; i < levelBuf.length; i++) sum += levelBuf[i] * levelBuf[i];
+  return Math.sqrt(sum / levelBuf.length);
+}
+
+/**
  * Silence the voice. `why` goes in the log whenever this actually cuts
  * something off — a reply that "stops halfway" is always one of these.
  */

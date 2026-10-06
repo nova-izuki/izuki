@@ -3,7 +3,7 @@ import { useWakeEngine, WAKE_THRESHOLD } from "../hooks/useWakeEngine";
 import { expandShortWords } from "../lib/shortWords";
 import { useDictation } from "../hooks/useDictation";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
-import { answersInBackground, cancelChat, chatLane, needsApps, needsScreen, recentHistory, remember, wantsBackground, wantsToWatch, type LaneResult } from "../lib/conversation";
+import { answersInBackground, cancelChat, chatLane, directionsTask, looksLikeDirections, needsApps, needsScreen, recentHistory, remember, wantsBackground, wantsToWatch, type LaneResult } from "../lib/conversation";
 import { speakable } from "../lib/speakable";
 import { parseInstant, type Instant } from "../lib/instant";
 import { isEcho, noteSaid, noteStillSaying } from "../lib/echo";
@@ -976,7 +976,8 @@ ${result}`);
         // Flush a just-edited setting (a freshly pasted key) before relying on it.
         await useIzuki.getState().flushSettings();
         if (useIzuki.getState().settings.speak_responses) void holdMicForVoice();
-        const plan = await api.submitVoiceCommand(tutoring ? tutorPrompt(t, tutoring.first) : t);
+        // Pasted directions ("1. Open Settings 2. Click…"): follow them on screen.
+        const plan = await api.submitVoiceCommand(tutoring ? tutorPrompt(t, tutoring.first) : looksLikeDirections(t) ? directionsTask(t) : t);
         if (tutoring) {
           tutoring.first = false;
           // Every explanation goes into today's lesson notes, to study later.

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, RotateCcw, Send, Sparkles, Square, Volume2, X } from "lucide-react";
+import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, RotateCcw, Send, Sparkles, Square, Volume2, X } from "lucide-react";
 import { api, emit, EV, on } from "../../lib/ipc";
 import { ChatText } from "../ChatText";
 import { LaterCard } from "../LaterCard";
@@ -12,7 +12,7 @@ import { cx } from "../ui";
 import type { Reminder } from "../../lib/types";
 import { useIzuki } from "../../lib/store";
 import { brainReady } from "../../lib/setup";
-import { needsApps, recentHistory, shareHistory } from "../../lib/conversation";
+import { looksLikeDirections, needsApps, recentHistory, shareHistory } from "../../lib/conversation";
 
 /**
  * Izuki as a plain chat companion — no screen, no mouse. Ask anything,
@@ -47,6 +47,33 @@ interface Msg {
   calls?: ToolCall[];
   /** What an allowed command really answered (so later turns know it ran). */
   ran?: string;
+  /** Pictures sent with it (data URLs) — shown, sent to the brain, not saved. */
+  images?: string[];
+}
+
+/**
+ * A picture made small enough to send: at most 1280 px on its long side,
+ * as a JPEG data URL (a phone photo is 4 MB; this is ~200 KB).
+ */
+function shrinkPicture(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(img.width * scale));
+      c.height = Math.max(1, Math.round(img.height * scale));
+      c.getContext("2d")?.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("not a picture"));
+    };
+    img.src = url;
+  });
 }
 
 /** A failure that setting up a brain would fix. */
@@ -70,7 +97,7 @@ const WRITE_ONLY =
   /\b(help me (write|draft|compose)|write (me )?(an? )?(e-?mail|message|note|reply)|draft (me )?(an? )?(e-?mail|message|note|reply))\b/i;
 const wantsApps = (t: string) => (ACCOUNTS.test(t) || needsApps(t)) && !WRITE_ONLY.test(t) && !/\b(remind me|set (a |an )?reminder)\b/i.test(t);
 const APPS = /^\s*\[?APPS\]?\s*$/i;
-const REMIND_TAG = /\s*\[REMIND[^\]]*\]?\s*/gi;
+const REMIND_TAG = /\s*\[(?:REMIND|ALARM)[^\]]*\]?\s*/gi;
 // Focus mode and Recall are answered on the PC itself, at once.
 const INSTANT_ASK = /^(?:hey nova,?\s*)?(?:focus\b|stop focus|end focus|pomodoro|help me focus|i need to focus)|\bwhat was (?:i doing|i looking at|i working on|i reading|i watching|that (?:site|page|website|video|document|file))|\bwhat did i have open|\bfind (?:the|that) (?:page|site) i/i;
 const LATER = /^(?:hey nova,?\s*)?(?:remind me later|remember for later|don'?t let me forget|add .+ to (?:my|the) (?:shopping |later )?list|what'?s on my (?:shopping |later )?list|what do i need to (?:buy|get)|i (?:got|bought) )/i;
@@ -99,6 +126,9 @@ function clean(v: unknown): Msg[] {
     out.push({
       ...(m as unknown as Msg),
       content: text(m.content),
+      images: Array.isArray(m.images)
+        ? (m.images as unknown[]).filter((u): u is string => typeof u === "string" && u.startsWith("data:image/")).slice(0, 4)
+        : undefined,
       status: typeof m.status === "string" ? m.status : undefined,
       links: links.length ? links : undefined,
       ran: typeof m.ran === "string" ? m.ran : undefined,
@@ -132,7 +162,9 @@ function load(): Msg[] {
 
 function save(msgs: Msg[]) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(msgs.slice(-KEEP)));
+    // Pictures are big: they're kept for this session only.
+    const light = msgs.slice(-KEEP).map((m) => (m.images?.length ? { ...m, images: undefined, content: `${m.content} 🖼️`.trim() } : m));
+    localStorage.setItem(KEY, JSON.stringify(light));
   } catch {
     /* private mode / full — the chat still works, it just isn't kept */
   }
@@ -191,6 +223,21 @@ export function ChatTab() {
   const setMsgs = setChatMsgs;
   const setBusy = setChatBusy;
   const [draft, setDraft] = useState("");
+  /** Pictures waiting to go with the next message. */
+  const [pics, setPics] = useState<string[]>([]);
+  const picker = useRef<HTMLInputElement>(null);
+  const addPictures = async (files: Iterable<Blob>) => {
+    const ready: string[] = [];
+    for (const f of files) {
+      if (!f.type.startsWith("image/")) continue;
+      try {
+        ready.push(await shrinkPicture(f));
+      } catch {
+        /* not a picture we can read */
+      }
+    }
+    if (ready.length) setPics((p) => [...p, ...ready].slice(0, 4));
+  };
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const streamId = chatStream;
   /** Ends the request in flight (Stop, a timeout) so nothing is left spinning. */
@@ -257,8 +304,8 @@ export function ChatTab() {
      * after Allow / No, the result and the answer land in the same message
      * as the card, the way Claude Code shows a job: steps, then the answer.
      */
-    async (text: string, note = false, here = false) => {
-      const t = text.trim();
+    async (text: string, note = false, here = false, images: string[] = []) => {
+      const t = text.trim() || (images.length ? "What's in this picture?" : "");
       if (!t || busy) return;
       // "clear chat" / "start over" — just wipe it, don't ask the AI.
       if (!note && /^(clear|reset|wipe|empty|start over|new)( (the|this|our|my))? ?(chat|conversation|messages|history|it|over)?$/i.test(t)) {
@@ -288,14 +335,27 @@ export function ChatTab() {
       // A just-flipped Ask/Auto switch is saved before the request goes out,
       // so Auto really runs without asking.
       await useIzuki.getState().flushSettings().catch(() => undefined);
+      // Directions pasted from another AI or a guide ("1. Open Settings
+      // 2. Click…"): Izuki does them on the screen instead of explaining them.
+      if (!note && !here && !images.length && looksLikeDirections(t)) {
+        setMsgs((m) => [
+          ...m,
+          { role: "user", content: t },
+          { role: "assistant", content: "On it — I'll follow those steps on your screen, one by one. 🖥️ Press Esc to stop me." },
+        ]);
+        void sendChatCommand(t);
+        return;
+      }
+      if (images.length) setPics([]);
       // Earlier replies carry what really happened (the steps, an allowed
       // command's output), so "u done?" is answered from facts, not memory.
-      const history = [...msgs.filter((m) => !m.failed && !m.screen), { role: "user" as const, content: t }].map((m) => ({
+      const history = [...msgs.filter((m) => !m.failed && !m.screen), { role: "user" as const, content: t, images }].map((m) => ({
         role: m.role,
         content:
           m.role === "assistant" && ("steps" in m || "ran" in m) && (m.steps?.length || m.ran)
             ? `${m.content}\n[Done for real: ${[...(m.steps ?? []), ...(m.ran ? [`result: ${m.ran}`] : [])].join(" | ")}]`
             : m.content,
+        ...(m.images?.length ? { images: m.images } : {}),
       }));
       if (here) {
         setMsgs((m) => {
@@ -305,7 +365,11 @@ export function ChatTab() {
           return copy;
         });
       } else {
-        setMsgs((m) => [...m, { role: "user", content: t, note }, { role: "assistant", content: "", status: firstStatus(t) }]);
+        setMsgs((m) => [
+          ...m,
+          { role: "user", content: t, note, images: images.length ? images : undefined },
+          { role: "assistant", content: "", status: firstStatus(t) },
+        ]);
       }
       setBusy(true);
       const id = Date.now();
@@ -551,7 +615,11 @@ export function ChatTab() {
               {reminders.map((r) => (
                 <div key={r.id} className="group flex items-center gap-2 rounded-[10px] px-1.5 py-1 hover:bg-white/5">
                   <span className="shrink-0 text-[10.5px] font-medium text-izk-teal">{when(r.at)}</span>
-                  <span className="min-w-0 flex-1 truncate text-[12px] text-izk-ink">{r.text}</span>
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-izk-ink">
+                    {r.alarm ? "⏰ " : ""}
+                    {r.text}
+                    {r.repeat ? <span className="text-izk-muted"> · {r.repeat === "daily" ? "every day" : r.repeat === "weekdays" ? "weekdays" : r.repeat === "weekends" ? "weekends" : r.repeat.replace(/,/g, ", ")}</span> : null}
+                  </span>
                   <button
                     type="button"
                     aria-label="Delete reminder"
@@ -661,6 +729,13 @@ export function ChatTab() {
                     : undefined
                 }
               >
+                {m.images?.length ? (
+                  <div className="mb-1.5 flex flex-wrap gap-1.5">
+                    {m.images.map((src, j) => (
+                      <img key={j} src={src} alt="" className="max-h-[140px] max-w-[200px] rounded-[10px] object-cover" />
+                    ))}
+                  </div>
+                ) : null}
                 {m.calls && m.calls.length > 0 && <ToolCards calls={m.calls} />}
                 {m.steps && m.steps.length > 0 && !m.calls?.length && <Steps steps={m.steps} />}
                 {m.action && <ActionCard action={m.action} busy={busy} onAnswer={(allow) => void answer(i, allow)} ran={m.ran} />}
@@ -718,8 +793,54 @@ export function ChatTab() {
           <div ref={bottom} />
         </div>
 
-        <div className="border-t border-white/8 p-[10px]">
+        <div
+          className="border-t border-white/8 p-[10px]"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            if (!e.dataTransfer.files.length) return;
+            e.preventDefault();
+            void addPictures(Array.from(e.dataTransfer.files));
+          }}
+        >
+          {pics.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {pics.map((p, i) => (
+                <div key={i} className="relative">
+                  <img src={p} alt="" className="h-[56px] w-[56px] rounded-[10px] border border-white/10 object-cover" />
+                  <button
+                    type="button"
+                    aria-label="Remove picture"
+                    onClick={() => setPics((all) => all.filter((_, j) => j !== i))}
+                    className="absolute -right-1.5 -top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-black/70 text-white"
+                  >
+                    <X size={10} strokeWidth={2.8} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <input
+            ref={picker}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={(e) => {
+              if (e.target.files) void addPictures(Array.from(e.target.files));
+              e.target.value = "";
+            }}
+          />
           <div className="flex items-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => picker.current?.click()}
+              disabled={busy}
+              aria-label="Add a picture"
+              title="Add a picture (or paste one with Ctrl+V)"
+              className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/6 hover:bg-white/10 disabled:opacity-40"
+            >
+              <Paperclip size={15} strokeWidth={2.3} className="text-izk-ink" />
+            </button>
             <button
               type="button"
               onClick={() => (dictation.listening ? dictation.stop() : dictation.start())}
@@ -760,10 +881,16 @@ export function ChatTab() {
               value={draft}
               rows={1}
               onChange={(e) => setDraft(e.target.value)}
+              onPaste={(e) => {
+                const files = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
+                if (!files.length) return;
+                e.preventDefault();
+                void addPictures(files);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  void send(draft);
+                  void send(draft, false, false, pics);
                 }
               }}
               placeholder={dictation.listening ? "Listening…" : "Message Izuki"}
@@ -781,8 +908,8 @@ export function ChatTab() {
             ) : (
               <button
                 type="button"
-                onClick={() => void send(draft)}
-                disabled={!draft.trim()}
+                onClick={() => void send(draft, false, false, pics)}
+                disabled={!draft.trim() && !pics.length}
                 aria-label="Send"
                 className="izk-btn-primary flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full disabled:opacity-40"
               >

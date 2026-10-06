@@ -6,6 +6,7 @@
  */
 import * as ort from "onnxruntime-web";
 import { WakeEngine } from "./wakeEngine";
+import { QuietGate } from "../../packages/voice-turns/src/index.ts";
 
 const HOST = "http://izukimodel.localhost/";
 ort.env.wasm.wasmPaths = `${HOST}ort/`;
@@ -24,6 +25,14 @@ let nearBest: { name: string; score: number } | null = null;
 let nearSince = 0;
 /** One call is one detection, not several. */
 const COOLDOWN_MS = 2000;
+
+/**
+ * Battery: in a quiet room there's nothing to hear, so the three models
+ * rest — that's most of the day. As soon as there's sound, the moment
+ * before it is run through first, so a "Hey Nova" that starts softly is
+ * still heard from its first syllable (packages/voice-turns).
+ */
+const gate = new QuietGate();
 
 let engine: WakeEngine | null = null;
 let lastFire = 0;
@@ -65,8 +74,20 @@ self.onmessage = async (e: MessageEvent<Msg>) => {
       return;
     }
     if (!engine) return;
+    const run = gate.push(msg.samples);
+    if (!run) return;
+    for (const audio of run) await score(audio);
+  } catch (err) {
+    self.postMessage({ kind: "error", error: err instanceof Error ? err.message : String(err) });
+  }
+};
+
+/** Run audio through the models and report the wake word if it's there. */
+async function score(samples: Float32Array) {
+  if (!engine) return;
+  {
     const began = performance.now();
-    const results = await engine.feed(msg.samples);
+    const results = await engine.feed(samples);
     busyMs += performance.now() - began;
     for (const scores of results) {
       frames++;
@@ -90,14 +111,13 @@ self.onmessage = async (e: MessageEvent<Msg>) => {
     }
     // Every ~20 s: how much of one core this takes (for the log).
     if (frames >= 250) {
-      self.postMessage({ kind: "load", msPerFrame: busyMs / frames });
+      self.postMessage({ kind: "load", msPerFrame: busyMs / frames, rested: gate.rested });
       frames = 0;
       busyMs = 0;
+      gate.rested = 0;
     }
-  } catch (err) {
-    self.postMessage({ kind: "error", error: err instanceof Error ? err.message : String(err) });
   }
-};
+}
 
 /** "hey_nova_v2.onnx" / "Hey_Nova_20260328_194345.onnx" → "Hey Nova". */
 function prettyName(file: string): string {
