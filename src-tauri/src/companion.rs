@@ -212,6 +212,12 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         push("assistant", &text);
         return Reply::text(text);
     }
+    // "Make a trap beat", from the phone too: the MIDI lands on the PC.
+    if let Some(text) = crate::beats::parse(said).and_then(|_| crate::beats::make(said)) {
+        push("user", said);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // "My PC is lagging", from the phone too: PC Boost on the PC.
     if crate::boost::is_request(said) {
         push("user", said);

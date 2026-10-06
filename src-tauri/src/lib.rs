@@ -60,6 +60,7 @@ pub mod timers;
 pub mod activity;
 pub mod boost;
 pub mod playbooks;
+pub mod beats;
 pub mod screentime;
 pub mod readaloud;
 pub mod tts;
