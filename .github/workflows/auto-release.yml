@@ -1,0 +1,51 @@
+name: Auto release on version bump
+
+# When main's version (package.json) is new, tag it and start the Windows and
+# phone builds — so the website's Download button and the app's own updater
+# get the newest version without anyone pushing a tag by hand.
+on:
+  push:
+    branches: [main]
+    paths: ['package.json', '.github/workflows/auto-release.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tag the new version and start the builds
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+          # The same version everywhere a build reads it.
+          tauri=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "$tauri" != "$version" ]; then
+            echo "package.json says $version but tauri.conf.json says $tauri; not releasing." >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "$tag already exists; nothing to do."
+            exit 0
+          fi
+          git tag "$tag" "$GITHUB_SHA"
+          git push origin "$tag"
+          # A tag pushed with this workflow's token doesn't start other
+          # workflows by itself, so start them on the tag directly.
+          gh workflow run release.yml --ref "$tag"
+          gh workflow run mobile.yml --ref "$tag"
+          echo "Started the $tag release."
