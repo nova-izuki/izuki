@@ -366,6 +366,10 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         let s2 = said.clone();
         return blocking(move || crate::screentime::answer(&s2)).await.ok();
     }
+    // "What are the shortcuts here?": the app's own playbook.
+    if let Some(text) = crate::playbooks::answer(&said) {
+        return Some(text);
+    }
     // "Make me an afrobeats drum pattern at 108 bpm": a real MIDI groove.
     if crate::beats::parse(&said).is_some() {
         let s2 = said.clone();

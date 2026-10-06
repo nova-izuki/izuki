@@ -76,6 +76,28 @@ pub fn prompt_block(app: &str, title: &str) -> String {
     s
 }
 
+/// "What are the shortcuts here?", "how do I use this app": the playbook
+/// for the app in front, said plainly. None when it isn't that question.
+pub fn answer(said: &str) -> Option<String> {
+    let s = said.to_lowercase();
+    let asks = (s.contains("shortcut") || s.contains("hotkey") || s.contains("keyboard keys"))
+        && (s.contains("here") || s.contains("this app") || s.contains("this program") || s.contains("for this") || s.contains("what are") || s.contains("show me"));
+    if !asks {
+        return None;
+    }
+    let app = crate::uia::foreground_app();
+    let title = crate::uia::foreground_title();
+    let Some(p) = find(&app, &title) else {
+        return Some("I don't have a playbook for this app yet — ask me what you want to do in it and I'll find the way.".into());
+    };
+    let keys: Vec<String> = p.keys.iter().take(12).map(|(k, what)| format!("{k} — {what}")).collect();
+    let mut out = format!("In {}: {}.", p.name, keys.join("; "));
+    if let Some(tip) = p.notes.first() {
+        out.push_str(&format!(" Tip: {tip}"));
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
