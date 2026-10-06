@@ -77,6 +77,50 @@ public class IzukiAccessibilityService extends AccessibilityService {
 
   // ---- seeing the screen ---------------------------------------------------
 
+  /**
+   * A picture of the screen (Android 11 and newer), small, as base64 JPEG —
+   * for "what's on my TV?" when the screen is a video or a picture with no
+   * text to read. `done` gets null where it isn't possible (an older
+   * Android, or an app that blocks screenshots, like some streaming apps).
+   */
+  static void shot(final java.util.function.Consumer<String> done) {
+    final IzukiAccessibilityService service = active;
+    if (service == null || android.os.Build.VERSION.SDK_INT < 30) { done.accept(null); return; }
+    service.takeShot(done);
+  }
+
+  @android.annotation.TargetApi(30)
+  private void takeShot(final java.util.function.Consumer<String> done) {
+    try {
+      takeScreenshot(android.view.Display.DEFAULT_DISPLAY, getMainExecutor(), new TakeScreenshotCallback() {
+        @Override public void onSuccess(ScreenshotResult result) {
+          String out = null;
+          android.hardware.HardwareBuffer buffer = result.getHardwareBuffer();
+          try {
+            android.graphics.Bitmap hw = android.graphics.Bitmap.wrapHardwareBuffer(buffer, result.getColorSpace());
+            android.graphics.Bitmap bmp = hw == null ? null : hw.copy(android.graphics.Bitmap.Config.ARGB_8888, false);
+            if (bmp != null) {
+              float scale = Math.min(1f, 1024f / Math.max(bmp.getWidth(), bmp.getHeight()));
+              android.graphics.Bitmap small = android.graphics.Bitmap.createScaledBitmap(bmp,
+                  Math.max(1, Math.round(bmp.getWidth() * scale)), Math.max(1, Math.round(bmp.getHeight() * scale)), true);
+              java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+              small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 72, bytes);
+              out = android.util.Base64.encodeToString(bytes.toByteArray(), android.util.Base64.NO_WRAP);
+            }
+          } catch (Exception ignored) {
+            out = null;
+          } finally {
+            if (buffer != null) buffer.close();
+          }
+          done.accept(out);
+        }
+        @Override public void onFailure(int errorCode) { done.accept(null); }
+      });
+    } catch (Exception e) {
+      done.accept(null);
+    }
+  }
+
   /** The app in front and what's on screen: [{n, text, kind, x, y, w, h, focused}]. */
   static JSONObject screen() throws JSONException {
     IzukiAccessibilityService service = active;

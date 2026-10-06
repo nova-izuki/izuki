@@ -531,6 +531,97 @@ pub fn now_on() -> Option<String> {
     Some(if name.is_empty() || name == "Roku" { "the home screen".into() } else if name == "Izuki" { "Izuki".into() } else { name })
 }
 
+/// A Roku's own report of what's happening, in words: the app, whether it's
+/// playing and how far in, and on a Roku TV's live channels the channel and
+/// the programme. A Roku can't share a picture of its screen, but it tells
+/// this much — enough for "what am I watching?".
+pub fn now_detail() -> Option<String> {
+    let host = crate::state::try_store()?.settings().tv_host.trim().to_string();
+    if host.is_empty() || make(&host).is_some() {
+        return None;
+    }
+    let app = now_on()?;
+    let c = client().ok()?;
+    let get = |path: &str| c.get(format!("{}{path}", base(&host))).timeout(Duration::from_millis(1500)).send().ok().and_then(|r| r.text().ok());
+    let player = get("/query/media-player").map(|x| media_player(&x)).unwrap_or_default();
+    let live = if app == "the home screen" { None } else { get("/query/tv-active-channel").and_then(|x| live_channel(&x)) };
+    Some(describe_now(&app, &player, live.as_ref()))
+}
+
+/// What /query/media-player says: (state, position s, duration s, live).
+#[derive(Debug, Default, PartialEq)]
+pub struct Player {
+    pub state: String,
+    pub position: Option<u64>,
+    pub duration: Option<u64>,
+    pub live: bool,
+}
+
+fn secs(v: &str) -> Option<u64> {
+    v.trim().trim_end_matches("ms").trim().parse::<u64>().ok().map(|ms| ms / 1000)
+}
+
+pub fn media_player(xml: &str) -> Player {
+    let state = xml.split("state=\"").nth(1).and_then(|s| s.split('"').next()).unwrap_or("").to_string();
+    Player {
+        state,
+        position: tag(xml, "position").as_deref().and_then(secs),
+        duration: tag(xml, "duration").as_deref().and_then(secs),
+        live: tag(xml, "is_live").is_some_and(|v| v.trim() == "true"),
+    }
+}
+
+/// A Roku TV's live channel: (number, name, programme title, description).
+pub fn live_channel(xml: &str) -> Option<(String, String, String, String)> {
+    let num = tag(xml, "number")?.trim().to_string();
+    let name = tag(xml, "name").unwrap_or_default().trim().to_string();
+    let title = tag(xml, "program-title").unwrap_or_default().trim().to_string();
+    let about = tag(xml, "program-description").unwrap_or_default().trim().chars().take(160).collect();
+    Some((num, name, title, about))
+}
+
+fn clock(s: u64) -> String {
+    let (h, m) = (s / 3600, (s % 3600) / 60);
+    match (h, m) {
+        (0, 0) => "less than a minute".into(),
+        (0, m) => format!("{m} min"),
+        (h, 0) => format!("{h} h"),
+        (h, m) => format!("{h} h {m} min"),
+    }
+}
+
+pub fn describe_now(app: &str, p: &Player, live: Option<&(String, String, String, String)>) -> String {
+    if let Some((num, name, title, about)) = live {
+        let mut s = format!("Your TV is on channel {num}{}", if name.is_empty() { String::new() } else { format!(" ({name})") });
+        if !title.is_empty() {
+            s.push_str(&format!(" — “{title}”"));
+        }
+        s.push('.');
+        if !about.is_empty() {
+            s.push_str(&format!(" {about}"));
+        }
+        return s;
+    }
+    let mut s = format!("Your TV is on {app}");
+    match p.state.as_str() {
+        "play" => {
+            s.push_str(", playing");
+            if let (Some(pos), Some(dur)) = (p.position, p.duration) {
+                if dur > 60 && !p.live {
+                    s.push_str(&format!(" — {} in, {} left", clock(pos), clock(dur.saturating_sub(pos))));
+                }
+            } else if p.live {
+                s.push_str(" live");
+            }
+        }
+        "pause" => s.push_str(", paused"),
+        "buffer" | "startup" => s.push_str(", loading"),
+        _ => {}
+    }
+    s.push('.');
+    s
+}
+
 /// Is Izuki's own channel the one open on the TV? (A side-loaded channel
 /// is "dev".) Checked at most every 8 s — it's asked on every orb change.
 fn izuki_open(host: &str) -> bool {
@@ -730,7 +821,9 @@ fn smart(host: &str, said: &str) -> Result<String> {
 pub fn run(said: &str) -> Result<String> {
     // "What's on my TV?" — read it, press nothing.
     if asks_what_is_on(said) {
-        return now_on().map(|n| format!("Your TV is on {n}.")).ok_or_else(|| anyhow!("I can't see what's on your TV right now."));
+        return now_detail()
+            .or_else(|| now_on().map(|n| format!("Your TV is on {n}.")))
+            .ok_or_else(|| anyhow!("I can't see what's on your TV right now."));
     }
     // "What apps are on my TV?", "show me free movie apps", "is Netflix free?"
     if let Some(ask) = asks_about_apps(said) {
@@ -839,6 +932,18 @@ pub fn run(said: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn says_what_the_roku_is_doing() {
+        let xml = r#"<?xml version="1.0"?><player error="false" state="play"><plugin bandwidth="10000000 bps" id="12" name="Netflix"/><position>2040000 ms</position><duration>6720000 ms</duration><is_live>false</is_live></player>"#;
+        let p = media_player(xml);
+        assert_eq!(p, Player { state: "play".into(), position: Some(2040), duration: Some(6720), live: false });
+        assert_eq!(describe_now("Netflix", &p, None), "Your TV is on Netflix, playing — 34 min in, 1 h 18 min left.");
+        assert_eq!(describe_now("YouTube", &Player { state: "pause".into(), ..Default::default() }, None), "Your TV is on YouTube, paused.");
+        let ch = live_channel("<tv-channel><channel><number>4.1</number><name>WCBS-HD</name><program-title>Evening News</program-title><program-description>Headlines tonight.</program-description></channel></tv-channel>").unwrap();
+        assert_eq!(describe_now("Live TV", &Player::default(), Some(&ch)), "Your TV is on channel 4.1 (WCBS-HD) — “Evening News”. Headlines tonight.");
+        assert!(live_channel("<tv-channel></tv-channel>").is_none());
+    }
 
     #[test]
     fn understands_tv_requests() {

@@ -372,11 +372,40 @@ async function quick(s) {
 /** A request about the TV screen ("play the second one", "search for…"). */
 const SCREEN_JOB = /\b(open|play|watch|put on|search|find|look for|select|choose|pick|click|press|tap|go to|start|next|episode|season|movie|show|channel|subtitles?|captions?|settings|sign in|profile|resume|continue watching|type|scroll|home|back)\b/i;
 
+/** "What's on my TV?", "what am I watching?", "read the screen". */
+const LOOK = /\b(what'?s|what is) (on )?(my |the |this )?(tv|screen)\b|what am i (watching|looking at)|what('?s| is) (this|that) (show|movie|film|video|game|ad)|describe (the|my|this) (screen|tv)|read (the|my) screen|what does (it|the screen) say|who('?s| is) (that|this) (actor|person|guy|woman|man)/i;
+
+/**
+ * Look at the TV like a person would: a picture of the screen (Android 11+,
+ * where the app allows it) and the words on it, then a short, plain answer.
+ */
+async function lookAtTv(question) {
+  const n = N();
+  if (!n || !control) return "To see your TV's screen, switch on “Control this TV” on the Izuki screen first.";
+  setState("think");
+  let pic = null, words = "", app = "";
+  try { const r = await n.screenshot(); if (r && r.ok) pic = r.jpeg; } catch {}
+  try {
+    const scr = await n.screen();
+    app = scr.app || "";
+    words = (scr.items || []).slice(0, 60).map((it) => it.text).filter(Boolean).join(" · ").slice(0, 2500);
+  } catch {}
+  if (!pic && !words) return "I can't see anything on the screen right now — some apps (like a few streaming apps) block that.";
+  const prompt = `The user is looking at their TV and asks: "${question}"\nApp in front: ${app || "unknown"}\nWords on screen: ${words || "(none readable)"}\n${pic ? "A picture of the screen is attached." : "There's no picture (the app blocks screenshots) — answer from the words."}\nAnswer in one or two short, friendly sentences, the way a friend on the sofa would. Name the show, film or game if you can tell.`;
+  try {
+    const reply = await (pic && core().look ? core().look(prompt, pic) : core().think(prompt));
+    return String(reply || "").trim() || "I couldn't make that out.";
+  } catch (e) {
+    return `My AI brain didn't answer — ${String(e?.message || e)}`;
+  }
+}
+
 async function tvDo(s) {
   const timed = timerAsk(s);
   if (timed) return timed;
   const fast = await quick(s).catch(() => null);
   if (fast) return fast;
+  if (LOOK.test(s)) return lookAtTv(s);
   if (!N() || !control || !SCREEN_JOB.test(s)) return null;
   return agent(s);
 }

@@ -158,6 +158,18 @@ public class IzukiControlPlugin extends Plugin {
     }
   }
 
+  /** A picture of the screen: {ok, jpeg (base64)} — ok false where Android can't. */
+  @PluginMethod
+  public void screenshot(PluginCall call) {
+    if (!IzukiAccessibilityService.running()) { call.reject("off"); return; }
+    IzukiAccessibilityService.shot((jpeg) -> {
+      JSObject result = new JSObject();
+      result.put("ok", jpeg != null);
+      if (jpeg != null) result.put("jpeg", jpeg);
+      call.resolve(result);
+    });
+  }
+
   /** {op: click|focus|type|scroll, n, text, dir} */
   @PluginMethod
   public void act(PluginCall call) {

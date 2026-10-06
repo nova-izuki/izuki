@@ -2275,6 +2275,9 @@
   window.IzukiCore = {
     ask: (t) => ask(String(t || "")),
     think: (prompt, system) => think([{ role: "user", parts: [{ text: String(prompt) }] }], null, system),
+    /** Look at a picture (the TV's screen) with a question — Gemini sees it; another brain gets the words only. */
+    look: (prompt, jpegB64, system) =>
+      think([{ role: "user", parts: [{ text: String(prompt) }, ...(jpegB64 ? [{ inline_data: { mime_type: "image/jpeg", data: String(jpegB64) } }] : [])] }], null, system),
     hear: hearClip,
     speak: (t) => speak(String(t || "")),
     hush: () => hush(),
