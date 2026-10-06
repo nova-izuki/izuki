@@ -1,0 +1,3 @@
+
+/* Settings' jump bar stays on top: land sections just below it. */
+[id^="settings-"] { scroll-margin-top: 52px; }
