@@ -188,7 +188,7 @@ fn page_helper(url: &str, v: &Value) -> Value {
         };
     }
     let text: String = text.chars().take(14_000).collect();
-    if text.trim().is_empty() && task != "ask" {
+    if text.trim().is_empty() && task != "ask" && task != "chat" {
         return json!({ "ok": false, "text": "There's nothing to work with — select some text first." });
     }
     let job = match task.as_str() {
@@ -201,14 +201,51 @@ fn page_helper(url: &str, v: &Value) -> Value {
             s("question")
         ),
     };
-    let msgs = [
-        json!({ "role": "system", "content": format!("You are Izuki, a warm, sharp helper inside the user's web browser. {job} Plain text only, no markdown headings.") }),
-        json!({ "role": "user", "content": format!("Page: {title}\n\n{text}") }),
-    ];
+    let msgs = if task == "chat" {
+        chat_messages(&v, &title, &text)
+    } else {
+        vec![
+            json!({ "role": "system", "content": format!("You are Izuki, a warm, sharp helper inside the user's web browser. {job} Plain text only, no markdown headings.") }),
+            json!({ "role": "user", "content": format!("Page: {title}\n\n{text}") }),
+        ]
+    };
     match crate::chat::complete(&msgs) {
         Ok(t) => json!({ "ok": true, "text": t.trim() }),
         Err(e) => json!({ "ok": false, "text": format!("My AI brain didn't answer: {e}") }),
     }
+}
+
+/// The side panel's conversation about the page in front: the page (and any
+/// other tabs shared), what's selected, the last few turns, then the question.
+fn chat_messages(v: &Value, title: &str, text: &str) -> Vec<Value> {
+    let cut = |s: &str, n: usize| s.chars().take(n).collect::<String>();
+    let mut context = format!("The page the user is on: {title}\n{}\n\n{text}", v["url"].as_str().unwrap_or_default());
+    let selection = v["selection"].as_str().unwrap_or_default().trim();
+    if !selection.is_empty() {
+        context.push_str(&format!("\n\nThe user has this selected on the page:\n{}", cut(selection, 3000)));
+    }
+    for tab in v["tabs"].as_array().into_iter().flatten().take(4) {
+        let t = tab["title"].as_str().unwrap_or_default();
+        let body = cut(tab["text"].as_str().unwrap_or_default(), 5000);
+        if !body.trim().is_empty() {
+            context.push_str(&format!("\n\n--- Another open tab the user shared: {t} ---\n{body}"));
+        }
+    }
+    let mut msgs = vec![
+        json!({ "role": "system", "content": "You are Izuki, a warm, sharp assistant in a side panel next to the user's web page. Answer from the page (and any shared tabs) when you can; if the answer isn't there, say so briefly and answer from what you know. Be direct and brief: lead with the answer. Short bullet points with - and **bold** are fine; no headings. Never ask for or repeat passwords or card numbers." }),
+        json!({ "role": "user", "content": context }),
+        json!({ "role": "assistant", "content": "Got it — I can see the page. What would you like to know?" }),
+    ];
+    let history: Vec<&Value> = v["history"].as_array().map(|a| a.iter().collect()).unwrap_or_default();
+    for turn in history.iter().rev().take(10).rev() {
+        let role = turn["role"].as_str().unwrap_or_default();
+        let content = turn["content"].as_str().unwrap_or_default();
+        if (role == "user" || role == "assistant") && !content.trim().is_empty() {
+            msgs.push(json!({ "role": role, "content": cut(content, 4000) }));
+        }
+    }
+    msgs.push(json!({ "role": "user", "content": cut(v["question"].as_str().unwrap_or_default(), 2000) }));
+    msgs
 }
 
 fn json_response(v: Value) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {

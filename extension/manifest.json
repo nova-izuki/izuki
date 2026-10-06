@@ -1,14 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Izuki — AI on your screen",
-  "version": "1.1.0",
-  "description": "Izuki in your browser: explain, translate, sum up, read aloud or save anything on a page; ask about the page; a focus guard; and Izuki's precise eyes and hands for web pages.",
+  "version": "1.2.0",
+  "description": "Izuki in your browser: a side panel that answers questions about the page you're on (and your other tabs), plus explain, translate, sum up, read aloud or save anything; a focus guard; and Izuki's precise eyes and hands for web pages.",
   "permissions": [
     "scripting",
     "tabs",
     "alarms",
     "contextMenus",
-    "tts"
+    "tts",
+    "sidePanel",
+    "storage"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -17,8 +19,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Izuki",
-    "default_popup": "popup.html"
+    "default_title": "Ask Izuki about this page"
   },
   "icons": {
     "16": "icons/icon-16.png",
@@ -31,7 +32,10 @@
       "suggested_key": {
         "default": "Alt+Shift+I"
       },
-      "description": "Ask Izuki about this page"
+      "description": "Open Izuki's side panel"
     }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   }
 }

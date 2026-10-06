@@ -3,7 +3,8 @@
 //  • right-click: Explain / Translate / Sum up / Read aloud / Save to Nova
 //    Notes / Remind me later on selected text; Sum up this link; Sum up or
 //    save the whole page;
-//  • Alt+Shift+I (or the toolbar popup): ask anything about this page;
+//  • the side panel (toolbar icon or Alt+Shift+I): ask anything about the
+//    page you're on, and your other tabs, in a running conversation;
 //  • Focus guard: during Izuki's Focus mode, a gentle nudge on distracting
 //    sites.
 // Answers come from Izuki on this PC, with your own AI — the extension holds
@@ -26,6 +27,7 @@ async function izuki(path, body) {
 // ---- the right-click menu ---------------------------------------------------
 
 const MENU = [
+  { id: "izk-panel", title: "Ask Izuki about this…", contexts: ["selection", "page"] },
   { id: "izk-explain", title: "Explain this", contexts: ["selection"] },
   { id: "izk-translate", title: "Translate to English", contexts: ["selection"] },
   { id: "izk-summarise", title: "Sum it up", contexts: ["selection"] },
@@ -45,6 +47,14 @@ function buildMenu() {
   });
 }
 chrome.runtime.onInstalled.addListener(buildMenu);
+// The toolbar icon opens the side panel, like Chrome's own assistant.
+chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true }).catch(() => {});
+
+/** Open the side panel (needs the click/keypress that led here), with a question to ask or just ready to type. */
+function openPanel(tab, question) {
+  try { chrome.sidePanel.open({ windowId: tab.windowId }); } catch {}
+  chrome.storage.session.set({ izkPending: { question: question || "", at: Date.now() } }).catch(() => {});
+}
 chrome.runtime.onStartup.addListener(buildMenu);
 
 async function pageText(tabId) {
@@ -70,6 +80,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const base = { title: tab.title || "", url: tab.url || "" };
   const show = (heading, body, opts) => bubble(tab.id, heading, body, opts);
   switch (info.menuItemId) {
+    case "izk-panel":
+      return openPanel(tab, sel ? `About this: “${sel.slice(0, 600)}” — explain it and tell me what matters.` : "");
     case "izk-explain":
     case "izk-translate":
     case "izk-summarise": {
@@ -175,7 +187,7 @@ chrome.runtime.onMessage.addListener((m) => {
   if (m && m.izukiSpeak) speak(m.izukiSpeak);
   if (m && m.izukiStop) chrome.tts.stop();
   if (m && m.izukiAsk) {
-    // From the popup: a question about the page in front.
+    // A question about the page in front, answered in a bubble on the page.
     (async () => {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
       if (!tab || !tab.id) return;
@@ -186,22 +198,12 @@ chrome.runtime.onMessage.addListener((m) => {
   }
 });
 
-// ---- Alt+Shift+I: ask about this page -------------------------------------------------
+// ---- Alt+Shift+I: open the side panel ------------------------------------------------
 
-chrome.commands.onCommand.addListener(async (cmd) => {
+chrome.commands.onCommand.addListener(async (cmd, tab) => {
   if (cmd !== "ask-page") return;
-  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  if (!tab || !tab.id) return;
-  try {
-    const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => prompt("Ask Izuki about this page:") });
-    const question = r && r.result;
-    if (!question) return;
-    await bubble(tab.id, "About this page", "…", { loading: true });
-    const a = await izuki("ask", { title: tab.title, url: tab.url, task: "ask", question, text: await pageText(tab.id) });
-    await bubble(tab.id, "About this page", a.text, { ok: a.ok });
-  } catch {
-    /* a browser page */
-  }
+  const t = tab || (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+  if (t) openPanel(t, "");
 });
 
 // ---- Focus guard ------------------------------------------------------------------------
