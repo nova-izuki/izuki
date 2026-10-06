@@ -1,3 +1,5 @@
+import { ScrollButtons } from "./ScrollButtons";
+import { DrawCommandBar } from "./TalkToIzuki";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Layers, MessageCircle, Minus, PenLine, Settings2, X, Eye, Blocks, Maximize2, Minimize2, NotebookPen } from "lucide-react";
@@ -192,6 +194,9 @@ export function GlassConfigPanel() {
           <Segmented value={tab} options={TABS} onChange={setTab} size="sm" compact={narrow} />
         </div>
 
+        {/* The Draw page's command bar stays up here, always in reach. */}
+        {tab === "draw" && <div className="izk-no-drag px-[18px] pb-[10px]"><DrawCommandBar /></div>}
+
         <div className="izk-divider mx-[18px]" />
 
         {/* ---------------- content ---------------- */}
@@ -217,6 +222,7 @@ export function GlassConfigPanel() {
               </Recover>
             </motion.div>
           </AnimatePresence>
+          <ScrollButtons tab={tab} />
         </main>
 
         <Recover name="toast" silent>

@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import { ArrowUp } from "lucide-react";
+import { useRef } from "react";
 import { useIzuki, type TabId } from "../lib/store";
 
 /** Scroll a section to just below the sticky jump bar. */
@@ -29,23 +28,10 @@ export function JumpBar({ jumps, topId, below = 0 }: { jumps: { label: string; i
     setTimeout(look, 60);
   };
   const topRef = useRef<HTMLDivElement>(null);
-  const [scrolled, setScrolled] = useState(false);
-  useEffect(() => {
-    const el = topRef.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver(([e]) => setScrolled(!e.isIntersecting));
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
   return (
     <>
       <div ref={topRef} id={topId} className="h-0" aria-hidden />
-      <nav aria-label="Jump to" style={below ? { top: below } : undefined} className="izk-no-drag sticky top-0 z-20 -mx-1 flex gap-1 overflow-x-auto rounded-[14px] bg-izk-base/85 px-1 py-1.5 backdrop-blur-md [scrollbar-width:none]">
-        {scrolled && (
-          <button type="button" onClick={() => jumpTo(topId)} aria-label="Back to the top" title="Back to the top" className="izk-btn-primary izk-no-drag flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10.5px]">
-            <ArrowUp size={11} strokeWidth={2.6} /> Top
-          </button>
-        )}
+      <nav aria-label="Jump to" style={below ? { top: below } : undefined} className="izk-no-drag -mx-1 flex gap-1 overflow-x-auto rounded-[14px] px-1 py-1 [scrollbar-width:none]">
         {jumps.map((j) => (
           <button key={j.id} type="button" onClick={() => go(j)} className="izk-pill izk-no-drag shrink-0 px-2.5 py-1 text-[10.5px]">
             {j.label}

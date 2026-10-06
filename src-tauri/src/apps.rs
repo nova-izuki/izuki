@@ -182,6 +182,45 @@ fn browser_with_profile(target: &str) -> Option<(std::path::PathBuf, String)> {
     Some((exe, profile))
 }
 
+/// "Open downloads", "show my documents", "open my files and open downloads":
+/// a folder to open in File Explorer (the last one named). Not "open the
+/// newest PDF in my downloads" — that's a file, the agent's job.
+pub fn folder_request(said: &str) -> Option<(std::path::PathBuf, &'static str)> {
+    let s = said.to_lowercase();
+    if !["open", "show", "go to", "take me to", "pull up", "bring up"].iter().any(|v| s.contains(v)) {
+        return None;
+    }
+    if [" in my ", " from my ", " in the ", " inside ", "latest", "newest", "recent", ".pdf", ".doc", "file called", "file named"].iter().any(|w| s.contains(w)) {
+        return None;
+    }
+    let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let pos = |w: &str| words.iter().rposition(|x| *x == w);
+    let mut best: Option<(usize, std::path::PathBuf, &'static str)> = None;
+    for (keys, name) in [(&["downloads", "download"][..], "Downloads"), (&["documents", "docs"][..], "Documents"), (&["desktop"][..], "Desktop"), (&["pictures", "photos"][..], "Pictures"), (&["music"][..], "Music"), (&["videos"][..], "Videos")] {
+        let Some(at) = keys.iter().filter_map(|k| pos(k)).max() else { continue };
+        let dir = match name {
+            "Downloads" => dirs::download_dir(),
+            "Documents" => dirs::document_dir(),
+            "Desktop" => dirs::desktop_dir(),
+            "Pictures" => dirs::picture_dir(),
+            "Music" => dirs::audio_dir(),
+            _ => dirs::video_dir(),
+        };
+        if let Some(dir) = dir {
+            if best.as_ref().is_none_or(|(b, _, _)| at > *b) {
+                best = Some((at, dir, name));
+            }
+        }
+    }
+    best.map(|(_, d, n)| (d, n))
+}
+
+/// Open a folder in File Explorer.
+pub fn open_folder(dir: &std::path::Path) -> Result<()> {
+    std::process::Command::new("explorer").arg(dir).spawn()?;
+    Ok(())
+}
+
 /// Open an app by name. `Err` if nothing installed matches.
 pub fn open_app(name: &str) -> Result<String> {
     let target = find_app(name).ok_or_else(|| anyhow!("no app called \"{}\" is installed", name.trim()))?;
@@ -196,6 +235,22 @@ pub fn open_app(name: &str) -> Result<String> {
     start(&target)?;
     let shown = Path::new(&target).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string();
     Ok(shown)
+}
+
+#[cfg(test)]
+mod folder_tests {
+    use super::*;
+
+    #[test]
+    fn opens_the_folder_asked_for() {
+        assert_eq!(folder_request("open my files and open downloads").map(|f| f.1), Some("Downloads"));
+        assert_eq!(folder_request("open downloads").map(|f| f.1), Some("Downloads"));
+        assert_eq!(folder_request("show me my documents folder").map(|f| f.1), Some("Documents"));
+        assert_eq!(folder_request("open file explorer then go to pictures").map(|f| f.1), Some("Pictures"));
+        assert_eq!(folder_request("open the newest pdf in my downloads"), None);
+        assert_eq!(folder_request("what's in my downloads"), None);
+        assert_eq!(folder_request("open chrome"), None);
+    }
 }
 
 /// Open a web address (or a bare domain like "youtube.com") in the default browser.

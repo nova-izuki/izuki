@@ -12,7 +12,7 @@ import {
   Type,
 } from "lucide-react";
 import { HandCursor } from "../HandCursor";
-import { TalkToIzuki, DrawCommandBar } from "../TalkToIzuki";
+import { TalkToIzuki } from "../TalkToIzuki";
 import { MemoryCard } from "../MemoryCard";
 import { TeachingCard } from "../TeachingCard";
 import { Kbd, Row, Section, Segmented, Toggle, Badge, cx } from "../ui";
@@ -83,8 +83,7 @@ export function DrawTab() {
 
   return (
     <>
-      <DrawCommandBar />
-      <JumpBar topId="draw-top" below={70} jumps={[
+      <JumpBar topId="draw-top" jumps={[
         { label: "✏️ Draw", id: "draw-hero" },
         { label: "🎙️ Hands-free", id: "draw-talk" },
         { label: "🗣️ Voice", id: "draw-voice" },

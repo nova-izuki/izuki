@@ -43,8 +43,8 @@ export function DrawCommandBar() {
   const submit=()=>{const value=text.trim();if(!value||busy)return;setText('');void sendChatCommand(value);};
   // Find anything in Izuki as you type (the same as Ctrl+K) — Enter still sends it as a command.
   const found=text.trim().length>=2?findFeatures(text,3):[];
-  // Pinned to the top of the page while you scroll, like the Find bar.
-  return <section id="draw-command" className="izk-card sticky top-0 z-30 overflow-hidden p-2 backdrop-blur-md" aria-label="Type a command">
+  // Lives in the panel's header (under the tabs), so it never scrolls away.
+  return <section id="draw-command" className="relative" aria-label="Type a command">
     <label htmlFor="draw-command-input" className="sr-only">Or type it</label>
     <form className="izk-inset flex items-center gap-2 rounded-[16px] p-1.5" onSubmit={e=>{e.preventDefault();submit();}}>
       <input ref={input} id="draw-command-input" value={text} onChange={e=>{setText(e.target.value);api.prefetchWhileTyping();}} onKeyDown={e=>{if(e.key==='Enter'&&e.nativeEvent.isComposing)e.preventDefault();}} disabled={busy} placeholder="Type a command or find anything in Izuki… (Enter to send)" className="h-[38px] min-w-0 flex-1 bg-transparent px-2 text-[12.5px] text-izk-ink outline-none placeholder:text-izk-muted/55"/>

@@ -385,6 +385,13 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         .await
         .ok();
     }
+    // "Open my files and open downloads": that folder in File Explorer, at once.
+    if let Some((dir, name)) = crate::apps::folder_request(&said) {
+        return Some(match crate::apps::open_folder(&dir) {
+            Ok(()) => format!("Opened your {name} folder."),
+            Err(e) => format!("I couldn't open {name}: {e}"),
+        });
+    }
     // "Take a screenshot", "record my screen", "stop recording".
     if let Some(shot) = crate::shots::parse(&said) {
         return Some(blocking(move || crate::shots::run(shot)).await.ok().map(|r| r.unwrap_or_else(|e| e.to_string())).unwrap_or_else(|| "That didn't work.".into()));
