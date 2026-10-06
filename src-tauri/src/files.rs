@@ -320,6 +320,9 @@ pub fn run(command: &str) -> Result<String> {
     let mut s = match status {
         None => "It took over 90 seconds, so I stopped it.\n".to_string(),
         Some(st) if st.success() => "Done.\n".to_string(),
+        // Told to skip what it can't touch (files in use, already gone) and it
+        // did: that's done, with some things skipped — not a failure.
+        Some(_) if err.trim().is_empty() && command.to_lowercase().contains("silentlycontinue") => "Done — a few items were skipped (in use or protected).\n".to_string(),
         Some(st) => format!("It finished with an error (code {}).\n", st.code().unwrap_or(-1)),
     };
     if !out.trim().is_empty() {

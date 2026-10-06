@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, Check, Copy, Link2, Loader2, Mic, MonitorSmartphone, RotateCcw, Send, Sparkles, Square, Volume2, X } from "lucide-react";
+import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, RotateCcw, Send, Sparkles, Square, Volume2, X } from "lucide-react";
 import { api, emit, EV, on } from "../../lib/ipc";
 import { ChatText } from "../ChatText";
 import { LaterCard } from "../LaterCard";
@@ -842,14 +842,47 @@ function Steps({ steps }: { steps: string[] }) {
   );
 }
 
-/** A change it wants to make — Allow / No — or, once answered, what happened. */
+/** What a tool did, as a card. */
 interface ToolCall {
   name: string;
   title: string;
   input: string;
   output: string;
   ok: boolean;
+  /** "✓ Checked: …" — a look afterwards that it really happened. */
+  proof?: string;
 }
+
+type Verdict = { v: "ok" | "warn" | "error"; note?: string };
+
+/**
+ * Did it work? The proof check wins: a command can end with a code (a file in
+ * use, a folder already gone) and still have done the job — that's green, not
+ * red. Red is kept for things that really failed.
+ */
+function verdictOf(call: ToolCall): Verdict {
+  const proof = call.proof ?? /\[Proof check: ([^\]]+)\]/.exec(call.output)?.[1];
+  const failed = /^(That didn't work|It didn't work|It finished with an error|It took over)/.test(call.output.trim());
+  const skipped = /^Done — a few items were skipped/.test(call.output.trim());
+  const warned = skipped || /(^|\n)Errors:/.test(call.output);
+  if (proof) {
+    if (!proof.trim().startsWith("✓")) return { v: "error", note: proof };
+    return failed || warned ? { v: "ok", note: "A few items were skipped (in use or protected) — the check confirms it's done." } : { v: "ok" };
+  }
+  if (failed) {
+    // "Ignore what you can't" commands end with a code when something was skipped.
+    if (/SilentlyContinue/i.test(call.input) && !warned) return { v: "warn", note: "Finished — some items were skipped (in use or protected)." };
+    return { v: "error" };
+  }
+  if (warned) return { v: "warn", note: skipped ? "Finished — some items were skipped (in use or protected)." : "Finished with warnings." };
+  return call.ok ? { v: "ok" } : { v: "error" };
+}
+
+const VERDICT = {
+  ok: { icon: "✓", tone: "text-izk-teal", edge: "border-izk-teal/25", label: "Done" },
+  warn: { icon: "⚠", tone: "text-amber-300", edge: "border-amber-300/30", label: "Done, with warnings" },
+  error: { icon: "✕", tone: "text-izk-danger", edge: "border-izk-danger/35", label: "Failed" },
+} as const;
 
 /** The tools it used — each a card with IN and OUT, like Claude Code. */
 function ToolCards({ calls }: { calls: ToolCall[] }) {
@@ -862,39 +895,131 @@ function ToolCards({ calls }: { calls: ToolCall[] }) {
   );
 }
 
-function ToolCard({ call }: { call: ToolCall }) {
-  const [open, setOpen] = useState(false);
-  const lines = call.output.split("\n");
-  const long = lines.length > 6 || call.output.length > 500;
-  const shown = open || !long ? call.output : lines.slice(0, 6).join("\n").slice(0, 500);
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [done, setDone] = useState(false);
   return (
-    <div className="overflow-hidden rounded-[10px] border border-white/10 bg-black/30 font-mono text-[11px] leading-snug">
-      <div className="flex items-center gap-2 border-b border-white/[0.06] px-2.5 py-1.5 font-sans">
-        <span className={call.ok ? "text-izk-teal" : "text-izk-danger"}>{call.ok ? "●" : "▲"}</span>
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        void navigator.clipboard.writeText(text).then(() => {
+          setDone(true);
+          setTimeout(() => setDone(false), 1200);
+        }).catch(() => {});
+      }}
+      className="rounded p-1 text-izk-muted hover:bg-white/10 hover:text-izk-ink"
+    >
+      {done ? <Check size={11} className="text-izk-teal" /> : <Copy size={11} />}
+    </button>
+  );
+}
+
+function ToolCard({ call }: { call: ToolCall }) {
+  const verdict = verdictOf(call);
+  const look = VERDICT[verdict.v];
+  const output = call.output.replace(/\n?\[Proof check: [^\]]+\]/, "").trim();
+  const [closed, setClosed] = useState(false);
+  const [all, setAll] = useState(false);
+  const [big, setBig] = useState(false);
+  const lines = output.split("\n");
+  const long = lines.length > 6 || output.length > 500;
+  const shown = all || !long ? output : lines.slice(0, 6).join("\n").slice(0, 500);
+  const everything = `${call.name}: ${call.title}\n\n$ ${call.input}${output ? `\n\n${output}` : ""}`;
+  return (
+    <div className={`overflow-hidden rounded-[10px] border bg-black/30 font-mono text-[11px] leading-snug ${look.edge}`}>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={!closed}
+        onClick={() => setClosed(!closed)}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setClosed(!closed))}
+        className="flex cursor-pointer items-center gap-2 border-b border-white/[0.06] px-2.5 py-1.5 font-sans hover:bg-white/[0.03]"
+      >
+        {closed ? <ChevronRight size={12} className="text-izk-muted" /> : <ChevronDown size={12} className="text-izk-muted" />}
+        <span className={`font-bold ${look.tone}`} title={look.label}>{look.icon}</span>
         <span className="font-semibold text-izk-ink">{call.name}</span>
-        <span className="min-w-0 flex-1 truncate text-[11.5px] text-izk-muted">{call.title}</span>
+        <span className="min-w-0 flex-1 truncate text-[11.5px] text-izk-muted" title={call.title}>{call.title}</span>
+        <CopyButton text={everything} label="Copy all" />
+        <button type="button" title="Expand" aria-label="Expand" onClick={(e) => { e.stopPropagation(); setBig(true); }} className="rounded p-1 text-izk-muted hover:bg-white/10 hover:text-izk-ink">
+          <Maximize2 size={11} />
+        </button>
       </div>
-      <div className="grid grid-cols-[34px_1fr] gap-x-1 px-2.5 py-1.5">
-        <span className="text-[10px] text-izk-muted/70">IN</span>
-        <pre className="max-h-[90px] overflow-auto whitespace-pre-wrap break-all text-izk-ink/90">{call.input}</pre>
-        {call.output.trim() && (
-          <>
-            <span className="mt-1 text-[10px] text-izk-muted/70">OUT</span>
-            <div className="mt-1 min-w-0">
-              <pre className={"whitespace-pre-wrap break-words rounded-[6px] bg-white/[0.04] p-1.5 " + (call.ok ? "text-izk-muted" : "text-izk-danger/90")}>{shown}</pre>
-              {long && (
-                <button type="button" onClick={() => setOpen(!open)} className="mt-0.5 font-sans text-[10.5px] text-izk-muted underline-offset-2 hover:text-izk-ink hover:underline">
-                  {open ? "Show less" : `Show all (${lines.length} lines)`}
-                </button>
-              )}
-            </div>
-          </>
-        )}
+      {!closed && (
+        <div className="grid grid-cols-[34px_1fr] gap-x-1 px-2.5 py-1.5">
+          <span className="text-[10px] text-izk-muted/70">IN</span>
+          <div className="group relative min-w-0">
+            <pre className="max-h-[90px] overflow-auto whitespace-pre-wrap break-all pr-6 text-izk-ink/90">{call.input}</pre>
+            <span className="absolute right-0 top-0 opacity-0 transition-opacity group-hover:opacity-100"><CopyButton text={call.input} label="Copy command" /></span>
+          </div>
+          {output && (
+            <>
+              <span className="mt-1 text-[10px] text-izk-muted/70">OUT</span>
+              <div className="group relative mt-1 min-w-0">
+                <pre className={"whitespace-pre-wrap break-words rounded-[6px] bg-white/[0.04] p-1.5 pr-7 " + (verdict.v === "error" ? "text-izk-danger/90" : "text-izk-muted")}>{shown}</pre>
+                <span className="absolute right-0.5 top-0.5 opacity-0 transition-opacity group-hover:opacity-100"><CopyButton text={output} label="Copy output" /></span>
+                {long && (
+                  <button type="button" onClick={() => setAll(!all)} className="mt-0.5 font-sans text-[10.5px] text-izk-muted underline-offset-2 hover:text-izk-ink hover:underline">
+                    {all ? "Show less" : `Show all (${lines.length} lines)`}
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+          {verdict.note && (
+            <>
+              <span />
+              <p className={`mt-1 font-sans text-[10.5px] ${look.tone}`}>{verdict.note}</p>
+            </>
+          )}
+        </div>
+      )}
+      {big && <ToolViewer call={call} output={output} verdict={verdict} onClose={() => setBig(false)} />}
+    </div>
+  );
+}
+
+/** A card, full screen: everything it ran and printed, to read, wrap and copy. */
+function ToolViewer({ call, output, verdict, onClose }: { call: ToolCall; output: string; verdict: Verdict; onClose: () => void }) {
+  const [wrap, setWrap] = useState(true);
+  const look = VERDICT[verdict.v];
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose]);
+  const pre = `${wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre overflow-x-auto"} rounded-[8px] bg-black/40 p-2.5 font-mono text-[11.5px] leading-relaxed`;
+  return (
+    <div role="dialog" aria-modal="true" aria-label={`${call.name}: ${call.title}`} className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className={`flex max-h-full w-full max-w-[860px] flex-col overflow-hidden rounded-[14px] border bg-[#0d1018] shadow-2xl ${look.edge}`} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2 font-sans text-[12px]">
+          <span className={`font-bold ${look.tone}`}>{look.icon}</span>
+          <span className="font-semibold text-izk-ink">{call.name}</span>
+          <span className="min-w-0 flex-1 truncate text-izk-muted">{call.title}</span>
+          <span className={`text-[11px] ${look.tone}`}>{look.label}</span>
+          <button type="button" className="izk-pill px-2 py-0.5 text-[11px]" aria-pressed={wrap} onClick={() => setWrap(!wrap)}>{wrap ? "Wrap: on" : "Wrap: off"}</button>
+          <button type="button" title="Close (Esc)" aria-label="Close" onClick={onClose} className="rounded p-1 text-izk-muted hover:bg-white/10 hover:text-izk-ink"><Minimize2 size={14} /></button>
+        </div>
+        <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
+          <section>
+            <div className="mb-1 flex items-center justify-between font-sans text-[10.5px] uppercase tracking-wide text-izk-muted"><span>In</span><CopyButton text={call.input} label="Copy command" /></div>
+            <pre className={pre + " text-izk-ink/90"}>{call.input}</pre>
+          </section>
+          {output && (
+            <section>
+              <div className="mb-1 flex items-center justify-between font-sans text-[10.5px] uppercase tracking-wide text-izk-muted"><span>Out · {output.split("\n").length} lines</span><CopyButton text={output} label="Copy output" /></div>
+              <pre className={pre + (verdict.v === "error" ? " text-izk-danger/90" : " text-izk-muted")}>{output}</pre>
+            </section>
+          )}
+          {verdict.note && <p className={`font-sans text-[11.5px] ${look.tone}`}>{verdict.note}</p>}
+        </div>
       </div>
     </div>
   );
 }
 
+/** A change it wants to make — Allow / No — or, once answered, what happened. */
 function ActionCard({ action, busy, onAnswer, ran }: { action: NonNullable<Msg["action"]>; busy: boolean; onAnswer: (allow: boolean) => void; ran?: string }) {
   // Allowed and done: the same card as any other tool, with what it printed.
   if (action.state === "allowed" && ran !== undefined) {
@@ -908,6 +1033,7 @@ function ActionCard({ action, busy, onAnswer, ran }: { action: NonNullable<Msg["
             input: action.detail,
             output: ran.replace(/\n?\[Proof check: [^\]]+\]/, "").trim(),
             ok: !/^(That didn't work|It didn't work|It finished with an error)/.test(ran) && !ran.includes("\nErrors:"),
+            proof,
           }}
         />
       </div>

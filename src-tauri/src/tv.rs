@@ -333,8 +333,32 @@ pub fn parse(said: &str) -> Option<TvAct> {
             return Some(TvAct::Key(key, 1));
         }
     }
+    // "open youtube and search for mrbeast": straight into that app's search.
+    for joint in [" and search for ", " and search ", " and look up ", " and find ", " then search for "] {
+        if let Some((a, q)) = core.split_once(joint) {
+            let app = a.trim().trim_start_matches("open ").trim_start_matches("launch ").trim_start_matches("go to ").trim_start_matches("the ").trim_end_matches(" app").trim();
+            if !app.is_empty() && !q.trim().is_empty() {
+                return Some(TvAct::Play { title: q.trim().to_string(), app: Some(app.to_string()) });
+            }
+        }
+    }
+    let known_app = |a: &str| KNOWN.iter().any(|(k, _)| a.trim().trim_end_matches(" app") == *k);
     for lead in ["search for ", "search ", "find ", "look for ", "look up "] {
         if let Some(q) = core.strip_prefix(lead) {
+            // "search youtube for mrbeast", "search for mrbeast on youtube"
+            if let Some((app, what)) = q.split_once(" for ").filter(|(a, _)| known_app(a)) {
+                return Some(TvAct::Play { title: what.trim().to_string(), app: Some(app.trim().to_string()) });
+            }
+            // ("for" was dropped above with the other filler words.)
+            if let Some((app, _)) = KNOWN.iter().find(|(k, _)| !["max", "prime"].contains(k) && q.starts_with(&format!("{k} "))) {
+                let what = q[app.len()..].trim();
+                if !what.is_empty() {
+                    return Some(TvAct::Play { title: what.to_string(), app: Some(app.to_string()) });
+                }
+            }
+            if let Some((what, app)) = q.rsplit_once(" on ").or_else(|| q.rsplit_once(" in ")).filter(|(_, a)| known_app(a)) {
+                return Some(TvAct::Play { title: what.trim().to_string(), app: Some(app.trim().to_string()) });
+            }
             return Some(TvAct::Search(q.trim().to_string()));
         }
     }
@@ -375,6 +399,118 @@ pub fn parse(said: &str) -> Option<TvAct> {
         return Some(TvAct::Ready);
     }
     None
+}
+
+/// Apps that cost nothing to watch (ads, or free tiers), and ones that need a
+/// subscription. Paid is checked first ("youtube tv" isn't "youtube").
+const PAID_APPS: &[&str] = &["netflix", "disney", "hulu", "hbo", "max", "prime video", "amazon prime", "peacock", "paramount", "apple tv", "starz", "showtime", "espn", "youtube tv", "sling tv", "fubo", "discovery", "mgm"];
+const FREE_APPS: &[&str] = &["youtube", "tubi", "pluto", "roku channel", "plex", "crackle", "freevee", "kanopy", "hoopla", "pbs", "xumo", "spotify", "pandora", "iheart", "tunein", "freestream", "vix", "filmrise", "redbox", "haystack", "newson", "crunchyroll", "twitch", "news"];
+
+/// Free to watch? None when it isn't an app Izuki knows about.
+pub fn app_is_free(name: &str) -> Option<bool> {
+    let n = name.to_lowercase();
+    let word = |k: &str| n == k || n.starts_with(&format!("{k} ")) || n.ends_with(&format!(" {k}")) || n.contains(&format!(" {k} ")) || (k.contains(' ') && n.contains(k));
+    if PAID_APPS.iter().any(|k| word(k)) {
+        return Some(false);
+    }
+    if FREE_APPS.iter().any(|k| word(k)) {
+        return Some(true);
+    }
+    None
+}
+
+/// Questions about the TV's apps.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AppsAsk {
+    /// "What apps are on my TV?"
+    All,
+    /// "Show me free movie apps", "what can I watch for free?"
+    Free,
+    /// "Is Netflix free?"
+    IsFree(String),
+}
+
+pub fn asks_about_apps(said: &str) -> Option<AppsAsk> {
+    let s = said.to_lowercase();
+    let s = s.trim().trim_end_matches(['?', '.', '!']).trim();
+    let tv = s.contains("tv") || s.contains("television") || s.contains("roku");
+    let apps = s.contains("app") || s.contains("channel");
+    if s.contains("free") && (apps || tv || s.contains("movie") || s.contains("film") || s.contains("watch")) && !s.starts_with("is ") {
+        let watchy = s.contains("movie") || s.contains("film") || s.contains("watch") || s.contains("show") || tv;
+        if watchy || apps {
+            return Some(AppsAsk::Free);
+        }
+    }
+    // "is netflix free", "is disney plus free on my tv", "do I have to pay for hulu"
+    let name = s.strip_prefix("is ").and_then(|r| r.split(" free").next()).or_else(|| s.strip_prefix("do i have to pay for ")).or_else(|| s.strip_prefix("do i need to pay for "));
+    if let Some(name) = name {
+        let name = name.replace("on my tv", "").replace("on the tv", "").trim().trim_start_matches("the ").to_string();
+        if !name.is_empty() && name.split_whitespace().count() <= 4 && app_is_free(&name).is_some() {
+            return Some(AppsAsk::IsFree(name));
+        }
+    }
+    if tv && apps && ["what", "which", "list", "show", "tell", "have", "installed"].iter().any(|w| s.contains(w)) {
+        return Some(AppsAsk::All);
+    }
+    None
+}
+
+/// A short spoken list: "A, B and C".
+fn and_list(items: &[String]) -> String {
+    match items.len() {
+        0 => String::new(),
+        1 => items[0].clone(),
+        n => format!("{} and {}", items[..n - 1].join(", "), items[n - 1]),
+    }
+}
+
+/// Answer a question about the TV's apps (a Roku's list; elsewhere, what's known).
+fn answer_apps(ask: &AppsAsk) -> Result<String> {
+    let installed: Vec<String> = host().filter(|h| make(h).is_none()).map(|h| apps(&h).into_iter().map(|(_, n)| n).collect()).unwrap_or_default();
+    let shown = |v: &[String], max: usize| {
+        let mut list: Vec<String> = v.iter().take(max).cloned().collect();
+        if v.len() > max {
+            list.push(format!("{} more", v.len() - max));
+        }
+        and_list(&list)
+    };
+    match ask {
+        AppsAsk::All => {
+            if installed.is_empty() {
+                return Err(anyhow!("I can only read the app list on a Roku — on other TVs, say \"open Netflix on the TV\" and I'll find it."));
+            }
+            Ok(format!("You've got {} apps on your TV: {}.", installed.len(), shown(&installed, 14)))
+        }
+        AppsAsk::Free => {
+            let free: Vec<String> = installed.iter().filter(|n| app_is_free(n) == Some(true)).cloned().collect();
+            let paid: Vec<String> = installed.iter().filter(|n| app_is_free(n) == Some(false)).cloned().collect();
+            if free.is_empty() {
+                return Ok("None of your TV's apps are free to watch that I know of. Tubi, Pluto TV and The Roku Channel are free with ads — say \"search the TV for Tubi\" to add one.".into());
+            }
+            let mut out = format!("Free to watch on your TV: {}.", shown(&free, 10));
+            if !paid.is_empty() {
+                out.push_str(&format!(" These need a subscription: {}.", shown(&paid, 6)));
+            }
+            Ok(out)
+        }
+        AppsAsk::IsFree(name) => {
+            let nice = title(name);
+            if app_is_free(name) == Some(true) {
+                return Ok(format!("{nice} is free to watch (with ads)."));
+            }
+            let free: Vec<String> = installed.iter().filter(|n| app_is_free(n) == Some(true)).take(3).cloned().collect();
+            Ok(if free.is_empty() {
+                format!("{nice} needs a subscription. Tubi, Pluto TV and The Roku Channel are free instead.")
+            } else {
+                format!("{nice} needs a subscription. Free on your TV instead: {}.", and_list(&free))
+            })
+        }
+    }
+}
+
+/// Anything tv::run takes care of: a TV command, "what's on", or a question about its apps.
+pub fn handles(said: &str) -> bool {
+    parse(said).is_some() || asks_what_is_on(said) || asks_about_apps(said).is_some()
 }
 
 /// "What's on my TV?", "what am I watching on the TV?"
@@ -596,6 +732,10 @@ pub fn run(said: &str) -> Result<String> {
     if asks_what_is_on(said) {
         return now_on().map(|n| format!("Your TV is on {n}.")).ok_or_else(|| anyhow!("I can't see what's on your TV right now."));
     }
+    // "What apps are on my TV?", "show me free movie apps", "is Netflix free?"
+    if let Some(ask) = asks_about_apps(said) {
+        return answer_apps(&ask);
+    }
     let Some(act) = parse(said) else {
         // Not a quick command: on a Roku, let the AI work it out.
         let host = host().ok_or_else(|| anyhow!("I couldn't find a TV on your Wi-Fi."))?;
@@ -717,6 +857,22 @@ mod tests {
         assert_eq!(parse("tv netflix"), Some(TvAct::Open("netflix".into())));
         assert_eq!(parse("play stranger things on netflix on the tv"), Some(TvAct::Play { title: "stranger things".into(), app: Some("netflix".into()) }));
         assert_eq!(parse("play ice age 3 on the tv"), Some(TvAct::Play { title: "ice age 3".into(), app: None }));
+        assert_eq!(parse("open youtube on the tv and search for mrbeast"), Some(TvAct::Play { title: "mrbeast".into(), app: Some("youtube".into()) }));
+        assert_eq!(parse("search youtube for lofi music on the tv"), Some(TvAct::Play { title: "lofi music".into(), app: Some("youtube".into()) }));
+        assert_eq!(parse("search the tv for cooking shows on netflix"), Some(TvAct::Play { title: "cooking shows".into(), app: Some("netflix".into()) }));
+        assert_eq!(parse("search the tv for things on sale"), Some(TvAct::Search("things on sale".into())));
+        assert_eq!(asks_about_apps("what apps are on my TV?"), Some(AppsAsk::All));
+        assert_eq!(asks_about_apps("which apps do I have on the roku"), Some(AppsAsk::All));
+        assert_eq!(asks_about_apps("show me free movie apps"), Some(AppsAsk::Free));
+        assert_eq!(asks_about_apps("what can I watch for free on the tv"), Some(AppsAsk::Free));
+        assert_eq!(asks_about_apps("is netflix free"), Some(AppsAsk::IsFree("netflix".into())));
+        assert_eq!(asks_about_apps("is the museum free"), None);
+        assert_eq!(asks_about_apps("what apps do I have"), None);
+        assert_eq!(app_is_free("YouTube TV"), Some(false));
+        assert_eq!(app_is_free("YouTube"), Some(true));
+        assert_eq!(app_is_free("Tubi - Free Movies & TV"), Some(true));
+        assert_eq!(app_is_free("Disney Plus"), Some(false));
+        assert_eq!(app_is_free("Weather Channel Thing"), None);
         let installed = vec![
             ("808732".to_string(), "FOX One: Live News, Sports, TV".to_string()),
             ("12".to_string(), "Netflix".to_string()),

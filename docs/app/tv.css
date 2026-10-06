@@ -38,7 +38,8 @@
 .tv-time span { font-size: 1.9vh; color: #9aa0c8; }
 
 .tv-stage { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
-.tv-orb-wrap { position: relative; width: 44vh; height: 44vh; }
+.tv-orb-wrap { position: relative; width: 44vh; height: 44vh; transition: transform 0.45s cubic-bezier(0.2, 1.4, 0.4, 1), opacity 0.45s; }
+#tv.orb-rest .tv-orb-wrap { transform: scale(0.8); opacity: 0.35; transition: transform 0.9s ease, opacity 0.9s ease; }
 #tv-orb {
   position: relative; width: 100%; height: 100%;
   /* a reflection on a dark glass floor */

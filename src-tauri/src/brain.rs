@@ -1191,7 +1191,7 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
     // A TV request that reached the screen path (a hand-over from the chat
     // lane, a follow-up mid-conversation) still goes to the TV — never "I
     // can't control your TV" while it opens Netflix on the PC instead.
-    if crate::tv::parse(&prompt).is_some() || crate::tv::asks_what_is_on(&prompt) {
+    if crate::tv::handles(&prompt) {
         let said = crate::tv::run(&prompt).unwrap_or_else(|e| e.to_string());
         remember_task(&prompt, &said);
         return VisionPlan { summary: said, provider: "tv".into(), ..Default::default() };

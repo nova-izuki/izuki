@@ -120,11 +120,17 @@ function build() {
   document.documentElement.classList.add("is-tv");
 }
 
+let restTimer = 0;
 function setState(s) {
   state = s;
   const label = { listen: "Listening…", think: "Thinking…", talk: "", idle: mode === "wake" ? "Say “Hey Nova”" : "Hold OK to talk" }[s];
   $("tv-state").textContent = label ?? "";
   $("tv").dataset.state = s;
+  // Hold-OK mode: once it's done talking, the orb settles back after a moment
+  // and springs forward again the moment you hold OK.
+  clearTimeout(restTimer);
+  $("tv").classList.remove("orb-rest");
+  if (s === "idle" && mode === "hold") restTimer = setTimeout(() => $("tv").classList.add("orb-rest"), 3000);
   // Away in another app: the little orb in the corner shows it instead.
   if (document.hidden && control) N()?.orb({ state: s, text: s === "talk" ? $("tv-said").textContent.slice(0, 140) : "" }).catch(() => {});
 }

@@ -22,6 +22,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🟢", title: "Clear command results", how: "In Chat, each command's card is green ✓ when it worked, amber ⚠ when it finished but skipped a few things, and red ✕ only when it really failed. Collapse it, copy the command or the output, or open it full screen.", try: { label: "Open Chat", tab: "chat" } },
+  { icon: "📺", title: "Smarter TV", how: "“What apps are on my TV?”, “show me free movie apps”, “is Netflix free?”, and “open YouTube on the TV and search for MrBeast” — straight into the app's search.", try: { label: "Try it", say: "what apps are on my tv" } },
   { icon: "📞", title: "Phone calls that flow", how: "On a phone call Izuki now listens by itself after every reply (no tapping the orb), starts talking as soon as its first sentence is ready, and the words on screen light up in step with its voice." },
   { icon: "🧑‍🚀", title: "Real 3D faces", how: "Four new faces under Voice orb — a hologram woman and man, a woman and a man — made as real 3D models. They breathe, turn to look at your mouse, talk with the voice and react when tapped. Customise skin tone, glow colour, hologram glow, shine, size, height and turn.", try: { label: "Pick one", tab: "settings", id: "settings-look" } },
   { icon: "🪞", title: "Your own face, talking", how: "My face: make a 3D you on avaturn.me (free, a few minutes), then pick the .glb. Your mouth moves with Izuki's voice, your eyes blink and look around. It stays on your device.", try: { label: "Set it up", tab: "settings", id: "settings-look" } },
