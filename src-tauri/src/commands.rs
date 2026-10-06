@@ -398,6 +398,20 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         let s2 = said.clone();
         return blocking(move || crate::beats::make(&s2)).await.ok().flatten();
     }
+    // "Remove the bloatware": the recommended ones, at once.
+    if crate::deepclean::is_bloat_request(&said) {
+        return blocking(|| crate::deepclean::remove_recommended().unwrap_or_else(|e| e.to_string())).await.ok();
+    }
+    // "Make my PC fast", "deep clean my PC": everything safe, and what else it found.
+    if crate::deepclean::is_deep_request(&said) {
+        return blocking(|| {
+            let r = crate::deepclean::run();
+            crate::deepclean::note_scan(&r);
+            r.said
+        })
+        .await
+        .ok();
+    }
     // "Speed up my PC", "my laptop is lagging": PC Boost, at once.
     if crate::boost::is_request(&said) {
         return blocking(|| crate::boost::run(false)).await.ok();
@@ -1083,6 +1097,35 @@ pub async fn boost_health() -> R<crate::boost::Health> {
 #[tauri::command]
 pub async fn boost_now() -> R<String> {
     blocking(|| crate::boost::run(false)).await
+}
+
+/// "Make my PC fast": the deep clean, and the bloatware and startup apps found.
+#[tauri::command]
+pub async fn boost_deep() -> R<crate::deepclean::Report> {
+    blocking(|| {
+        let r = crate::deepclean::run();
+        crate::deepclean::note_scan(&r);
+        r
+    })
+    .await
+}
+
+/// Remove the chosen bloatware and switch off the chosen startup apps.
+#[tauri::command]
+pub async fn boost_remove(bloat: Vec<String>, startup: Vec<String>) -> R<String> {
+    blocking(move || crate::deepclean::remove(&bloat, &startup).map_err(|e| e.to_string())).await?
+}
+
+/// Turn the startup apps switched off last time back on.
+#[tauri::command]
+pub async fn boost_undo_startup() -> R<String> {
+    blocking(|| crate::deepclean::undo_startup().map_err(|e| e.to_string())).await?
+}
+
+/// The deeper clean, with Windows' permission (a UAC prompt).
+#[tauri::command]
+pub async fn boost_admin(startup: Vec<String>) -> R<String> {
+    blocking(move || crate::deepclean::admin(&startup).map_err(|e| e.to_string())).await?
 }
 
 #[tauri::command]

@@ -86,7 +86,7 @@ export const CHARACTERS = {
   roxy: { name: "Roxy", g: "f", skin: "light", hair: ["pixie", "#e11d48"], top: ["jacket", "#18181b", "#e11d48"], pants: "#27272a", shoes: "#111111", eyes: "#3a2516", extras: ["studs"] },
   blaze: { name: "Blaze", g: "m", skin: "deep", hair: ["fade", "#120c08"], top: ["tank", "#ef4444", "#111827"], pants: "#111827", shoes: "#f97316", eyes: "#2b1a10", extras: ["headband"], build: "broad" },
   alfred: { name: "Alfred", g: "m", skin: "fair", hair: ["side", "#cbd5e1"], top: ["tux", "#111827", "#ffffff"], pants: "#111827", shoes: "#111111", eyes: "#4b5563", extras: ["bowtie", "moustache"] },
-  atlas: { name: "Atlas", g: "m", skin: "light", hair: ["side", "#2b2b2b"], top: ["turtleneck", "#0f172a", "#38bdf8"], pants: "#0f172a", shoes: "#111827", eyes: "#38bdf8", extras: ["visor"] },
+  atlas: { name: "Atlas", g: "m", skin: "#3a4556", hair: ["bald", "#3a4556"], top: ["armor", "#2b3442", "#38bdf8"], pants: "#2b3442", shoes: "#1c2330", eyes: "#38bdf8", extras: [], robot: true, build: "broad" },
   kiki: { name: "Kiki", g: "f", skin: "tan", hair: ["puffs", "#f472b6"], top: ["crop", "#22d3ee", "#f0abfc"], pants: "#7c3aed", shoes: "#fef08a", eyes: "#3a2516", extras: ["hoops"] },
   morgan: { name: "Morgan", g: "m", skin: "deep", hair: ["bald", "#120c08"], top: ["blazer", "#1c1917", "#d6d3d1"], pants: "#1c1917", shoes: "#111111", eyes: "#2b1a10", extras: ["beard"] },
   salty: { name: "Captain Salty", g: "m", skin: "tan", hair: ["messy", "#3b2414"], top: ["coat", "#7f1d1d", "#fbbf24"], pants: "#3f2a1e", shoes: "#111111", eyes: "#3a2516", extras: ["bandana", "beard", "eyepatch"] },
@@ -199,9 +199,17 @@ function animate(s, o, dt, t) {
     if (t < s.idleUntil && s.idleKind !== "look" && s.idleKind !== "rest") pose = s.idleKind === "stretch" ? "cheer" : s.idleKind;
   }
   const target = POSES[pose] || POSES.rest;
+  if (pose !== s.lastPose) {
+    // A new gesture: a quick squash (and a wind-up for the big ones), then
+    // the arms swing past and settle — the snappy motion-design feel.
+    s.squashV -= ["cheer", "pump", "wave"].includes(pose) ? 3.2 : 1.6;
+    if (["cheer", "pump", "wave"].includes(pose)) for (let side = 0; side < 2; side++) s.armV[side][0] -= 1.2;
+    s.lastPose = pose;
+  }
+  [s.squash, s.squashV] = spring(s.squash || 0, s.squashV || 0, 0, 150, 10, dt);
   for (let side = 0; side < 2; side++) {
     for (let j = 0; j < 2; j++) {
-      const [c, v] = spring(s.arms[side][j], s.armV[side][j], target[side][j], 46, 11, dt);
+      const [c, v] = spring(s.arms[side][j], s.armV[side][j], target[side][j], 58, 7.5, dt);
       s.arms[side][j] = c;
       s.armV[side][j] = v;
     }
@@ -228,6 +236,8 @@ function animate(s, o, dt, t) {
   [s.head.pitch, s.head.pv] = spring(s.head.pitch, s.head.pv, pitchT, 26, 8, dt);
   [s.head.roll, s.head.rv] = spring(s.head.roll, s.head.rv, rollT, 22, 7, dt);
   [s.nod, s.nodV] = spring(s.nod, s.nodV, 0, 60, 9, dt);
+  // Hair lags behind the head and swings past (follow-through).
+  [s.hair, s.hairV] = spring(s.hair || 0, s.hairV || 0, -s.head.yv * 0.5 - s.head.rv * 2 - s.sway * 0.25, 30, 4, dt);
 
   // ---- eyes: darts, the pointer, up while thinking; blinks
   if (t > s.eye.nextSacc) {
@@ -414,6 +424,7 @@ const SKIN_OF = (c) => SKIN[c.skin] || c.skin;
 function figure(ctx, C, s, P, t) {
   const male = C.g === "m";
   const broad = C.build === "broad" ? 1.12 : 1;
+  const robot = !!C.robot;
   const skin = SKIN_OF(C);
   const [topStyle, topCol, topAcc] = C.top;
   const breathe = Math.sin(t * 1.5);
@@ -486,6 +497,20 @@ function figure(ctx, C, s, P, t) {
     if (topStyle === "coat") for (let i = 0; i < 3; i++) P.shape(() => { ctx.beginPath(); ctx.arc(cx + 3.4, neckY + 7 + i * 5, 0.7, 0, TAU); }, topAcc, { flat: true });
     if (has("tie")) P.shape(() => { ctx.beginPath(); ctx.moveTo(cx - 0.8, neckY + 1); ctx.lineTo(cx + 0.8, neckY + 1); ctx.lineTo(cx + 1.2, neckY + 11); ctx.lineTo(cx, neckY + 12.5); ctx.lineTo(cx - 1.2, neckY + 11); ctx.closePath(); }, "#9b1c1c");
     if (has("bowtie")) P.shape(() => { ctx.beginPath(); ctx.moveTo(cx, neckY + 1.5); ctx.lineTo(cx - 2.6, neckY + 0.2); ctx.lineTo(cx - 2.6, neckY + 2.8); ctx.closePath(); ctx.moveTo(cx, neckY + 1.5); ctx.lineTo(cx + 2.6, neckY + 0.2); ctx.lineTo(cx + 2.6, neckY + 2.8); ctx.closePath(); }, "#111111", { flat: true });
+  } else if (topStyle === "armor") {
+    // Plates, seams and a glowing core that pulses with the voice.
+    P.line(() => { ctx.beginPath(); ctx.moveTo(cx - 7, neckY + 4); ctx.lineTo(cx - 2.5, neckY + 9); ctx.lineTo(cx + 2.5, neckY + 9); ctx.lineTo(cx + 7, neckY + 4); ctx.moveTo(cx, neckY + 13); ctx.lineTo(cx, hipY - 2); ctx.moveTo(hipX - 7, -57 - hop); ctx.lineTo(hipX + 7, -57 - hop); }, tone(topCol, 0.35), 0.35);
+    const pulse = 0.55 + 0.45 * clamp(s.e * 2, 0, 1) + 0.08 * Math.sin(t * 3);
+    ctx.save();
+    const g = ctx.createRadialGradient(cx, neckY + 6.4, 0, cx, neckY + 6.4, 3.4);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(0.35, topAcc);
+    g.addColorStop(1, "rgba(56,189,248,0)");
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, neckY + 6.4, 3.4, 0, TAU); ctx.fill();
+    ctx.restore();
+    P.line(() => { ctx.beginPath(); ctx.arc(cx, neckY + 6.4, 1.6, 0, TAU); }, tone(topCol, 0.5), 0.35);
   } else if (topStyle === "turtleneck") {
     P.shape(() => { ctx.beginPath(); ctx.roundRect(headX - 3.1, neckY - 2.4, 6.2, 3.6, 1.2); }, tone(topCol, 0.06));
     P.line(() => { ctx.beginPath(); ctx.moveTo(cx - 4, neckY + 8); ctx.lineTo(cx + 4, neckY + 8); }, topAcc, 0.35);
@@ -515,14 +540,22 @@ function figure(ctx, C, s, P, t) {
     const [u, f] = s.arms[side];
     const E = [S[0] + Math.sin(u) * dir * UPPER, S[1] + Math.cos(u) * UPPER];
     const W = [E[0] + Math.sin(f) * dir * FORE, E[1] + Math.cos(f) * FORE];
-    const upCol = sleeves === "long" ? topCol : skin;
+    const upCol = sleeves === "long" || robot ? topCol : skin;
     const foreCol = sleeves === "long" ? topCol : skin;
     const r0 = (male ? 3.2 : 2.7) * broad;
     P.shape(() => { capsule(ctx, S, E, r0, r0 * 0.86); }, sleeves === "none" ? skin : upCol);
     if (sleeves === "short") P.shape(() => { capsule(ctx, S, [S[0] + (E[0] - S[0]) * 0.55, S[1] + (E[1] - S[1]) * 0.55], r0 + 0.5, r0 + 0.3); }, topCol);
     P.shape(() => { capsule(ctx, E, W, r0 * 0.86, r0 * 0.72); }, foreCol);
-    if (sleeves === "long") P.shape(() => { capsule(ctx, [lerp(E[0], W[0], 0.88), lerp(E[1], W[1], 0.88)], W, r0 * 0.78, r0 * 0.78); }, tone(topCol, -0.12), { flat: true });
-    hand(ctx, P, W, Math.atan2(W[1] - E[1], W[0] - E[0]), s.hand[side], side === 1 ? s.count : 0, skin, dir, male);
+    if (sleeves === "long" && !robot) P.shape(() => { capsule(ctx, [lerp(E[0], W[0], 0.88), lerp(E[1], W[1], 0.88)], W, r0 * 0.78, r0 * 0.78); }, tone(topCol, -0.12), { flat: true });
+    // Robot joints: an elbow disc with a glowing ring.
+    if (robot) { P.shape(() => { ctx.beginPath(); ctx.arc(E[0], E[1], r0 * 0.75, 0, TAU); }, tone(topCol, 0.15)); P.line(() => { ctx.beginPath(); ctx.arc(E[0], E[1], r0 * 0.4, 0, TAU); }, topAcc, 0.35); }
+    hand(ctx, P, W, Math.atan2(W[1] - E[1], W[0] - E[0]), s.hand[side], side === 1 ? s.count : 0, robot ? topCol : skin, dir, male);
+    // Spider-Verse motion lines when a hand whips through the air.
+    const speed = Math.abs(s.armV[side][1]) + Math.abs(s.armV[side][0]);
+    if (P.comic && speed > 3.5) {
+      const a = Math.atan2(W[1] - E[1], W[0] - E[0]) + Math.PI / 2 * (s.armV[side][1] > 0 ? -1 : 1) * dir;
+      for (let k = 0; k < 3; k++) P.line(() => { ctx.beginPath(); ctx.moveTo(W[0] + Math.cos(a) * (2 + k * 0.8), W[1] + Math.sin(a) * (2 + k * 0.8) + (k - 1) * 1.6); ctx.lineTo(W[0] + Math.cos(a) * (6 + k * 1.6), W[1] + Math.sin(a) * (6 + k * 1.6) + (k - 1) * 1.6); }, "#15101f", 0.4);
+    }
   }
   return { headX, neckY };
 }
@@ -581,7 +614,46 @@ function hairBehind(ctx, C, s, P, t, at) {
   ctx.restore();
 }
 
+function robotHead(ctx, C, s, P, t, at) {
+  const [, plate, glow] = C.top;
+  ctx.save();
+  headSpace(ctx, s, at);
+  const turn = clamp(s.head.yaw, -0.8, 0.8) * 2.4;
+  // The helmet, then a darker faceplate.
+  P.shape(() => { ctx.beginPath(); ctx.moveTo(-8.4, 0); ctx.bezierCurveTo(-8.8, -12, 8.8, -12, 8.4, 0); ctx.lineTo(7.2, 6.4); ctx.quadraticCurveTo(0, 11, -7.2, 6.4); ctx.closePath(); }, plate, { light: 0.6 });
+  P.shape(() => { ctx.beginPath(); ctx.moveTo(-6.2 + turn * 0.6, -3.4); ctx.quadraticCurveTo(turn * 0.6, -5.2, 6.2 + turn * 0.6, -3.4); ctx.lineTo(5.4 + turn * 0.6, 6); ctx.quadraticCurveTo(turn * 0.6, 9, -5.4 + turn * 0.6, 6); ctx.closePath(); }, tone(plate, -0.35), { light: 0.4 });
+  // Side discs (ears) and a crest.
+  for (const side of [-1, 1]) P.shape(() => { ctx.beginPath(); ctx.arc(side * 8.3, 0.5, 1.8, 0, TAU); }, tone(plate, 0.2));
+  P.line(() => { ctx.beginPath(); ctx.moveTo(turn * 0.4, -10.5); ctx.lineTo(turn * 0.4, -6); }, tone(plate, 0.4), 0.45);
+  // Glowing eye slits: they blink, glance, narrow with a smile, tilt with a question.
+  const open = clamp(1 - s.blink, 0.08, 1) * (1 - Math.max(0, s.smile) * 0.25);
+  ctx.save();
+  ctx.shadowColor = glow;
+  ctx.shadowBlur = 6;
+  ctx.fillStyle = glow;
+  for (const side of [-1, 1]) {
+    const tilt = side * (s.brow * 0.12 - Math.max(0, -s.smile) * 0.1) + (side === 1 ? s.browR * 0.15 : 0);
+    ctx.save();
+    ctx.translate(side * 3.1 + turn + s.eye.x * 0.4, -0.6 + s.eye.y * 0.25);
+    ctx.rotate(tilt);
+    ctx.beginPath();
+    ctx.roundRect(-2, -0.55 * open, 4, 1.1 * open, 0.5);
+    ctx.fill();
+    ctx.restore();
+  }
+  // The mouth: a bar of lights that opens with the words.
+  const o = s.mouth.o;
+  for (let i = -3; i <= 3; i++) {
+    const h = 0.25 + o * 1.6 * (1 - Math.abs(i) / 4) * (0.7 + 0.3 * Math.sin(t * 20 + i));
+    ctx.globalAlpha = 0.45 + o * 0.55;
+    ctx.fillRect(turn * 0.8 + i * 0.8 - 0.3, 4.6 - h / 2, 0.6, h);
+  }
+  ctx.restore();
+  ctx.restore();
+}
+
 function head(ctx, C, s, P, t, at) {
+  if (C.robot) return robotHead(ctx, C, s, P, t, at);
   const male = C.g === "m";
   const skin = SKIN_OF(C);
   const [hairStyle, hairCol, hairAcc] = C.hair;
@@ -786,7 +858,7 @@ function mouth(ctx, P, s, x, y, male, skin) {
 // ------------------------------------------------------------------ hair
 
 function hairBack(ctx, P, style, col, acc, t, s) {
-  const swing = Math.sin(t * 1.3) * 0.25 + s.head.roll * 2 - s.sway * 0.3;
+  const swing = Math.sin(t * 1.3) * 0.25 + (s.hair || 0) * 3;
   if (style === "long" || style === "braid") {
     P.shape(() => {
       ctx.beginPath();
@@ -1004,6 +1076,8 @@ export function drawToon(ctx, size, opts = {}) {
     target.translate(c, size * (orb ? 0.06 : 0.01) - top * unit);
     target.scale(unit, unit);
     const P = painter(target, render, unit);
+    const sq = clamp(s.squash || 0, -0.12, 0.12);
+    target.scale(1 - sq * 0.5, 1 + sq);
     const at = { headX: s.sway * 0.02 * 34 + Math.sin(t * 0.7) * 0.15 };
     hairBehind(target, C, s, P, t, at);
     Object.assign(at, figure(target, C, s, P, t));

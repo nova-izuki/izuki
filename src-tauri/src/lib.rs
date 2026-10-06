@@ -37,6 +37,7 @@ pub mod ocr;
 pub mod overlay;
 pub mod patience;
 pub mod shots;
+pub mod deepclean;
 pub mod rokudev;
 pub mod planner;
 pub mod recipes;
@@ -317,6 +318,10 @@ pub fn run() {
             commands::boost_health,
             commands::voice_for_face,
             commands::boost_now,
+            commands::boost_deep,
+            commands::boost_remove,
+            commands::boost_undo_startup,
+            commands::boost_admin,
             commands::cancel_task,
             commands::quit_app,
             commands::selftest_enabled,

@@ -4,3 +4,6 @@
 
 /* Jump bars stay on top: land sections just below them. */
 [id^="draw-"], [id^="apps-"] { scroll-margin-top: 52px; }
+
+/* The Draw page: sections land below the pinned command bar and jump bar. */
+[id^="draw-"] { scroll-margin-top: 118px; }

@@ -84,7 +84,7 @@ export function DrawTab() {
   return (
     <>
       <DrawCommandBar />
-      <JumpBar topId="draw-top" jumps={[
+      <JumpBar topId="draw-top" below={70} jumps={[
         { label: "✏️ Draw", id: "draw-hero" },
         { label: "🎙️ Hands-free", id: "draw-talk" },
         { label: "🗣️ Voice", id: "draw-voice" },

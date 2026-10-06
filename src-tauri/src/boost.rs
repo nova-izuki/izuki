@@ -70,6 +70,8 @@ static SAMPLES: Mutex<Vec<(u8, u8)>> = Mutex::new(Vec::new());
 /// When the Island last offered help, and when it last ran by itself.
 static OFFERED: Mutex<Option<Instant>> = Mutex::new(None);
 static AUTO_RAN: Mutex<Option<Instant>> = Mutex::new(None);
+/// The once-a-day tidy (with "Keep my PC fast by itself" on).
+static DAILY: Mutex<Option<Instant>> = Mutex::new(None);
 
 /// Slow enough to notice: the processor pinned for ~30 s, or memory nearly
 /// full for ~15 s.
@@ -186,10 +188,9 @@ fn clear_dir(dir: &std::path::Path, age: Duration, depth: usize, freed: &mut u64
     }
 }
 
-/// Clear temp, close hogging background helpers, and name the heavy app.
-/// `auto`: run by itself (the Island's "Fix it by itself").
-pub fn run(auto: bool) -> String {
-    let freed = clear_old_temp();
+/// Close the background helpers hogging the PC (never a window, never a
+/// system or security process). Their names.
+pub fn close_helpers() -> Vec<String> {
     let health = sys::health();
     let mut closed = Vec::new();
     for h in &health.hogs {
@@ -197,8 +198,38 @@ pub fn run(auto: bool) -> String {
             closed.push(pretty(&h.name));
         }
     }
+    closed
+}
+
+/// Processes with a window on screen (never trimmed or closed).
+pub fn windowed_pids() -> std::collections::HashSet<u32> {
+    sys::windowed()
+}
+
+/// A system, security or Izuki process (by its open handle).
+#[cfg(windows)]
+pub fn is_protected_pid(h: windows::Win32::Foundation::HANDLE) -> bool {
+    let n = sys::name_of(h).to_lowercase();
+    n.is_empty() || NEVER.contains(&n.as_str())
+}
+
+/// The names of the programs running now ("chrome", "msedge"…).
+pub fn running_names() -> Vec<String> {
+    sys::health_all_names()
+}
+
+/// Clear temp and caches, trim memory, close hogging background helpers, and
+/// name the heavy app. `auto`: run by itself ("Keep my PC fast by itself").
+pub fn run(auto: bool) -> String {
+    let freed = clear_old_temp() + crate::deepclean::clear_caches();
+    let ram = crate::deepclean::trim();
+    let health = sys::health();
+    let closed = close_helpers();
     let heavy = health.hogs.iter().find(|h| h.window && !NEVER.contains(&h.name.to_lowercase().as_str()) && (h.mem_mb >= 900 || h.cpu >= 25.0));
-    let line = summary(freed, &closed, heavy, &health);
+    let mut line = summary(freed, &closed, heavy, &health);
+    if ram >= 50 {
+        line.push_str(&format!(" Freed {} of memory too.", if ram >= 1024 { format!("{:.1} GB", ram as f64 / 1024.0) } else { format!("{ram} MB") }));
+    }
     eprintln!("[boost] {} — {line}", if auto { "by itself" } else { "asked" });
     line
 }
@@ -222,6 +253,12 @@ pub fn spawn(app: tauri::AppHandle) {
                 v.drain(..excess);
                 is_lagging(&v)
             };
+            // "Keep my PC fast by itself": a light clean once a day too, at a quiet moment.
+            if s.pc_boost_auto && cpu < 30 && DAILY.lock().is_none_or(|t| t.elapsed() > Duration::from_secs(24 * 3600)) {
+                *DAILY.lock() = Some(Instant::now());
+                let line = run(true);
+                eprintln!("[boost] daily tidy: {line}");
+            }
             if !lagging {
                 continue;
             }
@@ -297,6 +334,32 @@ mod sys {
         }
     }
 
+    pub fn windowed() -> HashSet<u32> {
+        with_windows()
+    }
+
+    /// Every running program's name (lower case).
+    pub fn health_all_names() -> Vec<String> {
+        let mut pids = vec![0u32; 4096];
+        let mut got = 0u32;
+        if !unsafe { K32EnumProcesses(pids.as_mut_ptr(), (pids.len() * 4) as u32, &mut got) }.as_bool() {
+            return vec![];
+        }
+        pids.truncate(got as usize / 4);
+        let mut names = Vec::new();
+        for pid in pids.into_iter().filter(|p| *p > 4) {
+            let Ok(h) = (unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }) else { continue };
+            let n = name_of(h).to_lowercase();
+            unsafe {
+                let _ = CloseHandle(h);
+            }
+            if !n.is_empty() && !names.contains(&n) {
+                names.push(n);
+            }
+        }
+        names
+    }
+
     fn with_windows() -> HashSet<u32> {
         unsafe extern "system" fn each(h: HWND, l: LPARAM) -> BOOL {
             let set = &mut *(l.0 as *mut HashSet<u32>);
@@ -314,7 +377,7 @@ mod sys {
         set
     }
 
-    fn name_of(h: windows::Win32::Foundation::HANDLE) -> String {
+    pub fn name_of(h: windows::Win32::Foundation::HANDLE) -> String {
         let mut buf = [0u16; 520];
         let mut len = buf.len() as u32;
         if unsafe { QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, windows_core::PWSTR(buf.as_mut_ptr()), &mut len) }.is_ok() {
@@ -418,6 +481,12 @@ mod sys {
     }
     pub fn close(_pid: u32) -> bool {
         false
+    }
+    pub fn windowed() -> std::collections::HashSet<u32> {
+        Default::default()
+    }
+    pub fn health_all_names() -> Vec<String> {
+        vec![]
     }
 }
 

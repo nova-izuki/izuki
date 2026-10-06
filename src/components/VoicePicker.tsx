@@ -187,9 +187,38 @@ export function VoicePicker() {
     }
   }
 
+  // Each voice's 2D character, on its card.
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let alive = true;
+    const render = ((): "flat" | "comic" => {
+      try { return (JSON.parse(settings.avatar || "{}")?.toon?.render === "comic" ? "comic" : "flat"); } catch { return "flat"; }
+    })();
+    void import("../../docs/app/toon.js").then((m) => {
+      const ids = Object.keys(m.CHARACTERS);
+      let i = 0;
+      const step = () => {
+        if (!alive) return;
+        const batch: Record<string, string> = {};
+        for (const id of ids.slice(i, i + 5)) batch[id] = m.toonThumb(id, render, 76, "head");
+        i += 5;
+        setThumbs((t) => ({ ...t, ...batch }));
+        if (i < ids.length) setTimeout(step, 40);
+      };
+      step();
+    });
+    return () => { alive = false; };
+  }, [settings.avatar]);
+
   function apply(p: Persona) {
-    // "Match voice and character": a man's voice brings up a man's face.
-    const face = settings.match_voice_face ? faceForPersona(settings.orb_style, p.id, p.kokoro.charAt(1) === "m") : null;
+    // "Match voice and character": the voice brings its own character. A 3D
+    // face stays 3D (the right one for the voice); otherwise its 2D character shows.
+    const style = settings.orb_style;
+    const face = !settings.match_voice_face
+      ? null
+      : style.startsWith("model:")
+        ? faceForPersona(style, p.id, p.kokoro.charAt(1) === "m")
+        : style === "toon" ? null : "toon";
     patch({
       persona: p.id,
       persona_name: "",
@@ -619,6 +648,7 @@ export function VoicePicker() {
                   : "border-white/8 bg-white/4 hover:border-white/16"
               )}
             >
+              {thumbs[p.id] && <img src={thumbs[p.id]} alt="" className="h-[38px] w-[38px] shrink-0 rounded-full" draggable={false} />}
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1 text-[12px] font-semibold text-izk-ink">
                   <span className="truncate">{p.name}</span>

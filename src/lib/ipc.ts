@@ -291,6 +291,8 @@ export const MOCK_SETTINGS: Settings = {
 let lastTypingPrefetch = 0;
 
 /** PC Boost's look at the PC (boost.rs). */
+export interface CleanItem { id: string; name: string; kind: "bloat" | "startup"; recommended: boolean; scope: string }
+export interface DeepReport { said: string; freed_mb: number; ram_freed_mb: number; closed: string[]; bloat: CleanItem[]; startup: CleanItem[]; skipped: string[] }
 export interface BoostHealth {
   cpu: number;
   ram: number;
@@ -460,6 +462,10 @@ export const api = {
   boostHealth: () => call<BoostHealth>("boost_health", undefined, () => ({ cpu: 0, ram: 0, ram_free_gb: 0, lagging: false, hogs: [] })),
   voiceForFace: (male: boolean) => call<{ id: string; name: string; kokoro: string } | null>("voice_for_face", { male }, () => null),
   boostNow: () => call<string>("boost_now", undefined, () => "PC Boost only works inside the Izuki app."),
+  boostDeep: () => call<DeepReport>("boost_deep", undefined, () => ({ said: "PC Boost only works inside the Izuki app.", freed_mb: 0, ram_freed_mb: 0, closed: [], bloat: [], startup: [], skipped: [] })),
+  boostRemove: (bloat: string[], startup: string[]) => call<string>("boost_remove", { bloat, startup }, () => "PC Boost only works inside the Izuki app."),
+  boostUndoStartup: () => call<string>("boost_undo_startup", undefined, () => "PC Boost only works inside the Izuki app."),
+  boostAdmin: (startup: string[]) => call<string>("boost_admin", { startup }, () => "PC Boost only works inside the Izuki app."),
   alarmSnooze: (text: string, minutes: number) => call<Reminder>("alarm_snooze", { text, minutes }, () => ({ id: "", at: 0, text })),
   chatCancel: (id: number) => call<void>("chat_cancel", { id }, () => undefined).catch(() => undefined),
   /** Connect to the paired Android phone. */
