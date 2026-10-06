@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Plus, Trash2, Upload, X } from "lucide-react";
 import { useIzuki } from "../lib/store";
-import { faceId, faceLooks, isFace, withLook } from "../lib/faces";
+import { faceGender, faceId, faceLooks, isFace, withLook } from "../lib/faces";
+import { api } from "../lib/ipc";
+import { Toggle } from "./ui";
 import type { Settings } from "../lib/types";
 import type { FaceLook, SavedFace } from "../../docs/app/model-orb.js";
 
@@ -56,9 +58,22 @@ export function LookPicker() {
   const addRef = useRef<HTMLInputElement>(null);
   const meRef = useRef<HTMLInputElement>(null);
 
+  const match = useIzuki((s) => s.settings.match_voice_face);
   const pick = (s: Settings["orb_style"]) => {
     patch({ orb_style: s });
     if (isFace(s)) void mod?.preloadFace(faceId(s)).catch(() => {});
+    // "Match voice and character": a woman's face speaks with a woman's voice.
+    const g = faceGender(s);
+    if (g && match) {
+      void api
+        .voiceForFace(g === "male")
+        .then((p) => {
+          if (!p) return;
+          patch({ persona: p.id, persona_name: "", persona_voice: "", cloud_voice: "", voice_rate: 0, voice_pitch: 0, voice_name: p.kokoro });
+          setNote(`Voice switched to ${p.name} to match. (Turn off "Match voice and character" to choose your own.)`);
+        })
+        .catch(() => undefined);
+    }
   };
   const add = async (file: File | undefined, kind: "face" | "me") => {
     if (!file || !mod) return;
@@ -113,6 +128,14 @@ export function LookPicker() {
         <input ref={addRef} type="file" accept=".glb,model/gltf-binary" hidden onChange={(e) => { void add(e.target.files?.[0], "face"); e.target.value = ""; }} />
         <p className="mt-1 text-[10.5px] text-izk-muted">Add any .glb model (Tencent Hunyuan3D, Meshy, Sketchfab…). It stays on this PC.</p>
       </section>
+
+      <label className="flex items-center justify-between gap-2 rounded-[12px] border border-white/10 bg-white/5 px-3 py-2 text-[11.5px]">
+        <span>
+          <b className="text-izk-ink">Match voice and character</b>
+          <span className="block text-[10.5px] text-izk-muted">A woman's face speaks with a woman's voice; picking a man's voice brings up a man's face. Off = my own choice.</span>
+        </span>
+        <Toggle checked={match} onChange={(v) => patch({ match_voice_face: v })} />
+      </label>
 
       <section>
         <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-izk-muted">My face</h4>
@@ -176,9 +199,43 @@ function FaceTuner({ id, mod, rigged }: { id: string; mod: FaceModule; rigged: b
         <h4 className="text-[11px] font-semibold uppercase tracking-wide text-izk-muted">Customise</h4>
         <button type="button" className="izk-pill px-2 py-0.5 text-[10.5px]" onClick={() => patch({ avatar: withLook(raw, id, null) })}>Reset</button>
       </div>
+      <div className="mb-2">
+        <div className="mb-1 text-[11px] text-izk-muted">Skin tone</div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Swatch on={look.tint === "#ffffff"} colour="#ffffff" label="As made" onClick={() => set({ tint: "#ffffff" })} />
+          {mod.SKIN_TONES.map(([name, hex]) => (
+            <Swatch key={hex} on={look.tint === hex} colour={hex} label={name} onClick={() => set({ tint: hex })} />
+          ))}
+          {colour("tint", "Custom", "#ffffff")}
+        </div>
+      </div>
+      {rigged && (
+        <div className="mb-2">
+          <div className="mb-1 text-[11px] text-izk-muted">Hair colour</div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {mod.HAIR_COLOURS.map(([name, hex]) => (
+              <Swatch key={hex} on={look.hair === hex} colour={hex} label={name} onClick={() => set({ hair: hex })} />
+            ))}
+            {colour("hair", "Custom", "#2b1d16")}
+          </div>
+        </div>
+      )}
+      <div className="mb-2 grid grid-cols-2 gap-2">
+        <Choice label="Style" value={look.style ?? "real"} options={[["real", "Real"], ["comic", "Comic"], ["flat", "Flat vector"]]} onChange={(v) => set({ style: v as FaceLook["style"] })} />
+        {rigged && (
+          <Choice
+            label="Show"
+            value={look.headOnly ? "head" : look.frame ?? "shoulders"}
+            options={[["head", "Head"], ["shoulders", "Head & shoulders"], ["half", "Half body"], ["full", "Full body"]]}
+            onChange={(v) => set({ frame: v as FaceLook["frame"], headOnly: false })}
+          />
+        )}
+      </div>
+      <label className="mb-2 flex items-center gap-2 text-[11px] text-izk-muted">
+        <input type="checkbox" checked={!!look.bare} onChange={(e) => set({ bare: e.target.checked })} className="accent-izk-teal" />
+        Without the orb (just the character)
+      </label>
       <div className="grid grid-cols-3 gap-2">
-        {colour("tint", "Skin tone", "#ffffff")}
-        {rigged && colour("hair", "Hair", "#2b1d16")}
         {colour("accent", "Glow colour", "#a78bfa")}
       </div>
       <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
@@ -187,13 +244,36 @@ function FaceTuner({ id, mod, rigged }: { id: string; mod: FaceModule; rigged: b
         {slider("scale", "Size", 0.6, 1.8, 0.05)}
         {slider("y", "Height", -0.6, 0.6, 0.02)}
         {slider("rot", "Turn", -40, 40, 1)}
-        {rigged && (
-          <label className="flex items-center gap-2 self-end text-[11px] text-izk-muted">
-            <input type="checkbox" checked={look.headOnly} onChange={(e) => set({ headOnly: e.target.checked })} className="accent-izk-teal" />
-            Head only
-          </label>
-        )}
       </div>
     </section>
+  );
+}
+
+function Swatch({ on, colour, label, onClick }: { on: boolean; colour: string; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className={`h-6 w-6 rounded-full border transition-transform hover:scale-110 ${on ? "border-izk-teal ring-2 ring-izk-teal/60" : "border-white/25"}`}
+      style={{ background: colour }}
+    />
+  );
+}
+
+function Choice({ label, value, options, onChange }: { label: string; value: string; options: Array<[string, string]>; onChange: (v: string) => void }) {
+  return (
+    <label className="block text-[11px] text-izk-muted">
+      {label}
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 block h-[28px] w-full rounded-[8px] border border-white/10 bg-white/6 px-1.5 text-[11.5px] text-izk-ink outline-none">
+        {options.map(([v, l]) => (
+          <option key={v} value={v} className="bg-[#1b2230]">
+            {l}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

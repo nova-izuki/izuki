@@ -1025,6 +1025,22 @@ pub fn reminders_list() -> Vec<crate::reminders::Reminder> {
     crate::reminders::list()
 }
 
+/// "Match the voice to the face": the character to switch to for a face of
+/// this gender — `None` when the voice already matches (or matching is off).
+#[tauri::command]
+pub fn voice_for_face(male: bool) -> Option<serde_json::Value> {
+    let s = state::store().settings();
+    if !s.match_voice_face {
+        return None;
+    }
+    // A voice the user picked by hand that already fits: leave it alone.
+    if crate::tv::voice_is_male(&s) == male {
+        return None;
+    }
+    let p = crate::voices::persona_with_gender(&s.persona, male);
+    (crate::voices::is_male(p) == male).then(|| serde_json::json!({ "id": p.id, "name": p.name, "kokoro": p.kokoro }))
+}
+
 /// How the PC is doing, and the heaviest apps (Settings → PC Boost).
 #[tauri::command]
 pub async fn boost_health() -> R<crate::boost::Health> {

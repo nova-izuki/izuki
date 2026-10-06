@@ -34,7 +34,28 @@ export const FACES = [
 ];
 
 /** What each face can be changed with, and where it starts. */
-export const DEFAULT_LOOK = { tint: "#ffffff", hair: "", gloss: 0.5, glow: 0, accent: "", scale: 1, y: 0, rot: 0, headOnly: false };
+export const DEFAULT_LOOK = {
+  tint: "#ffffff", hair: "", gloss: 0.5, glow: 0, accent: "", scale: 1, y: 0, rot: 0, headOnly: false,
+  // How much of a rigged character shows: "head", "shoulders", "half" (waist
+  // up) or "full" (head to toe). Sculpts are busts: always head and shoulders.
+  frame: "shoulders",
+  // Without the orb: just the character, floating free.
+  bare: false,
+  // "real", "comic" (cel bands, ink edges, halftone dots, animated on twos)
+  // or "flat" (flat vector shapes and clean outlines).
+  style: "real",
+};
+
+/** One-tap skin tones (multiplied into the model's own colours). */
+export const SKIN_TONES = [
+  ["Porcelain", "#fff1ea"], ["Fair", "#f6d9c4"], ["Tan", "#d9a77e"], ["Olive", "#c09468"],
+  ["Brown", "#9a6845"], ["Deep", "#6e4630"], ["Ebony", "#4a2f22"],
+];
+/** One-tap hair colours. */
+export const HAIR_COLOURS = [
+  ["Black", "#1a1412"], ["Dark brown", "#3b2a20"], ["Brown", "#6a4a32"], ["Auburn", "#8a3b22"],
+  ["Blonde", "#d8b26e"], ["Platinum", "#e8e2d4"], ["Grey", "#9a9a9a"], ["Pink", "#e27bb0"], ["Blue", "#4a78d8"],
+];
 
 export function faceInfo(id) {
   return FACES.find((f) => f.id === id) || null;
@@ -193,7 +214,7 @@ function prepare(id, gltf) {
     const head = bones.Head.getWorldPosition(new Vector3());
     const tall = Math.max(0.2, Math.min(size.y, 2.2));
     const headH = tall > 1.2 ? tall * 0.13 : tall * 0.35; // a full body vs a bust
-    frame = { head, headH, front: box.max.z };
+    frame = { head, headH, front: box.max.z, top: box.max.y, bottom: box.min.y, full: tall > 1.2 };
   } else {
     const lm = landmarks(meshes, box);
     uniforms.uMouth.value.copy(lm.mouth);
@@ -483,7 +504,7 @@ function applyLook(model, L) {
     }
     if ("roughness" in mat) mat.roughness = clamp(b.roughness * (1.5 - L.gloss), 0.05, 1);
   }
-  for (const m of model.bodyMeshes) m.visible = !L.headOnly;
+  for (const m of model.bodyMeshes) m.visible = !(L.headOnly || L.frame === "head");
   model.uniforms.uGlow.value = clamp(L.glow, 0, 1);
   model.uniforms.uAccent.value.set(L.accent);
 }
@@ -597,9 +618,16 @@ function placeCamera(model, L, aspect = 1) {
   // A sculpt is framed on its nose (headH = top of head to nose); a rig on its
   // head bone: head and shoulders, or closer for head only.
   let viewH, cy;
+  const framing = L.headOnly ? "head" : L.frame || "shoulders";
   if (f.sculpt) { viewH = f.headH * 3.1; cy = f.head.y - f.headH * 0.12; }
-  else if (L.headOnly) { viewH = f.headH * 1.6; cy = f.head.y + f.headH * 0.4; }
-  else { viewH = f.headH * 2.6; cy = f.head.y + f.headH * 0.02; }
+  else if (framing === "head") { viewH = f.headH * 1.6; cy = f.head.y + f.headH * 0.4; }
+  else if (framing === "full" && f.full) { viewH = (f.top - f.bottom) * 1.06; cy = (f.top + f.bottom) / 2; }
+  else if (framing === "half" && f.full) {
+    // Waist up: about three heads below the head's centre.
+    const waist = Math.max(f.bottom, f.head.y - f.headH * 3.3);
+    viewH = (f.top - waist) * 1.08;
+    cy = (f.top + waist) / 2;
+  } else { viewH = f.headH * 2.6; cy = f.head.y + f.headH * 0.02; }
   viewH /= clamp(L.scale || 1, 0.4, 2.5);
   const target = new Vector3(f.head.x, cy - (L.y || 0) * viewH * 0.5, f.head.z);
   const dist = viewH / 2 / Math.tan(MathUtils.degToRad(camera.fov / 2));
@@ -633,6 +661,27 @@ export function drawModelOrb(ctx, size, opts) {
   const accent = new Color(L.accent);
   const rgb = `${Math.round(accent.r * 255)},${Math.round(accent.g * 255)},${Math.round(accent.b * 255)}`;
   const e = clamp(opts.energy || 0, 0, 1);
+  const bare = !!L.bare;
+
+  if (bare) {
+    // No orb: only the character (a faint glow at its feet while it talks).
+    if (!model) return true;
+    let s = states.get(ctx.canvas);
+    const t = opts.time || 0;
+    if (!s || s.id !== model.id) { s = newState(t); s.id = model.id; states.set(ctx.canvas, s); }
+    const dt = clamp(t - (s.last || t), 0, 0.1) || 1 / 30;
+    s.last = t;
+    applyLook(model, L);
+    animate(model, s, opts, dt);
+    rim.color.copy(accent);
+    placeCamera(model, L);
+    scene.add(model.root);
+    const px = Math.max(64, Math.min(1024, Math.round(size * scale)));
+    renderAt(px);
+    scene.remove(model.root);
+    paintStyled(ctx, size, px, L.style, s, t);
+    return true;
+  }
 
   // The orb behind the face: a soft glow that swells with the voice.
   const halo = ctx.createRadialGradient(c, c, R * 0.55, c, c, size / 2);
@@ -675,8 +724,7 @@ export function drawModelOrb(ctx, size, opts) {
   const px = Math.max(64, Math.min(1024, Math.round(size * scale)));
   renderAt(px);
   scene.remove(model.root);
-  const src = renderer.domElement;
-  ctx.drawImage(src, 0, src.height - px, px, px, 0, 0, size, size);
+  paintStyled(ctx, size, px, L.style, s, t);
   // Glass on top: a highlight and an inner shadow at the edge.
   const edge = ctx.createRadialGradient(c, c, R * 0.72, c, c, R);
   edge.addColorStop(0, "rgba(0,0,0,0)");
@@ -691,6 +739,121 @@ export function drawModelOrb(ctx, size, opts) {
   ctx.restore();
   ring(ctx, c, R, rgb, e);
   return true;
+}
+
+// ------------------------------------------------------------------ 2D looks
+
+let work = null;
+/**
+ * Copy the rendered character onto the orb — as it is ("real"), or drawn:
+ * "comic" (Spider-Verse-like cel bands, ink edges, halftone dots in the
+ * shadows, a touch of print misregistration, posed on twos) or "flat"
+ * (flat vector colours and clean outlines). A quick pass over a few
+ * hundred pixels square — no extra models, works with every character.
+ */
+function paintStyled(ctx, size, px, style, s, t) {
+  const src = renderer.domElement;
+  if (style !== "comic" && style !== "flat") {
+    ctx.drawImage(src, 0, src.height - px, px, px, 0, 0, size, size);
+    return;
+  }
+  // On twos: a fresh drawing 12 times a second; the frames between hold it.
+  const fresh = !s.held || s.held.width !== px || s.held.height !== px || s.heldStyle !== style || t - (s.heldAt || 0) >= 1 / 12;
+  if (fresh) {
+    if (!work) work = document.createElement("canvas");
+    if (work.width !== px || work.height !== px) { work.width = px; work.height = px; }
+    const w = work.getContext("2d", { willReadFrequently: true });
+    w.clearRect(0, 0, px, px);
+    w.drawImage(src, 0, src.height - px, px, px, 0, 0, px, px);
+    const img = w.getImageData(0, 0, px, px);
+    if (style === "comic") comicPass(img.data, px); else flatPass(img.data, px);
+    w.putImageData(img, 0, 0);
+    if (!s.held || s.held.width !== px || s.held.height !== px) { s.held = document.createElement("canvas"); s.held.width = s.held.height = px; }
+    const h = s.held.getContext("2d");
+    h.clearRect(0, 0, px, px);
+    h.drawImage(work, 0, 0);
+    s.heldAt = t;
+    s.heldStyle = style;
+  }
+  ctx.drawImage(s.held, 0, 0, px, px, 0, 0, size, size);
+}
+
+const lum = (d, i) => (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255;
+
+/** Ink where the shape ends or the light changes sharply. */
+function edges(d, px, alphaCut, lumaCut) {
+  const out = new Uint8Array(px * px);
+  for (let y = 1; y < px - 1; y++) {
+    for (let x = 1; x < px - 1; x++) {
+      const i = (y * px + x) * 4;
+      if (d[i + 3] < 8) continue;
+      const r = i + 4, b = i + px * 4, l = i - 4, u = i - px * 4;
+      const da = Math.max(Math.abs(d[i + 3] - d[r + 3]), Math.abs(d[i + 3] - d[b + 3]), Math.abs(d[i + 3] - d[l + 3]), Math.abs(d[i + 3] - d[u + 3]));
+      const dl = Math.abs(lum(d, r) - lum(d, l)) + Math.abs(lum(d, b) - lum(d, u));
+      if (da > alphaCut || dl > lumaCut) out[y * px + x] = 1;
+    }
+  }
+  return out;
+}
+
+/** The character's own average brightness (for where the shadows start). */
+function meanLum(d) {
+  let sum = 0, n = 0;
+  for (let i = 0; i < d.length; i += 16) if (d[i + 3] > 200) { sum += lum(d, i); n++; }
+  return n ? Math.max(0.08, sum / n) : 0.5;
+}
+
+/** Brightness snapped to even steps — cel shading that keeps every skin
+ *  tone its own (a step is never more than half a band from the real shade). */
+const step = (L, n) => Math.min(1, (Math.floor(L * n) + 0.62) / n);
+const sat = (d, i, k, amt) => {
+  let r = d[i] * k, g = d[i + 1] * k, b = d[i + 2] * k;
+  const a = (r + g + b) / 3;
+  return [a + (r - a) * amt, a + (g - a) * amt, a + (b - a) * amt];
+};
+
+export function comicPass(d, px) {
+  const ink = edges(d, px, 90, 0.36);
+  const m = meanLum(d);
+  const cell = Math.max(5, Math.round(px / 46));
+  // Misregistration: the red plate sits a pixel to the right.
+  const red = new Uint8ClampedArray(px * px);
+  for (let i = 0, p = 0; p < px * px; p++, i += 4) red[p] = d[i];
+  for (let y = 0; y < px; y++) {
+    for (let x = 0; x < px; x++) {
+      const p = y * px + x, i = p * 4;
+      if (d[i + 3] < 8) continue;
+      if (ink[p]) { d[i] = 18; d[i + 1] = 14; d[i + 2] = 26; continue; }
+      const L = lum(d, i);
+      const k = step(L, 4) / Math.max(0.02, L);
+      const [r, g, b] = sat(d, i, k, 1.22);
+      const rr = x > 0 ? red[p - 1] * k : r;
+      d[i] = Math.min(255, rr * 0.25 + r * 0.75);
+      d[i + 1] = Math.min(255, g);
+      d[i + 2] = Math.min(255, b);
+      // Halftone dots in the shadows (darker than the character's own tone).
+      if (L < m * 0.82) {
+        const cx = (Math.floor(x / cell) + 0.5) * cell, cy = (Math.floor(y / cell) + 0.5) * cell;
+        const rad = cell * 0.46 * Math.min(1, (m * 0.82 - L) / (m * 0.5) + 0.35);
+        if ((x - cx) ** 2 + (y - cy) ** 2 < rad * rad) { d[i] *= 0.7; d[i + 1] *= 0.7; d[i + 2] *= 0.78; }
+      }
+    }
+  }
+}
+
+export function flatPass(d, px) {
+  const ink = edges(d, px, 70, 0.5);
+  for (let p = 0, i = 0; p < px * px; p++, i += 4) {
+    if (d[i + 3] < 8) continue;
+    if (ink[p]) { d[i] = 22; d[i + 1] = 18; d[i + 2] = 30; d[i + 3] = 255; continue; }
+    // Flat colour: three brightness steps, cleaner colour, solid edges.
+    const L = lum(d, i);
+    const k = step(L, 3) / Math.max(0.02, L);
+    const [r, g, b] = sat(d, i, k, 1.06);
+    const q = (v) => Math.min(255, Math.max(0, Math.round(v / 20) * 20));
+    d[i] = q(r); d[i + 1] = q(g); d[i + 2] = q(b);
+    d[i + 3] = d[i + 3] > 120 ? 255 : 0;
+  }
 }
 
 function ring(ctx, c, R, rgb, e) {

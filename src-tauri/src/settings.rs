@@ -339,6 +339,10 @@ pub struct Settings {
     /// (boost.rs). Only looks — a few cheap system calls every 5 s.
     #[serde(default = "default_true")]
     pub pc_boost: bool,
+    /// Match Izuki's voice and character: a woman's face speaks with a woman's
+    /// voice, picking a man's voice brings up a man's face. Off = my own choice.
+    #[serde(default = "default_true")]
+    pub match_voice_face: bool,
     /// …and do the safe part by itself (old temp files, hogging background
     /// helpers) — never a window you're using.
     #[serde(default)]
@@ -846,6 +850,7 @@ impl Default for Settings {
             send_bug_reports: true,
             duck_while_listening: true,
             pc_boost: true,
+            match_voice_face: true,
             pc_boost_auto: false,
             cloud_ears: true,
             speech_language: default_speech_language(),

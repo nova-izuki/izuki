@@ -107,6 +107,12 @@
   #face-howto { margin: 6px 0; font-size: 13.5px; }
   #face-howto ol { padding-left: 20px; line-height: 1.6; }
   .swatch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; margin-right: 12px; }
+  .tones { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 8px 0; font-size: 13px; }
+  .tones span { width: 100%; opacity: .75; }
+  .tone { width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(255,255,255,.3); padding: 0; cursor: pointer; transition: transform .15s; }
+  .tone:active { transform: scale(.9); }
+  .tone.on { outline: 2px solid var(--accent, #5eead4); outline-offset: 2px; }
+  .tones[hidden], #ft-frame-wrap[hidden], #ft-hair-wrap[hidden] { display: none; }
   .swatch input[type="color"] { width: 34px; height: 26px; border: 1px solid var(--line); border-radius: 6px; background: none; padding: 0; }
   .chip.primary { background: var(--teal); color: var(--ground); border-color: transparent; font-weight: 700; }
   .msg .thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
@@ -395,16 +401,21 @@
           <ol><li>Open <a href="https://avaturn.me" target="_blank" rel="noopener">avaturn.me</a> and sign in.</li><li>Take or upload a front photo of your face.</li><li>Pick hair and clothes, then <b>Export → Download .glb</b>.</li><li>Come back and tap: <button class="chip primary" id="face-me-pick" type="button">Choose my .glb</button></li></ol>
           <p class="note">Your face has a real face rig: the mouth moves with Izuki's voice, the eyes blink and look around. It stays only on this phone.</p>
         </details>
+        <label class="swatch"><input type="checkbox" id="ft-match" checked> Match voice and character</label>
         <p class="note" id="face-note" aria-live="polite"></p>
       </div>
       <div id="face-tune" hidden>
-        <div class="row"><label class="swatch">Skin tone <input type="color" id="ft-tint" value="#ffffff"></label><label class="swatch" id="ft-hair-wrap">Hair <input type="color" id="ft-hair" value="#2b1d16"></label><label class="swatch">Glow <input type="color" id="ft-accent" value="#a78bfa"></label></div>
+        <div class="tones" aria-label="Skin tone"><span>Skin tone</span><button class="tone" type="button" data-tint="#ffffff" title="As made" aria-label="As made" style="background:#ffffff"></button><button class="tone" type="button" data-tint="#fff1ea" title="Porcelain" aria-label="Porcelain" style="background:#fff1ea"></button><button class="tone" type="button" data-tint="#f6d9c4" title="Fair" aria-label="Fair" style="background:#f6d9c4"></button><button class="tone" type="button" data-tint="#d9a77e" title="Tan" aria-label="Tan" style="background:#d9a77e"></button><button class="tone" type="button" data-tint="#c09468" title="Olive" aria-label="Olive" style="background:#c09468"></button><button class="tone" type="button" data-tint="#9a6845" title="Brown" aria-label="Brown" style="background:#9a6845"></button><button class="tone" type="button" data-tint="#6e4630" title="Deep" aria-label="Deep" style="background:#6e4630"></button><button class="tone" type="button" data-tint="#4a2f22" title="Ebony" aria-label="Ebony" style="background:#4a2f22"></button></div>
+        <div class="tones" id="ft-hair-tones" aria-label="Hair colour"><span>Hair</span><button class="tone" type="button" data-hair="#1a1412" title="Black" aria-label="Black" style="background:#1a1412"></button><button class="tone" type="button" data-hair="#3b2a20" title="Dark brown" aria-label="Dark brown" style="background:#3b2a20"></button><button class="tone" type="button" data-hair="#6a4a32" title="Brown" aria-label="Brown" style="background:#6a4a32"></button><button class="tone" type="button" data-hair="#8a3b22" title="Auburn" aria-label="Auburn" style="background:#8a3b22"></button><button class="tone" type="button" data-hair="#d8b26e" title="Blonde" aria-label="Blonde" style="background:#d8b26e"></button><button class="tone" type="button" data-hair="#e8e2d4" title="Platinum" aria-label="Platinum" style="background:#e8e2d4"></button><button class="tone" type="button" data-hair="#9a9a9a" title="Grey" aria-label="Grey" style="background:#9a9a9a"></button><button class="tone" type="button" data-hair="#e27bb0" title="Pink" aria-label="Pink" style="background:#e27bb0"></button><button class="tone" type="button" data-hair="#4a78d8" title="Blue" aria-label="Blue" style="background:#4a78d8"></button></div>
+        <div class="row"><div class="field" style="flex:1"><label for="ft-style">Style</label><select id="ft-style"><option value="real">Real</option><option value="comic">Comic</option><option value="flat">Flat vector</option></select></div><div class="field" style="flex:1" id="ft-frame-wrap"><label for="ft-frame">Show</label><select id="ft-frame"><option value="head">Head</option><option value="shoulders">Head &amp; shoulders</option><option value="half">Half body</option><option value="full">Full body</option></select></div></div>
+        <label class="swatch"><input type="checkbox" id="ft-bare"> Without the orb</label>
+        <div class="row"><label class="swatch">Custom skin <input type="color" id="ft-tint" value="#ffffff"></label><label class="swatch" id="ft-hair-wrap">Hair <input type="color" id="ft-hair" value="#2b1d16"></label><label class="swatch">Glow <input type="color" id="ft-accent" value="#a78bfa"></label></div>
         <div class="field"><label for="ft-glow">Hologram glow</label><input id="ft-glow" type="range" min="0" max="1" step="0.05"></div>
         <div class="field"><label for="ft-gloss">Shine</label><input id="ft-gloss" type="range" min="0" max="1" step="0.05"></div>
         <div class="field"><label for="ft-scale">Size</label><input id="ft-scale" type="range" min="0.6" max="1.8" step="0.05"></div>
         <div class="field"><label for="ft-y">Height</label><input id="ft-y" type="range" min="-0.6" max="0.6" step="0.02"></div>
         <div class="field"><label for="ft-rot">Turn</label><input id="ft-rot" type="range" min="-40" max="40" step="1"></div>
-        <div class="row"><label class="swatch" id="ft-head-wrap"><input type="checkbox" id="ft-head"> Head only</label><button class="chip" id="ft-reset" type="button">Reset</button></div>
+        <div class="row"><span id="ft-head-wrap"></span><button class="chip" id="ft-reset" type="button">Reset</button></div>
       </div>
       <p class="note">Liquid glass stays the default. Clear water pulls apart and rejoins with sound. Star crystal has rotating depth; Tidal pearl has a nacre surface and fine wavefronts.</p>
       <div class="orb-studio" id="orb-studio">
@@ -2600,7 +2611,26 @@
       ensureOption(id);
       $("orb-style").value = "model:" + id;
       $("orb-style").dispatchEvent(new Event("change"));
+      // Match voice and character: a man's face speaks with a man's voice.
+      const g = F && F.faceInfo(id) ? F.faceInfo(id).gender : null;
+      if (g && store.get("matchVoiceFace", true)) {
+        const male = g === "male";
+        const now = PEOPLE.find((x) => x.id === personId) || PEOPLE[0];
+        if (MALE_VOICES.includes(now.voice) !== male) {
+          const MATE = { nova: "leo", leo: "nova", sophie: "atlas", atlas: "sophie", alfred: "sophie", kiki: "leo", ezinne: "leo" };
+          const next = PEOPLE.find((x) => x.id === MATE[now.id] && MALE_VOICES.includes(x.voice) === male) || PEOPLE.find((x) => MALE_VOICES.includes(x.voice) === male);
+          if (next) {
+            personId = next.id;
+            store.set("person", personId);
+            noteVoiceGender();
+            showWho();
+            note(`Voice switched to ${next.name} to match.`);
+          }
+        }
+      }
     };
+    $("ft-match").checked = store.get("matchVoiceFace", true);
+    $("ft-match").onchange = () => store.set("matchVoiceFace", $("ft-match").checked);
     const tile = (id, label, img, extra) => {
       const b = el("button", "face-tile");
       b.type = "button";
@@ -2646,7 +2676,18 @@
     $("face-me-file").onchange = (e) => { void add(e.target.files[0], "me"); e.target.value = ""; };
     $("face-me-pick").onclick = () => $("face-me-file").click();
     // Customise the face in use: saved per face in izuki.avatar.
-    const fields = { tint: "ft-tint", hair: "ft-hair", accent: "ft-accent", glow: "ft-glow", gloss: "ft-gloss", scale: "ft-scale", y: "ft-y", rot: "ft-rot", headOnly: "ft-head" };
+    const fields = { tint: "ft-tint", hair: "ft-hair", accent: "ft-accent", glow: "ft-glow", gloss: "ft-gloss", scale: "ft-scale", y: "ft-y", rot: "ft-rot", style: "ft-style", frame: "ft-frame", bare: "ft-bare" };
+    const setLook = (k, v) => {
+      const id = current();
+      if (!id) return;
+      const all = looks();
+      all[id] = { ...(all[id] || {}), [k]: v, ...(k === "frame" ? { headOnly: false } : {}) };
+      try { localStorage.setItem("izuki.avatar", JSON.stringify(all)); } catch {}
+      window.IzukiOrb?.face?.();
+      fill();
+    };
+    document.querySelectorAll("[data-tint]").forEach((b) => (b.onclick = () => setLook("tint", b.dataset.tint)));
+    document.querySelectorAll("[data-hair]").forEach((b) => (b.onclick = () => setLook("hair", b.dataset.hair)));
     function fill() {
       const id = current();
       $("face-tune").hidden = !id || !F;
@@ -2654,20 +2695,26 @@
       const info = F.faceInfo(id);
       const rigged = id === "me" || !!saved.find((f) => f.id === id)?.rigged;
       const look = { ...F.DEFAULT_LOOK, glow: info ? info.glow : 0, accent: info ? info.accent : "#a78bfa", ...(looks()[id] || {}) };
+      if (look.headOnly) look.frame = "head";
       for (const [k, fid] of Object.entries(fields)) {
-        if (k === "headOnly") $(fid).checked = !!look[k];
+        if (k === "bare") $(fid).checked = !!look[k];
+        else if (k === "style") $(fid).value = look.style || "real";
+        else if (k === "frame") $(fid).value = look.frame || "shoulders";
         else $(fid).value = look[k] || (k === "hair" ? "#2b1d16" : "#ffffff");
       }
+      document.querySelectorAll("[data-tint]").forEach((b) => b.classList.toggle("on", (look.tint || "#ffffff") === b.dataset.tint));
+      document.querySelectorAll("[data-hair]").forEach((b) => b.classList.toggle("on", look.hair === b.dataset.hair));
       $("ft-hair-wrap").hidden = !rigged;
-      $("ft-head-wrap").hidden = !rigged;
+      $("ft-hair-tones").hidden = !rigged;
+      $("ft-frame-wrap").hidden = !rigged;
     }
     for (const [k, fid] of Object.entries(fields)) {
       $(fid).oninput = $(fid).onchange = () => {
         const id = current();
         if (!id) return;
         const all = looks();
-        const v = k === "headOnly" ? $(fid).checked : $(fid).type === "range" ? Number($(fid).value) : $(fid).value;
-        all[id] = { ...(all[id] || {}), [k]: v };
+        const v = k === "bare" ? $(fid).checked : $(fid).type === "range" ? Number($(fid).value) : $(fid).value;
+        all[id] = { ...(all[id] || {}), [k]: v, ...(k === "frame" ? { headOnly: false } : {}) };
         try { localStorage.setItem("izuki.avatar", JSON.stringify(all)); } catch {}
         window.IzukiOrb?.face?.();
       };

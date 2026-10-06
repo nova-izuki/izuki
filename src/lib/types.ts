@@ -397,6 +397,8 @@ export interface Settings {
   cloud_ears: boolean;
   /** PC Boost: notice a struggling PC and offer to speed it up. */
   pc_boost: boolean;
+  /** Match the voice and the character's gender (off = my own choice). */
+  match_voice_face: boolean;
   /** …and do the safe part (old temp files, hogging background helpers) by itself. */
   pc_boost_auto: boolean;
   /** Language Izuki should expect while listening; "auto" detects it. */

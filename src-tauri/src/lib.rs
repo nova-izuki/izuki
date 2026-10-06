@@ -312,6 +312,7 @@ pub fn run() {
             commands::reminder_remove,
             commands::alarm_snooze,
             commands::boost_health,
+            commands::voice_for_face,
             commands::boost_now,
             commands::cancel_task,
             commands::quit_app,

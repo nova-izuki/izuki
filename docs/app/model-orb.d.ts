@@ -16,7 +16,19 @@ export interface FaceLook {
   rot: number;
   /** Rigged models: hide the body, just the head. */
   headOnly: boolean;
+  /** How much of a rigged character shows. */
+  frame: "head" | "shoulders" | "half" | "full";
+  /** Without the orb: just the character, floating free. */
+  bare: boolean;
+  /** "real", "comic" (Spider-Verse-like) or "flat" (flat vector). */
+  style: "real" | "comic" | "flat";
 }
+
+/** One-tap skin tones and hair colours: [name, "#rrggbb"]. */
+export const SKIN_TONES: Array<[string, string]>;
+export const HAIR_COLOURS: Array<[string, string]>;
+export function comicPass(data: Uint8ClampedArray, px: number): void;
+export function flatPass(data: Uint8ClampedArray, px: number): void;
 
 export interface FaceInfo {
   id: string;

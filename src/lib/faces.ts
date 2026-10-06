@@ -30,6 +30,37 @@ export function faceFor(settings: Settings, style: string = settings.orb_style):
   return { custom: faceLooks(settings.avatar)[faceId(style)] ?? null };
 }
 
+/** The built-in faces' genders, and each one's counterpart (same family). */
+const FACE_GENDER: Record<string, "male" | "female"> = {
+  "holo-female": "female",
+  "holo-male": "male",
+  "lightskin-female": "female",
+  "black-male": "male",
+};
+const COUNTERPART: Record<string, string> = {
+  "holo-female": "holo-male",
+  "holo-male": "holo-female",
+  "lightskin-female": "black-male",
+  "black-male": "lightskin-female",
+};
+
+/** A built-in face's gender (null for your own faces — not guessed). */
+export function faceGender(style: string): "male" | "female" | null {
+  return isFace(style) ? FACE_GENDER[faceId(style)] ?? null : null;
+}
+
+/**
+ * "Match voice and character": the face to show for a voice of this gender,
+ * in the same family (hologram ↔ hologram) — or null to leave the look alone
+ * (a plain orb, your own face, or one that already matches).
+ */
+export function faceForVoice(style: string, male: boolean): string | null {
+  const g = faceGender(style);
+  if (!g || (g === "male") === male) return null;
+  const other = COUNTERPART[faceId(style)];
+  return other ? `model:${other}` : null;
+}
+
 /** settings.avatar with one face's look changed (null resets it). */
 export function withLook(raw: string | undefined, id: string, look: Partial<FaceLook> | null): string {
   const all = faceLooks(raw);

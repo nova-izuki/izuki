@@ -449,6 +449,30 @@ pub fn persona(id: &str) -> &'static Persona {
     PERSONAS.iter().find(|p| p.id == id).unwrap_or(&PERSONAS[0])
 }
 
+/// Whether a character speaks with a man's voice (its offline voice says so:
+/// "am_…"/"bm_…" are men, "af_…"/"bf_…" women).
+pub fn is_male(p: &Persona) -> bool {
+    p.kokoro.chars().nth(1) == Some('m')
+}
+
+/// The character like `current` — same language and accent, never a spicy
+/// one — but with a man's (`male`) or a woman's voice. For "match the voice
+/// to the face": a woman's face speaks with a woman's voice.
+pub fn persona_with_gender(current: &str, male: bool) -> &'static Persona {
+    let me = persona(current);
+    if is_male(me) == male {
+        return me;
+    }
+    let ok = |p: &&Persona| !p.spicy && is_male(p) == male;
+    PERSONAS
+        .iter()
+        .filter(ok)
+        .find(|p| p.lang == me.lang && p.group == me.group)
+        .or_else(|| PERSONAS.iter().filter(ok).find(|p| p.lang == me.lang))
+        .or_else(|| PERSONAS.iter().find(|p| p.id == if male { "leo" } else { "nova" }))
+        .unwrap_or(me)
+}
+
 /// The character in use, with the user's own tweaks applied.
 pub struct Active {
     pub persona: &'static Persona,
@@ -814,6 +838,19 @@ async fn edge_once(text: &str, voice: &str, rate: i32, pitch: i32) -> Result<Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_face_gets_a_voice_of_its_own_gender_in_the_same_language() {
+        assert!(!is_male(persona("nova")));
+        let m = persona_with_gender("nova", true);
+        assert!(is_male(m) && !m.spicy, "{}", m.id);
+        assert_eq!(persona_with_gender("nova", false).id, "nova");
+        // Nigerian Pidgin stays Pidgin: Amaka ↔ Chidi.
+        let chidi = persona("chidi");
+        let other = persona_with_gender("chidi", !is_male(chidi));
+        assert_eq!(other.lang, chidi.lang, "{}", other.id);
+        assert_ne!(is_male(other), is_male(chidi));
+    }
 
     #[test]
     fn azure_request_names_the_voice_and_its_language() {
