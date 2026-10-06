@@ -72,8 +72,38 @@ async function run(op, args) {
     case "open":
       await chrome.tabs.update(tab.id, { url: String(args.url) });
       return true;
+    case "readlinks":
+      // Look-ahead: pages linked from this one, read quietly with your own
+      // sign-ins so the answer can come from behind the link.
+      return await Promise.all((args.urls || []).slice(0, 4).map((u) => readLinked(String(u))));
     default:
       throw new Error(`unknown request: ${op}`);
+  }
+}
+
+/** A linked page's words (no scripts or menus), read in the background. */
+async function readLinked(url) {
+  try {
+    if (!/^https?:/i.test(url)) return { url, text: "" };
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch(url, { credentials: "include", signal: ctrl.signal, redirect: "follow" });
+    clearTimeout(timer);
+    const type = r.headers.get("content-type") || "";
+    if (!r.ok || !/text\/html|text\/plain|application\/xhtml/.test(type)) return { url, text: "" };
+    const html = (await r.text()).slice(0, 600000);
+    const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "";
+    const text = html
+      .replace(/<(script|style|noscript|svg|nav|header|footer|template)[\s\S]*?<\/\1>/gi, " ")
+      .replace(/<br\s*\/?>|<\/(p|div|li|h[1-6]|tr)>/gi, "\n")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n\s*\n+/g, "\n")
+      .trim();
+    return { url, title: title.trim(), text: text.slice(0, 3000) };
+  } catch {
+    return { url, text: "" };
   }
 }
 

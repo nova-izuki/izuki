@@ -139,6 +139,7 @@ mod tests {
             value: String::new(),
             focused: false,
             below: false,
+            section: String::new(),
             identity: None,
         }
     }
@@ -197,7 +198,7 @@ mod look {
         for i in 0..24u32 {
             cs.push(Control { id: i + 1, kind: "Button".into(), name: String::new(),
                 rect: crate::model::Rect { x: 60 + (i as i32 % 4) * 200, y: 120 + (i as i32 / 4) * 180, w: 160, h: 50 },
-                hidden: false, value: String::new(), focused: false, below: false, identity: None });
+                hidden: false, value: String::new(), focused: false, below: false, section: String::new(), identity: None });
         }
         super::draw(&mut f, &desk, &cs);
         for p in f.bgra.chunks_mut(4) {

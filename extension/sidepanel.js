@@ -50,6 +50,7 @@ async function readTab(tabId) {
       func: () => ({
         text: (document.body ? document.body.innerText : "").replace(/\n{3,}/g, "\n\n").slice(0, 14000),
         selection: String(getSelection() || "").slice(0, 3000),
+        links: [...document.links].slice(0, 400).map((a) => ({ name: (a.innerText || a.title || a.getAttribute("aria-label") || "").trim().slice(0, 80), href: a.href })).filter((l) => l.name && /^https?:/.test(l.href)),
       }),
     });
     return r ? r.result : null;
@@ -182,6 +183,44 @@ function hello() {
   log.appendChild(box);
 }
 
+// ---- look-ahead: the answer is often behind a link -------------------------------------
+
+const RISKY = /logout|log out|log-out|signout|sign out|sign-out|delete|remove|unsubscribe|cancel|submit|checkout|buy|pay|purchase|order|confirm|approve|reset/i;
+const SKIP = new Set(["what", "which", "where", "when", "does", "this", "that", "with", "from", "have", "about", "there", "their", "page", "please", "answer", "question", "tell"]);
+const EXPLAINERS = /syllabus|instructions|details|rubric|assignment|overview|guidelines|readme|docs|documentation|faq/i;
+
+/** The page's links most related to the question (never ones whose visit could change something). */
+function relatedLinks(links, question, pageUrl, max = 3) {
+  const words = question.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !SKIP.has(w));
+  const host = (u) => { try { return new URL(u).host; } catch { return ""; } };
+  const here = host(pageUrl), seen = new Set(), out = [];
+  for (const l of links || []) {
+    if (seen.has(l.href) || l.href.split("#")[0] === pageUrl.split("#")[0] || RISKY.test(l.name + " " + l.href)) continue;
+    seen.add(l.href);
+    const name = l.name.toLowerCase();
+    let score = words.filter((w) => name.includes(w)).length * 10 + (EXPLAINERS.test(name) ? 3 : 0) + (host(l.href) === here ? 2 : 0);
+    if (score >= 10) out.push({ ...l, score });
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, max);
+}
+
+/** A linked page's words, read quietly with your own sign-ins. */
+async function readLinked(link) {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch(link.href, { credentials: "include", signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok || !/html|text\/plain/.test(r.headers.get("content-type") || "")) return null;
+    const doc = new DOMParser().parseFromString((await r.text()).slice(0, 600000), "text/html");
+    doc.querySelectorAll("script,style,noscript,svg,nav,header,footer,template").forEach((n) => n.remove());
+    const text = (doc.body ? doc.body.innerText || doc.body.textContent : "").replace(/\s*\n\s*\n+/g, "\n").replace(/[ \t]+/g, " ").trim();
+    return text ? { title: link.name, url: link.href, text: text.slice(0, 3000) } : null;
+  } catch {
+    return null;
+  }
+}
+
 async function ask(question) {
   question = String(question || "").trim();
   if (!question || busy || !current) return;
@@ -196,6 +235,15 @@ async function ask(question) {
 
   const share = $("share").checked;
   const page = share ? await readTab(current.id) : null;
+  // Look-ahead: read the most related linked pages too.
+  let linked = [];
+  if (page && $("deep").checked) {
+    const picks = relatedLinks(page.links, question, current.url);
+    if (picks.length) {
+      wait.innerHTML = `<span class="dots"><span></span><span></span><span></span></span> <small style="padding:0;background:none">Reading ${picks.map((p) => "“" + esc(p.name) + "”").join(", ")}…</small>`;
+      linked = (await Promise.all(picks.map(readLinked))).filter(Boolean);
+    }
+  }
   const tabs = [];
   for (const id of extra) {
     const t = await chrome.tabs.get(id).catch(() => null);
@@ -210,6 +258,7 @@ async function ask(question) {
     text: page ? page.text : "",
     selection: page ? page.selection : "",
     tabs,
+    linked,
     history,
   };
   let answer, ok = false;
@@ -223,6 +272,7 @@ async function ask(question) {
   }
   wait.remove();
   if (share && !page && ok) divider("This page can't be read (a browser page or a PDF viewer) — I answered without it.");
+  if (ok && linked.length) divider(`Also read: ${linked.map((l) => l.title).join(", ")}`);
   bubble("assistant", answer || "I couldn't come up with an answer.", !ok);
   if (ok) {
     history.push({ role: "user", content: question }, { role: "assistant", content: answer });

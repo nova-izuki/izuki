@@ -169,6 +169,7 @@ mod drawn_target_tests {
     use super::*;
     fn control(id: u32, rect: Rect) -> crate::uia::Control {
         crate::uia::Control { id, kind: "RadioButton".into(), name: "Option".into(), rect, hidden: false, value: String::new(), focused: false, below: false,
+            section: String::new(),
             identity: Some(crate::uia::ControlIdentity { runtime_id: vec![id as i32], window: 1, rect, kind: "RadioButton".into(), name: "Option".into() }) }
     }
     #[test]

@@ -375,6 +375,7 @@ fn merge_page(controls: &mut Vec<uia::Control>, page_text: &mut String, page: cr
             value: String::new(),
             focused: false,
             below: false,
+            section: String::new(),
             identity: None,
         });
         next += 1;
@@ -430,7 +431,18 @@ fn ask_model(
     // view of the page. The browser's own buttons (tabs, address bar) stay.
     if crate::ext::connected() && is_browser(&uia::foreground_app()) {
         if let Some(page) = crate::ext::snapshot() {
+            // A question whose answer may be behind a link: read the most
+            // related linked pages in the background, with your sign-ins.
+            let behind = if crate::ext::is_question(&session.prompt) {
+                crate::ext::read_links(&crate::ext::related_links(&page, &session.prompt, 3))
+            } else {
+                String::new()
+            };
             merge_page(&mut controls, &mut page_text, page);
+            if !behind.is_empty() {
+                page_text.push_str("\n");
+                page_text.push_str(&behind);
+            }
         }
     }
     if zoomed {
@@ -2680,6 +2692,7 @@ mod speed_tests {
             value: String::new(),
             focused: false,
             below: false,
+            section: String::new(),
             identity: None,
         };
         let cs = vec![control(1, "Subscribe"), control(2, "Subscribed channels"), control(3, "Sign in")];

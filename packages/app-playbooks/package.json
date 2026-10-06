@@ -1,0 +1,9 @@
+{
+  "name": "@izuki/app-playbooks",
+  "version": "1.0.0",
+  "description": "How desktop apps really work, for AI agents: each app's own keyboard shortcuts, what to do instead of dragging on canvas apps, and what never to do. Plain JSON, MIT.",
+  "main": "playbooks.json",
+  "files": ["playbooks.json", "README.md"],
+  "license": "MIT",
+  "keywords": ["ai-agent", "computer-use", "desktop-automation", "keyboard-shortcuts", "windows"]
+}

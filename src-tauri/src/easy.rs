@@ -445,6 +445,7 @@ mod tests {
             value: String::new(),
             focused: false,
             below: false,
+            section: String::new(),
             identity: None,
         }
     }

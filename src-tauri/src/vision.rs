@@ -369,6 +369,9 @@ impl VisionRequest {
             if c.below {
                 extra.push_str(" (further down the page — target it and Izuki scrolls to it)");
             }
+            if !c.section.is_empty() && c.section != c.name {
+                extra.push_str(&format!(" in \"{}\"", c.section.chars().take(32).collect::<String>()));
+            }
             if c.name.is_empty() {
                 s.push_str(&format!("[{}] {} (no label) at {},{}{extra}\n", c.id, kind, ix, iy));
             } else {
@@ -386,6 +389,7 @@ impl VisionRequest {
         if !self.app.is_empty() {
             s.push_str(&format!("Foreground app: {}\n", self.app));
         }
+        s.push_str(&crate::playbooks::prompt_block(&self.app, &self.window_title));
         if !self.window_title.is_empty() {
             s.push_str(&format!("Window title: {}\n", self.window_title));
         }
@@ -1607,7 +1611,7 @@ mod tests {
     use crate::uia::Control;
 
     fn control(id: u32, x: i32, y: i32) -> Control {
-        Control { id, kind: "Button".into(), name: format!("Button {id}"), rect: Rect { x, y, w: 20, h: 10 }, hidden: false, value: String::new(), focused: false, below: false, identity: None }
+        Control { id, kind: "Button".into(), name: format!("Button {id}"), rect: Rect { x, y, w: 20, h: 10 }, hidden: false, value: String::new(), focused: false, below: false, section: String::new(), identity: None }
     }
 
     fn step(v: Value) -> ActionStep {

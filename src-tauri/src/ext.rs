@@ -224,6 +224,13 @@ fn chat_messages(v: &Value, title: &str, text: &str) -> Vec<Value> {
     if !selection.is_empty() {
         context.push_str(&format!("\n\nThe user has this selected on the page:\n{}", cut(selection, 3000)));
     }
+    for linked in v["linked"].as_array().into_iter().flatten().take(4) {
+        let t = linked["title"].as_str().unwrap_or_default();
+        let body = cut(linked["text"].as_str().unwrap_or_default(), 3000);
+        if !body.trim().is_empty() {
+            context.push_str(&format!("\n\n--- A page linked from this one, read in the background: {t} ---\n{body}"));
+        }
+    }
     for tab in v["tabs"].as_array().into_iter().flatten().take(4) {
         let t = tab["title"].as_str().unwrap_or_default();
         let body = cut(tab["text"].as_str().unwrap_or_default(), 5000);
@@ -277,6 +284,84 @@ pub struct Page {
     pub elements: Vec<Element>,
     /// Where the page itself sits on screen (below the tabs and address bar).
     pub viewport: crate::model::Rect,
+}
+
+// ---------------------------------------------------------------------------
+// Look-ahead: the answer is often behind a link on the page (the syllabus,
+// the assignment details). The pages most related to the question are read
+// in the background by the browser itself (with your sign-ins), never shown.
+// ---------------------------------------------------------------------------
+
+/// Links whose mere visit could change something: never read in the background.
+fn risky_link(name: &str, url: &str) -> bool {
+    let t = format!("{name} {url}").to_lowercase();
+    ["logout", "log out", "log-out", "signout", "sign out", "sign-out", "delete", "remove", "unsubscribe", "cancel", "submit",
+     "checkout", "buy", "pay", "purchase", "order", "confirm", "approve", "reset", "javascript:", "mailto:", "tel:"]
+        .iter()
+        .any(|w| t.contains(w))
+}
+
+/// Does this sound like a question to answer (rather than a job to do)?
+pub fn is_question(prompt: &str) -> bool {
+    let p = prompt.trim().to_lowercase();
+    p.contains('?')
+        || ["what", "why", "how", "who", "when", "which", "where", "explain", "answer", "solve", "tell me", "summar", "is ", "are ", "does ", "do ", "can ", "help me understand", "due"]
+            .iter()
+            .any(|w| p.starts_with(w))
+}
+
+/// The page's links most related to the question: (name, url), best first.
+pub fn related_links(page: &Page, question: &str, max: usize) -> Vec<(String, String)> {
+    const SKIP: &[&str] = &["what", "which", "where", "when", "does", "this", "that", "with", "from", "have", "about", "there", "their", "page", "please", "answer", "question", "tell"];
+    let words: Vec<String> = question
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() >= 3 && !SKIP.contains(w))
+        .map(str::to_string)
+        .collect();
+    let host = |u: &str| u.split("//").nth(1).and_then(|r| r.split('/').next()).unwrap_or("").to_string();
+    let here = host(&page.url);
+    let mut scored: Vec<(i32, String, String)> = Vec::new();
+    for e in &page.elements {
+        let Some(url) = e.href.as_deref() else { continue };
+        if !url.starts_with("http") || url.split('#').next() == page.url.split('#').next() || risky_link(&e.name, url) {
+            continue;
+        }
+        let name = e.name.to_lowercase();
+        let mut score: i32 = words.iter().filter(|w| name.contains(w.as_str())).count() as i32 * 10;
+        // Course pages people usually mean, even without the exact words.
+        if ["syllabus", "instructions", "details", "rubric", "assignment", "overview", "guidelines", "readme", "docs", "documentation", "faq"].iter().any(|k| name.contains(k)) {
+            score += 3;
+        }
+        if host(url) == here {
+            score += 2;
+        }
+        if score >= 10 && !scored.iter().any(|(_, _, u)| u == url) {
+            scored.push((score, e.name.clone(), url.to_string()));
+        }
+    }
+    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    scored.into_iter().take(max).map(|(_, n, u)| (n, u)).collect()
+}
+
+/// Read those pages in the background (through the browser, so school and
+/// work sign-ins apply): their words, labelled, ready to go to the brain.
+pub fn read_links(links: &[(String, String)]) -> String {
+    if links.is_empty() {
+        return String::new();
+    }
+    let urls: Vec<&str> = links.iter().map(|(_, u)| u.as_str()).collect();
+    let Ok(v) = request("readlinks", serde_json::json!({ "urls": urls }), Duration::from_secs(7)) else { return String::new() };
+    let mut out = String::new();
+    for (i, page) in v.as_array().into_iter().flatten().enumerate() {
+        let text = page["text"].as_str().unwrap_or_default().trim();
+        if text.is_empty() {
+            continue;
+        }
+        let name = links.get(i).map(|(n, _)| n.as_str()).unwrap_or_default();
+        out.push_str(&format!("--- Linked page \"{name}\" (read in the background) ---\n{}\n", text.chars().take(2500).collect::<String>()));
+    }
+    out
 }
 
 /// Ask for the page in front. `None` when there's no extension.
@@ -381,5 +466,35 @@ mod tests {
     #[test]
     fn not_connected_means_no_requests() {
         assert!(request("snapshot", json!({}), Duration::from_millis(10)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod look_ahead_tests {
+    use super::*;
+
+    fn el(name: &str, href: &str) -> Element {
+        Element { dom_id: "x".into(), kind: "Link".into(), name: name.into(), href: Some(href.into()), rect: crate::model::Rect { x: 0, y: 0, w: 10, h: 10 } }
+    }
+
+    #[test]
+    fn reads_the_links_that_matter_and_never_risky_ones() {
+        let page = Page {
+            url: "https://school.edu/course/1".into(),
+            title: "Course".into(),
+            text: String::new(),
+            elements: vec![
+                el("Grades", "https://school.edu/grades"),
+                el("Assignment 3 guidelines", "https://school.edu/a3"),
+                el("Log out", "https://school.edu/logout"),
+                el("Delete assignment 3", "https://school.edu/a3/delete"),
+            ],
+            viewport: crate::model::Rect { x: 0, y: 0, w: 100, h: 100 },
+        };
+        let links = related_links(&page, "when is assignment 3 due?", 3);
+        assert_eq!(links.first().map(|(n, _)| n.as_str()), Some("Assignment 3 guidelines"));
+        assert!(links.iter().all(|(n, _)| !n.contains("Log out") && !n.contains("Delete")));
+        assert!(is_question("what does this error mean"));
+        assert!(!is_question("open youtube"));
     }
 }

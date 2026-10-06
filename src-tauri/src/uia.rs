@@ -159,6 +159,9 @@ pub struct Control {
     /// Further down the page (scrolled out of view). Acting on it has the
     /// app scroll it into view first — see [`scroll_into_view`].
     pub below: bool,
+    /// The named part of the app it sits in ("Course menu", "Quiz",
+    /// "Toolbar"), so a model can tell a sidebar link from a question.
+    pub section: String,
     pub identity: Option<ControlIdentity>,
 }
 
@@ -643,9 +646,10 @@ fn collect(
     // link half-scrolled under the address bar used to be clicked at the
     // middle of its *whole* box — on the address bar or a tab. Now its box
     // is cut to the visible part, and that's where the click goes.
-    let mut stack: Vec<(uiautomation::UIElement, Option<Rect>)> = vec![(root, window)];
+    // Each element also carries the named section it's in (its "root").
+    let mut stack: Vec<(uiautomation::UIElement, Option<Rect>, std::rc::Rc<str>)> = vec![(root, window, std::rc::Rc::from(""))];
 
-    while let Some((el, view)) = stack.pop() {
+    while let Some((el, view, section)) = stack.pop() {
         visited += 1;
         if visited > node_budget
             || std::time::Instant::now() > deadline
@@ -697,6 +701,7 @@ fn collect(
                             value: String::new(),
                             focused: false,
                             below: true,
+                            section: section.to_string(),
                             identity: el.get_runtime_id().ok().map(|runtime_id| ControlIdentity { runtime_id, window: window_id, rect, kind: format!("{ct:?}"), name: el.get_name().unwrap_or_default() }),
                         });
                     } else if let Some(rect) = rect
@@ -729,6 +734,7 @@ fn collect(
                             value,
                             focused,
                             below: false,
+                            section: section.to_string(),
                             identity: el.get_runtime_id().ok().map(|runtime_id| ControlIdentity { runtime_id, window: window_id, rect, kind: format!("{ct:?}"), name: el.get_name().unwrap_or_default() }),
                         });
                     }
@@ -749,6 +755,17 @@ fn collect(
                 .or(view),
             _ => view,
         };
+        // A named region starts a new section for everything inside it.
+        let child_section = {
+            use uiautomation::types::ControlType as C;
+            let region = matches!(
+                el.get_control_type(),
+                Ok(C::Group | C::List | C::Tree | C::ToolBar | C::MenuBar | C::Menu | C::Tab | C::Table | C::DataGrid | C::StatusBar | C::Header | C::Pane | C::Window)
+            );
+            let name = if region { el.get_name().unwrap_or_default() } else { String::new() };
+            let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+            if region && !name.is_empty() && name.chars().count() <= 40 { std::rc::Rc::from(name.as_str()) } else { section.clone() }
+        };
         // Depth-first, children pushed in reverse so they pop in order.
         if let Ok(first) = walker.get_first_child(&el) {
             let mut kids = vec![first];
@@ -758,7 +775,7 @@ fn collect(
                     Err(_) => break,
                 }
             }
-            stack.extend(kids.into_iter().rev().map(|k| (k, child_view)));
+            stack.extend(kids.into_iter().rev().map(|k| (k, child_view, child_section.clone())));
         }
     }
 }

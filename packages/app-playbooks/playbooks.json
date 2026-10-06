@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "about": "How desktop apps really work, for AI agents: which keys do what, and what to avoid. Shortcuts here are the apps' own defaults (Windows). 'canvas': the app draws its own interface, so accessibility trees see little — prefer the shortcuts.",
+  "apps": [
+    {
+      "id": "windows",
+      "name": "Windows",
+      "match": ["explorer.exe"],
+      "notes": [
+        "File Explorer: type a path into the address bar (Ctrl+L) instead of clicking through folders.",
+        "To find a file, use the search box (Ctrl+E) rather than scrolling."
+      ],
+      "keys": [
+        ["Ctrl+L", "go to the address bar"], ["Ctrl+E", "search this folder"], ["F2", "rename the selected file"],
+        ["Ctrl+Shift+N", "new folder"], ["Alt+Up", "up one folder"], ["Alt+Enter", "properties"],
+        ["Win+D", "show the desktop"], ["Win+Shift+S", "snip part of the screen"], ["Win+V", "clipboard history"],
+        ["Ctrl+Shift+Esc", "Task Manager"], ["Win+Left / Win+Right", "snap the window to half the screen"]
+      ]
+    },
+    {
+      "id": "browser",
+      "name": "Web browser",
+      "match": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe"],
+      "notes": [
+        "To go somewhere, put the address in the address bar (Ctrl+L, type, Enter) — no need to hunt for links.",
+        "To find words on a long page, use Find (Ctrl+F) instead of scrolling and squinting."
+      ],
+      "keys": [
+        ["Ctrl+L", "address bar"], ["Ctrl+T", "new tab"], ["Ctrl+W", "close tab"], ["Ctrl+Shift+T", "reopen closed tab"],
+        ["Ctrl+Tab", "next tab"], ["Ctrl+F", "find on page"], ["F5", "reload"], ["Alt+Left", "back"], ["Alt+Right", "forward"],
+        ["Ctrl+D", "bookmark"], ["Ctrl+H", "history"], ["Ctrl+J", "downloads"], ["Ctrl+Plus / Ctrl+Minus", "zoom"]
+      ]
+    },
+    {
+      "id": "word",
+      "name": "Microsoft Word",
+      "match": ["winword.exe"],
+      "notes": ["Format by selecting text then using the shortcut; don't hunt through the ribbon."],
+      "keys": [
+        ["Ctrl+B", "bold"], ["Ctrl+I", "italic"], ["Ctrl+U", "underline"], ["Ctrl+S", "save"], ["Ctrl+P", "print"],
+        ["Ctrl+F", "find"], ["Ctrl+H", "replace"], ["Ctrl+E", "centre"], ["Ctrl+L", "align left"], ["Ctrl+R", "align right"],
+        ["Ctrl+Enter", "page break"], ["Ctrl+K", "insert link"], ["F7", "spelling and grammar"], ["Ctrl+Z", "undo"]
+      ]
+    },
+    {
+      "id": "excel",
+      "name": "Microsoft Excel",
+      "match": ["excel.exe"],
+      "notes": [
+        "Type into a cell, then Enter (down) or Tab (right). Formulas start with =.",
+        "Jump to a cell with the Name Box (Ctrl+G, type A1, Enter) instead of scrolling."
+      ],
+      "keys": [
+        ["F2", "edit the cell"], ["Ctrl+Arrow", "jump to the edge of the data"], ["Ctrl+Shift+L", "filters on/off"],
+        ["Alt+=", "AutoSum"], ["Ctrl+;", "today's date"], ["Ctrl+1", "format cells"], ["Ctrl+Space", "select column"],
+        ["Shift+Space", "select row"], ["Ctrl+G", "go to a cell"], ["F4", "make a reference absolute (while editing)"],
+        ["Ctrl+PageDown / Ctrl+PageUp", "next / previous sheet"], ["Ctrl+S", "save"]
+      ]
+    },
+    {
+      "id": "powerpoint",
+      "name": "Microsoft PowerPoint",
+      "match": ["powerpnt.exe"],
+      "notes": [],
+      "keys": [["F5", "start the slideshow"], ["Shift+F5", "slideshow from this slide"], ["Ctrl+M", "new slide"], ["Ctrl+D", "duplicate"], ["Esc", "end the slideshow"]]
+    },
+    {
+      "id": "vscode",
+      "name": "Visual Studio Code",
+      "match": ["code.exe", "cursor.exe"],
+      "notes": ["Open any file by name with Ctrl+P; run any command by name with Ctrl+Shift+P — faster and surer than clicking menus."],
+      "keys": [
+        ["Ctrl+P", "open a file by name"], ["Ctrl+Shift+P", "command palette"], ["Ctrl+`", "terminal"], ["Ctrl+/", "comment line"],
+        ["Ctrl+Shift+F", "search all files"], ["F12", "go to definition"], ["F2", "rename symbol"], ["Ctrl+D", "select next match"],
+        ["Alt+Up / Alt+Down", "move line"], ["F5", "run / debug"], ["Ctrl+S", "save"]
+      ]
+    },
+    {
+      "id": "fl-studio",
+      "name": "FL Studio",
+      "match": ["fl64.exe", "fl.exe", "fl studio"],
+      "canvas": true,
+      "notes": [
+        "FL Studio draws its own interface: the Playlist, Channel Rack and Piano Roll are canvases, so screen controls can't see notes or clips. Use the window keys and tools below, and the menus by name.",
+        "Don't drag clips or notes pixel by pixel. Set the snap (magnet) first so placements land on the grid, select what you want, then use a tool or the quantize command.",
+        "To bring in a beat or melody you made elsewhere, drag the .mid file onto the Playlist or a channel — far more exact than drawing notes by hand."
+      ],
+      "keys": [
+        ["F5", "Playlist"], ["F6", "Channel Rack"], ["F7", "Piano Roll"], ["F9", "Mixer"], ["Space", "play / stop"],
+        ["Ctrl+S", "save"], ["Ctrl+Z", "undo"], ["Ctrl+A", "select all (in the window in front)"], ["Ctrl+Q", "quick quantize"],
+        ["P", "paint tool"], ["D", "delete tool"], ["T", "mute tool"], ["C", "slice tool"], ["E", "select tool"],
+        ["Ctrl+R", "export as WAV"]
+      ]
+    },
+    {
+      "id": "ableton",
+      "name": "Ableton Live",
+      "match": ["ableton live", "live.exe"],
+      "canvas": true,
+      "notes": ["Arrangement clips are on a canvas: put the playhead where you want, then split there rather than dragging edges."],
+      "keys": [["Tab", "Session / Arrangement view"], ["Space", "play / stop"], ["Ctrl+E", "split clip at the selection"], ["Ctrl+J", "consolidate"], ["Ctrl+U", "quantize"], ["Ctrl+D", "duplicate"], ["Ctrl+Shift+R", "export audio"]]
+    },
+    {
+      "id": "premiere",
+      "name": "Adobe Premiere Pro",
+      "match": ["adobe premiere pro.exe"],
+      "canvas": true,
+      "notes": ["Cut at the playhead (Ctrl+K) instead of aiming the razor; remove gaps with Ripple Delete instead of dragging clips together."],
+      "keys": [["Space", "play / stop"], ["Ctrl+K", "cut at the playhead"], ["C", "razor tool"], ["V", "selection tool"], ["Shift+Delete", "ripple delete"], ["I / O", "mark in / out"], ["J / K / L", "reverse / pause / forward"], ["\\", "fit the timeline"], ["Ctrl+M", "export"]]
+    },
+    {
+      "id": "capcut",
+      "name": "CapCut",
+      "match": ["capcut.exe"],
+      "canvas": true,
+      "notes": ["Split at the playhead (Ctrl+B) instead of dragging clip edges."],
+      "keys": [["Space", "play / pause"], ["Ctrl+B", "split at the playhead"], ["Delete", "delete the selected clip"], ["Ctrl+Z", "undo"]]
+    },
+    {
+      "id": "photoshop",
+      "name": "Adobe Photoshop",
+      "match": ["photoshop.exe"],
+      "canvas": true,
+      "notes": ["Pick a tool by its key, work on its own layer (Ctrl+J or Ctrl+Shift+N), and use Free Transform (Ctrl+T) to resize or rotate exactly."],
+      "keys": [
+        ["V", "move"], ["M", "marquee select"], ["L", "lasso"], ["W", "quick select"], ["C", "crop"], ["B", "brush"], ["E", "eraser"],
+        ["T", "type"], ["Ctrl+T", "free transform"], ["Ctrl+J", "duplicate layer"], ["Ctrl+Shift+N", "new layer"],
+        ["Ctrl+0", "fit on screen"], ["[ / ]", "brush smaller / bigger"], ["X", "swap colours"], ["D", "default colours"], ["Ctrl+Shift+S", "save as"]
+      ]
+    },
+    {
+      "id": "blender",
+      "name": "Blender",
+      "match": ["blender.exe"],
+      "canvas": true,
+      "notes": ["Keys act on what's under the mouse pointer: keep the pointer over the 3D view. Type exact numbers after G/R/S (e.g. S 2 Enter) instead of dragging."],
+      "keys": [["G", "move"], ["R", "rotate"], ["S", "scale"], ["Tab", "edit / object mode"], ["Shift+A", "add"], ["X", "delete"], ["Space", "play animation"], ["F12", "render"], ["Ctrl+S", "save"]]
+    },
+    {
+      "id": "figma",
+      "name": "Figma",
+      "match": ["figma.exe", "figma"],
+      "canvas": true,
+      "notes": ["Figma is a canvas: pick tools by key and type exact sizes in the right-hand panel rather than dragging."],
+      "keys": [["V", "move"], ["F", "frame"], ["R", "rectangle"], ["T", "text"], ["P", "pen"], ["Ctrl+G", "group"], ["Shift+A", "auto layout"], ["Ctrl+Alt+K", "create component"]]
+    },
+    {
+      "id": "spotify",
+      "name": "Spotify",
+      "match": ["spotify.exe"],
+      "notes": [],
+      "keys": [["Space", "play / pause"], ["Ctrl+Right", "next song"], ["Ctrl+Left", "previous song"], ["Ctrl+Up / Ctrl+Down", "volume"]]
+    },
+    {
+      "id": "discord",
+      "name": "Discord",
+      "match": ["discord.exe"],
+      "notes": ["Jump to any server, channel or person with the quick switcher (Ctrl+K) instead of scrolling the sidebar."],
+      "keys": [["Ctrl+K", "quick switcher"], ["Ctrl+Shift+M", "mute"], ["Ctrl+Shift+D", "deafen"]]
+    },
+    {
+      "id": "school",
+      "name": "School sites (Blackboard, Canvas, Moodle, Google Classroom)",
+      "match": ["blackboard", "canvas", "moodle", "classroom.google"],
+      "notes": [
+        "Answer each question, and on Blackboard press Save Answer when there is one.",
+        "Never press Submit / Turn in / Finish attempt yourself — stop and let the person review and submit.",
+        "Instructions, rubrics and due dates are often behind links (Syllabus, Assignment details): read them before answering."
+      ],
+      "keys": []
+    }
+  ]
+}

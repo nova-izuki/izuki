@@ -59,6 +59,7 @@ pub mod recall;
 pub mod timers;
 pub mod activity;
 pub mod boost;
+pub mod playbooks;
 pub mod screentime;
 pub mod readaloud;
 pub mod tts;
