@@ -1456,7 +1456,9 @@ pub fn run_named_click(app: &AppHandle, store: &Arc<Store>, said: &str) -> Optio
         return None;
     }
     let controls = uia::controls_fresh_or_now(MAX_CONTROLS);
-    let c = unique_named(&wanted, &controls)?.clone();
+    // The exact name first; else a quick text-only pick from the numbered
+    // list (no screenshot): "click settings" finds "Preferences".
+    let c = unique_named(&wanted, &controls).or_else(|| pick_by_text(said, &controls))?.clone();
     let my_task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     automation::clear_abort();
     let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted();
@@ -1483,6 +1485,43 @@ pub fn run_named_click(app: &AppHandle, store: &Arc<Store>, said: &str) -> Optio
         done: true,
         ..Default::default()
     })
+}
+
+/// The semantic anchor: the app's controls as a short numbered text list
+/// (with the section each sits in), and a fast text model names the one the
+/// person means — just its number. No picture, so it's quick; anything
+/// unsure or slow (over 4 s) goes to the full look instead.
+fn pick_by_text<'a>(said: &str, controls: &'a [uia::Control]) -> Option<&'a uia::Control> {
+    let named: Vec<&uia::Control> = controls.iter().filter(|c| !c.name.is_empty() && !c.below).collect();
+    if named.len() < 2 {
+        return None;
+    }
+    let mut list = String::new();
+    for c in named.iter().take(70) {
+        let section = if c.section.is_empty() || c.section == c.name { String::new() } else { format!(" (in {})", c.section) };
+        list.push_str(&format!("{} | {} | {}{}\n", c.id, c.kind, c.name, section));
+    }
+    let msgs = vec![
+        serde_json::json!({ "role": "system", "content": "You match a request to ONE control in an app. Reply with ONLY that control's number. If none clearly fits, or it would delete, send, pay, buy, submit or sign out, reply none." }),
+        serde_json::json!({ "role": "user", "content": format!("Controls (number | kind | name):\n{list}\nRequest: \"{}\"\nNumber:", said.trim()) }),
+    ];
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(crate::chat::complete(&msgs));
+    });
+    let reply = rx.recv_timeout(Duration::from_secs(4)).ok()?.ok()?;
+    let id: u32 = reply.trim().trim_matches(|c: char| !c.is_ascii_digit()).parse().ok()?;
+    let pick = named.into_iter().find(|c| c.id == id)?;
+    // A button that's final or hard to undo is never pressed on a guess.
+    let n = pick.name.to_lowercase();
+    if ["delete", "remove", "send", "pay", "buy", "purchase", "order", "checkout", "submit", "confirm", "sign out", "log out", "uninstall", "erase", "transfer", "post", "publish"]
+        .iter()
+        .any(|f| n.contains(f))
+    {
+        return None;
+    }
+    eprintln!("[anchor] \"{said}\" → #{id} \"{}\" (text only)", pick.name);
+    Some(pick)
 }
 
 /// The name in "click X" / "press the X button", if that's all the request is.
