@@ -259,7 +259,7 @@ pub fn setup() -> Value {
     let key_of = |id: crate::settings::ProviderId| s.providers.iter().find(|p| p.id == id && !p.api_key.trim().is_empty()).map(|p| p.api_key.trim().to_string());
     use crate::settings::ProviderId as P;
     let mut brains = serde_json::Map::new();
-    for (name, id) in [("groq", P::Groq), ("openrouter", P::Openrouter), ("mistral", P::Mistral)] {
+    for (name, id) in [("groq", P::Groq), ("openrouter", P::Openrouter), ("mistral", P::Mistral), ("meta", P::Meta)] {
         if let Some(k) = key_of(id) {
             brains.insert(name.into(), json!(k));
         }

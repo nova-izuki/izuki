@@ -355,6 +355,7 @@
           <option value="groq">Groq — free, fastest</option>
           <option value="openrouter">OpenRouter — free models</option>
           <option value="mistral">Mistral — free plan</option>
+          <option value="meta">Meta Llama — free preview (US)</option>
         </select>
       </div>
       <div id="brain-extra" hidden>
@@ -559,6 +560,7 @@
     // so it can't go stale the way a fixed ":free" name does.
     openrouter: { name: "OpenRouter", url: "https://openrouter.ai/api/v1/chat/completions", model: "openrouter/free", get: "https://openrouter.ai/keys", hint: "sk-or-v1-…" },
     mistral: { name: "Mistral", url: "https://api.mistral.ai/v1/chat/completions", model: "mistral-small-latest", get: "https://console.mistral.ai/api-keys", hint: "your Mistral key (free Experiment plan)" },
+    meta: { name: "Meta Llama", url: "https://api.llama.com/compat/v1/chat/completions", model: "Llama-4-Maverick-17B-128E-Instruct-FP8", get: "https://llama.developer.meta.com/", hint: "LLM|… (free, US)" },
   };
   let brain = store.get("brain", "gemini");
   // Characters: a personality and a Gemini voice each, like on the PC.
@@ -1107,6 +1109,7 @@
         res = await fetch(b.url, { method: "POST", signal: guard.signal, headers, body: JSON.stringify({ model: b.model, messages, stream: true, max_tokens: 900, temperature: 0.7 }) });
       } catch (e) {
         if (e.name === "AbortError") { bug(`${b.name}: no answer in 30 s`); throw new Error(TOO_SLOW); }
+        if (b === BRAINS.meta) throw new Error("I can't reach Meta Llama from this phone — pick Groq or Gemini here (Meta works on the PC).");
         throw new Error("I can't reach my AI brain — are you online?");
       }
       if (!res.ok) {
