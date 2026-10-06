@@ -2623,7 +2623,7 @@
     const look = all.toon || {};
     $("toon-render").value = look.render || "flat";
     $("toon-framing").value = look.framing || "half";
-    $("toon-orb").checked = look.orb === true;
+    $("toon-orb").checked = look.orb ?? (look.framing || "half") !== "full";
   }
   for (const [id, key] of [["toon-render", "render"], ["toon-framing", "framing"], ["toon-orb", "orb"]]) {
     $(id).onchange = () => {

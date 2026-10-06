@@ -1,3 +1,4 @@
+import { findFeatures, openFeature } from "./FeatureFinder";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -38,13 +39,20 @@ export function DrawCommandBar() {
   const busy=useIzuki(s=>s.voice.busy);
   const [text,setText]=useState('');
   const input=useRef<HTMLInputElement>(null);
+  const setTab=useIzuki(s=>s.setTab);
   const submit=()=>{const value=text.trim();if(!value||busy)return;setText('');void sendChatCommand(value);};
+  // Find anything in Izuki as you type (the same as Ctrl+K) — Enter still sends it as a command.
+  const found=text.trim().length>=2?findFeatures(text,3):[];
   return <section id="draw-command" className="izk-card relative overflow-hidden p-3.5" aria-label="Type a command">
     <div className="mb-2 flex items-center justify-between text-[11px] text-izk-muted"><label htmlFor="draw-command-input" className="font-semibold text-izk-ink">Or type it</label><span>Enter to send · Esc to stop</span></div>
     <form className="izk-inset flex items-center gap-2 rounded-[16px] p-1.5" onSubmit={e=>{e.preventDefault();submit();}}>
       <input ref={input} id="draw-command-input" value={text} onChange={e=>{setText(e.target.value);api.prefetchWhileTyping();}} onKeyDown={e=>{if(e.key==='Enter'&&e.nativeEvent.isComposing)e.preventDefault();}} disabled={busy} placeholder="Ask Izuki to do something…" className="h-[38px] min-w-0 flex-1 bg-transparent px-2 text-[12.5px] text-izk-ink outline-none placeholder:text-izk-muted/55"/>
       <button type="submit" aria-label="Send command" disabled={busy||!text.trim()} className="izk-btn-primary flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[12px] disabled:opacity-40"><Send size={15}/></button>
     </form>
+    {found.length>0&&<div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10.5px]" aria-label="Found in Izuki">
+      <span className="text-izk-muted">In Izuki:</span>
+      {found.map(f=><button key={f.label} type="button" title={f.hint} onClick={()=>{setText('');openFeature(f,setTab);}} className="izk-pill izk-no-drag px-2.5 py-1">{f.label} →</button>)}
+    </div>}
   </section>;
 }
 
@@ -406,7 +414,7 @@ export function TalkToIzuki() {
           />
         </Row>
 
-        {settings.speak_responses && <VoicePicker />}
+        <div id="draw-voice">{settings.speak_responses && <VoicePicker />}</div>
 
 
         <AnimatePresence>

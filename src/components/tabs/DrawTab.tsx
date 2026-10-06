@@ -87,6 +87,8 @@ export function DrawTab() {
       <JumpBar topId="draw-top" jumps={[
         { label: "✏️ Draw", id: "draw-hero" },
         { label: "🎙️ Hands-free", id: "draw-talk" },
+        { label: "🗣️ Voice", id: "draw-voice" },
+        { label: "🎨 Character", id: "settings-look", tab: "settings" },
         { label: "🧠 Memory", id: "draw-memory" },
         { label: "✒️ Marks", id: "draw-language" },
         { label: "⚙️ Behaviour", id: "draw-behaviour" },

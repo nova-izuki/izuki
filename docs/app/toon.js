@@ -188,8 +188,16 @@ function animate(s, o, dt, t) {
     if (g) { pose = g.kind; n = g.n; }
   }
   if (jump > 0) pose = "cheer";
-  // Now and then at rest: hands on hips.
-  if (pose === "rest" && Math.sin(t * 0.11) > 0.82) pose = "hips";
+  // Never frozen: between replies it lives — hands on hips, arms folded, a
+  // look around, a stretch, every so often.
+  if (pose === "rest" && !talking) {
+    if (!s.idleUntil || t > s.idleUntil + (s.idleGap || 4)) {
+      s.idleKind = ["rest", "hips", "think", "look", "rest", "stretch", "hips", "look"][Math.floor(Math.random() * 8)];
+      s.idleUntil = t + (s.idleKind === "stretch" ? 2 : 3 + Math.random() * 3);
+      s.idleGap = 3 + Math.random() * 6;
+    }
+    if (t < s.idleUntil && s.idleKind !== "look" && s.idleKind !== "rest") pose = s.idleKind === "stretch" ? "cheer" : s.idleKind;
+  }
   const target = POSES[pose] || POSES.rest;
   for (let side = 0; side < 2; side++) {
     for (let j = 0; j < 2; j++) {
@@ -212,7 +220,8 @@ function animate(s, o, dt, t) {
   // ---- head: look at the pointer, tilt on a question, nod on beats
   const look = o.look || null;
   const asking = pose === "ask";
-  const yawT = (look ? look.x * 0.55 : 0.12 * Math.sin(t * 0.37)) + (thinking > 0.5 ? 0.25 : 0);
+  const glance = s.idleKind === "look" && t < s.idleUntil ? Math.sin(t * 0.9) * 0.55 : 0;
+  const yawT = (look ? look.x * 0.55 : 0.12 * Math.sin(t * 0.37) + glance) + (thinking > 0.5 ? 0.25 : 0);
   const pitchT = (look ? -look.y * 0.3 : 0.05 * Math.sin(t * 0.29)) + (thinking > 0.5 ? -0.25 : 0);
   const rollT = (asking ? 0.16 : 0) + 0.04 * Math.sin(t * 0.43) + (pose === "chin" ? -0.1 : 0);
   [s.head.yaw, s.head.yv] = spring(s.head.yaw, s.head.yv, yawT, 26, 8, dt);

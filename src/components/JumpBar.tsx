@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp } from "lucide-react";
+import { useIzuki, type TabId } from "../lib/store";
 
 /** Scroll a section to just below the sticky jump bar. */
 export function jumpTo(id: string) {
@@ -16,7 +17,16 @@ export function jumpTo(id: string) {
  * The quick-jump bar at the top of a long tab: every part of it one tap away,
  * and "Top" once you've scrolled down. Each tab passes its own sections.
  */
-export function JumpBar({ jumps, topId }: { jumps: { label: string; id: string }[]; topId: string }) {
+export function JumpBar({ jumps, topId }: { jumps: { label: string; id: string; tab?: TabId }[]; topId: string }) {
+  const setTab = useIzuki((s) => s.setTab);
+  // A jump into another tab: open it, then scroll once it's drawn.
+  const go = (j: { id: string; tab?: TabId }) => {
+    if (!j.tab) return jumpTo(j.id);
+    setTab(j.tab);
+    let tries = 0;
+    const look = () => { if (document.getElementById(j.id)) jumpTo(j.id); else if (tries++ < 20) setTimeout(look, 60); };
+    setTimeout(look, 60);
+  };
   const topRef = useRef<HTMLDivElement>(null);
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
@@ -35,9 +45,9 @@ export function JumpBar({ jumps, topId }: { jumps: { label: string; id: string }
             <ArrowUp size={11} strokeWidth={2.6} /> Top
           </button>
         )}
-        {jumps.map(({ label, id }) => (
-          <button key={id} type="button" onClick={() => jumpTo(id)} className="izk-pill izk-no-drag shrink-0 px-2.5 py-1 text-[10.5px]">
-            {label}
+        {jumps.map((j) => (
+          <button key={j.id} type="button" onClick={() => go(j)} className="izk-pill izk-no-drag shrink-0 px-2.5 py-1 text-[10.5px]">
+            {j.label}
           </button>
         ))}
       </nav>

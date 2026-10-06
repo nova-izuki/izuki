@@ -456,7 +456,9 @@ export function drawGlassOrb(ctx, size, style, time, energy, thinking, mood = 0,
     const c = f.custom || {};
     const persona = style.startsWith("toon:") ? style.slice(5) : f.persona || "nova";
     // Characters stand free by default (no round orb) — unless asked for.
-    return m.drawToon(ctx, size, { persona, render: c.render, framing: c.framing, orb: c.orb === true, accent: c.accent || undefined, time, energy, thinking, mood, look: f.look, poke: f.poke, say: f.say });
+    // A full body stands free (no round orb); closer views sit in the orb — unless changed.
+    const framing = c.framing || "half";
+    return m.drawToon(ctx, size, { persona, render: c.render, framing, orb: c.orb ?? framing !== "full", accent: c.accent || undefined, time, energy, thinking, mood, look: f.look, poke: f.poke, say: f.say });
   }
   // A 3D face (a GLB model): drawn by model-orb.js once it has loaded.
   if (typeof style === "string" && style.startsWith("model:")) {

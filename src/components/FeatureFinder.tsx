@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { Search, ArrowUpRight, X } from "lucide-react";
 import { useIzuki, type TabId } from "../lib/store";
 
-const FEATURES: { label: string; hint: string; tab: TabId; id?: string }[] = [
+export type Feature = { label: string; hint: string; tab: TabId; id?: string };
+export const FEATURES: Feature[] = [
+  { label: "2D characters", hint: "character, cartoon, comic, spider-verse, flat vector, full body, half body, voice character, dre, nia, avatar", tab: "settings", id: "settings-look" },
+  { label: "Voice & accent", hint: "voice, accent, character voice, male, female, dre, nia, british, nigerian, speak responses", tab: "draw", id: "draw-voice" },
   { label: "Chat with Izuki", hint: "Conversation, files and voice", tab: "chat" },
   { label: "Connected apps", hint: "Search accounts, email, socials and integrations", tab: "apps" },
   { label: "Draw on your screen", hint: "Point, annotate and give a screen task", tab: "draw" },
@@ -34,6 +37,28 @@ const FEATURES: { label: string; hint: string; tab: TabId; id?: string }[] = [
   { label: "3D faces", hint: "3D face, hologram woman, hologram man, avatar, my face, avaturn, glb, upload face, character, skin, glow", tab: "settings", id: "settings-look" },
   { label: "Update the TV channel", hint: "Roku, update TV, install on my TV, developer password, channel version", tab: "settings", id: "settings-tv" },
 ];
+
+/** Features matching what's typed (every word must appear), best first. */
+export function findFeatures(query: string, max = 8): Feature[] {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return [];
+  return FEATURES.filter((f) => terms.every((t) => `${f.label} ${f.hint}`.toLowerCase().includes(t)))
+    .sort((a, b) => Number(b.label.toLowerCase().includes(terms[0])) - Number(a.label.toLowerCase().includes(terms[0])))
+    .slice(0, max);
+}
+
+/** Open a feature: its tab, then scroll to it once it's drawn. */
+export function openFeature(feature: Feature, setTab: (t: TabId) => void) {
+  setTab(feature.tab);
+  if (!feature.id) return;
+  let tries = 0;
+  const look = () => {
+    const target = document.getElementById(feature.id!);
+    if (target) { target.scrollIntoView({ block: "start", behavior: "smooth" }); return; }
+    if (tries++ < 30) setTimeout(look, 60);
+  };
+  setTimeout(look, 30);
+}
 
 /** Local navigation only: searching never calls an AI or spends credits. */
 export function FeatureFinder() {

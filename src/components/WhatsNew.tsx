@@ -22,6 +22,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🕺", title: "Characters that never stand still", how: "Between replies they shift their weight, glance around, put their hands on their hips, fold their arms and stretch. Faces move like real ones: the nose crinkles with a laugh, dimples with a smile, lips press while thinking. Full body stands free on your screen; closer views sit in the orb." },
+  { icon: "🔎", title: "Type to find anything", how: "The “Or type it” bar on the Draw page now also finds parts of Izuki as you type — voice, character, TV, shortcuts — one tap away. Enter still sends it as a command. The Draw page's jump bar has Voice and Character too." },
   { icon: "🎨", title: "A 2D character for every voice", how: "39 characters in Flat vector or Comic (Spider-Verse) style — they stand right on your screen, breathe, blink, wave, count on their fingers, shrug and cheer as they talk, and their mouths make the real shapes of the words.", try: { label: "Pick one", tab: "settings", id: "settings-look" } },
   { icon: "🪞", title: "Your face acts it out", how: "Your Avaturn face now talks with real mouth shapes, smiles with its cheeks and eyes, raises its brows at a question, and gestures with its arms. Full body stands free on your screen." },
   { icon: "📸", title: "Screenshots and screen recording", how: "Say or type “take a screenshot” (saved to Pictures › Screenshots and copied), “record my screen” and “stop recording” (saved to Videos › Izuki Recordings).", try: { label: "Try it", say: "take a screenshot" } },

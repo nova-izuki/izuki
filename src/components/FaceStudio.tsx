@@ -116,8 +116,8 @@ function ToonTuner() {
         ))}
       </div>
       <label className="flex items-center gap-2 text-[11px] text-izk-muted">
-        <input type="checkbox" checked={look.orb === true} onChange={(e) => set({ orb: e.target.checked })} className="accent-izk-teal" />
-        Inside a round orb (off: the character stands free)
+        <input type="checkbox" checked={look.orb ?? (look.framing ?? "half") !== "full"} onChange={(e) => set({ orb: e.target.checked })} className="accent-izk-teal" />
+        Inside a round orb (full body stands free on your screen by default)
       </label>
     </section>
   );

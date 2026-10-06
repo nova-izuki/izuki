@@ -1031,7 +1031,19 @@ function animate(model, s, o, dt) {
     // The words: mouth shapes from what's being said, gestures from what it means.
     const F = follow(s, o.say, s.e, t);
     const g = F.talking ? gestureAt(F.plan, F.st) : null;
-    const kind = grin ? "cheer" : g ? g.kind : thinking > 0.5 ? "think" : "rest";
+    // Never frozen: when it isn't talking it still lives — hands on hips, arms
+    // folded, a glance around, a stretch, every so often.
+    if (!F.talking && thinking < 0.5) {
+      if (!s.idleUntil || t > s.idleUntil + (s.idleGap || 4)) {
+        const pick = ["rest", "hips", "fold", "look", "rest", "stretch", "hips", "look"][Math.floor(Math.random() * 8)];
+        s.idleKind = pick;
+        s.idleUntil = t + (pick === "stretch" ? 2.2 : 3 + Math.random() * 3);
+        s.idleGap = 3 + Math.random() * 6;
+      }
+    } else s.idleKind = null;
+    const idle = s.idleKind && t < s.idleUntil ? s.idleKind : null;
+    const kind = grin ? "cheer" : g ? g.kind : thinking > 0.5 ? "think" : idle === "hips" || idle === "fold" || idle === "stretch" ? idle : "rest";
+    if (idle === "look") s.yawv += (Math.sin(t * 0.9) * 0.6 - s.yaw) * dt * 6;
     const want = {};
     let jaw = 0;
     if (F.talking && F.st >= 0 && !F.quiet) {
@@ -1079,6 +1091,23 @@ function animate(model, s, o, dt) {
     model.setMorph("browDownRight", kind === "chin" ? 0.3 : 0);
     model.setMorph("eyeWideLeft", happy || grin ? 0.3 : 0);
     model.setMorph("eyeWideRight", happy || grin ? 0.3 : 0);
+    // The rest of the face, the way a real one moves: the nose crinkles with a
+    // laugh, dimples with a smile, lips press and pull aside while thinking,
+    // and tiny uneven movements so it's never a mask.
+    const micro = (a, b) => 0.5 + 0.5 * Math.sin(t * a + b);
+    model.setMorph("noseSneerLeft", (grin ? 0.45 : happy ? 0.2 : 0) + Math.max(0, sm - 0.5) * 0.3);
+    model.setMorph("noseSneerRight", (grin ? 0.4 : happy ? 0.18 : 0) + Math.max(0, sm - 0.5) * 0.25);
+    model.setMorph("mouthDimpleLeft", Math.max(0, sm) * 0.35);
+    model.setMorph("mouthDimpleRight", Math.max(0, sm) * 0.3);
+    model.setMorph("mouthSmileLeft", Math.max(0, sm) * (0.95 + 0.1 * micro(0.31, 1)));
+    model.setMorph("mouthSmileRight", Math.max(0, sm) * (0.9 + 0.1 * micro(0.27, 2)));
+    const pondering = thinking > 0.5 || kind === "chin";
+    model.setMorph("mouthPressLeft", pondering ? 0.35 : 0);
+    model.setMorph("mouthPressRight", pondering ? 0.35 : 0);
+    model.setMorph("mouthLeft", pondering ? 0.25 * micro(0.6, 0) : 0);
+    model.setMorph("mouthRollLower", pondering ? 0.15 : 0);
+    model.setMorph("browOuterUpLeft", s.brow + (F.talking ? 0 : 0.06 * micro(0.23, 0.5)));
+    model.setMorph("browOuterUpRight", s.brow + (F.talking ? 0 : 0.04 * micro(0.19, 1.7)));
     // The arms act it out (the idle animation underneath, blended).
     gesture(model, s, kind, g ? g.n : 0, t, dt);
     if (model.hasBlink) { model.setMorph("eyeBlinkLeft", blink); model.setMorph("eyeBlinkRight", blink); }
@@ -1112,6 +1141,9 @@ const JAW = { aa: 0.5, O: 0.38, E: 0.26, I: 0.16, U: 0.22, RR: 0.2, CH: 0.16, kk
  * on the viewer's left, 1 on the right — the same poses the 2D characters use.
  */
 const ARM_POSES = {
+  hips: [[0.7, -1.2, -0.15, 0.25], [0.7, -1.2, -0.15, 0.25]],
+  fold: [[-0.15, -1.6, 0.55, 1.4], [-0.2, -1.65, 0.6, 1.5]],
+  stretch: [[2.6, 3.05, -0.1, -0.1], [2.6, 3.05, -0.1, -0.1]],
   wave: [null, [1.2, 2.9, 0.1, 0.15]],
   ask: [[0.35, 1.3, 0.35, 0.9], [0.35, 1.3, 0.35, 0.9]],
   shrug: [[0.45, 1.5, 0.3, 0.7], [0.45, 1.5, 0.3, 0.7]],
@@ -1161,6 +1193,12 @@ function gesture(model, s, kind, n, t, dt) {
   s.lastPose = [pose[0] || s.lastPose?.[0], pose[1] || s.lastPose?.[1]];
   // A little hop when it cheers.
   if (B.Hips && kind === "cheer") B.Hips.position.y += Math.abs(Math.sin(t * 7)) * 0.015;
+  // Weight shifts from foot to foot, the hips swaying, the spine answering.
+  if (B.Hips) {
+    const shift = Math.sin(t * 0.35) * 0.6 + Math.sin(t * 0.13) * 0.4;
+    rotateWorld(B.Hips, _q.setFromEuler(_e.set(0, shift * 0.04, shift * 0.035)));
+    if (B.Spine1) rotateWorld(B.Spine1, _q.setFromEuler(_e.set(0, -shift * 0.02, -shift * 0.05)));
+  }
 }
 
 function placeCamera(model, L, aspect = 1) {
