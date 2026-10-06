@@ -1,3 +1,4 @@
+import { JumpBar } from "../JumpBar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bell, CheckCircle2, Copy, Download, ExternalLink, Loader2, Plus, RefreshCw, Search, Sparkles, Trash2, Workflow, X } from "lucide-react";
 import { AppsCard } from "../AppsCard";
@@ -267,6 +268,12 @@ export function AppsTab() {
 
   return (
     <>
+      <JumpBar topId="apps-top" jumps={[
+        { label: "🔌 Connect", id: "apps-connect" },
+        { label: "🌐 Websites", id: "apps-browser" },
+        { label: "🔔 Heads-ups", id: "apps-headsups" },
+        { label: "⚡ Automations", id: "apps-n8n" },
+      ]} />
       <button
         type="button"
         onClick={() => openSetup(true)}
@@ -281,6 +288,7 @@ export function AppsTab() {
 
       {/* ------------------------------------------------ connect */}
       <Section
+        id="apps-connect"
         title="Connect your apps"
         hint={
           hasKey
@@ -381,6 +389,7 @@ export function AppsTab() {
       {/* ------------------------------------------------ on your screen */}
       <AppsCard />
       <Section
+        id="apps-browser"
         title="School, notes & any website — the Izuki browser"
         hint="Tap one and sign in once in the Izuki browser (it's built into Windows — nothing to install). Close it, and from then on just ask in the chat or from your phone: Izuki opens it in the background, reads it and clicks through."
       >
@@ -477,6 +486,7 @@ export function AppsTab() {
 
       {/* ------------------------------------------------ heads-ups */}
       <Section
+        id="apps-headsups"
         title="Heads-ups"
         hint="Izuki tells you things before you ask — no AI quota used for these."
         right={<Bell size={14} className="text-izk-muted" />}
@@ -532,6 +542,7 @@ export function AppsTab() {
 
       {/* ------------------------------------------------ n8n */}
       <Section
+        id="apps-n8n"
         title="Your automations (n8n)"
         hint="Bring in all your n8n workflows at once — Izuki picks the right one when you ask (“send the weekly report”)."
         right={<Workflow size={14} className="text-izk-muted" />}

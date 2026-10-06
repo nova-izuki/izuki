@@ -444,3 +444,42 @@ pub fn set_overlay_interactive(app: &AppHandle, interactive: bool) -> Result<()>
 pub fn normalise_config_size(window: &WebviewWindow) {
     let _ = window.set_min_size(Some(LogicalSize::new(460.0, 560.0)));
 }
+
+/// When a drag ends with the panel partly off its screen (its chat box hidden
+/// under the taskbar or past an edge), slide it back so all of it shows. Moves
+/// arrive many times a second while dragging: act once they've stopped.
+pub fn keep_on_screen_later(window: &tauri::Window) {
+    use std::sync::atomic::AtomicU64;
+    static LAST_MOVE: AtomicU64 = AtomicU64::new(0);
+    static WAITING: AtomicBool = AtomicBool::new(false);
+    let now = crate::model::now_ms() as u64;
+    LAST_MOVE.store(now, Ordering::Relaxed);
+    if WAITING.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let window = window.clone();
+    std::thread::spawn(move || {
+        while crate::model::now_ms() as u64 - LAST_MOVE.load(Ordering::Relaxed) < 450 {
+            std::thread::sleep(std::time::Duration::from_millis(120));
+        }
+        WAITING.store(false, Ordering::Relaxed);
+        if window.is_minimized().unwrap_or(false) || window.is_maximized().unwrap_or(false) || !window.is_visible().unwrap_or(false) {
+            return;
+        }
+        let (Ok(pos), Ok(size), Ok(Some(mon))) = (window.outer_position(), window.outer_size(), window.current_monitor()) else { return };
+        let area = mon.work_area();
+        let (ax, ay, aw, ah) = (area.position.x, area.position.y, area.size.width as i32, area.size.height as i32);
+        let (mut w, mut h) = (size.width as i32, size.height as i32);
+        // Taller or wider than the screen's free area: shrink to fit first.
+        if h > ah || w > aw {
+            w = w.min(aw);
+            h = h.min(ah);
+            let _ = window.set_size(PhysicalSize::new(w as u32, h as u32));
+        }
+        let x = pos.x.clamp(ax, ax + aw - w);
+        let y = pos.y.clamp(ay, ay + ah - h);
+        if x != pos.x || y != pos.y {
+            let _ = window.set_position(PhysicalPosition::new(x, y));
+        }
+    });
+}

@@ -1,3 +1,4 @@
+import { JumpBar } from "../JumpBar";
 import { useRef } from "react";
 import {
   ArrowUpRight,
@@ -83,8 +84,15 @@ export function DrawTab() {
   return (
     <>
       <DrawCommandBar />
+      <JumpBar topId="draw-top" jumps={[
+        { label: "✏️ Draw", id: "draw-hero" },
+        { label: "🎙️ Hands-free", id: "draw-talk" },
+        { label: "🧠 Memory", id: "draw-memory" },
+        { label: "✒️ Marks", id: "draw-language" },
+        { label: "⚙️ Behaviour", id: "draw-behaviour" },
+      ]} />
       {/* ------------------------------------------------ hero */}
-      <div className="izk-card izk-grain relative overflow-hidden p-0">
+      <div id="draw-hero" className="izk-card izk-grain relative overflow-hidden p-0">
         <div
           className="pointer-events-none absolute -left-16 -top-20 h-56 w-56 rounded-full blur-[52px]"
           style={{ background: "radial-gradient(circle,rgba(124,92,255,0.55),transparent 70%)" }}
@@ -154,14 +162,15 @@ export function DrawTab() {
       </div>
 
       {/* ------------------------------------------------ hands-free */}
-      <TalkToIzuki />
+      <div id="draw-talk"><TalkToIzuki /></div>
       <TeachingCard />
 
       {/* ------------------------------------------------ memory */}
-      <MemoryCard />
+      <div id="draw-memory"><MemoryCard /></div>
 
       {/* ------------------------------------------------ draw language */}
       <Section
+        id="draw-language"
         title="The draw language"
         hint="Four marks. Chain them 1 → 2 → 3 in one pass to build a whole workflow."
       >
@@ -271,7 +280,7 @@ export function DrawTab() {
       </Section>
 
       {/* ------------------------------------------------ quick switches */}
-      <Section title="Behaviour" hint="Tuned for speed — every switch is live, nothing to save.">
+      <Section id="draw-behaviour" title="Behaviour" hint="Tuned for speed — every switch is live, nothing to save.">
         <QuickRow
           icon={<Magnet size={14} strokeWidth={2.3} />}
           label="Magnetic hand"

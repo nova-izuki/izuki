@@ -25,6 +25,83 @@ static RECENT: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// How long ads are watched for after something is played.
 pub const AD_WATCH: Duration = Duration::from_secs(4 * 60);
 
+/// A YouTube request said any normal way.
+#[derive(Debug, Clone, PartialEq)]
+pub enum YtAsk {
+    Play(String),
+    Search(String),
+}
+
+/// "open chrome and play how to make money, skip the ads", "watch lofi on
+/// youtube", "play drake in the browser", "search youtube for cat videos".
+/// Plain "play X" (no YouTube, browser or Chrome) isn't one — it might mean
+/// Spotify or what's already on screen.
+pub fn parse_request(said: &str) -> Option<YtAsk> {
+    let mut s = said.to_lowercase().replace(['“', '”', '"'], "");
+    s = s.trim().trim_end_matches(['.', '!', '?']).trim().to_string();
+    for lead in ["hey nova", "hey izuki", "ok nova", "okay nova", "please", "can you", "could you", "would you"] {
+        if let Some(r) = s.strip_prefix(lead) {
+            s = r.trim_start_matches([',', ' ']).to_string();
+        }
+    }
+    // The ads are always skipped: the words about them just go.
+    for tail in [" and skip any ads", " and skip the ads", " and skip all the ads", " and skip ads", " and skip the ad", " skip the ads", " skip ads", " skip the ad", " without ads", " with no ads", " no ads", " for me", " please"] {
+        if let Some(i) = s.find(tail) {
+            s.truncate(i);
+        }
+    }
+    let mut s = s.trim().trim_end_matches([',', ' ', '.', ';', '!']).to_string();
+    let mut youtubey = false;
+    for opener in ["open google chrome", "open chrome", "open the browser", "open my browser", "open a browser", "open edge", "open youtube", "go to youtube", "pull up youtube", "launch chrome", "launch youtube"] {
+        if let Some(r) = s.strip_prefix(opener) {
+            let r = r.trim_start_matches([',', ' ']);
+            if let Some(r) = r.strip_prefix("and ").or_else(|| r.strip_prefix("then ")).or_else(|| r.strip_prefix("and then ")) {
+                s = r.trim().to_string();
+                youtubey = true;
+            }
+            break;
+        }
+    }
+    let clean = |t: &str, youtubey: &mut bool| -> String {
+        let mut t = t.trim().to_string();
+        for tail in [" on youtube", " in youtube", " from youtube", " off youtube", " on chrome", " in chrome", " on google chrome", " in the browser", " on the browser", " in my browser"] {
+            if let Some(i) = t.find(tail) {
+                t.truncate(i);
+                *youtubey = true;
+            }
+        }
+        t.trim().trim_start_matches("the video ").trim_start_matches("a video ").trim_start_matches("a video about ").trim_start_matches("videos about ").trim().to_string()
+    };
+    for lead in ["search youtube for ", "search on youtube for ", "youtube search ", "look up on youtube "] {
+        if let Some(q) = s.strip_prefix(lead) {
+            let q = clean(q, &mut youtubey);
+            return (!q.is_empty()).then_some(YtAsk::Search(q));
+        }
+    }
+    if youtubey {
+        for lead in ["search for ", "search ", "look up ", "find "] {
+            if let Some(q) = s.strip_prefix(lead) {
+                let q = clean(q, &mut youtubey);
+                return (!q.is_empty()).then_some(YtAsk::Search(q));
+            }
+        }
+    }
+    if let Some(q) = s.strip_prefix("youtube ") {
+        let q = clean(q, &mut youtubey);
+        return (q.split_whitespace().count() >= 1).then_some(YtAsk::Play(q));
+    }
+    for lead in ["find and play ", "play ", "watch ", "put on ", "show me "] {
+        if let Some(q) = s.strip_prefix(lead) {
+            let q = clean(q, &mut youtubey);
+            if youtubey && !q.is_empty() && !["it", "this", "that", "something", "music", "a video"].contains(&q.as_str()) {
+                return Some(YtAsk::Play(q));
+            }
+            return None;
+        }
+    }
+    None
+}
+
 pub fn search_url(query: &str) -> String {
     let q: String = query
         .trim()
@@ -201,6 +278,25 @@ pub fn watch_ads(how_long: Duration) {
 /// Stop pressing Skip (the stop keys). The watch thread ends within a second.
 pub fn stop_watching_ads() {
     *WATCH_UNTIL.lock() = None;
+}
+
+#[cfg(test)]
+mod request_tests {
+    use super::*;
+
+    #[test]
+    fn understands_youtube_requests() {
+        assert_eq!(parse_request("open chrome and play how to make money. skip the ads"), Some(YtAsk::Play("how to make money".into())));
+        assert_eq!(parse_request("open chrome and play how to make money, skip the ads"), Some(YtAsk::Play("how to make money".into())));
+        assert_eq!(parse_request("play burna boy last last on youtube and skip the ads"), Some(YtAsk::Play("burna boy last last".into())));
+        assert_eq!(parse_request("watch lofi beats in the browser"), Some(YtAsk::Play("lofi beats".into())));
+        assert_eq!(parse_request("hey nova, open youtube and search for cat videos"), Some(YtAsk::Search("cat videos".into())));
+        assert_eq!(parse_request("search youtube for minecraft builds"), Some(YtAsk::Search("minecraft builds".into())));
+        assert_eq!(parse_request("youtube drake"), Some(YtAsk::Play("drake".into())));
+        assert_eq!(parse_request("play some music"), None);
+        assert_eq!(parse_request("play it"), None);
+        assert_eq!(parse_request("open chrome"), None);
+    }
 }
 
 fn is_skip_button(c: &crate::uia::Control) -> bool {

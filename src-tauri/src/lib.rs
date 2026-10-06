@@ -36,6 +36,7 @@ pub mod notes;
 pub mod ocr;
 pub mod overlay;
 pub mod patience;
+pub mod shots;
 pub mod rokudev;
 pub mod planner;
 pub mod recipes;
@@ -385,6 +386,10 @@ pub fn run() {
                     WindowEvent::Resized(_) if window.is_minimized().unwrap_or(false) => {
                         WAS_MINIMISED.store(true, Ordering::Relaxed);
                     }
+                    // Dragged partly off the screen (the chat box out of
+                    // reach below the taskbar): once it's let go, it slides
+                    // back so all of it can be seen.
+                    WindowEvent::Moved(_) => overlay::keep_on_screen_later(window),
                     // Any time it comes to the front, not just after the
                     // taskbar: it also went blank while left open (sleep, a
                     // lock, a graphics hiccup). At most every few seconds.

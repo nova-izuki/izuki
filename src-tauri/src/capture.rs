@@ -150,6 +150,12 @@ impl Frame {
         Ok(out)
     }
 
+    /// Width, height and RGBA pixels (for the clipboard).
+    pub fn rgba(&self) -> Option<(u32, u32, Vec<u8>)> {
+        let img = self.to_rgba_image();
+        Some((img.width(), img.height(), img.into_raw()))
+    }
+
     pub fn to_png(&self) -> Result<Vec<u8>> {
         let img = self.to_rgba_image();
         let mut out = Vec::with_capacity(64 * 1024);

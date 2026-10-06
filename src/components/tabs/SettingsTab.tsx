@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
-  ArrowUp,
   Brain,
   Check,
   Coffee,
@@ -35,6 +34,7 @@ import { useIzuki } from "../../lib/store";
 import { api } from "../../lib/ipc";
 import { setChatLook } from "../../lib/tone";
 import { brainReady } from "../../lib/setup";
+import { JumpBar } from "../JumpBar";
 import type { BackdropMode, ProviderId } from "../../lib/types";
 
 const LOCAL_PROVIDERS: ProviderId[] = ["ollama"];
@@ -53,16 +53,6 @@ const JUMPS: { label: string; id: string }[] = [
   { label: "❓ Help", id: "settings-help" },
   { label: "⬆️ Updates", id: "settings-updates" },
 ];
-/** Scroll a section to just below the sticky jump bar. */
-function jump(id: string) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  let box = el.parentElement;
-  while (box && !(box.scrollHeight > box.clientHeight && /auto|scroll/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
-  if (!box) return el.scrollIntoView({ behavior: "smooth", block: "start" });
-  const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 52;
-  box.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
-}
 /** Meta's Llama 4, free on these (Meta's own API is a US-only waitlist). */
 const META_LLAMA: Record<string, string> = {
   groq: "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -98,16 +88,6 @@ export function SettingsTab() {
       { label: "Help & tour", id: "settings-help", keywords: "tour guide how" },
     ].filter(({ label, keywords }) => `${label} ${keywords}`.toLowerCase().includes(q)).slice(0, 4);
   }, [settingsSearch]);
-  // A "back to the top" button once you've scrolled past the jump bar.
-  const topRef = useRef<HTMLDivElement>(null);
-  const [scrolled, setScrolled] = useState(false);
-  useEffect(() => {
-    const el = topRef.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver(([e]) => setScrolled(!e.isIntersecting));
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
 
   function setProvider(id: ProviderId, fields: Partial<(typeof settings.providers)[number]>) {
     patch({
@@ -139,19 +119,7 @@ export function SettingsTab() {
 
   return (
     <>
-      <div ref={topRef} id="settings-top" className="h-0" aria-hidden />
-      <nav aria-label="Jump to" className="izk-no-drag sticky top-0 z-20 -mx-1 flex gap-1 overflow-x-auto rounded-[14px] bg-izk-base/85 px-1 py-1.5 backdrop-blur-md [scrollbar-width:none]">
-        {scrolled && (
-          <button type="button" onClick={() => jump("settings-top")} aria-label="Back to the top" title="Back to the top" className="izk-btn-primary izk-no-drag flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10.5px]">
-            <ArrowUp size={11} strokeWidth={2.6} /> Top
-          </button>
-        )}
-        {JUMPS.map(({ label, id }) => (
-          <button key={id} type="button" onClick={() => jump(id)} className="izk-pill izk-no-drag shrink-0 px-2.5 py-1 text-[10.5px]">
-            {label}
-          </button>
-        ))}
-      </nav>
+      <JumpBar jumps={JUMPS} topId="settings-top" />
       <div className="relative">
         <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-izk-muted" size={15} />
         <input aria-label="Find a setting" value={settingsSearch} onChange={(e) => setSettingsSearch(e.target.value)} placeholder="Find a setting — orb, Android, reminders…" className="izk-field izk-no-drag w-full py-2 pl-9 text-[12px]" />

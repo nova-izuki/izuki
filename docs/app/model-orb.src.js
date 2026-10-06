@@ -32,7 +32,7 @@ export const FACES = [
   { id: "holo-female", name: "Hologram woman", gender: "female", url: new URL("./faces/holo-female.glb", import.meta.url).href, thumb: new URL("./faces/holo-female.webp", import.meta.url).href, glow: 0.55, accent: "#5ee7ff", bald: true },
   { id: "holo-male", name: "Hologram man", gender: "male", url: new URL("./faces/holo-male.glb", import.meta.url).href, thumb: new URL("./faces/holo-male.webp", import.meta.url).href, glow: 0.55, accent: "#5ee7ff", bald: true },
   { id: "lightskin-female", name: "Woman", gender: "female", url: new URL("./faces/lightskin-female.glb", import.meta.url).href, thumb: new URL("./faces/lightskin-female.webp", import.meta.url).href, glow: 0, accent: "#a78bfa" },
-  { id: "black-male", name: "Man", gender: "male", url: new URL("./faces/black-male.glb", import.meta.url).href, thumb: new URL("./faces/black-male.webp", import.meta.url).href, glow: 0, accent: "#a78bfa" },
+  { id: "black-male", name: "Man", gender: "male", url: new URL("./faces/black-male.glb", import.meta.url).href, thumb: new URL("./faces/black-male.webp", import.meta.url).href, glow: 0, accent: "#a78bfa", shortHair: true },
 ];
 
 /** What each face can be changed with, and where it starts. */
@@ -78,8 +78,11 @@ export const HAIR_COLOURS = [
 
 /** The haircuts a face can wear: [key, name]. */
 export function haircutsFor(id, rigged) {
-  const full = rigged || !!(faceInfo(id) || {}).bald;
-  return HAIRCUTS.filter(([, , adds]) => full || adds).map(([k, n]) => [k, n]);
+  const info = faceInfo(id) || {};
+  // Bald heads and rigs take any cut; a short fade sits under one too (just
+  // not "Bald" — that hair is part of the sculpt).
+  const full = rigged || !!info.bald || !!info.shortHair;
+  return HAIRCUTS.filter(([k, , adds]) => (full || adds) && !(k === "bald" && info.shortHair)).map(([k, n]) => [k, n]);
 }
 
 export function faceInfo(id) {
@@ -772,7 +775,8 @@ function haircut(cut, colour, hat, sculpt, glow, accent) {
 function wearHaircut(model, L) {
   // Rigged faces and the smooth-headed holograms wear any cut; the other
   // sculpts keep their own hair, so only cuts that add to it.
-  const full = model.rigged || !!(faceInfo(model.id) || {}).bald;
+  const info = faceInfo(model.id) || {};
+  const full = model.rigged || !!info.bald || (!!info.shortHair && L.cut !== "bald");
   const want = full || (HAIRCUTS.find(([k]) => k === L.cut) || [])[2] ? L.cut || "" : "";
   const colour = L.hair || "#1a1412";
   const key = `${want}|${colour}|${L.accent}|${L.glow}`;

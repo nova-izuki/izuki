@@ -156,9 +156,43 @@ fn start(target: &str) -> Result<()> {
     }
 }
 
+/// Chrome, Edge and Brave open on a "Who's using Chrome?" picker when there's
+/// more than one profile — and the agent used to sit there thinking. Open
+/// straight into the profile used last instead: (the browser, its profile).
+fn browser_with_profile(target: &str) -> Option<(std::path::PathBuf, String)> {
+    let low = target.to_lowercase();
+    let (exe, data) = if low.contains("chrome") {
+        ("Google\\Chrome\\Application\\chrome.exe", "Google\\Chrome\\User Data")
+    } else if low.contains("msedge") || low.contains("microsoft edge") || low.ends_with("edge.lnk") {
+        ("Microsoft\\Edge\\Application\\msedge.exe", "Microsoft\\Edge\\User Data")
+    } else if low.contains("brave") {
+        ("BraveSoftware\\Brave-Browser\\Application\\brave.exe", "BraveSoftware\\Brave-Browser\\User Data")
+    } else {
+        return None;
+    };
+    let roots = ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"].iter().filter_map(|v| std::env::var(v).ok()).collect::<Vec<_>>();
+    let exe = roots.iter().map(|r| Path::new(r).join(exe)).find(|p| p.exists())?;
+    let state = dirs::data_local_dir()?.join(data).join("Local State");
+    let profile = std::fs::read_to_string(state)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v["profile"]["last_used"].as_str().map(str::to_string))
+        .filter(|p| !p.is_empty() && !p.contains(['"', '\\', '/']))
+        .unwrap_or_else(|| "Default".into());
+    Some((exe, profile))
+}
+
 /// Open an app by name. `Err` if nothing installed matches.
 pub fn open_app(name: &str) -> Result<String> {
     let target = find_app(name).ok_or_else(|| anyhow!("no app called \"{}\" is installed", name.trim()))?;
+    if let Some((exe, profile)) = browser_with_profile(&target) {
+        let mut c = std::process::Command::new(&exe);
+        c.arg(format!("--profile-directory={profile}"));
+        if c.spawn().is_ok() {
+            let shown = Path::new(&target).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string();
+            return Ok(shown);
+        }
+    }
     start(&target)?;
     let shown = Path::new(&target).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string();
     Ok(shown)

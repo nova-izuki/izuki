@@ -366,6 +366,29 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         let s2 = said.clone();
         return blocking(move || crate::screentime::answer(&s2)).await.ok();
     }
+    // "Open Chrome and play how to make money, skip the ads": YouTube at once, no AI.
+    if let Some(ask) = crate::youtube::parse_request(&said) {
+        return blocking(move || {
+            crate::automation::clear_abort();
+            match ask {
+                crate::youtube::YtAsk::Play(q) => match crate::youtube::play(&q) {
+                    Ok(Some(title)) => format!("Playing “{title}” — I'll skip the ads."),
+                    Ok(None) => format!("Here are the YouTube results for {q} — say which one."),
+                    Err(e) => format!("I couldn't open YouTube: {e}"),
+                },
+                crate::youtube::YtAsk::Search(q) => match crate::patience::go_to(&crate::youtube::search_url(&q)) {
+                    Ok(_) => format!("Here are the YouTube results for {q}."),
+                    Err(e) => format!("I couldn't open YouTube: {e}"),
+                },
+            }
+        })
+        .await
+        .ok();
+    }
+    // "Take a screenshot", "record my screen", "stop recording".
+    if let Some(shot) = crate::shots::parse(&said) {
+        return Some(blocking(move || crate::shots::run(shot)).await.ok().map(|r| r.unwrap_or_else(|e| e.to_string())).unwrap_or_else(|| "That didn't work.".into()));
+    }
     // "What are the shortcuts here?": the app's own playbook.
     if let Some(text) = crate::playbooks::answer(&said) {
         return Some(text);

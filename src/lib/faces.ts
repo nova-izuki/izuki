@@ -49,6 +49,27 @@ export function faceGender(style: string): "male" | "female" | null {
   return isFace(style) ? FACE_GENDER[faceId(style)] ?? null : null;
 }
 
+/** Characters with a face of their own (when "Match voice and character" is on). */
+const PERSONA_FACE: Record<string, string> = {
+  dre: "black-male",
+  nia: "lightskin-female",
+  abeo: "black-male",
+  ezinne: "lightskin-female",
+  chidi: "black-male",
+  amaka: "lightskin-female",
+  thabo: "black-male",
+  asilia: "lightskin-female",
+};
+
+/** The face that fits this character — in the family already in use (a hologram stays a hologram). */
+export function faceForPersona(style: string, persona: string, male: boolean): string | null {
+  const own = PERSONA_FACE[persona];
+  // Only when a built-in face is showing: a plain orb or your own face is left alone.
+  if (!faceGender(style)) return null;
+  if (own && !faceId(style).startsWith("holo-")) return `model:${own}` === style ? null : `model:${own}`;
+  return faceForVoice(style, male);
+}
+
 /**
  * "Match voice and character": the face to show for a voice of this gender,
  * in the same family (hologram ↔ hologram) — or null to leave the look alone

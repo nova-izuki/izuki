@@ -22,6 +22,9 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "📸", title: "Screenshots and screen recording", how: "Say or type “take a screenshot” (saved to Pictures › Screenshots and copied), “record my screen” and “stop recording” (saved to Videos › Izuki Recordings).", try: { label: "Try it", say: "take a screenshot" } },
+  { icon: "▶️", title: "YouTube, straight away", how: "“Open Chrome and play how to make money, skip the ads” now plays at once — no thinking — and the ads are skipped. Chrome opens in your usual account, not the “Who's using Chrome?” screen.", try: { label: "Try it", say: "play lofi beats on youtube" } },
+  { icon: "🎤", title: "Dre and Nia", how: "Two new characters: Dre and Nia talk with real Black American slang — smooth, funny and real. Their faces match their voices." },
   { icon: "🔗", title: "Reads behind the links", how: "Ask about a page and Izuki also reads the pages it links to that matter — the syllabus, the assignment details — quietly, with your own sign-ins (needs the browser extension). Never links like Log out, Delete or Buy." },
   { icon: "📘", title: "Knows how each app works", how: "Built-in playbooks for FL Studio, Ableton, Premiere, CapCut, Photoshop, Blender, Figma, VS Code, Office, browsers and more: in apps that draw their own screen it uses their shortcuts and menus instead of dragging. Ask “what are the shortcuts here?”", try: { label: "Try it", say: "what are the shortcuts here" } },
   { icon: "🥁", title: "Beat starter", how: "“Make me an afrobeats drum pattern at 108 bpm” — or trap, amapiano, drill, boom bap, house, reggaeton, lo-fi and more. A real swung MIDI groove with a fill, saved in Music › Izuki Beats to drag into FL Studio.", try: { label: "Make one", say: "make me an afrobeats drum pattern" } },

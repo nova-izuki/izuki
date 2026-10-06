@@ -4,7 +4,7 @@ import { Row, Segmented, Slider, Toggle, cx } from "./ui";
 import { useIzuki } from "../lib/store";
 import { api, IS_TAURI } from "../lib/ipc";
 import { loadCatalog } from "../lib/personas";
-import { faceForVoice } from "../lib/faces";
+import { faceForPersona } from "../lib/faces";
 import { playClip, speakNatural, stopNatural } from "../lib/naturalVoice";
 import { speak } from "../lib/speak";
 import type { Persona, Settings, VoiceCatalog } from "../lib/types";
@@ -189,7 +189,7 @@ export function VoicePicker() {
 
   function apply(p: Persona) {
     // "Match voice and character": a man's voice brings up a man's face.
-    const face = settings.match_voice_face ? faceForVoice(settings.orb_style, p.kokoro.charAt(1) === "m") : null;
+    const face = settings.match_voice_face ? faceForPersona(settings.orb_style, p.id, p.kokoro.charAt(1) === "m") : null;
     patch({
       persona: p.id,
       persona_name: "",

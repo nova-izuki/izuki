@@ -1,3 +1,6 @@
 
 /* Settings' jump bar stays on top: land sections just below it. */
 [id^="settings-"] { scroll-margin-top: 52px; }
+
+/* Jump bars stay on top: land sections just below them. */
+[id^="draw-"], [id^="apps-"] { scroll-margin-top: 52px; }
