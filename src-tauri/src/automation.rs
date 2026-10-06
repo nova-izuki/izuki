@@ -153,7 +153,49 @@ pub fn click_at(x: i32, y: i32, button: Button, times: u8, duration_ms: u64) -> 
 /// hidden until hover (the waits are longer); `look_again` is for a guessed
 /// point that found nothing to snap to before the hover.
 fn hover_then_click(x: i32, y: i32, button: Button, times: u8, duration_ms: u64, reveal: bool, look_again: bool) -> Result<()> {
+    hover_then_click_named(x, y, button, times, duration_ms, reveal, look_again, None)
+}
+
+/// The pointer is really on (x, y) before any mouse-down: re-placed once if
+/// it isn't (you nudged the mouse, or the app held it back), and an error
+/// rather than a click somewhere else if it still can't get there.
+fn land_exactly(x: i32, y: i32) -> Result<()> {
+    let off = |(cx, cy): (i32, i32)| (cx - x).abs() > 2 || (cy - y).abs() > 2;
+    if !off(crate::capture::cursor_pos()) {
+        return Ok(());
+    }
+    let mut e = enigo()?;
+    place(&mut e, x, y);
+    std::thread::sleep(Duration::from_millis(30));
+    if off(crate::capture::cursor_pos()) {
+        return Err(anyhow!("target_changed: the pointer couldn't reach {x},{y} (something moved it); take another look"));
+    }
+    Ok(())
+}
+
+/// As hover_then_click, and for a known control: hovering can shift a page
+/// (menus open, rows grow), so look once more on arrival and follow the
+/// control to where it now is before pressing.
+#[allow(clippy::too_many_arguments)]
+fn hover_then_click_named(
+    x: i32,
+    y: i32,
+    button: Button,
+    times: u8,
+    duration_ms: u64,
+    reveal: bool,
+    look_again: bool,
+    name: Option<&str>,
+) -> Result<()> {
     glide_to(x, y, duration_ms)?;
+    let (mut x, mut y) = (x, y);
+    if let Some(name) = name.filter(|_| !reveal) {
+        if let uia::AtPoint::Moved(nx, ny) = uia::check_target(x, y, name) {
+            eprintln!("[hands] \"{name}\" shifted as the pointer arrived — following it");
+            glide_to(nx, ny, 90)?;
+            (x, y) = (nx, ny);
+        }
+    }
     if reveal || look_again {
         std::thread::sleep(Duration::from_millis(if reveal { 380 } else { 140 }));
         if aborted() {
@@ -162,9 +204,11 @@ fn hover_then_click(x: i32, y: i32, button: Button, times: u8, duration_ms: u64,
         if let Some(hit) = uia::snap_to_control(x, y, if reveal { 40 } else { 28 }) {
             if (hit.x, hit.y) != (x, y) {
                 glide_to(hit.x, hit.y, 120)?;
+                (x, y) = (hit.x, hit.y);
             }
         }
     }
+    land_exactly(x, y)?;
     click_at_here(button, times)
 }
 
@@ -542,6 +586,7 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
             return Err(anyhow!("target_changed: the control moved during pointer travel; parse the screen again"));
         }
         if aborted() { return Err(anyhow!("stopped")); }
+        land_exactly(point.0, point.1)?;
         let button = if step.action == Intent::RightClick { Button::Right } else { Button::Left };
         click_at_here(button, if step.action == Intent::DoubleClick { 2 } else { 1 })?;
         if targeted_type {
@@ -561,10 +606,11 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     // more look once the hover has had its effect.
     let reveal = step.hover_first;
     let look_again = magnetic && step.snapped_to.is_none() && snapped.is_none();
+    let known = verified_name.filter(|_| clicking);
     match step.action {
-        Intent::Click | Intent::Auto => hover_then_click(x, y, Button::Left, 1, move_ms, reveal, look_again)?,
-        Intent::DoubleClick => hover_then_click(x, y, Button::Left, 2, move_ms, reveal, look_again)?,
-        Intent::RightClick => hover_then_click(x, y, Button::Right, 1, move_ms, reveal, look_again)?,
+        Intent::Click | Intent::Auto => hover_then_click_named(x, y, Button::Left, 1, move_ms, reveal, look_again, known)?,
+        Intent::DoubleClick => hover_then_click_named(x, y, Button::Left, 2, move_ms, reveal, look_again, known)?,
+        Intent::RightClick => hover_then_click_named(x, y, Button::Right, 1, move_ms, reveal, look_again, known)?,
         Intent::Hover => glide_to(x, y, move_ms)?,
         // Only the on-screen hand goes there and circles it (the overlay
         // draws it off the HAND event) — the real mouse stays put. Held a

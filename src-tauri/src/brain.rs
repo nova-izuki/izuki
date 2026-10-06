@@ -1072,6 +1072,8 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
             std::thread::sleep(std::time::Duration::from_millis(60));
 
             let app_name = uia::foreground_app();
+            // When Izuki last touched the PC itself, so input after that is yours.
+            let own = std::cell::Cell::new(std::time::Instant::now());
 
             let run = || {
                 for (i, step) in steps.iter().enumerate() {
@@ -1088,6 +1090,18 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     // the real pointer, so the animation leads rather than trails.
                     // (Instant skills happen nowhere on screen — no hand.)
                     let placeless = matches!(step.action, Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube);
+                    // You grabbed the mouse or keyboard: let go until you
+                    // pause, then take a fresh look (you may have moved things).
+                    if !placeless && yield_to_user(app, own.get(), alive) {
+                        if !alive() {
+                            let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
+                            return false;
+                        }
+                        *STEP_SNAG.lock() = Some(
+                            "paused: you used the PC while I worked, so the screen may have changed — look again first".into(),
+                        );
+                        return false;
+                    }
                     if !placeless {
                     let _ = app.emit(
                         events::HAND,
@@ -1142,11 +1156,33 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
 
                     // Breathing room between steps so the app under us can react.
                     std::thread::sleep(Duration::from_millis(140));
+                    own.set(std::time::Instant::now());
                 }
                 true
             };
 
             (run(), executed.get())
+}
+
+/// Input newer than Izuki's own last move is the person's: true when they're
+/// using the PC right now.
+fn user_is_active(own: std::time::Instant) -> bool {
+    let idle = crate::buddy::idle_duration();
+    idle < Duration::from_millis(1200) && idle + Duration::from_millis(250) < own.elapsed()
+}
+
+/// Izuki and you never fight over the mouse: while you're using the PC it
+/// waits (up to 30 s, or until stopped), then carries on. True if it waited.
+fn yield_to_user(app: &AppHandle, own: std::time::Instant, alive: &dyn Fn() -> bool) -> bool {
+    if !user_is_active(own) {
+        return false;
+    }
+    let _ = app.emit(events::STATUS, StatusEvent::working("You're using the PC — I'll carry on when you pause."));
+    let until = std::time::Instant::now() + Duration::from_secs(30);
+    while alive() && std::time::Instant::now() < until && crate::buddy::idle_duration() < Duration::from_millis(1500) {
+        std::thread::sleep(Duration::from_millis(150));
+    }
+    true
 }
 
 pub fn run_flow(app: &AppHandle, store: &Arc<Store>, id: &str) -> Result<()> {
@@ -1629,6 +1665,10 @@ fn submit_task(
     let mut asked = 0;
     // The same steps twice in a row means they aren't working.
     let mut last_round: Vec<(Intent, i32, i32)> = Vec::new();
+    // The last named button clicked (and its number): if the mouse click
+    // didn't take, it's pressed again "from behind" — Windows' own control,
+    // or inside the web page — before anyone is asked anything.
+    let mut last_click: Option<(String, Option<u32>)> = None;
     let mut last_look: Option<crate::capture::Frame> = None;
     let mut repeats = 0;
     let mut all_steps: Vec<ActionStep> = Vec::new();
@@ -1714,7 +1754,30 @@ fn submit_task(
             let unchanged = last_look
                 .as_ref()
                 .is_some_and(|prev| crate::live::changed_share(prev, &frame.downscaled(160)) <= 0.02);
-            if unchanged && !told.as_deref().is_some_and(|t| t.contains("loading")) {
+            // The mouse click didn't take: press the same button directly.
+            let mut rescued = false;
+            if unchanged {
+                if let Some((name, target)) = last_click.take() {
+                    let pressed = uia::press_named(&name)
+                        || target.and_then(crate::ext::dom_id_for).is_some_and(|d| crate::ext::click(&d).is_ok());
+                    if pressed {
+                        crate::live::wait_until_settled(Duration::from_millis(300), Duration::from_millis(1500), || !alive());
+                        if let Ok(f) = capture::capture_all() {
+                            rescued = last_look.as_ref().is_some_and(|prev| crate::live::changed_share(prev, &f.downscaled(160)) > 0.02);
+                            frame = f;
+                        }
+                        eprintln!("[hands] \"{name}\": the mouse click didn't take — pressed it directly ({})", if rescued { "worked" } else { "still no change" });
+                        if rescued {
+                            let note = format!("Your click on \"{name}\" didn't take with the mouse, so it was pressed directly instead — and that worked. Carry on from this screen.");
+                            told = Some(match told.take() {
+                                Some(t) => format!("{t}\n{note}"),
+                                None => note,
+                            });
+                        }
+                    }
+                }
+            }
+            if unchanged && !rescued && !told.as_deref().is_some_and(|t| t.contains("loading")) {
                 let note = NO_EFFECT.to_string();
                 told = Some(match told.take() {
                     Some(t) => format!("{t}\n{note}"),
@@ -2010,6 +2073,12 @@ fn submit_task(
         // ("clear what's in the way" gone wrong) is caught and undone.
         let working_in = uia::target_window();
         let (finished, executed) = run_steps_blocking(app, store, &steps, &alive);
+        last_click = steps
+            .iter()
+            .take(executed)
+            .filter(|s| matches!(s.action, Intent::Click | Intent::Auto))
+            .filter_map(|s| s.snapped_to.clone().map(|n| (n, s.target)))
+            .last();
         all_steps.extend(steps.iter().take(executed).cloned());
         done_so_far.extend(steps.iter().take(executed).map(describe_step));
         // A click that couldn't happen (something on top, a greyed-out
@@ -2017,7 +2086,12 @@ fn submit_task(
         let snag = STEP_SNAG.lock().take();
         if let Some(why) = &snag {
             eprintln!("[agent] a click couldn't happen — {why}");
-            let note = if why.starts_with("target_changed:") {
+            let note = if why.starts_with("paused:") {
+                "The person used the PC while you worked, so you paused. Things may have moved or another window may \
+                 be in front: parse this fresh screenshot, bring the window you were working in back if needed, and \
+                 carry on from where you were. Do not redo steps already done."
+                    .to_string()
+            } else if why.starts_with("target_changed:") {
                 format!("Your last action was NOT executed — {why}. Parse this fresh screenshot and select the intended numbered control by its label and position. Do not reuse old IDs or coordinates. Do not close or minimise windows to fix a changed target. If the intended control is absent, explain that instead of guessing.")
             } else { format!(
                 "Your last click didn't happen — {why}. Deal with it like a person would: close what's on top (its ✕ \

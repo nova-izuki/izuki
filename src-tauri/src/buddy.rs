@@ -433,6 +433,11 @@ pub fn idle_secs() -> u64 {
     idle_for().as_secs()
 }
 
+/// How long since the keyboard or mouse was last touched (by anyone).
+pub fn idle_duration() -> Duration {
+    idle_for()
+}
+
 #[cfg(windows)]
 fn idle_for() -> Duration {
     use windows::Win32::System::SystemInformation::GetTickCount;

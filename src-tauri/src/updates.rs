@@ -35,7 +35,7 @@ fn install_allowed(expected: &str, actual: &str, ready: bool, busy: bool) -> Res
 }
 /// When Izuki started: an update found in the first minutes installs itself.
 static STARTED: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
-const QUIET_START: Duration = Duration::from_secs(5 * 60);
+const QUIET_START: Duration = Duration::from_secs(10 * 60);
 
 pub fn check_later(app: &AppHandle) {
     if cfg!(debug_assertions) || std::env::var("IZUKI_SELFTEST").is_ok() { return; }
