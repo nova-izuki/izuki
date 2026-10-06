@@ -147,15 +147,6 @@ pub fn click_at(x: i32, y: i32, button: Button, times: u8, duration_ms: u64) -> 
     click_at_here(button, times)
 }
 
-/// Click something that may only appear once the mouse is over it. Glide
-/// there, give hover effects a moment, and — if a control showed up under
-/// the pointer — land on its centre. `reveal` is for a control known to be
-/// hidden until hover (the waits are longer); `look_again` is for a guessed
-/// point that found nothing to snap to before the hover.
-fn hover_then_click(x: i32, y: i32, button: Button, times: u8, duration_ms: u64, reveal: bool, look_again: bool) -> Result<()> {
-    hover_then_click_named(x, y, button, times, duration_ms, reveal, look_again, None)
-}
-
 /// The pointer is really on (x, y) before any mouse-down: re-placed once if
 /// it isn't (you nudged the mouse, or the app held it back), and an error
 /// rather than a click somewhere else if it still can't get there.
@@ -173,11 +164,15 @@ fn land_exactly(x: i32, y: i32) -> Result<()> {
     Ok(())
 }
 
-/// As hover_then_click, and for a known control: hovering can shift a page
-/// (menus open, rows grow), so look once more on arrival and follow the
-/// control to where it now is before pressing.
+/// Click something that may only appear once the mouse is over it. Glide
+/// there, give hover effects a moment, and — if a control showed up under
+/// the pointer — land on its centre. `reveal` is for a control known to be
+/// hidden until hover (the waits are longer); `look_again` is for a guessed
+/// point that found nothing to snap to before the hover. For a known control
+/// (`name`), hovering can shift a page (menus open, rows grow), so look once
+/// more on arrival and follow the control to where it now is before pressing.
 #[allow(clippy::too_many_arguments)]
-fn hover_then_click_named(
+fn hover_then_click(
     x: i32,
     y: i32,
     button: Button,
@@ -455,6 +450,13 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     if aborted() {
         return Err(anyhow!("stopped"));
     }
+    // You're using another app: work in Izuki's window behind it, through
+    // Windows, without touching your mouse or keyboard.
+    if !dry_run {
+        if let Some(win) = uia::working_behind() {
+            return execute_behind(step, win);
+        }
+    }
 
     let (mut x, mut y) = (step.x, step.y);
     let mut snapped = None;
@@ -608,9 +610,9 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     let look_again = magnetic && step.snapped_to.is_none() && snapped.is_none();
     let known = verified_name.filter(|_| clicking);
     match step.action {
-        Intent::Click | Intent::Auto => hover_then_click_named(x, y, Button::Left, 1, move_ms, reveal, look_again, known)?,
-        Intent::DoubleClick => hover_then_click_named(x, y, Button::Left, 2, move_ms, reveal, look_again, known)?,
-        Intent::RightClick => hover_then_click_named(x, y, Button::Right, 1, move_ms, reveal, look_again, known)?,
+        Intent::Click | Intent::Auto => hover_then_click(x, y, Button::Left, 1, move_ms, reveal, look_again, known)?,
+        Intent::DoubleClick => hover_then_click(x, y, Button::Left, 2, move_ms, reveal, look_again, known)?,
+        Intent::RightClick => hover_then_click(x, y, Button::Right, 1, move_ms, reveal, look_again, known)?,
         Intent::Hover => glide_to(x, y, move_ms)?,
         // Only the on-screen hand goes there and circles it (the overlay
         // draws it off the HAND event) — the real mouse stays put. Held a
@@ -701,6 +703,52 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     }
 
     Ok(format!("{} at {}", step.action.as_str(), label))
+}
+
+/// One step in a window behind the one you're using. Steps that need the
+/// real mouse or keyboard come back as `needs_front:` — the caller waits for
+/// you to pause before bringing the window forward.
+fn execute_behind(step: &ActionStep, win: isize) -> Result<String> {
+    let name = step.snapped_to.as_deref();
+    let identity = step.grounding.as_ref();
+    let (x, y) = (step.x, step.y);
+    // A web page element: the browser extension acts right inside the page,
+    // whether or not the browser is in front.
+    if let Some(dom) = step.target.and_then(crate::ext::dom_id_for) {
+        let done = match step.action {
+            Intent::Click | Intent::Auto => crate::ext::click(&dom).ok().map(|_| "clicked the page element in the background".to_string()),
+            Intent::Type => crate::ext::type_into(&dom, step.text_to_type.as_deref().unwrap_or_default())
+                .ok()
+                .map(|_| "typed into the page in the background".to_string()),
+            _ => None,
+        };
+        if let Some(done) = done {
+            return Ok(done);
+        }
+    }
+    let done = match step.action {
+        Intent::Click | Intent::Auto => uia::act_behind(win, uia::Behind::Press { name, identity, x, y })?,
+        Intent::Type if identity.is_some() || name.is_some() || x != 0 || y != 0 => {
+            let text = step.text_to_type.as_deref().unwrap_or_default();
+            uia::act_behind(win, uia::Behind::Type { name, identity, x, y, text })?
+        }
+        Intent::Scroll => {
+            let (amount, axis) = scroll_direction(step.key.as_deref(), step.scroll_amount.unwrap_or(3));
+            uia::act_behind(win, uia::Behind::Scroll { x, y, amount, horizontal: matches!(axis, Axis::Horizontal) })?
+        }
+        // Only the overlay shows these — nothing on the window itself.
+        Intent::Point => {
+            std::thread::sleep(Duration::from_millis(1800));
+            Some("pointed it out".into())
+        }
+        Intent::Draw => {
+            std::thread::sleep(Duration::from_millis(900));
+            Some(format!("drew a {} on screen", step.shape.as_deref().unwrap_or("mark")))
+        }
+        Intent::Watch => Some("handed to the watcher".into()),
+        _ => None,
+    };
+    done.ok_or_else(|| anyhow!("needs_front: this step needs the real mouse or keyboard"))
 }
 
 /// Whether `shown` (what a box holds) has `typed` in it, ignoring case and spacing.

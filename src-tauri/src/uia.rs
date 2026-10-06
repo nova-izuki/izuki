@@ -294,6 +294,202 @@ pub fn set_text_grounded(_identity: &ControlIdentity, _text: &str) -> anyhow::Re
 /// real app window under them.
 #[cfg(windows)]
 pub fn target_window() -> Option<isize> {
+    held_window().or_else(natural_target_window)
+}
+
+// ---------------------------------------------------------------------------
+// Working behind you: while a task runs, Izuki holds on to the window it is
+// working in. Switch to another app and it carries on in that window through
+// Windows itself (no mouse, no keyboard), seeing it as if it were in front.
+// ---------------------------------------------------------------------------
+
+static HELD: parking_lot::Mutex<Option<isize>> = parking_lot::Mutex::new(None);
+
+/// Hold this window for the task (None lets go).
+pub fn hold_window(hwnd: Option<isize>) {
+    *HELD.lock() = hwnd;
+}
+
+/// The held window, while it still exists and isn't minimised.
+#[cfg(windows)]
+pub fn held_window() -> Option<isize> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindow, IsWindowVisible};
+    let raw = (*HELD.lock())?;
+    let h = HWND(raw as *mut core::ffi::c_void);
+    let alive = unsafe { IsWindow(Some(h)).as_bool() && IsWindowVisible(h).as_bool() && !IsIconic(h).as_bool() };
+    alive.then_some(raw)
+}
+
+#[cfg(not(windows))]
+pub fn held_window() -> Option<isize> {
+    *HELD.lock()
+}
+
+/// The window the person is using right now, if it isn't the one Izuki is
+/// working in: then Izuki works behind them.
+pub fn working_behind() -> Option<isize> {
+    let held = held_window()?;
+    let front = natural_target_window()?;
+    (front != held).then_some(held)
+}
+
+/// Keep holding the window, or follow a new one: a window change Izuki made
+/// itself (it opened an app) is followed; one the person made is not.
+pub fn follow_or_hold(person_moved: bool) {
+    let front = natural_target_window();
+    let mut held = HELD.lock();
+    match (*held, front) {
+        (None, f) => *held = f,
+        (Some(h), Some(f)) if h != f && !person_moved => *held = Some(f),
+        _ => {}
+    }
+}
+
+/// Bring the held window back in front (only once the person has paused).
+#[cfg(windows)]
+pub fn front_held_window() {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+    if let Some(raw) = held_window() {
+        unsafe {
+            let _ = SetForegroundWindow(HWND(raw as *mut core::ffi::c_void));
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn front_held_window() {}
+
+/// What Izuki does in a window behind you.
+pub enum Behind<'a> {
+    Press { name: Option<&'a str>, identity: Option<&'a ControlIdentity>, x: i32, y: i32 },
+    Type { name: Option<&'a str>, identity: Option<&'a ControlIdentity>, x: i32, y: i32, text: &'a str },
+    Scroll { x: i32, y: i32, amount: i32, horizontal: bool },
+}
+
+/// Do it in window `win` without the mouse or keyboard. Ok(None) when it
+/// can't be done that way (the step needs the real mouse or keys).
+#[cfg(windows)]
+pub fn act_behind(win: isize, what: Behind) -> anyhow::Result<Option<String>> {
+    use uiautomation::patterns::{
+        UIExpandCollapsePattern, UIInvokePattern, UILegacyIAccessiblePattern, UIScrollPattern, UISelectionItemPattern,
+        UITogglePattern, UIValuePattern,
+    };
+    use uiautomation::types::{ExpandCollapseState, ScrollAmount};
+    use uiautomation::UIAutomation;
+    let a = UIAutomation::new().or_else(|_| UIAutomation::new_direct())?;
+    let walker = a.get_control_view_walker()?;
+    let root = a.element_from_handle(win.into())?;
+    // Find a control in the window by its identity, its name, or where it is
+    // (hit-testing the screen would find your window on top, so walk the tree).
+    let find = |identity: Option<&ControlIdentity>, name: Option<&str>, x: i32, y: i32, want: &dyn Fn(&uiautomation::UIElement) -> bool| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(400);
+        let mut best: Option<(i64, uiautomation::UIElement)> = None;
+        let mut stack = vec![root.clone()];
+        let mut seen = 0;
+        while let Some(el) = stack.pop() {
+            seen += 1;
+            if seen > 2500 || std::time::Instant::now() > deadline {
+                break;
+            }
+            let kind = el.get_control_type().map(|c| format!("{c:?}")).unwrap_or_default();
+            let label = el.get_name().unwrap_or_default();
+            if let Some(id) = identity {
+                if matches_identity(id, &el.get_runtime_id().unwrap_or_default(), &kind, &label) {
+                    return Some(el);
+                }
+            } else if let Some(n) = name.filter(|n| n.trim().chars().count() >= 2) {
+                if same_name(&label, n) && want(&el) {
+                    return Some(el);
+                }
+            } else if let Ok(r) = el.get_bounding_rectangle() {
+                let r = to_rect(&r);
+                if r.w > 0 && r.h > 0 && x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h && want(&el) {
+                    let area = r.w as i64 * r.h as i64;
+                    if best.as_ref().is_none_or(|(b, _)| area < *b) {
+                        best = Some((area, el.clone()));
+                    }
+                }
+            }
+            let mut child = walker.get_first_child(&el).ok();
+            while let Some(c) = child {
+                child = walker.get_next_sibling(&c).ok();
+                stack.push(c);
+            }
+        }
+        best.map(|(_, e)| e)
+    };
+    let pressable = |el: &uiautomation::UIElement| {
+        el.get_pattern::<UIInvokePattern>().is_ok()
+            || el.get_pattern::<UITogglePattern>().is_ok()
+            || el.get_pattern::<UISelectionItemPattern>().is_ok()
+            || el.get_pattern::<UIExpandCollapsePattern>().is_ok()
+    };
+    match what {
+        Behind::Press { name, identity, x, y } => {
+            let Some(el) = find(identity, name, x, y, &pressable) else { return Ok(None) };
+            if !el.is_enabled().unwrap_or(false) {
+                return Err(anyhow::anyhow!("disabled: \"{}\" is greyed out, so clicking it does nothing yet", el.get_name().unwrap_or_default()));
+            }
+            let label = el.get_name().unwrap_or_default();
+            let done = if let Ok(p) = el.get_pattern::<UIInvokePattern>() {
+                p.invoke().is_ok()
+            } else if let Ok(p) = el.get_pattern::<UITogglePattern>() {
+                p.toggle().is_ok()
+            } else if let Ok(p) = el.get_pattern::<UISelectionItemPattern>() {
+                p.select().is_ok()
+            } else if let Ok(p) = el.get_pattern::<UIExpandCollapsePattern>() {
+                match p.get_state() {
+                    Ok(ExpandCollapseState::Expanded) => p.collapse().is_ok(),
+                    _ => p.expand().is_ok(),
+                }
+            } else {
+                el.get_pattern::<UILegacyIAccessiblePattern>().is_ok_and(|p| p.do_default_action().is_ok())
+            };
+            Ok(done.then(|| format!("pressed \"{label}\" in the background")))
+        }
+        Behind::Type { name, identity, x, y, text } => {
+            let takes_text = |el: &uiautomation::UIElement| el.get_pattern::<UIValuePattern>().is_ok_and(|p| !p.is_readonly().unwrap_or(true));
+            let Some(el) = find(identity, name, x, y, &takes_text) else { return Ok(None) };
+            if el.is_password().unwrap_or(true) {
+                return Err(anyhow::anyhow!("Izuki never types into password boxes"));
+            }
+            let Ok(p) = el.get_pattern::<UIValuePattern>() else { return Ok(None) };
+            if p.is_readonly().unwrap_or(true) {
+                return Ok(None);
+            }
+            p.set_value(text)?;
+            Ok(Some(format!("typed into \"{}\" in the background", el.get_name().unwrap_or_default())))
+        }
+        Behind::Scroll { x, y, amount, horizontal } => {
+            let scrolls = |el: &uiautomation::UIElement| el.get_pattern::<UIScrollPattern>().is_ok();
+            let Some(el) = find(None, None, x, y, &scrolls).or_else(|| {
+                let cond = a.create_property_condition(uiautomation::types::UIProperty::IsScrollPatternAvailable, true.into(), None).ok()?;
+                root.find_first(uiautomation::types::TreeScope::Descendants, &cond).ok()
+            }) else {
+                return Ok(None);
+            };
+            let Ok(p) = el.get_pattern::<UIScrollPattern>() else { return Ok(None) };
+            let step = if amount < 0 { ScrollAmount::SmallDecrement } else { ScrollAmount::SmallIncrement };
+            for _ in 0..amount.unsigned_abs().clamp(1, 15) {
+                let r = if horizontal { p.scroll(step, ScrollAmount::NoAmount) } else { p.scroll(ScrollAmount::NoAmount, step) };
+                if r.is_err() {
+                    break;
+                }
+            }
+            Ok(Some("scrolled in the background".into()))
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn act_behind(_win: isize, _what: Behind) -> anyhow::Result<Option<String>> {
+    Ok(None)
+}
+
+#[cfg(windows)]
+fn natural_target_window() -> Option<isize> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -341,6 +537,11 @@ pub fn target_window() -> Option<isize> {
 
 #[cfg(not(windows))]
 pub fn target_window() -> Option<isize> {
+    held_window()
+}
+
+#[cfg(not(windows))]
+fn natural_target_window() -> Option<isize> {
     None
 }
 

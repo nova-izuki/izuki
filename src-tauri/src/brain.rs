@@ -1073,7 +1073,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
 
             let app_name = uia::foreground_app();
             // When Izuki last touched the PC itself, so input after that is yours.
-            let own = std::cell::Cell::new(std::time::Instant::now());
+            let own = std::cell::Cell::new(LAST_OWN.lock().unwrap_or_else(std::time::Instant::now));
 
             let run = || {
                 for (i, step) in steps.iter().enumerate() {
@@ -1090,9 +1090,13 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     // the real pointer, so the animation leads rather than trails.
                     // (Instant skills happen nowhere on screen — no hand.)
                     let placeless = matches!(step.action, Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube);
-                    // You grabbed the mouse or keyboard: let go until you
-                    // pause, then take a fresh look (you may have moved things).
-                    if !placeless && yield_to_user(app, own.get(), alive) {
+                    // Switched to another app? Izuki keeps working in its own
+                    // window behind yours (automation::execute_behind).
+                    uia::follow_or_hold(person_touched(own.get()));
+                    let behind = uia::working_behind().is_some();
+                    // You grabbed the mouse or keyboard in the same window:
+                    // let go until you pause, then take a fresh look.
+                    if !placeless && !behind && yield_to_user(app, own.get(), alive) {
                         if !alive() {
                             let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
                             return false;
@@ -1102,7 +1106,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                         );
                         return false;
                     }
-                    if !placeless {
+                    if !placeless && !behind {
                     let _ = app.emit(
                         events::HAND,
                         HandCommand {
@@ -1139,6 +1143,30 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                                 },
                             );
                         }
+                        Err(e) if e.to_string().starts_with("needs_front:") => {
+                            // Needs the real mouse or keyboard: wait for you
+                            // to pause, borrow the window, look again.
+                            let _ = app.emit(
+                                events::STATUS,
+                                StatusEvent::working("Working behind your app — I'll borrow the window when you pause."),
+                            );
+                            let until = std::time::Instant::now() + Duration::from_secs(120);
+                            while alive() && std::time::Instant::now() < until && crate::buddy::idle_duration() < Duration::from_millis(2500) {
+                                std::thread::sleep(Duration::from_millis(200));
+                            }
+                            if !alive() {
+                                let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
+                                return false;
+                            }
+                            uia::front_held_window();
+                            std::thread::sleep(Duration::from_millis(300));
+                            own.set(std::time::Instant::now());
+                            *LAST_OWN.lock() = Some(own.get());
+                            *STEP_SNAG.lock() = Some(
+                                "paused: you were in another app, so Izuki waited and brought its window back — look again first".into(),
+                            );
+                            return false;
+                        }
                         Err(e) => {
                             let why = e.to_string();
                             // Something on top, or greyed out: the brain can fix
@@ -1157,11 +1185,20 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     // Breathing room between steps so the app under us can react.
                     std::thread::sleep(Duration::from_millis(140));
                     own.set(std::time::Instant::now());
+                    *LAST_OWN.lock() = Some(own.get());
                 }
                 true
             };
 
             (run(), executed.get())
+}
+
+/// When Izuki last moved the mouse or typed (shared across a task's rounds).
+static LAST_OWN: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+
+/// The person touched the keyboard or mouse after Izuki's own last move.
+fn person_touched(own: std::time::Instant) -> bool {
+    crate::buddy::idle_duration() + Duration::from_millis(250) < own.elapsed()
 }
 
 /// Input newer than Izuki's own last move is the person's: true when they're
@@ -1648,6 +1685,18 @@ fn submit_task(
         };
     };
 
+    // Hold the window this task works in: switch to another app and Izuki
+    // carries on there behind you (uia::working_behind). Let go at the end.
+    struct LetGo;
+    impl Drop for LetGo {
+        fn drop(&mut self) {
+            uia::hold_window(None);
+        }
+    }
+    uia::hold_window(uia::target_window());
+    *LAST_OWN.lock() = Some(std::time::Instant::now());
+    let _let_go = LetGo;
+
     // Look, act, look again — the way a person does a task. One plan made
     // from one screenshot runs blind: "open Chrome and play some music"
     // opened Chrome and stopped at its profile picker, because the picker
@@ -2081,6 +2130,16 @@ fn submit_task(
             .last();
         all_steps.extend(steps.iter().take(executed).cloned());
         done_so_far.extend(steps.iter().take(executed).map(describe_step));
+        if uia::working_behind().is_some() {
+            let note = "The person switched to another app while you work, so you're working in your window BEHIND \
+                        theirs (the screenshot shows your window as if it were in front). Clicking buttons, links, \
+                        tabs and checkboxes, typing into boxes and scrolling all work there; keyboard shortcuts, \
+                        right-clicks, dragging and opening apps wait until they pause. Prefer the steps that work.";
+            told = Some(match told.take() {
+                Some(t) => format!("{t}\n{note}"),
+                None => note.to_string(),
+            });
+        }
         // A click that couldn't happen (something on top, a greyed-out
         // button) isn't the end: tell the brain, and it deals with it.
         let snag = STEP_SNAG.lock().take();

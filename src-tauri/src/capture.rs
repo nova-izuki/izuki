@@ -339,6 +339,55 @@ mod imp {
         }
     }
 
+    /// One window's own picture, even while other windows cover it
+    /// (PrintWindow asks the app to draw itself), and where it is on screen.
+    pub fn capture_window(hwnd: isize) -> Result<(Rect, Frame)> {
+        use windows::Win32::Foundation::{HWND, RECT};
+        use windows::Win32::Storage::Xps::{PrintWindow, PRINT_WINDOW_FLAGS};
+        use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+        unsafe {
+            let h = HWND(hwnd as *mut core::ffi::c_void);
+            let mut r = RECT::default();
+            GetWindowRect(h, &mut r).map_err(|e| anyhow!("no window rect: {e}"))?;
+            let (w, ht) = (r.right - r.left, r.bottom - r.top);
+            if w <= 0 || ht <= 0 || w > 16384 || ht > 16384 {
+                return Err(anyhow!("empty window"));
+            }
+            let screen_dc = CreateDCW(w!("DISPLAY"), None, None, None);
+            if screen_dc.is_invalid() {
+                return Err(anyhow!("could not open the display device context"));
+            }
+            let mem_dc = CreateCompatibleDC(Some(screen_dc));
+            let bitmap = CreateCompatibleBitmap(screen_dc, w, ht);
+            let old = SelectObject(mem_dc, HGDIOBJ(bitmap.0));
+            // PW_RENDERFULLCONTENT (2): browsers and other GPU-drawn apps too.
+            let drawn = PrintWindow(h, mem_dc, PRINT_WINDOW_FLAGS(2)).as_bool();
+            let mut bgra = vec![0u8; (w as usize) * (ht as usize) * 4];
+            let mut info = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: w,
+                    biHeight: -ht,
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB.0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let scanned = GetDIBits(mem_dc, bitmap, 0, ht as u32, Some(bgra.as_mut_ptr().cast()), &mut info, DIB_RGB_COLORS);
+            SelectObject(mem_dc, old);
+            let _ = DeleteObject(HGDIOBJ(bitmap.0));
+            let _ = DeleteDC(mem_dc);
+            let _ = DeleteDC(screen_dc);
+            if !drawn || scanned == 0 {
+                return Err(anyhow!("the window wouldn't draw itself"));
+            }
+            let rect = Rect { x: r.left, y: r.top, w, h: ht };
+            Ok((rect, Frame { width: w as u32, height: ht as u32, origin: (r.left, r.top), bgra }))
+        }
+    }
+
     /// A tiny picture of the whole desktop (`w`×`h`), shrunk by the graphics
     /// driver in one call — cheap enough to take several times a second.
     /// Live Eyes (`live.rs`) watches these for motion; they never go to a model.
@@ -413,7 +462,54 @@ mod imp {
 
 pub use imp::{capture, capture_thumb, cursor_pos, virtual_bounds};
 
-/// Grab the whole virtual desktop.
+/// Grab the whole virtual desktop. While Izuki works in a window behind the
+/// one you're using, that window is drawn back in where it sits — so Izuki
+/// sees it as if it were in front, at its real screen position.
 pub fn capture_all() -> Result<Frame> {
-    capture(virtual_bounds())
+    let mut frame = capture(virtual_bounds())?;
+    #[cfg(windows)]
+    if let Some(win) = crate::uia::working_behind() {
+        if let Ok((_, shot)) = imp::capture_window(win) {
+            paste(&mut frame, &shot);
+        }
+    }
+    Ok(frame)
+}
+
+/// Lay `top` over `frame` at its own origin (clipped to the frame).
+fn paste(frame: &mut Frame, top: &Frame) {
+    let (fx, fy) = frame.origin;
+    let (tx, ty) = top.origin;
+    for row in 0..top.height as i32 {
+        let y = ty + row - fy;
+        if y < 0 || y >= frame.height as i32 {
+            continue;
+        }
+        let x0 = (tx - fx).max(0);
+        let x1 = (tx - fx + top.width as i32).min(frame.width as i32);
+        if x1 <= x0 {
+            continue;
+        }
+        let src = ((row as usize) * top.width as usize + (x0 - (tx - fx)) as usize) * 4;
+        let dst = ((y as usize) * frame.width as usize + x0 as usize) * 4;
+        let n = (x1 - x0) as usize * 4;
+        frame.bgra[dst..dst + n].copy_from_slice(&top.bgra[src..src + n]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_window_behind_is_drawn_back_in_place() {
+        let mut frame = Frame { width: 4, height: 3, origin: (-2, 0), bgra: vec![0; 4 * 3 * 4] };
+        // A 3×2 window at screen (0, 1), hanging off the frame's right edge.
+        let top = Frame { width: 3, height: 2, origin: (0, 1), bgra: vec![9; 3 * 2 * 4] };
+        paste(&mut frame, &top);
+        let at = |x: usize, y: usize| frame.bgra[(y * 4 + x) * 4];
+        assert_eq!((at(1, 1), at(2, 1), at(3, 1)), (0, 9, 9));
+        assert_eq!((at(2, 2), at(3, 2)), (9, 9));
+        assert_eq!(at(2, 0), 0);
+    }
 }
