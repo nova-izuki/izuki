@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import pkg from "../../../package.json";
 import { PhoneCard } from "../PhoneCard";
+import { BoostCard } from "../BoostCard";
 import { OrbStudio } from "../OrbStudio";
 import { UpdateControls } from '../UpdateControls';
 import { DiscordCard } from "../DiscordCard";
@@ -498,6 +499,8 @@ export function SettingsTab() {
           />
         </Row>
       </Section>
+
+      <BoostCard />
 
       <div id="settings-phone"><PhoneCard /></div>
 

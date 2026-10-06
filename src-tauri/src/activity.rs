@@ -81,6 +81,23 @@ fn clock(secs: u64) -> String {
     }
 }
 
+/// PC Boost on the Island: an offer to speed things up (with the buttons),
+/// or what it just did by itself.
+pub fn show_boost(text: &str, offer: bool) {
+    push(Activity {
+        id: "boost".into(),
+        kind: "boost",
+        icon: "⚡",
+        title: if offer { "PC running slow".into() } else { "PC Boost".into() },
+        detail: text.to_string(),
+        actions: if offer {
+            vec![Action { label: "Speed it up".into(), op: "ask:speed up my PC".into() }]
+        } else {
+            Vec::new()
+        },
+    });
+}
+
 /// The last few things copied (newest first), never anything secret.
 pub fn recent_copies() -> Vec<String> {
     RECENT_COPIES.lock().clone()

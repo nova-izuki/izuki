@@ -213,8 +213,15 @@ pub fn with_question(mut out: Vec<Suggestion>, question: bool, title: &str) -> V
     if !question || ["sign in", "log in", "login", "password"].iter().any(|w| t.contains(w)) {
         return out;
     }
-    out.retain(|s| s.label != "Explain this question" && s.label != "Teach me through this quiz");
+    out.retain(|s| !["Explain this question", "Teach me through this quiz", "Answer it for me"].contains(&s.label));
     out.insert(0, s("Teach me through this quiz", "👩‍🏫", "teach me this quiz"));
+    // Straight to the answer when that's what they want: picked on screen,
+    // with the reason in a line — never submitted for them.
+    out.insert(0, s(
+        "Answer it for me",
+        "✅",
+        "Answer the question on my screen: read the question and every option carefully (zoom in if the text is small), pick the right answer by clicking it, and tell me in one short line why it's right. Don't submit or go to the next question — I'll check it first.",
+    ));
     out.insert(0, strong(
         "Explain this question",
         "✏️",
@@ -299,7 +306,8 @@ mod tests {
         let q = with_question(base.clone(), true, "Performance Labs");
         assert_eq!(q[0].label, "Explain this question");
         assert!(q[0].strong);
-        assert_eq!(q[1].label, "Teach me through this quiz");
+        assert_eq!(q[1].label, "Answer it for me");
+        assert_eq!(q[2].label, "Teach me through this quiz");
         assert!(q.len() <= 3);
         assert_eq!(with_question(base.clone(), false, "x"), base);
         assert_eq!(with_question(Vec::new(), true, "Sign in - Google"), Vec::new());

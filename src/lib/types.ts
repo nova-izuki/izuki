@@ -395,6 +395,10 @@ export interface Settings {
   duck_while_listening: boolean;
   /** Double-check your words with a cloud speech model (Groq or Gemini key). */
   cloud_ears: boolean;
+  /** PC Boost: notice a struggling PC and offer to speed it up. */
+  pc_boost: boolean;
+  /** …and do the safe part (old temp files, hogging background helpers) by itself. */
+  pc_boost_auto: boolean;
   /** Language Izuki should expect while listening; "auto" detects it. */
   speech_language: string;
   /** Telegram bot token from @BotFather — Izuki on your phone. */

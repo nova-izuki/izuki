@@ -335,6 +335,14 @@ pub struct Settings {
     /// you, then back up — like a phone assistant lowering your music.
     #[serde(default = "default_true")]
     pub duck_while_listening: bool,
+    /// PC Boost: notice when the PC is struggling and offer to speed it up
+    /// (boost.rs). Only looks — a few cheap system calls every 5 s.
+    #[serde(default = "default_true")]
+    pub pc_boost: bool,
+    /// …and do the safe part by itself (old temp files, hogging background
+    /// helpers) — never a window you're using.
+    #[serde(default)]
+    pub pc_boost_auto: bool,
     /// Double-check what you said with a big cloud speech model (your Groq
     /// key, else Gemini): gets names like "Burna Boy" right and leaves out
     /// the lyrics of music playing in the room. The on-device model still
@@ -837,6 +845,8 @@ impl Default for Settings {
             barge_in: true,
             send_bug_reports: true,
             duck_while_listening: true,
+            pc_boost: true,
+            pc_boost_auto: false,
             cloud_ears: true,
             speech_language: default_speech_language(),
             telegram_token: String::new(),

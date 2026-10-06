@@ -58,6 +58,7 @@ pub mod clip;
 pub mod recall;
 pub mod timers;
 pub mod activity;
+pub mod boost;
 pub mod screentime;
 pub mod readaloud;
 pub mod tts;
@@ -310,6 +311,8 @@ pub fn run() {
             commands::reminders_list,
             commands::reminder_remove,
             commands::alarm_snooze,
+            commands::boost_health,
+            commands::boost_now,
             commands::cancel_task,
             commands::quit_app,
             commands::selftest_enabled,
@@ -363,6 +366,7 @@ pub fn run() {
             link::spawn(handle.clone());
             recall::spawn();
             activity::spawn();
+            boost::spawn(handle.clone());
             screentime::spawn();
             browser::init(&handle);
 

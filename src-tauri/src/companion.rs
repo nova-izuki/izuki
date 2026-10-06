@@ -212,6 +212,13 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         push("assistant", &text);
         return Reply::text(text);
     }
+    // "My PC is lagging", from the phone too: PC Boost on the PC.
+    if crate::boost::is_request(said) {
+        push("user", said);
+        let text = crate::boost::run(false);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // Timers, from the phone or Telegram too.
     if let Some(ask) = crate::timers::parse(said) {
         push("user", said);

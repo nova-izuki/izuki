@@ -366,6 +366,10 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         let s2 = said.clone();
         return blocking(move || crate::screentime::answer(&s2)).await.ok();
     }
+    // "Speed up my PC", "my laptop is lagging": PC Boost, at once.
+    if crate::boost::is_request(&said) {
+        return blocking(|| crate::boost::run(false)).await.ok();
+    }
     // Timers: "set a pasta timer for 12 minutes", "cancel the timer".
     if let Some(ask) = crate::timers::parse(&said) {
         return Some(crate::timers::run(&app, ask));
@@ -1019,6 +1023,18 @@ pub async fn media_control(action: String) -> R<bool> {
 #[tauri::command]
 pub fn reminders_list() -> Vec<crate::reminders::Reminder> {
     crate::reminders::list()
+}
+
+/// How the PC is doing, and the heaviest apps (Settings → PC Boost).
+#[tauri::command]
+pub async fn boost_health() -> R<crate::boost::Health> {
+    blocking(crate::boost::health).await
+}
+
+/// "Speed it up": clear old temp files, close hogging background helpers.
+#[tauri::command]
+pub async fn boost_now() -> R<String> {
+    blocking(|| crate::boost::run(false)).await
 }
 
 #[tauri::command]

@@ -242,6 +242,8 @@ export const MOCK_SETTINGS: Settings = {
   send_bug_reports: true,
   duck_while_listening: true,
   cloud_ears: true,
+  pc_boost: true,
+  pc_boost_auto: false,
   speech_language: "auto",
   telegram_token: "",
   composio_api_key: "",
@@ -278,6 +280,15 @@ export const MOCK_SETTINGS: Settings = {
 // ---------------------------------------------------------------------------
 
 let lastTypingPrefetch = 0;
+
+/** PC Boost's look at the PC (boost.rs). */
+export interface BoostHealth {
+  cpu: number;
+  ram: number;
+  ram_free_gb: number;
+  lagging: boolean;
+  hogs: Array<{ pid: number; name: string; cpu: number; mem_mb: number; window: boolean }>;
+}
 
 export const api = {
   getSettings: () => call<Settings>("get_settings", undefined, () => MOCK_SETTINGS),
@@ -437,6 +448,8 @@ export const api = {
   /** ⏮ ⏯ ⏭ for whatever is playing on the PC. */
   mediaControl: (action: "play" | "pause" | "next" | "previous") => call<boolean>("media_control", { action }, () => false),
   reminderRemove: (id: string) => call<void>("reminder_remove", { id }, () => undefined),
+  boostHealth: () => call<BoostHealth>("boost_health", undefined, () => ({ cpu: 0, ram: 0, ram_free_gb: 0, lagging: false, hogs: [] })),
+  boostNow: () => call<string>("boost_now", undefined, () => "PC Boost only works inside the Izuki app."),
   alarmSnooze: (text: string, minutes: number) => call<Reminder>("alarm_snooze", { text, minutes }, () => ({ id: "", at: 0, text })),
   chatCancel: (id: number) => call<void>("chat_cancel", { id }, () => undefined).catch(() => undefined),
   /** Connect to the paired Android phone. */
