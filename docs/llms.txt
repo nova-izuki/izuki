@@ -1,0 +1,30 @@
+# Izuki (Nova Izuki)
+
+> Izuki is a free, open-source AI assistant for Windows 10 and 11. Say "Hey Nova" and talk naturally: Izuki sees your screen, answers out loud, and uses your mouse and keyboard to get things done. It also works from your phone and on your TV.
+
+Izuki is free to use. It runs on free AI keys from Google Gemini, Groq (including Meta's Llama models), OpenRouter, Mistral or NVIDIA, or on a model running on your own PC with Ollama. Keys stay on the user's PC.
+
+## What it does
+
+- Hands-free voice ("Hey Nova") or hold Ctrl + Windows + Space to talk
+- Sees the screen and answers questions about it ("what does this error mean?")
+- Does tasks on the PC: opens apps, searches, clicks, types, scrolls, fills in forms, checking each step worked
+- Jarvis mode: presses buttons and types into boxes straight through Windows, so the user's own mouse stays free
+- Works beside you: if you use the mouse while it works, it waits, then carries on
+- Teacher mode for quizzes and homework: explains with an on-screen pen, never submits for you
+- Paste step-by-step directions from another AI and Izuki carries them out on screen
+- Alarms, reminders and day planning on the PC and phone
+- Send it pictures in the chat, Discord or Telegram
+- PC Boost: notices a slow PC and speeds it up (old temp files, hogging background updaters)
+- A status screen with live system health and one-tap fixes
+- Controls Roku, Samsung, LG, Android TV, Google TV and Fire TV, and can say what's on the TV
+- 30+ voices and real 3D characters, including comic-book and flat-art styles
+- A browser extension for exact clicks on web pages
+- Safety: Esc stops everything, it never types passwords or card numbers, and asks before sending
+
+## Links
+
+- Website: https://nova-izuki.github.io/izuki/
+- Download for Windows (free): https://github.com/nova-izuki/izuki/releases/latest
+- Phone web app: https://nova-izuki.github.io/izuki/app/
+- Source code: https://github.com/nova-izuki/izuki

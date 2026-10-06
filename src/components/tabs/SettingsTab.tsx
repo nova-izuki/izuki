@@ -37,6 +37,11 @@ import { brainReady } from "../../lib/setup";
 import type { BackdropMode, ProviderId } from "../../lib/types";
 
 const LOCAL_PROVIDERS: ProviderId[] = ["ollama"];
+/** Meta's Llama 4, free on these (Meta's own API is a US-only waitlist). */
+const META_LLAMA: Record<string, string> = {
+  groq: "meta-llama/llama-4-scout-17b-16e-instruct",
+  nvidia: "meta/llama-4-maverick-17b-128e-instruct",
+};
 
 export function SettingsTab() {
   const settings = useIzuki((s) => s.settings);
@@ -196,6 +201,16 @@ export function SettingsTab() {
                       onChange={(v) => setProvider(p.id, { model: v })}
                       placeholder="moondream"
                     />
+                    {META_LLAMA[p.id] && p.model !== META_LLAMA[p.id] && (
+                      <button
+                        type="button"
+                        onClick={() => setProvider(p.id, { model: META_LLAMA[p.id] })}
+                        className="izk-pill izk-no-drag h-[26px] self-start px-2.5 text-[11px]"
+                        title="Meta's free Llama 4 model, which can see your screen"
+                      >
+                        Use Meta Llama 4 (free, sees pictures)
+                      </button>
+                    )}
                     <LabelledField
                       label="Endpoint"
                       value={p.base_url}
