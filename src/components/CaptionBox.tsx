@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
-import { Check, Copy, GripHorizontal, X } from "lucide-react";
+import { Check, Copy, GripHorizontal, Trash2, X } from "lucide-react";
 import { resizeHandles, useFloating, workArea, type Limits } from "../lib/floating";
 import type { CaptionPayload } from "../lib/types";
 import { EV, on } from "../lib/ipc";
@@ -23,12 +23,18 @@ const LINGER_MS = 4000;
 export function CaptionBox({
   caption,
   onDone,
+  onClear,
   stay = false,
+  past = [],
 }: {
   caption: CaptionPayload & { id: number };
   onDone: () => void;
+  /** Clear every kept answer and close. */
+  onClear?: () => void;
   /** Keep the answer up once it's said (setting), until × or a new one. */
   stay?: boolean;
+  /** Earlier answers (kept answers only), oldest first — scroll up to read them. */
+  past?: string[];
 }) {
   const stayRef = useRef(stay);
   stayRef.current = stay;
@@ -83,10 +89,13 @@ export function CaptionBox({
     };
   }, [caption.id, caption.paced, caption.msPerWord, words.length]);
 
+  // Follow the words as they come — unless you've scrolled up to read an
+  // earlier answer, then it stays where you are.
+  const pinnedToEnd = useRef(true);
   useEffect(() => {
     const el = scroller.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [shown]);
+    if (el && pinnedToEnd.current) el.scrollTop = el.scrollHeight;
+  }, [shown, past.length]);
 
   // Readable over whatever is behind it — or the look picked in Settings.
   const card = useRef<HTMLDivElement>(null);
@@ -115,6 +124,18 @@ export function CaptionBox({
           </span>
           <span className="text-[10px] font-semibold tracking-[0.12em] text-izk-muted">IZUKI</span>
           <GripHorizontal size={12} className="ml-auto text-izk-muted/60" />
+          {stay && past.length > 0 && onClear && (
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={onClear}
+              aria-label="Clear all answers"
+              title="Clear all"
+              className="flex h-[18px] w-[18px] items-center justify-center rounded-full text-izk-muted transition-colors hover:bg-white/10 hover:text-izk-danger"
+            >
+              <Trash2 size={11} strokeWidth={2.4} />
+            </button>
+          )}
           {stay && shown >= words.length && (
             <button
               type="button"
@@ -144,9 +165,21 @@ export function CaptionBox({
         </div>
         <div
           ref={scroller}
-          onPointerDown={(e) => begin(e, "move")}
-          className="izk-tone-text min-h-0 flex-1 cursor-grab overflow-y-auto px-3.5 pb-3 pt-1.5 text-[13px] leading-relaxed text-izk-ink active:cursor-grabbing"
+          // Kept answers scroll and can be selected; a live caption drags.
+          onPointerDown={stay ? undefined : (e) => begin(e, "move")}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            pinnedToEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+          }}
+          className={`izk-tone-text min-h-0 flex-1 overflow-y-auto px-3.5 pb-3 pt-1.5 text-[13px] leading-relaxed text-izk-ink ${
+            stay ? "select-text" : "cursor-grab active:cursor-grabbing"
+          }`}
         >
+          {past.map((p, i) => (
+            <div key={i} className="mb-2 border-b border-white/8 pb-2 opacity-60">
+              {p}
+            </div>
+          ))}
           {words.slice(0, shown).join(" ")}
           {shown < words.length && (
             <span className="izk-breathe ml-0.5 inline-block h-[12px] w-[2px] translate-y-[2px] bg-izk-teal" />

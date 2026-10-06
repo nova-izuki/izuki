@@ -104,6 +104,10 @@ export function OverlayCanvas() {
   const [transcript, setTranscript] = useState<(TranscriptPayload & { at: number }) | null>(null);
   /** Live caption of whatever Izuki just said — null hides it. */
   const [caption, setCaption] = useState<(CaptionPayload & { id: number }) | null>(null);
+  // "Keep my last answer on screen": the earlier answers, to scroll back
+  // through in the same box (short "On it."-type lines aren't kept).
+  const [pastReplies, setPastReplies] = useState<string[]>([]);
+  const captionText = useRef("");
   /**
    * Whether "Always show the hand" is on. The overlay can be up in follow
    * mode without it — push-to-talk and captions borrow the window — and
@@ -476,7 +480,14 @@ export function OverlayCanvas() {
         setListening(p.active);
         setHandOn(p.follow);
       }),
-      on<CaptionPayload>(EV.caption, (p) => setCaption({ ...p, id: Date.now() })),
+      on<CaptionPayload>(EV.caption, (p) => {
+        const before = captionText.current.trim();
+        if (before && before !== p.text.trim() && before.split(/\s+/).length >= 4) {
+          setPastReplies((all) => [...all.filter((x) => x !== before), before].slice(-30));
+        }
+        captionText.current = p.text;
+        setCaption({ ...p, id: Date.now() });
+      }),
       on<OrbState>(EV.orb, (state) => {
         setOrb(state);
         if (state === "hidden") setPenMarks([]);
@@ -778,7 +789,19 @@ export function OverlayCanvas() {
           />}
         <VoiceSphere state={musicShowing ? "speaking" : orb} transcript={transcript} doing={doing} />
         {orb === "hidden" && <TranscriptBar text={transcript?.text ?? null} final={!!transcript?.final} />}
-        {caption && <CaptionBox caption={caption} stay={keepReply} onDone={() => setCaption(null)} />}
+        {caption && (
+          <CaptionBox
+            caption={caption}
+            stay={keepReply}
+            past={keepReply ? pastReplies : []}
+            onDone={() => setCaption(null)}
+            onClear={() => {
+              setPastReplies([]);
+              captionText.current = "";
+              setCaption(null);
+            }}
+          />
+        )}
         {handOn && <FloatingChat />}
       </>
     ) : null;
