@@ -531,6 +531,7 @@ pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
         | ProviderId::Xai
         | ProviderId::Groq
         | ProviderId::Mistral
+        | ProviderId::Meta
         | ProviderId::Custom => ask_openai_compatible(cfg, req, style)?,
     };
 

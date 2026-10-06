@@ -250,6 +250,8 @@ export function SettingsTab() {
                                 ? "xai-… (from console.x.ai → API Keys)"
                               : p.id === "groq"
                                 ? "gsk_… (free from console.groq.com → API Keys — same key as the Human voice)"
+                              : p.id === "meta"
+                                ? "LLM|… (free from llama.developer.meta.com → API keys)"
                               : p.id === "mistral"
                                 ? "free from console.mistral.ai → API Keys (pick the free Experiment plan)"
                               : p.id === "9router"

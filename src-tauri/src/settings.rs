@@ -24,6 +24,8 @@ pub enum ProviderId {
     Groq,
     /// Mistral (https://console.mistral.ai) — free on its "Experiment" plan.
     Mistral,
+    /// Meta's own Llama API (https://llama.developer.meta.com) — OpenAI-compatible.
+    Meta,
     Custom,
 }
 
@@ -40,6 +42,7 @@ impl ProviderId {
             ProviderId::Xai => "xai",
             ProviderId::Groq => "groq",
             ProviderId::Mistral => "mistral",
+            ProviderId::Meta => "meta",
             ProviderId::Custom => "custom",
         }
     }
@@ -56,6 +59,7 @@ impl ProviderId {
             "xai" | "grok" => ProviderId::Xai,
             "groq" => ProviderId::Groq,
             "mistral" => ProviderId::Mistral,
+            "meta" | "llama" => ProviderId::Meta,
             "custom" => ProviderId::Custom,
             _ => return None,
         })
@@ -769,6 +773,15 @@ impl Default for Settings {
                     base_url: "https://api.mistral.ai/v1".into(),
                     // Mistral's own "always the current Small" name; it reads images.
                     model: "mistral-small-latest".into(),
+                    api_key: String::new(),
+                    enabled: false,
+                },
+                ProviderConfig {
+                    id: ProviderId::Meta,
+                    label: "Meta Llama (free preview)".into(),
+                    base_url: "https://api.llama.com/compat/v1".into(),
+                    // Meta's Llama 4: reads images, so it does screen tasks too.
+                    model: "Llama-4-Maverick-17B-128E-Instruct-FP8".into(),
                     api_key: String::new(),
                     enabled: false,
                 },

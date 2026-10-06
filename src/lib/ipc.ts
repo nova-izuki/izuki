@@ -162,6 +162,14 @@ export const MOCK_SETTINGS: Settings = {
       enabled: false,
     },
     {
+      id: "meta",
+      label: "Meta Llama (free preview)",
+      base_url: "https://api.llama.com/compat/v1",
+      model: "Llama-4-Maverick-17B-128E-Instruct-FP8",
+      api_key: "",
+      enabled: false,
+    },
+    {
       id: "custom",
       label: "Custom endpoint",
       base_url: "http://127.0.0.1:8080/v1",

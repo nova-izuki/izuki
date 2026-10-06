@@ -31,7 +31,7 @@
 - The voice and the character switch together to match, or keep your own choice.
 
 ## Also
-- A one-tap **Meta Llama 4** model on Groq and NVIDIA. It's free and can see your screen.
+- **Meta Llama** is a new brain choice: paste a free key from llama.developer.meta.com (US). Llama 4 is also a one-tap pick on Groq and NVIDIA. It can see your screen.
 - Quieter on battery while waiting for "Hey Nova", and talking over Izuki cuts it off at once.
 - A stuck "Thinking…" now recovers by itself and tells you.
 - Updates downloaded in the background install within the first 10 minutes after you open Izuki.

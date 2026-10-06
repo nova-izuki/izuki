@@ -227,6 +227,7 @@ export type ProviderId =
   | "xai"
   | "groq"
   | "mistral"
+  | "meta"
   | "custom";
 
 export interface ProviderConfig {
