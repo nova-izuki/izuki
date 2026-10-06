@@ -283,6 +283,39 @@ function followUpMs() {
  * doesn't count: you might be answering its question.)
  */
 let requestSeq = 0;
+
+/**
+ * Never stuck on "Thinking…": anything that shows work is happening (a
+ * status line, words arriving, Izuki speaking) counts as progress. Slow but
+ * moving gets a short "still on it"; nothing at all for a minute is stopped
+ * and said plainly — the old way was a forever-spinning orb.
+ */
+let lastProgressAt = 0;
+const SAY_STILL_AFTER_MS = 12_000;
+const GIVE_UP_AFTER_MS = 60_000;
+const STILL = ["Still on it — one moment.", "Nearly there, hang on.", "Still working on that."];
+function watchThinking(at: number, isOurs: () => boolean, waitingOnYou: () => boolean, stop: () => void) {
+  const began = Date.now();
+  lastProgressAt = began;
+  let saidStill = false;
+  const t = setInterval(() => {
+    if (requestSeq !== at || !isOurs()) return clearInterval(t);
+    if (waitingOnYou() || isSpeaking()) {
+      lastProgressAt = Date.now();
+      return;
+    }
+    const now = Date.now();
+    if (!saidStill && now - began > SAY_STILL_AFTER_MS && now - lastProgressAt > 4000) {
+      saidStill = true;
+      void respond(pick(STILL), "calm", false, true);
+    }
+    if (now - lastProgressAt > GIVE_UP_AFTER_MS) {
+      clearInterval(t);
+      void api.log(`[bug] request stalled: no progress for ${Math.round((now - lastProgressAt) / 1000)} s — stopped it`).catch(() => undefined);
+      stop();
+    }
+  }, 1000);
+}
 /** Izuki asked "which one? circle it" and is waiting (see brain::ask_user). */
 let helpPending = false;
 /** A linked TV/phone heard the wake word: this PC doesn't answer it too. */
@@ -902,6 +935,23 @@ ${result}`);
     startSession(from === "voice", "thinking");
     thinkingNow.current = true;
     orb("thinking");
+    watchThinking(
+      at,
+      () => thinkingNow.current,
+      () => helpPending,
+      () => {
+        requestSeq++;
+        void api.cancelTask().catch(() => undefined);
+        cancelChat();
+        thinkingNow.current = false;
+        void emit(EV.thinking, false);
+        setVoice({ busy: false });
+        const now = requestSeq;
+        void respond("Sorry — that got stuck, so I stopped it. Try again, or say it a different way.", "sympathetic", true).then(
+          () => void afterReply(now, false)
+        );
+      }
+    );
     setVoice({ lastHeard: t, busy: true });
     void emit(EV.thinking, true);
     // In a voice conversation, keep listening while Izuki thinks and
@@ -1044,6 +1094,16 @@ ${result}`);
 
   // The module-level door (typed chat from anywhere) uses this.
   runRequest = handleRequest;
+
+  // Work showing up (a status line, words streaming in) is progress — the
+  // thinking watchdog only steps in when nothing at all is happening.
+  useEffect(() => {
+    const bump = () => {
+      lastProgressAt = Date.now();
+    };
+    const offs = [on(EV.status, bump), on(EV.chatDelta, bump), on(EV.say, bump)];
+    return () => offs.forEach((o) => void o.then((f) => f()));
+  }, []);
 
   // ---- listening ----------------------------------------------------------
   const {
