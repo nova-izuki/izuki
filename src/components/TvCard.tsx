@@ -241,8 +241,10 @@ function LinkAndLook() {
           <option value="constellation">Star crystal</option>
           <option value="particles">Stardust</option>
           <option value="face">Hologram face</option>
-          <option value="holo3d">Hologram bust (3D)</option>
-          <option value="avatar">3D avatar</option>
+          <option value="model:holo-female">Hologram woman (3D)</option>
+          <option value="model:holo-male">Hologram man (3D)</option>
+          <option value="model:lightskin-female">Woman (3D)</option>
+          <option value="model:black-male">Man (3D)</option>
           <option value="ferro">Ferrofluid</option>
           <option value="aurora">Aurora (TV)</option>
           <option value="nebula">Nebula (TV)</option>

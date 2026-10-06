@@ -18,7 +18,7 @@
 // (home Wi-Fi + Allow on the PC), it copies the PC's setup and memories, and
 // the PC can hand it TV jobs ("Hey Nova, open YouTube on the TV").
 
-import { drawGlassOrb, avatarFromStorage } from "./glass-orb.js";
+import { drawGlassOrb, faceFromStorage } from "./glass-orb.js";
 
 const N = () => window.Capacitor?.Plugins?.IzukiControl;
 const core = () => window.IzukiCore;
@@ -30,13 +30,14 @@ const store = {
 
 const ORBS = [
   ["ripple", "Tidal pearl"], ["ferrofluid", "Clear water"], ["dew", "Pure water"], ["constellation", "Star crystal"],
-  ["particles", "Stardust"], ["face", "Hologram face"], ["holo3d", "Hologram bust"], ["avatar", "3D avatar"], ["ferro", "Ferrofluid"], ["aurora", "Aurora"], ["nebula", "Nebula"],
+  ["particles", "Stardust"], ["face", "Hologram face"], ["model:holo-female", "Hologram woman"], ["model:holo-male", "Hologram man"], ["model:lightskin-female", "Woman (3D)"], ["model:black-male", "Man (3D)"], ["ferro", "Ferrofluid"], ["aurora", "Aurora"], ["nebula", "Nebula"],
 ];
 /** TV looks built on a glass orb plus a colour grade. */
 const GRADE = { aurora: ["ripple", "tv-aurora"], nebula: ["particles", "tv-nebula"] };
 
 let mode = store.get("mode", "wake");          // "wake" | "hold"
 let orbStyle = store.get("orb", "ripple");
+if (orbStyle === "holo3d" || orbStyle === "avatar") orbStyle = "model:holo-female";
 let link = store.get("link", null);             // { ip, name, token }
 let state = "idle";
 let energy = 0;
@@ -208,7 +209,7 @@ function animate() {
   // The 3D face's saved look, re-read every few seconds, not parsed every frame.
   let face = null, faceAt = -1e9;
   const frame = (now) => {
-    if (now - faceAt > 3000) { face = avatarFromStorage(); faceAt = now; }
+    if (now - faceAt > 3000) { face = faceFromStorage(GRADE[orbStyle]?.[0] || orbStyle); faceAt = now; }
     const t = (now - t0) / 1000;
     const target = state === "talk" ? 0.45 + 0.35 * Math.abs(Math.sin(t * 7.3)) * Math.abs(Math.sin(t * 2.1)) : state === "listen" ? 0.18 + energy : 0.05;
     energy *= 0.9;

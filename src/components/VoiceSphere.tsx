@@ -9,7 +9,7 @@ import { drawWaterOrb } from "../../docs/app/water-orb.js";
 import { createOrbMotion, stepOrbMotion } from "../../docs/app/orb-motion.js";
 import { drawConstellationOrb, drawRippleOrb } from "../../docs/app/orb-materials.js";
 import { drawGlassOrb, type FaceOptions } from "../../docs/app/glass-orb.js";
-import { faceFor } from "../lib/avatar";
+import { faceFor, isFace } from "../lib/faces";
 import { watchPointer } from "./Island";
 
 /**
@@ -226,7 +226,7 @@ export function SphereCanvas({
   /** Where the 3D face looks: at the pointer while it moves, else around. */
   const lookRef = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => {
-    if (style !== "holo3d" && style !== "avatar") return;
+    if (!isFace(style)) return;
     let idle: ReturnType<typeof setTimeout> | undefined;
     const stop = watchPointer((x, y) => {
       const r = canvasRef.current?.getBoundingClientRect();

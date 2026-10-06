@@ -425,9 +425,9 @@ pub fn show(state: &str, text: Option<&str>) -> bool {
     }
     let look = tv_look(&settings);
     let mut path = format!("/input?state={}&look={}", urlencode(state), urlencode(&look));
-    // The 3D faces: a man or a woman, matching the voice (or the choice).
-    if look == "holo3d" || look == "avatar" {
-        path.push_str(&format!("&face={}", if avatar_is_male(&settings) { "m" } else { "f" }));
+    // A 3D face: the channel has pictures of the four that come with Izuki.
+    if let Some(id) = look.strip_prefix("model:") {
+        path.push_str(&format!("&face={}", urlencode(id)));
     }
     // What you just said, shown above Izuki's answer.
     if state == "think" {
@@ -467,12 +467,8 @@ pub fn heard(said: &str) {
     }
 }
 
-/// The 3D face is a man's: chosen, or (on auto) the voice is a man's.
-pub fn avatar_is_male(s: &crate::settings::Settings) -> bool {
-    let picked = serde_json::from_str::<serde_json::Value>(&s.avatar).ok().and_then(|v| v["gender"].as_str().map(str::to_string)).unwrap_or_default();
-    if picked == "male" || picked == "female" {
-        return picked == "male";
-    }
+/// Izuki's voice is a man's (its own pick, or the character's).
+pub fn voice_is_male(s: &crate::settings::Settings) -> bool {
     let own = s.persona_voice.trim();
     if !own.is_empty() {
         if let Some((_, label)) = crate::voices::VOICES.iter().find(|(id, _)| *id == own) {

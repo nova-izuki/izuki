@@ -27,7 +27,16 @@
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const orbs = new Set();
   let style = "liquid";
-  try { style = localStorage.getItem("izuki.orbStyle") || "liquid"; } catch {}
+  // The orb styles there are; a 3D face is "model:<id>". The old drawn faces
+  // (holo3d, avatar) became real 3D models.
+  const STYLES = ["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro"];
+  const known = (v) => {
+    v = String(v || "");
+    if (v === "holo3d") return "model:holo-female";
+    if (v === "avatar") return "model:lightskin-female";
+    return STYLES.includes(v) || /^model:[a-z0-9-]{1,40}$/i.test(v) ? v : "liquid";
+  };
+  try { style = known(localStorage.getItem("izuki.orbStyle") || "liquid"); } catch {}
   let mode = "idle", target = 0, level = 0, t = 0, turn = 0, last = performance.now(), raf = 0, frame = 0;
   const parse = (col) => col.split(",").map(Number);
   let mix = PALETTES.idle.colors.map(parse), glowMix = parse(PALETTES.idle.glow);
@@ -45,12 +54,13 @@
 
   // The 3D faces (holo3d, avatar) need a steady 30 fps even at rest — blinks and
   // breathing at 12 fps look like a slideshow.
-  const isFace = (s) => s === "holo3d" || s === "avatar";
+  const isFace = (s) => typeof s === "string" && s.startsWith("model:");
   // The saved look, read once a second rather than parsed every frame.
-  let faceCache = null, faceAt = 0;
-  const savedFace = (now) => {
-    if (!faceCache || now - faceAt > 1000) { faceCache = material.avatarFromStorage ? material.avatarFromStorage() : null; faceAt = now; }
-    return faceCache;
+  let faceCache = {}, faceAt = 0;
+  const savedFace = (now, s) => {
+    if (now - faceAt > 1000) { faceCache = {}; faceAt = now; }
+    if (!faceCache[s]) faceCache[s] = material.faceFromStorage ? material.faceFromStorage(s) : {};
+    return faceCache[s];
   };
 
   const visible = (o) => { const r=o.canvas.getBoundingClientRect();return o.canvas.isConnected && r.width>0 && r.height>0 && r.bottom>0 && r.top<innerHeight; };
@@ -78,7 +88,7 @@
     const state = o.preview ? o.physics : physics;
     if (selectedStyle !== 'liquid' && material && state) {
       // The realistic GPU look first; the 2D drawers if this phone can't.
-      const face = isFace(selectedStyle) && material.avatarFromStorage ? { ...savedFace(now), poke: o.poke } : null;
+      const face = isFace(selectedStyle) ? { ...savedFace(now, selectedStyle), poke: o.poke } : null;
       const smile = (o.preview ? o.preview.mode : mode) === "speaking" ? 0.4 : 0;
       if (material.drawGlassOrb && material.drawGlassOrb(ctx, SIZE, selectedStyle, reduced ? 0 : state.time, state.energy, state.waiting || 0, smile, face)) return;
       if (selectedStyle === 'ferrofluid' || selectedStyle === 'dew') material.drawWaterOrb(ctx,SIZE,state.time,state.energy,0,(o.preview?.mode || mode)==='thinking',state);
@@ -223,9 +233,9 @@
       fetch(url).then(r=>r.arrayBuffer()).then(buffer=>{const envelope=motionModule?.waveEnvelope(buffer);if(generation===audioGeneration&&envelope)audioTrack={player,envelope};}).catch(()=>{});
     },
     /** The 3D face's look changed (setup saved it): show it now. */
-    face() { faceCache = null; wake(); },
+    face() { faceCache = {}; wake(); },
     style(value) {
-      style = ["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro", "holo3d", "avatar"].includes(value) ? value : "liquid";
+      style = known(value);
       try { localStorage.setItem("izuki.orbStyle", style); } catch {}
       wake();
     },

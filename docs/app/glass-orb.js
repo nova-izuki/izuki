@@ -1,17 +1,19 @@
-import { drawFace3D, genderOfVoice } from "./face3d.js";
+// The 3D faces (orb styles "model:<id>") live in model-orb.js — three.js and
+// the models are big, so they load only when a face is picked.
+let faces = null, facesLoading = null;
+function faceModule() {
+  if (!facesLoading) facesLoading = import("./model-orb.js").then((m) => (faces = m), () => (faces = false));
+  return faces;
+}
 
-/** The 3D face's look as saved on this device (phone and TV keep it here;
- *  the PC passes its own). Gender "auto" follows the voice when known. */
-export function avatarFromStorage() {
-  let a = {};
-  try { a = JSON.parse(localStorage.getItem("izuki.avatar") || "{}") || {}; } catch {}
-  let gender = a.gender;
-  if (gender !== "male" && gender !== "female") {
-    let voice = "";
-    try { voice = localStorage.getItem("izuki.voiceGender") || ""; } catch {}
-    gender = voice === "male" || voice === "female" ? voice : genderOfVoice(a.voice || "");
-  }
-  return { gender, avatar: a };
+/** How a face is set up on this device (izuki.avatar: { faceId: look }) —
+ *  the phone and the TV page keep it here; the PC passes its own. */
+export function faceFromStorage(style) {
+  let all = {};
+  try { all = JSON.parse(localStorage.getItem("izuki.avatar") || "{}") || {}; } catch {}
+  const id = String(style || "").replace(/^model:/, "");
+  const custom = all && typeof all[id] === "object" ? all[id] : null;
+  return { custom };
 }
 
 // Realistic orbs, drawn on the graphics card and shared by the PC app, the
@@ -433,10 +435,21 @@ function renderer(px) {
  * `thinking` 0…1 how much it's thinking. False if WebGL isn't available.
  */
 export function drawGlassOrb(ctx, size, style, time, energy, thinking, mood = 0, face = null) {
-  // The 3D faces: a hologram bust, or a full 3D character (face3d.js).
-  if (style === "holo3d" || style === "avatar") {
-    const f = face || avatarFromStorage();
-    return drawFace3D(ctx, size, { mode: style === "avatar" ? "avatar" : "holo", gender: f.gender, look: f.look, avatar: f.avatar, poke: f.poke, time, energy, thinking, mood });
+  // A 3D face (a GLB model): drawn by model-orb.js once it has loaded.
+  if (typeof style === "string" && style.startsWith("model:")) {
+    const m = faceModule();
+    if (m === false) return false;
+    const f = face || faceFromStorage(style);
+    if (!m) {
+      // Still loading the face code: a soft glow where it will be.
+      const c = size / 2, g = ctx.createRadialGradient(c, c, size * 0.1, c, c, size * 0.46);
+      g.addColorStop(0, `rgba(120,140,255,${0.18 + 0.08 * Math.sin(time * 3)})`);
+      g.addColorStop(1, "rgba(120,140,255,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, size, size);
+      return true;
+    }
+    return m.drawModelOrb(ctx, size, { id: style.slice(6), time, energy, thinking, mood, look: f.look, poke: f.poke, custom: f.custom });
   }
   if (unsupported || !(style in STYLES)) return false;
   try {

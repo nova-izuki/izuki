@@ -575,7 +575,13 @@ impl Settings {
     /// a newly supported brain.
     pub fn heal(&mut self) {
         if !["mouse", "precision"].contains(&self.control_style.as_str()) { self.control_style = "mouse".into(); }
-        if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro", "holo3d", "avatar"].contains(&self.orb_style.as_str()) { self.orb_style = "liquid".into(); }
+        // The old drawn 3D faces became real 3D models: the nearest one, by voice.
+        let male = crate::tv::voice_is_male(self);
+        if self.orb_style == "holo3d" { self.orb_style = if male { "model:holo-male" } else { "model:holo-female" }.into(); }
+        if self.orb_style == "avatar" { self.orb_style = if male { "model:black-male" } else { "model:lightskin-female" }.into(); }
+        if self.tv_orb == "holo3d" || self.tv_orb == "avatar" { self.tv_orb = "model:holo-female".into(); }
+        let face_ok = |s: &str| s.strip_prefix("model:").is_some_and(|id| (1..=40).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
+        if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro"].contains(&self.orb_style.as_str()) && !face_ok(&self.orb_style) { self.orb_style = "liquid".into(); }
         self.orb_response = if self.orb_response.is_finite() { self.orb_response.clamp(0.5, 1.5) } else { 1.0 };
         let defaults = Self::default();
         for d in defaults.providers {

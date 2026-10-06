@@ -118,6 +118,13 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
     await evaluate(`document.getElementById('orb-style').value='${style}';document.getElementById('orb-style').dispatchEvent(new Event('change'))`);
     assert.equal(await evaluate('localStorage.getItem("izuki.orbStyle")'), style);
   }
+  // A 3D face: the picker shows the faces and the customise panel.
+  await evaluate(`document.getElementById('orb-style').value='model:holo-female';document.getElementById('orb-style').dispatchEvent(new Event('change'))`);
+  assert.equal(await evaluate('localStorage.getItem("izuki.orbStyle")'), 'model:holo-female');
+  for (let i = 0; i < 120 && !(await evaluate('document.querySelectorAll("#face-grid .face-tile").length >= 5')); i++) await pause(250);
+  assert(await evaluate('document.querySelectorAll("#face-grid .face-tile").length >= 5'), '3D face grid did not appear');
+  assert(await evaluate('!document.getElementById("face-tune").hidden'), 'face customise panel did not appear');
+  await evaluate(`document.getElementById('orb-style').value='liquid';document.getElementById('orb-style').dispatchEvent(new Event('change'))`);
   assert(await evaluate('!!document.getElementById("apps-refresh")'));
   await evaluate('document.getElementById("orb-preview").scrollIntoView({block:"center"})');
   await pause(250);

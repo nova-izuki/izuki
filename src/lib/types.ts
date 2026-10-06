@@ -258,9 +258,9 @@ export interface Settings {
   /** Snap targets to real UI Automation controls before clicking. */
   magnetic_hand: boolean;
   control_style: "mouse" | "precision";
-  orb_style: "liquid" | "ferrofluid" | "dew" | "ripple" | "constellation" | "particles" | "face" | "ferro" | "holo3d" | "avatar";
+  orb_style: "liquid" | "ferrofluid" | "dew" | "ripple" | "constellation" | "particles" | "face" | "ferro" | `model:${string}`;
   orb_response: number;
-  /** The 3D face's look, as JSON (see lib/avatar.ts). */
+  /** Each 3D face's look, as JSON { faceId: look } (see lib/faces.ts). */
   avatar?: string;
   /** The Roku's developer password, for updating the Izuki channel. */
   roku_dev_password?: string;

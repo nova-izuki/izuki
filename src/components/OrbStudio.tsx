@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { SphereCanvas } from './VoiceSphere';
 import { useIzuki } from '../lib/store';
 import { Segmented } from './ui';
-import { AvatarStudio } from './AvatarStudio';
-import { faceFor } from '../lib/avatar';
+import { LookPicker } from './FaceStudio';
+import { faceFor, isFace } from '../lib/faces';
 
 export function OrbStudio() {
   const style=useIzuki(s=>s.settings.orb_style);
@@ -23,9 +23,9 @@ export function OrbStudio() {
         <input aria-label="Orb motion intensity" type="range" min="0.5" max="1.5" step="0.1" value={response} onChange={e=>patch({orb_response:Number(e.target.value)})} className="mt-2 block w-full accent-izk-teal" />
         <span className="flex justify-between"><span>Gentle</span><span>Expressive</span></span>
       </label>}
-      {(style==='holo3d'||style==='avatar') && <p className="text-[10.5px] leading-relaxed text-izk-muted">The face follows your pointer, blinks, talks with the voice and smiles with the mood. On Auto it's a man for a male voice and a woman for a female one.</p>}
+      <LookPicker />
+      {isFace(style) && <p className="text-[10.5px] leading-relaxed text-izk-muted">The face follows your pointer, breathes, blinks (rigged models), talks with the voice and smiles with the mood. Tap it and it reacts.</p>}
       <p className="text-[10.5px] leading-relaxed text-izk-muted">Silent visual demo · no microphone, model calls or credits. Live motion follows sound; reduced-motion settings are respected.</p>
     </div>
-    {(style==='holo3d'||style==='avatar') && <AvatarStudio />}
   </div>;
 }

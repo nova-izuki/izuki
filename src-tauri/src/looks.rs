@@ -1,108 +1,83 @@
 //! "Change your orb to stardust", "make your orb pure water", "switch to
-//! Atlas", "be Kiki" — Izuki changes how it looks and sounds when asked, at
-//! once and with no AI. A thing people can play with.
+//! Atlas", "be Kiki", "switch to the hologram woman", "use my face" — Izuki
+//! changes how it looks and sounds when asked, at once and with no AI.
 
 /// What to change.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Look {
     Orb(&'static str, &'static str),
     Persona(&'static str, &'static str),
-    /// Changes to the 3D face: (setting, value) pairs, and what it is now.
+    /// Changes to the 3D face in use: (setting, value) pairs, and what it is now.
     Avatar(Vec<(&'static str, serde_json::Value)>, String),
 }
 
-/// What people call each part of the 3D face: words → (setting, value, how to say it).
-const FACE: &[(&[&str], &str, &str, &str)] = &[
-    (&["long dreads", "long locs", "long dreadlocks"], "hair", "longlocs", "long dreads"),
-    (&["dreads", "dreadlocks", "locs"], "hair", "locs", "dreads"),
-    (&["box braids", "braids", "plaits"], "hair", "braids", "box braids"),
-    (&["afro", "fro"], "hair", "afro", "an afro"),
-    (&["high top", "high-top", "hightop", "flat top", "flattop"], "hair", "hightop", "a high-top"),
-    (&["mohawk", "mohican"], "hair", "mohawk", "a mohawk"),
-    (&["fade"], "hair", "fade", "a fade"),
-    (&["buzz cut", "buzzcut", "buzz"], "hair", "buzz", "a buzz cut"),
-    (&["bald", "shave your head", "no hair"], "hair", "none", "no hair"),
-    (&["ponytail", "pony tail"], "hair", "ponytail", "a ponytail"),
-    (&["bun"], "hair", "bun", "a bun"),
-    (&["pixie"], "hair", "pixie", "a pixie cut"),
-    (&["bob"], "hair", "bob", "a bob"),
-    (&["wavy", "waves"], "hair", "wavy", "long waves"),
-    (&["curly", "curls"], "hair", "curly", "curls"),
-    (&["long hair"], "hair", "long", "long hair"),
-    (&["short hair"], "hair", "short", "short hair"),
-    (&["full beard", "big beard"], "beard", "full", "a full beard"),
-    (&["goatee"], "beard", "goatee", "a goatee"),
-    (&["moustache", "mustache", "mustache"], "beard", "mustache", "a moustache"),
-    (&["stubble"], "beard", "stubble", "stubble"),
-    (&["shave your beard", "shave the beard", "no beard", "clean shaven", "clean-shaven", "lose the beard"], "beard", "none", "no beard"),
-    (&["beard"], "beard", "short", "a beard"),
-    (&["visor"], "glasses", "visor", "a visor"),
-    (&["take off your glasses", "no glasses", "lose the glasses", "remove your glasses"], "glasses", "none", "no glasses"),
-    (&["glasses", "specs", "spectacles"], "glasses", "round", "glasses"),
-    (&["blonde", "blond"], "hairColor", "blonde", "blonde hair"),
-    (&["ginger", "auburn", "red hair"], "hairColor", "auburn", "auburn hair"),
-    (&["pink hair"], "hairColor", "pink", "pink hair"),
-    (&["blue hair"], "hairColor", "blue", "blue hair"),
-    (&["silver hair", "grey hair", "gray hair"], "hairColor", "silver", "silver hair"),
-    (&["white hair", "platinum"], "hairColor", "platinum", "platinum hair"),
-    (&["green hair", "mint hair"], "hairColor", "mint", "mint hair"),
-    (&["black hair"], "hairColor", "black", "black hair"),
-    (&["brown hair"], "hairColor", "brown", "brown hair"),
-    (&["glowing eyes", "cyber eyes", "robot eyes"], "eyes", "cyan", "glowing eyes"),
-    (&["blue eyes"], "eyes", "blue", "blue eyes"),
-    (&["green eyes"], "eyes", "green", "green eyes"),
-    (&["brown eyes"], "eyes", "brown", "brown eyes"),
-    (&["hazel eyes"], "eyes", "hazel", "hazel eyes"),
-    (&["grey eyes", "gray eyes"], "eyes", "grey", "grey eyes"),
-    (&["violet eyes", "purple eyes"], "eyes", "violet", "violet eyes"),
-    (&["be a man", "a man's face", "male face", "be a guy", "man face"], "gender", "male", "a man's face"),
-    (&["be a woman", "a woman's face", "female face", "be a girl", "woman face"], "gender", "female", "a woman's face"),
-    (&["follow my voice", "match your voice", "match the voice"], "gender", "auto", "a face that matches my voice"),
+/// The 3D faces, by what people call them (checked in order: "woman" before "man").
+const FACES: &[(&[&str], &str, &str)] = &[
+    (&["my face", "my avatar", "my own face", "my 3d", "me in 3d", "look like me"], "model:me", "your face"),
+    (&["hologram woman", "hologram girl", "hologram lady", "holo woman", "holo girl"], "model:holo-female", "the hologram woman"),
+    (&["hologram man", "hologram guy", "holo man", "holo guy", "hologram bust", "3d hologram"], "model:holo-male", "the hologram man"),
+    (&["woman", "girl", "lady", "female"], "model:lightskin-female", "the woman"),
+    (&["man", "guy", "male", "dude"], "model:black-male", "the man"),
 ];
 
-/// "Give yourself dreads", "grow a beard", "put on a visor", "make your hair pink".
+const COLOURS: &[(&str, &str)] = &[
+    ("pink", "#ff6fb5"), ("blue", "#4da3ff"), ("purple", "#9b6bff"), ("violet", "#9b6bff"), ("green", "#4ade80"),
+    ("red", "#ff4d4d"), ("orange", "#ff9f43"), ("gold", "#f5c542"), ("yellow", "#f5d742"), ("blonde", "#e8c97a"),
+    ("blond", "#e8c97a"), ("white", "#f2f2f2"), ("silver", "#c0c6d0"), ("grey", "#9aa0a8"), ("gray", "#9aa0a8"),
+    ("black", "#1a1a1a"), ("brown", "#6b4423"), ("cyan", "#5ee7ff"), ("teal", "#2dd4bf"),
+];
+
+/// "Make your glow pink", "more hologram", "just your head", "make your hair blonde".
 fn parse_face(s: &str) -> Option<Look> {
-    let about_you = ["your", "yourself", "you a ", "grow a", "grow some", "put on", "wear ", "take off", "shave", "be a man", "be a woman", "be a guy", "be a girl"].iter().any(|w| s.contains(w));
-    let verb = ["give", "grow", "put", "wear", "make", "change", "get", "try", "shave", "take", "switch", "turn", "be a", "have", "lose", "add", "go "].iter().any(|v| s.contains(v));
+    let about_you = ["your", "yourself"].iter().any(|w| s.contains(w));
+    let verb = ["give", "make", "change", "turn", "set", "go ", "show", "zoom", "only", "just", "more", "less", "stop", "add", "put"].iter().any(|v| s.contains(v));
     if !about_you || !verb || s.split_whitespace().count() > 12 {
         return None;
     }
+    let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let has = |w: &str| words.contains(&w);
+    let colour = COLOURS.iter().find(|(w, _)| has(w)).map(|(_, hex)| serde_json::Value::String((*hex).into()));
     let mut changes: Vec<(&'static str, serde_json::Value)> = Vec::new();
     let mut named: Vec<&'static str> = Vec::new();
-    // "make your hair pink", "turn your eyes green": a colour said after the part.
-    const COLOURS: &[(&str, &str, &str)] = &[
-        ("pink", "pink", "pink"), ("blue", "blue", "blue"), ("blonde", "blonde", "blonde"), ("blond", "blonde", "blonde"),
-        ("black", "black", "black"), ("brown", "brown", "brown"), ("red", "auburn", "auburn"), ("ginger", "auburn", "auburn"),
-        ("silver", "silver", "silver"), ("grey", "silver", "silver"), ("gray", "silver", "silver"), ("white", "platinum", "platinum"),
-        ("green", "mint", "mint"), ("purple", "violet", "violet"),
-    ];
-    let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric()).collect();
-    for (part, key) in [("hair", "hairColor"), ("eyes", "eyes")] {
-        if words.contains(&part) {
-            if let Some((_, v, _)) = COLOURS.iter().find(|(w, _, _)| words.contains(w)) {
-                let v = if key == "eyes" && *v == "mint" { "green" } else if key == "eyes" && *v == "auburn" { "brown" } else { *v };
-                changes.push((key, serde_json::Value::String(v.into())));
-                named.push(if key == "eyes" { "new eyes" } else { "new hair colour" });
-            }
-        }
+    let num = |v: f64| serde_json::json!(v);
+    if has("hair") {
+        if let Some(c) = colour.clone() { changes.push(("hair", c)); named.push("new hair colour"); }
     }
-    for (words, key, value, say) in FACE {
-        if changes.iter().any(|(k, _)| k == key) {
-            continue;
-        }
-        if words.iter().any(|w| s.contains(w)) {
-            changes.push((key, serde_json::Value::String((*value).into())));
-            named.push(say);
-        }
+    if has("glow") || has("rim") || has("light") || has("aura") {
+        if let Some(c) = colour.clone() { changes.push(("accent", c)); named.push("a new glow"); }
+        else if ["more", "brighter", "up", "stronger"].iter().any(|w| has(w)) { changes.push(("glow", num(0.9))); named.push("more glow"); }
+        else if ["less", "off", "no", "stop", "down", "softer"].iter().any(|w| has(w)) { changes.push(("glow", num(0.0))); named.push("no glow"); }
     }
-    if s.contains("cyber") || s.contains("cyborg") || s.contains("glowing seams") {
-        changes.push(("tech", serde_json::Value::Bool(true)));
-        named.push("cyber seams");
+    if s.contains("hologram") && !s.contains("hologram woman") && !s.contains("hologram man") {
+        if ["less", "off", "no", "stop"].iter().any(|w| has(w)) { changes.push(("glow", num(0.0))); named.push("no hologram glow"); }
+        else if ["more", "full", "real"].iter().any(|w| has(w)) { changes.push(("glow", num(0.9))); named.push("more hologram"); }
     }
+    if has("skin") {
+        if ["darker", "dark", "deeper"].iter().any(|w| has(w)) { changes.push(("tint", serde_json::Value::String("#b39a86".into()))); named.push("darker skin"); }
+        else if ["lighter", "normal", "original", "natural", "back"].iter().any(|w| has(w)) { changes.push(("tint", serde_json::Value::String("#ffffff".into()))); named.push("your original skin"); }
+        else if let Some(c) = colour.clone() { changes.push(("tint", c)); named.push("a new skin tone"); }
+    }
+    if has("bigger") || s.contains("zoom in") || has("closer") { changes.push(("scale", num(1.3))); named.push("closer"); }
+    if has("smaller") || s.contains("zoom out") || has("further") { changes.push(("scale", num(0.8))); named.push("further back"); }
+    if has("shinier") || has("glossy") || has("shiny") { changes.push(("gloss", num(0.9))); named.push("shinier"); }
+    if has("matte") || s.contains("less shiny") { changes.push(("gloss", num(0.1))); named.push("matte"); }
+    if s.contains("just your head") || s.contains("only your head") || s.contains("head only") { changes.push(("headOnly", serde_json::Value::Bool(true))); named.push("just my head"); }
+    if s.contains("your body") || s.contains("full body") || s.contains("your shoulders") { changes.push(("headOnly", serde_json::Value::Bool(false))); named.push("head and shoulders"); }
     if changes.is_empty() {
         return None;
     }
     Some(Look::Avatar(changes, named.join(" and ")))
+}
+
+/// "Switch to the hologram woman", "use my face", "be the man".
+fn parse_face_switch(s: &str) -> Option<Look> {
+    let verb = ["switch", "change", "use", "show", "be ", "become", "go ", "turn into", "make"].iter().any(|v| s.contains(v));
+    let about_face = ["face", "hologram", "avatar", "3d", "bust", "look like me"].iter().any(|w| s.contains(w));
+    if !verb || !about_face || s.split_whitespace().count() > 10 {
+        return None;
+    }
+    let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    FACES.iter().find(|(names, _, _)| names.iter().any(|n| if n.contains(' ') { s.contains(n) } else { words.contains(n) })).map(|(_, id, name)| Look::Orb(id, name))
 }
 
 const ORBS: &[(&[&str], &str, &str)] = &[
@@ -111,8 +86,11 @@ const ORBS: &[(&[&str], &str, &str)] = &[
     (&["clear water", "water"], "ferrofluid", "Clear water"),
     (&["pearl"], "ripple", "Tidal pearl"),
     (&["crystal", "galaxy", "stars", "nebula", "constellation"], "constellation", "Star crystal"),
-    (&["3d avatar", "avatar", "3d face", "3d character", "character"], "avatar", "3D avatar"),
-    (&["hologram bust", "bust", "3d hologram"], "holo3d", "Hologram bust"),
+    (&["hologram woman", "hologram girl", "holo woman"], "model:holo-female", "the hologram woman"),
+    (&["hologram man", "hologram guy", "holo man", "hologram bust", "3d hologram"], "model:holo-male", "the hologram man"),
+    (&["my face", "my avatar"], "model:me", "your face"),
+    (&["3d woman", "3d girl"], "model:lightskin-female", "the woman"),
+    (&["3d man", "3d guy", "3d face", "3d avatar", "avatar"], "model:black-male", "the man"),
     (&["face", "hologram", "head"], "face", "Hologram face"),
     (&["ferrofluid", "ferro", "magnetic", "black liquid"], "ferro", "Ferrofluid"),
     (&["liquid", "glass", "default", "normal", "original"], "liquid", "Liquid glass"),
@@ -133,7 +111,10 @@ pub fn parse(said: &str) -> Option<Look> {
         }
         return None;
     }
-    // The 3D face: hair, beard, glasses, colours, man or woman.
+    // Which 3D face, then how it looks (glow, skin, hair, size, head only).
+    if let Some(face) = parse_face_switch(s) {
+        return Some(face);
+    }
     if let Some(face) = parse_face(s) {
         return Some(face);
     }
@@ -159,26 +140,38 @@ pub fn apply(look: &Look) -> Option<String> {
     let said = match look {
         Look::Orb(id, name) => {
             s.orb_style = (*id).into();
-            format!("Done — I'm {name} now. How do I look?")
+            if *id == "model:me" {
+                format!("Done — I'm {name} now. (If you haven't added it yet: Settings → Voice orb → My face, it takes a few minutes on avaturn.me.)")
+            } else if id.starts_with("model:") {
+                format!("Done — I'm {name} now. How do I look?")
+            } else {
+                format!("Done — I'm {name} now. How do I look?")
+            }
         }
         Look::Avatar(changes, named) => {
+            // Changes go to the face in use (a plain orb switches to a face first).
+            let id = match s.orb_style.strip_prefix("model:") {
+                Some(id) => id.to_string(),
+                None => {
+                    s.orb_style = "model:holo-female".into();
+                    "holo-female".to_string()
+                }
+            };
+            // A sculpted face's hair is part of the sculpt; only a rigged one (yours) can recolour it.
+            if changes.len() == 1 && changes[0].0 == "hair" && id != "me" && !id.starts_with("u-") {
+                return Some("This face's hair is sculpted in, so it can't change colour. Your own face from Avaturn can — Settings → Voice orb → My face.".into());
+            }
             let mut v: serde_json::Value = serde_json::from_str(&s.avatar).unwrap_or_else(|_| serde_json::json!({}));
             if !v.is_object() {
                 v = serde_json::json!({});
             }
+            if !v[&id].is_object() {
+                v[&id] = serde_json::json!({});
+            }
             for (k, val) in changes {
-                v[*k] = val.clone();
+                v[&id][*k] = val.clone();
             }
             s.avatar = v.to_string();
-            let beard = changes.iter().any(|(k, val)| *k == "beard" && val != "none");
-            if beard && !crate::tv::avatar_is_male(&s) {
-                v["gender"] = serde_json::Value::String("male".into());
-                s.avatar = v.to_string();
-            }
-            // Hair, a beard or glasses show on the 3D faces; switch to one if needed.
-            if s.orb_style != "avatar" && s.orb_style != "holo3d" {
-                s.orb_style = "avatar".into();
-            }
             format!("Done — {named}. How do I look?")
         }
         Look::Persona(id, name) => {
@@ -214,16 +207,22 @@ mod tests {
         assert_eq!(parse("switch to jarvis"), Some(Look::Persona("atlas", "Atlas")));
         assert_eq!(parse("switch to chrome"), None);
         assert_eq!(parse("please switch to the next tab in my browser now and also scroll"), None);
-        assert_eq!(parse("change your orb to the 3d avatar"), Some(Look::Orb("avatar", "3D avatar")));
-        let Some(Look::Avatar(c, _)) = parse("give yourself dreads and a beard") else { panic!("dreads") };
-        assert!(c.iter().any(|(k, v)| *k == "hair" && v == "locs"));
-        assert!(c.iter().any(|(k, v)| *k == "beard" && v == "short"));
-        let Some(Look::Avatar(c, _)) = parse("make your hair pink") else { panic!("pink") };
-        assert_eq!(c[0].0, "hairColor");
-        let Some(Look::Avatar(c, _)) = parse("put on a visor") else { panic!("visor") };
-        assert_eq!(c[0], ("glasses", serde_json::Value::String("visor".into())));
-        let Some(Look::Avatar(c, _)) = parse("give yourself long dreads") else { panic!("long") };
-        assert_eq!(c[0].1, "longlocs");
+        assert_eq!(parse("change your orb to the 3d avatar"), Some(Look::Orb("model:black-male", "the man")));
+        assert_eq!(parse("change your orb to the hologram woman"), Some(Look::Orb("model:holo-female", "the hologram woman")));
+        assert_eq!(parse("switch to the hologram man"), Some(Look::Orb("model:holo-male", "the hologram man")));
+        assert_eq!(parse("use my face"), Some(Look::Orb("model:me", "your face")));
+        assert_eq!(parse("show the woman's face"), Some(Look::Orb("model:lightskin-female", "the woman")));
+        assert_eq!(parse("change your face to the man"), Some(Look::Orb("model:black-male", "the man")));
+        assert_eq!(parse("change your orb to the hologram face"), Some(Look::Orb("face", "Hologram face")));
+        let Some(Look::Avatar(c, _)) = parse("make your glow pink") else { panic!("glow") };
+        assert_eq!(c[0], ("accent", serde_json::Value::String("#ff6fb5".into())));
+        let Some(Look::Avatar(c, _)) = parse("make your hair blonde") else { panic!("hair") };
+        assert_eq!(c[0].0, "hair");
+        let Some(Look::Avatar(c, _)) = parse("show just your head") else { panic!("head") };
+        assert_eq!(c[0], ("headOnly", serde_json::Value::Bool(true)));
+        let Some(Look::Avatar(c, _)) = parse("make your face bigger") else { panic!("bigger") };
+        assert_eq!(c[0].0, "scale");
+        assert_eq!(parse("open my face wash shopping list"), None);
         assert_eq!(parse("open my dreads tutorial video"), None);
     }
 }

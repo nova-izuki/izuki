@@ -423,19 +423,8 @@ export function SettingsTab() {
       {/* ------------------------------------------------ system */}
       <ThemePicker />
       <Section id="settings-look" title="Chat & caption colours" hint="How the chat box, Izuki's replies and your words look on screen.">
-        <Row label="Voice orb" hint="Choose your look. Clear water, Tidal pearl and Star crystal are drawn in 3D with real light — they bend the world behind them and ripple with every word. Animates only while visible.">
-          <select aria-label="Voice orb style" className="izk-field izk-no-drag max-w-[145px] py-1 text-[11.5px]" value={settings.orb_style} onChange={(e) => patch({ orb_style: e.target.value as typeof settings.orb_style })}>
-            <option value="liquid">Liquid glass</option>
-            <option value="ferrofluid">Clear water</option>
-            <option value="dew">Pure water</option>
-            <option value="ripple">Tidal pearl</option>
-            <option value="constellation">Star crystal</option>
-            <option value="particles">Stardust</option>
-            <option value="face">Hologram face</option>
-            <option value="holo3d">Hologram bust (3D)</option>
-            <option value="avatar">3D avatar</option>
-            <option value="ferro">Ferrofluid</option>
-          </select>
+        <Row label="Voice orb" hint="Choose your look: an orb, a 3D face, any .glb face you add, or your own face from Avaturn. Animates only while visible.">
+          <span className="text-[11px] text-izk-muted">Pick below</span>
         </Row>
         <OrbStudio />
         <Row

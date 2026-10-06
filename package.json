@@ -1,7 +1,7 @@
 {
   "name": "izuki",
   "private": true,
-  "version": "1.0.53",
+  "version": "1.0.54",
   "type": "module",
   "description": "IZUKI — YO IZUKI, DO IT. Draw on your screen, Izuki does it.",
   "scripts": {
@@ -23,7 +23,9 @@
   },
   "overrides": {
     "sharp": "$sharp",
-    "xcode": { "uuid": "11.1.1" }
+    "xcode": {
+      "uuid": "11.1.1"
+    }
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
@@ -55,6 +57,7 @@
     "jsqr": "^1.4.0",
     "sharp": "0.35.4",
     "tailwindcss": "4.3.3",
+    "three": "^0.186.1",
     "typescript": "5.9.3",
     "vite": "8.3.0"
   }

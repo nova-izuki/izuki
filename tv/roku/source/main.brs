@@ -3,7 +3,7 @@
 ' Izuki is doing here (Roku's "input" messages), so the orb and Izuki's words
 ' show on the TV:  POST http://<roku>:8060/input?state=talk&text=Hello
 '   state: idle | listen | think | talk      text: what Izuki says
-'   look: the orb ("" = Izuki colours, holo3d / avatar = a 3D face)   audio: Izuki's voice to play
+'   look: the orb ("" = Izuki colours, model:<id> = a 3D face)   audio: Izuki's voice to play
 '   face: m | f (the 3D face)   weather: a line for the corner   you: what you said
 
 sub Main(args as dynamic)

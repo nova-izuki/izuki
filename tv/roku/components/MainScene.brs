@@ -21,7 +21,6 @@ sub init()
     m.voice = m.top.findNode("voice")
     m.look = ""
     m.face = ""
-    m.gender = "f"
     m.state = "idle"
     m.working = false
     m.frame = 0
@@ -128,7 +127,7 @@ end sub
 ' The picture to show: an orb for this state, or the 3D face's frame.
 sub showPicture()
     if m.face <> ""
-        m.orb.uri = "pkg:/images/face_" + m.face + "_" + m.gender + "_" + m.frame.ToStr() + ".png"
+        m.orb.uri = "pkg:/images/face_" + m.face + "_" + m.frame.ToStr() + ".png"
         return
     end if
     glass = m.look <> "" and m.look <> "liquid"
@@ -212,10 +211,14 @@ function setLook(look as dynamic) as boolean
     m.blink.control = "stop"
     m.orb.blendColor = "0xFFFFFFFF"
     m.halo.opacity = 0
-    if look = "holo3d" or look = "avatar"
-        m.face = "holo"
-        if look = "avatar" then m.face = "av"
-        m.halo.blendColor = "0x67E8F9FF"
+    ' A 3D face ("model:<id>"): the channel has pictures of the four that come
+    ' with Izuki. One added on the PC (or your own) shows as the hologram woman.
+    if Left(look, 6) = "model:"
+        id = Mid(look, 7)
+        known = { "holo-female": "0x67E8F9FF", "holo-male": "0x67E8F9FF", "lightskin-female": "0xA78BFAFF", "black-male": "0xA78BFAFF" }
+        if known[id] = invalid then id = "holo-female"
+        m.face = id
+        m.halo.blendColor = known[id]
         m.halo.opacity = 0.35
         m.blink.control = "start"
         showPicture()
@@ -243,17 +246,9 @@ function setLook(look as dynamic) as boolean
     return true
 end function
 
-' Extra things the PC sends: the face (m/f), the weather, what you said.
+' Extra things the PC sends: the weather, what you said. (The face comes with the look.)
 function setInfo(info as dynamic) as boolean
     if info = invalid then return false
-    if info.face <> invalid
-        g = "f"
-        if info.face = "m" then g = "m"
-        if g <> m.gender
-            m.gender = g
-            showPicture()
-        end if
-    end if
     if info.weather <> invalid then m.weather.text = info.weather
     if info.you <> invalid
         if info.you <> ""
