@@ -209,7 +209,10 @@ function FaceTuner({ id, mod, rigged }: { id: string; mod: FaceModule; rigged: b
           {colour("tint", "Custom", "#ffffff")}
         </div>
       </div>
-      {rigged && (
+      <div className="mb-2">
+        <Choice label="Haircut" value={look.cut ?? ""} options={mod.haircutsFor(id, rigged)} onChange={(v) => set({ cut: v })} />
+      </div>
+      {(rigged || !!look.cut) && (
         <div className="mb-2">
           <div className="mb-1 text-[11px] text-izk-muted">Hair colour</div>
           <div className="flex flex-wrap items-center gap-1.5">

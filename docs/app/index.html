@@ -408,6 +408,7 @@
       <div id="face-tune" hidden>
         <div class="tones" aria-label="Skin tone"><span>Skin tone</span><button class="tone" type="button" data-tint="#ffffff" title="As made" aria-label="As made" style="background:#ffffff"></button><button class="tone" type="button" data-tint="#fff1ea" title="Porcelain" aria-label="Porcelain" style="background:#fff1ea"></button><button class="tone" type="button" data-tint="#f6d9c4" title="Fair" aria-label="Fair" style="background:#f6d9c4"></button><button class="tone" type="button" data-tint="#d9a77e" title="Tan" aria-label="Tan" style="background:#d9a77e"></button><button class="tone" type="button" data-tint="#c09468" title="Olive" aria-label="Olive" style="background:#c09468"></button><button class="tone" type="button" data-tint="#9a6845" title="Brown" aria-label="Brown" style="background:#9a6845"></button><button class="tone" type="button" data-tint="#6e4630" title="Deep" aria-label="Deep" style="background:#6e4630"></button><button class="tone" type="button" data-tint="#4a2f22" title="Ebony" aria-label="Ebony" style="background:#4a2f22"></button></div>
         <div class="tones" id="ft-hair-tones" aria-label="Hair colour"><span>Hair</span><button class="tone" type="button" data-hair="#1a1412" title="Black" aria-label="Black" style="background:#1a1412"></button><button class="tone" type="button" data-hair="#3b2a20" title="Dark brown" aria-label="Dark brown" style="background:#3b2a20"></button><button class="tone" type="button" data-hair="#6a4a32" title="Brown" aria-label="Brown" style="background:#6a4a32"></button><button class="tone" type="button" data-hair="#8a3b22" title="Auburn" aria-label="Auburn" style="background:#8a3b22"></button><button class="tone" type="button" data-hair="#d8b26e" title="Blonde" aria-label="Blonde" style="background:#d8b26e"></button><button class="tone" type="button" data-hair="#e8e2d4" title="Platinum" aria-label="Platinum" style="background:#e8e2d4"></button><button class="tone" type="button" data-hair="#9a9a9a" title="Grey" aria-label="Grey" style="background:#9a9a9a"></button><button class="tone" type="button" data-hair="#e27bb0" title="Pink" aria-label="Pink" style="background:#e27bb0"></button><button class="tone" type="button" data-hair="#4a78d8" title="Blue" aria-label="Blue" style="background:#4a78d8"></button></div>
+        <div class="field"><label for="ft-cut">Haircut</label><select id="ft-cut"></select></div>
         <div class="row"><div class="field" style="flex:1"><label for="ft-style">Style</label><select id="ft-style"><option value="real">Real</option><option value="comic">Comic</option><option value="flat">Flat vector</option></select></div><div class="field" style="flex:1" id="ft-frame-wrap"><label for="ft-frame">Show</label><select id="ft-frame"><option value="head">Head</option><option value="shoulders">Head &amp; shoulders</option><option value="half">Half body</option><option value="full">Full body</option></select></div></div>
         <label class="swatch"><input type="checkbox" id="ft-bare"> Without the orb</label>
         <div class="row"><label class="swatch">Custom skin <input type="color" id="ft-tint" value="#ffffff"></label><label class="swatch" id="ft-hair-wrap">Hair <input type="color" id="ft-hair" value="#2b1d16"></label><label class="swatch">Glow <input type="color" id="ft-accent" value="#a78bfa"></label></div>
@@ -2682,7 +2683,7 @@
     $("face-me-file").onchange = (e) => { void add(e.target.files[0], "me"); e.target.value = ""; };
     $("face-me-pick").onclick = () => $("face-me-file").click();
     // Customise the face in use: saved per face in izuki.avatar.
-    const fields = { tint: "ft-tint", hair: "ft-hair", accent: "ft-accent", glow: "ft-glow", gloss: "ft-gloss", scale: "ft-scale", y: "ft-y", rot: "ft-rot", style: "ft-style", frame: "ft-frame", bare: "ft-bare" };
+    const fields = { tint: "ft-tint", hair: "ft-hair", accent: "ft-accent", glow: "ft-glow", gloss: "ft-gloss", scale: "ft-scale", y: "ft-y", rot: "ft-rot", style: "ft-style", frame: "ft-frame", bare: "ft-bare", cut: "ft-cut" };
     const setLook = (k, v) => {
       const id = current();
       if (!id) return;
@@ -2705,13 +2706,19 @@
       for (const [k, fid] of Object.entries(fields)) {
         if (k === "bare") $(fid).checked = !!look[k];
         else if (k === "style") $(fid).value = look.style || "real";
+        else if (k === "cut") {
+          const sel = $(fid);
+          sel.textContent = "";
+          for (const [key, name] of F.haircutsFor(id, rigged)) sel.add(new Option(name, key));
+          sel.value = look.cut || "";
+        }
         else if (k === "frame") $(fid).value = look.frame || "shoulders";
         else $(fid).value = look[k] || (k === "hair" ? "#2b1d16" : "#ffffff");
       }
       document.querySelectorAll("[data-tint]").forEach((b) => b.classList.toggle("on", (look.tint || "#ffffff") === b.dataset.tint));
       document.querySelectorAll("[data-hair]").forEach((b) => b.classList.toggle("on", look.hair === b.dataset.hair));
-      $("ft-hair-wrap").hidden = !rigged;
-      $("ft-hair-tones").hidden = !rigged;
+      $("ft-hair-wrap").hidden = !rigged && !look.cut;
+      $("ft-hair-tones").hidden = !rigged && !look.cut;
       $("ft-frame-wrap").hidden = !rigged;
     }
     for (const [k, fid] of Object.entries(fields)) {

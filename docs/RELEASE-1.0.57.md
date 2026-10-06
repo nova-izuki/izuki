@@ -24,6 +24,23 @@
 - The status screen has a live processor trace, the heaviest apps, and **Autopilot**: one-tap fixes for low space, battery, a slow PC, a meeting soon or urgent mail.
 - "Keep my last answer on screen" now scrolls back through all of today's answers, with a clear button.
 
+## Keep working while Izuki works
+- Switch to another app mid-task and Izuki carries on in its own window behind yours. It presses buttons, types into boxes and scrolls through Windows (and inside web pages with the extension), without touching your mouse or keyboard.
+- It still sees that window, even while it's covered.
+- Things that need the real mouse or keyboard wait until you pause, then Izuki briefly brings its window back.
+
+## Ask Izuki in your browser
+- The extension opens a side panel next to any page, like Chrome's own assistant. Ask about the page, add other open tabs to compare them, and keep the conversation going.
+- Click the Izuki icon, press Alt+Shift+I, or right-click → Ask Izuki about this.
+
+## Haircuts
+- Afro, afro puffs, curly top fade, dreads, box braids, cornrows, Edgar cut, fohawk, buzz, crew cut, undercut, quiff, side part, slicked back, curtains, mullet, pixie, bob, long hair, bun, top knot, ponytail and a beanie.
+- Real strands and fuzzy texture, in any hair colour.
+- The holograms and your own face can wear every cut. The Woman and Man can wear the ones that go over their own hair.
+
+## Settings
+- A jump bar at the top of Settings, and a Top button.
+
 ## Characters
 - Skin tone and hair colour presets.
 - Comic and Flat art styles.

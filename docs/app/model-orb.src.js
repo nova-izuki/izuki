@@ -17,7 +17,9 @@
 import {
   AnimationMixer, Box3, BufferAttribute, Color, DirectionalLight, Group, HemisphereLight,
   MathUtils, PerspectiveCamera, PMREMGenerator, Quaternion, Scene, SRGBColorSpace, Vector3, WebGLRenderer,
-  ACESFilmicToneMapping, Euler,
+  ACESFilmicToneMapping, Euler, SphereGeometry, TorusGeometry, TubeGeometry, CatmullRomCurve3,
+  MeshStandardMaterial, Mesh, CanvasTexture, RepeatWrapping, BufferGeometry, Float32BufferAttribute, LineSegments,
+  LineBasicMaterial,
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
@@ -27,8 +29,8 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 
 /** The faces that come with Izuki. */
 export const FACES = [
-  { id: "holo-female", name: "Hologram woman", gender: "female", url: new URL("./faces/holo-female.glb", import.meta.url).href, thumb: new URL("./faces/holo-female.webp", import.meta.url).href, glow: 0.55, accent: "#5ee7ff" },
-  { id: "holo-male", name: "Hologram man", gender: "male", url: new URL("./faces/holo-male.glb", import.meta.url).href, thumb: new URL("./faces/holo-male.webp", import.meta.url).href, glow: 0.55, accent: "#5ee7ff" },
+  { id: "holo-female", name: "Hologram woman", gender: "female", url: new URL("./faces/holo-female.glb", import.meta.url).href, thumb: new URL("./faces/holo-female.webp", import.meta.url).href, glow: 0.55, accent: "#5ee7ff", bald: true },
+  { id: "holo-male", name: "Hologram man", gender: "male", url: new URL("./faces/holo-male.glb", import.meta.url).href, thumb: new URL("./faces/holo-male.webp", import.meta.url).href, glow: 0.55, accent: "#5ee7ff", bald: true },
   { id: "lightskin-female", name: "Woman", gender: "female", url: new URL("./faces/lightskin-female.glb", import.meta.url).href, thumb: new URL("./faces/lightskin-female.webp", import.meta.url).href, glow: 0, accent: "#a78bfa" },
   { id: "black-male", name: "Man", gender: "male", url: new URL("./faces/black-male.glb", import.meta.url).href, thumb: new URL("./faces/black-male.webp", import.meta.url).href, glow: 0, accent: "#a78bfa" },
 ];
@@ -44,7 +46,24 @@ export const DEFAULT_LOOK = {
   // "real", "comic" (cel bands, ink edges, halftone dots, animated on twos)
   // or "flat" (flat vector shapes and clean outlines).
   style: "real",
+  // A haircut built onto the head ("" keeps the character's own hair).
+  cut: "",
 };
+
+/**
+ * One-tap haircuts, made in 3D on the head (they turn and breathe with it).
+ * `adds`: sits on top of a sculpt's own hair, so the four built-in faces can
+ * wear it too; the rest replace the hair of a rigged face (your own).
+ */
+export const HAIRCUTS = [
+  ["", "Their own", true], ["afro", "Afro", true], ["puffs", "Afro puffs", true], ["bun", "Bun", true],
+  ["topknot", "Top knot", true], ["ponytail", "Ponytail", true], ["beanie", "Beanie", true], ["locs", "Dreads (locs)", false], ["boxbraids", "Box braids", false],
+  ["braids", "Braids", false], ["long", "Long", false], ["bob", "Bob", false], ["buzz", "Buzz cut", false],
+  ["quiff", "Quiff", false], ["sidepart", "Side part", false], ["slick", "Slicked back", false],
+  ["undercut", "Undercut", false], ["crew", "Crew cut", false], ["pixie", "Pixie", false], ["curtains", "Curtains", false],
+  ["mullet", "Mullet", false], ["edgar", "Edgar cut", false], ["curlytop", "Curly top fade", false],
+  ["mohawk", "Fohawk", false], ["bald", "Bald", false],
+];
 
 /** One-tap skin tones (multiplied into the model's own colours). */
 export const SKIN_TONES = [
@@ -56,6 +75,12 @@ export const HAIR_COLOURS = [
   ["Black", "#1a1412"], ["Dark brown", "#3b2a20"], ["Brown", "#6a4a32"], ["Auburn", "#8a3b22"],
   ["Blonde", "#d8b26e"], ["Platinum", "#e8e2d4"], ["Grey", "#9a9a9a"], ["Pink", "#e27bb0"], ["Blue", "#4a78d8"],
 ];
+
+/** The haircuts a face can wear: [key, name]. */
+export function haircutsFor(id, rigged) {
+  const full = rigged || !!(faceInfo(id) || {}).bald;
+  return HAIRCUTS.filter(([, , adds]) => full || adds).map(([k, n]) => [k, n]);
+}
 
 export function faceInfo(id) {
   return FACES.find((f) => f.id === id) || null;
@@ -215,6 +240,10 @@ function prepare(id, gltf) {
     const tall = Math.max(0.2, Math.min(size.y, 2.2));
     const headH = tall > 1.2 ? tall * 0.13 : tall * 0.35; // a full body vs a bust
     frame = { head, headH, front: box.max.z, top: box.max.y, bottom: box.min.y, full: tall > 1.2 };
+    // The skull, for haircuts: a ball over the head bone, in the bone's space.
+    bones.Head.updateWorldMatrix(true, false);
+    const c = head.clone().add(new Vector3(0, headH * 0.44, headH * 0.03));
+    frame.skull = { c, r: new Vector3(headH * 0.43, headH * 0.45, headH * 0.48), bone: bones.Head };
   } else {
     const lm = landmarks(meshes, box);
     uniforms.uMouth.value.copy(lm.mouth);
@@ -225,6 +254,7 @@ function prepare(id, gltf) {
     const trim = (faceInfo(id) || {}).trim;
     if (trim) uniforms.uTrim.value = lm.tn * trim;
     frame = { head: new Vector3(lm.nose.x, lm.nose.y, center.z), headH: lm.tn, front: lm.nose.z, sculpt: true };
+    frame.skull = skullOf(meshes, lm, box);
   }
 
   // The materials: shared uniforms for the glow (and a sculpt's jaw).
@@ -359,6 +389,425 @@ function landmarks(meshes, box) {
   each((x, y, z) => { if (Math.abs(x - nose.x) < tn * 0.05 && Math.abs(y - mouthY) < tn * 0.03 && z > mz) mz = z; });
   if (!Number.isFinite(mz)) mz = nose.z - tn * 0.1;
   return { nose, tn, mouth: new Vector3(nose.x, mouthY, mz) };
+}
+
+/** A sculpt's skull (with its own hair): measured across the forehead. */
+function skullOf(meshes, lm, box) {
+  const y0 = lm.nose.y + lm.tn * 0.45, band = lm.tn * 0.06;
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const m of meshes) {
+    const p = m.geometry.getAttribute("position");
+    for (let i = 0; i < p.count; i++) {
+      if (Math.abs(p.getY(i) - y0) > band) continue;
+      const x = p.getX(i), z = p.getZ(i);
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z;
+    }
+  }
+  if (!Number.isFinite(x0)) return { c: new Vector3(lm.nose.x, box.max.y - lm.tn * 0.8, lm.nose.z - lm.tn * 0.8), r: new Vector3(lm.tn * 0.8, lm.tn * 0.8, lm.tn * 0.8) };
+  // An oval, not a ball: heads are longer front to back than side to side.
+  const rx = Math.max((x1 - x0) / 2, lm.tn * 0.4);
+  const rz = Math.max((z1 - z0) / 2, lm.tn * 0.4);
+  const ry = (rx + rz) / 2;
+  return { c: new Vector3((x0 + x1) / 2, box.max.y - ry, (z0 + z1) / 2), r: new Vector3(rx, ry, rz) };
+}
+
+// ------------------------------------------------------------------ haircuts
+//
+// Built the way real-time hair is: short and textured hair (buzz, fades,
+// afros, curls) as fur shells — many see-through layers that rise off the
+// scalp, each keeping fewer strands, so it has real fuzzy volume. Straight
+// and long hair as thousands of combed strands. Dreads and braids as rope
+// strands following the same combing. All on a unit skull (radius 1, Y up,
+// facing +Z), turning and breathing with the head.
+
+/** A seeded random, so a haircut looks the same every time. */
+function seeded(seed) {
+  let s = seed % 2147483647 || 1;
+  return () => ((s = (s * 16807) % 2147483647) - 1) / 2147483646;
+}
+
+/** Random strand roots, as a texture: each texel one hair (curly: clumped). */
+const furTextures = {};
+function furTexture(curly) {
+  const k = curly ? "curly" : "straight";
+  if (furTextures[k]) return furTextures[k];
+  const n = 256, c = document.createElement("canvas");
+  c.width = c.height = n;
+  const g = c.getContext("2d"), img = g.createImageData(n, n), rnd = seeded(curly ? 91 : 17);
+  for (let i = 0; i < n * n; i++) {
+    const v = Math.floor(rnd() * 255);
+    img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v;
+    img.data[i * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  if (curly) {
+    // Coils clump: soft blobs over the noise.
+    for (let i = 0; i < 700; i++) {
+      const x = rnd() * n, y = rnd() * n, r = 2 + rnd() * 5;
+      g.fillStyle = `rgba(255,255,255,${0.25 + rnd() * 0.35})`;
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    }
+  }
+  const t = new CanvasTexture(c);
+  t.wrapS = t.wrapT = RepeatWrapping;
+  return (furTextures[k] = t);
+}
+
+/** Lumps on a ball (an afro's outline). */
+function lumpy(geo, amount) {
+  const p = geo.getAttribute("position"), v = new Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const n = Math.sin(v.x * 23.1 + v.y * 7.7) * Math.sin(v.y * 19.3 + v.z * 5.3) * Math.sin(v.z * 17.9 + v.x * 3.1);
+    v.multiplyScalar(1 + n * amount);
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * Fur shells over `geo`: `layers` copies pushed out along the normals up to
+ * `len`, each dropping more strands. `curl` twists them (coils), `droop`
+ * combs them down; `repeat` is how fine the hairs are.
+ */
+function furShells(group, geo, colour, { len = 0.05, layers = 14, curl = 0, droop = 0, repeat = [60, 30], glow = 0, accent = "#5ee7ff" } = {}) {
+  const tex = furTexture(curl > 0);
+  // The scalp under it, in the hair's darkest shade, so nothing shows through.
+  const base = new MeshStandardMaterial({ color: new Color(colour).multiplyScalar(0.55), roughness: 0.9 });
+  group.add(new Mesh(geo, base));
+  const mats = [base];
+  for (let i = 1; i <= layers; i++) {
+    const h = i / layers;
+    const m = new MeshStandardMaterial({ color: new Color(colour), roughness: 0.75, metalness: 0 });
+    if (glow) { m.emissive = new Color(accent); m.emissiveIntensity = glow * 0.3; }
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, { uH: { value: h }, uLen: { value: len }, uCurl: { value: curl }, uDroop: { value: droop }, uFur: { value: tex }, uRep: { value: new Vector3(repeat[0], repeat[1], 0) } });
+      sh.vertexShader = sh.vertexShader
+        .replace("#include <common>", "#include <common>\nuniform float uH, uLen, uCurl, uDroop;\nvarying vec2 vFurUv;")
+        .replace("#include <begin_vertex>", `#include <begin_vertex>
+          vFurUv = uv;
+          vec3 t1 = normalize(cross(normal, vec3(0.0, 1.0, 0.001)));
+          vec3 t2 = cross(normal, t1);
+          float ph = uH * 7.0 + dot(position, vec3(13.1, 7.3, 11.7));
+          transformed += normal * uLen * uH
+            + (t1 * sin(ph) + t2 * cos(ph)) * uCurl * uLen * uH
+            + vec3(0.0, -1.0, 0.0) * uDroop * uLen * uH * uH;`);
+      sh.fragmentShader = sh.fragmentShader
+        .replace("#include <common>", "#include <common>\nuniform float uH;\nuniform sampler2D uFur;\nuniform vec3 uRep;\nvarying vec2 vFurUv;")
+        .replace("#include <color_fragment>", `#include <color_fragment>
+          float strand = texture2D(uFur, vFurUv * uRep.xy).r;
+          if (strand < uH * 0.92 + 0.04) discard;
+          diffuseColor.rgb *= mix(0.55, 1.15, uH);`);
+    };
+    m.customProgramCacheKey = () => "izk-fur";
+    const o = new Mesh(geo, m);
+    o.renderOrder = i;
+    group.add(o);
+    mats.push(m);
+  }
+  return mats;
+}
+
+/** The scalp: where hair grows on a unit skull (hairline high at the front, low at the nape). */
+const SCALP_TILT = 0.34;
+const SCALP_UP = new Vector3(0, Math.cos(SCALP_TILT), -Math.sin(SCALP_TILT));
+function onScalp(p, reach = 0.44) {
+  return p.dot(SCALP_UP) > Math.cos(Math.PI * reach);
+}
+/** A scalp-shaped cap (the shells' base). */
+function scalpCap(grow = 1.0, reach = 0.44) {
+  const g = new SphereGeometry(grow, 64, 32, 0, Math.PI * 2, 0, Math.PI * reach);
+  g.rotateX(-SCALP_TILT);
+  return g;
+}
+
+/**
+ * Comb strands from the scalp. `style(p, pos, k)` gives the direction a hair
+ * goes from root `p` at point `pos`; it hugs the head until `falls(pos, p)`,
+ * then hangs, staying outside the head, until `ends(pos, p, travelled)`.
+ */
+function comb(n, rnd, { reach = 0.44, lift = 0.02, step = 0.04, style, falls = () => false, ends, root = () => true }) {
+  const paths = [];
+  const p = new Vector3(), pos = new Vector3(), d = new Vector3(), nrm = new Vector3();
+  for (let i = 0, tries = 0; i < n && tries < n * 40; tries++) {
+    p.set(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1);
+    if (p.lengthSq() > 1 || p.lengthSq() < 0.01) continue;
+    p.normalize();
+    if (!onScalp(p, reach) || !root(p)) continue;
+    i++;
+    const path = [p.clone().multiplyScalar(1.0)];
+    const up = typeof lift === "function" ? lift(p) : lift;
+    pos.copy(p).multiplyScalar(1 + up);
+    let travelled = 0, hanging = false;
+    const jitter = (rnd() - 0.5) * 0.25;
+    for (let k = 0; k < 90; k++) {
+      if (!hanging && falls(pos, p)) hanging = true;
+      if (hanging) {
+        d.set(pos.x * 0.04 + jitter * 0.05, -1, pos.z * 0.02);
+        // Hair falls beside the face, never over it: drift back and out.
+        if (pos.z > 0.05 && Math.abs(pos.x) < 1.05) { d.z -= 0.9; d.x += Math.sign(pos.x || 1) * 0.35; }
+      } else {
+        d.copy(style(p, pos, k));
+        nrm.copy(pos).normalize();
+        d.addScaledVector(nrm, -d.dot(nrm)); // along the head
+      }
+      if (d.lengthSq() < 1e-6) break;
+      d.normalize().multiplyScalar(step);
+      pos.add(d);
+      // Never inside the head (or the face and neck under it).
+      const r = Math.hypot(pos.x, pos.z);
+      const minR = pos.y > 0 ? Math.sqrt(Math.max(0, (1 + up) ** 2 - pos.y * pos.y)) : 0.92 + up;
+      if (!hanging) { if (pos.length() < 1 + up) pos.setLength(1 + up); }
+      else if (r < minR && r > 1e-4) { pos.x *= minR / r; pos.z *= minR / r; }
+      travelled += step;
+      path.push(pos.clone());
+      if (ends(pos, p, travelled)) break;
+    }
+    paths.push(path);
+  }
+  return paths;
+}
+
+/** Strands as fine lines, shaded like hair (darker roots, a soft sheen band). */
+function strandLines(paths, colour, rnd, glow = 0, accent = "#5ee7ff") {
+  const pos = [], col = [], base = new Color(colour).lerp(new Color(accent), glow * 0.6), c = new Color(), light = new Vector3(0.3, 0.8, 0.55).normalize();
+  for (const path of paths) {
+    const tone = 0.8 + rnd() * 0.35;
+    for (let k = 0; k + 1 < path.length; k++) {
+      for (const q of [path[k], path[k + 1]]) {
+        pos.push(q.x, q.y, q.z);
+        const along = Math.min(1, k / 8);
+        const lit = Math.max(0, q.clone().normalize().dot(light));
+        const sheen = Math.pow(lit, 6) * 0.6;
+        c.copy(base).multiplyScalar(tone * (0.6 + 0.35 * along + 0.55 * lit)).addScalar(sheen * 0.25);
+        col.push(c.r, c.g, c.b);
+      }
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  g.setAttribute("color", new Float32BufferAttribute(col, 3));
+  return new LineSegments(g, new LineBasicMaterial({ vertexColors: true }));
+}
+
+/** Rope strands (dreads, box braids) along combed paths, fuzzy. */
+function ropes(group, paths, colour, rnd, { thick = 0.06, braided = false } = {}) {
+  const mats = [];
+  for (const path of paths) {
+    if (path.length < 3) continue;
+    const r = thick * (0.75 + rnd() * 0.5);
+    const geo = new TubeGeometry(new CatmullRomCurve3(path), Math.max(8, path.length), r, 7, false);
+    mats.push(...furShells(group, geo, colour, { len: r * 0.6, layers: 5, curl: braided ? 0 : 0.8, repeat: braided ? [6, 40] : [10, 60] }));
+  }
+  return mats;
+}
+
+/** A haircut on a unit skull. On a sculpt (its own hair kept) only the extra volume is added. */
+function haircut(cut, colour, hat, sculpt, glow, accent) {
+  const g = new Group(), mats = [], rnd = seeded(cut.length * 977 + 13);
+  const fur = (geo, o) => mats.push(...furShells(g, geo, colour, { glow, accent, ...o }));
+  // The short hair that hugs the head (a fade at the sides, under longer styles).
+  const short = (len = 0.03, reach = 0.42) => { if (!sculpt) fur(scalpCap(1.0, reach), { len, layers: 10, repeat: [90, 45] }); };
+  const lines = (paths) => { const l = strandLines(paths, colour, rnd, glow, accent); g.add(l); mats.push(l.material); };
+  const sideOf = (p) => (p.x >= 0 ? 1 : -1);
+  const ball = (r, x, y, z, sx = 1, sy = 1, sz = 1, bump = 0.04) => {
+    const geo = lumpy(new SphereGeometry(r, 48, 32), bump);
+    geo.scale(sx, sy, sz);
+    geo.translate(x, y, z);
+    return geo;
+  };
+  switch (cut) {
+    case "buzz": short(0.025); break;
+    case "crew":
+      short(0.025);
+      fur(scalpCap(1.01, 0.3), { len: 0.09, layers: 14, droop: 0.4, repeat: [80, 40] });
+      break;
+    case "undercut":
+      short(0.012);
+      lines(comb(2600, rnd, { reach: 0.3, lift: 0.08, style: () => new Vector3(0, -0.2, -1), ends: (q, p, t) => t > 0.75 }));
+      fur(scalpCap(1.0, 0.3), { len: 0.03, layers: 6 });
+      break;
+    case "edgar":
+      short(0.012);
+      fur(scalpCap(1.01, 0.32), { len: 0.1, layers: 14, droop: 0.5, repeat: [90, 45] });
+      // The straight-cut fringe across the forehead.
+      lines(comb(1600, rnd, { reach: 0.32, lift: 0.07, root: (p) => p.z > 0.2, style: () => new Vector3(0, -0.4, 1), ends: (q) => q.y < 0.56 }));
+      break;
+    case "curlytop":
+      short(0.012);
+      fur(ball(0.8, 0, 0.62, 0.08, 1, 0.55, 1.1, 0.06), { len: 0.14, layers: 16, curl: 1.2, repeat: [26, 14] });
+      break;
+    case "mohawk":
+      short(0.012);
+      fur(ball(0.3, 0, 0.78, 0.0, 1, 1.5, 3.2, 0.04), { len: 0.12, layers: 14, curl: 0.6, repeat: [20, 30] });
+      break;
+    case "afro":
+      short(0.02);
+      fur(ball(1.28, 0, 0.42, -0.6, 1, 1, 1, 0.05), { len: 0.16, layers: 18, curl: 1.4, repeat: [30, 16] });
+      break;
+    case "puffs":
+      short(0.02);
+      for (const s of [-1, 1]) fur(ball(0.52, s * 0.74, 0.86, -0.3, 1, 1, 1, 0.06), { len: 0.12, layers: 16, curl: 1.4, repeat: [18, 10] });
+      break;
+    case "bun":
+    case "topknot": {
+      const G = cut === "bun" ? new Vector3(0, 0.95, -0.62) : new Vector3(0, 1.12, -0.18);
+      if (!sculpt) lines(comb(3200, rnd, { lift: 0.02, style: (p, q) => G.clone().sub(q), ends: (q) => q.distanceTo(G) < 0.3 }));
+      short(0.015);
+      fur(ball(cut === "bun" ? 0.4 : 0.32, G.x, G.y, G.z, 1, 0.85, 1, 0.08), { len: 0.06, layers: 12, droop: 0.2, repeat: [30, 20] });
+      break;
+    }
+    case "ponytail": {
+      const G = new Vector3(0, 0.38, -1.02);
+      if (!sculpt) lines(comb(3200, rnd, { lift: 0.02, style: (p, q) => G.clone().sub(q), ends: (q) => q.distanceTo(G) < 0.12 }));
+      short(0.015);
+      // The tail: strands gathered at the tie and falling down the back.
+      const tail = [];
+      for (let i = 0; i < 900; i++) {
+        const a = rnd() * Math.PI * 2, rr = Math.sqrt(rnd()) * 0.14, path = [];
+        for (let k = 0; k <= 26; k++) {
+          const t = k / 26, spread = rr * (1 + t * 1.6);
+          path.push(new Vector3(G.x + Math.cos(a) * spread, G.y - t * 1.75, G.z - 0.12 - Math.sin(t * Math.PI) * 0.2 + Math.sin(a) * spread * 0.6));
+        }
+        tail.push(path);
+      }
+      lines(tail);
+      fur(ball(0.11, G.x, G.y, G.z - 0.04), { len: 0.03, layers: 5 });
+      break;
+    }
+    case "long":
+    case "bob":
+    case "curtains": {
+      const bottom = cut === "long" ? -2.3 : cut === "bob" ? -0.82 : -0.25;
+      short(0.015);
+      lines(comb(cut === "curtains" ? 3200 : 4800, rnd, {
+        lift: cut === "curtains" ? 0.06 : 0.03,
+        style: (p) => new Vector3(sideOf(p) * (p.z > 0.35 ? 1.3 : 0.5), -1, p.z > 0.35 ? -0.5 : -0.15),
+        falls: (q) => q.y < 0.3 && (Math.abs(q.x) > 0.8 || q.z < -0.1),
+        ends: (q) => q.y < bottom,
+      }));
+      break;
+    }
+    case "pixie":
+      short(0.015);
+      lines(comb(3000, rnd, { lift: 0.05, style: (p) => new Vector3(0.5, -0.4, 0.9), ends: (q, p, t) => t > 0.55 || q.y < 0.45 }));
+      break;
+    case "sidepart":
+      short(0.012);
+      lines(comb(6000, rnd, {
+        lift: (p) => 0.06 + Math.max(0, p.y) * 0.1,
+        style: (p) => (p.x > -0.32 ? new Vector3(1, -0.15, -0.35) : new Vector3(-1, -0.6, -0.2)),
+        ends: (q, p, t) => t > 0.85 || q.y < 0.15,
+      }));
+      break;
+    case "slick":
+      short(0.012);
+      lines(comb(6000, rnd, { lift: (p) => 0.05 + Math.max(0, p.y) * 0.06, style: () => new Vector3(0, 0.05, -1), ends: (q) => q.z < -0.55 && q.y < 0.35 }));
+      break;
+    case "quiff":
+      short(0.012);
+      lines(comb(6000, rnd, {
+        lift: (p) => 0.05 + Math.max(0, p.z) * 0.22,
+        // The front sweeps up and back with volume; the rest is combed back.
+        style: (p, q, k) => (p.z > 0.35 && k < 6 ? new Vector3(0, 1, 0.15) : new Vector3(0, 0.1, -1)),
+        ends: (q, p, t) => t > (p.z > 0.35 ? 0.85 : 0.6),
+      }));
+      break;
+    case "mullet":
+      short(0.03, 0.42);
+      lines(comb(2600, rnd, {
+        lift: 0.03,
+        root: (p) => p.z < -0.15,
+        style: () => new Vector3(0, -1, -0.2),
+        falls: (q) => q.y < 0.1,
+        ends: (q) => q.y < -1.3,
+      }));
+      break;
+    case "locs":
+    case "boxbraids": {
+      short(0.015);
+      const paths = comb(cut === "locs" ? 120 : 170, rnd, {
+        lift: 0.05,
+        step: 0.07,
+        style: (p) => new Vector3(sideOf(p) * (p.z > 0.35 ? 1.3 : 0.45), -1, p.z > 0.35 ? -0.5 : -0.2),
+        falls: (q) => q.y < 0.35 && (Math.abs(q.x) > 0.8 || q.z < -0.1),
+        ends: (q, p, t) => q.y < -1.3 - (p.x * 7.3 % 0.4),
+      });
+      mats.push(...ropes(g, paths, colour, rnd, { thick: cut === "locs" ? 0.06 : 0.04, braided: cut === "boxbraids" }));
+      break;
+    }
+    case "braids": {
+      // Cornrows: tight rows from the hairline back to the nape.
+      short(0.008);
+      const rows = [];
+      for (let i = -4; i <= 4; i++) {
+        const path = [];
+        for (let k = 0; k <= 16; k++) {
+          const a = 0.95 - (k / 16) * 2.1; // forehead to nape
+          const x = i * 0.17 * Math.cos(a * 0.35);
+          const yz = Math.sqrt(Math.max(0, 1 - x * x)) * 1.03;
+          path.push(new Vector3(x, Math.cos(a - 0.5) * yz, Math.sin(a - 0.5) * yz));
+        }
+        rows.push(path);
+      }
+      mats.push(...ropes(g, rows, colour, rnd, { thick: 0.055, braided: true }));
+      break;
+    }
+    case "beanie": {
+      const knit = scalpCap(1.12, 0.42);
+      g.add(new Mesh(knit, hat));
+      const brim = new Mesh(new TorusGeometry(1.0, 0.13, 12, 48), hat);
+      brim.rotation.x = Math.PI / 2 - 0.5;
+      brim.position.set(0, 0.36, -0.2);
+      g.add(brim);
+      break;
+    }
+    default: break;
+  }
+  return { group: g, mats };
+}
+
+/** Put the chosen haircut on (or take it off): rebuilt only when it changes. */
+function wearHaircut(model, L) {
+  // Rigged faces and the smooth-headed holograms wear any cut; the other
+  // sculpts keep their own hair, so only cuts that add to it.
+  const full = model.rigged || !!(faceInfo(model.id) || {}).bald;
+  const want = full || (HAIRCUTS.find(([k]) => k === L.cut) || [])[2] ? L.cut || "" : "";
+  const colour = L.hair || "#1a1412";
+  const key = `${want}|${colour}|${L.accent}|${L.glow}`;
+  if (model.cutKey === key) return;
+  model.cutKey = key;
+  if (model.cut) {
+    model.cut.parent?.remove(model.cut);
+    model.cut.traverse((o) => { o.geometry?.dispose(); });
+    for (const m of model.cutMats || []) m.dispose();
+    model.cut = null;
+  }
+  // A rigged face's own hair goes away under a new cut (brows and lashes stay).
+  for (const m of model.hairMeshes) if (/hair/i.test(m.name)) m.visible = !want;
+  if (!want || want === "bald") return;
+  const knit = new Color(L.accent || "#a78bfa").lerp(new Color("#ffffff"), 0.15);
+  const hat = new MeshStandardMaterial({ color: knit, roughness: 0.95, bumpMap: furTexture(false), bumpScale: 2 });
+  const { group: cut, mats } = haircut(want, colour, hat, !full, clamp(L.glow || 0, 0, 1), L.accent);
+  model.cutMats = [...mats, hat];
+  const sk = model.frame.skull;
+  if (sk.bone) {
+    // Ride on the head bone: placed in its space, upright at rest.
+    const b = sk.bone;
+    b.updateWorldMatrix(true, false);
+    const wq = b.getWorldQuaternion(new Quaternion());
+    const ws = b.getWorldScale(new Vector3());
+    cut.position.copy(b.worldToLocal(sk.c.clone()));
+    cut.quaternion.copy(wq.invert());
+    cut.scale.copy(sk.r).divideScalar(ws.x || 1);
+    b.add(cut);
+  } else {
+    cut.position.copy(sk.c);
+    cut.scale.copy(sk.r);
+    model.root.add(cut);
+  }
+  model.cut = cut;
 }
 
 /** A T-posed rig with no idle: bring its arms down by its sides. */
@@ -505,6 +954,7 @@ function applyLook(model, L) {
     if ("roughness" in mat) mat.roughness = clamp(b.roughness * (1.5 - L.gloss), 0.05, 1);
   }
   for (const m of model.bodyMeshes) m.visible = !(L.headOnly || L.frame === "head");
+  wearHaircut(model, L);
   model.uniforms.uGlow.value = clamp(L.glow, 0, 1);
   model.uniforms.uAccent.value.set(L.accent);
 }

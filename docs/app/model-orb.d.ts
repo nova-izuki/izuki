@@ -22,11 +22,15 @@ export interface FaceLook {
   bare: boolean;
   /** "real", "comic" (Spider-Verse-like) or "flat" (flat vector). */
   style: "real" | "comic" | "flat";
+  /** A haircut built onto the head ("" keeps the character's own hair). */
+  cut: string;
 }
 
 /** One-tap skin tones and hair colours: [name, "#rrggbb"]. */
 export const SKIN_TONES: Array<[string, string]>;
 export const HAIR_COLOURS: Array<[string, string]>;
+/** The haircuts a face can wear: [key, name] ("" is its own hair). */
+export function haircutsFor(id: string, rigged: boolean): Array<[string, string]>;
 export function comicPass(data: Uint8ClampedArray, px: number): void;
 export function flatPass(data: Uint8ClampedArray, px: number): void;
 

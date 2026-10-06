@@ -27,6 +27,35 @@ const COLOURS: &[(&str, &str)] = &[
     ("black", "#1a1a1a"), ("brown", "#6b4423"), ("cyan", "#5ee7ff"), ("teal", "#2dd4bf"),
 ];
 
+/// Haircuts, by what people call them (longer names first).
+const CUTS: &[(&[&str], &str, &str)] = &[
+    (&["afro puffs", "puffs", "space buns"], "puffs", "afro puffs"),
+    (&["box braids"], "boxbraids", "box braids"),
+    (&["cornrows", "braids"], "braids", "cornrows"),
+    (&["dreads", "dreadlocks", "locs", "locks"], "locs", "dreads"),
+    (&["curly top", "curls on top", "curly fade"], "curlytop", "a curly top fade"),
+    (&["edgar"], "edgar", "an Edgar cut"),
+    (&["fohawk", "mohawk", "faux hawk"], "mohawk", "a fohawk"),
+    (&["buzz cut", "buzzcut", "buzz"], "buzz", "a buzz cut"),
+    (&["crew cut"], "crew", "a crew cut"),
+    (&["undercut"], "undercut", "an undercut"),
+    (&["quiff", "pompadour"], "quiff", "a quiff"),
+    (&["side part"], "sidepart", "a side part"),
+    (&["slicked back", "slick back", "slicked"], "slick", "slicked-back hair"),
+    (&["curtains", "middle part"], "curtains", "curtains"),
+    (&["mullet"], "mullet", "a mullet"),
+    (&["pixie"], "pixie", "a pixie cut"),
+    (&["bob"], "bob", "a bob"),
+    (&["long hair"], "long", "long hair"),
+    (&["top knot", "man bun"], "topknot", "a top knot"),
+    (&["bun"], "bun", "a bun"),
+    (&["ponytail", "pony tail"], "ponytail", "a ponytail"),
+    (&["beanie", "hat"], "beanie", "a beanie"),
+    (&["afro", "fro"], "afro", "an afro"),
+    (&["bald", "no hair", "shave your head"], "bald", "a bald head"),
+    (&["your own hair", "your normal hair", "original hair"], "", "your own hair"),
+];
+
 /// "Make your glow pink", "more hologram", "just your head", "make your hair blonde".
 fn parse_face(s: &str) -> Option<Look> {
     let about_you = ["your", "yourself"].iter().any(|w| s.contains(w));
@@ -42,6 +71,12 @@ fn parse_face(s: &str) -> Option<Look> {
     let num = |v: f64| serde_json::json!(v);
     if has("hair") {
         if let Some(c) = colour.clone() { changes.push(("hair", c)); named.push("new hair colour"); }
+    }
+    // "Give yourself dreads", "change your hair to a buzz cut".
+    let padded = format!(" {} ", words.join(" "));
+    if let Some((_, key, name)) = CUTS.iter().find(|(says, _, _)| says.iter().any(|w| padded.contains(&format!(" {w} ")))) {
+        changes.push(("cut", serde_json::Value::String((*key).into())));
+        named.push(name);
     }
     if has("glow") || has("rim") || has("light") || has("aura") {
         if let Some(c) = colour.clone() { changes.push(("accent", c)); named.push("a new glow"); }
@@ -157,11 +192,13 @@ pub fn apply(look: &Look) -> Option<String> {
                     "holo-female".to_string()
                 }
             };
-            // A sculpted face's hair is part of the sculpt; only a rigged one (yours) can recolour it.
-            if changes.len() == 1 && changes[0].0 == "hair" && id != "me" && !id.starts_with("u-") {
-                return Some("This face's hair is sculpted in, so it can't change colour. Your own face from Avaturn can — Settings → Voice orb → My face.".into());
-            }
             let mut v: serde_json::Value = serde_json::from_str(&s.avatar).unwrap_or_else(|_| serde_json::json!({}));
+            // A sculpted face's own hair is part of the sculpt: only a haircut
+            // put on it (or a rigged face, yours) can change colour.
+            let has_cut = v[&id]["cut"].as_str().is_some_and(|c| !c.is_empty());
+            if changes.len() == 1 && changes[0].0 == "hair" && id != "me" && !id.starts_with("u-") && !has_cut {
+                return Some("This face's own hair is sculpted in, so it can't change colour — but give it a haircut first (\"give yourself an afro\") and that can be any colour.".into());
+            }
             if !v.is_object() {
                 v = serde_json::json!({});
             }
@@ -222,6 +259,12 @@ mod tests {
         assert_eq!(c[0], ("headOnly", serde_json::Value::Bool(true)));
         let Some(Look::Avatar(c, _)) = parse("make your face bigger") else { panic!("bigger") };
         assert_eq!(c[0].0, "scale");
+        let Some(Look::Avatar(c, _)) = parse("give yourself dreads") else { panic!("dreads") };
+        assert_eq!(c[0], ("cut", serde_json::Value::String("locs".into())));
+        let Some(Look::Avatar(c, _)) = parse("change your hair to afro puffs") else { panic!("puffs") };
+        assert_eq!(c[0], ("cut", serde_json::Value::String("puffs".into())));
+        let Some(Look::Avatar(c, _)) = parse("give yourself a buzz cut and make your hair blonde") else { panic!("both") };
+        assert!(c.iter().any(|(k, _)| *k == "cut") && c.iter().any(|(k, _)| *k == "hair"));
         assert_eq!(parse("open my face wash shopping list"), None);
         assert_eq!(parse("open my dreads tutorial video"), None);
     }
