@@ -49,6 +49,41 @@ import org.json.JSONObject;
 @CapacitorPlugin(name = "IzukiControl")
 public class IzukiControlPlugin extends Plugin {
   private final ExecutorService work = Executors.newCachedThreadPool();
+  private static volatile IzukiControlPlugin instance;
+
+  @Override public void load() { instance = this; }
+
+  /** Tell the Izuki page something happened on the TV (e.g. a paywall). */
+  static void emit(String event, String app, String pkg, String say) {
+    IzukiControlPlugin p = instance;
+    if (p == null) return;
+    JSObject data = new JSObject();
+    data.put("app", app);
+    data.put("id", pkg);
+    data.put("say", say);
+    p.notifyListeners(event, data, true);
+  }
+
+  /** Paywall guard on/off (remembered). */
+  @PluginMethod
+  public void watch(PluginCall call) {
+    IzukiAccessibilityService.watch(getContext(), Boolean.TRUE.equals(call.getBoolean("on", false)));
+    JSObject result = new JSObject();
+    result.put("on", IzukiAccessibilityService.watching);
+    result.put("running", IzukiAccessibilityService.running());
+    call.resolve(result);
+  }
+
+  /** A picture of the screen: { image (base64 JPEG), type }. */
+  @PluginMethod
+  public void snapshot(PluginCall call) {
+    IzukiAccessibilityService.snapshot(image -> {
+      JSObject result = new JSObject();
+      result.put("image", image);
+      result.put("type", "image/jpeg");
+      call.resolve(result);
+    }, call::reject);
+  }
 
   @PluginMethod
   public void haptic(PluginCall call) {
@@ -156,18 +191,6 @@ public class IzukiControlPlugin extends Plugin {
     } catch (Exception e) {
       call.reject("couldn't read the screen: " + e.getMessage());
     }
-  }
-
-  /** A picture of the screen: {ok, jpeg (base64)} — ok false where Android can't. */
-  @PluginMethod
-  public void screenshot(PluginCall call) {
-    if (!IzukiAccessibilityService.running()) { call.reject("off"); return; }
-    IzukiAccessibilityService.shot((jpeg) -> {
-      JSObject result = new JSObject();
-      result.put("ok", jpeg != null);
-      if (jpeg != null) result.put("jpeg", jpeg);
-      call.resolve(result);
-    });
   }
 
   /** {op: click|focus|type|scroll, n, text, dir} */
