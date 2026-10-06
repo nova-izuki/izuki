@@ -199,6 +199,16 @@ typed text back, and places the pointer exactly on any monitor.
 safe-hands = { git = "https://github.com/nova-izuki/izuki" }
 ```
 
+## For developers: voice-turns 🎙️
+
+Building a voice assistant? **[packages/voice-turns](packages/voice-turns)**
+(TypeScript, MIT, zero dependencies) has two parts:
+
+- **EchoGate:** tells the user talking over the assistant apart from the
+  assistant's own voice echoing into a laptop mic.
+- **QuietGate:** lets an always-on wake-word detector rest in silence without
+  missing the first syllable.
+
 ## Roadmap
 
 - Voice personalities and characters, more voices and languages

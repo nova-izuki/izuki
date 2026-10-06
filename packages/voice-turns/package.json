@@ -1,0 +1,11 @@
+{
+  "name": "@izuki/voice-turns",
+  "version": "1.0.0",
+  "description": "Barge-in (talk-over) detection and a battery-saving silence gate for voice assistants. Zero dependencies.",
+  "type": "module",
+  "main": "src/index.ts",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/nova-izuki/izuki", "directory": "packages/voice-turns" },
+  "keywords": ["voice assistant", "barge-in", "echo", "wake word", "vad", "battery"],
+  "scripts": { "test": "node --experimental-strip-types --test src/index.test.ts" }
+}
