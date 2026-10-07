@@ -5,7 +5,7 @@
 //! and exact: the notes land where they should, which dragging them in by
 //! hand on a canvas never does.
 
-use std::path::PathBuf;
+
 
 /// General MIDI drum notes (channel 10).
 const KICK: u8 = 36;
@@ -149,11 +149,24 @@ pub const GENRES: &[Genre] = &[
 
 /// "Make me an afrobeats drum pattern at 108 bpm" → the genre and the tempo
 /// (the genre's own when none is said). None when it isn't a beat request.
+fn normalized(said: &str) -> String {
+    let text: String = said.to_lowercase().replace('’', "'").chars()
+        .map(|c| if c.is_alphanumeric() || matches!(c, '&' | '\'') { c } else { ' ' }).collect();
+    format!(" {} ", text.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+fn has(s: &str, phrase: &str) -> bool { s.contains(&format!(" {phrase} ")) }
+
 pub fn parse(said: &str) -> Option<(&'static Genre, u32)> {
-    let s = format!(" {} ", said.to_lowercase().replace(['-', '_'], " "));
-    let wants = ["beat", "drum", "drums", "groove", "rhythm", "pattern", "loop", "midi"].iter().any(|w| s.contains(&format!(" {w}")));
-    let make = ["make", "create", "give me", "generate", "write", "build", "start", "cook", "program"].iter().any(|w| s.contains(w));
-    if !wants || !make {
+    let s = normalized(said);
+    let musical = ["music", "midi", "bpm", "daw", "fl studio", "ableton", "drums"].iter().any(|w| has(&s, w))
+        || GENRES.iter().any(|g| g.says.iter().any(|w| has(&s, w)));
+    let wants = ["beat", "beats", "drum", "drums", "groove", "rhythm", "loop", "midi", "arrangement", "song"].iter().any(|w| has(&s, w))
+        || (musical && ["track", "pattern"].iter().any(|w| has(&s, w)));
+    let make = ["make", "create", "give me", "generate", "write", "build", "start", "cook", "program"].iter().any(|w| has(&s, w));
+    let negated = ["don't", "do not", "never", "stop", "cancel"].iter().any(|w| has(&s, w));
+    if ["lyrics", "python", "javascript", "sewing", "flower", "flowers"].iter().any(|w| has(&s, w)) { return None; }
+    if !wants || !make || negated {
         return None;
     }
     let padded = s.replace("hip-hop", "hip hop");
@@ -180,7 +193,7 @@ const PPQ: u32 = 96;
 const STEP: u32 = PPQ / 4;
 
 /// The loop as notes: (tick, note, velocity, length), `bars` long.
-fn notes(g: &Genre, bars: u32, seed: u32) -> Vec<(u32, u8, u8, u32)> {
+pub(crate) fn notes(g: &Genre, bars: u32, seed: u32) -> Vec<(u32, u8, u8, u32)> {
     let mut s = seed.max(1);
     let mut rnd = move || {
         s ^= s << 13;
@@ -189,6 +202,12 @@ fn notes(g: &Genre, bars: u32, seed: u32) -> Vec<(u32, u8, u8, u32)> {
         (s % 10_000) as f32 / 10_000.0
     };
     let mut out = Vec::new();
+    // Per-drum: the tick the last note on it ends. Notes wander a few ticks off
+    // the grid like a person, and two adjacent hits on the same drum can wander
+    // into each other — so a note can never start while the same drum is still
+    // sounding. Without this every genre with a ghost next to a hit failed the
+    // draft validator.
+    let mut last_end: std::collections::HashMap<u8, u32> = std::collections::HashMap::new();
     for (drum, pattern) in g.parts {
         let steps: Vec<char> = pattern.chars().collect();
         let len = steps.len().max(1) as u32;
@@ -214,22 +233,29 @@ fn notes(g: &Genre, bars: u32, seed: u32) -> Vec<(u32, u8, u8, u32)> {
             let nudge = ((rnd() - 0.5) * 2.0 * g.loose as f32) as i32;
             let tick = (tick as i32 + nudge).max(0) as u32;
             let vel = (vel + (rnd() - 0.5) * 16.0).clamp(30.0, 127.0) as u8;
-            out.push((tick, *drum, vel, STEP / 2));
+            // Never start while the same drum is still sounding.
+            let tick = tick.max(*last_end.get(drum).unwrap_or(&0));
+            let dur = STEP / 2;
+            out.push((tick, *drum, vel, dur));
+            last_end.insert(*drum, tick + dur);
         }
     }
     // The fill: 16ths rising in loudness over the last four steps, then a crash on top.
+    // Each note starts after the previous one ends — overlapping the same drum
+    // twice made every draft fail the validator's overlap check.
     let start = (bars * 16 - 4) * STEP;
+    let step = STEP / 2;
     for i in 0..8u32 {
         let drum = g.fill[(i as usize / 2) % g.fill.len()];
         let vel = (70 + i * 7).min(124) as u8;
-        out.push((start + i * STEP / 2, drum, vel, STEP / 3));
+        out.push((start + i * step, drum, vel, step / 2));
     }
     out.push((0, CRASH, 100, STEP));
     out.sort_by_key(|n| n.0);
     out
 }
 
-fn vlq(mut v: u32, out: &mut Vec<u8>) {
+pub(crate) fn vlq(mut v: u32, out: &mut Vec<u8>) {
     let mut bytes = vec![(v & 0x7f) as u8];
     v >>= 7;
     while v > 0 {
@@ -280,67 +306,19 @@ pub fn midi(g: &Genre, bpm: u32, bars: u32, seed: u32) -> Vec<u8> {
     f
 }
 
-/// Where beats go: Music\Izuki Beats.
-fn folder() -> PathBuf {
-    let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join("Music").join("Izuki Beats")
-}
-
-/// FL Studio, if it's installed: the newest FL64.exe under Image-Line.
-fn fl_studio() -> Option<PathBuf> {
-    let mut found: Vec<PathBuf> = Vec::new();
-    for root in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"] {
-        let Ok(base) = std::env::var(root) else { continue };
-        let Ok(rd) = std::fs::read_dir(PathBuf::from(base).join("Image-Line")) else { continue };
-        for d in rd.flatten() {
-            for exe in ["FL64.exe", "FL.exe"] {
-                let p = d.path().join(exe);
-                if p.exists() {
-                    found.push(p);
-                }
-            }
-        }
-    }
-    found.sort();
-    found.pop()
-}
-
-/// Make the beat, save it, open it in FL Studio (else show it in File
-/// Explorer), and say what to do next.
+/// Create a new verified file without opening or replacing a DAW project.
 pub fn make(said: &str) -> Option<String> {
     let (g, bpm) = parse(said)?;
-    let bars = if said.contains("8 bar") || said.contains("eight bar") { 8 } else { 4 };
-    let seed = (crate::model::now_ms() % 1_000_000) as u32;
-    let dir = folder();
-    if std::fs::create_dir_all(&dir).is_err() {
-        return Some("I couldn't make a folder for the beat in your Music folder.".into());
-    }
-    let stamp = chrono::Local::now().format("%H%M%S");
-    let path = dir.join(format!("{} {bpm}bpm {stamp}.mid", g.name.replace('&', "and")));
-    if std::fs::write(&path, midi(g, bpm, bars, seed)).is_err() {
-        return Some("I couldn't save the beat.".into());
-    }
-    let named_genre = GENRES.iter().any(|x| x.says.iter().any(|w| said.to_lowercase().contains(w)));
-    let picked = if named_genre { String::new() } else { format!(" (You didn't say a style, so I went with {} — say \"afrobeats\", \"drill\", \"amapiano\"… for another.)", g.name) };
-    // Straight into FL Studio when it's on this PC: the beat opens as a new project.
-    if let Some(fl) = fl_studio() {
-        if std::process::Command::new(&fl).arg(&path).spawn().is_ok() {
-            return Some(format!(
-                "Made a {bars}-bar {} drum groove at {bpm} BPM and opened it in FL Studio — swung and slightly off the grid like a real player, with a fill at the end. If FL asks how to import the MIDI, keep the defaults; set the tempo to {bpm}. It's saved in Music › Izuki Beats too.{picked}",
-                g.name
-            ));
+    Some(match crate::music_draft::make(said, g, bpm) {
+        Ok(mut reply) => {
+            let lower = normalized(said);
+            if !GENRES.iter().any(|genre| genre.says.iter().any(|name| has(&lower, name))) {
+                reply.push_str(&format!(" No recognized style was specified, so I used {}.", g.name));
+            }
+            reply
         }
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        let _ = std::process::Command::new("explorer.exe").arg(format!("/select,{}", path.display())).creation_flags(0x0800_0000).spawn();
-    }
-    let _ = &picked;
-    Some(format!(
-        "Made a {bars}-bar {} drum groove at {bpm} BPM — swung and slightly off the grid like a real player, with a fill at the end. It's in Music › Izuki Beats (open in File Explorer now): drag it onto your Playlist or a channel in FL Studio, or into any music app, and set the project to {bpm} BPM. Ask again for a fresh variation.",
-        g.name
-    ))
+        Err(error) => format!("I couldn't complete the music draft: {error}. I haven't changed your DAW project."),
+    })
 }
 
 #[cfg(test)]
@@ -359,6 +337,12 @@ mod tests {
         assert_eq!(parse("make a reggaeton beat").map(|(g, _)| g.key), Some("reggaeton"));
         assert!(parse("what is a trap beat").is_none());
         assert!(parse("make a house reservation").is_none());
+        assert!(parse("create a track issue").is_none());
+        assert!(parse("write song lyrics").is_none());
+        assert!(parse("don't make a beat").is_none());
+        assert!(parse("bookmark the song").is_none());
+        assert!(parse("make a sewing pattern").is_none());
+        assert_eq!(parse("make a trap track!").map(|(g, _)| g.key), Some("trap"));
     }
 
     #[test]
