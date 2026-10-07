@@ -6,6 +6,7 @@
   <title>Izuki (Nova Izuki) — Free AI Assistant for Windows That Uses Your PC</title>
   <meta name="description" content="Izuki (Nova Izuki) is a free AI assistant for Windows. Say “Hey Nova”, talk naturally, and Izuki sees your screen, answers out loud, and clicks, types and draws to get things done — on your PC and from your phone." />
   <meta name="keywords" content="Izuki, Nova Izuki, Izuki AI, Hey Nova, Nova AI assistant, AI assistant for Windows, free AI voice assistant, Jarvis for PC, AI that controls your computer, computer use agent, screen AI, hands-free PC assistant, AI desktop companion, AI tutor, open source" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
   <meta name="author" content="Solomon Nwachukwu" />
   <meta name="twitter:site" content="@izukiapp" />
   <meta name="twitter:creator" content="@izukiapp" />
@@ -29,76 +30,207 @@
   <meta name="twitter:image" content="https://nova-izuki.github.io/izuki/og.png" />
 
   <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "Organization",
-        "@id": "https://nova-izuki.github.io/izuki/#org",
-        "name": "Izuki",
-        "alternateName": ["Nova Izuki", "Izuki AI", "Nova"],
-        "url": "https://nova-izuki.github.io/izuki/",
-        "logo": { "@type": "ImageObject", "url": "https://nova-izuki.github.io/izuki/icon-512.png", "width": 512, "height": 512 },
-        "image": "https://nova-izuki.github.io/izuki/og.png",
-        "description": "Izuki makes a free AI assistant for Windows that sees your screen, talks with you and uses your PC to get things done.",
-        "founder": { "@type": "Person", "name": "Solomon Nwachukwu" },
-        "email": "izuki.hq@gmail.com",
-        "sameAs": [
-          "https://github.com/nova-izuki/izuki",
-          "https://x.com/izukiapp",
-          "https://www.instagram.com/izukiapp",
-          "https://www.tiktok.com/@izukiapp",
-          "https://www.youtube.com/@izukiapp",
-          "https://www.linkedin.com/company/143922746"
-        ]
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://nova-izuki.github.io/izuki/#org",
+      "name": "Izuki",
+      "alternateName": [
+        "Nova Izuki",
+        "Izuki AI",
+        "Nova"
+      ],
+      "url": "https://nova-izuki.github.io/izuki/",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://nova-izuki.github.io/izuki/icon-512.png",
+        "width": 512,
+        "height": 512
       },
-      {
-        "@type": "WebSite",
-        "@id": "https://nova-izuki.github.io/izuki/#site",
-        "name": "Izuki",
-        "alternateName": ["Nova Izuki", "Izuki AI"],
-        "url": "https://nova-izuki.github.io/izuki/",
-        "publisher": { "@id": "https://nova-izuki.github.io/izuki/#org" }
+      "image": "https://nova-izuki.github.io/izuki/og.png",
+      "description": "Izuki makes a free AI assistant for Windows that sees your screen, talks with you and uses your PC to get things done.",
+      "founder": {
+        "@type": "Person",
+        "name": "Solomon Nwachukwu"
       },
-      {
-        "@type": "SoftwareApplication",
-        "name": "Izuki",
-        "alternateName": ["Nova Izuki", "Izuki AI"],
-        "operatingSystem": "Windows 10, Windows 11",
-        "applicationCategory": "UtilitiesApplication",
-        "description": "A free AI assistant for Windows: say “Hey Nova”, and it sees your screen, answers out loud, and uses your mouse and keyboard to get things done — on your PC and from your phone.",
-        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-        "image": "https://nova-izuki.github.io/izuki/og.png",
-        "screenshot": "https://nova-izuki.github.io/izuki/shots/panel-draw.jpg",
-        "author": { "@id": "https://nova-izuki.github.io/izuki/#org" },
-        "publisher": { "@id": "https://nova-izuki.github.io/izuki/#org" },
-        "downloadUrl": "https://github.com/nova-izuki/izuki/releases/latest",
-        "url": "https://nova-izuki.github.io/izuki/",
-        "featureList": [
-          "Hands-free voice: say “Hey Nova”",
-          "Sees your screen and answers out loud",
-          "Clicks, types and scrolls to do tasks on your PC",
-          "Jarvis mode: presses buttons straight through Windows",
-          "Teacher mode for quizzes and homework",
-          "Alarms, reminders and day planning on PC and phone",
-          "Send it pictures in the chat, Discord or Telegram",
-          "PC Boost: speeds up a slow PC",
-          "Talks to Roku, Android TV, Google TV and Fire TV",
-          "Free AI from Gemini, Meta Llama (via Groq), OpenRouter, Mistral or a local model",
-          "30+ voices and real 3D characters"
-        ]
-      },
-      {
-        "@type": "FAQPage",
-        "mainEntity": [
-          { "@type": "Question", "name": "Is Izuki free?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Izuki is free and open source. It uses free AI keys from Gemini, Groq, OpenRouter or Mistral, or a model on your own PC." } },
-          { "@type": "Question", "name": "What does Izuki do?", "acceptedAnswer": { "@type": "Answer", "text": "Izuki is an AI assistant for Windows. Say “Hey Nova” and talk: it sees your screen, answers out loud, and uses your mouse and keyboard to get things done — opening apps, searching, filling in forms, explaining quizzes and more." } },
-          { "@type": "Question", "name": "Does Izuki work on phones and TVs?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Use Izuki on any phone from the web app, or the Android app. It can also control Roku, Samsung, LG, Android TV, Google TV and Fire TV." } },
-          { "@type": "Question", "name": "Is Izuki safe?", "acceptedAnswer": { "@type": "Answer", "text": "Your keys stay on your PC, Esc stops everything instantly, and Izuki never types passwords or card numbers and asks before sending anything." } }
-        ]
+      "email": "izuki.hq@gmail.com",
+      "sameAs": [
+        "https://github.com/nova-izuki/izuki",
+        "https://x.com/izukiapp",
+        "https://www.instagram.com/izukiapp",
+        "https://www.tiktok.com/@izukiapp",
+        "https://www.youtube.com/@izukiapp",
+        "https://www.linkedin.com/company/143922746"
+      ]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://nova-izuki.github.io/#website",
+      "name": "Izuki",
+      "alternateName": [
+        "Nova Izuki",
+        "Izuki AI",
+        "nova-izuki.github.io"
+      ],
+      "url": "https://nova-izuki.github.io/",
+      "publisher": {
+        "@id": "https://nova-izuki.github.io/izuki/#org"
       }
-    ]
-  }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "Izuki",
+      "alternateName": [
+        "Nova Izuki",
+        "Izuki AI"
+      ],
+      "operatingSystem": "Windows 10, Windows 11",
+      "applicationCategory": "UtilitiesApplication",
+      "description": "A free AI assistant for Windows: say “Hey Nova”, and it sees your screen, answers out loud, and uses your mouse and keyboard to get things done — on your PC and from your phone.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "image": "https://nova-izuki.github.io/izuki/og.png",
+      "screenshot": [
+        {
+          "@type": "ImageObject",
+          "@id": "https://nova-izuki.github.io/izuki/screenshots/#panel-draw",
+          "name": "Izuki — Draw on your screen",
+          "caption": "Izuki Draw panel on Windows, with controls for asking about something on your screen.",
+          "contentUrl": "https://nova-izuki.github.io/izuki/shots/panel-draw.jpg",
+          "url": "https://nova-izuki.github.io/izuki/shots/panel-draw.jpg",
+          "width": 920,
+          "height": 1480
+        },
+        {
+          "@type": "ImageObject",
+          "@id": "https://nova-izuki.github.io/izuki/screenshots/#panel-chat",
+          "name": "Izuki — Chat with Izuki",
+          "caption": "Izuki Chat panel with a message box, microphone and conversation suggestions.",
+          "contentUrl": "https://nova-izuki.github.io/izuki/shots/panel-chat.jpg",
+          "url": "https://nova-izuki.github.io/izuki/shots/panel-chat.jpg",
+          "width": 920,
+          "height": 1480
+        },
+        {
+          "@type": "ImageObject",
+          "@id": "https://nova-izuki.github.io/izuki/screenshots/#panel-watchers",
+          "name": "Izuki — Screen watchers",
+          "caption": "Izuki Watchers panel for watching an area of your Windows screen.",
+          "contentUrl": "https://nova-izuki.github.io/izuki/shots/panel-watchers.jpg",
+          "url": "https://nova-izuki.github.io/izuki/shots/panel-watchers.jpg",
+          "width": 920,
+          "height": 1480
+        },
+        {
+          "@type": "ImageObject",
+          "@id": "https://nova-izuki.github.io/izuki/screenshots/#panel-settings",
+          "name": "Izuki — Make Izuki yours",
+          "caption": "Izuki Settings panel with AI provider, voice and assistant preferences.",
+          "contentUrl": "https://nova-izuki.github.io/izuki/shots/panel-settings.jpg",
+          "url": "https://nova-izuki.github.io/izuki/shots/panel-settings.jpg",
+          "width": 920,
+          "height": 1480
+        },
+        {
+          "@type": "ImageObject",
+          "@id": "https://nova-izuki.github.io/izuki/screenshots/#phone-call",
+          "name": "Izuki — Izuki on your phone",
+          "caption": "Izuki phone call interface with its glowing orb and voice controls.",
+          "contentUrl": "https://nova-izuki.github.io/izuki/shots/phone-call.jpg",
+          "url": "https://nova-izuki.github.io/izuki/shots/phone-call.jpg",
+          "width": 780,
+          "height": 1688
+        }
+      ],
+      "author": {
+        "@id": "https://nova-izuki.github.io/izuki/#org"
+      },
+      "publisher": {
+        "@id": "https://nova-izuki.github.io/izuki/#org"
+      },
+      "downloadUrl": "https://github.com/nova-izuki/izuki/releases/latest",
+      "url": "https://nova-izuki.github.io/izuki/",
+      "featureList": [
+        "Hands-free voice: say “Hey Nova”",
+        "Sees your screen and answers out loud",
+        "Clicks, types and scrolls to do tasks on your PC",
+        "Jarvis mode: presses buttons straight through Windows",
+        "Teacher mode for quizzes and homework",
+        "Alarms, reminders and day planning on PC and phone",
+        "Send it pictures in the chat, Discord or Telegram",
+        "PC Boost: speeds up a slow PC",
+        "Talks to Roku, Android TV, Google TV and Fire TV",
+        "Free AI from Gemini, Meta Llama (via Groq), OpenRouter, Mistral or a local model",
+        "30+ voices and real 3D characters"
+      ],
+      "@id": "https://nova-izuki.github.io/izuki/#app"
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Is Izuki free?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Izuki is free and open source. It uses free AI keys from Gemini, Groq, OpenRouter or Mistral, or a model on your own PC."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What does Izuki do?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Izuki is an AI assistant for Windows. Say “Hey Nova” and talk: it sees your screen, answers out loud, and uses your mouse and keyboard to get things done — opening apps, searching, filling in forms, explaining quizzes and more."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Izuki work on phones and TVs?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Use Izuki on any phone from the web app, or the Android app. It can also control Roku, Samsung, LG, Android TV, Google TV and Fire TV."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is Izuki safe?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Your keys stay on your PC, Esc stops everything instantly, and Izuki never types passwords or card numbers and asks before sending anything."
+          }
+        }
+      ]
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://nova-izuki.github.io/izuki/#webpage",
+      "url": "https://nova-izuki.github.io/izuki/",
+      "name": "Izuki — Free AI Assistant for Windows",
+      "isPartOf": {
+        "@id": "https://nova-izuki.github.io/#website"
+      },
+      "mainEntity": {
+        "@id": "https://nova-izuki.github.io/izuki/#app"
+      },
+      "primaryImageOfPage": {
+        "@type": "ImageObject",
+        "@id": "https://nova-izuki.github.io/izuki/screenshots/#panel-draw",
+        "name": "Izuki — Draw on your screen",
+        "caption": "Izuki Draw panel on Windows, with controls for asking about something on your screen.",
+        "contentUrl": "https://nova-izuki.github.io/izuki/shots/panel-draw.jpg",
+        "url": "https://nova-izuki.github.io/izuki/shots/panel-draw.jpg",
+        "width": 920,
+        "height": 1480
+      }
+    }
+  ]
+}
   </script>
 
   <link rel="icon" href="favicon.ico" sizes="48x48" />
@@ -1510,6 +1642,7 @@
   </main>
 
   <footer>
+    <p><a href="screenshots/">Izuki screenshots &amp; brand images</a></p>
     <div class="socials" aria-label="Izuki on social media">
       <a href="https://x.com/izukiapp" aria-label="Izuki on X" rel="me noopener" target="_blank"><svg viewBox="0 0 24 24"><path d="M17.8 3h3.1l-6.8 7.7 8 10.3h-6.3l-4.9-6.4L5.3 21H2.2l7.2-8.3L1.8 3h6.4l4.4 5.8L17.8 3zm-1.1 16.2h1.7L7.4 4.7H5.6l11.1 14.5z"/></svg></a>
       <a href="https://www.instagram.com/izukiapp" aria-label="Izuki on Instagram" rel="me noopener" target="_blank"><svg viewBox="0 0 24 24"><path d="M12 7.3A4.7 4.7 0 1 0 16.7 12 4.7 4.7 0 0 0 12 7.3zm0 7.8A3.1 3.1 0 1 1 15.1 12 3.1 3.1 0 0 1 12 15.1zm6-8a1.1 1.1 0 1 1-1.1-1.1A1.1 1.1 0 0 1 18 7.1zM21.9 8.2a5.4 5.4 0 0 0-1.5-3.9 5.5 5.5 0 0 0-3.9-1.5C15 2.7 9 2.7 7.5 2.8a5.5 5.5 0 0 0-3.9 1.5 5.4 5.4 0 0 0-1.5 3.9c-.1 1.6-.1 6.1 0 7.7a5.4 5.4 0 0 0 1.5 3.9 5.5 5.5 0 0 0 3.9 1.5c1.6.1 7.5.1 9 0a5.4 5.4 0 0 0 3.9-1.5 5.4 5.4 0 0 0 1.5-3.9c.1-1.6.1-6.1 0-7.7zm-2.1 9.4a3.2 3.2 0 0 1-1.8 1.8c-1.2.5-4.2.4-5.6.4s-4.4.1-5.6-.4a3.2 3.2 0 0 1-1.8-1.8c-.5-1.2-.4-4.2-.4-5.6s-.1-4.4.4-5.6a3.2 3.2 0 0 1 1.8-1.8c1.2-.5 4.2-.4 5.6-.4s4.4-.1 5.6.4a3.2 3.2 0 0 1 1.8 1.8c.5 1.2.4 4.2.4 5.6s.1 4.4-.4 5.6z"/></svg></a>

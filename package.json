@@ -14,7 +14,7 @@
     "test:conversation": "node tools/conversation-check.cjs",
     "test:voice": "node tools/voice-check.cjs",
     "test:companion": "node tools/companion-check.mjs",
-    "test:html": "node tools/encoding-check.cjs && node tools/html-check.cjs docs/index.html && node tools/html-check.cjs docs/links/index.html && node tools/html-check.cjs docs/app/index.html && node tools/html-check.cjs src-tauri/src/call.html",
+    "test:html": "node tools/encoding-check.cjs && node tools/html-check.cjs docs/index.html && node tools/html-check.cjs docs/screenshots/index.html && node tools/html-check.cjs docs/links/index.html && node tools/html-check.cjs docs/app/index.html && node tools/html-check.cjs src-tauri/src/call.html",
     "app:dev": "tauri dev",
     "app:build": "tauri build",
     "mobile:sync": "cap sync",

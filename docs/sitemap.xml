@@ -25,4 +25,15 @@
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
+  <url>
+    <loc>https://nova-izuki.github.io/izuki/screenshots/</loc>
+    <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/panel-draw.jpg</image:loc></image:image>
+    <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/panel-chat.jpg</image:loc></image:image>
+    <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/panel-watchers.jpg</image:loc></image:image>
+    <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/panel-settings.jpg</image:loc></image:image>
+    <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/phone-call.jpg</image:loc></image:image>
+    <image:image><image:loc>https://nova-izuki.github.io/izuki/icon-512.png</image:loc></image:image>
+    <image:image><image:loc>https://nova-izuki.github.io/izuki/og.png</image:loc></image:image>
+    <lastmod>2026-10-06</lastmod>
+  </url>
 </urlset>
