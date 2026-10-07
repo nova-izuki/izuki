@@ -37,7 +37,8 @@ sub init()
         "Find a dinosaur cartoon",
         "What's good to watch tonight?",
         "Set a timer for 10 minutes",
-        "Open YouTube TV"
+        "Open YouTube TV",
+        "Make a 32 bar trap arrangement on my PC"
     ]
     m.top.findNode("hint").text = "OK clears   *  new ideas"
 

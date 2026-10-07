@@ -875,7 +875,7 @@ fn ask_racing(
     // Bound spend per look, even when every configured provider is failing
     // (a rate-limited model says so in well under a second).
     let chain = &expanded[..expanded.len().min(6)];
-    if chain.is_empty() { return Err(anyhow!("no screen brain is configured")); }
+    if chain.is_empty() { return Err(anyhow!("No suitable screen brain is available right now; configured models may be resting or too small for screen control.")); }
     let economy = crate::state::try_store().map(|s| s.settings().economy_mode).unwrap_or(true);
     let began = Instant::now();
     let mut last_launch = began;
@@ -900,6 +900,7 @@ fn ask_racing(
                 let e = e.to_string();
                 // One model rate-limited, others on the same key free: rest just it.
                 match rest_for(&e) {
+                    _ if e.contains("denied access to model") => crate::freebrains::rest_model(&cfg, Duration::from_secs(10 * 60)),
                     Some(d) if crate::freebrains::has_siblings(&cfg) && !is_hopeless(&e) => crate::freebrains::rest_model(&cfg, d),
                     _ => note_failure(cfg.id, &e),
                 }
@@ -2034,7 +2035,7 @@ fn submit_task(
         }
         // An action being planned is not evidence that it succeeded. Check
         // a fresh screen before accepting "done" for an autonomous task.
-        let done = lesson || (plan.done && steps.is_empty());
+        let done = lesson || completion_observed(&plan, steps.is_empty(), round);
         let wait = plan.wait;
         if plan.notes.is_some() {
             notes = plan.notes.clone();
@@ -2150,7 +2151,17 @@ fn submit_task(
                 }
             }
         }
-        if round == 0 && steps.is_empty() {
+        if wants_action && !lesson && steps.is_empty() && !done && plan.ask.is_none()
+            && (plan.done || wait > 0) && round < 2 && alive() {
+            // Re-observe once before trusting a first-look success or a
+            // promise like "Opening it". Never replay nonexistent actions.
+            told = Some("No action was executed from your last response. Check this fresh screen: name the visible result if the user's goal is already satisfied, otherwise provide the next grounded step. A promise to open/start something is not completion.".into());
+            last_plan = Some(plan);
+            std::thread::sleep(Duration::from_millis(250));
+            match capture::capture_all() { Ok(f) => frame = f, Err(_) => break }
+            continue;
+        }
+        if round == 0 && steps.is_empty() && !wants_action {
             // A question, or nothing to do: answered in the summary.
             if focus && !teaching {
                 let _ = overlay::hide_overlay(app);
@@ -2324,7 +2335,7 @@ fn submit_task(
     }
 
     let mut plan = last_plan.unwrap_or_default();
-    if settings.autosave_flows && !all_steps.is_empty() && !prompt.starts_with("Explain this video frame on my screen.") {
+    if settings.autosave_flows && completed && alive() && !all_steps.is_empty() && !prompt.starts_with("Explain this video frame on my screen.") {
         let thumbnail = frame.downscaled(360).to_jpeg_data_url(58).ok();
         let app_name = uia::foreground_app();
         store.add_flow(Flow {
@@ -2343,7 +2354,32 @@ fn submit_task(
     }
     plan.steps = all_steps;
     plan.more = false;
+    finalize_execution(&mut plan, completed && alive());
     plan
+}
+
+/// Executing steps is not the same as observing the requested result. Keep
+/// partial traces useful, but never return a stale success flag after a stop.
+fn completion_observed(plan: &VisionPlan, no_steps: bool, round: usize) -> bool {
+    // First-look claims get another fresh observation. An intention, a wait,
+    // or a question is not a completed autonomous task.
+    let summary = plan.summary.trim().to_lowercase();
+    let intention = ["opening ", "starting ", "i'll ", "i will ", "i’m going to ", "i'm going to ", "let me "]
+        .iter().any(|prefix| summary.starts_with(prefix));
+    round > 0 && plan.done && no_steps && plan.ask.is_none() && plan.wait == 0
+        && !summary.is_empty() && !intention
+}
+
+fn finalize_execution(plan: &mut VisionPlan, verified: bool) {
+    let claimed_done = plan.done;
+    plan.done = verified;
+    if !verified && (claimed_done || !plan.steps.is_empty()) {
+        if claimed_done || plan.summary.trim().is_empty() {
+            plan.summary = "I stopped before I could verify that the whole task finished. Some steps may have completed; check the current result before continuing.".into();
+        } else {
+            plan.summary.push_str(" I haven't verified that the whole task finished.");
+        }
+    }
 }
 
 /// The close-up for a `zoom`: the region with a little margin, at least a
@@ -2649,6 +2685,33 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
 #[cfg(test)]
 mod speed_tests {
     use super::*;
+
+    #[test]
+    fn completion_requires_a_followup_observation_not_an_intention() {
+        let mut plan = VisionPlan { done: true, summary: "The file is visible in Downloads".into(), ..Default::default() };
+        assert!(!completion_observed(&plan, true, 0));
+        assert!(completion_observed(&plan, true, 1));
+        assert!(!completion_observed(&plan, false, 1));
+        plan.summary = "Opening it for you".into();
+        assert!(!completion_observed(&plan, true, 1));
+        plan.summary = "Done".into();
+        plan.wait = 2;
+        assert!(!completion_observed(&plan, true, 1));
+    }
+
+    #[test]
+    fn interrupted_execution_cannot_keep_a_model_success_claim() {
+        let step: ActionStep = serde_json::from_value(serde_json::json!({"action":"key", "key":"ctrl+s"})).unwrap();
+        let mut plan = VisionPlan { done: true, summary: "Done, saved your file".into(), steps: vec![step], ..Default::default() };
+        finalize_execution(&mut plan, false);
+        assert!(!plan.done);
+        assert!(!plan.summary.contains("saved your file"));
+        assert!(plan.summary.contains("could verify"));
+        plan.summary = "The requested file is visible".into();
+        finalize_execution(&mut plan, true);
+        assert!(plan.done);
+        assert_eq!(plan.summary, "The requested file is visible");
+    }
     use crate::settings::{ProviderId, Settings};
 
     #[test]

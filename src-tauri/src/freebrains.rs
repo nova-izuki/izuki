@@ -44,7 +44,9 @@ fn key(id: ProviderId) -> String {
 fn load() -> parking_lot::MutexGuard<'static, Option<Saved>> {
     let mut g = SAVED.lock();
     if g.is_none() {
-        *g = Some(std::fs::read_to_string(file()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default());
+        *g = Some(if cfg!(test) { Saved::default() } else {
+            std::fs::read_to_string(file()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+        });
     }
     g
 }
@@ -200,7 +202,6 @@ fn resting(id: ProviderId, model: &str) -> bool {
 /// together, its chosen one first), resting models left out — and, to drive
 /// the screen, no tiny model while a strong one is free.
 pub fn expand(chain: Vec<ProviderConfig>, for_screen: bool) -> Vec<ProviderConfig> {
-    let original = chain.clone();
     // Each provider's models (its chosen one first)…
     let mut groups: Vec<Vec<ProviderConfig>> = Vec::new();
     for cfg in chain {
@@ -236,8 +237,9 @@ pub fn expand(chain: Vec<ProviderConfig>, for_screen: bool) -> Vec<ProviderConfi
             }
         }
     }
-    // Everything resting or too small: still try what's configured.
-    if out.is_empty() { original } else { out }
+    // Never bring a blocked/resting or unsuitable model back merely because
+    // it was the last one. The caller reports that none is available.
+    out
 }
 
 fn short(m: &str) -> String {
@@ -247,6 +249,16 @@ fn short(m: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exhausted_chain_does_not_resurrect_a_blocked_model() {
+        let cfg = ProviderConfig { id: ProviderId::Openrouter, label: "test".into(), base_url: "http://unused.invalid".into(), model: "izuki-test-access-denied".into(), api_key: String::new(), enabled: true };
+        rest_model(&cfg, Duration::from_secs(60));
+        assert!(expand(vec![cfg], true).is_empty());
+        let tiny = ProviderConfig { id: ProviderId::Ollama, label: "test".into(), base_url: "http://unused.invalid".into(), model: "tinyllama".into(), api_key: String::new(), enabled: true };
+        assert!(expand(vec![tiny.clone()], true).is_empty());
+        assert_eq!(expand(vec![tiny], false).len(), 1);
+    }
 
     /// What this PC's own keys offer (names only, never keys):
     /// `cargo test freebrains::tests::live -- --ignored --nocapture`.

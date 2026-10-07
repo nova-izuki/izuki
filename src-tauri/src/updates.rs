@@ -1,8 +1,5 @@
-//! Updates, always straight to the newest version: an old copy never steps
-//! through the versions in between. Checks run by themselves; with automatic
-//! checks on, a new version downloads in the background and — right after
-//! Izuki starts, before you're doing anything — installs itself. Otherwise
-//! it waits for "Restart to update". Every download is signature-checked.
+//! Automatic checks, explicit downloads and installation. Every downloaded
+//! update is signature-checked; a timer never installs or closes Izuki.
 use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -33,42 +30,24 @@ fn install_allowed(expected: &str, actual: &str, ready: bool, busy: bool) -> Res
     if !ready || expected.is_empty() || expected!=actual { return Err("Download and verify this version before installing it.".into()); }
     Ok(())
 }
-/// When Izuki started: an update found in the first minutes installs itself.
-static STARTED: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
-const QUIET_START: Duration = Duration::from_secs(10 * 60);
-
 pub fn check_later(app: &AppHandle) {
     if cfg!(debug_assertions) || std::env::var("IZUKI_SELFTEST").is_ok() { return; }
-    let _ = *STARTED;
     let app=app.clone();
     tauri::async_runtime::spawn(async move {
-        // Soon after starting: an old copy (an old installer, a PC that was off
-        // for weeks) goes straight to the newest version.
+        // Match Settings: check soon after startup, then every six hours.
         tokio::time::sleep(Duration::from_secs(8)).await;
         loop {
             if crate::state::store().settings().automatic_update_checks { auto_update(&app).await; }
-            tokio::time::sleep(Duration::from_secs(2*60*60)).await;
+            tokio::time::sleep(Duration::from_secs(6*60*60)).await;
         }
     });
 }
 
-/// Check, download the newest in the background, and install it if Izuki has
-/// only just started and isn't busy; otherwise it's ready for "Restart to update".
+/// Automatic checks may notify; downloading/installing requires a user action.
 async fn auto_update(app: &AppHandle) {
     let Ok(status) = check(app).await else { return };
     if status.phase != "available" && status.phase != "ready" { return; }
-    let Ok(status) = fetch(app).await else { return };
-    if status.phase == "ready" && STARTED.elapsed() < QUIET_START && !crate::hotkey::is_busy() {
-        let package = PACKAGE.lock().await;
-        if let Some(p) = package.as_ref() {
-            if let Some(bytes) = p.bytes.as_ref() {
-                publish(app, |s| { s.phase = "installing".into(); s.error = None; });
-                if let Err(e) = p.update.install(bytes) { failed(app, e); }
-                return;
-            }
-        }
-    }
-    if status.phase == "ready" { alert(&status.version); }
+    alert(&status.version);
 }
 
 /// The version downloaded and waiting to be installed, if any.
@@ -77,14 +56,13 @@ pub fn ready_version() -> Option<String> {
     (s.phase == "ready" && !s.version.is_empty()).then(|| s.version.clone())
 }
 
-/// Tell you once per version that it's downloaded and ready: on the Island
-/// (with Update now) and on your phone.
+/// Tell you once per version that an update is available.
 fn alert(version: &str) {
     static TOLD: Mutex<String> = Mutex::new(String::new());
     if version.is_empty() || *TOLD.lock() == version { return; }
     *TOLD.lock() = version.to_string();
     crate::activity::show_update(version);
-    crate::companion::notify_everywhere(&format!("⬆️ Izuki {version} is ready on your PC — open the Island and tap Update now (it takes a few seconds)."));
+    crate::companion::notify_everywhere(&format!("⬆️ Izuki {version} is available — open Settings → Updates on your PC to review, download and install it."));
 }
 
 /// "Update now" from the Island: download if needed, then install (unless Izuki is mid-task).
@@ -94,6 +72,8 @@ pub async fn install_now(app: AppHandle) -> Result<(), String> {
     let package = PACKAGE.try_lock().map_err(|_| "An update operation is already running.".to_string())?;
     let p = package.as_ref().ok_or("There's no update waiting.")?;
     let bytes = p.bytes.as_ref().ok_or("The update hasn't finished downloading.")?;
+    // A task may have started while the download was in progress.
+    install_allowed(&p.update.version, &p.update.version, true, crate::hotkey::is_busy())?;
     publish(&app, |s| { s.phase = "installing".into(); s.error = None; });
     p.update.install(bytes).map_err(|e| failed(&app, e))
 }
@@ -149,18 +129,8 @@ pub async fn download_update(app: AppHandle, window: WebviewWindow) -> Result<Up
 #[tauri::command]
 pub async fn install_update(app: AppHandle, window: WebviewWindow, version: String) -> Result<(),String> {
     main_only(&window)?;
-    // One last look: if an even newer version came out since the download,
-    // get that and install it instead of making you update twice.
-    let mut version=version;
-    {
-        let mut package=PACKAGE.try_lock().map_err(|_| "An update operation is already running.".to_string())?;
-        let before=package.as_ref().map(|p|p.update.version.clone()).unwrap_or_default();
-        if refresh(&app,&mut package).await.is_ok() {
-            let now=package.as_ref().map(|p|p.update.version.clone()).unwrap_or_default();
-            if !now.is_empty() && now!=before && before==version { version=now; }
-        }
-    }
-    if STATUS.lock().phase!="ready" { fetch(&app).await?; }
+    // Install exactly the verified version the person reviewed. A newer
+    // release must be downloaded and confirmed, not substituted silently.
     let package=PACKAGE.try_lock().map_err(|_| "An update operation is already running.".to_string())?;
     let p=package.as_ref().ok_or("Download an update first.")?;
     install_allowed(&version,&p.update.version,p.bytes.is_some(),crate::hotkey::is_busy())?;

@@ -151,7 +151,7 @@ function refresh() {
   $("tv-control-sub").textContent = control ? "On — I can open and press things" : "Off — turn it on";
   $("tv-watch-sub").textContent = !N()?.watch ? "Needs the Izuki TV app" : !control ? "Needs “Control this TV”" : watchOn ? "On — I'll tell you when an app wants money" : "Off";
   $("tv-orb-sub").textContent = (ORBS.find(([k]) => k === orbStyle) || ORBS[0])[1];
-  $("tv-link-sub").textContent = link ? `Linked to ${link.name}` : "Link to copy your setup";
+  $("tv-link-sub").textContent = link ? `Linked to ${link.name} · PC updates: Settings → Updates` : "Link to copy your setup";
   $("tv-link-chip").textContent = link ? `💻 ${link.name}` : "";
   $("tv-link-chip").hidden = !link;
   $("tv-hint").textContent = !core()?.ready()

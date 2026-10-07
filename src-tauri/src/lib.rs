@@ -29,6 +29,7 @@ pub mod keys;
 pub mod live;
 pub mod looks;
 pub mod media;
+pub mod music_draft;
 pub mod memory;
 pub mod model;
 pub mod models;
@@ -80,6 +81,8 @@ mod provider_tests;
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
 use crate::model::{DesktopBounds, OverlayOpenPayload, StatusEvent};
+
+static REOPEN_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Open the drawing overlay.
 ///
@@ -172,31 +175,29 @@ pub fn tls_ready() {
 
 pub fn run() {
     tls_ready();
-    // Every log line to %APPDATA%\Izuki\logs\izuki.log from here on, and
-    // crashes and errors reported (bugs.rs).
-    bugs::start();
-    eprintln!("[izuki] starting v{}", env!("CARGO_PKG_VERSION"));
     // Physical pixels everywhere, so a point drawn on the overlay is the same
     // point the mouse is later moved to.
     automation::make_dpi_aware();
 
-    let store = state::init();
-    // The bridge to the Izuki browser extension (localhost only).
-    ext::spawn();
-    // The flow tidy-up: once now, then every hour while Izuki runs.
-    {
-        let store = store.clone();
-        std::thread::Builder::new()
-            .name("izuki-flow-tidy".into())
-            .spawn(move || loop {
-                store.prune_flows();
-                std::thread::sleep(std::time::Duration::from_secs(3600));
-            })
-            .ok();
-    }
-    bugs::set_enabled(store.settings().send_bug_reports);
+    // The first plugin rejects duplicates before setup can create windows,
+    // microphone engines, bridges, logs or background workers. A launch that
+    // arrives while the first process is starting is replayed at Ready.
+    let builder = tauri::Builder::default();
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        if args.iter().any(|a| a == "--minimised") { return; }
+        REOPEN_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+        if app.get_webview_window(overlay::CONFIG_LABEL).is_some() {
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                if overlay::show_config(&handle).is_ok() {
+                    REOPEN_REQUESTED.store(false, std::sync::atomic::Ordering::SeqCst);
+                }
+            });
+        }
+    }));
 
-    tauri::Builder::default()
+    builder
         // Voice model files for the webviews — see models.rs for why they
         // don't just download them themselves.
         .register_asynchronous_uri_scheme_protocol(models::SCHEME, |ctx, request, responder| {
@@ -339,6 +340,19 @@ pub fn run() {
             commands::foreground_app,
         ])
         .setup(move |app| {
+            // This runs only for the owning process, after the instance guard.
+            bugs::start();
+            eprintln!("[izuki] starting v{}", env!("CARGO_PKG_VERSION"));
+            let store = state::init();
+            bugs::set_enabled(store.settings().send_bug_reports);
+            ext::spawn();
+            {
+                let store = store.clone();
+                std::thread::Builder::new().name("izuki-flow-tidy".into()).spawn(move || loop {
+                    store.prune_flows();
+                    std::thread::sleep(std::time::Duration::from_secs(3600));
+                }).ok();
+            }
             state::set_app(app.handle());
             let handle = app.handle().clone();
             let settings = store.settings();
@@ -448,7 +462,8 @@ pub fn run() {
                 // `--minimised` is passed by the autostart entry so Izuki
                 // boots into the tray rather than stealing focus at login.
                 let quiet = std::env::args().any(|a| a == "--minimised");
-                if !quiet {
+                let reopen = REOPEN_REQUESTED.swap(false, std::sync::atomic::Ordering::SeqCst);
+                if !quiet || reopen {
                     let _ = overlay::show_config(app);
                 }
 

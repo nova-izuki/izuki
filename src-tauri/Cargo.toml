@@ -1,6 +1,6 @@
 [package]
 name = "izuki"
-version = "1.0.64"
+version = "1.0.65"
 description = "IZUKI — draw on your screen, Izuki does it."
 authors = ["Izuki"]
 edition = "2021"
@@ -93,6 +93,9 @@ features = [
   "Win32_UI_WindowsAndMessaging",
   "Win32_System_Variant",
 ]
+
+[target.'cfg(windows)'.dependencies]
+tauri-plugin-single-instance = "=2.4.5"
 
 [profile.release]
 opt-level = 3

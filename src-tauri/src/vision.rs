@@ -1094,13 +1094,30 @@ fn ask_anthropic(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Res
     Ok(value["content"][0]["text"].as_str().unwrap_or_default().to_string())
 }
 
+fn screen_token_budget(id: ProviderId) -> u32 {
+    // A short action plan must fit the smaller output allowance on free Groq
+    // accounts. Other providers retain their existing budget.
+    if id == ProviderId::Groq { 768 } else { 2000 }
+}
+
+fn smaller_output_budget(status: u16, value: &Value, current: u32) -> Option<u32> {
+    let msg = value["error"]["message"].as_str()?.to_ascii_lowercase();
+    if status != 429 || !msg.contains("request too large")
+        || !(msg.contains("output tokens") || msg.contains("otpm")) { return None; }
+    let tail = msg.split("limit").nth(1)?.trim_start_matches([' ', ':', '=']);
+    let digits: String = tail.chars().take_while(|c| c.is_ascii_digit() || *c == ',').filter(|c| *c != ',').collect();
+    let limit: u32 = digits.parse().ok()?;
+    let reduced = (limit / 2).min(current / 2);
+    (reduced >= 128 && reduced < current).then_some(reduced)
+}
+
 fn ask_openai_compatible(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Result<String> {
     let base = cfg.base_url.trim_end_matches('/');
     let client = client()?;
     let image = format!("data:image/jpeg;base64,{}", req.b64());
     let text = style.user(req);
 
-    let send = |json_mode: bool, with_image: bool| -> Result<(reqwest::StatusCode, Value)> {
+    let send = |json_mode: bool, with_image: bool, budget: u32| -> Result<(reqwest::StatusCode, Value)> {
         let user = if with_image {
             json!([
                 { "type": "text", "text": text },
@@ -1114,7 +1131,7 @@ fn ask_openai_compatible(cfg: &ProviderConfig, req: &VisionRequest, style: Style
         let mut body = json!({
             "model": cfg.model,
             "temperature": 0.1,
-            "max_tokens": 2000,
+            "max_tokens": budget,
             "messages": [
                 { "role": "system", "content": style.system() },
                 { "role": "user", "content": user }
@@ -1148,15 +1165,26 @@ fn ask_openai_compatible(cfg: &ProviderConfig, req: &VisionRequest, style: Style
     // JSON mode first; plenty of free models reject `response_format`
     // outright with a 400/422, and the prompt already demands JSON anyway
     // (the parser tolerates chatter around it), so just ask again without.
-    let (mut status, mut value) = send(style.json(), true)?;
+    let mut budget = screen_token_budget(cfg.id);
+    let mut json_mode = style.json();
+    let mut with_image = true;
+    let (mut status, mut value) = send(json_mode, with_image, budget)?;
     if style.json() && (status.as_u16() == 400 || status.as_u16() == 422) {
-        (status, value) = send(false, true)?;
+        json_mode = false;
+        (status, value) = send(json_mode, with_image, budget)?;
     }
     // Still refused, and the reason is the picture itself — a text-only chat
     // model. Try once more without the screenshot; the controls list is
     // enough for it to act.
     if !status.is_success() && !req.controls.is_empty() && rejects_images(status, &value) {
-        (status, value) = send(false, false)?;
+        json_mode = false;
+        with_image = false;
+        (status, value) = send(json_mode, with_image, budget)?;
+    }
+
+    if let Some(smaller) = smaller_output_budget(status.as_u16(), &value, budget) {
+        budget = smaller;
+        (status, value) = send(json_mode, with_image, budget)?;
     }
 
     if !status.is_success() {
@@ -1166,11 +1194,12 @@ fn ask_openai_compatible(cfg: &ProviderConfig, req: &VisionRequest, style: Style
             .map(|m| truncate(m, 300))
             .unwrap_or_else(|| "unknown error".into());
         return Err(match status.as_u16() {
-            401 | 403 => anyhow!(
+            401 => anyhow!(
                 "{} rejected the API key ({status}): {msg}. Re-check it was pasted in full with \
                  no extra spaces, and that it's still active on the provider's dashboard.",
                 cfg.id.as_str()
             ),
+            403 => anyhow!("{} denied access to model \"{}\" ({status}): {msg}. This can be a model permission or policy restriction; it does not by itself mean your key is invalid.", cfg.id.as_str(), cfg.model),
             404 => anyhow!(
                 "{} doesn't know the model \"{}\" ({status}): {msg}. Check the exact model name \
                  on the provider's model list.",
@@ -1184,6 +1213,9 @@ fn ask_openai_compatible(cfg: &ProviderConfig, req: &VisionRequest, style: Style
             ),
             _ => anyhow!("{} answered {status}: {msg}", cfg.id.as_str()),
         });
+    }
+    if value["choices"][0]["finish_reason"].as_str() == Some("length") {
+        return Err(anyhow!("{} truncated the action plan at its output limit; no partial plan will be executed", cfg.id.as_str()));
     }
     Ok(value["choices"][0]["message"]["content"]
         .as_str()
@@ -1610,6 +1642,17 @@ fn truncate(s: &str, n: usize) -> String {
 mod tests {
     use super::*;
     use crate::uia::Control;
+
+    #[test]
+    fn output_limit_retry_is_bounded_and_does_not_retry_input_or_daily_limits() {
+        let error = |message: &str| json!({"error":{"message":message}});
+        assert_eq!(screen_token_budget(ProviderId::Groq), 768);
+        assert_eq!(smaller_output_budget(429, &error("Request too large for model on output tokens per minute (OTPM): Limit 1000, Requested 1819"), 2000), Some(500));
+        assert_eq!(smaller_output_budget(429, &error("Request too large on output tokens: Limit 200"), 768), None);
+        assert_eq!(smaller_output_budget(429, &error("Request too large on input tokens: Limit 1000"), 2000), None);
+        assert_eq!(smaller_output_budget(429, &error("Rate limit reached on output tokens per day: Limit 1000"), 2000), None);
+        assert_eq!(smaller_output_budget(403, &error("Request too large on output tokens: Limit 1000"), 2000), None);
+    }
 
     fn control(id: u32, x: i32, y: i32) -> Control {
         Control { id, kind: "Button".into(), name: format!("Button {id}"), rect: Rect { x, y, w: 20, h: 10 }, hidden: false, value: String::new(), focused: false, below: false, section: String::new(), identity: None }

@@ -104,7 +104,7 @@ pub fn show_boost(text: &str, offer: bool) {
     });
 }
 
-/// A new version downloaded and ready: one tap to update.
+/// An available update: one explicit action to download and install it.
 pub fn show_update(version: &str) {
     push(update_activity(version));
 }
@@ -114,9 +114,9 @@ fn update_activity(version: &str) -> Activity {
         id: "update".into(),
         kind: "update",
         icon: "⬆️",
-        title: format!("Izuki {version} is ready"),
-        detail: "New features and fixes".into(),
-        actions: vec![Action { label: "Update now".into(), op: "update:now".into() }],
+        title: format!("Izuki {version} is available"),
+        detail: "Download and install when you're ready".into(),
+        actions: vec![Action { label: "Download & install".into(), op: "update:now".into() }],
     }
 }
 

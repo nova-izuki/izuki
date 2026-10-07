@@ -28,6 +28,12 @@ Free · Open source · Hands-free voice · Works with free AI keys
 
 ---
 
+### v1.0.65 — reliability and MIDI drafts
+
+Opening Izuki twice brings the existing window forward. Automatic update checks notify you; download and install from **Settings → Updates** when ready. Interrupted tasks cannot retain a success flag, and incomplete runs are not saved as successful flows.
+
+Try **“make a 32 bar trap arrangement at 100 bpm in A minor”**. Izuki saves a new MIDI sketch with drums, bass, chords, melody and section markers, then reads it back and checks the notes, tempo and duration. Import it into a saved copy of your DAW project. From a paired phone, add **“on my PC”**. This does not analyze recordings, listen to a DAW, insert clips into a running project, or render finished audio. [Release notes](docs/RELEASE-1.0.65.md).
+
 Say your wake word — like **“Hey Nova”**. A glowing liquid orb
 appears, Izuki says “Mhm?”, and you just talk — like a voice call with a friend who
 happens to be great with computers. It can:
