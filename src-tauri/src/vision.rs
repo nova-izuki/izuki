@@ -486,7 +486,8 @@ fn client() -> Result<reqwest::blocking::Client> {
     // Bounded so a stuck cloud call can't freeze "thinking" for long — the
     // agent checks for a stop between calls, so shorter here means a faster stop.
     let built = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(22))
+        // A screen step is quick or it's stuck: give up and let the next brain answer.
+        .timeout(Duration::from_secs(14))
         .connect_timeout(Duration::from_secs(5))
         .pool_idle_timeout(Duration::from_secs(90))
         .build()

@@ -157,12 +157,14 @@ pub fn parse(said: &str) -> Option<(&'static Genre, u32)> {
         return None;
     }
     let padded = s.replace("hip-hop", "hip hop");
+    // No genre said ("make beats for me on FL Studio"): a trap beat to start.
     let genre = GENRES
         .iter()
         .flat_map(|g| g.says.iter().map(move |w| (g, *w)))
         .filter(|(_, w)| padded.contains(&format!(" {w} ")) || padded.contains(&format!(" {w}s ")))
         .max_by_key(|(_, w)| w.len())
-        .map(|(g, _)| g)?;
+        .map(|(g, _)| g)
+        .or_else(|| GENRES.iter().find(|g| g.key == "trap"))?;
     let bpm = s
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -284,7 +286,27 @@ fn folder() -> PathBuf {
     PathBuf::from(home).join("Music").join("Izuki Beats")
 }
 
-/// Make the beat, save it, show it in File Explorer, and say what to do next.
+/// FL Studio, if it's installed: the newest FL64.exe under Image-Line.
+fn fl_studio() -> Option<PathBuf> {
+    let mut found: Vec<PathBuf> = Vec::new();
+    for root in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"] {
+        let Ok(base) = std::env::var(root) else { continue };
+        let Ok(rd) = std::fs::read_dir(PathBuf::from(base).join("Image-Line")) else { continue };
+        for d in rd.flatten() {
+            for exe in ["FL64.exe", "FL.exe"] {
+                let p = d.path().join(exe);
+                if p.exists() {
+                    found.push(p);
+                }
+            }
+        }
+    }
+    found.sort();
+    found.pop()
+}
+
+/// Make the beat, save it, open it in FL Studio (else show it in File
+/// Explorer), and say what to do next.
 pub fn make(said: &str) -> Option<String> {
     let (g, bpm) = parse(said)?;
     let bars = if said.contains("8 bar") || said.contains("eight bar") { 8 } else { 4 };
@@ -298,11 +320,23 @@ pub fn make(said: &str) -> Option<String> {
     if std::fs::write(&path, midi(g, bpm, bars, seed)).is_err() {
         return Some("I couldn't save the beat.".into());
     }
+    let named_genre = GENRES.iter().any(|x| x.says.iter().any(|w| said.to_lowercase().contains(w)));
+    let picked = if named_genre { String::new() } else { format!(" (You didn't say a style, so I went with {} — say \"afrobeats\", \"drill\", \"amapiano\"… for another.)", g.name) };
+    // Straight into FL Studio when it's on this PC: the beat opens as a new project.
+    if let Some(fl) = fl_studio() {
+        if std::process::Command::new(&fl).arg(&path).spawn().is_ok() {
+            return Some(format!(
+                "Made a {bars}-bar {} drum groove at {bpm} BPM and opened it in FL Studio — swung and slightly off the grid like a real player, with a fill at the end. If FL asks how to import the MIDI, keep the defaults; set the tempo to {bpm}. It's saved in Music › Izuki Beats too.{picked}",
+                g.name
+            ));
+        }
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         let _ = std::process::Command::new("explorer.exe").arg(format!("/select,{}", path.display())).creation_flags(0x0800_0000).spawn();
     }
+    let _ = &picked;
     Some(format!(
         "Made a {bars}-bar {} drum groove at {bpm} BPM — swung and slightly off the grid like a real player, with a fill at the end. It's in Music › Izuki Beats (open in File Explorer now): drag it onto your Playlist or a channel in FL Studio, or into any music app, and set the project to {bpm} BPM. Ask again for a fresh variation.",
         g.name
@@ -318,6 +352,8 @@ mod tests {
         let (g, bpm) = parse("make me an afrobeats drum pattern at 110 bpm").expect("afrobeats");
         assert_eq!((g.key, bpm), ("afrobeats", 110));
         assert_eq!(parse("create a trap beat").map(|(g, b)| (g.key, b)), Some(("trap", 140)));
+        assert_eq!(parse("make beats for me on fl studio").map(|(g, _)| g.key), Some("trap"));
+        assert_eq!(parse("open fl studio and make a beat").map(|(g, _)| g.key), Some("trap"));
         assert_eq!(parse("give me a boom bap drum loop at 92bpm").map(|(g, b)| (g.key, b)), Some(("boombap", 92)));
         assert_eq!(parse("make an afro house groove").map(|(g, _)| g.key), Some("afrohouse"));
         assert_eq!(parse("make a reggaeton beat").map(|(g, _)| g.key), Some("reggaeton"));

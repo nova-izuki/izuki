@@ -38,6 +38,7 @@ pub mod overlay;
 pub mod patience;
 pub mod shots;
 pub mod deepclean;
+pub mod freebrains;
 pub mod rokudev;
 pub mod planner;
 pub mod recipes;
@@ -376,6 +377,7 @@ pub fn run() {
             recall::spawn();
             activity::spawn();
             boost::spawn(handle.clone());
+            freebrains::refresh_later();
             screentime::spawn();
             browser::init(&handle);
 

@@ -402,7 +402,8 @@ fn ask_model(
     let started = std::time::Instant::now();
     // Reading the window's buttons takes the longest part of the prep (up to
     // a second) — do it at the same time as the screenshot work.
-    let controls_job = std::thread::spawn(|| {
+    let (controls_tx, controls_rx) = std::sync::mpsc::channel();
+    let controls_job = std::thread::spawn(move || {
         let t = std::time::Instant::now();
         // The page's own words, read alongside the controls (not after).
         let text_job = std::thread::spawn(|| uia::document_text(PAGE_TEXT_CHARS));
@@ -411,8 +412,9 @@ fn ask_model(
         let c = uia::list_controls(MAX_CONTROLS);
         let text = text_job.join().unwrap_or_default();
         eprintln!("[brain] screen controls: {}, page text: {} chars, in {} ms", c.len(), text.len(), t.elapsed().as_millis());
-        (c, text)
+        let _ = controls_tx.send((c, text));
     });
+    let _ = controls_job;
 
     let annotated = planner::annotate(frame, session);
     // A close-up is enlarged, not shrunk: small print, tiny radio buttons and
@@ -425,7 +427,13 @@ fn ask_model(
     let desktop = Rect { x: frame.origin.0, y: frame.origin.1, w: frame.width as i32, h: frame.height as i32 };
     // Each control's number printed on the picture itself (tags.rs), so the
     // brain points at the real button instead of guessing pixels.
-    let (mut controls, mut page_text) = controls_job.join().unwrap_or_default();
+    // Apps that draw their own screens (FL Studio, games) can take Windows
+    // 15+ s to describe — and then list almost nothing. Wait 2.5 s at most;
+    // past that the picture alone guides the step.
+    let (mut controls, mut page_text) = controls_rx.recv_timeout(std::time::Duration::from_millis(2500)).unwrap_or_else(|_| {
+        eprintln!("[brain] the window was slow to list its controls — going by the picture");
+        Default::default()
+    });
     // With the Izuki browser extension: the page's real elements — names,
     // where links go, exact places — instead of the screen reader's rougher
     // view of the page. The browser's own buttons (tabs, address bar) stay.
@@ -861,8 +869,12 @@ fn ask_racing(
     use std::sync::{mpsc, Arc};
     use std::time::{Duration, Instant};
 
-    // Bound spend per look, even when every configured provider is failing.
-    let chain = &chain[..chain.len().min(3)];
+    // Every key's other strong free models join in (free limits are per
+    // model), resting ones and — to drive the screen — tiny ones left out.
+    let expanded = crate::freebrains::expand(chain.to_vec(), wants_action);
+    // Bound spend per look, even when every configured provider is failing
+    // (a rate-limited model says so in well under a second).
+    let chain = &expanded[..expanded.len().min(6)];
     if chain.is_empty() { return Err(anyhow!("no screen brain is configured")); }
     let economy = crate::state::try_store().map(|s| s.settings().economy_mode).unwrap_or(true);
     let began = Instant::now();
@@ -885,7 +897,12 @@ fn ask_racing(
                 Err(_) => {}
             }
             if let Err(e) = &r {
-                note_failure(cfg.id, &e.to_string());
+                let e = e.to_string();
+                // One model rate-limited, others on the same key free: rest just it.
+                match rest_for(&e) {
+                    Some(d) if crate::freebrains::has_siblings(&cfg) && !is_hopeless(&e) => crate::freebrains::rest_model(&cfg, d),
+                    _ => note_failure(cfg.id, &e),
+                }
             }
             let _ = tx.send((i, r, t.elapsed()));
         });
@@ -963,7 +980,10 @@ fn ask_racing(
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                if !economy && launched < chain.len() && launched - finished < 2 && last_launch.elapsed() >= hedge_after {
+                // A brain that's been slow lately gets one backup even in economy
+                // mode — a free model's 20 s wait shouldn't be the whole wait.
+                let slow_first = expected_ms(chain[0].id).is_some_and(|ms| ms > 6_000.0);
+                if (!economy || slow_first) && launched < chain.len() && launched - finished < 2 && last_launch.elapsed() >= hedge_after {
                     eprintln!("[brain] trying one speculative backup");
                     launch(launched);
                     launched += 1;
