@@ -2157,7 +2157,12 @@ fn submit_task(
             // promise like "Opening it". Never replay nonexistent actions.
             told = Some("No action was executed from your last response. Check this fresh screen: name the visible result if the user's goal is already satisfied, otherwise provide the next grounded step. A promise to open/start something is not completion.".into());
             last_plan = Some(plan);
-            std::thread::sleep(Duration::from_millis(250));
+            let until = std::time::Instant::now()
+                + Duration::from_millis(250 + u64::from(wait.min(12)) * 1000);
+            while std::time::Instant::now() < until && alive() {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            if !alive() { break; }
             match capture::capture_all() { Ok(f) => frame = f, Err(_) => break }
             continue;
         }

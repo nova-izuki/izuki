@@ -111,7 +111,7 @@ fn add_note(events: &mut Vec<Event>, tick: u32, duration: u32, channel: u8, pitc
     // with a ghost next to a hit fail the validator.
     let latest_off = events
         .iter()
-        .filter(|(_, e)| e[0] & 0xf0 == 0x80 && e[0] & 0xf == channel as u8 && e[2] == pitch)
+        .filter(|(_, e)| e[0] & 0xf0 == 0x80 && e[0] & 0xf == channel as u8 && e[1] == pitch)
         .map(|(t, _)| *t)
         .max()
         .unwrap_or(0);

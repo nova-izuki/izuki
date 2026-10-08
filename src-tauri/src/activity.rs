@@ -68,12 +68,10 @@ pub fn now() -> Vec<Activity> {
     out.extend(downloading());
     let mut s = SHOWN.lock();
     s.retain(|x| x.at.elapsed() < SHOW_FOR);
-    out.extend(s.iter().rev().map(|x| x.activity.clone()));
-    // A downloaded update stays on the Island until it's installed.
-    if let Some(v) = crate::updates::ready_version() {
-        if !out.iter().any(|a| a.id == "update") {
-            out.insert(0, update_activity(&v));
-        }
+    // Update state owns this tile so it cannot expire or retain stale wording.
+    out.extend(s.iter().rev().filter(|x| x.activity.id != "update").map(|x| x.activity.clone()));
+    if let Some((version, ready)) = crate::updates::offered_version() {
+        out.insert(0, update_activity(&version, ready));
     }
     out.truncate(4);
     out
@@ -106,17 +104,17 @@ pub fn show_boost(text: &str, offer: bool) {
 
 /// An available update: one explicit action to download and install it.
 pub fn show_update(version: &str) {
-    push(update_activity(version));
+    push(update_activity(version, false));
 }
 
-fn update_activity(version: &str) -> Activity {
+fn update_activity(version: &str, ready: bool) -> Activity {
     Activity {
         id: "update".into(),
         kind: "update",
         icon: "⬆️",
-        title: format!("Izuki {version} is available"),
-        detail: "Download and install when you're ready".into(),
-        actions: vec![Action { label: "Download & install".into(), op: "update:now".into() }],
+        title: format!("Izuki {version} is {}", if ready { "ready to install" } else { "available" }),
+        detail: if ready { "Signed update downloaded and verified".into() } else { "Download and install when you're ready".into() },
+        actions: vec![Action { label: if ready { "Install now".into() } else { "Download & install".into() }, op: "update:now".into() }],
     }
 }
 
@@ -409,5 +407,15 @@ mod tests {
         assert!(!is_temp(Path::new("C:\\x\\file.pdf")));
         assert_eq!(clock(754), "12:34");
         assert_eq!(size(2_500_000), "2.5 MB");
+    }
+
+    #[test]
+    fn update_tile_matches_download_state() {
+        let available = update_activity("1.2.3", false);
+        assert!(available.title.contains("available"));
+        assert_eq!(available.actions[0].label, "Download & install");
+        let ready = update_activity("1.2.3", true);
+        assert!(ready.title.contains("ready to install"));
+        assert_eq!(ready.actions[0].label, "Install now");
     }
 }

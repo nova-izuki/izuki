@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, Check, Mic, Pause, Pencil, Play, Settings2, SkipBack, SkipForward, Square } from "lucide-react";
+import { AlarmClock, Check, GripHorizontal, Mic, Pause, Pencil, Play, Settings2, SkipBack, SkipForward, Square } from "lucide-react";
 import { api, emit, EV, on } from "../lib/ipc";
 import { workArea } from "../lib/floating";
+import { lockHit, unlockHit } from "../lib/hitTest";
 import type { Activity, IslandStatus, NowPlaying, OrbState, Reminder, Suggestion } from "../lib/types";
 
 /**
@@ -51,6 +52,32 @@ const PEEK_MS = 7000;
 const PEEK_SAME_MS = 10 * 60_000;
 /** …and peeks are never closer together than this. */
 const PEEK_GAP_MS = 90_000;
+const ISLAND_POSITION_KEY = "izk.islandPosition.v1";
+const ISLAND_WIDTH = 372;
+
+type IslandPosition = { x: number; y: number };
+
+function fitIslandPosition(position: IslandPosition): IslandPosition {
+  const wa = workArea();
+  const half = ISLAND_WIDTH / 2;
+  return {
+    x: Math.min(wa.right - half, Math.max(wa.left + half, position.x)),
+    // Keep it in a top rail: movable away from tabs/address fields without
+    // letting a short drag strand it over the middle of the screen.
+    y: Math.min(wa.top + 120, Math.max(wa.top + 6, position.y)),
+  };
+}
+
+function loadIslandPosition(): IslandPosition {
+  const wa = workArea();
+  const fallback = { x: (wa.left + wa.right) / 2, y: wa.top + 6 };
+  try {
+    const saved = JSON.parse(localStorage.getItem(ISLAND_POSITION_KEY) || "null") as IslandPosition | null;
+    return saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) ? fitIslandPosition(saved) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 type Live =
   | { kind: "finished" }
@@ -88,6 +115,9 @@ export function Island({
   const lastPeek = useRef(0);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<IslandPosition>(loadIslandPosition);
+  const positionRef = useRef(position);
+  positionRef.current = position;
   const [finished, setFinished] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const pill = useRef<HTMLDivElement>(null);
@@ -161,11 +191,11 @@ export function Island({
     let wantOpen = false;
     const fn: PointerFn = (x, y) => {
       const wa = workArea();
-      const mid = (wa.left + wa.right) / 2;
       const r = pill.current?.getBoundingClientRect();
+      const islandMiddle = r ? r.left + r.width / 2 : positionRef.current.x;
       const margin = openRef.current ? 18 : 2;
       const overPill = !!r && r.width > 0 && x >= r.left - margin && x <= r.right + margin && y >= r.top - margin && y <= r.bottom + margin;
-      const atEdge = y <= wa.top + 3 && Math.abs(x - mid) < EDGE_BAND;
+      const atEdge = y <= wa.top + 3 && Math.abs(x - islandMiddle) < EDGE_BAND;
       const want = overPill || atEdge;
       if (want === wantOpen) return;
       wantOpen = want;
@@ -180,6 +210,49 @@ export function Island({
       clearTimeout(dwellTimer);
       clearTimeout(closeTimer);
     };
+  }, []);
+
+  useEffect(() => {
+    const fit = () => setPosition((current) => fitIslandPosition(current));
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
+
+  const beginMove = useCallback((event: React.PointerEvent) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const start = positionRef.current;
+    const sx = event.clientX;
+    const sy = event.clientY;
+    lockHit();
+    const move = (e: PointerEvent) => setPosition(fitIslandPosition({ x: start.x + e.clientX - sx, y: start.y + e.clientY - sy }));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      unlockHit();
+      try { localStorage.setItem(ISLAND_POSITION_KEY, JSON.stringify(positionRef.current)); } catch { /* position persistence is optional */ }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  }, []);
+
+  const moveByKeyboard = useCallback((event: React.KeyboardEvent) => {
+    const direction: Record<string, [number, number]> = {
+      ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
+    };
+    const delta = direction[event.key];
+    if (!delta) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const step = event.shiftKey ? 64 : 24;
+    setPosition((current) => {
+      const next = fitIslandPosition({ x: current.x + delta[0] * step, y: current.y + delta[1] * step });
+      try { localStorage.setItem(ISLAND_POSITION_KEY, JSON.stringify(next)); } catch { /* position persistence is optional */ }
+      return next;
+    });
   }, []);
 
   // ---- a gentle peek when something worth helping with comes up
@@ -241,9 +314,9 @@ export function Island({
   const dancing = !!media?.playing;
   if (status.fullscreen && !open) return null;
 
-  const wa = workArea();
+  const fitted = fitIslandPosition(position);
   return (
-    <div className="pointer-events-none fixed z-[60] flex justify-center" style={{ left: wa.left, width: wa.right - wa.left, top: wa.top + 6 }}>
+    <div className="pointer-events-none fixed z-[60] flex justify-center" style={{ left: fitted.x - ISLAND_WIDTH / 2, width: ISLAND_WIDTH, top: fitted.y }}>
       <motion.div
         ref={pill}
         layout
@@ -274,6 +347,8 @@ export function Island({
                 doing={doing}
                 visualizing={visualizing}
                 onVisualize={onVisualize}
+                onMoveStart={beginMove}
+                onMoveKey={moveByKeyboard}
                 onDone={() => setOpen(false)}
               />
             </motion.div>
@@ -398,6 +473,8 @@ function Expanded({
   doing,
   visualizing,
   onVisualize,
+  onMoveStart,
+  onMoveKey,
   onDone,
   activities = [],
   copies = [],
@@ -408,6 +485,8 @@ function Expanded({
   copies?: string[];
   visualizing?: boolean;
   onVisualize?: () => void;
+  onMoveStart: (event: React.PointerEvent) => void;
+  onMoveKey: (event: React.KeyboardEvent) => void;
   live: Live;
   media: NowPlaying | null;
   suggestions: Suggestion[];
@@ -428,6 +507,17 @@ function Expanded({
 
   return (
     <div className="flex flex-col gap-3">
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label="Drag the Island along the top of the screen"
+        title="Drag to move the Island"
+        onPointerDown={onMoveStart}
+        onKeyDown={onMoveKey}
+        className="-mb-1 flex h-4 cursor-grab items-center justify-center rounded-full text-white/35 hover:bg-white/[0.06] hover:text-white/65 active:cursor-grabbing"
+      >
+        <GripHorizontal size={16} />
+      </div>
       <div className="flex items-center gap-3">
         <Face size={40} mood={busy ? "busy" : live.kind === "finished" ? "happy" : dancing ? "dancing" : "idle"} pokeable />
         <div className="min-w-0 flex-1">
@@ -637,12 +727,14 @@ const QUICK: { icon: string; label: string; instant?: string; ask?: string }[] =
   { icon: "🔍", label: "Explain", ask: "Look at my screen and explain what I'm looking at in plain words — point at the important parts." },
   { icon: "📝", label: "Later", instant: "what's on my later list" },
   { icon: "📬", label: "Email", instant: "What's important in my email?" },
+  { icon: "📸", label: "Screenshot", instant: "take a screenshot" },
+  { icon: "⚡", label: "Boost", instant: "make my PC fast" },
 ];
 
 function QuickGrid({ onDone }: { onDone: () => void }) {
   const [hit, setHit] = useState<string | null>(null);
   return (
-    <div className="grid grid-cols-6 gap-1.5">
+    <div className="grid grid-cols-4 gap-1.5">
       {QUICK.map((q) => (
         <button
           key={q.label}

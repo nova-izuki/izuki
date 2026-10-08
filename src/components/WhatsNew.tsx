@@ -22,6 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "↔️", title: "Move the Island out of your way", how: "Open the Island and drag its grip along the top rail. It remembers the safe position, so browser tabs and the address bar stay reachable. Its quick tools are aligned in a larger 4 × 2 grid with Screenshot and PC Boost." },
   { icon: "🛡️", title: "One Izuki at a time", how: "Opening Izuki again brings back its existing window. A second launch no longer starts another orb, microphone engine or background worker." },
   { icon: "✅", title: "More honest task results", how: "Interrupted tasks stay incomplete. First-look success claims get another screen check, incomplete routes are not saved as successful flows, and unavailable screen models stay on cooldown." },
   { icon: "⬆️", title: "Updates when you're ready", how: "Izuki checks for updates automatically. Open Settings → Updates to check now, download the signed update, and install it when your task is finished.", try: { label: "Open updates", tab: "settings", id: "settings-updates" } },

@@ -28,6 +28,10 @@ Free · Open source · Hands-free voice · Works with free AI keys
 
 ---
 
+### v1.0.66 — verified hotfix and a movable Island
+
+The Island now has a drag grip and remembers its safe position along the top of the screen. Its aligned quick-action grid adds Screenshot and PC Boost. MIDI song drafts no longer reject a valid drum track when two hits share a pitch, model-requested waits are honored before screen verification, and update cards remain visible with accurate **available** or **ready to install** wording. [Release notes](docs/RELEASE-1.0.66.md).
+
 ### v1.0.65 — reliability and MIDI drafts
 
 Opening Izuki twice brings the existing window forward. Automatic update checks notify you; download and install from **Settings → Updates** when ready. Interrupted tasks cannot retain a success flag, and incomplete runs are not saved as successful flows.

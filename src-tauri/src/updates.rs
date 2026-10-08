@@ -56,6 +56,14 @@ pub fn ready_version() -> Option<String> {
     (s.phase == "ready" && !s.version.is_empty()).then(|| s.version.clone())
 }
 
+/// The update currently worth showing, and whether its signed bytes are ready.
+pub fn offered_version() -> Option<(String, bool)> {
+    let s = STATUS.lock();
+    matches!(s.phase.as_str(), "available" | "ready")
+        .then(|| (s.version.clone(), s.phase == "ready"))
+        .filter(|(version, _)| !version.is_empty())
+}
+
 /// Tell you once per version that an update is available.
 fn alert(version: &str) {
     static TOLD: Mutex<String> = Mutex::new(String::new());
