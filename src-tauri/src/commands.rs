@@ -1106,6 +1106,18 @@ pub async fn boost_now() -> R<String> {
     blocking(|| crate::boost::run(false)).await
 }
 
+/// "Boost mode on/off": High Performance power plan while the PC is lagging.
+#[tauri::command]
+pub async fn boost_power_plan(on: bool) -> R<String> {
+    blocking(move || crate::boost::set_power_plan(if on { "high" } else { "balanced" })).await?
+}
+
+// The currently active power plan.
+#[tauri::command]
+pub async fn boost_active_power_plan() -> R<String> {
+    blocking(crate::boost::active_power_plan).await?
+}
+
 /// "Make my PC fast": the deep clean, and the bloatware and startup apps found.
 #[tauri::command]
 pub async fn boost_deep() -> R<crate::deepclean::Report> {

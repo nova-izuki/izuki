@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Gauge, Loader2, Rocket, ShieldCheck, Trash2, Undo2, Wand2, Zap } from "lucide-react";
 import { Row, Section, Toggle } from "./ui";
 import { useIzuki } from "../lib/store";
-import { api, type BoostHealth, type DeepReport } from "../lib/ipc";
+import { api, IS_TAURI, type BoostHealth, type DeepReport } from "../lib/ipc";
 
 /**
  * PC Boost (boost.rs): notice a struggling PC and offer to speed it up —
@@ -18,6 +18,33 @@ export function BoostCard() {
   const [report, setReport] = useState<DeepReport | null>(null);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [working, setWorking] = useState("");
+  const [powerPlan, setPowerPlan] = useState("loading");
+  const [powerBusy, setPowerBusy] = useState(false);
+  const changingPower = useRef(false);
+  const powerGeneration = useRef(0);
+
+  // Read Windows itself; a saved checkbox is not proof of the active plan.
+  useEffect(() => {
+    let alive=true;
+    const read=()=>{ if(changingPower.current)return; const generation=++powerGeneration.current; void api.boostActivePowerPlan().then(plan=>{
+      if(alive&&generation===powerGeneration.current) { setPowerPlan(plan); patch({pc_boost_power_plan:plan==="high"}); }
+    }).catch(()=>{if(alive&&generation===powerGeneration.current)setPowerPlan("unknown");}); };
+    read();window.addEventListener("focus",read);
+    return()=>{alive=false;window.removeEventListener("focus",read);};
+  },[patch]);
+  const changePower = async (on: boolean) => {
+    if(changingPower.current)return;
+    changingPower.current=true;powerGeneration.current++;setPowerBusy(true);setResult("");
+    try {
+      const actual=await api.boostPowerPlan(on);
+      setPowerPlan(actual);patch({pc_boost_power_plan:actual==="high"});
+      setResult(actual==="high" ? "Windows confirmed High Performance. This can use more battery and increase heat." : "Windows confirmed Balanced.");
+    } catch(e) {
+      setResult(String(e));
+      try { const actual=await api.boostActivePowerPlan();setPowerPlan(actual);patch({pc_boost_power_plan:actual==="high"}); }
+      catch { setPowerPlan("unknown"); }
+    } finally { changingPower.current=false;setPowerBusy(false); }
+  };
 
   // A live look while the card is open (two samples to measure the processor).
   useEffect(() => {
@@ -164,6 +191,21 @@ export function BoostCard() {
           <Zap size={11} strokeWidth={2.4} /> Or say "make my PC fast" · "remove the bloatware"
         </span>
       </div>
+      {/* Power plan toggle */}
+      <Row
+        label="High Performance mode"
+        hint="Manual Windows plan: on selects High Performance; off selects Balanced. May use more battery and produce more heat; speed gains depend on your PC."
+        icon={<Zap size={14} strokeWidth={2.3} />}
+      >
+        <Toggle
+          checked={powerPlan==="high"}
+          disabled={!IS_TAURI || powerBusy || powerPlan==="loading" || powerPlan==="unknown"}
+          onChange={v=>void changePower(v)}
+        />
+      </Row>
+      <p className="mt-1 text-[10.5px] text-izk-muted" role="status">
+        {powerBusy ? "Checking the Windows change…" : powerPlan==="loading" ? "Reading Windows power plan…" : powerPlan==="high" ? "Active plan: High Performance" : powerPlan==="balanced" ? "Active plan: Balanced" : powerPlan==="other" ? "Active plan: another Windows plan (unchanged)." : "Power plan unavailable. Reopen this settings page to retry."}
+      </p>
       {result && <p className="mt-2 text-[11.5px] leading-snug text-izk-ink">{result}</p>}
       {report && (report.bloat.length > 0 || report.startup.length > 0) && (
         <div className="mt-2 rounded-[12px] border border-white/10 bg-white/5 p-2.5">

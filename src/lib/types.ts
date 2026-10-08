@@ -402,6 +402,8 @@ export interface Settings {
   match_voice_face: boolean;
   /** …and do the safe part (old temp files, hogging background helpers) by itself. */
   pc_boost_auto: boolean;
+  /** Last confirmed Windows High Performance state, refreshed in PC Boost. */
+  pc_boost_power_plan: boolean;
   /** Language Izuki should expect while listening; "auto" detects it. */
   speech_language: string;
   /** Telegram bot token from @BotFather — Izuki on your phone. */

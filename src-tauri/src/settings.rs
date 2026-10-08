@@ -351,6 +351,10 @@ pub struct Settings {
     /// helpers) — never a window you're using.
     #[serde(default)]
     pub pc_boost_auto: bool,
+    /// Last confirmed High Performance state. UI refreshes from Windows;
+    /// never automatically applies a plan from this stored preference.
+    #[serde(default = "default_false")]
+    pub pc_boost_power_plan: bool,
     /// Double-check what you said with a big cloud speech model (your Groq
     /// key, else Gemini): gets names like "Burna Boy" right and leaves out
     /// the lyrics of music playing in the room. The on-device model still
@@ -516,6 +520,10 @@ fn default_orb_response() -> f64 { 1.0 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_false() -> bool {
+    false
 }
 
 fn default_brief_at() -> String {
@@ -866,6 +874,7 @@ impl Default for Settings {
             pc_boost: true,
             match_voice_face: true,
             pc_boost_auto: false,
+            pc_boost_power_plan: false,
             cloud_ears: true,
             speech_language: default_speech_language(),
             telegram_token: String::new(),

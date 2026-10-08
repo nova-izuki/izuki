@@ -1,0 +1,20 @@
+/* Shared material vocabulary; static light/reflection, short interactions. */
+:root { --surface-edge:rgba(222,235,255,.18);--surface-text:#edf2ff;--surface-secondary:#b5bdd0;--surface-accent:#76e1d3; }
+.surface-search,.surface-small { font:600 12px inherit;color:var(--surface-text);border:1px solid var(--surface-edge);border-radius:12px;background:linear-gradient(150deg,#ffffff13,#ffffff05);cursor:pointer;min-height:40px;padding:8px 13px; }
+.surface-search:hover,.surface-small:hover { border-color:var(--surface-accent);background:#ffffff16; }
+.surface-search:focus-visible,.surface-small:focus-visible,.surface-finder button:focus-visible,.surface-finder input:focus-visible { outline:2px solid var(--surface-accent);outline-offset:3px; }
+.surface-finder { box-sizing:border-box;width:min(560px,calc(100% - 24px));max-height:min(690px,85dvh);padding:22px;border:1px solid #ffffff30;border-radius:26px;color:var(--surface-text);background:linear-gradient(135deg,#273042 0%,#171b29 48%,#151923);box-shadow:inset 0 1px #ffffff26,0 28px 90px #0009; }
+.surface-finder::backdrop { background:#050912b3; }
+.surface-finder-head { display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px; }
+.surface-finder h2 { margin:0;font-size:21px;letter-spacing:-.04em; }
+.surface-finder input { box-sizing:border-box;width:100%;min-height:48px;border:1px solid var(--surface-edge);background:#070e1988;border-radius:14px;color:var(--surface-text);padding:12px 14px;font:inherit; }
+.surface-results { display:grid;gap:6px;margin-top:12px;max-height:48dvh;overflow:auto;padding:3px; }
+.surface-results button { border:1px solid transparent;border-radius:13px;background:transparent;color:var(--surface-text);text-align:left;cursor:pointer;padding:13px;font:inherit; }
+.surface-results button:hover,.surface-results button:focus { background:#ffffff0b;border-color:var(--surface-edge); }
+.surface-results strong,.surface-results span { display:block; }
+.surface-results strong { font-size:14px;font-weight:600; }
+.surface-results span,.surface-caption { font-size:12px;line-height:1.6;color:var(--surface-secondary); }
+.surface-caption { margin:12px 3px 0; }
+html[data-surface="lite"] *,html[data-surface="lite"] *::before,html[data-surface="lite"] *::after { animation:none!important;transition:none!important;scroll-behavior:auto!important; }
+html[data-surface="lite"] .aurora,html[data-surface="lite"] .spot,html[data-surface="lite"] .ring-cursor,html[data-surface="lite"] .ring-dot,html[data-surface="lite"] .scene .grain { display:none!important; }
+@media(max-width:540px) { .surface-finder { padding:17px; }.surface-finder h2{font-size:19px;} }

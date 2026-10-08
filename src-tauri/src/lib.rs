@@ -320,6 +320,8 @@ pub fn run() {
             commands::boost_health,
             commands::voice_for_face,
             commands::boost_now,
+            commands::boost_power_plan,
+            commands::boost_active_power_plan,
             commands::boost_deep,
             commands::boost_remove,
             commands::boost_undo_startup,

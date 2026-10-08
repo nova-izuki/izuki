@@ -281,6 +281,78 @@ pub fn health() -> Health {
     sys::health()
 }
 
+const HIGH_PLAN: &str = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
+const BALANCED_PLAN: &str = "381b4222-f694-41f0-9685-ff5bb260df2e";
+static POWER_CHANGE: Mutex<()> = Mutex::new(());
+
+fn power_output(success: bool, stdout: &[u8], stderr: &[u8]) -> Result<String, String> {
+    if !success {
+        let detail=String::from_utf8_lossy(stderr).trim().chars().take(300).collect::<String>();
+        return Err(format!("Windows couldn't change/read the power plan. The plan may be unavailable or restricted by your administrator. {detail}"));
+    }
+    Ok(String::from_utf8_lossy(stdout).into_owned())
+}
+fn powercfg(args: &[&str]) -> Result<String, String> {
+    #[cfg(windows)] {
+        use std::os::windows::process::CommandExt;
+        let root=std::env::var_os("SystemRoot").ok_or("Windows system directory is unavailable.")?;
+        let output=std::process::Command::new(std::path::PathBuf::from(root).join("System32").join("powercfg.exe"))
+            .args(args).creation_flags(0x08000000).output().map_err(|e| format!("Couldn't run Windows power settings: {e}"))?;
+        power_output(output.status.success(), &output.stdout, &output.stderr)
+    }
+    #[cfg(not(windows))] { let _=args; Err("Power plans are only available on Windows.".into()) }
+}
+// Match the GUID, not localized display names or the entire output line.
+fn plan_kind(output: &str) -> &'static str {
+    let lower=output.to_ascii_lowercase();
+    let tokens=lower.split(|c: char| !c.is_ascii_hexdigit() && c!='-').collect::<Vec<_>>();
+    if tokens.contains(&HIGH_PLAN) { "high" }
+    else if tokens.contains(&BALANCED_PLAN) { "balanced" }
+    else { "other" }
+}
+fn change_plan(plan: &str, mut run: impl FnMut(&[&str]) -> Result<String,String>) -> Result<String,String> {
+    let guid=match plan { "high"=>HIGH_PLAN, "balanced"=>BALANCED_PLAN, _=>return Err("Unsupported power plan.".into()) };
+    run(&["/setactive",guid])?;
+    let actual=plan_kind(&run(&["/getactivescheme"])?);
+    if actual!=plan { return Err("Windows didn't confirm the requested power plan. Check Power Options and try again.".into()); }
+    Ok(actual.into())
+}
+/// Manual only. Never run automatically on startup or while watching for lag.
+pub fn set_power_plan(plan: &str) -> Result<String,String> {
+    let _guard=POWER_CHANGE.try_lock().ok_or("A power-plan change is already running.")?;
+    change_plan(plan, powercfg)
+}
+pub fn active_power_plan() -> Result<String,String> {
+    Ok(plan_kind(&powercfg(&["/getactivescheme"])?).into())
+}
+
+#[cfg(test)]
+mod power_tests {
+    use super::*;
+    #[test] fn reads_localized_guid_lines_and_preserves_custom_plans() {
+        assert_eq!(plan_kind(&format!("Power Scheme GUID: {HIGH_PLAN} (High performance)")),"high");
+        assert_eq!(plan_kind(&format!("GUID: {} (Equilibrado)", BALANCED_PLAN.to_uppercase())),"balanced");
+        assert_eq!(plan_kind("e9a42b02-d5df-448d-aa00-03f14749eb61 (Ultimate Performance)"),"other");
+        assert_eq!(plan_kind(""),"other");
+    }
+    #[test] fn failed_commands_never_report_success_from_empty_stdout() {
+        assert!(power_output(false,b"",b"Access denied").is_err());
+        assert!(power_output(true,b"",b"").is_ok());
+        assert!(change_plan("high", |_|Err("Denied".into())).is_err());
+        assert!(change_plan("high", |_|Ok(BALANCED_PLAN.into())).is_err());
+        assert!(change_plan("untrusted", |_|panic!("invalid input must not launch")).is_err());
+    }
+    #[test] fn changes_only_allowlisted_plan_then_checks_windows() {
+        let mut calls=Vec::new();
+        let result=change_plan("high", |args| {
+            calls.push(args.iter().map(|s|s.to_string()).collect::<Vec<_>>());
+            Ok(if args[0]=="/getactivescheme" {format!("GUID: {HIGH_PLAN} (High performance)")}else{String::new()})
+        });
+        assert_eq!(result.unwrap(),"high");
+        assert_eq!(calls,vec![vec!["/setactive",HIGH_PLAN],vec!["/getactivescheme"]]);
+    }
+}
+
 #[cfg(windows)]
 mod sys {
     use super::{Health, Hog, NEVER};

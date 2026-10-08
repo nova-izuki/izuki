@@ -253,6 +253,7 @@ export const MOCK_SETTINGS: Settings = {
   pc_boost: true,
   match_voice_face: true,
   pc_boost_auto: false,
+  pc_boost_power_plan: false,
   speech_language: "auto",
   telegram_token: "",
   composio_api_key: "",
@@ -466,6 +467,8 @@ export const api = {
   boostRemove: (bloat: string[], startup: string[]) => call<string>("boost_remove", { bloat, startup }, () => "PC Boost only works inside the Izuki app."),
   boostUndoStartup: () => call<string>("boost_undo_startup", undefined, () => "PC Boost only works inside the Izuki app."),
   boostAdmin: (startup: string[]) => call<string>("boost_admin", { startup }, () => "PC Boost only works inside the Izuki app."),
+  boostPowerPlan: (on: boolean) => call<string>("boost_power_plan", { on }, () => { throw new Error("Power plans can only be changed inside the Windows app."); }),
+  boostActivePowerPlan: () => call<string>("boost_active_power_plan", undefined, () => "unknown"),
   alarmSnooze: (text: string, minutes: number) => call<Reminder>("alarm_snooze", { text, minutes }, () => ({ id: "", at: 0, text })),
   chatCancel: (id: number) => call<void>("chat_cancel", { id }, () => undefined).catch(() => undefined),
   /** Connect to the paired Android phone. */
