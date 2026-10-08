@@ -127,6 +127,9 @@ export function Island({
   // ---- what Izuki is doing
   const busy = thinking || orb === "thinking";
   const busySince = useRef(0);
+  // The active drag's cleanup, so an unmount while dragging can't leave
+  // pointer listeners or hit testing locked.
+  const dragCleanup = useRef<(() => void) | null>(null);
   const orbRef = useRef(orb);
   orbRef.current = orb;
   useEffect(() => {
@@ -222,22 +225,36 @@ export function Island({
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
+    // A second drag while one is already in flight would leak the first
+    // cleanup, so run the old one before starting fresh.
+    dragCleanup.current?.();
+    dragCleanup.current = null;
     const start = positionRef.current;
     const sx = event.clientX;
     const sy = event.clientY;
     lockHit();
     const move = (e: PointerEvent) => setPosition(fitIslandPosition({ x: start.x + e.clientX - sx, y: start.y + e.clientY - sy }));
-    const up = () => {
+    const cleanup = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
       unlockHit();
       try { localStorage.setItem(ISLAND_POSITION_KEY, JSON.stringify(positionRef.current)); } catch { /* position persistence is optional */ }
+      // Clear the ref when this cleanup runs, so pointerup and an unmount
+      // can't both fire it.
+      if (dragCleanup.current === cleanup) dragCleanup.current = null;
     };
+    const up = cleanup;
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
+    dragCleanup.current = cleanup;
   }, []);
+
+  // A drag can end after the Island is gone — closing the app mid-drag used to
+  // leave pointer listeners and hit testing locked, so the overlay stopped
+  // responding to clicks. The active cleanup is always run on unmount.
+  useEffect(() => () => dragCleanup.current?.(), []);
 
   const moveByKeyboard = useCallback((event: React.KeyboardEvent) => {
     const direction: Record<string, [number, number]> = {
