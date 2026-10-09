@@ -61,7 +61,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Add these in Settings → Secrets → Actions to sign auto-updates.
-          # Without them the build still succeeds; updates just go unsigned.
+          # Required for updater artifacts. Never disable signing to release.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
@@ -130,6 +130,21 @@ jobs:
           }
           if (-not $ready) { throw "Phone builds are not ready; keeping this release a draft" }
           $version = $env:IZUKI_RELEASE_TAG -replace '^v', ''
+          # A working installer alone is not a working automatic update.
+          gh release download $env:IZUKI_RELEASE_TAG --pattern latest.json --output updater-manifest.json
+          if ($LASTEXITCODE -ne 0) { throw "Updater metadata is missing; keeping this release a draft" }
+          $manifest = Get-Content updater-manifest.json -Raw | ConvertFrom-Json
+          if ($manifest.version -ne $version) { throw "Updater metadata version does not match the release" }
+          foreach ($target in @('windows-x86_64', 'windows-x86_64-msi', 'windows-x86_64-nsis')) {
+            $entry = $manifest.platforms.$target
+            if (-not $entry.signature -or -not $entry.url.StartsWith("https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:IZUKI_RELEASE_TAG/")) {
+              throw "Missing signature or incorrect URL for $target"
+            }
+            $filename = [Uri]::UnescapeDataString(([Uri]$entry.url).Segments[-1])
+            if ($assets -notcontains $filename -or $assets -notcontains "$filename.sig") {
+              throw "Missing updater artifact or signature file for $target"
+            }
+          }
           $notes = "docs/RELEASE-$version.md"
           if (Test-Path $notes) {
             # Every release page leads to the website first — so search
