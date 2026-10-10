@@ -464,6 +464,10 @@ export const api = {
   musicMeter: (on: boolean) => call<void>("music_meter", { on }, () => undefined),
   /** Island audio level: continuous waveform flow for any PC sound. */
   islandAudioMeter: (on: boolean) => call<void>("island_audio_meter", { on }, () => undefined),
+  /** "Ask about this page" from the Island: the answer arrives on EV.pageAnswer. */
+  pageAsk: (id: number, question: string, history: Array<{ role: "user" | "assistant"; content: string }>) =>
+    call<void>("page_ask", { id, question, history }, () => undefined),
+  pageAskCancel: (id: number) => call<void>("page_ask_cancel", { id }, () => undefined),
   /** ⏮ ⏯ ⏭ for whatever is playing on the PC. */
   mediaControl: (action: "play" | "pause" | "next" | "previous") => call<boolean>("media_control", { action }, () => false),
   reminderRemove: (id: string) => call<void>("reminder_remove", { id }, () => undefined),
@@ -621,6 +625,8 @@ export const EV = {
   /** Frontend-only: live audio level (0..1) for Island waveform — music,
    * video, any PC sound. ~30Hz, drives the Island's continuous flow. */
   islandAudioLevel: "izuki://island-audio-level",
+  /** A piece of the answer to "Ask about this page" ({ id, text, done, error, page }). */
+  pageAnswer: "izuki://page-answer",
   /** Frontend-only: a still from the Island's camera (a data: URL) for Chat
    * to attach to the next message. */
   chatPicture: "izuki://chat-picture",

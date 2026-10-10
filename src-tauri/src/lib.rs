@@ -30,6 +30,7 @@ pub mod live;
 pub mod looks;
 pub mod media;
 pub mod autonomous;
+pub mod page_ask;
 pub mod music_draft;
 pub mod memory;
 pub mod model;
@@ -315,6 +316,8 @@ pub fn run() {
             commands::media_control,
             commands::music_meter,
             commands::island_audio_meter,
+            commands::page_ask,
+            commands::page_ask_cancel,
             commands::overlay_state,
             commands::reminders_list,
             commands::reminder_remove,

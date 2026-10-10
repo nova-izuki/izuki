@@ -38,6 +38,38 @@ pub struct IslandStatus {
     pub copies: Vec<String>,
     /// The weather now where the user lives: (place, °C, "🌤️ partly cloudy").
     pub weather: Option<(String, i64, String)>,
+    /// The page's title when a web browser is in front — the Island offers
+    /// "Ask about this page".
+    pub page: Option<String>,
+}
+
+const BROWSERS: &[&str] = &["chrome", "msedge", "firefox", "brave", "opera", "vivaldi", "arc"];
+
+/// A browser window's title without the browser's name on the end:
+/// "Syllabus - Canvas - Google Chrome" → "Syllabus - Canvas".
+pub fn page_title(window: &str) -> String {
+    let t = window.replace('\u{200b}', "");
+    let mut t = t.split(" — Mozilla Firefox").next().unwrap_or(&t).to_string();
+    // Edge: "Inbox - Outlook and 3 more pages - Personal - Microsoft Edge".
+    if let Some(at) = t.find(" and ") {
+        let rest = &t[at + 5..];
+        let digits = rest.chars().take_while(|c| c.is_ascii_digit()).count();
+        if digits > 0 && rest[digits..].starts_with(" more page") {
+            let after = rest[digits..].find(" - ").map(|i| rest[digits + i..].to_string()).unwrap_or_default();
+            t = format!("{}{after}", &t[..at]);
+        }
+    }
+    let names = ["google chrome", "microsoft edge", "mozilla firefox", "brave", "opera", "vivaldi", "arc"];
+    let mut parts: Vec<&str> = t.split(" - ").collect();
+    while parts.len() > 1 {
+        let last = parts.last().map(|p| p.trim().to_lowercase()).unwrap_or_default();
+        if names.iter().any(|n| last.ends_with(n)) || last == "personal" || last == "work" || last.starts_with("profile") {
+            parts.pop();
+        } else {
+            break;
+        }
+    }
+    parts.join(" - ").trim().to_string()
 }
 
 /// The weather for the Island — fetched off to the side so a slow network
@@ -59,7 +91,11 @@ fn weather_glance() -> Option<(String, i64, String)> {
 pub fn status() -> IslandStatus {
     let media = now_playing();
     let music = media.as_ref().is_some_and(|m| m.playing);
-    let context = format!("{}|{}", crate::uia::foreground_app(), crate::uia::foreground_title());
+    let app = crate::uia::foreground_app();
+    let title = crate::uia::foreground_title();
+    let in_browser = BROWSERS.contains(&app.to_lowercase().trim_end_matches(".exe"));
+    let page = in_browser.then(|| page_title(&title)).filter(|t| !t.is_empty());
+    let context = format!("{app}|{title}");
     let question = question_on_screen(&context);
     IslandStatus {
         media,
@@ -71,6 +107,7 @@ pub fn status() -> IslandStatus {
         activities: crate::activity::now(),
         copies: crate::activity::recent_copies().into_iter().map(|c| c.chars().take(90).collect()).collect(),
         weather: weather_glance(),
+        page,
     }
 }
 
@@ -271,6 +308,15 @@ fn front_is_fullscreen() -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn page_titles_lose_the_browser_name() {
+        assert_eq!(page_title("Syllabus - Canvas - Google Chrome"), "Syllabus - Canvas");
+        assert_eq!(page_title("Inbox - Outlook and 3 more pages - Personal - Microsoft\u{200b} Edge"), "Inbox - Outlook");
+        assert_eq!(page_title("Rust docs — Mozilla Firefox"), "Rust docs");
+        assert_eq!(page_title("YouTube"), "YouTube");
+    }
+
     use super::*;
 
     #[test]

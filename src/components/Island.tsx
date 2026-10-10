@@ -3,7 +3,8 @@ import { AnimatePresence, motion } from "motion/react";
 import { AlarmClock, Camera, Check, GripHorizontal, Mic, Pause, Pencil, Play, Settings2, SkipBack, SkipForward, Sparkles, Square, X } from "lucide-react";
 import { api, CAMERA_PICTURE_KEY, emit, EV, on } from "../lib/ipc";
 import { workArea } from "../lib/floating";
-import { lockHit, unlockHit } from "../lib/hitTest";
+import { lockHit, markHit, unlockHit } from "../lib/hitTest";
+import { ChatText } from "./ChatText";
 import type { Activity, IslandStatus, NowPlaying, OrbState, Reminder, Suggestion } from "../lib/types";
 
 /**
@@ -123,6 +124,19 @@ export function Island({
   const pill = useRef<HTMLDivElement>(null);
   const openRef = useRef(false);
   openRef.current = open;
+  // Held open while you're asking about the page or reading the answer —
+  // moving the mouse away mustn't throw the answer away.
+  const holdRef = useRef(false);
+  const wantRef = useRef(false);
+  const hold = useCallback((on: boolean) => {
+    if (holdRef.current === on) return;
+    holdRef.current = on;
+    if (!on) {
+      window.setTimeout(() => {
+        if (!wantRef.current && !holdRef.current) setOpen(false);
+      }, CLOSE_AFTER_MS);
+    }
+  }, []);
 
   // ---- what Izuki is doing
   const busy = thinking || orb === "thinking";
@@ -200,12 +214,13 @@ export function Island({
       const overPill = !!r && r.width > 0 && x >= r.left - margin && x <= r.right + margin && y >= r.top - margin && y <= r.bottom + margin;
       const atEdge = y <= wa.top + 3 && Math.abs(x - islandMiddle) < EDGE_BAND;
       const want = overPill || atEdge;
+      wantRef.current = want;
       if (want === wantOpen) return;
       wantOpen = want;
       clearTimeout(dwellTimer);
       clearTimeout(closeTimer);
       if (want && !openRef.current) dwellTimer = window.setTimeout(() => setOpen(true), DWELL_MS);
-      if (!want && openRef.current) closeTimer = window.setTimeout(() => setOpen(false), CLOSE_AFTER_MS);
+      if (!want && openRef.current && !holdRef.current) closeTimer = window.setTimeout(() => setOpen(false), CLOSE_AFTER_MS);
     };
     pointerFns.add(fn);
     return () => {
@@ -366,6 +381,8 @@ export function Island({
                 activities={acts}
                 weather={status.weather ?? null}
                 copies={status.copies ?? []}
+                page={status.page ?? null}
+                onHold={hold}
                 next={next}
                 now={now}
                 dancing={dancing}
@@ -505,7 +522,11 @@ function Expanded({
   activities = [],
   copies = [],
   weather = null,
+  page = null,
+  onHold,
 }: {
+  page?: string | null;
+  onHold?: (on: boolean) => void;
   weather?: [string, number, string] | null;
   activities?: Activity[];
   copies?: string[];
@@ -623,6 +644,8 @@ function Expanded({
           </div>
         </div>
       )}
+
+      {page && !busy && <AskPage page={page} onHold={onHold} onClose={onDone} />}
 
       {cameraOn ? (
         <CameraView onClose={() => setCameraOn(false)} onAsked={onDone} />
@@ -941,6 +964,196 @@ function Cover({ m, size }: { m: NowPlaying; size: number }) {
       style={{ width: size, height: size, fontSize: size * 0.45 }}
     >
       ♪
+    </div>
+  );
+}
+
+type PageTurn = { role: "user" | "assistant"; content: string };
+type PagePiece = { id: number; text: string; done: boolean; error?: string | null; page?: string | null };
+
+/** Reveal text a little at a time, catching up faster the further behind it is. */
+function useTypewriter(text: string) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (text.length < n) setN(0);
+  }, [text, n]);
+  useEffect(() => {
+    if (n >= text.length) return;
+    const step = Math.max(1, Math.ceil((text.length - n) / 14));
+    const t = setTimeout(() => setN((v) => Math.min(text.length, v + step)), 16);
+    return () => clearTimeout(t);
+  }, [n, text]);
+  return text.slice(0, n);
+}
+
+/** "Ask about this page" — like asking Gemini in Chrome, from the Island.
+ * Izuki reads the page in front (and, with the browser extension, the
+ * pages it links to that matter) and the answer types itself out here.
+ * Follow-ups carry on the same conversation until the page changes. */
+function AskPage({ page, onHold, onClose }: { page: string; onHold?: (on: boolean) => void; onClose: () => void }) {
+  const [draft, setDraft] = useState("");
+  const [focused, setFocused] = useState(false);
+  const [asked, setAsked] = useState("");
+  const [full, setFull] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const history = useRef<PageTurn[]>([]);
+  const current = useRef(0);
+  const answer = useRef("");
+  const shown = useTypewriter(full);
+
+  // A different page starts a fresh conversation.
+  useEffect(() => {
+    if (current.current) void api.pageAskCancel(current.current);
+    current.current = 0;
+    history.current = [];
+    setAsked("");
+    setFull("");
+    setError(null);
+    setWorking(false);
+  }, [page]);
+  useEffect(() => () => {
+    if (current.current) void api.pageAskCancel(current.current);
+  }, []);
+  // Keep the Island open while typing or while there's an answer to read.
+  const onHoldRef = useRef(onHold);
+  onHoldRef.current = onHold;
+  useEffect(() => onHoldRef.current?.(focused || !!asked), [focused, asked]);
+  useEffect(() => () => onHoldRef.current?.(false), []);
+
+  useEffect(() => {
+    const off = on<PagePiece>(EV.pageAnswer, (p) => {
+      if (!p || p.id !== current.current) return;
+      if (p.text) {
+        answer.current += p.text;
+        setFull(answer.current);
+      }
+      if (p.done) {
+        setWorking(false);
+        if (p.error && !answer.current) {
+          setError(p.error);
+          // The question went unanswered: don't carry it into follow-ups.
+          history.current = history.current.slice(0, -1);
+        } else {
+          history.current = [...history.current, { role: "assistant" as const, content: answer.current }].slice(-8);
+        }
+      }
+    });
+    return () => void off.then((f) => f());
+  }, []);
+
+  const send = (text?: string) => {
+    const q = (text ?? draft).trim();
+    if (!q || working) return;
+    const id = Date.now();
+    const before = history.current.slice(-8);
+    history.current = [...before, { role: "user" as const, content: q }];
+    current.current = id;
+    answer.current = "";
+    setAsked(q);
+    setDraft("");
+    setFull("");
+    setError(null);
+    setCopied(false);
+    setWorking(true);
+    void api.pageAsk(id, q, before);
+  };
+  const stop = () => {
+    if (current.current) void api.pageAskCancel(current.current);
+    setWorking(false);
+  };
+  const close = () => {
+    stop();
+    onHoldRef.current?.(false);
+    onClose();
+  };
+  const ideas = ["Sum this page up", "What should I do here?", "Explain it simply"];
+
+  return (
+    <div className="flex flex-col gap-2 rounded-2xl bg-white/[0.07] p-2.5">
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          send();
+        }}
+      >
+        <Sparkles size={15} className="shrink-0 text-fuchsia-300" />
+        <input
+          value={draft}
+          // The overlay doesn't take the keyboard by itself: ask for it.
+          onMouseDown={() => void api.setOverlayInteractive(true).then(() => markHit())}
+          onChange={(e) => setDraft(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") close();
+          }}
+          placeholder={`Ask about “${page.length > 34 ? page.slice(0, 33) + "…" : page}”`}
+          aria-label="Ask about this page"
+          className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-white/45"
+        />
+        {working ? (
+          <button type="button" onClick={stop} aria-label="Stop" className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-white/85 hover:bg-white/20">
+            <Square size={11} fill="currentColor" />
+          </button>
+        ) : (
+          <button type="submit" disabled={!draft.trim()} aria-label="Ask" className="rounded-full bg-white px-2.5 py-1 text-[12px] font-semibold text-black transition hover:bg-white/90 disabled:opacity-35">
+            Ask
+          </button>
+        )}
+        {asked && (
+          <button type="button" onClick={close} aria-label="Close" className="flex h-7 w-7 items-center justify-center rounded-full text-white/60 hover:bg-white/10 hover:text-white">
+            <X size={13} />
+          </button>
+        )}
+      </form>
+      {!asked && (
+        <div className="flex flex-wrap gap-1.5">
+          {ideas.map((q) => (
+            <button key={q} type="button" onClick={() => send(q)} className="rounded-full bg-white/10 px-2 py-[3px] text-[11px] font-medium text-white/80 transition hover:bg-white/16">
+              {q}
+            </button>
+          ))}
+        </div>
+      )}
+      {asked && (
+        <div className="max-h-[200px] overflow-y-auto pr-1 text-[13px] leading-snug text-white/90">
+          <div className="mb-1 text-[11.5px] text-white/50">{asked}</div>
+          {error ? (
+            <div className="text-[12.5px] text-rose-300">{error}</div>
+          ) : shown ? (
+            <ChatText text={shown} />
+          ) : (
+            <Dots />
+          )}
+        </div>
+      )}
+      {asked && !working && !error && full && (
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard?.writeText(full).then(() => setCopied(true)).catch(() => undefined);
+            }}
+            className="rounded-full bg-white/10 px-2 py-[3px] text-[11px] font-medium text-white/80 hover:bg-white/16"
+          >
+            {copied ? "Copied" : "Copy"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              history.current = [];
+              setAsked("");
+              setFull("");
+            }}
+            className="rounded-full bg-white/10 px-2 py-[3px] text-[11px] font-medium text-white/80 hover:bg-white/16"
+          >
+            New question
+          </button>
+        </div>
+      )}
     </div>
   );
 }

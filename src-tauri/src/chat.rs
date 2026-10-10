@@ -992,6 +992,12 @@ pub fn reply_here(history: &[Turn], style: Style) -> anyhow::Result<String> {
 /// Any finished answer to `messages` (system prompt first), raced across
 /// the brains like everything else here.
 pub fn complete(messages: &[Value]) -> anyhow::Result<String> {
+    complete_streaming(messages, 1_000_000_000 + rand::random::<u32>() as u64, &|_| {})
+}
+
+/// `complete`, handing each piece of the answer to `on_text` as it arrives
+/// (the Island types it out). `cancel(id)` stops it.
+pub fn complete_streaming(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -> anyhow::Result<String> {
     let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
     if chain.is_empty() {
         if !crate::brain::online() {
@@ -999,10 +1005,12 @@ pub fn complete(messages: &[Value]) -> anyhow::Result<String> {
         }
         anyhow::bail!("no AI brain is set up yet — add a free Gemini key in Izuki's Settings");
     }
-    let id = 1_000_000_000 + rand::random::<u32>() as u64;
     let text = Mutex::new(String::new());
     let failed = Mutex::new(None::<String>);
     let emit = |t: String, done: bool, error: Option<String>| {
+        if !t.is_empty() {
+            on_text(&t);
+        }
         text.lock().push_str(&t);
         if done {
             *failed.lock() = error;

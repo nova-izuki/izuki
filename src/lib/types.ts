@@ -619,6 +619,8 @@ export interface IslandStatus {
   copies?: string[];
   /** The weather now where the user lives: [place, °C, "🌤️ partly cloudy"]. */
   weather?: [string, number, string] | null;
+  /** The page's title when a web browser is in front ("Ask about this page"). */
+  page?: string | null;
 }
 
 /** Something happening right now, with its smart next steps. */

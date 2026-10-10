@@ -1073,6 +1073,18 @@ pub fn island_audio_meter(app: AppHandle, on: bool) {
     crate::media::island_audio_meter(&app, on);
 }
 
+/// "Ask about this page" from the Island: the answer arrives piece by
+/// piece on `izuki://page-answer` (see page_ask.rs).
+#[tauri::command]
+pub fn page_ask(app: AppHandle, id: u64, question: String, history: Option<Vec<crate::page_ask::Turn>>) {
+    std::thread::spawn(move || crate::page_ask::ask(&app, id, &question, &history.unwrap_or_default()));
+}
+
+#[tauri::command]
+pub fn page_ask_cancel(id: u64) {
+    crate::chat::cancel(id);
+}
+
 /// The Island's ⏮ ⏯ ⏭ buttons: "play", "pause", "next", "previous".
 #[tauri::command]
 pub async fn media_control(action: String) -> R<bool> {
