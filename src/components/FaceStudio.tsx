@@ -50,13 +50,14 @@ function Tile({ on, label, img, onClick, children }: { on: boolean; label: strin
 
 type ToonModule = typeof import("../../docs/app/toon.js");
 
-/** The 2D characters: one for every voice, Flat vector or Comic. */
+/** The 2D characters: one for every voice, Flat vector, Comic or Ink. */
 function ToonSection({ style, pick }: { style: string; pick: (s: Settings["orb_style"]) => void }) {
   const [mod, setMod] = useState<ToonModule | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const persona = useIzuki((s) => s.settings.persona);
   const raw = useIzuki((s) => s.settings.avatar);
-  const render = (faceLooks(raw).toon as { render?: string } | undefined)?.render === "comic" ? "comic" : "flat";
+  const picked = (faceLooks(raw).toon as { render?: string } | undefined)?.render;
+  const render = picked === "comic" || picked === "ink" ? picked : "flat";
   useEffect(() => {
     let alive = true;
     void import("../../docs/app/toon.js").then((m) => alive && setMod(m));
@@ -95,7 +96,7 @@ function ToonSection({ style, pick }: { style: string; pick: (s: Settings["orb_s
   );
 }
 
-/** How the 2D characters look: Flat or Comic, how much of them, in the orb or free. */
+/** How the 2D characters look: Flat, Comic or Ink, how much of them, in the orb or free. */
 function ToonTuner() {
   const raw = useIzuki((s) => s.settings.avatar);
   const patch = useIzuki((s) => s.patchSettings);
@@ -106,7 +107,7 @@ function ToonTuner() {
     <section className="space-y-2 rounded-[14px] border border-white/10 bg-white/5 p-3">
       <h4 className="text-[11px] font-semibold uppercase tracking-wide text-izk-muted">Character style</h4>
       <div className="flex flex-wrap gap-1.5">
-        {[["flat", "Flat vector"], ["comic", "Comic (Spider-Verse)"]].map(([k, l]) => (
+        {[["flat", "Flat vector"], ["comic", "Comic (Spider-Verse)"], ["ink", "Ink (painted)"]].map(([k, l]) => (
           <button key={k} type="button" aria-pressed={(look.render ?? "flat") === k} className={pill((look.render ?? "flat") === k)} onClick={() => set({ render: k })}>{l}</button>
         ))}
       </div>

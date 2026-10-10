@@ -191,8 +191,11 @@ export function VoicePicker() {
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   useEffect(() => {
     let alive = true;
-    const render = ((): "flat" | "comic" => {
-      try { return (JSON.parse(settings.avatar || "{}")?.toon?.render === "comic" ? "comic" : "flat"); } catch { return "flat"; }
+    const render = ((): "flat" | "comic" | "ink" => {
+      try {
+        const r = JSON.parse(settings.avatar || "{}")?.toon?.render;
+        return r === "comic" || r === "ink" ? r : "flat";
+      } catch { return "flat"; }
     })();
     void import("../../docs/app/toon.js").then((m) => {
       const ids = Object.keys(m.CHARACTERS);

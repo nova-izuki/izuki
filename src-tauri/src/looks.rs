@@ -102,6 +102,9 @@ fn parse_face(s: &str) -> Option<Look> {
     if s.contains("comic") || s.contains("spider-verse") || s.contains("spiderverse") || s.contains("spider verse") || s.contains("miles morales") {
         changes.push(("render", serde_json::Value::String("comic".into())));
         named.push("comic style");
+    } else if has("ink") || has("painted") || s.contains("concept art") || s.contains("ink.industries") || s.contains("ink industries") {
+        changes.push(("render", serde_json::Value::String("ink".into())));
+        named.push("ink painted style");
     } else if s.contains("flat") || s.contains("vector") {
         changes.push(("render", serde_json::Value::String("flat".into())));
         named.push("flat vector style");
@@ -299,5 +302,7 @@ mod tests {
         assert_eq!(parse("change your orb to the cartoon"), Some(Look::Orb("toon", "your 2D character")));
         let Some(Look::Avatar(c, _)) = parse("make your style comic") else { panic!("comic") };
         assert_eq!(c[0], ("render", serde_json::Value::String("comic".into())));
+        let Some(Look::Avatar(c, _)) = parse("make your style painted") else { panic!("ink") };
+        assert_eq!(c[0], ("render", serde_json::Value::String("ink".into())));
     }
 }

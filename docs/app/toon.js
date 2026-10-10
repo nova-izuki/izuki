@@ -5,6 +5,9 @@
 //          one soft shadow tone, snappy squash-and-stretch timing
 //   comic  Spider-Verse-style comic: ink outlines, halftone (Ben-Day) dots in
 //          the shadows, a slightly off print registration, posed "on twos"
+//   ink    painted concept-art look: tall figures with small heads, muted
+//          colour blocks with one loud accent, hard brushy shadow shapes and
+//          no outlines, baggy clothes and chunky boots, on off-white paper
 //
 // They're alive: they breathe, shift their weight, blink and glance around,
 // look at the pointer, and — while Izuki talks — an animator plans gestures
@@ -29,10 +32,16 @@ function hex(c) {
   const n = parseInt(h.length === 3 ? h.split("").map((x) => x + x).join("") : h, 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
+/** "#abc", "#aabbcc", "rgb(…)" or "rgba(…)" → [r, g, b, a]. */
+function rgba(c) {
+  if (c.startsWith("#")) return [...hex(c), 1];
+  const m = c.match(/[\d.]+/g) || ["0", "0", "0"];
+  return [+m[0], +m[1], +m[2], m[3] === undefined ? 1 : +m[3]];
+}
 const css = ([r, g, b], a = 1) => (a >= 1 ? `rgb(${r | 0},${g | 0},${b | 0})` : `rgba(${r | 0},${g | 0},${b | 0},${a})`);
 /** Darker (k<0) or lighter (k>0), keeping the hue warm the way paint does. */
 function tone(c, k) {
-  const [r, g, b] = hex(c);
+  const [r, g, b] = c.startsWith("#") ? hex(c) : rgba(c);
   if (k < 0) {
     const t = -k;
     // Shadows lean cool-violet, like a lit illustration.
@@ -154,6 +163,9 @@ function newState(t) {
     sway: 0, swayT: 0, nextShift: t + 3, shiftTo: 0,
     say: null, sayStart: 0, timeline: null, plan: null, quietSince: 0,
     pokeSeen: 0, jumpAt: -9, e: 0, lastBeat: 0, nod: 0, nodV: 0,
+    // Set by animate(); Comic's first frame draws before it runs, and a
+    // missing jump made the robot's core light throw.
+    jump: 0, pose: "rest", blink: 0, squash: 0,
   };
 }
 
@@ -303,8 +315,9 @@ function animate(s, o, dt, t) {
  * away from the light (flat: a darker tone; comic: halftone dots), and an
  * outline (comic: ink).
  */
-function painter(ctx, style, unit) {
+function painter(ctx, style, unit, accent = "") {
   const comic = style === "comic";
+  const painted = style === "ink";
   const ink = "#15101f";
   const patterns = new Map();
   const dots = (base) => {
@@ -349,11 +362,90 @@ function painter(ctx, style, unit) {
     return p;
   };
   const shadowOffset = 1.6;
+  // Ink: muted colour, a dry-brush grain, and shadows a cool step down.
+  const muted = new Map();
+  const keep = accent.toLowerCase();
+  const mute = (c) => {
+    if (typeof c !== "string" || c.toLowerCase() === keep) return c;
+    let m = muted.get(c);
+    if (m) return m;
+    const [r, g, b, a] = rgba(c);
+    const l = 0.3 * r + 0.59 * g + 0.11 * b;
+    // A third of the way to grey, and a touch toward warm paper.
+    const mix = (v, w) => v + (l - v) * 0.34 + (w - v) * 0.06;
+    m = css([mix(r, 150), mix(g, 140), mix(b, 124)], a);
+    muted.set(c, m);
+    return m;
+  };
+  let grain = null;
+  const brush = () => {
+    if (grain) return grain;
+    const c = document.createElement("canvas");
+    const n = 48;
+    c.width = c.height = n;
+    const g = c.getContext("2d");
+    // Streaks along one direction, like a flat brush dragged across.
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 70; i++) {
+      const x = rnd() * n, y = rnd() * n, len = 4 + rnd() * 14;
+      g.strokeStyle = rnd() < 0.5 ? `rgba(0,0,0,${0.25 + rnd() * 0.4})` : `rgba(255,255,255,${0.2 + rnd() * 0.35})`;
+      g.lineWidth = 0.6 + rnd() * 1.4;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + len * 0.86, y - len * 0.5);
+      g.stroke();
+    }
+    grain = ctx.createPattern(c, "repeat");
+    try { grain.setTransform(new DOMMatrix().scale(1 / unit)); } catch {}
+    return grain;
+  };
   return {
     comic,
+    painted,
     ink,
     lw: comic ? 0.55 : 0.0,
     shape(path, base, o = {}) {
+      if (painted) {
+        const col = mute(base);
+        ctx.save();
+        path();
+        ctx.fillStyle = col;
+        ctx.fill();
+        ctx.clip();
+        if (!o.flat) {
+          // A hard-edged shadow block on the side away from the light, the
+          // lit side a bigger step over than flat so the planes read.
+          const k = o.light ?? 1;
+          ctx.fillStyle = tone(col, -0.3);
+          path();
+          ctx.fill();
+          ctx.save();
+          ctx.translate(-3.1 * k, -1.9 * k);
+          ctx.fillStyle = col;
+          path();
+          ctx.fill();
+          ctx.restore();
+        }
+        // The dry-brush grain over the whole shape.
+        ctx.globalAlpha = o.skin ? 0.1 : 0.16;
+        ctx.globalCompositeOperation = "soft-light";
+        ctx.fillStyle = brush();
+        path();
+        ctx.fill();
+        ctx.restore();
+        // No outline — just the slightly darker edge paint leaves.
+        if (!o.noInk) {
+          ctx.save();
+          path();
+          ctx.strokeStyle = tone(col, -0.38);
+          ctx.globalAlpha = 0.45;
+          ctx.lineWidth = 0.22;
+          ctx.stroke();
+          ctx.restore();
+        }
+        return;
+      }
       ctx.save();
       path();
       ctx.fillStyle = base;
@@ -392,7 +484,7 @@ function painter(ctx, style, unit) {
     line(path, color, w) {
       ctx.save();
       path();
-      ctx.strokeStyle = color;
+      ctx.strokeStyle = painted ? mute(color) : color;
       ctx.lineWidth = w;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
@@ -428,11 +520,12 @@ function figure(ctx, C, s, P, t) {
   const skin = SKIN_OF(C);
   const [topStyle, topCol, topAcc] = C.top;
   const breathe = Math.sin(t * 1.5);
-  const sway = s.sway;
+  // Ink: weight on one leg, the hip out and the shoulders tilted against it.
+  const sway = s.sway + (P.painted ? 0.85 : 0);
   const hop = s.jump * 6;
   const hipX = sway * 1.2;
   const hipY = -48 - hop;
-  const shW = (male ? 12.4 : 10.4) * broad * (1 + breathe * 0.006);
+  const shW = (male ? 12.4 : 10.4) * broad * (P.painted ? 1.14 : 1) * (1 + breathe * 0.006);
   const chestY = -75 - hop - breathe * 0.25;
   const neckY = chestY - 3;
   const lean = sway * 0.02;
@@ -446,7 +539,21 @@ function figure(ctx, C, s, P, t) {
     const ankle = [side * 5.2 + sway * 0.15, -3.5 - hop * 0.3];
     return { side, hip, knee, ankle };
   });
+  // Ink figures are taller: the legs are longer and everything above the
+  // hips is lifted by the difference.
+  const lift = P.painted ? 12 : 0;
+  if (lift) for (const L of legs) { L.hip[1] -= lift; L.knee[1] -= lift * 0.45; }
   for (const L of legs) {
+    if (P.painted) {
+      // Baggy trousers that stack at a wide hem, over chunky boots.
+      P.shape(() => { capsule(ctx, L.hip, L.knee, male ? 4.9 : 4.6, 4.3); }, C.pants);
+      P.shape(() => { capsule(ctx, L.knee, [L.ankle[0], L.ankle[1] - 1.2], 4.3, 4.4); }, C.pants);
+      P.shape(() => { ctx.beginPath(); ctx.ellipse(L.ankle[0], L.ankle[1] - 2.2, 4.3, 1.1, 0, 0, TAU); }, tone(C.pants, -0.18), { flat: true });
+      const bx = L.ankle[0] + L.side * 1.1;
+      P.shape(() => { ctx.beginPath(); ctx.roundRect(bx - 4.6, L.ankle[1] - 0.6, 9.2, 4.2, [2.4, 2.8, 1, 1]); }, C.shoes);
+      P.shape(() => { ctx.beginPath(); ctx.roundRect(bx - 5, L.ankle[1] + 3.2, 10, 1.9, 0.7); }, tone(C.shoes === "#ffffff" || C.shoes === "#f3f4f6" ? "#d6d3cc" : C.shoes, -0.45), { flat: true });
+      continue;
+    }
     P.shape(() => { capsule(ctx, L.hip, L.knee, male ? 4.4 : 4.2, 3.6); }, C.pants);
     P.shape(() => { capsule(ctx, L.knee, L.ankle, 3.6, 2.9); }, C.pants);
     // Shoes: a rounded sneaker pointing a little outward.
@@ -456,18 +563,22 @@ function figure(ctx, C, s, P, t) {
     }, C.shoes, { edge: true });
     if (!P.comic) P.line(() => { ctx.beginPath(); ctx.moveTo(L.ankle[0] + L.side * 1.2 - 3.6, L.ankle[1] + 3.4); ctx.lineTo(L.ankle[0] + L.side * 1.2 + 3.6, L.ankle[1] + 3.4); }, tone(C.shoes, -0.3), 0.5);
   }
+  ctx.save();
+  ctx.translate(0, -lift);
 
   // ---- torso
   const sh = [-1, 1].map((side) => [lean * 30 + side * shW, chestY + 1.2 - (s.pose === "shrug" ? 1.4 : 0)]);
-  const waistW = (male ? 9.4 : 7.6) * broad;
-  const hipW = (male ? 9.2 : 9.8) * broad;
+  const waistW = (male ? 9.4 : 7.6) * broad * (P.painted ? 1.12 : 1);
+  const hipW = (male ? 9.2 : 9.8) * broad * (P.painted ? 1.1 : 1);
+  // Ink tops hang low and boxy.
+  const hem = (topStyle === "coat" ? 14 : topStyle === "crop" ? -8 : 2) + (P.painted && topStyle !== "crop" ? 4 : 0);
   const torso = () => {
     ctx.beginPath();
     ctx.moveTo(sh[0][0] + 1.4, sh[0][1] - 1.6);
     ctx.quadraticCurveTo(lean * 30, neckY - 0.6, sh[1][0] - 1.4, sh[1][1] - 1.6);
     ctx.quadraticCurveTo(sh[1][0] + 0.8, sh[1][1] - 0.6, sh[1][0] + 0.4, sh[1][1] + 3);
-    ctx.quadraticCurveTo(hipX + waistW + 0.4, -60 - hop, hipX + hipW, hipY + (topStyle === "coat" ? 14 : topStyle === "crop" ? -8 : 2));
-    ctx.lineTo(hipX - hipW, hipY + (topStyle === "coat" ? 14 : topStyle === "crop" ? -8 : 2));
+    ctx.quadraticCurveTo(hipX + waistW + 0.4, -60 - hop, hipX + hipW, hipY + hem);
+    ctx.lineTo(hipX - hipW, hipY + hem);
     ctx.quadraticCurveTo(hipX - waistW - 0.4, -60 - hop, sh[0][0] - 0.4, sh[0][1] + 3);
     ctx.quadraticCurveTo(sh[0][0] - 0.8, sh[0][1] - 0.6, sh[0][0] + 1.4, sh[0][1] - 1.6);
     ctx.closePath();
@@ -542,7 +653,7 @@ function figure(ctx, C, s, P, t) {
     const W = [E[0] + Math.sin(f) * dir * FORE, E[1] + Math.cos(f) * FORE];
     const upCol = sleeves === "long" || robot ? topCol : skin;
     const foreCol = sleeves === "long" ? topCol : skin;
-    const r0 = (male ? 3.2 : 2.7) * broad;
+    const r0 = (male ? 3.2 : 2.7) * broad * (P.painted && sleeves === "long" ? 1.2 : 1);
     P.shape(() => { capsule(ctx, S, E, r0, r0 * 0.86); }, sleeves === "none" ? skin : upCol);
     if (sleeves === "short") P.shape(() => { capsule(ctx, S, [S[0] + (E[0] - S[0]) * 0.55, S[1] + (E[1] - S[1]) * 0.55], r0 + 0.5, r0 + 0.3); }, topCol);
     P.shape(() => { capsule(ctx, E, W, r0 * 0.86, r0 * 0.72); }, foreCol);
@@ -557,7 +668,8 @@ function figure(ctx, C, s, P, t) {
       for (let k = 0; k < 3; k++) P.line(() => { ctx.beginPath(); ctx.moveTo(W[0] + Math.cos(a) * (2 + k * 0.8), W[1] + Math.sin(a) * (2 + k * 0.8) + (k - 1) * 1.6); ctx.lineTo(W[0] + Math.cos(a) * (6 + k * 1.6), W[1] + Math.sin(a) * (6 + k * 1.6) + (k - 1) * 1.6); }, "#15101f", 0.4);
     }
   }
-  return { headX, neckY };
+  ctx.restore();
+  return { headX, neckY: neckY - lift };
 }
 
 /** A hand at the wrist, along the forearm: open, palm up, fist, pointing, flat, counting. */
@@ -601,9 +713,9 @@ function hand(ctx, P, W, ang, kind, count, skin, dir, male) {
 /** The head's place: over the neck, nodding and tilting; drawn a little big, for appeal. */
 function headSpace(ctx, s, at) {
   const pitch = s.head.pitch + s.nod * 0.04;
-  ctx.translate(at.headX, -87.0 - s.jump * 6 + pitch * 2);
+  ctx.translate(at.headX, -87.0 - (at.lift || 0) - s.jump * 6 + pitch * 2);
   ctx.rotate(s.head.roll);
-  ctx.scale(1.2, 1.2);
+  ctx.scale(at.headScale || 1.2, at.headScale || 1.2);
 }
 
 /** Long hair, locs and braids fall behind the body: drawn first. */
@@ -675,14 +787,29 @@ function head(ctx, C, s, P, t, at) {
   // The face: a skull, then cheeks down to the chin (it drops as the mouth opens).
   const faceW = male ? 8.2 : 7.7;
   const chinY = (male ? 9.6 : 9.0) + jaw;
-  const face = () => {
-    ctx.beginPath();
-    ctx.moveTo(-faceW, -1.6);
-    ctx.bezierCurveTo(-faceW, -11.2, faceW, -11.2, faceW, -1.6);
-    ctx.bezierCurveTo(faceW, 3.6, male ? 5.8 : 4.8, chinY - 0.4, turn * 0.3, chinY);
-    ctx.bezierCurveTo(male ? -5.8 : -4.8, chinY - 0.4, -faceW, 3.6, -faceW, -1.6);
-    ctx.closePath();
-  };
+  const face = P.painted
+    ? () => {
+      // Ink: a longer head with planes — a jaw corner and a narrow chin.
+      const w = faceW * 0.94, cy = chinY + 1.4, jx = male ? w - 0.6 : w - 1.3;
+      ctx.beginPath();
+      ctx.moveTo(-w, -1.6);
+      ctx.bezierCurveTo(-w, -11.6, w, -11.6, w, -1.6);
+      ctx.lineTo(w - 0.2, 2.4);
+      ctx.lineTo(jx, 5.6);
+      ctx.lineTo(turn * 0.3 + (male ? 2.1 : 1.4), cy);
+      ctx.lineTo(turn * 0.3 - (male ? 2.1 : 1.4), cy);
+      ctx.lineTo(-jx, 5.6);
+      ctx.lineTo(-w + 0.2, 2.4);
+      ctx.closePath();
+    }
+    : () => {
+      ctx.beginPath();
+      ctx.moveTo(-faceW, -1.6);
+      ctx.bezierCurveTo(-faceW, -11.2, faceW, -11.2, faceW, -1.6);
+      ctx.bezierCurveTo(faceW, 3.6, male ? 5.8 : 4.8, chinY - 0.4, turn * 0.3, chinY);
+      ctx.bezierCurveTo(male ? -5.8 : -4.8, chinY - 0.4, -faceW, 3.6, -faceW, -1.6);
+      ctx.closePath();
+    };
   P.shape(face, skin, { light: 0.45, skin: true });
   if (has("beard")) {
     P.shape(() => {
@@ -713,7 +840,17 @@ function head(ctx, C, s, P, t, at) {
 
   // Cheeks: they lift and blush with a smile.
   const sm = s.smile;
-  for (const side of [-1, 1]) {
+  if (P.painted) {
+    // A cheekbone plane in shadow on the side away from the light.
+    ctx.save(); face(); ctx.clip();
+    ctx.fillStyle = tone(skin, -0.24);
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(faceW, 0.6); ctx.lineTo(4.4 + turn * 0.6, 2.2 - Math.max(0, sm) * 0.4); ctx.lineTo(3.4 + turn * 0.6, 6.4); ctx.lineTo(faceW, 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  } else for (const side of [-1, 1]) {
     ctx.fillStyle = css([235, 110, 120], (male ? 0.08 : 0.18) + Math.max(0, sm) * 0.18);
     ctx.beginPath();
     ctx.ellipse(side * 4.6 + turn * 0.6, 3.4 - Math.max(0, sm) * 0.5, 1.9, 1.2, 0, 0, TAU);
@@ -726,8 +863,8 @@ function head(ctx, C, s, P, t, at) {
   for (const side of [-1, 1]) {
     const ex = side * 3.35 + turn;
     const ey = -0.4;
-    const w = (male ? 1.8 : 1.95) * (1 - Math.abs(side * yaw) * 0.25 * (side * yaw > 0 ? 1 : 0));
-    const h = male ? 1.25 : 1.42;
+    const w = (male ? 1.8 : 1.95) * (P.painted ? 0.82 : 1) * (1 - Math.abs(side * yaw) * 0.25 * (side * yaw > 0 ? 1 : 0));
+    const h = (male ? 1.25 : 1.42) * (P.painted ? 0.72 : 1);
     const open = clamp(1 - blink - squint, 0.04, 1) * (1 + s.brow * 0.12);
     const white = () => {
       ctx.beginPath();
@@ -741,13 +878,13 @@ function head(ctx, C, s, P, t, at) {
     white();
     ctx.clip();
     const ix = ex + s.eye.x * 0.55, iy = ey - 0.15 + s.eye.y * 0.35;
-    ctx.fillStyle = C.eyes;
-    ctx.beginPath(); ctx.arc(ix, iy, 1.12, 0, TAU); ctx.fill();
+    ctx.fillStyle = P.painted ? tone(C.eyes, -0.45) : C.eyes;
+    ctx.beginPath(); ctx.arc(ix, iy, P.painted ? 0.95 : 1.12, 0, TAU); ctx.fill();
     ctx.fillStyle = "#0b0810";
     ctx.beginPath(); ctx.arc(ix, iy, 0.56, 0, TAU); ctx.fill();
     ctx.fillStyle = "#ffffff";
-    ctx.beginPath(); ctx.arc(ix - 0.36, iy - 0.4, 0.3, 0, TAU); ctx.fill();
-    ctx.beginPath(); ctx.arc(ix + 0.35, iy + 0.3, 0.12, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(ix - 0.36, iy - 0.4, P.painted ? 0.18 : 0.3, 0, TAU); ctx.fill();
+    if (!P.painted) { ctx.beginPath(); ctx.arc(ix + 0.35, iy + 0.3, 0.12, 0, TAU); ctx.fill(); }
     ctx.restore();
     // Upper lid line (and lashes).
     P.line(() => {
@@ -776,6 +913,13 @@ function head(ctx, C, s, P, t, at) {
     ctx.moveTo(turn * 1.25 + 0.2, 0.8);
     ctx.quadraticCurveTo(turn * 1.35 + 1.1, 3.4, turn * 1.3 + 0.1, 3.7);
   }, tone(skin, -0.32), 0.45);
+  if (P.painted) {
+    // The nose as a shadow plane, the way a painter blocks it in.
+    ctx.fillStyle = tone(skin, -0.3);
+    ctx.beginPath();
+    ctx.moveTo(turn * 1.25 + 0.3, 0.2); ctx.lineTo(turn * 1.35 + 1.5, 3.5); ctx.lineTo(turn * 1.3 - 0.2, 4.0); ctx.closePath();
+    ctx.fill();
+  }
   ctx.fillStyle = tone(skin, -0.28);
   ctx.beginPath(); ctx.ellipse(turn * 1.3 - 0.75, 3.8, 0.42, 0.25, 0, 0, TAU); ctx.ellipse(turn * 1.3 + 0.95, 3.8, 0.42, 0.25, 0, 0, TAU); ctx.fill();
   if (has("moustache")) P.shape(() => { ctx.beginPath(); ctx.ellipse(turn * 1.4 - 1.3, 5.0, 1.7, 0.6, -0.15, 0, TAU); ctx.ellipse(turn * 1.4 + 1.3, 5.0, 1.7, 0.6, 0.15, 0, TAU); }, tone(hairCol, 0.05), { flat: true });
@@ -1025,15 +1169,17 @@ function hairFront(ctx, P, style, col, acc, t, s, male) {
 
 /** What part of the figure to show: [top y, bottom y] in figure units (feet at 0). */
 const FRAMES = { full: [-106, 3], half: [-104, -40], bust: [-102, -62], head: [-100, -74] };
+/** Ink figures stand 12 units taller with a smaller head. */
+const TALL_FRAMES = { full: [-114, 6], half: [-113, -50], bust: [-112, -72], head: [-111, -86] };
 
 /**
- * One frame. opts: { persona, render ("flat"|"comic"), framing, orb (bool),
+ * One frame. opts: { persona, render ("flat"|"comic"|"ink"), framing, orb (bool),
  * time, energy, thinking, mood, look, poke, say: { text }, accent }.
  * Always true (no WebGL needed).
  */
 export function drawToon(ctx, size, opts = {}) {
   const C = characterFor(opts.persona);
-  const render = opts.render === "comic" ? "comic" : "flat";
+  const render = opts.render === "comic" || opts.render === "ink" ? opts.render : "flat";
   const framing = FRAMES[opts.framing] ? opts.framing : "half";
   const orb = opts.orb !== false;
   const time = opts.time || 0;
@@ -1054,6 +1200,10 @@ export function drawToon(ctx, size, opts = {}) {
     if (render === "comic") {
       g.addColorStop(0, tone(accent, 0.55));
       g.addColorStop(1, tone(accent, -0.35));
+    } else if (render === "ink") {
+      // Off-white paper, a little warmer at the edge.
+      g.addColorStop(0, "#f1efe9");
+      g.addColorStop(1, "#d9d5cc");
     } else {
       g.addColorStop(0, tone(accent, 0.35));
       g.addColorStop(1, tone(accent, -0.45));
@@ -1064,21 +1214,22 @@ export function drawToon(ctx, size, opts = {}) {
     ctx.fill();
     ctx.clip();
     if (render === "comic") comicBackdrop(ctx, size, accent, t, e, s);
+    else if (render === "ink") inkBackdrop(ctx, size, accent, t, e);
     else flatBackdrop(ctx, size, accent, t, e);
   }
 
   // Into figure units.
-  const [top, bottom] = FRAMES[framing];
+  const [top, bottom] = (render === "ink" ? TALL_FRAMES : FRAMES)[framing];
   const span = bottom - top;
   const unit = (size * (orb ? 0.9 : 0.98)) / span;
   const draw = (target) => {
     target.save();
     target.translate(c, size * (orb ? 0.06 : 0.01) - top * unit);
     target.scale(unit, unit);
-    const P = painter(target, render, unit);
+    const P = painter(target, render, unit, accent);
     const sq = clamp(s.squash || 0, -0.12, 0.12);
     target.scale(1 - sq * 0.5, 1 + sq);
-    const at = { headX: s.sway * 0.02 * 34 + Math.sin(t * 0.7) * 0.15 };
+    const at = { headX: s.sway * 0.02 * 34 + Math.sin(t * 0.7) * 0.15, lift: render === "ink" ? 12 : 0, headScale: render === "ink" ? 1.04 : 1.2 };
     hairBehind(target, C, s, P, t, at);
     Object.assign(at, figure(target, C, s, P, t));
     head(target, C, s, P, t, at);
@@ -1114,10 +1265,23 @@ export function drawToon(ctx, size, opts = {}) {
   } else {
     // A soft contact shadow, then the figure.
     if (framing === "full") {
-      ctx.fillStyle = "rgba(0,0,0,0.22)";
-      ctx.beginPath();
-      ctx.ellipse(c, size * (orb ? 0.06 : 0.01) - top * unit, 14 * unit, 2.6 * unit, 0, 0, TAU);
-      ctx.fill();
+      const fy = size * (orb ? 0.06 : 0.01) - top * unit;
+      if (render === "ink") {
+        // A soft, wide shadow and a darker one right under the boots.
+        ctx.fillStyle = "rgba(60,52,44,0.09)";
+        ctx.beginPath();
+        ctx.ellipse(c + 3 * unit, fy + 4.6 * unit, 19 * unit, 2.8 * unit, 0, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = "rgba(40,34,30,0.16)";
+        ctx.beginPath();
+        ctx.ellipse(c, fy + 5 * unit, 12 * unit, 1.5 * unit, 0, 0, TAU);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = "rgba(0,0,0,0.22)";
+        ctx.beginPath();
+        ctx.ellipse(c, fy, 14 * unit, 2.6 * unit, 0, 0, TAU);
+        ctx.fill();
+      }
     }
     draw(ctx);
   }
@@ -1125,8 +1289,8 @@ export function drawToon(ctx, size, opts = {}) {
   if (orb) {
     ctx.beginPath();
     ctx.arc(c, c, R, 0, TAU);
-    ctx.strokeStyle = render === "comic" ? "#15101f" : css(hex(accent), 0.5 + e * 0.4);
-    ctx.lineWidth = render === "comic" ? Math.max(2, size * 0.012) : 1.4 + e * 2;
+    ctx.strokeStyle = render === "comic" ? "#15101f" : render === "ink" ? `rgba(40,34,30,${0.3 + e * 0.3})` : css(hex(accent), 0.5 + e * 0.4);
+    ctx.lineWidth = render === "comic" ? Math.max(2, size * 0.012) : render === "ink" ? 1.2 + e * 1.4 : 1.4 + e * 2;
     ctx.stroke();
   }
   return true;
@@ -1153,6 +1317,19 @@ function flatBackdrop(ctx, size, accent, t, e) {
   ctx.fillStyle = tone(accent, -0.2);
   ctx.beginPath();
   ctx.arc(size * (0.78 + 0.03 * Math.cos(t * 0.5)), size * 0.72, size * 0.22, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+function inkBackdrop(ctx, size, accent, t, e) {
+  // One loose swash of the accent behind, like a painter's colour test.
+  ctx.save();
+  ctx.globalAlpha = 0.12 + e * 0.1;
+  ctx.fillStyle = accent;
+  ctx.translate(size * (0.62 + 0.015 * Math.sin(t * 0.3)), size * 0.34);
+  ctx.rotate(-0.42);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, size * 0.3, size * 0.07, 0, 0, TAU);
   ctx.fill();
   ctx.restore();
 }
@@ -1190,6 +1367,7 @@ function comicBackdrop(ctx, size, accent, t, e, s) {
 
 /** A still of a character (for its card), as a data URL. */
 export function toonThumb(persona, render = "flat", px = 220, framing = "bust") {
+  // render: "flat", "comic" or "ink".
   const c = document.createElement("canvas");
   c.width = c.height = px;
   const ctx = c.getContext("2d");
