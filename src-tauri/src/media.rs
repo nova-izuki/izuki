@@ -142,6 +142,37 @@ pub fn music_meter(app: &tauri::AppHandle, on: bool) {
         .ok();
 }
 
+/// Start or stop sending the PC's sound level to the Island (~30 times a
+/// second) for continuous waveform flow. Separate from music_meter so the
+/// Island can flow with ANY audio (video, games, system sounds) even when
+/// the orb isn't in music mode.
+pub fn island_audio_meter(app: &tauri::AppHandle, on: bool) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    // Each start gets a number; a thread stops as soon as it isn't the
+    // newest, so a quick off→on never leaves two meters running.
+    static NEWEST: AtomicU64 = AtomicU64::new(0);
+    let mine = NEWEST.fetch_add(1, Ordering::SeqCst) + 1;
+    if !on {
+        return;
+    }
+    let app = app.clone();
+    std::thread::Builder::new()
+        .name("izuki-island-audio-meter".into())
+        .spawn(move || {
+            use tauri::Emitter;
+            let meter = Meter::open();
+            let mut smooth = 0f32;
+            while NEWEST.load(Ordering::SeqCst) == mine {
+                let peak = meter.as_ref().and_then(|m| m.peak()).unwrap_or(0.0);
+                let level = peak.clamp(0.0, 1.0).powf(0.55);
+                smooth = if level > smooth { level } else { smooth * 0.78 + level * 0.22 };
+                let _ = app.emit_to(crate::overlay::OVERLAY_LABEL, "izuki://island-audio-level", smooth);
+                std::thread::sleep(Duration::from_millis(33));
+            }
+        })
+        .ok();
+}
+
 #[cfg(windows)]
 struct Meter(windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation);
 

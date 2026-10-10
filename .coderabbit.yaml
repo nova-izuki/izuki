@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit reviews pull requests once its GitHub App is installed on this
+# repo (coderabbit.ai -> Add to GitHub). No workflow or token is needed.
+language: "en-US"
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/target/**"
+    - "!**/dist/**"
+    - "!**/package-lock.json"
+    - "!**/Cargo.lock"
+    - "!docs/app/model-orb.js"
+    - "!**/*.glb"
+    - "!**/*.webp"
+    - "!**/*.png"
+  path_instructions:
+    - path: "src-tauri/src/{automation,uia,vision,planner,brain,patience}.rs"
+      instructions: |
+        Screen control must be exact and never act twice. Flag:
+        - any click/type/key that can repeat after a call that may already have acted (retries must re-look, never replay blindly);
+        - acting without checking the target is still there, enabled and not covered;
+        - acting on the lock screen, in a password field, or buying/sending/deleting without the user's confirmation;
+        - guessed coordinates where a numbered control from the screen parser exists.
+    - path: "src-tauri/src/**/*.rs"
+      instructions: |
+        Izuki is a Windows desktop agent. Flag blocking work on the UI thread, unbounded loops or polling,
+        threads that can be started twice, secrets or API keys written to logs, and anything that runs
+        on its own without a setting that is off by default.
+    - path: "src/**/*.tsx"
+      instructions: |
+        React + Tauri. Flag listeners or timers not cleaned up in effect cleanups, camera/mic tracks not
+        stopped, state updates many times a second that re-render large trees, and text that is not plain,
+        friendly English for a non-technical user.
+    - path: "docs/**/*.{html,js}"
+      instructions: |
+        The phone/TV web app and the website. Flag anything that breaks offline caching (docs/app/sw.js
+        cache name must change when docs/app changes), missing alt text, and personal data in the page.
+  tools:
+    clippy:
+      enabled: true
+    eslint:
+      enabled: true
+chat:
+  auto_reply: true

@@ -332,6 +332,10 @@ export interface Settings {
   wake_sensitivity: "relaxed" | "normal" | "strict";
   /** The Island may briefly offer help on its own (an error, a question, a video). */
   island_suggestions: boolean;
+  /** Press "Skip ad" on YouTube by itself. */
+  auto_skip_ads: boolean;
+  /** Press "Reject all" on cookie banners by itself. */
+  auto_reject_cookies: boolean;
   /** Size of the follow-mode hand, in px. */
   follow_hand_size: number;
 

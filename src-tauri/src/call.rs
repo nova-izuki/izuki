@@ -291,6 +291,17 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
 
     match (method, path) {
         (tiny_http::Method::Get, Some("/health")) => json_reply(req, json!({ "ok": true, "service": "izuki", "version": env!("CARGO_PKG_VERSION") })),
+        // The conversation so far, so a reopened call picks up where it was
+        // (words only — pictures stay on the PC).
+        (tiny_http::Method::Get, Some("/history")) => {
+            let history: Vec<_> = crate::companion::HISTORY
+                .lock()
+                .iter()
+                .filter(|t| t.role == "user" || t.role == "assistant")
+                .map(|t| json!({ "role": t.role, "content": t.content }))
+                .collect();
+            json_reply(req, json!(history))
+        }
         // The Izuki phone app (another web address) asking first.
         (tiny_http::Method::Options, Some(_)) => {
             let mut r = tiny_http::Response::empty(204);

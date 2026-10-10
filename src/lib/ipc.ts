@@ -220,6 +220,8 @@ export const MOCK_SETTINGS: Settings = {
   wake_sensitivity: "normal",
   keep_reply: false,
   island_suggestions: true,
+  auto_skip_ads: false,
+  auto_reject_cookies: false,
   follow_hand_size: 16,
   backdrop: "acrylic",
   start_with_windows: false,
@@ -301,6 +303,9 @@ export interface BoostHealth {
   lagging: boolean;
   hogs: Array<{ pid: number; name: string; cpu: number; mem_mb: number; window: boolean }>;
 }
+
+/** Where the Island's camera leaves a picture for Chat to pick up. */
+export const CAMERA_PICTURE_KEY = "izuki.camera-picture";
 
 export const api = {
   getSettings: () => call<Settings>("get_settings", undefined, () => MOCK_SETTINGS),
@@ -457,6 +462,8 @@ export const api = {
   overlayState: () => call<string | null>("overlay_state", undefined, () => null),
   /** Music mode: the PC's sound level drives the orb (on/off). */
   musicMeter: (on: boolean) => call<void>("music_meter", { on }, () => undefined),
+  /** Island audio level: continuous waveform flow for any PC sound. */
+  islandAudioMeter: (on: boolean) => call<void>("island_audio_meter", { on }, () => undefined),
   /** ⏮ ⏯ ⏭ for whatever is playing on the PC. */
   mediaControl: (action: "play" | "pause" | "next" | "previous") => call<boolean>("media_control", { action }, () => false),
   reminderRemove: (id: string) => call<void>("reminder_remove", { id }, () => undefined),
@@ -611,6 +618,12 @@ export const EV = {
   /** Frontend-only: live mic loudness (0..1) during push-to-talk, ~20Hz, so
    * the overlay's voice ring can move with your voice. */
   voiceLevel: "izuki://voice-level",
+  /** Frontend-only: live audio level (0..1) for Island waveform — music,
+   * video, any PC sound. ~30Hz, drives the Island's continuous flow. */
+  islandAudioLevel: "izuki://island-audio-level",
+  /** Frontend-only: a still from the Island's camera (a data: URL) for Chat
+   * to attach to the next message. */
+  chatPicture: "izuki://chat-picture",
   /** Frontend-only: the config panel just saved settings — the overlay
    * (which keeps no settings of its own) re-reads what it needs. */
   settingsChanged: "izuki://settings-changed",

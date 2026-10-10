@@ -333,6 +333,21 @@
   };
   const setOnline = (ok) => $("live").classList.toggle("off", !ok);
 
+  // Reopening the call shows the conversation so far — it's the same
+  // thread on the PC, so "continue" carries on rather than starting over.
+  fetch("history").then((r) => (r.ok ? r.json() : [])).then((past) => {
+    const log = $("log");
+    if (!Array.isArray(past) || !past.length || !log.querySelector(".empty")) return;
+    log.replaceChildren();
+    for (const t of past) {
+      if (typeof t?.content !== "string" || !t.content.trim()) continue;
+      const d = document.createElement("div");
+      d.className = "msg " + (t.role === "user" ? "me" : "iz");
+      d.textContent = t.content;
+      log.appendChild(d);
+    }
+  }).catch(() => {});
+
   function remember(who, text, links) {
     const log = $("log");
     const empty = log.querySelector(".empty");

@@ -12,7 +12,7 @@ use tauri::AppHandle;
 use crate::chat::{Style, Turn};
 
 /// The away-from-the-PC conversation (oldest first).
-static HISTORY: Mutex<Vec<Turn>> = Mutex::new(Vec::new());
+pub(crate) static HISTORY: Mutex<Vec<Turn>> = Mutex::new(Vec::new());
 const KEEP: usize = 16;
 
 #[derive(Debug, Clone, Default, Serialize)]

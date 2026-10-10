@@ -1067,6 +1067,12 @@ pub fn music_meter(app: AppHandle, on: bool) {
     crate::media::music_meter(&app, on);
 }
 
+/// Island audio meter: continuous waveform flow for any PC sound (on) — or stops (off).
+#[tauri::command]
+pub fn island_audio_meter(app: AppHandle, on: bool) {
+    crate::media::island_audio_meter(&app, on);
+}
+
 /// The Island's ⏮ ⏯ ⏭ buttons: "play", "pause", "next", "previous".
 #[tauri::command]
 pub async fn media_control(action: String) -> R<bool> {

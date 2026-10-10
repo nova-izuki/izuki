@@ -22,6 +22,10 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "📷", title: "Show Izuki with your camera", how: "Open the Island and tap “Show Izuki with your camera”. You see yourself live; tap “Ask Izuki about this” and that one picture goes to Chat so you can ask what you're holding, how an outfit looks, or what a label says. The camera turns off the moment you close it, and nothing is saved or sent until you tap Ask." },
+  { icon: "🪄", title: "Little chores, on its own", how: "Settings → On its own: Izuki can press “Skip” on YouTube ads and “Reject all” on cookie banners for you in the browser in front. Both are off until you turn them on, and it never types, buys or signs in for you.", try: { label: "Turn them on", tab: "settings", id: "settings-autonomous" } },
+  { icon: "🌊", title: "The Island moves with your music", how: "While something plays, the Island shows a live waveform that swells with the sound instead of four bouncing bars." },
+  { icon: "📞", title: "Calls pick up where you left off", how: "Reopen the call page on your phone and the conversation so far is already there, so “continue” carries on the same thread." },
   { icon: "↔️", title: "Move the Island out of your way", how: "Open the Island and drag its grip along the top rail. It remembers the safe position, so browser tabs and the address bar stay reachable. Its quick tools are aligned in a larger 4 × 2 grid with Screenshot and PC Boost." },
   { icon: "🛡️", title: "One Izuki at a time", how: "Opening Izuki again brings back its existing window. A second launch no longer starts another orb, microphone engine or background worker." },
   { icon: "✅", title: "More honest task results", how: "Interrupted tasks stay incomplete. First-look success claims get another screen check, incomplete routes are not saved as successful flows, and unavailable screen models stay on cooldown." },

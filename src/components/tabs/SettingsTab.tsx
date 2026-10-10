@@ -30,6 +30,7 @@ import { ThemePicker } from "../ThemePicker";
 import { ExtensionCard } from "../ExtensionCard";
 import { BugCard } from "../BugCard";
 import { Badge, Row, Section, Segmented, Slider, Toggle, cx } from "../ui";
+import { AutonomousCard } from "../AutonomousCard";
 import { useIzuki } from "../../lib/store";
 import { api } from "../../lib/ipc";
 import { setChatLook } from "../../lib/tone";
@@ -45,6 +46,7 @@ const JUMPS: { label: string; id: string }[] = [
   { label: "🖱️ Control", id: "settings-execution" },
   { label: "🎨 Look", id: "settings-look" },
   { label: "🪟 System", id: "settings-system" },
+  { label: "🪄 On its own", id: "settings-autonomous" },
   { label: "🚀 Boost", id: "settings-boost" },
   { label: "📱 Phone", id: "settings-phone" },
   { label: "💬 Discord", id: "settings-discord" },
@@ -81,6 +83,7 @@ export function SettingsTab() {
       { label: "Phone & Android", id: "settings-phone", keywords: "iphone ios mobile hands free siri accessibility" },
       { label: "Discord & reminders", id: "settings-discord", keywords: "notify notification calendar alert" },
       { label: "Updates", id: "settings-updates", keywords: "download version release" },
+      { label: "On its own", id: "settings-autonomous", keywords: "skip ads youtube cookie banner reject autonomous automatic chores" },
       { label: "PC Boost", id: "settings-boost", keywords: "lag slow speed fast temp clean memory cpu unlag" },
       { label: "Control my TV", id: "settings-tv", keywords: "roku samsung lg android tv fire" },
       { label: "Browser extension", id: "settings-browser", keywords: "chrome edge side panel ask page" },
@@ -538,6 +541,8 @@ export function SettingsTab() {
           />
         </Row>
       </Section>
+
+      <AutonomousCard />
 
       <BoostCard />
 

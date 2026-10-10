@@ -29,6 +29,7 @@ pub mod keys;
 pub mod live;
 pub mod looks;
 pub mod media;
+pub mod autonomous;
 pub mod music_draft;
 pub mod memory;
 pub mod model;
@@ -313,6 +314,7 @@ pub fn run() {
             commands::island_status,
             commands::media_control,
             commands::music_meter,
+            commands::island_audio_meter,
             commands::overlay_state,
             commands::reminders_list,
             commands::reminder_remove,
@@ -393,6 +395,7 @@ pub fn run() {
             recall::spawn();
             activity::spawn();
             boost::spawn(handle.clone());
+            autonomous::spawn(handle.clone());
             freebrains::refresh_later();
             screentime::spawn();
             browser::init(&handle);

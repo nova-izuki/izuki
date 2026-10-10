@@ -229,6 +229,12 @@ pub struct Settings {
     /// up (an error box, a question, a video) — a short peek, rarely.
     #[serde(default = "default_true")]
     pub island_suggestions: bool,
+    /// Press "Skip ad" on YouTube by itself (off until turned on).
+    #[serde(default)]
+    pub auto_skip_ads: bool,
+    /// Press "Reject all" on cookie banners by itself (off until turned on).
+    #[serde(default)]
+    pub auto_reject_cookies: bool,
     /// Size of the follow-mode hand, in px.
     #[serde(default = "default_follow_hand_size")]
     pub follow_hand_size: u32,
@@ -841,6 +847,8 @@ impl Default for Settings {
             app_theme_color: String::new(),
             flows_keep_days: default_flows_keep_days(),
             island_suggestions: true,
+            auto_skip_ads: false,
+            auto_reject_cookies: false,
             follow_hand_size: default_follow_hand_size(),
             backdrop: BackdropMode::Acrylic,
             start_with_windows: false,

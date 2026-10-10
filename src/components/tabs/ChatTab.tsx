@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, RotateCcw, Send, Sparkles, Square, Volume2, X } from "lucide-react";
-import { api, emit, EV, on } from "../../lib/ipc";
+import { api, CAMERA_PICTURE_KEY, emit, EV, on } from "../../lib/ipc";
 import { ChatText } from "../ChatText";
 import { LaterCard } from "../LaterCard";
 import { useDictation } from "../../hooks/useDictation";
@@ -238,6 +238,25 @@ export function ChatTab() {
     }
     if (ready.length) setPics((p) => [...p, ...ready].slice(0, 4));
   };
+  // A still from the Island's camera ("Ask Izuki about this"): it waits in
+  // shared storage too, so it arrives even when Chat opens after the event.
+  useEffect(() => {
+    const take = (picture: unknown) => {
+      if (typeof picture !== "string" || !picture.startsWith("data:image/")) return;
+      setPics((p) => (p.includes(picture) ? p : [...p, picture].slice(-4)));
+      requestAnimationFrame(() => input.current?.focus());
+    };
+    try {
+      const waiting = localStorage.getItem(CAMERA_PICTURE_KEY);
+      localStorage.removeItem(CAMERA_PICTURE_KEY);
+      take(waiting);
+    } catch { /* storage is optional */ }
+    const off = on<string>(EV.chatPicture, (picture) => {
+      try { localStorage.removeItem(CAMERA_PICTURE_KEY); } catch { /* storage is optional */ }
+      take(picture);
+    });
+    return () => void off.then((f) => f());
+  }, []);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const streamId = chatStream;
   /** Ends the request in flight (Stop, a timeout) so nothing is left spinning. */

@@ -11,6 +11,7 @@ export const FEATURES: Feature[] = [
   { label: "Draw on your screen", hint: "Point, annotate and give a screen task", tab: "draw" },
   { label: "Saved flows", hint: "Find, run and organise your workflows", tab: "flows" },
   { label: "Watchers", hint: "Screen changes and background checks", tab: "watchers" },
+  { label: "On its own", hint: "skip youtube ads, reject cookie banners automatically", tab: "settings", id: "settings-autonomous" },
   { label: "Brain & AI keys", hint: "Models, providers and local Ollama", tab: "settings", id: "settings-brain" },
   { label: "Screen control", hint: "Jarvis precision, mouse, approval and clicking", tab: "settings", id: "settings-execution" },
   { label: "Orb & appearance", hint: "Orb Studio, clear water, star crystal, tidal pearl, liquid, motion, captions and colours", tab: "settings", id: "settings-look" },

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, Check, GripHorizontal, Mic, Pause, Pencil, Play, Settings2, SkipBack, SkipForward, Square } from "lucide-react";
-import { api, emit, EV, on } from "../lib/ipc";
+import { AlarmClock, Camera, Check, GripHorizontal, Mic, Pause, Pencil, Play, Settings2, SkipBack, SkipForward, Sparkles, Square, X } from "lucide-react";
+import { api, CAMERA_PICTURE_KEY, emit, EV, on } from "../lib/ipc";
 import { workArea } from "../lib/floating";
 import { lockHit, unlockHit } from "../lib/hitTest";
 import type { Activity, IslandStatus, NowPlaying, OrbState, Reminder, Suggestion } from "../lib/types";
@@ -308,6 +308,15 @@ export function Island({
   const onPlayingRef = useRef(onPlaying);
   onPlayingRef.current = onPlaying;
   useEffect(() => onPlayingRef.current?.(musicOn), [musicOn]);
+
+  // The waveform follows the PC's sound level, only while something plays.
+  // Each <Waveform> listens to the level itself, so 30 updates a second
+  // never re-render the whole Island.
+  useEffect(() => {
+    if (!musicOn) return;
+    void api.islandAudioMeter(true);
+    return () => void api.islandAudioMeter(false);
+  }, [musicOn]);
   const live: Live = finished
     ? { kind: "finished" }
     : busy
@@ -451,7 +460,7 @@ function Compact({ live, dancing }: { live: Live; dancing: boolean }) {
         <>
           <Cover m={live.m} size={24} />
           <span className="max-w-[180px] truncate text-[13px] font-medium text-white/90">{live.m.title}</span>
-          <Bars playing={live.m.playing} />
+          <Waveform playing={live.m.playing} width={44} height={16} />
         </>
       );
     case "suggest":
@@ -517,6 +526,7 @@ function Expanded({
   const [optimistic, setOptimistic] = useState<boolean | null>(null);
   const playing = optimistic ?? !!media?.playing;
   useEffect(() => setOptimistic(null), [media?.playing, media?.title]);
+  const [cameraOn, setCameraOn] = useState(false);
   const control = useCallback((a: "play" | "pause" | "next" | "previous") => {
     if (a === "play" || a === "pause") setOptimistic(a === "play");
     void api.mediaControl(a);
@@ -596,6 +606,9 @@ function Expanded({
                 About this song
               </button>
             </div>
+            <div className="mt-1 h-6">
+              <Waveform playing={playing} width={120} height={24} />
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <RoundButton label="Previous" onClick={() => control("previous")}>
@@ -609,6 +622,18 @@ function Expanded({
             </RoundButton>
           </div>
         </div>
+      )}
+
+      {cameraOn ? (
+        <CameraView onClose={() => setCameraOn(false)} onAsked={onDone} />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setCameraOn(true)}
+          className="flex items-center gap-2 self-start rounded-full bg-white/[0.07] px-3 py-1.5 text-[12.5px] text-white/80 transition hover:bg-white/[0.12]"
+        >
+          <Camera size={14} /> Show Izuki with your camera
+        </button>
       )}
 
       {next && (
@@ -783,7 +808,7 @@ function QuickGrid({ onDone }: { onDone: () => void }) {
   );
 }
 
-function RoundButton({ children, label, onClick, big }: { children: React.ReactNode; label: string; onClick: () => void; big?: boolean }) {
+function RoundButton({ children, label, onClick, big, className = "" }: { children: React.ReactNode; label: string; onClick: () => void; big?: boolean; className?: string }) {
   return (
     <button
       type="button"
@@ -792,7 +817,8 @@ function RoundButton({ children, label, onClick, big }: { children: React.ReactN
       onClick={onClick}
       className={
         "flex items-center justify-center rounded-full transition active:scale-90 " +
-        (big ? "h-11 w-11 bg-white text-black hover:bg-white/90" : "h-9 w-9 text-white/85 hover:bg-white/10")
+        (big ? "h-11 w-11 bg-white text-black hover:bg-white/90" : "h-9 w-9 text-white/85 hover:bg-white/10") +
+        (className ? ` ${className}` : "")
       }
     >
       {children}
@@ -919,13 +945,153 @@ function Cover({ m, size }: { m: NowPlaying; size: number }) {
   );
 }
 
-function Bars({ playing }: { playing: boolean }) {
+/** A live waveform for whatever is playing: three soft lines that swell
+ * with the PC's sound level and taper at the ends. */
+function Waveform({ playing, width, height }: { playing: boolean; width: number; height: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const level = useRef(0);
+  useEffect(() => {
+    if (!playing) {
+      level.current = 0;
+      return;
+    }
+    const off = on<number>(EV.islandAudioLevel, (v) => {
+      level.current = typeof v === "number" && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
+    });
+    return () => void off.then((f) => f());
+  }, [playing]);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    const lines = [
+      { freq: 0.16, phase: 0, amp: 1, rgba: "143,199,255,0.95", w: 1.8 },
+      { freq: 0.23, phase: 1.3, amp: 0.7, rgba: "232,121,249,0.7", w: 1.4 },
+      { freq: 0.31, phase: 2.4, amp: 0.45, rgba: "255,255,255,0.55", w: 1.1 },
+    ];
+    let shown = 0;
+    let t = 0;
+    let raf = 0;
+    const draw = () => {
+      shown += (level.current - shown) * 0.3;
+      if (!still) t += playing ? 0.05 : 0.012;
+      const swell = Math.max(playing ? 0.14 : 0.05, shown);
+      ctx.clearRect(0, 0, width, height);
+      for (const l of lines) {
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(${l.rgba})`;
+        ctx.lineWidth = l.w;
+        ctx.lineCap = "round";
+        for (let x = 0; x <= width; x += 1.5) {
+          const taper = Math.sin((x / width) * Math.PI);
+          const y = height / 2 + Math.sin(x * l.freq + t * 3 + l.phase) * l.amp * swell * taper * height * 0.45;
+          if (x === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, width, height]);
+  return <canvas ref={canvasRef} aria-hidden className="izk-waveform block" style={{ width, height }} />;
+}
+
+/** The camera, opt-in: a live preview in the Island and "Ask Izuki", which
+ * hands one still to Chat. Nothing is recorded or sent until you press it,
+ * and the camera light goes off the moment this closes. */
+function CameraView({ onClose, onAsked }: { onClose: () => void; onAsked: () => void }) {
+  const video = useRef<HTMLVideoElement>(null);
+  const [state, setState] = useState<"starting" | "live" | "none" | "blocked">("starting");
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let gone = false;
+    const md = navigator.mediaDevices;
+    if (!md?.getUserMedia) {
+      setState("none");
+      return;
+    }
+    md.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }, audio: false })
+      .then((s) => {
+        if (gone) {
+          s.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        stream = s;
+        if (video.current) {
+          video.current.srcObject = s;
+          void video.current.play().catch(() => undefined);
+        }
+        setState("live");
+      })
+      .catch((e: unknown) => {
+        if (gone) return;
+        const name = e instanceof DOMException ? e.name : "";
+        setState(name === "NotAllowedError" || name === "SecurityError" ? "blocked" : "none");
+      });
+    return () => {
+      gone = true;
+      stream?.getTracks().forEach((t) => t.stop());
+      if (video.current) video.current.srcObject = null;
+    };
+  }, []);
+
+  const ask = () => {
+    const v = video.current;
+    if (!v || state !== "live" || !v.videoWidth) return;
+    const scale = Math.min(1, 1024 / Math.max(v.videoWidth, v.videoHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(v.videoWidth * scale);
+    c.height = Math.round(v.videoHeight * scale);
+    c.getContext("2d")?.drawImage(v, 0, 0, c.width, c.height);
+    const picture = c.toDataURL("image/jpeg", 0.85);
+    // Same-origin windows share storage: Chat picks the picture up even if
+    // it opens after this event has gone by.
+    try { localStorage.setItem(CAMERA_PICTURE_KEY, picture); } catch { /* the event below still carries it */ }
+    void emit(EV.chatPicture, picture);
+    void api.showConfig("chat");
+    onClose();
+    onAsked();
+  };
+
   return (
-    <span className={"izk-bars flex h-[14px] items-end gap-[2px] " + (playing ? "" : "izk-bars-still")}>
-      {[0, 1, 2, 3].map((i) => (
-        <span key={i} className="block w-[3px] rounded-full bg-gradient-to-t from-fuchsia-400 to-cyan-300" style={{ animationDelay: `${i * -0.21}s` }} />
-      ))}
-    </span>
+    <div className="izk-camera-view relative overflow-hidden rounded-2xl bg-black/60">
+      <video
+        ref={video}
+        muted
+        playsInline
+        className={"block max-h-[200px] w-full -scale-x-100 object-cover transition-opacity " + (state === "live" ? "opacity-100" : "opacity-0")}
+      />
+      {state !== "live" && (
+        <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-[12.5px] text-white/60">
+          {state === "starting"
+            ? "Starting your camera…"
+            : state === "blocked"
+              ? "Camera access is off. Allow it in Windows Settings › Privacy › Camera."
+              : "No camera found."}
+        </div>
+      )}
+      {state !== "live" && <div className="h-[120px]" />}
+      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/70 to-transparent px-2.5 pb-2 pt-6">
+        <button
+          type="button"
+          onClick={ask}
+          disabled={state !== "live"}
+          className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[12.5px] font-medium text-black transition hover:bg-white/90 disabled:opacity-40"
+        >
+          <Sparkles size={13} /> Ask Izuki about this
+        </button>
+        <button type="button" aria-label="Turn the camera off" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white/85 hover:bg-black/70">
+          <X size={15} />
+        </button>
+      </div>
+    </div>
   );
 }
 
