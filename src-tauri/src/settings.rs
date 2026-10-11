@@ -361,6 +361,13 @@ pub struct Settings {
     /// (off until turned on).
     #[serde(default)]
     pub tidy_dupes_auto: bool,
+    /// A click the AI picked by eye gets a second look from a pointing model
+    /// (Gemini, free with its key) before it happens.
+    #[serde(default = "default_true")]
+    pub sharp_eye: bool,
+    /// Use ByteDance's UI-TARS (through OpenRouter, paid) for that look.
+    #[serde(default)]
+    pub sharp_eye_tars: bool,
     /// Last confirmed High Performance state. UI refreshes from Windows;
     /// never automatically applies a plan from this stored preference.
     #[serde(default = "default_false")]
@@ -887,6 +894,8 @@ impl Default for Settings {
             match_voice_face: true,
             pc_boost_auto: false,
             tidy_dupes_auto: false,
+            sharp_eye: true,
+            sharp_eye_tars: false,
             pc_boost_power_plan: false,
             cloud_ears: true,
             speech_language: default_speech_language(),

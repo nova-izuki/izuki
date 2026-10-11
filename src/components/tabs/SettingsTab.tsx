@@ -406,6 +406,12 @@ export function SettingsTab() {
         <Row label="Save AI credits" hint="One screen-model request at a time; try a backup after failure. Off allows a second model to race a slow reply.">
           <Toggle checked={settings.economy_mode} onChange={(v) => patch({ economy_mode: v })} />
         </Row>
+        <Row label="Sharp eye for clicks" hint="When the AI picks a spot by eye instead of a known button, a model made for pointing looks again first and lands the click on the real button — never onto a Delete, Buy or Send it wasn't asked for. Sends that screenshot to Google Gemini with your Gemini key (free).">
+          <Toggle checked={settings.sharp_eye} onChange={(v) => patch({ sharp_eye: v })} />
+        </Row>
+        <Row label="Use UI-TARS for that look" hint="ByteDance's screen model, through your OpenRouter key. Paid: about $0.0002 a look (5,000 looks for $1) — add a little credit at openrouter.ai first. Falls back to Gemini if it can't answer.">
+          <Toggle checked={settings.sharp_eye_tars} disabled={!settings.sharp_eye} onChange={(v) => patch({ sharp_eye_tars: v })} />
+        </Row>
         <div className="izk-divider" />
         <Row
           label="Hand travel time"

@@ -32,6 +32,7 @@ pub mod media;
 pub mod autonomous;
 pub mod page_ask;
 pub mod dupes;
+pub mod sharpeye;
 pub mod music_draft;
 pub mod memory;
 pub mod model;

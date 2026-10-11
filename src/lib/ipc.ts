@@ -221,6 +221,8 @@ export const MOCK_SETTINGS: Settings = {
   keep_reply: false,
   island_suggestions: true,
   tidy_dupes_auto: false,
+  sharp_eye: true,
+  sharp_eye_tars: false,
   auto_skip_ads: false,
   auto_reject_cookies: false,
   follow_hand_size: 16,
