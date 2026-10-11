@@ -65,5 +65,5 @@ export function thumbFor(id: string, px?: number, opts?: { jaw?: number; mood?: 
 export function drawModelOrb(
   ctx: CanvasRenderingContext2D,
   size: number,
-  opts: { id: string; time: number; energy: number; thinking?: number | boolean; mood?: number; look?: { x: number; y: number } | null; poke?: number; custom?: Partial<FaceLook> | null },
+  opts: { id: string; time: number; energy: number; thinking?: number | boolean; mood?: number; look?: { x: number; y: number } | null; poke?: number; custom?: Partial<FaceLook> | null; say?: { text: string } | null; pose?: string; n?: number },
 ): boolean;

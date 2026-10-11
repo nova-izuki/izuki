@@ -289,7 +289,9 @@ function prepare(id, gltf) {
   // The head's resting turn in the world (facing +Z), to undo an idle's glance.
   const headRest = bones.Head ? bones.Head.getWorldQuaternion(new Quaternion()).invert() : null;
   const rest = new Map();
-  for (const name of ["Head", "Neck", "Spine1", "Spine2", "LeftEye", "RightEye", "LeftArm", "LeftForeArm", "RightArm", "RightForeArm"]) if (bones[name]) rest.set(name, bones[name].quaternion.clone());
+  const fingerBones = [];
+  for (const side of ["Left", "Right"]) for (const f of ["Thumb", "Index", "Middle", "Ring", "Pinky"]) for (const j of [1, 2, 3]) fingerBones.push(`${side}Hand${f}${j}`);
+  for (const name of ["Head", "Neck", "Spine1", "Spine2", "LeftEye", "RightEye", "LeftArm", "LeftForeArm", "RightArm", "RightForeArm", "LeftHand", "RightHand", "LeftShoulder", "RightShoulder", ...fingerBones]) if (bones[name]) rest.set(name, bones[name].quaternion.clone());
 
   const setMorph = (name, v) => {
     for (const m of morphed) {
@@ -1042,7 +1044,8 @@ function animate(model, s, o, dt) {
       }
     } else s.idleKind = null;
     const idle = s.idleKind && t < s.idleUntil ? s.idleKind : null;
-    const kind = grin ? "cheer" : g ? g.kind : thinking > 0.5 ? "think" : idle === "hips" || idle === "fold" || idle === "stretch" ? idle : "rest";
+    // o.pose holds one gesture (a pose preview); otherwise the words and mood pick it.
+    const kind = o.pose && ARM_POSES[o.pose] ? o.pose : grin ? "cheer" : g ? g.kind : thinking > 0.5 ? "think" : idle === "hips" || idle === "fold" || idle === "stretch" ? idle : "rest";
     if (idle === "look") s.yawv += (Math.sin(t * 0.9) * 0.6 - s.yaw) * dt * 6;
     const want = {};
     let jaw = 0;
@@ -1109,7 +1112,8 @@ function animate(model, s, o, dt) {
     model.setMorph("browOuterUpLeft", s.brow + (F.talking ? 0 : 0.06 * micro(0.23, 0.5)));
     model.setMorph("browOuterUpRight", s.brow + (F.talking ? 0 : 0.04 * micro(0.19, 1.7)));
     // The arms act it out (the idle animation underneath, blended).
-    gesture(model, s, kind, g ? g.n : 0, t, dt);
+    const held = o.pose && ARM_POSES[o.pose];
+    gesture(model, s, kind, held ? o.n || 0 : g ? g.n : o.n || 0, t, dt);
     if (model.hasBlink) { model.setMorph("eyeBlinkLeft", blink); model.setMorph("eyeBlinkRight", blink); }
     else model.setMorph("eyesClosed", blink);
     model.root.position.y = 0;
@@ -1142,23 +1146,116 @@ const JAW = { aa: 0.5, O: 0.38, E: 0.26, I: 0.16, U: 0.22, RR: 0.2, CH: 0.16, kk
  */
 const ARM_POSES = {
   hips: [[0.7, -1.2, -0.15, 0.25], [0.7, -1.2, -0.15, 0.25]],
-  fold: [[-0.15, -1.6, 0.55, 1.4], [-0.2, -1.65, 0.6, 1.5]],
+  fold: [[0.1, -1.45, 0.5, 1.7], [0.12, -1.5, 0.55, 1.8]],
   stretch: [[2.6, 3.05, -0.1, -0.1], [2.6, 3.05, -0.1, -0.1]],
   wave: [null, [1.2, 2.9, 0.1, 0.15]],
-  ask: [[0.35, 1.3, 0.35, 0.9], [0.35, 1.3, 0.35, 0.9]],
-  shrug: [[0.45, 1.5, 0.3, 0.7], [0.45, 1.5, 0.3, 0.7]],
-  chin: [null, [-0.1, -2.5, 0.5, 1.2]],
-  count: [null, [0, -2.2, 0.6, 1.4]],
+  // Talking is mostly forearms in front of the waist, not arms flung wide.
+  // (The forearm angle counts from straight down: ~1.4 is level.)
+  ask: [[0.2, 1.4, 0.4, 3.2], [0.2, 1.4, 0.4, 3.2]],
+  // A real shrug: elbows stay in, forearms out, palms up, shoulders up.
+  shrug: [[0.16, 1.45, 0.25, 1.6], [0.16, 1.45, 0.25, 1.6]],
+  chin: [null, [0.0, -2.3, 0.55, 1.5]],
+  count: [null, [0.15, -2.55, 0.5, 2.6]],
   pump: [null, [2.4, 3.0, 0.2, 0.2]],
   cheer: [[2.3, 2.9, 0.2, 0.2], [2.3, 2.9, 0.2, 0.2]],
-  point: [null, [0.3, -1.6, 0.8, 2.2]],
-  chest: [null, [-0.25, -2.4, 0.5, 1.4]],
-  present: [null, [0.55, 1.15, 0.5, 1.0]],
-  explain: [[0.3, 1.2, 0.5, 1.1], null],
-  explain2: [null, [0.3, 1.2, 0.5, 1.1]],
-  think: [[-0.15, -2.4, 0.5, 1.3], [-0.1, -2.5, 0.5, 1.2]],
+  point: [null, [0.3, 0.59, 0.9, 4.0]],
+  chest: [null, [0.05, -1.1, 0.5, 2.3]],
+  present: [null, [0.35, 1.45, 0.5, 2.2]],
+  explain: [[0.18, 1.35, 0.45, 3.0], null],
+  explain2: [null, [0.18, 1.35, 0.45, 3.0]],
+  // One hand at the chin, the other across the waist — not both meeting.
+  think: [[0.08, -0.8, 0.45, 2.0], [0.0, -2.3, 0.55, 1.5]],
 };
+/** The hand's shape for each gesture (the same as the 2D characters'). */
+const HAND_SHAPES = { wave: "open", ask: "palm", shrug: "palm", chin: "fist", count: "count", pump: "fist", cheer: "fist", point: "point", chest: "flat", present: "palm", explain: "palm", explain2: "palm", hips: "fist", think: "fist", fold: "relaxed", stretch: "open" };
+/** How far each finger (index, middle, ring, pinky, thumb) curls, in radians per joint. */
+function curlFor(shape, n) {
+  switch (shape) {
+    case "open": return [0.05, 0.06, 0.08, 0.1, 0.05];
+    case "palm": return [0.12, 0.14, 0.18, 0.22, 0.1];
+    case "flat": return [0.03, 0.03, 0.04, 0.05, 0.08];
+    case "fist": return [1.3, 1.35, 1.35, 1.3, 0.55];
+    case "point": return [0.05, 1.35, 1.35, 1.3, 0.5];
+    case "count": {
+      const up = Math.max(1, Math.min(5, n || 1));
+      return [up >= 1 ? 0.05 : 1.3, up >= 2 ? 0.05 : 1.35, up >= 3 ? 0.06 : 1.35, up >= 4 ? 0.08 : 1.3, up >= 5 ? 0.05 : 0.55];
+    }
+    default: return [0.3, 0.38, 0.45, 0.52, 0.2]; // relaxed: a loose natural curl
+  }
+}
 const _a = new Vector3(), _b = new Vector3(), _cur = new Vector3(), _d = new Vector3(), _gq = new Quaternion();
+
+const _z = new Vector3(0, 0, 1), _across = new Vector3(), _h = new Vector3(), _m = new Vector3();
+
+/**
+ * The torso as an upright elliptic column, from the bones: centred on the
+ * chest, as wide as the shoulders, about two-thirds as deep, from the hips
+ * to the neck. The body faces +Z.
+ */
+function torsoOf(B) {
+  if (!B.Spine2 || !B.LeftArm || !B.RightArm) return null;
+  const c = B.Spine2.getWorldPosition(new Vector3());
+  const half = Math.abs(B.LeftArm.getWorldPosition(_a).x - B.RightArm.getWorldPosition(_b).x) / 2;
+  if (!(half > 0)) return null;
+  const top = B.Neck ? B.Neck.getWorldPosition(_a).y : c.y + half;
+  const bottom = B.Hips ? B.Hips.getWorldPosition(_b).y - half * 0.35 : c.y - half * 2;
+  return { x: c.x, z: c.z, hw: half * 0.86, hd: half * 0.58, top, bottom, pad: half * 0.22 };
+}
+
+function insideBody(p, body) {
+  if (p.y > body.top || p.y < body.bottom) return false;
+  const dx = (p.x - body.x) / (body.hw + body.pad), dz = (p.z - body.z) / (body.hd + body.pad);
+  return dx * dx + dz * dz < 1;
+}
+
+/**
+ * If the hand or the middle of the forearm ended up inside the torso (a
+ * gesture toward the chest, an idle swing), bring the forearm — then the
+ * upper arm — forward until it's clear. A real arm goes in front, never
+ * through.
+ */
+function keepOutOfBody(B, side, body) {
+  const arm = B[side + "Arm"], fore = B[side + "ForeArm"], hand = B[side + "Hand"];
+  if (!arm || !fore || !hand) return;
+  for (let k = 0; k < 6; k++) {
+    hand.getWorldPosition(_h);
+    fore.getWorldPosition(_m).add(_h).multiplyScalar(0.5);
+    if (!insideBody(_h, body) && !insideBody(_m, body)) return;
+    const bone = k < 4 ? fore : arm, child = k < 4 ? hand : fore;
+    bone.getWorldPosition(_a);
+    child.getWorldPosition(_b);
+    const dir = _cur.subVectors(_b, _a).normalize().clone();
+    dir.z += 0.45;
+    aimBone(bone, child, dir.normalize(), 1);
+  }
+}
+
+/**
+ * Curl each finger toward the palm about the knuckle line (pinky → index),
+ * which stays put as a finger bends — so the same turn works at every joint
+ * and on both hands. curl: [index, middle, ring, pinky, thumb] in radians.
+ */
+const CURL_SIGN = 1;
+const PALM_SIGN = 1;
+function curlFingers(B, side, curl) {
+  const i1 = B[side + "HandIndex1"], p1 = B[side + "HandPinky1"];
+  if (!i1 || !p1) return;
+  i1.getWorldPosition(_a);
+  p1.getWorldPosition(_b);
+  _across.subVectors(_a, _b).normalize();
+  if (side === "Left") _across.negate();
+  const names = ["Index", "Middle", "Ring", "Pinky", "Thumb"];
+  for (let f = 0; f < 5; f++) {
+    const a = (curl[f] || 0) * CURL_SIGN;
+    for (const j of [1, 2, 3]) {
+      const bone = B[`${side}Hand${names[f]}${j}`];
+      if (!bone) continue;
+      // The thumb folds less, and mostly at its base.
+      const share = names[f] === "Thumb" ? [0.5, 0.35, 0.25][j - 1] : [0.85, 1, 0.75][j - 1];
+      rotateWorld(bone, _q.setFromAxisAngle(_across, a * share));
+    }
+  }
+}
 
 function aimBone(bone, child, dir, w) {
   if (!bone || !child || w < 0.01) return;
@@ -1179,16 +1276,42 @@ function gesture(model, s, kind, n, t, dt) {
   const arms = lx < rx ? [["Left", -1], ["Right", 1]] : [["Right", -1], ["Left", 1]];
   const pose = ARM_POSES[kind] || [null, null];
   s.gw = s.gw || [0, 0];
+  const body = torsoOf(B);
+  const breath = Math.sin(t * 1.25);
   for (let i = 0; i < 2; i++) {
     const p = pose[i];
     s.gw[i] += ((p ? 1 : 0) - s.gw[i]) * Math.min(1, dt * 5);
-    if (s.gw[i] < 0.01) continue;
     const [side, sx] = arms[i];
-    const q = p || s.lastPose?.[i] || [0.1, 0.05, 0, 0];
-    const fore = q[1] + (kind === "wave" && i === 1 ? Math.sin(t * 12) * 0.25 : 0);
     const dirOf = (ang, fwd) => _d.set(Math.sin(ang) * sx, -Math.cos(ang), fwd).normalize();
-    aimBone(B[side + "Arm"], B[side + "ForeArm"], dirOf(q[0], q[2]).clone(), s.gw[i]);
-    aimBone(B[side + "ForeArm"], B[side + "Hand"], dirOf(fore, q[3]).clone(), s.gw[i]);
+    // Never a frozen mannequin: with no idle animation of its own, a resting
+    // arm hangs a touch forward, the elbow soft, swaying with the breath.
+    if (!model.animated.has(side + "ForeArm")) {
+      const life = 1 - s.gw[i];
+      const sway = 0.02 * breath + 0.015 * Math.sin(t * 0.7 + i * 2.1);
+      aimBone(B[side + "Arm"], B[side + "ForeArm"], dirOf(0.12 + sway, 0.12).clone(), life * 0.8);
+      aimBone(B[side + "ForeArm"], B[side + "Hand"], dirOf(0.06 + sway, 0.38).clone(), life * 0.8);
+    }
+    if (s.gw[i] >= 0.01) {
+      const q = p || s.lastPose?.[i] || [0.1, 0.05, 0, 0];
+      const fore = q[1] + (kind === "wave" && i === 1 ? Math.sin(t * 12) * 0.25 : 0);
+      aimBone(B[side + "Arm"], B[side + "ForeArm"], dirOf(q[0], q[2]).clone(), s.gw[i]);
+      aimBone(B[side + "ForeArm"], B[side + "Hand"], dirOf(fore, q[3]).clone(), s.gw[i]);
+    }
+    if (body) keepOutOfBody(B, side, body);
+    // Palms turn up to ask, shrug, explain or offer something.
+    const twist = p && HAND_SHAPES[kind] === "palm" ? 1.0 * s.gw[i] : 0;
+    if (twist && B[side + "Hand"] && B[side + "ForeArm"]) {
+      B[side + "Hand"].getWorldPosition(_h);
+      B[side + "ForeArm"].getWorldPosition(_m);
+      rotateWorld(B[side + "Hand"], _q.setFromAxisAngle(_h.sub(_m).normalize(), twist * sx * PALM_SIGN));
+    }
+    // Shoulders lift with a shrug.
+    if (B[side + "Shoulder"] && kind === "shrug") rotateWorld(B[side + "Shoulder"], _q.setFromAxisAngle(_z, 0.12 * sx * s.gw[i]));
+    // The fingers: a loose curl at rest, then the gesture's shape.
+    s.curl = s.curl || [[], []];
+    const target = curlFor(p ? HAND_SHAPES[kind] || "relaxed" : "relaxed", n);
+    for (let f = 0; f < 5; f++) s.curl[i][f] = (s.curl[i][f] ?? target[f]) + (target[f] - (s.curl[i][f] ?? target[f])) * Math.min(1, dt * 8);
+    curlFingers(B, side, s.curl[i]);
   }
   s.lastPose = [pose[0] || s.lastPose?.[0], pose[1] || s.lastPose?.[1]];
   // A little hop when it cheers.
