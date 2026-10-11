@@ -225,6 +225,23 @@ export function TalkToIzuki() {
             <Toggle checked={settings.island_suggestions} onChange={(v) => patch({ island_suggestions: v })} />
           </Row>
         )}
+        {settings.island_enabled && (
+          <Row label="Island waveform" hint="How the Island moves with your music. Auto gives each song its own look.">
+            <div className="flex flex-wrap justify-end gap-1">
+              {(["auto", "silk", "bars", "mirror", "neon", "dots"] as const).map((w) => (
+                <button
+                  key={w}
+                  type="button"
+                  aria-pressed={(settings.island_wave ?? "auto") === w}
+                  onClick={() => patch({ island_wave: w })}
+                  className={`izk-pill izk-no-drag px-2 py-0.5 text-[10.5px] capitalize ${(settings.island_wave ?? "auto") === w ? "border-izk-teal/70 bg-izk-teal/15" : ""}`}
+                >
+                  {w}
+                </button>
+              ))}
+            </div>
+          </Row>
+        )}
 
         <Row
           label="Always show the hand"

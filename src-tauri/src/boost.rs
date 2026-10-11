@@ -259,9 +259,14 @@ pub fn spawn(app: tauri::AppHandle) {
             std::thread::sleep(Duration::from_secs(5));
             let s = crate::state::store().settings();
             // "Keep my PC fast 24/7" watches by itself; "Watch for lag" alone only offers.
-            if !s.pc_boost && !s.pc_boost_auto {
+            let tidy = s.tidy_dupes_auto || s.tidy_recycle_auto;
+            if !s.pc_boost && !s.pc_boost_auto && !tidy {
                 SAMPLES.lock().clear();
                 continue;
+            }
+            // Only the daily tidies are on: no need to sample every 5 s.
+            if !s.pc_boost && !s.pc_boost_auto {
+                std::thread::sleep(Duration::from_secs(55));
             }
             let (cpu, ram) = sys::load();
             let lagging = {
@@ -271,12 +276,14 @@ pub fn spawn(app: tauri::AppHandle) {
                 v.drain(..excess);
                 is_lagging(&v)
             };
-            // "Keep my PC fast by itself": a light clean once a day too, at a quiet moment.
-            if s.pc_boost_auto && cpu < 30 && DAILY.lock().is_none_or(|t| t.elapsed() > Duration::from_secs(24 * 3600)) {
+            // Once a day, at a quiet moment: each tidy that's switched on, on its own.
+            if (s.pc_boost_auto || tidy) && cpu < 30 && DAILY.lock().is_none_or(|t| t.elapsed() > Duration::from_secs(24 * 3600)) {
                 *DAILY.lock() = Some(Instant::now());
-                let line = run(true);
-                // Files only with their own switch on.
+                let line = if s.pc_boost_auto { run(true) } else { String::new() };
                 let dupes = if s.tidy_dupes_auto { dupes_line(crate::dupes::tidy_downloads()) } else { String::new() };
+                if s.tidy_recycle_auto {
+                    crate::recyclebin::clear_older_than(30);
+                }
                 eprintln!("[boost] daily tidy: {line}{dupes}");
                 if !dupes.is_empty() {
                     crate::activity::show_boost(dupes.trim(), false);

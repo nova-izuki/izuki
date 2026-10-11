@@ -773,6 +773,12 @@ pub async fn chat_action(id: u64, allow: bool) -> R<String> {
     blocking(move || crate::chat::answer_action(id, allow).map_err(err)).await?
 }
 
+/// The top video for a lesson topic: (watch link, title).
+#[tauri::command]
+pub async fn lesson_video(query: String) -> R<(String, String)> {
+    blocking(move || crate::youtube::lesson_video(&query).map_err(err)).await?
+}
+
 /// Show the Izuki browser (to sign in to a site once), optionally at `url`.
 #[tauri::command]
 pub async fn browser_show(url: Option<String>) -> R<()> {
@@ -1083,6 +1089,18 @@ pub fn page_ask(app: AppHandle, id: u64, question: String, history: Option<Vec<c
 #[tauri::command]
 pub fn page_ask_cancel(id: u64) {
     crate::chat::cancel(id);
+}
+
+/// The Recycle Bin's size: (items, MB).
+#[tauri::command]
+pub async fn recycle_bin_info() -> R<(u64, u64)> {
+    blocking(|| crate::recyclebin::size().ok_or_else(|| "Windows couldn't say how full the Recycle Bin is".to_string())).await?
+}
+
+/// Empty the Recycle Bin for good (Settings asks first).
+#[tauri::command]
+pub async fn recycle_bin_empty() -> R<String> {
+    blocking(|| Ok(crate::recyclebin::empty())).await?
 }
 
 /// The Island's ⏮ ⏯ ⏭ buttons: "play", "pause", "next", "previous".

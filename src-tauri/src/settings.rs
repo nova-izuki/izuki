@@ -229,6 +229,10 @@ pub struct Settings {
     /// up (an error box, a question, a video) — a short peek, rarely.
     #[serde(default = "default_true")]
     pub island_suggestions: bool,
+    /// The Island's waveform while music plays: auto (a style per song),
+    /// silk, bars, mirror, neon or dots.
+    #[serde(default = "default_island_wave")]
+    pub island_wave: String,
     /// Press "Skip ad" on YouTube by itself (off until turned on).
     #[serde(default)]
     pub auto_skip_ads: bool,
@@ -361,6 +365,10 @@ pub struct Settings {
     /// (off until turned on).
     #[serde(default)]
     pub tidy_dupes_auto: bool,
+    /// Once a day, what has sat in the Recycle Bin for 30+ days is cleared
+    /// for good (off until turned on).
+    #[serde(default)]
+    pub tidy_recycle_auto: bool,
     /// A click the AI picked by eye gets a second look from a pointing model
     /// (Gemini, free with its key) before it happens.
     #[serde(default = "default_true")]
@@ -566,6 +574,10 @@ fn clean_key(raw: &str) -> String {
     k.to_string()
 }
 
+fn default_island_wave() -> String {
+    "auto".into()
+}
+
 fn default_follow_hand_size() -> u32 {
     // A 16pt triangle reads well at any screen scale.
     16
@@ -624,6 +636,7 @@ impl Settings {
         let face_ok = |s: &str| s.strip_prefix("model:").is_some_and(|id| (1..=40).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
         let toon_ok = |s: &str| s == "toon" || s.strip_prefix("toon:").is_some_and(|id| (1..=24).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric()));
         if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro"].contains(&self.orb_style.as_str()) && !face_ok(&self.orb_style) && !toon_ok(&self.orb_style) { self.orb_style = "liquid".into(); }
+        if !["auto", "silk", "bars", "mirror", "neon", "dots"].contains(&self.island_wave.as_str()) { self.island_wave = default_island_wave(); }
         self.orb_response = if self.orb_response.is_finite() { self.orb_response.clamp(0.5, 1.5) } else { 1.0 };
         let defaults = Self::default();
         for d in defaults.providers {
@@ -858,6 +871,7 @@ impl Default for Settings {
             app_theme_color: String::new(),
             flows_keep_days: default_flows_keep_days(),
             island_suggestions: true,
+            island_wave: default_island_wave(),
             auto_skip_ads: false,
             auto_reject_cookies: false,
             follow_hand_size: default_follow_hand_size(),
@@ -894,6 +908,7 @@ impl Default for Settings {
             match_voice_face: true,
             pc_boost_auto: false,
             tidy_dupes_auto: false,
+            tidy_recycle_auto: false,
             sharp_eye: true,
             sharp_eye_tars: false,
             pc_boost_power_plan: false,

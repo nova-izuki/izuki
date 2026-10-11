@@ -34,11 +34,12 @@ pub fn check_later(app: &AppHandle) {
     if cfg!(debug_assertions) || std::env::var("IZUKI_SELFTEST").is_ok() { return; }
     let app=app.clone();
     tauri::async_runtime::spawn(async move {
-        // Match Settings: check soon after startup, then every six hours.
+        // Check soon after startup, then every hour — a single small request,
+        // and new versions often land several times a day.
         tokio::time::sleep(Duration::from_secs(8)).await;
         loop {
             if crate::state::store().settings().automatic_update_checks { auto_update(&app).await; }
-            tokio::time::sleep(Duration::from_secs(6*60*60)).await;
+            tokio::time::sleep(Duration::from_secs(60*60)).await;
         }
     });
 }

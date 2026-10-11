@@ -86,6 +86,12 @@ fn ps(script: &str, timeout: Duration) -> Result<String> {
     Ok(reader.join().unwrap_or_default())
 }
 
+/// Run a fixed PowerShell script (hidden window, bounded time) for another
+/// module. Never put file names or anything else from outside into `script`.
+pub(crate) fn powershell(script: &str, timeout: Duration) -> Result<String> {
+    ps(script, timeout)
+}
+
 /// A single-quoted PowerShell string.
 fn q(s: &str) -> String {
     format!("'{}'", s.replace('\'', "''"))

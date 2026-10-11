@@ -18,6 +18,21 @@ export function BoostCard() {
   const [report, setReport] = useState<DeepReport | null>(null);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [working, setWorking] = useState("");
+  /** The Recycle Bin: [items, MB] (null until read). */
+  const [bin, setBin] = useState<[number, number] | null>(null);
+  const readBin = () => void api.recycleBinInfo().then(setBin).catch(() => undefined);
+  useEffect(readBin, []);
+  const emptyBin = async () => {
+    // The size right now, not when the card opened.
+    const fresh = await api.recycleBinInfo().catch(() => bin);
+    if (fresh) setBin(fresh);
+    const [items, mb] = fresh ?? [0, 0];
+    if (!items) return;
+    const size = mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
+    if (!window.confirm(`Empty the Recycle Bin for good? ${items} item${items === 1 ? "" : "s"} (${size}) — they can't be restored after this.`)) return;
+    setResult(await api.recycleBinEmpty().catch((e) => String(e)));
+    readBin();
+  };
   const [powerPlan, setPowerPlan] = useState("loading");
   const [powerBusy, setPowerBusy] = useState(false);
   const changingPower = useRef(false);
@@ -182,6 +197,19 @@ export function BoostCard() {
       >
         <Toggle checked={settings.tidy_dupes_auto} onChange={(v) => patch({ tidy_dupes_auto: v })} />
       </Row>
+      <Row
+        label="Clear old Recycle Bin items"
+        hint="Once a day, anything that has sat in the Recycle Bin for 30 days or more is deleted for good. Newer things stay, so you always have a month to change your mind."
+        icon={<Trash2 size={14} strokeWidth={2.3} />}
+      >
+        <Toggle checked={settings.tidy_recycle_auto} onChange={(v) => patch({ tidy_recycle_auto: v })} />
+      </Row>
+      {bin && bin[0] > 0 && (
+        <div className="mt-1 flex items-center justify-between gap-2 rounded-[12px] bg-white/[0.04] px-3 py-2 text-[11.5px] text-izk-muted">
+          <span>Recycle Bin: {bin[0]} item{bin[0] === 1 ? "" : "s"} · {bin[1] >= 1024 ? `${(bin[1] / 1024).toFixed(1)} GB` : `${bin[1]} MB`}</span>
+          <button type="button" onClick={() => void emptyBin()} className="rounded-full bg-izk-danger/12 px-2.5 py-1 text-[11px] font-semibold text-izk-danger hover:bg-izk-danger/22">Empty it</button>
+        </div>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <button
           type="button"

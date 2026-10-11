@@ -23,7 +23,7 @@ export function UpdateControls({compact=false}:{compact?:boolean}) {
   if(compact&&(!status.version||dismissed===status.version))return null;
   const labels:Record<string,string>={checking:'Checking for updates…',current:'You have the latest published version.',available:`Izuki ${status.version} is available.`,downloading:`Downloading ${status.total?Math.min(100,Math.round(status.downloaded/status.total*100))+'%':(status.downloaded/1048576).toFixed(1)+' MB'}…`,ready:`Izuki ${status.version} is verified and ready to install.`,installing:'Starting the installer…',error:'Update needs attention.'};
   return <div className={compact?'mx-[18px] mt-2 rounded-2xl border border-izk-teal/25 bg-izk-teal/10 p-3 text-xs':'space-y-3 text-xs'}>
-    {!compact&&<Row label="Automatic update checks" hint="Check after startup and every six hours. Downloads and installation need your click."><Toggle checked={auto} onChange={v=>patch({automatic_update_checks:v})}/></Row>}
+    {!compact&&<Row label="Automatic update checks" hint="Checks after startup and every hour, and tells you on the Island when a new version is out. Downloads and installation need your click."><Toggle checked={auto} onChange={v=>patch({automatic_update_checks:v})}/></Row>}
     <p role="status">{labels[status.phase]||'Check for signed desktop updates without visiting the website.'}</p>
     {(error||status.error)&&<p role="alert" className="mt-2 break-words text-izk-danger">{error||status.error}</p>}
     <div className="mt-2 flex flex-wrap gap-2">

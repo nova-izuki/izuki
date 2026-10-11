@@ -33,6 +33,7 @@ pub mod autonomous;
 pub mod page_ask;
 pub mod dupes;
 pub mod sharpeye;
+pub mod recyclebin;
 pub mod music_draft;
 pub mod memory;
 pub mod model;
@@ -320,6 +321,9 @@ pub fn run() {
             commands::island_audio_meter,
             commands::page_ask,
             commands::page_ask_cancel,
+            commands::recycle_bin_info,
+            commands::lesson_video,
+            commands::recycle_bin_empty,
             commands::overlay_state,
             commands::reminders_list,
             commands::reminder_remove,

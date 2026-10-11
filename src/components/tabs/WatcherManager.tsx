@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Eye, Radar, Trash2 } from "lucide-react";
 import { Badge, EmptyState, Section, Toggle, cx } from "../ui";
+import { JumpBar } from "../JumpBar";
 import { useIzuki } from "../../lib/store";
 import { api } from "../../lib/ipc";
 import type { Watcher, WatcherCondition } from "../../lib/types";
@@ -41,7 +42,8 @@ export function WatcherManager() {
 
   return (
     <>
-      <div className="izk-card izk-grain relative overflow-hidden p-[16px]">
+      <JumpBar topId="watchers-top" jumps={[{ label: "👁️ Your watchers", id: "watchers-list" }, { label: "🧠 How they work", id: "watchers-how" }]} />
+      <div id="watchers-list" className="izk-card izk-grain relative overflow-hidden p-[16px]">
         <div
           className="pointer-events-none absolute -right-10 -top-14 h-44 w-44 rounded-full blur-[48px]"
           style={{ background: "radial-gradient(circle,rgba(78,205,196,0.45),transparent 70%)" }}
@@ -77,6 +79,7 @@ export function WatcherManager() {
       )}
 
       <Section
+        id="watchers-how"
         title="How a watcher thinks"
         hint="Each one polls its own region on its own cadence, so ten watchers cost far less than one full-screen loop."
       >

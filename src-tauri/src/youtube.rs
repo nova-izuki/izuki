@@ -115,6 +115,42 @@ pub fn search_url(query: &str) -> String {
     format!("https://www.youtube.com/results?search_query={q}")
 }
 
+/// The top real video (not a Short) for a lesson topic, straight from
+/// YouTube's results page — no browser or clicking needed: (watch link, title).
+pub fn lesson_video(query: &str) -> Result<(String, String)> {
+    let html = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36")
+        .build()?
+        .get(search_url(query))
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()?
+        .error_for_status()?
+        .text()?;
+    first_video(&html).ok_or_else(|| anyhow::anyhow!("I couldn't find a video for that — try other words"))
+}
+
+/// The first `videoRenderer` in a results page: (watch link, title).
+fn first_video(html: &str) -> Option<(String, String)> {
+    const MARK: &str = "\"videoRenderer\":{\"videoId\":\"";
+    let at = html.find(MARK)? + MARK.len();
+    let id: String = html[at..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+    if id.len() != 11 {
+        return None;
+    }
+    // Its title: the first "text" after it, read as a JSON string so escapes decode.
+    let rest = &html[at..];
+    let title = rest
+        .find("\"title\":{\"runs\":[{\"text\":")
+        .and_then(|i| {
+            let s = &rest[i + "\"title\":{\"runs\":[{\"text\":".len()..];
+            let mut de = serde_json::Deserializer::from_str(s).into_iter::<String>();
+            de.next()?.ok()
+        })
+        .unwrap_or_default();
+    Some((format!("https://www.youtube.com/watch?v={id}"), title))
+}
+
 /// Search YouTube for `query` and start the best video for it — a friend's
 /// pick, not a menu: the closest match to what was asked, skipping what it
 /// played lately; for something vague ("cool videos", "something chill")
@@ -153,6 +189,18 @@ pub fn play(query: &str) -> Result<Option<String>> {
         }
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod lesson_tests {
+    #[test]
+    fn reads_the_first_video_and_its_title() {
+        let page = r#"..."reelItemRenderer":{"videoId":"SHORTSHORT1"}..."videoRenderer":{"videoId":"dQw4w9WgXcQ","thumbnail":{},"title":{"runs":[{"text":"How to Dribble & Score"}]}}..."#;
+        let (url, title) = super::first_video(page).unwrap();
+        assert_eq!(url, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+        assert_eq!(title, "How to Dribble & Score");
+        assert!(super::first_video("no videos here").is_none());
+    }
 }
 
 fn words(s: &str) -> Vec<String> {

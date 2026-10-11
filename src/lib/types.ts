@@ -332,10 +332,14 @@ export interface Settings {
   wake_sensitivity: "relaxed" | "normal" | "strict";
   /** The Island may briefly offer help on its own (an error, a question, a video). */
   island_suggestions: boolean;
+  /** The Island's waveform while music plays. */
+  island_wave: "auto" | "silk" | "bars" | "mirror" | "neon" | "dots";
   /** A click picked by eye gets a second look from a pointing model (Gemini) first. */
   sharp_eye: boolean;
   /** Use UI-TARS (OpenRouter, paid) for that second look. */
   sharp_eye_tars: boolean;
+  /** Once a day, what has sat in the Recycle Bin for 30+ days is cleared for good. */
+  tidy_recycle_auto: boolean;
   /** Once a day, extra copies of the same download go to the Recycle Bin. */
   tidy_dupes_auto: boolean;
   /** Press "Skip ad" on YouTube by itself. */

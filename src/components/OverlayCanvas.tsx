@@ -117,6 +117,7 @@ export function OverlayCanvas() {
   // The Island at the top of the screen (on unless switched off in Talk).
   const [islandOn, setIslandOn] = useState(true);
   const [islandPeeks, setIslandPeeks] = useState(true);
+  const [islandWave, setIslandWave] = useState<string>("auto");
   const [keepReply, setKeepReply] = useState(false);
   // Music mode: the orb comes up and flows with what's playing — when asked
   // from the Island, or by itself when "Dance with my music" is on.
@@ -449,6 +450,7 @@ export function OverlayCanvas() {
           if (p.mode === "follow") setHandOn(s.follow_mode_enabled);
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
+          setIslandWave(s.island_wave || "auto");
           setKeepReply(s.keep_reply);
           setMusicAuto(s.music_visuals);
           setHandSize(s.follow_hand_size);
@@ -507,6 +509,7 @@ export function OverlayCanvas() {
           setHandOn(s.follow_mode_enabled);
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
+          setIslandWave(s.island_wave || "auto");
           setKeepReply(s.keep_reply);
           setMusicAuto(s.music_visuals);
           setHandSize(s.follow_hand_size);
@@ -787,6 +790,7 @@ export function OverlayCanvas() {
             doing={doing}
             thinking={thinking}
             peeks={islandPeeks}
+            wave={islandWave}
             visualizing={musicShowing}
             onVisualize={() => {
               setMusicSnoozed(false);

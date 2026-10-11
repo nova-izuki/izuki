@@ -220,7 +220,9 @@ export const MOCK_SETTINGS: Settings = {
   wake_sensitivity: "normal",
   keep_reply: false,
   island_suggestions: true,
+  island_wave: "auto",
   tidy_dupes_auto: false,
+  tidy_recycle_auto: false,
   sharp_eye: true,
   sharp_eye_tars: false,
   auto_skip_ads: false,
@@ -467,6 +469,11 @@ export const api = {
   musicMeter: (on: boolean) => call<void>("music_meter", { on }, () => undefined),
   /** Island audio level: continuous waveform flow for any PC sound. */
   islandAudioMeter: (on: boolean) => call<void>("island_audio_meter", { on }, () => undefined),
+  /** The top video for a lesson topic: [watch link, title]. */
+  lessonVideo: (query: string) => call<[string, string]>("lesson_video", { query }, () => { throw new Error("Lessons work in the Izuki app."); }),
+  /** The Recycle Bin: [items, MB]; and emptying it (asked first in Settings). */
+  recycleBinInfo: () => call<[number, number]>("recycle_bin_info", undefined, () => [0, 0]),
+  recycleBinEmpty: () => call<string>("recycle_bin_empty", undefined, () => "The Recycle Bin is only in the Izuki app."),
   /** "Ask about this page" from the Island: the answer arrives on EV.pageAnswer. */
   pageAsk: (id: number, question: string, history: Array<{ role: "user" | "assistant"; content: string }>) =>
     call<void>("page_ask", { id, question, history }, () => undefined),

@@ -51,9 +51,54 @@ export function TeachingCard() {
     } finally { if (mounted.current) setBusy(false); }
   };
 
+  /**
+   * A video to teach from: the one playing in the Izuki browser — or, when
+   * nothing is and a topic is typed, the top video for it, opened and
+   * started. `false` (with a note saying why) if there's still none.
+   */
+  const ensureVideo = async (mine: number) => {
+    const topic = lessonQuery.trim();
+    const held = await api.browserVideo("read", true).catch(() => null);
+    // A video already playing is the lesson. A paused one is too — unless a
+    // topic is typed, then that topic gets a fresh lesson.
+    if (held?.videoId && (!held.paused || !topic)) return true;
+    if (!topic) {
+      setNote("Open a video in the Izuki browser first — or type a topic above and I'll find one.");
+      return false;
+    }
+    setNote(`Finding a lesson on “${topic}”…`);
+    const [url, title] = await api.lessonVideo(topic);
+    if (mine !== generation.current) return false;
+    await api.browserShow(url);
+    setNote(`Opening “${title || topic}”…`);
+    // Give the page a moment to load its player, then make sure it's playing.
+    for (let i = 0; i < 24 && mine === generation.current; i++) {
+      await new Promise((r) => setTimeout(r, 750));
+      const v = await api.browserVideo("read", false).catch(() => null);
+      if (!v?.videoId) continue;
+      if (!v.paused) return true;
+      if (i >= 4) {
+        // Nudge it, then believe only what the player says.
+        await api.browserVideo("play", false, v.videoId).catch(() => undefined);
+        const after = await api.browserVideo("read", false).catch(() => null);
+        if (after?.videoId && !after.paused) return true;
+      }
+    }
+    if (mine === generation.current) setNote("The video didn't load — tap Play in it once, then press Teach in real time again.");
+    return false;
+  };
+
   const start = async (automatic: boolean) => {
     const mine = ++generation.current;
     clearTimeout(timer.current); setAuto(automatic);
+    setBusy(true);
+    try {
+      if (!(await ensureVideo(mine))) { if (mine === generation.current) setAuto(false); return; }
+    } catch (e) {
+      if (mine === generation.current) { setNote(String(e)); setAuto(false); }
+      return;
+    } finally { if (mounted.current) setBusy(false); }
+    if (mine !== generation.current) return;
     const began = Date.now(); let count = 0; let lastTime = -1; let lessonVideo = "";
     const tick = async (first: boolean) => {
       if (mine !== generation.current || !mounted.current) return;
@@ -114,7 +159,7 @@ export function TeachingCard() {
       <button className="izk-pill izk-no-drag px-3 py-1 text-[11px]" onClick={() => void control("play")}>Resume video</button>
       <button className="izk-pill izk-no-drag px-3 py-1 text-[11px]" onClick={() => void control("normal")}>Normal speed</button>
     </div>
-    <p className="mt-2 text-[10.5px] leading-relaxed text-izk-muted">Works with the largest visible HTML5 video in the Izuki browser, not just YouTube. Real-time teaching checks about every 30 seconds only while the video is playing in front, up to eight explanations or 12 minutes. Embedded or protected players may require one Play tap before they can resume.</p>
+    <p className="mt-2 text-[10.5px] leading-relaxed text-izk-muted">Type a topic and press Teach in real time — Izuki finds a video, plays it and teaches as it goes. Or open any video yourself. Works with the largest visible HTML5 video in the Izuki browser, not just YouTube. Real-time teaching checks about every 30 seconds only while the video is playing in front, up to eight explanations or 12 minutes. Embedded or protected players may require one Play tap before they can resume.</p>
     {note && <p role="status" className="mt-2 text-[11.5px] text-izk-teal">{note}</p>}
   </Section>;
 }

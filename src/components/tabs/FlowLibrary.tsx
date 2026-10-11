@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Layers, Pencil, Play, Search, Trash2 } from "lucide-react";
 import { Badge, EmptyState, Section, cx } from "../ui";
+import { JumpBar } from "../JumpBar";
 import { useIzuki } from "../../lib/store";
 import { api } from "../../lib/ipc";
 import type { Flow } from "../../lib/types";
@@ -55,7 +56,8 @@ export function FlowLibrary() {
 
   return (
     <>
-      <Section title="Your flows" hint="Keep useful routines and clear the clutter. Cleared flows are archived on this PC.">
+      <JumpBar topId="flows-top" jumps={[{ label: "🧩 Your flows", id: "flows-list" }, { label: "🧹 Tidy up", id: "flows-tidy" }, { label: "⛓️ Chain draw", id: "flows-chain" }]} />
+      <Section id="flows-list" title="Your flows" hint="Keep useful routines and clear the clutter. Cleared flows are archived on this PC.">
         <div className="flex flex-wrap items-center gap-2">
           <button className="izk-pill izk-no-drag px-3 py-1.5 text-[11.5px]" onClick={() => patch({ autosave_flows: !autosave })}>Auto-save: {autosave ? "on" : "off"}</button>
           <button disabled={!shown.length || clearing} className="izk-pill izk-no-drag px-3 py-1.5 text-[11.5px] disabled:opacity-40" onClick={() => { setClearIds(shown.map((f) => f.id)); setConfirmClear(true); }}>Clear {q.trim() ? "matching" : "all"} flows ({shown.length})</button>
@@ -188,6 +190,7 @@ export function FlowLibrary() {
       )}
 
       <Section
+        id="flows-tidy"
         title="Tidy up by itself"
         hint="Flows you haven't used clear away on their own. Ones you gave a shortcut key always stay."
       >
@@ -205,6 +208,7 @@ export function FlowLibrary() {
       </Section>
 
       <Section
+        id="flows-chain"
         title="Chain draw"
         hint="Draw arrow 1 → 2 → 3 in a single overlay pass and Izuki records the whole sequence as one flow — search, type, click, done."
       >

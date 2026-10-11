@@ -95,6 +95,7 @@ export function Island({
   doing,
   thinking,
   peeks = true,
+  wave = "auto",
   visualizing = false,
   onVisualize,
   onPlaying,
@@ -104,6 +105,8 @@ export function Island({
   thinking: boolean;
   /** Let a helpful suggestion peek out on its own (setting). */
   peeks?: boolean;
+  /** The waveform style while music plays (setting). */
+  wave?: string;
   /** Music mode is showing (the orb flowing with the music). */
   visualizing?: boolean;
   onVisualize?: () => void;
@@ -383,6 +386,7 @@ export function Island({
                 copies={status.copies ?? []}
                 page={status.page ?? null}
                 onHold={hold}
+                wave={wave}
                 next={next}
                 now={now}
                 dancing={dancing}
@@ -399,7 +403,7 @@ export function Island({
             <motion.div key="rest" {...fade} className="h-[5px] w-[72px]" />
           ) : (
             <motion.div key={live.kind} {...fade} className="flex h-[34px] items-center gap-2.5 pl-1.5 pr-3">
-              <Compact live={live} dancing={dancing} />
+              <Compact live={live} dancing={dancing} wave={wave} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -436,7 +440,7 @@ function same(a: IslandStatus, b: IslandStatus) {
 
 // ------------------------------------------------------------------ compact
 
-function Compact({ live, dancing }: { live: Live; dancing: boolean }) {
+function Compact({ live, dancing, wave = "auto" }: { live: Live; dancing: boolean; wave?: string }) {
   switch (live.kind) {
     case "finished":
       return (
@@ -477,7 +481,7 @@ function Compact({ live, dancing }: { live: Live; dancing: boolean }) {
         <>
           <Cover m={live.m} size={24} />
           <span className="max-w-[180px] truncate text-[13px] font-medium text-white/90">{live.m.title}</span>
-          <Waveform playing={live.m.playing} width={44} height={16} />
+          <Waveform playing={live.m.playing} width={44} height={16} style={waveFor(wave, live.m.title)} />
         </>
       );
     case "suggest":
@@ -524,7 +528,9 @@ function Expanded({
   weather = null,
   page = null,
   onHold,
+  wave = "auto",
 }: {
+  wave?: string;
   page?: string | null;
   onHold?: (on: boolean) => void;
   weather?: [string, number, string] | null;
@@ -554,7 +560,8 @@ function Expanded({
   }, []);
 
   return (
-    <div className="flex flex-col gap-3">
+    // Scrolls when it holds more than fits on the screen.
+    <div className="izk-island-scroll flex max-h-[calc(100vh-48px)] flex-col gap-3 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:thin]">
       <div
         role="button"
         tabIndex={0}
@@ -602,8 +609,8 @@ function Expanded({
           <div className="min-w-0 flex-1">
             <div className="truncate text-[14px] font-semibold">{media.title}</div>
             <div className="truncate text-[12px] text-white/55">{[media.artist, media.app].filter(Boolean).join(" · ")}</div>
-            <div className="mt-1 flex gap-1.5">
-              {onVisualize && (
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {mediaKind(media) === "song" && onVisualize && (
                 <button
                   type="button"
                   onClick={onVisualize}
@@ -615,20 +622,30 @@ function Expanded({
                   {visualizing ? "✨ Flowing" : "✨ Flow with it"}
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => {
-                  onDone();
-                  const by = media.artist ? ` by ${media.artist}` : "";
-                  void emit(EV.runChat, { id: Date.now(), text: `Tell me about the song "${media.title}"${by} — what it's about, and one interesting thing about it. Keep it short.` });
-                }}
-                className="rounded-full bg-white/10 px-2 py-[3px] text-[11px] font-semibold text-white/80 transition hover:bg-white/16"
-              >
-                About this song
-              </button>
+              {(() => {
+                // The right help for what's actually playing — a song, a
+                // lesson, an ad or just a video.
+                const kind = mediaKind(media);
+                const from = media.artist ? ` (${media.artist})` : "";
+                const ask = (text: string) => { onDone(); void emit(EV.runChat, { id: Date.now(), text }); };
+                const [label, text] =
+                  kind === "song" ? ["About this song", `Tell me about the song "${media.title}"${media.artist ? ` by ${media.artist}` : ""} — what it's about, and one interesting thing about it. Keep it short.`]
+                  : kind === "lesson" ? ["Explain this lesson", `The video "${media.title}"${from} is teaching something. Explain the main idea simply in a few short steps, like a good tutor.`]
+                  : kind === "ad" ? ["Skip ad", "Skip the ad that's playing."]
+                  : ["What's this video about?", `In a few short lines, what is the video "${media.title}"${from} about?`];
+                return (
+                  <button
+                    type="button"
+                    onClick={() => ask(text)}
+                    className="rounded-full bg-white/10 px-2 py-[3px] text-[11px] font-semibold text-white/80 transition hover:bg-white/16"
+                  >
+                    {label}
+                  </button>
+                );
+              })()}
             </div>
             <div className="mt-1 h-6">
-              <Waveform playing={playing} width={120} height={24} />
+              <Waveform playing={playing} width={120} height={24} style={waveFor(wave, media.title)} />
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -673,10 +690,17 @@ function Expanded({
           {activities.map((a) => (
             <div key={a.id} className="rounded-2xl bg-white/[0.07] px-3 py-2.5">
               <div className="flex items-center gap-2.5">
-                <span className="text-[17px]">{a.icon}</span>
+                <span className="shrink-0 text-[17px]">{a.icon}</span>
                 <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{a.title}</span>
-                <span className={"shrink-0 text-[12.5px] text-white/55" + (a.kind === "timer" ? " tabular-nums" : "")}>{a.detail}</span>
+                {/* A short detail (a time, a size) sits on the right; a long one
+                    wraps underneath instead of running out of the box. */}
+                {a.detail && a.detail.length <= 22 && (
+                  <span className={"max-w-[40%] shrink-0 truncate text-[12.5px] text-white/55" + (a.kind === "timer" ? " tabular-nums" : "")}>{a.detail}</span>
+                )}
               </div>
+              {a.detail && a.detail.length > 22 && (
+                <div className="mt-1 line-clamp-3 break-words pl-[29px] text-[12.5px] leading-snug text-white/60">{a.detail}</div>
+              )}
               {a.actions.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {a.actions.map((x) => (
@@ -1158,9 +1182,39 @@ function AskPage({ page, onHold, onClose }: { page: string; onHold?: (on: boolea
   );
 }
 
-/** A live waveform for whatever is playing: three soft lines that swell
- * with the PC's sound level and taper at the ends. */
-function Waveform({ playing, width, height }: { playing: boolean; width: number; height: number }) {
+/**
+ * What's playing, roughly: a song, a lesson, an ad or just a video — so the
+ * Island offers the right help ("About this song" on a cooking video, or on
+ * an advert, made no sense). Music apps play songs; in a browser it's a song
+ * only when the title says so.
+ */
+export function mediaKind(m: { title: string; artist: string; app: string }): "song" | "lesson" | "ad" | "video" {
+  const title = m.title.toLowerCase();
+  const app = m.app.toLowerCase();
+  if (/(^|\b)(ad|ads|advertisement|sponsored)\b/.test(title) || title.startsWith("ad ·") || title.startsWith("ad:")) return "ad";
+  if (/spotify|apple music|itunes|soundcloud|tidal|deezer|amazon music|youtube music|pandora|media player|groove|winamp|foobar|music/.test(app)) return "song";
+  if (/official (audio|video|music video|lyric)|\blyrics?\b|\bremix\b|\bfeat\.|\bft\.|\(prod\.|\bslowed\b|\bsped up\b|\bvisualizer\b|\binstrumental\b/.test(title)) return "song";
+  if (/\bhow to\b|tutorial|lesson|explained|lecture|course|\blearn|guide|for beginners|step by step|crash course|\bclass\b|walkthrough|tips/.test(title)) return "lesson";
+  const browser = /chrome|edge|firefox|brave|opera|vivaldi|arc|browser/.test(app);
+  return browser ? "video" : m.artist ? "song" : "video";
+}
+
+const WAVES = ["silk", "bars", "mirror", "neon", "dots"] as const;
+type WaveStyle = (typeof WAVES)[number];
+
+/** The style to draw: the chosen one, or for "auto" one per song (the same song keeps its look). */
+function waveFor(choice: string, title = ""): WaveStyle {
+  if ((WAVES as readonly string[]).includes(choice)) return choice as WaveStyle;
+  let h = 0;
+  for (let i = 0; i < title.length; i++) h = (h * 31 + title.charCodeAt(i)) >>> 0;
+  return WAVES[h % WAVES.length];
+}
+
+/** A live waveform for whatever is playing, in one of five looks, all
+ * following the PC's sound level: silk (soft flowing lines), bars (an
+ * equalizer), mirror (a voice-memo style), neon (one glowing line) and
+ * dots (bouncing beads). */
+function Waveform({ playing, width, height, style = "silk" }: { playing: boolean; width: number; height: number; style?: WaveStyle }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const level = useRef(0);
   useEffect(() => {
@@ -1182,11 +1236,17 @@ function Waveform({ playing, width, height }: { playing: boolean; width: number;
     canvas.height = Math.round(height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    const mid = height / 2;
     const lines = [
       { freq: 0.16, phase: 0, amp: 1, rgba: "143,199,255,0.95", w: 1.8 },
       { freq: 0.23, phase: 1.3, amp: 0.7, rgba: "232,121,249,0.7", w: 1.4 },
       { freq: 0.31, phase: 2.4, amp: 0.45, rgba: "255,255,255,0.55", w: 1.1 },
     ];
+    const grad = ctx.createLinearGradient(0, 0, width, 0);
+    grad.addColorStop(0, "#e879f9");
+    grad.addColorStop(1, "#67e8f9");
+    // Each bar/dot moves to its own beat, so it never looks like one block.
+    const jitter = (i: number, t: number) => 0.55 + 0.45 * Math.sin(t * (2.1 + (i % 5) * 0.37) + i * 1.7);
     let shown = 0;
     let t = 0;
     let raf = 0;
@@ -1195,24 +1255,67 @@ function Waveform({ playing, width, height }: { playing: boolean; width: number;
       if (!still) t += playing ? 0.05 : 0.012;
       const swell = Math.max(playing ? 0.14 : 0.05, shown);
       ctx.clearRect(0, 0, width, height);
-      for (const l of lines) {
-        ctx.beginPath();
-        ctx.strokeStyle = `rgba(${l.rgba})`;
-        ctx.lineWidth = l.w;
+      ctx.shadowBlur = 0;
+      if (style === "bars" || style === "mirror") {
+        const n = Math.max(5, Math.round(width / 6));
+        const gap = width / n;
+        const bw = Math.max(1.6, gap * 0.55);
+        ctx.fillStyle = grad;
+        for (let i = 0; i < n; i++) {
+          const taper = 0.45 + 0.55 * Math.sin(((i + 0.5) / n) * Math.PI);
+          const h = Math.max(1.5, swell * jitter(i, t * 3) * taper * (style === "mirror" ? height : height * 0.95));
+          const x = i * gap + (gap - bw) / 2;
+          const y = style === "mirror" ? mid - h / 2 : height - h;
+          ctx.beginPath();
+          ctx.roundRect(x, y, bw, h, bw / 2);
+          ctx.fill();
+        }
+      } else if (style === "dots") {
+        const n = Math.max(4, Math.round(width / 9));
+        const gap = width / n;
+        const r = Math.min(gap * 0.28, height * 0.16);
+        ctx.fillStyle = grad;
+        for (let i = 0; i < n; i++) {
+          const y = mid - Math.sin(t * 3 + i * 0.8) * swell * jitter(i, t * 2) * (height / 2 - r);
+          ctx.beginPath();
+          ctx.arc(i * gap + gap / 2, y, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (style === "neon") {
+        const hue = (t * 40) % 360;
+        ctx.strokeStyle = `hsl(${hue}, 95%, 70%)`;
+        ctx.shadowColor = `hsl(${hue}, 95%, 60%)`;
+        ctx.shadowBlur = 8;
+        ctx.lineWidth = 2;
         ctx.lineCap = "round";
+        ctx.beginPath();
         for (let x = 0; x <= width; x += 1.5) {
           const taper = Math.sin((x / width) * Math.PI);
-          const y = height / 2 + Math.sin(x * l.freq + t * 3 + l.phase) * l.amp * swell * taper * height * 0.45;
+          const y = mid + (Math.sin(x * 0.2 + t * 4) * 0.7 + Math.sin(x * 0.07 - t * 2) * 0.3) * swell * taper * height * 0.45;
           if (x === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         }
         ctx.stroke();
+      } else {
+        for (const l of lines) {
+          ctx.beginPath();
+          ctx.strokeStyle = `rgba(${l.rgba})`;
+          ctx.lineWidth = l.w;
+          ctx.lineCap = "round";
+          for (let x = 0; x <= width; x += 1.5) {
+            const taper = Math.sin((x / width) * Math.PI);
+            const y = mid + Math.sin(x * l.freq + t * 3 + l.phase) * l.amp * swell * taper * height * 0.45;
+            if (x === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
       }
       raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [playing, width, height]);
+  }, [playing, width, height, style]);
   return <canvas ref={canvasRef} aria-hidden className="izk-waveform block" style={{ width, height }} />;
 }
 
