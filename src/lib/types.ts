@@ -338,6 +338,8 @@ export interface Settings {
   sharp_eye: boolean;
   /** Use UI-TARS (OpenRouter, paid) for that second look. */
   sharp_eye_tars: boolean;
+  /** Box what Izuki is about to click, for half a second first. */
+  click_highlight: boolean;
   /** Once a day, what has sat in the Recycle Bin for 30+ days is cleared for good. */
   tidy_recycle_auto: boolean;
   /** PC Care: the Island says when antivirus, firewall, space or a drive needs attention. */
@@ -530,6 +532,8 @@ export interface HandCommand {
   text?: string | null;
   /** The desktop's real pixel bounds when sent — the overlay maps points with these. */
   desktop?: DesktopBounds | null;
+  /** "Show where I'll click" is on: box the spot first. */
+  highlight?: boolean;
 }
 
 export interface StatusEvent {

@@ -431,6 +431,9 @@ pub struct HandCommand {
     /// or missing screen size (which put marks 1.5× off on a 150 % display).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub desktop: Option<DesktopBounds>,
+    /// "Show where I'll click": the overlay boxes the spot first.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub highlight: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -380,6 +380,10 @@ pub struct Settings {
     /// Use ByteDance's UI-TARS (through OpenRouter, paid) for that look.
     #[serde(default)]
     pub sharp_eye_tars: bool,
+    /// Show a box on what Izuki is about to click, for half a second first
+    /// (off: clicks happen straight away).
+    #[serde(default)]
+    pub click_highlight: bool,
     /// Last confirmed High Performance state. UI refreshes from Windows;
     /// never automatically applies a plan from this stored preference.
     #[serde(default = "default_false")]
@@ -916,6 +920,7 @@ impl Default for Settings {
             pc_care_alerts: true,
             sharp_eye: true,
             sharp_eye_tars: false,
+            click_highlight: false,
             pc_boost_power_plan: false,
             cloud_ears: true,
             speech_language: default_speech_language(),

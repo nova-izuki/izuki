@@ -412,6 +412,9 @@ export function SettingsTab() {
         <Row label="Use UI-TARS for that look" hint="ByteDance's screen model, through your OpenRouter key. Paid: about $0.0002 a look (5,000 looks for $1) — add a little credit at openrouter.ai first. Falls back to Gemini if it can't answer.">
           <Toggle checked={settings.sharp_eye_tars} disabled={!settings.sharp_eye} onChange={(v) => patch({ sharp_eye_tars: v })} />
         </Row>
+        <Row label="Show where I'll click" hint="A box appears on what Izuki is about to click or type into, for half a second first — in every mode. Off: clicks happen straight away.">
+          <Toggle checked={settings.click_highlight} onChange={(v) => patch({ click_highlight: v })} />
+        </Row>
         <div className="izk-divider" />
         <Row
           label="Hand travel time"

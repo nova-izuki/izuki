@@ -226,6 +226,7 @@ export const MOCK_SETTINGS: Settings = {
   pc_care_alerts: true,
   sharp_eye: true,
   sharp_eye_tars: false,
+  click_highlight: false,
   auto_skip_ads: false,
   auto_reject_cookies: false,
   follow_hand_size: 16,

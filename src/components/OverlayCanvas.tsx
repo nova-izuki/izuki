@@ -566,6 +566,9 @@ export function OverlayCanvas() {
             ...prev,
             { id, kind: "arrow", x: cx2, y: cy2, x2: hx2, y2: hy2, tone: TOOL_COLOUR.arrow },
           ]);
+        } else if (cmd.highlight) {
+          // "Show where I'll click" — in every mode, Jarvis included.
+          setPointOuts((prev) => [...prev, { id, kind: "box", x: cx2, y: cy2, tone: TOOL_COLOUR.box }]);
         } else if (!precision.current || cmd.action === "point") {
           // Jarvis mode shows nothing for a click — it just happens. (A
           // "point at it" answer still circles, since the circle IS the answer.)

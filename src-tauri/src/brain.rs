@@ -1298,10 +1298,14 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                         );
                         return false;
                     }
+                    let highlight = settings.click_highlight
+                        && matches!(step.action, Intent::Click | Intent::DoubleClick | Intent::RightClick | Intent::Auto | Intent::Type)
+                        && (step.x != 0 || step.y != 0);
                     if !placeless && !behind {
                     let _ = app.emit(
                         events::HAND,
                         HandCommand {
+                            highlight,
                             x: step.x,
                             y: step.y,
                             x2: step.x2,
@@ -1319,6 +1323,17 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     );
                     }
 
+                    // "Show where I'll click": a moment to see the box first.
+                    if highlight && !placeless && !behind {
+                        // In short beats, so Stop lands at once.
+                        for _ in 0..10 {
+                            std::thread::sleep(Duration::from_millis(50));
+                            if !alive() {
+                                let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
+                                return false;
+                            }
+                        }
+                    }
                     match automation::execute(step, move_ms, settings.magnetic_hand, settings.dry_run)
                     {
                         Ok(detail) => {
