@@ -635,6 +635,8 @@ export const EV = {
   /** Frontend-only: live audio level (0..1) for Island waveform — music,
    * video, any PC sound. ~30Hz, drives the Island's continuous flow. */
   islandAudioLevel: "izuki://island-audio-level",
+  /** A live line from the core while it works ("Asking Gemini…"). */
+  trace: "izuki://trace",
   /** A piece of the answer to "Ask about this page" ({ id, text, done, error, page }). */
   pageAnswer: "izuki://page-answer",
   /** Frontend-only: a still from the Island's camera (a data: URL) for Chat

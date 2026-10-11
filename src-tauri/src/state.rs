@@ -23,6 +23,22 @@ pub fn set_app(app: &tauri::AppHandle) {
     let _ = APP.set(app.clone());
 }
 
+/// A live line for the Island while Izuki works — "Asking Gemini…",
+/// "Clicking “Next”…" — so it's never just a blind "Thinking…". Shown,
+/// never spoken; the newest wins.
+pub fn trace(line: impl Into<String>) {
+    use tauri::Emitter;
+    if let Some(app) = APP.get() {
+        let _ = app.emit_to("overlay", "izuki://trace", line.into());
+    }
+}
+
+/// A provider's name without its "(free tier)" / "· model" extras.
+pub fn short_name(label: &str) -> String {
+    let base = label.split(" · ").next().unwrap_or(label);
+    base.split(" (").next().unwrap_or(base).trim().to_string()
+}
+
 /// Settings were changed here in the core (by voice, or the TV being
 /// found): the windows reload theirs, so an open Settings page never saves
 /// its older copy back over the change.

@@ -297,6 +297,10 @@ fn friendly_error(service: &str, status: reqwest::StatusCode, body: &str) -> Str
     }
 }
 
+/// The Groq (Orpheus) voice over its limit: left alone until then — each
+/// failed try (twice a line) broke the voice up before the free one took over.
+static ORPHEUS_RESTING_UNTIL: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
+
 /// ElevenLabs out of credits: left alone until then.
 static ELEVEN_RESTING_UNTIL: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
 
@@ -415,6 +419,9 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
             if key.is_empty() {
                 return Err("add a free Groq key to use the Orpheus voice".into());
             }
+            if ORPHEUS_RESTING_UNTIL.lock().is_some_and(|t| std::time::Instant::now() < t) {
+                return Err("Groq voice limit reached for now — using the free voice".into());
+            }
             let direction = orpheus_direction(mood);
             let budget = ORPHEUS_MAX.saturating_sub(direction.len() + 3);
             let line: String = text.chars().take(budget).collect();
@@ -460,6 +467,15 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
         let body = resp.text().unwrap_or_default();
         let service = if engine == "orpheus" { "Groq" } else { "OpenAI" };
         eprintln!("[tts] {engine} HTTP {status}: {}", body.chars().take(200).collect::<String>());
+        if engine == "orpheus" && status.as_u16() == 429 {
+            // A daily allowance used up: try again in an hour (it rolls over
+            // through the day). A per-minute one: in a minute.
+            let lower = body.to_lowercase();
+            let daily = lower.contains("per day") || lower.contains("(tpd)") || lower.contains("(rpd)");
+            let rest = std::time::Duration::from_secs(if daily { 3600 } else { 60 });
+            *ORPHEUS_RESTING_UNTIL.lock() = Some(std::time::Instant::now() + rest);
+            eprintln!("[tts] resting the Groq voice for {} s", rest.as_secs());
+        }
         return Err(friendly_error(service, status, &body));
     }
     resp.bytes().map(|b| b.to_vec()).map_err(|e| e.to_string())

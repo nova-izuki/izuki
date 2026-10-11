@@ -102,10 +102,13 @@ fn parse_face(s: &str) -> Option<Look> {
     if s.contains("comic") || s.contains("spider-verse") || s.contains("spiderverse") || s.contains("spider verse") || s.contains("miles morales") {
         changes.push(("render", serde_json::Value::String("comic".into())));
         named.push("comic style");
+    } else if has("concept") || s.contains("concept art") || s.contains("ink.industries") || s.contains("ink industries") || s.contains("fashion art") {
+        changes.push(("render", serde_json::Value::String("concept".into())));
+        named.push("concept art style");
     } else if has("painted") || has("painting") || s.contains("real painting") {
         changes.push(("render", serde_json::Value::String("painted".into())));
         named.push("painted style");
-    } else if has("ink") || s.contains("concept art") || s.contains("ink.industries") || s.contains("ink industries") {
+    } else if has("ink") {
         changes.push(("render", serde_json::Value::String("ink".into())));
         named.push("ink style");
     } else if s.contains("flat") || s.contains("vector") {
@@ -307,6 +310,8 @@ mod tests {
         assert_eq!(c[0], ("render", serde_json::Value::String("comic".into())));
         let Some(Look::Avatar(c, _)) = parse("make your style painted") else { panic!("painted") };
         assert_eq!(c[0], ("render", serde_json::Value::String("painted".into())));
+        let Some(Look::Avatar(c, _)) = parse("make your style concept art") else { panic!("concept") };
+        assert_eq!(c[0], ("render", serde_json::Value::String("concept".into())));
         let Some(Look::Avatar(c, _)) = parse("make your style ink") else { panic!("ink") };
         assert_eq!(c[0], ("render", serde_json::Value::String("ink".into())));
     }

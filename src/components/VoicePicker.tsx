@@ -191,10 +191,10 @@ export function VoicePicker() {
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   useEffect(() => {
     let alive = true;
-    const render = ((): "flat" | "comic" | "ink" | "painted" => {
+    const render = ((): "flat" | "comic" | "ink" | "painted" | "concept" => {
       try {
         const r = JSON.parse(settings.avatar || "{}")?.toon?.render;
-        return r === "comic" || r === "ink" || r === "painted" ? r : "flat";
+        return r === "comic" || r === "ink" || r === "painted" || r === "concept" ? r : "flat";
       } catch { return "flat"; }
     })();
     void import("../../docs/app/toon.js").then((m) => {
@@ -209,7 +209,7 @@ export function VoicePicker() {
         if (i < ids.length) setTimeout(step, 40);
       };
       // Painted cards wait for the paintings, so they don't show the ink stand-in.
-      if (render === "painted") void m.paintedReady().then(step);
+      if (render === "painted" || render === "concept") void m.paintedReady().then(step);
       else step();
     });
     return () => { alive = false; };

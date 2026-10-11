@@ -100,6 +100,8 @@ const APPS = /^\s*\[?APPS\]?\s*$/i;
 const REMIND_TAG = /\s*\[(?:REMIND|ALARM)[^\]]*\]?\s*/gi;
 // Focus mode and Recall are answered on the PC itself, at once.
 const INSTANT_ASK = /^(?:hey nova,?\s*)?(?:focus\b|stop focus|end focus|pomodoro|help me focus|i need to focus)|\bwhat was (?:i doing|i looking at|i working on|i reading|i watching|that (?:site|page|website|video|document|file))|\bwhat did i have open|\bfind (?:the|that) (?:page|site) i/i;
+/** Anything about disk space — the core decides exactly, and answers with no AI. */
+const STORAGE_ASK = /spac|storag|disk|hard drive|\bssd\b|\bgb\b|\btb\b/i;
 const LATER = /^(?:hey nova,?\s*)?(?:remind me later|remember for later|don'?t let me forget|add .+ to (?:my|the) (?:shopping |later )?list|what'?s on my (?:shopping |later )?list|what do i need to (?:buy|get)|i (?:got|bought) )/i;
 
 /**
@@ -324,8 +326,18 @@ export function ChatTab() {
      * as the card, the way Claude Code shows a job: steps, then the answer.
      */
     async (text: string, note = false, here = false, images: string[] = []) => {
-      const t = text.trim() || (images.length ? "What's in this picture?" : "");
+      let t = text.trim() || (images.length ? "What's in this picture?" : "");
       if (!t || busy) return;
+      // "Continue" / "try again": the last thing asked, again — not a new
+      // question for the AI to guess at (it once sent "continue" off to the
+      // connected apps).
+      const AGAIN = /^(?:continue|go on|keep going|carry on|try again|again|retry|do it again|finish it)[.!]*$/i;
+      if (!note && AGAIN.test(t)) {
+        const before = [...msgs].reverse().find((m) => m.role === "user" && m.content.trim() && !AGAIN.test(m.content.trim()));
+        // Spelled out, so it goes where that request belongs and the
+        // conversation still carries on from where it was.
+        if (before) t = `Continue with my last request: ${before.content.trim()}`;
+      }
       // "clear chat" / "start over" — just wipe it, don't ask the AI.
       if (!note && /^(clear|reset|wipe|empty|start over|new)( (the|this|our|my))? ?(chat|conversation|messages|history|it|over)?$/i.test(t)) {
         stop();
@@ -404,7 +416,7 @@ export function ChatTab() {
           return copy;
         });
       // The Later list ("remind me later I'm buying…", "what's on my list"): done at once.
-      if (LATER.test(t) || INSTANT_ASK.test(t)) {
+      if (LATER.test(t) || INSTANT_ASK.test(t) || STORAGE_ASK.test(t)) {
         const said = await api.instantCommand(t).catch(() => null);
         if (said) {
           setLast({ content: said, status: undefined });

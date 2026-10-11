@@ -350,6 +350,10 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
             return Some(text);
         }
     }
+    // "What's taking up my space?" — measured right here, no AI needed.
+    if crate::storage::is_storage_question(&said) {
+        return blocking(crate::storage::report).await.ok();
+    }
     // "What's important in my email?" — gone through properly, not just counted.
     if crate::headsup::is_inbox_question(&said) && crate::composio::configured() {
         return blocking(crate::headsup::inbox_spoken).await.ok();

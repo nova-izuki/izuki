@@ -11,6 +11,8 @@
 //   painted  a real painting of the character (where one exists — Dre so
 //          far), brought to life: the mouth opens with the words, the eyes
 //          blink, the body breathes and sways. Others show as ink.
+//   concept  the same, in a fashion concept-art look: very tall, small
+//          head, flat two-tone gouache, oversized clothes, one loud accent.
 //
 // They're alive: they breathe, shift their weight, blink and glance around,
 // look at the pointer, and — while Izuki talks — an animator plans gestures
@@ -1176,7 +1178,7 @@ const FRAMES = { full: [-106, 3], half: [-104, -40], bust: [-102, -62], head: [-
 const TALL_FRAMES = { full: [-114, 6], half: [-113, -50], bust: [-112, -72], head: [-111, -86] };
 
 /**
- * One frame. opts: { persona, render ("flat"|"comic"|"ink"|"painted"), framing, orb (bool),
+ * One frame. opts: { persona, render ("flat"|"comic"|"ink"|"painted"|"concept"), framing, orb (bool),
  * time, energy, thinking, mood, look, poke, say: { text }, accent }.
  * Always true (no WebGL needed).
  */
@@ -1189,26 +1191,38 @@ const TALL_FRAMES = { full: [-114, 6], half: [-113, -50], bust: [-112, -72], hea
  * here so the app's bundler ships it.
  */
 const PAINTED_ART = {
-  dre: {
-    rig: new URL("./painted/dre/rig.json", import.meta.url).href,
-    base: new URL("./painted/dre/base.webp", import.meta.url).href,
-    mouth: new URL("./painted/dre/mouth.webp", import.meta.url).href,
-    eyes: new URL("./painted/dre/eyes.webp", import.meta.url).href,
+  painted: {
+    dre: {
+      rig: new URL("./painted/dre/rig.json", import.meta.url).href,
+      base: new URL("./painted/dre/base.webp", import.meta.url).href,
+      mouth: new URL("./painted/dre/mouth.webp", import.meta.url).href,
+      eyes: new URL("./painted/dre/eyes.webp", import.meta.url).href,
+    },
+  },
+  concept: {
+    dre: {
+      rig: new URL("./painted/dre-concept/rig.json", import.meta.url).href,
+      base: new URL("./painted/dre-concept/base.webp", import.meta.url).href,
+      mouth: new URL("./painted/dre-concept/mouth.webp", import.meta.url).href,
+      eyes: new URL("./painted/dre-concept/eyes.webp", import.meta.url).href,
+    },
   },
 };
 const paintedCache = new Map();
 const paintedLoads = new Map();
 
-/** The painted art for a voice, once it has loaded (null until then, or if there is none). */
-function paintedFor(persona) {
-  const art = PAINTED_ART[persona];
+/** The painted art for a voice in a style ("painted" or "concept"), once it
+ * has loaded (null until then, or if there is none). */
+function paintedFor(persona, style = "painted") {
+  const art = PAINTED_ART[style]?.[persona];
   if (!art || typeof Image === "undefined") return null;
-  let p = paintedCache.get(persona);
+  const key = `${style}:${persona}`;
+  let p = paintedCache.get(key);
   if (!p) {
     p = { ready: false };
-    paintedCache.set(persona, p);
+    paintedCache.set(key, p);
     const load = (src) => new Promise((ok, fail) => { const im = new Image(); im.onload = () => ok(im); im.onerror = fail; im.src = src; });
-    paintedLoads.set(persona, fetch(art.rig)
+    paintedLoads.set(key, fetch(art.rig)
       .then((r) => r.json())
       .then((rig) => Promise.all([load(art.base), load(art.mouth), load(art.eyes)]).then(([base, mouth, eyes]) => { Object.assign(p, { rig, base, mouth, eyes, ready: true }); }))
       .catch(() => { p.failed = true; }));
@@ -1216,13 +1230,13 @@ function paintedFor(persona) {
   return p.ready ? p : null;
 }
 
-/** Which voices have painted art. */
-export const PAINTED = Object.keys(PAINTED_ART);
+/** Which voices have painted art (in any painted style). */
+export const PAINTED = [...new Set(Object.values(PAINTED_ART).flatMap((s) => Object.keys(s)))];
 
 /** Settles once every painting has loaded (or failed) — so a card drawn
  * after it shows the painting, not the ink stand-in. */
 export function paintedReady() {
-  for (const id of PAINTED) paintedFor(id);
+  for (const [style, set] of Object.entries(PAINTED_ART)) for (const id of Object.keys(set)) paintedFor(id, style);
   return Promise.all([...paintedLoads.values()]).then(() => undefined);
 }
 
@@ -1292,8 +1306,8 @@ function drawPainted(ctx, size, P, s, t, framing, orb, e, accent) {
 export function drawToon(ctx, size, opts = {}) {
   const C = characterFor(opts.persona);
   // Painted art where it has loaded; ink (the closest drawn look) until then.
-  const painting = opts.render === "painted" ? paintedFor(opts.persona) : null;
-  const render = opts.render === "comic" || opts.render === "ink" ? opts.render : opts.render === "painted" ? "ink" : "flat";
+  const painting = opts.render === "painted" || opts.render === "concept" ? paintedFor(opts.persona, opts.render) : null;
+  const render = opts.render === "comic" || opts.render === "ink" ? opts.render : opts.render === "painted" || opts.render === "concept" ? "ink" : "flat";
   const framing = FRAMES[opts.framing] ? opts.framing : "half";
   const orb = opts.orb !== false;
   const time = opts.time || 0;
@@ -1482,7 +1496,7 @@ function comicBackdrop(ctx, size, accent, t, e, s) {
 
 /** A still of a character (for its card), as a data URL. */
 export function toonThumb(persona, render = "flat", px = 220, framing = "bust") {
-  // render: "flat", "comic", "ink" or "painted".
+  // render: "flat", "comic", "ink", "painted" or "concept".
   const c = document.createElement("canvas");
   c.width = c.height = px;
   const ctx = c.getContext("2d");

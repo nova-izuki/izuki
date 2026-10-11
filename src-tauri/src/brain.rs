@@ -325,6 +325,56 @@ fn keep_clicks_off_taskbar(steps: &mut Vec<ActionStep>, marks: &[crate::model::M
     fixed
 }
 
+/// Programs where typing a line runs it as a command.
+const TERMINALS: &[&str] = &["cmd", "powershell", "pwsh", "windowsterminal", "wt", "openconsole", "conhost", "wsl", "bash", "mintty", "alacritty", "wezterm-gui", "terminal"];
+
+/// A typed line that reads like a shell command ("git status", "rm -rf …").
+fn looks_like_command(text: &str) -> bool {
+    const STARTS: &[&str] = &[
+        "git ", "npm ", "npx ", "yarn ", "pnpm ", "cargo ", "rustc ", "python", "py ", "pip ", "node ", "cd ", "dir", "ls", "rm ", "del ",
+        "rmdir", "rd ", "format ", "move ", "copy ", "cp ", "mv ", "mkdir", "curl ", "wget ", "powershell", "pwsh", "cmd ", "start ", "taskkill",
+        "shutdown", "reg ", "net ", "sc ", "choco ", "winget ", "set-", "get-", "remove-", "new-", "invoke-", "iwr ", "irm ", "sudo ", "chmod", "echo ",
+    ];
+    let t = text.trim().to_lowercase();
+    !t.is_empty() && (STARTS.iter().any(|s| t.starts_with(s)) || t.contains(" && ") || t.contains(" | ") || t.contains("--force"))
+}
+
+/// Never on a guess: typing a command into a terminal (it runs, and can
+/// delete things) unless the user spelled that command out, and writing
+/// notes on the screen unless they asked to be shown or taught something.
+/// Drops those steps (and what came after a held-back command) and says why,
+/// for the next look. `None` when the plan was fine.
+fn guard_steps(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, front: &str) -> Option<String> {
+    let asked = prompt.to_lowercase();
+    let mut why = Vec::new();
+    // 1. Commands.
+    let terminal = TERMINALS.contains(&front);
+    let cut = steps.iter().position(|s| {
+        s.action == Intent::Type
+            && s.text_to_type.as_deref().is_some_and(|t| {
+                let spelled_out = asked.contains(&t.trim().to_lowercase());
+                (terminal || looks_like_command(t)) && !spelled_out
+            })
+    });
+    if let Some(i) = cut {
+        steps.truncate(i);
+        why.push("Typing a command into a terminal wasn't done: commands are only run when the user spells out the exact command. If one is needed, ask them which command to run (and say what it would do).".to_string());
+    }
+    // 2. Words written on the screen.
+    let explaining = lesson
+        || ["explain", "teach", "show me", "show where", "point", "draw", "mark", "circle", "highlight", "underline", "annotate", "note", "write", "label", "tutor", "help me understand"]
+            .iter()
+            .any(|w| asked.contains(w));
+    if !explaining {
+        let before = steps.len();
+        steps.retain(|s| !(s.action == Intent::Draw && s.text_to_type.as_deref().is_some_and(|t| !t.trim().is_empty()) && s.shape.as_deref() == Some("note")));
+        if steps.len() < before {
+            why.push("Notes written on the screen weren't shown: the user didn't ask to be taught or shown anything, so just do the task.".to_string());
+        }
+    }
+    (!why.is_empty()).then(|| why.join(" "))
+}
+
 /// Only pay for a model when the marks leave something genuinely open.
 fn should_ask_model(session: &DrawSession, local: &[ActionStep]) -> bool {
     if session.marks.len() == 1 && planner::explicit_draw_click(&session.prompt) && !local.is_empty() { return false; }
@@ -412,6 +462,7 @@ fn ask_model(
         let c = uia::list_controls(MAX_CONTROLS);
         let text = text_job.join().unwrap_or_default();
         eprintln!("[brain] screen controls: {}, page text: {} chars, in {} ms", c.len(), text.len(), t.elapsed().as_millis());
+        crate::state::trace(format!("Read your screen — {} things I can press", c.len()));
         let _ = controls_tx.send((c, text));
     });
     let _ = controls_job;
@@ -936,6 +987,7 @@ fn ask_racing(
     let req = Arc::new(req);
     let (tx, rx) = mpsc::channel::<(usize, Result<VisionPlan>, Duration)>();
     let launch = |i: usize| {
+        crate::state::trace(format!("Asking {}…", crate::state::short_name(&chain[i].label)));
         let (tx, cfg, req) = (tx.clone(), chain[i].clone(), req.clone());
         std::thread::spawn(move || {
             let t = Instant::now();
@@ -1023,6 +1075,9 @@ fn ask_racing(
             }
             Ok((i, Err(e), took)) => {
                 eprintln!("[brain] {} ({}) failed in {} ms: {e}", chain[i].label, chain[i].model, took.as_millis());
+                if launched < chain.len() {
+                    crate::state::trace(format!("{} is busy — asking another…", crate::state::short_name(&chain[i].label)));
+                }
                 errors.push(format!("{}: {e}", chain[i].label));
                 finished += 1;
                 if launched < chain.len() {
@@ -2099,9 +2154,18 @@ fn submit_task(
                 told = Some("A click you planned was on the Windows taskbar, which the user never pointed at — it wasn't made. Act on what they marked.".into());
             }
         }
+        let held = match guard_steps(&mut steps, &prompt, lesson, &uia::front_app()) {
+            Some(why) => {
+                eprintln!("[agent] held back: {why}");
+                told = Some(why);
+                true
+            }
+            None => false,
+        };
         // An action being planned is not evidence that it succeeded. Check
-        // a fresh screen before accepting "done" for an autonomous task.
-        let done = lesson || completion_observed(&plan, steps.is_empty(), round);
+        // a fresh screen before accepting "done" for an autonomous task —
+        // and a plan whose steps were held back isn't done at all.
+        let done = !held && (lesson || completion_observed(&plan, steps.is_empty(), round));
         let wait = plan.wait;
         if plan.notes.is_some() {
             notes = plan.notes.clone();
@@ -2756,6 +2820,40 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
 
 #[cfg(test)]
 mod speed_tests {
+    use crate::model::ActionStep;
+
+    fn step(v: serde_json::Value) -> ActionStep {
+        serde_json::from_value(v).unwrap()
+    }
+
+    #[test]
+    fn commands_only_when_spelled_out() {
+        let mut steps = vec![
+            step(serde_json::json!({ "action": "click", "x": 5, "y": 5 })),
+            step(serde_json::json!({ "action": "type", "text_to_type": "git status" })),
+            step(serde_json::json!({ "action": "key", "key": "enter" })),
+        ];
+        assert!(guard_steps(&mut steps, "check my code for bugs", false, "code").is_some());
+        assert_eq!(steps.len(), 1);
+        let mut steps = vec![step(serde_json::json!({ "action": "type", "text_to_type": "git status" }))];
+        assert!(guard_steps(&mut steps, "open a terminal and run git status", false, "windowsterminal").is_none());
+        assert_eq!(steps.len(), 1);
+        // Ordinary typing elsewhere is fine.
+        let mut steps = vec![step(serde_json::json!({ "action": "type", "text_to_type": "hello there" }))];
+        assert!(guard_steps(&mut steps, "write hello there", false, "notepad").is_none());
+    }
+
+    #[test]
+    fn screen_notes_only_when_explaining() {
+        let note = || step(serde_json::json!({ "action": "draw", "shape": "note", "text_to_type": "This part details the session", "x": 10, "y": 10 }));
+        let mut steps = vec![note()];
+        assert!(guard_steps(&mut steps, "check for bugs", false, "code").is_some());
+        assert!(steps.is_empty());
+        let mut steps = vec![note()];
+        assert!(guard_steps(&mut steps, "explain this page", false, "chrome").is_none());
+        assert_eq!(steps.len(), 1);
+    }
+
     use super::*;
 
     #[test]

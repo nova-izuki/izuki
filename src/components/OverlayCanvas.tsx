@@ -517,6 +517,10 @@ export function OverlayCanvas() {
         });
       }),
       on<boolean>(EV.thinking, setThinking),
+      // The live line from the core ("Asking Gemini…", "Clicking “Next”…").
+      on<string>(EV.trace, (line) => {
+        if (typeof line === "string" && line.trim()) setDoing(line.trim().slice(0, 90));
+      }),
       on<HandCommand>(EV.hand, (cmd) => {
         setActing(true);
         // The screen's real size travels with every command. Without it a
@@ -757,6 +761,9 @@ export function OverlayCanvas() {
       setCaption(null);
       captionText.current = "";
       setDoing(null);
+      // The Island's "Thinking…" (and its Stop) end now too, not when the
+      // cancelled request finishes unwinding.
+      setThinking(false);
     });
     return () => void off.then((f) => f());
   }, []);

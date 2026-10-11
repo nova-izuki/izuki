@@ -34,6 +34,7 @@ pub mod page_ask;
 pub mod dupes;
 pub mod sharpeye;
 pub mod recyclebin;
+pub mod storage;
 pub mod music_draft;
 pub mod memory;
 pub mod model;

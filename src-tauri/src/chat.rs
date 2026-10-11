@@ -1044,6 +1044,7 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
     let winner = Arc::new(AtomicUsize::new(usize::MAX));
     let (tx, rx) = mpsc::channel::<Event>();
     let launch = |i: usize| {
+        crate::state::trace(format!("Asking {}…", crate::state::short_name(&chain[i].label)));
         let (tx, cfg, messages, winner) = (tx.clone(), chain[i].clone(), messages.to_vec(), winner.clone());
         std::thread::spawn(move || {
             let started = Instant::now();

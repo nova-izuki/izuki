@@ -438,6 +438,26 @@ fn parse_key(name: &str) -> Option<Key> {
     })
 }
 
+/// What a step is doing, in a few words, for the Island.
+fn doing_line(step: &ActionStep) -> String {
+    let name = step.snapped_to.as_deref().map(|n| n.split(" → ").next().unwrap_or(n).trim()).filter(|n| !n.is_empty());
+    let short = |s: &str| s.chars().take(40).collect::<String>();
+    match step.action {
+        Intent::Click | Intent::Auto | Intent::DoubleClick => name.map(|n| format!("Clicking “{}”…", short(n))).unwrap_or_else(|| "Clicking…".into()),
+        Intent::RightClick => "Opening the menu…".into(),
+        Intent::Type => name.map(|n| format!("Typing in “{}”…", short(n))).unwrap_or_else(|| "Typing…".into()),
+        Intent::Key => format!("Pressing {}…", step.key.as_deref().unwrap_or("a key")),
+        Intent::Scroll => "Scrolling…".into(),
+        Intent::OpenApp => format!("Opening {}…", step.text_to_type.as_deref().map(short).unwrap_or_else(|| "the app".into())),
+        Intent::OpenUrl => "Opening the page…".into(),
+        Intent::Watch => "Watching for the change…".into(),
+        Intent::Search => "Searching…".into(),
+        Intent::PlayYoutube => "Finding it on YouTube…".into(),
+        Intent::Draw | Intent::Point => "Showing you…".into(),
+        _ => "Working on it…".into(),
+    }
+}
+
 /// Run a single planned step. `magnetic` snaps the point onto a real control
 /// first; `dry_run` animates nothing at the OS level.
 pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -> Result<String> {
@@ -449,6 +469,9 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     }
     if aborted() {
         return Err(anyhow!("stopped"));
+    }
+    if !dry_run {
+        crate::state::trace(doing_line(step));
     }
     // You're using another app: work in Izuki's window behind it, through
     // Windows, without touching your mouse or keyboard.
