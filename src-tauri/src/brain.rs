@@ -1004,6 +1004,7 @@ fn ask_racing(
                 if launched < chain.len() {
                     launch(launched);
                     launched += 1;
+                    last_launch = Instant::now();
                 } else if finished == launched {
                     let (_, plan) = fallback.take().expect("just stored");
                     return Ok(last_resort(plan, wants_action));
@@ -1027,6 +1028,14 @@ fn ask_racing(
                 if launched < chain.len() {
                     launch(launched);
                     launched += 1;
+                    last_launch = Instant::now();
+                    // A quick "no" (rate-limited, out of quota) says nothing about
+                    // the next brain's speed: ask two at once, so one that hangs
+                    // (14 s on a busy day) isn't the whole wait.
+                    if took < Duration::from_millis(2500) && launched < chain.len() && launched - finished < 2 {
+                        launch(launched);
+                        launched += 1;
+                    }
                 } else if finished == launched {
                     return match fallback.take() {
                         Some((_, plan)) => Ok(last_resort(plan, wants_action)),
@@ -1038,7 +1047,10 @@ fn ask_racing(
                 // A brain that's been slow lately gets one backup even in economy
                 // mode — a free model's 20 s wait shouldn't be the whole wait.
                 let slow_first = expected_ms(chain[0].id).is_some_and(|ms| ms > 6_000.0);
-                if (!economy || slow_first) && launched < chain.len() && launched - finished < 2 && last_launch.elapsed() >= hedge_after {
+                // Whatever is running now has said nothing for 4 s: one backup,
+                // even when saving credits — never more than two at a time.
+                let stuck = last_launch.elapsed() >= Duration::from_secs(4);
+                if (!economy || slow_first || stuck) && launched < chain.len() && launched - finished < 2 && last_launch.elapsed() >= hedge_after {
                     eprintln!("[brain] trying one speculative backup");
                     launch(launched);
                     launched += 1;

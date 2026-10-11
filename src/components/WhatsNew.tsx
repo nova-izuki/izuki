@@ -22,6 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "⚡", title: "Less “Thinking…”, more doing", how: "When one AI says no (busy, out of quota), Izuki now asks the next two at once instead of one at a time, and adds a backup after 4 seconds of silence — one slow AI is no longer the whole wait. “Keep my PC fast” no longer squeezes busy programs (that made them slower) and only trims memory when it's actually short. If another window covers what Izuki is about to click, it brings its window forward and checks again first. And “check status” opens the status screen.", try: { label: "Show me", say: "check status" } },
   { icon: "🌊", title: "Pick your Island waveform", how: "Settings → Talk to Izuki → Island waveform: Silk, Bars, Mirror, Neon or Dots — or Auto, which gives every song its own look. And the Island now knows a song from a lesson, an ad or a video: songs get “About this song” and “Flow with it”, lessons get “Explain this lesson”, ads get “Skip ad”." },
   { icon: "🎓", title: "Teach in real time finds the video", how: "Type a topic (“how to dribble in soccer”) and press Teach in real time: Izuki finds a good video, plays it in the Izuki browser and teaches as it goes." },
   { icon: "🗂️", title: "Notes: ⋯ menu and select many", how: "Every note has a ⋯ menu — open, summarise, quiz me, copy, delete. Tap Select to pick several and delete, summarise or copy them at once. And every page with sections (Notes, Flows, Watchers, Settings, Draw, Apps) has a jump bar that follows you down.", try: { label: "Open Notes", tab: "notes" } },

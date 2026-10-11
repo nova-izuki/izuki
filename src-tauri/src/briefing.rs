@@ -56,7 +56,13 @@ pub fn is_briefing(said: &str) -> bool {
     ];
     // Everyday phrases that only mean it when they're the whole thing
     // ("what's the status" yes; "what's the status of my order" no).
-    const WHOLE: &[&str] = &["whats the status", "status update", "how are things", "hows everything", "how is everything", "what did i miss", "im home", "im back", "status"];
+    const WHOLE: &[&str] = &[
+        "whats the status", "status update", "how are things", "hows everything", "how is everything", "what did i miss", "im home", "im back", "status",
+        // Only as the whole ask: "check status of my order" is something else.
+        "check status", "check the status", "check my status", "status check", "show status", "show me the status", "show my status",
+        "check my pc", "check my computer", "check on my pc", "show the dashboard", "show me the dashboard", "open the dashboard",
+        "jarvis mode", "status screen", "show the status screen", "open the status screen",
+    ];
     WHOLE.contains(&s)
         || ASKS.iter().any(|a| s == *a || s.starts_with(&format!("{a} ")) || s.ends_with(&format!(" {a}")) || s.contains(&format!(" {a} ")))
 }
@@ -327,11 +333,12 @@ mod tests {
     fn knows_when_it_is_asked() {
         for said in [
             "wake up", "Hey Nova, wake up.", "hey nova wake up hows the apps doing", "status report", "How are the apps doing?",
-            "catch me up", "Good morning Nova", "how's my PC", "I'm back",
+            "catch me up", "Good morning Nova", "how's my PC", "I'm back", "check status", "Check my PC", "Jarvis, status check",
+            "show me the dashboard",
         ] {
             assert!(is_briefing(said), "{said}");
         }
-        for said in ["wake me up at 7", "set an alarm to wake up at 6", "open youtube", "what's the status of my order on amazon today then tell me"] {
+        for said in ["wake me up at 7", "set an alarm to wake up at 6", "open youtube", "what's the status of my order on amazon today then tell me", "check status of my order", "turn off jarvis mode", "close the status screen", "open the dashboard of my bank"] {
             assert!(!is_briefing(said), "{said}");
         }
     }

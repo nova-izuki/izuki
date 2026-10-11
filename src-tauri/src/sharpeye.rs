@@ -19,6 +19,17 @@ use crate::settings::ProviderId;
 use crate::vision::VisionRequest;
 
 const MAX_LOOKS: usize = 2;
+
+/// UI-TARS refused (no credit, a bad key): the key it refused, so it isn't
+/// asked again — every look was costing seconds for nothing — until the
+/// OpenRouter key changes.
+static TARS_REFUSED: parking_lot::Mutex<Option<(String, Option<std::time::Instant>)>> = parking_lot::Mutex::new(None);
+
+fn openrouter_key() -> String {
+    crate::state::try_store()
+        .and_then(|s| s.settings().provider(ProviderId::Openrouter).map(|c| c.api_key.trim().to_string()))
+        .unwrap_or_default()
+}
 const TARS_MODEL: &str = "bytedance/ui-tars-1.5-7b";
 
 fn clicky(a: Intent) -> bool {
@@ -149,7 +160,13 @@ fn pin(step: &mut ActionStep, req: &VisionRequest, what: &str, x: i32, y: i32) -
 
 /// Where `what` is in the screenshot, in image pixels.
 fn locate(req: &VisionRequest, what: &str, tars: bool) -> Option<(f64, f64)> {
-    if tars {
+    // A refusal holds until the key changes — or, for "no credit", for 30
+    // minutes (credit may have been added since).
+    let refused = TARS_REFUSED
+        .lock()
+        .as_ref()
+        .is_some_and(|(k, until)| *k == openrouter_key() && until.is_none_or(|u| std::time::Instant::now() < u));
+    if tars && !refused {
         match ask_tars(req, what) {
             Some(p) => return Some(p),
             None => eprintln!("[sharp-eye] UI-TARS didn't answer — asking Gemini"),
@@ -222,6 +239,21 @@ fn ask_tars(req: &VisionRequest, what: &str) -> Option<(f64, f64)> {
     let res = client()?.post(url).bearer_auth(cfg.api_key.trim()).json(&body).send().ok()?;
     if !res.status().is_success() {
         eprintln!("[sharp-eye] UI-TARS answered {}", res.status());
+        let code = res.status().as_u16();
+        if matches!(code, 401 | 402 | 403) {
+            let key = cfg.api_key.trim().to_string();
+            let until = (code == 402).then(|| std::time::Instant::now() + Duration::from_secs(30 * 60));
+            let first = TARS_REFUSED.lock().replace((key.clone(), until)).is_none_or(|(k, _)| k != key);
+            if first {
+                let line = if code == 402 {
+                    "UI-TARS needs a little OpenRouter credit (openrouter.ai) — until then, Gemini is doing the sharp-eye looks."
+                } else {
+                    "UI-TARS wasn't allowed with your OpenRouter key — check the key in Settings → AI. Gemini is doing the sharp-eye looks meanwhile."
+                };
+                eprintln!("[sharp-eye] UI-TARS refused ({code}) — using Gemini until the OpenRouter key changes");
+                crate::activity::show_boost(line, false);
+            }
+        }
         return None;
     }
     let v: Value = res.json().ok()?;

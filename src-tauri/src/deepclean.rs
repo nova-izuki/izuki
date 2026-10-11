@@ -199,13 +199,44 @@ pub fn trim() -> u64 {
 
 // ---- memory ----------------------------------------------------------------------
 
-/// Trim the working memory of background programs (no window on screen):
-/// Windows pages out what they aren't using right now. MB freed (measured).
+/// Memory in use, 0–100.
+#[cfg(windows)]
+fn memory_load() -> u32 {
+    use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+    let mut m = MEMORYSTATUSEX { dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32, ..Default::default() };
+    if unsafe { GlobalMemoryStatusEx(&mut m) }.is_ok() { m.dwMemoryLoad } else { 0 }
+}
+
+/// Only when memory is genuinely short is trimming worth it: with plenty
+/// free it frees nothing useful, and the programs just page it all back in.
+const TRIM_FROM_LOAD: u32 = 75;
+
+/// A process's CPU time so far (kernel + user), in 100 ns units.
+#[cfg(windows)]
+fn cpu_time(h: windows::Win32::Foundation::HANDLE) -> Option<u64> {
+    use windows::Win32::Foundation::FILETIME;
+    use windows::Win32::System::Threading::GetProcessTimes;
+    let (mut a, mut b, mut k, mut u) = (FILETIME::default(), FILETIME::default(), FILETIME::default(), FILETIME::default());
+    unsafe { GetProcessTimes(h, &mut a, &mut b, &mut k, &mut u) }.ok()?;
+    let t = |f: FILETIME| ((f.dwHighDateTime as u64) << 32) | f.dwLowDateTime as u64;
+    Some(t(k) + t(u))
+}
+
+/// Trim the working memory of idle background programs (no window on
+/// screen), only when memory is short. Anything busy — a compiler, a game,
+/// a render, a download — is left alone: squeezing a working program makes
+/// it reload what it was using, and the PC gets slower, not faster.
+/// MB freed (measured).
 #[cfg(windows)]
 fn trim_memory() -> u64 {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::ProcessStatus::{K32EmptyWorkingSet, K32EnumProcesses};
     use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_QUOTA};
+    let load = memory_load();
+    if load < TRIM_FROM_LOAD {
+        eprintln!("[boost] memory is {load}% used — plenty free, nothing to trim");
+        return 0;
+    }
     let before = free_mb();
     let fronts = crate::boost::windowed_pids();
     let me = std::process::id();
@@ -215,16 +246,37 @@ fn trim_memory() -> u64 {
         return 0;
     }
     pids.truncate(got as usize / 4);
+    // Open each candidate and note its CPU time, wait a moment, and only
+    // trim the ones that did (almost) nothing meanwhile.
+    let mut open = Vec::new();
     for pid in pids.into_iter().filter(|p| *p > 4 && *p != me && !fronts.contains(p)) {
         let Ok(h) = (unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_QUOTA, false, pid) }) else { continue };
         if crate::boost::is_protected_pid(h) {
             unsafe { let _ = CloseHandle(h); }
             continue;
         }
+        let t0 = cpu_time(h);
+        open.push((h, t0));
+    }
+    std::thread::sleep(Duration::from_millis(500));
+    let mut left_alone = 0;
+    for (h, t0) in open {
+        // More than ~2% of one core over half a second: it's working.
+        let busy = match (t0, cpu_time(h)) {
+            (Some(a), Some(b)) => b.saturating_sub(a) > 100_000,
+            _ => true,
+        };
         unsafe {
-            let _ = K32EmptyWorkingSet(h);
+            if busy {
+                left_alone += 1;
+            } else {
+                let _ = K32EmptyWorkingSet(h);
+            }
             let _ = CloseHandle(h);
         }
+    }
+    if left_alone > 0 {
+        eprintln!("[boost] left {left_alone} busy program(s) alone");
     }
     std::thread::sleep(Duration::from_millis(400));
     free_mb().saturating_sub(before)

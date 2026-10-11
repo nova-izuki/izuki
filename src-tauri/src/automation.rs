@@ -552,7 +552,35 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
                     eprintln!("[hands] \"{name}\" was under {cover} — pressed it directly");
                     return Ok(format!("pressed \"{name}\" directly (it was behind {cover})"));
                 }
-                return Err(anyhow!("covered: {cover} is on top of \"{name}\""));
+                // Another app's window is in the way (the person's editor, say):
+                // bring the window being worked in to the front and look again
+                // — never move the mouse onto something that's covered.
+                let raised = uia::held_window().is_some_and(|w| uia::raise_window(w));
+                if raised {
+                    std::thread::sleep(Duration::from_millis(250));
+                }
+                match uia::covered_at(x, y) {
+                    None if raised => eprintln!("[hands] brought the window forward — \"{name}\" is clear now"),
+                    Some(still) => return Err(anyhow!("covered: {still} is on top of \"{name}\"")),
+                    None => return Err(anyhow!("covered: {cover} is on top of \"{name}\"")),
+                }
+                // The window moved to the front: check everything again before acting.
+                if uia::screen_locked() {
+                    request_abort();
+                    return Err(anyhow!("your PC is locked"));
+                }
+                match uia::check_target(x, y, name) {
+                    uia::AtPoint::Moved(nx, ny) => {
+                        x = nx;
+                        y = ny;
+                        if let Some(cover) = uia::covered_at(x, y) {
+                            return Err(anyhow!("covered: {cover} is on top of \"{name}\""));
+                        }
+                    }
+                    uia::AtPoint::Disabled => return Err(anyhow!("disabled: \"{name}\" is greyed out, so clicking it does nothing yet")),
+                    uia::AtPoint::Right => {}
+                    uia::AtPoint::Unknown => return Err(anyhow!("target_changed: I can't verify \"{name}\" here anymore; take another look before clicking")),
+                }
             }
         }
     }

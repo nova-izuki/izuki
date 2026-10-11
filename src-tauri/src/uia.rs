@@ -1022,6 +1022,30 @@ pub fn covered_at(_x: i32, _y: i32) -> Option<String> {
     None
 }
 
+/// Bring the window `raw` to the front (restoring it if minimised). `true`
+/// when it really is in front now — Windows can refuse.
+#[cfg(windows)]
+pub fn raise_window(raw: isize) -> bool {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, IsIconic, IsWindow, SetForegroundWindow, ShowWindow, SW_RESTORE};
+    unsafe {
+        let hwnd = HWND(raw as *mut core::ffi::c_void);
+        if !IsWindow(Some(hwnd)).as_bool() {
+            return false;
+        }
+        if IsIconic(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+        let _ = SetForegroundWindow(hwnd);
+        GetForegroundWindow() == hwnd
+    }
+}
+
+#[cfg(not(windows))]
+pub fn raise_window(_raw: isize) -> bool {
+    false
+}
+
 /// If the window `raw` (from [`target_window`]) has been minimised, put it
 /// back in front and say what it was called. For when one of Izuki's own
 /// steps minimised the very window it was working in.
