@@ -560,8 +560,6 @@ pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
     let had_point: Vec<bool> = steps.iter().map(|s| s.x != 0 || s.y != 0).collect();
     rescale(&mut steps, req);
     resolve_targets(&mut steps, &req.controls, &had_point);
-    // A click picked by eye gets a second, sharper look before it happens.
-    crate::sharpeye::refine(&mut steps, req);
 
     Ok(VisionPlan {
         steps,
@@ -587,8 +585,6 @@ fn plan_from_lines(cfg: &ProviderConfig, req: &VisionRequest, reply: crate::easy
     let had_point: Vec<bool> = steps.iter().map(|s| s.x != 0 || s.y != 0).collect();
     rescale(&mut steps, req);
     resolve_targets(&mut steps, &req.controls, &had_point);
-    // A click picked by eye gets a second, sharper look before it happens.
-    crate::sharpeye::refine(&mut steps, req);
     let summary = reply.say.unwrap_or_else(|| {
         if !steps.is_empty() {
             "On it.".to_string()

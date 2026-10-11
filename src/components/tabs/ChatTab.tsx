@@ -245,7 +245,14 @@ export function ChatTab() {
   useEffect(() => {
     const take = (picture: unknown) => {
       if (typeof picture !== "string" || !picture.startsWith("data:image/")) return;
-      setPics((p) => (p.includes(picture) ? p : [...p, picture].slice(-4)));
+      setPics((p) => {
+        if (p.includes(picture)) return p;
+        if (p.length >= 4) {
+          // Full: never push out a picture already chosen.
+          return p;
+        }
+        return [...p, picture];
+      });
       requestAnimationFrame(() => input.current?.focus());
     };
     try {

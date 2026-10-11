@@ -596,8 +596,9 @@ pub const OFFLINE: &str = "You're offline right now — check your Wi-Fi, then a
 pub fn brain_chain() -> Vec<crate::settings::ProviderConfig> {
     let mut chain = brain_chain_inner();
     // Offline: only brains running on this PC can answer — don't wait on the rest.
-    if chain.iter().any(|c| !c.id.is_local()) && !online() {
-        chain.retain(|c| c.id.is_local());
+    // Offline, only what runs on this PC can answer (9Router included).
+    if chain.iter().any(|c| !on_this_pc(&c.base_url)) && !online() {
+        chain.retain(|c| on_this_pc(&c.base_url));
     }
     chain
 }
@@ -633,7 +634,8 @@ fn skip_local_not_running(chain: &mut Vec<crate::settings::ProviderConfig>) {
     if chain.len() < 2 {
         return;
     }
-    let up: Vec<bool> = chain.iter().map(|c| !c.id.is_local() || local_up(&c.base_url)).collect();
+    // On this PC by its address (9Router is "local" without being Ollama).
+    let up: Vec<bool> = chain.iter().map(|c| !on_this_pc(&c.base_url) || local_up(&c.base_url)).collect();
     if up.iter().any(|u| *u) && up.iter().any(|u| !*u) {
         let mut i = 0;
         chain.retain(|_| {
@@ -652,19 +654,51 @@ fn local_up(base_url: &str) -> bool {
         return up;
     }
     // "localhost" is both ::1 and 127.0.0.1 and a server may listen on only
-    // one: knock on each, within 250 ms in all.
+    // one: knock on each. Something can accept the connection and then never
+    // answer (a stuck 9Router did: every chat waited 2.4 s on it), so it only
+    // counts as running if it replies to a tiny request — within ~0.6 s.
     let began = std::time::Instant::now();
     let budget = std::time::Duration::from_millis(250);
+    let https = base_url.trim_start().to_ascii_lowercase().starts_with("https://");
+    let path = base_url.split("://").nth(1).and_then(|r| r.find('/').map(|i| r[i..].trim_end_matches('/').to_string())).unwrap_or_default();
     let up = (host.as_str(), port).to_socket_addrs().is_ok_and(|addrs| {
         addrs.into_iter().any(|addr| {
             let left = budget.saturating_sub(began.elapsed());
-            !left.is_zero() && std::net::TcpStream::connect_timeout(&addr, left.min(std::time::Duration::from_millis(120))).is_ok()
+            if left.is_zero() {
+                return false;
+            }
+            let Ok(mut s) = std::net::TcpStream::connect_timeout(&addr, left.min(std::time::Duration::from_millis(120))) else { return false };
+            // An HTTPS server says nothing until a TLS handshake, so for one
+            // the connection itself is the answer.
+            https || answers(&mut s, &host, &path)
         })
     });
     let mut cache = LOCAL_UP.lock();
     cache.retain(|(u, _, _)| u != base_url);
     cache.push((base_url.to_string(), up, std::time::Instant::now()));
     up
+}
+
+/// An address on this PC (localhost, 127.x, ::1).
+fn on_this_pc(base_url: &str) -> bool {
+    host_port(base_url).is_some_and(|(h, _)| {
+        let h = h.to_ascii_lowercase();
+        h == "localhost" || h.starts_with("127.") || h == "::1" || h == "0.0.0.0"
+    })
+}
+
+/// A server that says anything at all to `GET <path>/models` is running.
+fn answers(s: &mut std::net::TcpStream, host: &str, path: &str) -> bool {
+    use std::io::{Read, Write};
+    let wait = std::time::Duration::from_millis(400);
+    let _ = s.set_read_timeout(Some(wait));
+    let _ = s.set_write_timeout(Some(wait));
+    let ask = format!("GET {path}/models HTTP/1.0\r\nHost: {host}\r\nConnection: close\r\n\r\n");
+    if s.write_all(ask.as_bytes()).is_err() {
+        return false;
+    }
+    let mut first = [0u8; 1];
+    matches!(s.read(&mut first), Ok(n) if n > 0)
 }
 
 /// "http://localhost:20128/v1" → ("localhost", 20128).
@@ -1006,7 +1040,8 @@ fn ask_racing(
                 let e = e.to_string();
                 // One model rate-limited, others on the same key free: rest just it.
                 match rest_for(&e) {
-                    _ if e.contains("denied access to model") => crate::freebrains::rest_model(&cfg, Duration::from_secs(10 * 60)),
+                    // Denied for this key (a model it can't use at all): a day, not ten minutes.
+                    _ if e.contains("denied access to model") => crate::freebrains::rest_model(&cfg, Duration::from_secs(24 * 3600)),
                     Some(d) if crate::freebrains::has_siblings(&cfg) && !is_hopeless(&e) => crate::freebrains::rest_model(&cfg, d),
                     _ => note_failure(cfg.id, &e),
                 }
@@ -1062,7 +1097,10 @@ fn ask_racing(
                     return Ok(last_resort(plan, wants_action));
                 }
             }
-            Ok((i, Ok(plan), took)) => {
+            Ok((i, Ok(mut plan), took)) => {
+                // Only the plan that won gets the sharp-eye look — not every
+                // brain's in the race.
+                crate::sharpeye::refine(&mut plan.steps, &req);
                 eprintln!(
                     "[brain] {} ({}) answered in {} ms (prep {} ms){}",
                     chain[i].label,
@@ -2820,6 +2858,14 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
 
 #[cfg(test)]
 mod speed_tests {
+
+    #[test]
+    fn knows_what_runs_on_this_pc() {
+        assert!(on_this_pc("http://localhost:20128/v1"));
+        assert!(on_this_pc("http://127.0.0.1:11434"));
+        assert!(!on_this_pc("https://openrouter.ai/api/v1"));
+    }
+
     use crate::model::ActionStep;
 
     fn step(v: serde_json::Value) -> ActionStep {

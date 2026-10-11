@@ -801,3 +801,9 @@ html[data-backdrop="tabbed"] .izk-card {
   -webkit-backdrop-filter: blur(14px) saturate(140%);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
 }
+
+/* The drifting colour behind the main window rests while you're in another
+   app: blurred, animated layers keep the graphics chip busy for nothing. */
+html.izk-away .izk-aurora span {
+  animation-play-state: paused;
+}

@@ -330,11 +330,13 @@ export function Island({
   // The waveform follows the PC's sound level, only while something plays.
   // Each <Waveform> listens to the level itself, so 30 updates a second
   // never re-render the whole Island.
+  // Only while the Island is open: the small pill's waveform is a still
+  // picture, so nothing else needs 30 readings a second.
   useEffect(() => {
-    if (!musicOn) return;
+    if (!musicOn || !open) return;
     void api.islandAudioMeter(true);
     return () => void api.islandAudioMeter(false);
-  }, [musicOn]);
+  }, [musicOn, open]);
   const live: Live = finished
     ? { kind: "finished" }
     : busy
@@ -481,7 +483,9 @@ function Compact({ live, dancing, wave = "auto" }: { live: Live; dancing: boolea
         <>
           <Cover m={live.m} size={24} />
           <span className="max-w-[180px] truncate text-[13px] font-medium text-white/90">{live.m.title}</span>
-          <Waveform playing={live.m.playing} width={44} height={16} style={waveFor(wave, live.m.title)} />
+          {/* Still in the small pill: it can show for hours over everything,
+              and moving would repaint the whole screen every frame. */}
+          <Waveform playing={live.m.playing} width={44} height={16} style={waveFor(wave, live.m.title)} frozen />
         </>
       );
     case "suggest":
@@ -1214,7 +1218,7 @@ function waveFor(choice: string, title = ""): WaveStyle {
  * following the PC's sound level: silk (soft flowing lines), bars (an
  * equalizer), mirror (a voice-memo style), neon (one glowing line) and
  * dots (bouncing beads). */
-function Waveform({ playing, width, height, style = "silk" }: { playing: boolean; width: number; height: number; style?: WaveStyle }) {
+function Waveform({ playing, width, height, style = "silk", frozen = false }: { playing: boolean; width: number; height: number; style?: WaveStyle; frozen?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const level = useRef(0);
   useEffect(() => {
@@ -1222,11 +1226,12 @@ function Waveform({ playing, width, height, style = "silk" }: { playing: boolean
       level.current = 0;
       return;
     }
+    if (frozen) return;
     const off = on<number>(EV.islandAudioLevel, (v) => {
       level.current = typeof v === "number" && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
     });
     return () => void off.then((f) => f());
-  }, [playing]);
+  }, [playing, frozen]);
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
@@ -1250,9 +1255,17 @@ function Waveform({ playing, width, height, style = "silk" }: { playing: boolean
     let shown = 0;
     let t = 0;
     let raf = 0;
-    const draw = () => {
+    // 30 frames a second is plenty for a waveform — and this sits in the
+    // full-screen overlay, where every frame re-composites the whole screen.
+    let lastFrame = 0;
+    const draw = (now = 0) => {
+      if (now - lastFrame < 33) {
+        raf = requestAnimationFrame(draw);
+        return;
+      }
+      lastFrame = now;
       shown += (level.current - shown) * 0.3;
-      if (!still) t += playing ? 0.05 : 0.012;
+      if (!still) t += playing ? 0.1 : 0.024;
       const swell = Math.max(playing ? 0.14 : 0.05, shown);
       ctx.clearRect(0, 0, width, height);
       ctx.shadowBlur = 0;
@@ -1311,11 +1324,19 @@ function Waveform({ playing, width, height, style = "silk" }: { playing: boolean
           ctx.stroke();
         }
       }
-      raf = requestAnimationFrame(draw);
+      if (!frozen) raf = requestAnimationFrame(draw);
     };
+    if (frozen) {
+      // One still frame, drawn mid-swell so it still reads as a waveform.
+      level.current = playing ? 0.55 : 0.1;
+      shown = level.current;
+      lastFrame = -1000;
+      draw(0);
+      return;
+    }
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [playing, width, height, style]);
+  }, [playing, width, height, style, frozen]);
   return <canvas ref={canvasRef} aria-hidden className="izk-waveform block" style={{ width, height }} />;
 }
 

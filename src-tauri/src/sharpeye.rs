@@ -60,7 +60,7 @@ pub fn refine(steps: &mut Vec<ActionStep>, req: &VisionRequest) {
         if looks >= MAX_LOOKS {
             break;
         }
-        if !clicky(step.action) || step.grounding.is_some() || (step.x == 0 && step.y == 0) {
+        if !clicky(step.action) || step.grounding.is_some() || step.target.is_some() || step.snapped_to.is_some() || (step.x == 0 && step.y == 0) {
             continue;
         }
         let Some(what) = describe(step) else { continue };

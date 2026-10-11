@@ -15,7 +15,9 @@ const BROWSERS: &[&str] = &["chrome", "msedge", "firefox", "brave", "opera", "vi
 
 /// How often to look while a YouTube tab is in front (a skip button shows
 /// after ~5 s, so a couple of seconds' wait is fine).
-const YOUTUBE_EVERY: Duration = Duration::from_secs(2);
+const YOUTUBE_EVERY: Duration = Duration::from_secs(5);
+/// After a skip, the next ad is a while away.
+const AFTER_SKIP: Duration = Duration::from_secs(15);
 /// A cookie banner shows as a page loads: look a few times after the page
 /// changes, then leave that page alone.
 const COOKIE_LOOKS_PER_PAGE: u8 = 4;
@@ -58,7 +60,7 @@ pub fn spawn(_app: AppHandle) {
     let _ = std::thread::Builder::new().name("izuki-autonomous".into()).spawn(|| {
         let mut page = String::new();
         let mut cookie_looks = 0u8;
-        let mut last_youtube = Instant::now() - YOUTUBE_EVERY;
+        let mut youtube_next = Instant::now();
         loop {
             std::thread::sleep(Duration::from_millis(1000));
             let Some(store) = crate::state::try_store() else { continue };
@@ -75,10 +77,11 @@ pub fn spawn(_app: AppHandle) {
                 cookie_looks = 0;
             }
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                if s.auto_skip_ads && title.to_lowercase().contains("youtube") && last_youtube.elapsed() >= YOUTUBE_EVERY {
-                    last_youtube = Instant::now();
+                if s.auto_skip_ads && title.to_lowercase().contains("youtube") && Instant::now() >= youtube_next {
+                    youtube_next = Instant::now() + YOUTUBE_EVERY;
                     if let Some(name) = press_first(is_skip_ad) {
                         eprintln!("[autonomous] pressed \"{name}\" on YouTube");
+                        youtube_next = Instant::now() + AFTER_SKIP;
                     }
                 }
                 if s.auto_reject_cookies && cookie_looks < COOKIE_LOOKS_PER_PAGE {

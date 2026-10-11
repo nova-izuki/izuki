@@ -126,6 +126,20 @@ export function GlassConfigPanel() {
     }
   }, [settingsLoaded, onboardingSeen, tourOpen, brainOk, setSetupOpen]);
 
+  // Rest the background animation while Izuki's window isn't the one in use.
+  useEffect(() => {
+    const away = () => document.documentElement.classList.toggle("izk-away", document.hidden || !document.hasFocus());
+    away();
+    window.addEventListener("focus", away);
+    window.addEventListener("blur", away);
+    document.addEventListener("visibilitychange", away);
+    return () => {
+      window.removeEventListener("focus", away);
+      window.removeEventListener("blur", away);
+      document.removeEventListener("visibilitychange", away);
+    };
+  }, []);
+
   const closeTour = () => {
     setTourOpen(false);
     if (!onboardingSeen) patchSettings({ onboarding_seen: true });
