@@ -311,6 +311,10 @@ export interface BoostHealth {
 
 /** Where the Island's camera leaves a picture for Chat to pick up. */
 export const CAMERA_PICTURE_KEY = "izuki.camera-picture";
+/** The Island's saved Ask conversations (its tabs). */
+export const ISLAND_CHATS_KEY = "izuki.island-chats.v1";
+/** An Island conversation waiting for Chat to carry on ("Continue in Chat"). */
+export const ISLAND_TO_CHAT_KEY = "izuki.island-to-chat";
 
 export const api = {
   getSettings: () => call<Settings>("get_settings", undefined, () => MOCK_SETTINGS),
@@ -475,8 +479,15 @@ export const api = {
   recycleBinInfo: () => call<[number, number]>("recycle_bin_info", undefined, () => [0, 0]),
   recycleBinEmpty: () => call<string>("recycle_bin_empty", undefined, () => "The Recycle Bin is only in the Izuki app."),
   /** "Ask about this page" from the Island: the answer arrives on EV.pageAnswer. */
-  pageAsk: (id: number, question: string, history: Array<{ role: "user" | "assistant"; content: string }>) =>
-    call<void>("page_ask", { id, question, history }, () => undefined),
+  /** Ask about the page in front — or, with `screen`, about the screen. `files`:
+   * photos (data URLs), text files' words, or { kind: "screen" } for a fresh look. */
+  pageAsk: (
+    id: number,
+    question: string,
+    history: Array<{ role: "user" | "assistant"; content: string }>,
+    files: Array<{ name: string; kind: "image" | "text" | "screen"; data: string }> = [],
+    screen = false
+  ) => call<void>("page_ask", { id, question, history, files, screen }, () => undefined),
   pageAskCancel: (id: number) => call<void>("page_ask_cancel", { id }, () => undefined),
   /** ⏮ ⏯ ⏭ for whatever is playing on the PC. */
   mediaControl: (action: "play" | "pause" | "next" | "previous") => call<boolean>("media_control", { action }, () => false),
@@ -642,6 +653,8 @@ export const EV = {
   /** Frontend-only: a still from the Island's camera (a data: URL) for Chat
    * to attach to the next message. */
   chatPicture: "izuki://chat-picture",
+  /** Frontend-only: an Island conversation for Chat to carry on. */
+  chatImport: "izuki://chat-import",
   /** Frontend-only: the config panel just saved settings — the overlay
    * (which keeps no settings of its own) re-reads what it needs. */
   settingsChanged: "izuki://settings-changed",

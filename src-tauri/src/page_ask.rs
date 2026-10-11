@@ -1,6 +1,8 @@
 //! "Ask about this page" from the Island — like asking Gemini in Chrome,
 //! without opening anything. Type a question while a web page is in front
-//! and the answer types itself out in the Island.
+//! and the answer types itself out in the Island. Away from the browser it
+//! asks about the screen itself (a fresh look at it), and files or photos
+//! added with + go along with the question.
 //!
 //! With the browser extension, the page is read the way the page itself is
 //! (its words, title and address) and the links most related to the question
@@ -31,6 +33,16 @@ pub struct Turn {
     pub content: String,
 }
 
+/// Something added with + : a photo (`data:image/…` URL), a text file's
+/// words, or "screen" — a fresh look at the screen, taken when asked.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct Attachment {
+    pub name: String,
+    pub kind: String,
+    #[serde(default)]
+    pub data: String,
+}
+
 /// What we could read of the page in front.
 struct Read {
     title: String,
@@ -57,43 +69,87 @@ fn cut(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
 }
 
-fn messages(read: &Read, question: &str, history: &[Turn]) -> Vec<Value> {
-    let mut context = format!("The page the user is on: {}\n{}\n\n{}", read.title, read.url, cut(&read.text, 14_000));
-    if !read.linked.trim().is_empty() {
-        context.push_str("\n\n");
-        context.push_str(&cut(&read.linked, 6000));
+/// A fresh look at the whole screen, small enough to send.
+fn screen_picture() -> Option<String> {
+    if crate::uia::screen_locked() {
+        return None;
     }
+    crate::capture::capture_all().ok()?.downscaled(1600).to_jpeg_data_url(70).ok()
+}
+
+const SYSTEM: &str = "You are Izuki, answering a question about what the user has open: a web page, or their screen (a screenshot is attached). Answer from it (and any linked pages or files given) when you can; if the answer isn't there, say so in a few words and answer from what you know. Lead with the answer, keep it short (a few sentences or a few bullet points with -), plain friendly words, no headings. When they ask what to do, give short numbered steps that name the exact buttons, menus and boxes on their screen — they can press \"Do it for me\" and you'll do those steps. Never ask for or repeat passwords or card numbers.";
+
+/// The conversation for the brain: what's open (page words or a screen
+/// picture), any files, the turns so far, then the question with its photos.
+fn messages(read: Option<&Read>, screen: Option<&str>, files: &[Attachment], question: &str, history: &[Turn]) -> Vec<Value> {
+    let mut context = match read {
+        Some(read) => {
+            let mut c = format!("The page the user is on: {}\n{}\n\n{}", read.title, read.url, cut(&read.text, 14_000));
+            if !read.linked.trim().is_empty() {
+                c.push_str("\n\n");
+                c.push_str(&cut(&read.linked, 6000));
+            }
+            c
+        }
+        None => format!(
+            "The user is asking about their screen. The window in front: {}. The screenshot is with their question (the small dark pill at the top centre is Izuki itself — ignore it).",
+            crate::island::page_title(&crate::uia::foreground_title())
+        ),
+    };
+    let mut room = 16_000usize;
+    for f in files.iter().filter(|f| f.kind == "text" && !f.data.trim().is_empty()) {
+        if room < 200 {
+            break;
+        }
+        let words = cut(&f.data, room.min(8000));
+        room = room.saturating_sub(words.chars().count());
+        context.push_str(&format!("\n\nThe file \"{}\" they added:\n{words}", cut(&f.name, 80)));
+    }
+    let seen = if read.is_some() { "I can see the page." } else { "I can see your screen." };
     let mut msgs = vec![
-        json!({ "role": "system", "content": "You are Izuki, answering a question about the web page the user has open. Answer from the page (and any linked pages read for you) when you can; if the answer isn't there, say so in a few words and answer from what you know. Lead with the answer, keep it short (a few sentences or a few bullet points with -), plain friendly words, no headings. Never ask for or repeat passwords or card numbers." }),
+        json!({ "role": "system", "content": SYSTEM }),
         json!({ "role": "user", "content": context }),
-        json!({ "role": "assistant", "content": "I can see the page. What would you like to know?" }),
+        json!({ "role": "assistant", "content": format!("{seen} What would you like to know?") }),
     ];
     for t in history.iter().rev().take(8).rev() {
         if (t.role == "user" || t.role == "assistant") && !t.content.trim().is_empty() {
             msgs.push(json!({ "role": t.role, "content": cut(&t.content, 3000) }));
         }
     }
-    msgs.push(json!({ "role": "user", "content": cut(question, 1500) }));
+    let pictures: Vec<&str> = screen
+        .into_iter()
+        .chain(files.iter().filter(|f| f.kind == "image" && f.data.starts_with("data:image/")).map(|f| f.data.as_str()))
+        .take(4)
+        .collect();
+    if pictures.is_empty() {
+        msgs.push(json!({ "role": "user", "content": cut(question, 1500) }));
+    } else {
+        let mut parts = vec![json!({ "type": "text", "text": cut(question, 1500) })];
+        parts.extend(pictures.iter().map(|url| json!({ "type": "image_url", "image_url": { "url": url } })));
+        msgs.push(json!({ "role": "user", "content": parts }));
+    }
     msgs
 }
 
-/// Answer `question` about the page in front, sending the answer to the
-/// Island piece by piece. Runs on the calling thread.
-pub fn ask(app: &AppHandle, id: u64, question: &str, history: &[Turn]) {
+/// Answer `question` about the page in front — or, with `on_screen` (no
+/// browser in front) or a page that can't be read, about the screen — and
+/// send the answer to the Island piece by piece. Runs on the calling thread.
+pub fn ask(app: &AppHandle, id: u64, question: &str, history: &[Turn], files: &[Attachment], on_screen: bool) {
     let send = |p: Piece| {
         let _ = app.emit(EVENT, p);
     };
-    let read = read_page(question);
-    if read.text.trim().is_empty() {
-        let hint = if crate::ext::connected() {
-            "I couldn't read that page. Click into the page once, then ask again."
-        } else {
-            "I couldn't read that page. Bring the browser to the front and ask again — or add the Izuki browser extension (Settings → Browser) so I can read any page."
-        };
-        return send(Piece { id, text: String::new(), done: true, error: Some(hint.into()), page: Some(read.title) });
+    let read = if on_screen { None } else { Some(read_page(question)).filter(|r| !r.text.trim().is_empty()) };
+    // Away from the browser, a page that couldn't be read, or "+ Screenshot":
+    // look at the screen itself.
+    let wants_shot = read.is_none() || files.iter().any(|f| f.kind == "screen");
+    let shot = if wants_shot { screen_picture() } else { None };
+    if read.is_none() && shot.is_none() {
+        let hint = if crate::uia::screen_locked() { "Your PC is locked — unlock it and ask again." } else { "I couldn't see your screen just now — ask again in a moment." };
+        return send(Piece { id, text: String::new(), done: true, error: Some(hint.into()), page: None });
     }
-    send(Piece { id, text: String::new(), done: false, error: None, page: Some(read.title.clone()) });
-    let msgs = messages(&read, question, history);
+    let title = read.as_ref().map(|r| r.title.clone()).unwrap_or_else(|| "Your screen".into());
+    send(Piece { id, text: String::new(), done: false, error: None, page: Some(title) });
+    let msgs = messages(read.as_ref(), shot.as_deref(), files, question, history);
     let result = crate::chat::complete_streaming(&msgs, id, &|t: &str| {
         send(Piece { id, text: t.to_string(), done: false, error: None, page: None });
     });
@@ -111,9 +167,30 @@ mod tests {
     fn question_goes_last_with_the_page_first() {
         let read = Read { title: "Syllabus".into(), url: "https://x.edu/s".into(), text: "Essay due Friday.".into(), linked: String::new() };
         let history = vec![Turn { role: "user".into(), content: "hi".into() }, Turn { role: "assistant".into(), content: "hello".into() }];
-        let m = messages(&read, "when is the essay due?", &history);
+        let m = messages(Some(&read), None, &[], "when is the essay due?", &history);
         assert!(m[1]["content"].as_str().unwrap().contains("Essay due Friday."));
         assert_eq!(m.last().unwrap()["content"], "when is the essay due?");
         assert_eq!(m.len(), 6);
+    }
+
+    #[test]
+    fn files_and_photos_go_with_the_question() {
+        let read = Read { title: "Doc".into(), url: String::new(), text: "Hello".into(), linked: String::new() };
+        let files = vec![
+            Attachment { name: "notes.txt".into(), kind: "text".into(), data: "Chapter 3 is on the test.".into() },
+            Attachment { name: "photo.jpg".into(), kind: "image".into(), data: "data:image/jpeg;base64,AAAA".into() },
+        ];
+        let m = messages(Some(&read), None, &files, "what's on the test?", &[]);
+        assert!(m[1]["content"].as_str().unwrap().contains("Chapter 3 is on the test."));
+        let last = &m.last().unwrap()["content"];
+        assert_eq!(last[0]["text"], "what's on the test?");
+        assert_eq!(last[1]["image_url"]["url"], "data:image/jpeg;base64,AAAA");
+    }
+
+    #[test]
+    fn the_screen_goes_first_when_theres_no_page() {
+        let m = messages(None, Some("data:image/jpeg;base64,SCREEN"), &[], "what do I do here?", &[]);
+        assert!(m[1]["content"].as_str().unwrap().contains("their screen"));
+        assert_eq!(m.last().unwrap()["content"][1]["image_url"]["url"], "data:image/jpeg;base64,SCREEN");
     }
 }

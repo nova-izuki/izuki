@@ -1086,8 +1086,17 @@ pub fn island_audio_meter(app: AppHandle, on: bool) {
 /// "Ask about this page" from the Island: the answer arrives piece by
 /// piece on `izuki://page-answer` (see page_ask.rs).
 #[tauri::command]
-pub fn page_ask(app: AppHandle, id: u64, question: String, history: Option<Vec<crate::page_ask::Turn>>) {
-    std::thread::spawn(move || crate::page_ask::ask(&app, id, &question, &history.unwrap_or_default()));
+pub fn page_ask(
+    app: AppHandle,
+    id: u64,
+    question: String,
+    history: Option<Vec<crate::page_ask::Turn>>,
+    files: Option<Vec<crate::page_ask::Attachment>>,
+    screen: Option<bool>,
+) {
+    std::thread::spawn(move || {
+        crate::page_ask::ask(&app, id, &question, &history.unwrap_or_default(), &files.unwrap_or_default(), screen.unwrap_or(false))
+    });
 }
 
 #[tauri::command]

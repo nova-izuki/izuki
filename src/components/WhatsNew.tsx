@@ -22,6 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🏝️", title: "The Island asks about anything — and does it for you", how: "Open the Island anywhere and ask about your screen (on a web page it reads the page). Ask “what do I do here?” and press Do it for me — Izuki does the steps while you watch. The + adds photos, text files or a screenshot. Every conversation is kept as a tab: pin the ones you want, or Continue in Chat." },
   { icon: "🪶", title: "Lighter on your PC", how: "A full recheck for lag: the Island pill no longer redraws the screen while music plays (its waveform moves only when the Island is open), the window's glow pauses in the background, an AI on this PC that isn't running (like 9Router) is skipped at once, a model your key can't use rests for a day, and the sharp-eye second look runs once — on the plan actually used." },
   { icon: "🧥", title: "Concept (beta) — the fashion concept-art look", how: "A new character style: very tall, small head, flat two-tone gouache, oversized clothes, one loud accent colour. Dre first — he talks and blinks. Settings → Voice orb → Character style → Concept (beta), or say “make your style concept art”.", try: { label: "Pick a style", tab: "settings", id: "settings-look" } },
   { icon: "💽", title: "“What's taking up my space?”", how: "Ask any way you like — Izuki answers in seconds with free space, the biggest apps and the biggest folders. No AI needed, nothing opens.", try: { label: "Ask it", say: "what's taking up my space" } },

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, RotateCcw, Send, Sparkles, Square, Volume2, X } from "lucide-react";
-import { api, CAMERA_PICTURE_KEY, emit, EV, on } from "../../lib/ipc";
+import { api, CAMERA_PICTURE_KEY, emit, EV, ISLAND_TO_CHAT_KEY, on } from "../../lib/ipc";
 import { ChatText } from "../ChatText";
 import { LaterCard } from "../LaterCard";
 import { useDictation } from "../../hooks/useDictation";
@@ -263,6 +263,28 @@ export function ChatTab() {
     const off = on<string>(EV.chatPicture, (picture) => {
       try { localStorage.removeItem(CAMERA_PICTURE_KEY); } catch { /* storage is optional */ }
       take(picture);
+    });
+    return () => void off.then((f) => f());
+  }, []);
+  // An Island conversation to carry on here ("Continue in Chat"): it joins
+  // this chat, so the next message follows on from it.
+  useEffect(() => {
+    type Handoff = { title?: string; where?: string; turns?: Array<{ role: string; content: string }> };
+    const take = (h: Handoff | null) => {
+      const turns = (h?.turns ?? []).filter((t) => (t.role === "user" || t.role === "assistant") && typeof t.content === "string" && t.content.trim());
+      if (!turns.length) return;
+      const from: Msg = { role: "user", content: `From the Island (${h?.where || "my screen"}):`, note: true };
+      setChatMsgs((m) => [...m, from, ...turns.map((t) => ({ role: t.role as Msg["role"], content: t.content }))]);
+      requestAnimationFrame(() => input.current?.focus());
+    };
+    try {
+      const waiting = localStorage.getItem(ISLAND_TO_CHAT_KEY);
+      localStorage.removeItem(ISLAND_TO_CHAT_KEY);
+      if (waiting) take(JSON.parse(waiting));
+    } catch { /* storage is optional */ }
+    const off = on<Handoff>(EV.chatImport, (h) => {
+      try { localStorage.removeItem(ISLAND_TO_CHAT_KEY); } catch { /* storage is optional */ }
+      take(h);
     });
     return () => void off.then((f) => f());
   }, []);
@@ -750,7 +772,11 @@ export function ChatTab() {
           {msgs.map((m, i) =>
             m.note ? (
               <div key={i} className="self-center rounded-full bg-white/5 px-2.5 py-0.5 text-[10.5px] text-izk-muted">
-                {String(m.content).startsWith("[I allowed") ? "✓ You allowed it" : "✕ You said no"}
+                {String(m.content).startsWith("[I allowed")
+                  ? "✓ You allowed it"
+                  : String(m.content).startsWith("From the Island")
+                    ? `🏝️ ${String(m.content).replace(/:$/, "")}`
+                    : "✕ You said no"}
               </div>
             ) : (
             <div key={i} className={cx("flex", m.role === "user" ? "justify-end" : "justify-start")}>
