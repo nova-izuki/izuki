@@ -569,8 +569,62 @@ fn brain_chain_inner() -> Vec<crate::settings::ProviderConfig> {
     }
     skip_broken(&mut chain);
     skip_resting(&mut chain);
+    skip_local_not_running(&mut chain);
     order_by_speed(&mut chain);
     chain
+}
+
+/// A brain on this PC (9Router, Ollama, LM Studio) that isn't running costs
+/// ~2.4 s to fail on every first try — after each restart and every time
+/// its five-minute rest ran out. A tenth-of-a-second knock on its port says
+/// the same thing; the answer is kept for 15 s.
+fn skip_local_not_running(chain: &mut Vec<crate::settings::ProviderConfig>) {
+    if chain.len() < 2 {
+        return;
+    }
+    let up: Vec<bool> = chain.iter().map(|c| !c.id.is_local() || local_up(&c.base_url)).collect();
+    if up.iter().any(|u| *u) && up.iter().any(|u| !*u) {
+        let mut i = 0;
+        chain.retain(|_| {
+            i += 1;
+            up[i - 1]
+        });
+    }
+}
+
+static LOCAL_UP: parking_lot::Mutex<Vec<(String, bool, std::time::Instant)>> = parking_lot::Mutex::new(Vec::new());
+
+fn local_up(base_url: &str) -> bool {
+    use std::net::ToSocketAddrs;
+    let Some((host, port)) = host_port(base_url) else { return true };
+    if let Some(&(_, up, _)) = LOCAL_UP.lock().iter().find(|(u, _, at)| u == base_url && at.elapsed() < std::time::Duration::from_secs(15)) {
+        return up;
+    }
+    // "localhost" is both ::1 and 127.0.0.1 and a server may listen on only
+    // one: knock on each, within 250 ms in all.
+    let began = std::time::Instant::now();
+    let budget = std::time::Duration::from_millis(250);
+    let up = (host.as_str(), port).to_socket_addrs().is_ok_and(|addrs| {
+        addrs.into_iter().any(|addr| {
+            let left = budget.saturating_sub(began.elapsed());
+            !left.is_zero() && std::net::TcpStream::connect_timeout(&addr, left.min(std::time::Duration::from_millis(120))).is_ok()
+        })
+    });
+    let mut cache = LOCAL_UP.lock();
+    cache.retain(|(u, _, _)| u != base_url);
+    cache.push((base_url.to_string(), up, std::time::Instant::now()));
+    up
+}
+
+/// "http://localhost:20128/v1" → ("localhost", 20128).
+fn host_port(base_url: &str) -> Option<(String, u16)> {
+    let rest = base_url.split("://").nth(1).unwrap_or(base_url);
+    let hostport = rest.split('/').next()?;
+    let (host, port) = match hostport.rsplit_once(':') {
+        Some((h, p)) => (h, p.parse().ok()?),
+        None => (hostport, if base_url.starts_with("https") { 443 } else { 80 }),
+    };
+    (!host.is_empty()).then(|| (host.trim_matches(|c| c == '[' || c == ']').to_string(), port))
 }
 
 /// A small model (roughly 12B parameters or fewer): fast, but weak at
@@ -2213,7 +2267,8 @@ fn submit_task(
             .iter()
             .take(executed)
             .filter(|s| matches!(s.action, Intent::Click | Intent::Auto))
-            .filter_map(|s| s.snapped_to.clone().map(|n| (n, s.target)))
+            // Windows knows a page link by its name, not "Next → https://…".
+            .filter_map(|s| s.snapped_to.as_deref().map(|n| (n.split(" → ").next().unwrap_or(n).to_string(), s.target)))
             .last();
         all_steps.extend(steps.iter().take(executed).cloned());
         done_so_far.extend(steps.iter().take(executed).map(describe_step));
@@ -2690,6 +2745,13 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
 #[cfg(test)]
 mod speed_tests {
     use super::*;
+
+    #[test]
+    fn reads_host_and_port_from_a_local_address() {
+        assert_eq!(host_port("http://localhost:20128/v1"), Some(("localhost".into(), 20128)));
+        assert_eq!(host_port("http://127.0.0.1:11434"), Some(("127.0.0.1".into(), 11434)));
+        assert_eq!(host_port("https://example.com/v1"), Some(("example.com".into(), 443)));
+    }
 
     #[test]
     fn completion_requires_a_followup_observation_not_an_intention() {

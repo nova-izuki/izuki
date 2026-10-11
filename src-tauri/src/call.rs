@@ -84,20 +84,48 @@ pub fn spawn(app: AppHandle) {
 
     std::thread::Builder::new()
         .name("izuki-call-tunnel".into())
-        .spawn(move || loop {
-            let want = crate::state::store().settings().call_enabled;
-            let running = TUNNEL.lock().as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(None)));
-            if want && !running {
-                if let Err(e) = start_tunnel(&app, port) {
-                    eprintln!("[call] tunnel: {e}");
-                    set(&app, "error", "", Some(e.to_string()));
-                    std::thread::sleep(Duration::from_secs(20));
+        .spawn(move || {
+            // A tunnel that dies within a minute (no internet, Cloudflare
+            // busy) used to be restarted every 2 s — hundreds of times a day.
+            // Each quick failure doubles the wait, up to 5 minutes.
+            let mut quick_fails: u32 = 0;
+            let mut started_at: Option<std::time::Instant> = None;
+            loop {
+                let want = crate::state::store().settings().call_enabled;
+                let running = TUNNEL.lock().as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(None)));
+                if want && !running {
+                    if let Some(at) = started_at.take() {
+                        quick_fails = if at.elapsed() < Duration::from_secs(60) { quick_fails + 1 } else { 0 };
+                    }
+                    if quick_fails > 0 {
+                        // Waited a second at a time, so turning calls off
+                        // (or back on) is noticed straight away.
+                        let wait = (5u64 << quick_fails.min(6)).min(300);
+                        let mut waited = 0;
+                        while waited < wait && crate::state::store().settings().call_enabled {
+                            std::thread::sleep(Duration::from_secs(1));
+                            waited += 1;
+                        }
+                        if !crate::state::store().settings().call_enabled {
+                            continue;
+                        }
+                    }
+                    match start_tunnel(&app, port) {
+                        Ok(()) => started_at = Some(std::time::Instant::now()),
+                        Err(e) => {
+                            eprintln!("[call] tunnel: {e}");
+                            set(&app, "error", "", Some(e.to_string()));
+                            std::thread::sleep(Duration::from_secs(20));
+                        }
+                    }
+                } else if !want && TUNNEL.lock().is_some() {
+                    stop();
+                    set(&app, "off", "", None);
+                    started_at = None;
+                    quick_fails = 0;
                 }
-            } else if !want && TUNNEL.lock().is_some() {
-                stop();
-                set(&app, "off", "", None);
+                std::thread::sleep(Duration::from_secs(2));
             }
-            std::thread::sleep(Duration::from_secs(2));
         })
         .ok();
 }

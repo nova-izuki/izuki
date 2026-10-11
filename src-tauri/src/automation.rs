@@ -467,6 +467,24 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     let precision = crate::state::try_store().is_some_and(|s| s.settings().control_style == "precision");
     let clicking = matches!(step.action, Intent::Click | Intent::Auto | Intent::DoubleClick | Intent::RightClick);
     let targeted_type = step.action == Intent::Type && (step.target.is_some() || step.x != 0 || step.y != 0);
+    // A web page element the browser extension listed: click or type right
+    // inside the page — exact, and no mouse at all. First, in every mode:
+    // these have no Windows control id, so Precision's check below refused
+    // them, and Windows names a link "Next" where the list says
+    // "Next → https://…", so the safety check could never match either.
+    if !dry_run && (matches!(step.action, Intent::Click | Intent::Auto) || targeted_type) {
+        if let Some(dom) = step.target.and_then(crate::ext::dom_id_for) {
+            let done = if targeted_type {
+                crate::ext::type_into(&dom, step.text_to_type.as_deref().unwrap_or_default()).map(|_| "typed into")
+            } else {
+                crate::ext::click(&dom).map(|_| "clicked")
+            };
+            match done {
+                Ok(what) => return Ok(format!("{what} page element {} directly (browser extension)", step.target.unwrap_or(0))),
+                Err(e) => eprintln!("[ext] couldn't act inside the page ({e}) — using the screen instead"),
+            }
+        }
+    }
     // Precision must select an element from the parsed screen. Snapping a
     // guessed answer onto a nearby radio button only verifies the guess.
     if precision && !dry_run && (clicking || targeted_type) && step.grounding.is_none() {
@@ -484,7 +502,7 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     // Further down the page: the app scrolls exactly to it first, and the
     // click lands where it ended up — no blind wheel turns.
     if step.scroll_first && !dry_run {
-        if let Some(name) = step.snapped_to.as_deref() {
+        if let Some(name) = step.snapped_to.as_deref().map(|n| n.split(" → ").next().unwrap_or(n)) {
             match uia::scroll_into_view(name) {
                 Some((nx, ny)) => {
                     x = nx;
@@ -514,7 +532,9 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         if verified_name.is_none() && precision {
             return Err(anyhow!("target_changed: Precision mode could not identify a real control at this point; take another look or use Mouse mode for a canvas-only target"));
         }
-        if let Some(name) = verified_name {
+        if let Some(listed) = verified_name {
+            // A page link is listed as "Next → https://…"; Windows calls it "Next".
+            let name = listed.split(" → ").next().unwrap_or(listed);
             match uia::check_target(x, y, name) {
                 // The page shifted since the screenshot (an ad or picture loaded).
                 uia::AtPoint::Moved(nx, ny) => {
@@ -543,23 +563,6 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
 
     if dry_run {
         return Ok(format!("[dry run] {} at {}", step.action.as_str(), label));
-    }
-
-    // A page element from the Izuki browser extension, in Jarvis mode: click
-    // or type right inside the page — exact, and no mouse at all.
-    if precision && (matches!(step.action, Intent::Click | Intent::Auto) || targeted_type) {
-        if let Some(dom) = step.target.and_then(crate::ext::dom_id_for) {
-            if aborted() { return Err(anyhow!("stopped")); }
-            let done = if targeted_type {
-                crate::ext::type_into(&dom, step.text_to_type.as_deref().unwrap_or_default()).map(|_| "typed into")
-            } else {
-                crate::ext::click(&dom).map(|_| "clicked")
-            };
-            match done {
-                Ok(what) => return Ok(format!("{what} page element {} directly (browser extension)", step.target.unwrap_or(0))),
-                Err(e) => eprintln!("[ext] couldn't act inside the page ({e}) — using the screen instead"),
-            }
-        }
     }
 
     if let Some(identity) = step.grounding.as_ref().filter(|_| clicking || targeted_type) {
@@ -709,7 +712,8 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
 /// real mouse or keyboard come back as `needs_front:` — the caller waits for
 /// you to pause before bringing the window forward.
 fn execute_behind(step: &ActionStep, win: isize) -> Result<String> {
-    let name = step.snapped_to.as_deref();
+    // A page link is listed as "Next → https://…"; Windows calls it "Next".
+    let name = step.snapped_to.as_deref().map(|n| n.split(" → ").next().unwrap_or(n));
     let identity = step.grounding.as_ref();
     let (x, y) = (step.x, step.y);
     // A web page element: the browser extension acts right inside the page,
