@@ -223,6 +223,7 @@ export const MOCK_SETTINGS: Settings = {
   island_wave: "auto",
   tidy_dupes_auto: false,
   tidy_recycle_auto: false,
+  pc_care_alerts: true,
   sharp_eye: true,
   sharp_eye_tars: false,
   auto_skip_ads: false,
@@ -308,6 +309,23 @@ export interface BoostHealth {
   lagging: boolean;
   hogs: Array<{ pid: number; name: string; cpu: number; mem_mb: number; window: boolean }>;
 }
+
+/** One line of PC Care's health check; `fix` is [button, Island op]. */
+export interface CareCheck {
+  key: string;
+  label: string;
+  ok: boolean;
+  detail: string;
+  fix: [string, string] | null;
+}
+
+const MOCK_CARE: CareCheck[] = [
+  { key: "antivirus", label: "Antivirus", ok: true, detail: "Windows Defender is on and up to date.", fix: null },
+  { key: "firewall", label: "Firewall", ok: true, detail: "On for every network.", fix: null },
+  { key: "drive", label: "Drive health", ok: true, detail: "Your drive is healthy.", fix: null },
+  { key: "space:C:", label: "Space on C:", ok: false, detail: "Only 6.2 GB free of 475 GB — the PC slows down and updates fail when a drive is this full.", fix: ["Free up space", "ask:make my PC fast"] },
+  { key: "restart", label: "Windows Update", ok: true, detail: "Nothing waiting on a restart.", fix: null },
+];
 
 /** Where the Island's camera leaves a picture for Chat to pick up. */
 export const CAMERA_PICTURE_KEY = "izuki.camera-picture";
@@ -477,6 +495,10 @@ export const api = {
   lessonVideo: (query: string) => call<[string, string]>("lesson_video", { query }, () => { throw new Error("Lessons work in the Izuki app."); }),
   /** The Recycle Bin: [items, MB]; and emptying it (asked first in Settings). */
   recycleBinInfo: () => call<[number, number]>("recycle_bin_info", undefined, () => [0, 0]),
+  /** PC Care's health check, now (a few seconds). */
+  pcCareCheck: () => call<CareCheck[]>("pc_care_check", undefined, () => MOCK_CARE),
+  /** The last health check, if one has run. */
+  pcCareLast: () => call<CareCheck[] | null>("pc_care_last", undefined, () => null),
   recycleBinEmpty: () => call<string>("recycle_bin_empty", undefined, () => "The Recycle Bin is only in the Izuki app."),
   /** "Ask about this page" from the Island: the answer arrives on EV.pageAnswer. */
   /** Ask about the page in front — or, with `screen`, about the screen. `files`:

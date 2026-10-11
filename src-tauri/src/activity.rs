@@ -29,7 +29,7 @@ pub struct Activity {
 pub struct Action {
     pub label: String,
     /// "ask:<what to ask Izuki>", "open:<path>", "show:<path>",
-    /// "copytext:<path>", "unzip:<path>".
+    /// "copytext:<path>", "unzip:<path>", "settings:<Windows settings page>".
     pub op: String,
 }
 
@@ -100,6 +100,23 @@ pub fn show_boost(text: &str, offer: bool) {
             Vec::new()
         },
     });
+}
+
+/// PC Care found something that needs you, with its fix one tap away.
+pub fn show_care(c: &crate::pccare::Check) {
+    push(Activity {
+        id: format!("care:{}", c.key),
+        kind: "care",
+        icon: "🛡️",
+        title: format!("PC Care — {}", c.label),
+        detail: c.detail.clone(),
+        actions: c.fix.iter().map(|(label, op)| Action { label: label.clone(), op: op.clone() }).collect(),
+    });
+}
+
+/// Windows' own settings pages the Island may open (nothing else).
+fn windows_page(uri: &str) -> bool {
+    ["windowsdefender:", "ms-settings:"].iter().any(|p| uri.starts_with(p)) && uri.chars().all(|c| c.is_ascii_alphanumeric() || ":/-_.".contains(c))
 }
 
 /// An available update: one explicit action to download and install it.
@@ -351,6 +368,10 @@ pub fn act(app: &tauri::AppHandle, op: &str) -> Option<String> {
             let _ = app.opener().open_path(arg, None::<&str>);
             None
         }
+        "settings" if windows_page(arg) => {
+            let _ = app.opener().open_url(arg, None::<&str>);
+            None
+        }
         "update" => {
             let app = app.clone();
             let _ = arg;
@@ -407,6 +428,14 @@ mod tests {
         assert!(!is_temp(Path::new("C:\\x\\file.pdf")));
         assert_eq!(clock(754), "12:34");
         assert_eq!(size(2_500_000), "2.5 MB");
+    }
+
+    #[test]
+    fn only_windows_own_pages_open() {
+        assert!(windows_page("windowsdefender:"));
+        assert!(windows_page("ms-settings:windowsupdate"));
+        assert!(!windows_page("https://example.com"));
+        assert!(!windows_page("ms-settings:x\" & calc"));
     }
 
     #[test]

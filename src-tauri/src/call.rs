@@ -191,7 +191,9 @@ fn start_tunnel(app: &AppHandle, port: u16) -> anyhow::Result<()> {
     let exe = ensure_cloudflared(app)?;
     set(app, "starting", "", None);
     let mut cmd = Command::new(exe);
-    cmd.args(["tunnel", "--no-autoupdate", "--url", &format!("http://127.0.0.1:{port}")])
+    // http2 rides on TCP: school and work Wi-Fi often block the UDP that
+    // cloudflared's default (QUIC) needs, and then the line never comes up.
+    cmd.args(["tunnel", "--no-autoupdate", "--protocol", "http2", "--url", &format!("http://127.0.0.1:{port}")])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

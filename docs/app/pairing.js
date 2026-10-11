@@ -19,7 +19,7 @@
       throw new Error('This link no longer reaches Izuki. Scan the current QR on your PC.');
     }catch(error) {
       if(error.name==='AbortError')throw new Error('Your PC did not answer within 8 seconds. Keep it awake with Call Izuki enabled, then scan the current QR.');
-      if(error instanceof TypeError || error instanceof SyntaxError)throw new Error('The call tunnel is unreachable. Check both devices’ internet connections and scan the fresh QR.');
+      if(error instanceof TypeError || error instanceof SyntaxError)throw new Error('Your PC can’t be reached from this network. School and work Wi-Fi often block the link — try mobile data, or check both devices are online and scan the fresh QR.');
       throw error;
     }finally{clearTimeout(timeout);}
   }

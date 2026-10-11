@@ -350,6 +350,10 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
             return Some(text);
         }
     }
+    // "Is my PC safe?" / "is my antivirus on?" — Windows asked directly.
+    if crate::pccare::is_care_question(&said) {
+        return blocking(crate::pccare::spoken).await.ok();
+    }
     // "What's taking up my space?" — measured right here, no AI needed.
     if crate::storage::is_storage_question(&said) {
         return blocking(crate::storage::report).await.ok();
@@ -1102,6 +1106,18 @@ pub fn page_ask(
 #[tauri::command]
 pub fn page_ask_cancel(id: u64) {
     crate::chat::cancel(id);
+}
+
+/// PC Care's health check, now (a few seconds).
+#[tauri::command]
+pub async fn pc_care_check() -> R<Vec<crate::pccare::Check>> {
+    blocking(crate::pccare::check).await
+}
+
+/// The last health check, if one has run (instant).
+#[tauri::command]
+pub fn pc_care_last() -> Option<Vec<crate::pccare::Check>> {
+    crate::pccare::last()
 }
 
 /// The Recycle Bin's size: (items, MB).

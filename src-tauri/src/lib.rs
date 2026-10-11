@@ -35,6 +35,7 @@ pub mod dupes;
 pub mod sharpeye;
 pub mod recyclebin;
 pub mod storage;
+pub mod pccare;
 pub mod music_draft;
 pub mod memory;
 pub mod model;
@@ -323,6 +324,8 @@ pub fn run() {
             commands::page_ask,
             commands::page_ask_cancel,
             commands::recycle_bin_info,
+            commands::pc_care_check,
+            commands::pc_care_last,
             commands::lesson_video,
             commands::recycle_bin_empty,
             commands::overlay_state,
@@ -406,6 +409,7 @@ pub fn run() {
             activity::spawn();
             boost::spawn(handle.clone());
             autonomous::spawn(handle.clone());
+            pccare::spawn();
             freebrains::refresh_later();
             screentime::spawn();
             browser::init(&handle);

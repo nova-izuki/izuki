@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Copy, Gauge, Loader2, Rocket, ShieldCheck, Trash2, Undo2, Wand2, Zap } from "lucide-react";
+import { BellRing, Copy, Gauge, Loader2, RefreshCw, Rocket, ShieldCheck, Trash2, Undo2, Wand2, Zap } from "lucide-react";
 import { Row, Section, Toggle } from "./ui";
 import { useIzuki } from "../lib/store";
-import { api, IS_TAURI, type BoostHealth, type DeepReport } from "../lib/ipc";
+import { api, emit, EV, IS_TAURI, type BoostHealth, type CareCheck, type DeepReport } from "../lib/ipc";
 
 /**
+ * PC Care: the health check (pccare.rs — antivirus, firewall, drive health,
+ * space, a restart Windows is waiting for, with alerts on the Island) and
  * PC Boost (boost.rs): notice a struggling PC and offer to speed it up —
  * old temp files cleared, hogging background helpers closed, and the heavy
  * app named. Never closes a window you're using.
@@ -32,6 +34,36 @@ export function BoostCard() {
     if (!window.confirm(`Empty the Recycle Bin for good? ${items} item${items === 1 ? "" : "s"} (${size}) — they can't be restored after this.`)) return;
     setResult(await api.recycleBinEmpty().catch((e) => String(e)));
     readBin();
+  };
+  /** The health check (null until read). */
+  const [care, setCare] = useState<CareCheck[] | null>(null);
+  const [checking, setChecking] = useState(false);
+  /** Still on screen (a check takes seconds; the card may close first). */
+  const mounted = useRef(true);
+  useEffect(() => () => void (mounted.current = false), []);
+  const runCare = async () => {
+    setChecking(true);
+    try {
+      const fresh = await api.pcCareCheck();
+      if (mounted.current) setCare(fresh);
+    } catch (e) {
+      if (mounted.current) setResult(String(e));
+    } finally {
+      if (mounted.current) setChecking(false);
+    }
+  };
+  // The last check at once; a fresh one if none has run yet.
+  useEffect(() => {
+    void api.pcCareLast().then((last) => {
+      if (!mounted.current) return;
+      if (last) setCare(last);
+      else void runCare();
+    }).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const fixIt = (op: string) => {
+    if (op.startsWith("ask:")) void emit(EV.runChat, { id: Date.now(), text: op.slice(4) });
+    else void api.activityDo(op);
   };
   const [powerPlan, setPowerPlan] = useState("loading");
   const [powerBusy, setPowerBusy] = useState(false);
@@ -162,7 +194,39 @@ export function BoostCard() {
   );
 
   return (
-    <Section id="settings-boost" title="PC Boost" hint="Keeps your PC quick: notices when it's struggling and speeds it up — never closes a window you're using.">
+    <Section id="settings-boost" title="PC Care" hint="Keeps your PC safe and quick: watches antivirus, firewall, drives and space, notices when it's struggling and speeds it up — never closes a window you're using.">
+      <div className="izk-inset mb-2 rounded-[14px] p-2.5">
+        <div className="mb-1.5 flex items-center justify-between">
+          <span className="flex items-center gap-1.5 text-[12px] font-semibold">
+            <ShieldCheck size={14} strokeWidth={2.3} className="text-izk-teal" /> Health check
+          </span>
+          <button type="button" onClick={() => void runCare()} disabled={checking} className="izk-pill izk-no-drag flex h-[26px] items-center gap-1 px-2.5 text-[11px] disabled:opacity-60">
+            {checking ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} {checking ? "Checking…" : "Check now"}
+          </button>
+        </div>
+        {care === null ? (
+          <div className="py-1 text-[11px] text-izk-muted">{checking ? "Asking Windows…" : "Not checked yet."}</div>
+        ) : (
+          care.map((c) => (
+            <div key={c.key} className="flex items-start gap-2 border-t border-white/5 py-1.5 first:border-t-0">
+              <span className="mt-[1px] text-[12px]" aria-hidden>{c.ok ? "✅" : "⚠️"}</span>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11.5px] font-medium">{c.label}</div>
+                <div className={"text-[10.5px] leading-snug " + (c.ok ? "text-izk-muted" : "text-amber-300/90")}>{c.detail}</div>
+              </div>
+              {c.fix && (
+                <button type="button" onClick={() => fixIt(c.fix![1])} className="izk-pill izk-no-drag h-[24px] shrink-0 px-2 text-[10.5px] font-semibold">
+                  {c.fix[0]}
+                </button>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+      <Row label="Alert me when something needs attention" hint="Antivirus or firewall off, a drive filling up or failing, a restart Windows is waiting for — the Island says so, with the fix. Checked quietly every few hours." icon={<BellRing size={14} strokeWidth={2.3} />}>
+        <Toggle checked={settings.pc_care_alerts} onChange={(v) => patch({ pc_care_alerts: v })} />
+      </Row>
+      <div className="izk-divider" />
       {health && (
         <div className="mb-2 flex gap-3">
           {meter("Processor", health.cpu)}

@@ -31,7 +31,7 @@ pub fn is_storage_question(said: &str) -> bool {
 
 /// Free and total GB on each fixed drive: ("C:", free, total).
 #[cfg(windows)]
-fn drives() -> Vec<(String, f64, f64)> {
+pub(crate) fn drives() -> Vec<(String, f64, f64)> {
     use windows::core::PCWSTR;
     use windows::Win32::Storage::FileSystem::{GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDrives};
     const FIXED: u32 = 3;
@@ -55,7 +55,7 @@ fn drives() -> Vec<(String, f64, f64)> {
 }
 
 #[cfg(not(windows))]
-fn drives() -> Vec<(String, f64, f64)> {
+pub(crate) fn drives() -> Vec<(String, f64, f64)> {
     Vec::new()
 }
 

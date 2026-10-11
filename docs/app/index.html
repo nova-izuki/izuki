@@ -26,6 +26,7 @@
 <script src="pairing.js"></script>
 <script src="orb.js"></script>
 <script src="apps.js"></script>
+<script src="drive.js"></script>
 <script type="module" src="tv.js"></script>
 <style>
   :root {
@@ -266,6 +267,9 @@
       <button class="icon-btn" id="read-aloud" type="button" aria-label="Read replies aloud" title="Read replies aloud">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
       </button>
+      <button class="icon-btn compact-action" id="go-drive" type="button" aria-label="Drive mode — Izuki as your co-pilot" title="Drive mode">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M6 17l1.5-6.5A2 2 0 0 1 9.4 9h5.2a2 2 0 0 1 1.9 1.5L18 17"/><circle cx="7.5" cy="17" r="2"/><circle cx="16.5" cy="17" r="2"/><path d="M4 13h2M18 13h2"/></svg><span>Drive</span>
+      </button>
       <button class="call-btn" id="go-live" type="button" aria-label="Call Izuki — talk hands-free">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>
         Call
@@ -459,6 +463,16 @@
       </div>
       <p id="native-feedback" class="note" role="status" style="margin-top:8px">Reminders use your phone's notification permissions, sound and vibration settings.</p>
       <p id="native-ios-limits" class="note" hidden>Siri Shortcuts can open a question in Izuki. iOS does not allow this app to tap through or read other apps. Connected accounts work through their supported integrations.</p>
+    </section>
+
+    <section>
+      <h3>Drive mode</h3>
+      <p class="note">Tap <b>Drive</b> at the top (or say “drive mode”): Izuki becomes your co-pilot, hands-free. “Take me to…” starts Google Maps' turn-by-turn; “find gas near me”, “play music”, “text that I'm on my way” are done at once. It speaks up after two hours at the wheel and when your battery runs low. 🎉 Fun mode makes it a cheeky road-trip buddy.</p>
+      <div class="field" style="margin-top:8px">
+        <label for="drive-warn">Warn me above this speed (optional)</label>
+        <input id="drive-warn" type="number" inputmode="numeric" min="0" max="250" step="5">
+      </div>
+      <p class="note">Your speed comes from your phone's location, while Drive mode is on only — it isn't saved or sent anywhere.</p>
     </section>
 
     <section id="native-controls" hidden>
@@ -951,6 +965,7 @@
       "Keep replies short and natural (a few sentences) unless they ask for detail. Plain text; a short dash list only when it really helps; an emoji now and then at most.",
       "What you write may be read aloud, so write the way a person talks.",
       talking ? "You're on a live voice call right now: answer in one to three short spoken sentences, the most important thing first. No lists, no markdown, no emoji." : "",
+      window.IzukiDrive?.system?.() || "",
       "Respect the requested device. Phone means phone, never silently PC. If a screen action has no clear device, ask which device and do not claim it was done. iPhone web pages cannot unlock or freely control other apps.",
       `It is now ${now.toLocaleString([], { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })} on the user's phone.`,
       `If they ask to be reminded of something, confirm it and add on its own line at the very end: [REMIND YYYY-MM-DD HH:MM | what to remind them] in their local time, 24-hour clock ("in 20 minutes" is ${stamp(in20)}).`,
@@ -1298,12 +1313,27 @@
     }, Math.max(0, Math.min(next.at - Date.now(), 2 ** 31 - 1)));
   }
 
-  /** Ask the linked PC (its Call Izuki page). */
+  /** Until when the PC counts as out of reach from this network (school
+   * and work Wi-Fi often block the link to it): meanwhile reminders and
+   * questions are handled here, and only an "on my PC" request tries again. */
+  let pcAway = 0;
+  /** Ask the linked PC (its Call Izuki page) — never waiting forever. */
   async function askPc(said) {
     const base = pc.endsWith("/") ? pc : pc + "/";
-    const r = await fetch(base + "talk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: said }) });
-    if (!r.ok) throw new Error("pc");
-    return r.json();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 9000);
+    try {
+      const r = await fetch(base + "talk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: said }), signal: controller.signal });
+      if (!r.ok) throw new Error("pc");
+      pcAway = 0;
+      return r.json();
+    } catch (e) {
+      // Never reached it at all (blocked, or no answer): not the PC's fault.
+      if (e instanceof TypeError || e?.name === "AbortError") { pcAway = Date.now() + 3 * 60_000; throw new Error("unreachable"); }
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
@@ -1390,8 +1420,10 @@
       out.remove();
       bubble("izuki", text, { chips });
       return text;
-    } catch {
-      const text = "I couldn't reach your PC — is it on, with Izuki open? The link also changes when Izuki restarts, so paste the new one in Settings.";
+    } catch (e) {
+      const text = e?.message === "unreachable"
+        ? "I can't reach your PC from this network — school and work Wi-Fi often block the link to it. Switch this phone to mobile data for PC tasks; everything else I can do right here."
+        : "I couldn't reach your PC — is it on, with Izuki open? The link also changes when Izuki restarts, so paste the new one in Settings.";
       out.remove();
       bubble("izuki", text, { error: true });
       return text;
@@ -1462,6 +1494,21 @@
         return;
       }
       said = g.said || said;
+    }
+    // Drive mode: "take me to…", "gas near me", "play music", "how fast am I
+    // going" — done at once, no AI (and "drive mode" itself starts it).
+    if (said && !audio && !files.length && window.IzukiDrive) {
+      const d = window.IzukiDrive.gate(said);
+      if (d) {
+        history.push({ role: "user", text: said }, { role: "model", text: d.say }); saveAll();
+        bubble("me", said); bubble("izuki", d.say); liveSaid(d.say);
+        const line = document.getElementById("drive-said"); if (line) line.textContent = d.say;
+        await speak(d.say);
+        // The app opens once the words are out (Maps would cut them off).
+        try { d.then?.(); } catch {}
+        if (talking) listen();
+        return;
+      }
     }
     if (files.length && !said) said = "Have a look at this and help me with it.";
     if (!ready()) { render(); return; }
@@ -1538,7 +1585,8 @@
       // instead of doing it. With a Composio key on this phone the phone can
       // do the accounts itself, so it doesn't wait for the PC at all.
       const haveApps = !!window.izukiApps?.configured();
-      const lane = requestLane(said, haveApps, !!pc);
+      // A PC this network can't reach: only an "on my PC" request tries again.
+      const lane = requestLane(said, haveApps, !!pc && (Date.now() > pcAway || pcTarget(said)));
       if (!files.length && (lane === "phone" || lane === "clarify")) {
         reply = lane === "clarify"
           ? "Do you want that on your phone or your PC? Please repeat the action with ‘on my phone’ or ‘on my PC’. I haven't changed either device."

@@ -369,6 +369,10 @@ pub struct Settings {
     /// for good (off until turned on).
     #[serde(default)]
     pub tidy_recycle_auto: bool,
+    /// PC Care: say on the Island when antivirus, firewall, disk space or a
+    /// drive needs attention (on unless turned off).
+    #[serde(default = "default_true")]
+    pub pc_care_alerts: bool,
     /// A click the AI picked by eye gets a second look from a pointing model
     /// (Gemini, free with its key) before it happens.
     #[serde(default = "default_true")]
@@ -909,6 +913,7 @@ impl Default for Settings {
             pc_boost_auto: false,
             tidy_dupes_auto: false,
             tidy_recycle_auto: false,
+            pc_care_alerts: true,
             sharp_eye: true,
             sharp_eye_tars: false,
             pc_boost_power_plan: false,
