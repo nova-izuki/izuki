@@ -31,7 +31,8 @@ export function JumpBar({ jumps, topId, below = 0 }: { jumps: { label: string; i
   return (
     <>
       <div ref={topRef} id={topId} className="h-0" aria-hidden />
-      <nav aria-label="Jump to" style={below ? { top: below } : undefined} className="izk-no-drag -mx-1 flex gap-1 overflow-x-auto rounded-[14px] px-1 py-1 [scrollbar-width:none]">
+      {/* Follows you down the page, so any part is always one tap away. */}
+      <nav aria-label="Jump to" style={{ top: below - 16 }} className="izk-no-drag izk-jumpbar sticky z-20 -mx-1 flex gap-1 overflow-x-auto rounded-[14px] px-1 py-1 [scrollbar-width:none]">
         {jumps.map((j) => (
           <button key={j.id} type="button" onClick={() => go(j)} className="izk-pill izk-no-drag shrink-0 px-2.5 py-1 text-[10.5px]">
             {j.label}

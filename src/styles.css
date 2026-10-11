@@ -123,6 +123,14 @@ html.izuki-overlay body {
   width: 100%;
 }
 
+/* The frame never scrolls — only the page area inside it does. */
+html.izuki-config,
+html.izuki-config body,
+html.izuki-config #root,
+.izk-window {
+  overflow: clip;
+}
+
 ::selection {
   background: rgba(124, 92, 255, 0.45);
 }
@@ -187,6 +195,10 @@ html.izuki-overlay body {
     inset 0 -1px 0 rgba(255, 255, 255, 0.06),
     inset 0 0 80px rgba(124, 92, 255, 0.07);
   overflow: hidden;
+  /* clip, not hidden: a clipped box can't be scrolled at all, so a
+     "scroll into view" (the chat following new words, Find anything, a
+     jump link) can never push the title bar half out of sight again. */
+  overflow: clip;
 }
 
 /* Specular sweep across the top edge — the "wet glass" read. */
@@ -780,4 +792,12 @@ html[data-backdrop="tabbed"] .izk-card {
 }
 @media (prefers-reduced-motion: reduce) {
   .izk-hud-spin-slow, .izk-hud-spin-rev, .izk-hud-spin-fast, .izk-hud-eq i { animation: none; }
+}
+
+/* The sticky jump bar: frosted, so the page scrolling under it stays readable. */
+.izk-jumpbar {
+  background: rgba(20, 20, 28, 0.72);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
 }

@@ -138,7 +138,11 @@ export function GlassConfigPanel() {
       <Recover name="voice" silent>
         <VoiceEngine />
       </Recover>
-      <div className="izk-sheet izk-grain flex h-full flex-col">
+      <div
+        className="izk-sheet izk-grain flex h-full flex-col"
+        // Belt and braces with overflow: clip — the frame itself never stays scrolled.
+        onScroll={(e) => { if (e.currentTarget.scrollTop) e.currentTarget.scrollTop = 0; }}
+      >
         {/* the slow-drifting colour under the glass — always there, never distracting */}
         <div className="izk-aurora" aria-hidden="true">
           <span />

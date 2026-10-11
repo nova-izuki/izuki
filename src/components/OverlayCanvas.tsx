@@ -743,10 +743,17 @@ export function OverlayCanvas() {
     };
   }, [musicShowing]);
   useEffect(() => {
-    // Closing the orb (its ×, Esc, "stop") ends music mode too.
+    // Closing the orb (its ×, Esc, "stop") ends music mode too — and
+    // everything Izuki had on screen goes at once, right here: the orb, the
+    // words still typing out, the "doing" line. (Waiting for the other
+    // window to say so left them up when it was busy or slow.)
     const off = on<void>(EV.stopSpeaking, () => {
       setMusicAsked(false);
       setMusicSnoozed(true);
+      setOrb("hidden");
+      setCaption(null);
+      captionText.current = "";
+      setDoing(null);
     });
     return () => void off.then((f) => f());
   }, []);
