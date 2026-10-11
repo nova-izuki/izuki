@@ -57,7 +57,7 @@ function ToonSection({ style, pick }: { style: string; pick: (s: Settings["orb_s
   const persona = useIzuki((s) => s.settings.persona);
   const raw = useIzuki((s) => s.settings.avatar);
   const picked = (faceLooks(raw).toon as { render?: string } | undefined)?.render;
-  const render = picked === "comic" || picked === "ink" ? picked : "flat";
+  const render = picked === "comic" || picked === "ink" || picked === "painted" ? picked : "flat";
   useEffect(() => {
     let alive = true;
     void import("../../docs/app/toon.js").then((m) => alive && setMod(m));
@@ -78,6 +78,11 @@ function ToonSection({ style, pick }: { style: string; pick: (s: Settings["orb_s
       if (i < ids.length) setTimeout(step, 30);
     };
     setThumbs({});
+    // Painted cards wait for the paintings, so they don't show the ink stand-in.
+    if (render === "painted") {
+      void mod.paintedReady().then(() => alive && step());
+      return () => { alive = false; };
+    }
     step();
     return () => { alive = false; };
   }, [mod, render]);
@@ -107,7 +112,7 @@ function ToonTuner() {
     <section className="space-y-2 rounded-[14px] border border-white/10 bg-white/5 p-3">
       <h4 className="text-[11px] font-semibold uppercase tracking-wide text-izk-muted">Character style</h4>
       <div className="flex flex-wrap gap-1.5">
-        {[["flat", "Flat vector"], ["comic", "Comic (Spider-Verse)"], ["ink", "Ink (painted)"]].map(([k, l]) => (
+        {[["flat", "Flat vector"], ["comic", "Comic (Spider-Verse)"], ["ink", "Ink"], ["painted", "Painted (beta)"]].map(([k, l]) => (
           <button key={k} type="button" aria-pressed={(look.render ?? "flat") === k} className={pill((look.render ?? "flat") === k)} onClick={() => set({ render: k })}>{l}</button>
         ))}
       </div>

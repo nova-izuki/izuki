@@ -8,6 +8,9 @@
 //   ink    painted concept-art look: tall figures with small heads, muted
 //          colour blocks with one loud accent, hard brushy shadow shapes and
 //          no outlines, baggy clothes and chunky boots, on off-white paper
+//   painted  a real painting of the character (where one exists — Dre so
+//          far), brought to life: the mouth opens with the words, the eyes
+//          blink, the body breathes and sways. Others show as ink.
 //
 // They're alive: they breathe, shift their weight, blink and glance around,
 // look at the pointer, and — while Izuki talks — an animator plans gestures
@@ -1173,13 +1176,124 @@ const FRAMES = { full: [-106, 3], half: [-104, -40], bust: [-102, -62], head: [-
 const TALL_FRAMES = { full: [-114, 6], half: [-113, -50], bust: [-112, -72], head: [-111, -86] };
 
 /**
- * One frame. opts: { persona, render ("flat"|"comic"|"ink"), framing, orb (bool),
+ * One frame. opts: { persona, render ("flat"|"comic"|"ink"|"painted"), framing, orb (bool),
  * time, energy, thinking, mood, look, poke, say: { text }, accent }.
  * Always true (no WebGL needed).
  */
+// ------------------------------------------------------------------ painted characters
+
+/**
+ * Painted art, per character: the body cut out on a transparent background,
+ * plus the mouth (open) and eyes (closed) painted over the same picture —
+ * see painted/<id>/rig.json for where they sit. Each file is written out
+ * here so the app's bundler ships it.
+ */
+const PAINTED_ART = {
+  dre: {
+    rig: new URL("./painted/dre/rig.json", import.meta.url).href,
+    base: new URL("./painted/dre/base.webp", import.meta.url).href,
+    mouth: new URL("./painted/dre/mouth.webp", import.meta.url).href,
+    eyes: new URL("./painted/dre/eyes.webp", import.meta.url).href,
+  },
+};
+const paintedCache = new Map();
+const paintedLoads = new Map();
+
+/** The painted art for a voice, once it has loaded (null until then, or if there is none). */
+function paintedFor(persona) {
+  const art = PAINTED_ART[persona];
+  if (!art || typeof Image === "undefined") return null;
+  let p = paintedCache.get(persona);
+  if (!p) {
+    p = { ready: false };
+    paintedCache.set(persona, p);
+    const load = (src) => new Promise((ok, fail) => { const im = new Image(); im.onload = () => ok(im); im.onerror = fail; im.src = src; });
+    paintedLoads.set(persona, fetch(art.rig)
+      .then((r) => r.json())
+      .then((rig) => Promise.all([load(art.base), load(art.mouth), load(art.eyes)]).then(([base, mouth, eyes]) => { Object.assign(p, { rig, base, mouth, eyes, ready: true }); }))
+      .catch(() => { p.failed = true; }));
+  }
+  return p.ready ? p : null;
+}
+
+/** Which voices have painted art. */
+export const PAINTED = Object.keys(PAINTED_ART);
+
+/** Settles once every painting has loaded (or failed) — so a card drawn
+ * after it shows the painting, not the ink stand-in. */
+export function paintedReady() {
+  for (const id of PAINTED) paintedFor(id);
+  return Promise.all([...paintedLoads.values()]).then(() => undefined);
+}
+
+function drawPainted(ctx, size, P, s, t, framing, orb, e, accent) {
+  const { rig, base, mouth, eyes } = P;
+  const [top, bottom] = rig.frames[framing] || rig.frames.half;
+  const c = size / 2, R = size * 0.46;
+  const unit = (size * (orb ? 0.9 : 0.98)) / (bottom - top);
+  ctx.save();
+  if (orb) {
+    const g = ctx.createRadialGradient(c, c * 0.85, R * 0.1, c, c, R);
+    g.addColorStop(0, "#f1efe9");
+    g.addColorStop(1, "#d9d5cc");
+    ctx.beginPath();
+    ctx.arc(c, c, R, 0, TAU);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.clip();
+    inkBackdrop(ctx, size, accent, t, e);
+  }
+  ctx.translate(c - rig.head[0] * unit, size * (orb ? 0.06 : 0.01) - top * unit);
+  ctx.scale(unit, unit);
+  // A soft see-through shadow under the boots (the painting's own was cut away).
+  if (framing === "full") {
+    ctx.fillStyle = "rgba(20,16,12,0.22)";
+    ctx.beginPath();
+    ctx.ellipse(rig.feet[0], rig.feet[1] + 6, rig.size[0] * 0.36, 14, 0, 0, TAU);
+    ctx.fill();
+  }
+  // Alive: breathing, a slow sway, a nod on the stressed words — from the feet
+  // when the whole body shows, from the neck when it's a closer view.
+  const [px, py] = framing === "full" ? rig.feet : rig.neck;
+  const sway = (s.sway || 0) * 0.008 + 0.005 * Math.sin(t * 0.45) + 0.003 * Math.sin(t * 1.1);
+  const nod = framing === "full" ? 0 : (s.nod || 0) * 0.025 + (s.head?.roll || 0) * 0.3;
+  ctx.translate(px, py);
+  ctx.rotate(sway + nod);
+  ctx.scale(1, 1 + Math.sin(t * 1.5) * 0.004);
+  ctx.translate(-px, -py);
+  ctx.drawImage(base, 0, 0);
+  // The mouth opens with the words: the open mouth fades in, and it stretches
+  // down a little more on the open sounds (ah, oh).
+  const open = clamp((s.mouth?.o || 0) * 1.7, 0, 1);
+  if (open > 0.03) {
+    const [mx, my, mw, mh] = rig.mouth;
+    ctx.globalAlpha = clamp(open * 1.4, 0, 1);
+    ctx.drawImage(mouth, mx, my, mw, mh * (0.82 + 0.22 * open));
+    ctx.globalAlpha = 1;
+  }
+  const shut = clamp((s.blink || 0) * 1.5, 0, 1);
+  if (shut > 0.05) {
+    const [ex, ey, ew, eh] = rig.eyes;
+    ctx.globalAlpha = shut;
+    ctx.drawImage(eyes, ex, ey, ew, eh);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+  if (orb) {
+    ctx.beginPath();
+    ctx.arc(c, c, R, 0, TAU);
+    ctx.strokeStyle = `rgba(40,34,30,${0.3 + e * 0.3})`;
+    ctx.lineWidth = 1.2 + e * 1.4;
+    ctx.stroke();
+  }
+  return true;
+}
+
 export function drawToon(ctx, size, opts = {}) {
   const C = characterFor(opts.persona);
-  const render = opts.render === "comic" || opts.render === "ink" ? opts.render : "flat";
+  // Painted art where it has loaded; ink (the closest drawn look) until then.
+  const painting = opts.render === "painted" ? paintedFor(opts.persona) : null;
+  const render = opts.render === "comic" || opts.render === "ink" ? opts.render : opts.render === "painted" ? "ink" : "flat";
   const framing = FRAMES[opts.framing] ? opts.framing : "half";
   const orb = opts.orb !== false;
   const time = opts.time || 0;
@@ -1193,6 +1307,7 @@ export function drawToon(ctx, size, opts = {}) {
   const accent = opts.accent || C.top[2] || "#8b5cf6";
   const c = size / 2, R = size * 0.46;
   const e = clamp(opts.energy || 0, 0, 1);
+  if (painting) return drawPainted(ctx, size, painting, s, t, framing, orb, e, painting.rig.accent || accent);
   ctx.save();
   if (orb) {
     // The stage: a disc behind the character.
@@ -1367,7 +1482,7 @@ function comicBackdrop(ctx, size, accent, t, e, s) {
 
 /** A still of a character (for its card), as a data URL. */
 export function toonThumb(persona, render = "flat", px = 220, framing = "bust") {
-  // render: "flat", "comic" or "ink".
+  // render: "flat", "comic", "ink" or "painted".
   const c = document.createElement("canvas");
   c.width = c.height = px;
   const ctx = c.getContext("2d");

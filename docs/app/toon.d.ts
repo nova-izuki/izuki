@@ -3,4 +3,6 @@ export const CHARACTERS: Record<string, ToonCharacter>;
 export const SKIN: Record<string, string>;
 export function characterFor(persona: string): ToonCharacter;
 export function drawToon(ctx: CanvasRenderingContext2D, size: number, opts: Record<string, unknown>): boolean;
-export function toonThumb(persona: string, render?: "flat" | "comic" | "ink", px?: number, framing?: string): string;
+export function toonThumb(persona: string, render?: "flat" | "comic" | "ink" | "painted", px?: number, framing?: string): string;
+export const PAINTED: string[];
+export function paintedReady(): Promise<void>;
