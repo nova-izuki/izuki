@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Gauge, Loader2, Rocket, ShieldCheck, Trash2, Undo2, Wand2, Zap } from "lucide-react";
+import { Copy, Gauge, Loader2, Rocket, ShieldCheck, Trash2, Undo2, Wand2, Zap } from "lucide-react";
 import { Row, Section, Toggle } from "./ui";
 import { useIzuki } from "../lib/store";
 import { api, IS_TAURI, type BoostHealth, type DeepReport } from "../lib/ipc";
@@ -169,11 +169,18 @@ export function BoostCard() {
       </Row>
       <div className="izk-divider" />
       <Row
-        label="Keep my PC fast by itself"
-        hint="Keeps your PC fast forever: when it lags it clears junk, frees memory and closes hogging updaters on its own — plus a quiet tidy once a day."
+        label="Keep my PC fast 24/7"
+        hint="Works on its own. When your PC slows down, Izuki clears junk and old browser files, frees memory and closes background update tools — plus a quiet tidy once a day. Apps are only removed when you tap."
         icon={<Wand2 size={14} strokeWidth={2.3} />}
       >
         <Toggle checked={settings.pc_boost_auto} onChange={(v) => patch({ pc_boost_auto: v })} />
+      </Row>
+      <Row
+        label="Clear duplicate downloads"
+        hint="Once a day, and when you press Make my PC fast, extra copies of a download (like “report (1).pdf” next to “report.pdf”) go to the Recycle Bin, so you can restore them. Files you named differently are never touched."
+        icon={<Copy size={14} strokeWidth={2.3} />}
+      >
+        <Toggle checked={settings.tidy_dupes_auto} onChange={(v) => patch({ tidy_dupes_auto: v })} />
       </Row>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <button

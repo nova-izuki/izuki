@@ -84,7 +84,7 @@ export function SettingsTab() {
       { label: "Discord & reminders", id: "settings-discord", keywords: "notify notification calendar alert" },
       { label: "Updates", id: "settings-updates", keywords: "download version release" },
       { label: "On its own", id: "settings-autonomous", keywords: "skip ads youtube cookie banner reject autonomous automatic chores" },
-      { label: "PC Boost", id: "settings-boost", keywords: "lag slow speed fast temp clean memory cpu unlag" },
+      { label: "PC Boost", id: "settings-boost", keywords: "lag slow speed fast temp clean memory cpu unlag duplicate downloads 24/7" },
       { label: "Control my TV", id: "settings-tv", keywords: "roku samsung lg android tv fire" },
       { label: "Browser extension", id: "settings-browser", keywords: "chrome edge side panel ask page" },
       { label: "Meta Llama", id: "settings-brain", keywords: "meta llama facebook" },

@@ -357,6 +357,10 @@ pub struct Settings {
     /// helpers) — never a window you're using.
     #[serde(default)]
     pub pc_boost_auto: bool,
+    /// Once a day, extra copies of the same download go to the Recycle Bin
+    /// (off until turned on).
+    #[serde(default)]
+    pub tidy_dupes_auto: bool,
     /// Last confirmed High Performance state. UI refreshes from Windows;
     /// never automatically applies a plan from this stored preference.
     #[serde(default = "default_false")]
@@ -882,6 +886,7 @@ impl Default for Settings {
             pc_boost: true,
             match_voice_face: true,
             pc_boost_auto: false,
+            tidy_dupes_auto: false,
             pc_boost_power_plan: false,
             cloud_ears: true,
             speech_language: default_speech_language(),

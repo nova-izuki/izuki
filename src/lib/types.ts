@@ -332,6 +332,8 @@ export interface Settings {
   wake_sensitivity: "relaxed" | "normal" | "strict";
   /** The Island may briefly offer help on its own (an error, a question, a video). */
   island_suggestions: boolean;
+  /** Once a day, extra copies of the same download go to the Recycle Bin. */
+  tidy_dupes_auto: boolean;
   /** Press "Skip ad" on YouTube by itself. */
   auto_skip_ads: boolean;
   /** Press "Reject all" on cookie banners by itself. */

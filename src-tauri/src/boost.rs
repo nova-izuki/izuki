@@ -230,8 +230,25 @@ pub fn run(auto: bool) -> String {
     if ram >= 50 {
         line.push_str(&format!(" Freed {} of memory too.", if ram >= 1024 { format!("{:.1} GB", ram as f64 / 1024.0) } else { format!("{ram} MB") }));
     }
+    // Asked for: duplicate downloads too, with their own switch on (not on a
+    // lag spike — it reads files).
+    if !auto && crate::state::try_store().is_some_and(|s| s.settings().tidy_dupes_auto) {
+        line.push_str(&dupes_line(crate::dupes::tidy_downloads()));
+    }
     eprintln!("[boost] {} — {line}", if auto { "by itself" } else { "asked" });
     line
+}
+
+/// " Moved 3 duplicate downloads (120 MB) to the Recycle Bin." — or nothing.
+fn dupes_line((moved, mb): (usize, u64)) -> String {
+    match moved {
+        0 => String::new(),
+        n => format!(
+            " Moved {n} duplicate download{}{} to the Recycle Bin.",
+            if n == 1 { "" } else { "s" },
+            if mb > 0 { format!(" ({mb} MB)") } else { String::new() }
+        ),
+    }
 }
 
 /// Watch quietly while Izuki runs; offer (or do) the boost when it's slow.
@@ -241,7 +258,8 @@ pub fn spawn(app: tauri::AppHandle) {
         .spawn(move || loop {
             std::thread::sleep(Duration::from_secs(5));
             let s = crate::state::store().settings();
-            if !s.pc_boost {
+            // "Keep my PC fast 24/7" watches by itself; "Watch for lag" alone only offers.
+            if !s.pc_boost && !s.pc_boost_auto {
                 SAMPLES.lock().clear();
                 continue;
             }
@@ -257,7 +275,12 @@ pub fn spawn(app: tauri::AppHandle) {
             if s.pc_boost_auto && cpu < 30 && DAILY.lock().is_none_or(|t| t.elapsed() > Duration::from_secs(24 * 3600)) {
                 *DAILY.lock() = Some(Instant::now());
                 let line = run(true);
-                eprintln!("[boost] daily tidy: {line}");
+                // Files only with their own switch on.
+                let dupes = if s.tidy_dupes_auto { dupes_line(crate::dupes::tidy_downloads()) } else { String::new() };
+                eprintln!("[boost] daily tidy: {line}{dupes}");
+                if !dupes.is_empty() {
+                    crate::activity::show_boost(dupes.trim(), false);
+                }
             }
             if !lagging {
                 continue;
@@ -267,7 +290,7 @@ pub fn spawn(app: tauri::AppHandle) {
                 let line = run(true);
                 crate::activity::show_boost(&format!("Sped up your PC — {line}"), false);
                 SAMPLES.lock().clear();
-            } else if OFFERED.lock().is_none_or(|t| t.elapsed() > Duration::from_secs(20 * 60)) {
+            } else if s.pc_boost && OFFERED.lock().is_none_or(|t| t.elapsed() > Duration::from_secs(20 * 60)) {
                 *OFFERED.lock() = Some(Instant::now());
                 crate::activity::show_boost(&format!("Your PC is working hard (processor {cpu}%, memory {ram}%)."), true);
             }

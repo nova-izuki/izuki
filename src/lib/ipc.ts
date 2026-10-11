@@ -220,6 +220,7 @@ export const MOCK_SETTINGS: Settings = {
   wake_sensitivity: "normal",
   keep_reply: false,
   island_suggestions: true,
+  tidy_dupes_auto: false,
   auto_skip_ads: false,
   auto_reject_cookies: false,
   follow_hand_size: 16,

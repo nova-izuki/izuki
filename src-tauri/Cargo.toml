@@ -1,6 +1,6 @@
 [package]
 name = "izuki"
-version = "1.0.73"
+version = "1.0.74"
 description = "IZUKI — draw on your screen, Izuki does it."
 authors = ["Izuki"]
 edition = "2021"
@@ -81,6 +81,7 @@ features = [
   "Win32_Media_Audio",
   "Win32_Media_Audio_Endpoints",
   "Win32_System_Com",
+  "Win32_UI_Shell",
   "Win32_System_Com_StructuredStorage",
   "Win32_Storage_FileSystem",
   "Win32_Storage_Xps",
