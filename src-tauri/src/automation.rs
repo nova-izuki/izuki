@@ -78,6 +78,27 @@ fn place(e: &mut Enigo, x: i32, y: i32) {
     let _ = e.move_mouse(x, y, Coordinate::Abs);
 }
 
+/// Put the pointer right there at once (Air control's fingertip).
+pub fn pointer_to(x: i32, y: i32) {
+    if let Ok(mut e) = enigo() {
+        place(&mut e, x, y);
+    }
+}
+
+/// Press or release a mouse button where the pointer is (Air control's pinch:
+/// pressed and moved is a drag and drop).
+pub fn mouse_button(right: bool, down: bool) -> Result<()> {
+    let mut e = enigo()?;
+    e.button(if right { Button::Right } else { Button::Left }, if down { Direction::Press } else { Direction::Release })
+        .map_err(|err| anyhow!("mouse button failed: {err:?}"))
+}
+
+/// Scroll whatever is under the pointer, where it is (no glide).
+pub fn scroll_here(amount: i32) -> Result<()> {
+    let mut e = enigo()?;
+    e.scroll(amount, Axis::Vertical).map_err(|err| anyhow!("scroll failed: {err:?}"))
+}
+
 /// Glide the real cursor from where it is to (x, y).
 pub fn glide_to(x: i32, y: i32, duration_ms: u64) -> Result<()> {
     let mut e = enigo()?;

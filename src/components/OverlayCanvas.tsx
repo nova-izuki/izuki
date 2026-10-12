@@ -30,6 +30,7 @@ import { useDictation } from "../hooks/useDictation";
 import { VoiceSphere } from "./VoiceSphere";
 import { TranscriptBar } from "./TranscriptBar";
 import { QuickAsk, QUICK_ASK_WIDTH } from "./QuickAsk";
+import { AirControl } from "./AirControl";
 import { cx } from "./ui";
 import type {
   CaptionPayload,
@@ -116,6 +117,8 @@ export function OverlayCanvas() {
   const [handOn, setHandOn] = useState(false);
   // The Island at the top of the screen (on unless switched off in Talk).
   const [islandOn, setIslandOn] = useState(true);
+  /** Air control: on (with your taught gestures) or off (null). */
+  const [air, setAir] = useState<Array<{ name: string; pose: number[]; action: string }> | null>(null);
   const [islandPeeks, setIslandPeeks] = useState(true);
   const [islandWave, setIslandWave] = useState<string>("auto");
   const [keepReply, setKeepReply] = useState(false);
@@ -455,6 +458,7 @@ export function OverlayCanvas() {
           setMusicAuto(s.music_visuals);
           setHandSize(s.follow_hand_size);
           setInk(s.ink_color);
+          setAir(s.air_enabled ? s.air_gestures : null);
         });
         // Focus the prompt without stealing the pointer from the canvas —
         // only relevant in draw mode, where the window can actually be typed into.
@@ -514,6 +518,7 @@ export function OverlayCanvas() {
           setMusicAuto(s.music_visuals);
           setHandSize(s.follow_hand_size);
           setInk(s.ink_color);
+          setAir(s.air_enabled ? s.air_gestures : null);
         });
       }),
       on<boolean>(EV.thinking, setThinking),
@@ -737,7 +742,7 @@ export function OverlayCanvas() {
     return () => clearTimeout(t);
   }, [transcript]);
 
-  const idle = open && mode === "follow" && !handOn && !islandOn && !listening && !caption && orb === "hidden" && !transcript;
+  const idle = open && mode === "follow" && !handOn && !islandOn && !air && !listening && !caption && orb === "hidden" && !transcript;
   useEffect(() => {
     if (!idle) return;
     const t = setTimeout(() => void api.closeOverlay(), 1500);
@@ -940,6 +945,7 @@ export function OverlayCanvas() {
 
   return (
     <>
+    {air && <AirControl key="air" gestures={air} />}
     <div key="main" className="fixed inset-0 select-none">
       {/* frozen screen behind the marks */}
       <AnimatePresence>

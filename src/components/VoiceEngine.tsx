@@ -338,6 +338,10 @@ let wakeHeardElsewhereUntil = 0;
 // where your cursor is, in whatever app is in front — Word, WhatsApp, Docs.
 let dictating = false;
 let dictatedEnd = "";
+/** Air control: you pointed at a box and it was clicked — what you say next goes in it. */
+let airFieldAt = 0;
+/** Said into a pointed-at box: an ask to write something, not words to type as they are. */
+const AIR_ASK = /^(?:please\s+|can you\s+|could you\s+)?(?:reply|respond|answer|write|draft|compose|tell (?:them|him|her)|say (?:that|something)|ask (?:them|him|her)|make (?:it|this)|fix|correct|translate|summari[sz]e|fill (?:it|this|that) in|put|search for|look up)\b/i;
 const DICTATE_START = /^(?:please\s+)?(?:type what i say|start (?:dictation|dictating|typing for me)|dictate|dictation mode|take dictation|write what i say|type for me)\b/i;
 const DICTATE_STOP = /^(?:stop|end|finish|done|cancel)(?:\s+(?:typing|dictation|dictating|writing))?\.?$|^(?:that's all|that is all|i'?m done)\.?$/i;
 
@@ -780,6 +784,34 @@ export function VoiceEngine() {
       }
       orb("listening");
       void afterReply(at, false);
+      return;
+    }
+
+    // "Turn on air control" / "stop hand control": straight to the setting.
+    const airSwitch = t.match(/^(?:please\s+)?(?:(turn|switch|start|stop)\s+(on|off)?\s*(?:the\s+)?(?:air|hand|gesture)\s+controls?(?:\s+(on|off))?|(?:air|hand|gesture)\s+controls?\s+(on|off))[.!]?$/i);
+    if (airSwitch) {
+      const word = (airSwitch[2] || airSwitch[3] || airSwitch[4] || airSwitch[1] || "").toLowerCase();
+      const onNow = word !== "off" && word !== "stop";
+      useIzuki.getState().patchSettings({ air_enabled: onNow });
+      startSession(from === "voice", "speaking");
+      await respond(onNow ? "Air control's on — wave your hand at the camera." : "Air control's off.", "cheerful");
+      void afterReply(at, false);
+      return;
+    }
+
+    // Air control: you pointed at a box (it's clicked and focused). Plain
+    // words go in as said; an ask ("reply that I'm running late") is written
+    // for you, straight into the box — never sent.
+    if (from === "voice" && airFieldAt && Date.now() - airFieldAt < 20_000) {
+      airFieldAt = 0;
+      if (AIR_ASK.test(t)) {
+        return handleRequest(`${t}\n[The text box under my pointer is already clicked and focused. Write what I asked straight into it — type it only; don't send, submit or press Enter.]`, from);
+      }
+      startSession(from === "voice", "thinking");
+      const ok = await api.typeHere(spokenToTyped(t, "")).catch(() => false);
+      if (requestSeq !== at) return;
+      if (!ok) await respond("I couldn't type there — point at the text box again and say it.", "calm");
+      else endAfterSpeaking("typed into the pointed-at box");
       return;
     }
 
@@ -1324,6 +1356,20 @@ ${result}`);
     });
     return () => void off.then((f) => f());
   }, [finishPushToTalk]);
+
+  // Air control: you pointed at a box and held still — it's clicked; now
+  // listen, and what you say goes in it (handleRequest).
+  useEffect(() => {
+    const off = on<void>(EV.airSay, () => {
+      const at = (airFieldAt = Date.now());
+      if (!listeningNow.current) void emit(EV.pushToTalk);
+      // Nothing said (the listen gave up): later requests aren't for the box.
+      setTimeout(() => {
+        if (airFieldAt === at && !listeningNow.current) airFieldAt = 0;
+      }, 9500);
+    });
+    return () => void off.then((f) => f());
+  }, []);
 
   useEffect(() => {
     const off = on<void>(EV.pushToTalk, () => {

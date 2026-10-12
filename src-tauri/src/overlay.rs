@@ -305,7 +305,7 @@ pub fn hide_overlay(app: &AppHandle) -> Result<()> {
 /// The overlay stays on screen (click-through) for the always-on hand or the
 /// Island; otherwise it's put away when there's nothing to show.
 pub fn stays_up(s: &crate::settings::Settings) -> bool {
-    s.follow_mode_enabled || s.island_enabled
+    s.follow_mode_enabled || s.island_enabled || s.air_enabled
 }
 
 /// Show just the glowing hand, click-through, tracking the real cursor,

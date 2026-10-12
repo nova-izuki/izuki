@@ -22,6 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🖐️", title: "Air control: your hand drives the PC", how: "Through any camera: move your hand to move the pointer, pinch to click (hold to drag and drop), thumb + middle right-clicks, thumb + ring copies, thumb + pinky pastes, two fingers scroll, a palm swipe goes back. Point at a text box and hold still: it's clicked, and what you say goes in it. A box hugs whatever is under your hand, even one tiny FL Studio step. Teach it your own gestures too. Or say “turn on air control”.", try: { label: "Air control settings", tab: "settings", id: "settings-air" } },
   { icon: "📷", title: "Any camera, picked for you", how: "Built-in, USB, capture card or a virtual camera like OBS: the Island's camera picks the right one by itself (yours if you chose one), moves on if one won't start, and switches if you unplug it. More than one? Pick from the corner of the view." },
   { icon: "👄", title: "3D faces open their mouths", how: "The holograms and the built-in Woman and Man now open their mouths when they talk — teeth and all." },
   { icon: "🟢", title: "See PC fast working", how: "With “Keep my PC fast 24/7” on, PC Care shows it live: when it last checked, and what it last cleaned by itself.", try: { label: "Open PC Care", tab: "settings", id: "settings-boost" } },

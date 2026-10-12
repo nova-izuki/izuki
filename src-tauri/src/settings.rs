@@ -402,6 +402,12 @@ pub struct Settings {
     /// Walks around the taskbar now and then.
     #[serde(default = "default_true")]
     pub mate_wander: bool,
+    /// Air control: your hand in front of the camera drives the PC (air.rs).
+    #[serde(default)]
+    pub air_enabled: bool,
+    /// Your own Air gestures: a taught hand pose and what it does.
+    #[serde(default)]
+    pub air_gestures: Vec<AirGesture>,
     /// Last confirmed High Performance state. UI refreshes from Windows;
     /// never automatically applies a plan from this stored preference.
     #[serde(default = "default_false")]
@@ -568,6 +574,15 @@ fn default_speech_language() -> String {
 }
 
 fn default_orb_response() -> f64 { 1.0 }
+
+/// A hand pose you taught Air control, and what it does: "keys:ctrl+s",
+/// "type:some words" or "say:a request for Izuki".
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AirGesture {
+    pub name: String,
+    pub pose: Vec<f32>,
+    pub action: String,
+}
 
 fn default_mate_pet() -> String {
     "cat".into()
@@ -953,6 +968,8 @@ impl Default for Settings {
             mate_chatty: default_mate_chatty(),
             mate_voice: false,
             mate_wander: true,
+            air_enabled: false,
+            air_gestures: Vec::new(),
             pc_boost_power_plan: false,
             cloud_ears: true,
             speech_language: default_speech_language(),

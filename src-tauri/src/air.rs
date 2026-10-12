@@ -1,0 +1,198 @@
+//! Air control — your hand in front of the camera drives the PC, Meta-Quest
+//! style: the fingertip is the pointer, a pinch is a click (hold it to drag),
+//! other pinches right-click, copy and paste, two fingers scroll. The camera
+//! and the hand tracking live in the overlay (AirControl.tsx); this is the
+//! PC side: the real pointer and buttons, and the box around whatever is
+//! under your finger — sized to that thing exactly, from a whole window down
+//! to one of FL Studio's tiny step buttons — so you see what a pinch will hit.
+
+use anyhow::Result;
+use serde::Serialize;
+
+use crate::model::Rect;
+
+/// Move the real pointer (physical pixels, any monitor).
+pub fn pointer(x: i32, y: i32) {
+    crate::automation::pointer_to(x, y);
+}
+
+/// Press or let go of a mouse button where the pointer is (a pinch held is a drag).
+pub fn button(right: bool, down: bool) -> Result<()> {
+    crate::automation::mouse_button(right, down)
+}
+
+/// Scroll whatever is under the pointer: notches, down when positive.
+pub fn scroll(amount: i32) -> Result<()> {
+    crate::automation::scroll_here(amount)
+}
+
+/// A key or combination ("ctrl+c", "alt+left").
+pub fn keys(combo: &str) -> Result<()> {
+    if !crate::automation::key_is_known(combo) {
+        anyhow::bail!("unknown keys: {combo}");
+    }
+    crate::automation::press_key(combo)
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq)]
+pub struct Hit {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+    /// "control" (Windows told us its edges) or "seen" (found in the picture).
+    pub kind: &'static str,
+    /// A box you can type into (point at it and talk).
+    pub field: bool,
+}
+
+/// Normalized (0..1 over every monitor) → physical pixels.
+pub fn to_screen(nx: f64, ny: f64) -> (i32, i32) {
+    let b = crate::capture::virtual_bounds();
+    let x = b.x + (nx.clamp(0.0, 1.0) * (b.w - 1).max(0) as f64).round() as i32;
+    let y = b.y + (ny.clamp(0.0, 1.0) * (b.h - 1).max(0) as f64).round() as i32;
+    (x, y)
+}
+
+/// A box, normalized like the pointer (what the overlay draws).
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct Seen {
+    pub nx: f64,
+    pub ny: f64,
+    pub nw: f64,
+    pub nh: f64,
+    pub kind: &'static str,
+    pub field: bool,
+}
+
+/// The box under a normalized point, normalized back for drawing.
+/// `overlay` is the overlay window, kept out of the picture (its cursor ring
+/// and box would otherwise be "the shape under the finger").
+pub fn target_norm(nx: f64, ny: f64, overlay: Option<isize>) -> Option<Seen> {
+    let (x, y) = to_screen(nx, ny);
+    let b = crate::capture::virtual_bounds();
+    let t = unseen(overlay, || target(x, y))?;
+    let (w, h) = (b.w.max(1) as f64, b.h.max(1) as f64);
+    Some(Seen { nx: (t.x - b.x) as f64 / w, ny: (t.y - b.y) as f64 / h, nw: t.w as f64 / w, nh: t.h as f64 / h, kind: t.kind, field: t.field })
+}
+
+/// Run `f` with the overlay hidden from screen grabs (still on screen for you).
+#[cfg(windows)]
+fn unseen<T>(overlay: Option<isize>, f: impl FnOnce() -> T) -> T {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE};
+    // One look at a time, so one can't put the overlay back mid-grab of another.
+    static ONE: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+    let Some(h) = overlay else { return f() };
+    let _one = ONE.lock();
+    let hwnd = HWND(h as *mut _);
+    let hidden = unsafe { SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) }.is_ok();
+    let out = f();
+    if hidden {
+        let _ = unsafe { SetWindowDisplayAffinity(hwnd, WDA_NONE) };
+    }
+    out
+}
+
+#[cfg(not(windows))]
+fn unseen<T>(_overlay: Option<isize>, f: impl FnOnce() -> T) -> T {
+    f()
+}
+
+/// The thing under (x, y), boxed: the control Windows knows is there when it
+/// is a sensible size, otherwise the shape seen in the picture around the
+/// point (custom-drawn apps like FL Studio, games, canvases).
+pub fn target(x: i32, y: i32) -> Option<Hit> {
+    let screen = crate::capture::virtual_bounds();
+    let big = (screen.w as i64 * screen.h as i64) / 6;
+    let control = control_at(x, y);
+    let field = control.is_some_and(|(_, f)| f);
+    if let Some((r, _)) = control {
+        let area = r.w as i64 * r.h as i64;
+        // A whole pane or window says nothing about what's under the finger.
+        if r.w >= 6 && r.h >= 6 && area < big && r.w < screen.w / 2 {
+            return Some(Hit { x: r.x, y: r.y, w: r.w, h: r.h, kind: "control", field });
+        }
+    }
+    seen_at(x, y).map(|h| Hit { field, ..h })
+}
+
+/// The control Windows knows is at (x, y), and whether it takes typing.
+#[cfg(windows)]
+fn control_at(x: i32, y: i32) -> Option<(Rect, bool)> {
+    use uiautomation::types::{ControlType, Point};
+    use uiautomation::UIAutomation;
+    let a = UIAutomation::new().or_else(|_| UIAutomation::new_direct()).ok()?;
+    let el = a.element_from_point(Point::new(x, y)).ok()?;
+    let r = el.get_bounding_rectangle().ok()?;
+    let rect = Rect { x: r.get_left(), y: r.get_top(), w: r.get_right() - r.get_left(), h: r.get_bottom() - r.get_top() };
+    let field = matches!(el.get_control_type(), Ok(ControlType::Edit | ControlType::ComboBox));
+    (rect.w > 0 && rect.h > 0 && x >= rect.x && y >= rect.y && x <= rect.x + rect.w && y <= rect.y + rect.h).then_some((rect, field))
+}
+
+#[cfg(not(windows))]
+fn control_at(_x: i32, _y: i32) -> Option<(Rect, bool)> {
+    None
+}
+
+/// The shape under the point, found in the picture: grow outwards from the
+/// point over pixels that look alike until the edges stop it.
+fn seen_at(x: i32, y: i32) -> Option<Hit> {
+    const R: i32 = 110;
+    let frame = crate::capture::capture(Rect { x: x - R, y: y - R, w: R * 2, h: R * 2 }).ok()?;
+    let (w, h) = (frame.width as usize, frame.height as usize);
+    if w < 8 || h < 8 {
+        return None;
+    }
+    let lum = |i: usize| -> i32 {
+        let p = &frame.bgra[i * 4..i * 4 + 3];
+        (p[0] as i32 * 29 + p[1] as i32 * 150 + p[2] as i32 * 77) >> 8
+    };
+    let (cx, cy) = ((x - frame.origin.0).clamp(0, w as i32 - 1) as usize, (y - frame.origin.1).clamp(0, h as i32 - 1) as usize);
+    let seed = lum(cy * w + cx);
+    let mut seen = vec![false; w * h];
+    let mut stack = vec![(cx, cy)];
+    let (mut x0, mut y0, mut x1, mut y1) = (cx, cy, cx, cy);
+    let mut count = 0usize;
+    while let Some((px, py)) = stack.pop() {
+        let i = py * w + px;
+        if seen[i] || (lum(i) - seed).abs() > 18 {
+            continue;
+        }
+        seen[i] = true;
+        count += 1;
+        if count > w * h / 2 {
+            return None; // flat background all round: nothing in particular here
+        }
+        x0 = x0.min(px);
+        y0 = y0.min(py);
+        x1 = x1.max(px);
+        y1 = y1.max(py);
+        if px > 0 { stack.push((px - 1, py)); }
+        if py > 0 { stack.push((px, py - 1)); }
+        if px + 1 < w { stack.push((px + 1, py)); }
+        if py + 1 < h { stack.push((px, py + 1)); }
+    }
+    let (bw, bh) = ((x1 - x0 + 1) as i32, (y1 - y0 + 1) as i32);
+    // Reaching the edge of what we looked at means it's bigger than a target.
+    if x0 == 0 || y0 == 0 || x1 + 1 == w || y1 + 1 == h || bw < 4 || bh < 4 {
+        return None;
+    }
+    Some(Hit { x: frame.origin.0 + x0 as i32, y: frame.origin.1 + y0 as i32, w: bw, h: bh, kind: "seen", field: false })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn corners_map_inside_the_screen() {
+        let b = crate::capture::virtual_bounds();
+        assert_eq!(super::to_screen(0.0, 0.0), (b.x, b.y));
+        assert_eq!(super::to_screen(1.0, 1.0), (b.x + b.w - 1, b.y + b.h - 1));
+        assert_eq!(super::to_screen(-3.0, 9.0), (b.x, b.y + b.h - 1));
+    }
+
+    #[test]
+    fn keys_must_be_known() {
+        assert!(super::keys("definitely-not-a-key").is_err());
+    }
+}

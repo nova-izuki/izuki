@@ -39,6 +39,7 @@ pub mod pccare;
 pub mod services;
 pub mod flstudio;
 pub mod mate;
+pub mod air;
 pub mod music_draft;
 pub mod memory;
 pub mod model;
@@ -336,6 +337,11 @@ pub fn run() {
             commands::voice_fallback,
             commands::voice_race,
             commands::mate_hot,
+            commands::air_pointer,
+            commands::air_button,
+            commands::air_scroll,
+            commands::air_keys,
+            commands::air_target,
             commands::boost_live,
             commands::mate_line,
             commands::fl_setup,

@@ -233,6 +233,8 @@ export const MOCK_SETTINGS: Settings = {
   mate_chatty: "normal",
   mate_voice: false,
   mate_wander: true,
+  air_enabled: false,
+  air_gestures: [],
   auto_skip_ads: false,
   auto_reject_cookies: false,
   follow_hand_size: 16,
@@ -538,6 +540,16 @@ export const api = {
   voiceRace: (text: string, mood?: string | null) => call<string | null>("voice_race", { text, mood: mood ?? null }, () => null),
   /** The on-device voice to stand in for a cloud voice (same gender). */
   voiceFallback: () => call<string>("voice_fallback", undefined, () => "af_heart"),
+  /** Air control: the real pointer to a normalized spot (0..1 over every monitor). */
+  airPointer: (nx: number, ny: number) => call<void>("air_pointer", { nx, ny }, () => undefined),
+  /** Air control: press / let go of a mouse button. */
+  airButton: (right: boolean, down: boolean) => call<void>("air_button", { right, down }, () => undefined),
+  /** Air control: scroll notches (down when positive). */
+  airScroll: (amount: number) => call<void>("air_scroll", { amount }, () => undefined),
+  /** Air control: a key combination ("ctrl+c"). */
+  airKeys: (combo: string) => call<void>("air_keys", { combo }, () => undefined),
+  /** Air control: the box around what's under a normalized spot (normalized). */
+  airTarget: (nx: number, ny: number) => call<{ nx: number; ny: number; nw: number; nh: number; kind: string; field: boolean } | null>("air_target", { nx, ny }, () => null),
   /** 24/7 PC fast, live: when it last looked and what it last did by itself. */
   boostLive: () => call<{ on: boolean; looked_secs_ago: number | null; done_secs_ago: number | null; done: string | null }>("boost_live", undefined, () => ({ on: false, looked_secs_ago: null, done_secs_ago: null, done: null })),
   /** The desktop mate: where its character is (only clicks there are caught). */
@@ -757,6 +769,11 @@ export const EV = {
   transcript: "izuki://transcript",
   /** Overlay → config panel: handle this typed message ({id, text}). */
   runChat: "izuki://run-chat",
+  /** Frontend-only, overlay → config panel: you pointed at a box with Air
+   * control and it was clicked — listen, and type what's said into it. */
+  airSay: "izuki://air-say",
+  /** Frontend-only, config panel → overlay: learn an Air gesture now ({name, action}). */
+  airRecord: "izuki://air-record",
   /** Config panel → overlay: that message is handled ({id}). */
   chatDone: "izuki://chat-done",
   /** Streamed words of a conversation reply (chat.rs). */

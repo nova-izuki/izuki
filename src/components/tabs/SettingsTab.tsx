@@ -23,6 +23,7 @@ import { PhoneCard } from "../PhoneCard";
 import { BoostCard } from "../BoostCard";
 import { FlStudioCard } from "../FlStudioCard";
 import { MateCard } from "../MateCard";
+import { AirCard } from "../AirCard";
 import { OrbStudio } from "../OrbStudio";
 import { UpdateControls } from '../UpdateControls';
 import { DiscordCard } from "../DiscordCard";
@@ -564,6 +565,7 @@ export function SettingsTab() {
       <FlStudioCard />
 
       <MateCard />
+      <AirCard />
 
       <div id="settings-phone"><PhoneCard /></div>
 

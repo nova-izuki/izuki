@@ -348,6 +348,11 @@ export interface Settings {
   mate_chatty: string;
   mate_voice: boolean;
   mate_wander: boolean;
+  /** Air control: your hand in front of the camera drives the PC. */
+  air_enabled: boolean;
+  /** Your own Air gestures: a taught hand pose and what it does
+   * ("keys:ctrl+s", "type:words", "say:a request"). */
+  air_gestures: Array<{ name: string; pose: number[]; action: string }>;
   /** Once a day, what has sat in the Recycle Bin for 30+ days is cleared for good. */
   tidy_recycle_auto: boolean;
   /** PC Care: the Island says when antivirus, firewall, space or a drive needs attention. */

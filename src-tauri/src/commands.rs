@@ -1138,6 +1138,40 @@ pub fn boost_live() -> crate::boost::Live {
     crate::boost::live()
 }
 
+/// Air control: move the real pointer to a normalized spot (0..1 over every monitor).
+#[tauri::command]
+pub fn air_pointer(nx: f64, ny: f64) {
+    let (x, y) = crate::air::to_screen(nx, ny);
+    crate::air::pointer(x, y);
+}
+
+/// Air control: press or let go of a mouse button where the pointer is.
+#[tauri::command]
+pub fn air_button(right: bool, down: bool) -> R<()> {
+    crate::air::button(right, down).map_err(err)
+}
+
+/// Air control: scroll notches where the pointer is (down when positive).
+#[tauri::command]
+pub fn air_scroll(amount: i32) -> R<()> {
+    crate::air::scroll(amount.clamp(-20, 20)).map_err(err)
+}
+
+/// Air control: a key combination ("ctrl+c"). (Pointer, buttons and scroll
+/// stay synchronous on purpose: they must reach Windows in the order sent —
+/// move, press, move, let go — or a drag drops in the wrong place.)
+#[tauri::command]
+pub async fn air_keys(combo: String) -> R<()> {
+    blocking(move || crate::air::keys(&combo).map_err(err)).await?
+}
+
+/// Air control: the box around whatever is under a normalized spot.
+#[tauri::command]
+pub async fn air_target(app: AppHandle, nx: f64, ny: f64) -> Option<crate::air::Seen> {
+    let overlay = app.get_webview_window("overlay").and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize);
+    blocking(move || crate::air::target_norm(nx, ny, overlay)).await.ok().flatten()
+}
+
 /// Where the desktop mate's character is in its window, so only clicks on it are caught.
 #[tauri::command]
 pub fn mate_hot(x: f64, y: f64, w: f64, h: f64) {
