@@ -813,7 +813,7 @@ export function OverlayCanvas() {
             }}
             onPlaying={setMusicPlaying}
           />}
-        <VoiceSphere state={musicShowing ? "speaking" : orb} transcript={transcript} doing={doing} />
+        <VoiceSphere state={musicShowing ? "speaking" : orb} transcript={transcript} doing={doing} music={musicShowing} />
         {orb === "hidden" && <TranscriptBar text={transcript?.text ?? null} final={!!transcript?.final} />}
         {caption && (
           <CaptionBox

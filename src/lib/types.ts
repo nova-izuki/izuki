@@ -263,7 +263,7 @@ export interface Settings {
   /** Snap targets to real UI Automation controls before clicking. */
   magnetic_hand: boolean;
   control_style: "mouse" | "precision";
-  orb_style: "liquid" | "ferrofluid" | "dew" | "ripple" | "constellation" | "particles" | "face" | "ferro" | "toon" | `toon:${string}` | `model:${string}`;
+  orb_style: "liquid" | "ferrofluid" | "dew" | "ripple" | "constellation" | "particles" | "face" | "ferro" | "toon" | `toon:${string}` | `buddy:${string}` | `model:${string}`;
   orb_response: number;
   /** Each 3D face's look, as JSON { faceId: look } (see lib/faces.ts). */
   avatar?: string;
@@ -344,6 +344,8 @@ export interface Settings {
   fl_key: string;
   /** The desktop mate: your character living on the desktop. */
   mate_enabled: boolean;
+  /** The moving character's pet: it follows along. */
+  buddy_pet: "none" | "cat" | "dog";
   /** The desktop mate was switched off once for everyone (1.0.89). */
   mate_reset_v2: boolean;
   mate_pet: string;

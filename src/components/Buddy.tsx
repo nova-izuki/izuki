@@ -1,0 +1,388 @@
+import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { Minus, X } from "lucide-react";
+import { api, EV, emit, on } from "../lib/ipc";
+import { resizeHandles, useFloating, workArea, type Limits } from "../lib/floating";
+import type { HandCommand, OrbState, StatusEvent } from "../lib/types";
+import { TranscriptText } from "./TranscriptBar";
+import { watchPointer } from "./Island";
+import { createActor, drawPuppet, loadPuppet, react, stepActor, type Actor, type Puppet } from "../../docs/app/puppet.js";
+
+/**
+ * The moving character — a companion look like the orbs (style
+ * "buddy:<id>"), shown only while you're asking something, exactly where the
+ * orb would be. It moves like a person (docs/app/puppet.js): waves hello,
+ * tilts its head to listen, puts a hand to its chin to think, types on a
+ * tiny laptop while it works, talks with its hands and mouth, dances to
+ * your music, and — like a desktop buddy — walks over to what Izuki is
+ * clicking and points at it. Your pet, if you want one, follows it around.
+ *
+ * Drag it anywhere, scroll over it (or pull an edge) to zoom, – to tuck it
+ * into a little bubble, × to stop. Battery: drawn 30 times a second only
+ * while it's on screen, nothing at all otherwise.
+ */
+
+const ASPECT = 0.62; // width / height of its box
+const DEFAULT_H = 190;
+const LIMITS: Limits = { minW: 70, minH: 110, maxW: 430, maxH: 700 };
+const HANDLES = resizeHandles(10);
+const MIN_KEY = "izuki.buddy.min";
+const PET_SRC: Record<string, string> = {
+  cat: new URL("../../docs/app/painted/pets/cat.webp", import.meta.url).href,
+  dog: new URL("../../docs/app/painted/pets/dog.webp", import.meta.url).href,
+};
+
+function initialBox() {
+  const wa = workArea();
+  const h = DEFAULT_H, w = Math.round(h * ASPECT);
+  return { x: Math.round(wa.right - w - 60), y: Math.round(wa.bottom - h - 70), w, h };
+}
+
+const readMin = () => {
+  try { return localStorage.getItem(MIN_KEY) === "1"; } catch { return false; }
+};
+
+export function Buddy({
+  id,
+  state,
+  transcript = null,
+  doing = null,
+  music = false,
+}: {
+  id: string;
+  state: OrbState;
+  transcript?: { text: string; final: boolean } | null;
+  doing?: string | null;
+  music?: boolean;
+}) {
+  const visible = state !== "hidden";
+  const [min, setMin] = useState(readMin);
+  const [pet, setPet] = useState<string>("none");
+  const { box, setBox, begin, reset } = useFloating("izuki.buddy", initialBox, LIMITS);
+
+  useEffect(() => {
+    let alive = true;
+    const read = () => void api.getSettings().then((s) => alive && setPet(s.buddy_pet || "none")).catch(() => undefined);
+    read();
+    const off = on<void>(EV.settingsChanged, read);
+    return () => { alive = false; void off.then((f) => f()); };
+  }, []);
+  useEffect(() => {
+    const off = on<void>(EV.resetFloating, () => reset());
+    return () => void off.then((f) => f());
+  }, [reset]);
+  // Keep its shape whichever edge was pulled.
+  useEffect(() => {
+    const w = Math.round(box.h * ASPECT);
+    if (Math.abs(box.w - w) > 1) setBox((b) => ({ ...b, w }));
+  }, [box.w, box.h, setBox]);
+
+  const setMinimized = (v: boolean) => {
+    setMin(v);
+    try { localStorage.setItem(MIN_KEY, v ? "1" : "0"); } catch { /* not remembered */ }
+  };
+  const onWheel = (e: React.WheelEvent) => {
+    const h = Math.max(LIMITS.minH, Math.min(LIMITS.maxH, box.h * (e.deltaY < 0 ? 1.08 : 0.93)));
+    const w = Math.round(h * ASPECT);
+    // Grow from the feet, so it stays standing where it is.
+    setBox((b) => ({ x: b.x + (b.w - w) / 2, y: b.y + b.h - h, w, h }));
+  };
+
+  return (
+    <AnimatePresence>
+      {visible && min && (
+        <motion.div
+          key="buddy-min"
+          data-izk-hit
+          initial={{ opacity: 0, scale: 0.6 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.6 }}
+          className="group fixed"
+          style={{ left: box.x + box.w / 2 - 30, top: box.y + box.h - 64, width: 60, height: 60 }}
+        >
+          <button
+            type="button"
+            aria-label="Bring your character back"
+            title="Bring your character back"
+            onClick={() => setMinimized(false)}
+            className="h-full w-full overflow-hidden rounded-full border-2 border-white/70 bg-[radial-gradient(circle_at_50%_35%,#3a3f6b,#12142a)] shadow-[0_6px_24px_rgba(0,0,0,0.45)]"
+          >
+            <Head id={id} talking={state === "speaking"} />
+          </button>
+          <button
+            type="button"
+            aria-label="Stop"
+            title="Stop"
+            onClick={() => void emit(EV.stopSpeaking)}
+            className="absolute -right-1 -top-1 flex h-[20px] w-[20px] items-center justify-center rounded-full border border-white/25 bg-black/60 text-white/85 opacity-0 transition-opacity group-hover:opacity-100"
+          >
+            <X size={11} strokeWidth={2.6} />
+          </button>
+        </motion.div>
+      )}
+      {visible && !min && (
+        <motion.div
+          key="buddy"
+          data-izk-hit
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 18 }}
+          transition={{ type: "spring", stiffness: 240, damping: 24 }}
+          className="group fixed"
+          style={{ left: box.x, top: box.y, width: box.w, height: box.h, cursor: "grab" }}
+          onPointerDown={(e) => begin(e, "move")}
+          onWheel={onWheel}
+        >
+          <Stage id={id} state={state} doing={doing} music={music} pet={pet} box={box} setBox={setBox} />
+          <div className="absolute -top-1 right-0 flex gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+            <button
+              type="button"
+              aria-label="Make it small"
+              title="Make it small"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setMinimized(true)}
+              className="flex h-[22px] w-[22px] items-center justify-center rounded-full border border-white/20 bg-black/45 text-white/80 hover:text-white"
+            >
+              <Minus size={12} strokeWidth={2.6} />
+            </button>
+            <button
+              type="button"
+              aria-label="Stop"
+              title="Stop"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => void emit(EV.stopSpeaking)}
+              className="flex h-[22px] w-[22px] items-center justify-center rounded-full border border-white/20 bg-black/45 text-white/80 hover:text-white"
+            >
+              <X size={12} strokeWidth={2.6} />
+            </button>
+          </div>
+          {HANDLES.map((h) => (
+            <div key={h.edge} style={h.style} onPointerDown={(e) => begin(e, h.edge)} />
+          ))}
+          <div className="pointer-events-none absolute left-1/2 top-full mt-1 flex -translate-x-1/2 justify-center" style={{ width: "max-content", maxWidth: "min(520px, 80vw)" }}>
+            {transcript ? (
+              <TranscriptText text={transcript.text} final={transcript.final} />
+            ) : state !== "speaking" ? (
+              <div className="izk-orb-label flex max-w-[340px] items-center gap-2 rounded-full px-3 py-[3px] text-[12px] font-semibold">
+                <span className="truncate">{state === "listening" ? "Listening…" : doing || "Thinking…"}</span>
+                {state !== "listening" && <span className="shrink-0 text-[10.5px] font-medium opacity-60">Esc to stop</span>}
+              </div>
+            ) : null}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+/** Its head, in the little bubble. */
+function Head({ id, talking }: { id: string; talking: boolean }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    let alive = true;
+    void loadPuppet(id).then((p) => {
+      const c = ref.current;
+      if (!alive || !p || !c) return;
+      const g = c.getContext("2d");
+      if (!g) return;
+      const [top, bottom] = p.rig.frames.head || [0, p.height * 0.16];
+      const span = (bottom - top) * 1.25;
+      c.width = c.height = 120;
+      g.drawImage(p.pics.base, p.rig.head[0] - span / 2, top - span * 0.08, span, span, 0, 0, 120, 120);
+    });
+    return () => { alive = false; };
+  }, [id]);
+  return <canvas ref={ref} className={"h-full w-full " + (talking ? "animate-pulse" : "")} />;
+}
+
+/**
+ * The drawing: the character (and pet) on a canvas a bit bigger than its box,
+ * so raised arms and props aren't cut off. Also walks it to what Izuki is
+ * clicking, and points.
+ */
+function Stage({
+  id,
+  state,
+  doing,
+  music,
+  pet,
+  box,
+  setBox,
+}: {
+  id: string;
+  state: OrbState;
+  doing: string | null;
+  music: boolean;
+  pet: string;
+  box: { x: number; y: number; w: number; h: number };
+  setBox: (f: (b: { x: number; y: number; w: number; h: number }) => { x: number; y: number; w: number; h: number }) => void;
+}) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const puppet = useRef<Puppet | null>(null);
+  const actor = useRef<Actor>(createActor());
+  const level = useRef(0);
+  const look = useRef<number | null>(null);
+  const live = useRef({ state, doing, music, pet, box });
+  live.current = { state, doing, music, pet, box };
+  /** Where it's walking to (overlay x), and what it'll point at when there. */
+  const goal = useRef<{ x: number; target: { x: number; y: number }; until: number } | null>(null);
+  const pointing = useRef<{ x: number; y: number; until: number } | null>(null);
+  const facing = useRef(1);
+  const lastX = useRef(box.x);
+  /** While it walks, it's moved directly (no re-render per step) — this far
+   * from its saved spot; the new spot is saved once, when it gets there. */
+  const walkOff = useRef(0);
+  const settling = useRef<number | null>(null);
+  const petImg = useRef<HTMLImageElement | null>(null);
+  const petState = useRef({ x: 0, vx: 0, hop: 0 });
+
+  useEffect(() => {
+    let alive = true;
+    void loadPuppet(id).then((p) => { if (alive) puppet.current = p; });
+    return () => { alive = false; };
+  }, [id]);
+  useEffect(() => {
+    petImg.current = null;
+    if (!PET_SRC[pet]) return;
+    const im = new Image();
+    im.onload = () => (petImg.current = im);
+    im.src = PET_SRC[pet];
+    return () => { im.onload = null; };
+  }, [pet]);
+  useEffect(() => {
+    const offs = [
+      on<number>(EV.voiceLevel, (l) => { level.current = Number.isFinite(l) ? Math.max(0, Math.min(1, l)) : 0; }),
+      // Something done: a little celebration; something failed: a shrug.
+      on<StatusEvent>(EV.status, (s) => {
+        if (s?.kind === "success") react(actor.current, Math.random() < 0.5 ? "cheer" : "thumbs");
+        else if (s?.kind === "error") react(actor.current, "shrug");
+      }),
+      // Izuki is about to click something: walk over beside it and point.
+      on<HandCommand>(EV.hand, (cmd) => {
+        if (!cmd || !Number.isFinite(cmd.x)) return;
+        const d = cmd.desktop && cmd.desktop.w > 0 ? cmd.desktop : null;
+        const tx = d ? ((cmd.x - d.x) * window.innerWidth) / d.w : cmd.x;
+        const ty = d ? ((cmd.y - d.y) * window.innerHeight) / d.h : cmd.y;
+        const b = live.current.box;
+        const side = tx < b.x + b.w / 2 ? 1 : -1; // stand to the right of it if it's on the left
+        const gx = Math.max(0, Math.min(window.innerWidth - b.w, tx + side * (b.w * 0.55) - b.w / 2 + (side > 0 ? b.w * 0.5 : -b.w * 0.5)));
+        goal.current = { x: gx, target: { x: tx, y: ty }, until: performance.now() + 6000 };
+      }),
+    ];
+    const stop = watchPointer((x) => {
+      const b = live.current.box;
+      look.current = Math.max(-1, Math.min(1, (x - (b.x + b.w / 2)) / Math.max(200, window.innerWidth * 0.3)));
+    });
+    return () => {
+      offs.forEach((o) => void o.then((f) => f()));
+      stop();
+    };
+  }, []);
+
+  useEffect(() => {
+    let raf = 0;
+    let last = performance.now();
+    let smooth = 0;
+    const frame = (now: number) => {
+      raf = requestAnimationFrame(frame);
+      if (document.hidden) { last = now; return; }
+      if (now - last < 32) return; // 30 a second is plenty
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      const c = canvas.current;
+      const L = live.current;
+      if (!c) return;
+      const b = L.box;
+      const host = c.parentElement;
+      // Just arrived and saved: until the saved spot shows, that's where it is.
+      if (settling.current !== null && Math.abs(b.x - settling.current) < 1) settling.current = null;
+      let x = settling.current ?? b.x + walkOff.current;
+      // Walking to a goal (Izuki is about to click there).
+      let walk = 0;
+      const g = goal.current;
+      if (g) {
+        const dx = g.x - x;
+        const speed = Math.max(220, b.h * 1.4);
+        if (Math.abs(dx) < 4 || now > g.until) {
+          pointing.current = { ...g.target, until: now + 2600 };
+          goal.current = null;
+          const off = walkOff.current;
+          walkOff.current = 0;
+          if (off) {
+            settling.current = b.x + off;
+            setBox((bb) => ({ ...bb, x: bb.x + off }));
+          }
+        } else {
+          walkOff.current += Math.sign(dx) * Math.min(Math.abs(dx), speed * dt);
+          x = b.x + walkOff.current;
+          if (host) host.style.left = `${x}px`;
+        }
+      }
+      // Moving at all (walked or dragged) is walking.
+      const vx = (x - lastX.current) / Math.max(dt, 1e-3);
+      lastX.current = x;
+      if (Math.abs(vx) > 15) {
+        walk = Math.min(1, Math.abs(vx) / 160);
+        facing.current = vx > 0 ? 1 : -1;
+      } else if (!g) {
+        facing.current = 1;
+      }
+      smooth += (level.current - smooth) * Math.min(1, dt * 12);
+      // (Music shows it with no conversation going: it just dances.)
+      const mode = L.music ? "idle" : L.state === "listening" ? "listening" : L.state === "speaking" ? "speaking" : L.doing ? "working" : "thinking";
+      // Pointing: the arm on the target's side, aimed at it.
+      let point = null as { side: "L" | "R"; up: number } | null;
+      const p = pointing.current;
+      if (p && now < p.until) {
+        const sx = x + b.w / 2, sy = b.y + b.h * 0.25;
+        const dx = p.x - sx, dy = p.y - sy;
+        const side: "L" | "R" = dx < 0 ? "L" : "R";
+        // Angle away from straight down, toward the target.
+        point = { side, up: Math.atan2(Math.abs(dx), dy) };
+        facing.current = 1;
+      } else pointing.current = null;
+      stepActor(actor.current, dt, { mode, energy: smooth, walk, music: L.music, look: look.current ?? undefined, point });
+
+      // Canvas: wider and taller than the box, feet on the box's bottom.
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const W = Math.round(b.w * 2.2), H = Math.round(b.h * 1.25);
+      if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) {
+        c.width = Math.round(W * dpr);
+        c.height = Math.round(H * dpr);
+        c.style.width = W + "px";
+        c.style.height = H + "px";
+      }
+      const ctx = c.getContext("2d");
+      if (!ctx) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      const feetX = W / 2, feetY = H - 6;
+      // The pet: trots after it, sits when it stops, hops when it cheers.
+      const im = petImg.current;
+      if (im) {
+        const ps = petState.current;
+        const want = -facing.current * b.w * 0.55;
+        ps.vx += ((want - ps.x) * 14 - ps.vx * 6) * dt;
+        ps.x += ps.vx * dt;
+        const moving = Math.abs(ps.vx) > 8 || walk > 0.05;
+        if (actor.current.reaction === "cheer" || (L.music && Math.random() < 0.02)) ps.hop = 1;
+        ps.hop = Math.max(0, ps.hop - dt * 2.2);
+        const ph = b.h * 0.2, pw = (im.width / im.height) * ph;
+        const t = actor.current.t;
+        const bob = moving ? Math.abs(Math.sin(t * 12)) * ph * 0.08 : 0;
+        const hop = Math.sin(ps.hop * Math.PI) * ph * 0.5;
+        const squash = moving ? 1 : 1 - 0.03 * (1 + Math.sin(t * 1.7)) / 2;
+        ctx.save();
+        ctx.translate(feetX + ps.x, feetY - bob - hop);
+        ctx.scale((ps.vx < -4 ? -1 : 1) * (2 - squash), squash);
+        ctx.drawImage(im, -pw / 2, -ph, pw, ph);
+        ctx.restore();
+      }
+      drawPuppet(ctx, puppet.current, actor.current, { x: feetX, y: feetY, height: b.h * 0.94, facing: facing.current });
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [setBox]);
+
+  return <canvas ref={canvas} className="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2" />;
+}

@@ -11,6 +11,7 @@ import { drawConstellationOrb, drawRippleOrb } from "../../docs/app/orb-material
 import { drawGlassOrb, type FaceOptions } from "../../docs/app/glass-orb.js";
 import { faceFor, isFace, isToon } from "../lib/faces";
 import { watchPointer } from "./Island";
+import { Buddy } from "./Buddy";
 
 /**
  * The hands-free voice sphere — "Hey Izuki" summons it.
@@ -79,9 +80,12 @@ export function VoiceSphere({
   demo = false,
   transcript = null,
   doing = null,
+  music = false,
 }: {
   state: OrbState;
   demo?: boolean;
+  /** Music is playing (a moving character dances). */
+  music?: boolean;
   /** Your words as you speak them — shown under the sphere, live. */
   transcript?: { text: string; final: boolean } | null;
   /** What Izuki is doing right now ("Opening Blackboard…"), while it works. */
@@ -122,6 +126,9 @@ export function VoiceSphere({
     // Grow around the centre, not the top-left corner.
     setBox((b) => ({ x: b.x + (b.w - next) / 2, y: b.y + (b.h - next) / 2, w: next, h: next }));
   };
+
+  // A moving character instead of an orb: same moments, its own body.
+  if (style.startsWith("buddy:")) return <Buddy id={style.slice(6)} state={state} transcript={transcript} doing={doing} music={music} />;
 
   return (
     <AnimatePresence>

@@ -48,6 +48,48 @@ function Tile({ on, label, img, onClick, children }: { on: boolean; label: strin
   );
 }
 
+/** Characters that move like a person (puppet.js): every painted character with a skeleton. */
+function BuddySection({ style, pick }: { style: string; pick: (s: Settings["orb_style"]) => void }) {
+  const [ids, setIds] = useState<string[]>([]);
+  const [names, setNames] = useState<Record<string, string>>({});
+  const pet = useIzuki((s) => s.settings.buddy_pet);
+  const patch = useIzuki((s) => s.patchSettings);
+  useEffect(() => {
+    let alive = true;
+    void import("../../docs/app/puppet.js").then((m) => m.puppetIds()).then((l) => alive && setIds(l));
+    void import("../../docs/app/toon.js").then((m) => alive && setNames(Object.fromEntries(Object.entries(m.CHARACTERS).map(([k, c]) => [k, c.name]))));
+    return () => { alive = false; };
+  }, []);
+  const [pics, setPics] = useState<Record<string, { base: string }>>({});
+  useEffect(() => {
+    let alive = true;
+    void import("../../docs/app/puppet-art.js").then((m) => alive && setPics(m.PUPPET_ART));
+    return () => { alive = false; };
+  }, []);
+  if (!ids.length) return null;
+  const pic = (id: string) => pics[id]?.base;
+  const pill = (on: boolean) => `izk-pill px-2.5 py-1 text-[11px] ${on ? "border-izk-teal/70 bg-izk-teal/15" : ""}`;
+  return (
+    <section>
+      <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-izk-muted">Characters that move <span className="normal-case text-izk-teal">new</span></h4>
+      <div className="grid grid-cols-5 gap-1.5">
+        {ids.map((id) => (
+          <Tile key={id} on={style === `buddy:${id}`} label={names[id] ?? id} img={pic(id)} onClick={() => pick(`buddy:${id}`)} />
+        ))}
+      </div>
+      <p className="mt-1 text-[10.5px] text-izk-muted">Shows up when you ask something, like the orb — no circle, just them. They move like a person: wave, think, type on a tiny laptop while working, talk with their hands, dance to your music, and walk over to what Izuki clicks. Drag them anywhere, scroll over them to zoom, the minus button makes them small and the × button stops.</p>
+      {style.startsWith("buddy:") && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+          <span className="text-izk-muted">Pet:</span>
+          {[["none", "No pet"], ["cat", "Cat"], ["dog", "Puppy"]].map(([k, l]) => (
+            <button key={k} type="button" aria-pressed={pet === k} className={pill(pet === k)} onClick={() => patch({ buddy_pet: k as Settings["buddy_pet"] })}>{l}</button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 type ToonModule = typeof import("../../docs/app/toon.js");
 
 /** The 2D characters: one for every voice, Flat vector, Comic or Ink. */
@@ -144,8 +186,8 @@ export function LookPicker() {
   const pick = (s: Settings["orb_style"]) => {
     patch({ orb_style: s });
     // A 2D character picked by name brings its own voice (when matching is on).
-    if (s.startsWith("toon:") && match) {
-      const id = s.slice(5);
+    if ((s.startsWith("toon:") || s.startsWith("buddy:")) && match) {
+      const id = s.slice(s.indexOf(":") + 1);
       void loadCatalog().then((cat) => {
         const p = cat.personas.find((x) => x.id === id);
         if (!p) return;
@@ -194,6 +236,7 @@ export function LookPicker() {
 
   return (
     <div className="space-y-3">
+      <BuddySection style={style} pick={pick} />
       <ToonSection style={style} pick={pick} />
       {isToon(style) && <ToonTuner />}
       <section>
