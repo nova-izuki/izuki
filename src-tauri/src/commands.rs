@@ -94,6 +94,8 @@ pub fn save_settings(app: AppHandle, settings: Settings) -> Settings {
             overlay::hide_overlay(&app)
         };
         crate::tray::refresh(&app);
+    } else if saved.air_enabled != previous.air_enabled {
+        crate::tray::refresh(&app);
     }
 
     saved

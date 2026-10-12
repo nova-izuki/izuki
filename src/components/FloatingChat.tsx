@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { AirToggle } from "./AirToggle";
 import { AnimatePresence, motion } from "motion/react";
 import { Loader2, MessageCircle, RotateCcw, Send, X } from "lucide-react";
 import { api, emit, EV, on } from "../lib/ipc";
@@ -200,6 +201,7 @@ export function FloatingChat() {
               </div>
               <ChatColorPicker />
               <RunMode />
+              <AirToggle />
               <textarea
                 ref={inputRef}
                 value={text}
@@ -305,6 +307,10 @@ export function FloatingChat() {
       >
         <MessageCircle size={19} strokeWidth={2} />
       </button>
+      {/* Air control, one tap — tucked on the bubble's shoulder. */}
+      <div className="pointer-events-auto fixed z-50" style={{ left: bubble.box.x + BUBBLE - 16, top: bubble.box.y - 8 }}>
+        <AirToggle variant="mini" />
+      </div>
     </>
   );
 }

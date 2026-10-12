@@ -688,10 +688,10 @@ impl Settings {
     /// a newly supported brain.
     pub fn heal(&mut self) {
         if !["mouse", "precision"].contains(&self.control_style.as_str()) { self.control_style = "mouse".into(); }
-        if !self.mate_reset_v2 {
-            self.mate_enabled = false;
-            self.mate_reset_v2 = true;
-        }
+        // The always-on desktop mate is retired (it slowed PCs down; the
+        // moving characters replace it): it stays off.
+        self.mate_enabled = false;
+        self.mate_reset_v2 = true;
         // The old drawn 3D faces became real 3D models: the nearest one, by voice.
         let male = crate::tv::voice_is_male(self);
         if self.orb_style == "holo3d" { self.orb_style = if male { "model:holo-male" } else { "model:holo-female" }.into(); }
@@ -1085,11 +1085,11 @@ mod tests {
         assert_eq!(s.orb_style, "liquid");
         assert!(s.economy_mode);
         assert_eq!(s.orb_response, 1.0);
-        // The always-on desktop mate is switched off once; turning it back on sticks.
+        // The always-on desktop mate is retired: it stays off.
         assert!(!s.mate_enabled && s.mate_reset_v2);
         s.mate_enabled = true;
         s.heal();
-        assert!(s.mate_enabled);
+        assert!(!s.mate_enabled);
         s.orb_response = 99.0;
         s.control_style = "unknown".into();
         s.orb_style = "unknown".into();

@@ -29,7 +29,7 @@ export interface Drawn {
 export function loadPuppet(id: string): Promise<Puppet | null>;
 export function createActor(): Actor;
 export function stepActor(a: Actor, dt: number, input?: ActorInput): Actor;
-export function react(a: Actor, name: "wave" | "bye" | "cheer" | "shrug" | "thumbs" | "nod" | "shake" | "facepalm" | "clap" | "laugh" | "sassy"): void;
+export function react(a: Actor, name: "wave" | "bye" | "cheer" | "shrug" | "thumbs" | "nod" | "shake" | "facepalm" | "tada" | "clap" | "laugh" | "sassy"): void;
 export function drawPuppet(
   ctx: CanvasRenderingContext2D,
   p: Puppet | null,
@@ -37,3 +37,4 @@ export function drawPuppet(
   opts: { x: number; y: number; height: number; facing?: number; laptopOn?: boolean; shadow?: boolean },
 ): Drawn | false;
 export function puppetIds(): Promise<string[]>;
+export function drawPet(ctx: CanvasRenderingContext2D, img: HTMLImageElement | null, opts: { x: number; y: number; height: number; facing?: number; t?: number; moving?: boolean; hop?: number }): void;

@@ -6,7 +6,8 @@ import { resizeHandles, useFloating, workArea, type Limits } from "../lib/floati
 import type { HandCommand, OrbState, StatusEvent } from "../lib/types";
 import { TranscriptText } from "./TranscriptBar";
 import { watchPointer } from "./Island";
-import { createActor, drawPuppet, loadPuppet, react, stepActor, type Actor, type Puppet } from "../../docs/app/puppet.js";
+import { createActor, drawPet, drawPuppet, loadPuppet, react, stepActor, type Actor, type Puppet } from "../../docs/app/puppet.js";
+import { createMover, drawMover, loadMoves, stepMover, type MovesPack } from "../../docs/app/sprites.js";
 
 /**
  * The moving character — a companion look like the orbs (style
@@ -219,6 +220,9 @@ function Stage({
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const puppet = useRef<Puppet | null>(null);
+  /** Real animation frames, when this character has them (else the bending puppet). */
+  const moves = useRef<MovesPack | null>(null);
+  const mover = useRef(createMover());
   const actor = useRef<Actor>(createActor());
   const level = useRef(0);
   const look = useRef<number | null>(null);
@@ -234,10 +238,13 @@ function Stage({
   const walkOff = useRef(0);
   const settling = useRef<number | null>(null);
   const petImg = useRef<HTMLImageElement | null>(null);
-  const petState = useRef({ x: 0, vx: 0, hop: 0 });
+  const petState = useRef({ x: 0, vx: 0, hop: 0, cheered: false });
 
   useEffect(() => {
     let alive = true;
+    moves.current = null;
+    puppet.current = null;
+    void loadMoves(id).then((m) => { if (alive) moves.current = m; });
     void loadPuppet(id).then((p) => { if (alive) puppet.current = p; });
     return () => { alive = false; };
   }, [id]);
@@ -254,7 +261,10 @@ function Stage({
       on<number>(EV.voiceLevel, (l) => { level.current = Number.isFinite(l) ? Math.max(0, Math.min(1, l)) : 0; }),
       // Something done: a little celebration; something failed: a shrug.
       on<StatusEvent>(EV.status, (s) => {
-        if (s?.kind === "success") react(actor.current, Math.random() < 0.5 ? "cheer" : "thumbs");
+        if (s?.kind === "success") {
+          const pick = ["cheer", "thumbs", "tada", "clap"] as const;
+          react(actor.current, pick[Math.floor(Math.random() * pick.length)]);
+        }
         else if (s?.kind === "error") react(actor.current, "shrug");
       }),
       // Izuki is about to click something: walk over beside it and point.
@@ -365,20 +375,37 @@ function Stage({
         ps.vx += ((want - ps.x) * 14 - ps.vx * 6) * dt;
         ps.x += ps.vx * dt;
         const moving = Math.abs(ps.vx) > 8 || walk > 0.05;
-        if (actor.current.reaction === "cheer" || (L.music && Math.random() < 0.02)) ps.hop = 1;
+        // A hop when its human cheers (once per cheer), and now and then to music.
+        const cheering = actor.current.reaction === "cheer" || actor.current.reaction === "tada";
+        if ((cheering && !ps.cheered) || (L.music && ps.hop === 0 && Math.random() < 0.02)) ps.hop = 1;
+        ps.cheered = cheering;
         ps.hop = Math.max(0, ps.hop - dt * 2.2);
-        const ph = b.h * 0.2, pw = (im.width / im.height) * ph;
-        const t = actor.current.t;
-        const bob = moving ? Math.abs(Math.sin(t * 12)) * ph * 0.08 : 0;
-        const hop = Math.sin(ps.hop * Math.PI) * ph * 0.5;
-        const squash = moving ? 1 : 1 - 0.03 * (1 + Math.sin(t * 1.7)) / 2;
-        ctx.save();
-        ctx.translate(feetX + ps.x, feetY - bob - hop);
-        ctx.scale((ps.vx < -4 ? -1 : 1) * (2 - squash), squash);
-        ctx.drawImage(im, -pw / 2, -ph, pw, ph);
-        ctx.restore();
+        // Facing where it's going, or (standing) toward its human.
+        const petFacing = walk > 0.05 ? facing.current : Math.abs(ps.vx) > 8 ? Math.sign(ps.vx) : ps.x < 0 ? 1 : -1;
+        drawPet(ctx, im, { x: feetX + ps.x, y: feetY, height: b.h * 0.2, facing: petFacing, t: actor.current.t, moving, hop: ps.hop });
       }
-      drawPuppet(ctx, puppet.current, actor.current, { x: feetX, y: feetY, height: b.h * 0.94, facing: facing.current });
+      const pack = moves.current;
+      if (pack) {
+        // Real frames: pick the move for this moment.
+        const r = actor.current.reaction;
+        const want =
+          walk > 0.05 ? "walk"
+          : point ? "point"
+          : r === "wave" || r === "bye" ? "wave"
+          : r === "thumbs" ? "thumbs"
+          : r === "cheer" || r === "tada" || r === "clap" ? "cheer"
+          : r === "shrug" ? "shrug"
+          : mode === "speaking" ? (smooth > 0.06 ? "talk" : "idle")
+          : mode === "thinking" ? "think"
+          : mode === "working" ? "type"
+          : "idle";
+        stepMover(mover.current, dt, want);
+        // Walking faces where it goes; pointing faces the target (its frame points right).
+        const face = want === "walk" ? facing.current : want === "point" && point ? (point.side === "R" ? 1 : -1) : 1;
+        drawMover(ctx, pack, mover.current, { x: feetX, y: feetY, height: b.h * 0.94, facing: face });
+      } else {
+        drawPuppet(ctx, puppet.current, actor.current, { x: feetX, y: feetY, height: b.h * 0.94, facing: facing.current });
+      }
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);

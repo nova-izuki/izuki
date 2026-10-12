@@ -11,6 +11,7 @@ import { VoiceOrb } from "../VoiceOrb";
 import { cx } from "../ui";
 import type { Reminder } from "../../lib/types";
 import { useIzuki } from "../../lib/store";
+import { AirToggle } from "../AirToggle";
 import { brainReady } from "../../lib/setup";
 import { looksLikeDirections, needsApps, recentHistory, shareHistory } from "../../lib/conversation";
 
@@ -721,6 +722,7 @@ export function ChatTab() {
           >
             {settings.chat_auto_run ? "⚡ Auto-run" : "🛡️ Ask first"}
           </button>
+          <AirToggle className="h-[26px]" />
           {msgs.length > 0 && (
             <button
               type="button"

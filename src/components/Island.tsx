@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AirToggle } from "./AirToggle";
 import { AnimatePresence, motion } from "motion/react";
 import { AlarmClock, Brain, Camera, Check, FileText, GripHorizontal, History, Mic, Monitor, Paperclip, Pause, Pencil, Pin, Play, Plus, Settings2, SkipBack, SkipForward, Sparkles, Square, Wand2, X } from "lucide-react";
 import { api, CAMERA_PICTURE_KEY, emit, EV, IS_TAURI, ISLAND_CHATS_KEY, ISLAND_DEEP_KEY, ISLAND_TO_CHAT_KEY, on } from "../lib/ipc";
@@ -1382,6 +1383,7 @@ function AskPage({ page, onHold, onClose }: { page: string | null; onHold?: (on:
         >
           <Brain size={12} /> Deep
         </button>
+        <AirToggle variant="mini" className="h-6 w-6" />
         <input
           value={draft}
           // The overlay doesn't take the keyboard by itself: ask for it.

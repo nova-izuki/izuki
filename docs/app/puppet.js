@@ -122,10 +122,12 @@ function skinPoints(P, M, into) {
 const OUT = { L: 1, R: -1 };
 
 /** Arm targets: `up` lifts the arm out/up from the side (rad), `bend` folds the forearm in toward the body. */
-function arm(t, side, up, bend, len = 1) {
+function arm(t, side, up, bend, len = 1, upperLen = 1) {
   t.rot["upperArm" + side] = OUT[side] * up;
   t.rot["lowerArm" + side] = -OUT[side] * bend;
   t.len["lowerArm" + side] = len;
+  // Shorter = the upper arm comes forward, toward you (2D foreshortening).
+  if (upperLen !== 1) t.len["upperArm" + side] = upperLen;
 }
 
 const GESTURES = {
@@ -135,7 +137,7 @@ const GESTURES = {
   left: (t, k) => { arm(t, "L", 0.25, 1.45 + 0.25 * k); arm(t, "R", 0.06, 0.12); },
   right: (t, k) => { arm(t, "R", 0.25, 1.45 + 0.25 * k); arm(t, "L", 0.06, 0.12); },
   // A hand on the chest ("I think…", "for me…").
-  chest: (t) => { arm(t, "R", -0.05, 2.35, 0.9); arm(t, "L", 0.06, 0.15); },
+  chest: (t) => { arm(t, "R", -0.5, 2.0, 0.95, 0.6); arm(t, "L", 0.06, 0.15); },
   // Shrug.
   shrug: (t) => { arm(t, "L", 0.45, 1.0); arm(t, "R", 0.45, 1.0); t.len.chest = 1.025; t.rot.head = 0.07; },
   // Counting it out / emphasis up high.
@@ -152,15 +154,15 @@ const GESTURE_NAMES = Object.keys(GESTURES);
 const ACTS = {
   stretch: { secs: 2.6, pose: (T, k) => { const up = Math.sin(Math.min(1, k * 1.6) * Math.PI); arm(T, "L", 2.6 * up, -0.1); arm(T, "R", 2.6 * up, -0.1); T.len.chest = 1 + 0.03 * up; T.rot.head = -0.06 * up; }, yawn: true },
   lookAround: { secs: 3.2, pose: (T, k) => { T.rot.head = 0.12 * Math.sin(k * Math.PI * 2); T.rot.chest += 0.03 * Math.sin(k * Math.PI * 2); } },
-  phone: { secs: 4.5, prop: "phone", pose: (T, k) => { arm(T, "R", -0.12, 2.2, 0.85); T.rot.head = 0.08; arm(T, "L", 0.05, 0.15); }, thumbs: true },
-  coffee: { secs: 3.4, prop: "mug", pose: (T, k) => { const sip = k > 0.35 && k < 0.7 ? 1 : 0; arm(T, "R", -0.2 + 0.1 * sip, 2.1 + 0.55 * sip, 0.88); T.rot.head = -0.04 * sip; } },
+  phone: { secs: 4.5, prop: "phone", pose: (T) => { arm(T, "R", -0.45, 1.9, 0.95, 0.7); T.rot.head = 0.08; arm(T, "L", 0.05, 0.15); } },
+  coffee: { secs: 3.6, prop: "mug", pose: (T, k) => { if (k > 0.35 && k < 0.7) { arm(T, "R", -0.75, 2.45, 1.1, 0.55); T.rot.head = -0.05; } else arm(T, "R", -0.45, 1.8, 0.95, 0.7); } },
   tapFoot: { secs: 2.4, pose: (T, k, t) => { T.len.shinR = 1 - 0.035 * Math.max(0, Math.sin(t * 14)); arm(T, "L", 0.3, 2.0, 0.9); arm(T, "R", 0.3, 2.0, 0.9); } },
-  scratchHead: { secs: 2.2, pose: (T, k, t) => { arm(T, "R", 2.0, 1.6 + 0.12 * Math.sin(t * 16)); T.rot.head = 0.07; } },
+  present: { secs: 2.4, pose: (T, k) => { const o = Math.sin(Math.min(1, k * 2) * Math.PI / 2); arm(T, "R", 0.7 * o, -1.5 * o, 0.95, 0.85); T.rot.head = -0.04 * o; } },
   hipsHands: { secs: 3, pose: (T) => { arm(T, "L", 0.55, 2.3, 0.8); arm(T, "R", 0.55, 2.3, 0.8); T.rot.head = -0.05; } },
   rollShoulders: { secs: 1.8, pose: (T, k) => { T.len.chest = 1 + 0.03 * Math.sin(k * Math.PI * 2); T.rot.chest += 0.03 * Math.sin(k * Math.PI * 4); } },
   checkWatch: { secs: 2.4, prop: "watch", pose: (T) => { arm(T, "L", -0.1, 1.75, 0.9); T.rot.head = 0.07; } },
 };
-const IDLE_ACTS = ["stretch", "lookAround", "phone", "coffee", "tapFoot", "scratchHead", "hipsHands", "rollShoulders", "checkWatch", "lookAround"];
+const IDLE_ACTS = ["stretch", "lookAround", "phone", "coffee", "tapFoot", "present", "hipsHands", "rollShoulders", "checkWatch", "lookAround"];
 
 /** Quick reactions anyone can trigger: actor.react("thumbs"). */
 const REACTIONS = {
@@ -171,9 +173,10 @@ const REACTIONS = {
   thumbs: { secs: 1.5, pose: (T) => { arm(T, "R", 0.35, 1.75); T.rot.head = -0.05; } },
   nod: { secs: 1.2, pose: (T, k) => { T.rot.head = 0.07 * Math.sin(k * Math.PI * 4); } },
   shake: { secs: 1.3, pose: (T, k) => { T.rot.head = 0.1 * Math.sin(k * Math.PI * 6); } },
-  facepalm: { secs: 1.8, pose: (T) => { arm(T, "R", -0.4, 2.95, 0.95); T.rot.head = 0.12; } },
+  facepalm: { secs: 1.8, pose: (T) => { arm(T, "R", -0.6, 2.65, 1.2, 0.5); T.rot.head = 0.12; } },
+  tada: { secs: 1.6, pose: (T, k) => { const o = Math.sin(Math.min(1, k * 3) * Math.PI / 2); arm(T, "L", 1.2 * o, -1.3 * o); arm(T, "R", 1.2 * o, -1.3 * o); T.rot.head = -0.05 * o; } },
   clap: { secs: 1.6, pose: (T, k, t) => { const c = 0.25 * Math.max(0, Math.sin(t * 15)); arm(T, "L", 0.25, 1.55 + c, 0.9); arm(T, "R", 0.25, 1.55 + c, 0.9); } },
-  laugh: { secs: 1.6, pose: (T, k, t) => { T.len.chest = 1 + 0.02 * Math.abs(Math.sin(t * 12)); T.rot.head = -0.08 + 0.03 * Math.sin(t * 12); arm(T, "R", -0.05, 2.3, 0.9); }, mouth: 0.8 },
+  laugh: { secs: 1.6, pose: (T, k, t) => { T.len.chest = 1 + 0.02 * Math.abs(Math.sin(t * 12)); T.rot.head = -0.08 + 0.03 * Math.sin(t * 12); arm(T, "R", -0.5, 2.0, 0.95, 0.6); }, mouth: 0.8 },
   sassy: { secs: 2.2, pose: (T) => { arm(T, "L", 0.55, 2.3, 0.8); arm(T, "R", 0.55, 2.3, 0.8); T.rot.head = -0.1; T.rot.chest += -0.04; } },
 };
 
@@ -245,8 +248,8 @@ export function stepActor(A, dt, input = {}) {
     arm(T, "L", 0.04, 0.12);
     arm(T, "R", 0.04, 0.12);
   } else if (mode === "thinking") {
-    // A hand to the chin, the other across the waist.
-    arm(T, "R", -0.32, 2.75, 0.92);
+    // A hand to the chin (elbow tucked in, forearm up), the other across the waist.
+    arm(T, "R", -0.75, 2.45, 1.12, 0.55);
     arm(T, "L", -0.05, 1.55, 0.9);
     T.rot.head = -0.07 + 0.015 * Math.sin(t * 0.8);
   } else if (mode === "working") {
@@ -579,4 +582,41 @@ export function drawPuppet(ctx, P, A, { x, y, height, facing = 1, laptopOn = fal
 /** Which characters have a skeleton. */
 export async function puppetIds() {
   return Object.keys(PUPPET_ART);
+}
+
+/**
+ * A pet (a side-on painting, facing right) that trots: the body bobs and the
+ * front and back legs swing in turn; standing still, it breathes.
+ *   drawPet(ctx, img, { x, y, height, facing, t, moving, hop })
+ */
+export function drawPet(ctx, img, { x, y, height, facing = 1, t = 0, moving = false, hop = 0 } = {}) {
+  if (!img || !img.width || !img.height) return;
+  const w = (img.width / img.height) * height, h = height;
+  const iw = img.width, ih = img.height;
+  const cut = 0.64; // where the legs start
+  const ph = t * 13;
+  const bob = moving ? Math.abs(Math.sin(ph)) * h * 0.05 : Math.sin(t * 1.7) * h * 0.006;
+  const lift = Math.sin(Math.min(1, hop) * Math.PI) * h * 0.45;
+  ctx.save();
+  ctx.translate(x, y - lift);
+  if (facing < 0) ctx.scale(-1, 1);
+  ctx.translate(-w / 2, -h);
+  // Legs first (the body overlaps their tops), each pair swinging from the hip.
+  const legs = (sx0, sx1, swing) => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(w * sx0, h * (cut - 0.04), w * (sx1 - sx0), h * (1 - cut + 0.06));
+    ctx.clip();
+    // Shear about the leg tops: the feet move forward/back, the hips stay.
+    const k = moving ? swing : 0;
+    ctx.transform(1, 0, k, 1, -k * h * cut, 0);
+    ctx.drawImage(img, 0, ih * (cut - 0.04), iw, ih * (1 - cut + 0.04), 0, h * (cut - 0.04), w, h * (1 - cut + 0.04));
+    ctx.restore();
+  };
+  legs(0, 0.52, 0.35 * Math.sin(ph));
+  legs(0.52, 1, -0.35 * Math.sin(ph));
+  // The body (and head and tail), bobbing.
+  // (A little past the leg tops, so no seam shows where they meet.)
+  ctx.drawImage(img, 0, 0, iw, ih * (cut + 0.025), 0, -bob, w, h * (cut + 0.025));
+  ctx.restore();
 }

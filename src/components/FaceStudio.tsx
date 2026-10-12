@@ -56,7 +56,10 @@ function BuddySection({ style, pick }: { style: string; pick: (s: Settings["orb_
   const patch = useIzuki((s) => s.patchSettings);
   useEffect(() => {
     let alive = true;
-    void import("../../docs/app/puppet.js").then((m) => m.puppetIds()).then((l) => alive && setIds(l));
+    // Really animated ones first.
+    void Promise.all([import("../../docs/app/puppet.js").then((m) => m.puppetIds()), import("../../docs/app/sprites.js").then((m) => m.movesIds())])
+      .then(([all, real]) => alive && setIds([...all.filter((i) => real.includes(i)), ...all.filter((i) => !real.includes(i))]))
+      .catch(() => undefined);
     void import("../../docs/app/toon.js").then((m) => alive && setNames(Object.fromEntries(Object.entries(m.CHARACTERS).map(([k, c]) => [k, c.name]))));
     return () => { alive = false; };
   }, []);

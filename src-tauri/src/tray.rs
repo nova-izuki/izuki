@@ -44,6 +44,7 @@ fn build_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<tauri:
         "Always show the hand"
     };
     let follow = MenuItem::with_id(app, "follow", follow_label, true, None::<&str>)?;
+    let air = MenuItem::with_id(app, "air", if settings.air_enabled { "Air control (hand gestures)   ✓" } else { "Air control (hand gestures)" }, true, None::<&str>)?;
     let flows = MenuItem::with_id(app, "flows", "My flows", true, None::<&str>)?;
     let watchers = MenuItem::with_id(app, "watchers", "Watchers", true, None::<&str>)?;
     let settings_item = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
@@ -63,6 +64,7 @@ fn build_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<tauri:
         &[
             &draw,
             &follow,
+            &air,
             &sep1,
             &flows,
             &watchers,
@@ -108,6 +110,20 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
                 } else {
                     "Follow mode off."
                 }),
+            );
+        }
+        "air" => {
+            let store = crate::state::store();
+            let mut settings = store.settings();
+            settings.air_enabled = !settings.air_enabled;
+            let saved = store.set_settings(settings);
+            // The camera and gestures live in the overlay: up while Air is on.
+            let _ = if overlay::stays_up(&saved) { overlay::show_follow(app) } else { overlay::hide_overlay(app) };
+            crate::state::settings_changed_elsewhere();
+            refresh(app);
+            let _ = app.emit(
+                events::STATUS,
+                crate::model::StatusEvent::info(if saved.air_enabled { "Air control on — your hand drives the PC." } else { "Air control off." }),
             );
         }
         "flows" => navigate(app, "flows"),
