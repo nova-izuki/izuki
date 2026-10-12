@@ -22,6 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "⚡", title: "A faster PC: the desktop character is off", how: "The character that lived on your desktop all the time is switched off — it slowed some PCs down. Characters are coming back the right way: as a look for Izuki that shows up only when you ask, with real body movement." },
   { icon: "🖐️", title: "Air control: your hand drives the PC", how: "Through any camera: move your hand to move the pointer, pinch to click (hold to drag and drop), thumb + middle right-clicks, thumb + ring copies, thumb + pinky pastes, two fingers scroll, a palm swipe goes back. Point at a text box and hold still: it's clicked, and what you say goes in it. A box hugs whatever is under your hand, even one tiny FL Studio step. Teach it your own gestures too. Or say “turn on air control”.", try: { label: "Air control settings", tab: "settings", id: "settings-air" } },
   { icon: "📷", title: "Any camera, picked for you", how: "Built-in, USB, capture card or a virtual camera like OBS: the Island's camera picks the right one by itself (yours if you chose one), moves on if one won't start, and switches if you unplug it. More than one? Pick from the corner of the view." },
   { icon: "👄", title: "3D faces open their mouths", how: "The holograms and the built-in Woman and Man now open their mouths when they talk — teeth and all." },

@@ -387,9 +387,13 @@ pub struct Settings {
     /// The key FL Studio's Izuki script answers to (written into the script).
     #[serde(default)]
     pub fl_key: String,
-    /// The desktop mate: your character living on the desktop (on unless turned off).
-    #[serde(default = "default_true")]
+    /// The desktop mate: your character living on the desktop (off unless turned on).
+    #[serde(default)]
     pub mate_enabled: bool,
+    /// The desktop mate was switched off once for everyone (1.0.89): it
+    /// was on by default, felt like a bug and slowed PCs down.
+    #[serde(default)]
+    pub mate_reset_v2: bool,
     /// Its pet: "cat", "dog" or "none".
     #[serde(default = "default_mate_pet")]
     pub mate_pet: String,
@@ -677,6 +681,10 @@ impl Settings {
     /// a newly supported brain.
     pub fn heal(&mut self) {
         if !["mouse", "precision"].contains(&self.control_style.as_str()) { self.control_style = "mouse".into(); }
+        if !self.mate_reset_v2 {
+            self.mate_enabled = false;
+            self.mate_reset_v2 = true;
+        }
         // The old drawn 3D faces became real 3D models: the nearest one, by voice.
         let male = crate::tv::voice_is_male(self);
         if self.orb_style == "holo3d" { self.orb_style = if male { "model:holo-male" } else { "model:holo-female" }.into(); }
@@ -963,7 +971,8 @@ impl Default for Settings {
             sharp_eye_tars: false,
             click_highlight: false,
             fl_key: String::new(),
-            mate_enabled: true,
+            mate_enabled: false,
+            mate_reset_v2: true,
             mate_pet: default_mate_pet(),
             mate_chatty: default_mate_chatty(),
             mate_voice: false,
@@ -1067,6 +1076,11 @@ mod tests {
         assert_eq!(s.orb_style, "liquid");
         assert!(s.economy_mode);
         assert_eq!(s.orb_response, 1.0);
+        // The always-on desktop mate is switched off once; turning it back on sticks.
+        assert!(!s.mate_enabled && s.mate_reset_v2);
+        s.mate_enabled = true;
+        s.heal();
+        assert!(s.mate_enabled);
         s.orb_response = 99.0;
         s.control_style = "unknown".into();
         s.orb_style = "unknown".into();

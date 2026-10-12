@@ -344,6 +344,8 @@ export interface Settings {
   fl_key: string;
   /** The desktop mate: your character living on the desktop. */
   mate_enabled: boolean;
+  /** The desktop mate was switched off once for everyone (1.0.89). */
+  mate_reset_v2: boolean;
   mate_pet: string;
   mate_chatty: string;
   mate_voice: boolean;

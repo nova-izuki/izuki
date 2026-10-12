@@ -13,7 +13,7 @@ export function MateCard() {
       title="Desktop mate"
       hint="Your character lives on your desktop with its pet: it walks along the taskbar, dances to your music, dozes off when you're away, and reacts to what you do — switching apps, builds finishing, downloads — in its own voice. Double-click it to talk (Izuki's whole brain answers), drag it anywhere, right-click for its menu. It hides during fullscreen games and videos."
     >
-      <Row label="Show my mate" hint="The character you picked, in the Concept style." icon={<PawPrint size={14} strokeWidth={2.3} />}>
+      <Row label="Show my mate" hint="Off by default: it stays on your desktop all the time, which can slow a PC down." icon={<PawPrint size={14} strokeWidth={2.3} />}>
         <Toggle checked={settings.mate_enabled} onChange={(v) => patch({ mate_enabled: v })} />
       </Row>
       <Row label="Its pet" hint="Trots behind it on a lead.">
