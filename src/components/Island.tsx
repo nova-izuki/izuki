@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, Camera, Check, FileText, GripHorizontal, History, Mic, Monitor, Paperclip, Pause, Pencil, Pin, Play, Plus, Settings2, SkipBack, SkipForward, Sparkles, Square, Wand2, X } from "lucide-react";
-import { api, CAMERA_PICTURE_KEY, emit, EV, IS_TAURI, ISLAND_CHATS_KEY, ISLAND_TO_CHAT_KEY, on } from "../lib/ipc";
+import { AlarmClock, Brain, Camera, Check, FileText, GripHorizontal, History, Mic, Monitor, Paperclip, Pause, Pencil, Pin, Play, Plus, Settings2, SkipBack, SkipForward, Sparkles, Square, Wand2, X } from "lucide-react";
+import { api, CAMERA_PICTURE_KEY, emit, EV, IS_TAURI, ISLAND_CHATS_KEY, ISLAND_DEEP_KEY, ISLAND_TO_CHAT_KEY, on } from "../lib/ipc";
 import { workArea } from "../lib/floating";
 import { lockHit, markHit, unlockHit } from "../lib/hitTest";
 import { ChatText } from "./ChatText";
@@ -1117,6 +1117,17 @@ function AskPage({ page, onHold, onClose }: { page: string | null; onHold?: (on:
   const [saved, setSaved] = useState<SavedAsk[]>(() => loadAsks());
   const [allChats, setAllChats] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  /** Deep thinking: slower, reasoned answers (remembered between uses). */
+  const [deep, setDeep] = useState(() => {
+    try { return localStorage.getItem(ISLAND_DEEP_KEY) === "1"; } catch { return false; }
+  });
+  const toggleDeep = () =>
+    setDeep((v) => {
+      try { localStorage.setItem(ISLAND_DEEP_KEY, v ? "0" : "1"); } catch { /* storage is optional */ }
+      return !v;
+    });
+  /** Whether the answer in progress was asked deeply (for its "thinking" line). */
+  const [askedDeep, setAskedDeep] = useState(false);
   const turnsRef = useRef<PageTurn[]>([]);
   const chatId = useRef<number | null>(null);
   const current = useRef(0);
@@ -1207,7 +1218,8 @@ function AskPage({ page, onHold, onClose }: { page: string | null; onHold?: (on:
     setWorking(true);
     const sending = files;
     setFiles([]);
-    void api.pageAsk(id, q, turnsRef.current.slice(-8), sending, !page);
+    setAskedDeep(deep);
+    void api.pageAsk(id, q, turnsRef.current.slice(-8), sending, !page, deep);
   };
   const stop = () => {
     if (current.current) void api.pageAskCancel(current.current);
@@ -1356,6 +1368,19 @@ function AskPage({ page, onHold, onClose }: { page: string | null; onHold?: (on:
           )}
           <input ref={picker} type="file" multiple accept={ASK_FILE_TYPES} className="hidden" onChange={(e) => { void addFiles(e.target.files); e.target.value = ""; }} />
         </div>
+        <button
+          type="button"
+          onClick={toggleDeep}
+          aria-pressed={deep}
+          aria-label="Deep thinking"
+          title={deep ? "Deep thinking is on — slower, carefully reasoned answers" : "Deep thinking — for hard questions: slower, carefully reasoned answers"}
+          className={
+            "flex h-6 shrink-0 items-center gap-1 rounded-full px-2 text-[11px] font-semibold transition " +
+            (deep ? "bg-violet-500/80 text-white" : "bg-white/10 text-white/70 hover:bg-white/20")
+          }
+        >
+          <Brain size={12} /> Deep
+        </button>
         <input
           value={draft}
           // The overlay doesn't take the keyboard by itself: ask for it.
@@ -1424,6 +1449,10 @@ function AskPage({ page, onHold, onClose }: { page: string | null; onHold?: (on:
             <div className="text-[12.5px] text-rose-300">{error}</div>
           ) : shown ? (
             <ChatText text={shown} />
+          ) : askedDeep ? (
+            <div className="flex items-center gap-2 text-[12px] text-violet-200/90">
+              <Brain size={13} className="animate-pulse" /> Thinking it through…
+            </div>
           ) : (
             <Dots />
           )}

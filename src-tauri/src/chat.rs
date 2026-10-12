@@ -1005,6 +1005,11 @@ pub fn complete_streaming(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -
         }
         anyhow::bail!("no AI brain is set up yet — add a free Gemini key in Izuki's Settings");
     }
+    // Deep: the brain that can really think goes first.
+    let mut chain = chain;
+    if is_deep(id) {
+        chain.sort_by_key(|c| if c.id == ProviderId::Gemini { 0 } else { 1 });
+    }
     let text = Mutex::new(String::new());
     let failed = Mutex::new(None::<String>);
     let emit = |t: String, done: bool, error: Option<String>| {
@@ -1026,6 +1031,34 @@ pub fn complete_streaming(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -
 
 /// How long a brain gets to start answering before the next is asked too.
 const HEDGE_AFTER: Duration = Duration::from_millis(1800);
+/// Deep thinking: a brain that's thinking says nothing for a while — give it
+/// this long before asking another (whose quick answer would win the race).
+const HEDGE_AFTER_DEEP: Duration = Duration::from_secs(25);
+
+/// Requests asked to think deeply ("Deep thinking" in the Island's Ask).
+static DEEP: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+thread_local! {
+    /// This brain's request is a deep one (set on each racing thread).
+    static DEEP_HERE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+fn is_deep(id: u64) -> bool {
+    DEEP.lock().contains(&id)
+}
+
+/// `complete_streaming`, letting the brains think it through first: thinking
+/// switched on (where a brain can), room for a longer answer, Gemini asked
+/// first, and the others only if it stays silent a long while.
+pub fn complete_streaming_deep(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -> anyhow::Result<String> {
+    struct Unmark(u64);
+    impl Drop for Unmark {
+        fn drop(&mut self) {
+            DEEP.lock().retain(|d| *d != self.0);
+        }
+    }
+    DEEP.lock().push(id);
+    let _unmark = Unmark(id);
+    complete_streaming(messages, id, on_text)
+}
 
 enum Event {
     Text(usize, String),
@@ -1046,7 +1079,9 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
     let launch = |i: usize| {
         crate::state::trace(format!("Asking {}…", crate::state::short_name(&chain[i].label)));
         let (tx, cfg, messages, winner) = (tx.clone(), chain[i].clone(), messages.to_vec(), winner.clone());
+        let deep = is_deep(id);
         std::thread::spawn(move || {
+            DEEP_HERE.with(|d| d.set(deep));
             let started = Instant::now();
             let first = Mutex::new(None::<u128>);
             let stop = || {
@@ -1092,14 +1127,15 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
         let won = winner.load(Ordering::SeqCst);
         let local = chain[..launched].iter().any(|c| c.id.is_local());
         // Nobody has said a word for this long: stop waiting and say why.
-        let first_words = Duration::from_secs(if local { 240 } else { 40 });
+        let deep = is_deep(id);
+        let first_words = Duration::from_secs(if local { 240 } else if deep { 150 } else { 40 });
         if winner.load(Ordering::SeqCst) == usize::MAX && launched == chain.len() && began.elapsed() > first_words {
             errors.push("no answer in time".into());
             return emit(String::new(), true, Some(errors.join("; ")));
         }
         let patience = if local { 240 } else { 90 };
         let wait = if won == usize::MAX && launched < chain.len() {
-            HEDGE_AFTER
+            if deep { HEDGE_AFTER_DEEP } else { HEDGE_AFTER }
         } else if won == usize::MAX {
             first_words.saturating_sub(began.elapsed()).max(Duration::from_millis(200))
         } else {
@@ -1147,29 +1183,40 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
 /// One provider. `Ok(true)` = finished, `Ok(false)` = cancelled. Only fails
 /// over to the next provider if nothing was sent yet.
 pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn() -> bool, on_text: &dyn Fn(String)) -> anyhow::Result<bool> {
+    let deep = DEEP_HERE.with(|d| d.get());
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(6))
-        .timeout(reply_timeout(cfg))
+        .timeout(if deep && !cfg.id.is_local() { Duration::from_secs(150) } else { reply_timeout(cfg) })
         .build()?;
     let body = json!({
         "model": cfg.model,
         "messages": messages,
         "stream": true,
         // Room for a drafted email or an app call; the prompts keep chat short.
-        "max_tokens": 900,
-        "temperature": 0.7,
+        // Deep thinking: room for the thinking and a full answer.
+        "max_tokens": if deep { 6000 } else { 900 },
+        "temperature": if deep { 0.4 } else { 0.7 },
     });
     let mut body = body;
     // Conversation wants first words fast, not deliberation.
     // (Gemini's main model may be resting — see `vision::gemini_model_now`.)
     let model_now = crate::vision::gemini_model_now(&cfg.model);
-    let knob = if cfg.id == ProviderId::Gemini {
+    let knob = if cfg.id == ProviderId::Gemini && !deep {
         crate::vision::gemini_no_think(&model_now)
     } else {
         crate::vision::NoThink::Neither
     };
     if let Some(effort) = knob.reasoning_effort() {
         body["reasoning_effort"] = json!(effort);
+    }
+    // Deep thinking: switched on where a brain can (Gemini's thinking models;
+    // reasoning models through OpenRouter). Others just get the time.
+    if deep {
+        match cfg.id {
+            ProviderId::Gemini => body["reasoning_effort"] = json!("high"),
+            ProviderId::Openrouter => body["reasoning"] = json!({ "effort": "high", "exclude": true }),
+            _ => {}
+        }
     }
     let mut body = body;
     if cfg.id == ProviderId::Gemini {
@@ -1183,6 +1230,14 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
         rq = rq.header("HTTP-Referer", "https://github.com/nova-izuki/izuki").header("X-Title", "Izuki");
     }
     let resp = rq.send()?;
+    // Turned away for the thinking setting itself: ask again plainly.
+    if deep && resp.status().as_u16() == 400 && matches!(cfg.id, ProviderId::Gemini | ProviderId::Openrouter) {
+        eprintln!("[chat] {} refused deep thinking — asking it plainly", cfg.label);
+        DEEP_HERE.with(|d| d.set(false));
+        let r = stream_one(cfg, messages, stop, on_text);
+        DEEP_HERE.with(|d| d.set(true));
+        return r;
+    }
     // This model takes a different "don't think" setting (or none): again without it.
     if knob != crate::vision::NoThink::Neither && resp.status().as_u16() == 400 {
         crate::vision::gemini_refused_no_think(&model_now, knob);
@@ -1223,7 +1278,8 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
         // A "thinking" model that's still only thinking after a few seconds
         // (it reasons in a separate field, and can spend the whole reply
         // budget there) isn't going to be quick — let a faster brain answer.
-        if !sent_any && began.elapsed() > Duration::from_secs(6) {
+        // (Deep thinking asked for exactly that: it waits.)
+        if !deep && !sent_any && began.elapsed() > Duration::from_secs(6) {
             let d = &v["choices"][0]["delta"];
             if d["reasoning_content"].is_string() || d["reasoning"].is_string() {
                 anyhow::bail!("still thinking after 6 s — too slow for conversation");

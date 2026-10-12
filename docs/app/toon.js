@@ -1206,6 +1206,12 @@ const PAINTED_ART = {
       mouth: new URL("./painted/dre-concept/mouth.webp", import.meta.url).href,
       eyes: new URL("./painted/dre-concept/eyes.webp", import.meta.url).href,
     },
+    nia: {
+      rig: new URL("./painted/nia-concept/rig.json", import.meta.url).href,
+      base: new URL("./painted/nia-concept/base.webp", import.meta.url).href,
+      mouth: new URL("./painted/nia-concept/mouth.webp", import.meta.url).href,
+      eyes: new URL("./painted/nia-concept/eyes.webp", import.meta.url).href,
+    },
   },
 };
 const paintedCache = new Map();

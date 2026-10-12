@@ -20,6 +20,7 @@ import {
   ACESFilmicToneMapping, Euler, SphereGeometry, TorusGeometry, TubeGeometry, CatmullRomCurve3,
   MeshStandardMaterial, Mesh, CanvasTexture, RepeatWrapping, BufferGeometry, Float32BufferAttribute, LineSegments,
   LineBasicMaterial,
+  Vector4,
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { follow, gestureAt, visemeAt } from "./speech.js";
@@ -29,11 +30,15 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 // ------------------------------------------------------------------ the faces
 
 /** The faces that come with Izuki. */
+// mouth: [lip line, half-width], eyes: [centre out from the middle, height,
+// half-width, half-height] — measured on each sculpt, in units of the
+// head-top-to-nose-tip length from the nose tip. (A guess from the head's
+// height put the mouth on the lower lip of any face with a tall head.)
 export const FACES = [
-  { id: "holo-female", name: "Hologram woman", gender: "female", url: new URL("./faces/holo-female.glb", import.meta.url).href, thumb: new URL("./faces/holo-female.webp", import.meta.url).href, glow: 0.55, accent: "#5ee7ff", bald: true },
-  { id: "holo-male", name: "Hologram man", gender: "male", url: new URL("./faces/holo-male.glb", import.meta.url).href, thumb: new URL("./faces/holo-male.webp", import.meta.url).href, glow: 0.55, accent: "#5ee7ff", bald: true },
-  { id: "lightskin-female", name: "Woman", gender: "female", url: new URL("./faces/lightskin-female.glb", import.meta.url).href, thumb: new URL("./faces/lightskin-female.webp", import.meta.url).href, glow: 0, accent: "#a78bfa" },
-  { id: "black-male", name: "Man", gender: "male", url: new URL("./faces/black-male.glb", import.meta.url).href, thumb: new URL("./faces/black-male.webp", import.meta.url).href, glow: 0, accent: "#a78bfa", shortHair: true },
+  { id: "holo-female", name: "Hologram woman", gender: "female", url: new URL("./faces/holo-female.glb", import.meta.url).href, thumb: new URL("./faces/holo-female.webp", import.meta.url).href, glow: 0.55, accent: "#5ee7ff", bald: true, mouth: [-0.165, 0.14], eyes: [0.265, 0.245, 0.095, 0.045] },
+  { id: "holo-male", name: "Hologram man", gender: "male", url: new URL("./faces/holo-male.glb", import.meta.url).href, thumb: new URL("./faces/holo-male.webp", import.meta.url).href, glow: 0.55, accent: "#5ee7ff", bald: true, mouth: [-0.225, 0.17], eyes: [0.24, 0.22, 0.095, 0.045] },
+  { id: "lightskin-female", name: "Woman", gender: "female", url: new URL("./faces/lightskin-female.glb", import.meta.url).href, thumb: new URL("./faces/lightskin-female.webp", import.meta.url).href, glow: 0, accent: "#a78bfa", mouth: [-0.19, 0.15], eyes: [0.25, 0.24, 0.09, 0.045] },
+  { id: "black-male", name: "Man", gender: "male", url: new URL("./faces/black-male.glb", import.meta.url).href, thumb: new URL("./faces/black-male.webp", import.meta.url).href, glow: 0, accent: "#a78bfa", shortHair: true, mouth: [-0.215, 0.16], eyes: [0.24, 0.20, 0.095, 0.045] },
 ];
 
 /** What each face can be changed with, and where it starts. */
@@ -217,6 +222,9 @@ function prepare(id, gltf) {
   const uniforms = {
     uJaw: { value: 0 }, uMouth: { value: new Vector3() }, uMouthW: { value: 0.03 }, uJawR: { value: 0.08 },
     uGlow: { value: 0 }, uAccent: { value: new Color("#5ee7ff") }, uTime: { value: 0 }, uScan: { value: 400 }, uTrim: { value: 0 },
+    // A sculpt's blink: each eye (x out from the middle, y, half-width, half-height),
+    // how far in front it is, how closed (0–1), and the lid's colour.
+    uEye: { value: new Vector4(0, 0, 0, 0) }, uEyeZ: { value: 0 }, uBlink: { value: 0 }, uLid: { value: new Color("#8a5a44") },
   };
 
   if (rigged) {
@@ -250,8 +258,36 @@ function prepare(id, gltf) {
     frame.skull = { c, r: new Vector3(headH * 0.43, headH * 0.45, headH * 0.48), bone: bones.Head };
   } else {
     const lm = landmarks(meshes, box);
+    const info = faceInfo(id) || {};
+    if (info.mouth) {
+      // The measured lip line, and the front of the face there.
+      const y = lm.nose.y + info.mouth[0] * lm.tn;
+      lm.mouth.set(lm.nose.x, y, frontAt(meshes, lm.nose.x, y, lm.tn * 0.05, lm.mouth.z));
+    }
     uniforms.uMouth.value.copy(lm.mouth);
-    uniforms.uMouthW.value = lm.tn * 0.15;
+    uniforms.uMouthW.value = lm.tn * (info.mouth ? info.mouth[1] : 0.15);
+    if (info.eyes) {
+      const [ex, ey, rx, ry] = info.eyes;
+      // A little over the measured opening, so the lid covers the liner too.
+      uniforms.uEye.value.set(ex * lm.tn, lm.nose.y + ey * lm.tn, rx * 1.2 * lm.tn, ry * 1.3 * lm.tn);
+      uniforms.uEyeZ.value = lm.nose.z - lm.tn * 0.45;
+      // The lid is the skin around the eye: the middle of a ring of samples
+      // (one point can land on a brow, a highlight or a lash), a shade darker.
+      const ring = [];
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI * 2;
+        const c = colourAt(meshes, lm.nose.x - (ex + Math.cos(a) * rx * 1.35) * lm.tn, lm.nose.y + (ey + Math.sin(a) * ry * 3.0) * lm.tn);
+        if (c) ring.push(c);
+      }
+      // Brows, lashes and stray hair are the darkest samples: leave them out.
+      ring.sort((a, b) => a.r + a.g + a.b - (b.r + b.g + b.b));
+      ring.splice(0, Math.min(4, Math.max(0, ring.length - 3)));
+      if (ring.length) {
+        const mid = (k) => ring.map((c) => c[k]).sort((a, b) => a - b)[Math.floor(ring.length / 2)];
+        // The socket catches more light than the cheek: a closed lid reads darker.
+        uniforms.uLid.value.setRGB(mid("r") * 0.82, mid("g") * 0.78, mid("b") * 0.78);
+      }
+    }
     uniforms.uJawR.value = lm.tn * 0.55;
     uniforms.uScan.value = (Math.PI * 2 * 70) / Math.max(0.01, lm.tn * 2);
     // Stray bits beside the bust (a sculpt's floating hands): cut off.
@@ -395,6 +431,53 @@ function landmarks(meshes, box) {
   each((x, y, z) => { if (Math.abs(x - nose.x) < tn * 0.05 && Math.abs(y - mouthY) < tn * 0.03 && z > mz) mz = z; });
   if (!Number.isFinite(mz)) mz = nose.z - tn * 0.1;
   return { nose, tn, mouth: new Vector3(nose.x, mouthY, mz) };
+}
+
+/** The frontmost z near (x, y) — where the surface is. */
+function frontAt(meshes, x, y, r, fallback) {
+  let z = -Infinity;
+  for (const m of meshes) {
+    const p = m.geometry.getAttribute("position");
+    for (let i = 0; i < p.count; i++) if (Math.abs(p.getX(i) - x) < r && Math.abs(p.getY(i) - y) < r * 0.6 && p.getZ(i) > z) z = p.getZ(i);
+  }
+  return Number.isFinite(z) ? z : fallback;
+}
+
+/** A texture drawn once for reading colours back (the lid's skin tone). */
+const readback = new WeakMap();
+
+/** The painted colour of the front surface at (x, y): from the texture, or the material. */
+function colourAt(meshes, x, y) {
+  let best = null, bz = -Infinity;
+  for (const m of meshes) {
+    const p = m.geometry.getAttribute("position");
+    for (let i = 0; i < p.count; i++) {
+      if (Math.hypot(p.getX(i) - x, p.getY(i) - y) > 0.012) continue;
+      if (p.getZ(i) > bz) { bz = p.getZ(i); best = { m, i }; }
+    }
+  }
+  if (!best) return null;
+  const mat = [].concat(best.m.material)[0];
+  const uv = best.m.geometry.getAttribute("uv");
+  const img = mat && mat.map && mat.map.image;
+  if (uv && img && img.width) {
+    try {
+      let g = readback.get(img);
+      if (!g) {
+        const c = document.createElement("canvas");
+        c.width = img.width; c.height = img.height;
+        g = c.getContext("2d", { willReadFrequently: true });
+        g.drawImage(img, 0, 0);
+        readback.set(img, g);
+      }
+      // glTF textures aren't flipped: v runs top to bottom like the image's rows.
+      const u = uv.getX(best.i), v = mat.map.flipY === false ? uv.getY(best.i) : 1 - uv.getY(best.i);
+      const px = g.getImageData(Math.min(img.width - 1, Math.max(0, Math.round(u * img.width))), Math.min(img.height - 1, Math.max(0, Math.round(v * img.height))), 1, 1).data;
+      // Texture pixels are sRGB; the shader works in linear.
+      return new Color().setRGB(px[0] / 255, px[1] / 255, px[2] / 255, SRGBColorSpace);
+    } catch { /* a texture we can't read back */ }
+  }
+  return mat && mat.color ? mat.color.clone() : null;
 }
 
 /** A sculpt's skull (with its own hair): measured across the forehead. */
@@ -858,17 +941,37 @@ function patch(mat, U, sculpt) {
           float front = smoothstep(-uJawR * 1.5, -uJawR * .35, d.z);
           float reach = 1. - smoothstep(uJawR * .9, uJawR * 1.9, -d.y);
           float w = below * side * front * reach;
-          transformed.y -= uJaw * uJawR * .11 * w;
-          transformed.z -= uJaw * uJawR * .025 * w;
+          transformed.y -= uJaw * uJawR * .15 * w;
+          transformed.z -= uJaw * uJawR * .03 * w;
           // The opening between the lips: an almond, widest in the middle.
           vec2 q = vec2(d.x / uMouthW, (d.y + uJaw * uJawR * .012) / (uJawR * .036 * (.3 + uJaw)));
           float almond = length(vec2(q.x, q.y / max(.15, 1. - q.x * q.x * .8)));
           vMouth = (1. - smoothstep(.55, 1., almond)) * step(-uJawR * .5, d.z);
         }` : ""}`);
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nuniform float uJaw, uGlow, uTime, uScan, uTrim; uniform vec3 uAccent, uMouth; varying float vMouth; varying vec3 vObj;")
+      .replace("#include <common>", "#include <common>\nuniform float uJaw, uGlow, uTime, uScan, uTrim, uBlink, uEyeZ; uniform vec3 uAccent, uMouth, uLid; uniform vec4 uEye; varying float vMouth; varying vec3 vObj;")
+      // A closed lid is skin, not a glossy eye: matte while it's down.
+      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\n roughnessFactor = mix(roughnessFactor, .9, izkLid);")
       .replace("#include <clipping_planes_fragment>", "#include <clipping_planes_fragment>\n if (uTrim > 0. && abs(vObj.x - uMouth.x) > uTrim) discard;")
-      .replace("#include <color_fragment>", "#include <color_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(.09, .03, .035), uAccent * .08, uGlow), clamp(min(1., uJaw * 2.) * vMouth, 0., .85));")
+      .replace("#include <color_fragment>", `#include <color_fragment>
+        diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(.09, .03, .035), uAccent * .08, uGlow), clamp(min(1., uJaw * 2.) * vMouth, 0., .85));
+        float izkLid = 0.;
+        ${sculpt ? `
+        if (uBlink > .001 && uEye.z > 0. && vObj.z > uEyeZ) {
+          // The lid sweeps down over the eye (both, mirrored about the face's middle).
+          vec2 e = vec2((abs(vObj.x - uMouth.x) - uEye.x) / uEye.z, (vObj.y - uEye.y) / uEye.w);
+          float inside = 1. - smoothstep(.72, 1.1, length(e));
+          // Shut, the lid's edge rests along the bottom of the opening.
+          float edge = mix(1., -.6, uBlink);
+          float covered = smoothstep(edge - .08, edge + .08, e.y);
+          izkLid = inside * covered;
+          // A lid is rounder than the eye under it: darker toward its edge.
+          vec3 lidCol = uLid * (.72 + .3 * smoothstep(edge, edge + 1.3, e.y));
+          diffuseColor.rgb = mix(diffuseColor.rgb, lidCol, izkLid);
+          // The lashes along that edge.
+          float lash = (1. - smoothstep(.0, .2, abs(e.y - edge))) * smoothstep(.15, .5, uBlink) * (1. - smoothstep(.75, 1., abs(e.x)));
+          diffuseColor.rgb = mix(diffuseColor.rgb, uLid * .15, inside * lash * .95);
+        }` : ""}`)
       .replace("#include <opaque_fragment>", `
         if (uGlow > .001) {
           // Hologram: a bright rim where the surface turns away, faint moving scan lines.
@@ -1119,8 +1222,16 @@ function animate(model, s, o, dt) {
     model.root.position.y = 0;
     model.root.rotation.set(0, 0, 0);
   } else {
-    // A sculpt: the whole bust turns and breathes about its neck; the jaw talks.
-    model.uniforms.uJaw.value = o.still ? clamp(s.e, 0, 1) : clamp(s.e * 1.2, 0, 1) * (0.75 + 0.25 * Math.sin(t * 17.3) * Math.sin(t * 6.1));
+    // A sculpt: the whole bust turns and breathes about its neck; the jaw
+    // talks — shaped by the words being said, like a rigged face, not just
+    // by how loud the voice is (which left it barely moving when quiet).
+    const F = follow(s, o.say, s.e, t);
+    let jaw = 0;
+    if (F.talking && F.st >= 0 && !F.quiet) jaw = ((JAW[visemeAt(F.timeline, F.st)] || 0) / 0.5) * clamp(0.65 + s.e, 0, 1.2);
+    else if (s.e > 0.05) jaw = clamp(s.e * 1.2, 0, 1) * (0.75 + 0.25 * Math.sin(t * 17.3) * Math.sin(t * 6.1));
+    s.jaw = (s.jaw || 0) + (jaw - (s.jaw || 0)) * Math.min(1, dt * 18);
+    model.uniforms.uJaw.value = o.still ? clamp(s.e, 0, 1) : clamp(s.jaw, 0, 1);
+    model.uniforms.uBlink.value = blink;
     const P = model.pivot;
     model.root.position.set(0, 0, 0);
     model.root.rotation.set(0, 0, 0);

@@ -350,6 +350,10 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
             return Some(text);
         }
     }
+    // "Turn off services I don't use" — what's found, and where to choose.
+    if crate::services::is_request(&said) {
+        return blocking(crate::services::spoken).await.ok();
+    }
     // "Is my PC safe?" / "is my antivirus on?" — Windows asked directly.
     if crate::pccare::is_care_question(&said) {
         return blocking(crate::pccare::spoken).await.ok();
@@ -1097,9 +1101,10 @@ pub fn page_ask(
     history: Option<Vec<crate::page_ask::Turn>>,
     files: Option<Vec<crate::page_ask::Attachment>>,
     screen: Option<bool>,
+    deep: Option<bool>,
 ) {
     std::thread::spawn(move || {
-        crate::page_ask::ask(&app, id, &question, &history.unwrap_or_default(), &files.unwrap_or_default(), screen.unwrap_or(false))
+        crate::page_ask::ask(&app, id, &question, &history.unwrap_or_default(), &files.unwrap_or_default(), screen.unwrap_or(false), deep.unwrap_or(false))
     });
 }
 
@@ -1112,6 +1117,24 @@ pub fn page_ask_cancel(id: u64) {
 #[tauri::command]
 pub async fn pc_care_check() -> R<Vec<crate::pccare::Check>> {
     blocking(crate::pccare::check).await
+}
+
+/// Background services worth turning off (from a known list only).
+#[tauri::command]
+pub async fn services_scan() -> R<Vec<crate::services::Svc>> {
+    blocking(crate::services::scan).await
+}
+
+/// Turn off the chosen services (Windows asks permission once).
+#[tauri::command]
+pub async fn services_quiet(ids: Vec<String>) -> R<String> {
+    blocking(move || crate::services::quiet(&ids).map_err(|e| e.to_string())).await?
+}
+
+/// Put the services turned off back as they were.
+#[tauri::command]
+pub async fn services_undo() -> R<String> {
+    blocking(|| crate::services::undo().map_err(|e| e.to_string())).await?
 }
 
 /// The last health check, if one has run (instant).

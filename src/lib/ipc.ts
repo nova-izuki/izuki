@@ -320,6 +320,24 @@ export interface CareCheck {
   fix: [string, string] | null;
 }
 
+/** A background service PC Care can turn off. */
+export interface BackgroundService {
+  id: string;
+  name: string;
+  why: string;
+  kind: "security" | "privacy" | "speed";
+  only_if: string | null;
+  recommended: boolean;
+  running: boolean;
+  start: string;
+}
+
+const MOCK_SERVICES: BackgroundService[] = [
+  { id: "RemoteRegistry", name: "Remote Registry", why: "Lets other computers on the network read and change this PC's settings.", kind: "security", only_if: null, recommended: true, running: false, start: "Automatic" },
+  { id: "DiagTrack", name: "Connected User Experiences and Telemetry", why: "Sends usage data to Microsoft.", kind: "privacy", only_if: null, recommended: true, running: true, start: "Automatic" },
+  { id: "XblGameSave", name: "Xbox Live Game Save", why: "Xbox Live cloud saves.", kind: "speed", only_if: "Leave it on if you play Xbox or Game Pass games on this PC.", recommended: false, running: true, start: "Manual" },
+];
+
 const MOCK_CARE: CareCheck[] = [
   { key: "antivirus", label: "Antivirus", ok: true, detail: "Windows Defender is on and up to date.", fix: null },
   { key: "firewall", label: "Firewall", ok: true, detail: "On for every network.", fix: null },
@@ -332,6 +350,8 @@ const MOCK_CARE: CareCheck[] = [
 export const CAMERA_PICTURE_KEY = "izuki.camera-picture";
 /** The Island's saved Ask conversations (its tabs). */
 export const ISLAND_CHATS_KEY = "izuki.island-chats.v1";
+/** The Island's Ask "Deep thinking" switch ("1" when on). */
+export const ISLAND_DEEP_KEY = "izuki.island-deep";
 /** An Island conversation waiting for Chat to carry on ("Continue in Chat"). */
 export const ISLAND_TO_CHAT_KEY = "izuki.island-to-chat";
 
@@ -498,6 +518,12 @@ export const api = {
   recycleBinInfo: () => call<[number, number]>("recycle_bin_info", undefined, () => [0, 0]),
   /** PC Care's health check, now (a few seconds). */
   pcCareCheck: () => call<CareCheck[]>("pc_care_check", undefined, () => MOCK_CARE),
+  /** Background services worth turning off (a known list only). */
+  servicesScan: () => call<BackgroundService[]>("services_scan", undefined, () => MOCK_SERVICES),
+  /** Turn off the chosen services — Windows asks permission once. */
+  servicesQuiet: (ids: string[]) => call<string>("services_quiet", { ids }, () => `Turned off ${ids.length} services.`),
+  /** Put them back as they were. */
+  servicesUndo: () => call<string>("services_undo", undefined, () => "Put them back."),
   /** The last health check, if one has run. */
   pcCareLast: () => call<CareCheck[] | null>("pc_care_last", undefined, () => null),
   recycleBinEmpty: () => call<string>("recycle_bin_empty", undefined, () => "The Recycle Bin is only in the Izuki app."),
@@ -509,8 +535,10 @@ export const api = {
     question: string,
     history: Array<{ role: "user" | "assistant"; content: string }>,
     files: Array<{ name: string; kind: "image" | "text" | "screen"; data: string }> = [],
-    screen = false
-  ) => call<void>("page_ask", { id, question, history, files, screen }, () => undefined),
+    screen = false,
+    /** Deep thinking: the brain takes its time and reasons it through. */
+    deep = false
+  ) => call<void>("page_ask", { id, question, history, files, screen, deep }, () => undefined),
   pageAskCancel: (id: number) => call<void>("page_ask_cancel", { id }, () => undefined),
   /** ⏮ ⏯ ⏭ for whatever is playing on the PC. */
   mediaControl: (action: "play" | "pause" | "next" | "previous") => call<boolean>("media_control", { action }, () => false),

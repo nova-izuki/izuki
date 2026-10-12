@@ -36,6 +36,7 @@ pub mod sharpeye;
 pub mod recyclebin;
 pub mod storage;
 pub mod pccare;
+pub mod services;
 pub mod music_draft;
 pub mod memory;
 pub mod model;
@@ -326,6 +327,9 @@ pub fn run() {
             commands::recycle_bin_info,
             commands::pc_care_check,
             commands::pc_care_last,
+            commands::services_scan,
+            commands::services_quiet,
+            commands::services_undo,
             commands::lesson_video,
             commands::recycle_bin_empty,
             commands::overlay_state,

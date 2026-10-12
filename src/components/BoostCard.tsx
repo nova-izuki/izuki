@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { BellRing, Copy, Gauge, Loader2, RefreshCw, Rocket, ShieldCheck, Trash2, Undo2, Wand2, Zap } from "lucide-react";
 import { Row, Section, Toggle } from "./ui";
 import { useIzuki } from "../lib/store";
-import { api, emit, EV, IS_TAURI, type BoostHealth, type CareCheck, type DeepReport } from "../lib/ipc";
+import { api, emit, EV, IS_TAURI, type BackgroundService, type BoostHealth, type CareCheck, type DeepReport } from "../lib/ipc";
 
 /**
  * PC Care: the health check (pccare.rs — antivirus, firewall, drive health,
@@ -61,6 +61,49 @@ export function BoostCard() {
     }).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  /** Background services worth turning off (null until looked for). */
+  const [svcs, setSvcs] = useState<BackgroundService[] | null>(null);
+  const [svcPick, setSvcPick] = useState<Record<string, boolean>>({});
+  const [svcBusy, setSvcBusy] = useState(false);
+  const findServices = async () => {
+    setSvcBusy(true);
+    try {
+      const found = await api.servicesScan();
+      if (!mounted.current) return;
+      setSvcs(found);
+      setSvcPick(Object.fromEntries(found.map((s) => [s.id, s.recommended])));
+    } catch (e) {
+      if (mounted.current) setResult(String(e));
+    } finally {
+      if (mounted.current) setSvcBusy(false);
+    }
+  };
+  const quietServices = async () => {
+    const ids = (svcs ?? []).filter((s) => svcPick[s.id]).map((s) => s.id);
+    if (!ids.length) return;
+    setSvcBusy(true);
+    try {
+      const said = await api.servicesQuiet(ids);
+      if (mounted.current) setResult(said);
+    } catch (e) {
+      if (mounted.current) setResult(String(e));
+    } finally {
+      if (mounted.current) setSvcBusy(false);
+    }
+    void findServices();
+  };
+  const undoServices = async () => {
+    setSvcBusy(true);
+    try {
+      const said = await api.servicesUndo();
+      if (mounted.current) setResult(said);
+    } catch (e) {
+      if (mounted.current) setResult(String(e));
+    } finally {
+      if (mounted.current) setSvcBusy(false);
+    }
+    void findServices();
+  };
   const fixIt = (op: string) => {
     if (op.startsWith("ask:")) void emit(EV.runChat, { id: Date.now(), text: op.slice(4) });
     else void api.activityDo(op);
@@ -221,6 +264,44 @@ export function BoostCard() {
               )}
             </div>
           ))
+        )}
+      </div>
+      <div className="izk-inset mb-2 rounded-[14px] p-2.5">
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1.5 text-[12px] font-semibold">
+            <ShieldCheck size={14} strokeWidth={2.3} className="text-izk-teal" /> Background services
+          </span>
+          <button type="button" onClick={() => void findServices()} disabled={svcBusy} className="izk-pill izk-no-drag flex h-[26px] items-center gap-1 px-2.5 text-[11px] disabled:opacity-60">
+            {svcBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} {svcs ? "Look again" : "Find unneeded ones"}
+          </button>
+        </div>
+        <p className="mb-1.5 text-[10.5px] leading-snug text-izk-muted">
+          Every service running in the background that you don't use is one more way in for an attacker. Izuki only ever touches a short, known list: each one starts only when something needs it, and the ones that just open a door (like Remote Registry) are switched off. Windows asks your permission once, and Undo puts them back.
+        </p>
+        {svcs && svcs.length === 0 && <div className="py-1 text-[11px] text-izk-muted">✅ Already lean — none of the usual unneeded services are running.</div>}
+        {svcs?.map((s) => (
+          <label key={s.id} className="flex cursor-pointer items-start gap-2 border-t border-white/5 py-1.5 first:border-t-0">
+            <input type="checkbox" className="mt-[3px]" checked={!!svcPick[s.id]} onChange={(e) => setSvcPick((p) => ({ ...p, [s.id]: e.target.checked }))} />
+            <div className="min-w-0 flex-1">
+              <div className="text-[11.5px] font-medium">
+                {s.name} <span className="text-[10px] font-normal text-izk-muted">· {s.kind}{s.running ? " · running" : ""}</span>
+              </div>
+              <div className="text-[10.5px] leading-snug text-izk-muted">{s.why}</div>
+              {s.only_if && <div className="text-[10.5px] leading-snug text-amber-300/90">{s.only_if}</div>}
+            </div>
+          </label>
+        ))}
+        {svcs && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {svcs.length > 0 && (
+              <button type="button" onClick={() => void quietServices()} disabled={svcBusy || !svcs.some((s) => svcPick[s.id])} className="izk-pill izk-no-drag h-[28px] px-3 text-[11px] font-semibold disabled:opacity-50">
+                Turn off {svcs.filter((s) => svcPick[s.id]).length}
+              </button>
+            )}
+            <button type="button" onClick={() => void undoServices()} disabled={svcBusy} className="izk-pill izk-no-drag flex h-[28px] items-center gap-1 px-3 text-[11px] disabled:opacity-50">
+              <Undo2 size={12} /> Undo
+            </button>
+          </div>
         )}
       </div>
       <Row label="Alert me when something needs attention" hint="Antivirus or firewall off, a drive filling up or failing, a restart Windows is waiting for — the Island says so, with the fix. Checked quietly every few hours." icon={<BellRing size={14} strokeWidth={2.3} />}>

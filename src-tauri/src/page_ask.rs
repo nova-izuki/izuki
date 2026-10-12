@@ -79,6 +79,9 @@ fn screen_picture() -> Option<String> {
 
 const SYSTEM: &str = "You are Izuki, answering a question about what the user has open: a web page, or their screen (a screenshot is attached). Answer from it (and any linked pages or files given) when you can; if the answer isn't there, say so in a few words and answer from what you know. Lead with the answer, keep it short (a few sentences or a few bullet points with -), plain friendly words, no headings. When they ask what to do, give short numbered steps that name the exact buttons, menus and boxes on their screen — they can press \"Do it for me\" and you'll do those steps. Never ask for or repeat passwords or card numbers.";
 
+/// Deep thinking: take the time, and show the work that matters.
+const DEEP: &str = "DEEP THINKING is on: the user wants your most careful answer, not your fastest. Think it through properly before you write: read everything given closely, work the problem step by step, consider other readings and check your result. Then answer clearly — the answer first, then the reasoning that matters (short steps or bullets), and anything they should double-check. Longer is fine when it helps; no filler.";
+
 /// The conversation for the brain: what's open (page words or a screen
 /// picture), any files, the turns so far, then the question with its photos.
 fn messages(read: Option<&Read>, screen: Option<&str>, files: &[Attachment], question: &str, history: &[Turn]) -> Vec<Value> {
@@ -134,7 +137,7 @@ fn messages(read: Option<&Read>, screen: Option<&str>, files: &[Attachment], que
 /// Answer `question` about the page in front — or, with `on_screen` (no
 /// browser in front) or a page that can't be read, about the screen — and
 /// send the answer to the Island piece by piece. Runs on the calling thread.
-pub fn ask(app: &AppHandle, id: u64, question: &str, history: &[Turn], files: &[Attachment], on_screen: bool) {
+pub fn ask(app: &AppHandle, id: u64, question: &str, history: &[Turn], files: &[Attachment], on_screen: bool, deep: bool) {
     let send = |p: Piece| {
         let _ = app.emit(EVENT, p);
     };
@@ -149,10 +152,18 @@ pub fn ask(app: &AppHandle, id: u64, question: &str, history: &[Turn], files: &[
     }
     let title = read.as_ref().map(|r| r.title.clone()).unwrap_or_else(|| "Your screen".into());
     send(Piece { id, text: String::new(), done: false, error: None, page: Some(title) });
-    let msgs = messages(read.as_ref(), shot.as_deref(), files, question, history);
-    let result = crate::chat::complete_streaming(&msgs, id, &|t: &str| {
-        send(Piece { id, text: t.to_string(), done: false, error: None, page: None });
-    });
+    let mut msgs = messages(read.as_ref(), shot.as_deref(), files, question, history);
+    if deep {
+        if let Some(system) = msgs.first_mut() {
+            system["content"] = serde_json::Value::String(format!("{SYSTEM}\n\n{DEEP}"));
+        }
+    }
+    let on_piece = |t: &str| send(Piece { id, text: t.to_string(), done: false, error: None, page: None });
+    let result = if deep {
+        crate::chat::complete_streaming_deep(&msgs, id, &on_piece)
+    } else {
+        crate::chat::complete_streaming(&msgs, id, &on_piece)
+    };
     match result {
         Ok(_) => send(Piece { id, text: String::new(), done: true, error: None, page: None }),
         Err(e) => send(Piece { id, text: String::new(), done: true, error: Some(format!("My AI brain didn't answer: {e}")), page: None }),

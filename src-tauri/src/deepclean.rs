@@ -557,8 +557,7 @@ pub fn undo_startup() -> Result<String> {
 /// temp, old update downloads, the delivery-optimisation cache, and startup
 /// apps for all users that were chosen.
 pub fn admin(startup_ids: &[String]) -> Result<String> {
-    let result = std::env::temp_dir().join("izuki-deepclean-result.txt");
-    let _ = std::fs::remove_file(&result);
+    let result = crate::services::private_file("deepclean-result", "txt")?;
     let all: Vec<String> = startup_ids.iter().filter(|i| is_all_users(i) || i.starts_with("Run32|")).cloned().collect();
     let body = format!(
         r#"$ErrorActionPreference='SilentlyContinue'
@@ -575,19 +574,11 @@ $after=(Get-PSDrive C).Free
         startup_script(&all, "HKLM:", false),
         q(&result.to_string_lossy())
     );
-    let script = std::env::temp_dir().join("izuki-deepclean.ps1");
-    std::fs::write(&script, body)?;
-    let launch = format!(
-        "try {{ Start-Process powershell -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',{} ; 'ok' }} catch {{ 'no' }}",
-        q(&script.to_string_lossy())
-    );
-    let out = ps(&launch, Duration::from_secs(600))?;
-    let _ = std::fs::remove_file(&script);
-    if out.trim().ends_with("no") {
+    // A private, fresh script file, checked before Windows runs it as admin.
+    let Some(text) = crate::services::run_elevated(&body, &result, Duration::from_secs(600))? else {
         return Ok("Okay — no deeper clean (Windows' permission wasn't given).".into());
-    }
-    let mb: u64 = std::fs::read_to_string(&result).ok().and_then(|t| t.trim().parse().ok()).unwrap_or(0);
-    let _ = std::fs::remove_file(&result);
+    };
+    let mb: u64 = text.trim().parse().unwrap_or(0);
     let mut s = if mb > 0 { format!("Deep clean done — freed {} from Windows' own files.", if mb >= 1024 { format!("{:.1} GB", mb as f64 / 1024.0) } else { format!("{mb} MB") }) } else { "Deep clean done — Windows' own files were already tidy.".to_string() };
     if !all.is_empty() {
         s.push_str(&format!(" And {} startup app{} for all users switched off.", all.len(), if all.len() == 1 { "" } else { "s" }));

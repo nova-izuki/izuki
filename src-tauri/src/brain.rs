@@ -2543,8 +2543,50 @@ fn submit_task(
     }
     plan.steps = all_steps;
     plan.more = false;
+    // "Playing some chill music now" … then "Chill music's rolling on
+    // YouTube": the last word only restated what was already said aloud, so
+    // Izuki sounded like it was repeating itself. Keep it to "Done."
+    if completed && alive() && restates(&plan.summary, &last_said) {
+        plan.summary = "Done.".into();
+    }
     finalize_execution(&mut plan, completed && alive());
     plan
+}
+
+/// Does the final reply mostly say again what was said mid-task? Compared
+/// word-stem by word-stem ("music's" is "music"), ignoring filler. A reply
+/// with something new in it (a total, an answer, a name) is kept.
+fn restates(line: &str, said: &str) -> bool {
+    const FILLER: &[&str] = &[
+        "got", "it", "okay", "ok", "alright", "sure", "on", "let", "me", "i'll", "now", "so", "right", "cool", "great", "perfect",
+        "here", "we", "go", "just", "you", "for", "your", "the", "a", "an", "to", "that", "this", "up", "is", "in", "of", "and",
+        "all", "set", "done", "there", "good", "it's", "its", "some", "already", "should", "be", "i", "i've", "have", "has",
+    ];
+    let stems = |s: &str| -> Vec<String> {
+        s.to_lowercase()
+            .split(|c: char| !c.is_alphanumeric() && c != '\'')
+            .map(|w| w.trim_matches('\''))
+            .filter(|w| !w.is_empty() && !FILLER.contains(w))
+            .map(|w| {
+                let w = w.strip_suffix("'s").unwrap_or(w);
+                let w = w.strip_suffix("ing").filter(|r| r.len() >= 3).unwrap_or(w);
+                w.strip_suffix('s').filter(|r| r.len() >= 3).unwrap_or(w).to_string()
+            })
+            .collect()
+    };
+    let before = stems(said);
+    let now = stems(line);
+    if before.is_empty() || now.is_empty() {
+        return false;
+    }
+    // Numbers, prices and times are news.
+    if line.chars().any(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    let shared = now.iter().filter(|w| before.contains(w)).count();
+    let share = (shared as f32) / (now.len() as f32);
+    // Mostly the same words — not two shared words in a reply full of news.
+    share >= 0.5 || (shared >= 2 && share >= 0.4)
 }
 
 /// Executing steps is not the same as observing the requested result. Keep
@@ -2873,6 +2915,17 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
 
 #[cfg(test)]
 mod speed_tests {
+
+    #[test]
+    fn the_last_word_doesnt_say_it_again() {
+        assert!(restates("Chill music's already rolling on YouTube. You good.", "Got you. Playing some chill music now."));
+        assert!(restates("Notepad's open.", "Opening Notepad for you."));
+        assert!(!restates("Your total is $42.10.", "Opening your cart."));
+        assert!(!restates("Sent it — Maria will see it in her inbox.", "Writing the email now."));
+        assert!(!restates("All set.", ""));
+        assert!(!restates("Opened Notepad and wrote the whole shopping list: eggs, bread, milk, coffee, rice, beans.", "Opening Notepad now."));
+    }
+
 
     #[test]
     fn knows_what_runs_on_this_pc() {
