@@ -1132,6 +1132,12 @@ pub async fn pc_care_check() -> R<Vec<crate::pccare::Check>> {
     blocking(crate::pccare::check).await
 }
 
+/// 24/7 PC fast, live: when it last looked and what it last did by itself.
+#[tauri::command]
+pub fn boost_live() -> crate::boost::Live {
+    crate::boost::live()
+}
+
 /// Where the desktop mate's character is in its window, so only clicks on it are caught.
 #[tauri::command]
 pub fn mate_hot(x: f64, y: f64, w: f64, h: f64) {

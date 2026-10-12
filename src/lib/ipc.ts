@@ -538,6 +538,8 @@ export const api = {
   voiceRace: (text: string, mood?: string | null) => call<string | null>("voice_race", { text, mood: mood ?? null }, () => null),
   /** The on-device voice to stand in for a cloud voice (same gender). */
   voiceFallback: () => call<string>("voice_fallback", undefined, () => "af_heart"),
+  /** 24/7 PC fast, live: when it last looked and what it last did by itself. */
+  boostLive: () => call<{ on: boolean; looked_secs_ago: number | null; done_secs_ago: number | null; done: string | null }>("boost_live", undefined, () => ({ on: false, looked_secs_ago: null, done_secs_ago: null, done: null })),
   /** The desktop mate: where its character is (only clicks there are caught). */
   mateHot: (x: number, y: number, w: number, h: number) => call<void>("mate_hot", { x, y, w, h }, () => undefined),
   /** A line in the mate's own voice for what happened (null: no AI answered). */

@@ -22,6 +22,9 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "📷", title: "Any camera, picked for you", how: "Built-in, USB, capture card or a virtual camera like OBS: the Island's camera picks the right one by itself (yours if you chose one), moves on if one won't start, and switches if you unplug it. More than one? Pick from the corner of the view." },
+  { icon: "👄", title: "3D faces open their mouths", how: "The holograms and the built-in Woman and Man now open their mouths when they talk — teeth and all." },
+  { icon: "🟢", title: "See PC fast working", how: "With “Keep my PC fast 24/7” on, PC Care shows it live: when it last checked, and what it last cleaned by itself.", try: { label: "Open PC Care", tab: "settings", id: "settings-boost" } },
   { icon: "🐾", title: "Your character lives on your desktop", how: "With its pet on a lead: it wanders the taskbar, dances to your music, dozes off when you're away, and reacts to what you do — builds finishing, downloads, apps — in its own voice. Double-click to talk (Izuki's whole brain answers), drag it anywhere, right-click for its menu.", try: { label: "Desktop mate settings", tab: "settings", id: "settings-mate" } },
   { icon: "🎨", title: "Every character, painted", how: "All 35 characters now come in the Concept style — each talks with a painted mouth and blinks. On the PC and the phone.", try: { label: "Pick a style", tab: "settings", id: "settings-look" } },
   { icon: "🎹", title: "FL Studio: “make afrobeats”", how: "Set up once (Settings → FL Studio), then ask for a beat by genre and tempo — you watch the drums write themselves, and it plays. Stop, play and tempo by voice too. Every change is one undo step.", try: { label: "Set up FL Studio", tab: "settings", id: "settings-flstudio" } },

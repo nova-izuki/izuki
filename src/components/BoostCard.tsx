@@ -108,6 +108,15 @@ export function BoostCard() {
     if (op.startsWith("ask:")) void emit(EV.runChat, { id: Date.now(), text: op.slice(4) });
     else void api.activityDo(op);
   };
+  /** 24/7 PC fast, live (refreshed while the card is open). */
+  const [live, setLive] = useState<{ looked_secs_ago: number | null; done_secs_ago: number | null; done: string | null } | null>(null);
+  useEffect(() => {
+    const read = () => void api.boostLive().then((l) => mounted.current && setLive(l)).catch(() => undefined);
+    read();
+    const t = setInterval(read, 3000);
+    return () => clearInterval(t);
+  }, []);
+  const ago = (s: number) => (s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`);
   const [powerPlan, setPowerPlan] = useState("loading");
   const [powerBusy, setPowerBusy] = useState(false);
   const changingPower = useRef(false);
@@ -335,6 +344,15 @@ export function BoostCard() {
       >
         <Toggle checked={settings.pc_boost_auto} onChange={(v) => patch({ pc_boost_auto: v })} />
       </Row>
+      {settings.pc_boost_auto && live && (
+        <div className="-mt-1 mb-2 flex items-start gap-1.5 pl-7 text-[10.5px] leading-snug text-izk-muted">
+          <span className={"mt-[3px] inline-block h-1.5 w-1.5 shrink-0 rounded-full " + (live.looked_secs_ago !== null && live.looked_secs_ago < 30 ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]" : "bg-amber-400")} />
+          <span>
+            {live.looked_secs_ago === null ? "Starting up…" : live.looked_secs_ago < 30 ? `Running — checked ${live.looked_secs_ago}s ago` : "No recent check — it may be paused"}
+            {live.done && live.done_secs_ago !== null ? ` · last clean ${ago(live.done_secs_ago)}: ${live.done.replace(/^Done — /, "").split(". ")[0]}` : " · nothing needed cleaning yet"}
+          </span>
+        </div>
+      )}
       <Row
         label="Clear duplicate downloads"
         hint="Once a day, and when you press Make my PC fast, extra copies of a download (like “report (1).pdf” next to “report.pdf”) go to the Recycle Bin, so you can restore them. Files you named differently are never touched."

@@ -928,10 +928,11 @@ function patch(mat, U, sculpt) {
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U);
     sh.vertexShader = sh.vertexShader
-      .replace("#include <common>", "#include <common>\nuniform float uJaw, uMouthW, uJawR; uniform vec3 uMouth; varying float vMouth; varying vec3 vObj;")
+      .replace("#include <common>", "#include <common>\nuniform float uJaw, uMouthW, uJawR; uniform vec3 uMouth; varying float vMouth; varying float vMouthY; varying vec3 vObj;")
       .replace("#include <begin_vertex>", `#include <begin_vertex>
         vObj = transformed;
         vMouth = 0.;
+        vMouthY = 0.;
         ${sculpt ? `
         if (uJaw > .001) {
           // The jaw: below the lips, at the front, it drops; the lips part.
@@ -944,17 +945,24 @@ function patch(mat, U, sculpt) {
           transformed.y -= uJaw * uJawR * .15 * w;
           transformed.z -= uJaw * uJawR * .03 * w;
           // The opening between the lips: an almond, widest in the middle.
-          vec2 q = vec2(d.x / uMouthW, (d.y + uJaw * uJawR * .012) / (uJawR * .036 * (.3 + uJaw)));
+          // (A taller opening than before, so talking reads as an open mouth.)
+          vec2 q = vec2(d.x / uMouthW, (d.y + uJaw * uJawR * .012) / (uJawR * .05 * (.3 + uJaw)));
           float almond = length(vec2(q.x, q.y / max(.15, 1. - q.x * q.x * .8)));
-          vMouth = (1. - smoothstep(.55, 1., almond)) * step(-uJawR * .5, d.z);
+          vMouth = (1. - smoothstep(.5, 1., almond)) * step(-uJawR * .5, d.z);
+          // Where in the opening (top = the upper teeth).
+          vMouthY = q.y;
         }` : ""}`);
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nuniform float uJaw, uGlow, uTime, uScan, uTrim, uBlink, uEyeZ; uniform vec3 uAccent, uMouth, uLid; uniform vec4 uEye; varying float vMouth; varying vec3 vObj;")
+      .replace("#include <common>", "#include <common>\nuniform float uJaw, uGlow, uTime, uScan, uTrim, uBlink, uEyeZ; uniform vec3 uAccent, uMouth, uLid; uniform vec4 uEye; varying float vMouth; varying float vMouthY; varying vec3 vObj;")
       // A closed lid is skin, not a glossy eye: matte while it's down.
       .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\n roughnessFactor = mix(roughnessFactor, .9, izkLid);")
       .replace("#include <clipping_planes_fragment>", "#include <clipping_planes_fragment>\n if (uTrim > 0. && abs(vObj.x - uMouth.x) > uTrim) discard;")
       .replace("#include <color_fragment>", `#include <color_fragment>
-        diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(.09, .03, .035), uAccent * .08, uGlow), clamp(min(1., uJaw * 2.) * vMouth, 0., .85));
+        // Talking: the mouth opens dark inside, with the top teeth showing.
+        vec3 inMouth = mix(vec3(.09, .03, .035), uAccent * .08, uGlow);
+        float teeth = smoothstep(.12, .42, vMouthY) * smoothstep(.2, .45, uJaw);
+        inMouth = mix(inMouth, mix(vec3(.93, .9, .85), uAccent * .4 + .45, uGlow), teeth * .92);
+        diffuseColor.rgb = mix(diffuseColor.rgb, inMouth, clamp(min(1., uJaw * 2.4) * vMouth, 0., .96));
         float izkLid = 0.;
         ${sculpt ? `
         if (uBlink > .001 && uEye.z > 0. && vObj.z > uEyeZ) {

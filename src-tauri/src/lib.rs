@@ -336,6 +336,7 @@ pub fn run() {
             commands::voice_fallback,
             commands::voice_race,
             commands::mate_hot,
+            commands::boost_live,
             commands::mate_line,
             commands::fl_setup,
             commands::lesson_video,

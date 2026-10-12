@@ -5,6 +5,7 @@ import { api, CAMERA_PICTURE_KEY, emit, EV, IS_TAURI, ISLAND_CHATS_KEY, ISLAND_D
 import { workArea } from "../lib/floating";
 import { lockHit, markHit, unlockHit } from "../lib/hitTest";
 import { ChatText } from "./ChatText";
+import { listCameras, openCamera, saveCamera } from "../lib/camera";
 import type { Activity, IslandStatus, NowPlaying, OrbState, Reminder, Suggestion } from "../lib/types";
 
 /**
@@ -1644,26 +1645,37 @@ function Waveform({ playing, width, height, style = "silk", frozen = false }: { 
 function CameraView({ onClose, onAsked }: { onClose: () => void; onAsked: () => void }) {
   const video = useRef<HTMLVideoElement>(null);
   const [state, setState] = useState<"starting" | "live" | "none" | "blocked">("starting");
+  // Any camera — built-in, USB, virtual: the right one picked by itself, or yours.
+  const [cams, setCams] = useState<MediaDeviceInfo[]>([]);
+  const [camId, setCamId] = useState<string | null>(null);
+  /** The camera you picked (null: Izuki picks). Only this reopens the camera. */
+  const [want, setWant] = useState<string | null>(null);
+  /** Bumped to reopen a camera (the one showing was unplugged). */
+  const [reopen, setReopen] = useState(0);
+  const live = useRef<MediaStream | null>(null);
   useEffect(() => {
     let stream: MediaStream | null = null;
     let gone = false;
-    const md = navigator.mediaDevices;
-    if (!md?.getUserMedia) {
+    if (!navigator.mediaDevices?.getUserMedia) {
       setState("none");
       return;
     }
-    md.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }, audio: false })
-      .then((s) => {
+    setState("starting");
+    openCamera(want)
+      .then(({ stream: s, deviceId }) => {
         if (gone) {
           s.getTracks().forEach((t) => t.stop());
           return;
         }
         stream = s;
+        live.current = s;
+        setCamId(deviceId);
         if (video.current) {
           video.current.srcObject = s;
           void video.current.play().catch(() => undefined);
         }
         setState("live");
+        void listCameras().then((c) => !gone && setCams(c));
       })
       .catch((e: unknown) => {
         if (gone) return;
@@ -1675,6 +1687,22 @@ function CameraView({ onClose, onAsked }: { onClose: () => void; onAsked: () => 
       stream?.getTracks().forEach((t) => t.stop());
       if (video.current) video.current.srcObject = null;
     };
+  }, [want, reopen]);
+  useEffect(() => {
+    const md = navigator.mediaDevices;
+    if (!md?.addEventListener) return;
+    const changed = () =>
+      void listCameras().then((c) => {
+        setCams(c);
+        // The camera showing was unplugged: open the next best one.
+        const track = live.current?.getVideoTracks()[0];
+        if (!track || track.readyState === "ended") {
+          setWant(null);
+          setReopen((n) => n + 1);
+        }
+      });
+    md.addEventListener("devicechange", changed);
+    return () => md.removeEventListener("devicechange", changed);
   }, []);
 
   const ask = () => {
@@ -1713,6 +1741,25 @@ function CameraView({ onClose, onAsked }: { onClose: () => void; onAsked: () => 
         </div>
       )}
       {state !== "live" && <div className="h-[120px]" />}
+      {cams.length > 1 && (
+        <select
+          aria-label="Camera"
+          value={camId ?? ""}
+          onMouseDown={() => void api.setOverlayInteractive(true).then(() => markHit())}
+          onChange={(e) => {
+            saveCamera(e.target.value);
+            setCamId(e.target.value);
+            setWant(e.target.value);
+          }}
+          className="absolute right-2 top-2 max-w-[60%] truncate rounded-full bg-black/60 px-2 py-1 text-[11px] text-white outline-none"
+        >
+          {cams.map((c, i) => (
+            <option key={c.deviceId} value={c.deviceId} className="text-black">
+              {c.label || `Camera ${i + 1}`}
+            </option>
+          ))}
+        </select>
+      )}
       <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/70 to-transparent px-2.5 pb-2 pt-6">
         <button
           type="button"

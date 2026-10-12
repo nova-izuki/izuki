@@ -72,6 +72,29 @@ static OFFERED: Mutex<Option<Instant>> = Mutex::new(None);
 static AUTO_RAN: Mutex<Option<Instant>> = Mutex::new(None);
 /// The once-a-day tidy (with "Keep my PC fast by itself" on).
 static DAILY: Mutex<Option<Instant>> = Mutex::new(None);
+/// When it last looked (it looks every 5 s while 24/7 is on), and what it last did by itself.
+static LAST_LOOK: Mutex<Option<Instant>> = Mutex::new(None);
+static LAST_DONE: Mutex<Option<(Instant, String)>> = Mutex::new(None);
+
+/// Proof it's working: how long since it last looked, and what it last did by itself.
+#[derive(Debug, Clone, Serialize)]
+pub struct Live {
+    pub on: bool,
+    pub looked_secs_ago: Option<u64>,
+    pub done_secs_ago: Option<u64>,
+    pub done: Option<String>,
+}
+
+pub fn live() -> Live {
+    let on = crate::state::try_store().is_some_and(|s| s.settings().pc_boost_auto);
+    let done = LAST_DONE.lock().clone();
+    Live {
+        on,
+        looked_secs_ago: LAST_LOOK.lock().map(|t| t.elapsed().as_secs()),
+        done_secs_ago: done.as_ref().map(|(t, _)| t.elapsed().as_secs()),
+        done: done.map(|(_, l)| l),
+    }
+}
 
 /// Slow enough to notice: the processor pinned for ~30 s, or memory nearly
 /// full for ~15 s.
@@ -236,6 +259,9 @@ pub fn run(auto: bool) -> String {
         line.push_str(&dupes_line(crate::dupes::tidy_downloads()));
     }
     eprintln!("[boost] {} — {line}", if auto { "by itself" } else { "asked" });
+    if auto {
+        *LAST_DONE.lock() = Some((Instant::now(), line.clone()));
+    }
     line
 }
 
@@ -269,6 +295,7 @@ pub fn spawn(app: tauri::AppHandle) {
                 std::thread::sleep(Duration::from_secs(55));
             }
             let (cpu, ram) = sys::load();
+            *LAST_LOOK.lock() = Some(Instant::now());
             let lagging = {
                 let mut v = SAMPLES.lock();
                 v.push((cpu, ram));
