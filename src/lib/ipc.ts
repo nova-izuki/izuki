@@ -227,6 +227,12 @@ export const MOCK_SETTINGS: Settings = {
   sharp_eye: true,
   sharp_eye_tars: false,
   click_highlight: false,
+  fl_key: "",
+  mate_enabled: true,
+  mate_pet: "cat",
+  mate_chatty: "normal",
+  mate_voice: false,
+  mate_wander: true,
   auto_skip_ads: false,
   auto_reject_cookies: false,
   follow_hand_size: 16,
@@ -318,6 +324,16 @@ export interface CareCheck {
   ok: boolean;
   detail: string;
   fix: [string, string] | null;
+}
+
+/** FL Studio link status. */
+export interface FlStatus {
+  cable: string | null;
+  script: boolean;
+  fl_installed: boolean;
+  fl_running: boolean;
+  connected: boolean;
+  problem: string | null;
 }
 
 /** A background service PC Care can turn off. */
@@ -518,6 +534,19 @@ export const api = {
   recycleBinInfo: () => call<[number, number]>("recycle_bin_info", undefined, () => [0, 0]),
   /** PC Care's health check, now (a few seconds). */
   pcCareCheck: () => call<CareCheck[]>("pc_care_check", undefined, () => MOCK_CARE),
+  /** The chosen voice failed: race the other voice services for this line (same gender). */
+  voiceRace: (text: string, mood?: string | null) => call<string | null>("voice_race", { text, mood: mood ?? null }, () => null),
+  /** The on-device voice to stand in for a cloud voice (same gender). */
+  voiceFallback: () => call<string>("voice_fallback", undefined, () => "af_heart"),
+  /** The desktop mate: where its character is (only clicks there are caught). */
+  mateHot: (x: number, y: number, w: number, h: number) => call<void>("mate_hot", { x, y, w, h }, () => undefined),
+  /** A line in the mate's own voice for what happened (null: no AI answered). */
+  mateLine: (kind: string, detail: string, recent: string[]) => call<string | null>("mate_line", { kind, detail, recent }, () => null),
+  foregroundApp: () => call<string>("foreground_app", undefined, () => ""),
+  /** Is Izuki linked to FL Studio? */
+  flStatus: () => call<FlStatus>("fl_status", undefined, () => ({ cable: null, script: false, fl_installed: true, fl_running: false, connected: false, problem: null })),
+  /** One-time FL Studio setup; what's left to do in FL. */
+  flSetup: () => call<string>("fl_setup", undefined, () => "Set up."),
   /** Background services worth turning off (a known list only). */
   servicesScan: () => call<BackgroundService[]>("services_scan", undefined, () => MOCK_SERVICES),
   /** Turn off the chosen services — Windows asks permission once. */
@@ -706,6 +735,8 @@ export const EV = {
   chatPicture: "izuki://chat-picture",
   /** Frontend-only: an Island conversation for Chat to carry on. */
   chatImport: "izuki://chat-import",
+  /** A line of progress while FL Studio is being set up. */
+  flSetup: "izuki://fl-setup",
   /** Frontend-only: the config panel just saved settings — the overlay
    * (which keeps no settings of its own) re-reads what it needs. */
   settingsChanged: "izuki://settings-changed",

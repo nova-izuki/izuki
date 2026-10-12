@@ -329,16 +329,84 @@ fn eleven_voice(chosen: &str, openai: &str) -> &'static str {
     }
 }
 
+/// A voice of each gender for an engine standing in for the chosen one.
+fn stand_in_voice(engine: &str, female: bool) -> Option<&'static str> {
+    Some(match (engine, female) {
+        ("orpheus", true) => "diana",
+        ("orpheus", false) => "troy",
+        ("openai", true) => "coral",
+        ("openai", false) => "ash",
+        ("gemini", true) => "Kore",
+        ("gemini", false) => "Charon",
+        ("elevenlabs", true) => "cgSgspJ2msm6clMCkdW9",
+        ("elevenlabs", false) => "nPczCjzI2devNBz1zQrb",
+        _ => return None,
+    })
+}
+
+/// The engines that can stand in for the chosen one (it and Edge are tried
+/// separately).
+const STAND_INS: &[&str] = &["orpheus", "gemini", "openai", "elevenlabs", "azure"];
+
+/// The chosen voice couldn't speak: ask every other voice service at once and
+/// keep the first that answers — in the same gender. Its audio is kept, so
+/// speaking that same line again is instant.
+pub fn race(settings: &Settings, text: &str, mood: Option<&str>) -> Option<String> {
+    use std::sync::mpsc;
+    let (tx, rx) = mpsc::channel::<(String, Vec<u8>)>();
+    let mut asked = 0;
+    for engine in STAND_INS.iter().filter(|e| **e != settings.voice_engine) {
+        asked += 1;
+        let (tx, s, text, mood, engine) = (tx.clone(), settings.clone(), text.to_string(), mood.map(str::to_string), engine.to_string());
+        std::thread::spawn(move || {
+            if let Ok(audio) = synthesize(&s, &engine, &text, mood.as_deref()) {
+                let _ = tx.send((engine, audio));
+            }
+        });
+    }
+    drop(tx);
+    if asked == 0 {
+        return None;
+    }
+    let (engine, audio) = rx.recv_timeout(std::time::Duration::from_secs(8)).ok()?;
+    eprintln!("[tts] {} stood in for {}", engine, settings.voice_engine);
+    *RACE_WON.lock() = Some((engine.clone(), text.trim().to_string(), audio));
+    Some(engine)
+}
+
+static RACE_WON: parking_lot::Mutex<Option<(String, String, Vec<u8>)>> = parking_lot::Mutex::new(None);
+
 /// One line of speech as WAV bytes.
 pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&str>) -> Result<Vec<u8>, String> {
     let text = text.trim();
     if text.is_empty() {
         return Err("nothing to say".into());
     }
+    // The line a race already made in this voice.
+    {
+        let mut won = RACE_WON.lock();
+        if won.as_ref().is_some_and(|(e, t, _)| e == engine && t == text) {
+            return Ok(won.take().map(|(_, _, a)| a).unwrap_or_default());
+        }
+    }
+    // Standing in for another voice: a voice of the same gender, not this
+    // engine's own choice (that belongs to when it's the chosen one).
+    if engine != settings.voice_engine && STAND_INS.contains(&engine) && engine != "azure" {
+        if let Some(v) = stand_in_voice(engine, speaking_female(settings).unwrap_or(crate::voices::active(settings).persona.kokoro.chars().nth(1) == Some('f'))) {
+            let mut s = settings.clone();
+            s.cloud_voice = v.to_string();
+            s.voice_engine = engine.to_string();
+            return synthesize(&s, engine, text, mood);
+        }
+    }
     if engine == "edge" {
         let a = crate::voices::active(settings);
         let (dr, dp) = edge_mood(mood);
-        return crate::voices::synthesize(text, &a.voice, a.rate + dr, a.pitch + dp);
+        // Standing in for another voice that can't speak right now (Groq's
+        // daily limit, no credits): keep its gender — a woman's voice never
+        // turns into a man's mid-conversation.
+        let voice = if settings.voice_engine != "edge" { fallback_edge_voice(settings) } else { a.voice.clone() };
+        return crate::voices::synthesize(text, &voice, a.rate + dr, a.pitch + dp);
     }
     let c = client()?;
     if engine == "gemini" {
@@ -501,6 +569,35 @@ mod tests {
     }
 
     #[test]
+    fn stand_ins_keep_the_gender() {
+        assert_eq!(stand_in_voice("orpheus", true), Some("diana"));
+        assert_eq!(stand_in_voice("openai", false), Some("ash"));
+        assert!(stand_in_voice("edge", true).is_none());
+        let mut s = Settings::default();
+        s.voice_engine = "orpheus".into();
+        s.cloud_voice = "hannah".into();
+        assert_eq!(speaking_female(&s), Some(true));
+    }
+
+    #[test]
+    fn a_fallback_keeps_the_voice_s_gender() {
+        let mut s = Settings::default();
+        s.persona = "dre".into();
+        s.voice_engine = "orpheus".into();
+        s.cloud_voice = "diana".into();
+        assert_eq!(speaking_female(&s), Some(true));
+        assert_eq!(fallback_edge_voice(&s), "en-US-AvaNeural");
+        assert_eq!(fallback_kokoro(&s), "af_heart");
+        s.cloud_voice = "troy".into();
+        assert_eq!(fallback_kokoro(&s), crate::voices::persona("dre").kokoro);
+        // An ElevenLabs ID says nothing: the face does.
+        s.voice_engine = "elevenlabs".into();
+        s.cloud_voice = "21m00Tcm4TlvDq8ikWAM".into();
+        s.orb_style = "model:holo-female".into();
+        assert_eq!(speaking_female(&s), Some(true));
+    }
+
+    #[test]
     fn gemini_voice_is_steered_and_wrapped() {
         let mut s = Settings::default();
         s.persona = "chidi".into();
@@ -539,6 +636,72 @@ pub fn speak_audio(settings: &Settings, text: &str) -> Result<(Vec<u8>, &'static
 }
 
 pub const ORPHEUS_VOICES: &[&str] = &["hannah", "autumn", "diana", "austin", "daniel", "troy"];
+
+const FEMALE_VOICES: &[&str] = &[
+    // Groq (Orpheus)
+    "hannah", "autumn", "diana",
+    // ChatGPT
+    "marin", "coral", "sage", "nova", "shimmer",
+    // Gemini
+    "sulafat", "aoede", "kore", "vindemiatrix", "despina", "leda", "zephyr", "gacrux", "callirrhoe", "autonoe", "erinome", "laomedeia", "achernar", "pulcherrima",
+];
+const MALE_VOICES: &[&str] = &[
+    "austin", "daniel", "troy",
+    "cedar", "ash", "verse", "ballad", "echo", "fable", "onyx",
+    "charon", "algieba", "orus", "iapetus", "umbriel", "achird", "sadaltager", "puck", "fenrir", "enceladus", "algenib", "rasalgethi", "alnilam", "schedar", "sadachbia", "zubenelgenubi",
+];
+
+/// Whether the voice really speaking is a woman's (`Some(true)`), a man's,
+/// or unknown: the chosen voice for the engine in use, else the character's
+/// default for it, else the face on screen.
+pub fn speaking_female(s: &Settings) -> Option<bool> {
+    let persona = crate::voices::active(s).persona;
+    let chosen = s.cloud_voice.trim().to_lowercase();
+    let named = match s.voice_engine.as_str() {
+        "orpheus" => Some(if ORPHEUS_VOICES.contains(&chosen.as_str()) { chosen.clone() } else { persona.orpheus.to_string() }),
+        "openai" => Some(if OPENAI_VOICES.contains(&chosen.as_str()) { chosen.clone() } else { persona.openai.to_string() }),
+        "gemini" => Some(gemini_voice(&chosen, persona.openai).to_lowercase()),
+        _ => None,
+    };
+    if let Some(n) = named {
+        if FEMALE_VOICES.contains(&n.as_str()) {
+            return Some(true);
+        }
+        if MALE_VOICES.contains(&n.as_str()) {
+            return Some(false);
+        }
+    }
+    // An ElevenLabs ID or anything else: the face being shown.
+    let face = s.orb_style.to_lowercase();
+    if face.contains("female") || face.contains("woman") {
+        return Some(true);
+    }
+    if face.contains("-male") || face.ends_with("male") {
+        return Some(false);
+    }
+    None
+}
+
+/// The character's own natural voice when it's the right gender; otherwise
+/// a natural voice that is.
+pub fn fallback_edge_voice(s: &Settings) -> String {
+    let a = crate::voices::active(s);
+    let persona_female = a.persona.kokoro.chars().nth(1) == Some('f');
+    match speaking_female(s) {
+        Some(f) if f != persona_female => (if f { "en-US-AvaNeural" } else { "en-US-AndrewNeural" }).to_string(),
+        _ => a.voice,
+    }
+}
+
+/// The same for the on-device voice (Kokoro): the character's own, or one of the right gender.
+pub fn fallback_kokoro(s: &Settings) -> String {
+    let own = crate::voices::active(s).persona.kokoro;
+    let own_female = own.chars().nth(1) == Some('f');
+    match speaking_female(s) {
+        Some(f) if f != own_female => (if f { "af_heart" } else { "am_michael" }).to_string(),
+        _ => own.to_string(),
+    }
+}
 pub const GEMINI_VOICES: &[&str] = &[
     "Charon", "Algieba", "Orus", "Iapetus", "Umbriel", "Achird", "Sadaltager", "Puck",
     "Sulafat", "Aoede", "Kore", "Vindemiatrix", "Despina", "Leda", "Zephyr", "Gacrux",

@@ -126,6 +126,11 @@ impl Store {
             // have heard yet that a phone paired in the background — don't
             // let that stale copy unpair it. (Unpairing makes a new code.)
             let current = self.settings.read();
+            // FL Studio's link key lives in the script written into FL: a
+            // panel that never heard of it mustn't wipe it.
+            if next.fl_key.is_empty() && !current.fl_key.is_empty() {
+                next.fl_key = current.fl_key.clone();
+            }
             if next.telegram_chat_id == 0
                 && current.telegram_chat_id != 0
                 && next.telegram_code == current.telegram_code

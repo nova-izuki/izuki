@@ -37,6 +37,8 @@ pub mod recyclebin;
 pub mod storage;
 pub mod pccare;
 pub mod services;
+pub mod flstudio;
+pub mod mate;
 pub mod music_draft;
 pub mod memory;
 pub mod model;
@@ -330,6 +332,12 @@ pub fn run() {
             commands::services_scan,
             commands::services_quiet,
             commands::services_undo,
+            commands::fl_status,
+            commands::voice_fallback,
+            commands::voice_race,
+            commands::mate_hot,
+            commands::mate_line,
+            commands::fl_setup,
             commands::lesson_video,
             commands::recycle_bin_empty,
             commands::overlay_state,
@@ -414,6 +422,7 @@ pub fn run() {
             boost::spawn(handle.clone());
             autonomous::spawn(handle.clone());
             pccare::spawn();
+            mate::spawn(handle.clone());
             freebrains::refresh_later();
             screentime::spawn();
             browser::init(&handle);

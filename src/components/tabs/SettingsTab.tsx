@@ -21,6 +21,8 @@ import {
 import pkg from "../../../package.json";
 import { PhoneCard } from "../PhoneCard";
 import { BoostCard } from "../BoostCard";
+import { FlStudioCard } from "../FlStudioCard";
+import { MateCard } from "../MateCard";
 import { OrbStudio } from "../OrbStudio";
 import { UpdateControls } from '../UpdateControls';
 import { DiscordCard } from "../DiscordCard";
@@ -48,6 +50,8 @@ const JUMPS: { label: string; id: string }[] = [
   { label: "🪟 System", id: "settings-system" },
   { label: "🪄 On its own", id: "settings-autonomous" },
   { label: "🛡️ PC Care", id: "settings-boost" },
+  { label: "🎹 FL Studio", id: "settings-flstudio" },
+  { label: "🐾 Mate", id: "settings-mate" },
   { label: "📱 Phone", id: "settings-phone" },
   { label: "💬 Discord", id: "settings-discord" },
   { label: "📺 TV", id: "settings-tv" },
@@ -85,6 +89,8 @@ export function SettingsTab() {
       { label: "Updates", id: "settings-updates", keywords: "download version release" },
       { label: "On its own", id: "settings-autonomous", keywords: "skip ads youtube cookie banner reject autonomous automatic chores" },
       { label: "PC Care", id: "settings-boost", keywords: "pc boost lag slow speed fast temp clean memory cpu unlag duplicate downloads 24/7 antivirus firewall defender virus security drive disk health space alerts restart windows update services daemons harden telemetry remote registry" },
+      { label: "FL Studio", id: "settings-flstudio", keywords: "fl studio beats producer music daw afrobeats trap drill amapiano midi loopmidi make a beat" },
+      { label: "Desktop mate", id: "settings-mate", keywords: "desktop pet character companion buddy mate walking dancing cat dog shimeji overlay always on top" },
       { label: "Control my TV", id: "settings-tv", keywords: "roku samsung lg android tv fire" },
       { label: "Browser extension", id: "settings-browser", keywords: "chrome edge side panel ask page" },
       { label: "Meta Llama", id: "settings-brain", keywords: "meta llama facebook" },
@@ -554,6 +560,10 @@ export function SettingsTab() {
       <AutonomousCard />
 
       <BoostCard />
+
+      <FlStudioCard />
+
+      <MateCard />
 
       <div id="settings-phone"><PhoneCard /></div>
 

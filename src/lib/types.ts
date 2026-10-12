@@ -340,6 +340,14 @@ export interface Settings {
   sharp_eye_tars: boolean;
   /** Box what Izuki is about to click, for half a second first. */
   click_highlight: boolean;
+  /** FL Studio link key (written into FL's Izuki script). */
+  fl_key: string;
+  /** The desktop mate: your character living on the desktop. */
+  mate_enabled: boolean;
+  mate_pet: string;
+  mate_chatty: string;
+  mate_voice: boolean;
+  mate_wander: boolean;
   /** Once a day, what has sat in the Recycle Bin for 30+ days is cleared for good. */
   tidy_recycle_auto: boolean;
   /** PC Care: the Island says when antivirus, firewall, space or a drive needs attention. */

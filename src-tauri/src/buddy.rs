@@ -90,6 +90,10 @@ pub fn spawn(app: AppHandle) {
 /// Something Izuki might bring up. `key` stops repeats; `level` decides
 /// whether now is the moment.
 pub fn say(app: &AppHandle, key: &str, text: &str, level: Level) {
+    // The desktop mate says the important ones in its bubble too.
+    if level >= Level::Important {
+        crate::mate::notify("say", text);
+    }
     let Some(store) = crate::state::try_store() else { return };
     let settings = store.settings();
     let idle = idle_for();

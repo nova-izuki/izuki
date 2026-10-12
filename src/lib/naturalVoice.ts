@@ -745,7 +745,7 @@ export async function speakCloud(
  * they get the first sentence alone (it starts talking sooner), then the
  * rest in long runs.
  */
-function cloudPieces(engine: string, text: string): string[] {
+export function cloudPieces(engine: string, text: string): string[] {
   // Gemini's free allowance counts requests, and it reads long passages
   // well: a whole reply in as few requests as possible.
   if (engine === "gemini") return packPieces(splitForSpeech(text, 400), 900);

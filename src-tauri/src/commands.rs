@@ -62,6 +62,9 @@ pub fn save_settings(app: AppHandle, settings: Settings) -> Settings {
     let previous = state::store().settings();
     let saved = state::store().set_settings(settings);
     crate::bugs::set_enabled(saved.send_bug_reports);
+    if saved.mate_enabled != previous.mate_enabled {
+        crate::mate::apply(&app);
+    }
 
     if saved.backdrop != previous.backdrop {
         if let Some(w) = app.get_webview_window(overlay::CONFIG_LABEL) {
@@ -348,6 +351,16 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         let s2 = said.clone();
         if let Ok(Some(text)) = blocking(move || crate::tv::answer_choice(&s2)).await {
             return Some(text);
+        }
+    }
+    // FL Studio: "make afrobeats", "stop the beat", "tempo 140" — done in FL itself.
+    if crate::flstudio::is_request(&said) {
+        let s2 = said.clone();
+        match blocking(move || crate::flstudio::handle(&s2)).await {
+            Ok(Ok(Some(text))) => return Some(text),
+            Ok(Err(e)) => return Some(e.to_string()),
+            // Anything else in FL: the screen agent works it like a person.
+            _ => {}
         }
     }
     // "Turn off services I don't use" — what's found, and where to choose.
@@ -1117,6 +1130,51 @@ pub fn page_ask_cancel(id: u64) {
 #[tauri::command]
 pub async fn pc_care_check() -> R<Vec<crate::pccare::Check>> {
     blocking(crate::pccare::check).await
+}
+
+/// Where the desktop mate's character is in its window, so only clicks on it are caught.
+#[tauri::command]
+pub fn mate_hot(x: f64, y: f64, w: f64, h: f64) {
+    crate::mate::set_hot(x, y, w, h);
+}
+
+/// A line in the mate's own voice for what just happened (None: no AI answered).
+#[tauri::command]
+pub async fn mate_line(kind: String, detail: String, recent: Vec<String>) -> R<Option<String>> {
+    blocking(move || crate::mate::line(&kind, &detail, &recent)).await
+}
+
+/// The chosen voice couldn't speak: the first other voice service to say
+/// this line (same gender), or none.
+#[tauri::command]
+pub async fn voice_race(text: String, mood: Option<String>) -> R<Option<String>> {
+    let settings = state::store().settings();
+    blocking(move || crate::tts::race(&settings, &text, mood.as_deref())).await
+}
+
+/// The on-device voice to stand in for a cloud voice that can't speak —
+/// the same gender as the one it replaces.
+#[tauri::command]
+pub fn voice_fallback() -> String {
+    crate::tts::fallback_kokoro(&crate::state::store().settings())
+}
+
+/// Is Izuki linked to FL Studio? (Asks FL when it's open.)
+#[tauri::command]
+pub async fn fl_status() -> R<crate::flstudio::Status> {
+    blocking(crate::flstudio::status).await
+}
+
+/// One-time FL Studio setup: the script and the MIDI cable. What's left to do in FL.
+#[tauri::command]
+pub async fn fl_setup(app: AppHandle) -> R<String> {
+    blocking(move || {
+        crate::flstudio::setup(&|line: &str| {
+            let _ = app.emit("izuki://fl-setup", line.to_string());
+        })
+        .map_err(|e| e.to_string())
+    })
+    .await?
 }
 
 /// Background services worth turning off (from a known list only).

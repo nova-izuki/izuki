@@ -45,6 +45,10 @@ static SHOWN: Mutex<Vec<Shown>> = Mutex::new(Vec::new());
 static RECENT_COPIES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 fn push(a: Activity) {
+    // The desktop mate notices finished downloads too.
+    if a.kind == "download" {
+        crate::mate::notify("download", &a.title);
+    }
     let mut s = SHOWN.lock();
     s.retain(|x| x.activity.id != a.id);
     s.push(Shown { activity: a, at: Instant::now() });

@@ -20,6 +20,7 @@ import {
   prepareLines,
   probeVoiceSpeed,
   speakCloud,
+  cloudPieces,
   speakNatural,
   stopNatural,
   prefetchCloud,
@@ -211,8 +212,17 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
       return;
     }
     const why = lastCloudError ?? "it didn't answer";
-    // A keyed voice that can't speak right now (out of today's free
-    // allowance, no credit): the free natural voice is next best.
+    // Ask every other voice service at once (same gender); the first to
+    // answer speaks — its first line is already made, so it starts at once.
+    if (engine !== "edge") {
+      const first = cloudPieces("orpheus", text)[0] ?? text;
+      const other = await api.voiceRace(first, mood).catch(() => null);
+      if (other && (await speakCloud(other, text, mood, captionOnce).catch(() => false))) {
+        captionOnce();
+        return;
+      }
+    }
+    // None could: the free natural voice is next best.
     const natural = engine !== "edge" && (await speakCloud("edge", speakable(raw, false), mood, captionOnce).catch(() => false));
     if (!cloudProblemsShown.has(why)) {
       cloudProblemsShown.add(why);
@@ -240,7 +250,9 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
   if (engine !== "system" && !tooSlow && who.english) {
     // (Only the Orpheus voice performs <laugh> and friends.)
     const began = Date.now();
-    const spoke = await speakNatural(shownText, settings.voice_name, captionOnce, mood, who.speed).catch((e) => {
+    // Standing in for a cloud voice that couldn't speak: the same gender as it.
+    const stand = ["orpheus", "openai", "gemini", "azure", "elevenlabs"].includes(engine) ? await api.voiceFallback().catch(() => settings.voice_name) : settings.voice_name;
+    const spoke = await speakNatural(shownText, stand, captionOnce, mood, who.speed).catch((e) => {
       void api.log(`voice: natural voice failed — ${e}`).catch(() => undefined);
       return false;
     });

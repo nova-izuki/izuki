@@ -384,6 +384,24 @@ pub struct Settings {
     /// (off: clicks happen straight away).
     #[serde(default)]
     pub click_highlight: bool,
+    /// The key FL Studio's Izuki script answers to (written into the script).
+    #[serde(default)]
+    pub fl_key: String,
+    /// The desktop mate: your character living on the desktop (on unless turned off).
+    #[serde(default = "default_true")]
+    pub mate_enabled: bool,
+    /// Its pet: "cat", "dog" or "none".
+    #[serde(default = "default_mate_pet")]
+    pub mate_pet: String,
+    /// How often it speaks up unasked: "quiet", "normal" or "chatty".
+    #[serde(default = "default_mate_chatty")]
+    pub mate_chatty: String,
+    /// Says its lines out loud too (off: speech bubbles only).
+    #[serde(default)]
+    pub mate_voice: bool,
+    /// Walks around the taskbar now and then.
+    #[serde(default = "default_true")]
+    pub mate_wander: bool,
     /// Last confirmed High Performance state. UI refreshes from Windows;
     /// never automatically applies a plan from this stored preference.
     #[serde(default = "default_false")]
@@ -550,6 +568,14 @@ fn default_speech_language() -> String {
 }
 
 fn default_orb_response() -> f64 { 1.0 }
+
+fn default_mate_pet() -> String {
+    "cat".into()
+}
+
+fn default_mate_chatty() -> String {
+    "normal".into()
+}
 
 fn default_true() -> bool {
     true
@@ -921,6 +947,12 @@ impl Default for Settings {
             sharp_eye: true,
             sharp_eye_tars: false,
             click_highlight: false,
+            fl_key: String::new(),
+            mate_enabled: true,
+            mate_pet: default_mate_pet(),
+            mate_chatty: default_mate_chatty(),
+            mate_voice: false,
+            mate_wander: true,
             pc_boost_power_plan: false,
             cloud_ears: true,
             speech_language: default_speech_language(),

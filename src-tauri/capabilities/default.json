@@ -4,7 +4,8 @@
   "description": "Permissions for the Izuki config panel and drawing overlay.",
   "windows": [
     "main",
-    "overlay"
+    "overlay",
+    "mate"
   ],
   "permissions": [
     "core:default",
