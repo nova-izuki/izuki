@@ -359,6 +359,37 @@ pub fn press_key(name: &str) -> Result<()> {
     tapped.map_err(|err| anyhow!("key press failed: {err:?}"))
 }
 
+/// Hold one key down, or let it go — Air control's game controls (an arrow
+/// held while the hand leans that way). Only single keys, no combinations.
+pub fn key_hold(name: &str, down: bool) -> Result<()> {
+    let key = parse_modifier(name).or_else(|| parse_key(name)).ok_or_else(|| anyhow!("unknown key: {name}"))?;
+    let mut e = enigo()?;
+    // Keys held for one window (the game) are let go when another window
+    // comes to the front — they never carry over into a different app.
+    let front = crate::uia::foreground_hwnd();
+    {
+        let mut h = HELD.lock();
+        if down && h.0.is_some() && h.0 != front {
+            for (k, _) in h.1.drain(..) {
+                let _ = e.key(k, Direction::Release);
+            }
+        }
+        if down {
+            h.0 = front;
+            if !h.1.iter().any(|(_, n)| n == name) {
+                h.1.push((key, name.to_string()));
+            }
+        } else {
+            h.1.retain(|(_, n)| n != name);
+        }
+    }
+    e.key(key, if down { Direction::Press } else { Direction::Release })
+        .map_err(|err| anyhow!("key {} failed: {err:?}", if down { "down" } else { "up" }))
+}
+
+/// Keys held by [`key_hold`], and the window they were held for.
+static HELD: parking_lot::Mutex<(Option<isize>, Vec<(Key, String)>)> = parking_lot::Mutex::new((None, Vec::new()));
+
 /// Whether `press_key` understands this key or combination ("ctrl+t").
 pub fn key_is_known(name: &str) -> bool {
     let parts: Vec<&str> = name.split('+').map(str::trim).filter(|p| !p.is_empty()).collect();

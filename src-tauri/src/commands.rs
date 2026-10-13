@@ -1210,6 +1210,15 @@ pub async fn air_keys(combo: String) -> R<()> {
     blocking(move || crate::air::keys(&combo).map_err(err)).await?
 }
 
+/// Air control's game controls: hold a key down (`down`) or let it go.
+#[tauri::command]
+pub fn air_hold(key: String, down: bool) -> R<()> {
+    if crate::uia::screen_locked() {
+        return Err("the PC is locked".into());
+    }
+    crate::automation::key_hold(&key, down).map_err(err)
+}
+
 /// Air control's floating keyboard: one key (or a few letters) into the window
 /// you were typing in — the keyboard itself never keeps the focus.
 #[tauri::command]

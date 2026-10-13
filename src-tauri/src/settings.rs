@@ -435,6 +435,12 @@ pub struct Settings {
     /// ("click:right", "keys:ctrl+c", "none"…). Missing = the default.
     #[serde(default)]
     pub air_bindings: std::collections::BTreeMap<String, String>,
+    /// Air control as a game controller: the hand leaning left/right/up/down
+    /// holds those keys, a pinch holds Space ("arrows" or "wasd" for the keys).
+    #[serde(default)]
+    pub air_game: bool,
+    #[serde(default = "default_air_game_keys")]
+    pub air_game_keys: String,
     /// How the Air pointer follows your hand: "fast", "balanced" or "precision".
     #[serde(default = "default_air_mode")]
     pub air_mode: String,
@@ -618,6 +624,10 @@ pub struct AirGesture {
     pub action: String,
 }
 
+fn default_air_game_keys() -> String {
+    "arrows".into()
+}
+
 fn default_air_mode() -> String {
     "balanced".into()
 }
@@ -741,6 +751,7 @@ impl Settings {
         if !["none", "cat", "dog"].contains(&self.buddy_pet.as_str()) { self.buddy_pet = "none".into(); }
         if !["smooth", "retro"].contains(&self.buddy_motion.as_str()) { self.buddy_motion = default_buddy_motion(); }
         if !["fast", "balanced", "precision"].contains(&self.air_mode.as_str()) { self.air_mode = default_air_mode(); }
+        if !["arrows", "wasd"].contains(&self.air_game_keys.as_str()) { self.air_game_keys = default_air_game_keys(); }
         self.air_bindings.retain(|slot, action| {
             ["middle", "ring", "pinky", "flick_left", "flick_right"].contains(&slot.as_str())
                 && action.len() <= 40
@@ -1043,6 +1054,8 @@ impl Default for Settings {
             air_gestures: Vec::new(),
             air_mode: default_air_mode(),
             air_bindings: Default::default(),
+            air_game: false,
+            air_game_keys: default_air_game_keys(),
             pc_boost_power_plan: false,
             cloud_ears: true,
             speech_language: default_speech_language(),

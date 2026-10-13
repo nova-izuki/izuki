@@ -97,6 +97,22 @@ export function AirCard() {
           ))}
         </div>
       </div>
+      <Row label="Game controls" hint="Play games with your hand: lean it left, right, up or down from the middle of the camera to hold the arrow keys (or W A S D); pinch to hold Space (jump / fire); thumb + ring finger is Enter. Fist still pauses. Or say “turn on game controls”.">
+        <div className="flex items-center gap-2">
+          {settings.air_game && (
+            <select
+              aria-label="Game keys"
+              className="rounded-lg border border-white/15 bg-black/40 px-1.5 py-0.5 text-[11.5px] text-white"
+              value={settings.air_game_keys ?? "arrows"}
+              onChange={(e) => patch({ air_game_keys: e.target.value as "arrows" | "wasd" })}
+            >
+              <option value="arrows">Arrow keys</option>
+              <option value="wasd">W A S D</option>
+            </select>
+          )}
+          <Toggle checked={!!settings.air_game} onChange={(v) => patch({ air_game: v })} />
+        </div>
+      </Row>
       <Row label="How it follows your hand" hint="Fast: the ring keeps right up with quick moves. Balanced: quick and steady. Precision: slower, finer moves for small buttons — your hand covers more of the camera's view per screen.">
         <div className="flex flex-wrap justify-end gap-1">
           {([["fast", "Fast"], ["balanced", "Balanced"], ["precision", "Precision"]] as const).map(([k, l]) => (

@@ -244,6 +244,8 @@ export const MOCK_SETTINGS: Settings = {
   air_mode: "balanced",
   phone_remote: false,
   air_bindings: {},
+  air_game: false,
+  air_game_keys: "arrows",
   auto_skip_ads: false,
   auto_reject_cookies: false,
   follow_hand_size: 16,
@@ -577,6 +579,8 @@ export const api = {
   airTarget: (nx: number, ny: number) => call<{ nx: number; ny: number; nw: number; nh: number; kind: string; field: boolean } | null>("air_target", { nx, ny }, () => null),
   /** 24/7 PC fast, live: when it last looked and what it last did by itself. */
   /** Dictated text with its grammar and punctuation fixed (unchanged if no brain answers). */
+  /** Hold a key down / let it go (Air control's game controls). */
+  airHold: (key: string, down: boolean) => call<void>("air_hold", { key, down }, () => undefined),
   polishText: (text: string) => call<string>("polish_text", { text }, () => text),
   tweaksList: () => call<WindowsTweak[]>("tweaks_list", undefined, () => []),
   tweakSet: (id: string, on: boolean) => call<WindowsTweak[]>("tweak_set", { id, on }, () => []),

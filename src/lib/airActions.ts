@@ -71,6 +71,7 @@ export type AirVoice =
   | { kind: "bind"; slot: AirSlot; action: string }
   | { kind: "mode"; mode: "fast" | "balanced" | "precision" }
   | { kind: "reset" }
+  | { kind: "game"; on: boolean }
   | { kind: "list" };
 
 /**
@@ -80,6 +81,11 @@ export type AirVoice =
  */
 export function parseAirVoice(said: string): AirVoice | null {
   const t = ` ${said.toLowerCase().replace(/[’']/g, "'")} `;
+  const game = t.match(/\b(turn|switch|put)\s+(on|off)\s+(the\s+)?(air\s+)?(game|gaming)\s+(controls?|mode)\b|\b(game|gaming)\s+(controls?|mode)\s+(on|off)\b|\b(start|stop)\s+(the\s+)?(air\s+)?(game|gaming)\s+(controls?|mode)\b/);
+  if (game) {
+    const word = game[2] || game[9] || game[10] || "";
+    return { kind: "game", on: word === "on" || word === "start" };
+  }
   const aboutAir = /\b(air|hand|gesture|gestures|pinch|flick|swipe|finger)\b/.test(t);
   if (!aboutAir) return null;
   if (/\b(reset|restore|put back|go back to)\b.*\b(air|gesture|gestures)\b|\b(air|gesture|gestures)\b.*\b(back to normal|to default|defaults)\b/.test(t)) return { kind: "reset" };

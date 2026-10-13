@@ -119,6 +119,7 @@ export function AirHost() {
   const [gestures, setGestures] = useState<Custom[] | null>(null);
   const [mode, setMode] = useState<AirMode>("balanced");
   const [bindings, setBindings] = useState<Record<AirSlot, string>>(() => airBindings(undefined));
+  const [game, setGame] = useState<{ on: boolean; keys: "arrows" | "wasd" }>({ on: false, keys: "arrows" });
   const last = useRef("");
   useEffect(() => {
     let alive = true;
@@ -129,6 +130,7 @@ export function AirHost() {
           if (!alive) return;
           setMode(s.air_mode in AIR_MODES ? s.air_mode : "balanced");
           setBindings(airBindings(s.air_bindings));
+          setGame({ on: !!s.air_game, keys: s.air_game_keys === "wasd" ? "wasd" : "arrows" });
           const next = s.air_enabled ? s.air_gestures ?? [] : null;
           const key = JSON.stringify(next);
           if (key === last.current) return; // same as before: don't restart the camera
@@ -145,10 +147,23 @@ export function AirHost() {
       offs.forEach((off) => void off.then((f) => f()).catch(() => undefined));
     };
   }, []);
-  return gestures ? <AirControl gestures={gestures} mode={mode} bindings={bindings} /> : null;
+  return gestures ? <AirControl gestures={gestures} mode={mode} bindings={bindings} game={game} /> : null;
 }
 
-export function AirControl({ gestures, mode: airMode = "balanced", bindings }: { gestures: Custom[]; mode?: AirMode; bindings?: Record<AirSlot, string> }) {
+export function AirControl({
+  gestures,
+  mode: airMode = "balanced",
+  bindings,
+  game,
+}: {
+  gestures: Custom[];
+  mode?: AirMode;
+  bindings?: Record<AirSlot, string>;
+  /** Game controls: the hand leaning holds direction keys, a pinch holds Space. */
+  game?: { on: boolean; keys: "arrows" | "wasd" };
+}) {
+  const gameRef = useRef(game ?? { on: false, keys: "arrows" as const });
+  gameRef.current = game ?? { on: false, keys: "arrows" };
   /** What the quick gestures do (changing them never restarts the camera). */
   const binds = useRef(airBindings(undefined));
   if (bindings) binds.current = bindings;
@@ -270,6 +285,27 @@ export function AirControl({ gestures, mode: airMode = "balanced", bindings }: {
     let peaceAt = 0;
     let scrollAcc = 0;
     let fistAt = 0;
+    /** Keys the game controls are holding down right now. */
+    const held = new Set<string>();
+    const hold = (key: string, down: boolean) => {
+      if (down === held.has(key)) return;
+      if (down) held.add(key);
+      else held.delete(key);
+      // (In order: the PC runs these one after another.) A let-go that
+      // fails is tried once more — a key must never stay held down.
+      void api.airHold(key, down).catch(() => {
+        if (!down) setTimeout(() => void api.airHold(key, false).catch(() => undefined), 120);
+      });
+    };
+    let gameKeys = "";
+    /** Let go of every held key (hand gone, paused, game controls off, Air off). */
+    const releaseKeys = () => [...held].forEach((k) => hold(k, false));
+    let gameEnter = false;
+    /** A pinch that picked up one of Izuki's own things (the character, the orb) to drag it. */
+    let grabbing = false;
+    const at = (p: { x: number; y: number }) => ({ clientX: p.x * window.innerWidth, clientY: p.y * window.innerHeight });
+    const fake = (type: string, p: { x: number; y: number }, target: EventTarget = window) =>
+      target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === "pointerup" ? 0 : 1, pointerId: 77, pointerType: "mouse", isPrimary: true, ...at(p) }));
     /** The 🤙 call gesture: when it began, and when it may fire again. */
     let callAt = 0;
     let callCool = 0;
@@ -497,6 +533,11 @@ export function AirControl({ gestures, mode: airMode = "balanced", bindings }: {
       }
       if (!lm) {
         L.gesture = "";
+        releaseKeys();
+        if (grabbing) {
+          grabbing = false;
+          fake("pointerup", pointer);
+        }
         // Hand gone: the 🤙 call is ready again.
         callAt = 0;
         if (callCool === Infinity) callCool = now + 1200;
@@ -573,6 +614,7 @@ export function AirControl({ gestures, mode: airMode = "balanced", bindings }: {
       }
       if (fistAt === Infinity) holdLabel = "";
       if (paused) {
+        releaseKeys();
         if (pinchDown) {
           pinchDown = false;
           if (!ownDown) void api.airButton(false, false).catch(() => undefined);
@@ -593,6 +635,48 @@ export function AirControl({ gestures, mode: airMode = "balanced", bindings }: {
       const active = { x: (raw.x - (1 - span) / 2) / span, y: (raw.y - (0.9 - span) / 2) / span };
       const nx = Math.min(1, Math.max(0, sx.next(active.x, now, tune.minCut, tune.beta)));
       const ny = Math.min(1, Math.max(0, sy.next(active.y, now, tune.minCut, tune.beta)));
+      // 🎮 Game controls: lean the hand from the middle of the camera to hold
+      // the direction keys; pinch holds Space; thumb + ring taps Enter. The
+      // pointer stays put (the ring shows where the hand leans).
+      if (gameRef.current.on) {
+        const g = gameRef.current;
+        // Switched to game controls mid-press or mid-drag: finish that first.
+        if (pinchDown && !held.has("space")) {
+          if (grabbing) fake("pointerup", pointer);
+          else if (!ownDown) void api.airButton(false, false).catch(() => undefined);
+          grabbing = false;
+          ownDown = null;
+          pinchDown = false;
+        }
+        // Arrows ↔ W A S D changed: let go of the old keys first.
+        if (g.keys !== gameKeys) {
+          releaseKeys();
+          gameKeys = g.keys;
+        }
+        const k = g.keys === "wasd" ? { l: "a", r: "d", u: "w", d: "s" } : { l: "left", r: "right", u: "up", d: "down" };
+        const cx = raw.x - 0.5;
+        const cy = raw.y - 0.45;
+        // Past 0.09 from the middle presses; it lets go nearer the middle (0.06), so it doesn't flicker.
+        const past = (v: number, key: string) => v > (held.has(key) ? 0.06 : 0.09);
+        hold(k.l, past(-cx, k.l));
+        hold(k.r, past(cx, k.r));
+        hold(k.u, past(-cy, k.u));
+        hold(k.d, past(cy, k.d));
+        hold("space", pinch(8, held.has("space")));
+        const enter = pinch(16, gameEnter);
+        if (enter && !gameEnter) void api.airKeys("enter").catch(() => undefined);
+        gameEnter = enter;
+        const lean = { x: Math.min(1, Math.max(0, 0.5 + cx * 1.6)), y: Math.min(1, Math.max(0, 0.5 + cy * 1.6)) };
+        L.moved += Math.hypot(lean.x - pointer.x, lean.y - pointer.y);
+        pointer = lean;
+        const arrows: Record<string, string> = { left: "←", right: "→", up: "↑", down: "↓", a: "A", d: "D", w: "W", s: "S", space: "Space" };
+        mode = "🎮 " + ([...held].map((h) => arrows[h] ?? h).join(" ") || "middle");
+        L.gesture = "game";
+        draw(true);
+        return;
+      }
+      releaseKeys();
+
       // Your own gestures come first (a taught peace sign isn't a scroll):
       // hold the pose a moment. The pointer stays put while you show it.
       let taught: Custom | null = null;
@@ -652,6 +736,7 @@ export function AirControl({ gestures, mode: airMode = "balanced", bindings }: {
         live.current.moved += Math.hypot(nx - pointer.x, ny - pointer.y);
         pointer = { x: nx, y: ny };
         void api.airPointer(nx, ny).catch(() => undefined);
+        if (grabbing) fake("pointermove", pointer);
       }
 
       // Over Izuki's own panel: the box is that control, exactly.
@@ -686,6 +771,16 @@ export function AirControl({ gestures, mode: airMode = "balanced", bindings }: {
         L.pinches++;
         pinchFrom = { x: raw.x, y: raw.y };
         ownDown = own;
+        // Not a button: it's the character or the orb — pick it up (it
+        // drags like a mouse would, through its own drag handling).
+        if (own && !own.matches("button, a, select, input, textarea, [role=button]")) {
+          const el = document.elementFromPoint(at(pointer).clientX, at(pointer).clientY);
+          if (el) {
+            grabbing = true;
+            ownDown = null;
+            fake("pointerdown", pointer, el);
+          }
+        }
         // A pinch lands on the middle of what's boxed.
         if (box) {
           const cx = box.nx + box.nw / 2;
@@ -697,14 +792,17 @@ export function AirControl({ gestures, mode: airMode = "balanced", bindings }: {
             void api.airPointer(cx, cy).catch(() => undefined);
           }
         }
-        if (!ownDown) void api.airButton(false, true).catch(() => undefined);
+        if (!ownDown && !grabbing) void api.airButton(false, true).catch(() => undefined);
         // A box you can type in: the air keyboard comes up by itself.
-        if (!ownDown && box?.field && pointer.x >= box.nx && pointer.x <= box.nx + box.nw && pointer.y >= box.ny && pointer.y <= box.ny + box.nh) {
+        if (!ownDown && !grabbing && box?.field && pointer.x >= box.nx && pointer.x <= box.nx + box.nw && pointer.y >= box.ny && pointer.y <= box.ny + box.nh) {
           window.dispatchEvent(new Event(AIR_KEYBOARD_OPEN));
         }
       } else if (!p && pinchDown) {
         pinchDown = false;
-        if (ownDown) {
+        if (grabbing) {
+          grabbing = false;
+          fake("pointerup", pointer);
+        } else if (ownDown) {
           // Pressed where it began (a drag off it cancels, like a real button).
           const now2 = ownAt(pointer.x, pointer.y);
           if (now2 && (now2 === ownDown || ownDown.contains(now2))) ownDown.click();
@@ -962,6 +1060,9 @@ export function AirControl({ gestures, mode: airMode = "balanced", bindings }: {
       alive = false;
       cancelAnimationFrame(raf);
       clearInterval(timer);
+      releaseKeys();
+      // A pick-up in progress ends here (a drag of Izuki's own things, not a Windows mouse press).
+      if (grabbing) fake("pointerup", pointer);
       void reader?.cancel().catch(() => undefined);
       tracker?.postMessage({ type: "stop" });
       tracker?.terminate();

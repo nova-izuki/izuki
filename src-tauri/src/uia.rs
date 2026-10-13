@@ -1621,3 +1621,16 @@ mod taskbar_live {
         assert!(!super::on_taskbar(w / 2, h / 2));
     }
 }
+
+/// The window in front right now (as a number), if any.
+#[cfg(windows)]
+pub fn foreground_hwnd() -> Option<isize> {
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    let h = unsafe { GetForegroundWindow() };
+    (!h.is_invalid()).then_some(h.0 as isize)
+}
+
+#[cfg(not(windows))]
+pub fn foreground_hwnd() -> Option<isize> {
+    None
+}

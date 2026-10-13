@@ -835,6 +835,9 @@ export function VoiceEngine() {
       } else if (airVoice.kind === "mode") {
         st.patchSettings({ air_mode: airVoice.mode });
         line = `Air control's on ${airVoice.mode} now.`;
+      } else if (airVoice.kind === "game") {
+        st.patchSettings({ air_game: airVoice.on, ...(airVoice.on ? { air_enabled: true } : {}) });
+        line = airVoice.on ? "Game controls on — lean your hand to move, pinch to jump. Make a fist to pause." : "Game controls off — your hand moves the pointer again.";
       } else if (airVoice.kind === "reset") {
         st.patchSettings({ air_bindings: {} });
         line = "Your air gestures are back to normal.";

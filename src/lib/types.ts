@@ -367,6 +367,9 @@ export interface Settings {
   phone_remote: boolean;
   /** What the quick gestures do (src/lib/airActions.ts); missing = the default. */
   air_bindings: Record<string, string>;
+  /** Air control as a game controller (lean = arrow keys, pinch = Space). */
+  air_game: boolean;
+  air_game_keys: "arrows" | "wasd";
   /** Once a day, what has sat in the Recycle Bin for 30+ days is cleared for good. */
   tidy_recycle_auto: boolean;
   /** PC Care: the Island says when antivirus, firewall, space or a drive needs attention. */

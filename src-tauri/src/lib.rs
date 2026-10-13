@@ -365,6 +365,7 @@ pub fn run() {
             commands::boost_live,
             commands::tweaks_list,
             commands::polish_text,
+            commands::air_hold,
             commands::tweak_set,
             commands::restart_explorer,
             commands::mate_line,
