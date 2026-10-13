@@ -21,3 +21,5 @@ pub const STOP_SPEAKING: &str = "izuki://stop-speaking";
 pub const HELP_ASK: &str = "izuki://help-ask";
 /// The question was answered, skipped or timed out.
 pub const HELP_DONE: &str = "izuki://help-done";
+/// A new email in the primary inbox, for the Island's 📧 tile: `{ from, subject }`.
+pub const ISLAND_MAIL: &str = "izuki://island-mail";

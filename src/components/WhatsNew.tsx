@@ -22,6 +22,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "📧", title: "New emails on the Island", how: "When a new email lands in your main inbox (not promotions or social), the Island shows who it's from and the subject. Tap it and Izuki reads it to you and says whether you need to do anything. Needs Gmail linked in Apps." },
+  { icon: "💡", title: "Suggestions for creative apps", how: "The Island now has one-tap help for music apps (“Make a beat”, “Mixing tips”), Blender, video editors, Photoshop / GIMP / Figma, OBS and PowerPoint — on top of browsers, email, chats, Word, PDFs, Excel and code." },
   { icon: "🎮", title: "Play games with your hand", how: "Turn on Game controls (Settings → Air control, or say “turn on game controls”): lean your hand left, right, up or down to hold the arrow keys (or W A S D), pinch to hold Space, thumb + ring for Enter. A fist still pauses.", try: { label: "Air control", tab: "settings", id: "settings-air" } },
   { icon: "✊", title: "Grab things with your hand", how: "With Air control on, pinch on your character or the orb and move your hand — it comes along, like dragging with a mouse. Open your fingers to put it down." },
   { icon: "📱", title: "Your phone is a remote for your PC", how: "Turn on “Let my phone control this PC” (Settings → Phone), then tap Remote in the Izuki phone app: see your PC's screen live (tap it to click there), use the phone as a trackpad (two fingers scroll or right-click, press and hold to drag), type, press keys and control music. Only your linked phone, never while the PC is locked." },

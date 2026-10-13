@@ -170,7 +170,15 @@ fn tick(app: &AppHandle) {
     if settings.heads_up_email && has("gmail") && due(st.email_at, EMAIL_EVERY) {
         st.email_at = Some(Instant::now());
         match new_emails(st) {
-            Ok(lines) => {
+            Ok(mails) => {
+                // The newest on the Island too (a 📧 tile: tap it and Izuki reads it to you).
+                if let Some((from, subject)) = mails.first() {
+                    let _ = app.emit(crate::events::ISLAND_MAIL, json!({ "from": from, "subject": subject, "more": mails.len().saturating_sub(1) }));
+                }
+                let lines: Vec<String> = mails
+                    .iter()
+                    .map(|(from, subject)| if subject.is_empty() { format!("New email from {from}") } else { format!("{from}: {subject}") })
+                    .collect();
                 deliver_many(app, "📧", &lines, "new emails");
                 // The ones that matter, Izuki also says out loud (buddy mode).
                 crate::buddy::new_mail(app, &lines);
@@ -203,7 +211,7 @@ fn tick(app: &AppHandle) {
 // Email
 // ---------------------------------------------------------------------------
 
-fn new_emails(st: &mut State) -> anyhow::Result<Vec<String>> {
+fn new_emails(st: &mut State) -> anyhow::Result<Vec<(String, String)>> {
     let data = crate::composio::execute(
         "GMAIL_FETCH_EMAILS",
         json!({ "query": "is:unread in:inbox category:primary newer_than:1d", "max_results": 8, "include_payload": false, "verbose": false }),
@@ -216,7 +224,7 @@ fn new_emails(st: &mut State) -> anyhow::Result<Vec<String>> {
         if !seen.insert(m.id.clone()) || first_look {
             continue;
         }
-        lines.push(if m.subject.is_empty() { format!("New email from {}", m.from) } else { format!("{}: {}", m.from, m.subject) });
+        lines.push((m.from, m.subject));
     }
     Ok(lines)
 }

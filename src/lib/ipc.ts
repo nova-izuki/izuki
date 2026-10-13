@@ -808,6 +808,8 @@ export const EV = {
   airSay: "izuki://air-say",
   /** The 🤙 Air gesture: start listening (never stops a listen, unlike the talk key). */
   airCall: "izuki://air-call",
+  /** A new email in the primary inbox (headsup.rs), for the Island's 📧 tile. */
+  islandMail: "izuki://island-mail",
   /** Frontend-only, config panel → overlay: learn an Air gesture now ({name, action}). */
   airRecord: "izuki://air-record",
   /** Frontend-only, config panel → overlay: open Air control's guided test. */

@@ -122,6 +122,31 @@ pub fn for_context(app: &str, title: &str, hour: u32, music: bool) -> Vec<Sugges
         out.push(s("Explain this code", "🧑‍💻", "Explain the code on my screen simply, marking the important lines with the pen."));
         out.push(s("Find the bug", "🐞", "Look at the code on my screen and point out what might be wrong."));
     }
+    // Creative apps: what each is for. (Only help Izuki really gives — it
+    // looks at the screen and explains, or makes a MIDI draft for any DAW.)
+    let starts = |names: &[&str]| names.iter().any(|n| a.trim_end_matches(".exe").starts_with(n));
+    if app_is(&["fl64", "fl", "reaper", "bitwig studio", "audacity", "lmms"]) || starts(&["ableton live", "studio one", "cubase", "nuendo", "bitwig"]) {
+        out.push(s("Make a beat", "🎛️", "Make me a beat for the music app I have open, and tell me how to bring it in."));
+        out.push(s("Mixing tips", "🎚️", "Look at my music project on screen and give me two or three quick mixing tips."));
+    }
+    if app_is(&["blender"]) {
+        out.push(s("Explain this tool", "🧊", "Explain the Blender tool or panel on my screen simply, marking it with the pen."));
+        out.push(s("Help me model this", "🛠️", "Look at my Blender scene and tell me the next steps to model what I'm making."));
+    }
+    if app_is(&["resolve", "adobe premiere pro", "premiere pro", "vegas", "capcut", "clipchamp"]) {
+        out.push(s("Editing tips", "🎬", "Look at my video edit on screen and give me two or three quick editing tips."));
+        out.push(s("Explain this panel", "🧭", "Explain the editing panel on my screen simply, marking the key buttons with the pen."));
+    }
+    if app_is(&["photoshop", "gimp-2.10", "gimp", "krita", "figma", "illustrator", "affinity photo 2", "paint.net"]) || has(&["- figma", "canva"]) {
+        out.push(s("Design feedback", "🎨", "Look at my design on screen and give me honest, specific feedback to make it better."));
+        out.push(s("Explain this tool", "🖌️", "Explain the tool or panel on my screen simply, marking it with the pen."));
+    }
+    if app_is(&["obs64", "obs32", "obs"]) {
+        out.push(s("Check my stream setup", "📡", "Look at my OBS setup on screen and tell me if anything looks wrong before I go live."));
+    }
+    if app_is(&["powerpnt"]) || has(&["google slides", "- powerpoint"]) {
+        out.push(s("Make this slide better", "📽️", "Look at the slide on my screen and suggest how to make it clearer and better looking."));
+    }
     if has(&["amazon", "jumia", "ebay", "aliexpress", "temu", "konga", "shopping cart", "your cart"]) {
         out.push(s("Is this a good deal?", "🏷️", "Look at this product and tell me if it's a good deal. Compare prices for me."));
     }
@@ -262,6 +287,13 @@ mod tests {
         assert_eq!(labels("Code.exe", "main.rs - izuki - Visual Studio Code")[0], "Explain this code");
         assert_eq!(labels("EXCEL.EXE", "Budget.xlsx - Excel")[0], "Explain this formula");
         assert_eq!(labels("WhatsApp.exe", "WhatsApp")[0], "Help me reply");
+        assert_eq!(labels("FL64.exe", "My beat - FL Studio 21")[0], "Make a beat");
+        assert_eq!(labels("Ableton Live 12 Suite.exe", "Untitled - Ableton Live 12")[0], "Make a beat");
+        assert_eq!(labels("blender.exe", "Blender [C:\\scene.blend]")[0], "Explain this tool");
+        assert_eq!(labels("Resolve.exe", "DaVinci Resolve - Project")[0], "Editing tips");
+        assert_eq!(labels("Photoshop.exe", "poster.psd @ 50% (RGB/8)")[0], "Design feedback");
+        assert_eq!(labels("obs64.exe", "OBS 30.2 - Profile: Untitled")[0], "Check my stream setup");
+        assert_eq!(labels("POWERPNT.EXE", "Pitch deck - PowerPoint")[0], "Make this slide better");
         assert_eq!(labels("chrome.exe", "Some news article - Google Chrome"), vec!["Sum up this page"]);
         let lab = labels("chrome.exe", "Performance Labs : ITSY-2345 [Network Defense 4e] en-uCertify - Google Chrome");
         assert_eq!(lab, vec!["Explain this like a teacher", "Quiz me on this", "Save notes from this"]);

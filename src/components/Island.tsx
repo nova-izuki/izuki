@@ -312,12 +312,34 @@ export function Island({
     // Only a new page/app (or new suggestion) is news — not every look.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status.context, status.suggestions[0]?.label, status.clip?.[0]?.ask, peeks]);
+  // 📧 A new email in your primary inbox: a tile on the Island — tap it and
+  // Izuki reads it to you and says what (if anything) you need to do.
+  useEffect(() => {
+    const off = on<{ from: string; subject: string; more?: number }>(EV.islandMail, (m) => {
+      // Quiet when you've turned the Island's peeks off (the Windows notification still comes).
+      if (busyRef.current || status.fullscreen || !peeksRef.current) return;
+      const subject = m.subject?.trim();
+      const more = m.more ? ` (+${m.more} more)` : "";
+      setPeek({
+        icon: "📧",
+        label: `${m.from}${subject ? `: ${subject}` : ""}${more}`.slice(0, 90),
+        ask: `Read me my newest email from ${m.from}${subject ? ` (“${subject}”)` : ""} and tell me in a sentence or two what it says and whether I need to do anything.`,
+        strong: true,
+      });
+    });
+    return () => void off.then((f) => f());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status.fullscreen]);
   // Its own timer, so a page change mid-peek can't leave it stuck up.
   useEffect(() => {
     if (!peek) return;
     const hide = setTimeout(() => setPeek(null), PEEK_MS);
     return () => clearTimeout(hide);
   }, [peek]);
+  const peeksRef = useRef(peeks);
+  peeksRef.current = peeks;
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
   useEffect(() => {
     if (busy) setPeek(null);
   }, [busy]);
