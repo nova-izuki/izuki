@@ -285,6 +285,12 @@ export function AirControl({
     let peaceAt = 0;
     let scrollAcc = 0;
     let fistAt = 0;
+    /** The hand is raised and driving Air control (and since when it's been up / down). */
+    let engaged = false;
+    let upSince = 0;
+    let downSince = 0;
+    /** When the fingers first came together: a pinch counts once held a moment. */
+    let pinchSeen = 0;
     /** Keys the game controls are holding down right now. */
     const held = new Set<string>();
     const hold = (key: string, down: boolean) => {
@@ -559,6 +565,43 @@ export function AirControl({
       }
       lastHand = now;
       const scale = Math.max(1e-3, dist(lm[0], lm[9]));
+      // Only a raised hand drives Air control: up in front of the camera,
+      // fingers pointing up. Hands resting on the keyboard — low in the
+      // picture, lying flat — used to move the mouse while you typed.
+      const raised = lm[0].y < 0.9 && lm[9].y < 0.82 && (lm[0].y - lm[9].y) / scale > 0.5;
+      if (raised) {
+        if (!upSince) upSince = now;
+        downSince = 0;
+      } else {
+        if (!downSince) downSince = now;
+        upSince = 0;
+      }
+      if (!engaged && raised && now - upSince > 200) engaged = true;
+      if (engaged && !raised && now - downSince > 350) engaged = false;
+      if (!engaged) {
+        L.lm = null;
+        L.gesture = "";
+        releaseKeys();
+        // Whatever was under way stops cleanly (a pick-up ends once, here).
+        if (grabbing) fake("pointerup", pointer);
+        else if (pinchDown && !ownDown) void api.airButton(false, false).catch(() => undefined);
+        grabbing = false;
+        ownDown = null;
+        pinchFrom = null;
+        pinchDown = false;
+        pinchSeen = 0;
+        scrollY = null;
+        scrollAcc = 0;
+        swipeFrom = null;
+        customName = "";
+        callAt = 0;
+        stillFrom = null;
+        sx.reset();
+        sy.reset();
+        mode = "";
+        draw(false);
+        return;
+      }
       const up = (tip: number, pip: number) => dist(lm[0], lm[tip]) > dist(lm[0], lm[pip]) * 1.12;
       const ext = { index: up(8, 6), middle: up(12, 10), ring: up(16, 14), pinky: up(20, 18) };
       // Closing counts at 0.3; once pinched it holds until 0.42 (0.5 while
@@ -733,9 +776,18 @@ export function AirControl({
       // During a pinch's first moment, the pointer holds (no accidental drag).
       const settling = pinchDown && now - pinchAt < 140 && !dragging;
       if (!settling) {
-        live.current.moved += Math.hypot(nx - pointer.x, ny - pointer.y);
-        pointer = { x: nx, y: ny };
-        void api.airPointer(nx, ny).catch(() => undefined);
+        // On a small button the ring goes half speed (like aim assist), so a
+        // little wobble doesn't slip off it before the pinch.
+        let tx = nx;
+        let ty = ny;
+        const small = box && !paused && box.nw * window.innerWidth < 140 && box.nh * window.innerHeight < 90;
+        if (small && box && pointer.x >= box.nx && pointer.x <= box.nx + box.nw && pointer.y >= box.ny && pointer.y <= box.ny + box.nh) {
+          tx = pointer.x + (nx - pointer.x) * 0.45;
+          ty = pointer.y + (ny - pointer.y) * 0.45;
+        }
+        live.current.moved += Math.hypot(tx - pointer.x, ty - pointer.y);
+        pointer = { x: tx, y: ty };
+        void api.airPointer(pointer.x, pointer.y).catch(() => undefined);
         if (grabbing) fake("pointermove", pointer);
       }
 
@@ -763,7 +815,10 @@ export function AirControl({
       }
 
       // Thumb + index: press (and hold to drag).
-      const p = !taught && pinch(8, pinchDown);
+      const touching = !taught && pinch(8, pinchDown);
+      if (!touching) pinchSeen = 0;
+      else if (!pinchSeen) pinchSeen = now;
+      const p = touching && (pinchDown || now - pinchSeen >= 80);
       if (p && !pinchDown) {
         pinchDown = true;
         pinchAt = now;

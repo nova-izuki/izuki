@@ -14,6 +14,41 @@ use crate::settings::Settings;
 
 /// Push-to-talk is being held down right now.
 static VOICE_DOWN: AtomicBool = AtomicBool::new(false);
+
+/// The talk key, caught by the keyboard hook itself when Windows wouldn't
+/// register it — another program owns it (Windows uses Ctrl+Win+Space to
+/// switch keyboard languages, so "couldn't register: Ctrl+Super+Space" left
+/// the talk key doing nothing at all). (modifier bits, virtual key.)
+static VOICE_HOOK: parking_lot::Mutex<Option<(u8, u32)>> = parking_lot::Mutex::new(None);
+/// A combo with the Windows key was taken: when Win comes up, a harmless
+/// invisible key first, so the Start menu doesn't open (as PowerToys does).
+static WIN_SWALLOWED: AtomicBool = AtomicBool::new(false);
+const M_CTRL: u8 = 1;
+const M_SHIFT: u8 = 2;
+const M_ALT: u8 = 4;
+const M_WIN: u8 = 8;
+
+/// A shortcut ("Ctrl+Super+Space") as modifier bits and a Windows virtual key.
+fn hook_combo(combo: &str) -> Option<(u8, u32)> {
+    let mut mods = 0u8;
+    let mut vk = None;
+    for token in combo.split('+').map(str::trim).filter(|t| !t.is_empty()) {
+        let t = token.to_ascii_lowercase();
+        match t.as_str() {
+            "ctrl" | "control" | "commandorcontrol" | "cmdorctrl" => mods |= M_CTRL,
+            "shift" => mods |= M_SHIFT,
+            "alt" | "option" => mods |= M_ALT,
+            "super" | "win" | "meta" | "cmd" | "command" => mods |= M_WIN,
+            "space" | "spacebar" => vk = Some(0x20),
+            "enter" | "return" => vk = Some(0x0D),
+            "tab" => vk = Some(0x09),
+            _ if t.len() == 1 && t.as_bytes()[0].is_ascii_alphanumeric() => vk = Some(t.to_ascii_uppercase().as_bytes()[0] as u32),
+            _ if t.starts_with('f') && t[1..].parse::<u32>().is_ok_and(|n| (1..=24).contains(&n)) => vk = Some(0x6F + t[1..].parse::<u32>().unwrap_or(1)),
+            _ => return None,
+        }
+    }
+    vk.filter(|_| mods != 0).map(|v| (mods, v))
+}
 /// The quickdraw chord is being held down right now.
 static QUICK_DOWN: AtomicBool = AtomicBool::new(false);
 
@@ -210,8 +245,61 @@ unsafe extern "system" fn esc_hook(
     wparam: windows::Win32::Foundation::WPARAM,
     lparam: windows::Win32::Foundation::LPARAM,
 ) -> windows::Win32::Foundation::LRESULT {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL, VK_ESCAPE, VK_SHIFT};
-    use windows::Win32::UI::WindowsAndMessaging::{CallNextHookEx, KBDLLHOOKSTRUCT, LLKHF_INJECTED, WM_KEYDOWN};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        keybd_event, GetAsyncKeyState, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_CONTROL, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{CallNextHookEx, KBDLLHOOKSTRUCT, LLKHF_INJECTED, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP};
+    // The talk key, when Windows wouldn't give it to Izuki (see VOICE_HOOK):
+    // press = listen (the orb and waveform come up), let go = done, and the
+    // key itself is kept (so Windows doesn't also switch keyboard language).
+    if code >= 0 {
+        let talk = *VOICE_HOOK.lock();
+        if let Some((mods, vk)) = talk {
+            let key = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
+            let msg = wparam.0 as u32;
+            let down_msg = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+            let up_msg = msg == WM_KEYUP || msg == WM_SYSKEYUP;
+            let injected = key.flags.0 & LLKHF_INJECTED.0 != 0;
+            let held = |vk: i32| (GetAsyncKeyState(vk) as u16 & 0x8000) != 0;
+            if key.vkCode == vk && !injected {
+                let now_mods = (if held(VK_CONTROL.0 as i32) { M_CTRL } else { 0 })
+                    | (if held(VK_SHIFT.0 as i32) { M_SHIFT } else { 0 })
+                    | (if held(VK_MENU.0 as i32) { M_ALT } else { 0 })
+                    | (if held(VK_LWIN.0 as i32) || held(VK_RWIN.0 as i32) { M_WIN } else { 0 });
+                if down_msg && now_mods == mods {
+                    if !VOICE_DOWN.swap(true, Ordering::SeqCst) {
+                        if let Some(app) = ESC_APP.get() {
+                            let app = app.clone();
+                            std::thread::spawn(move || {
+                                eprintln!("[hotkey] talk key pressed (caught directly)");
+                                Action::Voice.run(&app);
+                            });
+                        }
+                    }
+                    if mods & M_WIN != 0 {
+                        WIN_SWALLOWED.store(true, Ordering::SeqCst);
+                    }
+                    return windows::Win32::Foundation::LRESULT(1);
+                }
+                if up_msg && VOICE_DOWN.swap(false, Ordering::SeqCst) {
+                    if let Some(app) = ESC_APP.get() {
+                        let app = app.clone();
+                        std::thread::spawn(move || {
+                            eprintln!("[hotkey] talk key released");
+                            let _ = app.emit(events::PUSH_TO_TALK_RELEASE, ());
+                        });
+                    }
+                    return windows::Win32::Foundation::LRESULT(1);
+                }
+            }
+            // The Windows key let go after a combo Izuki took: an invisible
+            // key first, so Windows doesn't open the Start menu.
+            if up_msg && (key.vkCode == VK_LWIN.0 as u32 || key.vkCode == VK_RWIN.0 as u32) && WIN_SWALLOWED.swap(false, Ordering::SeqCst) {
+                keybd_event(0xE8, 0, KEYBD_EVENT_FLAGS(0), 0);
+                keybd_event(0xE8, 0, KEYEVENTF_KEYUP, 0);
+            }
+        }
+    }
     // Emergency stop (Ctrl+Shift+Q) as a guaranteed backup, even if the
     // registered global shortcut didn't take (another app owns it) or Izuki is
     // busy. Ctrl and Shift held, Q pressed. cancel_task() only sets flags, so
@@ -361,6 +449,14 @@ pub fn rebind(app: &AppHandle, settings: &Settings) {
         }
     }
 
+    // The talk key couldn't be registered: catch it in the keyboard hook instead.
+    let caught = failed.iter().any(|f| *f == settings.hotkey_voice).then(|| hook_combo(&settings.hotkey_voice)).flatten();
+    *VOICE_HOOK.lock() = caught;
+    if caught.is_some() {
+        eprintln!("[hotkey] {} is taken by another program — Izuki catches the talk key directly instead", settings.hotkey_voice);
+        failed.retain(|f| *f != settings.hotkey_voice);
+    }
+
     if !failed.is_empty() {
         eprintln!("[hotkey] couldn't register: {}", failed.join(", "));
         let _ = app.emit(
@@ -477,4 +573,18 @@ pub fn stop_everything(app: &AppHandle) {
     eprintln!("[hotkey] emergency stop ({} watchers paused)", running.len());
     let detail = Some(detail.unwrap_or_else(|| "Izuki's still here — just ask when you're ready.".to_string()));
     let _ = app.emit(events::STATUS, StatusEvent { kind: "info", message: "Stopped everything.".into(), detail });
+}
+
+#[cfg(test)]
+mod talk_key_tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_talk_key_for_the_keyboard_hook() {
+        assert_eq!(hook_combo("Ctrl+Super+Space"), Some((M_CTRL | M_WIN, 0x20)));
+        assert_eq!(hook_combo("Ctrl+Shift+K"), Some((M_CTRL | M_SHIFT, 0x4B)));
+        assert_eq!(hook_combo("Alt+F9"), Some((M_ALT, 0x78)));
+        assert_eq!(hook_combo("Space"), None); // a bare key is never taken
+        assert_eq!(hook_combo("Ctrl+Mystery"), None);
+    }
 }

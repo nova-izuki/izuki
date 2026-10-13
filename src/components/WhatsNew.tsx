@@ -22,6 +22,9 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🎙️", title: "The talk key works again", how: "Ctrl+Win+Space did nothing: Windows keeps that combination for switching keyboard languages, so Izuki never got it. Now Izuki catches it itself — press and the orb and waveform come up; hold and let go to send." },
+  { icon: "🖐️", title: "Air control: no more accidents", how: "Only a raised hand (fingers up, in front of the camera) moves the pointer — hands resting on the keyboard while you type are ignored. A pinch has to be held a moment, so fingers brushing past don't click. And on a small button the ring slows down, so it's easy to stay on it.", try: { label: "Air control", tab: "settings", id: "settings-air" } },
+  { icon: "🔒", title: "Nothing sent without your yes", how: "Emails, messages and posts through your linked apps now always show you the draft first — who it's to, the subject and the words — and only an explicit “yes, send it” sends exactly that. The same message can't be sent twice." },
   { icon: "📧", title: "New emails on the Island", how: "When a new email lands in your main inbox (not promotions or social), the Island shows who it's from and the subject. Tap it and Izuki reads it to you and says whether you need to do anything. Needs Gmail linked in Apps." },
   { icon: "💡", title: "Suggestions for creative apps", how: "The Island now has one-tap help for music apps (“Make a beat”, “Mixing tips”), Blender, video editors, Photoshop / GIMP / Figma, OBS and PowerPoint — on top of browsers, email, chats, Word, PDFs, Excel and code." },
   { icon: "🎮", title: "Play games with your hand", how: "Turn on Game controls (Settings → Air control, or say “turn on game controls”): lean your hand left, right, up or down to hold the arrow keys (or W A S D), pinch to hold Space, thumb + ring for Enter. A fist still pauses.", try: { label: "Air control", tab: "settings", id: "settings-air" } },

@@ -411,9 +411,41 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
             let tool = step["run"]["tool"].as_str().unwrap_or_default();
             let args = step["run"]["arguments"].clone();
             let args = if args.is_object() { args } else { json!({}) };
+            // The hard gate (not just the prompt): anything that sends, posts,
+            // deletes, pays or changes runs only when Izuki has just shown the
+            // draft and the user's latest message clearly says yes. Otherwise
+            // the user sees exactly what would happen, and is asked.
+            let change_key = changes(tool).then(|| action_key(tool, &args, step["run"]["account"].as_str()));
+            if let Some(key) = change_key {
+                // A yes approves only the exact draft that was shown.
+                if !(approved(history) && proposed_is(key)) {
+                    eprintln!("[apps] {tool} held for the user's yes");
+                    *PROPOSED.lock() = Some((key, std::time::Instant::now()));
+                    return Ok(Answer { text: draft_of(tool, &args), links });
+                }
+                if !reserve(key) {
+                    return Ok(Answer { text: "That exact one already went through a moment ago — I didn't do it twice.".into(), links });
+                }
+                PROPOSED.lock().take();
+                eprintln!("[apps] {tool} — the user said yes");
+            }
             let mut body = json!({ "tool_slug": tool, "arguments": args });
             if let Some(account) = step["run"]["account"].as_str() { body["account"] = json!(account); }
-            match router(&key, "execute", &body) {
+            let outcome = router(&key, "execute", &body);
+            // A change that definitely failed is released, so it can be tried
+            // again; one that went through (or may have) stays recorded.
+            if let Some(k) = change_key {
+                let failed = match &outcome {
+                    Ok(v) => tool_error(v).is_some(),
+                    // Only a clear "no" from Composio counts as not done; a
+                    // dropped connection may have sent it — never risk twice.
+                    Err(e) => e.to_string().starts_with("Composio answered 4"),
+                };
+                if failed {
+                    release(k);
+                }
+            }
+            match outcome {
                 Ok(v) => {
                     let err = tool_error(&v);
                     match err {
@@ -521,6 +553,118 @@ fn asked_app(said: &str) -> Option<&'static str> {
         ("whatsapp", "whatsapp"), ("telegram", "telegram"), ("youtube", "youtube"),
     ];
     MAP.iter().find(|(k, _)| t.contains(k)).map(|(_, v)| *v)
+}
+
+/// A tool that changes something for the user — sends, posts, replies,
+/// deletes, pays, accepts… (a saved draft, or reading, changes nothing).
+fn changes(tool: &str) -> bool {
+    let t = tool.to_ascii_uppercase();
+    // Word by word ("GMAIL_LIST_LABELS" only reads; "LABELS" isn't "LABEL").
+    let words: Vec<&str> = t.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let has = |w: &str| words.contains(&w);
+    // Only making or saving a draft is free; deleting or changing one is not.
+    if has("DRAFT") && (has("CREATE") || has("SAVE")) && !has("SEND") {
+        return false;
+    }
+    const DOES: &[&str] = &[
+        "SEND", "REPLY", "POST", "FORWARD", "DELETE", "REMOVE", "TRASH", "ARCHIVE", "CREATE", "UPDATE", "PATCH", "MODIFY",
+        "MOVE", "PAY", "PURCHASE", "BUY", "ACCEPT", "DECLINE", "INVITE", "PUBLISH", "COMMENT", "SHARE", "ADD", "INSERT",
+        "SCHEDULE", "CANCEL", "MARK", "LABEL", "STAR", "UPLOAD", "RENAME", "TRANSFER", "SUBMIT", "TWEET", "RETWEET", "LIKE",
+        "FOLLOW", "UNFOLLOW", "EDIT", "SET", "APPLY", "ASSIGN", "CLOSE", "MERGE", "WRITE", "REACT", "PIN", "MUTE", "BLOCK",
+        "SUBSCRIBE", "UNSUBSCRIBE", "INSTALL", "REVOKE", "APPROVE", "REJECT", "RESPOND", "CHARGE", "REFUND", "BOOK",
+    ];
+    DOES.iter().any(|d| has(d))
+}
+
+/// Izuki just showed the draft and asked, and the user's latest message is a
+/// clear yes ("yes", "send it", "go ahead") — nothing else counts.
+fn approved(history: &[Turn]) -> bool {
+    let mut turns = history.iter().rev().filter(|t| t.role == "user" || t.role == "assistant");
+    let Some(latest) = turns.next() else { return false };
+    let asked = turns.next().is_some_and(|t| t.role == "assistant" && t.content.contains('?'));
+    latest.role == "user" && asked && said_yes(&latest.content)
+}
+
+fn said_yes(said: &str) -> bool {
+    let t = said.trim().to_lowercase();
+    let t = t.trim_matches(|c: char| !c.is_alphanumeric() && c != ' ' && c != '\'');
+    let no = ["no", "not", "don't", "dont", "wait", "stop", "change", "instead", "but", "hold on", "cancel"];
+    if t.split_whitespace().any(|w| no.contains(&w)) {
+        return false;
+    }
+    const YES: &[&str] = &[
+        "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "go ahead", "send it", "send", "post it", "do it", "please do",
+        "confirm", "confirmed", "sounds good", "looks good", "perfect", "approve", "approved", "allow", "yes please",
+    ];
+    YES.iter().any(|y| t == *y || t.starts_with(&format!("{y} ")) || t.starts_with(&format!("{y},")))
+}
+
+/// One exact action: the tool, its arguments (spacing tidied, so a retry
+/// that only re-spaces the words is the same action) and the account.
+fn action_key(tool: &str, args: &Value, account: Option<&str>) -> u64 {
+    use std::hash::{Hash, Hasher};
+    fn tidy(v: &Value) -> Value {
+        match v {
+            Value::String(s) => Value::String(s.split_whitespace().collect::<Vec<_>>().join(" ")),
+            Value::Array(a) => Value::Array(a.iter().map(tidy).collect()),
+            Value::Object(o) => Value::Object(o.iter().map(|(k, v)| (k.clone(), tidy(v))).collect()),
+            other => other.clone(),
+        }
+    }
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    tool.to_ascii_uppercase().hash(&mut h);
+    tidy(args).to_string().hash(&mut h);
+    account.unwrap_or("").hash(&mut h);
+    h.finish()
+}
+
+/// The draft the user was last shown (what a "yes" approves), and when.
+static PROPOSED: Mutex<Option<(u64, std::time::Instant)>> = Mutex::new(None);
+
+fn proposed_is(key: u64) -> bool {
+    PROPOSED.lock().is_some_and(|(k, at)| k == key && at.elapsed() < Duration::from_secs(15 * 60))
+}
+
+/// Done (or under way) in the last ten minutes: a retry or a repeated "yes"
+/// never sends the same thing twice.
+static DONE: Mutex<Vec<(u64, std::time::Instant)>> = Mutex::new(Vec::new());
+
+/// Claim this action before running it — false if it already ran.
+fn reserve(key: u64) -> bool {
+    let mut done = DONE.lock();
+    done.retain(|(_, at)| at.elapsed() < Duration::from_secs(600));
+    if done.iter().any(|(k, _)| *k == key) {
+        return false;
+    }
+    done.push((key, std::time::Instant::now()));
+    true
+}
+
+/// It definitely didn't happen: it may be tried again.
+fn release(key: u64) {
+    DONE.lock().retain(|(k, _)| *k != key);
+}
+
+/// What the user is asked before a change: exactly what would happen.
+fn draft_of(tool: &str, args: &Value) -> String {
+    let app = pretty(&app_of(tool));
+    let field = |keys: &[&str]| keys.iter().find_map(|k| args.get(*k).and_then(Value::as_str)).map(str::trim).filter(|v| !v.is_empty());
+    let to = field(&["recipient_email", "to", "recipient", "channel", "chat_id", "email", "attendees"]);
+    let subject = field(&["subject", "title", "summary", "name"]);
+    let body = field(&["body", "message", "text", "content", "description", "comment"]);
+    let verb = tool.to_ascii_lowercase().replace('_', " ");
+    let mut out = format!("Here's what I'd do in {app} ({verb}):");
+    if let Some(t) = to {
+        out.push_str(&format!("\nTo: {t}"));
+    }
+    if let Some(s) = subject {
+        out.push_str(&format!("\nSubject: {s}"));
+    }
+    if let Some(b) = body {
+        out.push_str(&format!("\n\n{}", b.chars().take(1200).collect::<String>()));
+    }
+    out.push_str("\n\nWant me to go ahead? Say “yes, send it” — or tell me what to change.");
+    out
 }
 
 /// A question that only *reads* — safe to answer from a snapshot. Anything
@@ -720,6 +864,48 @@ mod tests {
     fn tool_slugs_map_to_their_app() {
         assert_eq!(app_of("GMAIL_FETCH_EMAILS"), "gmail");
         assert_eq!(app_of("SLACK_SEND_MESSAGE"), "slack");
+    }
+
+    #[test]
+    fn nothing_is_sent_without_a_yes_to_the_draft() {
+        // Shared with the real gate: start (and finish) clean.
+        *PROPOSED.lock() = None;
+        DONE.lock().clear();
+        let turn = |role: &str, content: &str| Turn { role: role.into(), content: content.into(), ..Default::default() };
+        assert!(changes("GMAIL_SEND_EMAIL") && changes("SLACK_SEND_MESSAGE") && changes("GOOGLECALENDAR_DELETE_EVENT"));
+        assert!(!changes("GMAIL_FETCH_EMAILS") && !changes("GMAIL_CREATE_EMAIL_DRAFT") && !changes("GOOGLECALENDAR_FIND_EVENT"));
+        assert!(changes("GMAIL_DELETE_DRAFT") && changes("GMAIL_UPDATE_DRAFT") && changes("GMAIL_SEND_DRAFT"));
+        assert!(!changes("GMAIL_LIST_LABELS") && !changes("TWITTER_GET_BOOKMARKS") && !changes("SLACK_SEARCH_MESSAGES"));
+        assert!(changes("GMAIL_ADD_LABEL_TO_EMAIL") && changes("SLACK_ADD_REACTION_TO_AN_ITEM"));
+        // Asked straight out: the draft comes first.
+        assert!(!approved(&[turn("user", "email Sam that I'm running late")]));
+        // The draft was shown and the answer is yes: go.
+        let asked = turn("assistant", "Here's what I'd do in Gmail: To: sam@x.com … Want me to go ahead?");
+        assert!(approved(&[turn("user", "email Sam"), asked.clone(), turn("user", "yes, send it")]));
+        assert!(approved(&[turn("user", "email Sam"), asked.clone(), turn("user", "Go ahead")]));
+        // Anything but a clear yes is not a yes.
+        assert!(!approved(&[turn("user", "email Sam"), asked.clone(), turn("user", "no wait, change the time")]));
+        assert!(!approved(&[turn("user", "email Sam"), asked.clone(), turn("user", "yes but make it shorter")]));
+        assert!(!approved(&[turn("user", "email Sam"), turn("assistant", "Done."), turn("user", "yes")]));
+        // The same send twice in a row: only once — unless the first failed.
+        let args = json!({ "to": "sam@x.com", "body": "late" });
+        let k = action_key("GMAIL_SEND_EMAIL", &args, None);
+        assert!(reserve(k));
+        assert!(!reserve(k));
+        release(k);
+        assert!(reserve(k));
+        // Re-spacing the words is the same action; another account or other words is not.
+        assert_eq!(k, action_key("GMAIL_SEND_EMAIL", &json!({ "to": "sam@x.com", "body": "  late " }), None));
+        assert_ne!(k, action_key("GMAIL_SEND_EMAIL", &args, Some("work")));
+        assert_ne!(k, action_key("GMAIL_SEND_EMAIL", &json!({ "to": "sam@x.com", "body": "early" }), None));
+        // A yes approves only the draft that was shown.
+        *PROPOSED.lock() = Some((k, std::time::Instant::now()));
+        assert!(proposed_is(k));
+        assert!(!proposed_is(action_key("GMAIL_SEND_EMAIL", &json!({ "to": "boss@x.com", "body": "late" }), None)));
+        let d = draft_of("GMAIL_SEND_EMAIL", &json!({ "recipient_email": "sam@x.com", "subject": "Running late", "body": "Be there at 3." }));
+        assert!(d.contains("To: sam@x.com") && d.contains("Subject: Running late") && d.contains("Be there at 3.") && d.contains("go ahead"));
+        *PROPOSED.lock() = None;
+        DONE.lock().clear();
         assert_eq!(app_of("GOOGLECALENDAR_EVENTS"), "googlecalendar");
         assert_eq!(app_of("gmail"), "gmail");
     }
