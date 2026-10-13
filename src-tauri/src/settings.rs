@@ -502,6 +502,10 @@ pub struct Settings {
     /// and a look at the screen (remote.rs). Off until switched on.
     #[serde(default)]
     pub phone_remote: bool,
+    /// The paired phone may run PowerShell commands here (rtools.rs) —
+    /// changes only after the phone confirms the exact command. Off until on.
+    #[serde(default)]
+    pub phone_terminal: bool,
     /// The secret part of the call link — without it the page won't open.
     #[serde(default)]
     pub call_token: String,
@@ -1071,6 +1075,7 @@ impl Default for Settings {
             chat_auto_run: false,
             call_enabled: false,
             phone_remote: false,
+            phone_terminal: false,
             call_token: String::new(),
             composio_api_key: String::new(),
             composio_user_id: String::new(),

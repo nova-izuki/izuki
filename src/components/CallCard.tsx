@@ -64,6 +64,14 @@ export function CallCard() {
         </Row>
       )}
       {settings.call_enabled && settings.phone_remote && (
+        <Row
+          label="Let my phone use the terminal"
+          hint="Run PowerShell commands on this PC from the phone's Remote. Commands that only look run at once; anything that could change something is shown on the phone and runs only after you confirm it. Every command is logged."
+        >
+          <Toggle checked={!!settings.phone_terminal} onChange={(v) => patch({ phone_terminal: v })} />
+        </Row>
+      )}
+      {settings.call_enabled && settings.phone_remote && (
         <div className="mb-1 ml-[24px] text-[11.5px] leading-snug text-izk-muted">
           Only phones you allowed here can use it (in the phone app: Remote → Pair this phone — a box with a code pops up here).
           {settings.linked_devices.filter((d) => d.kind === "phone").length > 0 ? (

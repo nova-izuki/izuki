@@ -43,6 +43,7 @@ pub mod air;
 pub mod daw;
 pub mod tweaks;
 pub mod remote;
+pub mod rtools;
 pub mod missions;
 pub mod music_draft;
 pub mod memory;

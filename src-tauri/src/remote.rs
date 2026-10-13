@@ -74,7 +74,7 @@ fn announce() {
 }
 
 /// Written down: who did what, when — never what was typed.
-fn audit(device: &str, op: &str, detail: &str) {
+pub fn audit(device: &str, op: &str, detail: &str) {
     let path = crate::store::data_dir().join("logs").join("remote-audit.log");
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(f, "{} {device}: {op}{}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S"), if detail.is_empty() { String::new() } else { format!(" ({detail})") });

@@ -406,6 +406,77 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
                     cors(&mut r);
                     let _ = req.respond(r);
                 }
+                // Files: only inside your own folders (rtools.rs).
+                (tiny_http::Method::Get, "/remote/files/roots") => json_reply(req, crate::rtools::file_roots()),
+                (tiny_http::Method::Get, "/remote/files/list") | (tiny_http::Method::Get, "/remote/files/get") => {
+                    let path = req.url().split_once('?').and_then(|(_, q)| q.split('&').find_map(|kv| kv.strip_prefix("p="))).map(crate::rtools::unescape).unwrap_or_default();
+                    if crate::uia::screen_locked() {
+                        return json_reply(req, json!({ "ok": false, "error": "locked" }));
+                    }
+                    if p == "/remote/files/list" {
+                        match crate::rtools::file_list(&path) {
+                            Ok(v) => json_reply(req, v),
+                            Err(e) => json_reply(req, json!({ "ok": false, "error": e.to_string() })),
+                        }
+                    } else {
+                        match crate::rtools::file_get(&path) {
+                            Ok((name, file, len)) => {
+                                crate::remote::audit(&device, "download", &name);
+                                let mut r = tiny_http::Response::new(tiny_http::StatusCode(200), Vec::new(), file, Some(len as usize), None);
+                                let disposition = format!("attachment; filename=\"{}\"", name.replace(['"', '\r', '\n'], "_"));
+                                for (k, v) in [("Content-Type", "application/octet-stream".to_string()), ("Content-Disposition", disposition), ("Access-Control-Expose-Headers", "Content-Disposition".to_string())] {
+                                    if let Ok(h) = tiny_http::Header::from_bytes(k, v.as_bytes()) {
+                                        r.add_header(h);
+                                    }
+                                }
+                                cors(&mut r);
+                                let _ = req.respond(r);
+                            }
+                            Err(e) => respond(req, 404, "application/json", json!({ "ok": false, "error": e.to_string() }).to_string().into_bytes()),
+                        }
+                    }
+                }
+                (tiny_http::Method::Post, "/remote/files/put") => {
+                    let q = |name: &str| req.url().split_once('?').and_then(|(_, q)| q.split('&').find_map(|kv| kv.strip_prefix(&format!("{name}=")))).map(crate::rtools::unescape).unwrap_or_default();
+                    let (dir, name) = (q("dir"), q("name"));
+                    let len = req.body_length();
+                    if crate::uia::screen_locked() {
+                        return json_reply(req, json!({ "ok": false, "error": "locked" }));
+                    }
+                    let saved = crate::rtools::file_put(&dir, &name, req.as_reader(), len);
+                    if saved.is_ok() {
+                        crate::remote::audit(&device, "upload", &name);
+                    }
+                    match saved {
+                        Ok(v) => json_reply(req, v),
+                        Err(e) => json_reply(req, json!({ "ok": false, "error": e.to_string() })),
+                    }
+                }
+                (tiny_http::Method::Post, "/remote/files/mkdir") | (tiny_http::Method::Post, "/remote/files/rename") | (tiny_http::Method::Post, "/remote/term") => {
+                    let mut body = String::new();
+                    let _ = req.as_reader().take(16 * 1024).read_to_string(&mut body);
+                    let asked = serde_json::from_str::<Value>(&body).unwrap_or(Value::Null);
+                    let s = |k: &str| asked[k].as_str().unwrap_or("").to_string();
+                    if crate::uia::screen_locked() {
+                        return json_reply(req, json!({ "ok": false, "error": "locked" }));
+                    }
+                    let out = match p {
+                        "/remote/files/mkdir" => crate::rtools::file_mkdir(&s("dir"), &s("name")).inspect(|_| crate::remote::audit(&device, "new folder", &s("name"))),
+                        "/remote/files/rename" => crate::rtools::file_rename(&s("path"), &s("name")).inspect(|_| crate::remote::audit(&device, "rename", &s("name"))),
+                        _ => {
+                            let cmd = s("cmd");
+                            let r = crate::rtools::terminal(&cmd, asked["confirmed"].as_bool().unwrap_or(false));
+                            if r.as_ref().is_ok_and(|v| v["output"].is_string()) {
+                                crate::remote::audit(&device, "terminal", &cmd.chars().take(200).collect::<String>());
+                            }
+                            r
+                        }
+                    };
+                    match out {
+                        Ok(v) => json_reply(req, v),
+                        Err(e) => json_reply(req, json!({ "ok": false, "error": e.to_string() })),
+                    }
+                }
                 _ => respond(req, 404, "text/plain", b"no such remote action".to_vec()),
             }
         }

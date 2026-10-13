@@ -22,6 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "📁", title: "Files, a terminal and several PCs — from your phone", how: "The phone's Remote now has Files (browse your Desktop, Documents, Downloads, Pictures, Music and Videos; download, upload, new folder, rename — nothing outside them, nothing overwritten or deleted) and a Terminal (PowerShell — only when you switch it on; commands that change things ask first). And a PC switcher: add another PC with its link and pair it." },
   { icon: "🖥️", title: "Remote desktop from your phone, live", how: "The phone's Remote now streams your PC's screen live (Data saver, Balanced or Smooth), shows what Izuki is doing with a Stop button, and lets you ask Izuki to do things while you watch. Only phones you allowed on this PC can use it — pair once with a code — and this PC always shows “📱 … is controlling this PC · End” while one is connected. Touching the controls stops Izuki's own work, so you never fight over the mouse." },
   { icon: "🖐️", title: "Air control reaches the taskbar", how: "Reaching down for the taskbar no longer makes the ring disappear: a raised hand is judged by your fingers pointing up, not how low it is, and the bottom of the screen is easier to reach." },
   { icon: "💃", title: "“Nova, dance!”", how: "Ask your character to wave, say hi or bye, cheer, clap, dance, nod, shrug, laugh, facepalm or give you a thumbs up — it does it, with a line to match." },

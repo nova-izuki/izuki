@@ -23,6 +23,10 @@
   try { quality = localStorage.getItem("izuki.remoteQuality") || "balanced"; } catch {}
   if (!QUALITY[quality]) quality = "balanced";
   const auth = () => (pass ? { Authorization: "Bearer " + pass } : {});
+  /** Your PCs: [{ name, link, pass }] — this phone's pass for each. */
+  const pcs = () => { try { return JSON.parse(localStorage.getItem("izuki.remotePcs") || "[]"); } catch { return []; } };
+  const savePcs = (list) => { try { localStorage.setItem("izuki.remotePcs", JSON.stringify(list)); } catch {} };
+  let tab = "screen", filePath = "";
   let pend = { dx: 0, dy: 0 };
   /** A held button (press-and-hold drag): always let go of it, never leave it down on the PC. */
   let dragging = false;
@@ -61,19 +65,42 @@
   .izr .ai button{padding:8px 10px;font-size:12px}
   .izr .ai .stop{background:rgba(255,80,110,.35)}
   .izr .pair{margin:6px 12px 0;padding:10px;border-radius:12px;background:rgba(255,210,122,.1);border:1px solid rgba(255,210,122,.35);font-size:12.5px;display:flex;flex-direction:column;gap:8px}
-  .izr .pair .code{font-size:26px;font-weight:800;letter-spacing:4px;text-align:center}`;
+  .izr .pair .code{font-size:26px;font-weight:800;letter-spacing:4px;text-align:center}
+  .izr .pair[hidden],.izr .ai[hidden]{display:none}
+  .izr .tabs{display:flex;gap:6px;padding:0 12px 6px}
+  .izr .tabs button{flex:1;padding:8px}
+  .izr .tabs button[aria-pressed=true]{background:rgba(94,231,255,.28);border-color:rgba(94,231,255,.6)}
+  .izr .pane{display:flex;flex-direction:column;flex:1;min-height:0}
+  .izr .pane[hidden]{display:none}
+  .izr .files{flex:1;min-height:0;overflow:auto;margin:0 12px;border-radius:12px;border:1px solid rgba(255,255,255,.1)}
+  .izr .files .item{display:flex;align-items:center;gap:8px;padding:10px;border-bottom:1px solid rgba(255,255,255,.06);font-size:13px}
+  .izr .files .item .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .izr .files .item .sz{color:rgba(255,255,255,.45);font-size:11px}
+  .izr .files .item button{padding:4px 8px;font-size:12px}
+  .izr .crumb{margin:0 12px 6px;font-size:11px;color:rgba(255,255,255,.55);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .izr .term{flex:1;min-height:0;overflow:auto;margin:0 12px;padding:10px;border-radius:12px;background:#05070d;border:1px solid rgba(255,255,255,.1);font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;color:#cfe8ff}`;
 
   function open(pcLink, opts = {}) {
     base = pcLink.endsWith("/") ? pcLink : pcLink + "/";
     pass = opts.pass || "";
-    savePass = opts.savePass || (() => {});
+    // The phone's main PC is always in the list; others are added here.
+    const list = pcs();
+    const mine = list.find((p) => p.link === base);
+    if (mine) pass = mine.pass || pass;
+    else savePcs([{ name: "My PC", link: base, pass }, ...list]);
+    const outer = opts.savePass || (() => {});
+    savePass = (p) => {
+      outer(p);
+      savePcs(pcs().map((x) => (x.link === base ? { ...x, pass: p } : x)));
+    };
     if (!root) build();
+    fillPcs();
     root.hidden = false;
     live = true;
     say("");
     if (!pass) return showPair();
     $(".pair").hidden = true;
-    refresh();
+    showTab(tab);
     pollStatus();
   }
 
@@ -263,6 +290,120 @@
     shotTimer = setTimeout(poll, 1500);
   }
 
+  async function post(path, body) {
+    try {
+      const r = await fetch(base + path, { method: "POST", headers: { "Content-Type": "application/json", ...auth() }, body: JSON.stringify(body) });
+      const v = await r.json();
+      if (r.status === 401 || v.error === "pair") explain("pair");
+      return v;
+    } catch {
+      return { ok: false, error: "Can't reach your PC." };
+    }
+  }
+
+  function fillPcs() {
+    const sel = $("[data-pc]");
+    if (!sel) return;
+    const list = pcs();
+    sel.innerHTML = list.map((p) => `<option value="${p.link.replace(/"/g, "&quot;")}">${p.name.replace(/</g, "&lt;")}</option>`).join("") + `<option value="+">➕ Add a PC…</option>`;
+    sel.value = base;
+  }
+
+  function switchTo(link) {
+    const p = pcs().find((x) => x.link === link);
+    if (!p) return fillPcs();
+    stopStream();
+    base = p.link;
+    pass = p.pass || "";
+    fillPcs();
+    say("");
+    filePath = "";
+    if (!pass) return showPair("This PC hasn't allowed this phone yet.");
+    $(".pair").hidden = true;
+    showTab(tab);
+    pollStatus();
+  }
+
+  function showTab(name) {
+    tab = name;
+    root.querySelectorAll("[data-tab]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tab === name)));
+    root.querySelectorAll("[data-pane]").forEach((p) => (p.hidden = p.dataset.pane !== name));
+    // The live picture only while you look at it (saves data on Files / Terminal).
+    if (name === "screen") refresh();
+    else stopStream();
+    if (name === "files") listFiles(filePath);
+  }
+
+  const size = (n) => (n > 1e9 ? (n / 1e9).toFixed(1) + " GB" : n > 1e6 ? (n / 1e6).toFixed(1) + " MB" : n > 1e3 ? Math.round(n / 1e3) + " KB" : n + " B");
+
+  // Files: your folders on the PC (only those). Tap a folder to open it, a
+  // file to download it; ✏️ renames.
+  async function listFiles(path) {
+    const box = $(".files");
+    if (!path) {
+      try {
+        const r = await fetch(base + "remote/files/roots", { headers: auth() });
+        const v = await r.json();
+        if (r.status === 401) return explain("pair");
+        filePath = "";
+        root.dataset.up = "";
+        $(".crumb").textContent = "Your folders";
+        const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+        box.innerHTML = (v.roots || []).map((x) => `<div class="item" data-open="${encodeURIComponent(x.path)}">📁 <span class="nm">${esc(x.name)}</span></div>`).join("");
+      } catch {
+        box.textContent = "Can't reach your PC.";
+      }
+    } else {
+      try {
+        const r = await fetch(base + "remote/files/list?p=" + encodeURIComponent(path), { headers: auth() });
+        const v = await r.json();
+        if (r.status === 401) return explain("pair");
+        if (v.ok === false) return say(v.error === "locked" ? "Your PC is locked." : v.error);
+        filePath = v.path;
+        root.dataset.up = v.up || "";
+        $(".crumb").textContent = v.path;
+        const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+        box.innerHTML = v.items.length
+          ? v.items.map((it) => {
+              const full = encodeURIComponent(v.path.replace(/[\\/]+$/, "") + "\\" + it.name);
+              return `<div class="item" ${it.dir ? `data-open="${full}"` : `data-get="${full}" data-name="${encodeURIComponent(it.name)}"`}>${it.dir ? "📁" : "📄"} <span class="nm">${esc(it.name)}</span>${it.dir ? "" : `<span class="sz">${size(it.size)}</span>`}<button data-ren="${full}" data-name="${encodeURIComponent(it.name)}">✏️</button></div>`;
+            }).join("")
+          : `<div class="item"><span class="nm">Empty folder</span></div>`;
+      } catch {
+        box.textContent = "Can't reach your PC.";
+      }
+    }
+    box.querySelectorAll("[data-open]").forEach((el) => (el.onclick = (e) => { if (!e.target.closest("[data-ren]")) listFiles(decodeURIComponent(el.dataset.open)); }));
+    box.querySelectorAll("[data-get]").forEach((el) => (el.onclick = (e) => { if (!e.target.closest("[data-ren]")) download(decodeURIComponent(el.dataset.get), decodeURIComponent(el.dataset.name)); }));
+    box.querySelectorAll("[data-ren]").forEach((b) => (b.onclick = async () => {
+      const now = decodeURIComponent(b.dataset.name);
+      const name = prompt("New name:", now);
+      if (!name || name === now) return;
+      const v = await post("remote/files/rename", { path: decodeURIComponent(b.dataset.ren), name });
+      if (v.ok === false) return say(v.error);
+      listFiles(filePath);
+    }));
+  }
+
+  async function download(path, name) {
+    say(`Downloading ${name}…`);
+    try {
+      const r = await fetch(base + "remote/files/get?p=" + encodeURIComponent(path), { headers: auth() });
+      if (!r.ok) return say((await r.json().catch(() => ({}))).error || "Couldn't download that.");
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
+      say(`Downloaded ${name} ✓`);
+    } catch {
+      say("The download stopped — check the connection.");
+    }
+  }
+
   // What Izuki is doing on the PC (and how the stream is going), every 3 s.
   async function pollStatus() {
     clearTimeout(statusTimer);
@@ -296,8 +437,20 @@
     root.setAttribute("role", "dialog");
     root.setAttribute("aria-label", "Remote for your PC");
     root.innerHTML = `
-      <header><b>🖱️ Remote</b><select data-quality aria-label="Picture quality">${Object.entries(QUALITY).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join("")}</select><button data-live aria-pressed="true">Live</button><button data-close aria-label="Close">✕</button></header>
+      <header><b>🖱️</b><select data-pc aria-label="Which PC"></select><select data-quality aria-label="Picture quality">${Object.entries(QUALITY).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join("")}</select><button data-live aria-pressed="true">Live</button><button data-close aria-label="Close">✕</button></header>
       <div class="pair" hidden></div>
+      <div class="tabs"><button data-tab="screen" aria-pressed="true">🖥️ Screen</button><button data-tab="files" aria-pressed="false">📁 Files</button><button data-tab="term" aria-pressed="false">⌨️ Terminal</button></div>
+      <div class="pane" data-pane="files" hidden>
+        <div class="crumb"></div>
+        <div class="row"><button data-up>⬆ Up</button><button data-upload>⤒ Upload</button><button data-mkdir>📁 New folder</button></div>
+        <input type="file" data-file multiple hidden>
+        <div class="files"></div>
+      </div>
+      <div class="pane" data-pane="term" hidden>
+        <div class="term">PowerShell on your PC. Commands that only look run at once; anything that could change something asks you first.\n</div>
+        <div class="type"><input type="text" data-cmd placeholder="e.g. Get-ChildItem Downloads" enterkeyhint="send" autocomplete="off" autocapitalize="off" spellcheck="false"><button data-run>Run</button></div>
+      </div>
+      <div class="pane" data-pane="screen">
       <div class="shot"><span class="wait">Your PC's screen shows here</span><img alt="Your PC's screen — tap to click there"></div>
       <div class="note" aria-live="polite"></div>
       <div class="ai">
@@ -311,10 +464,67 @@
       <div class="row"><button data-key="enter">Enter</button><button data-key="backspace">⌫</button><button data-key="tab">Tab</button><button data-key="escape">Esc</button><button data-key="left">←</button><button data-key="up">↑</button><button data-key="down">↓</button><button data-key="right">→</button></div>
       <div class="row"><button data-key="ctrl+c">Copy</button><button data-key="ctrl+v">Paste</button><button data-key="ctrl+z">Undo</button><button data-key="alt+tab">Switch</button><button data-key="win">Start</button></div>
       <div class="row"><button data-key="prevtrack">⏮</button><button data-key="playpause">⏯</button><button data-key="nexttrack">⏭</button><button data-key="volumedown">🔉</button><button data-key="volumeup">🔊</button><button data-key="volumemute">🔇</button></div>
+      </div>
       <div class="safe"></div>`;
     document.body.append(root);
 
     $("[data-close]").onclick = close;
+    // Several PCs: switch, or add one with its private link (then pair it).
+    $("[data-pc]").onchange = async (e) => {
+      const v = e.target.value;
+      if (v === "+") {
+        const link = prompt("Paste the other PC's Izuki link (Settings → Phone → Call Izuki from your phone):");
+        fillPcs();
+        if (!link) return;
+        const ok = window.IzukiPairing ? await window.IzukiPairing.check(link).then((r) => r.link).catch((err) => (alert(String(err.message || err)), null)) : link;
+        if (!ok) return;
+        const name = prompt("A name for it (e.g. Home desktop):", "PC " + (pcs().length + 1)) || "PC";
+        savePcs([...pcs().filter((p) => p.link !== ok), { name, link: ok, pass: "" }]);
+        switchTo(ok);
+        return;
+      }
+      switchTo(v);
+    };
+    root.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
+    $("[data-up]").onclick = () => listFiles(root.dataset.up || "");
+    $("[data-mkdir]").onclick = async () => {
+      const name = prompt("New folder name:");
+      if (!name || !filePath) return;
+      const v = await post("remote/files/mkdir", { dir: filePath, name });
+      if (v.ok === false) return say(v.error);
+      listFiles(filePath);
+    };
+    $("[data-upload]").onclick = () => $("[data-file]").click();
+    $("[data-file]").onchange = async (e) => {
+      for (const f of [...e.target.files]) {
+        say(`Uploading ${f.name}…`);
+        try {
+          const r = await fetch(`${base}remote/files/put?dir=${encodeURIComponent(filePath)}&name=${encodeURIComponent(f.name)}`, { method: "POST", headers: auth(), body: f });
+          const v = await r.json();
+          say(v.ok === false ? `${f.name}: ${v.error}` : `Uploaded ${f.name} ✓`);
+        } catch {
+          say(`${f.name}: the upload stopped — check the connection.`);
+        }
+      }
+      e.target.value = "";
+      listFiles(filePath);
+    };
+    const cmdBox = $("[data-cmd]");
+    const runCmd = async (confirmed = false, cmd = cmdBox.value.trim()) => {
+      if (!cmd) return;
+      cmdBox.value = "";
+      const out = $(".term");
+      if (!confirmed) out.textContent += `\n> ${cmd}\n`;
+      const v = await post("remote/term", { cmd, confirmed });
+      if (v.ok === false) out.textContent += (v.error === "terminal_off" ? "The terminal is off. Turn on “Let my phone use the terminal” on your PC (Settings → Phone)." : "Error: " + v.error) + "\n";
+      else if (v.needs_ok) {
+        if (confirm(`This could change things on your PC:\n\n${cmd}\n\nRun it?`)) return runCmd(true, cmd);
+        out.textContent += "(not run)\n";
+      } else out.textContent += (v.output || "") + "\n";
+      out.scrollTop = out.scrollHeight;
+    };
+    $("[data-run]").onclick = () => runCmd();
+    cmdBox.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runCmd(); } });
     const qSel = $("[data-quality]");
     qSel.value = quality;
     qSel.onchange = () => {

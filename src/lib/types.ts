@@ -365,6 +365,8 @@ export interface Settings {
   air_mode: "fast" | "balanced" | "precision";
   /** The linked phone may work this PC (trackpad, typing, keys, a look at the screen). */
   phone_remote: boolean;
+  /** The paired phone may run PowerShell here (changes only after it confirms the exact command). */
+  phone_terminal: boolean;
   /** What the quick gestures do (src/lib/airActions.ts); missing = the default. */
   air_bindings: Record<string, string>;
   /** Air control as a game controller (lean = arrow keys, pinch = Space). */

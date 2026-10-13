@@ -243,6 +243,7 @@ export const MOCK_SETTINGS: Settings = {
   air_gestures: [],
   air_mode: "balanced",
   phone_remote: false,
+  phone_terminal: false,
   air_bindings: {},
   air_game: false,
   air_game_keys: "arrows",
