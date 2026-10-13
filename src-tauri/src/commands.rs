@@ -1159,6 +1159,34 @@ pub async fn polish_text(text: String) -> R<String> {
     .await
 }
 
+/// The inbox gone through: what matters, urgent first (Gmail via the apps
+/// key). `fresh` skips the ten-minute cache.
+#[tauri::command]
+pub async fn inbox_digest(fresh: bool) -> R<crate::headsup::InboxDigest> {
+    blocking(move || crate::headsup::inbox_digest(fresh).map_err(|e| e.to_string())).await?
+}
+
+/// What Izuki really sent or changed in your apps (this session).
+#[tauri::command]
+pub fn sent_history() -> Vec<crate::composio::Sent> {
+    crate::composio::sent_history()
+}
+
+/// "Remind me to follow up" — a reminder `days` from now.
+#[tauri::command]
+pub fn follow_up(app: AppHandle, text: String, days: i64) -> crate::reminders::Reminder {
+    let at = chrono::Utc::now().timestamp_millis() + days.clamp(1, 30) * 24 * 3600 * 1000;
+    let r = crate::reminders::add(at, &text);
+    let _ = app.emit(crate::reminders::CHANGED, ());
+    r
+}
+
+/// What Izuki is really doing right now (the honest answer to "what are you doing?").
+#[tauri::command]
+pub fn doing_now() -> String {
+    crate::state::doing_now()
+}
+
 /// Windows tweaks (Windhawk-style), each with whether it's on now.
 #[tauri::command]
 pub async fn tweaks_list() -> R<Vec<crate::tweaks::Tweak>> {

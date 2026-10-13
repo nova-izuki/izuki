@@ -1,3 +1,4 @@
+import { InboxCard } from "../InboxCard";
 import { JumpBar } from "../JumpBar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bell, CheckCircle2, Copy, Download, ExternalLink, Loader2, Plus, RefreshCw, Search, Sparkles, Trash2, Workflow, X } from "lucide-react";
@@ -271,6 +272,7 @@ export function AppsTab() {
       <JumpBar topId="apps-top" jumps={[
         { label: "🔌 Connect", id: "apps-connect" },
         { label: "🌐 Websites", id: "apps-browser" },
+        { label: "📥 Inbox", id: "apps-inbox" },
         { label: "🔔 Heads-ups", id: "apps-headsups" },
         { label: "⚡ Automations", id: "apps-n8n" },
       ]} />
@@ -483,6 +485,9 @@ export function AppsTab() {
           It's a private link to your own deadlines — keep it to yourself.
         </details>
       </Section>
+
+      {/* ------------------------------------------------ inbox */}
+      <InboxCard />
 
       {/* ------------------------------------------------ heads-ups */}
       <Section

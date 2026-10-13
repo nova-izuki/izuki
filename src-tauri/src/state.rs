@@ -26,6 +26,57 @@ pub fn set_app(app: &tauri::AppHandle) {
 /// A live line for the Island while Izuki works — "Asking Gemini…",
 /// "Clicking “Next”…" — so it's never just a blind "Thinking…". Shown,
 /// never spoken; the newest wins.
+/// What Izuki is really doing right now — the task it's on, its latest
+/// step, and since when — so "what are you doing?" is answered from fact,
+/// never made up.
+static DOING: parking_lot::Mutex<Option<(u64, String, String, std::time::Instant)>> = parking_lot::Mutex::new(None);
+static DOING_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// A task running for as long as this lives (the agent loop, an apps
+/// request). Each has its own number: an older one finishing never clears
+/// (or rewrites) a newer one.
+pub struct Doing(u64);
+
+impl Doing {
+    pub fn start(goal: &str) -> Doing {
+        let id = DOING_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        *DOING.lock() = Some((id, goal.trim().chars().take(140).collect(), String::new(), std::time::Instant::now()));
+        Doing(id)
+    }
+}
+
+impl Drop for Doing {
+    fn drop(&mut self) {
+        let mut d = DOING.lock();
+        if d.as_ref().is_some_and(|t| t.0 == self.0) {
+            d.take();
+        }
+    }
+}
+
+/// The current task's latest step ("Opening Blackboard…").
+pub fn task_step(step: &str) {
+    if let Some(d) = DOING.lock().as_mut() {
+        d.2 = step.trim().chars().take(140).collect();
+    }
+}
+
+/// The honest answer to "what are you doing?".
+pub fn doing_now() -> String {
+    match DOING.lock().as_ref() {
+        Some((_, goal, step, since)) => {
+            let secs = since.elapsed().as_secs();
+            let how_long = if secs < 60 { format!("{secs} seconds") } else { format!("{} minutes", secs / 60) };
+            if step.is_empty() {
+                format!("I'm working on “{goal}” — just started ({how_long} in).")
+            } else {
+                format!("I'm working on “{goal}”. Right now: {step} ({how_long} in.)")
+            }
+        }
+        None => "Nothing right now — no task running. I'm here whenever you need me.".into(),
+    }
+}
+
 pub fn trace(line: impl Into<String>) {
     use tauri::Emitter;
     if let Some(app) = APP.get() {
@@ -56,4 +107,22 @@ pub fn store() -> Arc<Store> {
         .get()
         .cloned()
         .expect("the Izuki store is read before it is initialised")
+}
+
+#[cfg(test)]
+mod doing_tests {
+    use super::*;
+
+    #[test]
+    fn says_what_is_really_running() {
+        let first = Doing::start("open Blackboard");
+        task_step("Opening Blackboard…");
+        assert!(doing_now().contains("open Blackboard") && doing_now().contains("Opening Blackboard"));
+        // A newer task takes over; the older one finishing doesn't erase it.
+        let second = Doing::start("check my email");
+        drop(first);
+        assert!(doing_now().contains("check my email"));
+        drop(second);
+        assert!(doing_now().starts_with("Nothing right now"));
+    }
 }

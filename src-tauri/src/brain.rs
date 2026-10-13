@@ -2064,6 +2064,8 @@ fn submit_task(
         )
     });
 
+    // "What are you doing?" is answered from this, while the task runs.
+    let _doing = crate::state::Doing::start(&prompt);
     for round in 0..MAX_ROUNDS {
         if !alive() {
             eprintln!("[agent] stopped (replaced or cancelled)");
@@ -2328,6 +2330,7 @@ fn submit_task(
             if wait > 0 { format!(", wait {wait}s") } else { String::new() },
             plan.summary.chars().take(80).collect::<String>()
         );
+        crate::state::task_step(&plan.summary);
         let this_round: Vec<(Intent, i32, i32)> = steps.iter().map(|s| (s.action, s.x / 12, s.y / 12)).collect();
         let look = frame.downscaled(160);
         let screen_changed = last_look

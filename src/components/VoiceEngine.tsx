@@ -750,6 +750,21 @@ export function VoiceEngine() {
     // not "answer what?".
     const t = answerOnScreen(expandShortWords(text.trim()));
     if (!t) return;
+    // "What are you doing?" — the real answer, from the task actually
+    // running (never made up). Asked mid-task, it doesn't stop the task.
+    if (/^(?:hey\s+(?:nova|izuki)[,\s]*)?(?:what\s+are\s+you\s+(?:doing|up\s+to|working\s+on)|what(?:'s|\s+is)\s+going\s+on|what\s+you\s+doing|status\s+update)[?.!]*$/i.test(t)) {
+      // (No new request number: a task already running keeps going.)
+      const at = requestSeq;
+      const now = await api.doingNow().catch(() => "I'm not sure right now.");
+      if (requestSeq !== at) return;
+      const idle = now.startsWith("Nothing right now");
+      if (!session.current.on) startSession(from === "voice", "speaking");
+      await respond(now, "calm", true, true);
+      // Nothing running: the usual end of a reply. A running task still owns
+      // the conversation and finishes it itself.
+      if (idle) void afterReply(at, false);
+      return;
+    }
     // Classroom requests deliberately keep the pen overlay open until the
     // spoken explanation has finished. That also makes the caller wait, so
     // TeachingCard cannot resume a paused video halfway through a lesson.

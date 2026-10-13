@@ -242,6 +242,8 @@ fn stopped(since: u64) -> bool {
 
 /// Handle a request that needs the user's apps. `history` ends with it.
 pub fn ask(history: &[Turn]) -> Result<Answer> {
+    let asked = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.clone()).unwrap_or_default();
+    let _doing = crate::state::Doing::start(&format!("in your apps: {asked}"));
     let key = crate::state::store().settings().composio_api_key.trim().to_string();
     if key.is_empty() {
         // No apps linked: still help ("plan my week" deserves a plan, not
@@ -452,6 +454,9 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
                         Some(e) => format!("{tool} failed: {e}"),
                         None => {
                             executed = true;
+                            if change_key.is_some() {
+                                record_sent(tool, &args);
+                            }
                             // Note which app was really read, so the finished
                             // answer can be kept for next time (see below).
                             read_app = Some(app_of(tool));
@@ -638,6 +643,39 @@ fn reserve(key: u64) -> bool {
     }
     done.push((key, std::time::Instant::now()));
     true
+}
+
+/// What Izuki really sent, posted or changed for you (this session, newest
+/// first) — shown in the Inbox card, so the history is never a guess.
+#[derive(Debug, Clone, Serialize)]
+pub struct Sent {
+    pub app: String,
+    pub what: String,
+    pub to: String,
+    pub subject: String,
+    /// Unix time, ms.
+    pub at: i64,
+}
+
+static SENT: Mutex<Vec<Sent>> = Mutex::new(Vec::new());
+
+fn record_sent(tool: &str, args: &Value) {
+    let field = |keys: &[&str]| keys.iter().find_map(|k| args.get(*k).and_then(Value::as_str)).map(|s| s.trim().chars().take(120).collect::<String>()).unwrap_or_default();
+    let item = Sent {
+        app: pretty(&app_of(tool)),
+        what: tool.to_ascii_lowercase().replace('_', " "),
+        to: field(&["recipient_email", "to", "recipient", "channel", "chat_id", "email"]),
+        subject: field(&["subject", "title", "summary", "name"]),
+        at: chrono::Utc::now().timestamp_millis(),
+    };
+    eprintln!("[apps] done: {} {}", item.app, item.what);
+    let mut s = SENT.lock();
+    s.insert(0, item);
+    s.truncate(30);
+}
+
+pub fn sent_history() -> Vec<Sent> {
+    SENT.lock().clone()
 }
 
 /// It definitely didn't happen: it may be tried again.

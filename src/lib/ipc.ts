@@ -384,6 +384,30 @@ export const ISLAND_DEEP_KEY = "izuki.island-deep";
 /** An Island conversation waiting for Chat to carry on ("Continue in Chat"). */
 export const ISLAND_TO_CHAT_KEY = "izuki.island-to-chat";
 
+/** One email that matters (headsup.rs InboxItem). */
+export interface InboxItem {
+  from: string;
+  subject: string;
+  /** "reply", "money", "delivery", "school", "work", "meeting", "security", "personal". */
+  kind: string;
+  action: string;
+  urgent: boolean;
+}
+export interface InboxDigest {
+  summary: string;
+  items: InboxItem[];
+  looked_at: number;
+  skipped: number;
+}
+/** Something Izuki really sent for you (composio.rs Sent). */
+export interface SentItem {
+  app: string;
+  what: string;
+  to: string;
+  subject: string;
+  at: number;
+}
+
 /** A Windows tweak (tweaks.rs): a switch, read live from Windows. */
 export interface WindowsTweak {
   id: string;
@@ -581,6 +605,11 @@ export const api = {
   /** Dictated text with its grammar and punctuation fixed (unchanged if no brain answers). */
   /** Hold a key down / let it go (Air control's game controls). */
   airHold: (key: string, down: boolean) => call<void>("air_hold", { key, down }, () => undefined),
+  /** What Izuki is really doing right now, in words. */
+  inboxDigest: (fresh: boolean) => call<InboxDigest>("inbox_digest", { fresh }, () => ({ summary: "", items: [], looked_at: 0, skipped: 0 })),
+  sentHistory: () => call<SentItem[]>("sent_history", undefined, () => []),
+  followUp: (text: string, days: number) => call<Reminder>("follow_up", { text, days }, () => ({ id: "", at: 0, text, alarm: false, repeat: "" }) as unknown as Reminder),
+  doingNow: () => call<string>("doing_now", undefined, () => "Nothing right now."),
   polishText: (text: string) => call<string>("polish_text", { text }, () => text),
   tweaksList: () => call<WindowsTweak[]>("tweaks_list", undefined, () => []),
   tweakSet: (id: string, on: boolean) => call<WindowsTweak[]>("tweak_set", { id, on }, () => []),
