@@ -81,6 +81,10 @@ export const MOVES_ART = {
     json: new URL("./painted/leo-moves/moves.json", import.meta.url).href,
     atlas: new URL("./painted/leo-moves/moves.webp", import.meta.url).href,
   },
+  lucia: {
+    json: new URL("./painted/lucia-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/lucia-moves/moves.webp", import.meta.url).href,
+  },
   mateo: {
     json: new URL("./painted/mateo-moves/moves.json", import.meta.url).href,
     atlas: new URL("./painted/mateo-moves/moves.webp", import.meta.url).href,
@@ -124,6 +128,10 @@ export const MOVES_ART = {
   sage: {
     json: new URL("./painted/sage-moves/moves.json", import.meta.url).href,
     atlas: new URL("./painted/sage-moves/moves.webp", import.meta.url).href,
+  },
+  salty: {
+    json: new URL("./painted/salty-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/salty-moves/moves.webp", import.meta.url).href,
   },
   sophie: {
     json: new URL("./painted/sophie-moves/moves.json", import.meta.url).href,

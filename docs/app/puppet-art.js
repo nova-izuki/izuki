@@ -161,6 +161,14 @@ export const PUPPET_ART = {
     mouth: new URL("./painted/leo-concept/mouth.webp", import.meta.url).href,
     eyes: new URL("./painted/leo-concept/eyes.webp", import.meta.url).href,
   },
+  lucia: {
+    skin: new URL("./painted/lucia-concept/skin.json", import.meta.url).href,
+    rig: new URL("./painted/lucia-concept/rig.json", import.meta.url).href,
+    base: new URL("./painted/lucia-concept/base.webp", import.meta.url).href,
+    body: new URL("./painted/lucia-concept/body.webp", import.meta.url).href,
+    mouth: new URL("./painted/lucia-concept/mouth.webp", import.meta.url).href,
+    eyes: new URL("./painted/lucia-concept/eyes.webp", import.meta.url).href,
+  },
   mateo: {
     skin: new URL("./painted/mateo-concept/skin.json", import.meta.url).href,
     rig: new URL("./painted/mateo-concept/rig.json", import.meta.url).href,
@@ -248,6 +256,14 @@ export const PUPPET_ART = {
     body: new URL("./painted/sage-concept/body.webp", import.meta.url).href,
     mouth: new URL("./painted/sage-concept/mouth.webp", import.meta.url).href,
     eyes: new URL("./painted/sage-concept/eyes.webp", import.meta.url).href,
+  },
+  salty: {
+    skin: new URL("./painted/salty-concept/skin.json", import.meta.url).href,
+    rig: new URL("./painted/salty-concept/rig.json", import.meta.url).href,
+    base: new URL("./painted/salty-concept/base.webp", import.meta.url).href,
+    body: new URL("./painted/salty-concept/body.webp", import.meta.url).href,
+    mouth: new URL("./painted/salty-concept/mouth.webp", import.meta.url).href,
+    eyes: new URL("./painted/salty-concept/eyes.webp", import.meta.url).href,
   },
   sophie: {
     skin: new URL("./painted/sophie-concept/skin.json", import.meta.url).href,
