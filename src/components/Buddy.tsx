@@ -236,6 +236,9 @@ function Stage({
   const moves = useRef<MovesPack | null>(null);
   const mover = useRef(createMover());
   const actor = useRef<Actor>(createActor());
+  /** A dance still going (its next moves), cancelled by a new move or when this closes. */
+  const danceTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => danceTimers.current.forEach(clearTimeout), []);
   const level = useRef(0);
   const look = useRef<number | null>(null);
   const live = useRef({ state, doing, music, pet, retro, box });
@@ -278,6 +281,17 @@ function Stage({
           react(actor.current, pick[Math.floor(Math.random() * pick.length)]);
         }
         else if (s?.kind === "error") react(actor.current, "shrug");
+      }),
+      // "Nova, wave" / "cheer" / "dance": asked for by name. A dance is a
+      // little routine of moves.
+      on<string>(EV.buddyReact, (name) => {
+        // A new move cancels the rest of a dance still going.
+        danceTimers.current.forEach(clearTimeout);
+        danceTimers.current = [];
+        if (name === "dance") {
+          const moves = ["cheer", "clap", "tada", "cheer", "clap"] as const;
+          danceTimers.current = moves.map((m, i) => setTimeout(() => react(actor.current, m), i * 1300));
+        } else if (name) react(actor.current, name as Parameters<typeof react>[1]);
       }),
       // "Walk to my Chrome": there, and point at it.
       on<{ nx: number; ny: number }>(EV.buddyGoto, (g) => {

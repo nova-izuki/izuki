@@ -837,6 +837,20 @@ export function VoiceEngine() {
       return;
     }
 
+    // "Nova, wave" / "dance" / "cheer" / "give me a thumbs up": the character
+    // does it (a short spoken line too, so it shows up to do it).
+    const move = t.match(/^(?:hey\s+(?:nova|izuki)[,\s]*)?(?:can\s+you\s+|please\s+)?(wave|say\s+hi|say\s+bye|cheer|celebrate|clap|dance|nod|shrug|laugh|facepalm|(?:give\s+me\s+a\s+)?thumbs?\s+up)(?:\s+(?:for\s+me|at\s+me|please))?[.!?]*$/i);
+    if (move) {
+      const w = move[1].toLowerCase();
+      const name = /thumb/.test(w) ? "thumbs" : w === "say hi" ? "wave" : w === "say bye" ? "bye" : w === "celebrate" ? "tada" : w;
+      const LINES: Record<string, string> = { wave: "Hey! 👋", bye: "Bye for now! 👋", cheer: "Woo! 🎉", tada: "Ta-da! 🎉", clap: "Yay, well done! 👏", dance: "Let's go! 💃", nod: "Mm-hm.", shrug: "Who knows!", laugh: "Ha! 😄", facepalm: "Oh no… 🤦", thumbs: "👍 You got it!" };
+      startSession(from === "voice", "speaking");
+      void emit(EV.buddyReact, name);
+      await respond(LINES[name] ?? "👍", "cheerful");
+      void afterReply(at, false);
+      return;
+    }
+
     // Missions (Rest mode): "add to my missions: check my assignments",
     // "start my missions" / "rest mode", "what's on my missions".
     const missionAdd = t.match(/^(?:please\s+)?(?:add|put)\s+(?:this\s+)?(?:to|on)\s+(?:my\s+)?(?:missions?|mission list|rest mode)[:,\s-]+(.{3,})$/i);

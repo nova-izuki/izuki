@@ -855,6 +855,8 @@ export const EV = {
   islandMail: "izuki://island-mail",
   /** The missions list changed (missions.rs). */
   missionsChanged: "izuki://missions-changed",
+  /** "Nova, wave" / "dance" / "cheer": the character does it (Buddy.tsx). */
+  buddyReact: "izuki://buddy-react",
   /** Frontend-only, config panel → overlay: learn an Air gesture now ({name, action}). */
   airRecord: "izuki://air-record",
   /** Frontend-only, config panel → overlay: open Air control's guided test. */
