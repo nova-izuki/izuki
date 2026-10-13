@@ -34,12 +34,25 @@ type Custom = Settings["air_gestures"][number];
 const IDLE_OFF_MS = 10 * 60_000;
 
 /** One-euro filter: steady when still, quick when moving. */
+/**
+ * How the pointer follows your hand. Measured on the old setting (beta 0.03)
+ * a quick move was smoothed as hard as a still hand, so the ring trailed
+ * behind and only caught up when you stopped. A one-euro filter should smooth
+ * a still hand (jitter) and let a moving one through — beta is how much speed
+ * opens it up. region: how much of the camera's view spans the whole screen.
+ */
+export const AIR_MODES = {
+  fast: { minCut: 2.2, beta: 9, region: 0.5 },
+  balanced: { minCut: 1.2, beta: 4, region: 0.6 },
+  precision: { minCut: 0.6, beta: 1.2, region: 0.8 },
+} as const;
+export type AirMode = keyof typeof AIR_MODES;
+
 class Smooth {
   private x: number | null = null;
   private dx = 0;
   private t = 0;
-  constructor(private minCut = 1.4, private beta = 0.03) {}
-  next(v: number, now: number) {
+  next(v: number, now: number, minCut: number, beta: number) {
     if (this.x === null) {
       this.x = v;
       this.t = now;
@@ -50,7 +63,7 @@ class Smooth {
     const a = (cut: number) => 1 / (1 + 1 / (2 * Math.PI * cut * dt));
     const d = (v - this.x) / dt;
     this.dx += a(1) * (d - this.dx);
-    const cut = this.minCut + this.beta * Math.abs(this.dx);
+    const cut = minCut + beta * Math.abs(this.dx);
     this.x += a(cut) * (v - this.x);
     return this.x;
   }
@@ -88,6 +101,7 @@ function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
  */
 export function AirHost() {
   const [gestures, setGestures] = useState<Custom[] | null>(null);
+  const [mode, setMode] = useState<AirMode>("balanced");
   const last = useRef("");
   useEffect(() => {
     let alive = true;
@@ -96,6 +110,7 @@ export function AirHost() {
         .getSettings()
         .then((s) => {
           if (!alive) return;
+          setMode(s.air_mode in AIR_MODES ? s.air_mode : "balanced");
           const next = s.air_enabled ? s.air_gestures ?? [] : null;
           const key = JSON.stringify(next);
           if (key === last.current) return; // same as before: don't restart the camera
@@ -112,10 +127,12 @@ export function AirHost() {
       offs.forEach((off) => void off.then((f) => f()).catch(() => undefined));
     };
   }, []);
-  return gestures ? <AirControl gestures={gestures} /> : null;
+  return gestures ? <AirControl gestures={gestures} mode={mode} /> : null;
 }
 
-export function AirControl({ gestures }: { gestures: Custom[] }) {
+export function AirControl({ gestures, mode: airMode = "balanced" }: { gestures: Custom[]; mode?: AirMode }) {
+  const tuning = useRef(AIR_MODES[airMode]);
+  tuning.current = AIR_MODES[airMode] ?? AIR_MODES.balanced;
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState("Starting the camera…");
@@ -123,7 +140,7 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
   customs.current = gestures;
   const recording = useRef<{ name: string; action: string; frames: number[][]; until: number } | null>(null);
   /** What the guided test watches: the last hand, and what's been done. */
-  const live = useRef({ lm: null as Pt[] | null, hand: false, moved: 0, scrolls: 0, pauses: 0, clicked: false, engine: "", camera: "", looks: 0, looksAt: 0, rate: 0 });
+  const live = useRef<AirLive>({ lm: null, hand: false, moved: 0, scrolls: 0, pauses: 0, clicked: false, dragged: false, engine: "", camera: "", looks: 0, looksAt: 0, rate: 0, ms: 0, fps: 0, gesture: "", pinch: 1, tour: false, snap: null });
   const [tour, setTour] = useState(false);
   /** Bumped to reopen the camera: another one picked, or one plugged in / out. */
   const [camKey, setCamKey] = useState(0);
@@ -190,12 +207,25 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
     let alive = true;
     let stream: MediaStream | null = null;
     let landmarker: HandLandmarker | null = null;
+    /** The hand tracker on its own thread (airWorker.ts) — the overlay never waits on it. */
+    let tracker: Worker | null = null;
+    /** The tracker thread while it's still getting ready (closed if Air is turned off meanwhile). */
+    let starting: Worker | null = null;
+    /** A picture is with the tracker: newer ones wait (the latest one goes next). */
+    let trackerBusy = false;
+    /** The picture now being looked at, shown in the guide once its hand comes back. */
+    let snapNext: HTMLCanvasElement | null = null;
     let readyAt = 0;
     let lastVideoTime = -1;
     let frames = 0;
     let lastReport = 0;
     let raf = 0;
     let lastRaf = 0;
+    /** Reading the camera directly: every new picture as it arrives. */
+    let streaming = false;
+    let reader: ReadableStreamDefaultReader<VideoFrame> | null = null;
+    let camFrames = 0;
+    let camAt = performance.now();
     let timer: ReturnType<typeof setInterval> | undefined;
     let timerSaid = false;
     let detectSaid = false;
@@ -208,6 +238,8 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
     let pinchDown = false;
     let pinchAt = 0;
     let dragging = false;
+    /** How far the hand had moved when a drag began (the guide's drag step). */
+    let dragFrom = 0;
     let other: "middle" | "ring" | "pinky" | null = null;
     let otherAt = 0;
     let scrollY: number | null = null;
@@ -290,12 +322,12 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
     const frame = () => {
       raf = requestAnimationFrame(frame);
       lastRaf = performance.now();
-      look();
+      if (!streaming) look();
     };
     // Screen refreshes stop when Windows thinks the overlay isn't showing —
     // then a plain timer keeps the hand tracked (the loop never just stops).
     const backup = () => {
-      if (performance.now() - lastRaf < 400) return;
+      if (streaming || performance.now() - lastRaf < 400) return;
       if (!timerSaid) {
         timerSaid = true;
         void api.log("[air] screen refresh paused — looking on a timer instead").catch(() => undefined);
@@ -303,12 +335,20 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
       look();
     };
 
-    const look = () => {
+    const look = (pic?: VideoFrame) => {
       const v = video.current;
       const now = performance.now();
       const handRecently = now - lastHand < 2000;
-      if (!landmarker || !v) return;
-      if (v.readyState < 2) {
+      if ((!landmarker && !tracker) || !v) return;
+      if (pic) {
+        camFrames++;
+        if (now - camAt > 1000) {
+          live.current.fps = Math.round((camFrames * 1000) / (now - camAt));
+          camFrames = 0;
+          camAt = now;
+        }
+      }
+      if (!pic && v.readyState < 2) {
         // A camera that opened but never sends a picture: say so, once.
         if (!blankSaid && now - readyAt > 10_000) {
           blankSaid = true;
@@ -318,9 +358,10 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
         }
         return;
       }
-      // Full speed with a hand in view; four looks a second without. (Never
-      // the same moment twice — the hand model needs time to move forward.)
-      if (now <= lastLook || now - lastLook < (handRecently ? 0 : 250)) return;
+      // Full speed with a hand in view; about seven looks a second without, so
+      // a hand that comes back (or was lost in a fast move) is found again
+      // quickly. (Never the same moment twice — the model moves forward.)
+      if (now <= lastLook || now - lastLook < (handRecently ? 0 : 150)) return;
       lastLook = now;
       if (now - lastHand > IDLE_OFF_MS) {
         // Nobody's here: switch off (once) — the overlay unmounts this.
@@ -332,18 +373,50 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
         return;
       }
       // Frames arriving at all? (A camera that's "on" but sends nothing.)
-      if (v.currentTime !== lastVideoTime) {
+      if (pic) frames++;
+      else if (v.currentTime !== lastVideoTime) {
         lastVideoTime = v.currentTime;
         frames++;
-      }
+      } else return; // the same picture again: nothing new to look at
       // What it's doing, in the log — every 30 s for the first few minutes.
       if (now - lastReport > 30_000 && now - readyAt < 4 * 60_000) {
         lastReport = now;
-        void api.log(`[air] ${live.current.rate} looks/s, ${frames} camera frames so far, hand ${live.current.hand ? "seen" : "not seen yet"}`).catch(() => undefined);
+        const L = live.current;
+        void api.log(`[air] ${L.rate} looks/s, ${L.ms} ms per look, camera ${streaming ? `${L.fps} pictures/s (direct)` : "via video"}, ${frames} pictures so far, hand ${L.hand ? "seen" : "not seen yet"}`).catch(() => undefined);
       }
+      // The guide shows the very picture the hand was found in, so the dots
+      // sit on the fingers (the live video ran ahead of the dots).
+      if (live.current.tour && !(tracker && trackerBusy)) {
+        const c = tracker
+          ? (snapNext ??= Object.assign(document.createElement("canvas"), { width: 320, height: 240 }))
+          : (live.current.snap ??= Object.assign(document.createElement("canvas"), { width: 320, height: 240 }));
+        const g = c.getContext("2d");
+        if (g) {
+          g.save();
+          g.translate(c.width, 0);
+          g.scale(-1, 1);
+          g.drawImage(pic ?? v, 0, 0, c.width, c.height);
+          g.restore();
+        }
+      }
+      if (tracker) {
+        // One picture at a time; while it's busy, newer pictures are skipped
+        // (the next one after it's free is the newest — never a backlog).
+        if (trackerBusy) return;
+        trackerBusy = true;
+        const t = tracker;
+        const send = (frame: VideoFrame | ImageBitmap) => t.postMessage({ type: "look", frame, t: now }, [frame]);
+        if (pic) send(pic.clone());
+        else void createImageBitmap(v).then(send).catch(() => (trackerBusy = false));
+        return;
+      }
+      if (!landmarker) return;
+      const lookStart = performance.now();
       let res: ReturnType<HandLandmarker["detectForVideo"]>;
       try {
-        res = landmarker.detectForVideo(v, now);
+        res = landmarker.detectForVideo(pic ?? v, now);
+        const took = performance.now() - lookStart;
+        live.current.ms = Math.round(live.current.ms ? live.current.ms * 0.8 + took * 0.2 : took);
       } catch (e) {
         if (!detectSaid) {
           detectSaid = true;
@@ -352,7 +425,11 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
         }
         return;
       }
-      const lm = res.landmarks?.[0] as Pt[] | undefined;
+      use(res.landmarks?.[0] as Pt[] | undefined, now);
+    };
+
+    /** A hand came back from a look (or none did): move, click, scroll… */
+    const use = (lm: Pt[] | undefined, now: number) => {
       const L = live.current;
       L.lm = lm ?? null;
       L.looks++;
@@ -366,6 +443,7 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
         void api.log("[air] first hand seen").catch(() => undefined);
       }
       if (!lm) {
+        L.gesture = "";
         if (pinchDown) {
           void api.airButton(false, false);
           pinchDown = false;
@@ -417,15 +495,19 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
           void api.airButton(false, false).catch(() => undefined);
         }
         mode = "Paused";
+        L.gesture = "fist";
         draw(true);
         return;
       }
+      L.pinch = Math.min(1, dist(lm[4], lm[8]) / scale / 0.9);
 
       // The pointer: the index and middle knuckles (steady through pinches).
       const raw = { x: 1 - (lm[5].x + lm[9].x) / 2, y: (lm[5].y + lm[9].y) / 2 };
-      const active = { x: (raw.x - 0.2) / 0.6, y: (raw.y - 0.15) / 0.6 };
-      const nx = Math.min(1, Math.max(0, sx.next(active.x, now)));
-      const ny = Math.min(1, Math.max(0, sy.next(active.y, now)));
+      const tune = tuning.current;
+      const span = tune.region;
+      const active = { x: (raw.x - (1 - span) / 2) / span, y: (raw.y - (0.9 - span) / 2) / span };
+      const nx = Math.min(1, Math.max(0, sx.next(active.x, now, tune.minCut, tune.beta)));
+      const ny = Math.min(1, Math.max(0, sy.next(active.y, now, tune.minCut, tune.beta)));
       // Your own gestures come first (a taught peace sign isn't a scroll):
       // hold the pose a moment. The pointer stays put while you show it.
       let taught: Custom | null = null;
@@ -459,6 +541,7 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
       // Scrolling holds the pointer still and turns hand movement into notches.
       if (twoUp) {
         mode = "Scroll";
+        L.gesture = "scroll";
         if (scrollY === null) scrollY = ny;
         scrollAcc += (ny - scrollY) * 40;
         scrollY = ny;
@@ -518,10 +601,13 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
         pinchDown = false;
         void api.airButton(false, false).catch(() => undefined);
       } else if (pinchDown && now - pinchAt > 250) {
+        if (dragging && L.moved - dragFrom > 0.08) L.dragged = true;
+        if (!dragging) dragFrom = L.moved;
         dragging = true;
         mode = "Drag";
       }
       if (!pinchDown) mode = "";
+      L.gesture = pinchDown ? (dragging ? "drag" : "pinch") : fist ? "fist" : "point";
 
       // Thumb + middle / ring / pinky: right-click, copy, paste.
       const which = !pinchDown ? (pinch(12, other === "middle") ? "middle" : pinch(16, other === "ring") ? "ring" : pinch(20, other === "pinky") ? "pinky" : null) : null;
@@ -608,36 +694,131 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
         // Every stage gets a time limit and a log line: on a slow PC the hand
         // model sometimes never finished loading, with nothing to say why.
         await within(v.play(), 8000, "the camera picture didn't start");
-        setStatus("Loading hand tracking…");
+        setStatus("Getting hand tracking ready…");
         void api.log("[air] loading hand tracking…").catch(() => undefined);
-        const files = await within(FilesetResolver.forVisionTasks(new URL("/air", window.location.href).href), 45_000, "the hand-tracking engine didn't load");
-        void api.log(`[air] engine loaded in ${took()}`).catch(() => undefined);
-        // The processor, always. Measured: it loads in ~5 s and finds a hand
-        // in the first picture; the graphics chip took 25 s to load on this
-        // laptop, then never found a hand (and loading both at once hangs).
-        const making = HandLandmarker.createFromOptions(files, {
-          baseOptions: { modelAssetPath: new URL("/air/hand_landmarker.task", window.location.href).href, delegate: "CPU" },
-          runningMode: "VIDEO",
-          numHands: 1,
-          minHandDetectionConfidence: 0.5,
-          minHandPresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
+        const base = new URL("/air", window.location.href).href;
+        // The graphics chip on its own thread: ~37 ms a look here (the
+        // processor took ~300), and its slow first-time setup freezes nothing.
+        const fromWorker = await new Promise<string | null>((resolve) => {
+          let w: Worker;
+          try {
+            w = new Worker(new URL("../lib/airWorker.ts", import.meta.url), { type: "module" });
+            starting = w;
+          } catch (e) {
+            void api.log(`[air] no tracker thread (${e instanceof Error ? e.message : e})`).catch(() => undefined);
+            return resolve(null);
+          }
+          const late = setTimeout(() => {
+            void api.log("[air] the tracker thread took over 60 s to get ready — using the page instead").catch(() => undefined);
+            w.terminate();
+            resolve(null);
+          }, 60_000);
+          w.onmessage = (e: MessageEvent) => {
+            const m = e.data as { type: string; engine?: string; ms?: number; lm?: Pt[] | null; message?: string };
+            if (m.type === "ready") {
+              clearTimeout(late);
+              tracker = w;
+              resolve(`${m.engine} (on its own thread, ready in ${m.ms} ms)`);
+            } else if (m.type === "hand") {
+              trackerBusy = false;
+              if (!alive) return;
+              live.current.ms = Math.round(live.current.ms ? live.current.ms * 0.8 + (m.ms ?? 0) * 0.2 : m.ms ?? 0);
+              if (snapNext && live.current.tour) {
+                const shown = live.current.snap;
+                live.current.snap = snapNext;
+                snapNext = shown;
+              }
+              use(m.lm ?? undefined, performance.now());
+            } else if (m.type === "note") {
+              void api.log(`[air] ${m.message}`).catch(() => undefined);
+            } else if (m.type === "error") {
+              trackerBusy = false;
+              if (!tracker) {
+                clearTimeout(late);
+                void api.log(`[air] tracker thread couldn't start: ${m.message}`).catch(() => undefined);
+                w.terminate();
+                resolve(null);
+              } else if (!detectSaid) {
+                detectSaid = true;
+                void api.log(`[air] hand model error: ${m.message}`).catch(() => undefined);
+              }
+            }
+          };
+          w.onerror = (e) => {
+            clearTimeout(late);
+            void api.log(`[air] tracker thread failed: ${e.message}`).catch(() => undefined);
+            w.terminate();
+            if (tracker === w) tracker = null;
+            trackerBusy = false;
+            resolve(null);
+          };
+          w.postMessage({ type: "start", base });
         });
-        let gaveUpModel = false;
-        void making.then((l) => gaveUpModel && l.close()).catch(() => undefined);
-        const made = await within(making, 60_000, "the hand model didn't load").catch((e) => {
-          gaveUpModel = true;
-          throw e;
-        });
-        live.current.engine = "processor";
-        void api.log(`[air] hand tracking ready in ${took()}`).catch(() => undefined);
         if (!alive) {
-          made.close();
+          // (Set from the worker's reply, which TypeScript can't follow.)
+          (tracker as Worker | null)?.terminate();
           return;
         }
-        landmarker = made;
+        if (fromWorker) {
+          live.current.engine = fromWorker.split(" (")[0];
+          void api.log(`[air] hand tracking ready on the ${fromWorker}, ${took()} in all`).catch(() => undefined);
+        } else {
+          // No worker: the processor, right here (slower, but it always works).
+          const files = await within(FilesetResolver.forVisionTasks(base), 45_000, "the hand-tracking engine didn't load");
+          const making = HandLandmarker.createFromOptions(files, {
+            baseOptions: { modelAssetPath: `${base}/hand_landmarker.task`, delegate: "CPU" },
+            runningMode: "VIDEO",
+            numHands: 1,
+            minHandDetectionConfidence: 0.5,
+            minHandPresenceConfidence: 0.5,
+            minTrackingConfidence: 0.5,
+          });
+          let gaveUpModel = false;
+          void making.then((l) => gaveUpModel && l.close()).catch(() => undefined);
+          const made = await within(making, 60_000, "the hand model didn't load").catch((e) => {
+            gaveUpModel = true;
+            throw e;
+          });
+          live.current.engine = "processor";
+          void api.log(`[air] hand tracking ready on the processor (in the page), ${took()}`).catch(() => undefined);
+          if (!alive) {
+            made.close();
+            return;
+          }
+          landmarker = made;
+        }
         readyAt = performance.now();
         setStatus(`Air control on — ${cam.label || "camera"}`);
+        // Read the camera directly when the webview can: every new picture as
+        // it arrives, never an old one twice, and no waiting on the screen to
+        // refresh (Windows throttled the overlay's refresh to about once a
+        // second — the hand dots lagged and only caught up when you stopped).
+        const Processor = (window as unknown as { MediaStreamTrackProcessor?: new (o: { track: MediaStreamTrack; maxBufferSize?: number }) => { readable: ReadableStream<VideoFrame> } }).MediaStreamTrackProcessor;
+        const track = stream.getVideoTracks()[0];
+        if (Processor && track) {
+          try {
+            const r = new Processor({ track, maxBufferSize: 1 }).readable.getReader();
+            reader = r;
+            streaming = true;
+            void api.log("[air] reading the camera directly").catch(() => undefined);
+            void (async () => {
+              while (alive) {
+                const { value, done } = await r.read();
+                if (done || !value) break;
+                try {
+                  look(value);
+                } finally {
+                  value.close();
+                }
+              }
+            })().catch((e) => {
+              streaming = false;
+              void api.log(`[air] direct camera stopped (${e instanceof Error ? e.message : e}) — using the video instead`).catch(() => undefined);
+            });
+          } catch {
+            streaming = false;
+          }
+        }
         raf = requestAnimationFrame(frame);
         lastRaf = performance.now();
         timer = setInterval(backup, 100);
@@ -655,6 +836,10 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
       alive = false;
       cancelAnimationFrame(raf);
       clearInterval(timer);
+      void reader?.cancel().catch(() => undefined);
+      tracker?.postMessage({ type: "stop" });
+      tracker?.terminate();
+      starting?.terminate();
       if (pinchDown) void api.airButton(false, false);
       stream?.getTracks().forEach((t) => t.stop());
       landmarker?.close();
@@ -675,24 +860,124 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
 }
 
 /** The steps of the guided test, and how each is seen to be done. */
-const STEPS: Array<{ say: string; done: (l: AirLive) => boolean }> = [
-  { say: "Hold one hand up in front of the camera, palm facing it, about an arm's length away.", done: (l) => l.hand },
-  { say: "Move your hand around slowly — the white ring on the screen follows it.", done: (l) => l.moved > 1.2 },
-  { say: "Put the ring on the “Pinch me” button, then touch your thumb and index finger together.", done: (l) => l.clicked },
-  { say: "Hold up two fingers (peace sign) and move your hand up and down to scroll.", done: (l) => l.scrolls >= 3 },
-  { say: "Make a fist and hold it for a second to pause. Do it again to carry on.", done: (l) => l.pauses >= 1 },
-];
-type AirLive = { lm: Pt[] | null; hand: boolean; moved: number; scrolls: number; pauses: number; clicked: boolean; engine: string; camera: string; rate: number };
+type AirLive = {
+  lm: Pt[] | null;
+  hand: boolean;
+  moved: number;
+  scrolls: number;
+  pauses: number;
+  clicked: boolean;
+  /** Pinched, held and moved (a drag). */
+  dragged: boolean;
+  engine: string;
+  camera: string;
+  looks: number;
+  looksAt: number;
+  /** Hand looks per second. */
+  rate: number;
+  /** Milliseconds one look takes. */
+  ms: number;
+  /** Camera pictures per second. */
+  fps: number;
+  /** What the hand is doing now, in words, for the guide. */
+  gesture: string;
+  /** How far apart thumb and index tips are (0 = touching, 1 = wide open). */
+  pinch: number;
+  /** The guide is open: keep the picture the hand was found in. */
+  tour: boolean;
+  /** That picture (mirrored), so the dots sit exactly on the fingers. */
+  snap: HTMLCanvasElement | null;
+};
 const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
 
+/** Counters a step is measured from (so "Try again" starts it fresh). */
+type Base = { moved: number; scrolls: number; pauses: number; clicked: boolean; dragged: boolean };
+const baseOf = (l: AirLive): Base => ({ moved: l.moved, scrolls: l.scrolls, pauses: l.pauses, clicked: l.clicked, dragged: l.dragged });
+
 /**
- * The guided test: the camera's view with your hand's skeleton on it, and
- * five steps that tick themselves off as you do them — so you can see it
- * working (or see exactly which part isn't).
+ * The guided test's steps, in plain words. Each: what to do, with which
+ * fingers, a little picture of it, when it counts as done, and what Izuki
+ * sees your hand doing right now (so you know if you're doing it right).
+ */
+const STEPS: Array<{
+  title: string;
+  how: string;
+  demo: string;
+  /** The picture's movement: "bob", "slide", "pinch", "drag", "updown", "squeeze". */
+  move: string;
+  done: (l: AirLive, b: Base) => boolean;
+  /** 0..1 — how far along this step is. */
+  progress: (l: AirLive, b: Base) => number;
+  now: (l: AirLive) => string;
+}> = [
+  {
+    title: "Show your hand",
+    how: "Hold up one hand with your palm facing the camera, about an arm's length away. Keep it in the light.",
+    demo: "✋",
+    move: "bob",
+    done: (l) => l.hand && !!l.lm,
+    progress: (l) => (l.lm ? 1 : 0),
+    now: (l) => (l.lm ? "I can see your hand ✓" : "Looking for your hand…"),
+  },
+  {
+    title: "Move the ring",
+    how: "Keep your hand open and move it slowly left, right, up and down. The white ring on your screen moves with it.",
+    demo: "✋",
+    move: "slide",
+    done: (l, b) => l.moved - b.moved > 1.5,
+    progress: (l, b) => Math.min(1, (l.moved - b.moved) / 1.5),
+    now: (l) => (l.lm ? "Moving the ring — keep going" : "Show me your hand"),
+  },
+  {
+    title: "Pinch to click",
+    how: "Move the ring onto the pink “Pinch me” button below. Then touch the tip of your thumb to the tip of your pointing finger, and open them again — like picking up a grain of rice.",
+    demo: "🤏",
+    move: "pinch",
+    done: (l, b) => l.clicked && !b.clicked,
+    progress: (l) => (l.lm ? 1 - l.pinch : 0),
+    now: (l) => (!l.lm ? "Show me your hand" : l.gesture === "pinch" || l.gesture === "drag" ? "Pinched! ✓" : l.pinch < 0.45 ? "Closer… almost touching" : "Thumb and pointing finger apart"),
+  },
+  {
+    title: "Pinch and hold to drag",
+    how: "Pinch your thumb and pointing finger together and keep them together. Move your hand a little — that drags. Open your fingers to let go.",
+    demo: "🤏",
+    move: "drag",
+    done: (l, b) => l.dragged && !b.dragged,
+    progress: (l) => (l.gesture === "drag" ? 0.6 : l.gesture === "pinch" ? 0.3 : 0),
+    now: (l) => (!l.lm ? "Show me your hand" : l.gesture === "drag" ? "Dragging — move a little, then open your fingers" : l.gesture === "pinch" ? "Keep holding the pinch…" : "Pinch and hold"),
+  },
+  {
+    title: "Scroll",
+    how: "Hold up two fingers — your pointing and middle fingers, like a peace sign ✌️ — with the others folded down. Move your hand up or down to scroll.",
+    demo: "✌️",
+    move: "updown",
+    done: (l, b) => l.scrolls - b.scrolls >= 3,
+    progress: (l, b) => Math.min(1, (l.scrolls - b.scrolls) / 3),
+    now: (l) => (!l.lm ? "Show me your hand" : l.gesture === "scroll" ? "Scrolling ✓ — move up or down" : "Show a peace sign ✌️"),
+  },
+  {
+    title: "Pause",
+    how: "Make a fist ✊ and hold it still for one second — Air control pauses. Make a fist again to carry on.",
+    demo: "✊",
+    move: "squeeze",
+    done: (l, b) => l.pauses - b.pauses >= 1,
+    progress: (l, b) => (l.pauses - b.pauses >= 1 ? 1 : l.gesture === "fist" ? 0.5 : 0),
+    now: (l) => (!l.lm ? "Show me your hand" : l.gesture === "fist" ? "Hold the fist…" : "Make a fist ✊"),
+  },
+];
+
+/**
+ * The guided test, one step at a time: what to do and with which fingers, a
+ * little moving picture of it, what Izuki sees your hand doing right now,
+ * and Back / Try again / Skip. The camera view shows the very picture your
+ * hand was found in, with the dots on it — so they sit on your fingers.
  */
 function AirTour({ video, live, onClose, onCamera }: { video: React.RefObject<HTMLVideoElement | null>; live: React.MutableRefObject<AirLive>; onClose: () => void; onCamera: () => void }) {
   const preview = useRef<HTMLCanvasElement>(null);
   const [, tick] = useState(0);
+  const [at, setAt] = useState(0);
+  const base = useRef<Base>(baseOf(live.current));
+  const [cheer, setCheer] = useState(false);
   // Every camera, by name (this window already has camera permission).
   const [cams, setCams] = useState<MediaDeviceInfo[]>([]);
   useEffect(() => {
@@ -701,26 +986,44 @@ function AirTour({ video, live, onClose, onCamera }: { video: React.RefObject<HT
     navigator.mediaDevices?.addEventListener?.("devicechange", read);
     return () => navigator.mediaDevices?.removeEventListener?.("devicechange", read);
   }, []);
+  // While the guide is open, the loop keeps the picture each look used.
+  useEffect(() => {
+    live.current.tour = true;
+    return () => {
+      live.current.tour = false;
+      live.current.snap = null;
+    };
+  }, [live]);
   useEffect(() => {
     let raf = 0;
     let last = 0;
+    let lastWords = 0;
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
-      if (now - last < 66) return;
+      if (now - last < 33) return;
       last = now;
-      tick((n) => n + 1);
+      // The words and the progress bar: five times a second is plenty (the
+      // picture itself redraws every frame).
+      if (now - lastWords > 200) {
+        lastWords = now;
+        tick((n) => n + 1);
+      }
       const c = preview.current;
       const v = video.current;
-      if (!c || !v || v.readyState < 2) return;
+      if (!c) return;
       const g = c.getContext("2d");
       if (!g) return;
       const W = c.width, H = c.height;
-      // Mirrored, like a mirror: your right hand on the right.
-      g.save();
-      g.translate(W, 0);
-      g.scale(-1, 1);
-      g.drawImage(v, 0, 0, W, H);
-      g.restore();
+      const snap = live.current.snap;
+      if (snap) g.drawImage(snap, 0, 0, W, H);
+      else if (v && v.readyState >= 2) {
+        // Mirrored, like a mirror: your right hand on the right.
+        g.save();
+        g.translate(W, 0);
+        g.scale(-1, 1);
+        g.drawImage(v, 0, 0, W, H);
+        g.restore();
+      } else return;
       const lm = live.current.lm;
       if (lm) {
         const P = (p: Pt) => [W - p.x * W, p.y * H] as const;
@@ -741,6 +1044,14 @@ function AirTour({ video, live, onClose, onCamera }: { video: React.RefObject<HT
           g.arc(x, y, 3, 0, Math.PI * 2);
           g.fill();
         }
+        // The two fingertips that pinch, bigger.
+        for (const i of [4, 8]) {
+          const [x, y] = P(lm[i]);
+          g.beginPath();
+          g.arc(x, y, 6, 0, Math.PI * 2);
+          g.strokeStyle = "#fff";
+          g.stroke();
+        }
       } else {
         g.fillStyle = "rgba(0,0,0,0.45)";
         g.fillRect(0, H - 26, W, 26);
@@ -752,16 +1063,45 @@ function AirTour({ video, live, onClose, onCamera }: { video: React.RefObject<HT
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
   }, [video, live]);
+
   const l = live.current;
-  const next = STEPS.findIndex((s) => !s.done(l));
-  const all = next === -1;
+  const finished = at >= STEPS.length;
+  const step = STEPS[Math.min(at, STEPS.length - 1)];
+  const done = !finished && step.done(l, base.current);
+  // Done: a moment to see the tick, then the next step.
+  // (Two effects: one that also cleared its own timer when `cheer` changed
+  // left the guide stuck on "that worked".)
+  useEffect(() => {
+    if (done && !cheer) setCheer(true);
+  }, [done, cheer]);
+  useEffect(() => {
+    if (!cheer) return;
+    const t = setTimeout(() => {
+      setCheer(false);
+      base.current = baseOf(live.current);
+      setAt((a) => a + 1);
+    }, 900);
+    return () => clearTimeout(t);
+  }, [cheer, live]);
+  const go = (to: number) => {
+    base.current = baseOf(live.current);
+    setCheer(false);
+    setAt(Math.max(0, Math.min(STEPS.length, to)));
+  };
+  const progress = finished ? 1 : Math.max(0, Math.min(1, step.progress(l, base.current)));
+
   return (
-    <div data-izk-hit className="fixed right-6 top-1/2 z-[75] w-[340px] -translate-y-1/2 rounded-2xl border border-white/15 bg-[#12141f]/95 p-3 text-white shadow-2xl backdrop-blur">
+    <div data-izk-hit className="fixed right-6 top-1/2 z-[75] w-[360px] -translate-y-1/2 rounded-2xl border border-white/15 bg-[#12141f]/95 p-3 text-white shadow-2xl">
       <div className="mb-2 flex items-center justify-between">
-        <b className="text-[13px]">🖐️ Air control — let's test it</b>
-        <button type="button" onClick={onClose} className="rounded-full px-2 text-[12px] text-white/60 hover:bg-white/10 hover:text-white">✕</button>
+        <b className="text-[13px]">🖐️ Air control — guided test</b>
+        <button type="button" onClick={onClose} aria-label="Close the guide" className="rounded-full px-2 text-[12px] text-white/60 hover:bg-white/10 hover:text-white">✕</button>
       </div>
-      <canvas ref={preview} width={316} height={237} className="w-full rounded-xl bg-black" />
+      <canvas ref={preview} width={320} height={240} className="w-full rounded-xl bg-black" />
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 text-[10.5px] text-white/60">
+        <span className="max-w-[170px] truncate">📷 {l.camera || "starting…"}</span>
+        {l.rate ? <span>{l.rate} looks/s</span> : null}
+        {l.ms ? <span>{l.ms} ms each</span> : null}
+      </div>
       {cams.length > 1 && (
         <select
           aria-label="Camera"
@@ -779,42 +1119,72 @@ function AirTour({ video, live, onClose, onCamera }: { video: React.RefObject<HT
           ))}
         </select>
       )}
-      <div className="mt-1.5 flex flex-wrap gap-x-3 text-[10.5px] text-white/60">
-        <span>📷 {l.camera || "starting…"}</span>
-        <span>⚙️ {l.engine || "loading…"}</span>
-        <span>{l.rate ? `${l.rate} looks/s` : ""}</span>
+
+      {/* Where you are */}
+      <div className="mt-2.5 flex items-center gap-2 text-[11px] text-white/70">
+        <span>{finished ? "All done" : `Step ${at + 1} of ${STEPS.length}`}</span>
+        <div className="flex flex-1 gap-1" aria-hidden>
+          {STEPS.map((_, i) => (
+            <span key={i} className={"h-1.5 flex-1 rounded-full " + (i < at ? "bg-emerald-400" : i === at ? "bg-cyan-400" : "bg-white/15")} />
+          ))}
+        </div>
       </div>
-      <ol className="mt-2 space-y-1.5">
-        {STEPS.map((s, i) => {
-          const done = s.done(l);
-          const now = i === next;
-          return (
-            <li key={i} className={"flex gap-2 rounded-lg px-2 py-1.5 text-[12px] leading-snug " + (now ? "bg-cyan-400/15 text-white" : done ? "text-emerald-300" : "text-white/45")}>
-              <span className="w-4 shrink-0">{done ? "✓" : `${i + 1}.`}</span>
-              <span>{s.say}</span>
-            </li>
-          );
-        })}
-      </ol>
-      {next === 2 && (
-        <button
-          type="button"
-          onClick={() => (live.current.clicked = true)}
-          className="mt-2 w-full rounded-xl bg-fuchsia-500 py-3 text-[13px] font-bold text-white shadow-lg hover:bg-fuchsia-400"
-        >
-          Pinch me
-        </button>
+
+      {!finished ? (
+        <div className={"mt-2 rounded-xl p-3 " + (cheer ? "bg-emerald-500/20" : "bg-white/5")}>
+          <div className="flex items-start gap-3">
+            <span aria-hidden className={`izk-demo izk-demo-${step.move} flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-black/30 text-[28px]`}>
+              {cheer ? "✅" : step.demo}
+            </span>
+            <div className="min-w-0">
+              <b className="block text-[14px]">{step.title}</b>
+              <p className="mt-0.5 text-[12px] leading-snug text-white/80">{step.how}</p>
+            </div>
+          </div>
+          {/* What it sees your hand doing right now */}
+          <div className="mt-2.5 rounded-lg bg-black/30 px-2.5 py-1.5" aria-live="polite">
+            <div className="text-[11.5px] font-semibold">{cheer ? "Nice — that worked ✓" : step.now(l)}</div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full rounded-full bg-cyan-400 transition-[width] duration-150" style={{ width: `${Math.round(progress * 100)}%` }} />
+            </div>
+          </div>
+          {at === 2 && (
+            <button
+              type="button"
+              onClick={() => (live.current.clicked = true)}
+              className="mt-2 w-full rounded-xl bg-fuchsia-500 py-3 text-[13px] font-bold text-white shadow-lg hover:bg-fuchsia-400"
+            >
+              Pinch me
+            </button>
+          )}
+          <div className="mt-2 flex gap-1.5 text-[11.5px]">
+            <button type="button" disabled={at === 0} onClick={() => go(at - 1)} className="rounded-lg bg-white/10 px-2.5 py-1 disabled:opacity-30">← Back</button>
+            <button type="button" onClick={() => go(at)} className="rounded-lg bg-white/10 px-2.5 py-1">Try again</button>
+            <button type="button" onClick={() => go(at + 1)} className="ml-auto rounded-lg bg-white/10 px-2.5 py-1">Skip →</button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2 rounded-xl bg-emerald-500/15 p-3 text-[12px] leading-relaxed text-emerald-100">
+          <b className="block text-[13px]">All working! 🎉</b>
+          <ul className="mt-1 space-y-0.5">
+            <li>✋ Open hand — move the ring</li>
+            <li>🤏 Thumb + pointing finger — click (hold to drag)</li>
+            <li>🤌 Thumb + middle finger — right-click</li>
+            <li>✌️ Peace sign — scroll</li>
+            <li>✊ Fist for a second — pause / carry on</li>
+            <li>👋 Quick flick of your open hand — back</li>
+          </ul>
+          <p className="mt-1.5 text-emerald-100/80">The ring too jumpy or too slow? Settings → Air control → How it follows your hand.</p>
+          <div className="mt-2 flex gap-1.5">
+            <button type="button" onClick={() => go(0)} className="flex-1 rounded-lg bg-white/10 py-1.5 font-semibold">Do it again</button>
+            <button type="button" onClick={onClose} className="flex-1 rounded-lg bg-emerald-500 py-1.5 font-semibold text-white">Done</button>
+          </div>
+        </div>
       )}
       {!l.hand && (
         <p className="mt-2 text-[10.5px] leading-snug text-amber-300/90">
-          Not seeing your hand? Check the picture above is your camera, there's light on your hand, and it's not too far away. Wrong camera? Pick it in Settings → Air control.
+          Not seeing your hand? Check the picture above is your camera, there's light on your hand, and it's not too far away. Wrong camera? Pick it above.
         </p>
-      )}
-      {all && (
-        <div className="mt-2 rounded-xl bg-emerald-500/15 p-2 text-[12px] text-emerald-200">
-          All working! 🎉 Also: thumb + middle finger = right-click, thumb + ring = copy, thumb + pinky = paste, a quick flick of your open hand = back.
-          <button type="button" onClick={onClose} className="mt-2 block w-full rounded-lg bg-emerald-500 py-1.5 font-semibold text-white">Done</button>
-        </div>
       )}
     </div>
   );

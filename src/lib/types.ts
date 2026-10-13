@@ -359,6 +359,8 @@ export interface Settings {
   /** Your own Air gestures: a taught hand pose and what it does
    * ("keys:ctrl+s", "type:words", "say:a request"). */
   air_gestures: Array<{ name: string; pose: number[]; action: string }>;
+  /** How the Air pointer follows your hand. */
+  air_mode: "fast" | "balanced" | "precision";
   /** Once a day, what has sat in the Recycle Bin for 30+ days is cleared for good. */
   tidy_recycle_auto: boolean;
   /** PC Care: the Island says when antivirus, firewall, space or a drive needs attention. */

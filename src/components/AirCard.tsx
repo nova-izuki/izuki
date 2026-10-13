@@ -75,6 +75,21 @@ export function AirCard() {
       <Row label="Air control" hint="Your camera turns on while this is on." icon={<Hand size={14} strokeWidth={2.3} />}>
         <Toggle checked={settings.air_enabled} onChange={(v) => patch({ air_enabled: v })} />
       </Row>
+      <Row label="How it follows your hand" hint="Fast: the ring keeps right up with quick moves. Balanced: quick and steady. Precision: slower, finer moves for small buttons — your hand covers more of the camera's view per screen.">
+        <div className="flex flex-wrap justify-end gap-1">
+          {([["fast", "Fast"], ["balanced", "Balanced"], ["precision", "Precision"]] as const).map(([k, l]) => (
+            <button
+              key={k}
+              type="button"
+              aria-pressed={(settings.air_mode ?? "balanced") === k}
+              onClick={() => patch({ air_mode: k })}
+              className={`izk-pill izk-no-drag px-2.5 py-0.5 text-[11px] ${(settings.air_mode ?? "balanced") === k ? "border-izk-teal/70 bg-izk-teal/15" : ""}`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+      </Row>
       <Row label="Test it, step by step" hint="Shows what the camera sees and your hand's outline, then walks you through moving, clicking, scrolling and pausing.">
         <button
           type="button"

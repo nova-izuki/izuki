@@ -426,6 +426,9 @@ pub struct Settings {
     /// Your own Air gestures: a taught hand pose and what it does.
     #[serde(default)]
     pub air_gestures: Vec<AirGesture>,
+    /// How the Air pointer follows your hand: "fast", "balanced" or "precision".
+    #[serde(default = "default_air_mode")]
+    pub air_mode: String,
     /// Last confirmed High Performance state. UI refreshes from Windows;
     /// never automatically applies a plan from this stored preference.
     #[serde(default = "default_false")]
@@ -602,6 +605,10 @@ pub struct AirGesture {
     pub action: String,
 }
 
+fn default_air_mode() -> String {
+    "balanced".into()
+}
+
 fn default_buddy_motion() -> String {
     "smooth".into()
 }
@@ -716,6 +723,7 @@ impl Settings {
         let toon_ok = |s: &str| s == "toon" || s.strip_prefix("toon:").or_else(|| s.strip_prefix("buddy:")).is_some_and(|id| (1..=24).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric()));
         if !["none", "cat", "dog"].contains(&self.buddy_pet.as_str()) { self.buddy_pet = "none".into(); }
         if !["smooth", "retro"].contains(&self.buddy_motion.as_str()) { self.buddy_motion = default_buddy_motion(); }
+        if !["fast", "balanced", "precision"].contains(&self.air_mode.as_str()) { self.air_mode = default_air_mode(); }
         // "Glow only" without the glow would leave nothing showing Izuki is there.
         if !self.edge_glow { self.glow_only = false; }
         if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro"].contains(&self.orb_style.as_str()) && !face_ok(&self.orb_style) && !toon_ok(&self.orb_style) { self.orb_style = "liquid".into(); }
@@ -1009,6 +1017,7 @@ impl Default for Settings {
             mate_wander: true,
             air_enabled: false,
             air_gestures: Vec::new(),
+            air_mode: default_air_mode(),
             pc_boost_power_plan: false,
             cloud_ears: true,
             speech_language: default_speech_language(),

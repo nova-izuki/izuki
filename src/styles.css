@@ -807,3 +807,17 @@ html[data-backdrop="tabbed"] .izk-card {
 html.izk-away .izk-aurora span {
   animation-play-state: paused;
 }
+
+/* Air control guide: the little moving picture of each gesture. Tiny and
+   only shown while the guide is open. */
+.izk-demo-bob { animation: izk-demo-bob 1.6s ease-in-out infinite; }
+.izk-demo-slide { animation: izk-demo-slide 2s ease-in-out infinite; }
+.izk-demo-updown { animation: izk-demo-updown 1.4s ease-in-out infinite; }
+.izk-demo-pinch, .izk-demo-squeeze { animation: izk-demo-pinch 1.2s ease-in-out infinite; }
+.izk-demo-drag { animation: izk-demo-drag 2s ease-in-out infinite; }
+@keyframes izk-demo-bob { 50% { transform: translateY(-4px); } }
+@keyframes izk-demo-slide { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+@keyframes izk-demo-updown { 25% { transform: translateY(-7px); } 75% { transform: translateY(7px); } }
+@keyframes izk-demo-pinch { 50% { transform: scale(0.78); } }
+@keyframes izk-demo-drag { 0%, 100% { transform: translateX(-7px) scale(0.8); } 50% { transform: translateX(7px) scale(0.8); } }
+@media (prefers-reduced-motion: reduce) { .izk-demo { animation: none !important; } }

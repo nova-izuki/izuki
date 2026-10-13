@@ -1134,6 +1134,24 @@ pub async fn pc_care_check() -> R<Vec<crate::pccare::Check>> {
     blocking(crate::pccare::check).await
 }
 
+/// Windows tweaks (Windhawk-style), each with whether it's on now.
+#[tauri::command]
+pub async fn tweaks_list() -> R<Vec<crate::tweaks::Tweak>> {
+    blocking(crate::tweaks::list).await
+}
+
+/// Flip one Windows tweak; the fresh list back.
+#[tauri::command]
+pub async fn tweak_set(id: String, on: bool) -> R<Vec<crate::tweaks::Tweak>> {
+    blocking(move || crate::tweaks::set(&id, on).map_err(|e| e.to_string())).await?
+}
+
+/// Restart Windows Explorer so a tweak shows (only when asked).
+#[tauri::command]
+pub async fn restart_explorer() -> R<()> {
+    blocking(|| crate::tweaks::restart_explorer().map_err(|e| e.to_string())).await?
+}
+
 /// 24/7 PC fast, live: when it last looked and what it last did by itself.
 #[tauri::command]
 pub fn boost_live() -> crate::boost::Live {

@@ -63,8 +63,18 @@ pub fn overlay_shown() -> bool {
 /// Tauri's own defaults are kept; autoplay is opened up because Izuki's
 /// voice plays from the config panel while it's hidden in the tray, where
 /// nobody has clicked to "allow" audio.
-pub const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
-                            --autoplay-policy=no-user-gesture-required";
+///
+/// No throttling: Chromium decided the see-through, click-through overlay
+/// was "occluded" and slowed its screen refresh, video and timers to about
+/// once a second (logged as "screen refresh paused") — Air control's hand
+/// dots lagged a second behind the hand. `CalculateNativeWinOcclusion` off
+/// (in the one --disable-features list: a second one would replace it) and
+/// the background/occlusion throttles off keep it at full speed.
+pub const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion \
+                            --autoplay-policy=no-user-gesture-required \
+                            --disable-background-timer-throttling \
+                            --disable-backgrounding-occluded-windows \
+                            --disable-renderer-backgrounding";
 
 /// Let Izuki's own pages use the microphone and the camera without a
 /// permission prompt.

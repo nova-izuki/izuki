@@ -41,6 +41,7 @@ pub mod flstudio;
 pub mod mate;
 pub mod air;
 pub mod daw;
+pub mod tweaks;
 pub mod music_draft;
 pub mod memory;
 pub mod model;
@@ -361,6 +362,9 @@ pub fn run() {
             commands::air_draw,
             commands::window_spot,
             commands::boost_live,
+            commands::tweaks_list,
+            commands::tweak_set,
+            commands::restart_explorer,
             commands::mate_line,
             commands::fl_setup,
             commands::lesson_video,
