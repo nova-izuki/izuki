@@ -580,7 +580,7 @@ pub async fn open_url(url: String) -> R<()> {
 #[tauri::command]
 pub fn quit_app(app: AppHandle) {
     brain::cancel_task();
-    app.exit(0);
+    crate::quit(&app);
 }
 
 #[tauri::command]
@@ -1182,6 +1182,12 @@ pub async fn air_key(key: String) -> R<()> {
         .map_err(err)
     })
     .await?
+}
+
+/// Where an app's window is (normalized), for "walk to my Chrome".
+#[tauri::command]
+pub async fn window_spot(name: String) -> Option<(f64, f64)> {
+    blocking(move || crate::air::app_spot_norm(&name)).await.ok().flatten()
 }
 
 /// Air control's pen: Izuki's draw mode, so a pinch held and moved draws.

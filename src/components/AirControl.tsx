@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
 import { api, emit, EV, on } from "../lib/ipc";
-import { openCamera } from "../lib/camera";
+import { listCameras, openCamera, rankCameras, saveCamera, savedCamera } from "../lib/camera";
 import { AirKeyboard } from "./AirKeyboard";
 import type { Settings } from "../lib/types";
 
@@ -84,6 +84,37 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
   /** What the guided test watches: the last hand, and what's been done. */
   const live = useRef({ lm: null as Pt[] | null, hand: false, moved: 0, scrolls: 0, pauses: 0, clicked: false, engine: "", camera: "", looks: 0, looksAt: 0, rate: 0 });
   const [tour, setTour] = useState(false);
+  /** Bumped to reopen the camera: another one picked, or one plugged in / out. */
+  const [camKey, setCamKey] = useState(0);
+  useEffect(() => {
+    const reopen = () => setCamKey((k) => k + 1);
+    const off = on<void>(EV.airCamera, reopen);
+    // A webcam plugged in (or pulled out): start again with the best one.
+    // (Only cameras — a headset or mic switching doesn't restart it.)
+    let t: ReturnType<typeof setTimeout> | undefined;
+    let seen = "";
+    void listCameras().then((c) => (seen = c.map((d) => d.deviceId).join("|"))).catch(() => undefined);
+    const changed = () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        void listCameras()
+          .then((c) => {
+            const now = c.map((d) => d.deviceId).join("|");
+            if (now !== seen) {
+              seen = now;
+              reopen();
+            }
+          })
+          .catch(() => undefined);
+      }, 1200);
+    };
+    navigator.mediaDevices?.addEventListener?.("devicechange", changed);
+    return () => {
+      clearTimeout(t);
+      navigator.mediaDevices?.removeEventListener?.("devicechange", changed);
+      void off.then((f) => f());
+    };
+  }, []);
   // The guided test: the first time Air control is on, or when Settings asks.
   useEffect(() => {
     let first = false;
@@ -118,6 +149,14 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
     let alive = true;
     let stream: MediaStream | null = null;
     let landmarker: HandLandmarker | null = null;
+    /** The processor version, if the graphics chip turns out not to find hands. */
+    let makeCpu: (() => Promise<HandLandmarker>) | null = null;
+    let engine = "";
+    let readyAt = 0;
+    let switched = false;
+    let lastVideoTime = -1;
+    let frames = 0;
+    let lastReport = 0;
     let raf = 0;
     let lastLook = 0;
     let lastHand = performance.now();
@@ -223,6 +262,33 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
           void emit(EV.patchSettings, { air_enabled: false });
         }
         return;
+      }
+      // Frames arriving at all? (A camera that's "on" but sends nothing.)
+      if (v.currentTime !== lastVideoTime) {
+        lastVideoTime = v.currentTime;
+        frames++;
+      }
+      // Some graphics chips run the hand model but never find a hand: if
+      // nothing's been found for 20 s while frames are arriving, switch to
+      // the processor (once).
+      if (!switched && makeCpu && engine === "graphics chip" && !live.current.hand && frames > 30 && now - readyAt > 20_000) {
+        switched = true;
+        void api.log("[air] no hand found on the graphics chip in 20 s — switching to the processor").catch(() => undefined);
+        void makeCpu()
+          .then((cpu) => {
+            if (!alive) return cpu.close();
+            landmarker?.close();
+            landmarker = cpu;
+            engine = "processor";
+            live.current.engine = engine;
+            readyAt = performance.now();
+          })
+          .catch((e) => void api.log(`[air] the processor version wouldn't start: ${e instanceof Error ? e.message : e}`).catch(() => undefined));
+      }
+      // What it's doing, in the log — every 30 s for the first few minutes.
+      if (now - lastReport > 30_000 && now - readyAt < 4 * 60_000) {
+        lastReport = now;
+        void api.log(`[air] ${live.current.rate} looks/s on the ${engine}, ${frames} camera frames so far, hand ${live.current.hand ? "seen" : "not seen yet"}`).catch(() => undefined);
       }
       const res = landmarker.detectForVideo(v, now);
       const lm = res.landmarks?.[0] as Pt[] | undefined;
@@ -451,7 +517,22 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
 
     (async () => {
       try {
-        const cam = await openCamera(null, { width: 640, height: 480 });
+        // A camera that never answers (a hidden "allow camera?" box, a driver
+        // stuck) shouldn't leave Air control silently waiting forever.
+        let late: ReturnType<typeof setTimeout> | undefined;
+        let gaveUp = false;
+        const opening = openCamera(null, { width: 640, height: 480 });
+        // One that answers after we gave up is closed, not left running.
+        void opening.then((c) => {
+          if (gaveUp) c.stream.getTracks().forEach((t) => t.stop());
+        }).catch(() => undefined);
+        const cam = await Promise.race([
+          opening,
+          new Promise<never>((_, fail) => (late = setTimeout(() => {
+            gaveUp = true;
+            fail(new Error("the camera didn't answer in 12 s"));
+          }, 12_000))),
+        ]).finally(() => clearTimeout(late));
         live.current.camera = cam.label || "camera";
         void api.log(`[air] camera: ${cam.label || "camera"}`).catch(() => undefined);
         if (!alive) {
@@ -473,7 +554,8 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
             minTrackingConfidence: 0.5,
           });
         // The graphics chip is easiest on the battery; the processor if it can't.
-        let engine = "graphics chip";
+        engine = "graphics chip";
+        makeCpu = () => make("CPU");
         const made = await make("GPU").catch((e) => {
           void api.log(`[air] graphics chip unavailable (${e instanceof Error ? e.message : e}) — using the processor`).catch(() => undefined);
           engine = "processor";
@@ -486,6 +568,7 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
           return;
         }
         landmarker = made;
+        readyAt = performance.now();
         setStatus(`Air control on — ${cam.label || "camera"}`);
         raf = requestAnimationFrame(frame);
       } catch (e) {
@@ -500,13 +583,13 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
       stream?.getTracks().forEach((t) => t.stop());
       landmarker?.close();
     };
-  }, []);
+  }, [camKey]);
 
   return (
     <>
-      {tour && <AirTour video={video} live={live} onClose={() => setTour(false)} />}
+      {tour && <AirTour video={video} live={live} onClose={() => setTour(false)} onCamera={() => setCamKey((k) => k + 1)} />}
       <AirKeyboard />
-      <video ref={video} muted playsInline className="hidden" />
+      <video ref={video} muted playsInline style={{ position: "fixed", left: -4, top: -4, width: 2, height: 2, opacity: 0, pointerEvents: "none" }} />
       <canvas ref={canvas} className="pointer-events-none fixed inset-0 z-[70]" />
       <div className="pointer-events-none fixed bottom-3 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-[11.5px] text-white/85 shadow-lg">
         🖐️ {status}
@@ -531,9 +614,17 @@ const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [
  * five steps that tick themselves off as you do them — so you can see it
  * working (or see exactly which part isn't).
  */
-function AirTour({ video, live, onClose }: { video: React.RefObject<HTMLVideoElement | null>; live: React.MutableRefObject<AirLive>; onClose: () => void }) {
+function AirTour({ video, live, onClose, onCamera }: { video: React.RefObject<HTMLVideoElement | null>; live: React.MutableRefObject<AirLive>; onClose: () => void; onCamera: () => void }) {
   const preview = useRef<HTMLCanvasElement>(null);
   const [, tick] = useState(0);
+  // Every camera, by name (this window already has camera permission).
+  const [cams, setCams] = useState<MediaDeviceInfo[]>([]);
+  useEffect(() => {
+    const read = () => void listCameras().then((c) => setCams(rankCameras(c, savedCamera()))).catch(() => undefined);
+    read();
+    navigator.mediaDevices?.addEventListener?.("devicechange", read);
+    return () => navigator.mediaDevices?.removeEventListener?.("devicechange", read);
+  }, []);
   useEffect(() => {
     let raf = 0;
     let last = 0;
@@ -595,6 +686,23 @@ function AirTour({ video, live, onClose }: { video: React.RefObject<HTMLVideoEle
         <button type="button" onClick={onClose} className="rounded-full px-2 text-[12px] text-white/60 hover:bg-white/10 hover:text-white">✕</button>
       </div>
       <canvas ref={preview} width={316} height={237} className="w-full rounded-xl bg-black" />
+      {cams.length > 1 && (
+        <select
+          aria-label="Camera"
+          value={cams.find((c) => c.label === l.camera)?.deviceId ?? ""}
+          onChange={(e) => {
+            saveCamera(e.target.value);
+            onCamera();
+          }}
+          className="mt-1.5 w-full rounded-lg border border-white/15 bg-black/40 px-2 py-1 text-[11.5px] text-white"
+        >
+          {cams.map((c, i) => (
+            <option key={c.deviceId || i} value={c.deviceId}>
+              📷 {c.label || `Camera ${i + 1}`}
+            </option>
+          ))}
+        </select>
+      )}
       <div className="mt-1.5 flex flex-wrap gap-x-3 text-[10.5px] text-white/60">
         <span>📷 {l.camera || "starting…"}</span>
         <span>⚙️ {l.engine || "loading…"}</span>

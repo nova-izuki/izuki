@@ -787,6 +787,28 @@ export function VoiceEngine() {
       return;
     }
 
+    // A moving character: "walk to my Chrome" / "go over to Spotify" — it
+    // walks there and points (no AI needed).
+    const walkTo = t.match(/^(?:hey\s+\w+,?\s+)?(?:can you\s+|please\s+)?(?:walk|go|run|move|head)\s+(?:over\s+)?to\s+(?:my\s+|the\s+)?(.{2,40}?)(?:\s+window|\s+app)?[.!?]?$/i);
+    if (walkTo && useIzuki.getState().settings.orb_style.startsWith("buddy:")) {
+      const spot = await api.windowSpot(walkTo[1]).catch(() => null);
+      if (requestSeq !== at) return; // stopped, or something newer came in
+      // "Walk to …" is always for the character; "go to YouTube" is only
+      // when that window is open — otherwise it's a normal request (open it).
+      const walking = /^(?:hey\s+\w+,?\s+)?(?:can you\s+|please\s+)?(?:walk|run)\b/i.test(t);
+      if (spot || walking) {
+        startSession(from === "voice", "speaking");
+        if (spot) {
+          void emit(EV.buddyGoto, { nx: spot[0], ny: spot[1] });
+          await respond(`On my way to ${walkTo[1]}!`, "cheerful");
+        } else {
+          await respond(`I can't see ${walkTo[1]} open right now — want me to open it?`, "calm");
+        }
+        void afterReply(at, false);
+        return;
+      }
+    }
+
     // "Turn on air control" / "stop hand control": straight to the setting.
     const airSwitch = t.match(/^(?:please\s+)?(?:(turn|switch|start|stop)\s+(on|off)?\s*(?:the\s+)?(?:air|hand|gesture)\s+controls?(?:\s+(on|off))?|(?:air|hand|gesture)\s+controls?\s+(on|off))[.!]?$/i);
     if (airSwitch) {

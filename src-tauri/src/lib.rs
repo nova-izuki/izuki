@@ -101,6 +101,20 @@ static REOPEN_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::Atom
 /// transparent window, so it appears in a couple of frames and the user can
 /// start drawing immediately. The freeze frame, which costs real milliseconds
 /// to encode, arrives a moment later and fades in behind the marks.
+/// "Quit Izuki" always quits. The tidy exit (other apps' sound back up, any
+/// call hung up) gets two seconds; if something in it hangs on a busy PC —
+/// Quit used to do nothing then — the process ends anyway.
+pub fn quit(app: &AppHandle) {
+    eprintln!("[izuki] quitting");
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        eprintln!("[izuki] the tidy exit took too long — ending now");
+        duck::restore_now();
+        std::process::exit(0);
+    });
+    app.exit(0);
+}
+
 pub fn open_draw_overlay(app: &AppHandle) {
     let settings = state::store().settings();
     automation::clear_abort();
@@ -344,6 +358,7 @@ pub fn run() {
             commands::air_target,
             commands::air_key,
             commands::air_draw,
+            commands::window_spot,
             commands::boost_live,
             commands::mate_line,
             commands::fl_setup,

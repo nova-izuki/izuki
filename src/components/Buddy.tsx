@@ -267,6 +267,15 @@ function Stage({
         }
         else if (s?.kind === "error") react(actor.current, "shrug");
       }),
+      // "Walk to my Chrome": there, and point at it.
+      on<{ nx: number; ny: number }>(EV.buddyGoto, (g) => {
+        if (!g || !Number.isFinite(g.nx)) return;
+        const tx = g.nx * window.innerWidth, ty = g.ny * window.innerHeight;
+        const b = live.current.box;
+        const side = tx < b.x + b.w / 2 ? 1 : -1;
+        const gx = Math.max(0, Math.min(window.innerWidth - b.w, tx + side * b.w * 0.6 - b.w / 2));
+        goal.current = { x: gx, target: { x: tx, y: ty }, until: performance.now() + 9000 };
+      }),
       // Izuki is about to click something: walk over beside it and point.
       on<HandCommand>(EV.hand, (cmd) => {
         if (!cmd || !Number.isFinite(cmd.x)) return;
@@ -293,6 +302,7 @@ function Stage({
     let raf = 0;
     let last = performance.now();
     let smooth = 0;
+    let talkUntil = 0;
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
       if (document.hidden) { last = now; return; }
@@ -338,6 +348,10 @@ function Stage({
         facing.current = 1;
       }
       smooth += (level.current - smooth) * Math.min(1, dt * 12);
+      // Talking holds through the little gaps between words (it flickered
+      // between talking and standing many times a second).
+      if (smooth > 0.08) talkUntil = now + 450;
+      const talkingNow = now < talkUntil;
       // (Music shows it with no conversation going: it just dances.)
       const mode = L.music ? "idle" : L.state === "listening" ? "listening" : L.state === "speaking" ? "speaking" : L.doing ? "working" : "thinking";
       // Pointing: the arm on the target's side, aimed at it.
@@ -355,7 +369,8 @@ function Stage({
 
       // Canvas: wider and taller than the box, feet on the box's bottom.
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const W = Math.round(b.w * 2.2), H = Math.round(b.h * 1.25);
+      // Room above the head for raised arms, and to the sides for pointing.
+      const W = Math.round(b.w * 2.4), H = Math.round(b.h * 1.5);
       if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) {
         c.width = Math.round(W * dpr);
         c.height = Math.round(H * dpr);
@@ -395,7 +410,7 @@ function Stage({
           : r === "thumbs" ? "thumbs"
           : r === "cheer" || r === "tada" || r === "clap" ? "cheer"
           : r === "shrug" ? "shrug"
-          : mode === "speaking" ? (smooth > 0.06 ? "talk" : "idle")
+          : mode === "speaking" ? (talkingNow ? "talk" : "idle")
           : mode === "thinking" ? "think"
           : mode === "working" ? "type"
           : "idle";

@@ -28,11 +28,31 @@ export function AirCard() {
   const [kind, setKind] = useState<"keys" | "type" | "say">("keys");
   const [value, setValue] = useState("");
   const [note, setNote] = useState("");
+  const [camNote, setCamNote] = useState("");
 
+  // The names (and the external ones) only show once this window has asked
+  // for the camera — so ask, briefly, then let it go.
+  const readCams = async (askFirst: boolean) => {
+    try {
+      let all = await listCameras();
+      if (askFirst && (all.length === 0 || all.every((c) => !c.label))) {
+        const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        s.getTracks().forEach((t) => t.stop());
+        all = await listCameras();
+      }
+      setCams(rankCameras(all, savedCamera()));
+      setCamNote(all.length ? "" : "No camera found — plug one in, or check Windows Settings → Privacy → Camera.");
+    } catch (e) {
+      setCamNote(`Couldn't open the cameras (${e instanceof Error ? e.message : String(e)}). Check Windows Settings → Privacy → Camera.`);
+    }
+  };
   useEffect(() => {
-    void listCameras()
-      .then((all) => setCams(rankCameras(all, savedCamera())))
-      .catch(() => undefined);
+    // Only turn the camera on to read names when Air control is on (or ↻ is tapped).
+    void readCams(settings.air_enabled);
+    const changed = () => void readCams(false);
+    navigator.mediaDevices?.addEventListener?.("devicechange", changed);
+    return () => navigator.mediaDevices?.removeEventListener?.("devicechange", changed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const teach = () => {
@@ -71,7 +91,7 @@ export function AirCard() {
           Start the test
         </button>
       </Row>
-      <Row label="Camera" hint="Picked for you (an external camera first). Takes effect next time Air control starts.">
+      <Row label="Camera" hint="Picked for you (an external camera first). Changing it switches at once.">
         <select
           aria-label="Camera"
           className={select}
@@ -79,6 +99,8 @@ export function AirCard() {
           onChange={(e) => {
             setCam(e.target.value);
             saveCamera(e.target.value);
+            // Running? Switch to it now.
+            if (settings.air_enabled) void emit(EV.airCamera);
           }}
         >
           <option value="">Automatic</option>
@@ -88,7 +110,11 @@ export function AirCard() {
             </option>
           ))}
         </select>
+        <button type="button" title="Look for cameras again" aria-label="Look for cameras again" onClick={() => void readCams(true)} className="izk-no-drag ml-1 rounded-full px-2 py-1 text-[12px] text-izk-muted hover:bg-white/10">
+          ↻
+        </button>
       </Row>
+      {camNote && <p className="-mt-1 mb-2 text-[10.5px] text-amber-300">{camNote}</p>}
       <div className="mb-3 grid grid-cols-1 gap-1 rounded-xl border border-white/8 bg-white/[0.03] p-2.5 text-[11px] leading-snug">
         {MOVES.map(([g, d]) => (
           <div key={g} className="flex justify-between gap-3">

@@ -552,6 +552,8 @@ export const api = {
   airKeys: (combo: string) => call<void>("air_keys", { combo }, () => undefined),
   /** Air control's keyboard: a key ("backspace", "enter") or letters, into the window you were typing in. */
   airKey: (key: string) => call<void>("air_key", { key }, () => undefined),
+  /** Where an app's window is on screen (0..1 over every monitor), or null if it isn't open. */
+  windowSpot: (name: string) => call<[number, number] | null>("window_spot", { name }, () => null),
   /** Air control's pen: open draw mode. */
   airDraw: () => call<void>("air_draw", undefined, () => undefined),
   /** Air control: the box around what's under a normalized spot (normalized). */
@@ -782,6 +784,10 @@ export const EV = {
   airRecord: "izuki://air-record",
   /** Frontend-only, config panel → overlay: open Air control's guided test. */
   airTour: "izuki://air-tour",
+  /** Frontend-only: another camera was picked for Air control — reopen it. */
+  airCamera: "izuki://air-camera",
+  /** Frontend-only: the moving character walks to a spot (0..1 over every monitor) and points. */
+  buddyGoto: "izuki://buddy-goto",
   /** Config panel → overlay: that message is handled ({id}). */
   chatDone: "izuki://chat-done",
   /** Streamed words of a conversation reply (chat.rs). */

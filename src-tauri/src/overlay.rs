@@ -66,18 +66,22 @@ pub fn overlay_shown() -> bool {
 pub const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
                             --autoplay-policy=no-user-gesture-required";
 
-/// Let Izuki's own pages use the microphone without a permission prompt.
+/// Let Izuki's own pages use the microphone and the camera without a
+/// permission prompt.
 ///
 /// WebView2 otherwise asks with a dialog on the requesting window — and the
 /// config panel usually listens while it's hidden in the tray, where that
-/// dialog can never be seen or answered, so the mic just hangs forever.
+/// dialog can never be seen or answered, so the mic just hangs forever. The
+/// camera had the same problem in the overlay (Air control, the Island's
+/// camera): the "allow camera?" box sat on the invisible overlay and the
+/// camera never turned on — no light, no error.
 /// Both windows only ever load Izuki's own UI, so there's nobody else to ask
 /// on behalf of.
-fn grant_microphone(w: &WebviewWindow) {
+fn grant_media(w: &WebviewWindow) {
     #[cfg(windows)]
     let _ = w.with_webview(|pw| unsafe {
         use webview2_com::Microsoft::Web::WebView2::Win32::{
-            COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
+            COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_KIND_CAMERA, COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
             COREWEBVIEW2_PERMISSION_STATE_ALLOW,
         };
         use webview2_com::PermissionRequestedEventHandler;
@@ -89,7 +93,7 @@ fn grant_microphone(w: &WebviewWindow) {
                 let Some(args) = args else { return Ok(()) };
                 let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
                 args.PermissionKind(&mut kind)?;
-                if kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE {
+                if kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE || kind == COREWEBVIEW2_PERMISSION_KIND_CAMERA {
                     args.SetState(COREWEBVIEW2_PERMISSION_STATE_ALLOW)?;
                 }
                 Ok(())
@@ -137,7 +141,7 @@ pub fn ensure_config(app: &AppHandle) -> Result<WebviewWindow> {
         .focused(false)
         .build()?;
 
-    grant_microphone(&w);
+    grant_media(&w);
     Ok(w)
 }
 
@@ -255,7 +259,7 @@ pub fn ensure_overlay(app: &AppHandle) -> Result<WebviewWindow> {
         .build()?;
 
     fit_to_desktop(&w)?;
-    grant_microphone(&w);
+    grant_media(&w);
     // Idle overlays must not eat clicks meant for the app underneath.
     w.set_ignore_cursor_events(true).ok();
     Ok(w)

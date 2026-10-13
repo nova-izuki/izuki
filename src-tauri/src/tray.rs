@@ -130,7 +130,7 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
         "watchers" => navigate(app, "watchers"),
         "settings" => navigate(app, "settings"),
         "stop" => crate::hotkey::stop_everything(app),
-        "quit" => app.exit(0),
+        "quit" => crate::quit(app),
         _ => {}
     }
 }

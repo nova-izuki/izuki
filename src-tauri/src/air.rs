@@ -181,6 +181,104 @@ fn seen_at(x: i32, y: i32) -> Option<Hit> {
     Some(Hit { x: frame.origin.0 + x0 as i32, y: frame.origin.1 + y0 as i32, w: bw, h: bh, kind: "seen", field: false })
 }
 
+/// What people call an app → the start of its program's name.
+fn app_alias(name: &str) -> String {
+    let n = name.trim().to_lowercase();
+    let n = n.trim_start_matches("my ").trim_start_matches("the ").trim_end_matches(" window").trim_end_matches(" app").trim();
+    match n {
+        "google chrome" | "chrome" | "browser" => "chrome",
+        "edge" | "microsoft edge" => "msedge",
+        "word" | "microsoft word" => "winword",
+        "excel" | "microsoft excel" => "excel",
+        "powerpoint" => "powerpnt",
+        "file explorer" | "files" | "explorer" | "folder" => "explorer",
+        "fl studio" | "fl" => "fl64",
+        "vs code" | "vscode" | "code" => "code",
+        other => other,
+    }
+    .to_string()
+}
+
+/// Where an app's window is on screen (the middle of its title bar), for
+/// "walk to my Chrome" — the window nearest the front that matches by its
+/// program name or its title. None if it isn't open (or is minimised).
+#[cfg(windows)]
+pub fn app_spot(name: &str) -> Option<(i32, i32)> {
+    use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT};
+    use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible};
+    use windows_core::{BOOL, PWSTR};
+
+    let want = app_alias(name);
+    if want.len() < 2 {
+        return None;
+    }
+    unsafe extern "system" fn each(h: HWND, l: LPARAM) -> BOOL {
+        let v = &mut *(l.0 as *mut Vec<isize>);
+        if IsWindowVisible(h).as_bool() && !IsIconic(h).as_bool() {
+            v.push(h.0 as isize);
+        }
+        BOOL(1)
+    }
+    let mut hs: Vec<isize> = Vec::new();
+    unsafe {
+        let _ = EnumWindows(Some(each), LPARAM(&mut hs as *mut _ as isize));
+    }
+    let me = std::process::id();
+    for raw in hs {
+        let h = HWND(raw as *mut core::ffi::c_void);
+        let mut buf = [0u16; 256];
+        let n = unsafe { GetWindowTextW(h, &mut buf) };
+        if n <= 0 {
+            continue;
+        }
+        let title = String::from_utf16_lossy(&buf[..n as usize]).to_lowercase();
+        let mut pid = 0u32;
+        unsafe { GetWindowThreadProcessId(h, Some(&mut pid)) };
+        if pid == me {
+            continue;
+        }
+        let exe = unsafe {
+            match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+                Ok(p) => {
+                    let mut path = [0u16; 520];
+                    let mut len = path.len() as u32;
+                    let ok = QueryFullProcessImageNameW(p, PROCESS_NAME_WIN32, PWSTR(path.as_mut_ptr()), &mut len).is_ok();
+                    let _ = CloseHandle(p);
+                    if ok {
+                        let full = String::from_utf16_lossy(&path[..len as usize]).to_lowercase();
+                        full.rsplit('\\').next().unwrap_or("").trim_end_matches(".exe").to_string()
+                    } else {
+                        String::new()
+                    }
+                }
+                Err(_) => String::new(),
+            }
+        };
+        if !(exe.starts_with(&want) || title.contains(&want)) {
+            continue;
+        }
+        let mut r = RECT::default();
+        if unsafe { GetWindowRect(h, &mut r) }.is_err() || r.right - r.left < 120 || r.bottom - r.top < 80 {
+            continue;
+        }
+        return Some(((r.left + r.right) / 2, r.top + 18));
+    }
+    None
+}
+
+#[cfg(not(windows))]
+pub fn app_spot(_name: &str) -> Option<(i32, i32)> {
+    None
+}
+
+/// That spot as a share of the whole desktop (what the overlay draws in).
+pub fn app_spot_norm(name: &str) -> Option<(f64, f64)> {
+    let (x, y) = app_spot(name)?;
+    let b = crate::capture::virtual_bounds();
+    Some(((x - b.x) as f64 / b.w.max(1) as f64, (y - b.y) as f64 / b.h.max(1) as f64))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -189,6 +287,14 @@ mod tests {
         assert_eq!(super::to_screen(0.0, 0.0), (b.x, b.y));
         assert_eq!(super::to_screen(1.0, 1.0), (b.x + b.w - 1, b.y + b.h - 1));
         assert_eq!(super::to_screen(-3.0, 9.0), (b.x, b.y + b.h - 1));
+    }
+
+    #[test]
+    fn app_names_people_use() {
+        assert_eq!(super::app_alias("my Chrome"), "chrome");
+        assert_eq!(super::app_alias("the Word window"), "winword");
+        assert_eq!(super::app_alias("FL Studio"), "fl64");
+        assert_eq!(super::app_alias("Spotify"), "spotify");
     }
 
     #[test]
