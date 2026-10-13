@@ -363,6 +363,8 @@ export interface Settings {
   air_gestures: Array<{ name: string; pose: number[]; action: string }>;
   /** How the Air pointer follows your hand. */
   air_mode: "fast" | "balanced" | "precision";
+  /** The linked phone may work this PC (trackpad, typing, keys, a look at the screen). */
+  phone_remote: boolean;
   /** What the quick gestures do (src/lib/airActions.ts); missing = the default. */
   air_bindings: Record<string, string>;
   /** Once a day, what has sat in the Recycle Bin for 30+ days is cleared for good. */

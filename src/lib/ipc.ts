@@ -242,6 +242,7 @@ export const MOCK_SETTINGS: Settings = {
   air_enabled: false,
   air_gestures: [],
   air_mode: "balanced",
+  phone_remote: false,
   air_bindings: {},
   auto_skip_ads: false,
   auto_reject_cookies: false,

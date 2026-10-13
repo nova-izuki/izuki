@@ -492,6 +492,10 @@ pub struct Settings {
     /// a free Cloudflare tunnel (call.rs).
     #[serde(default)]
     pub call_enabled: bool,
+    /// The linked phone may work this PC: trackpad, clicks, typing, keys
+    /// and a look at the screen (remote.rs). Off until switched on.
+    #[serde(default)]
+    pub phone_remote: bool,
     /// The secret part of the call link — without it the page won't open.
     #[serde(default)]
     pub call_token: String,
@@ -1053,6 +1057,7 @@ impl Default for Settings {
             adult_ok: false,
             chat_auto_run: false,
             call_enabled: false,
+            phone_remote: false,
             call_token: String::new(),
             composio_api_key: String::new(),
             composio_user_id: String::new(),

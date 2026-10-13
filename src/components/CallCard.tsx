@@ -56,6 +56,14 @@ export function CallCard() {
         <Toggle checked={settings.call_enabled} onChange={(v) => patch({ call_enabled: v })} />
       </Row>
       {settings.call_enabled && (
+        <Row
+          label="Let my phone control this PC"
+          hint="Your phone becomes a remote: a trackpad, clicks, scrolling, typing, keys and music buttons, and a live look at your screen — in the Izuki phone app (Remote). Only your linked phone, never while the PC is locked."
+        >
+          <Toggle checked={!!settings.phone_remote} onChange={(v) => patch({ phone_remote: v })} />
+        </Row>
+      )}
+      {settings.call_enabled && (
         <div className="mb-1 ml-[24px] text-[12px] leading-snug text-izk-muted">
           {status.state === "ready" ? (
             <div className="flex flex-col gap-1.5">
