@@ -1167,6 +1167,29 @@ pub async fn air_keys(combo: String) -> R<()> {
     blocking(move || crate::air::keys(&combo).map_err(err)).await?
 }
 
+/// Air control's floating keyboard: one key (or a few letters) into the window
+/// you were typing in — the keyboard itself never keeps the focus.
+#[tauri::command]
+pub async fn air_key(key: String) -> R<()> {
+    blocking(move || {
+        crate::uia::focus_target_window();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        if crate::automation::key_is_known(&key) && key.chars().count() > 1 {
+            crate::automation::press_key(&key)
+        } else {
+            crate::automation::type_text(&key)
+        }
+        .map_err(err)
+    })
+    .await?
+}
+
+/// Air control's pen: Izuki's draw mode, so a pinch held and moved draws.
+#[tauri::command]
+pub fn air_draw(app: AppHandle) {
+    crate::open_draw_overlay(&app);
+}
+
 /// Air control: the box around whatever is under a normalized spot.
 #[tauri::command]
 pub async fn air_target(app: AppHandle, nx: f64, ny: f64) -> Option<crate::air::Seen> {

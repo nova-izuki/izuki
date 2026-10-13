@@ -22,6 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🖐️", title: "Air control: a guided test, a keyboard and a pen", how: "Turn Air control on and a guide shows what your camera sees with your hand's outline, then walks you through moving, pinching, scrolling and pausing — each step ticks itself off. A round ⌨️ button opens a floating keyboard you type on with pinches (or tap 🎤 and say it); ✏️ draws on the screen. Sharper camera pictures, so your hand is found from further away.", try: { label: "Air control settings", tab: "settings", id: "settings-air" } },
   { icon: "🎯", title: "Tasks finish instead of going in circles", how: "When a page is slow to load, Izuki now waits for it instead of opening it again and again, then carries on. And when a free AI brain is busy, Izuki goes back to it after a minute instead of leaving it out for hours." },
   { icon: "🎬", title: "All 35 characters animated", how: "Every character now walks, talks with hand gestures, thinks, types, waves, cheers and points, drawn frame by frame.", try: { label: "Pick a character", tab: "settings", id: "settings-look" } },
   { icon: "🖐️", title: "Air control, one tap anywhere", how: "A 🖐️ button on the chat, the round chat bubble, the Island, the Chat tab and the tray menu turns Air control on or off." },

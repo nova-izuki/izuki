@@ -550,6 +550,10 @@ export const api = {
   airScroll: (amount: number) => call<void>("air_scroll", { amount }, () => undefined),
   /** Air control: a key combination ("ctrl+c"). */
   airKeys: (combo: string) => call<void>("air_keys", { combo }, () => undefined),
+  /** Air control's keyboard: a key ("backspace", "enter") or letters, into the window you were typing in. */
+  airKey: (key: string) => call<void>("air_key", { key }, () => undefined),
+  /** Air control's pen: open draw mode. */
+  airDraw: () => call<void>("air_draw", undefined, () => undefined),
   /** Air control: the box around what's under a normalized spot (normalized). */
   airTarget: (nx: number, ny: number) => call<{ nx: number; ny: number; nw: number; nh: number; kind: string; field: boolean } | null>("air_target", { nx, ny }, () => null),
   /** 24/7 PC fast, live: when it last looked and what it last did by itself. */
@@ -776,6 +780,8 @@ export const EV = {
   airSay: "izuki://air-say",
   /** Frontend-only, config panel → overlay: learn an Air gesture now ({name, action}). */
   airRecord: "izuki://air-record",
+  /** Frontend-only, config panel → overlay: open Air control's guided test. */
+  airTour: "izuki://air-tour",
   /** Config panel → overlay: that message is handled ({id}). */
   chatDone: "izuki://chat-done",
   /** Streamed words of a conversation reply (chat.rs). */

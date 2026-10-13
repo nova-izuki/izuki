@@ -342,6 +342,8 @@ pub fn run() {
             commands::air_scroll,
             commands::air_keys,
             commands::air_target,
+            commands::air_key,
+            commands::air_draw,
             commands::boost_live,
             commands::mate_line,
             commands::fl_setup,

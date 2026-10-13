@@ -55,6 +55,22 @@ export function AirCard() {
       <Row label="Air control" hint="Your camera turns on while this is on." icon={<Hand size={14} strokeWidth={2.3} />}>
         <Toggle checked={settings.air_enabled} onChange={(v) => patch({ air_enabled: v })} />
       </Row>
+      <Row label="Test it, step by step" hint="Shows what the camera sees and your hand's outline, then walks you through moving, clicking, scrolling and pausing.">
+        <button
+          type="button"
+          className="izk-btn-primary izk-no-drag h-[28px] px-3 text-[11.5px]"
+          onClick={() => {
+            if (settings.air_enabled) {
+              void emit(EV.airTour);
+            } else {
+              try { localStorage.setItem("izuki.air.tour", "1"); } catch { /* tour opens from the button next time */ }
+              patch({ air_enabled: true });
+            }
+          }}
+        >
+          Start the test
+        </button>
+      </Row>
       <Row label="Camera" hint="Picked for you (an external camera first). Takes effect next time Air control starts.">
         <select
           aria-label="Camera"

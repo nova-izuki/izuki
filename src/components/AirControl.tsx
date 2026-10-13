@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
 import { api, emit, EV, on } from "../lib/ipc";
 import { openCamera } from "../lib/camera";
+import { AirKeyboard } from "./AirKeyboard";
 import type { Settings } from "../lib/types";
 
 /**
@@ -80,6 +81,27 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
   const customs = useRef<Custom[]>(gestures);
   customs.current = gestures;
   const recording = useRef<{ name: string; action: string; frames: number[][]; until: number } | null>(null);
+  /** What the guided test watches: the last hand, and what's been done. */
+  const live = useRef({ lm: null as Pt[] | null, hand: false, moved: 0, scrolls: 0, pauses: 0, clicked: false, engine: "", camera: "", looks: 0, looksAt: 0, rate: 0 });
+  const [tour, setTour] = useState(false);
+  // The guided test: the first time Air control is on, or when Settings asks.
+  useEffect(() => {
+    let first = false;
+    try {
+      first = localStorage.getItem("izuki.air.tour") === "1" || !localStorage.getItem("izuki.air.toured");
+      localStorage.removeItem("izuki.air.tour");
+      localStorage.setItem("izuki.air.toured", "1");
+    } catch {
+      /* no storage: no automatic tour */
+    }
+    if (first) setTour(true);
+    const off = on<void>(EV.airTour, () => {
+      // A fresh test: every step starts undone (the camera and hand stay known).
+      Object.assign(live.current, { moved: 0, clicked: false, scrolls: 0, pauses: 0 });
+      setTour(true);
+    });
+    return () => void off.then((f) => f());
+  }, []);
 
   // Teaching a gesture: Settings asks, this window records the pose for 1.5 s
   // (from the moment a hand is seen).
@@ -197,12 +219,25 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
         // Nobody's here: switch off (once) — the overlay unmounts this.
         if (!switchedOff) {
           switchedOff = true;
+          void api.log(`[air] no hand for 10 min${live.current.hand ? "" : " (never saw one)"} — switching off`).catch(() => undefined);
           void emit(EV.patchSettings, { air_enabled: false });
         }
         return;
       }
       const res = landmarker.detectForVideo(v, now);
       const lm = res.landmarks?.[0] as Pt[] | undefined;
+      const L = live.current;
+      L.lm = lm ?? null;
+      L.looks++;
+      if (now - L.looksAt > 1000) {
+        L.rate = Math.round((L.looks * 1000) / (now - L.looksAt));
+        L.looks = 0;
+        L.looksAt = now;
+      }
+      if (lm && !L.hand) {
+        L.hand = true;
+        void api.log("[air] first hand seen").catch(() => undefined);
+      }
       if (!lm) {
         if (pinchDown) {
           void api.airButton(false, false);
@@ -244,6 +279,7 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
         if (!fistAt) fistAt = now;
         else if (now - fistAt > 800) {
           paused = !paused;
+          live.current.pauses++;
           fistAt = Infinity;
           setStatus(paused ? "Paused — make a fist again to carry on" : "Air control on");
         }
@@ -302,6 +338,7 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
         const notches = Math.trunc(scrollAcc);
         if (notches) {
           scrollAcc -= notches;
+          live.current.scrolls += Math.abs(notches);
           void api.airScroll(notches).catch(() => undefined);
         }
         draw(true);
@@ -312,6 +349,7 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
       // During a pinch's first moment, the pointer holds (no accidental drag).
       const settling = pinchDown && now - pinchAt < 140 && !dragging;
       if (!settling) {
+        live.current.moved += Math.hypot(nx - pointer.x, ny - pointer.y);
         pointer = { x: nx, y: ny };
         void api.airPointer(nx, ny).catch(() => undefined);
       }
@@ -413,7 +451,9 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
 
     (async () => {
       try {
-        const cam = await openCamera(null, { width: 320, height: 240 });
+        const cam = await openCamera(null, { width: 640, height: 480 });
+        live.current.camera = cam.label || "camera";
+        void api.log(`[air] camera: ${cam.label || "camera"}`).catch(() => undefined);
         if (!alive) {
           cam.stream.getTracks().forEach((t) => t.stop());
           return;
@@ -428,11 +468,19 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
             baseOptions: { modelAssetPath: new URL("/air/hand_landmarker.task", window.location.href).href, delegate },
             runningMode: "VIDEO",
             numHands: 1,
-            minHandDetectionConfidence: 0.6,
+            minHandDetectionConfidence: 0.5,
+            minHandPresenceConfidence: 0.5,
             minTrackingConfidence: 0.5,
           });
         // The graphics chip is easiest on the battery; the processor if it can't.
-        const made = await make("GPU").catch(() => make("CPU"));
+        let engine = "graphics chip";
+        const made = await make("GPU").catch((e) => {
+          void api.log(`[air] graphics chip unavailable (${e instanceof Error ? e.message : e}) — using the processor`).catch(() => undefined);
+          engine = "processor";
+          return make("CPU");
+        });
+        live.current.engine = engine;
+        void api.log(`[air] hand tracking ready on the ${engine}`).catch(() => undefined);
         if (!alive) {
           made.close();
           return;
@@ -456,11 +504,134 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
 
   return (
     <>
+      {tour && <AirTour video={video} live={live} onClose={() => setTour(false)} />}
+      <AirKeyboard />
       <video ref={video} muted playsInline className="hidden" />
       <canvas ref={canvas} className="pointer-events-none fixed inset-0 z-[70]" />
       <div className="pointer-events-none fixed bottom-3 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-[11.5px] text-white/85 shadow-lg">
         🖐️ {status}
       </div>
     </>
+  );
+}
+
+/** The steps of the guided test, and how each is seen to be done. */
+const STEPS: Array<{ say: string; done: (l: AirLive) => boolean }> = [
+  { say: "Hold one hand up in front of the camera, palm facing it, about an arm's length away.", done: (l) => l.hand },
+  { say: "Move your hand around slowly — the white ring on the screen follows it.", done: (l) => l.moved > 1.2 },
+  { say: "Put the ring on the “Pinch me” button, then touch your thumb and index finger together.", done: (l) => l.clicked },
+  { say: "Hold up two fingers (peace sign) and move your hand up and down to scroll.", done: (l) => l.scrolls >= 3 },
+  { say: "Make a fist and hold it for a second to pause. Do it again to carry on.", done: (l) => l.pauses >= 1 },
+];
+type AirLive = { lm: Pt[] | null; hand: boolean; moved: number; scrolls: number; pauses: number; clicked: boolean; engine: string; camera: string; rate: number };
+const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
+
+/**
+ * The guided test: the camera's view with your hand's skeleton on it, and
+ * five steps that tick themselves off as you do them — so you can see it
+ * working (or see exactly which part isn't).
+ */
+function AirTour({ video, live, onClose }: { video: React.RefObject<HTMLVideoElement | null>; live: React.MutableRefObject<AirLive>; onClose: () => void }) {
+  const preview = useRef<HTMLCanvasElement>(null);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    let raf = 0;
+    let last = 0;
+    const draw = (now: number) => {
+      raf = requestAnimationFrame(draw);
+      if (now - last < 66) return;
+      last = now;
+      tick((n) => n + 1);
+      const c = preview.current;
+      const v = video.current;
+      if (!c || !v || v.readyState < 2) return;
+      const g = c.getContext("2d");
+      if (!g) return;
+      const W = c.width, H = c.height;
+      // Mirrored, like a mirror: your right hand on the right.
+      g.save();
+      g.translate(W, 0);
+      g.scale(-1, 1);
+      g.drawImage(v, 0, 0, W, H);
+      g.restore();
+      const lm = live.current.lm;
+      if (lm) {
+        const P = (p: Pt) => [W - p.x * W, p.y * H] as const;
+        g.strokeStyle = "rgba(94,231,255,0.95)";
+        g.lineWidth = 2.5;
+        for (const [a, b] of BONES) {
+          const [x1, y1] = P(lm[a]);
+          const [x2, y2] = P(lm[b]);
+          g.beginPath();
+          g.moveTo(x1, y1);
+          g.lineTo(x2, y2);
+          g.stroke();
+        }
+        g.fillStyle = "#ff5caa";
+        for (const p of lm) {
+          const [x, y] = P(p);
+          g.beginPath();
+          g.arc(x, y, 3, 0, Math.PI * 2);
+          g.fill();
+        }
+      } else {
+        g.fillStyle = "rgba(0,0,0,0.45)";
+        g.fillRect(0, H - 26, W, 26);
+        g.fillStyle = "#fff";
+        g.font = "600 12px system-ui";
+        g.fillText("No hand seen yet", 10, H - 9);
+      }
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [video, live]);
+  const l = live.current;
+  const next = STEPS.findIndex((s) => !s.done(l));
+  const all = next === -1;
+  return (
+    <div data-izk-hit className="fixed right-6 top-1/2 z-[75] w-[340px] -translate-y-1/2 rounded-2xl border border-white/15 bg-[#12141f]/95 p-3 text-white shadow-2xl backdrop-blur">
+      <div className="mb-2 flex items-center justify-between">
+        <b className="text-[13px]">🖐️ Air control — let's test it</b>
+        <button type="button" onClick={onClose} className="rounded-full px-2 text-[12px] text-white/60 hover:bg-white/10 hover:text-white">✕</button>
+      </div>
+      <canvas ref={preview} width={316} height={237} className="w-full rounded-xl bg-black" />
+      <div className="mt-1.5 flex flex-wrap gap-x-3 text-[10.5px] text-white/60">
+        <span>📷 {l.camera || "starting…"}</span>
+        <span>⚙️ {l.engine || "loading…"}</span>
+        <span>{l.rate ? `${l.rate} looks/s` : ""}</span>
+      </div>
+      <ol className="mt-2 space-y-1.5">
+        {STEPS.map((s, i) => {
+          const done = s.done(l);
+          const now = i === next;
+          return (
+            <li key={i} className={"flex gap-2 rounded-lg px-2 py-1.5 text-[12px] leading-snug " + (now ? "bg-cyan-400/15 text-white" : done ? "text-emerald-300" : "text-white/45")}>
+              <span className="w-4 shrink-0">{done ? "✓" : `${i + 1}.`}</span>
+              <span>{s.say}</span>
+            </li>
+          );
+        })}
+      </ol>
+      {next === 2 && (
+        <button
+          type="button"
+          onClick={() => (live.current.clicked = true)}
+          className="mt-2 w-full rounded-xl bg-fuchsia-500 py-3 text-[13px] font-bold text-white shadow-lg hover:bg-fuchsia-400"
+        >
+          Pinch me
+        </button>
+      )}
+      {!l.hand && (
+        <p className="mt-2 text-[10.5px] leading-snug text-amber-300/90">
+          Not seeing your hand? Check the picture above is your camera, there's light on your hand, and it's not too far away. Wrong camera? Pick it in Settings → Air control.
+        </p>
+      )}
+      {all && (
+        <div className="mt-2 rounded-xl bg-emerald-500/15 p-2 text-[12px] text-emerald-200">
+          All working! 🎉 Also: thumb + middle finger = right-click, thumb + ring = copy, thumb + pinky = paste, a quick flick of your open hand = back.
+          <button type="button" onClick={onClose} className="mt-2 block w-full rounded-lg bg-emerald-500 py-1.5 font-semibold text-white">Done</button>
+        </div>
+      )}
+    </div>
   );
 }
