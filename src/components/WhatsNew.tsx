@@ -22,6 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🤙", title: "Call Izuki with your hand", how: "With Air control on, make the “call me” hand — thumb and little finger out, the other three folded — and hold it half a second: Izuki starts listening right away. Just say what you want (no “Hey Nova” needed).", try: { label: "Air control", tab: "settings", id: "settings-air" } },
   { icon: "🖐️", title: "Air control: every gesture fixed", how: "Pinching Izuki's own buttons (like the test's “Pinch me”) works now, pinches are easier, the peace-sign scroll is forgiving, right-click no longer turns into a left click, and a fist only pauses when it's a real fist held a second (“Hold to pause…” shows first). The ring is easy to see on bright screens, and clicking a text box brings up the air keyboard.", try: { label: "Air control", tab: "settings", id: "settings-air" } },
   { icon: "🗣️", title: "“Make my pinky pinch take a screenshot”", how: "Choose what your quick gestures do — thumb + middle, ring or little finger, and a flick left or right — in Settings → Air control, or just say it. “Set air control to precision” and “reset my air gestures” work too.", try: { label: "Air gestures", tab: "settings", id: "settings-air" } },
   { icon: "✍️", title: "Say it, it's written well", how: "Point at a text box and say what to type: Izuki fixes the grammar, spelling and punctuation before typing it (your own words — nothing added)." },

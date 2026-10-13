@@ -78,7 +78,7 @@ export function AirCard() {
       </Row>
       <div className="py-2">
         <div className="text-[13px] font-medium text-izk-ink">What your quick gestures do</div>
-        <div className="mt-0.5 text-[11px] text-izk-muted">Or just say it: “Hey Nova, make my pinky pinch take a screenshot.” Thumb + pointing finger is always click and drag; a peace sign scrolls; a fist pauses.</div>
+        <div className="mt-0.5 text-[11px] text-izk-muted">Or just say it: “Hey Nova, make my pinky pinch take a screenshot.” Thumb + pointing finger is always click and drag; a peace sign scrolls; a fist pauses; the 🤙 “call me” hand starts talking to Izuki.</div>
         <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           {AIR_SLOTS.map((s) => (
             <label key={s.id} className="flex items-center justify-between gap-2 rounded-xl bg-white/5 px-2.5 py-1.5 text-[11.5px]">

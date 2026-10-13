@@ -161,7 +161,7 @@ export function AirControl({ gestures, mode: airMode = "balanced", bindings }: {
   customs.current = gestures;
   const recording = useRef<{ name: string; action: string; frames: number[][]; until: number } | null>(null);
   /** What the guided test watches: the last hand, and what's been done. */
-  const live = useRef<AirLive>({ lm: null, hand: false, moved: 0, scrolls: 0, pauses: 0, clicked: false, dragged: false, pinches: 0, engine: "", camera: "", looks: 0, looksAt: 0, rate: 0, ms: 0, fps: 0, gesture: "", pinch: 1, tour: false, snap: null });
+  const live = useRef<AirLive>({ lm: null, hand: false, moved: 0, scrolls: 0, pauses: 0, clicked: false, dragged: false, pinches: 0, calls: 0, engine: "", camera: "", looks: 0, looksAt: 0, rate: 0, ms: 0, fps: 0, gesture: "", pinch: 1, tour: false, snap: null });
   const [tour, setTour] = useState(false);
   /** Bumped to reopen the camera: another one picked, or one plugged in / out. */
   const [camKey, setCamKey] = useState(0);
@@ -270,6 +270,9 @@ export function AirControl({ gestures, mode: airMode = "balanced", bindings }: {
     let peaceAt = 0;
     let scrollAcc = 0;
     let fistAt = 0;
+    /** The 🤙 call gesture: when it began, and when it may fire again. */
+    let callAt = 0;
+    let callCool = 0;
     /** Where the hand was when it last moved (taught gestures need it held still). */
     let stillFrom: { x: number; y: number } | null = null;
     /** "Hold to pause…" by the ring while a fist is held (so a pause is never a surprise). */
@@ -494,6 +497,9 @@ export function AirControl({ gestures, mode: airMode = "balanced", bindings }: {
       }
       if (!lm) {
         L.gesture = "";
+        // Hand gone: the 🤙 call is ready again.
+        callAt = 0;
+        if (callCool === Infinity) callCool = now + 1200;
         scrollY = null;
         scrollAcc = 0;
         swipeFrom = null;
@@ -521,6 +527,8 @@ export function AirControl({ gestures, mode: airMode = "balanced", bindings }: {
       // closing counts at 0.38; once pinched it holds until 0.5 (0.58 while
       // dragging, where the fingers loosen as the hand moves).
       const near = (tip: number) => dist(lm[4], lm[tip]) / scale;
+      const folded = (tip: number, knuckle: number) => dist(lm[0], lm[tip]) < dist(lm[0], lm[knuckle]) * 1.02;
+      const upBy = (tip: number, pip: number, k: number) => dist(lm[0], lm[tip]) > dist(lm[0], lm[pip]) * k;
       // Which fingertip the thumb is nearest: that's the pinch (thumb + middle
       // for a right-click often had the pointing finger close too, and turned
       // into a left click).
@@ -549,7 +557,6 @@ export function AirControl({ gestures, mode: airMode = "balanced", bindings }: {
       // Only a real fist: every fingertip folded right into the palm (nearer
       // the wrist than its knuckle). A relaxed, half-curled hand used to
       // count and paused Air control by surprise.
-      const folded = (tip: number, knuckle: number) => dist(lm[0], lm[tip]) < dist(lm[0], lm[knuckle]) * 1.02;
       const fist = folded(8, 5) && folded(12, 9) && folded(16, 13) && folded(20, 17) && !pinchDown;
       if (fist) {
         if (!fistAt) fistAt = now;
@@ -618,7 +625,6 @@ export function AirControl({ gestures, mode: airMode = "balanced", bindings }: {
       // Forgiving: up a little counts (1.04), and a half-bent ring or little
       // finger doesn't spoil it (only clearly up, 1.3, does). Once scrolling,
       // it holds through a flickery look or two (200 ms).
-      const upBy = (tip: number, pip: number, k: number) => dist(lm[0], lm[tip]) > dist(lm[0], lm[pip]) * k;
       const peace = upBy(8, 6, 1.04) && upBy(12, 10, 1.04) && !upBy(16, 14, 1.3) && !upBy(20, 18, 1.3) && !pinch(8, false) && !pinch(12, false);
       if (peace) peaceAt = now;
       const twoUp = !pinchDown && !taught && (peace || (scrollY !== null && now - peaceAt < 200));
@@ -716,7 +722,29 @@ export function AirControl({ gestures, mode: airMode = "balanced", bindings }: {
       L.gesture = pinchDown ? (dragging ? "drag" : "pinch") : fist ? "fist" : "point";
 
       // Thumb + middle / ring / pinky: right-click, copy, paste.
-      const which = !pinchDown ? (pinch(12, other === "middle") ? "middle" : pinch(16, other === "ring") ? "ring" : pinch(20, other === "pinky") ? "pinky" : null) : null;
+      // 🤙 "Call me": thumb and little finger out, the other three folded,
+      // held half a second — Izuki starts listening right away (like Meta's
+      // hand gesture for its assistant); just say what you want.
+      const thumbOut = near(5) > 0.75 && dist(lm[4], lm[9]) / scale > 0.75;
+      const callMe = !taught && thumbOut && upBy(20, 18, 1.08) && folded(8, 5) && folded(12, 9) && folded(16, 13) && !pinchDown;
+      if (callMe && now > callCool) {
+        if (!callAt) callAt = now;
+        else if (now - callAt > 250 && now - callAt <= 500) mode = "🤙 Keep holding to talk…";
+        if (now - callAt > 500) {
+          callAt = 0;
+          // Once per gesture: lower the hand (or change it) to call again.
+          callCool = Infinity;
+          L.calls++;
+          void api.log("[air] 🤙 call gesture — listening").catch(() => undefined);
+          flash("🤙 Listening — say it");
+          void emit(EV.airCall);
+        }
+      } else if (!callMe) {
+        callAt = 0;
+        if (callCool === Infinity) callCool = now + 1200;
+      }
+
+      const which = !pinchDown && !callMe ? (pinch(12, other === "middle") ? "middle" : pinch(16, other === "ring") ? "ring" : pinch(20, other === "pinky") ? "pinky" : null) : null;
       if (which && which !== other && now - otherAt > 600) {
         otherAt = now;
         quick(binds.current[which]);
@@ -969,6 +997,8 @@ type AirLive = {
   dragged: boolean;
   /** Pinches so far. */
   pinches: number;
+  /** 🤙 calls so far. */
+  calls: number;
   engine: string;
   camera: string;
   looks: number;
@@ -1282,6 +1312,7 @@ function AirTour({ video, live, onClose, onCamera }: { video: React.RefObject<HT
             <li>🤌 Thumb + middle finger — right-click</li>
             <li>✌️ Peace sign — scroll</li>
             <li>✊ Fist for a second — pause / carry on</li>
+            <li>🤙 “Call me” hand (thumb and little finger out) — talk to Izuki</li>
             <li>👋 Quick flick of your open hand — back</li>
           </ul>
           <p className="mt-1.5 text-emerald-100/80">The ring too jumpy or too slow? Settings → Air control → How it follows your hand.</p>

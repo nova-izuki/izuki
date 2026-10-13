@@ -801,6 +801,8 @@ export const EV = {
   /** Frontend-only, overlay → config panel: you pointed at a box with Air
    * control and it was clicked — listen, and type what's said into it. */
   airSay: "izuki://air-say",
+  /** The 🤙 Air gesture: start listening (never stops a listen, unlike the talk key). */
+  airCall: "izuki://air-call",
   /** Frontend-only, config panel → overlay: learn an Air gesture now ({name, action}). */
   airRecord: "izuki://air-record",
   /** Frontend-only, config panel → overlay: open Air control's guided test. */

@@ -1433,6 +1433,12 @@ ${result}`);
   }, []);
 
   useEffect(() => {
+    // 🤙 in the air: start listening (if not already) — say it straight away.
+    const offCall = on<void>(EV.airCall, () => {
+      if (listeningNow.current) return;
+      void api.log("air call: listening").catch(() => undefined);
+      void emit(EV.pushToTalk);
+    });
     const off = on<void>(EV.pushToTalk, () => {
       // A press while listening in a conversation means "I'm done". But a
       // listen left running with no conversation open (stuck) used to turn
@@ -1456,7 +1462,10 @@ ${result}`);
       // it by accident); follow-ups wait as long as the setting says.
       startPushToTalk({ noSpeechMs: 8000 });
     });
-    return () => void off.then((f) => f());
+    return () => {
+      void off.then((f) => f());
+      void offCall.then((f) => f());
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startPushToTalk, finishPushToTalk]);
 
