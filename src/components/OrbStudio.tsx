@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { SphereCanvas } from './VoiceSphere';
 import { useIzuki } from '../lib/store';
-import { Segmented } from './ui';
+import { Segmented, Toggle } from './ui';
 import { LookPicker } from './FaceStudio';
 import { faceFor, isFace } from '../lib/faces';
 
@@ -23,6 +23,12 @@ export function OrbStudio() {
         <input aria-label="Orb motion intensity" type="range" min="0.5" max="1.5" step="0.1" value={response} onChange={e=>patch({orb_response:Number(e.target.value)})} className="mt-2 block w-full accent-izk-teal" />
         <span className="flex justify-between"><span>Gentle</span><span>Expressive</span></span>
       </label>}
+      <div className="space-y-2 rounded-[14px] border border-white/10 bg-black/20 p-2.5">
+        <label className="flex items-center justify-between gap-3 text-xs"><span><strong className="block">Glowing screen edges</strong><span className="text-[10.5px] text-izk-muted">A line of light around your screen: calm cyan while listening, every colour flowing while thinking, swelling with each word while talking. Gone when Izuki is quiet.</span></span>
+          <Toggle checked={settings.edge_glow ?? true} onChange={(v)=>patch(v?{edge_glow:true}:{edge_glow:false,glow_only:false})} /></label>
+        <label className="flex items-center justify-between gap-3 text-xs"><span><strong className="block">Glow only</strong><span className="text-[10.5px] text-izk-muted">Hide the orb or character — the glowing edges alone show Izuki is listening and talking. Captions still show.</span></span>
+          <Toggle checked={!!settings.glow_only && (settings.edge_glow ?? true)} disabled={!(settings.edge_glow ?? true)} onChange={(v)=>patch({glow_only:v})} /></label>
+      </div>
       <LookPicker />
       {isFace(style) && <p className="text-[10.5px] leading-relaxed text-izk-muted">The face follows your pointer, breathes, blinks (rigged models), talks with the voice and smiles with the mood. Tap it and it reacts.</p>}
       <p className="text-[10.5px] leading-relaxed text-izk-muted">Silent visual demo · no microphone, model calls or credits. Live motion follows sound; reduced-motion settings are respected.</p>

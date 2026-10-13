@@ -31,6 +31,7 @@ import { VoiceSphere } from "./VoiceSphere";
 import { TranscriptBar } from "./TranscriptBar";
 import { QuickAsk, QUICK_ASK_WIDTH } from "./QuickAsk";
 import { AirControl } from "./AirControl";
+import { EdgeGlow } from "./EdgeGlow";
 import { cx } from "./ui";
 import type {
   CaptionPayload,
@@ -122,6 +123,9 @@ export function OverlayCanvas() {
   const [islandPeeks, setIslandPeeks] = useState(true);
   const [islandWave, setIslandWave] = useState<string>("auto");
   const [keepReply, setKeepReply] = useState(false);
+  /** The glowing screen edges while Izuki is with you, and "glow only" (no orb). */
+  const [edgeGlow, setEdgeGlow] = useState(true);
+  const [glowOnly, setGlowOnly] = useState(false);
   // Music mode: the orb comes up and flows with what's playing — when asked
   // from the Island, or by itself when "Dance with my music" is on.
   const [musicAuto, setMusicAuto] = useState(false);
@@ -455,6 +459,8 @@ export function OverlayCanvas() {
           setIslandPeeks(s.island_suggestions);
           setIslandWave(s.island_wave || "auto");
           setKeepReply(s.keep_reply);
+          setEdgeGlow(s.edge_glow);
+          setGlowOnly(s.edge_glow && s.glow_only);
           setMusicAuto(s.music_visuals);
           setHandSize(s.follow_hand_size);
           setInk(s.ink_color);
@@ -515,6 +521,8 @@ export function OverlayCanvas() {
           setIslandPeeks(s.island_suggestions);
           setIslandWave(s.island_wave || "auto");
           setKeepReply(s.keep_reply);
+          setEdgeGlow(s.edge_glow);
+          setGlowOnly(s.edge_glow && s.glow_only);
           setMusicAuto(s.music_visuals);
           setHandSize(s.follow_hand_size);
           setInk(s.ink_color);
@@ -813,7 +821,8 @@ export function OverlayCanvas() {
             }}
             onPlaying={setMusicPlaying}
           />}
-        <VoiceSphere state={musicShowing ? "speaking" : orb} transcript={transcript} doing={doing} music={musicShowing} />
+        {edgeGlow && <EdgeGlow state={orb} />}
+        {!(glowOnly && !musicShowing) && <VoiceSphere state={musicShowing ? "speaking" : orb} transcript={transcript} doing={doing} music={musicShowing} />}
         {orb === "hidden" && <TranscriptBar text={transcript?.text ?? null} final={!!transcript?.final} />}
         {caption && (
           <CaptionBox
@@ -855,7 +864,7 @@ export function OverlayCanvas() {
               thinking={thinking && !listening}
             />
           )}
-          {!handOn && <ListeningBadge active={listening} />}
+          {!handOn && !glowOnly && <ListeningBadge active={listening} />}
         </div>
         {floatingSlot}
       </>

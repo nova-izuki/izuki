@@ -25,6 +25,7 @@
 <script src="native.js"></script>
 <script src="pairing.js"></script>
 <script src="orb.js"></script>
+<script src="edge-glow.js"></script>
 <script src="apps.js"></script>
 <script src="drive.js"></script>
 <script type="module" src="tv.js"></script>
@@ -434,6 +435,7 @@
         <div class="row"><b>Orb Studio</b><button class="chip" id="orb-surface" type="button" aria-pressed="false">Light surface</button></div>
         <div class="field"><label for="orb-preview-state">Preview state</label><select id="orb-preview-state"><option value="speaking">Voice demo</option><option value="listening">Rest</option><option value="thinking">Thinking</option></select></div>
         <div class="field" id="orb-response-field"><label for="orb-response">Motion intensity <span id="orb-response-value">100%</span></label><input id="orb-response" type="range" min="0.5" max="1.5" step="0.1" value="1"></div>
+        <label class="swatch"><input type="checkbox" id="edge-glow" checked> Glowing screen edges while Izuki listens, thinks and talks</label>
         <p class="note">Silent demo — no mic, model calls or credits. Cloud WAV replies animate from their real waveform. System voices use a quiet fallback because their audio isn't available to measure.</p>
       </div>
     </section>
@@ -2838,6 +2840,8 @@
   })();
   $("orb-style").onchange = () => { window.IzukiOrb.style($("orb-style").value); updateOrbPreview(); };
   $("orb-preview-state").onchange = updateOrbPreview;
+  try { $("edge-glow").checked = window.IzukiEdge?.enabled() ?? true; } catch {}
+  $("edge-glow").onchange = () => window.IzukiEdge?.enabled($("edge-glow").checked);
   $("orb-response").oninput = () => { const v=Number($("orb-response").value);window.IzukiOrb.response(v);$("orb-response-value").textContent=Math.round(v*100)+'%'; };
   $("orb-surface").onclick = () => { const light=$("orb-studio").classList.toggle('light');$("orb-surface").setAttribute('aria-pressed',String(light));$("orb-surface").textContent=light?'Dark surface':'Light surface'; };
 

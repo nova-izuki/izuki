@@ -386,6 +386,10 @@ export interface Settings {
   show_captions: boolean;
   /** Keep Izuki's last answer on screen after the orb goes (until ×). */
   keep_reply: boolean;
+  /** A line of light around the screen edges while Izuki listens, thinks and talks. */
+  edge_glow: boolean;
+  /** Only the glowing edges show Izuki is there — no orb or character. */
+  glow_only: boolean;
   /** Speak responses out loud, independent of `show_captions`. */
   speak_responses: boolean;
   /**

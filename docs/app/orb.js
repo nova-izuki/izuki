@@ -206,6 +206,8 @@
       motionModule.stepOrbMotion(o.physics,dt,reduced?0:simulated,reduced?'idle':m,response);
     }
     level += (goal - level) * (goal > level ? 0.45 : 0.08);
+    // The glowing screen edges swell with the same sound (edge-glow.js).
+    if (mode !== "idle") window.IzukiEdge?.level(mode === "speaking" && measured ? measured : level);
     target *= 0.9;
     const pace = reduced ? 0.25 : 1;
     t += dt * pace * (mode === "thinking" ? 1.6 : 1 + level * 2.2);
@@ -259,7 +261,7 @@
       if (window.ResizeObserver) { o.observer=new ResizeObserver(wake);o.observer.observe(canvas); }
       return canvas;
     },
-    mode(m) { mode = PALETTES[m] ? m : "idle"; wake(); },
+    mode(m) { mode = PALETTES[m] ? m : "idle"; window.IzukiEdge?.mode(mode); wake(); },
     level(v) { if (Number.isFinite(v)) kick(Math.max(0, Math.min(1, v))); },
     kick,
     wake,

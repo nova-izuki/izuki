@@ -219,6 +219,8 @@ export const MOCK_SETTINGS: Settings = {
   flows_keep_days: 1,
   wake_sensitivity: "normal",
   keep_reply: false,
+  edge_glow: true,
+  glow_only: false,
   island_suggestions: true,
   island_wave: "auto",
   tidy_dupes_auto: false,

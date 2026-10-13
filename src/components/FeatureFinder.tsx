@@ -14,6 +14,7 @@ export const FEATURES: Feature[] = [
   { label: "On its own", hint: "skip youtube ads, reject cookie banners automatically", tab: "settings", id: "settings-autonomous" },
   { label: "Brain & AI keys", hint: "Models, providers and local Ollama", tab: "settings", id: "settings-brain" },
   { label: "Screen control", hint: "Jarvis precision, mouse, approval and clicking", tab: "settings", id: "settings-execution" },
+  { label: "Glowing screen edges", hint: "edge glow, screen glow, border light, apple intelligence, siri glow, glow only, hide orb, hide character", tab: "settings", id: "settings-look" },
   { label: "Orb & appearance", hint: "Orb Studio, clear water, star crystal, tidal pearl, liquid, motion, captions and colours", tab: "settings", id: "settings-look" },
   { label: "Window & battery", hint: "Glass backdrop, background and power", tab: "settings", id: "settings-system" },
   { label: "Keyboard shortcuts", hint: "Hotkeys and voice commands", tab: "settings", id: "settings-shortcuts" },

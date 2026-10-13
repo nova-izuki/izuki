@@ -273,6 +273,13 @@ pub struct Settings {
     /// again — until it's closed with × or a new answer replaces it.
     #[serde(default)]
     pub keep_reply: bool,
+    /// A line of light around the screen edges while Izuki listens, thinks
+    /// and talks (EdgeGlow.tsx).
+    #[serde(default = "default_true")]
+    pub edge_glow: bool,
+    /// Only the glowing edges show Izuki is there — no orb or character.
+    #[serde(default)]
+    pub glow_only: bool,
     /// Speak responses out loud. Independent of `show_captions` — you can
     /// have captions with no voice, voice with no captions, or both.
     #[serde(default = "default_true")]
@@ -700,6 +707,8 @@ impl Settings {
         let face_ok = |s: &str| s.strip_prefix("model:").is_some_and(|id| (1..=40).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
         let toon_ok = |s: &str| s == "toon" || s.strip_prefix("toon:").or_else(|| s.strip_prefix("buddy:")).is_some_and(|id| (1..=24).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric()));
         if !["none", "cat", "dog"].contains(&self.buddy_pet.as_str()) { self.buddy_pet = "none".into(); }
+        // "Glow only" without the glow would leave nothing showing Izuki is there.
+        if !self.edge_glow { self.glow_only = false; }
         if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro"].contains(&self.orb_style.as_str()) && !face_ok(&self.orb_style) && !toon_ok(&self.orb_style) { self.orb_style = "liquid".into(); }
         if !["auto", "silk", "bars", "mirror", "neon", "dots"].contains(&self.island_wave.as_str()) { self.island_wave = default_island_wave(); }
         self.orb_response = if self.orb_response.is_finite() { self.orb_response.clamp(0.5, 1.5) } else { 1.0 };
@@ -948,6 +957,8 @@ impl Default for Settings {
             ink_color: default_ink_color(),
             show_captions: true,
             keep_reply: false,
+            edge_glow: true,
+            glow_only: false,
             speak_responses: true,
             voice_engine: default_voice_engine(),
             voice_name: default_voice_name(),
