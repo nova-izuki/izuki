@@ -309,11 +309,16 @@ pub fn midi(g: &Genre, bpm: u32, bars: u32, seed: u32) -> Vec<u8> {
 /// Create a new verified file without opening or replacing a DAW project.
 pub fn make(said: &str) -> Option<String> {
     let (g, bpm) = parse(said)?;
-    Some(match crate::music_draft::make(said, g, bpm) {
-        Ok(mut reply) => {
+    Some(match crate::music_draft::make_file(said, g, bpm) {
+        Ok((mut reply, file)) => {
             let lower = normalized(said);
             if !GENRES.iter().any(|genre| genre.says.iter().any(|name| has(&lower, name))) {
                 reply.push_str(&format!(" No recognized style was specified, so I used {}.", g.name));
+            }
+            // Whatever producer app you use — the one you named, or the one open.
+            if let Some(daw) = crate::daw::named(said).or_else(crate::daw::running) {
+                reply.push_str(&format!(" To bring it into {}: {}. I've opened the folder with it selected.", daw.name, daw.import));
+                crate::daw::reveal(&file);
             }
             reply
         }
@@ -335,6 +340,8 @@ mod tests {
         assert_eq!(parse("give me a boom bap drum loop at 92bpm").map(|(g, b)| (g.key, b)), Some(("boombap", 92)));
         assert_eq!(parse("make an afro house groove").map(|(g, _)| g.key), Some("afrohouse"));
         assert_eq!(parse("make a reggaeton beat").map(|(g, _)| g.key), Some("reggaeton"));
+        assert_eq!(parse("make a trap beat in ableton").map(|(g, _)| g.key), Some("trap"));
+        assert!(parse("make me a beat in reaper").is_some());
         assert!(parse("what is a trap beat").is_none());
         assert!(parse("make a house reservation").is_none());
         assert!(parse("create a track issue").is_none());

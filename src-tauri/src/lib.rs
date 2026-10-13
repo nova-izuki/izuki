@@ -40,6 +40,7 @@ pub mod services;
 pub mod flstudio;
 pub mod mate;
 pub mod air;
+pub mod daw;
 pub mod music_draft;
 pub mod memory;
 pub mod model;

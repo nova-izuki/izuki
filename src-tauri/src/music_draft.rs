@@ -309,6 +309,11 @@ pub fn save_arrangement(dir: &Path, g: &Genre, spec: &DraftSpec) -> Result<PathB
 }
 
 pub fn make(said: &str, g: &Genre, default_bpm: u32) -> Result<String> {
+    make_file(said, g, default_bpm).map(|(reply, _)| reply)
+}
+
+/// [`make`], plus the .mid file it saved (to show it, ready to drag into a DAW).
+pub fn make_file(said: &str, g: &Genre, default_bpm: u32) -> Result<(String, PathBuf)> {
     let arrangement = is_arrangement(said);
     let lower = said.to_lowercase();
     if ["my loop", "my sample", "my recording", "this audio", "listen to", "detect the", "in real time"].iter().any(|s| lower.contains(s)) {
@@ -320,10 +325,10 @@ pub fn make(said: &str, g: &Genre, default_bpm: u32) -> Result<String> {
     if arrangement {
         let spec = DraftSpec { genre: g.key.into(), bpm, tonic, minor, key: key.clone(), bars, seed, sections: sections(bars) };
         let folder = save_arrangement(&dir, g, &spec)?;
-        Ok(format!("Created and checked a {bars}-bar {} MIDI draft at {bpm} BPM in {key}: intro, verses, hooks, bridge and outro, with drums, bass, chords and melody. Saved to {}. Save a copy of your DAW project, then import arrangement.mid and choose its instruments. Your open project is untouched. Tempo and key are draft settings, not detected from audio.", g.name, folder.display()))
+        Ok((format!("Created and checked a {bars}-bar {} MIDI draft at {bpm} BPM in {key}: intro, verses, hooks, bridge and outro, with drums, bass, chords and melody. Saved to {}. Save a copy of your DAW project, then import arrangement.mid and choose its instruments. Your open project is untouched. Tempo and key are draft settings, not detected from audio.", g.name, folder.display()), folder.join("arrangement.mid")))
     } else {
         let path = save_loop(&dir, g, bpm, bars, seed)?;
-        Ok(format!("Created and checked a {bars}-bar {} drum MIDI loop at {bpm} BPM. Saved to {}. Import it into a saved copy of your DAW project and choose a drum instrument. Your open project is untouched.", g.name, path.display()))
+        Ok((format!("Created and checked a {bars}-bar {} drum MIDI loop at {bpm} BPM. Saved to {}. Import it into a saved copy of your DAW project and choose a drum instrument. Your open project is untouched.", g.name, path.display()), path))
     }
 }
 
