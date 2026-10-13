@@ -1,0 +1,5 @@
+{
+  "_": "Shared by companion.rs (opens_an_app) and src/lib/conversation.ts (opensAnApp): opening an app is the app on the PC; what's in it is the linked account.",
+  "opens": ["open Outlook", "Nova, open outlook", "please open the Outlook app", "switch to Discord", "launch slack", "close WhatsApp", "can you open new outlook for me", "open gmail", "open google drive"],
+  "account": ["open my latest email", "open my inbox", "open outlook and read my unread emails", "check my outlook", "open my slack channels", "open my notion notes", "open my google contacts", "open my todoist tasks"]
+}

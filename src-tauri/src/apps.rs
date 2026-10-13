@@ -38,6 +38,9 @@ const BUILT_IN: &[(&str, &str)] = &[
     ("snipping tool", "ms-screenclip:"),
     ("screenshot", "ms-screenclip:"),
     ("mail", "outlookmail:"),
+    // The new Outlook (a Store app) has no Start-menu shortcut to find;
+    // classic Outlook's shortcut still wins when it's installed.
+    ("outlook", "outlookmail:"),
     ("calendar", "outlookcal:"),
     ("maps", "bingmaps:"),
     ("weather", "bingweather:"),

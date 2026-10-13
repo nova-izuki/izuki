@@ -113,10 +113,33 @@ pub fn needs_screen(said: &str) -> bool {
     DO.iter().chain(LOOK).any(|k| t.contains(k)) || crate::instant::parse(said).is_some()
 }
 
+/// "Open Outlook", "switch to Discord", "close Slack": the app itself, on the
+/// PC — not the linked account. ("Open Outlook" used to go to Composio.)
+/// Anything about what's *in* it ("open my latest email") is still the account.
+pub fn opens_an_app(said: &str) -> bool {
+    let t = said.to_lowercase();
+    let words: Vec<&str> = t.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    const LEAD: &[&str] = &["hey", "ok", "okay", "nova", "izuki", "please", "can", "could", "would", "you", "go", "ahead", "and"];
+    let mut rest: &[&str] = &words;
+    while let Some((w, more)) = rest.split_first() {
+        if LEAD.contains(w) { rest = more; } else { break; }
+    }
+    let verb_len = match rest {
+        ["switch", "to", ..] | ["bring", "up", ..] | ["pull", "up", ..] | ["go", "to", ..] | ["show", "me", ..] => 2,
+        [w, ..] if matches!(*w, "open" | "launch" | "start" | "run" | "close" | "quit" | "exit" | "minimise" | "minimize" | "maximise" | "maximize" | "focus") => 1,
+        _ => return false,
+    };
+    const FILLER: &[&str] = &["the", "my", "app", "application", "program", "for", "me", "please", "now", "up", "desktop", "new", "classic"];
+    const DATA: &[&str] = &["email", "emails", "mail", "inbox", "message", "messages", "dm", "dms", "calendar", "schedule", "event", "events", "meeting", "meetings", "unread", "notifications", "latest", "last", "newest", "recent", "from", "about", "file", "files", "doc", "docs", "repo", "repos", "post", "posts", "channel", "channels", "task", "tasks", "note", "notes", "contact", "contacts"];
+    let named: Vec<&&str> = rest[verb_len..].iter().filter(|w| !FILLER.contains(w)).collect();
+    !named.is_empty() && named.len() <= 3 && !named.iter().any(|w| DATA.contains(w))
+}
+
 /// Connected-account work takes priority over generic verbs such as
-/// "read", "open" and "send" on every remote channel.
+/// "read", "open" and "send" on every remote channel — except opening the
+/// app itself ([`opens_an_app`]).
 pub fn needs_apps(said: &str) -> bool {
-    if wants_reminder(said) { return false; }
+    if wants_reminder(said) || opens_an_app(said) { return false; }
     let t = said.to_lowercase();
     if ["help me write", "help me draft", "help me compose", "write an email", "draft an email"]
         .iter().any(|p| t.contains(p)) { return false; }
@@ -446,11 +469,24 @@ assert!(hands_over(" [SCREEN] ", "SCREEN"));
 
     #[test]
     fn accounts_take_priority_over_screen_verbs() {
-        for text in ["open gmail", "read my emails", "what's on my calendar", "check my Instagram", "send a Slack message"] {
+        for text in ["read my emails", "what's on my calendar", "check my Instagram", "send a Slack message", "open my latest email from Sam", "open my outlook inbox", "what's in my inbox"] {
             assert!(needs_apps(text), "{text}");
         }
         for text in ["help me write an email", "open Chrome", "mailbox-shaped cake", "tell me a joke"] {
             assert!(!needs_apps(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn opening_an_app_is_the_app_not_the_account() {
+        // The same table the PC-side check reads (tools/conversation-check.cjs).
+        let cases: serde_json::Value = serde_json::from_str(include_str!("../../tools/opens-app-cases.json")).unwrap();
+        for text in cases["opens"].as_array().unwrap().iter().filter_map(|v| v.as_str()) {
+            assert!(opens_an_app(text), "{text}");
+            assert!(!needs_apps(text), "{text}");
+        }
+        for text in cases["account"].as_array().unwrap().iter().filter_map(|v| v.as_str()) {
+            assert!(!opens_an_app(text), "{text}");
         }
     }
 }

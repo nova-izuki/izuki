@@ -22,6 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "📧", title: "\"Open Outlook\" opens Outlook", how: "Saying \"open Outlook\" (or \"switch to Discord\", \"launch Slack\") used to go to your linked accounts instead of opening the app. Now it opens the real app on your PC. Asking about what's inside — \"read my emails\", \"what's in my inbox\" — still uses your linked account." },
   { icon: "🖐️", title: "Air control really turns on now", how: "The real reason it never worked: Air control was only switched on while you were drawing on the screen — the rest of the time, turning it on did nothing at all (no camera light, no pointer). It now runs whenever it's on. Settings → Air control → Start the test.", try: { label: "Test Air control", tab: "settings", id: "settings-air" } },
   { icon: "🎞️", title: "Smooth characters (or retro)", how: "Characters hold each gesture and blend into the next, with a gentle breath — no more flicking through poses. Like the old flick-book look? Pick Movement: Retro game under the character list.", try: { label: "Characters", tab: "settings", id: "settings-look" } },
   { icon: "🗣️", title: "Voices show the new characters", how: "With a moving character picked, each voice in Draw → Voice shows its painted face, and picking a voice switches to that voice's character — never back to the old drawings." },

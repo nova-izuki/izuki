@@ -130,7 +130,29 @@ export function suggestions(): string[] {
  * with no screen at all. Only used when apps are linked.
  */
 export function needsApps(text: string): boolean {
-  return APPS.test(text) && !/\b(help me (write|draft|compose)|remind me|set (a |an )?reminder)\b/i.test(text);
+  return APPS.test(text) && !opensAnApp(text) && !/\b(help me (write|draft|compose)|remind me|set (a |an )?reminder)\b/i.test(text);
+}
+
+/**
+ * "Open Outlook", "switch to Discord", "close Slack": the app itself on the
+ * PC, not the linked account — "open Outlook" used to go to Composio. About
+ * what's *in* it ("open my latest email") is still the account. Same rule as
+ * companion.rs `opens_an_app`.
+ */
+export function opensAnApp(text: string): boolean {
+  const words = text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const lead = new Set(["hey", "ok", "okay", "nova", "izuki", "please", "can", "could", "would", "you", "go", "ahead", "and"]);
+  let i = 0;
+  while (i < words.length && lead.has(words[i])) i++;
+  const two = `${words[i] ?? ""} ${words[i + 1] ?? ""}`;
+  let n = 0;
+  if (["switch to", "bring up", "pull up", "go to", "show me"].includes(two)) n = 2;
+  else if (/^(open|launch|start|run|close|quit|exit|minimi[sz]e|maximi[sz]e|focus)$/.test(words[i] ?? "")) n = 1;
+  else return false;
+  const filler = new Set(["the", "my", "app", "application", "program", "for", "me", "please", "now", "up", "desktop", "new", "classic"]);
+  const data = /^(e?mails?|inbox|messages?|dms?|calendar|schedule|events?|meetings?|unread|notifications|latest|last|newest|recent|from|about|files?|docs?|repos?|posts?|channels?|tasks?|notes?|contacts?)$/;
+  const named = words.slice(i + n).filter((w) => !filler.has(w));
+  return named.length > 0 && named.length <= 3 && !named.some((w) => data.test(w));
 }
 
 const APPS = new RegExp(

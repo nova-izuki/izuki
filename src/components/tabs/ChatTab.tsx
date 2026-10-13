@@ -13,7 +13,7 @@ import type { Reminder } from "../../lib/types";
 import { useIzuki } from "../../lib/store";
 import { AirToggle } from "../AirToggle";
 import { brainReady } from "../../lib/setup";
-import { looksLikeDirections, needsApps, recentHistory, shareHistory } from "../../lib/conversation";
+import { looksLikeDirections, needsApps, opensAnApp, recentHistory, shareHistory } from "../../lib/conversation";
 
 /**
  * Izuki as a plain chat companion — no screen, no mouse. Ask anything,
@@ -96,7 +96,7 @@ const ACCOUNTS =
 // Asking for help writing something is the chat lane's own job, not an app.
 const WRITE_ONLY =
   /\b(help me (write|draft|compose)|write (me )?(an? )?(e-?mail|message|note|reply)|draft (me )?(an? )?(e-?mail|message|note|reply))\b/i;
-const wantsApps = (t: string) => (ACCOUNTS.test(t) || needsApps(t)) && !WRITE_ONLY.test(t) && !/\b(remind me|set (a |an )?reminder)\b/i.test(t);
+const wantsApps = (t: string) => (ACCOUNTS.test(t) || needsApps(t)) && !opensAnApp(t) && !WRITE_ONLY.test(t) && !/\b(remind me|set (a |an )?reminder)\b/i.test(t);
 const APPS = /^\s*\[?APPS\]?\s*$/i;
 const REMIND_TAG = /\s*\[(?:REMIND|ALARM)[^\]]*\]?\s*/gi;
 // Focus mode and Recall are answered on the PC itself, at once.

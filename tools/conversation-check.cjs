@@ -158,6 +158,14 @@ mem.remember("assistant", "Hello! What can I do for you?");
 is("four at most, never a duplicate", mem.suggestions().length <= 4, true);
 is("and both ways out are always there", mem.suggestions().includes("Start over") && mem.suggestions().includes("Keep going"), true);
 
+// "Open Outlook" is the Outlook app on the PC, not the linked account (it
+// used to go to Composio). What's *in* the app is still the account.
+// The same table companion.rs's test reads.
+const cases = JSON.parse(fs.readFileSync(path.join(__dirname, "opens-app-cases.json"), "utf8"));
+for (const t of cases.opens) is(`"${t}" opens the app`, mem.opensAnApp(t) && !mem.needsApps(t), true);
+for (const t of cases.account) is(`"${t}" isn't just opening the app`, mem.opensAnApp(t), false);
+for (const t of ["read my emails", "what's in my inbox", "check my outlook"]) is(`"${t}" is about the account`, mem.needsApps(t), true);
+
 console.log("");
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
