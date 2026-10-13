@@ -74,6 +74,12 @@ function poseDistance(a: number[], b: number[]) {
   return Math.sqrt(d / Math.max(1, a.length));
 }
 
+/** A promise, or an error saying `what` once `ms` pass — never a silent wait. */
+function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([p, new Promise<never>((_, fail) => (t = setTimeout(() => fail(new Error(`${what} (${Math.round(ms / 1000)} s)`)), ms)))]).finally(() => clearTimeout(t));
+}
+
 export function AirControl({ gestures }: { gestures: Custom[] }) {
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -149,15 +155,16 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
     let alive = true;
     let stream: MediaStream | null = null;
     let landmarker: HandLandmarker | null = null;
-    /** The processor version, if the graphics chip turns out not to find hands. */
-    let makeCpu: (() => Promise<HandLandmarker>) | null = null;
-    let engine = "";
     let readyAt = 0;
-    let switched = false;
     let lastVideoTime = -1;
     let frames = 0;
     let lastReport = 0;
     let raf = 0;
+    let lastRaf = 0;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    let timerSaid = false;
+    let detectSaid = false;
+    let blankSaid = false;
     let lastLook = 0;
     let lastHand = performance.now();
     const sx = new Smooth();
@@ -247,12 +254,38 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
 
     const frame = () => {
       raf = requestAnimationFrame(frame);
+      lastRaf = performance.now();
+      look();
+    };
+    // Screen refreshes stop when Windows thinks the overlay isn't showing —
+    // then a plain timer keeps the hand tracked (the loop never just stops).
+    const backup = () => {
+      if (performance.now() - lastRaf < 400) return;
+      if (!timerSaid) {
+        timerSaid = true;
+        void api.log("[air] screen refresh paused — looking on a timer instead").catch(() => undefined);
+      }
+      look();
+    };
+
+    const look = () => {
       const v = video.current;
       const now = performance.now();
       const handRecently = now - lastHand < 2000;
-      if (!landmarker || !v || v.readyState < 2) return;
-      // Full speed with a hand in view; four looks a second without.
-      if (now - lastLook < (handRecently ? 0 : 250)) return;
+      if (!landmarker || !v) return;
+      if (v.readyState < 2) {
+        // A camera that opened but never sends a picture: say so, once.
+        if (!blankSaid && now - readyAt > 10_000) {
+          blankSaid = true;
+          void api.log(`[air] the camera sent no picture in 10 s (state ${v.readyState}, ${v.paused ? "paused" : "playing"})`).catch(() => undefined);
+          setStatus("The camera isn't sending a picture — pick another one in Settings → Air control.");
+          void v.play().catch(() => undefined);
+        }
+        return;
+      }
+      // Full speed with a hand in view; four looks a second without. (Never
+      // the same moment twice — the hand model needs time to move forward.)
+      if (now <= lastLook || now - lastLook < (handRecently ? 0 : 250)) return;
       lastLook = now;
       if (now - lastHand > IDLE_OFF_MS) {
         // Nobody's here: switch off (once) — the overlay unmounts this.
@@ -268,29 +301,22 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
         lastVideoTime = v.currentTime;
         frames++;
       }
-      // Some graphics chips run the hand model but never find a hand: if
-      // nothing's been found for 20 s while frames are arriving, switch to
-      // the processor (once).
-      if (!switched && makeCpu && engine === "graphics chip" && !live.current.hand && frames > 30 && now - readyAt > 20_000) {
-        switched = true;
-        void api.log("[air] no hand found on the graphics chip in 20 s — switching to the processor").catch(() => undefined);
-        void makeCpu()
-          .then((cpu) => {
-            if (!alive) return cpu.close();
-            landmarker?.close();
-            landmarker = cpu;
-            engine = "processor";
-            live.current.engine = engine;
-            readyAt = performance.now();
-          })
-          .catch((e) => void api.log(`[air] the processor version wouldn't start: ${e instanceof Error ? e.message : e}`).catch(() => undefined));
-      }
       // What it's doing, in the log — every 30 s for the first few minutes.
       if (now - lastReport > 30_000 && now - readyAt < 4 * 60_000) {
         lastReport = now;
-        void api.log(`[air] ${live.current.rate} looks/s on the ${engine}, ${frames} camera frames so far, hand ${live.current.hand ? "seen" : "not seen yet"}`).catch(() => undefined);
+        void api.log(`[air] ${live.current.rate} looks/s, ${frames} camera frames so far, hand ${live.current.hand ? "seen" : "not seen yet"}`).catch(() => undefined);
       }
-      const res = landmarker.detectForVideo(v, now);
+      let res: ReturnType<HandLandmarker["detectForVideo"]>;
+      try {
+        res = landmarker.detectForVideo(v, now);
+      } catch (e) {
+        if (!detectSaid) {
+          detectSaid = true;
+          void api.log(`[air] hand model error: ${e instanceof Error ? e.message : e}`).catch(() => undefined);
+          setStatus("Hand tracking hit a problem — turn Air control off and on to try again.");
+        }
+        return;
+      }
       const lm = res.landmarks?.[0] as Pt[] | undefined;
       const L = live.current;
       L.lm = lm ?? null;
@@ -542,27 +568,34 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
         stream = cam.stream;
         const v = video.current!;
         v.srcObject = stream;
-        await v.play();
-        const files = await FilesetResolver.forVisionTasks(new URL("/air", window.location.href).href);
-        const make = (delegate: "GPU" | "CPU") =>
-          HandLandmarker.createFromOptions(files, {
-            baseOptions: { modelAssetPath: new URL("/air/hand_landmarker.task", window.location.href).href, delegate },
-            runningMode: "VIDEO",
-            numHands: 1,
-            minHandDetectionConfidence: 0.5,
-            minHandPresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5,
-          });
-        // The graphics chip is easiest on the battery; the processor if it can't.
-        engine = "graphics chip";
-        makeCpu = () => make("CPU");
-        const made = await make("GPU").catch((e) => {
-          void api.log(`[air] graphics chip unavailable (${e instanceof Error ? e.message : e}) — using the processor`).catch(() => undefined);
-          engine = "processor";
-          return make("CPU");
+        const t0 = performance.now();
+        const took = () => `${Math.round(performance.now() - t0)} ms`;
+        // Every stage gets a time limit and a log line: on a slow PC the hand
+        // model sometimes never finished loading, with nothing to say why.
+        await within(v.play(), 8000, "the camera picture didn't start");
+        setStatus("Loading hand tracking…");
+        void api.log("[air] loading hand tracking…").catch(() => undefined);
+        const files = await within(FilesetResolver.forVisionTasks(new URL("/air", window.location.href).href), 45_000, "the hand-tracking engine didn't load");
+        void api.log(`[air] engine loaded in ${took()}`).catch(() => undefined);
+        // The processor, always. Measured: it loads in ~5 s and finds a hand
+        // in the first picture; the graphics chip took 25 s to load on this
+        // laptop, then never found a hand (and loading both at once hangs).
+        const making = HandLandmarker.createFromOptions(files, {
+          baseOptions: { modelAssetPath: new URL("/air/hand_landmarker.task", window.location.href).href, delegate: "CPU" },
+          runningMode: "VIDEO",
+          numHands: 1,
+          minHandDetectionConfidence: 0.5,
+          minHandPresenceConfidence: 0.5,
+          minTrackingConfidence: 0.5,
         });
-        live.current.engine = engine;
-        void api.log(`[air] hand tracking ready on the ${engine}`).catch(() => undefined);
+        let gaveUpModel = false;
+        void making.then((l) => gaveUpModel && l.close()).catch(() => undefined);
+        const made = await within(making, 60_000, "the hand model didn't load").catch((e) => {
+          gaveUpModel = true;
+          throw e;
+        });
+        live.current.engine = "processor";
+        void api.log(`[air] hand tracking ready in ${took()}`).catch(() => undefined);
         if (!alive) {
           made.close();
           return;
@@ -571,14 +604,22 @@ export function AirControl({ gestures }: { gestures: Custom[] }) {
         readyAt = performance.now();
         setStatus(`Air control on — ${cam.label || "camera"}`);
         raf = requestAnimationFrame(frame);
+        lastRaf = performance.now();
+        timer = setInterval(backup, 100);
       } catch (e) {
-        void api.log(`[air] couldn't start: ${e instanceof Error ? e.message : String(e)}`).catch(() => undefined);
-        setStatus("Air control couldn't start — pick another camera in Settings → Air control, or close apps using it.");
+        const why = e instanceof Error ? e.message : String(e);
+        void api.log(`[air] couldn't start: ${why}`).catch(() => undefined);
+        setStatus(
+          /camera/i.test(why)
+            ? "Air control couldn't start — pick another camera in Settings → Air control, or close apps using it."
+            : "Hand tracking couldn't load — turn Air control off and on to try again.",
+        );
       }
     })();
     return () => {
       alive = false;
       cancelAnimationFrame(raf);
+      clearInterval(timer);
       if (pinchDown) void api.airButton(false, false);
       stream?.getTracks().forEach((t) => t.stop());
       landmarker?.close();
