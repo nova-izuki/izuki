@@ -1333,11 +1333,59 @@ pub fn loading(keep: bool) -> Option<&'static str> {
         if controls.iter().any(|c| c.kind == "Button" && is_stop_loading(&c.name)) {
             return Some("the browser's reload button still says Stop — the page is loading");
         }
+        // A web address but nothing on the page yet: it hasn't arrived
+        // (Blackboard sat blank for seconds with no Stop button, and was
+        // judged "not loading" and opened again).
+        if let Some(url) = web_address(&controls) {
+            if blank_for(&url, document_text(64).trim().is_empty()) {
+                return Some("the page is still blank — it hasn't arrived yet");
+            }
+        }
         if keep {
             keep_controls(controls);
         }
     }
     None
+}
+
+/// The address in the browser's address bar, if it's a real web page (not
+/// a new tab or the browser's own settings).
+fn web_address(controls: &[Control]) -> Option<String> {
+    let bar = controls
+        .iter()
+        .find(|c| matches!(c.kind.as_str(), "Edit" | "ComboBox") && c.name.to_lowercase().contains("address"))?;
+    let url = bar.value.trim().to_lowercase();
+    let own = ["chrome://", "edge://", "about:", "brave://", "opera://", "vivaldi://", "file://", "chrome-extension://"];
+    (!url.is_empty() && !url.contains(' ') && url.contains('.') && !own.iter().any(|p| url.starts_with(p))).then_some(url)
+}
+
+/// How long a blank page counts as "still loading". After that it's a page
+/// that simply has no text (a game, a drawing app) — never waited on again.
+const BLANK_LOADING: std::time::Duration = std::time::Duration::from_secs(15);
+/// Not seen blank for this long: a later blank is a new load (a reload of
+/// the same page), and gets its own 15 s again.
+const BLANK_NEW_LOAD: std::time::Duration = std::time::Duration::from_secs(60);
+/// The blank page: its address, when it was first and last seen blank.
+static BLANK_SINCE: parking_lot::Mutex<Option<(String, std::time::Instant, std::time::Instant)>> = parking_lot::Mutex::new(None);
+
+/// Whether `url`, blank right now, still counts as loading.
+fn blank_for(url: &str, blank: bool) -> bool {
+    let mut since = BLANK_SINCE.lock();
+    if !blank {
+        *since = None;
+        return false;
+    }
+    let now = std::time::Instant::now();
+    match since.as_mut() {
+        Some((u, first, last)) if u == url && now.duration_since(*last) < BLANK_NEW_LOAD => {
+            *last = now;
+            now.duration_since(*first) < BLANK_LOADING
+        }
+        _ => {
+            *since = Some((url.to_string(), now, now));
+            true
+        }
+    }
 }
 
 /// The browser's "Stop loading this page" / "Stop (Esc)" button.
@@ -1373,6 +1421,50 @@ mod loading_tests {
         assert!(super::is_stop_loading("Stop (Esc)"));
         assert!(!super::is_stop_loading("Stop sharing"));
         assert!(!super::is_stop_loading("Reload"));
+    }
+
+    fn bar(name: &str, value: &str) -> super::Control {
+        super::Control {
+            id: 1,
+            kind: "Edit".into(),
+            name: name.into(),
+            rect: Default::default(),
+            hidden: false,
+            value: value.into(),
+            focused: false,
+            below: false,
+            section: String::new(),
+            identity: None,
+        }
+    }
+
+    #[test]
+    fn a_blank_page_only_counts_on_a_real_web_address() {
+        let at = |v: &str| super::web_address(&[bar("Address and search bar", v)]);
+        assert_eq!(at("sanjac.blackboard.com/ultra/course").as_deref(), Some("sanjac.blackboard.com/ultra/course"));
+        assert_eq!(at("https://www.youtube.com/").as_deref(), Some("https://www.youtube.com/"));
+        assert_eq!(at(""), None);
+        assert_eq!(at("chrome://newtab/"), None);
+        assert_eq!(at("edge://settings"), None);
+        assert_eq!(at("what is the weather"), None);
+        assert_eq!(super::web_address(&[bar("Search", "example.com")]), None);
+    }
+
+    #[test]
+    fn a_blank_page_stops_counting_as_loading() {
+        assert!(super::blank_for("a.example.com", true));
+        assert!(super::blank_for("a.example.com", true));
+        assert!(!super::blank_for("a.example.com", false));
+        // Long blank: a page with no words, not a slow one.
+        let now = std::time::Instant::now();
+        *super::BLANK_SINCE.lock() = Some(("b.example.com".into(), now - super::BLANK_LOADING, now));
+        assert!(!super::blank_for("b.example.com", true));
+        // The same page reloaded a while later: a new load, waited on again.
+        *super::BLANK_SINCE.lock() = Some(("b.example.com".into(), now - super::BLANK_NEW_LOAD * 2, now - super::BLANK_NEW_LOAD));
+        assert!(super::blank_for("b.example.com", true));
+        // Another page starts its own clock.
+        assert!(super::blank_for("c.example.com", true));
+        *super::BLANK_SINCE.lock() = None;
     }
 }
 

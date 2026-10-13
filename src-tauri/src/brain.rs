@@ -894,6 +894,40 @@ fn goal_words(summary: &str) -> Vec<String> {
     w
 }
 
+/// A round that says it's doing something ("Opening Blackboard for you now",
+/// "Let me wait for it to load") — as opposed to an answer or a refusal.
+/// With no step attached, the task isn't over: the step is still to come.
+fn promises_action(summary: &str) -> bool {
+    let s = summary.to_lowercase();
+    let refuses = ["can't", "cannot", "can not", "unable", "won't", "not able", "isn't possible", "not possible", "don't have access"]
+        .iter()
+        .any(|p| s.contains(p));
+    if refuses {
+        return false;
+    }
+    const DOING: &[&str] = &[
+        "let me", "i'll", "i will", "i'm going to", "going to", "on it", "getting you", "get you", "bringing up", "pulling up",
+        "wait for", "waiting for", "still loading", "finish loading", "here we go", "one sec", "hang on", "hold on",
+    ];
+    if DOING.iter().any(|p| s.contains(p)) {
+        return true;
+    }
+    // "Opening…", "Clicking the first link now", "Signing you in".
+    const VERBS: &[&str] = &[
+        "opening", "clicking", "signing", "logging", "typing", "searching", "launching", "starting", "scrolling", "selecting",
+        "picking", "heading", "switching", "loading", "closing", "playing", "pressing", "tapping", "filling", "entering",
+        "navigating", "going", "checking", "finding", "moving", "dragging", "saving", "sending", "pasting", "copying",
+    ];
+    s.split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .take(6)
+        .any(|w| VERBS.contains(&w))
+}
+
+/// Empty rounds in a row (no step, not done) allowed while a task is waiting
+/// on a page or about to act, before Izuki says it's stuck.
+const MAX_IDLE_ROUNDS: u32 = 4;
+
 /// Two rounds after the same thing: one's words are all in the other, or most are shared.
 fn same_goal(a: &[String], b: &[String]) -> bool {
     if a.is_empty() || b.is_empty() {
@@ -2007,6 +2041,8 @@ fn submit_task(
     let mut last_goal: Option<Vec<String>> = None;
     let mut goal_repeats = 0u32;
     let mut waited_on_goal = false;
+    // Rounds in a row that did nothing ("let me wait for it to load").
+    let mut idle_rounds = 0u32;
     let mut all_steps: Vec<ActionStep> = Vec::new();
     let mut last_plan: Option<VisionPlan> = None;
     // What was last said while working, so it isn't said again.
@@ -2415,20 +2451,43 @@ fn submit_task(
                 }
             }
         }
-        if wants_action && !lesson && steps.is_empty() && !done && plan.ask.is_none()
-            && (plan.done || wait > 0) && round < 2 && alive() {
-            // Re-observe once before trusting a first-look success or a
-            // promise like "Opening it". Never replay nonexistent actions.
-            told = Some("No action was executed from your last response. Check this fresh screen: name the visible result if the user's goal is already satisfied, otherwise provide the next grounded step. A promise to open/start something is not completion.".into());
-            last_plan = Some(plan);
-            let until = std::time::Instant::now()
-                + Duration::from_millis(250 + u64::from(wait.min(12)) * 1000);
-            while std::time::Instant::now() < until && alive() {
-                std::thread::sleep(Duration::from_millis(100));
+        if wants_action && !lesson && steps.is_empty() && !done && plan.ask.is_none() && alive()
+            && (plan.done || wait > 0 || promises_action(&plan.summary)) {
+            // A round with no step that waits for a page ("let me wait for it
+            // to load") or promises one ("Opening Blackboard now") isn't the
+            // end of the task — any round, not just the first two (the task
+            // used to stop dead right there). Look again; a few empty rounds
+            // in a row, though, and it says it's stuck instead of looping.
+            idle_rounds += 1;
+            if idle_rounds <= MAX_IDLE_ROUNDS {
+                told = Some(if wait > 0 && !plan.done {
+                    "You chose to wait for the screen. This is the screen now: if it's ready, give the next step of the task; \
+                     if it is clearly still loading, answer with no steps and \"wait\" again. Don't open it again."
+                        .into()
+                } else {
+                    "No action was executed from your last response. Check this fresh screen: name the visible result if the user's goal is already satisfied, otherwise provide the next grounded step. A promise to open/start something is not completion — send the step itself.".into()
+                });
+                last_plan = Some(plan);
+                let _ = app.emit(events::STATUS, StatusEvent::working(if wait > 0 { "Waiting for it to finish loading…" } else { "Izuki is checking the screen…" }));
+                let until = std::time::Instant::now()
+                    + Duration::from_millis(250 + u64::from(wait.min(12)) * 1000);
+                while std::time::Instant::now() < until && alive() {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                if !alive() { break; }
+                match capture::capture_all() { Ok(f) => frame = f, Err(_) => break }
+                continue;
             }
-            if !alive() { break; }
-            match capture::capture_all() { Ok(f) => frame = f, Err(_) => break }
-            continue;
+            eprintln!("[agent] {MAX_IDLE_ROUNDS} rounds in a row without a step — stopping");
+            *UNFINISHED.lock() = Some((prompt.clone(), done_so_far.clone()));
+            let mut plan = plan;
+            plan.summary = "It's still not ready after a good while, so I'll pause here. Say \"keep going\" and I'll pick it up, or tell me what to click.".into();
+            plan.mood = Some("sympathetic".into());
+            last_plan = Some(plan);
+            break;
+        }
+        if !steps.is_empty() {
+            idle_rounds = 0;
         }
         if round == 0 && steps.is_empty() && !wants_action {
             // A question, or nothing to do: answered in the summary.
@@ -2996,6 +3055,31 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
 
 #[cfg(test)]
 mod speed_tests {
+    use super::promises_action;
+
+    #[test]
+    fn promises_action_tells_a_promise_from_an_answer() {
+        for s in [
+            "Opening Blackboard for you now.",
+            "Clicking the first Blackboard link for you now, Solomon.",
+            "Let me wait for the Blackboard page to finish loading.",
+            "Signing you in to Blackboard now.",
+            "Bet, let me get you to Chrome, fam.",
+            "The page is still loading — let me wait a moment for it to finish.",
+            "Say less, I'm on it — Chrome, here we go.",
+        ] {
+            assert!(promises_action(s), "{s}");
+        }
+        for s in [
+            "Your next assignment is due Friday at 11:59 PM.",
+            "I can't open that — it needs your password.",
+            "That's a photo of a sunset over the ocean.",
+            "Done — the file is saved to your Desktop.",
+            "",
+        ] {
+            assert!(!promises_action(s), "{s}");
+        }
+    }
 
     #[test]
     fn the_last_word_doesnt_say_it_again() {
