@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useWakeEngine, WAKE_THRESHOLD } from "../hooks/useWakeEngine";
 import { expandShortWords } from "../lib/shortWords";
 import { useDictation } from "../hooks/useDictation";
+import { AIR_SLOTS, actionLabel, airBindings, parseAirVoice, slotLabel } from "../lib/airActions";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
 import { answersInBackground, cancelChat, chatLane, directionsTask, looksLikeDirections, needsApps, needsScreen, recentHistory, remember, wantsBackground, wantsToWatch, type LaneResult } from "../lib/conversation";
 import { speakable } from "../lib/speakable";
@@ -821,6 +822,33 @@ export function VoiceEngine() {
       return;
     }
 
+    // "Make my pinky pinch take a screenshot", "set air control to precision",
+    // "reset my air gestures", "what do my air gestures do": straight to the setting.
+    const airVoice = parseAirVoice(t);
+    if (airVoice) {
+      const st = useIzuki.getState();
+      const binds = airBindings(st.settings.air_bindings);
+      let line: string;
+      if (airVoice.kind === "bind") {
+        st.patchSettings({ air_bindings: { ...(st.settings.air_bindings ?? {}), [airVoice.slot]: airVoice.action } });
+        line = airVoice.action === "none" ? `Done — ${slotLabel(airVoice.slot).toLowerCase()} does nothing now.` : `Done — ${slotLabel(airVoice.slot).toLowerCase()} now does ${actionLabel(airVoice.action).toLowerCase()}.`;
+      } else if (airVoice.kind === "mode") {
+        st.patchSettings({ air_mode: airVoice.mode });
+        line = `Air control's on ${airVoice.mode} now.`;
+      } else if (airVoice.kind === "reset") {
+        st.patchSettings({ air_bindings: {} });
+        line = "Your air gestures are back to normal.";
+      } else {
+        line = AIR_SLOTS.map((s) => `${s.label}: ${actionLabel(binds[s.id]).toLowerCase()}`).join(". ") + ".";
+      }
+      startSession(from === "voice", "speaking");
+      remember("user", t);
+      remember("assistant", line);
+      await respond(line, "cheerful");
+      void afterReply(at, false);
+      return;
+    }
+
     // Air control: you pointed at a box (it's clicked and focused). Plain
     // words go in as said; an ask ("reply that I'm running late") is written
     // for you, straight into the box — never sent.
@@ -830,7 +858,18 @@ export function VoiceEngine() {
         return handleRequest(`${t}\n[The text box under my pointer is already clicked and focused. Write what I asked straight into it — type it only; don't send, submit or press Enter.]`, from);
       }
       startSession(from === "voice", "thinking");
-      const ok = await api.typeHere(spokenToTyped(t, "")).catch(() => false);
+      // Typed as you'd write it: grammar, spelling and punctuation fixed —
+      // except short bits, addresses, emails and code, which go in as said.
+      // If no brain answers in 4 s, your words go in as heard.
+      let typed = spokenToTyped(t, "");
+      if (typed.split(/\s+/).length >= 3 && !/[@/\\{}<>]|\.(com|org|net|edu|io)\b|https?:/i.test(typed)) {
+        typed = await Promise.race([
+          api.polishText(typed).catch(() => typed),
+          new Promise<string>((ok) => setTimeout(() => ok(typed), 4000)),
+        ]);
+        if (requestSeq !== at) return;
+      }
+      const ok = await api.typeHere(typed).catch(() => false);
       if (requestSeq !== at) return;
       if (!ok) await respond("I couldn't type there — point at the text box again and say it.", "calm");
       else endAfterSpeaking("typed into the pointed-at box");
@@ -1395,10 +1434,18 @@ ${result}`);
 
   useEffect(() => {
     const off = on<void>(EV.pushToTalk, () => {
-      if (listeningNow.current) {
+      // A press while listening in a conversation means "I'm done". But a
+      // listen left running with no conversation open (stuck) used to turn
+      // every press into "done" — nothing happened, no orb, no waveform.
+      if (listeningNow.current && session.current.on) {
+        void api.log("talk key: finishing the listen").catch(() => undefined);
         finishPushToTalk();
         return;
       }
+      if (listeningNow.current) {
+        void api.log("talk key: a listen was left running — starting fresh").catch(() => undefined);
+        cancelListen.current?.();
+      } else void api.log("talk key: listening").catch(() => undefined);
       pressedAt.current = Date.now();
       // The key means "my turn": it cuts Izuki off.
       const wasTalking = isSpeaking();

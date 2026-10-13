@@ -233,6 +233,10 @@ pub struct Settings {
     /// silk, bars, mirror, neon or dots.
     #[serde(default = "default_island_wave")]
     pub island_wave: String,
+    /// The Island's look (Windhawk-style themes): "default", "glass",
+    /// "bubble", "squircle", "outline" or "aero".
+    #[serde(default = "default_island_style")]
+    pub island_style: String,
     /// Press "Skip ad" on YouTube by itself (off until turned on).
     #[serde(default)]
     pub auto_skip_ads: bool,
@@ -426,6 +430,11 @@ pub struct Settings {
     /// Your own Air gestures: a taught hand pose and what it does.
     #[serde(default)]
     pub air_gestures: Vec<AirGesture>,
+    /// What Air control's quick gestures do (src/lib/airActions.ts): slot
+    /// ("middle", "ring", "pinky", "flick_left", "flick_right") → action
+    /// ("click:right", "keys:ctrl+c", "none"…). Missing = the default.
+    #[serde(default)]
+    pub air_bindings: std::collections::BTreeMap<String, String>,
     /// How the Air pointer follows your hand: "fast", "balanced" or "precision".
     #[serde(default = "default_air_mode")]
     pub air_mode: String,
@@ -656,6 +665,10 @@ fn clean_key(raw: &str) -> String {
     k.to_string()
 }
 
+fn default_island_style() -> String {
+    "default".into()
+}
+
 fn default_island_wave() -> String {
     "auto".into()
 }
@@ -724,10 +737,16 @@ impl Settings {
         if !["none", "cat", "dog"].contains(&self.buddy_pet.as_str()) { self.buddy_pet = "none".into(); }
         if !["smooth", "retro"].contains(&self.buddy_motion.as_str()) { self.buddy_motion = default_buddy_motion(); }
         if !["fast", "balanced", "precision"].contains(&self.air_mode.as_str()) { self.air_mode = default_air_mode(); }
+        self.air_bindings.retain(|slot, action| {
+            ["middle", "ring", "pinky", "flick_left", "flick_right"].contains(&slot.as_str())
+                && action.len() <= 40
+                && (action == "none" || action == "click:right" || action.starts_with("keys:"))
+        });
         // "Glow only" without the glow would leave nothing showing Izuki is there.
         if !self.edge_glow { self.glow_only = false; }
         if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro"].contains(&self.orb_style.as_str()) && !face_ok(&self.orb_style) && !toon_ok(&self.orb_style) { self.orb_style = "liquid".into(); }
         if !["auto", "silk", "bars", "mirror", "neon", "dots"].contains(&self.island_wave.as_str()) { self.island_wave = default_island_wave(); }
+        if !["default", "glass", "bubble", "squircle", "outline", "aero"].contains(&self.island_style.as_str()) { self.island_style = default_island_style(); }
         self.orb_response = if self.orb_response.is_finite() { self.orb_response.clamp(0.5, 1.5) } else { 1.0 };
         let defaults = Self::default();
         for d in defaults.providers {
@@ -963,6 +982,7 @@ impl Default for Settings {
             flows_keep_days: default_flows_keep_days(),
             island_suggestions: true,
             island_wave: default_island_wave(),
+            island_style: default_island_style(),
             auto_skip_ads: false,
             auto_reject_cookies: false,
             follow_hand_size: default_follow_hand_size(),
@@ -1018,6 +1038,7 @@ impl Default for Settings {
             air_enabled: false,
             air_gestures: Vec::new(),
             air_mode: default_air_mode(),
+            air_bindings: Default::default(),
             pc_boost_power_plan: false,
             cloud_ears: true,
             speech_language: default_speech_language(),

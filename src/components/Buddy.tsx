@@ -7,7 +7,7 @@ import type { HandCommand, OrbState, StatusEvent } from "../lib/types";
 import { TranscriptText } from "./TranscriptBar";
 import { watchPointer } from "./Island";
 import { createActor, drawPet, drawPuppet, loadPuppet, react, stepActor, type Actor, type Puppet } from "../../docs/app/puppet.js";
-import { createMover, drawMover, loadMoves, stepMover, type MovesPack } from "../../docs/app/sprites.js";
+import { createMover, drawMover, loadMoves, nudgeMover, stepMover, type MovesPack } from "../../docs/app/sprites.js";
 
 /**
  * The moving character — a companion look like the orbs (style
@@ -314,6 +314,11 @@ function Stage({
     let raf = 0;
     let last = performance.now();
     let smooth = 0;
+    let mouth = 0;
+    let quietFor = 1;
+    let blinkAt = performance.now() + 1500;
+    let blinkFrom = -1e9;
+    let blinkTwice = 0;
     let talkUntil = 0;
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
@@ -360,6 +365,27 @@ function Stage({
         facing.current = 1;
       }
       smooth += (level.current - smooth) * Math.min(1, dt * 12);
+      // The mouth: opens fast on each syllable, closes a touch slower.
+      const lv = L.state === "speaking" ? level.current : 0;
+      mouth += (lv - mouth) * Math.min(1, dt * (lv > mouth ? 32 : 18));
+      // A new phrase (the voice back after a little pause): the next gesture.
+      if (lv < 0.08) quietFor += dt;
+      else {
+        if (quietFor > 0.18 && lv > 0.16) nudgeMover(mover.current);
+        quietFor = 0;
+      }
+      // Blinking: every few seconds, now and then twice.
+      if (now >= blinkAt) {
+        blinkFrom = now;
+        blinkAt = now + 2200 + Math.random() * 3800;
+        if (Math.random() < 0.15) blinkTwice = now + 260;
+      }
+      if (blinkTwice && now >= blinkTwice) {
+        blinkFrom = now;
+        blinkTwice = 0;
+      }
+      const bt = (now - blinkFrom) / 150;
+      const blink = bt >= 0 && bt <= 1 ? Math.sin(bt * Math.PI) : 0;
       // Talking holds through the little gaps between words (it flickered
       // between talking and standing many times a second).
       if (smooth > 0.08) talkUntil = now + 450;
@@ -429,7 +455,7 @@ function Stage({
         stepMover(mover.current, dt, want);
         // Walking faces where it goes; pointing faces the target (its frame points right).
         const face = want === "walk" ? facing.current : want === "point" && point ? (point.side === "R" ? 1 : -1) : 1;
-        drawMover(ctx, pack, mover.current, { x: feetX, y: feetY, height: b.h * 0.94, facing: face, retro: live.current.retro });
+        drawMover(ctx, pack, mover.current, { x: feetX, y: feetY, height: b.h * 0.94, facing: face, retro: live.current.retro, mouth: want === "talk" ? Math.min(1, mouth * 1.6) : 0, blink: want === "walk" ? 0 : blink });
       } else {
         drawPuppet(ctx, puppet.current, actor.current, { x: feetX, y: feetY, height: b.h * 0.94, facing: facing.current });
       }

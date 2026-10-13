@@ -23,6 +23,7 @@ import { PhoneCard } from "../PhoneCard";
 import { BoostCard } from "../BoostCard";
 import { FlStudioCard } from "../FlStudioCard";
 import { AirCard } from "../AirCard";
+import { TweaksCard } from "../TweaksCard";
 import { OrbStudio } from "../OrbStudio";
 import { UpdateControls } from '../UpdateControls';
 import { DiscordCard } from "../DiscordCard";
@@ -52,6 +53,7 @@ const JUMPS: { label: string; id: string }[] = [
   { label: "🪟 System", id: "settings-system" },
   { label: "🪄 On its own", id: "settings-autonomous" },
   { label: "🛡️ PC Care", id: "settings-boost" },
+  { label: "🛠️ Tweaks", id: "settings-tweaks" },
   { label: "🎹 FL Studio", id: "settings-flstudio" },
   { label: "📱 Phone", id: "settings-phone" },
   { label: "💬 Discord", id: "settings-discord" },
@@ -565,6 +567,7 @@ export function SettingsTab() {
       <FlStudioCard />
 
       <AirCard />
+      <TweaksCard />
 
       <div id="settings-phone"><PhoneCard /></div>
 

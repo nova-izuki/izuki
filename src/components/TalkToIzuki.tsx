@@ -226,6 +226,23 @@ export function TalkToIzuki() {
           </Row>
         )}
         {settings.island_enabled && (
+          <Row label="Island look" hint="Choose how the Island — the pill at the top of your screen — looks (themes like Windhawk's).">
+            <div className="flex flex-wrap justify-end gap-1">
+              {([["default", "Default"], ["glass", "Glass"], ["bubble", "Bubble"], ["squircle", "Squircle"], ["outline", "Neon outline"], ["aero", "Aero (classic)"]] as const).map(([k, l]) => (
+                <button
+                  key={k}
+                  type="button"
+                  aria-pressed={(settings.island_style ?? "default") === k}
+                  onClick={() => patch({ island_style: k })}
+                  className={`izk-pill izk-no-drag px-2 py-0.5 text-[10.5px] ${(settings.island_style ?? "default") === k ? "border-izk-teal/70 bg-izk-teal/15" : ""}`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          </Row>
+        )}
+        {settings.island_enabled && (
           <Row label="Island waveform" hint="How the Island moves with your music. Auto gives each song its own look.">
             <div className="flex flex-wrap justify-end gap-1">
               {(["auto", "silk", "bars", "mirror", "neon", "dots"] as const).map((w) => (

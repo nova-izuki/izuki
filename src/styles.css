@@ -298,6 +298,17 @@ html.izuki-config #root,
   transform: scale(0.97);
 }
 
+/* The picked one of a set of pills (Fast / Balanced / Precision, the
+   Island's look, the pet…). The base style above used to win over the
+   picked colours, so it never showed which one you'd chosen. */
+.izk-pill[aria-pressed="true"] {
+  color: #fff;
+  border-color: rgba(78, 205, 196, 0.85);
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.45), rgba(78, 205, 196, 0.4));
+  box-shadow: 0 0 0 1px rgba(78, 205, 196, 0.35), 0 4px 14px rgba(78, 205, 196, 0.25);
+  font-weight: 650;
+}
+
 .izk-btn-primary {
   position: relative;
   border-radius: 999px;
@@ -658,6 +669,29 @@ html[data-backdrop="tabbed"] .izk-card {
 @media (prefers-reduced-motion: reduce) {
   .izk-island-open::before { animation: none; }
 }
+/* Island looks (Settings → Talk → Island look), Windhawk-style. All static —
+   no backdrop blur, no animation — because the Island sits over video all day. */
+.izk-island.izk-theme-glass {
+  background: rgba(22, 26, 40, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+.izk-island.izk-theme-bubble {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.04) 55%), rgba(20, 22, 34, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -3px 8px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.izk-island.izk-theme-squircle {
+  background: rgba(14, 14, 20, 0.96);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.izk-island.izk-theme-outline {
+  background: rgba(6, 6, 9, 0.6);
+  box-shadow: inset 0 0 0 1.5px rgba(94, 231, 255, 0.75), 0 0 12px rgba(94, 231, 255, 0.35);
+}
+.izk-island.izk-theme-aero {
+  background: linear-gradient(180deg, rgba(150, 195, 245, 0.6) 0%, rgba(60, 110, 190, 0.78) 48%, rgba(25, 60, 130, 0.9) 52%, rgba(30, 70, 150, 0.88) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.28), 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
 /* Nothing to say: just a faint glowing line showing where it lives. */
 .izk-island-rest {
   /* Static on purpose: this sits over live video all day, and a moving

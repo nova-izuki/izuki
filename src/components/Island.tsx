@@ -101,6 +101,7 @@ export function Island({
   thinking,
   peeks = true,
   wave = "auto",
+  look = "default",
   visualizing = false,
   onVisualize,
   onPlaying,
@@ -112,6 +113,8 @@ export function Island({
   peeks?: boolean;
   /** The waveform style while music plays (setting). */
   wave?: string;
+  /** The Island's look (setting island_style): Windhawk-style themes. */
+  look?: string;
   /** Music mode is showing (the orb flowing with the music). */
   visualizing?: boolean;
   onVisualize?: () => void;
@@ -377,9 +380,10 @@ export function Island({
           "izk-island relative overflow-hidden text-white " +
           (open ? "pointer-events-auto" : "pointer-events-none") +
           (live.kind === "rest" && !open ? " izk-island-rest" : "") +
-          (open ? " izk-island-open" : "")
+          (open ? " izk-island-open" : "") +
+          (look !== "default" ? ` izk-theme-${look}` : "")
         }
-        style={{ borderRadius: open ? 28 : 22 }}
+        style={{ borderRadius: look === "squircle" ? (open ? 16 : 11) : open ? 28 : 22 }}
       >
         <AnimatePresence mode="popLayout" initial={false}>
           {open ? (

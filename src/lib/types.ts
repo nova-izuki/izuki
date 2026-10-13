@@ -334,6 +334,8 @@ export interface Settings {
   island_suggestions: boolean;
   /** The Island's waveform while music plays. */
   island_wave: "auto" | "silk" | "bars" | "mirror" | "neon" | "dots";
+  /** The Island's look (Windhawk-style themes). */
+  island_style: "default" | "glass" | "bubble" | "squircle" | "outline" | "aero";
   /** A click picked by eye gets a second look from a pointing model (Gemini) first. */
   sharp_eye: boolean;
   /** Use UI-TARS (OpenRouter, paid) for that second look. */
@@ -361,6 +363,8 @@ export interface Settings {
   air_gestures: Array<{ name: string; pose: number[]; action: string }>;
   /** How the Air pointer follows your hand. */
   air_mode: "fast" | "balanced" | "precision";
+  /** What the quick gestures do (src/lib/airActions.ts); missing = the default. */
+  air_bindings: Record<string, string>;
   /** Once a day, what has sat in the Recycle Bin for 30+ days is cleared for good. */
   tidy_recycle_auto: boolean;
   /** PC Care: the Island says when antivirus, firewall, space or a drive needs attention. */

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Hand, Trash2 } from "lucide-react";
 import { Row, Section, Toggle } from "./ui";
+import { AIR_ACTIONS, AIR_SLOTS, airBindings } from "../lib/airActions";
 import { useIzuki } from "../lib/store";
 import { emit, EV } from "../lib/ipc";
 import { listCameras, rankCameras, saveCamera, savedCamera } from "../lib/camera";
@@ -75,6 +76,27 @@ export function AirCard() {
       <Row label="Air control" hint="Your camera turns on while this is on." icon={<Hand size={14} strokeWidth={2.3} />}>
         <Toggle checked={settings.air_enabled} onChange={(v) => patch({ air_enabled: v })} />
       </Row>
+      <div className="py-2">
+        <div className="text-[13px] font-medium text-izk-ink">What your quick gestures do</div>
+        <div className="mt-0.5 text-[11px] text-izk-muted">Or just say it: “Hey Nova, make my pinky pinch take a screenshot.” Thumb + pointing finger is always click and drag; a peace sign scrolls; a fist pauses.</div>
+        <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          {AIR_SLOTS.map((s) => (
+            <label key={s.id} className="flex items-center justify-between gap-2 rounded-xl bg-white/5 px-2.5 py-1.5 text-[11.5px]">
+              <span className="text-izk-ink">{s.label}</span>
+              <select
+                aria-label={s.label}
+                className="rounded-lg border border-white/15 bg-black/40 px-1.5 py-0.5 text-[11.5px] text-white"
+                value={airBindings(settings.air_bindings)[s.id]}
+                onChange={(e) => patch({ air_bindings: { ...(settings.air_bindings ?? {}), [s.id]: e.target.value } })}
+              >
+                {AIR_ACTIONS.map((a) => (
+                  <option key={a.id} value={a.id}>{a.label}</option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+      </div>
       <Row label="How it follows your hand" hint="Fast: the ring keeps right up with quick moves. Balanced: quick and steady. Precision: slower, finer moves for small buttons — your hand covers more of the camera's view per screen.">
         <div className="flex flex-wrap justify-end gap-1">
           {([["fast", "Fast"], ["balanced", "Balanced"], ["precision", "Precision"]] as const).map(([k, l]) => (

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
 import { api, emit, EV, on } from "../lib/ipc";
 import { listCameras, openCamera, rankCameras, saveCamera, savedCamera } from "../lib/camera";
-import { AirKeyboard } from "./AirKeyboard";
+import { AIR_KEYBOARD_OPEN, AirKeyboard } from "./AirKeyboard";
+import { actionLabel, airBindings, type AirSlot } from "../lib/airActions";
 import type { Settings } from "../lib/types";
 
 /**
@@ -32,6 +33,21 @@ type Box = { nx: number; ny: number; nw: number; nh: number; kind: string; field
 type Custom = Settings["air_gestures"][number];
 
 const IDLE_OFF_MS = 10 * 60_000;
+
+/**
+ * Izuki's own control under the ring (the guide's "Pinch me" button, the
+ * floating keyboard…), or null. The overlay spans the same screen area as
+ * the ring's coordinates. These are pressed right here: a Windows mouse
+ * press went through the see-through overlay to the app behind it, and the
+ * highlight box (found from the apps behind, with the overlay left out on
+ * purpose) moved the pinch onto whatever was behind the panel.
+ */
+function ownAt(nx: number, ny: number): HTMLElement | null {
+  const el = document.elementFromPoint(nx * window.innerWidth, ny * window.innerHeight) as HTMLElement | null;
+  const panel = el?.closest<HTMLElement>("[data-izk-hit]");
+  if (!el || !panel) return null;
+  return el.closest<HTMLElement>("button, a, select, input, textarea, [role=button]") ?? panel;
+}
 
 /** One-euro filter: steady when still, quick when moving. */
 /**
@@ -102,6 +118,7 @@ function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
 export function AirHost() {
   const [gestures, setGestures] = useState<Custom[] | null>(null);
   const [mode, setMode] = useState<AirMode>("balanced");
+  const [bindings, setBindings] = useState<Record<AirSlot, string>>(() => airBindings(undefined));
   const last = useRef("");
   useEffect(() => {
     let alive = true;
@@ -111,6 +128,7 @@ export function AirHost() {
         .then((s) => {
           if (!alive) return;
           setMode(s.air_mode in AIR_MODES ? s.air_mode : "balanced");
+          setBindings(airBindings(s.air_bindings));
           const next = s.air_enabled ? s.air_gestures ?? [] : null;
           const key = JSON.stringify(next);
           if (key === last.current) return; // same as before: don't restart the camera
@@ -127,10 +145,13 @@ export function AirHost() {
       offs.forEach((off) => void off.then((f) => f()).catch(() => undefined));
     };
   }, []);
-  return gestures ? <AirControl gestures={gestures} mode={mode} /> : null;
+  return gestures ? <AirControl gestures={gestures} mode={mode} bindings={bindings} /> : null;
 }
 
-export function AirControl({ gestures, mode: airMode = "balanced" }: { gestures: Custom[]; mode?: AirMode }) {
+export function AirControl({ gestures, mode: airMode = "balanced", bindings }: { gestures: Custom[]; mode?: AirMode; bindings?: Record<AirSlot, string> }) {
+  /** What the quick gestures do (changing them never restarts the camera). */
+  const binds = useRef(airBindings(undefined));
+  if (bindings) binds.current = bindings;
   const tuning = useRef(AIR_MODES[airMode]);
   tuning.current = AIR_MODES[airMode] ?? AIR_MODES.balanced;
   const video = useRef<HTMLVideoElement>(null);
@@ -140,7 +161,7 @@ export function AirControl({ gestures, mode: airMode = "balanced" }: { gestures:
   customs.current = gestures;
   const recording = useRef<{ name: string; action: string; frames: number[][]; until: number } | null>(null);
   /** What the guided test watches: the last hand, and what's been done. */
-  const live = useRef<AirLive>({ lm: null, hand: false, moved: 0, scrolls: 0, pauses: 0, clicked: false, dragged: false, engine: "", camera: "", looks: 0, looksAt: 0, rate: 0, ms: 0, fps: 0, gesture: "", pinch: 1, tour: false, snap: null });
+  const live = useRef<AirLive>({ lm: null, hand: false, moved: 0, scrolls: 0, pauses: 0, clicked: false, dragged: false, pinches: 0, engine: "", camera: "", looks: 0, looksAt: 0, rate: 0, ms: 0, fps: 0, gesture: "", pinch: 1, tour: false, snap: null });
   const [tour, setTour] = useState(false);
   /** Bumped to reopen the camera: another one picked, or one plugged in / out. */
   const [camKey, setCamKey] = useState(0);
@@ -238,13 +259,21 @@ export function AirControl({ gestures, mode: airMode = "balanced" }: { gestures:
     let pinchDown = false;
     let pinchAt = 0;
     let dragging = false;
-    /** How far the hand had moved when a drag began (the guide's drag step). */
-    let dragFrom = 0;
+    /** A pinch that began on Izuki's own control: pressed here on release, no Windows click. */
+    let ownDown: HTMLElement | null = null;
+    /** Where the hand was when the pinch began (the drag step measures the hand itself). */
+    let pinchFrom: { x: number; y: number } | null = null;
     let other: "middle" | "ring" | "pinky" | null = null;
     let otherAt = 0;
     let scrollY: number | null = null;
+    /** When the peace sign was last seen (scrolling holds through a flicker). */
+    let peaceAt = 0;
     let scrollAcc = 0;
     let fistAt = 0;
+    /** Where the hand was when it last moved (taught gestures need it held still). */
+    let stillFrom: { x: number; y: number } | null = null;
+    /** "Hold to pause…" by the ring while a fist is held (so a pause is never a surprise). */
+    let holdLabel = "";
     let paused = false;
     let pointAt = 0;
     let pointFrom: { x: number; y: number } | null = null;
@@ -282,21 +311,31 @@ export function AirControl({ gestures, mode: airMode = "balanced" }: { gestures:
       g.clearRect(0, 0, W, H);
       if (!hand) return;
       if (box && !paused) {
-        g.strokeStyle = "rgba(94,231,255,0.95)";
-        g.lineWidth = 2;
-        g.shadowColor = "rgba(94,231,255,0.8)";
-        g.shadowBlur = 8;
         const r = Math.min(8, box.nw * W * 0.2, box.nh * H * 0.2);
         g.beginPath();
         g.roundRect(box.nx * W - 2, box.ny * H - 2, box.nw * W + 4, box.nh * H + 4, r);
+        // A dark edge under the glow: it shows on white pages too.
+        g.strokeStyle = "rgba(0,0,0,0.6)";
+        g.lineWidth = 4.5;
+        g.stroke();
+        g.strokeStyle = "rgba(94,231,255,0.98)";
+        g.lineWidth = 2;
+        g.shadowColor = "rgba(94,231,255,0.8)";
+        g.shadowBlur = 8;
         g.stroke();
         g.shadowBlur = 0;
       }
       const px = pointer.x * W;
       const py = pointer.y * H;
+      // Seen on any screen, bright or dark: a dark edge under the white (or
+      // pink) ring. (The overlay can't read the colours behind it, so the
+      // ring carries its own contrast.)
       g.beginPath();
       g.arc(px, py, pinchDown ? 9 : 14, 0, Math.PI * 2);
-      g.strokeStyle = paused ? "rgba(255,255,255,0.35)" : pinchDown ? "rgba(255,92,170,0.95)" : "rgba(255,255,255,0.9)";
+      g.strokeStyle = paused ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.78)";
+      g.lineWidth = 6;
+      g.stroke();
+      g.strokeStyle = paused ? "rgba(255,255,255,0.45)" : pinchDown ? "rgba(255,92,170,1)" : "rgba(255,255,255,0.97)";
       g.lineWidth = 2.5;
       g.stroke();
       if (pinchDown) {
@@ -306,9 +345,20 @@ export function AirControl({ gestures, mode: airMode = "balanced" }: { gestures:
       const label = mode || (performance.now() < shown.until ? shown.text : "");
       if (label) {
         g.font = "600 12px system-ui";
-        g.fillStyle = "rgba(255,255,255,0.92)";
+        g.lineWidth = 3.5;
+        g.strokeStyle = "rgba(0,0,0,0.75)";
+        g.strokeText(label, px + 18, py - 14);
+        g.fillStyle = "rgba(255,255,255,0.97)";
         g.fillText(label, px + 18, py - 14);
       }
+    };
+
+    /** A quick gesture's action (yours to choose: Settings → Air control, or by voice). */
+    const quick = (action: string) => {
+      if (!action || action === "none") return;
+      if (action === "click:right") void api.airButton(true, true).then(() => api.airButton(true, false)).catch(() => undefined);
+      else if (action.startsWith("keys:")) void api.airKeys(action.slice(5)).catch(() => undefined);
+      flash(actionLabel(action));
     };
 
     const act = (action: string) => {
@@ -444,8 +494,14 @@ export function AirControl({ gestures, mode: airMode = "balanced" }: { gestures:
       }
       if (!lm) {
         L.gesture = "";
+        scrollY = null;
+        scrollAcc = 0;
+        swipeFrom = null;
+        customName = "";
         if (pinchDown) {
-          void api.airButton(false, false);
+          if (!ownDown) void api.airButton(false, false);
+          ownDown = null;
+          pinchFrom = null;
           pinchDown = false;
         }
         sx.reset();
@@ -458,7 +514,18 @@ export function AirControl({ gestures, mode: airMode = "balanced" }: { gestures:
       const scale = Math.max(1e-3, dist(lm[0], lm[9]));
       const up = (tip: number, pip: number) => dist(lm[0], lm[tip]) > dist(lm[0], lm[pip]) * 1.12;
       const ext = { index: up(8, 6), middle: up(12, 10), ring: up(16, 14), pinky: up(20, 18) };
-      const pinch = (tip: number, on: boolean) => dist(lm[4], lm[tip]) / scale < (on ? 0.42 : 0.3);
+      // Closing counts at 0.3; once pinched it holds until 0.42 (0.5 while
+      // dragging, where the fingers loosen as the hand moves).
+      // Measured as fingertip gap ÷ palm length. Your fingertips don't have
+      // to touch exactly (0.3 was too strict on a webcam — "it's hard"):
+      // closing counts at 0.38; once pinched it holds until 0.5 (0.58 while
+      // dragging, where the fingers loosen as the hand moves).
+      const near = (tip: number) => dist(lm[4], lm[tip]) / scale;
+      // Which fingertip the thumb is nearest: that's the pinch (thumb + middle
+      // for a right-click often had the pointing finger close too, and turned
+      // into a left click).
+      const nearest = [8, 12, 16, 20].reduce((a, b) => (near(b) < near(a) ? b : a));
+      const pinch = (tip: number, on: boolean) => near(tip) < (on ? (dragging ? 0.58 : 0.5) : 0.38) && (on || nearest === tip);
 
       // Teaching: average the pose over a moment.
       const rec = recording.current;
@@ -479,22 +546,33 @@ export function AirControl({ gestures, mode: airMode = "balanced" }: { gestures:
       }
 
       // Fist, held: pause / resume.
-      const fist = !ext.index && !ext.middle && !ext.ring && !ext.pinky && !pinch(8, false);
+      // Only a real fist: every fingertip folded right into the palm (nearer
+      // the wrist than its knuckle). A relaxed, half-curled hand used to
+      // count and paused Air control by surprise.
+      const folded = (tip: number, knuckle: number) => dist(lm[0], lm[tip]) < dist(lm[0], lm[knuckle]) * 1.02;
+      const fist = folded(8, 5) && folded(12, 9) && folded(16, 13) && folded(20, 17) && !pinchDown;
       if (fist) {
         if (!fistAt) fistAt = now;
-        else if (now - fistAt > 800) {
+        else if (fistAt !== Infinity && now - fistAt > 250) holdLabel = paused ? "Hold to carry on…" : "Hold to pause…";
+        if (fistAt !== Infinity && now - fistAt > 1000) {
           paused = !paused;
           live.current.pauses++;
           fistAt = Infinity;
           setStatus(paused ? "Paused — make a fist again to carry on" : "Air control on");
         }
-      } else fistAt = 0;
+      } else {
+        fistAt = 0;
+        holdLabel = "";
+      }
+      if (fistAt === Infinity) holdLabel = "";
       if (paused) {
         if (pinchDown) {
           pinchDown = false;
-          void api.airButton(false, false).catch(() => undefined);
+          if (!ownDown) void api.airButton(false, false).catch(() => undefined);
+          ownDown = null;
+          pinchFrom = null;
         }
-        mode = "Paused";
+        mode = holdLabel || "Paused — fist again to carry on";
         L.gesture = "fist";
         draw(true);
         return;
@@ -511,7 +589,9 @@ export function AirControl({ gestures, mode: airMode = "balanced" }: { gestures:
       // Your own gestures come first (a taught peace sign isn't a scroll):
       // hold the pose a moment. The pointer stays put while you show it.
       let taught: Custom | null = null;
-      if (!pinchDown && customs.current.length) {
+      const still = !!stillFrom && Math.hypot(raw.x - stillFrom.x, raw.y - stillFrom.y) < 0.03;
+      if (!still) stillFrom = { x: raw.x, y: raw.y };
+      if (!pinchDown && still && customs.current.length) {
         const pose = poseOf(lm);
         let bd = Infinity;
         for (const c of customs.current) {
@@ -532,12 +612,16 @@ export function AirControl({ gestures, mode: airMode = "balanced" }: { gestures:
           flash(`✨ ${taught.name}`);
           act(taught.action);
         }
-        draw(true);
-        return;
-      }
-      customName = "";
+      } else customName = "";
 
-      const twoUp = ext.index && ext.middle && !ext.ring && !ext.pinky && !pinch(8, false);
+      // The peace sign ✌️: pointing and middle fingers up, the other two down.
+      // Forgiving: up a little counts (1.04), and a half-bent ring or little
+      // finger doesn't spoil it (only clearly up, 1.3, does). Once scrolling,
+      // it holds through a flickery look or two (200 ms).
+      const upBy = (tip: number, pip: number, k: number) => dist(lm[0], lm[tip]) > dist(lm[0], lm[pip]) * k;
+      const peace = upBy(8, 6, 1.04) && upBy(12, 10, 1.04) && !upBy(16, 14, 1.3) && !upBy(20, 18, 1.3) && !pinch(8, false) && !pinch(12, false);
+      if (peace) peaceAt = now;
+      const twoUp = !pinchDown && !taught && (peace || (scrollY !== null && now - peaceAt < 200));
       // Scrolling holds the pointer still and turns hand movement into notches.
       if (twoUp) {
         mode = "Scroll";
@@ -564,8 +648,16 @@ export function AirControl({ gestures, mode: airMode = "balanced" }: { gestures:
         void api.airPointer(nx, ny).catch(() => undefined);
       }
 
+      // Over Izuki's own panel: the box is that control, exactly.
+      const own = ownAt(pointer.x, pointer.y);
+      if (own) {
+        const r = own.getBoundingClientRect();
+        box = { nx: r.left / window.innerWidth, ny: r.top / window.innerHeight, nw: r.width / window.innerWidth, nh: r.height / window.innerHeight, kind: "own", field: false };
+        boxSeq++; // a lookup still on its way is about the app behind
+        boxFor = { x: -1, y: -1 };
+      }
       // The box under the hand, eight times a second when it has moved.
-      if (!boxBusy && now - boxAt > 125 && Math.hypot(pointer.x - boxFor.x, pointer.y - boxFor.y) > 0.004) {
+      else if (!boxBusy && now - boxAt > 125 && Math.hypot(pointer.x - boxFor.x, pointer.y - boxFor.y) > 0.004) {
         boxAt = now;
         boxFor = { ...pointer };
         const seq = ++boxSeq;
@@ -580,11 +672,14 @@ export function AirControl({ gestures, mode: airMode = "balanced" }: { gestures:
       }
 
       // Thumb + index: press (and hold to drag).
-      const p = pinch(8, pinchDown);
+      const p = !taught && pinch(8, pinchDown);
       if (p && !pinchDown) {
         pinchDown = true;
         pinchAt = now;
         dragging = false;
+        L.pinches++;
+        pinchFrom = { x: raw.x, y: raw.y };
+        ownDown = own;
         // A pinch lands on the middle of what's boxed.
         if (box) {
           const cx = box.nx + box.nw / 2;
@@ -596,50 +691,52 @@ export function AirControl({ gestures, mode: airMode = "balanced" }: { gestures:
             void api.airPointer(cx, cy).catch(() => undefined);
           }
         }
-        void api.airButton(false, true).catch(() => undefined);
+        if (!ownDown) void api.airButton(false, true).catch(() => undefined);
+        // A box you can type in: the air keyboard comes up by itself.
+        if (!ownDown && box?.field && pointer.x >= box.nx && pointer.x <= box.nx + box.nw && pointer.y >= box.ny && pointer.y <= box.ny + box.nh) {
+          window.dispatchEvent(new Event(AIR_KEYBOARD_OPEN));
+        }
       } else if (!p && pinchDown) {
         pinchDown = false;
-        void api.airButton(false, false).catch(() => undefined);
+        if (ownDown) {
+          // Pressed where it began (a drag off it cancels, like a real button).
+          const now2 = ownAt(pointer.x, pointer.y);
+          if (now2 && (now2 === ownDown || ownDown.contains(now2))) ownDown.click();
+          ownDown = null;
+        } else void api.airButton(false, false).catch(() => undefined);
+        pinchFrom = null;
       } else if (pinchDown && now - pinchAt > 250) {
-        if (dragging && L.moved - dragFrom > 0.08) L.dragged = true;
-        if (!dragging) dragFrom = L.moved;
+        // A drag: the pinch held while the hand itself moves (measured from
+        // the hand, not the ring, which holds still for a moment at first).
+        if (pinchFrom && Math.hypot(raw.x - pinchFrom.x, raw.y - pinchFrom.y) > 0.05) L.dragged = true;
         dragging = true;
         mode = "Drag";
       }
-      if (!pinchDown) mode = "";
+      if (!pinchDown) mode = holdLabel;
       L.gesture = pinchDown ? (dragging ? "drag" : "pinch") : fist ? "fist" : "point";
 
       // Thumb + middle / ring / pinky: right-click, copy, paste.
       const which = !pinchDown ? (pinch(12, other === "middle") ? "middle" : pinch(16, other === "ring") ? "ring" : pinch(20, other === "pinky") ? "pinky" : null) : null;
       if (which && which !== other && now - otherAt > 600) {
         otherAt = now;
-        if (which === "middle") {
-          void api.airButton(true, true).then(() => api.airButton(true, false)).catch(() => undefined);
-          flash("Right-click");
-        } else if (which === "ring") {
-          void api.airKeys("ctrl+c").catch(() => undefined);
-          flash("Copied");
-        } else {
-          void api.airKeys("ctrl+v").catch(() => undefined);
-          flash("Pasted");
-        }
+        quick(binds.current[which]);
       }
       other = which;
 
       // Open palm, quick sideways swipe: back / forward.
       const palm = ext.index && ext.middle && ext.ring && ext.pinky;
-      if (palm && now > swipeCool) {
+      if (palm && !taught && now > swipeCool) {
         if (!swipeFrom) swipeFrom = { x: raw.x, y: raw.y, t: now };
         const dt = now - swipeFrom.t;
         const dx = raw.x - swipeFrom.x;
-        // A real flick: half the screen in a third of a second, and level —
-        // just moving the pointer with an open hand never counts.
-        if (dt < 330 && Math.abs(dx) > 0.3 && Math.abs(raw.y - swipeFrom.y) < 0.08) {
-          void api.airKeys(dx > 0 ? "alt+right" : "alt+left").catch(() => undefined);
-          flash(dx > 0 ? "Forward" : "Back");
+        // A real flick: most of the camera's width in under 0.28 s, dead level,
+        // fingers open the whole way. Now that tracking keeps up with fast
+        // moves, an ordinary quick move across the screen mustn't go Back.
+        if (dt < 280 && Math.abs(dx) > 0.42 && Math.abs(raw.y - swipeFrom.y) < 0.06) {
+          quick(binds.current[dx > 0 ? "flick_right" : "flick_left"]);
           swipeCool = now + 900;
           swipeFrom = null;
-        } else if (dt > 330) swipeFrom = { x: raw.x, y: raw.y, t: now };
+        } else if (dt > 280) swipeFrom = { x: raw.x, y: raw.y, t: now };
       } else swipeFrom = null;
 
       // Point at a text box and hold still: it's clicked, then what you say
@@ -653,6 +750,7 @@ export function AirControl({ gestures, mode: airMode = "balanced" }: { gestures:
         } else if (now - pointAt > 900) {
           pointAt = Infinity;
           flash("Say it…");
+          window.dispatchEvent(new Event(AIR_KEYBOARD_OPEN));
           void api.airButton(false, true).then(() => api.airButton(false, false)).then(() => emit(EV.airSay)).catch(() => undefined);
         }
       } else {
@@ -869,6 +967,8 @@ type AirLive = {
   clicked: boolean;
   /** Pinched, held and moved (a drag). */
   dragged: boolean;
+  /** Pinches so far. */
+  pinches: number;
   engine: string;
   camera: string;
   looks: number;
@@ -891,8 +991,8 @@ type AirLive = {
 const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
 
 /** Counters a step is measured from (so "Try again" starts it fresh). */
-type Base = { moved: number; scrolls: number; pauses: number; clicked: boolean; dragged: boolean };
-const baseOf = (l: AirLive): Base => ({ moved: l.moved, scrolls: l.scrolls, pauses: l.pauses, clicked: l.clicked, dragged: l.dragged });
+type Base = { moved: number; scrolls: number; pauses: number; clicked: boolean; dragged: boolean; pinches: number };
+const baseOf = (l: AirLive): Base => ({ moved: l.moved, scrolls: l.scrolls, pauses: l.pauses, clicked: l.clicked, dragged: l.dragged, pinches: l.pinches });
 
 /**
  * The guided test's steps, in plain words. Each: what to do, with which
@@ -905,6 +1005,8 @@ const STEPS: Array<{
   demo: string;
   /** The picture's movement: "bob", "slide", "pinch", "drag", "updown", "squeeze". */
   move: string;
+  /** The fingertips this step uses, circled on the camera view. */
+  tips: number[];
   done: (l: AirLive, b: Base) => boolean;
   /** 0..1 — how far along this step is. */
   progress: (l: AirLive, b: Base) => number;
@@ -912,6 +1014,7 @@ const STEPS: Array<{
 }> = [
   {
     title: "Show your hand",
+    tips: [4, 8, 12, 16, 20],
     how: "Hold up one hand with your palm facing the camera, about an arm's length away. Keep it in the light.",
     demo: "✋",
     move: "bob",
@@ -921,6 +1024,7 @@ const STEPS: Array<{
   },
   {
     title: "Move the ring",
+    tips: [5, 9],
     how: "Keep your hand open and move it slowly left, right, up and down. The white ring on your screen moves with it.",
     demo: "✋",
     move: "slide",
@@ -930,15 +1034,17 @@ const STEPS: Array<{
   },
   {
     title: "Pinch to click",
-    how: "Move the ring onto the pink “Pinch me” button below. Then touch the tip of your thumb to the tip of your pointing finger, and open them again — like picking up a grain of rice.",
+    tips: [4, 8],
+    how: "Touch the tip of your thumb to the tip of your pointing finger, then open them again — like picking up a grain of rice. Try it on the pink “Pinch me” button below.",
     demo: "🤏",
     move: "pinch",
-    done: (l, b) => l.clicked && !b.clicked,
+    done: (l, b) => (l.clicked && !b.clicked) || l.pinches > b.pinches,
     progress: (l) => (l.lm ? 1 - l.pinch : 0),
     now: (l) => (!l.lm ? "Show me your hand" : l.gesture === "pinch" || l.gesture === "drag" ? "Pinched! ✓" : l.pinch < 0.45 ? "Closer… almost touching" : "Thumb and pointing finger apart"),
   },
   {
     title: "Pinch and hold to drag",
+    tips: [4, 8],
     how: "Pinch your thumb and pointing finger together and keep them together. Move your hand a little — that drags. Open your fingers to let go.",
     demo: "🤏",
     move: "drag",
@@ -948,7 +1054,8 @@ const STEPS: Array<{
   },
   {
     title: "Scroll",
-    how: "Hold up two fingers — your pointing and middle fingers, like a peace sign ✌️ — with the others folded down. Move your hand up or down to scroll.",
+    tips: [8, 12],
+    how: "Make a peace sign ✌️ — pointing and middle fingers up, the other two folded down (your thumb can rest on them). Hold it, and move your whole hand slowly up or down to scroll.",
     demo: "✌️",
     move: "updown",
     done: (l, b) => l.scrolls - b.scrolls >= 3,
@@ -957,6 +1064,7 @@ const STEPS: Array<{
   },
   {
     title: "Pause",
+    tips: [4, 8, 12, 16, 20],
     how: "Make a fist ✊ and hold it still for one second — Air control pauses. Make a fist again to carry on.",
     demo: "✊",
     move: "squeeze",
@@ -976,6 +1084,7 @@ function AirTour({ video, live, onClose, onCamera }: { video: React.RefObject<HT
   const preview = useRef<HTMLCanvasElement>(null);
   const [, tick] = useState(0);
   const [at, setAt] = useState(0);
+  const tipsRef = useRef<number[]>([4, 8]);
   const base = useRef<Base>(baseOf(live.current));
   const [cheer, setCheer] = useState(false);
   // Every camera, by name (this window already has camera permission).
@@ -1044,8 +1153,8 @@ function AirTour({ video, live, onClose, onCamera }: { video: React.RefObject<HT
           g.arc(x, y, 3, 0, Math.PI * 2);
           g.fill();
         }
-        // The two fingertips that pinch, bigger.
-        for (const i of [4, 8]) {
+        // The fingertips this step uses, circled.
+        for (const i of tipsRef.current) {
           const [x, y] = P(lm[i]);
           g.beginPath();
           g.arc(x, y, 6, 0, Math.PI * 2);
@@ -1067,6 +1176,7 @@ function AirTour({ video, live, onClose, onCamera }: { video: React.RefObject<HT
   const l = live.current;
   const finished = at >= STEPS.length;
   const step = STEPS[Math.min(at, STEPS.length - 1)];
+  tipsRef.current = step.tips;
   const done = !finished && step.done(l, base.current);
   // Done: a moment to see the tick, then the next step.
   // (Two effects: one that also cleared its own timer when `cheer` changed

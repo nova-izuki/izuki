@@ -223,6 +223,7 @@ export const MOCK_SETTINGS: Settings = {
   glow_only: false,
   island_suggestions: true,
   island_wave: "auto",
+  island_style: "default",
   tidy_dupes_auto: false,
   tidy_recycle_auto: false,
   pc_care_alerts: true,
@@ -241,6 +242,7 @@ export const MOCK_SETTINGS: Settings = {
   air_enabled: false,
   air_gestures: [],
   air_mode: "balanced",
+  air_bindings: {},
   auto_skip_ads: false,
   auto_reject_cookies: false,
   follow_hand_size: 16,
@@ -378,6 +380,16 @@ export const ISLAND_CHATS_KEY = "izuki.island-chats.v1";
 export const ISLAND_DEEP_KEY = "izuki.island-deep";
 /** An Island conversation waiting for Chat to carry on ("Continue in Chat"). */
 export const ISLAND_TO_CHAT_KEY = "izuki.island-to-chat";
+
+/** A Windows tweak (tweaks.rs): a switch, read live from Windows. */
+export interface WindowsTweak {
+  id: string;
+  label: string;
+  hint: string;
+  /** Shows only after Windows Explorer restarts. */
+  restart: boolean;
+  on: boolean;
+}
 
 export const api = {
   getSettings: () => call<Settings>("get_settings", undefined, () => MOCK_SETTINGS),
@@ -563,6 +575,11 @@ export const api = {
   /** Air control: the box around what's under a normalized spot (normalized). */
   airTarget: (nx: number, ny: number) => call<{ nx: number; ny: number; nw: number; nh: number; kind: string; field: boolean } | null>("air_target", { nx, ny }, () => null),
   /** 24/7 PC fast, live: when it last looked and what it last did by itself. */
+  /** Dictated text with its grammar and punctuation fixed (unchanged if no brain answers). */
+  polishText: (text: string) => call<string>("polish_text", { text }, () => text),
+  tweaksList: () => call<WindowsTweak[]>("tweaks_list", undefined, () => []),
+  tweakSet: (id: string, on: boolean) => call<WindowsTweak[]>("tweak_set", { id, on }, () => []),
+  restartExplorer: () => call<void>("restart_explorer", undefined, () => undefined),
   boostLive: () => call<{ on: boolean; looked_secs_ago: number | null; done_secs_ago: number | null; done: string | null }>("boost_live", undefined, () => ({ on: false, looked_secs_ago: null, done_secs_ago: null, done: null })),
   /** The desktop mate: where its character is (only clicks there are caught). */
   mateHot: (x: number, y: number, w: number, h: number) => call<void>("mate_hot", { x, y, w, h }, () => undefined),

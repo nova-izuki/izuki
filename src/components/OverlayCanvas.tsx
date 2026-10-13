@@ -119,6 +119,7 @@ export function OverlayCanvas() {
   const [islandOn, setIslandOn] = useState(true);
   const [islandPeeks, setIslandPeeks] = useState(true);
   const [islandWave, setIslandWave] = useState<string>("auto");
+  const [islandStyle, setIslandStyle] = useState<string>("default");
   const [keepReply, setKeepReply] = useState(false);
   /** Air control is on (drawn by AirHost at the overlay root) — keeps the overlay from idling shut. */
   const [air, setAir] = useState(false);
@@ -457,6 +458,7 @@ export function OverlayCanvas() {
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
           setIslandWave(s.island_wave || "auto");
+          setIslandStyle(s.island_style || "default");
           setKeepReply(s.keep_reply);
           setEdgeGlow(s.edge_glow);
           setAir(s.air_enabled);
@@ -519,6 +521,7 @@ export function OverlayCanvas() {
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
           setIslandWave(s.island_wave || "auto");
+          setIslandStyle(s.island_style || "default");
           setKeepReply(s.keep_reply);
           setEdgeGlow(s.edge_glow);
           setAir(s.air_enabled);
@@ -813,6 +816,7 @@ export function OverlayCanvas() {
             thinking={thinking}
             peeks={islandPeeks}
             wave={islandWave}
+            look={islandStyle}
             visualizing={musicShowing}
             onVisualize={() => {
               setMusicSnoozed(false);

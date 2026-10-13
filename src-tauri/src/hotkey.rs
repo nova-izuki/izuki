@@ -340,10 +340,12 @@ pub fn rebind(app: &AppHandle, settings: &Settings) {
                         // recording (a quick tap keeps listening instead).
                         (Action::Voice, ShortcutState::Pressed) => {
                             if !VOICE_DOWN.swap(true, Ordering::SeqCst) {
+                                eprintln!("[hotkey] talk key pressed");
                                 action.run(&handle);
                             }
                         }
                         (Action::Voice, ShortcutState::Released) => {
+                            eprintln!("[hotkey] talk key released");
                             VOICE_DOWN.store(false, Ordering::SeqCst);
                             let _ = handle.emit(events::PUSH_TO_TALK_RELEASE, ());
                         }
@@ -360,6 +362,7 @@ pub fn rebind(app: &AppHandle, settings: &Settings) {
     }
 
     if !failed.is_empty() {
+        eprintln!("[hotkey] couldn't register: {}", failed.join(", "));
         let _ = app.emit(
             events::STATUS,
             StatusEvent::error(

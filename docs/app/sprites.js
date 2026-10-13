@@ -79,6 +79,14 @@ function resolve(pack, state) {
   return pack.data.states[s]?.length ? s : Object.keys(pack.data.states)[0];
 }
 
+/**
+ * A new phrase began (the voice came back after a pause): move on to the
+ * next gesture, so the hands go with the words instead of a clock.
+ */
+export function nudgeMover(m) {
+  m.nudge = true;
+}
+
 export function createMover() {
   return { state: "idle", t: 0, clock: 0, prev: null, fade: 0, pose: null };
 }
@@ -123,24 +131,104 @@ function posed(m, pose, frames, p, t) {
   return { pose, f: frames[pose.i % n], old: pose.from >= 0 && k < 1 ? frames[pose.from % n] : null, k };
 }
 
+/** Talking poses drawn with the mouth shut (the mouth is painted on, in time with the voice). */
+const shut = new WeakMap();
+function talkFrames(frames) {
+  if (!shut.has(frames)) {
+    const closed = frames.filter((f) => f.face && f.face.mo < 0.2);
+    shut.set(frames, closed.length >= 2 ? closed : frames);
+  }
+  return shut.get(frames);
+}
+
 function frameAt(pack, state, t, holder) {
   const s = resolve(pack, state);
-  const frames = pack.data.states[s];
+  const all = pack.data.states[s];
+  const frames = s === "talk" ? talkFrames(all) : all;
   const p = PLAY[s] || PLAY.idle;
   if (p.cycle) return { f: frames[Math.floor(t * p.cycle) % frames.length], old: null, k: 1, walk: true };
+  // A new phrase starting: the next gesture now (once it's been held a moment).
+  if (holder.nudge && holder.pose && t - holder.pose.at > 0.55) holder.pose.until = t;
+  holder.nudge = false;
   const r = posed(holder, holder.pose, frames, p, t);
   holder.pose = r.pose;
   return { f: r.f, old: r.old, k: r.k, walk: false };
 }
 
-function drawFrame(ctx, pack, f, { x, y, height, facing, breath = 0 }) {
+function drawFrame(ctx, pack, f, { x, y, height, facing, breath = 0, mouth = 0, blink = 0, face = false }) {
   const s = height / pack.data.height;
   ctx.save();
   if (facing < 0) { ctx.translate(x, 0); ctx.scale(-1, 1); ctx.translate(-x, 0); }
   // Breathing: a slight rise and fall, from the feet up.
   if (breath) { ctx.translate(0, y); ctx.scale(1, 1 + breath); ctx.translate(0, -y); }
-  ctx.drawImage(pack.img, f.x, f.y, f.w, f.h, x - f.fx * s, y - f.fy * s, f.w * s, f.h * s);
+  const ox = x - f.fx * s;
+  const oy = y - f.fy * s;
+  ctx.drawImage(pack.img, f.x, f.y, f.w, f.h, ox, oy, f.w * s, f.h * s);
+  if (face && f.face) drawFace(ctx, f.face, ox, oy, s, mouth, blink);
   ctx.restore();
+}
+
+/** A colour, darker (0..1). */
+function darker(hex, by) {
+  const n = parseInt(hex.slice(1), 16);
+  const c = (v) => Math.round(v * (1 - by));
+  return `rgb(${c(n >> 16)},${c((n >> 8) & 255)},${c(n & 255)})`;
+}
+
+/**
+ * The live face on a painted frame (found by .work/face_meta.py): a mouth
+ * that opens with the voice — painted in the character's own lip colour —
+ * and eyelids for blinking, in their own skin colour. An eye under a patch
+ * is left alone.
+ */
+function drawFace(ctx, fc, ox, oy, s, mouth, blink) {
+  if (mouth > 0.04) {
+    const cx = ox + fc.mx * s;
+    const cy = oy + fc.my * s;
+    const w = fc.mw * s * (0.58 + 0.2 * mouth);
+    const h = Math.max(0.8, fc.mw * s * (0.06 + 0.42 * mouth));
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + h * 0.12, w / 2, h / 2, 0, 0, Math.PI * 2);
+    ctx.fillStyle = darker(fc.lip, 0.62);
+    ctx.fill();
+    // Teeth: a hint along the top when it's open wide enough to see.
+    if (h > 2.6) {
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = "rgba(245,240,232,0.85)";
+      ctx.fillRect(cx - w / 2, cy + h * 0.12 - h / 2, w, h * 0.24);
+      ctx.restore();
+    }
+    ctx.lineWidth = Math.max(0.6, s * 0.7);
+    ctx.strokeStyle = fc.lip;
+    ctx.stroke();
+  }
+  if (blink > 0.05) {
+    const eyes = [[fc.lx, fc.ly, fc.lc], [fc.rx, fc.ry, fc.rc]];
+    for (const [ex, ey, covered] of eyes) {
+      if (covered) continue;
+      const cx = ox + ex * s;
+      const cy = oy + ey * s;
+      const rx = fc.ew * s * 0.62;
+      const ry = Math.max(0.6, fc.ew * s * 0.42);
+      // The lid comes down from the top.
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.fillStyle = fc.skin;
+      ctx.fillRect(cx - rx, cy - ry, rx * 2, ry * 2 * blink);
+      ctx.restore();
+      if (blink > 0.7) {
+        ctx.beginPath();
+        ctx.moveTo(cx - rx * 0.9, cy + ry * 0.1);
+        ctx.quadraticCurveTo(cx, cy + ry * 0.55, cx + rx * 0.9, cy + ry * 0.1);
+        ctx.lineWidth = Math.max(0.6, s * 0.6);
+        ctx.strokeStyle = darker(fc.skin, 0.55);
+        ctx.stroke();
+      }
+    }
+  }
 }
 
 /**
@@ -152,7 +240,7 @@ function blendFrames(ctx, pack, old, cur, k, o) {
   if (old && k < 1) {
     ctx.save();
     ctx.globalAlpha = 1 - k;
-    drawFrame(ctx, pack, old, o);
+    drawFrame(ctx, pack, old, { ...o, face: false });
     ctx.restore();
     ctx.save();
     ctx.globalAlpha = Math.min(1, k * 2);
@@ -165,7 +253,7 @@ function blendFrames(ctx, pack, old, cur, k, o) {
  * Draw it: feet at (x, y), `height` tall (a standing frame), facing 1 (as
  * drawn — walking faces right) or -1. Returns false without a pack.
  */
-export function drawMover(ctx, pack, m, { x, y, height, facing = 1, shadow = true, retro = false } = {}) {
+export function drawMover(ctx, pack, m, { x, y, height, facing = 1, shadow = true, retro = false, mouth = 0, blink = 0 } = {}) {
   if (!pack) return false;
   if (shadow) {
     ctx.save();
@@ -177,7 +265,7 @@ export function drawMover(ctx, pack, m, { x, y, height, facing = 1, shadow = tru
   }
   const cur = retro ? retroFrame(pack, m.state, m.t) : frameAt(pack, m.state, m.t, m);
   const breath = cur.walk || retro ? 0 : 0.006 * Math.sin(((m.clock || 0) * Math.PI * 2) / 3.8);
-  const o = { x, y, height, facing, breath };
+  const o = { x, y, height, facing, breath, mouth, blink, face: true };
   if (m.prev && m.fade > 0) {
     // Into a new state: the last state's pose fades out under the new one.
     const before = retro ? retroFrame(pack, m.prev.state, m.prev.t) : frameAt(pack, m.prev.state, m.prev.t, m.prev);

@@ -1134,6 +1134,31 @@ pub async fn pc_care_check() -> R<Vec<crate::pccare::Check>> {
     blocking(crate::pccare::check).await
 }
 
+/// What you dictated into a box, with its grammar, spelling and punctuation
+/// fixed — same words and meaning, nothing added. Unchanged if no brain
+/// answers.
+#[tauri::command]
+pub async fn polish_text(text: String) -> R<String> {
+    blocking(move || {
+        let ask = serde_json::json!([
+            { "role": "system", "content": "You fix dictated text before it is typed into a text box. Correct grammar, spelling, capital letters and punctuation. Keep the person's own words, meaning and tone; do not add, remove or answer anything. Reply with only the corrected text, no quotes." },
+            { "role": "user", "content": text },
+        ]);
+        let msgs = ask.as_array().cloned().unwrap_or_default();
+        match crate::chat::complete(&msgs) {
+            Ok(fixed) => {
+                let fixed = fixed.trim().trim_matches('"').trim().to_string();
+                // A sane fix is about the same length; anything else (an answer, an essay) is ignored.
+                let n = text.chars().count().max(1) as f32;
+                let m = fixed.chars().count() as f32;
+                if fixed.is_empty() || m > n * 1.6 + 12.0 || m < n * 0.5 { text } else { fixed }
+            }
+            Err(_) => text,
+        }
+    })
+    .await
+}
+
 /// Windows tweaks (Windhawk-style), each with whether it's on now.
 #[tauri::command]
 pub async fn tweaks_list() -> R<Vec<crate::tweaks::Tweak>> {

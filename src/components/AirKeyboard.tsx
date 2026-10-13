@@ -39,8 +39,16 @@ function loadPos() {
   return { x: Math.round(window.innerWidth / 2 - 260), y: Math.round(window.innerHeight - 330), size: 1 };
 }
 
+/** Clicking a box you can type in (with your hand) opens the keyboard. */
+export const AIR_KEYBOARD_OPEN = "izk-air-keyboard-open";
+
 export function AirKeyboard() {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const show = () => setOpen(true);
+    window.addEventListener(AIR_KEYBOARD_OPEN, show);
+    return () => window.removeEventListener(AIR_KEYBOARD_OPEN, show);
+  }, []);
   const [shift, setShift] = useState(false);
   const [symbols, setSymbols] = useState(false);
   const [pos, setPos] = useState(loadPos);

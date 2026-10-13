@@ -12,5 +12,7 @@ export interface Mover {
 export function loadMoves(id: string): Promise<MovesPack | null>;
 export function movesIds(): string[];
 export function createMover(): Mover;
+/** A new phrase began: the next gesture now. */
+export function nudgeMover(m: Mover): void;
 export function stepMover(m: Mover, dt: number, want?: string): Mover;
-export function drawMover(ctx: CanvasRenderingContext2D, pack: MovesPack | null, m: Mover, opts: { x: number; y: number; height: number; facing?: number; shadow?: boolean; retro?: boolean }): boolean;
+export function drawMover(ctx: CanvasRenderingContext2D, pack: MovesPack | null, m: Mover, opts: { x: number; y: number; height: number; facing?: number; shadow?: boolean; retro?: boolean; mouth?: number; blink?: number }): boolean;
