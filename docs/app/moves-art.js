@@ -81,8 +81,64 @@ export const MOVES_ART = {
     json: new URL("./painted/leo-moves/moves.json", import.meta.url).href,
     atlas: new URL("./painted/leo-moves/moves.webp", import.meta.url).href,
   },
+  mateo: {
+    json: new URL("./painted/mateo-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/mateo-moves/moves.webp", import.meta.url).href,
+  },
+  max: {
+    json: new URL("./painted/max-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/max-moves/moves.webp", import.meta.url).href,
+  },
+  mei: {
+    json: new URL("./painted/mei-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/mei-moves/moves.webp", import.meta.url).href,
+  },
+  morgan: {
+    json: new URL("./painted/morgan-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/morgan-moves/moves.webp", import.meta.url).href,
+  },
+  nia: {
+    json: new URL("./painted/nia-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/nia-moves/moves.webp", import.meta.url).href,
+  },
+  niamh: {
+    json: new URL("./painted/niamh-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/niamh-moves/moves.webp", import.meta.url).href,
+  },
   nova: {
     json: new URL("./painted/nova-moves/moves.json", import.meta.url).href,
     atlas: new URL("./painted/nova-moves/moves.webp", import.meta.url).href,
+  },
+  priya: {
+    json: new URL("./painted/priya-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/priya-moves/moves.webp", import.meta.url).href,
+  },
+  rex: {
+    json: new URL("./painted/rex-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/rex-moves/moves.webp", import.meta.url).href,
+  },
+  roxy: {
+    json: new URL("./painted/roxy-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/roxy-moves/moves.webp", import.meta.url).href,
+  },
+  sage: {
+    json: new URL("./painted/sage-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/sage-moves/moves.webp", import.meta.url).href,
+  },
+  sophie: {
+    json: new URL("./painted/sophie-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/sophie-moves/moves.webp", import.meta.url).href,
+  },
+  thabo: {
+    json: new URL("./painted/thabo-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/thabo-moves/moves.webp", import.meta.url).href,
+  },
+  yuki: {
+    json: new URL("./painted/yuki-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/yuki-moves/moves.webp", import.meta.url).href,
+  },
+  zuri: {
+    json: new URL("./painted/zuri-moves/moves.json", import.meta.url).href,
+    atlas: new URL("./painted/zuri-moves/moves.webp", import.meta.url).href,
   },
 };

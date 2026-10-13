@@ -774,7 +774,7 @@ fn rest_for(err: &str) -> Option<std::time::Duration> {
 fn note_failure(id: crate::settings::ProviderId, err: &str) {
     if is_hopeless(err) {
         let e = err.to_ascii_lowercase();
-        if ["no credits", "insufficient_quota", "billing", "rejected the key", "unauthorized", "401", "402"].iter().any(|w| e.contains(w)) {
+        if ["no credits", "insufficient_quota", "billing", "rejected the key", "unauthorized"].iter().any(|w| e.contains(w)) || has_status(&e, "401") || has_status(&e, "402") {
             let mut o = OUT_OF_CREDIT.lock();
             if !o.contains(&id) {
                 o.push(id);
@@ -875,23 +875,59 @@ static BROKEN: parking_lot::Mutex<Vec<(crate::settings::ProviderId, std::time::I
     parking_lot::Mutex::new(Vec::new());
 const BROKEN_FOR: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
+/// The words that say what a round set out to do ("Opening Blackboard in
+/// Chrome now" → opening, blackboard, chrome), filler left out.
+fn goal_words(summary: &str) -> Vec<String> {
+    const FILLER: &[&str] = &[
+        "now", "that", "this", "your", "with", "from", "here", "just", "then", "again", "look", "looks", "like", "right",
+        "okay", "alright", "sure", "there", "will", "have", "for", "you", "the", "and", "let", "oops", "seems", "page",
+        "really", "quick", "quickly", "back",
+    ];
+    let mut w: Vec<String> = summary
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 3 && !FILLER.contains(t))
+        .map(str::to_string)
+        .collect();
+    w.sort();
+    w.dedup();
+    w
+}
+
+/// Two rounds after the same thing: one's words are all in the other, or most are shared.
+fn same_goal(a: &[String], b: &[String]) -> bool {
+    if a.is_empty() || b.is_empty() {
+        return false;
+    }
+    let shared = a.iter().filter(|w| b.contains(w)).count();
+    let (small, big) = if a.len() <= b.len() { (a.len(), b.len()) } else { (b.len(), a.len()) };
+    (small >= 2 && shared == small) || shared as f32 / (small + big - shared) as f32 >= 0.6
+}
+
+/// A status code standing alone ("(402 Payment Required)"), not inside a
+/// bigger number — Groq's rate-limit text says "Used 4029", which used to
+/// count as 402 (no credits) and shut the fastest brain out for 6 hours.
+fn has_status(e: &str, code: &str) -> bool {
+    let b = e.as_bytes();
+    e.match_indices(code).any(|(i, m)| {
+        let before = i.checked_sub(1).map(|j| b[j]);
+        let after = b.get(i + m.len()).copied();
+        !before.is_some_and(|c| c.is_ascii_alphanumeric()) && !after.is_some_and(|c| c.is_ascii_alphanumeric())
+    })
+}
+
 /// An error that won't fix itself by asking again in a minute.
 fn is_hopeless(err: &str) -> bool {
     let e = err.to_ascii_lowercase();
-    [
-        "no credits",
-        "insufficient_quota",
-        "no active credentials",
-        "rejected the key",
-        "unauthorized",
-        "401",
-        "402",
-        "403",
-        "404",
-        "connection refused",
-    ]
-    .iter()
-    .any(|p| e.contains(p))
+    let out_of_money = ["no credits", "insufficient_quota", "billing"].iter().any(|p| e.contains(p));
+    // "Too many requests" is waiting, not broken — unless it says the money ran out.
+    let limited = has_status(&e, "429") || e.contains("too many requests") || e.contains("rate limit") || e.contains("rate-limit");
+    if limited && !out_of_money {
+        return false;
+    }
+    out_of_money
+        || ["no active credentials", "rejected the key", "unauthorized", "connection refused"].iter().any(|p| e.contains(p))
+        || ["401", "402", "403", "404"].iter().any(|c| has_status(&e, c))
         // Can't reach a *local* brain (Ollama/9Router not running) — but a
         // busy cloud queue timing out is just slow, not broken.
         || (e.contains("error sending request") && (e.contains("localhost") || e.contains("127.0.0.1")))
@@ -1966,6 +2002,11 @@ fn submit_task(
     let mut last_click: Option<(String, Option<u32>)> = None;
     let mut last_look: Option<crate::capture::Frame> = None;
     let mut repeats = 0;
+    // The same goal round after round ("Opening Blackboard…" again) — with
+    // different clicks on a still-changing screen, which `repeats` misses.
+    let mut last_goal: Option<Vec<String>> = None;
+    let mut goal_repeats = 0u32;
+    let mut waited_on_goal = false;
     let mut all_steps: Vec<ActionStep> = Vec::new();
     let mut last_plan: Option<VisionPlan> = None;
     // What was last said while working, so it isn't said again.
@@ -2301,6 +2342,46 @@ fn submit_task(
             continue;
         }
         last_round = this_round;
+        let goal = goal_words(&plan.summary);
+        if !steps.is_empty() && last_goal.as_ref().is_some_and(|g| same_goal(g, &goal)) {
+            goal_repeats += 1;
+        } else {
+            goal_repeats = 0;
+            waited_on_goal = false;
+        }
+        last_goal = Some(goal);
+        if goal_repeats >= 2 && !waited_on_goal && alive() {
+            // A third go at the same thing: a page or app that's slow to
+            // arrive, most likely. Don't open it yet again — wait for it,
+            // like a person would, then look.
+            eprintln!("[agent] same goal a third time (\"{}\") — waiting instead of redoing it", plan.summary.chars().take(60).collect::<String>());
+            let _ = app.emit(events::STATUS, StatusEvent::working("Waiting for it to finish loading…"));
+            let until = std::time::Instant::now() + Duration::from_secs_f32(8.0 * crate::patience::slowness());
+            while std::time::Instant::now() < until && alive() {
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            waited_on_goal = true;
+            goal_repeats = 0;
+            told = Some(
+                "You were about to do the same thing a third time, so Izuki waited for the screen to finish loading instead. \
+                 Look carefully at what's on screen NOW: if what you were opening is there, carry on with the next part of the \
+                 task; only if the screen clearly shows it failed (an error page), try a DIFFERENT way."
+                    .into(),
+            );
+            last_plan = Some(plan);
+            match capture::capture_all() {
+                Ok(f) => frame = f,
+                Err(_) => break,
+            }
+            continue;
+        }
+        if goal_repeats == 1 {
+            told = Some(
+                "You're doing the same thing as last round. On this PC pages and apps can take 10-20 seconds to arrive — \
+                 if it's still loading, answer with no steps and \"wait\": 5 rather than opening it again."
+                    .into(),
+            );
+        }
         // Stuck on "which one?": ask, and carry on with what they show us.
         if let (true, Some(question)) = (steps.is_empty(), plan.ask.clone()) {
             if asked < 3 && alive() {
@@ -3156,6 +3237,10 @@ mod speed_tests {
         assert_eq!(chain[0].id, ProviderId::Openrouter);
         assert_eq!(chain[1].id, ProviderId::Nvidia);
         assert!(is_hopeless("openai is rate-limiting you (429 Too Many Requests): You have no credits remaining"));
+        // Groq's per-minute limit mentions "Used 4029" — not a 402, not hopeless.
+        assert!(!is_hopeless("groq is rate-limiting you (429 Too Many Requests): Rate limit reached for model `qwen` in organization `org_01m3g02f` on input tokens per minute (ITPM): Limit 7000, Used 4029, Requested 4059. Please try again in 9.3s. Need more tokens? Upgrade to Dev Tier today"));
+        assert!(is_hopeless("payment needed (402 Payment Required)"));
+        assert!(!is_hopeless("took 4021 ms"));
         assert!(!is_hopeless("the model returned an empty reply"));
         // A busy cloud queue timing out is slow, not broken; a local brain
         // that isn't running is.
@@ -3208,5 +3293,16 @@ mod speed_tests {
         }
         assert!(!is_keep_going("open chrome"));
         assert!(!is_keep_going("what's next on my calendar"));
+    }
+
+    #[test]
+    fn the_same_goal_is_noticed_across_rounds() {
+        let a = goal_words("Opening Blackboard to check your assignments.");
+        let b = goal_words("Opening Blackboard in Chrome now.");
+        let c = goal_words("Opening Blackboard now.");
+        assert!(same_goal(&a, &c) && same_goal(&b, &c));
+        assert!(same_goal(&goal_words("Clicking the first link on the left now."), &goal_words("Clicking that first link for you now.")));
+        assert!(!same_goal(&goal_words("Opening Blackboard now."), &goal_words("Typing your password into the box.")));
+        assert!(!same_goal(&goal_words("Searching for flights to Lagos."), &goal_words("Opening the Settings app.")));
     }
 }
