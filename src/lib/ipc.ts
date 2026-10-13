@@ -384,6 +384,15 @@ export const ISLAND_DEEP_KEY = "izuki.island-deep";
 /** An Island conversation waiting for Chat to carry on ("Continue in Chat"). */
 export const ISLAND_TO_CHAT_KEY = "izuki.island-to-chat";
 
+/** A mission (missions.rs): something to do while you're away. */
+export interface Mission {
+  id: string;
+  text: string;
+  state: "waiting" | "running" | "done" | "needs_you" | "stopped";
+  result: string;
+  at: number;
+}
+
 /** One email that matters (headsup.rs InboxItem). */
 export interface InboxItem {
   from: string;
@@ -609,6 +618,11 @@ export const api = {
   inboxDigest: (fresh: boolean) => call<InboxDigest>("inbox_digest", { fresh }, () => ({ summary: "", items: [], looked_at: 0, skipped: 0 })),
   sentHistory: () => call<SentItem[]>("sent_history", undefined, () => []),
   followUp: (text: string, days: number) => call<Reminder>("follow_up", { text, days }, () => ({ id: "", at: 0, text, alarm: false, repeat: "" }) as unknown as Reminder),
+  missionsList: () => call<{ missions: Mission[]; running: boolean }>("missions_list", undefined, () => ({ missions: [], running: false })),
+  missionAdd: (text: string) => call<Mission[]>("mission_add", { text }, () => []),
+  missionRemove: (id: string) => call<Mission[]>("mission_remove", { id }, () => []),
+  missionsClearDone: () => call<Mission[]>("missions_clear_done", undefined, () => []),
+  missionsRun: () => call<boolean>("missions_run", undefined, () => false),
   doingNow: () => call<string>("doing_now", undefined, () => "Nothing right now."),
   polishText: (text: string) => call<string>("polish_text", { text }, () => text),
   tweaksList: () => call<WindowsTweak[]>("tweaks_list", undefined, () => []),
@@ -839,6 +853,8 @@ export const EV = {
   airCall: "izuki://air-call",
   /** A new email in the primary inbox (headsup.rs), for the Island's 📧 tile. */
   islandMail: "izuki://island-mail",
+  /** The missions list changed (missions.rs). */
+  missionsChanged: "izuki://missions-changed",
   /** Frontend-only, config panel → overlay: learn an Air gesture now ({name, action}). */
   airRecord: "izuki://air-record",
   /** Frontend-only, config panel → overlay: open Air control's guided test. */

@@ -1181,6 +1181,39 @@ pub fn follow_up(app: AppHandle, text: String, days: i64) -> crate::reminders::R
     r
 }
 
+/// Missions (Rest mode): the list.
+#[tauri::command]
+pub fn missions_list() -> serde_json::Value {
+    serde_json::json!({ "missions": crate::missions::list(), "running": crate::missions::running() })
+}
+
+#[tauri::command]
+pub fn mission_add(app: AppHandle, text: String) -> Vec<crate::missions::Mission> {
+    let all = crate::missions::add(&text);
+    let _ = app.emit(crate::missions::CHANGED, ());
+    all
+}
+
+#[tauri::command]
+pub fn mission_remove(app: AppHandle, id: String) -> Vec<crate::missions::Mission> {
+    let all = crate::missions::remove(&id);
+    let _ = app.emit(crate::missions::CHANGED, ());
+    all
+}
+
+#[tauri::command]
+pub fn missions_clear_done(app: AppHandle) -> Vec<crate::missions::Mission> {
+    let all = crate::missions::clear_done();
+    let _ = app.emit(crate::missions::CHANGED, ());
+    all
+}
+
+/// Start doing the waiting missions (false if they're already running).
+#[tauri::command]
+pub fn missions_run(app: AppHandle) -> bool {
+    crate::missions::run_all(&app)
+}
+
 /// What Izuki is really doing right now (the honest answer to "what are you doing?").
 #[tauri::command]
 pub fn doing_now() -> String {

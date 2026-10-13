@@ -1,3 +1,4 @@
+import { MissionsCard } from "../MissionsCard";
 import { JumpBar } from "../JumpBar";
 import { useRef } from "react";
 import {
@@ -86,6 +87,7 @@ export function DrawTab() {
       <JumpBar topId="draw-top" jumps={[
         { label: "✏️ Draw", id: "draw-hero" },
         { label: "🎙️ Hands-free", id: "draw-talk" },
+        { label: "🎯 Missions", id: "draw-missions" },
         { label: "🗣️ Voice", id: "draw-voice" },
         { label: "🎨 Character", id: "settings-look", tab: "settings" },
         { label: "🖐️ Air control", id: "settings-air", tab: "settings" },
@@ -173,6 +175,7 @@ export function DrawTab() {
 
       {/* ------------------------------------------------ hands-free */}
       <div id="draw-talk"><TalkToIzuki /></div>
+      <MissionsCard />
       <TeachingCard />
 
       {/* ------------------------------------------------ memory */}

@@ -43,6 +43,7 @@ pub mod air;
 pub mod daw;
 pub mod tweaks;
 pub mod remote;
+pub mod missions;
 pub mod music_draft;
 pub mod memory;
 pub mod model;
@@ -366,6 +367,11 @@ pub fn run() {
             commands::tweaks_list,
             commands::polish_text,
             commands::doing_now,
+            commands::missions_list,
+            commands::mission_add,
+            commands::mission_remove,
+            commands::missions_clear_done,
+            commands::missions_run,
             commands::inbox_digest,
             commands::sent_history,
             commands::follow_up,

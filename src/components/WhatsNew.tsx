@@ -22,6 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🎯", title: "Missions: Izuki works while you rest", how: "Draw → Missions: give Izuki a list (“check my assignments and list what's due”, “summarise my unread emails”…), press Start and step away. It does them one by one and tells you — on the PC and your phone — when it's done. Anything that needs your yes waits for you. By voice: “add to my missions: …”, then “start my missions”.", try: { label: "Missions", tab: "draw", id: "draw-missions" } },
   { icon: "📥", title: "Your inbox, gone through", how: "Apps → Inbox: Izuki reads your Gmail and shows what needs you, urgent first. For each one: “Draft a reply” (you see the draft — nothing is sent without your yes) or “Follow up in 3 days” (a reminder). It also lists what Izuki really did in your apps.", try: { label: "Inbox", tab: "apps", id: "apps-inbox" } },
   { icon: "🤖", title: "“What are you doing?”", how: "Ask Izuki what it's doing and it tells you the truth: the task it's actually on and its latest step — or that nothing's running. Asking mid-task doesn't stop the task." },
   { icon: "🎙️", title: "The talk key works again", how: "Ctrl+Win+Space did nothing: Windows keeps that combination for switching keyboard languages, so Izuki never got it. Now Izuki catches it itself — press and the orb and waveform come up; hold and let go to send." },

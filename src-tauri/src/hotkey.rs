@@ -535,6 +535,7 @@ fn halt(app: &AppHandle) {
     };
     safe("the task", &|| crate::brain::cancel_task());
     safe("the apps lane", &|| crate::composio::stop());
+    safe("the missions", &|| crate::missions::stop());
     safe("the ad watch", &|| crate::youtube::stop_watching_ads());
     safe("the voice", &|| {
         let _ = app.emit(events::STOP_SPEAKING, ());

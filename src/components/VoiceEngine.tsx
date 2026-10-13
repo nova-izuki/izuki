@@ -837,6 +837,30 @@ export function VoiceEngine() {
       return;
     }
 
+    // Missions (Rest mode): "add to my missions: check my assignments",
+    // "start my missions" / "rest mode", "what's on my missions".
+    const missionAdd = t.match(/^(?:please\s+)?(?:add|put)\s+(?:this\s+)?(?:to|on)\s+(?:my\s+)?(?:missions?|mission list|rest mode)[:,\s-]+(.{3,})$/i);
+    // Only a clear "start my missions" / "start rest mode" — never a passing "do the mission".
+    const missionGo = /^(?:please\s+)?(?:start|run|begin|do)\s+(?:my\s+missions?|the\s+missions|missions)\b|^(?:please\s+)?(?:start|turn\s+on|go\s+into|switch\s+to)\s+rest\s+mode\b/i.test(t);
+    if (missionAdd || missionGo) {
+      startSession(from === "voice", "speaking");
+      let line: string;
+      if (missionAdd) {
+        const all = await api.missionAdd(missionAdd[1]).catch(() => null);
+        const waiting = all ? all.filter((m) => m.state === "waiting").length : 0;
+        line = all
+          ? `Added. ${waiting} mission${waiting === 1 ? "" : "s"} waiting — say “start my missions” when you head off.`
+          : "I couldn't add that one — try again in a moment.";
+      } else {
+        const started = await api.missionsRun().catch(() => false);
+        line = started ? "On it — I'll work through your missions and tell you (and your phone) when they're done. Anything that needs your yes waits for you." : "They're already running.";
+      }
+      if (requestSeq !== at) return;
+      await respond(line, "cheerful");
+      void afterReply(at, false);
+      return;
+    }
+
     // "Make my pinky pinch take a screenshot", "set air control to precision",
     // "reset my air gestures", "what do my air gestures do": straight to the setting.
     const airVoice = parseAirVoice(t);
