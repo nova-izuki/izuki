@@ -568,7 +568,7 @@
   const $ = (id) => document.getElementById(id);
   // The phone as a remote for the PC (remote.js), through the linked PC's private link.
   document.getElementById("go-remote")?.addEventListener("click", () => {
-    if (pc) window.IzukiRemote?.open(pc);
+    if (pc) window.IzukiRemote?.open(pc, { pass: store.get("pcPass", ""), savePass: (p) => store.set("pcPass", p) });
     else alert("Link this phone to your PC first: on the PC, Izuki → Settings → Phone → Call Izuki from your phone, then scan the QR code.");
   });
   /** Report a problem to Izuki's bug catcher (../shared/bugs.js). */
@@ -2885,6 +2885,8 @@
       const v = await r.json();
       if (!v.ok) throw new Error(v.error || "The PC didn't allow it.");
       window.IzukiCore?.applySetup(v.setup);
+      // The PC's pass for this phone (Remote uses it: only allowed phones can control the PC).
+      if (v.token) store.set("pcPass", v.token);
       out.className = "ok";
       out.textContent = "Done — this phone has your setup now.";
       try { $("composio").value = window.izukiApps?.key() || ""; } catch {}

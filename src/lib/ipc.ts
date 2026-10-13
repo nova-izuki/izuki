@@ -623,6 +623,8 @@ export const api = {
   missionRemove: (id: string) => call<Mission[]>("mission_remove", { id }, () => []),
   missionsClearDone: () => call<Mission[]>("missions_clear_done", undefined, () => []),
   missionsRun: () => call<boolean>("missions_run", undefined, () => false),
+  /** End the phone remote from this PC (switches it off). */
+  remoteEnd: () => call<void>("remote_end", undefined, () => undefined),
   doingNow: () => call<string>("doing_now", undefined, () => "Nothing right now."),
   polishText: (text: string) => call<string>("polish_text", { text }, () => text),
   tweaksList: () => call<WindowsTweak[]>("tweaks_list", undefined, () => []),
@@ -857,6 +859,8 @@ export const EV = {
   missionsChanged: "izuki://missions-changed",
   /** "Nova, wave" / "dance" / "cheer": the character does it (Buddy.tsx). */
   buddyReact: "izuki://buddy-react",
+  /** A phone is watching / controlling this PC (remote.rs): { device, controlling } or null. */
+  remoteActive: "izuki://remote-active",
   /** Frontend-only, config panel → overlay: learn an Air gesture now ({name, action}). */
   airRecord: "izuki://air-record",
   /** Frontend-only, config panel → overlay: open Air control's guided test. */

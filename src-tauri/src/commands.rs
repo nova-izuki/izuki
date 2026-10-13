@@ -1214,6 +1214,12 @@ pub fn missions_run(app: AppHandle) -> bool {
     crate::missions::run_all(&app)
 }
 
+/// The PC's "End" on the phone-remote indicator: remote off until switched on again.
+#[tauri::command]
+pub fn remote_end() {
+    crate::remote::end_from_pc();
+}
+
 /// What Izuki is really doing right now (the honest answer to "what are you doing?").
 #[tauri::command]
 pub fn doing_now() -> String {

@@ -367,6 +367,7 @@ pub fn run() {
             commands::tweaks_list,
             commands::polish_text,
             commands::doing_now,
+            commands::remote_end,
             commands::missions_list,
             commands::mission_add,
             commands::mission_remove,

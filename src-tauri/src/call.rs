@@ -360,27 +360,53 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
             let code = asked["code"].as_str().unwrap_or("");
             json_reply(req, crate::link::link_request(name, kind, code))
         }
-        // The phone as a remote (remote.rs): only while "Let my phone control
-        // this PC" is on, never while the PC is locked.
-        (tiny_http::Method::Post, Some("/remote")) => {
-            let mut body = String::new();
-            let _ = req.as_reader().take(16 * 1024).read_to_string(&mut body);
-            let asked = serde_json::from_str::<Value>(&body).unwrap_or(Value::Null);
-            match crate::remote::run(&asked) {
-                Ok(v) => json_reply(req, v),
-                Err(e) => json_reply(req, json!({ "ok": false, "error": e.to_string() })),
-            }
-        }
-        (tiny_http::Method::Get, Some("/remote/screen")) => {
-            let width = req
-                .url()
-                .split_once('?')
-                .and_then(|(_, q)| q.split('&').find_map(|kv| kv.strip_prefix("w=")))
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(720);
-            match crate::remote::screen(width) {
-                Ok(jpeg) => respond(req, 200, "image/jpeg", jpeg),
-                Err(e) => respond(req, 403, "text/plain", e.to_string().into_bytes()),
+        // The phone as a remote (remote.rs): only a phone you allowed on this
+        // PC (its own pass, not just this link), only while "Let my phone
+        // control this PC" is on, never while the PC is locked.
+        (_, Some(p)) if p.starts_with("/remote") => {
+            let pass = req
+                .headers()
+                .iter()
+                .find(|h| h.field.equiv("Authorization"))
+                .and_then(|h| h.value.as_str().strip_prefix("Bearer ").map(str::to_string));
+            let device = match crate::remote::device(pass.as_deref()) {
+                Ok(d) => d,
+                Err(e) => return respond(req, 401, "application/json", json!({ "ok": false, "error": e.to_string() }).to_string().into_bytes()),
+            };
+            let arg = |name: &str| -> Option<u32> {
+                req.url().split_once('?').and_then(|(_, q)| q.split('&').find_map(|kv| kv.strip_prefix(&format!("{name}=")).and_then(|v| v.parse().ok())))
+            };
+            match (req.method().clone(), p) {
+                (tiny_http::Method::Post, "/remote") => {
+                    let mut body = String::new();
+                    let _ = req.as_reader().take(16 * 1024).read_to_string(&mut body);
+                    let asked = serde_json::from_str::<Value>(&body).unwrap_or(Value::Null);
+                    match crate::remote::run(&asked, &device) {
+                        Ok(v) => json_reply(req, v),
+                        Err(e) => json_reply(req, json!({ "ok": false, "error": e.to_string() })),
+                    }
+                }
+                (tiny_http::Method::Get, "/remote/status") => match crate::remote::status(&device) {
+                    Ok(v) => json_reply(req, v),
+                    Err(e) => json_reply(req, json!({ "ok": false, "error": e.to_string() })),
+                },
+                (tiny_http::Method::Get, "/remote/screen") => match crate::remote::screen(arg("w").unwrap_or(720), &device) {
+                    Ok(jpeg) => respond(req, 200, "image/jpeg", jpeg),
+                    Err(e) => respond(req, 403, "text/plain", e.to_string().into_bytes()),
+                },
+                // The live view: a stream of pictures for as long as the phone watches.
+                (tiny_http::Method::Get, "/remote/stream") => {
+                    let live = crate::remote::Live::new(arg("w").unwrap_or(960), arg("fps").unwrap_or(6), arg("q").unwrap_or(55) as u8, &device);
+                    let mut r = tiny_http::Response::new(tiny_http::StatusCode(200), Vec::new(), live, None, None);
+                    for (k, v) in [("Content-Type", "multipart/x-mixed-replace; boundary=frame"), ("Cache-Control", "no-store"), ("X-Accel-Buffering", "no")] {
+                        if let Ok(h) = tiny_http::Header::from_bytes(k, v) {
+                            r.add_header(h);
+                        }
+                    }
+                    cors(&mut r);
+                    let _ = req.respond(r);
+                }
+                _ => respond(req, 404, "text/plain", b"no such remote action".to_vec()),
             }
         }
         (tiny_http::Method::Get, Some("/icon.png")) => respond(req, 200, "image/png", ICON.to_vec()),
@@ -483,7 +509,7 @@ fn cors<R: std::io::Read>(r: &mut tiny_http::Response<R>) {
     for (k, v) in [
         ("Access-Control-Allow-Origin", "*"),
         ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
-        ("Access-Control-Allow-Headers", "Content-Type"),
+        ("Access-Control-Allow-Headers", "Content-Type, Authorization"),
         ("Access-Control-Max-Age", "86400"),
     ] {
         if let Ok(h) = tiny_http::Header::from_bytes(k, v) {

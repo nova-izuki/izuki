@@ -568,7 +568,11 @@ export function AirControl({
       // Only a raised hand drives Air control: up in front of the camera,
       // fingers pointing up. Hands resting on the keyboard — low in the
       // picture, lying flat — used to move the mouse while you typed.
-      const raised = lm[0].y < 0.9 && lm[9].y < 0.82 && (lm[0].y - lm[9].y) / scale > 0.5;
+      // Judged by the fingers pointing up, not by how low the hand is — a hand
+      // reaching down for the taskbar is still raised (it vanished there);
+      // typing hands point down at the keys and never count.
+      const upright = (lm[0].y - lm[9].y) / scale;
+      const raised = lm[9].y < 0.95 && upright > (engaged ? 0.3 : 0.45);
       if (raised) {
         if (!upSince) upSince = now;
         downSince = 0;
@@ -675,7 +679,11 @@ export function AirControl({
       const raw = { x: 1 - (lm[5].x + lm[9].x) / 2, y: (lm[5].y + lm[9].y) / 2 };
       const tune = tuning.current;
       const span = tune.region;
-      const active = { x: (raw.x - (1 - span) / 2) / span, y: (raw.y - (0.9 - span) / 2) / span };
+      // The screen's area in the camera's view sits a little high, so the
+      // bottom of the screen (the taskbar) is in easy reach without
+      // dropping the hand to the edge of the picture.
+      const spanY = span * 0.85;
+      const active = { x: (raw.x - (1 - span) / 2) / span, y: (raw.y - 0.1) / spanY };
       const nx = Math.min(1, Math.max(0, sx.next(active.x, now, tune.minCut, tune.beta)));
       const ny = Math.min(1, Math.max(0, sy.next(active.y, now, tune.minCut, tune.beta)));
       // 🎮 Game controls: lean the hand from the middle of the camera to hold

@@ -19,6 +19,11 @@ pub fn try_store() -> Option<Arc<Store>> {
 
 static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
 
+/// The app, once it's running (for parts of the core with no handle of their own).
+pub fn app() -> Option<&'static tauri::AppHandle> {
+    APP.get()
+}
+
 pub fn set_app(app: &tauri::AppHandle) {
     let _ = APP.set(app.clone());
 }
@@ -52,6 +57,11 @@ impl Drop for Doing {
             d.take();
         }
     }
+}
+
+/// A task is running right now (the agent, an apps request).
+pub fn task_running() -> bool {
+    DOING.lock().is_some()
 }
 
 /// The current task's latest step ("Opening Blackboard…").

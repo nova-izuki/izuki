@@ -1,15 +1,28 @@
 // The phone as a remote for the PC (the PC side is src-tauri/src/remote.rs),
 // through the private link the phone already has to its PC.
 //
-//   IzukiRemote.open(pcLink)    show it (full screen); ✕ closes it
+//   IzukiRemote.open(pcLink, { pass, savePass })    show it; ✕ closes it
 //
-// A live look at the PC's screen (tap it: the pointer goes there and
+// A live video of the PC's screen (tap it: the pointer goes there and
 // clicks), a trackpad (slide to move, tap to click, two fingers to scroll or
-// right-click, press and hold to drag), typing, keys and music buttons.
-// The PC must have "Let my phone control this PC" switched on.
+// right-click, press and hold to drag), typing, keys and music buttons —
+// and what Izuki is doing, with Stop and an "Ask Izuki" box, so you can
+// watch it work. The PC must have "Let my phone control this PC" on, and
+// this phone must be one you allowed there (Pair this phone: a box with a
+// code pops up on the PC; the pass it gives is kept on this phone).
 (() => {
   "use strict";
   let root = null, base = "", live = true, shotTimer = 0, shotUrl = "", inFlight = false;
+  let pass = "", savePass = () => {}, streamCtl = null, statusTimer = 0, quality = "balanced";
+  let seen = { frames: 0, at: performance.now(), fps: 0 };
+  const QUALITY = {
+    saver: { w: 640, fps: 3, q: 45, label: "Data saver" },
+    balanced: { w: 960, fps: 6, q: 55, label: "Balanced" },
+    smooth: { w: 1280, fps: 10, q: 60, label: "Smooth" },
+  };
+  try { quality = localStorage.getItem("izuki.remoteQuality") || "balanced"; } catch {}
+  if (!QUALITY[quality]) quality = "balanced";
+  const auth = () => (pass ? { Authorization: "Bearer " + pass } : {});
   let pend = { dx: 0, dy: 0 };
   /** A held button (press-and-hold drag): always let go of it, never leave it down on the PC. */
   let dragging = false;
@@ -38,15 +51,30 @@
   .izr .shot .wait{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.45);font-size:12px}
   .izr .type{display:flex;gap:6px;padding:0 12px 6px}
   .izr .type input{flex:1;min-width:0;background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:10px;font:inherit}
-  .izr .safe{height:env(safe-area-inset-bottom)}`;
+  .izr .safe{height:env(safe-area-inset-bottom)}
+  .izr header select{background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:8px;font:inherit;font-size:12px}
+  .izr .ai{margin:6px 12px 0;padding:8px 10px;border-radius:12px;background:rgba(94,231,255,.08);border:1px solid rgba(94,231,255,.2);font-size:12px;display:flex;flex-direction:column;gap:6px}
+  .izr .ai .doing{color:#dff9ff}
+  .izr .ai .stats{color:rgba(255,255,255,.5);font-size:11px}
+  .izr .ai .askrow{display:flex;gap:6px}
+  .izr .ai input{flex:1;min-width:0;background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:8px;font:inherit;font-size:12px}
+  .izr .ai button{padding:8px 10px;font-size:12px}
+  .izr .ai .stop{background:rgba(255,80,110,.35)}
+  .izr .pair{margin:6px 12px 0;padding:10px;border-radius:12px;background:rgba(255,210,122,.1);border:1px solid rgba(255,210,122,.35);font-size:12.5px;display:flex;flex-direction:column;gap:8px}
+  .izr .pair .code{font-size:26px;font-weight:800;letter-spacing:4px;text-align:center}`;
 
-  function open(pcLink) {
+  function open(pcLink, opts = {}) {
     base = pcLink.endsWith("/") ? pcLink : pcLink + "/";
+    pass = opts.pass || "";
+    savePass = opts.savePass || (() => {});
     if (!root) build();
     root.hidden = false;
     live = true;
     say("");
+    if (!pass) return showPair();
+    $(".pair").hidden = true;
     refresh();
+    pollStatus();
   }
 
   function close() {
@@ -54,8 +82,42 @@
     if (!root) return;
     root.hidden = true;
     clearTimeout(shotTimer);
+    clearTimeout(statusTimer);
+    stopStream();
     if (shotUrl) URL.revokeObjectURL(shotUrl);
     shotUrl = "";
+  }
+
+  function stopStream() {
+    if (streamCtl) streamCtl.abort();
+    streamCtl = null;
+  }
+
+  // Pairing: the PC shows a box with this code; Yes there gives this phone
+  // its own pass (kept here). Without it, the PC refuses every remote action.
+  function showPair(note) {
+    stopStream();
+    const p = $(".pair");
+    p.hidden = false;
+    p.innerHTML = `<b>Pair this phone with your PC</b><span>${note || "Your PC only lets phones you allowed on it see or control it."} Tap below — a box pops up on your PC with a code. Check it matches, then press Yes there.</span><button data-pair>Pair this phone</button>`;
+    p.querySelector("[data-pair]").onclick = async () => {
+      const code = String(1000 + Math.floor(Math.random() * 9000));
+      p.innerHTML = `<span>On your PC, check the box shows</span><div class="code">${code}</div><span>then press <b>Yes</b>. (Someone needs to be at the PC for this, once.)</span>`;
+      try {
+        const name = /iphone|ipad/i.test(navigator.userAgent) ? "iPhone" : "Android phone";
+        const r = await fetch(base + "link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, kind: "phone", code }) });
+        const v = await r.json();
+        if (!v.ok || !v.token) throw new Error(v.error || "The PC didn't allow it.");
+        pass = v.token;
+        savePass(pass);
+        p.hidden = true;
+        say("Paired ✓");
+        refresh();
+        pollStatus();
+      } catch (e) {
+        showPair(String(e.message || e));
+      }
+    };
   }
 
   function say(text) {
@@ -64,6 +126,7 @@
   }
 
   function explain(error) {
+    if (error === "pair") return showPair("This phone isn't allowed on your PC yet (or it was removed there).");
     if (error === "off") say("Turn on “Let my phone control this PC” on your PC: Izuki → Settings → Phone.");
     else if (error === "locked") say("Your PC is locked — unlock it first (Izuki never works the lock screen).");
     else if (error) say("The PC said: " + error);
@@ -71,7 +134,7 @@
 
   async function send(body) {
     try {
-      const r = await fetch(base + "remote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const r = await fetch(base + "remote", { method: "POST", headers: { "Content-Type": "application/json", ...auth() }, body: JSON.stringify(body) });
       const v = await r.json();
       if (!v.ok) explain(v.error);
       else if ($(".note").textContent.startsWith("Turn on") || $(".note").textContent.startsWith("Can't reach")) say("");
@@ -100,12 +163,92 @@
     go();
   }
 
+  /** One picture of the live view on screen (the old one let go once it's replaced). */
+  function show(bytes) {
+    const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
+    const img = $(".shot img");
+    const old = shotUrl;
+    img.onload = () => old && URL.revokeObjectURL(old);
+    img.src = url;
+    shotUrl = url;
+    $(".shot .wait").hidden = true;
+    seen.frames++;
+    const now = performance.now();
+    if (now - seen.at > 1000) {
+      seen.fps = (seen.frames * 1000) / (now - seen.at);
+      seen = { frames: 0, at: now, fps: seen.fps };
+    }
+  }
+
+  function find(buf, seq, from = 0) {
+    outer: for (let i = from; i <= buf.length - seq.length; i++) {
+      for (let j = 0; j < seq.length; j++) if (buf[i + j] !== seq[j]) continue outer;
+      return i;
+    }
+    return -1;
+  }
+
+  // The live view: one long stream of pictures from the PC, read here part by
+  // part (a header with its length, then the picture).
   async function refresh() {
+    clearTimeout(shotTimer);
+    stopStream();
+    if (!root || root.hidden || !live || !pass) return;
+    const q = QUALITY[quality];
+    const ctl = new AbortController();
+    streamCtl = ctl;
+    let r;
+    try {
+      r = await fetch(`${base}remote/stream?w=${q.w}&fps=${q.fps}&q=${q.q}`, { headers: auth(), signal: ctl.signal, cache: "no-store" });
+    } catch {
+      if (ctl.signal.aborted) return;
+      say("Can't reach your PC — is Izuki open with the phone link on?");
+      shotTimer = setTimeout(refresh, 3000);
+      return;
+    }
+    if (r.status === 401) return explain((await r.json().catch(() => ({}))).error || "pair");
+    if (r.status === 404 || !r.body) return poll();
+    if (!r.ok) {
+      explain((await r.text()).trim());
+      shotTimer = setTimeout(refresh, 4000);
+      return;
+    }
+    if ($(".note").textContent.startsWith("Can't reach")) say("");
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = new Uint8Array(0);
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const joined = new Uint8Array(buf.length + value.length);
+        joined.set(buf);
+        joined.set(value, buf.length);
+        buf = joined;
+        for (;;) {
+          const end = find(buf, [13, 10, 13, 10]);
+          if (end < 0) break;
+          const m = dec.decode(buf.subarray(0, end)).match(/Content-Length:\s*(\d+)/i);
+          if (!m) { buf = buf.subarray(end + 4); continue; }
+          const len = Number(m[1]);
+          if (buf.length < end + 4 + len) break;
+          show(buf.slice(end + 4, end + 4 + len));
+          buf = buf.subarray(end + 4 + len);
+        }
+      }
+    } catch {
+      /* stopped, or the connection dropped */
+    }
+    if (!ctl.signal.aborted && root && !root.hidden && live) shotTimer = setTimeout(refresh, 1500);
+  }
+
+  // An older PC with no live stream: a picture every 1.5 s, as before.
+  async function poll() {
     clearTimeout(shotTimer);
     if (!root || root.hidden || !live) return;
     try {
       const w = Math.min(1280, Math.round(innerWidth * (devicePixelRatio || 1)));
-      const r = await fetch(base + "remote/screen?w=" + w, { cache: "no-store" });
+      const r = await fetch(base + "remote/screen?w=" + w, { cache: "no-store", headers: auth() });
       if (r.ok) {
         const blob = await r.blob();
         const url = URL.createObjectURL(blob);
@@ -117,7 +260,31 @@
     } catch {
       say("Can't reach your PC — is Izuki open with the phone link on?");
     }
-    shotTimer = setTimeout(refresh, 1500);
+    shotTimer = setTimeout(poll, 1500);
+  }
+
+  // What Izuki is doing on the PC (and how the stream is going), every 3 s.
+  async function pollStatus() {
+    clearTimeout(statusTimer);
+    if (!root || root.hidden || !pass) return;
+    try {
+      const r = await fetch(base + "remote/status", { headers: auth(), cache: "no-store" });
+      const v = await r.json();
+      if (v.ok === false) {
+        if (v.error === "pair") return explain("pair");
+      } else {
+        $(".ai .doing").textContent = "🤖 " + (v.doing || "");
+        $(".ai .stop").hidden = !v.busy;
+        const waiting = (v.missions || []).filter((m) => m.state === "waiting" || m.state === "running").length;
+        const needs = (v.missions || []).filter((m) => m.state === "needs_you").length;
+        $(".ai .stats").textContent =
+          `${seen.fps ? seen.fps.toFixed(1) + " pictures/s here" : "—"} · ${Math.round(v.kbps || 0)} kb/s · ${v.encode_ms || 0} ms per picture` +
+          (waiting || needs ? ` · missions: ${waiting} to go${needs ? `, ${needs} need you` : ""}` : "");
+      }
+    } catch {
+      /* the stream shows the connection trouble */
+    }
+    statusTimer = setTimeout(pollStatus, 3000);
   }
 
   function build() {
@@ -129,9 +296,15 @@
     root.setAttribute("role", "dialog");
     root.setAttribute("aria-label", "Remote for your PC");
     root.innerHTML = `
-      <header><b>🖱️ Remote</b><button data-live aria-pressed="true">Live view</button><button data-close aria-label="Close">✕</button></header>
+      <header><b>🖱️ Remote</b><select data-quality aria-label="Picture quality">${Object.entries(QUALITY).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join("")}</select><button data-live aria-pressed="true">Live</button><button data-close aria-label="Close">✕</button></header>
+      <div class="pair" hidden></div>
       <div class="shot"><span class="wait">Your PC's screen shows here</span><img alt="Your PC's screen — tap to click there"></div>
       <div class="note" aria-live="polite"></div>
+      <div class="ai">
+        <div class="doing">🤖 …</div>
+        <div class="askrow"><input type="text" data-ask placeholder="Ask Izuki to do something on your PC…" enterkeyhint="send" autocomplete="off"><button data-asksend>Ask</button><button class="stop" data-stop hidden>Stop Izuki</button></div>
+        <div class="stats"></div>
+      </div>
       <div class="pad">Slide to move · tap to click · two fingers: tap = right-click, slide = scroll · press and hold to drag</div>
       <div class="row"><button data-click="left">Click</button><button data-click="right">Right-click</button><button data-click="double">Double</button></div>
       <div class="type"><input type="text" placeholder="Type on your PC…" enterkeyhint="send" autocomplete="off"><button data-send>Type</button></div>
@@ -142,23 +315,50 @@
     document.body.append(root);
 
     $("[data-close]").onclick = close;
+    const qSel = $("[data-quality]");
+    qSel.value = quality;
+    qSel.onchange = () => {
+      quality = qSel.value;
+      try { localStorage.setItem("izuki.remoteQuality", quality); } catch {}
+      refresh();
+    };
+    $("[data-stop]").onclick = () => void send({ op: "stop" }).then(() => pollStatus());
+    // "Ask Izuki" — a request to the PC, done there while you watch.
+    const askBox = $("[data-ask]");
+    const ask = async () => {
+      const text = askBox.value.trim();
+      if (!text) return;
+      askBox.value = "";
+      say("Asked — watch it work…");
+      try {
+        const r = await fetch(base + "talk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+        const v = await r.json();
+        say(v.text ? "Izuki: " + v.text : "");
+      } catch {
+        say("Can't reach your PC — is Izuki open with the phone link on?");
+      }
+      pollStatus();
+    };
+    $("[data-asksend]").onclick = ask;
+    askBox.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); ask(); } });
     $("[data-live]").onclick = (e) => {
       live = !live;
       e.currentTarget.setAttribute("aria-pressed", String(live));
-      e.currentTarget.textContent = live ? "Live view" : "View off";
+      e.currentTarget.textContent = live ? "Live" : "Off";
       if (live) refresh();
+      else stopStream();
     };
     root.querySelectorAll("[data-click]").forEach((b) => (b.onclick = () => {
       const k = b.dataset.click;
-      void send({ op: "click", button: k === "right" ? "right" : "left", double: k === "double" }).then(() => setTimeout(refresh, 250));
+      void send({ op: "click", button: k === "right" ? "right" : "left", double: k === "double" });
     }));
-    root.querySelectorAll("[data-key]").forEach((b) => (b.onclick = () => void send({ op: "key", combo: b.dataset.key }).then(() => setTimeout(refresh, 250))));
+    root.querySelectorAll("[data-key]").forEach((b) => (b.onclick = () => void send({ op: "key", combo: b.dataset.key })));
     const input = $(".type input");
     const typeIt = () => {
       const text = input.value;
       if (!text) return;
       input.value = "";
-      void send({ op: "type", text }).then(() => setTimeout(refresh, 250));
+      void send({ op: "type", text });
     };
     $("[data-send]").onclick = typeIt;
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); typeIt(); } });
@@ -174,7 +374,7 @@
       const nx = (e.clientX - box.left - (box.width - w) / 2) / w;
       const ny = (e.clientY - box.top - (box.height - h) / 2) / h;
       if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
-      void send({ op: "point", nx, ny }).then(() => send({ op: "click", button: "left" })).then(() => setTimeout(refresh, 300));
+      void send({ op: "point", nx, ny }).then(() => send({ op: "click", button: "left" }));
     });
 
     // The trackpad.
@@ -241,7 +441,6 @@
         void send({ op: "click", button: maxFingers >= 2 ? "right" : "left" });
       }
       maxFingers = 0;
-      setTimeout(refresh, 300);
     };
     pad.addEventListener("pointerup", end);
     pad.addEventListener("pointercancel", end);

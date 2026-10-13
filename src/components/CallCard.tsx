@@ -63,6 +63,25 @@ export function CallCard() {
           <Toggle checked={!!settings.phone_remote} onChange={(v) => patch({ phone_remote: v })} />
         </Row>
       )}
+      {settings.call_enabled && settings.phone_remote && (
+        <div className="mb-1 ml-[24px] text-[11.5px] leading-snug text-izk-muted">
+          Only phones you allowed here can use it (in the phone app: Remote → Pair this phone — a box with a code pops up here).
+          {settings.linked_devices.filter((d) => d.kind === "phone").length > 0 ? (
+            <ul className="mt-1.5 flex flex-col gap-1">
+              {settings.linked_devices.filter((d) => d.kind === "phone").map((d) => (
+                <li key={d.name + d.added} className="flex items-center gap-2 text-izk-ink">
+                  <span>📱</span>
+                  <span className="min-w-0 flex-1 truncate">{d.name}</span>
+                  <button type="button" className="izk-pill px-2 py-0.5 text-[10.5px]" onClick={() => void api.linkForget(d.name)}>Remove</button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="mt-1">No phone allowed yet.</div>
+          )}
+          <div className="mt-1">Every action is written to {"%APPDATA%\\Izuki\\logs\\remote-audit.log"} (never what you type).</div>
+        </div>
+      )}
       {settings.call_enabled && (
         <div className="mb-1 ml-[24px] text-[12px] leading-snug text-izk-muted">
           {status.state === "ready" ? (

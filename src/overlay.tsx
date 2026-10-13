@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { OverlayCanvas } from "./components/OverlayCanvas";
 import { AirHost } from "./components/AirControl";
+import { RemoteBadge } from "./components/RemoteBadge";
 import { Recover, logUncaught } from "./components/Recover";
 import "./styles.css";
 import "./lib/escapeStop";
@@ -19,6 +20,10 @@ ReactDOM.createRoot(document.getElementById("overlay-root")!).render(
     {/* Air control in every overlay mode (see AirHost). */}
     <Recover name="air" silent>
       <AirHost />
+    </Recover>
+    {/* "📱 … is controlling this PC · End" — never a silent remote session. */}
+    <Recover name="remote" silent>
+      <RemoteBadge />
     </Recover>
   </React.StrictMode>
 );
