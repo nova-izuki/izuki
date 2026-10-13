@@ -237,6 +237,7 @@ export const MOCK_SETTINGS: Settings = {
   mate_wander: true,
   mate_reset_v2: true,
   buddy_pet: "none",
+  buddy_motion: "smooth",
   air_enabled: false,
   air_gestures: [],
   auto_skip_ads: false,

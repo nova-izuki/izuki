@@ -80,6 +80,41 @@ function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   return Promise.race([p, new Promise<never>((_, fail) => (t = setTimeout(() => fail(new Error(`${what} (${Math.round(ms / 1000)} s)`)), ms)))]).finally(() => clearTimeout(t));
 }
 
+/**
+ * Air control whenever the setting is on — in every overlay mode. It lives at
+ * the overlay's root, outside OverlayCanvas: it used to be drawn only in the
+ * drawing mode, so in the usual follow mode turning it on did nothing at all
+ * (no camera, no tracking, no log line).
+ */
+export function AirHost() {
+  const [gestures, setGestures] = useState<Custom[] | null>(null);
+  const last = useRef("");
+  useEffect(() => {
+    let alive = true;
+    const refresh = () =>
+      void api
+        .getSettings()
+        .then((s) => {
+          if (!alive) return;
+          const next = s.air_enabled ? s.air_gestures ?? [] : null;
+          const key = JSON.stringify(next);
+          if (key === last.current) return; // same as before: don't restart the camera
+          const wasOn = last.current !== "" && last.current !== "null";
+          last.current = key;
+          if (next && !wasOn) void api.log("[air] on — starting").catch(() => undefined);
+          setGestures(next);
+        })
+        .catch(() => undefined);
+    refresh();
+    const offs = [on<void>(EV.settingsChanged, refresh), on(EV.overlayOpen, refresh)];
+    return () => {
+      alive = false;
+      offs.forEach((off) => void off.then((f) => f()).catch(() => undefined));
+    };
+  }, []);
+  return gestures ? <AirControl gestures={gestures} /> : null;
+}
+
 export function AirControl({ gestures }: { gestures: Custom[] }) {
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);

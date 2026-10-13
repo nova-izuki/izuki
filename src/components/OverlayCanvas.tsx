@@ -30,7 +30,6 @@ import { useDictation } from "../hooks/useDictation";
 import { VoiceSphere } from "./VoiceSphere";
 import { TranscriptBar } from "./TranscriptBar";
 import { QuickAsk, QUICK_ASK_WIDTH } from "./QuickAsk";
-import { AirControl } from "./AirControl";
 import { EdgeGlow } from "./EdgeGlow";
 import { cx } from "./ui";
 import type {
@@ -118,11 +117,11 @@ export function OverlayCanvas() {
   const [handOn, setHandOn] = useState(false);
   // The Island at the top of the screen (on unless switched off in Talk).
   const [islandOn, setIslandOn] = useState(true);
-  /** Air control: on (with your taught gestures) or off (null). */
-  const [air, setAir] = useState<Array<{ name: string; pose: number[]; action: string }> | null>(null);
   const [islandPeeks, setIslandPeeks] = useState(true);
   const [islandWave, setIslandWave] = useState<string>("auto");
   const [keepReply, setKeepReply] = useState(false);
+  /** Air control is on (drawn by AirHost at the overlay root) — keeps the overlay from idling shut. */
+  const [air, setAir] = useState(false);
   /** The glowing screen edges while Izuki is with you, and "glow only" (no orb). */
   const [edgeGlow, setEdgeGlow] = useState(true);
   const [glowOnly, setGlowOnly] = useState(false);
@@ -460,11 +459,11 @@ export function OverlayCanvas() {
           setIslandWave(s.island_wave || "auto");
           setKeepReply(s.keep_reply);
           setEdgeGlow(s.edge_glow);
+          setAir(s.air_enabled);
           setGlowOnly(s.edge_glow && s.glow_only);
           setMusicAuto(s.music_visuals);
           setHandSize(s.follow_hand_size);
           setInk(s.ink_color);
-          setAir(s.air_enabled ? s.air_gestures : null);
         });
         // Focus the prompt without stealing the pointer from the canvas —
         // only relevant in draw mode, where the window can actually be typed into.
@@ -522,11 +521,11 @@ export function OverlayCanvas() {
           setIslandWave(s.island_wave || "auto");
           setKeepReply(s.keep_reply);
           setEdgeGlow(s.edge_glow);
+          setAir(s.air_enabled);
           setGlowOnly(s.edge_glow && s.glow_only);
           setMusicAuto(s.music_visuals);
           setHandSize(s.follow_hand_size);
           setInk(s.ink_color);
-          setAir(s.air_enabled ? s.air_gestures : null);
         });
       }),
       on<boolean>(EV.thinking, setThinking),
@@ -954,7 +953,6 @@ export function OverlayCanvas() {
 
   return (
     <>
-    {air && <AirControl key="air" gestures={air} />}
     <div key="main" className="fixed inset-0 select-none">
       {/* frozen screen behind the marks */}
       <AnimatePresence>

@@ -88,6 +88,7 @@ export function DrawTab() {
         { label: "🎙️ Hands-free", id: "draw-talk" },
         { label: "🗣️ Voice", id: "draw-voice" },
         { label: "🎨 Character", id: "settings-look", tab: "settings" },
+        { label: "🖐️ Air control", id: "settings-air", tab: "settings" },
         { label: "🧠 Memory", id: "draw-memory" },
         { label: "✒️ Marks", id: "draw-language" },
         { label: "⚙️ Behaviour", id: "draw-behaviour" },
@@ -159,6 +160,14 @@ export function DrawTab() {
               <Kbd combo={settings.hotkey_draw} />
             </div>
           </div>
+          {/* The steps, spelled out — "Draw now" alone left people guessing. */}
+          <ol className="mt-3 space-y-1.5 text-[11.5px] leading-relaxed text-izk-muted">
+            <li><b className="text-izk-ink">1.</b> Press <b className="text-izk-ink">Draw now</b> (or <Kbd combo={settings.hotkey_draw} />). Your screen freezes so you can draw on it.</li>
+            <li><b className="text-izk-ink">2.</b> With the mouse, draw a Box, Circle, Arrow or Scribble on what you mean (the marks are explained below).</li>
+            <li><b className="text-izk-ink">3.</b> Type or say what to do in the box at the bottom, then press <b className="text-izk-ink">Enter</b>. <b className="text-izk-ink">Esc</b> cancels.</li>
+            <li><b className="text-izk-ink">Quick way:</b> hold <Kbd combo={settings.hotkey_quickdraw} />, trace around the thing with your mouse, and let go. A small box opens: type or say what to do (or pick a suggestion) and press Enter.</li>
+            <li><b className="text-izk-ink">With your hand:</b> turn on Air control and tap the round ✏️ button to draw in the air.</li>
+          </ol>
         </div>
       </div>
 

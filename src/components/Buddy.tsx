@@ -59,11 +59,20 @@ export function Buddy({
   const visible = state !== "hidden";
   const [min, setMin] = useState(readMin);
   const [pet, setPet] = useState<string>("none");
+  const [retro, setRetro] = useState(false);
   const { box, setBox, begin, reset } = useFloating("izuki.buddy", initialBox, LIMITS);
 
   useEffect(() => {
     let alive = true;
-    const read = () => void api.getSettings().then((s) => alive && setPet(s.buddy_pet || "none")).catch(() => undefined);
+    const read = () =>
+      void api
+        .getSettings()
+        .then((s) => {
+          if (!alive) return;
+          setPet(s.buddy_pet || "none");
+          setRetro(s.buddy_motion === "retro");
+        })
+        .catch(() => undefined);
     read();
     const off = on<void>(EV.settingsChanged, read);
     return () => { alive = false; void off.then((f) => f()); };
@@ -134,7 +143,7 @@ export function Buddy({
           onPointerDown={(e) => begin(e, "move")}
           onWheel={onWheel}
         >
-          <Stage id={id} state={state} doing={doing} music={music} pet={pet} box={box} setBox={setBox} />
+          <Stage id={id} state={state} doing={doing} music={music} pet={pet} retro={retro} box={box} setBox={setBox} />
           <div className="absolute -top-1 right-0 flex gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
             <button
               type="button"
@@ -207,6 +216,7 @@ function Stage({
   doing,
   music,
   pet,
+  retro,
   box,
   setBox,
 }: {
@@ -215,6 +225,8 @@ function Stage({
   doing: string | null;
   music: boolean;
   pet: string;
+  /** Poses flicked frame by frame like an old game, instead of held and blended. */
+  retro: boolean;
   box: { x: number; y: number; w: number; h: number };
   setBox: (f: (b: { x: number; y: number; w: number; h: number }) => { x: number; y: number; w: number; h: number }) => void;
 }) {
@@ -226,8 +238,8 @@ function Stage({
   const actor = useRef<Actor>(createActor());
   const level = useRef(0);
   const look = useRef<number | null>(null);
-  const live = useRef({ state, doing, music, pet, box });
-  live.current = { state, doing, music, pet, box };
+  const live = useRef({ state, doing, music, pet, retro, box });
+  live.current = { state, doing, music, pet, retro, box };
   /** Where it's walking to (overlay x), and what it'll point at when there. */
   const goal = useRef<{ x: number; target: { x: number; y: number }; until: number } | null>(null);
   const pointing = useRef<{ x: number; y: number; until: number } | null>(null);
@@ -417,7 +429,7 @@ function Stage({
         stepMover(mover.current, dt, want);
         // Walking faces where it goes; pointing faces the target (its frame points right).
         const face = want === "walk" ? facing.current : want === "point" && point ? (point.side === "R" ? 1 : -1) : 1;
-        drawMover(ctx, pack, mover.current, { x: feetX, y: feetY, height: b.h * 0.94, facing: face });
+        drawMover(ctx, pack, mover.current, { x: feetX, y: feetY, height: b.h * 0.94, facing: face, retro: live.current.retro });
       } else {
         drawPuppet(ctx, puppet.current, actor.current, { x: feetX, y: feetY, height: b.h * 0.94, facing: facing.current });
       }

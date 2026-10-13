@@ -346,6 +346,8 @@ export interface Settings {
   mate_enabled: boolean;
   /** The moving character's pet: it follows along. */
   buddy_pet: "none" | "cat" | "dog";
+  /** How the moving character plays its poses: held and blended, or frame by frame like an old game. */
+  buddy_motion: "smooth" | "retro";
   /** The desktop mate was switched off once for everyone (1.0.89). */
   mate_reset_v2: boolean;
   mate_pet: string;

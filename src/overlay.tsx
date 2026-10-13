@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { OverlayCanvas } from "./components/OverlayCanvas";
+import { AirHost } from "./components/AirControl";
 import { Recover, logUncaught } from "./components/Recover";
 import "./styles.css";
 import "./lib/escapeStop";
@@ -14,6 +15,10 @@ ReactDOM.createRoot(document.getElementById("overlay-root")!).render(
   <React.StrictMode>
     <Recover name="overlay" silent>
       <OverlayCanvas />
+    </Recover>
+    {/* Air control in every overlay mode (see AirHost). */}
+    <Recover name="air" silent>
+      <AirHost />
     </Recover>
   </React.StrictMode>
 );

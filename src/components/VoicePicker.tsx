@@ -5,6 +5,7 @@ import { useIzuki } from "../lib/store";
 import { api, IS_TAURI } from "../lib/ipc";
 import { loadCatalog } from "../lib/personas";
 import { faceForPersona } from "../lib/faces";
+import { PUPPET_ART } from "../../docs/app/puppet-art.js";
 import { playClip, speakNatural, stopNatural } from "../lib/naturalVoice";
 import { speak } from "../lib/speak";
 import type { Persona, Settings, VoiceCatalog } from "../lib/types";
@@ -100,6 +101,20 @@ async function openLink(url: string) {
 const selectClass =
   "izk-no-drag h-[30px] max-w-[210px] rounded-[10px] border border-white/10 bg-white/6 px-2 text-[12px] text-izk-ink outline-none";
 
+/** A painted character's face, cut from their picture as a small round thumbnail. */
+async function paintedFace(rigUrl: string, baseUrl: string, size = 76): Promise<string> {
+  const rig = (await (await fetch(rigUrl)).json()) as { head: [number, number]; frames?: { head?: [number, number] } };
+  const img = new Image();
+  img.src = baseUrl;
+  await img.decode();
+  const side = Math.max(120, (rig.frames?.head?.[1] ?? 235) * 1.05);
+  const [hx, hy] = rig.head;
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  c.getContext("2d")!.drawImage(img, hx - side / 2, Math.max(0, hy - side * 0.48), side, side, 0, 0, size, size);
+  return c.toDataURL("image/webp", 0.85);
+}
+
 export function VoicePicker() {
   const settings = useIzuki((s) => s.settings);
   const patch = useIzuki((s) => s.patchSettings);
@@ -187,8 +202,27 @@ export function VoicePicker() {
     }
   }
 
-  // Each voice's 2D character, on its card.
+  // Each voice's 2D character, on its card — its painted face when you use
+  // the new moving characters, else the drawn one.
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const [painted, setPainted] = useState<Record<string, string>>({});
+  const buddyStyle = settings.orb_style.startsWith("buddy:");
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const out: Record<string, string> = {};
+      for (const [id, art] of Object.entries(PUPPET_ART as Record<string, { rig: string; base: string }>)) {
+        out[id] = "";
+        if (!buddyStyle) continue;
+        const face = await paintedFace(art.rig, art.base).catch(() => "");
+        if (!alive) return;
+        out[id] = face;
+        setPainted({ ...out });
+      }
+      if (alive) setPainted({ ...out });
+    })();
+    return () => { alive = false; };
+  }, [buddyStyle]);
   useEffect(() => {
     let alive = true;
     const render = ((): "flat" | "comic" | "ink" | "painted" | "concept" => {
@@ -223,7 +257,10 @@ export function VoicePicker() {
       ? null
       : style.startsWith("model:")
         ? faceForPersona(style, p.id, p.kokoro.charAt(1) === "m")
-        : style === "toon" ? null : "toon";
+        : style.startsWith("buddy:")
+          // The new moving characters: the voice's own one, if it has one.
+          ? (p.id in PUPPET_ART ? `buddy:${p.id}` : null)
+          : style === "toon" ? null : "toon";
     patch({
       persona: p.id,
       persona_name: "",
@@ -653,7 +690,9 @@ export function VoicePicker() {
                   : "border-white/8 bg-white/4 hover:border-white/16"
               )}
             >
-              {thumbs[p.id] && <img src={thumbs[p.id]} alt="" className="h-[38px] w-[38px] shrink-0 rounded-full" draggable={false} />}
+              {(buddyStyle && painted[p.id]) || thumbs[p.id] ? (
+                <img src={(buddyStyle && painted[p.id]) || thumbs[p.id]} alt="" className="h-[38px] w-[38px] shrink-0 rounded-full bg-white/10 object-cover" draggable={false} />
+              ) : null}
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1 text-[12px] font-semibold text-izk-ink">
                   <span className="truncate">{p.name}</span>

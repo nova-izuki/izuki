@@ -400,6 +400,10 @@ pub struct Settings {
     /// The moving character's pet ("none", "cat" or "dog"): it follows along.
     #[serde(default = "default_buddy_pet")]
     pub buddy_pet: String,
+    /// How the moving character plays its poses: "smooth" (held and
+    /// blended) or "retro" (flicked frame by frame, like an old game).
+    #[serde(default = "default_buddy_motion")]
+    pub buddy_motion: String,
     /// The desktop mate was switched off once for everyone (1.0.89): it
     /// was on by default, felt like a bug and slowed PCs down.
     #[serde(default)]
@@ -598,6 +602,10 @@ pub struct AirGesture {
     pub action: String,
 }
 
+fn default_buddy_motion() -> String {
+    "smooth".into()
+}
+
 fn default_buddy_pet() -> String {
     "none".into()
 }
@@ -707,6 +715,7 @@ impl Settings {
         let face_ok = |s: &str| s.strip_prefix("model:").is_some_and(|id| (1..=40).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
         let toon_ok = |s: &str| s == "toon" || s.strip_prefix("toon:").or_else(|| s.strip_prefix("buddy:")).is_some_and(|id| (1..=24).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric()));
         if !["none", "cat", "dog"].contains(&self.buddy_pet.as_str()) { self.buddy_pet = "none".into(); }
+        if !["smooth", "retro"].contains(&self.buddy_motion.as_str()) { self.buddy_motion = default_buddy_motion(); }
         // "Glow only" without the glow would leave nothing showing Izuki is there.
         if !self.edge_glow { self.glow_only = false; }
         if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro"].contains(&self.orb_style.as_str()) && !face_ok(&self.orb_style) && !toon_ok(&self.orb_style) { self.orb_style = "liquid".into(); }
@@ -993,6 +1002,7 @@ impl Default for Settings {
             mate_enabled: false,
             mate_reset_v2: true,
             buddy_pet: default_buddy_pet(),
+            buddy_motion: default_buddy_motion(),
             mate_pet: default_mate_pet(),
             mate_chatty: default_mate_chatty(),
             mate_voice: false,

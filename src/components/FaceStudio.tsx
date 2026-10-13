@@ -53,6 +53,7 @@ function BuddySection({ style, pick }: { style: string; pick: (s: Settings["orb_
   const [ids, setIds] = useState<string[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
   const pet = useIzuki((s) => s.settings.buddy_pet);
+  const motion = useIzuki((s) => s.settings.buddy_motion ?? "smooth");
   const patch = useIzuki((s) => s.patchSettings);
   useEffect(() => {
     let alive = true;
@@ -86,6 +87,10 @@ function BuddySection({ style, pick }: { style: string; pick: (s: Settings["orb_
           <span className="text-izk-muted">Pet:</span>
           {[["none", "No pet"], ["cat", "Cat"], ["dog", "Puppy"]].map(([k, l]) => (
             <button key={k} type="button" aria-pressed={pet === k} className={pill(pet === k)} onClick={() => patch({ buddy_pet: k as Settings["buddy_pet"] })}>{l}</button>
+          ))}
+          <span className="ml-2 text-izk-muted">Movement:</span>
+          {[["smooth", "Smooth"], ["retro", "Retro game"]].map(([k, l]) => (
+            <button key={k} type="button" aria-pressed={motion === k} className={pill(motion === k)} onClick={() => patch({ buddy_motion: k as Settings["buddy_motion"] })}>{l}</button>
           ))}
         </div>
       )}
