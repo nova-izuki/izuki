@@ -20,11 +20,30 @@ pub struct Reply {
     pub text: String,
     /// Sign-in links for apps that aren't linked yet: (app, url).
     pub links: Vec<(String, String)>,
+    /// Structured executor result. Text such as "Done" cannot set this.
+    pub outcome: crate::model::TaskOutcome,
 }
 
 impl Reply {
     fn text(t: impl Into<String>) -> Self {
-        Reply { text: t.into(), links: Vec::new() }
+        Reply { text: t.into(), ..Default::default() }
+    }
+
+    fn with_outcome(mut self, outcome: crate::model::TaskOutcome) -> Self {
+        self.outcome = outcome;
+        self
+    }
+
+    fn from_plan(plan: &crate::model::VisionPlan) -> Self {
+        use crate::model::TaskOutcome;
+        let outcome = if plan.ask.is_some() { TaskOutcome::NeedsUser }
+            else if plan.outcome != TaskOutcome::Unverified { plan.outcome }
+            else if !plan.steps.is_empty() { TaskOutcome::Partial }
+            else { TaskOutcome::Unverified };
+        let text = if plan.summary.trim().is_empty() {
+            plan.ask.as_deref().unwrap_or(if outcome == TaskOutcome::Verified { "Done." } else { "I couldn't verify that this task finished." })
+        } else { plan.summary.trim() };
+        Self::text(text).with_outcome(outcome)
     }
 }
 
@@ -192,6 +211,9 @@ pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str))
 /// brain looks at them with the words — "what's this?", "fix this error",
 /// "solve question 3".
 pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bool, status: &dyn Fn(&str)) -> Reply {
+    if let Err(reason) = crate::execution::check() {
+        return Reply::text(reason.explanation()).with_outcome(if reason == crate::execution::StopReason::Cancelled { crate::model::TaskOutcome::Cancelled } else { crate::model::TaskOutcome::Blocked });
+    }
     if !images.is_empty() {
         push_with("user", said, images);
         forget_old_pictures();
@@ -221,14 +243,21 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         push("assistant", &text);
         return Reply::text(text);
     }
+    // A terminal lesson (tutor.rs), from the phone and Discord too.
+    if let Some(ask) = crate::tutor::parse(said) {
+        push("user", said);
+        let text = crate::tutor::handle(ask);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // "Find my Home Depot email": every linked Gmail account searched, and
     // the answer says exactly which (mail.rs) — Discord, phone, Telegram.
     if let Some(ask) = crate::mail::parse_ask(said).filter(|_| crate::composio::configured()) {
         push("user", said);
         status("Searching your email…");
-        let text = crate::mail::answer(&ask);
+        let (text, outcome) = crate::mail::answer_checked(&ask);
         push("assistant", &text);
-        return Reply::text(text);
+        return Reply::text(text).with_outcome(outcome);
     }
     // "What's important in my email?", from the phone and Telegram too.
     if crate::headsup::is_inbox_question(said) && crate::composio::configured() {
@@ -307,15 +336,15 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         status("Checking your connected apps…");
         let history = HISTORY.lock().clone();
         let answer = match crate::composio::ask(&history) {
-            Ok(a) => Reply { text: crate::reminders::take_tags(&a.text), links: a.links },
-            Err(e) => Reply::text(format!("I couldn't reach your apps ({e}).")),
+            Ok(a) => Reply { text: crate::reminders::take_tags(&a.text), links: a.links, ..Default::default() },
+            Err(e) => Reply::text(format!("I couldn't reach your apps ({e}).")).with_outcome(crate::model::TaskOutcome::Failed),
         };
         push("assistant", &answer.text);
         return answer;
     }
     // Plainly a PC job? Do it — don't gamble on the chat model tagging it.
     if needs_screen(said) && !pc_asked(said) { return Reply::text(CHOOSE_DEVICE); }
-    if needs_screen(said) && crate::state::store().settings().phone_controls_pc && !crate::uia::screen_locked() {
+    if needs_screen(said) {
         push("user", said);
         let out = on_pc(app, said, status);
         push("assistant", &out.text);
@@ -328,7 +357,7 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         Ok(r) => crate::reminders::take_tags(&r),
         Err(e) => {
             HISTORY.lock().pop();
-            return Reply::text(format!("My AI brain didn't answer ({e}). Try again in a moment?"));
+            return Reply::text(format!("My AI brain didn't answer ({e}). Try again in a moment?")).with_outcome(crate::model::TaskOutcome::Failed);
         }
     };
 
@@ -342,8 +371,8 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
     }
     if hands_over(&reply, "APPS") {
         let answer = match crate::composio::ask(&history) {
-            Ok(a) => Reply { text: crate::reminders::take_tags(&a.text), links: a.links },
-            Err(e) => Reply::text(format!("I couldn't get into your apps just now ({e}).")),
+            Ok(a) => Reply { text: crate::reminders::take_tags(&a.text), links: a.links, ..Default::default() },
+            Err(e) => Reply::text(format!("I couldn't get into your apps just now ({e}).")).with_outcome(crate::model::TaskOutcome::Failed),
         };
         push("assistant", &answer.text);
         return answer;
@@ -429,20 +458,65 @@ pub fn notify_everywhere(text: &str) {
 fn on_pc(app: &AppHandle, said: &str, status: &dyn Fn(&str)) -> Reply {
     let store = crate::state::store();
     if !store.settings().phone_controls_pc {
-        return Reply::text("That needs your PC, and doing things on it from your phone is switched off (Izuki → Settings → Phone).");
+        return Reply::text("That needs your PC, and doing things on it from your phone is switched off (Izuki → Settings → Phone).").with_outcome(crate::model::TaskOutcome::Blocked);
     }
     if crate::uia::screen_locked() {
-        return Reply::text("Your PC is locked, so I can't do that right now — unlock it and ask again.");
+        return Reply::text("Your PC is locked, so I can't do that right now — unlock it and ask again.").with_outcome(crate::model::TaskOutcome::Blocked);
     }
     status("On it — doing that on your PC…");
     let plan = crate::brain::submit_voice_command(app, &store, said.to_string());
-    let summary = plan.summary.trim();
-    Reply::text(if summary.is_empty() { "Done.".to_string() } else { summary.to_string() })
+    Reply::from_plan(&plan)
+}
+
+/// "Teach me…", "show me how…", "I want to learn…": the user asked to be
+/// taught, so demonstrating harmless basics is part of the request.
+pub fn asks_to_learn(said: &str) -> bool {
+    let s = format!(" {} ", said.to_lowercase());
+    [" teach", " learn ", " learn how", " lesson", " tutorial", " show me how", " walk me through", " how do i use", " explain how to use"]
+        .iter()
+        .any(|w| s.contains(w))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn knows_a_request_to_be_taught() {
+        assert!(asks_to_learn("teach me git in the terminal"));
+        assert!(asks_to_learn("Can you show me how to use PowerShell"));
+        assert!(!asks_to_learn("inspect my project"));
+        assert!(!asks_to_learn("open the learning center app"));
+    }
+
+    #[test]
+    fn executor_verdict_survives_the_companion_handoff() {
+        use crate::model::{TaskOutcome, VisionPlan};
+        let mut plan = VisionPlan::default();
+        let reply = Reply::from_plan(&plan);
+        assert_eq!(reply.outcome, TaskOutcome::Unverified);
+        assert!(!reply.text.contains("Done"));
+        plan.summary = "Done.".into();
+        assert_eq!(Reply::from_plan(&plan).outcome, TaskOutcome::Unverified);
+        plan.done = true;
+        assert_eq!(Reply::from_plan(&plan).outcome, TaskOutcome::Unverified);
+        plan.outcome = TaskOutcome::Verified;
+        assert_eq!(Reply::from_plan(&plan).outcome, TaskOutcome::Verified);
+        plan.ask = Some("Which account?".into());
+        assert_eq!(Reply::from_plan(&plan).outcome, TaskOutcome::NeedsUser);
+        plan.done = false;
+        plan.outcome = TaskOutcome::Unverified;
+        plan.ask = None;
+        plan.steps.push(serde_json::from_value(serde_json::json!({"action":"click","x":1,"y":1})).unwrap());
+        assert_eq!(Reply::from_plan(&plan).outcome, TaskOutcome::Partial);
+        assert_eq!(Reply::text("I did everything!").outcome, TaskOutcome::Unverified);
+        // Even an external JSON claim cannot set the executor-only verdict.
+        let mut json = serde_json::to_value(&plan).unwrap();
+        assert!(json.get("outcome").is_none());
+        json["outcome"] = serde_json::json!("verified");
+        let injected: VisionPlan = serde_json::from_value(json).unwrap();
+        assert_eq!(injected.outcome, TaskOutcome::Unverified);
+    }
 
     #[test]
     fn phone_intent_cannot_fall_through_to_windows() {

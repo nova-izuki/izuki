@@ -169,8 +169,15 @@ pub fn search_in(src: &dyn Source, accounts: &[Account], dupes: usize, query: &s
         found.failed.push(("a Gmail account".into(), a.note.clone()));
     }
     let ok: Vec<&Account> = accounts.iter().filter(|a| a.state == "ok").collect();
+    let execution_context = crate::execution::current();
     let results: Vec<(String, Result<Value>)> = std::thread::scope(|sc| {
-        let jobs: Vec<_> = ok.iter().map(|a| (a.address.clone(), sc.spawn(move || src.fetch(&a.id, query, max)))).collect();
+        let jobs: Vec<_> = ok.iter().map(|a| {
+            let context = execution_context.clone();
+            (a.address.clone(), sc.spawn(move || {
+                let _scope = crate::execution::attach(context);
+                src.fetch(&a.id, query, max)
+            }))
+        }).collect();
         jobs.into_iter().map(|(addr, j)| (addr, j.join().unwrap_or_else(|_| Err(anyhow!("the search crashed"))))).collect()
     });
     let mut ids: HashSet<(String, String)> = HashSet::new();
@@ -375,13 +382,33 @@ pub fn query_for(ask: &Ask) -> String {
 
 /// Answer a mail search, in plain words, grounded in what was really found.
 pub fn answer(ask: &Ask) -> String {
+    answer_checked(ask).0
+}
+
+/// The answer and how complete the search really was: verified only when
+/// every account in scope was searched (none failed, none needing sign-in).
+pub fn answer_checked(ask: &Ask) -> (String, crate::model::TaskOutcome) {
     let q = query_for(ask);
     match search(&q, 10, ask.account.as_deref()) {
         Ok(f) => {
             let (all, _) = accounts_now().unwrap_or_default();
-            say(ask, &f, &all)
+            (say(ask, &f, &all), coverage(&f))
         }
-        Err(e) => format!("I couldn't reach your email just now ({}), so I can't say whether it's there.", short(&e.to_string())),
+        Err(e) => (
+            format!("I couldn't reach your email just now ({}), so I can't say whether it's there.", short(&e.to_string())),
+            crate::model::TaskOutcome::Failed,
+        ),
+    }
+}
+
+/// How much of the asked-for scope a search covered.
+pub fn coverage(f: &Found) -> crate::model::TaskOutcome {
+    use crate::model::TaskOutcome;
+    match (f.checked.is_empty(), f.failed.is_empty() && f.needs_sign_in == 0) {
+        (true, _) if f.failed.is_empty() && f.needs_sign_in == 0 => TaskOutcome::Blocked,
+        (true, _) => TaskOutcome::Failed,
+        (false, true) => TaskOutcome::Verified,
+        (false, false) => TaskOutcome::Partial,
     }
 }
 
@@ -808,6 +835,19 @@ mod tests {
         assert!(lines[0].starts_with("📧 2 emails in the last day, 2 unread (checked 2 Gmail accounts"), "{lines:?}");
         // Every counted email is named: the important one and the other unread one.
         assert!(lines.iter().any(|l| l.contains("Home_Depot_Hiring")) && lines.iter().any(|l| l.contains("Sam")), "{lines:?}");
+    }
+
+    #[test]
+    fn verified_only_when_every_account_was_searched() {
+        use crate::model::TaskOutcome;
+        let src = two_accounts();
+        let (accs, d) = accounts(&src).unwrap();
+        assert_eq!(coverage(&search_in(&src, &accs, d, "x", 10)), TaskOutcome::Verified);
+        let mut broken = two_accounts();
+        broken.broken.insert("ca_b".into());
+        let (accs, d) = accounts(&broken).unwrap();
+        assert_eq!(coverage(&search_in(&broken, &accs, d, "x", 10)), TaskOutcome::Partial);
+        assert_eq!(coverage(&Found::default()), TaskOutcome::Blocked);
     }
 
     #[test]

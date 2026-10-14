@@ -286,6 +286,7 @@ fn click_what_was_circled(app: &AppHandle, store: &Arc<Store>, session: &DrawSes
         provider: "local".into(),
         model: "circle".into(),
         done: true,
+        outcome: crate::model::TaskOutcome::Partial,
         ..Default::default()
     })
 }
@@ -339,6 +340,35 @@ fn looks_like_command(text: &str) -> bool {
     !t.is_empty() && (STARTS.iter().any(|s| t.starts_with(s)) || t.contains(" && ") || t.contains(" | ") || t.contains("--force"))
 }
 
+/// A terminal line safe to type without the user spelling it out: it only
+/// looks (the Chat tab's own rule), or it's a harmless basic a lesson shows
+/// (cls, cd, echo to the screen, mkdir of a new plain folder…). Nothing that
+/// deletes, overwrites, installs, chains or redirects.
+pub fn safe_terminal_line(text: &str) -> bool {
+    let l = text.trim().to_lowercase();
+    if l.is_empty() || l.len() > 160 || l.contains(['\n', '\r']) {
+        return false;
+    }
+    if ['&', '|', '>', '<', '^', '`', '$', ';', '*', '?', '%', '!', '(', ')', '{', '}'].iter().any(|c| l.contains(*c)) {
+        return false;
+    }
+    let first = l.split_whitespace().next().unwrap_or("");
+    let rest = l[first.len()..].trim();
+    match first {
+        "cls" | "clear" | "clear-host" | "ver" | "pwd" | "whoami" | "hostname" | "get-location" | "gl" => rest.is_empty(),
+        "help" | "get-help" | "title" => true,
+        "date" | "time" => rest == "/t",
+        "echo" | "write-host" | "write-output" => true,
+        "cd" | "chdir" | "set-location" | "sl" | "pushd" | "popd" => !rest.starts_with("/d \\\\"),
+        "type" | "more" | "get-content" => !rest.is_empty(),
+        "mkdir" | "md" => !rest.is_empty() && !rest.contains("..") && rest.chars().all(|c| c.is_alphanumeric() || "-_".contains(c)),
+        "python" | "py" | "node" | "git" | "npm" | "java" | "gcc" | "rustc" | "cargo" => {
+            ["--version", "-v", "-version", "version", "status", "log --oneline", "branch", "diff"].contains(&rest)
+        }
+        _ => false,
+    }
+}
+
 /// Never on a guess: typing a command into a terminal (it runs, and can
 /// delete things) unless the user spelled that command out, and writing
 /// notes on the screen unless they asked to be shown or taught something.
@@ -353,7 +383,7 @@ fn guard_steps(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, front: &
         s.action == Intent::Type
             && s.text_to_type.as_deref().is_some_and(|t| {
                 let spelled_out = asked.contains(&t.trim().to_lowercase());
-                (terminal || looks_like_command(t)) && !spelled_out
+                (terminal || looks_like_command(t)) && !spelled_out && !(lesson && terminal && safe_terminal_line(t))
             })
     });
     if let Some(i) = cut {
@@ -1364,10 +1394,12 @@ where F: FnOnce() + Send + 'static,
     let steps = steps.to_vec();
     let app = app.clone();
     let store = store.clone();
+    let execution_context = crate::execution::current();
 
     std::thread::Builder::new()
         .name("izuki-act".into())
         .spawn(move || {
+            let _execution = crate::execution::attach(execution_context);
             run_steps_blocking(&app, &store, &steps, &|| task_alive(task));
             on_done();
         })
@@ -1381,6 +1413,7 @@ static STEP_SNAG: Mutex<Option<String>> = Mutex::new(None);
 /// Run `steps` on this thread. `true` if every step ran (not stopped and
 /// no step failed).
 fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> (bool, usize) {
+            if !crate::execution::allowed() { return (false, 0); }
             STEP_SNAG.lock().take();
             let executed = std::cell::Cell::new(0usize);
             let settings = store.settings();
@@ -1405,6 +1438,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
 
             let run = || {
                 for (i, step) in steps.iter().enumerate() {
+                    if crate::execution::charge(crate::execution::Work::Action).is_err() { return false; }
                     if !alive() {
                         let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
                         return false;
@@ -1470,10 +1504,17 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             }
                         }
                     }
+                    let evidence = match crate::execution::begin_step(crate::mission_journal::EvidenceKind::DesktopAction, &format!("{:?}", step.action), None) {
+                        Ok(evidence) => evidence,
+                        Err(_) => return false,
+                    };
                     match automation::execute(step, move_ms, settings.magnetic_hand, settings.dry_run)
                     {
                         Ok(detail) => {
                             executed.set(i + 1);
+                            if let Some(evidence) = evidence {
+                                if evidence.finish(crate::mission_journal::EvidenceOutcome::Returned).is_err() { return false; }
+                            }
                             if matches!(step.action, Intent::Click | Intent::DoubleClick) {
                                 ghost::record(&store, &app_name, step.x, step.y);
                             }
@@ -1512,6 +1553,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                         }
                         Err(e) => {
                             let why = e.to_string();
+                            if let Some(evidence) = evidence { let _ = evidence.finish(crate::mission_journal::EvidenceOutcome::Unknown); }
                             // Something on top, or greyed out: the brain can fix
                             // that on its next look — the task goes on.
                             if why.starts_with("covered:") || why.starts_with("disabled:") || why.starts_with("target_changed:") {
@@ -1792,7 +1834,7 @@ pub fn run_named_click(app: &AppHandle, store: &Arc<Store>, said: &str) -> Optio
     let c = unique_named(&wanted, &controls).or_else(|| pick_by_text(said, &controls))?.clone();
     let my_task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     automation::clear_abort();
-    let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted();
+    let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted() && crate::execution::allowed();
     let (x, y) = c.rect.center();
     let mut step: ActionStep = serde_json::from_value(serde_json::json!({ "action": "click", "x": x, "y": y, "confidence": 1.0, "reasoning": "named on screen" }))
         .expect("a click step is always well-formed");
@@ -1814,6 +1856,7 @@ pub fn run_named_click(app: &AppHandle, store: &Arc<Store>, said: &str) -> Optio
         model: "named".into(),
         mood: Some("cheerful".into()),
         done: true,
+        outcome: crate::model::TaskOutcome::Partial,
         ..Default::default()
     })
 }
@@ -1921,11 +1964,11 @@ pub fn run_instant(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<Vi
     // Like any new task, this replaces one still running.
     let my_task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     automation::clear_abort();
-    let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted();
+    let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted() && crate::execution::allowed();
     eprintln!("[instant] \"{said}\" → {act:?}");
     let steps = crate::instant::steps(act);
     let worked = if steps.is_empty() {
-        crate::instant::run_direct(act)
+        crate::execution::charge(crate::execution::Work::Action).is_ok() && alive() && crate::instant::run_direct(act)
     } else {
         run_steps_blocking(app, store, &steps, &alive).0
     };
@@ -1938,7 +1981,8 @@ pub fn run_instant(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<Vi
         provider: "local".into(),
         model: "instant".into(),
         mood: Some(if worked { "cheerful" } else { "sympathetic" }.into()),
-        done: true,
+        done: worked && alive(),
+        outcome: if !alive() { crate::model::TaskOutcome::Cancelled } else if worked { crate::model::TaskOutcome::Partial } else { crate::model::TaskOutcome::Failed },
         ..Default::default()
     })
 }
@@ -1955,7 +1999,7 @@ fn submit_task(
     inherited_task: Option<u64>,
 ) -> VisionPlan {
     if let Some(summary) = crate::companion::phone_guidance(&prompt, store.settings().android_enabled) {
-        return VisionPlan { summary, provider: "local".into(), model: "device-routing".into(), done: true, ..Default::default() };
+        return VisionPlan { summary, provider: "local".into(), model: "device-routing".into(), outcome: crate::model::TaskOutcome::Blocked, ..Default::default() };
     }
     // "Scroll down", "louder", "next song": done at once, no AI (instant.rs).
     // Every way in — voice, typing, the phone, Discord — comes through here.
@@ -1970,7 +2014,7 @@ fn submit_task(
         }
         // Offline, with no AI on this PC: the offline helper (offline.rs).
         if brain_chain().is_empty() && !online() {
-            return VisionPlan { summary: crate::offline::answer(&prompt), provider: "offline".into(), done: true, ..Default::default() };
+            return VisionPlan { summary: crate::offline::answer(&prompt), provider: "offline".into(), ..Default::default() };
         }
     }
     let settings = store.settings();
@@ -1989,7 +2033,7 @@ fn submit_task(
     let _esc = crate::hotkey::working();
     // A new task: whatever was drawn to explain the last one goes.
     let _ = app.emit("izuki://pen-clear", ());
-    let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted();
+    let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted() && crate::execution::allowed();
 
     // "Keep going" after a task had to stop: pick it up where it left off.
     let (prompt, resumed) = match UNFINISHED.lock().take() {
@@ -2138,6 +2182,7 @@ fn submit_task(
     // "What are you doing?" is answered from this, while the task runs.
     let _doing = crate::state::Doing::start(&prompt);
     for round in 0..MAX_ROUNDS {
+        if crate::execution::charge(crate::execution::Work::Round).is_err() { break; }
         if !alive() {
             eprintln!("[agent] stopped (replaced or cancelled)");
             break;
@@ -2177,6 +2222,7 @@ fn submit_task(
                 let wanted = ["start menu", "search", "windows menu", "notification", "start button"].iter().any(|w| p.contains(w));
                 if !wanted {
                     eprintln!("[agent] a step opened {popup} by mistake — closing it");
+                    if crate::execution::charge(crate::execution::Work::Action).is_err() { break; }
                     let _ = crate::automation::press_key("esc");
                     std::thread::sleep(Duration::from_millis(350));
                     if let Ok(f) = capture::capture_all() {
@@ -2357,7 +2403,10 @@ fn submit_task(
                 told = Some("A click you planned was on the Windows taskbar, which the user never pointed at — it wasn't made. Act on what they marked.".into());
             }
         }
-        let held = match guard_steps(&mut steps, &prompt, lesson, &uia::front_app()) {
+        // A real lesson ("teach me git in the terminal") may show harmless
+        // basics; anything else still needs the exact command spelled out.
+        let teaching_now = lesson || crate::companion::asks_to_learn(&prompt);
+        let held = match guard_steps(&mut steps, &prompt, teaching_now, &uia::front_app()) {
             Some(why) => {
                 eprintln!("[agent] held back: {why}");
                 told = Some(why);
@@ -2764,6 +2813,7 @@ fn submit_task(
         plan.summary = "Done.".into();
     }
     finalize_execution(&mut plan, completed && alive());
+    if !alive() { plan.outcome = crate::model::TaskOutcome::Cancelled; }
     plan
 }
 
@@ -2818,6 +2868,10 @@ fn completion_observed(plan: &VisionPlan, no_steps: bool, round: usize) -> bool 
 fn finalize_execution(plan: &mut VisionPlan, verified: bool) {
     let claimed_done = plan.done;
     plan.done = verified;
+    plan.outcome = if verified { crate::model::TaskOutcome::Verified }
+        else if plan.ask.is_some() { crate::model::TaskOutcome::NeedsUser }
+        else if !plan.steps.is_empty() { crate::model::TaskOutcome::Partial }
+        else { crate::model::TaskOutcome::Unverified };
     if !verified && (claimed_done || !plan.steps.is_empty()) {
         if claimed_done || plan.summary.trim().is_empty() {
             plan.summary = "I stopped before I could verify that the whole task finished. Some steps may have completed; check the current result before continuing.".into();
@@ -2911,8 +2965,8 @@ const MAX_ROUNDS: usize = 16;
 static TASK_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn task_is_current(task: u64, generation: u64, aborted: bool) -> bool { generation == task && !aborted }
-fn task_alive(task: u64) -> bool { task_is_current(task, TASK_GEN.load(std::sync::atomic::Ordering::SeqCst), automation::aborted()) }
-fn stopped_plan() -> VisionPlan { VisionPlan { summary: "Stopped.".into(), ..Default::default() } }
+fn task_alive(task: u64) -> bool { task_is_current(task, TASK_GEN.load(std::sync::atomic::Ordering::SeqCst), automation::aborted()) && crate::execution::allowed() }
+fn stopped_plan() -> VisionPlan { VisionPlan { summary: "Stopped.".into(), outcome: crate::model::TaskOutcome::Cancelled, ..Default::default() } }
 pub fn reserve_draw_task() -> u64 {
     automation::clear_abort();
     TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
@@ -3177,6 +3231,18 @@ mod speed_tests {
 
     fn step(v: serde_json::Value) -> ActionStep {
         serde_json::from_value(v).unwrap()
+    }
+
+    #[test]
+    fn terminal_basics_are_only_exempt_during_a_lesson() {
+        for line in ["cls", "echo Hello", "mkdir practice", "git status"] {
+            let typed = || step(serde_json::json!({ "action": "type", "text_to_type": line }));
+            assert!(guard_steps(&mut vec![typed()], "teach me terminal basics", true, "windowsterminal").is_none(), "{line}");
+            assert!(guard_steps(&mut vec![typed()], "inspect my project", false, "windowsterminal").is_some(), "{line}");
+        }
+        for line in ["echo %PATH%", "echo hello\rdel file", "Get-ChildItem | ForEach-Object { Remove-Item $_ }", "mkdir C:\\outside", "echo hi > file", "echo hi & del file"] {
+            assert!(!safe_terminal_line(line), "{line}");
+        }
     }
 
     #[test]

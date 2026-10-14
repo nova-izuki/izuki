@@ -46,7 +46,11 @@ pub mod remote;
 pub mod rtools;
 pub mod offline;
 pub mod mail;
+pub mod tutor;
 pub mod missions;
+pub mod execution;
+pub mod mission_journal;
+pub mod awake;
 pub mod music_draft;
 pub mod memory;
 pub mod model;
@@ -362,6 +366,7 @@ pub fn run() {
             commands::air_pointer,
             commands::air_button,
             commands::air_scroll,
+            commands::air_scroll_side,
             commands::air_keys,
             commands::air_target,
             commands::air_key,

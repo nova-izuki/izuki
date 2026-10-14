@@ -417,7 +417,7 @@
         $(".ai .doing").textContent = "🤖 " + (v.doing || "");
         $(".ai .stop").hidden = !v.busy;
         const waiting = (v.missions || []).filter((m) => m.state === "waiting" || m.state === "running").length;
-        const needs = (v.missions || []).filter((m) => m.state === "needs_you").length;
+        const needs = (v.missions || []).filter((m) => ["needs_you", "partial", "blocked", "failed", "unverified"].includes(m.state)).length;
         $(".ai .stats").textContent =
           `${seen.fps ? seen.fps.toFixed(1) + " pictures/s here" : "—"} · ${Math.round(v.kbps || 0)} kb/s · ${v.encode_ms || 0} ms per picture` +
           (waiting || needs ? ` · missions: ${waiting} to go${needs ? `, ${needs} need you` : ""}` : "");

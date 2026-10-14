@@ -13,7 +13,7 @@ import type { Settings } from "../lib/types";
  *   ☝️  your hand moves the pointer (knuckles, so pinching doesn't jolt it)
  *   🤏  thumb + index: click — hold and move to drag and drop
  *   🤌  thumb + middle: right-click · thumb + ring: copy · thumb + pinky: paste
- *   ✌️  two fingers up, move up/down: scroll
+ *   ✌️  two fingers up, move up/down: scroll (left/right: scroll sideways)
  *   🖐️  open palm, quick swipe: back / forward
  *   👉  point and hold still on a box: it's clicked, and what you say next is
  *       typed into it (or written for you: "reply that I'll be there at 6")
@@ -281,9 +281,16 @@ export function AirControl({
     let other: "middle" | "ring" | "pinky" | null = null;
     let otherAt = 0;
     let scrollY: number | null = null;
+    let scrollX: number | null = null;
     /** When the peace sign was last seen (scrolling holds through a flicker). */
     let peaceAt = 0;
     let scrollAcc = 0;
+    let sideAcc = 0;
+    /** Which way this scroll goes, once the hand has clearly moved that way:
+     * up/down or sideways — never both, so a wobble doesn't go diagonal. */
+    let scrollAxis: "v" | "h" | null = null;
+    /** How far the hand has moved since the peace sign began (to pick the way). */
+    let scrollTravel = { x: 0, y: 0 };
     let fistAt = 0;
     /** The hand is raised and driving Air control (and since when it's been up / down). */
     let engaged = false;
@@ -548,7 +555,11 @@ export function AirControl({
         callAt = 0;
         if (callCool === Infinity) callCool = now + 1200;
         scrollY = null;
+        scrollX = null;
         scrollAcc = 0;
+        sideAcc = 0;
+        scrollAxis = null;
+        scrollTravel = { x: 0, y: 0 };
         swipeFrom = null;
         customName = "";
         if (pinchDown) {
@@ -595,7 +606,11 @@ export function AirControl({
         pinchDown = false;
         pinchSeen = 0;
         scrollY = null;
+        scrollX = null;
         scrollAcc = 0;
+        sideAcc = 0;
+        scrollAxis = null;
+        scrollTravel = { x: 0, y: 0 };
         swipeFrom = null;
         customName = "";
         callAt = 0;
@@ -767,20 +782,42 @@ export function AirControl({
       if (twoUp) {
         mode = "Scroll";
         L.gesture = "scroll";
-        if (scrollY === null) scrollY = ny;
-        scrollAcc += (ny - scrollY) * 40;
+        if (scrollY === null || scrollX === null) {
+          scrollY = ny;
+          scrollX = nx;
+        }
+        const dy = ny - scrollY;
+        const dx = nx - scrollX;
         scrollY = ny;
+        scrollX = nx;
+        if (!scrollAxis) {
+          // Pick the way once the hand has clearly moved (3% of the view).
+          scrollTravel = { x: scrollTravel.x + dx, y: scrollTravel.y + dy };
+          if (Math.hypot(scrollTravel.x, scrollTravel.y) > 0.03) scrollAxis = Math.abs(scrollTravel.x) > Math.abs(scrollTravel.y) * 1.3 ? "h" : "v";
+        }
+        if (scrollAxis === "v") scrollAcc += dy * 40;
+        if (scrollAxis === "h") sideAcc += dx * 40;
         const notches = Math.trunc(scrollAcc);
         if (notches) {
           scrollAcc -= notches;
           live.current.scrolls += Math.abs(notches);
           void api.airScroll(notches).catch(() => undefined);
         }
+        const side = Math.trunc(sideAcc);
+        if (side) {
+          sideAcc -= side;
+          live.current.scrolls += Math.abs(side);
+          void api.airScrollSide(side).catch(() => undefined);
+        }
         draw(true);
         return;
       }
       scrollY = null;
+      scrollX = null;
       scrollAcc = 0;
+      sideAcc = 0;
+      scrollAxis = null;
+      scrollTravel = { x: 0, y: 0 };
       // During a pinch's first moment, the pointer holds (no accidental drag).
       const settling = pinchDown && now - pinchAt < 140 && !dragging;
       if (!settling) {

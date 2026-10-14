@@ -57,6 +57,7 @@ fn client() -> Result<reqwest::blocking::Client> {
 }
 
 fn post(key: &str, path: &str, body: &Value) -> Result<Value> {
+    crate::execution::charge(crate::execution::Work::Request).map_err(|r| anyhow!(r.explanation()))?;
     let res = client()?.post(format!("{API}{path}")).header("x-api-key", key).json(body).send()?;
     let status = res.status();
     let v: Value = res.json().unwrap_or(Value::Null);
@@ -72,6 +73,7 @@ fn post(key: &str, path: &str, body: &Value) -> Result<Value> {
 }
 
 fn get(key: &str, path: &str) -> Result<Value> {
+    crate::execution::charge(crate::execution::Work::Request).map_err(|r| anyhow!(r.explanation()))?;
     let res = client()?.get(format!("{API}{path}")).header("x-api-key", key).send()?;
     let status = res.status();
     let v: Value = res.json().unwrap_or(Value::Null);
@@ -133,9 +135,26 @@ pub fn connections(toolkit: &str) -> Result<Vec<crate::mail::Link>> {
 
 /// Run one tool on one specific linked account (by its connection id) —
 /// without this Composio uses its default account for the app.
+fn recorded_tool(tool: &str, account: Option<&str>, run: impl FnOnce() -> Result<Value>) -> Result<Value> {
+    use crate::mission_journal::{EvidenceKind, EvidenceOutcome};
+    // User-facing account labels can be email addresses; journal only opaque
+    // provider connection IDs, never those labels or tool arguments.
+    let account = account.filter(|a| a.starts_with("ca_") && a.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'));
+    let step = crate::execution::begin_step(EvidenceKind::ConnectedTool, tool, account).map_err(|r| anyhow!(r.explanation()))?;
+    let result = run();
+    let outcome = match &result {
+        Ok(v) if tool_error(v).is_some() => EvidenceOutcome::Failed,
+        Ok(_) => EvidenceOutcome::Returned,
+        // A network failure does not prove the provider rejected an action.
+        Err(_) => EvidenceOutcome::Unknown,
+    };
+    if let Some(step) = step { step.finish(outcome).map_err(|_| anyhow!(crate::execution::StopReason::CheckpointFailure.explanation()))?; }
+    result
+}
+
 pub fn execute_on(connection: &str, tool: &str, arguments: Value) -> Result<Value> {
     let key = key()?;
-    let v = post(&key, &format!("/tools/execute/{tool}"), &json!({ "connected_account_id": connection, "user_id": user_id(), "arguments": arguments }))?;
+    let v = recorded_tool(tool, Some(connection), || post(&key, &format!("/tools/execute/{tool}"), &json!({ "connected_account_id": connection, "user_id": user_id(), "arguments": arguments })))?;
     if let Some(e) = tool_error(&v) {
         return Err(anyhow!("{tool} failed: {e}"));
     }
@@ -156,7 +175,7 @@ pub fn link(toolkit: &str) -> Result<String> {
 /// Run one tool directly — no AI involved (the heads-up checks use this).
 pub fn execute(tool: &str, arguments: Value) -> Result<Value> {
     let key = key()?;
-    let v = router(&key, "execute", &json!({ "tool_slug": tool, "arguments": arguments }))?;
+    let v = recorded_tool(tool, None, || router(&key, "execute", &json!({ "tool_slug": tool, "arguments": arguments })))?;
     if let Some(e) = tool_error(&v) {
         return Err(anyhow!("{tool} failed: {e}"));
     }
@@ -338,6 +357,7 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
         Err(e) => return Ok(Answer { text: format!("I couldn't reach your apps: {e}"), links: Vec::new() }),
     }
     for round in 0..MAX_ROUNDS {
+        crate::execution::charge(crate::execution::Work::Round).map_err(|r| anyhow!(r.explanation()))?;
         // Never keep them waiting for minutes: past this, answer with what
         // it has.
         if began.elapsed() > BUDGET {
@@ -483,7 +503,7 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
             // A tool for one email or thread by its id belongs to one account:
             // it's tried account by account until the one that has it answers.
             let by_id = tool.contains("_BY_") || tool.contains("_MESSAGE_BY") || tool.contains("_THREAD") || tool.contains("ATTACHMENT");
-            let outcome = if everywhere { gmail_everywhere(tool, &args, by_id) } else { router(&key, "execute", &body) };
+            let outcome = if everywhere { gmail_everywhere(tool, &args, by_id) } else { recorded_tool(tool, step["run"]["account"].as_str(), || router(&key, "execute", &body)) };
             eprintln!("[apps] ran {tool}{}", if everywhere { " on every Gmail account" } else { "" });
             // A change that definitely failed is released, so it can be tried
             // again; one that went through (or may have) stays recorded.
@@ -556,7 +576,17 @@ fn gmail_everywhere(tool: &str, args: &Value, by_id: bool) -> Result<Value> {
         return Err(last);
     }
     let results: Vec<Value> = std::thread::scope(|sc| {
-        let jobs: Vec<_> = ok.iter().map(|a| (a.address.clone(), sc.spawn(|| execute_on(&a.id, tool, args.clone())))).collect();
+        // Each account's read counts against the running mission's budget too.
+        let jobs: Vec<_> = ok
+            .iter()
+            .map(|a| {
+                let context = crate::execution::current();
+                (a.address.clone(), sc.spawn(move || {
+                    let _scope = crate::execution::attach(context);
+                    execute_on(&a.id, tool, args.clone())
+                }))
+            })
+            .collect();
         jobs.into_iter()
             .map(|(addr, j)| match j.join().unwrap_or_else(|_| Err(anyhow!("crashed"))) {
                 Ok(v) => json!({ "account": addr, "result": v }),
@@ -938,6 +968,33 @@ pub fn test_key(key: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_journal_keeps_provider_failures_distinct_from_network_uncertainty() {
+        use crate::{execution::{Scope, TaskContract}, mission_journal::{Journal, EvidenceOutcome}};
+        let id = uuid::Uuid::new_v4().to_string();
+        let root = std::env::temp_dir().join(format!("izuki-tool-evidence-{id}"));
+        let journal = std::sync::Arc::new(Journal::create(&root, &id).unwrap());
+        let scope = Scope::enter_recorded(&TaskContract::new("Read my inbox"), || false, journal.clone()).unwrap();
+        recorded_tool("GMAIL_FETCH_EMAILS", Some("ca_fixture"), || Ok(json!({"successful":true,"data":{"messages":[]}}))).unwrap();
+        // Preserve raw response behavior so existing approval/deduplication
+        // code can still distinguish a definite provider rejection.
+        let failed = recorded_tool("GMAIL_SEND_EMAIL", None, || Ok(json!({"successful":false,"error":"synthetic private provider text","data":{}}))).unwrap();
+        assert!(tool_error(&failed).is_some());
+        assert!(recorded_tool("GMAIL_SEND_EMAIL", None, || Err(anyhow!("synthetic timeout containing private text"))).is_err());
+        let report = crate::mission_journal::read(&root, &id).unwrap();
+        assert_eq!(report.evidence.iter().map(|e| e.outcome).collect::<Vec<_>>(), [EvidenceOutcome::Returned, EvidenceOutcome::Failed, EvidenceOutcome::Unknown]);
+        let bytes = std::fs::read_to_string(crate::mission_journal::path(&root, &id).unwrap()).unwrap();
+        assert!(!bytes.contains("private"));
+        let ran = std::cell::Cell::new(false);
+        assert!(recorded_tool("invalid tool containing private data", None, || { ran.set(true); Ok(json!({"data":{}})) }).is_err());
+        assert!(!ran.get(), "failed start checkpoint must prevent dispatch");
+        let mut reply = crate::companion::Reply { outcome: crate::model::TaskOutcome::Verified, ..Default::default() };
+        scope.finish(&mut reply);
+        assert_ne!(reply.outcome, crate::model::TaskOutcome::Verified);
+        assert_eq!(scope.usage().stop_reason, Some(crate::execution::StopReason::CheckpointFailure));
+        drop(scope); drop(journal); std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn tool_results_must_really_succeed() {

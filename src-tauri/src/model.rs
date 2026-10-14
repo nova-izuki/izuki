@@ -261,6 +261,9 @@ where
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct VisionPlan {
+    /// Set by the executor only. Model JSON cannot provide a verification verdict.
+    #[serde(skip)]
+    pub outcome: TaskOutcome,
     pub steps: Vec<ActionStep>,
     pub summary: String,
     pub provider: String,
@@ -484,4 +487,19 @@ mod rect_tests {
         assert!(page.contains(seen.center().0, seen.center().1));
         assert!(Rect { x: 0, y: 0, w: 50, h: 50 }.intersect(&page).is_none());
     }
+}
+/// An execution verdict supplied by a trusted executor, never inferred from
+/// an assistant's wording. Unverified is the default for ordinary chat and
+/// integrations that do not yet expose structured completion evidence.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskOutcome {
+    #[default]
+    Unverified,
+    Verified,
+    Partial,
+    NeedsUser,
+    Blocked,
+    Failed,
+    Cancelled,
 }

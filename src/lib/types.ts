@@ -673,6 +673,10 @@ export interface IslandStatus {
   weather?: [string, number, string] | null;
   /** The page's title when a web browser is in front ("Ask about this page"). */
   page?: string | null;
+  /** Missions running right now: [the current one, how many more wait]. */
+  missions?: [string, number] | null;
+  /** A terminal lesson in progress ("CMD lesson · step 3 of 9 · mkdir"). */
+  lesson?: string | null;
 }
 
 /** Something happening right now, with its smart next steps. */

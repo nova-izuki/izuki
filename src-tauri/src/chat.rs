@@ -984,6 +984,7 @@ fn with_system(history: &[Turn], system: String) -> Vec<Value> {
 /// A whole reply at once (the phone lane), with the same racing of brains
 /// as the streamed one. Reminder tags are left in for the caller.
 pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
+    crate::execution::check().map_err(|r| anyhow::anyhow!(r.explanation()))?;
     complete_with_tools(messages_for(history, style))
 }
 
@@ -996,6 +997,7 @@ pub fn reply_here(history: &[Turn], style: Style) -> anyhow::Result<String> {
 /// Any finished answer to `messages` (system prompt first), raced across
 /// the brains like everything else here.
 pub fn complete(messages: &[Value]) -> anyhow::Result<String> {
+    crate::execution::check().map_err(|r| anyhow::anyhow!(r.explanation()))?;
     complete_streaming(messages, 1_000_000_000 + rand::random::<u32>() as u64, &|_| {})
 }
 

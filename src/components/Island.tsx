@@ -92,6 +92,8 @@ type Live =
   | { kind: "suggest"; s: Suggestion }
   | { kind: "music"; m: NowPlaying }
   | { kind: "focus"; secs: number }
+  | { kind: "missions"; now: string; left: number; step: string | null }
+  | { kind: "lesson"; text: string }
   | { kind: "activity"; a: Activity }
   | { kind: "rest" };
 
@@ -369,10 +371,14 @@ export function Island({
   }, [musicOn, open]);
   const live: Live = finished
     ? { kind: "finished" }
+    : status.missions
+      ? { kind: "missions", now: status.missions[0], left: status.missions[1], step: busy ? doing : null }
     : busy
       ? { kind: "working", text: doing || "Thinking…" }
       : soon && soon.at - now <= 5 * 60_000
         ? { kind: "reminder", r: soon, urgent: true }
+        : status.lesson
+        ? { kind: "lesson", text: status.lesson }
         : peek
           ? { kind: "suggest", s: peek }
           : fresh
@@ -462,6 +468,8 @@ function same(a: IslandStatus, b: IslandStatus) {
     // all changes. (Only music used to count, so the suggestions stayed on
     // whatever app was in front first.)
     a.context === b.context &&
+    JSON.stringify(a.missions ?? null) === JSON.stringify(b.missions ?? null) &&
+    (a.lesson ?? null) === (b.lesson ?? null) &&
     labels(a.suggestions) === labels(b.suggestions) &&
     labels(a.clip) === labels(b.clip) &&
     JSON.stringify(a.activities ?? []) === JSON.stringify(b.activities ?? []) &&
@@ -498,6 +506,24 @@ function Compact({ live, dancing, wave = "auto" }: { live: Live; dancing: boolea
           <span className="flex h-[24px] w-[24px] items-center justify-center rounded-full bg-white/12 text-[13px]">{live.a.icon}</span>
           <span className="max-w-[200px] truncate text-[13px] font-medium text-white/90">{live.a.title}</span>
           <span className={"text-[12.5px] text-white/60" + (live.a.kind === "timer" ? " tabular-nums" : "")}>{live.a.detail}</span>
+        </>
+      );
+    case "missions":
+      return (
+        <>
+          <Face size={24} mood="busy" />
+          <span className="max-w-[300px] truncate text-[13px] font-medium text-white/90" title={live.step ?? live.now}>
+            Missions · {live.now || "starting…"}
+          </span>
+          {live.left > 0 && <span className="text-[12px] tabular-nums text-white/55">+{live.left}</span>}
+          <Dots />
+        </>
+      );
+    case "lesson":
+      return (
+        <>
+          <span className="flex h-[24px] w-[24px] items-center justify-center rounded-full bg-cyan-500/80 text-[13px]">🎓</span>
+          <span className="max-w-[320px] truncate text-[13px] font-medium text-white/90">{live.text}</span>
         </>
       );
     case "focus":

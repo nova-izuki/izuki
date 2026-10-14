@@ -499,7 +499,7 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
             let reply = if matches!(said.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()), "stop" | "stop it" | "cancel") {
                 crate::brain::cancel_task();
                 let _ = app.emit(crate::events::STOP_SPEAKING, ());
-                crate::companion::Reply { text: "Stopped.".into(), links: Vec::new() }
+                crate::companion::Reply { text: "Stopped.".into(), outcome: crate::model::TaskOutcome::Cancelled, ..Default::default() }
             } else {
                 crate::companion::respond(app, &said, true, &|_| {})
             };

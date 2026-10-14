@@ -348,6 +348,10 @@ pub fn open_log_folder() -> R<()> {
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     crate::tv::heard(&said);
+    // "Teach me CMD", and "next" / "check my work" while a lesson is on.
+    if let Some(ask) = crate::tutor::parse(&said) {
+        return blocking(move || crate::tutor::handle(ask)).await.ok();
+    }
     // Answering Izuki's "which app?" for the TV ("Disney", "the first one").
     {
         let s2 = said.clone();
@@ -1284,6 +1288,12 @@ pub fn air_button(right: bool, down: bool) -> R<()> {
 #[tauri::command]
 pub fn air_scroll(amount: i32) -> R<()> {
     crate::air::scroll(amount.clamp(-20, 20)).map_err(err)
+}
+
+/// Air control: scroll sideways (peace sign moved left or right).
+#[tauri::command]
+pub fn air_scroll_side(amount: i32) -> R<()> {
+    crate::air::scroll_sideways(amount.clamp(-20, 20)).map_err(err)
 }
 
 /// Air control: a key combination ("ctrl+c"). (Pointer, buttons and scroll

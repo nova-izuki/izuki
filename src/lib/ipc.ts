@@ -386,10 +386,43 @@ export const ISLAND_DEEP_KEY = "izuki.island-deep";
 export const ISLAND_TO_CHAT_KEY = "izuki.island-to-chat";
 
 /** A mission (missions.rs): something to do while you're away. */
+export interface TaskContract {
+  version: number;
+  objective: string;
+  authorized_scope: "existing_permissions";
+  success_criteria: string[];
+  verification: "observed_requested_outcome";
+  budget: { max_duration_ms: number; max_rounds: number; max_actions: number; max_requests: number };
+}
+
+export interface TaskCheckpoint {
+  started_at: number;
+  updated_at: number;
+  phase: "running" | "returned" | "interrupted";
+  usage: { elapsed_ms: number; rounds: number; actions: number; requests: number; stop_reason: "cancelled" | "deadline" | "rounds" | "actions" | "requests" | "checkpoint_failure" | null };
+  journal_version?: number | null;
+  journal_incomplete?: boolean;
+  evidence?: ExecutionEvidence[];
+}
+
+export interface ExecutionEvidence {
+  sequence: number;
+  kind: "desktop_action" | "connected_tool";
+  operation: string;
+  account: string | null;
+  started_at: number;
+  finished_at: number | null;
+  outcome: "in_flight" | "returned" | "failed" | "unknown";
+}
+
 export interface Mission {
   id: string;
   text: string;
-  state: "waiting" | "running" | "done" | "needs_you" | "stopped";
+  state: "waiting" | "running" | "done" | "needs_you" | "stopped" | "partial" | "blocked" | "failed" | "unverified";
+  outcome?: "unverified" | "verified" | "partial" | "needs_user" | "blocked" | "failed" | "cancelled";
+  contract?: TaskContract | null;
+  checkpoint?: TaskCheckpoint | null;
+  attempts?: number;
   result: string;
   at: number;
 }
@@ -609,6 +642,8 @@ export const api = {
   airButton: (right: boolean, down: boolean) => call<void>("air_button", { right, down }, () => undefined),
   /** Air control: scroll notches (down when positive). */
   airScroll: (amount: number) => call<void>("air_scroll", { amount }, () => undefined),
+  /** Scroll sideways under the pointer: right when positive. */
+  airScrollSide: (amount: number) => call<void>("air_scroll_side", { amount }, () => undefined),
   /** Air control: a key combination ("ctrl+c"). */
   airKeys: (combo: string) => call<void>("air_keys", { combo }, () => undefined),
   /** Air control's keyboard: a key ("backspace", "enter") or letters, into the window you were typing in. */

@@ -26,6 +26,11 @@ pub fn scroll(amount: i32) -> Result<()> {
     crate::automation::scroll_here(amount)
 }
 
+/// Scroll sideways (carousels, wide pages, timelines): right when positive.
+pub fn scroll_sideways(amount: i32) -> Result<()> {
+    crate::automation::scroll_sideways_here(amount)
+}
+
 /// A key or combination ("ctrl+c", "alt+left").
 pub fn keys(combo: &str) -> Result<()> {
     if !crate::automation::key_is_known(combo) {

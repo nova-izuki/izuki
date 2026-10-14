@@ -41,6 +41,10 @@ pub struct IslandStatus {
     /// The page's title when a web browser is in front — the Island offers
     /// "Ask about this page".
     pub page: Option<String>,
+    /// Missions running right now: (the current one, how many more wait).
+    pub missions: Option<(String, usize)>,
+    /// A terminal lesson in progress ("CMD lesson · step 3 of 9 · …").
+    pub lesson: Option<String>,
 }
 
 const BROWSERS: &[&str] = &["chrome", "msedge", "firefox", "brave", "opera", "vivaldi", "arc"];
@@ -108,6 +112,8 @@ pub fn status() -> IslandStatus {
         copies: crate::activity::recent_copies().into_iter().map(|c| c.chars().take(90).collect()).collect(),
         weather: weather_glance(),
         page,
+        missions: crate::missions::glance(),
+        lesson: crate::tutor::glance(),
     }
 }
 

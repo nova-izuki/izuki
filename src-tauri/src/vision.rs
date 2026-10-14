@@ -575,6 +575,7 @@ pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
         wait,
         notes,
         zoom,
+        outcome: crate::model::TaskOutcome::Unverified,
     })
 }
 

@@ -44,6 +44,38 @@ static STATUS: Mutex<Status> =
     Mutex::new(Status { bot: String::new(), invite: String::new(), paired: false, online: false, code: String::new(), error: None });
 static STARTED: AtomicBool = AtomicBool::new(false);
 
+/// What lets a dropped connection pick up where it left off (Discord then
+/// replays what was missed instead of losing it): (session id, resume
+/// address, last sequence number).
+static RESUME: Mutex<Option<(String, String, Value)>> = Mutex::new(None);
+
+/// Messages already answered (Discord can deliver one twice around a
+/// reconnect) — the newest few hundred ids.
+static ANSWERED: Mutex<std::collections::VecDeque<String>> = Mutex::new(std::collections::VecDeque::new());
+
+/// True the first time a message id is seen.
+fn first_time(id: &str) -> bool {
+    if id.is_empty() {
+        return true;
+    }
+    let mut seen = ANSWERED.lock();
+    if seen.iter().any(|s| s == id) {
+        return false;
+    }
+    seen.push_back(id.to_string());
+    while seen.len() > 300 {
+        seen.pop_front();
+    }
+    true
+}
+
+/// How long to wait before reconnect attempt `n` (1, 2, …): 2 s doubling
+/// to a minute, with a little jitter so many PCs don't retry in step.
+fn backoff(n: u32) -> Duration {
+    let base = 2u64.saturating_mul(1u64 << n.saturating_sub(1).min(5)).min(60);
+    Duration::from_millis(base * 1000 + rand::random::<u64>() % 1000)
+}
+
 pub fn status() -> Status {
     let s = crate::state::store().settings();
     let mut st = STATUS.lock().clone();
@@ -196,8 +228,18 @@ pub fn spawn(app: AppHandle) {
 }
 
 async fn run_forever(app: AppHandle) {
+    // Failed connections in a row (reset by one that lasted).
+    let mut fails: u32 = 0;
+    let mut previous_token = String::new();
     loop {
         let token = crate::state::store().settings().discord_token.trim().to_string();
+        // The token can change while offline too, before session's periodic
+        // token check runs. Never resume another bot's old gateway session.
+        if token != previous_token {
+            RESUME.lock().take();
+            previous_token = token.clone();
+            fails = 0;
+        }
         if token.is_empty() {
             *STATUS.lock() = Status::default();
             tokio::time::sleep(Duration::from_secs(3)).await;
@@ -233,17 +275,28 @@ async fn run_forever(app: AppHandle) {
             Err(_) => continue,
         }
 
+        let began = std::time::Instant::now();
         if let Err(e) = session(&app, &token).await {
             set_status(&app, |s| { s.online = false; s.error = Some("Reconnecting to Discord…".into()); });
             eprintln!("[discord] connection ended: {e}");
-            if e.to_string().contains("4004") {
+            let code = e.to_string();
+            if code.contains("4004") {
+                RESUME.lock().take();
                 set_status(&app, |s| s.error = Some("Discord refused the token — copy it again.".into()));
                 wait_for_new_token(&token, Duration::from_secs(60)).await;
                 continue;
             }
+            // These closes mean the old session can't be picked up again.
+            if ["4007", "4009", "4010", "4011", "4012", "4013", "4014"].iter().any(|c| code.contains(c)) {
+                RESUME.lock().take();
+            }
         }
         set_status(&app, |s| s.online = false);
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        // A connection that lasted a while was fine — try again quickly.
+        fails = if began.elapsed() > Duration::from_secs(120) { 1 } else { fails + 1 };
+        let wait = backoff(fails);
+        eprintln!("[discord] reconnecting in {} s (try {fails})", wait.as_secs());
+        tokio::time::sleep(wait).await;
     }
 }
 
@@ -261,24 +314,41 @@ async fn wait_for_new_token(old: &str, max: Duration) {
 /// One gateway connection, until it drops or the token changes.
 async fn session(app: &AppHandle, token: &str) -> Result<()> {
     crate::tls_ready();
-    let (ws, _) = tokio_tungstenite::connect_async(GATEWAY).await?;
+    let resume = RESUME.lock().clone();
+    let url = resume
+        .as_ref()
+        .map(|(_, u, _)| format!("{}/?v=10&encoding=json", u.trim_end_matches('/')))
+        .unwrap_or_else(|| GATEWAY.to_string());
+    // Never hang on a half-dead network: a connection that doesn't open, or
+    // says nothing, within 20 s is dropped and tried again.
+    let (ws, _) = tokio::time::timeout(Duration::from_secs(20), tokio_tungstenite::connect_async(url.as_str()))
+        .await
+        .map_err(|_| anyhow!("connecting timed out"))??;
     let (mut tx, mut rx) = ws.split();
 
     // Hello → the heartbeat interval.
-    let hello = next_json(&mut rx).await?;
+    let hello = tokio::time::timeout(Duration::from_secs(20), next_json(&mut rx))
+        .await
+        .map_err(|_| anyhow!("no hello from Discord"))??;
     let every = Duration::from_millis(hello["d"]["heartbeat_interval"].as_u64().unwrap_or(41_250));
 
-    let identify = json!({
-        "op": 2,
-        "d": {
-            "token": token,
-            "intents": INTENTS,
-            "properties": { "os": "windows", "browser": "izuki", "device": "izuki" }
-        }
-    });
-    tx.send(Message::Text(identify.to_string().into())).await?;
-
     let mut seq: Value = Value::Null;
+    let first = match &resume {
+        // Pick up the old session: Discord replays what was missed.
+        Some((id, _, last)) => {
+            seq = last.clone();
+            json!({ "op": 6, "d": { "token": token, "session_id": id, "seq": last } })
+        }
+        None => json!({
+            "op": 2,
+            "d": {
+                "token": token,
+                "intents": INTENTS,
+                "properties": { "os": "windows", "browser": "izuki", "device": "izuki" }
+            }
+        }),
+    };
+    tx.send(Message::Text(first.to_string().into())).await?;
     let mut beat = tokio::time::interval(every);
     beat.tick().await; // the first tick is immediate
     let mut acked = true;
@@ -295,6 +365,8 @@ async fn session(app: &AppHandle, token: &str) -> Result<()> {
             }
             _ = token_check.tick() => {
                 if crate::state::store().settings().discord_token.trim() != token {
+                    // A new bot: its session starts fresh.
+                    RESUME.lock().take();
                     let _ = tx.close().await;
                     return Ok(());
                 }
@@ -311,17 +383,41 @@ async fn session(app: &AppHandle, token: &str) -> Result<()> {
                 let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
                 if !v["s"].is_null() {
                     seq = v["s"].clone();
+                    if let Some(r) = RESUME.lock().as_mut() {
+                        r.2 = seq.clone();
+                    }
                 }
                 match v["op"].as_u64() {
                     Some(11) => acked = true,
                     Some(1) => tx.send(Message::Text(json!({ "op": 1, "d": seq }).to_string().into())).await?,
-                    Some(7) | Some(9) => return Err(anyhow!("Discord asked to reconnect")),
+                    // Reconnect and pick up again.
+                    Some(7) => return Err(anyhow!("Discord asked to reconnect")),
+                    // Invalid session: resumable only if Discord says so.
+                    Some(9) => {
+                        if v["d"] != true {
+                            RESUME.lock().take();
+                        }
+                        return Err(anyhow!("Discord ended the session"));
+                    }
                     Some(0) => match v["t"].as_str() {
                         Some("READY") => {
+                            let id = v["d"]["session_id"].as_str().unwrap_or_default().to_string();
+                            let url = v["d"]["resume_gateway_url"].as_str().unwrap_or("wss://gateway.discord.gg").to_string();
+                            if !id.is_empty() {
+                                *RESUME.lock() = Some((id, url, seq.clone()));
+                            }
                             eprintln!("[discord] connected");
                             set_status(app, |s| { s.online = true; s.error = None; });
                         }
+                        Some("RESUMED") => {
+                            eprintln!("[discord] reconnected — picked up where it left off");
+                            set_status(app, |s| { s.online = true; s.error = None; });
+                        }
                         Some("MESSAGE_CREATE") => {
+                            // Delivered twice around a reconnect: answered once.
+                            if !first_time(v["d"]["id"].as_str().unwrap_or_default()) {
+                                continue;
+                            }
                             let (app, token, d) = (app.clone(), token.to_string(), v["d"].clone());
                             // Replies can take a while (a PC task) — never
                             // hold up the gateway.
@@ -461,4 +557,23 @@ fn handle(app: &AppHandle, token: &str, m: &Value) -> Result<()> {
     }
     send_text(token, channel, &out);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn answers_a_message_once() {
+        assert!(first_time("m-1"));
+        assert!(!first_time("m-1"));
+        assert!(first_time("m-2"));
+    }
+
+    #[test]
+    fn waits_longer_each_time_up_to_a_minute() {
+        assert!(backoff(1) >= Duration::from_secs(2) && backoff(1) < Duration::from_secs(3));
+        assert!(backoff(3) >= Duration::from_secs(8) && backoff(3) < Duration::from_secs(9));
+        assert!(backoff(30) >= Duration::from_secs(60) && backoff(30) < Duration::from_secs(61));
+    }
 }

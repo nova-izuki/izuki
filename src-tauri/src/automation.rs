@@ -99,6 +99,12 @@ pub fn scroll_here(amount: i32) -> Result<()> {
     e.scroll(amount, Axis::Vertical).map_err(|err| anyhow!("scroll failed: {err:?}"))
 }
 
+/// Scroll sideways whatever is under the pointer: notches, right when positive.
+pub fn scroll_sideways_here(amount: i32) -> Result<()> {
+    let mut e = enigo()?;
+    e.scroll(amount, Axis::Horizontal).map_err(|err| anyhow!("sideways scroll failed: {err:?}"))
+}
+
 /// Glide the real cursor from where it is to (x, y).
 pub fn glide_to(x: i32, y: i32, duration_ms: u64) -> Result<()> {
     let mut e = enigo()?;

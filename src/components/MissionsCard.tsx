@@ -2,12 +2,33 @@ import { useCallback, useEffect, useState } from "react";
 import { api, EV, on, type Mission } from "../lib/ipc";
 import { Section } from "./ui";
 
+/** The saved progress, in plain words. */
+const PHASE: Record<string, string> = {
+  running: "Working on it so far",
+  returned: "When it finished",
+  interrupted: "When it was interrupted",
+};
+
+/** Why a mission stopped early, in plain words. */
+const STOPPED: Record<string, string> = {
+  cancelled: "You stopped it.",
+  deadline: "It paused at its time limit.",
+  rounds: "It paused after thinking it over as many times as it's allowed.",
+  actions: "It paused at its limit of clicks and key presses.",
+  requests: "It paused at its limit of checks in your apps.",
+  checkpoint_failure: "It paused because it couldn't save a record of what it did.",
+};
+
 const STATE: Record<Mission["state"], { icon: string; label: string }> = {
   waiting: { icon: "⏳", label: "Waiting" },
   running: { icon: "⚙️", label: "Working on it…" },
-  done: { icon: "✅", label: "Done" },
+  done: { icon: "✅", label: "Verified" },
   needs_you: { icon: "✋", label: "Needs you" },
   stopped: { icon: "⏹", label: "Stopped" },
+  partial: { icon: "⚠️", label: "Partly done" },
+  blocked: { icon: "🔒", label: "Blocked" },
+  failed: { icon: "⚠️", label: "Failed" },
+  unverified: { icon: "⚠️", label: "Not verified" },
 };
 
 /**
@@ -22,6 +43,8 @@ export function MissionsCard() {
   const [running, setRunning] = useState(false);
   const [text, setText] = useState("");
   const [open, setOpen] = useState<string | null>(null);
+  const [addError, setAddError] = useState("");
+  const [evidenceOpen, setEvidenceOpen] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     void api
@@ -41,8 +64,13 @@ export function MissionsCard() {
   const add = () => {
     const t = text.trim();
     if (!t) return;
-    setText("");
-    void api.missionAdd(t).then(setMissions).catch(() => undefined);
+    setAddError("");
+    const ids = new Set(missions.map((m) => m.id));
+    void api.missionAdd(t).then((all) => {
+      setMissions(all);
+      if (all.some((m) => !ids.has(m.id) && m.text === t)) setText("");
+      else setAddError("The mission wasn't added. Keep it within 400 characters and check that Izuki can save its data.");
+    }).catch(() => setAddError("The mission couldn't be saved. Your text is still here to try again."));
   };
   const waiting = missions.filter((m) => m.state === "waiting").length;
   const finished = missions.some((m) => m.state === "done" || m.state === "stopped");
@@ -56,6 +84,7 @@ export function MissionsCard() {
       <div className="flex gap-1.5">
         <input
           value={text}
+          maxLength={400}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") add();
@@ -66,6 +95,7 @@ export function MissionsCard() {
         />
         <button type="button" onClick={add} className="izk-pill izk-no-drag px-3 text-[11.5px]">Add</button>
       </div>
+      {addError && <p role="alert" className="mt-1.5 text-[11px] text-izk-muted">{addError}</p>}
       {missions.length === 0 && <p className="mt-2 text-[11.5px] text-izk-muted">No missions yet. Or say “add to my missions: …”.</p>}
       <ul className="mt-2 space-y-1">
         {missions.map((m) => (
@@ -82,6 +112,30 @@ export function MissionsCard() {
               <button type="button" onClick={() => setOpen(open === m.id ? null : m.id)} className="izk-no-drag mt-1 block w-full text-left text-[11px] leading-snug text-izk-muted">
                 {open === m.id ? m.result : `${m.result.slice(0, 110)}${m.result.length > 110 ? "…" : ""}`}
               </button>
+            )}
+            {m.contract && (
+              <details className="mt-1 text-[11px] leading-snug text-izk-muted">
+                <summary className="izk-no-drag cursor-pointer">What Izuki may do, and what it did</summary>
+                <p className="mt-1">Only what you've already allowed. Sending, spending or deleting anything still waits for your yes.</p>
+                <p className="mt-1">It counts as done only when Izuki can see this really happened: {m.contract.success_criteria.join("; ")}</p>
+                <p className="mt-1">It stops by itself after {Math.ceil(m.contract.budget.max_duration_ms / 60000)} minutes, {m.contract.budget.max_actions} clicks or key presses, or {m.contract.budget.max_requests} checks in your apps — whichever comes first.</p>
+                {m.checkpoint && (
+                  <p className="mt-1">
+                    {PHASE[m.checkpoint.phase] ?? "Saved progress"}: {m.checkpoint.usage.actions} clicks or key presses, {m.checkpoint.usage.requests} checks in your apps, {Math.max(1, Math.round(m.checkpoint.usage.elapsed_ms / 1000))} seconds.
+                    {m.checkpoint.usage.stop_reason && ` ${STOPPED[m.checkpoint.usage.stop_reason] ?? "It stopped early."}`}
+                  </p>
+                )}
+                {m.checkpoint?.journal_incomplete && <p role="status" className="mt-1">Part of the record of what it did couldn't be read. Have a look at the result before running it again.</p>}
+                {!!m.checkpoint?.evidence?.length && <>
+                  <button type="button" className="izk-no-drag mt-1 underline" onClick={() => setEvidenceOpen(evidenceOpen === m.id ? null : m.id)}>{evidenceOpen === m.id ? "Hide" : "Show"} execution records ({m.checkpoint.evidence.length})</button>
+                  {evidenceOpen === m.id && <>
+                    <p className="mt-1">Each step Izuki took and how it went. A step that worked doesn't by itself mean the whole mission is done.</p>
+                    <ul className="mt-1 max-h-48 overflow-y-auto space-y-1">
+                      {m.checkpoint.evidence.map((e) => <li key={e.sequence}>#{e.sequence} · {e.operation} · {{in_flight: "Still going", returned: "Worked", failed: "Didn't work", unknown: "Not sure how it went"}[e.outcome]}{e.account && ` · Connection ${e.account}`} · {new Date(e.started_at).toLocaleTimeString()}</li>)}
+                    </ul>
+                  </>}
+                </>}
+              </details>
             )}
           </li>
         ))}
