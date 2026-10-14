@@ -51,6 +51,8 @@ pub mod missions;
 pub mod execution;
 pub mod mission_journal;
 pub mod awake;
+pub mod approvals;
+pub mod touch;
 pub mod music_draft;
 pub mod memory;
 pub mod model;

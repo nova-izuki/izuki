@@ -486,7 +486,10 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
                 if !(approved(history) && proposed_is(key)) {
                     eprintln!("[apps] {tool} held for the user's yes");
                     *PROPOSED.lock() = Some((key, std::time::Instant::now()));
-                    return Ok(Answer { text: draft_of(tool, &args), links });
+                    let draft = draft_of(tool, &args);
+                    // Also approvable from the paired phone (Touch Grass).
+                    crate::approvals::hold(tool, &args, step["run"]["account"].as_str(), &pretty(&app_of(tool)), &draft);
+                    return Ok(Answer { text: draft, links });
                 }
                 if !reserve(key) {
                     return Ok(Answer { text: "That exact one already went through a moment ago — I didn't do it twice.".into(), links });
@@ -522,11 +525,17 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
                 Ok(v) => {
                     let err = tool_error(&v);
                     match err {
-                        Some(e) => format!("{tool} failed: {e}"),
+                        Some(e) => {
+                            if change_key.is_some() {
+                                crate::approvals::settled_in_chat(tool, &args, step["run"]["account"].as_str(), false);
+                            }
+                            format!("{tool} failed: {e}")
+                        }
                         None => {
                             executed = true;
                             if change_key.is_some() {
                                 record_sent(tool, &args);
+                                crate::approvals::settled_in_chat(tool, &args, step["run"]["account"].as_str(), true);
                             }
                             // Note which app was really read, so the finished
                             // answer can be kept for next time (see below).
@@ -796,6 +805,56 @@ pub fn sent_history() -> Vec<Sent> {
 /// It definitely didn't happen: it may be tried again.
 fn release(key: u64) {
     DONE.lock().retain(|(k, _)| *k != key);
+}
+
+/// The draft was rejected (or approved elsewhere): a later "yes" in the chat
+/// must not send it.
+pub fn forget_proposal(tool: &str, args: &Value, account: Option<&str>) {
+    let key = action_key(tool, args, account);
+    let mut p = PROPOSED.lock();
+    if p.is_some_and(|(k, _)| k == key) {
+        *p = None;
+    }
+}
+
+/// Run a change the user approved from their phone (approvals.rs): exactly
+/// that tool, those arguments and that account, once. Ok only when the app
+/// confirmed it.
+pub fn run_approved(tool: &str, args: &Value, account: Option<&str>) -> Result<()> {
+    if !changes(tool) {
+        return Err(anyhow!("that isn't something that needs approving"));
+    }
+    let key = key()?;
+    let action = action_key(tool, args, account);
+    // The chat's "yes" can't send it again afterwards.
+    forget_proposal(tool, args, account);
+    if !reserve(action) {
+        return Err(anyhow!("that exact one already went through a moment ago — not sent twice"));
+    }
+    let mut body = json!({ "tool_slug": tool, "arguments": args });
+    if let Some(a) = account {
+        body["account"] = json!(a);
+    }
+    // Recorded like the chat's own approved actions (mission journal, budget).
+    match recorded_tool(tool, account, || router(&key, "execute", &body)) {
+        Ok(v) => match tool_error(&v) {
+            Some(e) => {
+                release(action);
+                Err(anyhow!("{e}"))
+            }
+            None => {
+                record_sent(tool, args);
+                Ok(())
+            }
+        },
+        Err(e) => {
+            // Only a clear "no" counts as not sent; a dropped line may have sent it.
+            if e.to_string().starts_with("Composio answered 4") {
+                release(action);
+            }
+            Err(e)
+        }
+    }
 }
 
 /// What the user is asked before a change: exactly what would happen.

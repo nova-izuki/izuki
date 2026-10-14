@@ -360,6 +360,37 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
             let code = asked["code"].as_str().unwrap_or("");
             json_reply(req, crate::link::link_request(name, kind, code))
         }
+        // Touch Grass (touch.rs): missions and approvals from the phone —
+        // only a phone you allowed on this PC (its own pass, not just this
+        // link). Works without "control this PC": it never moves the mouse.
+        (_, Some(p)) if p == "/touch" || p.starts_with("/touch/") => {
+            let pass = req
+                .headers()
+                .iter()
+                .find(|h| h.field.equiv("Authorization"))
+                .and_then(|h| h.value.as_str().strip_prefix("Bearer ").map(str::to_string));
+            let device = match crate::remote::device(pass.as_deref()) {
+                Ok(d) => d,
+                Err(e) => return respond(req, 401, "application/json", json!({ "ok": false, "error": e.to_string() }).to_string().into_bytes()),
+            };
+            match (req.method().clone(), p) {
+                (tiny_http::Method::Get, "/touch/status") => json_reply(req, crate::touch::status()),
+                (tiny_http::Method::Post, "/touch") => {
+                    let mut body = String::new();
+                    let _ = req.as_reader().take(16 * 1024).read_to_string(&mut body);
+                    let asked = serde_json::from_str::<Value>(&body).unwrap_or(Value::Null);
+                    // Approving runs an app tool (network): off this server thread.
+                    let (app2, dev) = (app.clone(), device.clone());
+                    let out = std::thread::spawn(move || crate::touch::act(&app2, &asked, &dev)).join();
+                    match out {
+                        Ok(Ok(v)) => json_reply(req, v),
+                        Ok(Err(e)) => json_reply(req, json!({ "ok": false, "error": e.to_string() })),
+                        Err(_) => json_reply(req, json!({ "ok": false, "error": "something went wrong on the PC" })),
+                    }
+                }
+                _ => respond(req, 404, "text/plain", b"not here".to_vec()),
+            }
+        }
         // The phone as a remote (remote.rs): only a phone you allowed on this
         // PC (its own pass, not just this link), only while "Let my phone
         // control this PC" is on, never while the PC is locked.

@@ -286,6 +286,14 @@ export function AirControl({
     /** When the peace sign was last seen (scrolling holds through a flicker). */
     let peaceAt = 0;
     let fistAt = 0;
+    /** When the hand was last seen open (3+ fingers out): a fist only counts
+     * right after an open hand — a hand resting curled on a cheek or the desk
+     * never pauses or un-pauses Air control. */
+    let openAt = 0;
+    /** Where the hand settled, and since when — a hand resting still for a
+     * while stops clicking until it moves again. */
+    let restFrom: { x: number; y: number; at: number } | null = null;
+    let resting = false;
     /** The hand is raised and driving Air control (and since when it's been up / down). */
     let engaged = false;
     let upSince = 0;
@@ -551,6 +559,8 @@ export function AirControl({
         scroll = null;
         swipeFrom = null;
         customName = "";
+        restFrom = null;
+        resting = false;
         if (pinchDown) {
           if (!ownDown) void api.airButton(false, false);
           ownDown = null;
@@ -572,7 +582,11 @@ export function AirControl({
       // reaching down for the taskbar is still raised (it vanished there);
       // typing hands point down at the keys and never count.
       const upright = (lm[0].y - lm[9].y) / scale;
-      const raised = lm[9].y < 0.95 && upright > (engaged ? 0.3 : 0.45);
+      // Facing the camera: the knuckles spread across the picture. A hand on
+      // its side — on your chin or cheek, or resting on its edge — shows
+      // them stacked, and doesn't drive anything.
+      const facing = dist(lm[5], lm[17]) / scale;
+      const raised = lm[9].y < 0.95 && upright > (engaged ? 0.3 : 0.45) && facing > (engaged ? 0.22 : 0.3);
       if (raised) {
         if (!upSince) upSince = now;
         downSince = 0;
@@ -597,6 +611,8 @@ export function AirControl({
         scroll = null;
         swipeFrom = null;
         customName = "";
+        restFrom = null;
+        resting = false;
         callAt = 0;
         stillFrom = null;
         sx.reset();
@@ -645,14 +661,18 @@ export function AirControl({
       // the wrist than its knuckle). A relaxed, half-curled hand used to
       // count and paused Air control by surprise.
       const fist = folded(8, 5) && folded(12, 9) && folded(16, 13) && folded(20, 17) && !pinchDown;
+      const openNow = [ext.index, ext.middle, ext.ring, ext.pinky].filter(Boolean).length >= 3;
+      if (openNow) openAt = now;
       if (fist) {
-        if (!fistAt) fistAt = now;
-        else if (fistAt !== Infinity && now - fistAt > 250) holdLabel = paused ? "Hold to carry on…" : "Hold to pause…";
-        if (fistAt !== Infinity && now - fistAt > 1000) {
+        // Open hand → fist is a choice; a fist with no open hand just before
+        // is a resting hand, and is ignored until it opens again.
+        if (!fistAt) fistAt = now - openAt < 1500 ? now : -1;
+        else if (fistAt > 0 && fistAt !== Infinity && now - fistAt > 250) holdLabel = paused ? "Hold to carry on…" : "Hold to pause…";
+        if (fistAt > 0 && fistAt !== Infinity && now - fistAt > 1000) {
           paused = !paused;
           live.current.pauses++;
           fistAt = Infinity;
-          setStatus(paused ? "Paused — make a fist again to carry on" : "Air control on");
+          setStatus(paused ? "Paused — open your hand, then make a fist, to carry on" : "Air control on");
         }
       } else {
         fistAt = 0;
@@ -667,12 +687,32 @@ export function AirControl({
           ownDown = null;
           pinchFrom = null;
         }
-        mode = holdLabel || "Paused — fist again to carry on";
+        mode = holdLabel || "Paused — open hand, then a fist, to carry on";
         L.gesture = "fist";
         draw(true);
         return;
       }
       L.pinch = Math.min(1, dist(lm[4], lm[8]) / scale / 0.9);
+
+      // Resting: a hand held still for 4 s (leaning on it, thinking) stops
+      // clicking until it moves again — a drag in progress is left alone.
+      {
+        const here = { x: (lm[5].x + lm[9].x) / 2, y: (lm[5].y + lm[9].y) / 2 };
+        if (!restFrom || Math.hypot(here.x - restFrom.x, here.y - restFrom.y) > 0.035) {
+          restFrom = { ...here, at: now };
+          if (resting) setStatus("Air control on");
+          resting = false;
+        } else if (!resting && !pinchDown && now - restFrom.at > 4000) {
+          resting = true;
+          setStatus("Resting — move your hand to carry on");
+        }
+      }
+      if (resting && !pinchDown) {
+        mode = "Resting — move to carry on";
+        L.gesture = "rest";
+        draw(true);
+        return;
+      }
 
       // The pointer: the index and middle knuckles (steady through pinches).
       const raw = { x: 1 - (lm[5].x + lm[9].x) / 2, y: (lm[5].y + lm[9].y) / 2 };
@@ -1259,7 +1299,7 @@ const STEPS: Array<{
   {
     title: "Pause",
     tips: [4, 8, 12, 16, 20],
-    how: "Make a fist ✊ and hold it still for one second — Air control pauses. Make a fist again to carry on.",
+    how: "Show an open hand ✋, then close it into a fist ✊ and hold it for one second — Air control pauses. Open your hand and make a fist again to carry on. (A hand just resting curled never counts.)",
     demo: "✊",
     move: "squeeze",
     done: (l, b) => l.pauses - b.pauses >= 1,
