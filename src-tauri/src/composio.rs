@@ -108,6 +108,40 @@ pub fn connected() -> Result<Vec<String>> {
     Ok(out)
 }
 
+/// Every link to one app (all of them — Gmail can be linked for several
+/// accounts), with its status ("ACTIVE", "EXPIRED"…) and why.
+pub fn connections(toolkit: &str) -> Result<Vec<crate::mail::Link>> {
+    let key = key()?;
+    let v = get(&key, &format!("/connected_accounts?user_ids={}&toolkit_slugs={}&limit=100", user_id(), toolkit))?;
+    Ok(v["items"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter(|c| c["toolkit"]["slug"].as_str().or(c["toolkit_slug"].as_str()).is_some_and(|s| s.eq_ignore_ascii_case(toolkit)))
+                .filter(|c| c["is_disabled"] != true)
+                .filter_map(|c| {
+                    Some(crate::mail::Link {
+                        id: c["id"].as_str()?.to_string(),
+                        status: c["status"].as_str().unwrap_or("UNKNOWN").to_string(),
+                        reason: c["status_reason"].as_str().unwrap_or_default().to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// Run one tool on one specific linked account (by its connection id) —
+/// without this Composio uses its default account for the app.
+pub fn execute_on(connection: &str, tool: &str, arguments: Value) -> Result<Value> {
+    let key = key()?;
+    let v = post(&key, &format!("/tools/execute/{tool}"), &json!({ "connected_account_id": connection, "user_id": user_id(), "arguments": arguments }))?;
+    if let Some(e) = tool_error(&v) {
+        return Err(anyhow!("{tool} failed: {e}"));
+    }
+    Ok(v["data"].clone())
+}
+
 /// A sign-in page for linking one app (opened in the browser).
 pub fn link(toolkit: &str) -> Result<String> {
     let key = key()?;
@@ -256,6 +290,11 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
 
     // Always read afresh for the current question.
     let latest = history.iter().rev().find(|t| t.role != "assistant").map(|t| t.content.clone()).unwrap_or_default();
+    // Looking for email: searched directly in every linked Gmail account
+    // (mail.rs) — no model choosing one account and guessing.
+    if let Some(m) = crate::mail::parse_ask(&latest) {
+        return Ok(Answer { text: crate::mail::answer(&m), links: Vec::new() });
+    }
     // An app-wide snapshot can answer a different question with the wrong
     // result (e.g. inbox count versus a particular sender). Read afresh.
 
@@ -412,7 +451,11 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
             executed = false;
             let tool = step["run"]["tool"].as_str().unwrap_or_default();
             let args = step["run"]["arguments"].clone();
-            let args = if args.is_object() { args } else { json!({}) };
+            let mut args = if args.is_object() { args } else { json!({}) };
+            // Gmail's fetch returns ONE email unless told otherwise.
+            if tool == "GMAIL_FETCH_EMAILS" && args["max_results"].as_u64().unwrap_or(0) < 10 {
+                args["max_results"] = json!(10);
+            }
             // The hard gate (not just the prompt): anything that sends, posts,
             // deletes, pays or changes runs only when Izuki has just shown the
             // draft and the user's latest message clearly says yes. Otherwise
@@ -433,7 +476,15 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
             }
             let mut body = json!({ "tool_slug": tool, "arguments": args });
             if let Some(account) = step["run"]["account"].as_str() { body["account"] = json!(account); }
-            let outcome = router(&key, "execute", &body);
+            // Reading Gmail with no account named: every linked account, each
+            // result labelled with its address (Composio alone reads only
+            // its default account).
+            let everywhere = change_key.is_none() && tool.starts_with("GMAIL_") && step["run"]["account"].as_str().is_none();
+            // A tool for one email or thread by its id belongs to one account:
+            // it's tried account by account until the one that has it answers.
+            let by_id = tool.contains("_BY_") || tool.contains("_MESSAGE_BY") || tool.contains("_THREAD") || tool.contains("ATTACHMENT");
+            let outcome = if everywhere { gmail_everywhere(tool, &args, by_id) } else { router(&key, "execute", &body) };
+            eprintln!("[apps] ran {tool}{}", if everywhere { " on every Gmail account" } else { "" });
             // A change that definitely failed is released, so it can be tried
             // again; one that went through (or may have) stays recorded.
             if let Some(k) = change_key {
@@ -481,6 +532,40 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
         .and_then(|v| v["reply"].as_str().map(str::to_string))
         .unwrap_or_else(|| plain(&raw));
     Ok(Answer { text: remember(read_app.as_deref(), text), links })
+}
+
+/// One Gmail read tool, run on every linked account (links to the same
+/// address once). Shaped like a router result: `data.accounts[]`, each with
+/// the account and its result or error — the model sees exactly what was
+/// and wasn't read.
+fn gmail_everywhere(tool: &str, args: &Value, by_id: bool) -> Result<Value> {
+    let (accounts, _) = crate::mail::accounts_now()?;
+    let ok: Vec<_> = accounts.iter().filter(|a| a.state == "ok").cloned().collect();
+    if ok.is_empty() {
+        return Err(anyhow!("no Gmail account is linked and signed in"));
+    }
+    if by_id {
+        // One email or thread: the account that has it answers; the rest don't.
+        let mut last = anyhow!("none of your Gmail accounts has that email");
+        for a in &ok {
+            match execute_on(&a.id, tool, args.clone()) {
+                Ok(v) => return Ok(json!({ "successful": true, "data": { "account": a.address, "result": v } })),
+                Err(e) => last = e,
+            }
+        }
+        return Err(last);
+    }
+    let results: Vec<Value> = std::thread::scope(|sc| {
+        let jobs: Vec<_> = ok.iter().map(|a| (a.address.clone(), sc.spawn(|| execute_on(&a.id, tool, args.clone())))).collect();
+        jobs.into_iter()
+            .map(|(addr, j)| match j.join().unwrap_or_else(|_| Err(anyhow!("crashed"))) {
+                Ok(v) => json!({ "account": addr, "result": v }),
+                Err(e) => json!({ "account": addr, "error": e.to_string(), "note": "NOT searched — say so" }),
+            })
+            .collect()
+    });
+    let needs = accounts.iter().filter(|a| a.state == "needs_sign_in").count();
+    Ok(json!({ "successful": true, "data": { "accounts": results, "gmail_links_needing_sign_in": needs } }))
 }
 
 /// The first app a search said isn't linked yet, so we can offer a sign-in

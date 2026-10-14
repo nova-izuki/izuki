@@ -45,6 +45,7 @@ pub mod tweaks;
 pub mod remote;
 pub mod rtools;
 pub mod offline;
+pub mod mail;
 pub mod missions;
 pub mod music_draft;
 pub mod memory;
@@ -322,6 +323,7 @@ pub fn run() {
             commands::apps_ask,
             commands::apps_test,
             commands::apps_connected,
+            commands::mail_accounts,
             commands::apps_connect,
             commands::headsup_test,
             commands::browser_show,

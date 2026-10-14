@@ -221,6 +221,15 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         push("assistant", &text);
         return Reply::text(text);
     }
+    // "Find my Home Depot email": every linked Gmail account searched, and
+    // the answer says exactly which (mail.rs) — Discord, phone, Telegram.
+    if let Some(ask) = crate::mail::parse_ask(said).filter(|_| crate::composio::configured()) {
+        push("user", said);
+        status("Searching your email…");
+        let text = crate::mail::answer(&ask);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // "What's important in my email?", from the phone and Telegram too.
     if crate::headsup::is_inbox_question(said) && crate::composio::configured() {
         push("user", said);

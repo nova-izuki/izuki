@@ -377,6 +377,10 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     if crate::storage::is_storage_question(&said) {
         return blocking(crate::storage::report).await.ok();
     }
+    // "Find my Home Depot email" — every linked Gmail account, searched for real.
+    if let Some(ask) = crate::mail::parse_ask(&said).filter(|_| crate::composio::configured()) {
+        return blocking(move || crate::mail::answer(&ask)).await.ok();
+    }
     // "What's important in my email?" — gone through properly, not just counted.
     if crate::headsup::is_inbox_question(&said) && crate::composio::configured() {
         return blocking(crate::headsup::inbox_spoken).await.ok();
@@ -786,6 +790,19 @@ pub async fn apps_ask(history: Vec<crate::chat::Turn>) -> R<crate::composio::Ans
 #[tauri::command]
 pub async fn apps_connected() -> R<Vec<String>> {
     blocking(|| crate::composio::connected().map_err(err)).await?
+}
+
+/// Every Gmail account Izuki can read (links to one address counted once),
+/// which need signing in again, and how many duplicate links there are.
+#[tauri::command]
+pub async fn mail_accounts(fresh: bool) -> R<serde_json::Value> {
+    blocking(move || {
+        if fresh {
+            crate::mail::refresh();
+        }
+        crate::mail::accounts_now().map(|(a, d)| serde_json::json!({ "accounts": a, "duplicates": d })).map_err(err)
+    })
+    .await?
 }
 
 /// A sign-in page for linking one app; the Apps tab opens it.

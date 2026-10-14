@@ -409,6 +409,14 @@ export interface InboxDigest {
   looked_at: number;
   skipped: number;
 }
+/** One Gmail account Izuki can (or should be able to) read. */
+export interface MailAccount {
+  id: string;
+  address: string;
+  /** "ok", "needs_sign_in", "error". */
+  state: string;
+  note?: string;
+}
 /** Something Izuki really sent for you (composio.rs Sent). */
 export interface SentItem {
   app: string;
@@ -618,6 +626,9 @@ export const api = {
   /** What Izuki is really doing right now, in words. */
   inboxDigest: (fresh: boolean) => call<InboxDigest>("inbox_digest", { fresh }, () => ({ summary: "", items: [], looked_at: 0, skipped: 0 })),
   sentHistory: () => call<SentItem[]>("sent_history", undefined, () => []),
+  /** Every Gmail account Izuki can read (mail.rs), and which need signing in again. */
+  mailAccounts: (fresh: boolean) =>
+    call<{ accounts: MailAccount[]; duplicates: number }>("mail_accounts", { fresh }, () => ({ accounts: [], duplicates: 0 })),
   followUp: (text: string, days: number) => call<Reminder>("follow_up", { text, days }, () => ({ id: "", at: 0, text, alarm: false, repeat: "" }) as unknown as Reminder),
   missionsList: () => call<{ missions: Mission[]; running: boolean }>("missions_list", undefined, () => ({ missions: [], running: false })),
   missionAdd: (text: string) => call<Mission[]>("mission_add", { text }, () => []),

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, emit, EV, type InboxDigest, type InboxItem, type SentItem } from "../lib/ipc";
+import { api, emit, EV, IS_TAURI, type InboxDigest, type InboxItem, type MailAccount, type SentItem } from "../lib/ipc";
 import { Row, Section } from "./ui";
 
 const KIND: Record<string, string> = {
@@ -19,9 +19,40 @@ export function InboxCard() {
   const [sent, setSent] = useState<SentItem[]>([]);
   const [note, setNote] = useState("");
 
+  const [accounts, setAccounts] = useState<{ accounts: MailAccount[]; duplicates: number } | null>(null);
+  const [accountsNote, setAccountsNote] = useState("");
+
+  const loadAccounts = (fresh: boolean) =>
+    void api
+      .mailAccounts(fresh)
+      .then((a) => {
+        setAccounts(a);
+        setAccountsNote("");
+      })
+      .catch((e) =>
+        setAccountsNote(/composio|key/i.test(String(e)) ? "" : "Couldn't check your Gmail accounts just now — check your internet, then tap Refresh."),
+      );
+
   useEffect(() => {
     void api.sentHistory().then(setSent).catch(() => undefined);
+    loadAccounts(false);
   }, []);
+
+  const addAccount = async () => {
+    try {
+      const url = await api.appsConnect("gmail");
+      if (IS_TAURI) {
+        const { openUrl } = await import("@tauri-apps/plugin-opener");
+        await openUrl(url);
+      } else window.open(url, "_blank");
+      setAccountsNote("When Google asks, choose the account you want to add (or “Use another account” if it isn't listed). Finish within 10 minutes, then come back here and tap Refresh.");
+    } catch (e) {
+      setAccountsNote(`Couldn't start the sign-in: ${e}`);
+    }
+  };
+
+  const ok = accounts?.accounts.filter((a) => a.state === "ok") ?? [];
+  const broken = accounts?.accounts.filter((a) => a.state !== "ok") ?? [];
 
   const look = (fresh: boolean) => {
     setBusy(true);
@@ -59,6 +90,42 @@ export function InboxCard() {
       title="Inbox"
       hint="What matters in your Gmail, urgent first — with a reply drafted for you to check, or a reminder to follow up. Nothing is ever sent without your yes."
     >
+      <Row
+        label="Gmail accounts Izuki can read"
+        hint="Every email search and briefing goes through all of these, and says which ones it checked. An account that isn't listed here is never searched."
+      >
+        <button type="button" onClick={() => loadAccounts(true)} className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]">
+          Refresh
+        </button>
+      </Row>
+      {accounts && (
+        <div className="mb-1 ml-[24px] space-y-1 text-[11.5px]">
+          {ok.length === 0 && broken.length === 0 && <div className="text-izk-muted">No Gmail account linked yet.</div>}
+          {ok.map((a) => (
+            <div key={a.id} className="flex items-center gap-1.5 text-izk-ink">
+              <span aria-hidden>✅</span>
+              <span className="min-w-0 flex-1 truncate">{a.address}</span>
+            </div>
+          ))}
+          {broken.map((a) => (
+            <div key={a.id} className="flex items-center gap-1.5 text-izk-danger">
+              <span aria-hidden>⚠️</span>
+              <span className="min-w-0 flex-1 truncate" title={a.note || undefined}>
+                {a.state === "needs_sign_in" ? "A Gmail link needs signing in again — not searched" : "A Gmail account couldn't be opened just now — not searched"}
+              </span>
+            </div>
+          ))}
+          {accounts.duplicates > 0 && (
+            <div className="text-izk-muted">
+              {accounts.duplicates} extra link{accounts.duplicates === 1 ? "" : "s"} to an account already listed (searched once — harmless).
+            </div>
+          )}
+          <button type="button" onClick={() => void addAccount()} className="izk-pill izk-no-drag mt-1 h-[26px] px-2.5 text-[11px]">
+            ➕ Add another Gmail account
+          </button>
+        </div>
+      )}
+      {accountsNote && <p className="ml-[24px] text-[11.5px] text-izk-muted">{accountsNote}</p>}
       <Row label="Go through my inbox" hint="Reads the last few days (not promotions or social) and picks out what needs you. Uses your linked Gmail.">
         <button type="button" disabled={busy} onClick={() => look(!!digest)} className="izk-btn-primary izk-no-drag h-[28px] px-3 text-[11.5px]">
           {busy ? "Reading…" : digest ? "Check again" : "Check my inbox"}

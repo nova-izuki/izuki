@@ -764,9 +764,74 @@ fn rest_for(err: &str) -> Option<std::time::Duration> {
     }
     if e.contains("quota") || e.contains("per day") || e.contains("daily") {
         Some(std::time::Duration::from_secs(60 * 60))
+    } else if let Some(d) = retry_after(&e) {
+        // The provider said when: "Please try again in 7.2s" — no longer.
+        Some(d.clamp(std::time::Duration::from_secs(5), std::time::Duration::from_secs(15 * 60)))
     } else {
         Some(std::time::Duration::from_secs(60))
     }
+}
+
+/// "please try again in 7.2s", "retry in 1m30s", "retry after 12 seconds",
+/// "retry_after: 20" → that long.
+fn retry_after(e: &str) -> Option<std::time::Duration> {
+    let at = ["try again in ", "retry in ", "retry after ", "retry_after\":", "retry_after:", "retry-after:", "retrydelay\":\""]
+        .iter()
+        .find_map(|k| e.find(k).map(|i| i + k.len()))?;
+    let rest: Vec<char> = e[at..].trim_start_matches([' ', '"']).chars().take(16).collect();
+    // Number+unit pairs: "1m30s", "7.2s", "250ms", "12 seconds", "20".
+    let (mut secs, mut i, mut any) = (0.0f64, 0usize, false);
+    while i < rest.len() {
+        let start = i;
+        while i < rest.len() && (rest[i].is_ascii_digit() || rest[i] == '.') {
+            i += 1;
+        }
+        if i == start {
+            break;
+        }
+        let v: f64 = rest[start..i].iter().collect::<String>().parse().unwrap_or(0.0);
+        while i < rest.len() && rest[i] == ' ' {
+            i += 1;
+        }
+        let unit: String = rest[i..].iter().take_while(|c| c.is_ascii_alphabetic()).collect();
+        i += unit.len();
+        any = true;
+        secs += match unit.as_str() {
+            "ms" | "msec" | "milliseconds" => v / 1000.0,
+            "m" | "min" | "mins" | "minute" | "minutes" => v * 60.0,
+            "h" | "hr" | "hour" | "hours" => v * 3600.0,
+            _ => v,
+        };
+        if !matches!(unit.as_str(), "h" | "m") {
+            break;
+        }
+    }
+    (any && secs > 0.0).then(|| std::time::Duration::from_millis((secs * 1000.0).round() as u64))
+}
+
+/// Rate limits again and again from one brain: each rest twice the last
+/// (within ten minutes of the previous one), up to fifteen minutes.
+static STRIKES: parking_lot::Mutex<Vec<(crate::settings::ProviderId, u32, std::time::Instant)>> = parking_lot::Mutex::new(Vec::new());
+
+fn escalate(id: crate::settings::ProviderId, base: std::time::Duration) -> std::time::Duration {
+    if base >= std::time::Duration::from_secs(60 * 60) {
+        return base;
+    }
+    let mut s = STRIKES.lock();
+    let now = std::time::Instant::now();
+    s.retain(|(_, _, at)| now.duration_since(*at) < std::time::Duration::from_secs(600));
+    let n = match s.iter_mut().find(|(p, _, _)| *p == id) {
+        Some(entry) => {
+            entry.1 += 1;
+            entry.2 = now;
+            entry.1
+        }
+        None => {
+            s.push((id, 1, now));
+            1
+        }
+    };
+    (base * 2u32.saturating_pow(n.saturating_sub(1).min(5))).min(std::time::Duration::from_secs(15 * 60))
 }
 
 /// Remember what a failure says about a brain: gone for good (bad key, no
@@ -783,6 +848,7 @@ fn note_failure(id: crate::settings::ProviderId, err: &str) {
         }
         mark_broken(id);
     } else if let Some(d) = rest_for(err) {
+        let d = escalate(id, d);
         let mut r = RESTING.lock();
         r.retain(|(p, _)| *p != id);
         r.push((id, std::time::Instant::now() + d));
@@ -3294,6 +3360,25 @@ mod speed_tests {
         let busy = "Gemini answered 503 Service Unavailable: This model is currently experiencing high demand.";
         assert_eq!(rest_for(busy), Some(std::time::Duration::from_secs(60)));
         assert!(rest_for("gemini: 429 Too Many Requests — quota exceeded per day").unwrap() > std::time::Duration::from_secs(60));
+        // The provider's own "try again in …" is used (at least 5 s).
+        let groq = "HTTP 429 Too Many Requests: {\"error\":{\"message\":\"Rate limit reached for model `qwen` on tokens per minute (TPM): Limit 6000, Used 5000. Please try again in 7.2s.\"}}";
+        assert_eq!(rest_for(groq), Some(std::time::Duration::from_millis(7200)));
+        assert_eq!(retry_after("please try again in 1m30s."), Some(std::time::Duration::from_secs(90)));
+        assert_eq!(retry_after("rate limit, retry after 12 seconds"), Some(std::time::Duration::from_secs(12)));
+        assert_eq!(retry_after("please try again in 250ms"), Some(std::time::Duration::from_millis(250)));
+        assert_eq!(rest_for("429 rate limit — please try again in 250ms"), Some(std::time::Duration::from_secs(5)));
+        assert_eq!(retry_after("429 too many requests"), None);
+        // Again and again: each rest twice the last, capped at 15 minutes.
+        let id = crate::settings::ProviderId::Mistral;
+        let one = std::time::Duration::from_secs(60);
+        assert_eq!(escalate(id, one), one);
+        assert_eq!(escalate(id, one), one * 2);
+        assert_eq!(escalate(id, one), one * 4);
+        for _ in 0..6 {
+            escalate(id, one);
+        }
+        assert_eq!(escalate(id, one), std::time::Duration::from_secs(15 * 60));
+        STRIKES.lock().retain(|(p, _, _)| *p != id);
         assert!(rest_for("groq is rate-limiting you (429 Too Many Requests): Request too large for model `qwen`").is_none());
         assert_eq!(rest_for("the key was rejected (401)"), None);
     }

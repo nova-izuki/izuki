@@ -211,17 +211,17 @@ fn tick(app: &AppHandle) {
 // Email
 // ---------------------------------------------------------------------------
 
+/// New mail in every linked Gmail account (not promotions or social — but a
+/// job or security email counts wherever Gmail filed it).
 fn new_emails(st: &mut State) -> anyhow::Result<Vec<(String, String)>> {
-    let data = crate::composio::execute(
-        "GMAIL_FETCH_EMAILS",
-        json!({ "query": "is:unread in:inbox category:primary newer_than:1d", "max_results": 8, "include_payload": false, "verbose": false }),
-    )?;
-    let mails = messages(&data);
+    let f = crate::mail::search("is:unread in:inbox newer_than:1d", 15, None)?;
     let first_look = st.seen_mail.is_none();
     let seen = st.seen_mail.get_or_insert_with(HashSet::new);
     let mut lines = Vec::new();
-    for m in mails {
-        if !seen.insert(m.id.clone()) || first_look {
+    for m in f.mails {
+        let promo = m.labels.iter().any(|l| l == "CATEGORY_PROMOTIONS" || l == "CATEGORY_SOCIAL");
+        // Per account: the same id in two accounts is two emails.
+        if !seen.insert(format!("{}/{}", m.account, m.id)) || first_look || (promo && crate::mail::why_important(&m).is_none()) {
             continue;
         }
         lines.push((m.from, m.subject));
@@ -270,13 +270,26 @@ pub fn inbox_digest(fresh: bool) -> anyhow::Result<InboxDigest> {
             }
         }
     }
-    let data = crate::composio::execute(
-        "GMAIL_FETCH_EMAILS",
-        json!({ "query": "in:inbox newer_than:3d -category:promotions -category:social", "max_results": 25, "include_payload": false, "verbose": false }),
-    )?;
-    let mails = messages(&data);
+    // Every linked account; promotions only when they look like they matter.
+    let found = crate::mail::search("in:inbox newer_than:3d -category:social", 30, None)?;
+    let many = found.checked.len() > 1;
+    let coverage = coverage_note(&found);
+    if found.checked.is_empty() {
+        anyhow::bail!("I couldn't open any of your Gmail accounts.{coverage}");
+    }
+    let mails: Vec<Mail> = found
+        .mails
+        .iter()
+        .filter(|m| !m.labels.iter().any(|l| l == "CATEGORY_PROMOTIONS") || crate::mail::why_important(m).is_some())
+        .take(25)
+        .map(|m| Mail {
+            from: if many { format!("{} (to {})", m.from, m.account) } else { m.from.clone() },
+            subject: clip(&m.subject, 90),
+            snippet: m.snippet.clone(),
+        })
+        .collect();
     if mails.is_empty() {
-        let d = InboxDigest { summary: "Your inbox is quiet — nothing new in the last few days.".into(), ..Default::default() };
+        let d = InboxDigest { summary: format!("Your inbox is quiet — nothing new in the last few days.{coverage}"), ..Default::default() };
         *DIGEST.lock() = Some((d.clone(), Instant::now()));
         return Ok(d);
     }
@@ -290,6 +303,7 @@ pub fn inbox_digest(fresh: bool) -> anyhow::Result<InboxDigest> {
         json!({ "role": "user", "content": format!("Today is {}.\nEmails:\n{list}", chrono::Local::now().format("%A %-d %B %Y")) }),
     ])?;
     let mut d = parse_digest(&reply).unwrap_or_else(|| InboxDigest { summary: reply.trim().chars().take(400).collect(), ..Default::default() });
+    d.summary.push_str(&coverage);
     d.looked_at = mails.len();
     d.skipped = mails.len().saturating_sub(d.items.len());
     *DIGEST.lock() = Some((d.clone(), Instant::now()));
@@ -349,13 +363,39 @@ pub fn inbox_spoken() -> String {
 /// What's in the inbox right now, for the "wake up" briefing: how many
 /// unread emails came today (primary inbox), and who the first few are
 /// from, with their subjects.
+/// Unread mail from the last day across every linked account (important
+/// ones first), for the wake-up briefing: (how many, the first few).
 pub fn inbox_today() -> anyhow::Result<(usize, Vec<(String, String)>)> {
-    let data = crate::composio::execute(
-        "GMAIL_FETCH_EMAILS",
-        json!({ "query": "is:unread in:inbox category:primary newer_than:1d", "max_results": 20, "include_payload": false, "verbose": false }),
-    )?;
-    let mails = messages(&data);
-    Ok((mails.len(), mails.into_iter().take(3).map(|m| (m.from, m.subject)).collect()))
+    let b = crate::mail::brief()?;
+    if b.found.checked.is_empty() {
+        anyhow::bail!("couldn't open any Gmail account");
+    }
+    let mut first: Vec<(String, String)> = b.important.iter().filter(|(m, _)| m.unread).map(|(m, _)| (m.from.clone(), m.subject.clone())).collect();
+    for m in b.received.iter().filter(|m| m.unread) {
+        if first.len() >= 3 {
+            break;
+        }
+        if !first.iter().any(|(f, s)| *f == m.from && *s == m.subject) {
+            first.push((m.from.clone(), m.subject.clone()));
+        }
+    }
+    first.truncate(3);
+    Ok((b.unread, first))
+}
+
+/// " (Searched a@x and b@y. Couldn't open c@z: …)" — what a summary covered.
+fn coverage_note(f: &crate::mail::Found) -> String {
+    let mut s = String::new();
+    if f.checked.len() > 1 {
+        s.push_str(&format!(" (I went through {} Gmail accounts.)", f.checked.len()));
+    }
+    for (acc, why) in &f.failed {
+        s.push_str(&format!(" I couldn't open {acc} ({why}), so it's not included."));
+    }
+    if f.needs_sign_in > 0 {
+        s.push_str(&format!(" {} Gmail link{} need signing in again (Apps).", f.needs_sign_in, if f.needs_sign_in == 1 { "" } else { "s" }));
+    }
+    s
 }
 
 /// The rest of today's calendar: (time, title), for the briefing.
@@ -369,36 +409,12 @@ pub fn calendar_today() -> anyhow::Result<Vec<(String, String)>> {
         .collect())
 }
 
+/// One email, as the inbox digest reads it.
 struct Mail {
-    id: String,
     from: String,
     subject: String,
     /// The start of the email itself, when the tool gives it.
     snippet: String,
-}
-
-/// The messages in a Gmail tool result, however it nests them.
-fn messages(data: &Value) -> Vec<Mail> {
-    let list = find_array(data, &["messages", "emails"]).unwrap_or_default();
-    list.iter()
-        .filter_map(|m| {
-            let id = str_of(m, &["messageId", "message_id", "id", "threadId"])?;
-            let from = str_of(m, &["sender", "from"]).map(|f| display_name(&f)).unwrap_or_else(|| "someone".into());
-            let subject = str_of(m, &["subject"]).unwrap_or_default();
-            let snippet = str_of(m, &["preview", "snippet", "messageText", "body", "text"]).map(|s| clip(&s.split_whitespace().collect::<Vec<_>>().join(" "), 400)).unwrap_or_default();
-            Some(Mail { id, from, subject: clip(&subject, 90), snippet })
-        })
-        .collect()
-}
-
-/// "Sam Lee <sam@x.com>" → "Sam Lee".
-fn display_name(from: &str) -> String {
-    let name = from.split('<').next().unwrap_or(from).trim().trim_matches('"').trim();
-    if name.is_empty() {
-        from.trim_matches(|c| c == '<' || c == '>').to_string()
-    } else {
-        name.to_string()
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -502,17 +518,11 @@ fn morning_brief(gmail: bool, calendar: bool, school: &[Due]) -> String {
         }
     }
     if gmail {
-        if let Ok(data) = crate::composio::execute(
-            "GMAIL_FETCH_EMAILS",
-            json!({ "query": "is:unread in:inbox category:primary newer_than:1d", "max_results": 20, "include_payload": false, "verbose": false }),
-        ) {
-            let n = messages(&data).len();
-            parts.push(match n {
-                0 => "📧 No new email overnight.".into(),
-                1 => "📧 1 new email.".into(),
-                20 => "📧 20+ new emails.".into(),
-                n => format!("📧 {n} new emails."),
-            });
+        // Every account, each count backed by the emails behind it, and
+        // anything that couldn't be checked said plainly.
+        match crate::mail::brief() {
+            Ok(b) => parts.extend(crate::mail::brief_lines(&b)),
+            Err(e) => parts.push(format!("📧 I couldn't check your email this morning ({e}).")),
         }
     }
     let now = Local::now();
@@ -773,8 +783,9 @@ mod tests {
             { "messageId": "a1", "sender": "Sam Lee <sam@x.com>", "subject": "Friday?" },
             { "id": "a2", "from": "\"Bank\" <no-reply@bank.com>", "subject": "" }
         ]});
-        let m = messages(&json!({ "response_data": data }));
+        let m = crate::mail::parse(&data, "me@example.com");
         assert_eq!(m.len(), 2);
+        assert_eq!(m[0].account, "me@example.com");
         assert_eq!(m[0].from, "Sam Lee");
         assert_eq!(m[0].subject, "Friday?");
         assert_eq!(m[1].from, "Bank");
