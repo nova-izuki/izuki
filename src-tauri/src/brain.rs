@@ -1897,9 +1897,14 @@ fn submit_task(
         if let Some(plan) = run_instant(app, store, &prompt) {
             return plan;
         }
-        // "Click Subscribe": the button is named — clicked directly, no AI.
+        // "Click Subscribe": the button is named — clicked directly, no AI
+        // (works offline too).
         if let Some(plan) = run_named_click(app, store, &prompt) {
             return plan;
+        }
+        // Offline, with no AI on this PC: the offline helper (offline.rs).
+        if brain_chain().is_empty() && !online() {
+            return VisionPlan { summary: crate::offline::answer(&prompt), provider: "offline".into(), done: true, ..Default::default() };
         }
     }
     let settings = store.settings();

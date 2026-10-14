@@ -44,6 +44,7 @@ pub mod daw;
 pub mod tweaks;
 pub mod remote;
 pub mod rtools;
+pub mod offline;
 pub mod missions;
 pub mod music_draft;
 pub mod memory;
@@ -461,6 +462,7 @@ pub fn run() {
                 });
             }
             link::spawn(handle.clone());
+            offline::spawn(handle.clone());
             recall::spawn();
             activity::spawn();
             boost::spawn(handle.clone());

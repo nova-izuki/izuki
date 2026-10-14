@@ -813,7 +813,7 @@ export function ChatTab() {
                   </span>
                 ) : null}
                 {m.role === "assistant" && m.content && !m.failed && !(busy && i === msgs.length - 1) && (
-                  <ReplyTools text={m.content} onRetry={i === msgs.length - 1 ? () => retry(i) : undefined} />
+                  <ReplyTools text={m.content} onRetry={i === msgs.length - 1 ? () => retry(i) : undefined} onAsk={i === msgs.length - 1 ? (ask) => void send(ask) : undefined} />
                 )}
                 {m.setup && i === msgs.length - 1 && (
                   <button
@@ -1279,9 +1279,32 @@ function ActionCard({ action, busy, onAnswer, ran }: { action: NonNullable<Msg["
   );
 }
 
-/** Copy, read it out loud, or ask again — under each finished reply. */
-function ReplyTools({ text, onRetry }: { text: string; onRetry?: () => void }) {
+/** Copy, read it out loud, or ask again — under each finished reply — and
+ * a ⋯ menu like ChatGPT's: shorter, simpler, more, translate, save, share. */
+function ReplyTools({ text, onRetry, onAsk }: { text: string; onRetry?: () => void; onAsk?: (ask: string) => void }) {
   const [copied, setCopied] = useState(false);
+  const [more, setMore] = useState(false);
+  const [saved, setSaved] = useState("");
+  const [lang, setLang] = useState<string | null>(null);
+  const menu = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!saved) return;
+    const t = setTimeout(() => setSaved(""), 2500);
+    return () => clearTimeout(t);
+  }, [saved]);
+  useEffect(() => {
+    if (!more) return;
+    const away = (e: MouseEvent) => {
+      if (!menu.current?.contains(e.target as Node)) setMore(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setMore(false);
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [more]);
   const btn = "flex h-[22px] items-center gap-1 rounded-full px-1.5 text-[10.5px] text-izk-muted hover:bg-white/10 hover:text-izk-ink";
   return (
     <div className="-mb-1 mt-1 flex gap-0.5 opacity-70 hover:opacity-100">
@@ -1306,6 +1329,80 @@ function ReplyTools({ text, onRetry }: { text: string; onRetry?: () => void }) {
           <RotateCcw size={11} /> Again
         </button>
       )}
+      <span ref={menu} className="relative">
+        <button type="button" className={btn} title="More" aria-haspopup="menu" aria-expanded={more} onClick={() => setMore((v) => !v)}>
+          ⋯
+        </button>
+        {more && (
+          <div role="menu" className="absolute left-0 top-[24px] z-20 flex w-[170px] flex-col rounded-xl border border-white/12 bg-[#151826] p-1 text-[11.5px] shadow-xl">
+            {(
+              [
+                ["Make it shorter", () => onAsk?.("Make that shorter.")],
+                ["Explain it simpler", () => onAsk?.("Explain that more simply, like I'm new to it.")],
+                ["Tell me more", () => onAsk?.("Tell me more about that.")],
+                ["Translate…", () => setLang("")],
+                [
+                  "Save as a note",
+                  () =>
+                    void api
+                      .notesLesson(text)
+                      .then(() => setSaved("Saved to Notes ✓"))
+                      .catch(() => setSaved("Couldn't save it")),
+                ],
+                [
+                  "Share",
+                  () => {
+                    const nav = navigator as Navigator & { share?: (d: { text: string }) => Promise<void> };
+                    if (nav.share) void nav.share({ text }).catch(() => undefined);
+                    else
+                      void navigator.clipboard
+                        .writeText(text)
+                        .then(() => setSaved("Copied to share ✓"))
+                        .catch(() => setSaved("Couldn't copy it"));
+                  },
+                ],
+              ] as Array<[string, () => void]>
+            )
+              .filter(([label]) => onAsk || !["Make it shorter", "Explain it simpler", "Tell me more", "Translate…"].includes(label))
+              .map(([label, act]) => (
+                <button
+                  key={label}
+                  type="button"
+                  role="menuitem"
+                  className="rounded-lg px-2 py-1.5 text-left text-izk-ink hover:bg-white/10"
+                  onClick={() => {
+                    setMore(false);
+                    act();
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+          </div>
+        )}
+      </span>
+      {lang !== null && (
+        <form
+          className="flex items-center gap-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (lang.trim()) onAsk?.(`Translate that into ${lang.trim()}.`);
+            setLang(null);
+          }}
+        >
+          <input
+            autoFocus
+            value={lang}
+            onChange={(e) => setLang(e.target.value)}
+            onKeyDown={(e) => e.key === "Escape" && setLang(null)}
+            placeholder="Into which language?"
+            aria-label="Translate into which language"
+            className="h-[22px] w-[140px] rounded-md border border-white/12 bg-white/5 px-1.5 text-[11px] text-izk-ink outline-none"
+          />
+          <button type="submit" className={btn}>Go</button>
+        </form>
+      )}
+      {saved && <span className="self-center text-[10.5px] text-izk-teal">{saved}</span>}
     </div>
   );
 }

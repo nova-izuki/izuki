@@ -490,8 +490,12 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
         let files = style == Style::Text;
         let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
         if chain.is_empty() {
-            let why = if crate::brain::online() { "no chat-capable brain is set up" } else { crate::brain::OFFLINE };
-            return emit(String::new(), true, Some(why.into()));
+            if !crate::brain::online() {
+                // Offline with no AI on this PC: help anyway (offline.rs).
+                let said = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.clone()).unwrap_or_default();
+                return emit(crate::offline::answer(&said), true, None);
+            }
+            return emit(String::new(), true, Some("no chat-capable brain is set up".into()));
         }
         let mut messages = messages_for(&history, style);
         // Times an answer was sent back for claiming what never happened.
