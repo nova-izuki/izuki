@@ -22,6 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "✨", title: "Island 2.0: the Nova look, Vitals and Apps", how: "A new ✨ Nova look (dark glass, a cyan–violet edge that lights up while Izuki is really working). Open the Island for three tabs: Now, Vitals (your PC's real processor, memory, battery, internet and Izuki's own use) and Apps (open anything, favourites, most used today). Size and placement in Settings → Talk.", try: { label: "Island", tab: "draw", id: "draw-talk" } },
   { icon: "🌱", title: "Touch Grass: your PC's work from your phone", how: "Tap Grass in the phone app: see your missions and their real results, add and start them, stop everything — and approve or reject emails and posts Izuki has ready (Approve sends exactly that draft, once; Reject sends nothing; unanswered drafts expire). Only your paired phone can open it." },
   { icon: "✋", title: "Air control leaves resting hands alone", how: "Pause and un-pause with an open hand, then a fist, held a second — a resting curled hand never counts. A hand on its side (on your cheek or chin) doesn't drive the pointer, and a hand held still for 4 seconds stops clicking until it moves.", try: { label: "Air control", tab: "settings", id: "settings-air" } },
   { icon: "✌️", title: "Air control scrolls sideways", how: "Peace sign ✌️ and move your hand left or right to scroll sideways — wide pages, carousels, timelines. Up and down still scrolls up and down, and a wobble never goes diagonal.", try: { label: "Air control", tab: "settings", id: "settings-air" } },

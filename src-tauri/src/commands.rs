@@ -809,6 +809,19 @@ pub async fn mail_accounts(fresh: bool) -> R<serde_json::Value> {
     .await?
 }
 
+/// The Island's Vitals tab: real processor, memory, battery, internet and
+/// Izuki's own numbers (vitals.rs). Asked only while the tab is open.
+#[tauri::command]
+pub async fn island_vitals() -> R<crate::vitals::Vitals> {
+    blocking(crate::vitals::now).await
+}
+
+/// The Island's Apps tab: what you've used most today (screen time), most first.
+#[tauri::command]
+pub fn island_recent_apps() -> Vec<String> {
+    crate::screentime::top_today(8).into_iter().map(|(n, _)| n).collect()
+}
+
 /// A sign-in page for linking one app; the Apps tab opens it.
 #[tauri::command]
 pub async fn apps_connect(toolkit: String) -> R<String> {

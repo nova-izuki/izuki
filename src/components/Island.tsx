@@ -8,6 +8,7 @@ import { lockHit, markHit, unlockHit } from "../lib/hitTest";
 import { ChatText } from "./ChatText";
 import { listCameras, openCamera, saveCamera } from "../lib/camera";
 import type { Activity, IslandStatus, NowPlaying, OrbState, Reminder, Suggestion } from "../lib/types";
+import type { IslandVitals } from "../lib/ipc";
 
 /**
  * The Island: a black pill at the top of the screen, like a phone's live
@@ -63,9 +64,15 @@ const ISLAND_WIDTH = 372;
 
 type IslandPosition = { x: number; y: number };
 
-function fitIslandPosition(position: IslandPosition): IslandPosition {
+/** The Island's size setting as a scale (Settings → Island size). */
+function islandScale(size: string): number {
+  return size === "small" ? 0.88 : size === "large" ? 1.15 : 1;
+}
+
+/** Kept on screen at its real (scaled) width. */
+function fitIslandPosition(position: IslandPosition, scale = 1): IslandPosition {
   const wa = workArea();
-  const half = ISLAND_WIDTH / 2;
+  const half = (ISLAND_WIDTH * scale) / 2;
   return {
     x: Math.min(wa.right - half, Math.max(wa.left + half, position.x)),
     // Keep it in a top rail: movable away from tabs/address fields without
@@ -104,6 +111,7 @@ export function Island({
   peeks = true,
   wave = "auto",
   look = "default",
+  size = "normal",
   visualizing = false,
   onVisualize,
   onPlaying,
@@ -117,6 +125,8 @@ export function Island({
   wave?: string;
   /** The Island's look (setting island_style): Windhawk-style themes. */
   look?: string;
+  /** "small", "normal" or "large" (setting island_size). */
+  size?: string;
   /** Music mode is showing (the orb flowing with the music). */
   visualizing?: boolean;
   onVisualize?: () => void;
@@ -132,6 +142,8 @@ export function Island({
   const [position, setPosition] = useState<IslandPosition>(loadIslandPosition);
   const positionRef = useRef(position);
   positionRef.current = position;
+  const scaleRef = useRef(islandScale(size));
+  scaleRef.current = islandScale(size);
   const [finished, setFinished] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const pill = useRef<HTMLDivElement>(null);
@@ -244,9 +256,22 @@ export function Island({
   }, []);
 
   useEffect(() => {
-    const fit = () => setPosition((current) => fitIslandPosition(current));
+    const fit = () => setPosition((current) => fitIslandPosition(current, scaleRef.current));
     window.addEventListener("resize", fit);
     return () => window.removeEventListener("resize", fit);
+  }, []);
+
+  // Settings → Island → Left / Top centre / Right.
+  useEffect(() => {
+    const off = on<{ where: "left" | "center" | "right" }>(EV.islandPlace, (e) => {
+      const wa = workArea();
+      const half = ISLAND_WIDTH / 2;
+      const x = e.where === "left" ? wa.left + half + 8 : e.where === "right" ? wa.right - half - 8 : (wa.left + wa.right) / 2;
+      const next = fitIslandPosition({ x, y: wa.top + 6 }, scaleRef.current);
+      setPosition(next);
+      try { localStorage.setItem(ISLAND_POSITION_KEY, JSON.stringify(next)); } catch { /* position persistence is optional */ }
+    });
+    return () => void off.then((f) => f());
   }, []);
 
   const beginMove = useCallback((event: React.PointerEvent) => {
@@ -261,7 +286,7 @@ export function Island({
     const sx = event.clientX;
     const sy = event.clientY;
     lockHit();
-    const move = (e: PointerEvent) => setPosition(fitIslandPosition({ x: start.x + e.clientX - sx, y: start.y + e.clientY - sy }));
+    const move = (e: PointerEvent) => setPosition(fitIslandPosition({ x: start.x + e.clientX - sx, y: start.y + e.clientY - sy }, scaleRef.current));
     const cleanup = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
@@ -294,7 +319,7 @@ export function Island({
     event.stopPropagation();
     const step = event.shiftKey ? 64 : 24;
     setPosition((current) => {
-      const next = fitIslandPosition({ x: current.x + delta[0] * step, y: current.y + delta[1] * step });
+      const next = fitIslandPosition({ x: current.x + delta[0] * step, y: current.y + delta[1] * step }, scaleRef.current);
       try { localStorage.setItem(ISLAND_POSITION_KEY, JSON.stringify(next)); } catch { /* position persistence is optional */ }
       return next;
     });
@@ -396,9 +421,13 @@ export function Island({
   const dancing = !!media?.playing;
   if (status.fullscreen && !open) return null;
 
-  const fitted = fitIslandPosition(position);
+  const scale = islandScale(size);
+  const fitted = fitIslandPosition(position, scale);
   return (
-    <div className="pointer-events-none fixed z-[60] flex justify-center" style={{ left: fitted.x - ISLAND_WIDTH / 2, width: ISLAND_WIDTH, top: fitted.y }}>
+    <div
+      className="pointer-events-none fixed z-[60] flex justify-center"
+      style={{ left: fitted.x - ISLAND_WIDTH / 2, width: ISLAND_WIDTH, top: fitted.y, transform: scale !== 1 ? `scale(${scale})` : undefined, transformOrigin: "top center" }}
+    >
       <motion.div
         ref={pill}
         layout
@@ -409,6 +438,8 @@ export function Island({
           (open ? "pointer-events-auto" : "pointer-events-none") +
           (live.kind === "rest" && !open ? " izk-island-rest" : "") +
           (open ? " izk-island-open" : "") +
+          // Lit up while Izuki is really listening, thinking or working.
+          (busy || orb === "listening" || orb === "speaking" || live.kind === "missions" ? " izk-island-active" : "") +
           (look !== "default" ? ` izk-theme-${look}` : "")
         }
         style={{ borderRadius: look === "squircle" ? (open ? 16 : 11) : open ? 28 : 22 }}
@@ -436,6 +467,7 @@ export function Island({
                 onMoveStart={beginMove}
                 onMoveKey={moveByKeyboard}
                 onDone={() => setOpen(false)}
+                scale={scale}
               />
             </motion.div>
           ) : live.kind === "rest" ? (
@@ -590,7 +622,10 @@ function Expanded({
   page = null,
   onHold,
   wave = "auto",
+  scale = 1,
 }: {
+  /** The Island's size scale: the panel's height limit allows for it. */
+  scale?: number;
   wave?: string;
   page?: string | null;
   onHold?: (on: boolean) => void;
@@ -615,6 +650,7 @@ function Expanded({
   const playing = optimistic ?? !!media?.playing;
   useEffect(() => setOptimistic(null), [media?.playing, media?.title]);
   const [cameraOn, setCameraOn] = useState(false);
+  const [tab, setTab] = useState<"now" | "vitals" | "apps">("now");
   const control = useCallback((a: "play" | "pause" | "next" | "previous") => {
     if (a === "play" || a === "pause") setOptimistic(a === "play");
     void api.mediaControl(a);
@@ -622,7 +658,10 @@ function Expanded({
 
   return (
     // Scrolls when it holds more than fits on the screen.
-    <div className="izk-island-scroll flex max-h-[calc(100vh-48px)] flex-col gap-3 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:thin]">
+    <div
+      className="izk-island-scroll flex flex-col gap-3 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:thin]"
+      style={{ maxHeight: `calc((100vh - 48px) / ${scale})` }}
+    >
       <div
         role="button"
         tabIndex={0}
@@ -651,6 +690,21 @@ function Expanded({
         <div className="text-[22px] font-semibold tabular-nums tracking-tight text-white/90">{clock(now)}</div>
       </div>
 
+      <div role="tablist" aria-label="Island" className="grid grid-cols-3 gap-1 rounded-full bg-white/[0.06] p-1">
+        {([["now", "Now"], ["vitals", "Vitals"], ["apps", "Apps"]] as const).map(([k, l]) => (
+          <button
+            key={k}
+            type="button"
+            role="tab"
+            aria-selected={tab === k}
+            onClick={() => setTab(k)}
+            className={"rounded-full py-1 text-[12px] font-semibold transition " + (tab === k ? "bg-white/[0.16] text-white" : "text-white/55 hover:text-white/85")}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+
       {busy && (
         <button
           type="button"
@@ -664,6 +718,17 @@ function Expanded({
         </button>
       )}
 
+      {/* Kept alive on every tab, so switching to Vitals or Apps never
+          throws away a question being answered — just hidden. */}
+      {!busy && (
+        <div hidden={tab !== "now"}>
+          <AskPage page={page} onHold={onHold} onClose={onDone} />
+        </div>
+      )}
+      {tab === "vitals" && <VitalsTab />}
+      {tab === "apps" && <AppsTab onDone={onDone} />}
+      {tab === "now" && (
+        <>
       {media && (
         <div className="flex items-center gap-3 rounded-2xl bg-white/[0.07] p-2.5">
           <Cover m={media} size={52} />
@@ -724,7 +789,6 @@ function Expanded({
       )}
 
       {/* On a web page it asks about the page; anywhere else, about the screen. */}
-      {!busy && <AskPage page={page} onHold={onHold} onClose={onDone} />}
 
       {cameraOn ? (
         <CameraView onClose={() => setCameraOn(false)} onAsked={onDone} />
@@ -835,6 +899,8 @@ function Expanded({
       )}
 
       <QuickGrid onDone={onDone} />
+        </>
+      )}
 
       <div className="grid grid-cols-3 gap-2">
         <BigAction
@@ -865,6 +931,141 @@ function Expanded({
           <Settings2 size={19} />
         </BigAction>
       </div>
+    </div>
+  );
+}
+
+/** A mini JARVIS readout: every number measured (vitals.rs), read every
+ *  3 s only while this tab is open. */
+function VitalsTab() {
+  const [v, setV] = useState<IslandVitals | null>(null);
+  useEffect(() => {
+    let alive = true;
+    let timer = 0;
+    const read = async () => {
+      const got = await api.islandVitals().catch(() => null);
+      if (!alive) return;
+      if (got) setV(got);
+      timer = window.setTimeout(read, 3000);
+    };
+    void read();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, []);
+  if (!v) return <div className="px-1 py-6 text-center text-[12.5px] text-white/50">Reading your PC…</div>;
+  const bar = (label: string, pct: number, hint: string) => (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-baseline justify-between text-[12.5px]">
+        <span className="font-medium">{label}</span>
+        <span className="tabular-nums text-white/70">{pct}%</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-white/[0.08]" role="meter" aria-label={label} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+        <div className={"h-full rounded-full " + (pct >= 85 ? "bg-red-400" : pct >= 65 ? "bg-amber-300" : "bg-gradient-to-r from-cyan-400 to-violet-400")} style={{ width: `${Math.max(2, pct)}%` }} />
+      </div>
+      <div className="text-[11px] text-white/45">{hint}</div>
+    </div>
+  );
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl bg-white/[0.05] p-3">
+      {bar("Processor", v.cpu, v.cpu >= 85 ? "Working hard — something heavy is running." : "Plenty to spare.")}
+      {bar("Memory", v.ram, v.ram >= 85 ? "Nearly full — closing a few tabs or apps would help." : "Fine.")}
+      <div className="grid grid-cols-3 gap-2 text-center text-[12px]">
+        <div className="rounded-xl bg-white/[0.06] px-1 py-2">
+          <div className="text-[15px]">{v.battery ? (v.battery[1] ? "🔌" : v.battery[0] <= 15 ? "🪫" : "🔋") : "🖥️"}</div>
+          <div className="tabular-nums">{v.battery ? `${v.battery[0]}%` : "No battery"}</div>
+        </div>
+        <div className="rounded-xl bg-white/[0.06] px-1 py-2">
+          <div className="text-[15px]">{v.online ? "🌐" : "📴"}</div>
+          <div>{v.online ? "Online" : "Offline"}</div>
+        </div>
+        <div className="rounded-xl bg-white/[0.06] px-1 py-2" title="Izuki's main process (its windows are counted separately by Windows)">
+          <div className="text-[15px]">✨</div>
+          <div className="tabular-nums">{v.izuki_mb} MB</div>
+        </div>
+      </div>
+      <div className="text-[12.5px] text-white/75">
+        {v.missions ? `🤖 Missions: ${v.missions[0] || "starting…"}${v.missions[1] ? ` (+${v.missions[1]} more)` : ""}` : v.task ? `🤖 ${v.task}` : "🤖 Izuki isn't working on anything right now."}
+      </div>
+    </div>
+  );
+}
+
+const FAVS_KEY = "izuki.island-favs";
+
+/** Your apps, one tap away: favourites, what you've used most today, and a
+ *  search box ("spotify", "calculator"). */
+function AppsTab({ onDone }: { onDone: () => void }) {
+  const [recent, setRecent] = useState<string[]>([]);
+  const [favs, setFavs] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(FAVS_KEY) || "[]") as string[]; } catch { return []; }
+  });
+  const [q, setQ] = useState("");
+  const [note, setNote] = useState("");
+  useEffect(() => void api.islandRecentApps().then(setRecent).catch(() => undefined), []);
+  const saveFavs = (list: string[]) => {
+    setFavs(list);
+    try { localStorage.setItem(FAVS_KEY, JSON.stringify(list)); } catch { /* favourites are a convenience */ }
+  };
+  const open = (name: string) => {
+    setNote(`Opening ${name}…`);
+    void api
+      .openApp(name)
+      .then(() => onDone())
+      // Not an installed app (a website like YouTube): Izuki opens it.
+      .catch(() => {
+        onDone();
+        void emit(EV.runChat, { id: Date.now(), text: `open ${name}` });
+      });
+  };
+  const chip = (name: string) => (
+    <div key={name} className="flex items-center gap-0.5 rounded-full bg-white/[0.08] pl-3 pr-1">
+      <button type="button" onClick={() => open(name)} className="py-1 text-[12.5px] font-medium">{name}</button>
+      <button
+        type="button"
+        aria-label={favs.includes(name) ? `Unpin ${name}` : `Pin ${name}`}
+        title={favs.includes(name) ? "Unpin" : "Pin to favourites"}
+        onClick={() => saveFavs(favs.includes(name) ? favs.filter((f) => f !== name) : [...favs, name].slice(-8))}
+        className="rounded-full px-1.5 py-0.5 text-[12px] text-white/50 hover:text-amber-300"
+      >
+        {favs.includes(name) ? "★" : "☆"}
+      </button>
+    </div>
+  );
+  return (
+    <div className="flex flex-col gap-3">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (q.trim()) open(q.trim());
+        }}
+        className="flex gap-1.5"
+      >
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Open an app — e.g. Spotify"
+          aria-label="App to open"
+          className="min-w-0 flex-1 rounded-full bg-white/[0.08] px-3 py-1.5 text-[13px] text-white outline-none placeholder:text-white/40 focus:bg-white/[0.12]"
+        />
+        <button type="submit" className="rounded-full bg-white/[0.12] px-3 text-[12.5px] font-semibold hover:bg-white/[0.2]">Open</button>
+      </form>
+      {favs.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/40">Favourites</div>
+          <div className="flex flex-wrap gap-1.5">{favs.map(chip)}</div>
+        </div>
+      )}
+      <div className="flex flex-col gap-1.5">
+        <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/40">Used most today</div>
+        {recent.length ? (
+          <div className="flex flex-wrap gap-1.5">{recent.filter((r) => !favs.includes(r)).map(chip)}</div>
+        ) : (
+          <div className="px-1 text-[12px] text-white/45">Nothing yet today — the apps you use show up here (Screen time).</div>
+        )}
+      </div>
+      {note && <div className="px-1 text-[12px] text-white/55" role="status">{note}</div>}
     </div>
   );
 }

@@ -224,6 +224,7 @@ export const MOCK_SETTINGS: Settings = {
   island_suggestions: true,
   island_wave: "auto",
   island_style: "default",
+  island_size: "normal",
   tidy_dupes_auto: false,
   tidy_recycle_auto: false,
   pc_care_alerts: true,
@@ -441,6 +442,18 @@ export interface InboxDigest {
   items: InboxItem[];
   looked_at: number;
   skipped: number;
+}
+/** The Island's Vitals (vitals.rs). */
+export interface IslandVitals {
+  cpu: number;
+  ram: number;
+  /** [percent, plugged in], or null on a PC without a battery. */
+  battery: [number, boolean] | null;
+  online: boolean;
+  /** Izuki's main process, MB. */
+  izuki_mb: number;
+  task: string;
+  missions: [string, number] | null;
 }
 /** One Gmail account Izuki can (or should be able to) read. */
 export interface MailAccount {
@@ -661,6 +674,11 @@ export const api = {
   /** What Izuki is really doing right now, in words. */
   inboxDigest: (fresh: boolean) => call<InboxDigest>("inbox_digest", { fresh }, () => ({ summary: "", items: [], looked_at: 0, skipped: 0 })),
   sentHistory: () => call<SentItem[]>("sent_history", undefined, () => []),
+  /** The Island's Vitals tab (vitals.rs): measured, never estimated. */
+  islandVitals: () =>
+    call<IslandVitals>("island_vitals", undefined, () => ({ cpu: 12, ram: 48, battery: [80, false], online: true, izuki_mb: 210, task: "", missions: null })),
+  /** What you've used most today (screen time), for the Island's Apps tab. */
+  islandRecentApps: () => call<string[]>("island_recent_apps", undefined, () => ["Chrome", "YouTube", "VS Code"]),
   /** Every Gmail account Izuki can read (mail.rs), and which need signing in again. */
   mailAccounts: (fresh: boolean) =>
     call<{ accounts: MailAccount[]; duplicates: number }>("mail_accounts", { fresh }, () => ({ accounts: [], duplicates: 0 })),
@@ -841,6 +859,8 @@ export const api = {
 // ---------------------------------------------------------------------------
 
 export const EV = {
+  /** Put the Island at the top centre / left / right (Settings → Island). */
+  islandPlace: "izuki://island-place",
   overlayOpen: "izuki://overlay-open",
   overlayClose: "izuki://overlay-close",
   /** A new task: clear what Izuki drew while explaining the last one. */

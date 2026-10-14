@@ -228,7 +228,7 @@ export function TalkToIzuki() {
         {settings.island_enabled && (
           <Row label="Island look" hint="Choose how the Island — the pill at the top of your screen — looks (themes like Windhawk's).">
             <div className="flex flex-wrap justify-end gap-1">
-              {([["default", "Default"], ["glass", "Glass"], ["bubble", "Bubble"], ["squircle", "Squircle"], ["outline", "Neon outline"], ["aero", "Aero (classic)"]] as const).map(([k, l]) => (
+              {([["nova", "✨ Nova"], ["default", "Default"], ["glass", "Glass"], ["bubble", "Bubble"], ["squircle", "Squircle"], ["outline", "Neon outline"], ["aero", "Aero (classic)"]] as const).map(([k, l]) => (
                 <button
                   key={k}
                   type="button"
@@ -236,6 +236,29 @@ export function TalkToIzuki() {
                   onClick={() => patch({ island_style: k })}
                   className={`izk-pill izk-no-drag px-2 py-0.5 text-[10.5px] ${(settings.island_style ?? "default") === k ? "border-izk-teal/70 bg-izk-teal/15" : ""}`}
                 >
+                  {l}
+                </button>
+              ))}
+            </div>
+          </Row>
+        )}
+        {settings.island_enabled && (
+          <Row label="Island size and place" hint="Bigger or smaller, and where along the top of the screen it sits (you can also drag it).">
+            <div className="flex flex-wrap justify-end gap-1">
+              {(["small", "normal", "large"] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  aria-pressed={(settings.island_size ?? "normal") === k}
+                  onClick={() => patch({ island_size: k })}
+                  className={`izk-pill izk-no-drag px-2 py-0.5 text-[10.5px] ${(settings.island_size ?? "normal") === k ? "border-izk-teal/70 bg-izk-teal/15" : ""}`}
+                >
+                  {k === "small" ? "Small" : k === "normal" ? "Normal" : "Large"}
+                </button>
+              ))}
+              <span className="mx-1 self-center text-izk-muted">·</span>
+              {([["left", "⇤ Left"], ["center", "Top centre"], ["right", "Right ⇥"]] as const).map(([k, l]) => (
+                <button key={k} type="button" onClick={() => void emit(EV.islandPlace, { where: k })} className="izk-pill izk-no-drag px-2 py-0.5 text-[10.5px]">
                   {l}
                 </button>
               ))}

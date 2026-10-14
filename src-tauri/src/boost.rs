@@ -383,6 +383,11 @@ pub fn active_power_plan() -> Result<String,String> {
     Ok(plan_kind(&powercfg(&["/getactivescheme"])?).into())
 }
 
+/// (processor %, memory %) for the whole PC right now — the Island's Vitals.
+pub fn load_now() -> (u8, u8) {
+    sys::load()
+}
+
 #[cfg(test)]
 mod power_tests {
     use super::*;

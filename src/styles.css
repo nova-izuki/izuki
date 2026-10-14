@@ -692,6 +692,46 @@ html[data-backdrop="tabbed"] .izk-card {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.28), 0 6px 16px rgba(0, 0, 0, 0.4);
 }
 
+/* ✨ Nova: Izuki's own look — deep glass with a cyan→violet holographic rim.
+   Static like every look (it sits over video all day); while Izuki is really
+   listening, thinking or working the rim and glow brighten — a change of
+   style, not an animation. */
+.izk-island.izk-theme-nova {
+  background: linear-gradient(180deg, rgba(12, 16, 32, 0.94), rgba(7, 8, 18, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 0 14px rgba(34, 211, 238, 0.10),
+    0 0 26px rgba(168, 85, 247, 0.08),
+    0 10px 30px rgba(0, 0, 0, 0.4);
+}
+.izk-island.izk-theme-nova::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(110deg, #22d3ee 0%, #818cf8 35%, #c084fc 55%, #22d3ee 80%, #6366f1 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 20;
+}
+.izk-island.izk-theme-nova.izk-island-active::after {
+  opacity: 0.95;
+}
+.izk-island.izk-theme-nova.izk-island-active {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 18px rgba(34, 211, 238, 0.32),
+    0 0 34px rgba(168, 85, 247, 0.22),
+    0 10px 30px rgba(0, 0, 0, 0.4);
+}
+@media (prefers-contrast: more) {
+  .izk-island.izk-theme-nova::after { opacity: 1; }
+}
+
 /* Nothing to say: just a faint glowing line showing where it lives. */
 .izk-island-rest {
   /* Static on purpose: this sits over live video all day, and a moving

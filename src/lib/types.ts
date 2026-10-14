@@ -335,7 +335,9 @@ export interface Settings {
   /** The Island's waveform while music plays. */
   island_wave: "auto" | "silk" | "bars" | "mirror" | "neon" | "dots";
   /** The Island's look (Windhawk-style themes). */
-  island_style: "default" | "glass" | "bubble" | "squircle" | "outline" | "aero";
+  island_style: "default" | "glass" | "bubble" | "squircle" | "outline" | "aero" | "nova";
+  /** How big the Island is. */
+  island_size?: "small" | "normal" | "large";
   /** A click picked by eye gets a second look from a pointing model (Gemini) first. */
   sharp_eye: boolean;
   /** Use UI-TARS (OpenRouter, paid) for that second look. */

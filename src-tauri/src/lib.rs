@@ -53,6 +53,7 @@ pub mod mission_journal;
 pub mod awake;
 pub mod approvals;
 pub mod touch;
+pub mod vitals;
 pub mod music_draft;
 pub mod memory;
 pub mod model;
@@ -330,6 +331,8 @@ pub fn run() {
             commands::apps_test,
             commands::apps_connected,
             commands::mail_accounts,
+            commands::island_vitals,
+            commands::island_recent_apps,
             commands::apps_connect,
             commands::headsup_test,
             commands::browser_show,
