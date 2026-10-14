@@ -12,7 +12,7 @@ const MOVES: Array<[string, string]> = [
   ["🤌 Thumb + middle", "right-click"],
   ["💍 Thumb + ring", "copy"],
   ["🤙 Thumb + pinky", "paste"],
-  ["✌️ Two fingers up", "move up/down to scroll"],
+  ["✌️ Two fingers up", "move up/down to scroll, left/right to scroll sideways"],
   ["🖐️ Open palm, quick swipe", "back / forward"],
   ["👉 Point at a text box, hold still", "clicks it — then say what goes in it"],
   ["✊ Fist, held", "pause / resume"],

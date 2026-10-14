@@ -4,6 +4,7 @@ import { api, emit, EV, on } from "../lib/ipc";
 import { listCameras, openCamera, rankCameras, saveCamera, savedCamera } from "../lib/camera";
 import { AIR_KEYBOARD_OPEN, AirKeyboard } from "./AirKeyboard";
 import { actionLabel, airBindings, type AirSlot } from "../lib/airActions";
+import { newScroll, scrollStep, type ScrollState } from "../lib/airScroll";
 import type { Settings } from "../lib/types";
 
 /**
@@ -280,17 +281,10 @@ export function AirControl({
     let pinchFrom: { x: number; y: number } | null = null;
     let other: "middle" | "ring" | "pinky" | null = null;
     let otherAt = 0;
-    let scrollY: number | null = null;
-    let scrollX: number | null = null;
+    /** The peace-sign scroll in progress (up/down or sideways), or null. */
+    let scroll: ScrollState | null = null;
     /** When the peace sign was last seen (scrolling holds through a flicker). */
     let peaceAt = 0;
-    let scrollAcc = 0;
-    let sideAcc = 0;
-    /** Which way this scroll goes, once the hand has clearly moved that way:
-     * up/down or sideways — never both, so a wobble doesn't go diagonal. */
-    let scrollAxis: "v" | "h" | null = null;
-    /** How far the hand has moved since the peace sign began (to pick the way). */
-    let scrollTravel = { x: 0, y: 0 };
     let fistAt = 0;
     /** The hand is raised and driving Air control (and since when it's been up / down). */
     let engaged = false;
@@ -554,12 +548,7 @@ export function AirControl({
         // Hand gone: the 🤙 call is ready again.
         callAt = 0;
         if (callCool === Infinity) callCool = now + 1200;
-        scrollY = null;
-        scrollX = null;
-        scrollAcc = 0;
-        sideAcc = 0;
-        scrollAxis = null;
-        scrollTravel = { x: 0, y: 0 };
+        scroll = null;
         swipeFrom = null;
         customName = "";
         if (pinchDown) {
@@ -605,12 +594,7 @@ export function AirControl({
         pinchFrom = null;
         pinchDown = false;
         pinchSeen = 0;
-        scrollY = null;
-        scrollX = null;
-        scrollAcc = 0;
-        sideAcc = 0;
-        scrollAxis = null;
-        scrollTravel = { x: 0, y: 0 };
+        scroll = null;
         swipeFrom = null;
         customName = "";
         callAt = 0;
@@ -777,47 +761,26 @@ export function AirControl({
       // it holds through a flickery look or two (200 ms).
       const peace = upBy(8, 6, 1.04) && upBy(12, 10, 1.04) && !upBy(16, 14, 1.3) && !upBy(20, 18, 1.3) && !pinch(8, false) && !pinch(12, false);
       if (peace) peaceAt = now;
-      const twoUp = !pinchDown && !taught && (peace || (scrollY !== null && now - peaceAt < 200));
+      const twoUp = !pinchDown && !taught && (peace || (scroll !== null && now - peaceAt < 200));
       // Scrolling holds the pointer still and turns hand movement into notches.
       if (twoUp) {
         mode = "Scroll";
         L.gesture = "scroll";
-        if (scrollY === null || scrollX === null) {
-          scrollY = ny;
-          scrollX = nx;
+        // Up/down or sideways — whichever way the hand clearly moves (airScroll.ts).
+        scroll ??= newScroll();
+        const { down, right } = scrollStep(scroll, nx, ny);
+        if (down) {
+          live.current.scrolls += Math.abs(down);
+          void api.airScroll(down).catch(() => undefined);
         }
-        const dy = ny - scrollY;
-        const dx = nx - scrollX;
-        scrollY = ny;
-        scrollX = nx;
-        if (!scrollAxis) {
-          // Pick the way once the hand has clearly moved (3% of the view).
-          scrollTravel = { x: scrollTravel.x + dx, y: scrollTravel.y + dy };
-          if (Math.hypot(scrollTravel.x, scrollTravel.y) > 0.03) scrollAxis = Math.abs(scrollTravel.x) > Math.abs(scrollTravel.y) * 1.3 ? "h" : "v";
-        }
-        if (scrollAxis === "v") scrollAcc += dy * 40;
-        if (scrollAxis === "h") sideAcc += dx * 40;
-        const notches = Math.trunc(scrollAcc);
-        if (notches) {
-          scrollAcc -= notches;
-          live.current.scrolls += Math.abs(notches);
-          void api.airScroll(notches).catch(() => undefined);
-        }
-        const side = Math.trunc(sideAcc);
-        if (side) {
-          sideAcc -= side;
-          live.current.scrolls += Math.abs(side);
-          void api.airScrollSide(side).catch(() => undefined);
+        if (right) {
+          live.current.scrolls += Math.abs(right);
+          void api.airScrollSide(right).catch(() => undefined);
         }
         draw(true);
         return;
       }
-      scrollY = null;
-      scrollX = null;
-      scrollAcc = 0;
-      sideAcc = 0;
-      scrollAxis = null;
-      scrollTravel = { x: 0, y: 0 };
+      scroll = null;
       // During a pinch's first moment, the pointer holds (no accidental drag).
       const settling = pinchDown && now - pinchAt < 140 && !dragging;
       if (!settling) {
@@ -1286,7 +1249,7 @@ const STEPS: Array<{
   {
     title: "Scroll",
     tips: [8, 12],
-    how: "Make a peace sign ✌️ — pointing and middle fingers up, the other two folded down (your thumb can rest on them). Hold it, and move your whole hand slowly up or down to scroll.",
+    how: "Make a peace sign ✌️ — pointing and middle fingers up, the other two folded down (your thumb can rest on them). Hold it, and move your whole hand slowly up or down to scroll — or left and right to scroll sideways.",
     demo: "✌️",
     move: "updown",
     done: (l, b) => l.scrolls - b.scrolls >= 3,
