@@ -275,12 +275,39 @@ export function AirControl({
     let pinchDown = false;
     let pinchAt = 0;
     let dragging = false;
+    /** This pinch has clearly moved: from now on it's a drag. Until then the
+     * pointer holds still, so a click stays a click. */
+    let dragOut = false;
     /** A pinch that began on Izuki's own control: pressed here on release, no Windows click. */
     let ownDown: HTMLElement | null = null;
     /** Where the hand was when the pinch began (the drag step measures the hand itself). */
     let pinchFrom: { x: number; y: number } | null = null;
     let other: "middle" | "ring" | "pinky" | null = null;
     let otherAt = 0;
+    /** The 3D app in front (Blender, Unity…), checked every 1.5 s while the
+     * hand drives — there a pinch dragged turns the model. */
+    let app3d: string | null = null;
+    let app3dAt = 0;
+    /** This pinch is in a 3D app: a quick one clicks, a dragged one turns. */
+    let pend3d = false;
+    let grip3d = false;
+    let app3dBusy = false;
+    /** The grip being started, so a "let go" always comes after it. */
+    let gripStart: Promise<unknown> | null = null;
+    const letGo3d = () => {
+      const after = gripStart ?? Promise.resolve();
+      gripStart = null;
+      void after.finally(() => api.airGrip3d(false).catch(() => undefined));
+    };
+    /** Whatever a pinch was doing, it's over: let go of exactly that. */
+    const endPinch3d = () => {
+      if (grip3d) letGo3d();
+      const pressed = !pend3d || grip3d;
+      pend3d = false;
+      grip3d = false;
+      dragOut = false;
+      return pressed;
+    };
     /** The peace-sign scroll in progress (up/down or sideways), or null. */
     let scroll: ScrollState | null = null;
     /** When the peace sign was last seen (scrolling holds through a flicker). */
@@ -547,6 +574,13 @@ export function AirControl({
         void api.log("[air] first hand seen").catch(() => undefined);
       }
       if (!lm) {
+        // A look or two without the hand (a fast move blurs it): hold
+        // everything — the pinch, the drag, the scroll, the pointer — for a
+        // moment. Letting go on one missed look cut drags off half-way.
+        if (lastHand && now - lastHand < 400) {
+          draw(true);
+          return;
+        }
         L.gesture = "";
         releaseKeys();
         if (grabbing) {
@@ -562,7 +596,7 @@ export function AirControl({
         restFrom = null;
         resting = false;
         if (pinchDown) {
-          if (!ownDown) void api.airButton(false, false);
+          if (!ownDown && endPinch3d()) void api.airButton(false, false);
           ownDown = null;
           pinchFrom = null;
           pinchDown = false;
@@ -602,7 +636,7 @@ export function AirControl({
         releaseKeys();
         // Whatever was under way stops cleanly (a pick-up ends once, here).
         if (grabbing) fake("pointerup", pointer);
-        else if (pinchDown && !ownDown) void api.airButton(false, false).catch(() => undefined);
+        else if (pinchDown && !ownDown && endPinch3d()) void api.airButton(false, false).catch(() => undefined);
         grabbing = false;
         ownDown = null;
         pinchFrom = null;
@@ -683,7 +717,7 @@ export function AirControl({
         releaseKeys();
         if (pinchDown) {
           pinchDown = false;
-          if (!ownDown) void api.airButton(false, false).catch(() => undefined);
+          if (!ownDown && endPinch3d()) void api.airButton(false, false).catch(() => undefined);
           ownDown = null;
           pinchFrom = null;
         }
@@ -693,6 +727,15 @@ export function AirControl({
         return;
       }
       L.pinch = Math.min(1, dist(lm[4], lm[8]) / scale / 0.9);
+      if (now - app3dAt > 1500 && !app3dBusy) {
+        app3dAt = now;
+        app3dBusy = true;
+        void api
+          .air3dApp()
+          .then((a) => { app3d = a; })
+          .catch(() => { app3d = null; })
+          .finally(() => { app3dBusy = false; });
+      }
 
       // Resting: a hand held still for 4 s (leaning on it, thinking) stops
       // clicking until it moves again — a drag in progress is left alone.
@@ -733,7 +776,7 @@ export function AirControl({
         // Switched to game controls mid-press or mid-drag: finish that first.
         if (pinchDown && !held.has("space")) {
           if (grabbing) fake("pointerup", pointer);
-          else if (!ownDown) void api.airButton(false, false).catch(() => undefined);
+          else if (!ownDown && endPinch3d()) void api.airButton(false, false).catch(() => undefined);
           grabbing = false;
           ownDown = null;
           pinchDown = false;
@@ -821,8 +864,12 @@ export function AirControl({
         return;
       }
       scroll = null;
-      // During a pinch's first moment, the pointer holds (no accidental drag).
-      const settling = pinchDown && now - pinchAt < 140 && !dragging;
+      // A click stays a click: while pinched, the pointer holds still until
+      // the hand clearly moves (3.5% of the view), like a real mouse's drag
+      // threshold. Closing the fingers nudges the whole hand, and that used
+      // to turn clicks into little drags.
+      if (pinchDown && !dragOut && pinchFrom && Math.hypot(raw.x - pinchFrom.x, raw.y - pinchFrom.y) > 0.035) dragOut = true;
+      const settling = pinchDown && !dragOut;
       if (!settling) {
         // On a small button the ring goes half speed (like aim assist), so a
         // little wobble doesn't slip off it before the pinch.
@@ -873,6 +920,7 @@ export function AirControl({
         dragging = false;
         L.pinches++;
         pinchFrom = { x: raw.x, y: raw.y };
+        dragOut = false;
         ownDown = own;
         // Not a button: it's the character or the orb — pick it up (it
         // drags like a mouse would, through its own drag handling).
@@ -895,7 +943,9 @@ export function AirControl({
             void api.airPointer(cx, cy).catch(() => undefined);
           }
         }
-        if (!ownDown && !grabbing) void api.airButton(false, true).catch(() => undefined);
+        pend3d = !ownDown && !grabbing && !!app3d;
+        grip3d = false;
+        if (!ownDown && !grabbing && !pend3d) void api.airButton(false, true).catch(() => undefined);
         // A box you can type in: the air keyboard comes up by itself.
         if (!ownDown && !grabbing && box?.field && pointer.x >= box.nx && pointer.x <= box.nx + box.nw && pointer.y >= box.ny && pointer.y <= box.ny + box.nh) {
           window.dispatchEvent(new Event(AIR_KEYBOARD_OPEN));
@@ -910,17 +960,33 @@ export function AirControl({
           const now2 = ownAt(pointer.x, pointer.y);
           if (now2 && (now2 === ownDown || ownDown.contains(now2))) ownDown.click();
           ownDown = null;
+        } else if (grip3d) {
+          letGo3d();
+        } else if (pend3d) {
+          // A quick pinch in a 3D app is still a click.
+          void api.airButton(false, true).then(() => api.airButton(false, false)).catch(() => undefined);
         } else void api.airButton(false, false).catch(() => undefined);
+        pend3d = false;
+        grip3d = false;
+        dragOut = false;
         pinchFrom = null;
       } else if (pinchDown && now - pinchAt > 250) {
         // A drag: the pinch held while the hand itself moves (measured from
         // the hand, not the ring, which holds still for a moment at first).
         if (pinchFrom && Math.hypot(raw.x - pinchFrom.x, raw.y - pinchFrom.y) > 0.05) L.dragged = true;
         dragging = true;
-        mode = "Drag";
+        mode = dragOut ? "Drag" : "Pinch — move to drag";
+        if (pend3d && !grip3d && dragOut) {
+          grip3d = true;
+          gripStart = api
+            .airGrip3d(true)
+            .then((ok) => { if (!ok) grip3d = false; })
+            .catch(() => { grip3d = false; });
+        }
+        if (grip3d) mode = `🧊 Turning · ${app3d ?? "3D"}`;
       }
       if (!pinchDown) mode = holdLabel;
-      L.gesture = pinchDown ? (dragging ? "drag" : "pinch") : fist ? "fist" : "point";
+      L.gesture = pinchDown ? (dragOut ? "drag" : "pinch") : fist ? "fist" : "point";
 
       // Thumb + middle / ring / pinky: right-click, copy, paste.
       // 🤙 "Call me": thumb and little finger out, the other three folded,
@@ -1096,9 +1162,11 @@ export function AirControl({
             baseOptions: { modelAssetPath: `${base}/hand_landmarker.task`, delegate: "CPU" },
             runningMode: "VIDEO",
             numHands: 1,
+            // Finding a new hand stays strict; keeping hold of one already
+            // found is looser, so a hand moving fast isn't dropped.
             minHandDetectionConfidence: 0.5,
-            minHandPresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5,
+            minHandPresenceConfidence: 0.4,
+            minTrackingConfidence: 0.35,
           });
           let gaveUpModel = false;
           void making.then((l) => gaveUpModel && l.close()).catch(() => undefined);
@@ -1170,7 +1238,7 @@ export function AirControl({
       tracker?.postMessage({ type: "stop" });
       tracker?.terminate();
       starting?.terminate();
-      if (pinchDown) void api.airButton(false, false);
+      if (pinchDown && endPinch3d()) void api.airButton(false, false);
       stream?.getTracks().forEach((t) => t.stop());
       landmarker?.close();
     };
@@ -1284,7 +1352,7 @@ const STEPS: Array<{
     move: "drag",
     done: (l, b) => l.dragged && !b.dragged,
     progress: (l) => (l.gesture === "drag" ? 0.6 : l.gesture === "pinch" ? 0.3 : 0),
-    now: (l) => (!l.lm ? "Show me your hand" : l.gesture === "drag" ? "Dragging — move a little, then open your fingers" : l.gesture === "pinch" ? "Keep holding the pinch…" : "Pinch and hold"),
+    now: (l) => (!l.lm ? "Show me your hand" : l.gesture === "drag" ? "Dragging — move a little, then open your fingers" : l.gesture === "pinch" ? "Pinched — now move your hand to drag" : "Pinch and hold"),
   },
   {
     title: "Scroll",

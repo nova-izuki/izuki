@@ -443,6 +443,10 @@ export function Island({
           (look !== "default" ? ` izk-theme-${look}` : "")
         }
         style={{ borderRadius: look === "squircle" ? (open ? 16 : 11) : open ? 28 : 22 }}
+        // Esc closes it from anywhere inside (not just the Ask box).
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && open) setOpen(false);
+        }}
       >
         <AnimatePresence mode="popLayout" initial={false}>
           {open ? (
@@ -1084,36 +1088,72 @@ const QUICK: { icon: string; label: string; instant?: string; ask?: string }[] =
 ];
 
 function QuickGrid({ onDone }: { onDone: () => void }) {
-  const [hit, setHit] = useState<string | null>(null);
+  /** The button whose job is running now — lit until it finishes. */
+  const [working, setWorking] = useState<string | null>(null);
+  /** What the last one said, under the buttons for a moment. */
+  const [said, setSaid] = useState<{ label: string; text: string } | null>(null);
+  useEffect(() => {
+    if (!said) return;
+    const t = window.setTimeout(() => setSaid(null), 4000);
+    return () => clearTimeout(t);
+  }, [said]);
+  const busyWord = (label: string) => (label === "Read this" ? "Reading…" : label === "Screenshot" ? "Snapping…" : label === "Boost" ? "Boosting…" : "Working…");
   return (
-    <div className="grid grid-cols-4 gap-1.5">
-      {QUICK.map((q) => (
-        <button
-          key={q.label}
-          type="button"
-          title={q.instant ?? q.ask}
-          onClick={() => {
-            setHit(q.label);
-            setTimeout(() => setHit((h) => (h === q.label ? null : h)), 900);
-            if (q.ask) {
-              onDone();
-              void emit(EV.runChat, { id: Date.now(), text: q.ask });
-              return;
-            }
-            void api.instantCommand(q.instant!).then((said) => {
-              if (said) void emit(EV.say, { text: said });
-              else void emit(EV.runChat, { id: Date.now(), text: q.instant! });
-            });
-          }}
-          className={
-            "flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[10.5px] font-medium text-white/75 transition active:scale-[0.94] " +
-            (hit === q.label ? "bg-white/[0.2]" : "bg-white/[0.06] hover:bg-white/[0.12]")
-          }
-        >
-          <span className="text-[16px] leading-none">{q.icon}</span>
-          {q.label}
-        </button>
-      ))}
+    <div className="flex flex-col gap-1.5">
+      <div className="grid grid-cols-4 gap-1.5">
+        {QUICK.map((q) => {
+          const running = working === q.label;
+          const done = said?.label === q.label;
+          return (
+            <button
+              key={q.label}
+              type="button"
+              title={q.instant ?? q.ask}
+              aria-busy={running}
+              disabled={!!working && !running}
+              onClick={() => {
+                if (working) return;
+                if (q.ask) {
+                  onDone();
+                  void emit(EV.runChat, { id: Date.now(), text: q.ask });
+                  return;
+                }
+                setWorking(q.label);
+                setSaid(null);
+                void api
+                  .instantCommand(q.instant!)
+                  .then((text) => {
+                    if (text) {
+                      void emit(EV.say, { text });
+                      setSaid({ label: q.label, text });
+                    } else {
+                      void emit(EV.runChat, { id: Date.now(), text: q.instant! });
+                      setSaid({ label: q.label, text: "Asked Izuki — the answer is on its way." });
+                    }
+                  })
+                  .catch(() => setSaid({ label: q.label, text: "That didn't work — try again?" }))
+                  .finally(() => setWorking(null));
+              }}
+              className={
+                "flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[10.5px] font-medium transition active:scale-[0.94] disabled:opacity-40 " +
+                (running
+                  ? "animate-pulse bg-cyan-400/25 text-white ring-1 ring-cyan-300/70"
+                  : done
+                    ? "bg-emerald-400/20 text-white ring-1 ring-emerald-300/50"
+                    : "bg-white/[0.06] text-white/75 hover:bg-white/[0.12]")
+              }
+            >
+              <span className="text-[16px] leading-none">{running ? "⏳" : done ? "✓" : q.icon}</span>
+              {running ? busyWord(q.label) : q.label}
+            </button>
+          );
+        })}
+      </div>
+      {said && (
+        <div role="status" className="line-clamp-2 rounded-xl bg-white/[0.06] px-3 py-1.5 text-[12px] leading-snug text-white/80">
+          {said.text}
+        </div>
+      )}
     </div>
   );
 }

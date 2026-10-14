@@ -93,6 +93,13 @@ pub fn mouse_button(right: bool, down: bool) -> Result<()> {
         .map_err(|err| anyhow!("mouse button failed: {err:?}"))
 }
 
+/// Press or let go of the middle mouse button (3D apps orbit with it).
+pub fn middle_button(down: bool) -> Result<()> {
+    let mut e = enigo()?;
+    e.button(Button::Middle, if down { Direction::Press } else { Direction::Release })
+        .map_err(|err| anyhow!("middle button failed: {err:?}"))
+}
+
 /// Scroll whatever is under the pointer, where it is (no glide).
 pub fn scroll_here(amount: i32) -> Result<()> {
     let mut e = enigo()?;

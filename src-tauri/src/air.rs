@@ -17,8 +17,108 @@ pub fn pointer(x: i32, y: i32) {
 }
 
 /// Press or let go of a mouse button where the pointer is (a pinch held is a drag).
+/// Letting go of the left button also lets go of a 3D grip — every way a
+/// pinch can end (hand gone, paused, lowered) comes through here.
 pub fn button(right: bool, down: bool) -> Result<()> {
+    if !right && !down {
+        let _ = grip_3d(false);
+    }
     crate::automation::mouse_button(right, down)
+}
+
+// ---------------------------------------------------------------------------
+// 3D apps: a pinch dragged turns the model (orbit), the way each app wants
+// it — Blender orbits with the middle button, Unity with Alt + left… A quick
+// pinch is still a click (the frontend decides), and ✌️ zooms (scroll).
+// ---------------------------------------------------------------------------
+
+/// How a 3D app orbits: (exe name, shown name, mouse button, keys held).
+const APPS_3D: &[(&str, &str, Btn, &[&str])] = &[
+    ("blender", "Blender", Btn::Middle, &[]),
+    ("sketchup", "SketchUp", Btn::Middle, &[]),
+    ("fusion360", "Fusion 360", Btn::Middle, &["shift"]),
+    ("unity", "Unity", Btn::Left, &["alt"]),
+    ("maya", "Maya", Btn::Left, &["alt"]),
+    ("3dsmax", "3ds Max", Btn::Middle, &["alt"]),
+    ("cinema 4d", "Cinema 4D", Btn::Left, &["alt"]),
+    ("3dviewer", "3D Viewer", Btn::Left, &[]),
+    ("paintstudio.view", "Paint 3D", Btn::Left, &[]),
+    ("freecad", "FreeCAD", Btn::Middle, &[]),
+];
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Btn {
+    Left,
+    Middle,
+}
+
+/// The 3D app in front, if Air's 3D controls are on and it's one we know.
+pub fn app_3d() -> Option<(&'static str, Btn, &'static [&'static str])> {
+    let on = crate::state::try_store().is_some_and(|s| s.settings().air_3d);
+    if !on {
+        return None;
+    }
+    profile(&crate::uia::foreground_app())
+}
+
+fn profile(app: &str) -> Option<(&'static str, Btn, &'static [&'static str])> {
+    let a = app.to_lowercase();
+    let a = a.trim_end_matches(".exe");
+    APPS_3D.iter().find(|(exe, _, _, _)| a == *exe).map(|(_, name, b, keys)| (*name, *b, *keys))
+}
+
+/// What's held for a 3D grip right now (to let go of exactly that). The lock
+/// is held for a whole start or end, so a "let go" can never slip in while a
+/// grip is still being pressed and leave it stuck down.
+static GRIP: parking_lot::Mutex<Option<(Btn, &'static [&'static str])>> = parking_lot::Mutex::new(None);
+
+fn let_go(held: &mut Option<(Btn, &'static [&'static str])>) -> bool {
+    match held.take() {
+        Some((b, keys)) => {
+            let _ = press(b, false);
+            for k in keys.iter().rev() {
+                let _ = crate::automation::key_hold(k, false);
+            }
+            true
+        }
+        None => false,
+    }
+}
+
+/// Start (down) or end a 3D grip. `Ok(false)` when there's no 3D app in front.
+pub fn grip_3d(down: bool) -> Result<bool> {
+    let mut held = GRIP.lock();
+    if !down {
+        return Ok(let_go(&mut held));
+    }
+    let Some((name, b, keys)) = app_3d() else { return Ok(false) };
+    // Never two grips at once.
+    let_go(&mut held);
+    // Keys pressed so far: if one fails, the earlier ones are let go too.
+    for (i, k) in keys.iter().enumerate() {
+        if let Err(e) = crate::automation::key_hold(k, true) {
+            for done in keys[..i].iter().rev() {
+                let _ = crate::automation::key_hold(done, false);
+            }
+            return Err(e);
+        }
+    }
+    if let Err(e) = press(b, true) {
+        for k in keys.iter().rev() {
+            let _ = crate::automation::key_hold(k, false);
+        }
+        return Err(e);
+    }
+    *held = Some((b, keys));
+    eprintln!("[air] 3D: orbiting in {name}");
+    Ok(true)
+}
+
+fn press(b: Btn, down: bool) -> Result<()> {
+    match b {
+        Btn::Left => crate::automation::mouse_button(false, down),
+        Btn::Middle => crate::automation::middle_button(down),
+    }
 }
 
 /// Scroll whatever is under the pointer: notches, down when positive.
@@ -286,6 +386,16 @@ pub fn app_spot_norm(name: &str) -> Option<(f64, f64)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn knows_how_each_3d_app_orbits() {
+        use super::{profile, Btn};
+        assert_eq!(profile("blender.exe").map(|p| p.1), Some(Btn::Middle));
+        assert_eq!(profile("Unity.exe").map(|p| (p.1, p.2.to_vec())), Some((Btn::Left, vec!["alt"])));
+        assert_eq!(profile("Fusion360.exe").map(|p| p.2.to_vec()), Some(vec!["shift"]));
+        assert!(profile("chrome.exe").is_none());
+        assert!(profile("notepad.exe").is_none());
+    }
+
     #[test]
     fn corners_map_inside_the_screen() {
         let b = crate::capture::virtual_bounds();

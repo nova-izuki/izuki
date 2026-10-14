@@ -359,6 +359,8 @@ export interface Settings {
   mate_voice: boolean;
   mate_wander: boolean;
   /** Air control: your hand in front of the camera drives the PC. */
+  /** In 3D apps (Blender, Unity…), a pinch dragged turns the model. */
+  air_3d?: boolean;
   air_enabled: boolean;
   /** Your own Air gestures: a taught hand pose and what it does
    * ("keys:ctrl+s", "type:words", "say:a request"). */

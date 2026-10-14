@@ -1303,6 +1303,19 @@ pub fn air_scroll(amount: i32) -> R<()> {
     crate::air::scroll(amount.clamp(-20, 20)).map_err(err)
 }
 
+/// Air control: the 3D app in front (Blender, Unity…), if Air's 3D
+/// controls are on — a pinch dragged there turns the model.
+#[tauri::command]
+pub async fn air_3d_app() -> Option<String> {
+    blocking(|| crate::air::app_3d().map(|(name, _, _)| name.to_string())).await.ok().flatten()
+}
+
+/// Air control: start or end turning the model in the 3D app in front.
+#[tauri::command]
+pub async fn air_grip_3d(down: bool) -> R<bool> {
+    blocking(move || crate::air::grip_3d(down).map_err(err)).await?
+}
+
 /// Air control: scroll sideways (peace sign moved left or right).
 #[tauri::command]
 pub fn air_scroll_side(amount: i32) -> R<()> {

@@ -241,6 +241,7 @@ export const MOCK_SETTINGS: Settings = {
   buddy_pet: "none",
   buddy_motion: "smooth",
   air_enabled: false,
+  air_3d: false,
   air_gestures: [],
   air_mode: "balanced",
   phone_remote: false,
@@ -655,6 +656,10 @@ export const api = {
   airButton: (right: boolean, down: boolean) => call<void>("air_button", { right, down }, () => undefined),
   /** Air control: scroll notches (down when positive). */
   airScroll: (amount: number) => call<void>("air_scroll", { amount }, () => undefined),
+  /** The 3D app in front (Blender, Unity…) when Air's 3D controls are on, else null. */
+  air3dApp: () => call<string | null>("air_3d_app", undefined, () => null),
+  /** Start / end turning the model in that 3D app (the right buttons and keys for it). */
+  airGrip3d: (down: boolean) => call<boolean>("air_grip_3d", { down }, () => false),
   /** Scroll sideways under the pointer: right when positive. */
   airScrollSide: (amount: number) => call<void>("air_scroll_side", { amount }, () => undefined),
   /** Air control: a key combination ("ctrl+c"). */

@@ -44,9 +44,11 @@ async function make(base: string, delegate: "GPU" | "CPU") {
       baseOptions: { modelAssetPath: `${base}/hand_landmarker.task`, delegate },
       runningMode: "VIDEO",
       numHands: 1,
+      // Finding a new hand stays strict; keeping hold of one already found is
+      // looser, so a hand moving fast isn't dropped.
       minHandDetectionConfidence: 0.5,
-      minHandPresenceConfidence: 0.5,
-      minTrackingConfidence: 0.5,
+      minHandPresenceConfidence: 0.4,
+      minTrackingConfidence: 0.35,
     },
   );
 }

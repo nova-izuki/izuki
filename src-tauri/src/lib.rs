@@ -372,6 +372,8 @@ pub fn run() {
             commands::air_button,
             commands::air_scroll,
             commands::air_scroll_side,
+            commands::air_3d_app,
+            commands::air_grip_3d,
             commands::air_keys,
             commands::air_target,
             commands::air_key,

@@ -23,6 +23,8 @@ type Dword = (&'static str, &'static str, u32, u32);
 
 const ADV: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
 const THEME: &str = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+/// Windows' own tips, suggested apps and lock-screen ads.
+const CDM: &str = r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager";
 const CLASSIC_MENU: &str = r"Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32";
 
 struct Def {
@@ -53,6 +55,16 @@ const DEFS: &[Def] = &[
     Def { id: "file_extensions", label: "Show file extensions", hint: "See .pdf, .exe, .jpg in File Explorer — easier to spot a fake \"photo.jpg.exe\".", restart: false, how: How::Values(&[(ADV, "HideFileExt", 0, 1)]) },
     Def { id: "hidden_files", label: "Show hidden files", hint: "File Explorer shows hidden files and folders (faded).", restart: false, how: How::Values(&[(ADV, "Hidden", 1, 2)]) },
     Def { id: "dark_mode", label: "Dark mode everywhere", hint: "Windows and apps in dark colours.", restart: false, how: How::Values(&[(THEME, "AppsUseLightTheme", 0, 1), (THEME, "SystemUsesLightTheme", 0, 1)]) },
+    Def { id: "more_pins", label: "More pinned apps in Start", hint: "Start shows more of your pinned apps and fewer recommendations.", restart: true, how: How::Values(&[(ADV, "Start_Layout", 1, 0)]) },
+    Def { id: "no_start_tips", label: "No tips or new-app suggestions in Start", hint: "Start's Recommended section stops suggesting tips and apps you didn't ask for.", restart: true, how: How::Values(&[(ADV, "Start_IrisRecommendations", 0, 1)]) },
+    Def { id: "no_suggested_apps", label: "No suggested apps or ads", hint: "Windows stops suggesting and quietly installing promoted apps, and stops showing ads in Start and Settings.", restart: false, how: How::Values(&[(CDM, "SystemPaneSuggestionsEnabled", 0, 1), (CDM, "SubscribedContent-338388Enabled", 0, 1), (CDM, "SilentInstalledAppsEnabled", 0, 1)]) },
+    Def { id: "no_lock_tips", label: "No tips or ads on the lock screen", hint: "The lock screen shows just your picture and the time — no \"fun facts\" or ads.", restart: false, how: How::Values(&[(CDM, "RotatingLockScreenOverlayEnabled", 0, 1), (CDM, "SubscribedContent-338387Enabled", 0, 1)]) },
+    Def { id: "no_copilot_button", label: "Hide the Copilot button", hint: "One less button on the taskbar (where Windows shows it).", restart: false, how: How::Values(&[(ADV, "ShowCopilotButton", 0, 1)]) },
+    Def { id: "no_badges", label: "No red badges on taskbar icons", hint: "Taskbar icons stop showing unread counts and alert dots.", restart: false, how: How::Values(&[(ADV, "TaskbarBadges", 0, 1)]) },
+    Def { id: "no_snap_popup", label: "No snap layouts pop-up", hint: "Hovering a window's maximise button no longer pops up the layout picker (Win+Z still shows it).", restart: false, how: How::Values(&[(ADV, "EnableSnapAssistFlyout", 0, 1)]) },
+    Def { id: "taskbar_main_only", label: "Taskbar on the main screen only", hint: "With more than one screen, only the main one has a taskbar.", restart: false, how: How::Values(&[(ADV, "MMTaskbarEnabled", 0, 1)]) },
+    Def { id: "compact_explorer", label: "Compact File Explorer", hint: "Tighter rows in File Explorer, so more files fit on screen.", restart: false, how: How::Values(&[(ADV, "UseCompactMode", 1, 0)]) },
+    Def { id: "no_bing_search", label: "Search only your PC (no Bing)", hint: "Searching from Start shows your apps, files and settings — not web results. Works on most Windows versions; shows after Explorer restarts.", restart: true, how: How::Values(&[(r"Software\Microsoft\Windows\CurrentVersion\Search", "BingSearchEnabled", 0, 1)]) },
     Def { id: "no_transparency", label: "Turn off see-through effects", hint: "Solid taskbar and menus — a little faster on a slow PC.", restart: false, how: How::Values(&[(THEME, "EnableTransparency", 0, 1)]) },
 ];
 

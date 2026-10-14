@@ -113,6 +113,12 @@ export function AirCard() {
           <Toggle checked={!!settings.air_game} onChange={(v) => patch({ air_game: v })} />
         </div>
       </Row>
+      <Row
+        label="3D apps: turn models with your hand"
+        hint="In Blender, SketchUp, Fusion 360, Unity, Maya, 3ds Max, Cinema 4D, FreeCAD, 3D Viewer and Paint 3D: pinch and move to turn the model (the right buttons and keys for each app); a quick pinch still clicks; ✌️ up and down zooms. Nothing changes in other apps. Off by default: while it's on, dragging a slider in those apps turns the model instead."
+      >
+        <Toggle checked={!!settings.air_3d} onChange={(v) => patch({ air_3d: v })} />
+      </Row>
       <Row label="How it follows your hand" hint="Fast: the ring keeps right up with quick moves. Balanced: quick and steady. Precision: slower, finer moves for small buttons — your hand covers more of the camera's view per screen.">
         <div className="flex flex-wrap justify-end gap-1">
           {([["fast", "Fast"], ["balanced", "Balanced"], ["precision", "Precision"]] as const).map(([k, l]) => (
