@@ -22,6 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🎨", title: "Looks: a whole new Windows in one tap", how: "Seven looks with wallpapers painted for your screen: Nova (a planet's glowing edge under the stars), Midnight (northern lights over mountains), Ember, Forest, Sakura, Paper and Focus. Each sets dark or light, the accent colour on the taskbar, Start and title bars, and see-through effects. Or just say “make my PC look Nova”. Undo puts everything back, even a wallpaper slideshow.", try: { label: "Looks", tab: "settings", id: "settings-looks" } },
   { icon: "🎓", title: "What's due — straight from Blackboard", how: "Say “connect my Blackboard”, press Copy on its calendar link, and Izuki saves it by itself. Then ask “what's due this week?” or “which assignment should I do first?” — and get reminders before things are due." },
   { icon: "📱", title: "A smoother phone remote", how: "The live view makes each picture about 3× faster and prepares the next one while the last is still travelling — no more backlog on a slow connection." },
   { icon: "🗣️", title: "The voice keeps up with the words", how: "When your chosen voice is failing, Izuki goes straight to the one that's working instead of waiting on every line, and captions start when the voice really does." },

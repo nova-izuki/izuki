@@ -489,6 +489,37 @@ export interface SentItem {
   at: number;
 }
 
+/** A one-tap Windows look (winlook.rs). */
+export interface LookPreset {
+  id: string;
+  name: string;
+  blurb: string;
+  accent: string;
+  dark: boolean;
+  /** Accent on the taskbar and Start. */
+  bars: boolean;
+  /** Accent on window title bars. */
+  titles: boolean;
+  /** CSS background that looks like its wallpaper. */
+  preview: string;
+}
+
+/** Windows' look right now, plus the presets (winlook.rs). */
+export interface LooksStatus {
+  presets: LookPreset[];
+  /** [name, "#rrggbb"] */
+  swatches: [string, string][];
+  accent: string;
+  dark: boolean;
+  glass: boolean;
+  bars: boolean;
+  titles: boolean;
+  current: string | null;
+  can_undo: boolean;
+  /** Something to tell you after a change (e.g. how to turn Spotlight back on). */
+  note?: string | null;
+}
+
 /** A Windows tweak (tweaks.rs): a switch, read live from Windows. */
 export interface WindowsTweak {
   id: string;
@@ -719,6 +750,11 @@ export const api = {
   polishText: (text: string) => call<string>("polish_text", { text }, () => text),
   tweaksList: () => call<WindowsTweak[]>("tweaks_list", undefined, () => []),
   tweakSet: (id: string, on: boolean) => call<WindowsTweak[]>("tweak_set", { id, on }, () => []),
+  looksStatus: () => call<LooksStatus | null>("looks_status", undefined, () => null),
+  lookApply: (id: string, wallpaper: boolean) => call<LooksStatus | null>("look_apply", { id, wallpaper }, () => null),
+  lookAccent: (colour: string) => call<LooksStatus | null>("look_accent", { colour }, () => null),
+  lookSwitch: (name: string, on: boolean) => call<LooksStatus | null>("look_switch", { name, on }, () => null),
+  lookUndo: () => call<LooksStatus | null>("look_undo", undefined, () => null),
   restartExplorer: () => call<void>("restart_explorer", undefined, () => undefined),
   boostLive: () => call<{ on: boolean; looked_secs_ago: number | null; done_secs_ago: number | null; done: string | null }>("boost_live", undefined, () => ({ on: false, looked_secs_ago: null, done_secs_ago: null, done: null })),
   /** The desktop mate: where its character is (only clicks there are caught). */

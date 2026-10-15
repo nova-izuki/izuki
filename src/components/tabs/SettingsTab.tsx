@@ -24,6 +24,7 @@ import { BoostCard } from "../BoostCard";
 import { FlStudioCard } from "../FlStudioCard";
 import { AirCard } from "../AirCard";
 import { TweaksCard } from "../TweaksCard";
+import { LooksCard } from "../LooksCard";
 import { OrbStudio } from "../OrbStudio";
 import { UpdateControls } from '../UpdateControls';
 import { DiscordCard } from "../DiscordCard";
@@ -567,6 +568,7 @@ export function SettingsTab() {
       <FlStudioCard />
 
       <AirCard />
+      <LooksCard />
       <TweaksCard />
 
       <div id="settings-phone"><PhoneCard /></div>

@@ -19,6 +19,7 @@ assistant is also changing.
 | Gmail across every account, briefings | `mail.rs`, `headsup.rs` (email parts) | Claude |
 | Terminal tutor (CMD/PowerShell lessons) | `tutor.rs` | Claude |
 | Discord reconnect/resume | `discord.rs` | Claude |
+| Windows looks (accent, dark, wallpapers, undo) | `winlook.rs`, `LooksCard.tsx` | Claude |
 | Keep-awake during missions | `awake.rs` | Claude |
 | Island glances (missions, lesson) | `island.rs`, `Island.tsx` | Claude |
 | Execution verdicts, contracts, budgets | `execution.rs`, `model.rs` (`TaskOutcome`) | ChatGPT |

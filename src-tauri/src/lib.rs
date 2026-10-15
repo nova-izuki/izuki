@@ -42,6 +42,7 @@ pub mod mate;
 pub mod air;
 pub mod daw;
 pub mod tweaks;
+pub mod winlook;
 pub mod remote;
 pub mod rtools;
 pub mod offline;
@@ -403,6 +404,11 @@ pub fn run() {
             commands::follow_up,
             commands::air_hold,
             commands::tweak_set,
+            commands::looks_status,
+            commands::look_apply,
+            commands::look_accent,
+            commands::look_switch,
+            commands::look_undo,
             commands::restart_explorer,
             commands::mate_line,
             commands::fl_setup,

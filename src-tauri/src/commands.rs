@@ -369,6 +369,10 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
             return blocking(|| crate::study::coach().unwrap_or_else(|e| e.to_string())).await.ok();
         }
     }
+    // Windows looks: "make my PC look Nova", "undo the look", "accent colour red" (winlook.rs).
+    if let Some(ask) = crate::winlook::parse(&said) {
+        return blocking(move || crate::winlook::handle(ask)).await.ok();
+    }
     // "Go to San Jac Blackboard": the right website, opened directly (sites.rs).
     if crate::sites::is_wrong_site(&said) {
         return blocking(crate::sites::wrong_site).await.ok();
@@ -1326,6 +1330,36 @@ pub async fn tweaks_list() -> R<Vec<crate::tweaks::Tweak>> {
 #[tauri::command]
 pub async fn tweak_set(id: String, on: bool) -> R<Vec<crate::tweaks::Tweak>> {
     blocking(move || crate::tweaks::set(&id, on).map_err(|e| e.to_string())).await?
+}
+
+/// Looks: presets, the live accent/dark/see-through state, whether Undo is possible.
+#[tauri::command]
+pub async fn looks_status() -> R<crate::winlook::Status> {
+    blocking(crate::winlook::status).await
+}
+
+/// Apply a whole look (wallpaper optional).
+#[tauri::command]
+pub async fn look_apply(id: String, wallpaper: bool) -> R<crate::winlook::Status> {
+    blocking(move || crate::winlook::apply(&id, wallpaper).map_err(|e| e.to_string())).await?
+}
+
+/// Just the accent colour ("#rrggbb").
+#[tauri::command]
+pub async fn look_accent(colour: String) -> R<crate::winlook::Status> {
+    blocking(move || crate::winlook::set_accent(&colour).map_err(|e| e.to_string())).await?
+}
+
+/// One look switch: dark, glass, bars or titles.
+#[tauri::command]
+pub async fn look_switch(name: String, on: bool) -> R<crate::winlook::Status> {
+    blocking(move || crate::winlook::set_switch(&name, on).map_err(|e| e.to_string())).await?
+}
+
+/// Put back the colours and wallpaper from before the first look.
+#[tauri::command]
+pub async fn look_undo() -> R<crate::winlook::Status> {
+    blocking(|| crate::winlook::undo().map_err(|e| e.to_string())).await?
 }
 
 /// Restart Windows Explorer so a tweak shows (only when asked).
