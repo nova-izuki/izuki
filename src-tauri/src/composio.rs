@@ -57,8 +57,17 @@ fn client() -> Result<reqwest::blocking::Client> {
 }
 
 fn post(key: &str, path: &str, body: &Value) -> Result<Value> {
+    post_within(key, path, body, None)
+}
+
+/// `post`, giving up after `limit` (a quick check must not hang).
+fn post_within(key: &str, path: &str, body: &Value, limit: Option<Duration>) -> Result<Value> {
     crate::execution::charge(crate::execution::Work::Request).map_err(|r| anyhow!(r.explanation()))?;
-    let res = client()?.post(format!("{API}{path}")).header("x-api-key", key).json(body).send()?;
+    let mut req = client()?.post(format!("{API}{path}")).header("x-api-key", key).json(body);
+    if let Some(limit) = limit {
+        req = req.timeout(limit);
+    }
+    let res = req.send()?;
     let status = res.status();
     let v: Value = res.json().unwrap_or(Value::Null);
     if !status.is_success() {
@@ -133,6 +142,28 @@ pub fn connections(toolkit: &str) -> Result<Vec<crate::mail::Link>> {
         .unwrap_or_default())
 }
 
+/// Every link to every app (any status), for the account-health check.
+pub fn all_connections() -> Result<Vec<crate::accounts::RawLink>> {
+    let key = key()?;
+    let v = get(&key, &format!("/connected_accounts?user_ids={}&limit=200", user_id()))?;
+    Ok(v["items"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter(|c| c["is_disabled"] != true)
+                .filter_map(|c| {
+                    Some(crate::accounts::RawLink {
+                        app: c["toolkit"]["slug"].as_str().or(c["toolkit_slug"].as_str())?.to_lowercase(),
+                        id: c["id"].as_str()?.to_string(),
+                        status: c["status"].as_str().unwrap_or("UNKNOWN").to_string(),
+                        reason: c["status_reason"].as_str().unwrap_or_default().to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
 /// Run one tool on one specific linked account (by its connection id) —
 /// without this Composio uses its default account for the app.
 fn recorded_tool(tool: &str, account: Option<&str>, run: impl FnOnce() -> Result<Value>) -> Result<Value> {
@@ -153,8 +184,19 @@ fn recorded_tool(tool: &str, account: Option<&str>, run: impl FnOnce() -> Result
 }
 
 pub fn execute_on(connection: &str, tool: &str, arguments: Value) -> Result<Value> {
+    execute_on_limited(connection, tool, arguments, None)
+}
+
+/// `execute_on`, giving up after `limit` (account checks: 10 s).
+pub fn execute_on_within(connection: &str, tool: &str, arguments: Value, limit: Duration) -> Result<Value> {
+    execute_on_limited(connection, tool, arguments, Some(limit))
+}
+
+fn execute_on_limited(connection: &str, tool: &str, arguments: Value, limit: Option<Duration>) -> Result<Value> {
     let key = key()?;
-    let v = recorded_tool(tool, Some(connection), || post(&key, &format!("/tools/execute/{tool}"), &json!({ "connected_account_id": connection, "user_id": user_id(), "arguments": arguments })))?;
+    let v = recorded_tool(tool, Some(connection), || {
+        post_within(&key, &format!("/tools/execute/{tool}"), &json!({ "connected_account_id": connection, "user_id": user_id(), "arguments": arguments }), limit)
+    })?;
     if let Some(e) = tool_error(&v) {
         return Err(anyhow!("{tool} failed: {e}"));
     }
@@ -486,7 +528,7 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
                 if !(approved(history) && proposed_is(key)) {
                     eprintln!("[apps] {tool} held for the user's yes");
                     *PROPOSED.lock() = Some((key, std::time::Instant::now()));
-                    let draft = draft_of(tool, &args);
+                    let draft = format!("{}{}", from_line(tool, step["run"]["account"].as_str()), draft_of(tool, &args));
                     // Also approvable from the paired phone (Touch Grass).
                     crate::approvals::hold(tool, &args, step["run"]["account"].as_str(), &pretty(&app_of(tool)), &draft);
                     return Ok(Answer { text: draft, links });
@@ -857,6 +899,33 @@ pub fn run_approved(tool: &str, args: &Value, account: Option<&str>) -> Result<(
     }
 }
 
+/// Which account a change would use, said before the yes: "From: x@gmail.com".
+fn from_line(tool: &str, account: Option<&str>) -> String {
+    if !tool.starts_with("GMAIL_") {
+        return String::new();
+    }
+    let ok: Vec<crate::mail::Account> = crate::mail::accounts_now().map(|(a, _)| a).unwrap_or_default().into_iter().filter(|a| a.state == "ok").collect();
+    from_line_for(account, &ok)
+}
+
+fn from_line_for(account: Option<&str>, ok: &[crate::mail::Account]) -> String {
+    match account {
+        Some(a) => {
+            let who = ok.iter().find(|x| x.id == a || x.address.eq_ignore_ascii_case(a)).map(|x| x.address.clone()).unwrap_or_else(|| a.to_string());
+            format!("From: {who}\n")
+        }
+        None => match ok {
+            [] => String::new(),
+            [one] => format!("From: {}\n", one.address),
+            many => format!(
+                "From: your default Gmail link — you have {} Gmail accounts ({}); say “send it from …” to pick one.\n",
+                many.len(),
+                many.iter().map(|x| x.address.as_str()).collect::<Vec<_>>().join(", ")
+            ),
+        },
+    }
+}
+
 /// What the user is asked before a change: exactly what would happen.
 fn draft_of(tool: &str, args: &Value) -> String {
     let app = pretty(&app_of(tool));
@@ -1141,6 +1210,10 @@ mod tests {
         *PROPOSED.lock() = Some((k, std::time::Instant::now()));
         assert!(proposed_is(k));
         assert!(!proposed_is(action_key("GMAIL_SEND_EMAIL", &json!({ "to": "boss@x.com", "body": "late" }), None)));
+        let acct = |id: &str, a: &str| crate::mail::Account { id: id.into(), address: a.into(), state: "ok".into(), note: String::new() };
+        assert_eq!(from_line_for(None, &[acct("ca_1", "a@x.com")]), "From: a@x.com\n");
+        assert_eq!(from_line_for(Some("ca_2"), &[acct("ca_1", "a@x.com"), acct("ca_2", "b@x.com")]), "From: b@x.com\n");
+        assert!(from_line_for(None, &[acct("ca_1", "a@x.com"), acct("ca_2", "b@x.com")]).contains("you have 2 Gmail accounts (a@x.com, b@x.com)"));
         let d = draft_of("GMAIL_SEND_EMAIL", &json!({ "recipient_email": "sam@x.com", "subject": "Running late", "body": "Be there at 3." }));
         assert!(d.contains("To: sam@x.com") && d.contains("Subject: Running late") && d.contains("Be there at 3.") && d.contains("go ahead"));
         *PROPOSED.lock() = None;

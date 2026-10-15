@@ -369,6 +369,17 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
             return blocking(|| crate::study::coach().unwrap_or_else(|e| e.to_string())).await.ok();
         }
     }
+    // "Check my connected accounts": every app, every account, really checked (accounts.rs).
+    if crate::accounts::asks(&said) {
+        return blocking(|| {
+            crate::accounts::health().map(|h| crate::accounts::report(&h)).unwrap_or_else(|e| {
+                eprintln!("[accounts] check failed: {e}");
+                "I couldn't reach your connected apps just now. Check that your Composio key is set in Apps, and your internet — then ask me again.".into()
+            })
+        })
+        .await
+        .ok();
+    }
     // Windows looks: "make my PC look Nova", "undo the look", "accent colour red" (winlook.rs).
     if let Some(ask) = crate::winlook::parse(&said) {
         return blocking(move || crate::winlook::handle(ask)).await.ok();
@@ -1841,6 +1852,18 @@ pub async fn chat_allow_last(allow: bool) -> R<Option<String>> {
 pub fn chat_cancel(id: u64) {
     crate::chat::cancel(id);
     crate::research::cancel(id);
+}
+
+/// Every linked app and account, and whether each really works (accounts.rs).
+#[tauri::command]
+pub async fn accounts_health(fresh: bool) -> R<crate::accounts::Health> {
+    blocking(move || {
+        if fresh {
+            crate::accounts::forget();
+        }
+        crate::accounts::health().map_err(|e| e.to_string())
+    })
+    .await?
 }
 
 /// Deep research (research.rs): searches, pages read and the answer arrive

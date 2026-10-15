@@ -44,6 +44,7 @@ pub mod daw;
 pub mod tweaks;
 pub mod winlook;
 pub mod research;
+pub mod accounts;
 pub mod remote;
 pub mod rtools;
 pub mod offline;
@@ -415,6 +416,7 @@ pub fn run() {
             commands::look_auto,
             commands::look_preview,
             commands::research_start,
+            commands::accounts_health,
             commands::research_save,
             commands::restart_explorer,
             commands::mate_line,

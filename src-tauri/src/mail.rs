@@ -77,6 +77,8 @@ pub struct Found {
     pub duplicates: usize,
     /// Some account had more results than were read.
     pub more: bool,
+    /// Gmail sign-ins that were started and never finished (not accounts yet).
+    pub unfinished: usize,
     /// When the search ran (live, never cached).
     pub at: String,
 }
@@ -100,7 +102,8 @@ impl Source for Composio {
         if let Some(a) = KNOWN.lock().as_ref().and_then(|m| m.get(link).cloned()) {
             return Ok(a);
         }
-        let v = crate::composio::execute_on(link, "GMAIL_GET_PROFILE", json!({}))?;
+        // A quick check: at most 10 s, so one stuck account can't stall a search.
+        let v = crate::composio::execute_on_within(link, "GMAIL_GET_PROFILE", json!({}), Duration::from_secs(10))?;
         let d = if v["response_data"].is_object() { &v["response_data"] } else { &v };
         let a = d["emailAddress"].as_str().ok_or_else(|| anyhow!("Gmail didn't say which account this is"))?.to_lowercase();
         KNOWN.lock().get_or_insert_with(HashMap::new).insert(link.to_string(), a.clone());
@@ -134,8 +137,11 @@ pub fn accounts(src: &dyn Source) -> Result<(Vec<Account>, usize)> {
                 }
                 Err(e) => out.push(Account { id: l.id, address: String::new(), state: "error".into(), note: short(&e.to_string()) }),
             },
-            // A sign-in that was started and never finished isn't an account.
-            _ if l.reason.to_lowercase().contains("not completed") || l.status.eq_ignore_ascii_case("INITIATED") => {}
+            // A sign-in that was started and never finished isn't an account —
+            // but it's said, not hidden (it may be the account you meant).
+            _ if l.reason.to_lowercase().contains("not completed") || l.status.eq_ignore_ascii_case("INITIATED") => {
+                out.push(Account { id: l.id, address: String::new(), state: "unfinished".into(), note: "a sign-in was started and never finished".into() })
+            }
             _ => out.push(Account { id: l.id, address: String::new(), state: "needs_sign_in".into(), note: short(&l.reason) }),
         }
     }
@@ -144,10 +150,12 @@ pub fn accounts(src: &dyn Source) -> Result<(Vec<Account>, usize)> {
 
 static ACCOUNTS: Mutex<Option<(Vec<Account>, usize, Instant)>> = Mutex::new(None);
 
-/// The accounts, re-read at most every two minutes.
+/// The accounts, re-read at most every five minutes (every minute while
+/// one of them can't be opened).
 pub fn accounts_now() -> Result<(Vec<Account>, usize)> {
     if let Some((a, d, at)) = ACCOUNTS.lock().clone() {
-        if at.elapsed() < Duration::from_secs(120) {
+        let failing = a.iter().any(|x| x.state == "error");
+        if at.elapsed() < Duration::from_secs(if failing { 60 } else { 300 }) {
             return Ok((a, d));
         }
     }
@@ -156,15 +164,17 @@ pub fn accounts_now() -> Result<(Vec<Account>, usize)> {
     Ok((a, d))
 }
 
-/// Forget the cached account list (after linking or removing one).
+/// Forget the cached account list (after linking or removing one, or a failure).
 pub fn refresh() {
     ACCOUNTS.lock().take();
+    crate::accounts::forget();
 }
 
 /// Search `accounts` (all of them at once) with a Gmail query.
 pub fn search_in(src: &dyn Source, accounts: &[Account], dupes: usize, query: &str, max: usize) -> Found {
     let mut found = Found { duplicates: dupes, at: Local::now().format("%-I:%M %p").to_string(), ..Default::default() };
     found.needs_sign_in = accounts.iter().filter(|a| a.state == "needs_sign_in").count();
+    found.unfinished = accounts.iter().filter(|a| a.state == "unfinished").count();
     for a in accounts.iter().filter(|a| a.state == "error") {
         found.failed.push(("a Gmail account".into(), a.note.clone()));
     }
@@ -213,7 +223,12 @@ pub fn search_in(src: &dyn Source, accounts: &[Account], dupes: usize, query: &s
 pub fn search(query: &str, max: usize, pick: Option<&str>) -> Result<Found> {
     let (all, dupes) = accounts_now()?;
     let chosen = choose(&all, pick);
-    Ok(search_in(&Composio, &chosen, dupes, query, max))
+    let found = search_in(&Composio, &chosen, dupes, query, max);
+    // An account that couldn't be searched is re-checked next time, not remembered as fine.
+    if !found.failed.is_empty() {
+        refresh();
+    }
+    Ok(found)
 }
 
 /// "my school gmail", "the second account", "lmm@…": just those accounts.
@@ -454,7 +469,13 @@ pub fn say(ask: &Ask, f: &Found, all: &[Account]) -> String {
             if f.needs_sign_in == 1 { "it" } else { "them" }
         ));
     }
-    if f.mails.is_empty() && !f.checked.is_empty() && ask.account.is_none() && f.checked.len() == 1 {
+    if f.mails.is_empty() && f.unfinished > 0 {
+        out.push_str(&format!(
+            " Also, {} Gmail sign-in{} started and never finished — if that was a different account, it isn't linked: Apps → Gmail → Add another account to finish it.",
+            f.unfinished,
+            if f.unfinished == 1 { " was" } else { "s were" }
+        ));
+    } else if f.mails.is_empty() && !f.checked.is_empty() && ask.account.is_none() && f.checked.len() == 1 {
         out.push_str(" If it's in a different Gmail account, that one isn't linked to Izuki yet — Apps → Gmail → Add another account, and pick that account when Google asks.");
     }
     out
@@ -755,6 +776,34 @@ mod tests {
         let said = say(&ask, &f, &accs);
         assert!(said.contains("Home_Depot_Hiring") && said.contains("second@example.com"), "{said}");
         assert!(said.contains("all 2 of your Gmail accounts"), "{said}");
+    }
+
+    #[test]
+    fn every_account_failing_is_never_not_found() {
+        let mut src = two_accounts();
+        src.broken.insert("ca_a".into());
+        src.broken.insert("ca_b".into());
+        let (accs, dupes) = accounts(&src).unwrap();
+        let ask = parse_ask("any emails from home depot?").unwrap();
+        let f = search_in(&src, &accs, dupes, &query_for(&ask), 10);
+        assert!(f.checked.is_empty() && f.failed.len() == 2);
+        let said = say(&ask, &f, &accs);
+        assert!(said.starts_with("I couldn't search your email, so I can't say whether"), "{said}");
+        assert!(!said.contains("No emails"), "{said}");
+        assert_eq!(coverage(&f), crate::model::TaskOutcome::Failed);
+    }
+
+    #[test]
+    fn an_unfinished_sign_in_is_said_not_hidden() {
+        let src = two_accounts();
+        let (accs, dupes) = accounts(&src).unwrap();
+        assert_eq!(accs.iter().filter(|a| a.state == "unfinished").count(), 1, "kept, as unfinished");
+        assert_eq!(accs.iter().filter(|a| a.state == "ok").count(), 2, "and never searched as an account");
+        let ask = parse_ask("any emails from the dentist?").unwrap();
+        let f = search_in(&src, &accs, dupes, &query_for(&ask), 10);
+        assert_eq!(f.unfinished, 1);
+        let said = say(&ask, &f, &accs);
+        assert!(said.contains("1 Gmail sign-in was started and never finished") && said.contains("Add another account"), "{said}");
     }
 
     #[test]

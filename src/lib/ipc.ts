@@ -538,6 +538,19 @@ export interface LookAuto {
   last: number;
 }
 
+/** Account health (accounts.rs). */
+export interface AccountHealth {
+  apps: Array<{
+    app: string;
+    name: string;
+    accounts: Array<{ id: string; who: string; state: "working" | "linked" | "needs_sign_in" | "error"; note?: string }>;
+    unfinished: number;
+    duplicates: number;
+  }>;
+  not_linked: string[];
+  at: string;
+}
+
 /** One source a deep research read (research.rs). */
 export interface ResearchSource {
   n: number;
@@ -670,6 +683,8 @@ export const api = {
   appsConnected: () => call<string[]>("apps_connected", undefined, () => ["gmail"]),
   /** A sign-in page for linking one app. */
   appsConnect: (toolkit: string) => call<string>("apps_connect", { toolkit }, () => "https://composio.dev"),
+  /** Every linked app and account, really checked (accounts.rs); `fresh` skips the 5-minute memory. */
+  accountsHealth: (fresh: boolean) => call<AccountHealth>("accounts_health", { fresh }, () => ({ apps: [], not_linked: [], at: "" })),
   /** Allow / No on a change the chat asked to make; what happened. */
   chatAction: (id: number, allow: boolean) => call<string>("chat_action", { id, allow }, () => (allow ? "Done." : "Not done.")),
   /** Show the Izuki browser (to sign in to a site once), optionally at `url`. */

@@ -103,7 +103,7 @@ const wantsApps = (t: string) => (ACCOUNTS.test(t) || needsApps(t)) && !opensAnA
 const APPS = /^\s*\[?APPS\]?\s*$/i;
 const REMIND_TAG = /\s*\[(?:REMIND|ALARM)[^\]]*\]?\s*/gi;
 // Focus mode and Recall are answered on the PC itself, at once.
-const INSTANT_ASK = /^(?:hey nova,?\s*)?(?:focus\b|stop focus|end focus|pomodoro|help me focus|i need to focus)|\bwhat was (?:i doing|i looking at|i working on|i reading|i watching|that (?:site|page|website|video|document|file))|\bwhat did i have open|\bfind (?:the|that) (?:page|site) i/i;
+const INSTANT_ASK = /\b(?:check (?:my )?(?:connected )?(?:accounts|apps|connections)|(?:which|what) (?:accounts|apps) are (?:connected|linked)|are my (?:apps|accounts) (?:connected|linked|working)|(?:connected|linked) accounts|account health)\b|^(?:hey nova,?\s*)?(?:focus\b|stop focus|end focus|pomodoro|help me focus|i need to focus)|\bwhat was (?:i doing|i looking at|i working on|i reading|i watching|that (?:site|page|website|video|document|file))|\bwhat did i have open|\bfind (?:the|that) (?:page|site) i/i;
 /** Anything about disk space — the core decides exactly, and answers with no AI. */
 const STORAGE_ASK = /spac|storag|disk|hard drive|\bssd\b|\bgb\b|\btb\b/i;
 const LATER = /^(?:hey nova,?\s*)?(?:remind me later|remember for later|don'?t let me forget|add .+ to (?:my|the) (?:shopping |later )?list|what'?s on my (?:shopping |later )?list|what do i need to (?:buy|get)|i (?:got|bought) )/i;
