@@ -29,6 +29,13 @@ const DAWS: &[Daw] = &[
     Daw { name: "MPC", exes: &["mpc", "mpc beats"], says: &["mpc"], import: "drag the .mid file onto a track, or use File, then Import" },
 ];
 
+impl Daw {
+    /// Is this process (an exe name) this DAW?
+    pub fn matches_process(&self, exe: &str) -> bool {
+        process_matches(self, exe)
+    }
+}
+
 fn process_matches(d: &Daw, name: &str) -> bool {
     let n = name.trim().to_lowercase();
     let n = n.strip_suffix(".exe").unwrap_or(&n);

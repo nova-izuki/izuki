@@ -469,6 +469,11 @@ fn parse_key(name: &str) -> Option<Key> {
         "left" => Key::LeftArrow,
         "right" => Key::RightArrow,
         "home" => Key::Home,
+        // The number pad's own keys (DAWs use them for record and loop).
+        "num*" | "multiply" => Key::Multiply,
+        "num/" | "divide" => Key::Divide,
+        "num." | "decimal" => Key::Decimal,
+        "num0" => Key::Numpad0,
         "end" => Key::End,
         "pageup" => Key::PageUp,
         "pagedown" => Key::PageDown,

@@ -359,6 +359,14 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
             return Some(text);
         }
     }
+    // Any other DAW: "record in Ableton", "stop the beat", "metronome on" —
+    // its own default shortcut, pressed only once it's really in front.
+    if !crate::flstudio::fl_running() {
+        if let Some(act) = crate::dawctl::parse(&said) {
+            let s2 = said.clone();
+            return blocking(move || crate::dawctl::run(&s2, act)).await.ok();
+        }
+    }
     // FL Studio: "make afrobeats", "stop the beat", "tempo 140" — done in FL itself.
     if crate::flstudio::is_request(&said) {
         let s2 = said.clone();

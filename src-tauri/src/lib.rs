@@ -54,6 +54,7 @@ pub mod awake;
 pub mod approvals;
 pub mod touch;
 pub mod vitals;
+pub mod dawctl;
 pub mod music_draft;
 pub mod memory;
 pub mod model;

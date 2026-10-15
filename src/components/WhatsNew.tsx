@@ -22,6 +22,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🎛️", title: "Control any DAW by voice", how: "“Record in Ableton”, “stop the beat”, “metronome on”, “loop it”, “go to the start”, “save the project” — in Ableton, REAPER, Cubase, Studio One, Reason, Cakewalk, Pro Tools and more. Izuki brings it to the front and presses its own shortcut; “stop” never starts playback." },
   { icon: "✋", title: "Air control holds on — and clicks stay clicks", how: "A hand the camera misses for a moment no longer drops your drag or makes the pointer jump, and the pointer holds still during a pinch until your hand really moves, so a click never turns into a little drag.", try: { label: "Air control", tab: "settings", id: "settings-air" } },
   { icon: "🧊", title: "Turn 3D models with your hand", how: "Switch on “3D apps” in Air control: in Blender, SketchUp, Fusion 360, Unity, Maya and more, pinch and move to turn the model; a quick pinch still clicks; ✌️ zooms.", try: { label: "Air control", tab: "settings", id: "settings-air" } },
   { icon: "🏝️", title: "Island buttons show they're working", how: "Tap Read this, Screenshot or Boost on the Island: the button lights up (“Reading…”) until it's done, then shows ✓ and what Izuki said. Esc closes the Island." },

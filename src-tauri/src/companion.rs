@@ -243,6 +243,15 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         push("assistant", &text);
         return Reply::text(text);
     }
+    // Your DAW (dawctl.rs), from the phone and Discord too: "record in Ableton".
+    if !crate::flstudio::fl_running() {
+        if let Some(act) = crate::dawctl::parse(said) {
+            push("user", said);
+            let text = crate::dawctl::run(said, act);
+            push("assistant", &text);
+            return Reply::text(text);
+        }
+    }
     // A terminal lesson (tutor.rs), from the phone and Discord too.
     if let Some(ask) = crate::tutor::parse(said) {
         push("user", said);

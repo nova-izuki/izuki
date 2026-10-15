@@ -25,6 +25,11 @@ assistant is also changing.
 | Mission evidence journal | `mission_journal.rs`, `missions.rs` | ChatGPT |
 | Missions card | `MissionsCard.tsx`, `ipc.ts` mission types | ChatGPT |
 
+## Shared skills (local, in `.claude/skills/`, not in git)
+- `izuki-dev`: architecture, traps and the checklist.
+- `ffmpeg`: converting, cutting, recording, and the .y4m Air test clips (FFmpeg 9.0 is installed).
+- `yt-dlp`: details, transcripts, audio/video, within the rules (yt-dlp isn't installed; ask first).
+
 ## Open items
 - (Done by Claude in 1.0.116, after Codex hit its limit) Missions card wording should be plain and friendly for a
   non-technical user (map checkpoint phase and stop reason to words like
