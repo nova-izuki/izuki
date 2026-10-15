@@ -25,22 +25,192 @@ fn client() -> Result<reqwest::blocking::Client> {
         .build()?)
 }
 
+#[derive(Clone)]
 pub struct Hit {
     pub title: String,
     pub url: String,
     pub snippet: String,
 }
 
-/// Search the web — DuckDuckGo first, Bing if that's unavailable.
+/// Search the web — Google through the user's Gemini key first (Gemini's
+/// own Google Search tool: real results, its own free daily allowance),
+/// then Brave, DuckDuckGo and Bing pages. (Oct 2026: DuckDuckGo answers
+/// background requests with a bot check, Bing only uses the first word,
+/// and Brave stops answering after a burst — fine as backups only.) An
+/// engine that comes back empty is skipped for 90 s, so a long research
+/// doesn't wait on it.
 pub fn search(query: &str) -> Result<Vec<Hit>> {
     let q = query.trim();
     if q.is_empty() {
         return Err(anyhow!("nothing to search for"));
     }
-    match duckduckgo(q) {
-        Ok(h) if !h.is_empty() => Ok(h),
-        _ => bing(q),
+    let engines: [(&str, fn(&str) -> Result<Vec<Hit>>); 5] =
+        [("google", google_via_gemini), ("brave", brave), ("wikipedia", wikipedia), ("duckduckgo", duckduckgo), ("bing", bing)];
+    let mut last = anyhow!("the web search didn't answer — try again in a moment");
+    for (name, engine) in engines {
+        if resting(name) {
+            continue;
+        }
+        match engine(q) {
+            Ok(h) if !h.is_empty() => return Ok(h),
+            // Wikipedia having no article isn't the engine failing.
+            Ok(_) if name == "wikipedia" => {}
+            Ok(_) => rest(name, 90),
+            Err(e) => {
+                // Out of quota / "too many requests": a long rest.
+                let busy = e.to_string().contains("429");
+                rest(name, match (name, busy) {
+                    ("google", true) => 3600,
+                    (_, true) => 180,
+                    _ => 90,
+                });
+                last = e;
+            }
+        }
     }
+    Err(last)
+}
+
+/// Wikipedia's own search (its public API — always answers, no key).
+pub fn wikipedia(q: &str) -> Result<Vec<Hit>> {
+    let v: serde_json::Value = client()?
+        .get(format!("https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={}&srlimit=5&format=json&utf8=1", enc(q)))
+        .send()?
+        .error_for_status()?
+        .json()?;
+    Ok(v["query"]["search"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| {
+            let title = r["title"].as_str()?.to_string();
+            let snippet = Html::parse_fragment(r["snippet"].as_str().unwrap_or("")).root_element().text().collect::<String>();
+            Some(Hit { url: format!("https://en.wikipedia.org/wiki/{}", enc(&title.replace(' ', "_"))), title: format!("{title} - Wikipedia"), snippet })
+        })
+        .collect())
+}
+
+static RESTING: std::sync::Mutex<Vec<(&'static str, std::time::Instant)>> = std::sync::Mutex::new(Vec::new());
+
+fn resting(name: &str) -> bool {
+    let mut r = RESTING.lock().unwrap_or_else(|e| e.into_inner());
+    r.retain(|(_, until)| *until > std::time::Instant::now());
+    r.iter().any(|(n, _)| *n == name)
+}
+
+fn rest(name: &'static str, secs: u64) {
+    eprintln!("[web] {name} gave no results — resting it for {secs} s");
+    RESTING.lock().unwrap_or_else(|e| e.into_inner()).push((name, std::time::Instant::now() + Duration::from_secs(secs)));
+}
+
+/// Brave answers a person's pace, not a burst: searches at least 2.5 s apart.
+static BRAVE_LAST: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+/// Google results through Gemini's Google Search tool. The links are
+/// Google's redirects to the real pages (reading one lands on the page).
+fn google_via_gemini(q: &str) -> Result<Vec<Hit>> {
+    use crate::settings::ProviderId;
+    let settings = crate::state::try_store().ok_or_else(|| anyhow!("not ready"))?.settings();
+    let cfg = settings.provider(ProviderId::Gemini).filter(|c| !c.api_key.trim().is_empty()).cloned().ok_or_else(|| anyhow!("no Gemini key"))?;
+    let base = cfg.base_url.trim_end_matches('/').to_string();
+    let base = if base.is_empty() { "https://generativelanguage.googleapis.com".to_string() } else { base };
+    let mut last = anyhow!("Google search through Gemini didn't answer");
+    // The light model first (quick, and its own allowance), then the chosen one.
+    for model in ["gemini-flash-lite-latest".to_string(), crate::vision::gemini_model_now(&cfg.model)] {
+        let mut body = serde_json::json!({
+            "contents": [{ "role": "user", "parts": [{ "text": format!("Search the web for: {q}\nSum up what the best results say — the key facts, numbers and dates — in a few sentences.") }] }],
+            "tools": [{ "google_search": {} }],
+            "generationConfig": { "temperature": 0.2, "maxOutputTokens": 600 }
+        });
+        if let Some(config) = crate::vision::gemini_no_think(&model).thinking_config() {
+            body["generationConfig"]["thinkingConfig"] = config;
+        }
+        let res = client()?.post(format!("{base}/v1beta/models/{model}:generateContent")).header("x-goog-api-key", cfg.api_key.trim()).json(&body).send()?;
+        let status = res.status();
+        if !status.is_success() {
+            let why: String = res.text().unwrap_or_default().split_whitespace().collect::<Vec<_>>().join(" ").chars().take(1400).collect();
+            eprintln!("[web] Google search through {model} answered {status}: {why}");
+            last = anyhow!("Google search through Gemini answered {}", status.as_u16());
+            continue;
+        }
+        let v: serde_json::Value = res.json()?;
+        let hits = parse_grounding(&v);
+        if !hits.is_empty() {
+            return Ok(hits);
+        }
+        eprintln!("[web] Google search through {model} came back with no pages ({})", v["candidates"][0]["finishReason"].as_str().unwrap_or("?"));
+    }
+    Err(last)
+}
+
+/// The pages Gemini's Google search used, each with the sentences it
+/// supported as its snippet.
+fn parse_grounding(v: &serde_json::Value) -> Vec<Hit> {
+    let meta = &v["candidates"][0]["groundingMetadata"];
+    let chunks = meta["groundingChunks"].as_array().cloned().unwrap_or_default();
+    let mut snippets = vec![String::new(); chunks.len()];
+    for s in meta["groundingSupports"].as_array().into_iter().flatten() {
+        let text = s["segment"]["text"].as_str().unwrap_or("");
+        for i in s["groundingChunkIndices"].as_array().into_iter().flatten().filter_map(|i| i.as_u64()) {
+            if let Some(sn) = snippets.get_mut(i as usize) {
+                if sn.len() < 400 {
+                    sn.push_str(text);
+                    sn.push(' ');
+                }
+            }
+        }
+    }
+    chunks
+        .iter()
+        .zip(snippets)
+        .filter_map(|(c, snippet)| {
+            let url = c["web"]["uri"].as_str()?.to_string();
+            let title = c["web"]["title"].as_str().unwrap_or("").to_string();
+            url.starts_with("http").then(|| Hit { title, url, snippet: snippet.trim().to_string() })
+        })
+        .take(8)
+        .collect()
+}
+
+fn brave(q: &str) -> Result<Vec<Hit>> {
+    {
+        let mut last = BRAVE_LAST.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(at) = *last {
+            let gap = Duration::from_millis(2500);
+            if at.elapsed() < gap {
+                std::thread::sleep(gap - at.elapsed());
+            }
+        }
+        *last = Some(std::time::Instant::now());
+    }
+    let html = client()?
+        .get(format!("https://search.brave.com/search?q={}&source=web", enc(q)))
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()?
+        .error_for_status()?
+        .text()?;
+    Ok(parse_brave(&html))
+}
+
+fn parse_brave(html: &str) -> Vec<Hit> {
+    let doc = Html::parse_document(html);
+    let result = Selector::parse(r#"div.snippet[data-type="web"]"#).unwrap();
+    let link = Selector::parse("a[href]").unwrap();
+    let title = Selector::parse(".title").unwrap();
+    let snip = Selector::parse(".generic-snippet .content, .snippet-description, .content").unwrap();
+    doc.select(&result)
+        .filter_map(|r| {
+            let a = r.select(&link).find(|a| a.value().attr("href").is_some_and(|h| h.starts_with("http") && !h.contains("brave.com")))?;
+            let t = r.select(&title).next()?;
+            Some(Hit {
+                title: t.value().attr("title").map(str::to_string).unwrap_or_else(|| text_of(t.text())),
+                url: a.value().attr("href")?.to_string(),
+                snippet: r.select(&snip).next().map(|s| text_of(s.text())).unwrap_or_default(),
+            })
+        })
+        .filter(|h| !h.title.is_empty())
+        .take(6)
+        .collect()
 }
 
 fn duckduckgo(q: &str) -> Result<Vec<Hit>> {
@@ -86,6 +256,24 @@ fn unwrap_ddg(href: &str) -> String {
     }
 }
 
+/// Bing's links go through bing.com/ck/a; the real address is `u=a1` +
+/// base64url.
+fn unwrap_bing(href: &str) -> String {
+    use base64::Engine;
+    if href.contains("bing.com/ck/") {
+        if let Some(b) = href.split(['?', '&']).find_map(|p| p.strip_prefix("u=a1")) {
+            if let Ok(bytes) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(b.trim_end_matches('=')) {
+                if let Ok(real) = String::from_utf8(bytes) {
+                    if real.starts_with("http") {
+                        return real;
+                    }
+                }
+            }
+        }
+    }
+    href.to_string()
+}
+
 fn bing(q: &str) -> Result<Vec<Hit>> {
     let html = client()?
         .get(format!("https://www.bing.com/search?q={}", enc(q)))
@@ -102,7 +290,7 @@ fn bing(q: &str) -> Result<Vec<Hit>> {
             let a = r.select(&link).next()?;
             Some(Hit {
                 title: text_of(a.text()),
-                url: a.value().attr("href")?.to_string(),
+                url: unwrap_bing(a.value().attr("href")?),
                 snippet: r.select(&snip).next().map(|s| text_of(s.text())).unwrap_or_default(),
             })
         })
@@ -128,9 +316,15 @@ pub fn search_text(query: &str) -> Result<String> {
 
 /// A page as clean, readable text: title, the main words, and its links.
 pub fn read(url: &str) -> Result<String> {
+    read_page(url).map(|(_, text)| text)
+}
+
+/// `read`, plus the address it really landed on (after any redirect).
+pub fn read_page(url: &str) -> Result<(String, String)> {
     let url = url.trim().trim_matches(|c| c == '<' || c == '>');
     let url = if url.starts_with("http") { url.to_string() } else { format!("https://{url}") };
     let res = client()?.get(&url).send()?;
+    let landed = res.url().to_string();
     let status = res.status();
     let kind = res.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_lowercase();
     if !status.is_success() {
@@ -141,9 +335,10 @@ pub fn read(url: &str) -> Result<String> {
     }
     let body = res.text()?;
     if !kind.contains("html") && !body.trim_start().starts_with('<') {
-        return Ok(clip(&body, PAGE_CHARS));
+        return Ok((landed, clip(&body, PAGE_CHARS)));
     }
-    Ok(page_text(&body, &url))
+    let text = page_text(&body, &landed);
+    Ok((landed, text))
 }
 
 /// The readable part of an HTML page (what a person would read), then a
@@ -300,6 +495,41 @@ mod tests {
         eprintln!("page:
 {}", clip(&page, 400));
         assert!(page.contains("Burna Boy"), "{page}");
+    }
+
+    /// Google through this PC's Gemini key: `cargo test --lib live_google -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn live_google_search() {
+        crate::state::init();
+        let hits = google_via_gemini("Gemini API free tier rate limits").unwrap();
+        for h in &hits {
+            eprintln!("{} | {} | {}", h.title, &h.url[..h.url.len().min(80)], &h.snippet[..h.snippet.len().min(100)]);
+        }
+        assert!(!hits.is_empty());
+    }
+
+    #[test]
+    fn reads_brave_and_bing_results() {
+        let html = r#"<main><div class="snippet svelte-x" data-pos="0" data-type="web"><a href="https://ai.google.dev/gemini-api/docs/rate-limits" class="l1"><div class="title search-snippet-title" title="Rate limits | Gemini API">Rate limits | Gemini API</div></a><div class="generic-snippet"><div class="content">Default rate limits are <strong>0.3x</strong> the standard.</div></div></div>
+            <div class="snippet" data-type="video"><a href="https://youtube.com/x"><div class="title">A video</div></a></div></main>"#;
+        let hits = parse_brave(html);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].url, "https://ai.google.dev/gemini-api/docs/rate-limits");
+        assert_eq!(hits[0].title, "Rate limits | Gemini API");
+        assert!(hits[0].snippet.contains("0.3x"), "{}", hits[0].snippet);
+        assert_eq!(
+            unwrap_bing("https://www.bing.com/ck/a?!&&p=07f4&ptn=3&ver=2&hsh=4&fclid=02cc&u=a1aHR0cHM6Ly93d3cuYmVzdGJ1eS5jb20v&ntb=1"),
+            "https://www.bestbuy.com/"
+        );
+        assert_eq!(unwrap_bing("https://example.com/a"), "https://example.com/a");
+        let g = serde_json::json!({"candidates":[{"groundingMetadata":{
+            "groundingChunks":[{"web":{"uri":"https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc","title":"ai.google.dev"}},{"web":{"uri":"https://vertexaisearch.cloud.google.com/grounding-api-redirect/def","title":"groq.com"}}],
+            "groundingSupports":[{"segment":{"text":"Gemini's free tier allows 15 requests a minute."},"groundingChunkIndices":[0]},{"segment":{"text":"Groq is free with limits."},"groundingChunkIndices":[1,0]}]}}]});
+        let hits = parse_grounding(&g);
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].title, "ai.google.dev");
+        assert!(hits[0].snippet.contains("15 requests") && hits[0].snippet.contains("Groq"), "{}", hits[0].snippet);
     }
 
     #[test]

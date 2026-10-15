@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, RotateCcw, Send, Sparkles, Square, Volume2, X } from "lucide-react";
-import { api, CAMERA_PICTURE_KEY, emit, EV, ISLAND_TO_CHAT_KEY, on } from "../../lib/ipc";
+import { api, CAMERA_PICTURE_KEY, emit, EV, ISLAND_TO_CHAT_KEY, on, type ResearchUpdate } from "../../lib/ipc";
+import { ResearchPanel, researchAsk, type ResearchState } from "../ResearchPanel";
 import { ChatText } from "../ChatText";
 import { LaterCard } from "../LaterCard";
 import { useDictation } from "../../hooks/useDictation";
@@ -50,6 +51,8 @@ interface Msg {
   ran?: string;
   /** Pictures sent with it (data URLs) — shown, sent to the brain, not saved. */
   images?: string[];
+  /** A deep research: its searches, the pages read, and its sources. */
+  research?: ResearchState;
 }
 
 /**
@@ -141,9 +144,102 @@ function clean(v: unknown): Msg[] {
         a && typeof a === "object" && typeof a.id === "number"
           ? ({ ...a, title: text(a.title), detail: text(a.detail) } as Msg["action"])
           : undefined,
+      research: storedResearch(m.research),
     });
   }
   return out;
+}
+
+const DEEP_KEY = "izk.chatDeep";
+
+/** A saved research, tidied (one still "working" when the app closed was cut short). */
+function storedResearch(r: unknown): ResearchState | undefined {
+  if (!r || typeof r !== "object") return undefined;
+  const o = r as Record<string, unknown>;
+  if (typeof o.question !== "string") return undefined;
+  const steps = Array.isArray(o.steps) ? (o.steps as ResearchState["steps"]).filter((x) => x && typeof x.text === "string").slice(-40) : [];
+  const sources = Array.isArray(o.sources) ? (o.sources as ResearchState["sources"]).filter((x) => x && typeof x.url === "string").slice(0, 30) : [];
+  return { question: o.question, phase: o.phase === "done" ? "done" : "error", steps, sources };
+}
+
+/**
+ * Run one deep research: each search and page arrives as a step, then the
+ * answer streams in. Ends on "done", an error, Stop, or two silent minutes.
+ */
+function runResearch(
+  id: number,
+  question: string,
+  history: Array<{ role: string; content: string }>,
+  setLast: (patch: Partial<Msg> | ((last: Msg) => Partial<Msg>)) => void,
+  finish: { current: ((why: string) => void) | null }
+): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let ended = false;
+    let text = "";
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    // The answer streams in many small pieces: one screen update per frame.
+    let frame = 0;
+    const flush = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+      setLast({ content: text });
+    };
+    const withResearch = (last: Msg, patch: Partial<ResearchState>): ResearchState => ({
+      ...(last.research ?? { question, phase: "working", steps: [], sources: [] }),
+      ...patch,
+    });
+    const end = () => {
+      if (ended) return;
+      ended = true;
+      clearTimeout(quiet);
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+      finish.current = null;
+      void off.then((f) => f());
+      resolve();
+    };
+    const fail = (why: string) => {
+      if (text) flush();
+      setLast((last) => ({ content: text || why, failed: !text, retry: !text, research: withResearch(last, { phase: "error" }) }));
+      end();
+    };
+    const wait = () => {
+      clearTimeout(quiet);
+      quiet = setTimeout(() => {
+        void api.chatCancel(id);
+        fail("The research stopped answering — check your internet and try again.");
+      }, 120_000);
+    };
+    finish.current = (why: string) => fail(why);
+    const off = on<ResearchUpdate>(EV.research, (u) => {
+      if (u.id !== id || ended) return;
+      wait();
+      if (u.kind === "text") {
+        text += u.text;
+        if (!frame) frame = requestAnimationFrame(flush);
+      } else if (u.kind === "done") {
+        flush();
+        setLast((last) => ({ research: withResearch(last, { phase: "done", sources: u.sources ?? last.research?.sources ?? [] }) }));
+        end();
+      } else if (u.kind === "error") {
+        fail(u.text);
+      } else {
+        setLast((last) => {
+          const r = withResearch(last, {});
+          return {
+            research: {
+              ...r,
+              steps: [...r.steps, { kind: u.kind, text: u.text, url: u.url, site: u.site }].slice(-40),
+              sources: u.sources ?? r.sources,
+            },
+          };
+        });
+      }
+    });
+    wait();
+    // Listening first, so the first steps aren't missed.
+    void off.then(() => api.researchStart(id, question, history)).catch((e) => fail(String(e)));
+  });
 }
 
 function load(): Msg[] {
@@ -349,6 +445,15 @@ export function ChatTab() {
     shareHistory(msgs.slice(baseline.current).map(({ role, content }) => ({ role, content })));
   }, [msgs]);
 
+  /** Deep research on (remembered on this PC). */
+  const [deep, setDeep] = useState(() => {
+    try {
+      return localStorage.getItem(DEEP_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+
   const send = useCallback(
     /**
      * `here`: carry on in the last reply instead of starting a new one —
@@ -445,6 +550,18 @@ export function ChatTab() {
           copy[copy.length - 1] = { ...last, ...(typeof patch === "function" ? patch(last) : patch) };
           return copy;
         });
+      // Deep research (research.rs): many searches, many pages, an answer
+      // with its sources — with the Deep switch on, or "research …".
+      const researchQ = !note && !here && !images.length ? (deep ? t : researchAsk(t)) : null;
+      if (researchQ) {
+        setLast({ status: undefined, research: { question: researchQ, phase: "working", steps: [], sources: [] } });
+        await runResearch(id, researchQ, history, setLast, finish);
+        if (streamId.current === id) {
+          streamId.current = null;
+          setBusy(false);
+        }
+        return;
+      }
       // The Later list ("remind me later I'm buying…", "what's on my list"): done at once.
       if (LATER.test(t) || INSTANT_ASK.test(t) || STORAGE_ASK.test(t)) {
         const said = await api.instantCommand(t).catch(() => null);
@@ -595,14 +712,15 @@ export function ChatTab() {
       setBusy(false);
       input.current?.focus();
     },
-    [busy, msgs]
+    [busy, msgs, deep]
   );
 
   const stop = () => {
     void api.cancelTask();
     if (streamId.current !== null) void api.chatCancel(streamId.current);
-    streamId.current = null;
+    // Told before the reply is let go, so it can show it stopped.
     finish.current?.("Stopped.");
+    streamId.current = null;
     setBusy(false);
   };
 
@@ -805,13 +923,15 @@ export function ChatTab() {
                 {m.calls && m.calls.length > 0 && <ToolCards calls={m.calls} />}
                 {m.steps && m.steps.length > 0 && !m.calls?.length && <Steps steps={m.steps} />}
                 {m.action && <ActionCard action={m.action} busy={busy} onAnswer={(allow) => void answer(i, allow)} ran={m.ran} />}
+                {m.research && <ResearchPanel r={m.research} />}
                 {m.content ? (
                   m.role === "assistant" ? <ChatText text={m.content} /> : m.content
-                ) : busy && i === msgs.length - 1 ? (
+                ) : busy && i === msgs.length - 1 && !m.research ? (
                   <span className={cx("flex items-center gap-1.5 text-izk-muted", (!!m.steps?.length || !!m.action) && "mt-1.5")}>
                     <Loader2 size={13} className="animate-spin" /> {m.status ?? "Thinking…"}
                   </span>
                 ) : null}
+                {m.research?.phase === "done" && m.content && <ResearchPanel r={m.research} footer text={m.content} />}
                 {m.role === "assistant" && m.content && !m.failed && !(busy && i === msgs.length - 1) && (
                   <ReplyTools text={m.content} onRetry={i === msgs.length - 1 ? () => retry(i) : undefined} onAsk={i === msgs.length - 1 ? (ask) => void send(ask) : undefined} />
                 )}
@@ -942,6 +1062,27 @@ export function ChatTab() {
             >
               {settings.chat_auto_run ? "⚡ Auto" : "🛡️ Ask"}
             </button>
+            {/* Deep research: Izuki searches and reads many pages, then answers with sources. */}
+            <button
+              type="button"
+              onClick={() => {
+                const next = !deep;
+                setDeep(next);
+                try {
+                  localStorage.setItem(DEEP_KEY, next ? "1" : "0");
+                } catch {
+                  /* only a convenience */
+                }
+              }}
+              aria-pressed={deep}
+              title={deep ? "Deep research is on: Izuki searches the web, reads many pages and answers with its sources (about a minute). Tap to turn off." : "Deep research: Izuki searches the web, reads many pages and answers with its sources. Or just type “research …”."}
+              className={cx(
+                "flex h-[36px] shrink-0 items-center gap-1 rounded-full border px-2.5 text-[11px] font-semibold transition-colors",
+                deep ? "border-izk-teal/50 bg-izk-teal/15 text-izk-teal" : "border-white/10 bg-white/6 text-izk-ink hover:bg-white/10"
+              )}
+            >
+              🔭 Deep
+            </button>
             <textarea
               ref={input}
               value={draft}
@@ -959,7 +1100,7 @@ export function ChatTab() {
                   void send(draft, false, false, pics);
                 }
               }}
-              placeholder={dictation.listening ? "Listening…" : "Message Izuki"}
+              placeholder={dictation.listening ? "Listening…" : deep ? "What should I research?" : "Message Izuki"}
               className="izk-field izk-no-drag max-h-[120px] min-h-[36px] flex-1 resize-none rounded-[18px] py-[8px] text-[13px]"
             />
             {busy ? (

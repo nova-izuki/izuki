@@ -20,6 +20,7 @@ assistant is also changing.
 | Terminal tutor (CMD/PowerShell lessons) | `tutor.rs` | Claude |
 | Discord reconnect/resume | `discord.rs` | Claude |
 | Windows looks (accent, dark, wallpapers, undo) | `winlook.rs`, `LooksCard.tsx` | Claude |
+| Deep research (chat) and web search engines | `research.rs`, `web.rs`, `ResearchPanel.tsx` | Claude |
 | Keep-awake during missions | `awake.rs` | Claude |
 | Island glances (missions, lesson) | `island.rs`, `Island.tsx` | Claude |
 | Execution verdicts, contracts, budgets | `execution.rs`, `model.rs` (`TaskOutcome`) | ChatGPT |

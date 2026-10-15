@@ -520,6 +520,24 @@ export interface LooksStatus {
   note?: string | null;
 }
 
+/** One source a deep research read (research.rs). */
+export interface ResearchSource {
+  n: number;
+  title: string;
+  url: string;
+  site: string;
+}
+
+/** A deep-research update (research.rs). */
+export interface ResearchUpdate {
+  id: number;
+  kind: "plan" | "search" | "read" | "skip" | "think" | "write" | "text" | "done" | "error";
+  text: string;
+  url?: string;
+  site?: string;
+  sources?: ResearchSource[];
+}
+
 /** A Windows tweak (tweaks.rs): a switch, read live from Windows. */
 export interface WindowsTweak {
   id: string;
@@ -802,6 +820,13 @@ export const api = {
   boostActivePowerPlan: () => call<string>("boost_active_power_plan", undefined, () => "unknown"),
   alarmSnooze: (text: string, minutes: number) => call<Reminder>("alarm_snooze", { text, minutes }, () => ({ id: "", at: 0, text })),
   chatCancel: (id: number) => call<void>("chat_cancel", { id }, () => undefined).catch(() => undefined),
+  /** Deep research: updates arrive as EV.research tagged `id`; stop with chatCancel. */
+  researchStart: (id: number, question: string, history: Array<{ role: string; content: string }>) =>
+    call<void>("research_start", { id, question, history }, () => undefined),
+  researchSave: (question: string, text: string) =>
+    call<Note>("research_save", { question, text }, () => {
+      throw new Error("Notes work in the Izuki app on your PC.");
+    }),
   /** Connect to the paired Android phone. */
   androidConnect: () => call<string>("android_connect", undefined, () => { throw new Error("not in Izuki"); }),
   /** Do something on the phone from the PC ("… on my phone"). */
@@ -1001,6 +1026,8 @@ export const EV = {
   chatDone: "izuki://chat-done",
   /** Streamed words of a conversation reply (chat.rs). */
   chatDelta: "izuki://chat-delta",
+  /** Deep research progress and answer (research.rs). */
+  research: "izuki://research",
   /** The one-tap replies to offer next (string[]). */
   suggestions: "izuki://suggestions",
   /** Custom wake words were added or removed — the detector reloads. */

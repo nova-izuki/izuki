@@ -153,6 +153,26 @@ pub fn from_text(title: &str, source: &str, text: &str, make_notes: bool) -> Res
     })
 }
 
+/// A finished piece of writing kept as it is (a deep-research answer with
+/// its sources), up to 60,000 characters.
+pub fn keep(title: &str, source: &str, text: &str) -> Result<Note> {
+    let text: String = text.trim().chars().take(60_000).collect();
+    if text.len() < 3 {
+        bail!("there was nothing to save");
+    }
+    let now = crate::model::now_ms();
+    save(Note {
+        id: uuid::Uuid::new_v4().to_string(),
+        title: tidy_title(title),
+        text,
+        source: source.to_string(),
+        created_at: now,
+        updated_at: now,
+        cards: Vec::new(),
+        lesson: false,
+    })
+}
+
 /// Teacher mode: add what was just explained to today's lesson notes for
 /// this page (one running note per page per day).
 pub fn add_to_lesson(text: &str) -> Result<Note> {

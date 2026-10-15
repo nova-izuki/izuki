@@ -43,6 +43,7 @@ pub mod air;
 pub mod daw;
 pub mod tweaks;
 pub mod winlook;
+pub mod research;
 pub mod remote;
 pub mod rtools;
 pub mod offline;
@@ -409,6 +410,8 @@ pub fn run() {
             commands::look_accent,
             commands::look_switch,
             commands::look_undo,
+            commands::research_start,
+            commands::research_save,
             commands::restart_explorer,
             commands::mate_line,
             commands::fl_setup,

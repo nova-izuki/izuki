@@ -1816,6 +1816,20 @@ pub async fn chat_allow_last(allow: bool) -> R<Option<String>> {
 #[tauri::command]
 pub fn chat_cancel(id: u64) {
     crate::chat::cancel(id);
+    crate::research::cancel(id);
+}
+
+/// Deep research (research.rs): searches, pages read and the answer arrive
+/// as `izuki://research` events tagged `id`. Stopped with `chat_cancel`.
+#[tauri::command]
+pub fn research_start(app: AppHandle, id: u64, question: String, history: Vec<crate::chat::Turn>) {
+    crate::research::start(app, id, question, history);
+}
+
+/// Keep a deep-research answer in Notes, as written.
+#[tauri::command]
+pub async fn research_save(question: String, text: String) -> R<crate::notes::Note> {
+    blocking(move || crate::notes::keep(&format!("Research — {question}"), "Deep research", &text).map_err(err)).await?
 }
 
 /// Connect to the paired Android phone (Settings → Control my Android).

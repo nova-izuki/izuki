@@ -895,3 +895,41 @@ html.izk-away .izk-aurora span {
 @keyframes izk-demo-pinch { 50% { transform: scale(0.78); } }
 @keyframes izk-demo-drag { 0%, 100% { transform: translateX(-7px) scale(0.8); } 50% { transform: translateX(7px) scale(0.8); } }
 @media (prefers-reduced-motion: reduce) { .izk-demo { animation: none !important; } }
+
+/* Deep research: the computer with an eye (ResearchPanel). It moves only
+   while a research is running — nothing animates once it's done. */
+.izk-research-eye::after {
+  content: "";
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  top: 22%;
+  height: 1.5px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, transparent, rgba(78, 205, 196, 0.9), transparent);
+  opacity: 0;
+}
+.izk-research-eye.is-live::after {
+  animation: izk-research-scan 1.6s ease-in-out infinite;
+}
+.izk-research-eye.is-live .izk-research-pupil {
+  animation: izk-research-look 2.4s ease-in-out infinite;
+}
+@keyframes izk-research-scan {
+  0% { transform: translateY(0); opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateY(9px); opacity: 0; }
+}
+@keyframes izk-research-look {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  60% { transform: translateX(2px); }
+}
+.izk-research-live {
+  box-shadow: 0 0 0 1px rgba(78, 205, 196, 0.08), 0 6px 20px rgba(78, 205, 196, 0.08);
+}
+@media (prefers-reduced-motion: reduce) {
+  .izk-research-eye.is-live::after,
+  .izk-research-eye.is-live .izk-research-pupil { animation: none; }
+}
