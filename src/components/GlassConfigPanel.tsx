@@ -2,7 +2,7 @@ import { ScrollButtons } from "./ScrollButtons";
 import { DrawCommandBar } from "./TalkToIzuki";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Layers, MessageCircle, Minus, PenLine, Settings2, X, Eye, Blocks, Maximize2, Minimize2, NotebookPen } from "lucide-react";
+import { Layers, MessageCircle, Minus, PenLine, Settings2, X, Eye, Blocks, Maximize2, Minimize2, NotebookPen, Palette } from "lucide-react";
 import { IzukiMark } from "./IzukiMark";
 import { Segmented, cx } from "./ui";
 import { DrawTab } from "./tabs/DrawTab";
@@ -12,6 +12,7 @@ import { NotesTab } from "./tabs/NotesTab";
 import { FlowLibrary } from "./tabs/FlowLibrary";
 import { WatcherManager } from "./tabs/WatcherManager";
 import { SettingsTab } from "./tabs/SettingsTab";
+import { StyleTab } from "./tabs/StyleTab";
 import { StatusToast } from "./StatusToast";
 import { VoiceEngine } from "./VoiceEngine";
 import { OnboardingTour } from "./OnboardingTour";
@@ -34,6 +35,7 @@ const TABS: Array<{ value: TabId; label: string; icon: React.ReactNode }> = [
   { value: "notes", label: "Notes", icon: <NotebookPen size={13} strokeWidth={2.4} /> },
   { value: "flows", label: "Flows", icon: <Layers size={13} strokeWidth={2.4} /> },
   { value: "watchers", label: "Watchers", icon: <Eye size={13} strokeWidth={2.4} /> },
+  { value: "style", label: "Style", icon: <Palette size={13} strokeWidth={2.4} /> },
   { value: "settings", label: "Settings", icon: <Settings2 size={13} strokeWidth={2.4} /> },
 ];
 
@@ -236,6 +238,7 @@ export function GlassConfigPanel() {
                 {tab === "notes" && <NotesTab />}
                 {tab === "flows" && <FlowLibrary />}
                 {tab === "watchers" && <WatcherManager />}
+                {tab === "style" && <StyleTab />}
                 {tab === "settings" && <SettingsTab />}
               </Recover>
             </motion.div>

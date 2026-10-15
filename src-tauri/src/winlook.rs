@@ -65,6 +65,15 @@ enum Extra {
     Lines(u8, u32),
     /// One thin glowing ring: centre (0–1 across, 0–1 down), radius (screen widths), colour.
     Ring(f32, f32, f32, u32),
+    /// A sun or moon: centre (0–1 across, 0–1 down), radius (screen widths),
+    /// top colour, bottom colour, synthwave stripes across its lower half.
+    Sun(f32, f32, f32, u32, u32, bool),
+    /// A glowing perspective grid on the ground below a horizon (0–1 down), colour.
+    Grid(f32, u32),
+    /// Rolling waves or dunes, far to near, with bright crests: how many, the nearest colour.
+    Waves(u8, u32),
+    /// Falling columns of glowing code: chance per column (0–1), colour.
+    Rain(f32, u32),
 }
 
 struct Wall {
@@ -202,6 +211,113 @@ const PRESETS: &[Preset] = &[
             extras: &[Extra::Ring(0.5, 0.5, 0.21, 0x94A3B8)],
         },
     },
+    Preset {
+        id: "synthwave",
+        name: "Synthwave",
+        blurb: "A striped 80s sun over a glowing neon grid.",
+        dark: true,
+        accent: 0xC026D3,
+        bars: true,
+        titles: true,
+        glass: true,
+        wall: Wall {
+            top: 0x0B0221,
+            bottom: 0x2A0845,
+            glows: &[(0.5, 0.6, 0.5, 0xF472B6, 0.35), (0.15, 0.2, 0.35, 0x6366F1, 0.25)],
+            extras: &[Extra::Stars(0.05, 0xFDF4FF), Extra::Sun(0.5, 0.5, 0.15, 0xFDE047, 0xEC4899, true), Extra::Grid(0.62, 0xE879F9)],
+        },
+    },
+    Preset {
+        id: "sunset",
+        name: "Sunset",
+        blurb: "The sun going down behind purple hills.",
+        dark: true,
+        accent: 0xE11D48,
+        bars: false,
+        titles: true,
+        glass: true,
+        wall: Wall {
+            top: 0x1E1B4B,
+            bottom: 0xF97316,
+            glows: &[(0.5, 0.68, 0.5, 0xFB923C, 0.45), (0.2, 0.15, 0.4, 0x7C3AED, 0.25)],
+            extras: &[Extra::Sun(0.5, 0.5, 0.07, 0xFEF3C7, 0xFDBA74, false), Extra::Ridges(3, 0x140A24)],
+        },
+    },
+    Preset {
+        id: "ocean",
+        name: "Ocean",
+        blurb: "Moonlight on rolling night waves.",
+        dark: true,
+        accent: 0x0D9488,
+        bars: true,
+        titles: true,
+        glass: true,
+        wall: Wall {
+            top: 0x020617,
+            bottom: 0x0C4A6E,
+            glows: &[(0.72, 0.3, 0.4, 0x38BDF8, 0.25)],
+            extras: &[Extra::Stars(0.04, 0xE0F2FE), Extra::Sun(0.74, 0.24, 0.03, 0xF8FAFC, 0xCBD5E1, false), Extra::Waves(5, 0x01101C)],
+        },
+    },
+    Preset {
+        id: "matrix",
+        name: "Matrix",
+        blurb: "Green code raining down a black screen.",
+        dark: true,
+        accent: 0x16A34A,
+        bars: false,
+        titles: true,
+        glass: false,
+        wall: Wall { top: 0x000000, bottom: 0x010804, glows: &[(0.5, 0.5, 0.6, 0x14532D, 0.18)], extras: &[Extra::Rain(0.55, 0x22C55E)] },
+    },
+    Preset {
+        id: "arctic",
+        name: "Arctic",
+        blurb: "Bright, icy mountains under a pale sun.",
+        dark: false,
+        accent: 0x0284C7,
+        bars: false,
+        titles: true,
+        glass: true,
+        wall: Wall {
+            top: 0xDBEAFE,
+            bottom: 0xF8FAFC,
+            glows: &[(0.25, 0.2, 0.35, 0xFFFFFF, 0.7)],
+            extras: &[Extra::Sun(0.25, 0.22, 0.04, 0xFFFFFF, 0xFEF9C3, false), Extra::Ridges(3, 0x64748B)],
+        },
+    },
+    Preset {
+        id: "galaxy",
+        name: "Galaxy",
+        blurb: "A pink and blue nebula full of stars.",
+        dark: true,
+        accent: 0xDB2777,
+        bars: true,
+        titles: true,
+        glass: true,
+        wall: Wall {
+            top: 0x02010A,
+            bottom: 0x0A0520,
+            glows: &[(0.36, 0.46, 0.33, 0xDB2777, 0.42), (0.6, 0.4, 0.38, 0x6366F1, 0.42), (0.5, 0.45, 0.12, 0xFDE68A, 0.3)],
+            extras: &[Extra::Stars(0.08, 0xFFFFFF), Extra::Stars(0.04, 0xFBCFE8)],
+        },
+    },
+    Preset {
+        id: "dune",
+        name: "Dune",
+        blurb: "Warm sand dunes in the afternoon sun.",
+        dark: false,
+        accent: 0xCA8A04,
+        bars: false,
+        titles: true,
+        glass: true,
+        wall: Wall {
+            top: 0xFEF3C7,
+            bottom: 0xFDBA74,
+            glows: &[(0.72, 0.25, 0.32, 0xFFFFFF, 0.5)],
+            extras: &[Extra::Sun(0.72, 0.28, 0.05, 0xFFFBEB, 0xFDE68A, false), Extra::Waves(4, 0x9A3412)],
+        },
+    },
 ];
 
 /// Accent colours offered as swatches (and understood by name).
@@ -221,6 +337,8 @@ const COLOURS: &[(&str, u32)] = &[
     ("magenta", 0xC026D3),
     ("grey", 0x64748B),
     ("gray", 0x64748B),
+    ("rose", 0xE11D48),
+    ("sky", 0x0284C7),
 ];
 
 #[derive(Debug, Clone, Serialize)]
@@ -251,6 +369,8 @@ pub struct Status {
     pub can_undo: bool,
     /// Something to tell you after a change (e.g. how to turn Spotlight back on).
     pub note: Option<String>,
+    /// Looks that change by themselves.
+    pub auto: Auto,
 }
 
 /// A registry value exactly as it was: its type and bytes (None = it didn't exist).
@@ -280,6 +400,154 @@ struct Before {
 struct Memory {
     before: Option<Before>,
     current: Option<String>,
+    #[serde(default)]
+    auto: Auto,
+}
+
+/// Looks that change by themselves.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Auto {
+    /// "off", "daynight" (one look by day, another at night) or "shuffle" (a new look every so often).
+    pub mode: String,
+    pub day: String,
+    pub night: String,
+    /// "HH:MM", 24-hour.
+    pub day_at: String,
+    pub night_at: String,
+    /// Shuffle: minutes between looks.
+    pub every_min: u32,
+    /// Shuffle: the looks to go through (empty = all of them).
+    pub pool: Vec<String>,
+    /// Change the wallpaper too.
+    pub wallpaper: bool,
+    /// When shuffle last changed the look (ms).
+    #[serde(default)]
+    pub last: i64,
+}
+
+impl Default for Auto {
+    fn default() -> Self {
+        Auto {
+            mode: "off".into(),
+            day: "paper".into(),
+            night: "nova".into(),
+            day_at: "07:00".into(),
+            night_at: "19:00".into(),
+            every_min: 60,
+            pool: Vec::new(),
+            wallpaper: true,
+            last: 0,
+        }
+    }
+}
+
+fn minutes(hhmm: &str) -> Option<u32> {
+    let (h, m) = hhmm.trim().split_once(':')?;
+    let (h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
+    (h < 24 && m < 60).then_some(h * 60 + m)
+}
+
+/// The look Auto wants now, if it isn't the one showing. `now_min` is
+/// minutes since midnight, `now_ms` the clock.
+fn due(a: &Auto, current: Option<&str>, now_min: u32, now_ms: i64) -> Option<String> {
+    match a.mode.as_str() {
+        "daynight" => {
+            let (day, night) = (minutes(&a.day_at)?, minutes(&a.night_at)?);
+            // Daytime may wrap past midnight (e.g. a night shift: day 20:00, night 08:00).
+            let is_day = if day <= night { now_min >= day && now_min < night } else { now_min >= day || now_min < night };
+            let want = if is_day { &a.day } else { &a.night };
+            (current != Some(want.as_str())).then(|| want.clone())
+        }
+        "shuffle" => {
+            let pool: Vec<&str> = if a.pool.is_empty() { PRESETS.iter().map(|p| p.id).collect() } else { a.pool.iter().map(String::as_str).collect() };
+            if pool.is_empty() {
+                return None;
+            }
+            let at = current.and_then(|c| pool.iter().position(|p| *p == c));
+            let waited = now_ms - a.last >= i64::from(a.every_min.max(5)) * 60_000;
+            if at.is_some() && !waited {
+                return None;
+            }
+            let next = pool[at.map_or(0, |i| (i + 1) % pool.len())];
+            (current != Some(next)).then(|| next.to_string())
+        }
+        _ => None,
+    }
+}
+
+/// Turn Auto on, change it, or turn it off. The look changes straight away if it should.
+pub fn set_auto(mut a: Auto) -> Result<Status> {
+    if !["off", "daynight", "shuffle"].contains(&a.mode.as_str()) {
+        return Err(anyhow!("no auto mode called {}", a.mode));
+    }
+    for id in [&a.day, &a.night].into_iter().chain(a.pool.iter()) {
+        if !PRESETS.iter().any(|p| p.id == id) {
+            return Err(anyhow!("there's no look called {id}"));
+        }
+    }
+    if minutes(&a.day_at).is_none() || minutes(&a.night_at).is_none() {
+        return Err(anyhow!("times look like 07:00 or 19:30"));
+    }
+    a.every_min = a.every_min.clamp(5, 7 * 24 * 60);
+    a.last = 0;
+    {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        let mut m = memory();
+        m.auto = a;
+        remember(&m)?;
+    }
+    tick();
+    Ok(status())
+}
+
+/// Change the look if Auto says it's time.
+fn tick() {
+    // Decided and done in one turn, so Auto switched off (or Undo) a moment
+    // ago can't be overtaken by a decision made just before.
+    let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+    let m = memory();
+    let now = chrono::Local::now();
+    let now_min = chrono::Timelike::hour(&now) * 60 + chrono::Timelike::minute(&now);
+    let now_ms = now.timestamp_millis();
+    let Some(id) = due(&m.auto, m.current.as_deref(), now_min, now_ms) else { return };
+    match apply_locked(&id, m.auto.wallpaper) {
+        Ok(_) => {
+            let mut m = memory();
+            m.auto.last = now_ms;
+            let _ = remember(&m);
+            eprintln!("[looks] auto: {id}");
+        }
+        Err(e) => eprintln!("[looks] auto couldn't change the look: {e}"),
+    }
+}
+
+/// Auto's clock: checks once a minute (started with the app).
+pub fn spawn_auto() {
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        std::thread::spawn(|| loop {
+            std::thread::sleep(std::time::Duration::from_secs(60));
+            if memory().auto.mode != "off" {
+                tick();
+            }
+        });
+    });
+}
+
+/// A bigger picture of one look's wallpaper (for the Style tab's preview), painted once.
+pub fn big_preview(id: &str) -> Result<String> {
+    use base64::Engine;
+    static CACHE: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+    if let Some((_, url)) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|(k, _)| k == id) {
+        return Ok(url.clone());
+    }
+    let p = PRESETS.iter().find(|p| p.id == id).ok_or_else(|| anyhow!("there's no look called {id}"))?;
+    let img = paint(&p.wall, p.dark, 960, 540);
+    let mut bytes = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, 86).encode_image(&img)?;
+    let url = format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(&bytes));
+    CACHE.lock().unwrap_or_else(|e| e.into_inner()).push((id.to_string(), url.clone()));
+    Ok(url)
 }
 
 fn dir() -> std::path::PathBuf {
@@ -540,6 +808,95 @@ fn paint(w: &Wall, dark: bool, width: u32, height: u32) -> image::RgbImage {
                     let a = 0.55 * (-(e * wf / 1.4).powi(2)).exp() + 0.18 * (-(e / 0.025).powi(2)).exp();
                     light(&mut c, rgb_f(col), a, dark);
                 }
+                Extra::Sun(sx, sy, r, top, bottom, stripes) => {
+                    let dx = u - sx;
+                    let dy = (v - sy) * aspect;
+                    let d = (dx * dx + dy * dy).sqrt();
+                    let (top, bottom) = (rgb_f(top), rgb_f(bottom));
+                    // A soft glow around it, in the sun's own middle colour.
+                    if d > r {
+                        let mut halo = top;
+                        mix(&mut halo, bottom, 0.5);
+                        light(&mut c, halo, if dark { 1.0 } else { 0.55 } * 0.4 * (-((d - r) / (r * 0.6)).powi(2)).exp() + 0.12 * (-(d - r) / (r * 2.5)).exp(), true);
+                    }
+                    let mut inside = smoothstep(r + 1.0 / wf, r - 1.0 / wf, d);
+                    if stripes && dy > 0.0 {
+                        // Gaps that widen toward the bottom, like an 80s poster sun.
+                        let k = dy / r;
+                        let band = (k * 7.0).fract();
+                        inside *= smoothstep(k * 0.55 - 0.03, k * 0.55 + 0.03, band);
+                    }
+                    if inside > 0.0 {
+                        let t = ((dy / r + 1.0) / 2.0).clamp(0.0, 1.0);
+                        let mut sun = top;
+                        mix(&mut sun, bottom, t);
+                        mix(&mut c, sun, inside);
+                    }
+                }
+                Extra::Grid(horizon, col) => {
+                    let depth = v - horizon;
+                    if depth > 0.0 {
+                        // The ground (it hides the lower half of a sun), then the lines.
+                        let ground = [sky[0] * 0.25, sky[1] * 0.15, sky[2] * 0.3];
+                        mix(&mut c, ground, smoothstep(0.0, 0.004, depth));
+                        let col = rgb_f(col);
+                        let z = 0.5 / depth;
+                        let dz = 0.5 / (depth * depth * hf);
+                        let fz = z.fract();
+                        let across = (1.0 - fz.min(1.0 - fz) / (dz * 1.4).max(1e-4)).clamp(0.0, 1.0);
+                        let xx = (u - 0.5) / depth * 0.9;
+                        let dxx = 0.9 / (depth * wf);
+                        let fx = xx.fract().abs();
+                        let along = (1.0 - fx.min(1.0 - fx) / (dxx * 1.4).max(1e-4)).clamp(0.0, 1.0);
+                        let fade = smoothstep(0.0, 0.3, depth);
+                        light(&mut c, col, (across.max(along) * 0.9 + 0.25 * (-depth / 0.02).exp()) * fade.max(0.25), true);
+                    } else {
+                        // The horizon glows.
+                        light(&mut c, rgb_f(col), 0.35 * (depth / 0.015).exp(), true);
+                    }
+                }
+                Extra::Waves(count, near) => {
+                    let near = rgb_f(near);
+                    for i in 0..count {
+                        let fi = i as f32;
+                        let k = (fi + 1.0) / count as f32;
+                        let base = 0.55 + 0.42 * fi / count as f32;
+                        let crest = base + 0.022 * (u * (4.0 + fi) * 3.1 + fi * 1.7).sin() + 0.01 * (u * (11.0 + 2.0 * fi) + fi).sin();
+                        let s = smoothstep(crest - 1.0 / hf, crest + 1.0 / hf, v);
+                        if s > 0.0 {
+                            let mut layer = sky;
+                            mix(&mut layer, near, 0.3 + 0.7 * k);
+                            // Light catching each crest.
+                            let shine = (-((v - crest) * hf / (1.5 + 2.0 * k)).powi(2)).exp() * (0.35 - 0.2 * k);
+                            light(&mut layer, sky, shine.max(0.0), true);
+                            mix(&mut c, layer, s);
+                        }
+                    }
+                }
+                Extra::Rain(chance, col) => {
+                    let col = rgb_f(col);
+                    let cell = (hf / 60.0).max(6.0);
+                    let cx = (x / cell).floor() as u32;
+                    if unit(hash(cx, 0, seed)) < chance {
+                        let head = 0.1 + 0.95 * unit(hash(cx, 1, seed));
+                        let len = 0.15 + 0.4 * unit(hash(cx, 2, seed));
+                        let t = head - v;
+                        if t > -0.01 && t < len {
+                            // A glyph: a 3×5 pattern of dots from the cell's number.
+                            let row = (y / cell).floor() as u32;
+                            let bits = hash(cx, row, seed + 3);
+                            let gx = (((x % cell) / cell) * 4.0) as u32;
+                            let gy = (((y % cell) / cell) * 6.0) as u32;
+                            let lit = (1..4).contains(&gx) && (1..6).contains(&gy) && (bits >> ((gy - 1) * 3 + gx - 1)) & 1 == 1;
+                            if lit {
+                                let fade = (1.0 - t.max(0.0) / len).powi(2);
+                                let is_head = t < cell / hf;
+                                let glow = if is_head { [220.0, 255.0, 230.0] } else { col };
+                                light(&mut c, glow, fade * if is_head { 0.95 } else { 0.75 }, true);
+                            }
+                        }
+                    }
+                }
             }
         }
         let vignette = if dark {
@@ -682,6 +1039,11 @@ fn put_wallpaper(file: &str) -> Result<()> {
 /// Apply a whole look. `wallpaper: false` keeps your picture.
 pub fn apply(id: &str, wallpaper: bool) -> Result<Status> {
     let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+    apply_locked(id, wallpaper)
+}
+
+/// `apply`, for a caller already holding `TURN`.
+fn apply_locked(id: &str, wallpaper: bool) -> Result<Status> {
     let p = PRESETS.iter().find(|p| p.id == id).ok_or_else(|| anyhow!("there's no look called {id}"))?;
     // Paint first: if that fails, nothing has changed yet.
     let file = if wallpaper { Some(wallpaper_for(p)?) } else { None };
@@ -805,6 +1167,8 @@ pub fn undo() -> Result<Status> {
     }
     m.before = None;
     m.current = None;
+    // Auto would only bring a look straight back.
+    m.auto.mode = "off".into();
     remember(&m)?;
     eprintln!("[looks] undone");
     let mut s = status_now(m);
@@ -848,6 +1212,7 @@ fn status_now(m: Memory) -> Status {
         current,
         can_undo: m.before.is_some(),
         note: None,
+        auto: m.auto,
     }
 }
 
@@ -984,6 +1349,22 @@ mod win {
     pub const REG_BINARY: u32 = 3;
     pub const REG_DWORD: u32 = 4;
 
+    /// COM for this thread, released when dropped (only if this call started it).
+    struct Com(bool);
+    impl Com {
+        fn start() -> Self {
+            use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+            Com(unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok())
+        }
+    }
+    impl Drop for Com {
+        fn drop(&mut self) {
+            if self.0 {
+                unsafe { windows::Win32::System::Com::CoUninitialize() };
+            }
+        }
+    }
+
     pub fn wide(s: &str) -> Vec<u8> {
         s.encode_utf16().chain(std::iter::once(0)).flat_map(|u| u.to_le_bytes()).collect()
     }
@@ -1030,6 +1411,22 @@ mod win {
     }
 
     pub fn set_wallpaper(file: &str) -> Result<()> {
+        // Windows' wallpaper interface fades from the old picture to the new
+        // one; the older call (below) is the fallback, and clears to a colour.
+        if !file.is_empty() {
+            use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
+            use windows::Win32::UI::Shell::{DesktopWallpaper, IDesktopWallpaper, DWPOS_FILL};
+            let faded = unsafe {
+                let _com = Com::start();
+                CoCreateInstance::<_, IDesktopWallpaper>(&DesktopWallpaper, None, CLSCTX_ALL).and_then(|dw| {
+                    let _ = dw.SetPosition(DWPOS_FILL);
+                    dw.SetWallpaper(windows::core::PCWSTR::null(), &HSTRING::from(file))
+                })
+            };
+            if faded.is_ok() {
+                return Ok(());
+            }
+        }
         let mut path: Vec<u16> = file.encode_utf16().chain(std::iter::once(0)).collect();
         unsafe { SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, Some(path.as_mut_ptr() as *mut _), SPIF_UPDATEINIFILE | SPIF_SENDCHANGE) }.map_err(|e| anyhow!("Windows wouldn't change the wallpaper ({e})"))
     }
@@ -1037,10 +1434,10 @@ mod win {
     /// The wallpaper slideshow, if one is running: its folders, options and
     /// ms per picture (Windows' documented wallpaper interface).
     pub fn slideshow() -> Option<(Vec<String>, i32, u32)> {
-        use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED};
+        use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL};
         use windows::Win32::UI::Shell::{DesktopWallpaper, IDesktopWallpaper, DESKTOP_SLIDESHOW_OPTIONS, DSS_SLIDESHOW, SIGDN_FILESYSPATH};
         unsafe {
-            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            let _com = Com::start();
             let dw: IDesktopWallpaper = CoCreateInstance(&DesktopWallpaper, None, CLSCTX_ALL).ok()?;
             if dw.GetStatus().ok()?.0 & DSS_SLIDESHOW.0 == 0 {
                 return None;
@@ -1064,11 +1461,11 @@ mod win {
     /// Start the slideshow again: the same pictures (or folder), the same
     /// order setting and timing.
     pub fn set_slideshow(items: &[String], options: i32, tick: u32) -> Result<()> {
-        use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+        use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
         use windows::Win32::UI::Shell::Common::ITEMIDLIST;
         use windows::Win32::UI::Shell::{DesktopWallpaper, IDesktopWallpaper, ILCreateFromPathW, ILFree, SHCreateShellItemArrayFromIDLists, DESKTOP_SLIDESHOW_OPTIONS};
         unsafe {
-            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            let _com = Com::start();
             let dw: IDesktopWallpaper = CoCreateInstance(&DesktopWallpaper, None, CLSCTX_ALL)?;
             // Pictures that have since been deleted are left out.
             let ids: Vec<*const ITEMIDLIST> = items
@@ -1249,6 +1646,7 @@ mod tests {
         }
         // What the Looks card gets (read only), for a browser preview.
         std::fs::write(out.join("looks-status.json"), serde_json::to_string(&status()).unwrap()).unwrap();
+        std::fs::write(out.join("tweaks.json"), serde_json::to_string(&crate::tweaks::list()).unwrap()).unwrap();
     }
 
     /// Really applies Nova on this PC, checks Windows took it, then Undo and
@@ -1286,6 +1684,26 @@ mod tests {
             assert_eq!(win::wallpaper(), wall, "the picture is back");
         }
         assert!(memory().before.is_none() && !back.can_undo);
+    }
+
+    #[test]
+    fn auto_picks_the_right_look() {
+        let mut a = Auto { mode: "daynight".into(), ..Auto::default() };
+        assert_eq!(due(&a, Some("nova"), 8 * 60, 0), Some("paper".into()), "morning: the day look");
+        assert_eq!(due(&a, Some("paper"), 8 * 60, 0), None, "already on");
+        assert_eq!(due(&a, Some("paper"), 20 * 60, 0), Some("nova".into()), "evening: the night look");
+        assert_eq!(due(&a, None, 3 * 60, 0), Some("nova".into()), "middle of the night");
+        a.day_at = "20:00".into();
+        a.night_at = "08:00".into();
+        assert_eq!(due(&a, None, 23 * 60, 0), Some("paper".into()), "a day that wraps past midnight");
+        let s = Auto { mode: "shuffle".into(), pool: vec!["ember".into(), "ocean".into()], every_min: 60, last: 0, ..Auto::default() };
+        assert_eq!(due(&s, Some("ember"), 0, 30 * 60_000), None, "not yet");
+        assert_eq!(due(&s, Some("ember"), 0, 61 * 60_000), Some("ocean".into()));
+        assert_eq!(due(&s, Some("ocean"), 0, 61 * 60_000), Some("ember".into()), "round again");
+        assert_eq!(due(&s, Some("nova"), 0, 1), Some("ember".into()), "not in the list: start it");
+        assert_eq!(due(&Auto::default(), None, 0, 0), None, "off");
+        assert_eq!(minutes("7:05"), Some(425));
+        assert_eq!(minutes("25:00"), None);
     }
 
     /// Reads the real values (changes nothing).

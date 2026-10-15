@@ -1,3 +1,4 @@
+import type { TabId } from "../../lib/store";
 import { useMemo, useState } from "react";
 import {
   Brain,
@@ -23,8 +24,6 @@ import { PhoneCard } from "../PhoneCard";
 import { BoostCard } from "../BoostCard";
 import { FlStudioCard } from "../FlStudioCard";
 import { AirCard } from "../AirCard";
-import { TweaksCard } from "../TweaksCard";
-import { LooksCard } from "../LooksCard";
 import { OrbStudio } from "../OrbStudio";
 import { UpdateControls } from '../UpdateControls';
 import { DiscordCard } from "../DiscordCard";
@@ -44,7 +43,7 @@ import type { BackdropMode, ProviderId } from "../../lib/types";
 
 const LOCAL_PROVIDERS: ProviderId[] = ["ollama"];
 /** The quick-jump bar: every part of this long page, one tap away. */
-const JUMPS: { label: string; id: string }[] = [
+const JUMPS: { label: string; id: string; tab?: TabId }[] = [
   { label: "🧠 AI", id: "settings-brain" },
   { label: "⌨️ Shortcuts", id: "settings-shortcuts" },
   { label: "🖱️ Control", id: "settings-execution" },
@@ -54,7 +53,7 @@ const JUMPS: { label: string; id: string }[] = [
   { label: "🪟 System", id: "settings-system" },
   { label: "🪄 On its own", id: "settings-autonomous" },
   { label: "🛡️ PC Care", id: "settings-boost" },
-  { label: "🛠️ Tweaks", id: "settings-tweaks" },
+  { label: "🎨 Looks & tweaks", id: "style-looks", tab: "style" },
   { label: "🎹 FL Studio", id: "settings-flstudio" },
   { label: "📱 Phone", id: "settings-phone" },
   { label: "💬 Discord", id: "settings-discord" },
@@ -568,8 +567,6 @@ export function SettingsTab() {
       <FlStudioCard />
 
       <AirCard />
-      <LooksCard />
-      <TweaksCard />
 
       <div id="settings-phone"><PhoneCard /></div>
 

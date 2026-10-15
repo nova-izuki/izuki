@@ -933,3 +933,29 @@ html.izk-away .izk-aurora span {
   .izk-research-eye.is-live::after,
   .izk-research-eye.is-live .izk-research-pupil { animation: none; }
 }
+
+/* Style tab (StyleTab.tsx). Everything here moves once (a look going on,
+   a section opening) or only while hovered — nothing loops in the
+   background, so it costs nothing while you're not looking. */
+.izk-hero-layer { animation-duration: 1.4s; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); animation-fill-mode: both; }
+@keyframes izk-hero-in-a { from { transform: scale(1.07); filter: saturate(1.3) brightness(1.08); } to { transform: scale(1); filter: none; } }
+@keyframes izk-hero-in-b { from { transform: scale(1.07); filter: saturate(1.3) brightness(1.08); } to { transform: scale(1); filter: none; } }
+.izk-hero-sweep {
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.0) 38%, rgba(255, 255, 255, 0.55) 50%, rgba(255, 255, 255, 0) 62%, transparent 70%);
+  transform: translateX(-120%);
+  animation: izk-hero-sweep 1.1s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  mix-blend-mode: overlay;
+}
+@keyframes izk-hero-sweep { to { transform: translateX(120%); } }
+.izk-twinkle { opacity: 0.35; animation: izk-twinkle 1.8s ease-in-out infinite; animation-play-state: paused; box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.7); }
+.izk-hero:hover .izk-twinkle { animation-play-state: running; }
+@keyframes izk-twinkle { 0%, 100% { opacity: 0.2; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.4); } }
+.izk-look-pic { transition: transform 5s cubic-bezier(0.16, 1, 0.3, 1); }
+.izk-look:hover .izk-look-pic, .izk-look:focus-visible .izk-look-pic { transform: scale(1.14) translate(-3%, -2%); }
+.izk-rise { animation: izk-rise 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes izk-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.izk-tile:active { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) {
+  .izk-hero-layer, .izk-hero-sweep, .izk-twinkle, .izk-rise { animation: none !important; }
+  .izk-look-pic { transition: none; }
+}

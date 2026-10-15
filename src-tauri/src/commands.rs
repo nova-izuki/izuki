@@ -1356,10 +1356,28 @@ pub async fn look_switch(name: String, on: bool) -> R<crate::winlook::Status> {
     blocking(move || crate::winlook::set_switch(&name, on).map_err(|e| e.to_string())).await?
 }
 
+/// Looks that change by themselves (day & night, shuffle).
+#[tauri::command]
+pub async fn look_auto(auto: crate::winlook::Auto) -> R<crate::winlook::Status> {
+    blocking(move || crate::winlook::set_auto(auto).map_err(|e| e.to_string())).await?
+}
+
+/// A big picture of a look's wallpaper, for the Style tab's preview.
+#[tauri::command]
+pub async fn look_preview(id: String) -> R<String> {
+    blocking(move || crate::winlook::big_preview(&id).map_err(|e| e.to_string())).await?
+}
+
 /// Put back the colours and wallpaper from before the first look.
 #[tauri::command]
 pub async fn look_undo() -> R<crate::winlook::Status> {
     blocking(|| crate::winlook::undo().map_err(|e| e.to_string())).await?
+}
+
+/// Turn on a one-tap set of Windows tweaks (gamer, clean, power).
+#[tauri::command]
+pub async fn tweak_pack(id: String) -> R<Vec<crate::tweaks::Tweak>> {
+    blocking(move || crate::tweaks::set_pack(&id).map_err(|e| e.to_string())).await?
 }
 
 /// Restart Windows Explorer so a tweak shows (only when asked).

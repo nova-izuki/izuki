@@ -518,6 +518,23 @@ export interface LooksStatus {
   can_undo: boolean;
   /** Something to tell you after a change (e.g. how to turn Spotlight back on). */
   note?: string | null;
+  /** Looks that change by themselves. */
+  auto: LookAuto;
+}
+
+/** Looks that change by themselves (winlook.rs `Auto`). */
+export interface LookAuto {
+  mode: "off" | "daynight" | "shuffle";
+  day: string;
+  night: string;
+  /** "HH:MM", 24-hour. */
+  day_at: string;
+  night_at: string;
+  every_min: number;
+  /** Shuffle's looks (empty = all). */
+  pool: string[];
+  wallpaper: boolean;
+  last: number;
 }
 
 /** One source a deep research read (research.rs). */
@@ -543,6 +560,8 @@ export interface WindowsTweak {
   id: string;
   label: string;
   hint: string;
+  /** Which Style → Tweaks group it's in. */
+  group: string;
   /** Shows only after Windows Explorer restarts. */
   restart: boolean;
   on: boolean;
@@ -773,6 +792,9 @@ export const api = {
   lookAccent: (colour: string) => call<LooksStatus | null>("look_accent", { colour }, () => null),
   lookSwitch: (name: string, on: boolean) => call<LooksStatus | null>("look_switch", { name, on }, () => null),
   lookUndo: () => call<LooksStatus | null>("look_undo", undefined, () => null),
+  lookAuto: (auto: LookAuto) => call<LooksStatus | null>("look_auto", { auto }, () => null),
+  lookPreview: (id: string) => call<string | null>("look_preview", { id }, () => null),
+  tweakPack: (id: string) => call<WindowsTweak[]>("tweak_pack", { id }, () => []),
   restartExplorer: () => call<void>("restart_explorer", undefined, () => undefined),
   boostLive: () => call<{ on: boolean; looked_secs_ago: number | null; done_secs_ago: number | null; done: string | null }>("boost_live", undefined, () => ({ on: false, looked_secs_ago: null, done_secs_ago: null, done: null })),
   /** The desktop mate: where its character is (only clicks there are caught). */

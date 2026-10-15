@@ -405,11 +405,14 @@ pub fn run() {
             commands::follow_up,
             commands::air_hold,
             commands::tweak_set,
+            commands::tweak_pack,
             commands::looks_status,
             commands::look_apply,
             commands::look_accent,
             commands::look_switch,
             commands::look_undo,
+            commands::look_auto,
+            commands::look_preview,
             commands::research_start,
             commands::research_save,
             commands::restart_explorer,
@@ -496,6 +499,8 @@ pub fn run() {
             link::spawn(handle.clone());
             offline::spawn(handle.clone());
             routines::spawn(handle.clone());
+            // Looks that change by themselves (Style → Auto).
+            winlook::spawn_auto();
             recall::spawn();
             activity::spawn();
             boost::spawn(handle.clone());

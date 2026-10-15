@@ -1,3 +1,4 @@
+import { requestStyleSection } from "../lib/styleNav";
 import { useEffect, useRef, useState } from "react";
 import { Search, ArrowUpRight, X } from "lucide-react";
 import { useIzuki, type TabId } from "../lib/store";
@@ -14,8 +15,9 @@ export const FEATURES: Feature[] = [
   { label: "On its own", hint: "skip youtube ads, reject cookie banners automatically", tab: "settings", id: "settings-autonomous" },
   { label: "Brain & AI keys", hint: "Models, providers and local Ollama", tab: "settings", id: "settings-brain" },
   { label: "Screen control", hint: "Jarvis precision, mouse, approval and clicking", tab: "settings", id: "settings-execution" },
-  { label: "Looks", hint: "theme, wallpaper, accent colour, color, dark mode, light mode, taskbar colour, title bar colour, nova, midnight, ember, forest, sakura, paper, focus, translucenttb, transparency, undo look", tab: "settings", id: "settings-looks" },
-  { label: "Windows tweaks", hint: "windhawk, taskbar left, hide taskbar, seconds on clock, end task, classic right-click menu, file extensions, hidden files, dark mode, transparency, task view, search box", tab: "settings", id: "settings-tweaks" },
+  { label: "Looks", hint: "synthwave, sunset, ocean, matrix, arctic, galaxy, dune, theme, wallpaper, accent colour, color, dark mode, light mode, taskbar colour, title bar colour, nova, midnight, ember, forest, sakura, paper, focus, translucenttb, transparency, undo look", tab: "style", id: "style-looks" },
+  { label: "Auto looks (day & night, shuffle)", hint: "auto change theme, wallpaper changes by itself, day night, dark at night, light in the day, shuffle looks, rotate wallpaper, every hour", tab: "style", id: "style-auto" },
+  { label: "Windows tweaks", hint: "windhawk, taskbar left, hide taskbar, seconds on clock, end task, classic right-click menu, file extensions, hidden files, dark mode, transparency, task view, search box, widgets, app names, never combine, desktop icons, this pc, recycle bin, cursor, black cursor, big cursor, animations, gamer, game dvr, sticky keys, menus, startup delay, ads, tips, privacy, advertising id, open to this pc, checkboxes, full path, shortcut", tab: "style", id: "style-tweaks" },
   { label: "Island look", hint: "windhawk, island style, glass, bubble, squircle, neon outline, aero, classic", tab: "draw", id: "draw-talk" },
   { label: "Glowing screen edges", hint: "edge glow, screen glow, border light, apple intelligence, siri glow, glow only, hide orb, hide character", tab: "settings", id: "settings-look" },
   { label: "Orb & appearance", hint: "Orb Studio, clear water, star crystal, tidal pearl, liquid, motion, captions and colours", tab: "settings", id: "settings-look" },
@@ -55,6 +57,7 @@ export function findFeatures(query: string, max = 8): Feature[] {
 /** Open a feature: its tab, then scroll to it once it's drawn. */
 export function openFeature(feature: Feature, setTab: (t: TabId) => void) {
   setTab(feature.tab);
+  requestStyleSection(feature.id);
   if (!feature.id) return;
   let tries = 0;
   const look = () => {

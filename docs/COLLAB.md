@@ -19,7 +19,7 @@ assistant is also changing.
 | Gmail across every account, briefings | `mail.rs`, `headsup.rs` (email parts) | Claude |
 | Terminal tutor (CMD/PowerShell lessons) | `tutor.rs` | Claude |
 | Discord reconnect/resume | `discord.rs` | Claude |
-| Windows looks (accent, dark, wallpapers, undo) | `winlook.rs`, `LooksCard.tsx` | Claude |
+| Style tab: looks, auto, tweaks | `winlook.rs`, `tweaks.rs`, `StyleTab.tsx`, `lib/styleNav.ts` | Claude |
 | Deep research (chat) and web search engines | `research.rs`, `web.rs`, `ResearchPanel.tsx` | Claude |
 | Keep-awake during missions | `awake.rs` | Claude |
 | Island glances (missions, lesson) | `island.rs`, `Island.tsx` | Claude |

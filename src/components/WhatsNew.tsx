@@ -1,3 +1,4 @@
+import { requestStyleSection } from "../lib/styleNav";
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { Sparkles, X } from "lucide-react";
@@ -22,9 +23,10 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🎨", title: "The Style tab: 14 looks, Auto, 51 tweaks", how: "A new tab with a big live preview of your desktop — hover a look to see it, tap to use it (Windows fades the wallpaper in). Seven new painted looks: Synthwave, Sunset, Ocean, Matrix, Arctic, Galaxy and Dune. Auto changes your look by itself: a light one by day and a dark one at night, or a shuffle every hour. And 51 Windhawk-style tweaks as tiles, by group, with one-tap Gamer, Clean & private and Power user packs.", try: { label: "Open Style", tab: "style", id: "style-looks" } },
   { icon: "🔭", title: "Deep research, with sources", how: "In Chat, switch on 🔭 Deep (or type “research …”). Izuki runs several searches, reads the best pages — you watch the computer-with-an-eye as it browses — checks what's missing, then writes a long answer with numbered sources you can click and save to Notes. Numbers it can't find in its sources are flagged for you to double-check.", try: { label: "Open Chat", tab: "chat" } },
   { icon: "🔎", title: "Web search works again", how: "DuckDuckGo started blocking Izuki's searches and Bing only read the first word — so answers that needed the web were coming back empty or off-topic. Now: Google (through your Gemini key, when its allowance allows), Brave, Wikipedia, then the others." },
-  { icon: "🎨", title: "Looks: a whole new Windows in one tap", how: "Seven looks with wallpapers painted for your screen: Nova (a planet's glowing edge under the stars), Midnight (northern lights over mountains), Ember, Forest, Sakura, Paper and Focus. Each sets dark or light, the accent colour on the taskbar, Start and title bars, and see-through effects. Or just say “make my PC look Nova”. Undo puts everything back, even a wallpaper slideshow.", try: { label: "Looks", tab: "settings", id: "settings-looks" } },
+  { icon: "🎨", title: "Looks: a whole new Windows in one tap", how: "Seven looks with wallpapers painted for your screen: Nova (a planet's glowing edge under the stars), Midnight (northern lights over mountains), Ember, Forest, Sakura, Paper and Focus. Each sets dark or light, the accent colour on the taskbar, Start and title bars, and see-through effects. Or just say “make my PC look Nova”. Undo puts everything back, even a wallpaper slideshow.", try: { label: "Looks", tab: "style", id: "style-looks" } },
   { icon: "🎓", title: "What's due — straight from Blackboard", how: "Say “connect my Blackboard”, press Copy on its calendar link, and Izuki saves it by itself. Then ask “what's due this week?” or “which assignment should I do first?” — and get reminders before things are due." },
   { icon: "📱", title: "A smoother phone remote", how: "The live view makes each picture about 3× faster and prepares the next one while the last is still travelling — no more backlog on a slow connection." },
   { icon: "🗣️", title: "The voice keeps up with the words", how: "When your chosen voice is failing, Izuki goes straight to the one that's working instead of waiting on every line, and captions start when the voice really does." },
@@ -69,7 +71,7 @@ const ITEMS: Item[] = [
   { icon: "🗣️", title: "“Make my pinky pinch take a screenshot”", how: "Choose what your quick gestures do — thumb + middle, ring or little finger, and a flick left or right — in Settings → Air control, or just say it. “Set air control to precision” and “reset my air gestures” work too.", try: { label: "Air gestures", tab: "settings", id: "settings-air" } },
   { icon: "✍️", title: "Say it, it's written well", how: "Point at a text box and say what to type: Izuki fixes the grammar, spelling and punctuation before typing it (your own words — nothing added)." },
   { icon: "👄", title: "Characters talk and blink", how: "The moving characters now open their mouths with every syllable of Izuki's voice, blink like a person (now and then twice), and change gesture as each new phrase begins." },
-  { icon: "🛠️", title: "Windows tweaks and Island looks", how: "Settings → Windows tweaks: taskbar on the left, hide the taskbar, seconds on the clock, “End task” on right-click, the full right-click menu, file extensions, dark mode and more — each a switch that flips back. And pick an Island look: Glass, Bubble, Squircle, Neon outline or Aero.", try: { label: "Windows tweaks", tab: "settings", id: "settings-tweaks" } },
+  { icon: "🛠️", title: "Windows tweaks and Island looks", how: "Style → Tweaks: taskbar on the left, hide the taskbar, seconds on the clock, “End task” on right-click, the full right-click menu, file extensions, dark mode and more — each a switch that flips back. And pick an Island look: Glass, Bubble, Squircle, Neon outline or Aero.", try: { label: "Windows tweaks", tab: "style", id: "style-tweaks" } },
   { icon: "⚡", title: "Air control keeps up with your hand", how: "The dots and the ring used to trail behind your hand and catch up when you stopped: hand tracking ran 1–7 times a second. It now runs on the graphics chip in the background — about 25–30 times a second — and Windows can no longer slow it down. Pick Fast, Balanced or Precision in Settings → Air control.", try: { label: "Air control", tab: "settings", id: "settings-air" } },
   { icon: "🧭", title: "A clearer Air control guide", how: "The guided test now goes one step at a time: which fingers to use, a little moving picture of the gesture, what Izuki sees your hand doing right now, and Back / Try again / Skip. Six steps: show your hand, move, pinch to click, pinch and hold to drag, peace-sign scroll, fist to pause.", try: { label: "Start the test", tab: "settings", id: "settings-air" } },
   { icon: "📧", title: "\"Open Outlook\" opens Outlook", how: "Saying \"open Outlook\" (or \"switch to Discord\", \"launch Slack\") used to go to your linked accounts instead of opening the app. Now it opens the real app on your PC. Asking about what's inside — \"read my emails\", \"what's in my inbox\" — still uses your linked account." },
@@ -227,6 +229,7 @@ const ITEMS: Item[] = [
 /** Open a tab, then scroll to (and focus) a section in it once it's there. */
 function goTo(setTab: (t: TabId) => void, tab: TabId, id?: string) {
   setTab(tab);
+  requestStyleSection(id);
   if (!id) return;
   let tries = 0;
   const look = () => {

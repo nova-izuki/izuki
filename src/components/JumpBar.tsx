@@ -1,3 +1,4 @@
+import { requestStyleSection } from "../lib/styleNav";
 import { useRef } from "react";
 import { useIzuki, type TabId } from "../lib/store";
 
@@ -23,6 +24,7 @@ export function JumpBar({ jumps, topId, below = 0 }: { jumps: { label: string; i
   const go = (j: { id: string; tab?: TabId }) => {
     if (!j.tab) return jumpTo(j.id);
     setTab(j.tab);
+    requestStyleSection(j.id);
     let tries = 0;
     const look = () => { if (document.getElementById(j.id)) jumpTo(j.id); else if (tries++ < 20) setTimeout(look, 60); };
     setTimeout(look, 60);
