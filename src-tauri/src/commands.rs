@@ -348,6 +348,10 @@ pub fn open_log_folder() -> R<()> {
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     crate::tv::heard(&said);
+    // "What's due this week?", "connect my Blackboard" (campus.rs).
+    if let Some(ask) = crate::campus::parse(&said) {
+        return blocking(move || crate::campus::handle(ask)).await.ok();
+    }
     // An assignment open on screen: a study guide saved to Notes, walked through (study.rs).
     if let Some(text) = crate::study::follow_up(&said) {
         return Some(text);
@@ -733,7 +737,7 @@ pub async fn speak_cloud(
     mood: Option<String>,
 ) -> R<tauri::ipc::Response> {
     let settings = state::store().settings();
-    blocking(move || crate::tts::synthesize(&settings, &engine, &text, mood.as_deref()))
+    blocking(move || crate::tts::speak_line(&settings, &engine, &text, mood.as_deref()))
         .await?
         .map(tauri::ipc::Response::new)
 }

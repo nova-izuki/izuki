@@ -59,6 +59,7 @@ pub mod webpush;
 pub mod routines;
 pub mod sites;
 pub mod study;
+pub mod campus;
 pub mod music_draft;
 pub mod memory;
 pub mod model;

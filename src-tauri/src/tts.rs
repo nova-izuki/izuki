@@ -303,6 +303,9 @@ static ORPHEUS_RESTING_UNTIL: parking_lot::Mutex<Option<std::time::Instant>> = p
 
 /// ElevenLabs out of credits: left alone until then.
 static ELEVEN_RESTING_UNTIL: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
+/// The ChatGPT voice out of credits (or rate-limited): left alone a while
+/// instead of costing a failed try on every line.
+static OPENAI_RESTING_UNTIL: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
 
 /// ElevenLabs' ready-made voices (free on every plan).
 pub const ELEVEN_VOICES: &[(&str, &str)] = &[
@@ -370,11 +373,47 @@ pub fn race(settings: &Settings, text: &str, mood: Option<&str>) -> Option<Strin
     }
     let (engine, audio) = rx.recv_timeout(std::time::Duration::from_secs(8)).ok()?;
     eprintln!("[tts] {} stood in for {}", engine, settings.voice_engine);
+    *LAST_STAND_IN.lock() = Some((engine.clone(), std::time::Instant::now()));
     *RACE_WON.lock() = Some((engine.clone(), text.trim().to_string(), audio));
     Some(engine)
 }
 
 static RACE_WON: parking_lot::Mutex<Option<(String, String, Vec<u8>)>> = parking_lot::Mutex::new(None);
+
+/// When the chosen voice last failed, and which voice last stood in for it.
+/// For ten minutes after a failure the stand-in speaks straight away —
+/// trying the failing voice first on every line made each reply wait for a
+/// failure, so the words showed long before the voice ("it's not aligning").
+static CHOSEN_FAILED: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
+static LAST_STAND_IN: parking_lot::Mutex<Option<(String, std::time::Instant)>> = parking_lot::Mutex::new(None);
+const STICK: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// One line in `engine`, going straight to the voice that's been working
+/// when the chosen one keeps failing.
+pub fn speak_line(settings: &Settings, engine: &str, text: &str, mood: Option<&str>) -> Result<Vec<u8>, String> {
+    if engine != settings.voice_engine {
+        return synthesize(settings, engine, text, mood);
+    }
+    let failing = CHOSEN_FAILED.lock().is_some_and(|t| t.elapsed() < STICK);
+    if failing {
+        let sub = LAST_STAND_IN.lock().clone().filter(|(_, t)| t.elapsed() < STICK).map(|(e, _)| e);
+        if let Some(sub) = sub {
+            if let Ok(audio) = synthesize(settings, &sub, text, mood) {
+                return Ok(audio);
+            }
+        }
+    }
+    match synthesize(settings, engine, text, mood) {
+        Ok(audio) => {
+            CHOSEN_FAILED.lock().take();
+            Ok(audio)
+        }
+        Err(e) => {
+            *CHOSEN_FAILED.lock() = Some(std::time::Instant::now());
+            Err(e)
+        }
+    }
+}
 
 /// One line of speech as WAV bytes.
 pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&str>) -> Result<Vec<u8>, String> {
@@ -504,6 +543,9 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
                 .send()
         }
         "openai" => {
+            if OPENAI_RESTING_UNTIL.lock().is_some_and(|t| std::time::Instant::now() < t) {
+                return Err("the ChatGPT voice is resting (no credits or busy) — another voice speaks".into());
+            }
             let cfg = settings
                 .provider(ProviderId::Openai)
                 .ok_or("OpenAI isn't set up")?;
@@ -543,6 +585,15 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
             let rest = std::time::Duration::from_secs(if daily { 3600 } else { 60 });
             *ORPHEUS_RESTING_UNTIL.lock() = Some(std::time::Instant::now() + rest);
             eprintln!("[tts] resting the Groq voice for {} s", rest.as_secs());
+        }
+        if engine == "openai" && status.as_u16() == 429 {
+            // No credits: leave it six hours (it's back as soon as credits are
+            // added after that); just busy: a minute.
+            let lower = body.to_lowercase();
+            let broke = lower.contains("no credits") || lower.contains("insufficient_quota") || lower.contains("exceeded your current quota");
+            let rest = std::time::Duration::from_secs(if broke { 6 * 3600 } else { 60 });
+            *OPENAI_RESTING_UNTIL.lock() = Some(std::time::Instant::now() + rest);
+            eprintln!("[tts] resting the ChatGPT voice for {} s{}", rest.as_secs(), if broke { " (no credits)" } else { "" });
         }
         return Err(friendly_error(service, status, &body));
     }

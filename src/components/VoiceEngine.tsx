@@ -276,9 +276,15 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
       }
     }
   }
-  speak(shownText, { lang: who.lang, rate: who.speed !== 1 ? who.speed : undefined });
-  // Windows' voice: ~370 ms a word at normal speed, faster or slower with the character's pace.
-  if (caption) showCaption(shownText, true, 370 / (who.speed || 1));
+  // Windows' voice: ~370 ms a word at normal speed, faster or slower with the
+  // character's pace — shown when it actually starts talking, not before.
+  speak(shownText, {
+    lang: who.lang,
+    rate: who.speed !== 1 ? who.speed : undefined,
+    onStart: () => {
+      if (caption) showCaption(shownText, true, 370 / (who.speed || 1));
+    },
+  });
 }
 
 /**

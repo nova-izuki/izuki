@@ -563,6 +563,11 @@ pub struct Due {
     at: chrono::DateTime<Local>,
 }
 
+/// A school calendar feed's items: (id, title, due), for Campus (campus.rs).
+pub fn fetch_school_feed(url: &str) -> anyhow::Result<Vec<(String, String, chrono::DateTime<Local>)>> {
+    Ok(fetch_feed(url)?.into_iter().map(|d| (d.uid, d.title, d.at)).collect())
+}
+
 fn fetch_feed(url: &str) -> anyhow::Result<Vec<Due>> {
     // Calendar apps hand these out as webcal://; it's plain https.
     let url = url.replacen("webcal://", "https://", 1);

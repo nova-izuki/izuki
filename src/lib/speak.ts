@@ -86,8 +86,17 @@ export function openVoiceSettings() {
  * Speak a short line. Cancels whatever it was saying before, so replies never
  * queue up and lag behind the moment they were meant for.
  */
-export function speak(text: string, opts: { rate?: number; pitch?: number; lang?: string } = {}) {
+export function speak(text: string, opts: { rate?: number; pitch?: number; lang?: string; onStart?: () => void } = {}) {
   if (!canSpeak() || !text.trim()) return;
+  // Captions start when the sound really does (Windows' own start can lag a
+  // second or more) — or after 1.5 s if Windows never says it started.
+  let told = false;
+  const tell = () => {
+    if (told) return;
+    told = true;
+    opts.onStart?.();
+  };
+
   try {
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
@@ -113,6 +122,8 @@ export function speak(text: string, opts: { rate?: number; pitch?: number; lang?
     // fires its `onend` late, which would mark this one finished early.
     current = u;
     setSystemSpeaking(true);
+    // Only for this line: a line that's been replaced never shows its caption.
+    if (opts.onStart) setTimeout(() => current === u && tell(), 1500);
     let started = false;
     setTimeout(() => {
       if (current === u && !started && !window.speechSynthesis.speaking) setSystemSpeaking(false);
@@ -120,6 +131,7 @@ export function speak(text: string, opts: { rate?: number; pitch?: number; lang?
     u.onstart = () => {
       started = true;
       if (current === u) setSystemSpeaking(true);
+      tell();
     };
     u.onend = () => {
       if (current === u) setSystemSpeaking(false);
@@ -142,6 +154,9 @@ export function speak(text: string, opts: { rate?: number; pitch?: number; lang?
         if (plain) retry.voice = plain;
         // Still talking — the retry says it.
         current = retry;
+        retry.onstart = () => {
+          if (current === retry) tell();
+        };
         retry.onend = retry.onerror = () => {
           if (current === retry) setSystemSpeaking(false);
         };

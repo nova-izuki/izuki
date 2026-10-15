@@ -243,6 +243,17 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         push("assistant", &text);
         return Reply::text(text);
     }
+    // "What's due this week?" from the phone and Discord too (campus.rs).
+    if let Some(ask) = crate::campus::parse(said) {
+        push("user", said);
+        let text = if ask == crate::campus::Ask::Connect {
+            pc_allowed().unwrap_or_else(|| crate::campus::handle(ask))
+        } else {
+            crate::campus::handle(ask)
+        };
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // An assignment on the PC's screen, coached (study.rs) — phone and Discord too.
     if let Some(text) = crate::study::follow_up(said).or_else(|| crate::study::explain_current(said)) {
         push("user", said);

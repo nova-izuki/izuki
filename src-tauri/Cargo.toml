@@ -1,6 +1,6 @@
 [package]
 name = "izuki"
-version = "1.0.122"
+version = "1.0.123"
 description = "IZUKI — draw on your screen, Izuki does it."
 authors = ["Izuki"]
 edition = "2021"
@@ -52,6 +52,8 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "macros", "net"] }
 reqwest = { version = "0.13", features = ["json", "blocking", "multipart"] }
 
+# Fast JPEG straight from the screen's BGRA (the phone remote's live view).
+jpeg-encoder = { version = "0.6", features = ["simd"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 enigo = "0.6"
 arboard = "3"

@@ -121,6 +121,20 @@ pub fn forget(name: &str) {
     }
 }
 
+/// The school's learning site opened for you before (Blackboard, Canvas,
+/// Moodle, Brightspace) — never a guess at the vendor's own website.
+pub fn school_site() -> Option<String> {
+    list()
+        .into_iter()
+        .map(|s| s.url)
+        .find(|u| {
+            let host = u.split("://").nth(1).unwrap_or(u).split('/').next().unwrap_or(u).to_lowercase();
+            let lms = ["blackboard", "instructure", "canvas", "moodle", "brightspace", "d2l"].iter().any(|w| host.contains(w));
+            // The vendors' own sites aren't a school's.
+            lms && !["www.blackboard.com", "blackboard.com", "www.instructure.com", "moodle.org", "www.d2l.com"].contains(&host.as_str())
+        })
+}
+
 /// An address said out loud ("sanjac.blackboard.com", "https://…").
 fn address_in(name: &str) -> Option<String> {
     let w = name.trim().trim_end_matches(['.', '!', '?']);

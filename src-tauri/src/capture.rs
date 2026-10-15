@@ -137,6 +137,20 @@ impl Frame {
         Frame { width: nw, height: nh, origin: self.origin, bgra }
     }
 
+    /// JPEG straight from the screen's own BGRA pixels — no copies, the
+    /// processor's fast instructions (the phone remote's live view: ~5× faster
+    /// than `to_jpeg` here).
+    pub fn to_jpeg_fast(&self, quality: u8) -> Result<Vec<u8>> {
+        if self.width > u32::from(u16::MAX) || self.height > u32::from(u16::MAX) {
+            return self.to_jpeg(quality);
+        }
+        let mut out = Vec::with_capacity(64 * 1024);
+        jpeg_encoder::Encoder::new(&mut out, quality)
+            .encode(&self.bgra, self.width as u16, self.height as u16, jpeg_encoder::ColorType::Bgra)
+            .map_err(|e| anyhow::anyhow!("jpeg: {e}"))?;
+        Ok(out)
+    }
+
     pub fn to_jpeg(&self, quality: u8) -> Result<Vec<u8>> {
         let img = self.to_rgba_image();
         let rgb = image::DynamicImage::ImageRgba8(img).to_rgb8();

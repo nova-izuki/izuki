@@ -220,77 +220,160 @@ static STREAM_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::
 /// again (only every few seconds, to show it's alive), so a still screen
 /// costs almost nothing. Ends when the phone goes, the remote is switched
 /// off or the PC locks.
+///
+/// Two halves so it stays smooth: a maker thread captures, shrinks and
+/// compresses the next picture *while* the last one is still travelling to
+/// the phone, and keeps only the newest (a slow connection gets fresh
+/// pictures, never a backlog). Before this, each picture waited for the one
+/// before it to arrive — about 5 a second at best on this PC.
 pub struct Live {
-    /// Which stream this is: a newer one replaces it (one live view at a time).
     gen: u64,
     began: Instant,
-    width: u32,
-    every: Duration,
-    quality: u8,
     device: String,
     buf: Vec<u8>,
     pos: usize,
-    last: Option<Vec<u8>>,
-    last_sent: Instant,
+    shared: std::sync::Arc<Shared>,
     window: (Instant, u32, usize),
+}
+
+/// Between the maker thread and the sender.
+struct Shared {
+    /// The newest picture not sent yet.
+    slot: Mutex<Option<Vec<u8>>>,
+    ready: parking_lot::Condvar,
+    /// Set when the stream ends (either side).
+    stop: std::sync::atomic::AtomicBool,
+    /// How long the last picture took to make, ms.
+    make_ms: std::sync::atomic::AtomicU32,
 }
 
 impl Live {
     pub fn new(width: u32, fps: u32, quality: u8, device: &str) -> Live {
-        Live {
-            gen: STREAM_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1,
-            began: Instant::now(),
-            width: width.clamp(320, 1600),
-            every: Duration::from_millis(1000 / u64::from(fps.clamp(1, 15))),
-            quality: quality.clamp(30, 85),
-            device: device.to_string(),
-            buf: Vec::new(),
-            pos: 0,
-            last: None,
-            last_sent: Instant::now() - Duration::from_secs(10),
-            window: (Instant::now(), 0, 0),
+        let gen = STREAM_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let shared = std::sync::Arc::new(Shared {
+            slot: Mutex::new(None),
+            ready: parking_lot::Condvar::new(),
+            stop: std::sync::atomic::AtomicBool::new(false),
+            make_ms: std::sync::atomic::AtomicU32::new(0),
+        });
+        let maker = shared.clone();
+        let (width, every, quality) = (width.clamp(320, 1600), Duration::from_millis(1000 / u64::from(fps.clamp(1, 15))), quality.clamp(30, 85));
+        let began = Instant::now();
+        let spawned = std::thread::Builder::new()
+            .name("izuki-live".into())
+            .spawn(move || make_pictures(&maker, gen, began, width, every, quality));
+        if spawned.is_err() {
+            // No maker: end at once rather than wait for pictures that won't come.
+            shared.stop.store(true, std::sync::atomic::Ordering::SeqCst);
         }
+        Live { gen, began, device: device.to_string(), buf: Vec::new(), pos: 0, shared, window: (Instant::now(), 0, 0) }
+    }
+
+    fn ended(&self) -> bool {
+        let replaced = STREAM_GEN.load(std::sync::atomic::Ordering::SeqCst) != self.gen;
+        self.shared.stop.load(std::sync::atomic::Ordering::SeqCst) || replaced || allowed().is_err() || self.began.elapsed() > Duration::from_secs(2 * 3600)
     }
 
     fn next_frame(&mut self) -> std::io::Result<bool> {
-        loop {
-            // Switched off, the PC locked, a newer live view started, or two
-            // hours up (the phone reconnects by itself): this one ends.
-            let replaced = STREAM_GEN.load(std::sync::atomic::Ordering::SeqCst) != self.gen;
-            if allowed().is_err() || replaced || self.began.elapsed() > Duration::from_secs(2 * 3600) {
+        let jpeg = loop {
+            if self.ended() {
+                self.shared.stop.store(true, std::sync::atomic::Ordering::SeqCst);
                 return Ok(false);
             }
-            let started = Instant::now();
-            let frame = crate::capture::capture_all().map_err(std::io::Error::other)?;
-            // Changed since the last picture? (A tiny copy is compared.)
-            let thumb = frame.downscaled(48);
-            let sig: Vec<u8> = thumb.bgra.iter().skip(1).step_by(4).copied().collect();
-            let same = self.last.as_ref().is_some_and(|l| l.len() == sig.len() && l.iter().zip(&sig).filter(|(a, b)| a.abs_diff(**b) > 6).count() < 3);
-            if same && self.last_sent.elapsed() < Duration::from_secs(3) {
-                std::thread::sleep(self.every.saturating_sub(started.elapsed()).max(Duration::from_millis(40)));
-                continue;
+            let mut slot = self.shared.slot.lock();
+            if let Some(j) = slot.take() {
+                break j;
             }
-            self.last = Some(sig);
-            let jpeg = frame.downscaled(self.width).to_jpeg(self.quality).map_err(std::io::Error::other)?;
-            let took = started.elapsed();
-            self.buf.clear();
-            self.pos = 0;
-            let _ = write!(self.buf, "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n", jpeg.len());
-            self.buf.extend_from_slice(&jpeg);
-            self.buf.extend_from_slice(b"\r\n");
-            self.last_sent = Instant::now();
-            seen(&self.device, false);
-            // The numbers, every second.
-            self.window.1 += 1;
-            self.window.2 += jpeg.len();
-            let w = self.window.0.elapsed().as_secs_f32();
-            if w >= 1.0 {
-                *STATS.lock() = Stats { fps: self.window.1 as f32 / w, kbps: self.window.2 as f32 * 8.0 / 1000.0 / w, encode_ms: took.as_millis() as u32 };
-                self.window = (Instant::now(), 0, 0);
+            // Wake when the maker has one (or check the stop signs each second).
+            self.shared.ready.wait_for(&mut slot, Duration::from_secs(1));
+            if let Some(j) = slot.take() {
+                break j;
             }
-            std::thread::sleep(self.every.saturating_sub(took));
-            return Ok(true);
+        };
+        self.buf.clear();
+        self.pos = 0;
+        let _ = write!(self.buf, "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n", jpeg.len());
+        self.buf.extend_from_slice(&jpeg);
+        self.buf.extend_from_slice(b"\r\n");
+        seen(&self.device, false);
+        // The numbers, every second.
+        self.window.1 += 1;
+        self.window.2 += jpeg.len();
+        let w = self.window.0.elapsed().as_secs_f32();
+        if w >= 1.0 {
+            *STATS.lock() = Stats {
+                fps: self.window.1 as f32 / w,
+                kbps: self.window.2 as f32 * 8.0 / 1000.0 / w,
+                encode_ms: self.shared.make_ms.load(std::sync::atomic::Ordering::Relaxed),
+            };
+            self.window = (Instant::now(), 0, 0);
         }
+        Ok(true)
+    }
+}
+
+impl Drop for Live {
+    fn drop(&mut self) {
+        // The phone went: the maker thread stops too.
+        self.shared.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.shared.ready.notify_all();
+    }
+}
+
+/// The maker: capture → shrink → (changed?) → compress, at most `every`,
+/// leaving only the newest picture for the sender.
+fn make_pictures(shared: &Shared, gen: u64, began: Instant, width: u32, every: Duration, quality: u8) {
+    let mut last: Option<Vec<u8>> = None;
+    let mut last_made = Instant::now() - Duration::from_secs(10);
+    // Failures in a row: each waits longer (up to 2 s); 30 in a row ends it.
+    let mut fails: u32 = 0;
+    let rest = |fails: u32| Duration::from_millis((200u64 << fails.min(4)).min(2000)).max(every);
+    loop {
+        let replaced = STREAM_GEN.load(std::sync::atomic::Ordering::SeqCst) != gen;
+        if shared.stop.load(std::sync::atomic::Ordering::SeqCst) || replaced || allowed().is_err() || began.elapsed() > Duration::from_secs(2 * 3600) {
+            shared.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+            shared.ready.notify_all();
+            return;
+        }
+        let started = Instant::now();
+        let Ok(frame) = crate::capture::capture_all() else {
+            fails += 1;
+            if fails >= 30 {
+                shared.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+                shared.ready.notify_all();
+                return;
+            }
+            std::thread::sleep(rest(fails));
+            continue;
+        };
+        // Shrink first; the "has it changed?" check uses the small picture.
+        let small = frame.downscaled(width);
+        let thumb = small.downscaled(48);
+        let sig: Vec<u8> = thumb.bgra.iter().skip(1).step_by(4).copied().collect();
+        let same = last.as_ref().is_some_and(|l| l.len() == sig.len() && l.iter().zip(&sig).filter(|(a, b)| a.abs_diff(**b) > 6).count() < 3);
+        if same && last_made.elapsed() < Duration::from_secs(3) {
+            std::thread::sleep(every.saturating_sub(started.elapsed()).max(Duration::from_millis(40)));
+            continue;
+        }
+        let Ok(jpeg) = small.to_jpeg_fast(quality) else {
+            fails += 1;
+            if fails >= 30 {
+                shared.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+                shared.ready.notify_all();
+                return;
+            }
+            std::thread::sleep(rest(fails));
+            continue;
+        };
+        // Only a picture that really made it counts as "the last one".
+        last = Some(sig);
+        fails = 0;
+        shared.make_ms.store(started.elapsed().as_millis() as u32, std::sync::atomic::Ordering::Relaxed);
+        last_made = Instant::now();
+        // Newest wins: an unsent older picture is simply replaced.
+        *shared.slot.lock() = Some(jpeg);
+        shared.ready.notify_one();
+        std::thread::sleep(every.saturating_sub(started.elapsed()));
     }
 }
 
@@ -320,7 +403,15 @@ pub fn end_from_pc() {
     announce();
 }
 
+/// Tests only: let the live view run without a settings file.
+#[cfg(test)]
+static TEST_ALLOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn allowed() -> Result<()> {
+    #[cfg(test)]
+    if TEST_ALLOW.load(std::sync::atomic::Ordering::SeqCst) {
+        return Ok(());
+    }
     let on = crate::state::try_store().is_some_and(|s| s.settings().phone_remote);
     if !on {
         bail!("off");
@@ -350,6 +441,60 @@ fn cursor() -> (i32, i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The real live view, read like the phone reads it: how many pictures
+    /// arrive in 3 seconds (the PC changes enough — a clock — or every 3 s
+    /// one is re-sent anyway). `cargo test --lib live_view_speed -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn live_view_speed() {
+        use std::io::Read;
+        TEST_ALLOW.store(true, std::sync::atomic::Ordering::SeqCst);
+        let mut live = Live::new(960, 15, 55, "test");
+        let started = Instant::now();
+        let (mut frames, mut bytes, mut buf) = (0u32, 0usize, vec![0u8; 64 * 1024]);
+        let mut seen = Vec::new();
+        while started.elapsed() < Duration::from_secs(3) {
+            let n = live.read(&mut buf).unwrap();
+            if n == 0 {
+                break;
+            }
+            bytes += n;
+            seen.extend_from_slice(&buf[..n]);
+            frames += seen.windows(7).filter(|w| *w == b"--frame").count() as u32;
+            let keep = seen.len().saturating_sub(6);
+            seen.drain(..keep);
+        }
+        drop(live);
+        TEST_ALLOW.store(false, std::sync::atomic::Ordering::SeqCst);
+        eprintln!("live view: {frames} pictures in 3 s ({:.1}/s), {} KB", frames as f32 / 3.0, bytes / 1024);
+        assert!(frames >= 1, "at least one picture arrives");
+    }
+
+    /// How long each part of one live-view picture takes on this PC.
+    /// `cargo test --lib time_a_frame -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn time_a_frame() {
+        for _ in 0..6 {
+            let t0 = Instant::now();
+            let frame = crate::capture::capture_all().unwrap();
+            let t1 = Instant::now();
+            let _thumb = frame.downscaled(48);
+            let t2 = Instant::now();
+            let small = frame.downscaled(960);
+            let t3 = Instant::now();
+            let jpeg = small.to_jpeg(55).unwrap();
+            let t4 = Instant::now();
+            let fast = small.to_jpeg_fast(55).unwrap();
+            let t5 = Instant::now();
+            eprintln!("fast jpeg {} ms, {} KB", (t5 - t4).as_millis(), fast.len() / 1024);
+            eprintln!(
+                "capture {} ms ({}x{}), thumb {} ms, shrink {} ms, jpeg {} ms, {} KB",
+                (t1 - t0).as_millis(), frame.width, frame.height, (t2 - t1).as_millis(), (t3 - t2).as_millis(), (t4 - t3).as_millis(), jpeg.len() / 1024
+            );
+        }
+    }
 
     #[test]
     fn nothing_happens_while_it_is_off() {

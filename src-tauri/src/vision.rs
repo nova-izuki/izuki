@@ -1412,8 +1412,20 @@ fn complete_objects(text: &str) -> Vec<&str> {
     out
 }
 
+/// "User Safety: safe", "Response Safety: …", "Safety Categories: …".
+pub fn is_safety_label(text: &str) -> bool {
+    let t = text.trim_start().to_lowercase();
+    t.starts_with("user safety:") || t.starts_with("response safety:") || t.starts_with("safety categories:") || (t.len() < 200 && t.contains("user safety:") && t.contains("safety categories"))
+}
+
 fn parse_plan(raw: &str) -> Result<(Vec<ActionStep>, String)> {
     let cleaned = strip_thinking(raw);
+    // Some free "routers" hand the request to a safety checker, which answers
+    // "User Safety: safe / Safety Categories: …" instead of doing anything.
+    // That's not an answer — counted as a failure, so the brain is rested.
+    if is_safety_label(&cleaned) {
+        return Err(anyhow!("the model answered with a safety check instead of an answer"));
+    }
 
     // Free models don't always follow "JSON only" — often they just answer
     // in sentences. That's still a perfectly good answer to a question, so
@@ -1641,6 +1653,15 @@ fn truncate(s: &str, n: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn safety_labels_are_not_answers() {
+        assert!(super::is_safety_label("User Safety: safe"));
+        assert!(super::is_safety_label("User Safety: unsafe
+Response Safety: safe
+Safety Categories: PII/Privacy"));
+        assert!(!super::is_safety_label("Sure — clicking Start now."));
+    }
+
     use super::*;
     use crate::uia::Control;
 

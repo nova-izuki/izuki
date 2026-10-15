@@ -22,6 +22,9 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🎓", title: "What's due — straight from Blackboard", how: "Say “connect my Blackboard”, press Copy on its calendar link, and Izuki saves it by itself. Then ask “what's due this week?” or “which assignment should I do first?” — and get reminders before things are due." },
+  { icon: "📱", title: "A smoother phone remote", how: "The live view makes each picture about 3× faster and prepares the next one while the last is still travelling — no more backlog on a slow connection." },
+  { icon: "🗣️", title: "The voice keeps up with the words", how: "When your chosen voice is failing, Izuki goes straight to the one that's working instead of waiting on every line, and captions start when the voice really does." },
   { icon: "📘", title: "Assignments, taught step by step — saved to Notes", how: "Say “open my lab assignment on Blackboard and teach me while I do it”: Izuki opens it, reads it, and saves a guide to Notes — what it asks, what to hand in, the due date, the steps with the why of each, key terms and a checklist. Then “next step” or “explain that”. It coaches you through doing it; it never submits." },
   { icon: "🌐", title: "The right website, first try", how: "“Go to San Jac Blackboard” opens the real site — even when speech mishears the name — instead of whatever the address bar guessed from your history. Say “wrong site” to correct it." },
   { icon: "🔄", title: "Routines", how: "“Every weekday at 8, check my email and send me the summary on my phone” — off until you say “turn it on”. Manage them by voice or in Draw → Routines.", try: { label: "Routines", tab: "draw", id: "draw-routines" } },
