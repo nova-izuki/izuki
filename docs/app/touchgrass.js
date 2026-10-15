@@ -11,6 +11,7 @@
 (() => {
   "use strict";
   let root = null, base = "", pass = "", timer = 0, onPair = () => {}, lastWaiting = new Set();
+  let vapid = "", pushOn = false;
   const $ = (sel) => root.querySelector(sel);
   const auth = () => ({ Authorization: "Bearer " + pass, "Content-Type": "application/json" });
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -61,6 +62,7 @@
       <header><b>🌱 Touch Grass</b><button class="watch" type="button" aria-label="Watch the PC live">🖥️ Watch</button><button class="close" type="button" aria-label="Close">✕</button></header>
       <p class="note" role="status"></p>
       <section class="pairbox" hidden><h3>First, pair this phone</h3><div>Touch Grass needs this phone paired with your PC (once). Tap Pair — a code pops up on your PC to type in here.</div><button class="pair go" type="button">Pair this phone</button></section>
+      <section class="bell"><h3>Notifications</h3><div class="muted belltext">Get a buzz on this phone when Izuki needs your yes or your missions finish — even with Izuki closed.</div><button class="push" type="button">🔔 Notify me on this phone</button></section>
       <section class="pc"><h3>Your PC</h3><div class="now">…</div><div class="warn locked" hidden>Your PC is locked, so anything that needs the screen waits. Email, apps and files still work.</div><button class="stop all" type="button">⏹ Stop everything</button></section>
       <section class="asks"><h3>Waiting for your yes</h3><div class="list"></div></section>
       <section class="ms"><h3>Missions</h3>
@@ -77,6 +79,7 @@
     $(".all").onclick = () => act({ op: "stop" }, "Stopped everything on your PC.");
     $(".run").onclick = () => act({ op: "run" }, "Missions started.");
     $(".clear").onclick = () => act({ op: "clear" }, "");
+    $(".push").onclick = togglePush;
     const add = () => {
       const t = $(".new").value.trim();
       if (!t) return;
@@ -104,14 +107,50 @@
     }
   }
 
+  /** Switch real notifications on (or off) for this phone. */
+  async function togglePush() {
+    const btn = $(".push");
+    if (pushOn) {
+      try { (await (await navigator.serviceWorker.ready).pushManager.getSubscription())?.unsubscribe(); } catch {}
+      return act({ op: "push_off" }, "Notifications off on this phone.");
+    }
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      return say(/iphone|ipad/i.test(navigator.userAgent)
+        ? "On iPhone: tap Share → Add to Home Screen, open Izuki from there, then tap this again (iOS 16.4 or newer)."
+        : "This browser can't show notifications from a web app — try Chrome.");
+    }
+    if (!vapid) return say("Your PC needs Izuki 1.0.122 or newer for notifications.");
+    btn.disabled = true;
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { say("Notifications are blocked for this site — allow them in the browser's site settings."); return; }
+      const reg = await navigator.serviceWorker.ready;
+      const key = Uint8Array.from(atob(vapid.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((vapid.length + 3) % 4)), (c) => c.charCodeAt(0));
+      let sub = await reg.pushManager.getSubscription();
+      if (sub) { try { await sub.unsubscribe(); } catch {} }
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      await act({ op: "push_on", sub: sub.toJSON() }, "🔔 Notifications on — a test one is on its way.");
+    } catch (e) {
+      say("Couldn't switch notifications on: " + (e?.message || e));
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   function showPair() {
     $(".pairbox").hidden = false;
-    for (const s of [".pc", ".asks", ".ms"]) $(s).hidden = true;
+    for (const s of [".pc", ".asks", ".ms", ".bell"]) $(s).hidden = true;
   }
 
   function render(v) {
     $(".pairbox").hidden = true;
-    for (const s of [".pc", ".asks", ".ms"]) $(s).hidden = false;
+    for (const s of [".pc", ".asks", ".ms", ".bell"]) $(s).hidden = false;
+    vapid = v.vapid || "";
+    pushOn = !!v.push_on;
+    $(".push").textContent = pushOn ? "🔕 Turn notifications off" : "🔔 Notify me on this phone";
+    $(".belltext").textContent = pushOn
+      ? "On — this phone buzzes when Izuki needs your yes or your missions finish."
+      : "Get a buzz on this phone when Izuki needs your yes or your missions finish — even with Izuki closed.";
     $(".now").textContent = v.busy ? `🤖 ${v.doing || "Working…"}` : v.running ? "🤖 Doing your missions…" : v.lesson ? `🎓 ${v.lesson}` : "Free — nothing running.";
     $(".locked").hidden = !v.locked;
     $(".all").hidden = !(v.busy || v.running);

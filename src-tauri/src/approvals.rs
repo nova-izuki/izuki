@@ -71,6 +71,9 @@ pub fn hold(tool: &str, args: &Value, account: Option<&str>, app: &str, draft: &
     );
     list.truncate(20);
     eprintln!("[approvals] waiting for a yes: {app}");
+    // Phones with notifications on hear about it straight away.
+    let first = draft.lines().find(|l| l.starts_with("To:") || l.starts_with("Subject:")).unwrap_or("A draft is ready").trim().to_string();
+    crate::webpush::send_all("✋ Izuki needs your yes", &format!("{app} · {first} — tap to approve or reject"), "approval");
     id
 }
 

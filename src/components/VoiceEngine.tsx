@@ -1391,6 +1391,10 @@ ${result}`);
   // Between "you stopped talking" and "the model has it".
   useEffect(() => {
     if (transcribing) orb("thinking");
+    // Transcribing finished with no request (background sound, a TV, a
+    // cough): back to listening. The orb used to stay on "thinking" forever
+    // here in hands-free mode — "it keeps loading for no reason".
+    else if (!thinkingNow.current && session.current.on && !isSpeaking() && ptTListening) orb("listening");
     void emit(EV.thinking, transcribing || thinkingNow.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcribing]);

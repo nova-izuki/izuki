@@ -583,11 +583,15 @@
     else alert("Link this phone to your PC first: on the PC, Izuki → Settings → Phone → Call Izuki from your phone, then scan the QR code.");
   });
   // 🌱 Touch Grass (touchgrass.js): missions and approvals for the linked PC.
-  document.getElementById("go-touch")?.addEventListener("click", () => {
+  const openTouch = () => {
     if (!pc) return alert("Link this phone to your PC first: on the PC, Izuki → Settings → Phone → Call Izuki from your phone, then scan the QR code.");
     const remote = () => window.IzukiRemote?.open(pc, { pass: store.get("pcPass", ""), savePass: (p) => store.set("pcPass", p) });
     window.IzukiTouch?.open(pc, { pass: store.get("pcPass", ""), onPair: remote });
-  });
+  };
+  document.getElementById("go-touch")?.addEventListener("click", openTouch);
+  // A tapped notification opens Touch Grass (#touch, or a message from the worker).
+  if (location.hash === "#touch") setTimeout(openTouch, 300);
+  navigator.serviceWorker?.addEventListener("message", (e) => { if (e.data?.type === "open-touch") openTouch(); });
   /** Report a problem to Izuki's bug catcher (../shared/bugs.js). */
   const bug = (message, extra) => { try { window.izukiBugs?.report(message, extra); } catch {} };
   /** Note what just happened, to go with a later report. */

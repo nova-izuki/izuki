@@ -891,6 +891,15 @@ fn check_typed(typed: &str) -> Result<Option<String>> {
         return Ok(None);
     }
     std::thread::sleep(Duration::from_millis(120));
+    // A browser's address bar quietly finishes what you type from your
+    // history ("blackboard" → blackboard.com/trust-center) and Enter goes
+    // there. Delete drops that greyed-in part, so Enter goes to exactly what
+    // was typed — the wrong-site bug from the San Jac Blackboard test.
+    let address_bar = uia::focused_is_address_bar();
+    if address_bar {
+        press_key("delete")?;
+        std::thread::sleep(Duration::from_millis(60));
+    }
     let Some(shown) = uia::focused_value() else { return Ok(None) };
     if has_typed(&shown, typed) {
         return Ok(None);
@@ -903,6 +912,10 @@ fn check_typed(typed: &str) -> Result<Option<String>> {
     eprintln!("[hands] the box shows \"{}\" instead of what was typed — typing it again", shown.chars().take(40).collect::<String>());
     press_key("ctrl+a")?;
     type_text(typed)?;
+    if address_bar {
+        std::thread::sleep(Duration::from_millis(120));
+        press_key("delete")?;
+    }
     std::thread::sleep(Duration::from_millis(120));
     Ok(uia::focused_value().filter(|again| !has_typed(again, typed)).map(|s| s.chars().take(80).collect()))
 }

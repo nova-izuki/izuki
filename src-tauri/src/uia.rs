@@ -966,6 +966,22 @@ pub fn focused_value() -> Option<String> {
     el.get_pattern::<UIValuePattern>().ok()?.get_value().ok()
 }
 
+/// Is the box with the keyboard a browser's address bar (Chrome / Edge:
+/// "Address and search bar"; Firefox: "Search with … or enter address")?
+#[cfg(windows)]
+pub fn focused_is_address_bar() -> bool {
+    use uiautomation::UIAutomation;
+    let Some(automation) = UIAutomation::new().or_else(|_| UIAutomation::new_direct()).ok() else { return false };
+    let Ok(el) = automation.get_focused_element() else { return false };
+    let name = el.get_name().unwrap_or_default().to_lowercase();
+    name.contains("address and search") || name.contains("enter address") || name == "address bar" || name.contains("search or enter")
+}
+
+#[cfg(not(windows))]
+pub fn focused_is_address_bar() -> bool {
+    false
+}
+
 #[cfg(not(windows))]
 pub fn focused_value() -> Option<String> {
     None

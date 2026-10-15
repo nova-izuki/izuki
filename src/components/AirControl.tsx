@@ -313,6 +313,8 @@ export function AirControl({
     /** When the peace sign was last seen (scrolling holds through a flicker). */
     let peaceAt = 0;
     let fistAt = 0;
+    /** Looks with a hand in them, and why any weren't used (logged every 30 s). */
+    let why = { used: 0, low: 0, flat: 0, turned: 0 };
     /** When the hand was last seen open (3+ fingers out): a fist only counts
      * right after an open hand — a hand resting curled on a cheek or the desk
      * never pauses or un-pauses Air control. */
@@ -513,7 +515,10 @@ export function AirControl({
       if (now - lastReport > 30_000 && now - readyAt < 4 * 60_000) {
         lastReport = now;
         const L = live.current;
-        void api.log(`[air] ${L.rate} looks/s, ${L.ms} ms per look, camera ${streaming ? `${L.fps} pictures/s (direct)` : "via video"}, ${frames} pictures so far, hand ${L.hand ? "seen" : "not seen yet"}`).catch(() => undefined);
+        const seen = why.used + why.low + why.flat + why.turned;
+        const usage = seen ? `; of ${seen} looks with a hand: used ${Math.round((why.used / seen) * 100)}%, too low ${why.low}, not raised ${why.flat}, turned sideways ${why.turned}` : "";
+        void api.log(`[air] ${L.rate} looks/s, ${L.ms} ms per look, camera ${streaming ? `${L.fps} pictures/s (direct)` : "via video"}, ${frames} pictures so far, hand ${L.hand ? "seen" : "not seen yet"}${usage}`).catch(() => undefined);
+        why = { used: 0, low: 0, flat: 0, turned: 0 };
       }
       // The guide shows the very picture the hand was found in, so the dots
       // sit on the fingers (the live video ran ahead of the dots).
@@ -620,7 +625,15 @@ export function AirControl({
       // its side — on your chin or cheek, or resting on its edge — shows
       // them stacked, and doesn't drive anything.
       const facing = dist(lm[5], lm[17]) / scale;
-      const raised = lm[9].y < 0.95 && upright > (engaged ? 0.3 : 0.45) && facing > (engaged ? 0.22 : 0.3);
+      // Looser (1.0.122: "it isn't registering my hand"): a hand tilted well
+      // forward still counts, and only a hand truly edge-on is turned away.
+      const raised = lm[9].y < 0.95 && upright > (engaged ? 0.15 : 0.3) && facing > (engaged ? 0.1 : 0.18);
+      // Why a hand isn't used, counted for the 30-second log line.
+      if (!raised) {
+        if (lm[9].y >= 0.95) why.low++;
+        else if (upright <= (engaged ? 0.15 : 0.3)) why.flat++;
+        else why.turned++;
+      }
       if (raised) {
         if (!upSince) upSince = now;
         downSince = 0;
@@ -628,8 +641,9 @@ export function AirControl({
         if (!downSince) downSince = now;
         upSince = 0;
       }
-      if (!engaged && raised && now - upSince > 200) engaged = true;
-      if (engaged && !raised && now - downSince > 350) engaged = false;
+      if (!engaged && raised && now - upSince > 120) engaged = true;
+      if (engaged && !raised && now - downSince > 600) engaged = false;
+      if (engaged) why.used++;
       if (!engaged) {
         L.lm = null;
         L.gesture = "";
@@ -700,7 +714,7 @@ export function AirControl({
       if (fist) {
         // Open hand → fist is a choice; a fist with no open hand just before
         // is a resting hand, and is ignored until it opens again.
-        if (!fistAt) fistAt = now - openAt < 1500 ? now : -1;
+        if (!fistAt) fistAt = now - openAt < 2500 ? now : -1;
         else if (fistAt > 0 && fistAt !== Infinity && now - fistAt > 250) holdLabel = paused ? "Hold to carry on…" : "Hold to pause…";
         if (fistAt > 0 && fistAt !== Infinity && now - fistAt > 1000) {
           paused = !paused;
@@ -745,7 +759,7 @@ export function AirControl({
           restFrom = { ...here, at: now };
           if (resting) setStatus("Air control on");
           resting = false;
-        } else if (!resting && !pinchDown && now - restFrom.at > 4000) {
+        } else if (!resting && !pinchDown && now - restFrom.at > 7000) {
           resting = true;
           setStatus("Resting — move your hand to carry on");
         }

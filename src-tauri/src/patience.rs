@@ -147,6 +147,10 @@ pub fn go_to(url: &str) -> Result<bool> {
         crate::automation::press_key("ctrl+l")?;
         std::thread::sleep(Duration::from_millis(90));
         crate::automation::type_text(&full)?;
+        std::thread::sleep(Duration::from_millis(60));
+        // Drop the address bar's own guess from your history, so Enter goes
+        // to exactly this address (it once sent Blackboard to the wrong page).
+        crate::automation::press_key("delete")?;
         std::thread::sleep(Duration::from_millis(40));
         crate::automation::press_key("enter")?;
         remember_tab();

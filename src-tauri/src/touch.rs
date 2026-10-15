@@ -30,7 +30,13 @@ pub fn status() -> Value {
         "busy": crate::state::task_running(),
         "locked": crate::uia::screen_locked(),
         "lesson": crate::tutor::glance(),
+        "vapid": crate::webpush::public_key().ok(),
     })
+}
+
+/// Has this phone switched notifications on?
+pub fn push_on(device: &str) -> bool {
+    crate::webpush::subs().iter().any(|s| s.device == device)
 }
 
 /// One thing the phone asked for.
@@ -79,6 +85,16 @@ pub fn act(app: &AppHandle, asked: &Value, device: &str) -> anyhow::Result<Value
             let id = asked["id"].as_str().unwrap_or_default();
             crate::missions::remove(id);
             crate::remote::audit(device, "mission removed", "");
+            Ok(json!({ "ok": true }))
+        }
+        "push_on" => {
+            crate::webpush::subscribe(device, &asked["sub"])?;
+            crate::remote::audit(device, "phone notifications on", "");
+            crate::webpush::send_to(device, "🌱 Notifications are on", "Izuki will tell you here when something needs your yes or your missions finish.", "welcome");
+            Ok(json!({ "ok": true }))
+        }
+        "push_off" => {
+            crate::webpush::unsubscribe(device);
             Ok(json!({ "ok": true }))
         }
         "clear" => {

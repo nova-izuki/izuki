@@ -243,11 +243,52 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         push("assistant", &text);
         return Reply::text(text);
     }
+    // An assignment on the PC's screen, coached (study.rs) — phone and Discord too.
+    if let Some(text) = crate::study::follow_up(said).or_else(|| crate::study::explain_current(said)) {
+        push("user", said);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
+    if crate::study::parse(said).is_some_and(|a| a.open_first.is_none()) {
+        push("user", said);
+        let text = match pc_allowed() {
+            Some(no) => no,
+            None => crate::study::coach().unwrap_or_else(|e| e.to_string()),
+        };
+        push("assistant", &text);
+        return Reply::text(text);
+    }
+    // "Go to San Jac Blackboard" on the PC, from the phone and Discord too.
+    if crate::sites::is_wrong_site(said) {
+        push("user", said);
+        let text = crate::sites::wrong_site();
+        push("assistant", &text);
+        return Reply::text(text);
+    }
+    if let Some(name) = crate::sites::parse(said) {
+        push("user", said);
+        let text = match pc_allowed() {
+            Some(no) => no,
+            None => crate::sites::go(&name),
+        };
+        push("assistant", &text);
+        return Reply::text(text);
+    }
+    // Routines, from the phone and Discord too: "every morning at 8, …".
+    if let Some(ask) = crate::routines::parse(said) {
+        push("user", said);
+        let text = crate::routines::handle(ask);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // Your DAW (dawctl.rs), from the phone and Discord too: "record in Ableton".
     if !crate::flstudio::fl_running() {
         if let Some(act) = crate::dawctl::parse(said) {
             push("user", said);
-            let text = crate::dawctl::run(said, act);
+            let text = match pc_allowed() {
+                Some(no) => no,
+                None => crate::dawctl::run(said, act),
+            };
             push("assistant", &text);
             return Reply::text(text);
         }
@@ -464,6 +505,18 @@ pub fn notify_everywhere(text: &str) {
 }
 
 /// Something to do on the PC, asked from away.
+/// Acting on the PC from here (phone, Discord): the same rules as `on_pc` —
+/// only when the user allowed it, never while the PC is locked. `Some(why not)`.
+fn pc_allowed() -> Option<String> {
+    if !crate::state::store().settings().phone_controls_pc {
+        return Some("That needs your PC, and doing things on it from your phone is switched off (Izuki → Settings → Phone).".into());
+    }
+    if crate::uia::screen_locked() {
+        return Some("Your PC is locked, so I can't do that right now — unlock it and ask again.".into());
+    }
+    None
+}
+
 fn on_pc(app: &AppHandle, said: &str, status: &dyn Fn(&str)) -> Reply {
     let store = crate::state::store();
     if !store.settings().phone_controls_pc {

@@ -55,6 +55,10 @@ pub mod approvals;
 pub mod touch;
 pub mod vitals;
 pub mod dawctl;
+pub mod webpush;
+pub mod routines;
+pub mod sites;
+pub mod study;
 pub mod music_draft;
 pub mod memory;
 pub mod model;
@@ -333,6 +337,9 @@ pub fn run() {
             commands::apps_connected,
             commands::mail_accounts,
             commands::island_vitals,
+            commands::routines_list,
+            commands::routine_set,
+            commands::routine_delete,
             commands::island_recent_apps,
             commands::apps_connect,
             commands::headsup_test,
@@ -478,6 +485,7 @@ pub fn run() {
             }
             link::spawn(handle.clone());
             offline::spawn(handle.clone());
+            routines::spawn(handle.clone());
             recall::spawn();
             activity::spawn();
             boost::spawn(handle.clone());

@@ -348,6 +348,34 @@ pub fn open_log_folder() -> R<()> {
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     crate::tv::heard(&said);
+    // An assignment open on screen: a study guide saved to Notes, walked through (study.rs).
+    if let Some(text) = crate::study::follow_up(&said) {
+        return Some(text);
+    }
+    {
+        let s2 = said.clone();
+        if let Ok(Some(text)) = blocking(move || crate::study::explain_current(&s2)).await {
+            return Some(text);
+        }
+    }
+    if let Some(ask) = crate::study::parse(&said) {
+        // "Open my lab assignment and teach me…" needs the screen agent first —
+        // that goes on to submit_task, which opens it and then coaches.
+        if ask.open_first.is_none() {
+            return blocking(|| crate::study::coach().unwrap_or_else(|e| e.to_string())).await.ok();
+        }
+    }
+    // "Go to San Jac Blackboard": the right website, opened directly (sites.rs).
+    if crate::sites::is_wrong_site(&said) {
+        return blocking(crate::sites::wrong_site).await.ok();
+    }
+    if let Some(name) = crate::sites::parse(&said) {
+        return blocking(move || crate::sites::go(&name)).await.ok();
+    }
+    // Routines: "every weekday at 8, check my email…" (routines.rs).
+    if let Some(ask) = crate::routines::parse(&said) {
+        return blocking(move || crate::routines::handle(ask)).await.ok();
+    }
     // "Teach me CMD", and "next" / "check my work" while a lesson is on.
     if let Some(ask) = crate::tutor::parse(&said) {
         return blocking(move || crate::tutor::handle(ask)).await.ok();
@@ -815,6 +843,22 @@ pub async fn mail_accounts(fresh: bool) -> R<serde_json::Value> {
         crate::mail::accounts_now().map(|(a, d)| serde_json::json!({ "accounts": a, "duplicates": d })).map_err(err)
     })
     .await?
+}
+
+/// Routines (routines.rs): the list, on/off, delete — for the Routines card.
+#[tauri::command]
+pub fn routines_list() -> Vec<crate::routines::Routine> {
+    crate::routines::list()
+}
+
+#[tauri::command]
+pub fn routine_set(id: String, on: bool) -> Vec<crate::routines::Routine> {
+    crate::routines::set_active(&id, on)
+}
+
+#[tauri::command]
+pub fn routine_delete(id: String) -> Vec<crate::routines::Routine> {
+    crate::routines::delete(&id)
 }
 
 /// The Island's Vitals tab: real processor, memory, battery, internet and

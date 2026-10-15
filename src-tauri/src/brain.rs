@@ -802,6 +802,17 @@ fn rest_for(err: &str) -> Option<std::time::Duration> {
     }
 }
 
+/// A remote brain that didn't answer at all (no reply, timed out) while
+/// this PC's internet is fine: the trouble is that server, so it rests 90 s
+/// (longer if it keeps happening) instead of costing ~14 s on every look.
+/// With the internet down, nothing is rested — that's not the brain's fault.
+fn unreachable_rest(err: &str) -> Option<std::time::Duration> {
+    let e = err.to_ascii_lowercase();
+    let local = e.contains("localhost") || e.contains("127.0.0.1");
+    let silent = e.contains("error sending request") || e.contains("timed out") || e.contains("operation timed out") || e.contains("connection reset");
+    (!local && silent && online()).then(|| std::time::Duration::from_secs(90))
+}
+
 /// "please try again in 7.2s", "retry in 1m30s", "retry after 12 seconds",
 /// "retry_after: 20" → that long.
 fn retry_after(e: &str) -> Option<std::time::Duration> {
@@ -877,12 +888,13 @@ fn note_failure(id: crate::settings::ProviderId, err: &str) {
             }
         }
         mark_broken(id);
-    } else if let Some(d) = rest_for(err) {
+    } else if let Some(d) = rest_for(err).or_else(|| unreachable_rest(err)) {
         let d = escalate(id, d);
         let mut r = RESTING.lock();
         r.retain(|(p, _)| *p != id);
         r.push((id, std::time::Instant::now() + d));
-        eprintln!("[brain] resting {id:?} for {} s (rate-limited)", d.as_secs());
+        let why = if rest_for(err).is_some() { "rate-limited or busy" } else { "not answering" };
+        eprintln!("[brain] resting {id:?} for {} s ({why})", d.as_secs());
     }
 }
 
@@ -2000,6 +2012,21 @@ fn submit_task(
 ) -> VisionPlan {
     if let Some(summary) = crate::companion::phone_guidance(&prompt, store.settings().android_enabled) {
         return VisionPlan { summary, provider: "local".into(), model: "device-routing".into(), outcome: crate::model::TaskOutcome::Blocked, ..Default::default() };
+    }
+    // "Open my lab assignment and teach me while I do it": open it (this same
+    // agent), then read it into a study guide saved to Notes (study.rs).
+    if marks.is_empty() && drawn_on.is_none() {
+        if let Some(open) = crate::study::parse(&prompt).and_then(|a| a.open_first) {
+            let opened = submit_task(app, store, open, Vec::new(), None, inherited_task);
+            if matches!(opened.outcome, crate::model::TaskOutcome::Failed | crate::model::TaskOutcome::Cancelled | crate::model::TaskOutcome::Blocked) {
+                return opened;
+            }
+            let summary = match crate::study::coach() {
+                Ok(text) => text,
+                Err(e) => format!("{} — but {e}", opened.summary.trim()),
+            };
+            return VisionPlan { summary, provider: "local".into(), model: "study".into(), outcome: opened.outcome, ..Default::default() };
+        }
     }
     // "Scroll down", "louder", "next song": done at once, no AI (instant.rs).
     // Every way in — voice, typing, the phone, Discord — comes through here.

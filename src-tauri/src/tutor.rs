@@ -30,6 +30,10 @@ pub enum Shell {
     #[default]
     Cmd,
     PowerShell,
+    Python,
+    Git,
+    /// JavaScript, run by Node.js.
+    Node,
 }
 
 impl Shell {
@@ -37,6 +41,9 @@ impl Shell {
         match self {
             Shell::Cmd => "CMD (Command Prompt)",
             Shell::PowerShell => "PowerShell",
+            Shell::Python => "Python",
+            Shell::Git => "Git",
+            Shell::Node => "JavaScript",
         }
     }
 }
@@ -83,6 +90,17 @@ struct Exercise {
     must_exist: &'static str,
     /// A folder (true) or a file (false).
     is_dir: bool,
+    /// Also run this where it was found; done only if it works and its
+    /// output passes the test ("python me.py" prints something).
+    verify: Option<(&'static str, fn(&str) -> bool)>,
+}
+
+fn printed_something(out: &str) -> bool {
+    !out.trim().is_empty()
+}
+
+fn two_commits(out: &str) -> bool {
+    out.trim().parse::<u32>().is_ok_and(|n| n >= 2)
 }
 
 const CMD: &[Step] = &[
@@ -151,7 +169,7 @@ const CMD: &[Step] = &[
         before: "Your turn, in the CMD window: go to IzukiPractice first (use “cd ..” if you are in notes), make a folder called projects with “mkdir projects”, then go into it with “cd projects”. Say “check my work” when you're done.",
         act: Act::None,
         after: "",
-        exercise: Some(Exercise { task: "make a folder called projects in IzukiPractice", must_exist: "projects", is_dir: true }),
+        exercise: Some(Exercise { task: "make a folder called projects in IzukiPractice", must_exist: "projects", is_dir: true, verify: None }),
     },
 ];
 
@@ -203,7 +221,177 @@ const POWERSHELL: &[Step] = &[
         before: "Your turn, in the PowerShell window: go to IzukiPractice first (use “cd ..” if you are in notes), then “mkdir projects” and “cd projects”. Say “check my work” when you're done.",
         act: Act::None,
         after: "",
-        exercise: Some(Exercise { task: "make a folder called projects in IzukiPractice", must_exist: "projects", is_dir: true }),
+        exercise: Some(Exercise { task: "make a folder called projects in IzukiPractice", must_exist: "projects", is_dir: true, verify: None }),
+    },
+];
+
+const PYTHON: &[Step] = &[
+    Step {
+        title: "What Python is",
+        before: "Python is a programming language: you write instructions in a file, and Python runs them. It's one of the friendliest first languages, and it's already on this PC. First, which version: “python --version”.",
+        act: Act::Run { line: "python --version", then_cwd: None },
+        after: "It printed: {out}\nThat's the Python that will run your programs.",
+        exercise: None,
+    },
+    Step {
+        title: "Your first program",
+        before: "A program is just a text file. I'm writing hello.py with one line — print(\"Hello from Izuki!\") — print shows text on the screen. Then I run it with “python hello.py”.",
+        act: Act::WriteAndRun { file: "hello.py", body: "print(\"Hello from Izuki!\")\n", line: "python hello.py" },
+        after: "It printed: {out}\nYou just ran a program.",
+        exercise: None,
+    },
+    Step {
+        title: "Variables",
+        before: "A variable is a name for a value. In vars.py, name holds some text and age holds a number; f\"…{name}…\" puts them into a sentence:\nname = \"friend\"\nage = 20\nprint(f\"Hi {name}! Next year you'll be {age + 1}.\")",
+        act: Act::WriteAndRun { file: "vars.py", body: "name = \"friend\"\nage = 20\nprint(f\"Hi {name}! Next year you'll be {age + 1}.\")\n", line: "python vars.py" },
+        after: "It printed: {out}\nPython worked out age + 1 for you.",
+        exercise: None,
+    },
+    Step {
+        title: "Decisions (if)",
+        before: "if runs some lines only when something is true; else runs otherwise. The indented lines belong to it — in Python, the spaces matter:\ntemperature = 30\nif temperature > 25:\n    print(\"It's hot — drink some water.\")\nelse:\n    print(\"It's cool today.\")",
+        act: Act::WriteAndRun { file: "decide.py", body: "temperature = 30\nif temperature > 25:\n    print(\"It's hot - drink some water.\")\nelse:\n    print(\"It's cool today.\")\n", line: "python decide.py" },
+        after: "It printed: {out}\n30 is more than 25, so the first branch ran. Change 30 to 10 and the other one would.",
+        exercise: None,
+    },
+    Step {
+        title: "Loops",
+        before: "for repeats the indented lines once for each item in a list:\nfor day in [\"Mon\", \"Tue\", \"Wed\"]:\n    print(\"Practice on\", day)",
+        act: Act::WriteAndRun { file: "loop.py", body: "for day in [\"Mon\", \"Tue\", \"Wed\"]:\n    print(\"Practice on\", day)\n", line: "python loop.py" },
+        after: "It printed:\n{out}\nOne line per day — that's a loop.",
+        exercise: None,
+    },
+    Step {
+        title: "Functions",
+        before: "A function is a named recipe you can use again. def makes one; return gives back the answer:\ndef greet(name):\n    return \"Hi \" + name + \"!\"\nprint(greet(\"Izuki\"))\nprint(greet(\"you\"))",
+        act: Act::WriteAndRun { file: "func.py", body: "def greet(name):\n    return \"Hi \" + name + \"!\"\n\nprint(greet(\"Izuki\"))\nprint(greet(\"you\"))\n", line: "python func.py" },
+        after: "It printed:\n{out}\nThe same recipe, two different names.",
+        exercise: None,
+    },
+    Step {
+        title: "Reading an error",
+        before: "Mistakes are normal — the skill is reading what Python says. oops.py uses a variable that was never made: print(score). Watch:",
+        act: Act::WriteAndRun { file: "oops.py", body: "print(score)\n", line: "python oops.py" },
+        after: "Python said:\n{err}\nThe last line matters most: NameError means it doesn't know the name “score”. Fix it by making it first (score = 10) — reading that last line is how programmers fix almost everything.",
+        exercise: None,
+    },
+    Step {
+        title: "Your turn",
+        before: "Your turn, in the practice window: make a file called me.py that prints your name. Easiest: type “notepad me.py”, write print(\"Your name\"), save, close, then “python me.py”. Say “check my work” when it prints.",
+        act: Act::None,
+        after: "",
+        exercise: Some(Exercise { task: "make me.py print your name", must_exist: "me.py", is_dir: false, verify: Some(("python me.py", printed_something)) }),
+    },
+];
+
+const NODE: &[Step] = &[
+    Step {
+        title: "What JavaScript is",
+        before: "JavaScript runs every website — and with Node.js it runs on your PC too. First, which version: “node --version”.",
+        act: Act::Run { line: "node --version", then_cwd: None },
+        after: "It printed: {out}\nThat's Node.js, ready to run your JavaScript.",
+        exercise: None,
+    },
+    Step {
+        title: "Your first program",
+        before: "I'm writing hello.js with one line — console.log(\"Hello from Izuki!\") — console.log shows text. Then I run it with “node hello.js”.",
+        act: Act::WriteAndRun { file: "hello.js", body: "console.log(\"Hello from Izuki!\");\n", line: "node hello.js" },
+        after: "It printed: {out}\nYou just ran JavaScript.",
+        exercise: None,
+    },
+    Step {
+        title: "Variables",
+        before: "const makes a value that won't change; let one that can. Backticks with ${…} put values into text:\nconst name = \"friend\";\nlet age = 20;\nconsole.log(`Hi ${name}! Next year you'll be ${age + 1}.`);",
+        act: Act::WriteAndRun { file: "vars.js", body: "const name = \"friend\";\nlet age = 20;\nconsole.log(`Hi ${name}! Next year you'll be ${age + 1}.`);\n", line: "node vars.js" },
+        after: "It printed: {out}",
+        exercise: None,
+    },
+    Step {
+        title: "Decisions (if)",
+        before: "if runs a block only when something is true; else otherwise. The curly braces { } mark the block:\nconst temperature = 30;\nif (temperature > 25) {\n  console.log(\"It's hot — drink some water.\");\n} else {\n  console.log(\"It's cool today.\");\n}",
+        act: Act::WriteAndRun { file: "decide.js", body: "const temperature = 30;\nif (temperature > 25) {\n  console.log(\"It's hot - drink some water.\");\n} else {\n  console.log(\"It's cool today.\");\n}\n", line: "node decide.js" },
+        after: "It printed: {out}",
+        exercise: None,
+    },
+    Step {
+        title: "Loops",
+        before: "for … of repeats a block for each item in a list (an array):\nfor (const day of [\"Mon\", \"Tue\", \"Wed\"]) {\n  console.log(\"Practice on\", day);\n}",
+        act: Act::WriteAndRun { file: "loop.js", body: "for (const day of [\"Mon\", \"Tue\", \"Wed\"]) {\n  console.log(\"Practice on\", day);\n}\n", line: "node loop.js" },
+        after: "It printed:\n{out}",
+        exercise: None,
+    },
+    Step {
+        title: "Functions",
+        before: "A function is a named recipe. Here's the short “arrow” way:\nconst greet = (name) => \"Hi \" + name + \"!\";\nconsole.log(greet(\"Izuki\"));\nconsole.log(greet(\"you\"));",
+        act: Act::WriteAndRun { file: "func.js", body: "const greet = (name) => \"Hi \" + name + \"!\";\nconsole.log(greet(\"Izuki\"));\nconsole.log(greet(\"you\"));\n", line: "node func.js" },
+        after: "It printed:\n{out}",
+        exercise: None,
+    },
+    Step {
+        title: "Reading an error",
+        before: "oops.js uses a name that was never made: console.log(score). Watch what Node says:",
+        act: Act::WriteAndRun { file: "oops.js", body: "console.log(score);\n", line: "node oops.js" },
+        after: "Node said:\n{err}\nLook for the line with the error's name: ReferenceError means “score” was never made. Fix it with const score = 10; first.",
+        exercise: None,
+    },
+    Step {
+        title: "Your turn",
+        before: "Your turn, in the practice window: make me.js that prints your name. Type “notepad me.js”, write console.log(\"Your name\");, save, close, then “node me.js”. Say “check my work” when it prints.",
+        act: Act::None,
+        after: "",
+        exercise: Some(Exercise { task: "make me.js print your name", must_exist: "me.js", is_dir: false, verify: Some(("node me.js", printed_something)) }),
+    },
+];
+
+const GIT: &[Step] = &[
+    Step {
+        title: "What Git is",
+        before: "Git keeps the history of a project: every saved version (a commit), so you can see what changed and go back. Programmers use it every day. First: “git --version”.",
+        act: Act::Run { line: "git --version", then_cwd: None },
+        after: "It printed: {out}",
+        exercise: None,
+    },
+    Step {
+        title: "Start a repository",
+        before: "A repository is a folder Git watches. I'm making “gitlesson” and starting Git in it with “git init”.",
+        act: Act::Run { line: "if not exist gitlesson mkdir gitlesson & cd gitlesson & git init", then_cwd: Some("gitlesson") },
+        after: "{out}\nThat made a hidden .git folder — Git's memory for this project.",
+        exercise: None,
+    },
+    Step {
+        title: "See what's new",
+        before: "I'm writing notes.txt, then asking “git status --short” what Git sees.",
+        act: Act::WriteAndRun { file: "notes.txt", body: "My first line\r\n", line: "git status --short" },
+        after: "It printed: {out}\n?? means a new file Git isn't tracking yet.",
+        exercise: None,
+    },
+    Step {
+        title: "Save a version (commit)",
+        before: "Two steps: “git add notes.txt” picks the file, then “git commit -m \"First note\"” saves the snapshot with a message. (I give this practice commit a practice name, so your own Git settings aren't touched.)",
+        act: Act::Run { line: "git add notes.txt && git -c user.name=Izuki-practice -c user.email=practice@izuki.invalid commit -m \"First note\"", then_cwd: None },
+        after: "{out}\nThat's your first commit.",
+        exercise: None,
+    },
+    Step {
+        title: "History",
+        before: "“git log --oneline” lists every commit, newest first.",
+        act: Act::Run { line: "git log --oneline", then_cwd: None },
+        after: "It printed: {out}\nEach line is a commit: a short id and its message.",
+        exercise: None,
+    },
+    Step {
+        title: "What changed",
+        before: "I'm adding a second line to notes.txt, then “git diff” shows exactly what changed since the last commit.",
+        act: Act::WriteAndRun { file: "notes.txt", body: "My first line\r\nA second line\r\n", line: "git diff" },
+        after: "It printed:\n{out}\nA line starting with + was added; - would mean removed.",
+        exercise: None,
+    },
+    Step {
+        title: "Your turn",
+        before: "Your turn, in the practice window, inside gitlesson (“cd gitlesson”): commit that change — “git add notes.txt”, then “git commit -m \"Second note\"”. If Git asks who you are, set it once with git config --global user.name \"Your Name\" and git config --global user.email \"you@example.com\". Say “check my work” when it's committed.",
+        act: Act::None,
+        after: "",
+        exercise: Some(Exercise { task: "make a second commit in gitlesson", must_exist: "gitlesson", is_dir: true, verify: Some(("git rev-list --count HEAD", two_commits)) }),
     },
 ];
 
@@ -211,6 +399,9 @@ fn steps(shell: Shell) -> &'static [Step] {
     match shell {
         Shell::Cmd => CMD,
         Shell::PowerShell => POWERSHELL,
+        Shell::Python => PYTHON,
+        Shell::Git => GIT,
+        Shell::Node => NODE,
     }
 }
 
@@ -286,8 +477,22 @@ pub fn parse(said: &str) -> Option<Ask> {
         .any(|w| s.contains(w));
     let ps = s.contains("powershell");
     let cmd = [" cmd ", "command prompt", "command line", " terminal", " batch ", " the console", " cmd"].iter().any(|w| s.contains(w));
-    if learn && (ps || cmd) {
-        return Some(Ask::Start(if ps { Shell::PowerShell } else { Shell::Cmd }));
+    let python = s.contains(" python");
+    let node = [" javascript", " java script", " node js", " nodejs", " node.js", " js "].iter().any(|w| s.contains(w));
+    let git = [" git ", " github", " version control"].iter().any(|w| s.contains(w));
+    if learn && (ps || cmd || python || node || git) {
+        let shell = if python {
+            Shell::Python
+        } else if node {
+            Shell::Node
+        } else if git {
+            Shell::Git
+        } else if ps {
+            Shell::PowerShell
+        } else {
+            Shell::Cmd
+        };
+        return Some(Ask::Start(shell));
     }
     let p = load();
     if !live(&p) {
@@ -352,7 +557,7 @@ pub struct Ran {
 fn run(shell: Shell, line: &str, dir: &Path) -> std::io::Result<Ran> {
     use std::process::{Command, Stdio};
     let mut c = match shell {
-        Shell::Cmd => {
+        Shell::Cmd | Shell::Python | Shell::Git | Shell::Node => {
             let mut c = Command::new("cmd");
             c.args(["/D", "/C", line]);
             c
@@ -425,9 +630,15 @@ fn open_window(shell: Shell) -> bool {
     let root = practice_dir();
     let _ = std::fs::create_dir_all(&root);
     let mut c = match shell {
-        Shell::Cmd => {
+        Shell::Cmd | Shell::Python | Shell::Git | Shell::Node => {
+            let title = match shell {
+                Shell::Python => "title Izuki practice - Python",
+                Shell::Git => "title Izuki practice - Git",
+                Shell::Node => "title Izuki practice - JavaScript",
+                _ => "title Izuki practice - CMD",
+            };
             let mut c = std::process::Command::new("cmd");
-            c.args(["/K", "title Izuki practice - CMD"]);
+            c.args(["/K", title]);
             c
         }
         Shell::PowerShell => {
@@ -467,8 +678,15 @@ fn show(p: &mut Progress, i: usize) -> String {
         p.active = false;
         save(p);
         return format!(
-            "That's the {} basics done ✅ — folders, files, echo, type, cls and your first script. Next you could try “teach me PowerShell”, or start a real language like Python. Your practice files stay in IzukiPractice.",
-            p.shell.name()
+            "That's the {} basics done ✅. Next you could try {}. Your practice files stay in IzukiPractice.",
+            p.shell.name(),
+            match p.shell {
+                Shell::Cmd => "“teach me PowerShell”, or a real language: “teach me Python”",
+                Shell::PowerShell => "“teach me Python” or “teach me JavaScript”",
+                Shell::Python => "“teach me JavaScript”, or “teach me Git” to save your work's history",
+                Shell::Node => "“teach me Git” to save your work's history",
+                Shell::Git => "putting a real project in Git: make a folder, git init, and commit as you go",
+            }
         );
     };
     // Each demonstration starts in its own expected folder. Repeating a cd
@@ -509,8 +727,20 @@ fn show(p: &mut Progress, i: usize) -> String {
 /// What the real result means — and if it failed, that it failed.
 fn explain(step: &Step, r: &Ran) -> String {
     let out = if r.out.trim().is_empty() { "(nothing — which is normal for this command)".to_string() } else { r.out.clone() };
+    // A step that's showing an error on purpose explains it.
+    if step.after.contains("{err}") {
+        return step.after.replace("{err}", &out);
+    }
     if r.code != Some(0) {
-        return format!("That came back with an error:\n{out}\nThat's useful too: CMD tells you what went wrong. Say “again” to retry it, or “next” to move on.");
+        // Python / Node / Git itself missing (not a typo like "dri").
+        let tool = match &step.act {
+            Act::Run { line, .. } | Act::WriteAndRun { line, .. } => line.split_whitespace().next().unwrap_or(""),
+            Act::None => "",
+        };
+        if ["python", "py", "node", "git"].contains(&tool) && (out.contains("is not recognized") || out.contains("not found")) {
+            return format!("That program isn't installed on this PC:\n{out}\nInstall it (Izuki can help — ask “install Python”), then say “again”.");
+        }
+        return format!("That came back with an error:\n{out}\nThat's useful too: it tells you what went wrong. Say “again” to retry it, or “next” to move on.");
     }
     step.after.replace("{out}", &out)
 }
@@ -523,6 +753,14 @@ fn check(p: &Progress) -> String {
     let root = practice_dir();
     let mut hits: Vec<PathBuf> = Vec::new();
     find(&root, ex.must_exist, ex.is_dir, 3, &mut hits);
+    if let (Some(at), Some((line, ok))) = (hits.first(), ex.verify) {
+        let dir = if ex.is_dir { at.clone() } else { at.parent().map(Path::to_path_buf).unwrap_or_else(|| root.clone()) };
+        return match run(p.shell, line, &dir) {
+            Ok(r) if r.code == Some(0) && ok(&r.out) => format!("✅ Done — I ran “{line}” and it worked:\n{}\nNice work. Say “next” to finish up.", r.out.trim()),
+            Ok(r) => format!("Close! I found it, but “{line}” didn't work yet:\n{}\nThe task: {}. Fix it in the practice window, then say “check my work” again.", r.out.trim(), ex.task),
+            Err(e) => format!("I found it but couldn't run “{line}”: {e}."),
+        };
+    }
     match hits.first() {
         Some(at) => format!(
             "✅ Done — I can see {} at {}. Nice work. Say “next” to finish up.",
@@ -627,6 +865,9 @@ pub fn glance() -> Option<String> {
     let shell = match p.shell {
         Shell::Cmd => "CMD",
         Shell::PowerShell => "PowerShell",
+        Shell::Python => "Python",
+        Shell::Git => "Git",
+        Shell::Node => "JavaScript",
     };
     Some(format!("{shell} lesson · step {} of {} · {title}", (p.step + 1).min(all.len()), all.len()))
 }
@@ -681,8 +922,39 @@ mod tests {
     }
 
     #[test]
+    fn starts_the_right_lesson() {
+        assert_eq!(parse("teach me python"), Some(Ask::Start(Shell::Python)));
+        assert_eq!(parse("I want to learn JavaScript"), Some(Ask::Start(Shell::Node)));
+        assert_eq!(parse("teach me git"), Some(Ask::Start(Shell::Git)));
+        assert_eq!(parse("open python"), None);
+    }
+
+    #[test]
+    fn python_and_node_lessons_really_run() {
+        let dir = std::env::temp_dir().join(format!("izuki-tutor-py-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (shell, steps) in [(Shell::Python, PYTHON), (Shell::Node, NODE)] {
+            for step in steps {
+                if let Act::WriteAndRun { file, body, line } = &step.act {
+                    std::fs::write(dir.join(file), body).unwrap();
+                    let r = run(shell, line, &dir).unwrap();
+                    let text = explain(step, &r);
+                    if step.after.contains("{err}") {
+                        assert_ne!(r.code, Some(0), "{file} is meant to fail");
+                        assert!(text.contains("Error"), "{file}: {text}");
+                    } else {
+                        assert_eq!(r.code, Some(0), "{file}: {}", r.out);
+                        assert!(!r.out.trim().is_empty(), "{file} printed nothing");
+                    }
+                }
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn lessons_have_one_exercise_at_the_end() {
-        for s in [Shell::Cmd, Shell::PowerShell] {
+        for s in [Shell::Cmd, Shell::PowerShell, Shell::Python, Shell::Git, Shell::Node] {
             let all = steps(s);
             assert!(all.last().unwrap().exercise.is_some());
             assert_eq!(all.iter().filter(|x| x.exercise.is_some()).count(), 1);

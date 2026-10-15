@@ -444,6 +444,22 @@ export interface InboxDigest {
   looked_at: number;
   skipped: number;
 }
+/** A routine (routines.rs). */
+export interface Routine {
+  id: string;
+  task: string;
+  every: string;
+  at: string;
+  phone: boolean;
+  active: boolean;
+  next: number;
+  last_run: number;
+  last_result: string;
+  last_outcome: string;
+  made: number;
+  /** Set by “run it now”: runs once soon, on/off unchanged. */
+  run_once?: boolean;
+}
 /** The Island's Vitals (vitals.rs). */
 export interface IslandVitals {
   cpu: number;
@@ -688,6 +704,10 @@ export const api = {
   mailAccounts: (fresh: boolean) =>
     call<{ accounts: MailAccount[]; duplicates: number }>("mail_accounts", { fresh }, () => ({ accounts: [], duplicates: 0 })),
   followUp: (text: string, days: number) => call<Reminder>("follow_up", { text, days }, () => ({ id: "", at: 0, text, alarm: false, repeat: "" }) as unknown as Reminder),
+  /** Routines (routines.rs): things done by themselves on a schedule. */
+  routinesList: () => call<Routine[]>("routines_list", undefined, () => []),
+  routineSet: (id: string, on: boolean) => call<Routine[]>("routine_set", { id, on }, () => []),
+  routineDelete: (id: string) => call<Routine[]>("routine_delete", { id }, () => []),
   missionsList: () => call<{ missions: Mission[]; running: boolean }>("missions_list", undefined, () => ({ missions: [], running: false })),
   missionAdd: (text: string) => call<Mission[]>("mission_add", { text }, () => []),
   missionRemove: (id: string) => call<Mission[]>("mission_remove", { id }, () => []),

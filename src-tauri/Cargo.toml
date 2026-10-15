@@ -1,6 +1,6 @@
 [package]
 name = "izuki"
-version = "1.0.121"
+version = "1.0.122"
 description = "IZUKI — draw on your screen, Izuki does it."
 authors = ["Izuki"]
 edition = "2021"
@@ -34,6 +34,8 @@ parking_lot = "0.12"
 dirs = "7"
 rand = "0.9"
 base64 = "0.23"
+# Web Push to the phone (webpush.rs) — already in the build for HTTPS.
+ring = "0.17"
 uuid = { version = "1", features = ["v4"] }
 # FL Studio: the virtual MIDI cable to the Izuki controller script.
 midir = "0.10"

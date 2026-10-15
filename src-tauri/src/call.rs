@@ -374,7 +374,11 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
                 Err(e) => return respond(req, 401, "application/json", json!({ "ok": false, "error": e.to_string() }).to_string().into_bytes()),
             };
             match (req.method().clone(), p) {
-                (tiny_http::Method::Get, "/touch/status") => json_reply(req, crate::touch::status()),
+                (tiny_http::Method::Get, "/touch/status") => {
+                    let mut v = crate::touch::status();
+                    v["push_on"] = json!(crate::touch::push_on(&device));
+                    json_reply(req, v)
+                }
                 (tiny_http::Method::Post, "/touch") => {
                     let mut body = String::new();
                     let _ = req.as_reader().take(16 * 1024).read_to_string(&mut body);

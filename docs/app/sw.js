@@ -1,6 +1,6 @@
 // Keeps Izuki's phone app opening instantly, even on a bad connection.
 // Only the app itself is cached — never a conversation or an AI reply.
-const CACHE = "izuki-phone-v60";
+const CACHE = "izuki-phone-v61";
 const SHELL = ["./", "index.html", "native.js", "pairing.js", "orb.js", "edge-glow.js", "apps.js", "drive.js", "remote.js", "touchgrass.js", "../shared/bugs.js", "water-orb.js", "orb-motion.js", "orb-materials.js", "glass-orb.js", "toon.js", "speech.js", "tv.js", "tv.css", "companion.css", "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
@@ -33,4 +33,37 @@ self.addEventListener("fetch", (e) => {
       })
       .catch(() => caches.match(key).then(async (r) => r || (e.request.mode === "navigate" ? await caches.match("index.html") : null) || Response.error()))
   );
+});
+
+// 🔔 Notifications from your PC (webpush.rs), even with Izuki closed:
+// a draft waiting for your yes, missions finished, heads-ups. The message is
+// encrypted for this phone only; the browser decrypts it before we see it.
+self.addEventListener("push", (e) => {
+  let m = { title: "Izuki", body: "Something on your PC needs you.", tag: "izuki" };
+  try { if (e.data) m = { ...m, ...e.data.json() }; } catch { try { m.body = e.data.text(); } catch {} }
+  e.waitUntil(self.registration.showNotification(m.title, {
+    body: m.body,
+    tag: m.tag,
+    renotify: m.tag === "approval",
+    icon: "icon-192.png",
+    badge: "icon-192.png",
+    data: { open: "./#touch" },
+  }));
+});
+
+// Tapping it opens Touch Grass (or brings the open app forward).
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const target = new URL(e.notification.data?.open || "./#touch", self.location.href).href;
+  e.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const w of wins) {
+      if (new URL(w.url).pathname === new URL(target).pathname) {
+        await w.focus();
+        w.postMessage({ type: "open-touch" });
+        return;
+      }
+    }
+    await self.clients.openWindow(target);
+  })());
 });

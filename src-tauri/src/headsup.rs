@@ -712,6 +712,8 @@ pub fn deliver(app: &AppHandle, title: &str, body: &str) {
     }
     if settings.heads_up_phone {
         crate::companion::notify_everywhere(body);
+        // A real notification on phones that switched it on (Touch Grass → 🔔).
+        crate::webpush::send_all(title, body, "headsup");
     }
 }
 

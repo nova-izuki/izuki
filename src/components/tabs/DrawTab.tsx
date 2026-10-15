@@ -1,3 +1,4 @@
+import { RoutinesCard } from "../RoutinesCard";
 import { MissionsCard } from "../MissionsCard";
 import { JumpBar } from "../JumpBar";
 import { useRef } from "react";
@@ -176,6 +177,7 @@ export function DrawTab() {
       {/* ------------------------------------------------ hands-free */}
       <div id="draw-talk"><TalkToIzuki /></div>
       <MissionsCard />
+      <RoutinesCard />
       <TeachingCard />
 
       {/* ------------------------------------------------ memory */}
