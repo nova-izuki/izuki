@@ -361,6 +361,8 @@ export interface Settings {
   /** Air control: your hand in front of the camera drives the PC. */
   /** In 3D apps (Blender, Unity…), a pinch dragged turns the model. */
   air_3d?: boolean;
+  /** Air control: a small camera window — you and your hand, with edge warnings. */
+  air_mirror?: boolean;
   air_enabled: boolean;
   /** Your own Air gestures: a taught hand pose and what it does
    * ("keys:ctrl+s", "type:words", "say:a request"). */

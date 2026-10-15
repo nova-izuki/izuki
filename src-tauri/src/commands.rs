@@ -1418,6 +1418,12 @@ pub async fn air_3d_app() -> Option<String> {
     blocking(|| crate::air::app_3d().map(|(name, _, _)| name.to_string())).await.ok().flatten()
 }
 
+/// Air control: the app in front, and whether Windows blocks Izuki's clicks there.
+#[tauri::command]
+pub async fn air_front() -> R<crate::air::Front> {
+    blocking(crate::air::front).await
+}
+
 /// Air control: start or end turning the model in the 3D app in front.
 #[tauri::command]
 pub async fn air_grip_3d(down: bool) -> R<bool> {

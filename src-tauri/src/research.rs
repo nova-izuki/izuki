@@ -116,12 +116,12 @@ const PLAN_PROMPT: &str = "You plan web research. Given a question, write 4 or 5
 
 const GAPS_PROMPT: &str = "You check web research. Given a question and notes from the pages read so far, write up to 3 more short web searches (3 to 8 words each, keeping the question's key words) for what is still missing or uncertain. One per line, nothing else. If nothing important is missing, write only: NONE";
 
-const WRITE_PROMPT: &str = "You are Izuki, writing a deep research answer from web pages you just read.
-- Start with a 2–3 sentence direct answer.
-- Then sections with short ## headings: the details, numbers, dates, differing views, and what's uncertain.
-- Cite every fact with the source's number in square brackets, like [2] or [1][4]. Only use the numbered sources given; never invent a source, a number or a quote.
-- If the sources disagree, say so. If they don't answer part of the question, say that plainly.
-- End with a short '## Bottom line'. Don't write a sources list — it's added for you.
+const WRITE_PROMPT: &str = "You are Izuki, a smart assistant who just researched the web for the user. Give them the most useful answer possible — the web pages are your evidence, not your limit.
+- If they asked you to MAKE something (a prompt, plan, message, email, essay outline, code, checklist, comparison table), make it FIRST: complete, specific and ready to use — e.g. a full prompt in a ```text block they can copy. Use what the pages taught you plus your own knowledge. Never answer \"the sources don't contain one\" when you can write it yourself.
+- If they asked a QUESTION, start with a 2–3 sentence direct answer, then sections with short ## headings: details, numbers, dates, differing views, what's uncertain.
+- Facts taken from a page get its number in square brackets, like [2] or [1][4]. Never invent a source, a quote, or a number and pin it on a source. Your own general knowledge is welcome where the pages fall short — don't cite it, and say so when it matters (\"from general knowledge\").
+- If a page is about something else, ignore it rather than describing it.
+- End with a short '## Bottom line' (for a question) or '## How to use it' (for something you made). Don't write a sources list — it's added for you.
 - Plain, friendly English. Markdown is fine.";
 
 struct Page {
@@ -205,7 +205,11 @@ fn run(id: u64, question: &str, history: &[crate::chat::Turn], send: &dyn Fn(Upd
     }
     let messages = [
         json!({ "role": "system", "content": WRITE_PROMPT }),
-        json!({ "role": "user", "content": format!("Question: {question}\nToday is {}.\n\nSources:\n\n{material}", chrono::Local::now().format("%A %-d %B %Y")) }),
+        json!({ "role": "user", "content": format!(
+            "{}Request: {question}\nToday is {}.\n\nSources:\n\n{material}",
+            if context.is_empty() { String::new() } else { format!("The conversation so far (for context):\n{context}\n") },
+            chrono::Local::now().format("%A %-d %B %Y")
+        ) }),
     ];
     let answer = crate::chat::complete_streaming_deep(&messages, id, &|t| {
         if !cancelled(id) {
@@ -351,15 +355,20 @@ fn unsupported_numbers(answer: &str, sources: &str) -> Vec<String> {
     let chars: Vec<char> = answer.chars().collect();
     let mut i = 0;
     while i < chars.len() {
-        if chars[i].is_ascii_digit() && (i == 0 || !chars[i - 1].is_alphanumeric()) && !(i > 0 && chars[i - 1] == '[') {
+        if chars[i].is_ascii_digit() {
+            // The whole number-like word: "47.6", "1.0.20", "2026".
             let start = i;
             while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.' && chars.get(i + 1).is_some_and(|c| c.is_ascii_digit())) {
                 i += 1;
             }
             let n: String = chars[start..i].iter().collect();
-            // Skip a citation ("[3]") and tiny counts ("3 steps").
+            // Not a figure: part of a word or name ("v1.0.20", "GPT4"), a
+            // version ("1.0.20"), a citation ("[3]").
+            let before = start.checked_sub(1).map(|b| chars[b]);
+            let glued = before.is_some_and(|c| c.is_alphanumeric() || c == '[' || c == '.' || c == '_') || chars.get(i).is_some_and(|c| c.is_alphabetic());
+            let version = n.matches('.').count() >= 2;
             let cited = chars.get(i) == Some(&']');
-            if !cited && (n.len() >= 2 || n.contains('.')) && !has_number(&sources, &n) && !out.iter().any(|o| o.trim_end_matches('%') == n) {
+            if !glued && !version && !cited && (n.len() >= 2 || n.contains('.')) && !has_number(&sources, &n) && !out.iter().any(|o| o.trim_end_matches('%') == n) {
                 let pct = if chars.get(i) == Some(&'%') { "%" } else { "" };
                 out.push(format!("{n}{pct}"));
             }
@@ -447,6 +456,7 @@ mod tests {
         assert!(skip_site("www.youtube.com".trim_start_matches("www.")));
         assert!(!skip_site("wikipedia.org"));
         assert_eq!(unsupported_numbers("Panels make 10-20% on cloudy days [1], and the record is 47.6% [2]. Over 1,000 tested.", "the record of 47.6% was set; 1000 panels"), vec!["10", "20%"]);
+        assert!(unsupported_numbers("Izuki v1.0.20 was released; version 1.0.20 too; GPT4o and 3rd place.", "nothing").is_empty(), "versions and names aren't figures");
         let hit = |t: &str, s: &str, u: &str| crate::web::Hit { title: t.into(), snippet: s.into(), url: u.into() };
         let q = "free AI API rate limits students";
         assert!(relevant(q, &hit("Rate limits | Gemini API", "Free tier requests per minute", "https://ai.google.dev/gemini-api/docs/rate-limits")));

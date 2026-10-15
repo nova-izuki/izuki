@@ -3,6 +3,7 @@ import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
 import { api, emit, EV, on } from "../lib/ipc";
 import { listCameras, openCamera, rankCameras, saveCamera, savedCamera } from "../lib/camera";
 import { AIR_KEYBOARD_OPEN, AirKeyboard } from "./AirKeyboard";
+import { AirMirror, HAND_BONES } from "./AirMirror";
 import { actionLabel, airBindings, type AirSlot } from "../lib/airActions";
 import { newScroll, scrollStep, type ScrollState } from "../lib/airScroll";
 import type { Settings } from "../lib/types";
@@ -121,6 +122,7 @@ export function AirHost() {
   const [mode, setMode] = useState<AirMode>("balanced");
   const [bindings, setBindings] = useState<Record<AirSlot, string>>(() => airBindings(undefined));
   const [game, setGame] = useState<{ on: boolean; keys: "arrows" | "wasd" }>({ on: false, keys: "arrows" });
+  const [mirror, setMirror] = useState(false);
   const last = useRef("");
   useEffect(() => {
     let alive = true;
@@ -132,6 +134,7 @@ export function AirHost() {
           setMode(s.air_mode in AIR_MODES ? s.air_mode : "balanced");
           setBindings(airBindings(s.air_bindings));
           setGame({ on: !!s.air_game, keys: s.air_game_keys === "wasd" ? "wasd" : "arrows" });
+          setMirror(!!s.air_mirror);
           const next = s.air_enabled ? s.air_gestures ?? [] : null;
           const key = JSON.stringify(next);
           if (key === last.current) return; // same as before: don't restart the camera
@@ -148,7 +151,7 @@ export function AirHost() {
       offs.forEach((off) => void off.then((f) => f()).catch(() => undefined));
     };
   }, []);
-  return gestures ? <AirControl gestures={gestures} mode={mode} bindings={bindings} game={game} /> : null;
+  return gestures ? <AirControl gestures={gestures} mode={mode} bindings={bindings} game={game} mirror={mirror} /> : null;
 }
 
 export function AirControl({
@@ -156,9 +159,12 @@ export function AirControl({
   mode: airMode = "balanced",
   bindings,
   game,
+  mirror = false,
 }: {
   gestures: Custom[];
   mode?: AirMode;
+  /** Show the camera window (AirMirror). */
+  mirror?: boolean;
   bindings?: Record<AirSlot, string>;
   /** Game controls: the hand leaning holds direction keys, a pinch holds Space. */
   game?: { on: boolean; keys: "arrows" | "wasd" };
@@ -177,8 +183,13 @@ export function AirControl({
   customs.current = gestures;
   const recording = useRef<{ name: string; action: string; frames: number[][]; until: number } | null>(null);
   /** What the guided test watches: the last hand, and what's been done. */
-  const live = useRef<AirLive>({ lm: null, hand: false, moved: 0, scrolls: 0, pauses: 0, clicked: false, dragged: false, pinches: 0, calls: 0, engine: "", camera: "", looks: 0, looksAt: 0, rate: 0, ms: 0, fps: 0, gesture: "", pinch: 1, tour: false, snap: null });
+  const live = useRef<AirLive>({ lm: null, hand: false, moved: 0, scrolls: 0, pauses: 0, clicked: false, dragged: false, pinches: 0, calls: 0, engine: "", camera: "", looks: 0, looksAt: 0, rate: 0, ms: 0, fps: 0, gesture: "", pinch: 1, tour: false, mirror: false, snap: null });
   const [tour, setTour] = useState(false);
+  live.current.mirror = mirror;
+  // Closing the camera window drops its last picture.
+  useEffect(() => {
+    if (!mirror && !live.current.tour) live.current.snap = null;
+  }, [mirror]);
   /** Bumped to reopen the camera: another one picked, or one plugged in / out. */
   const [camKey, setCamKey] = useState(0);
   useEffect(() => {
@@ -264,6 +275,9 @@ export function AirControl({
     let camFrames = 0;
     let camAt = performance.now();
     let timer: ReturnType<typeof setInterval> | undefined;
+    let frontTimer: ReturnType<typeof setInterval> | undefined;
+    let frontApp = "";
+    let frontBlocked = false;
     let timerSaid = false;
     let detectSaid = false;
     let blankSaid = false;
@@ -522,7 +536,7 @@ export function AirControl({
       }
       // The guide shows the very picture the hand was found in, so the dots
       // sit on the fingers (the live video ran ahead of the dots).
-      if (live.current.tour && !(tracker && trackerBusy)) {
+      if ((live.current.tour || live.current.mirror) && !(tracker && trackerBusy)) {
         const c = tracker
           ? (snapNext ??= Object.assign(document.createElement("canvas"), { width: 320, height: 240 }))
           : (live.current.snap ??= Object.assign(document.createElement("canvas"), { width: 320, height: 240 }));
@@ -1130,7 +1144,7 @@ export function AirControl({
               trackerBusy = false;
               if (!alive) return;
               live.current.ms = Math.round(live.current.ms ? live.current.ms * 0.8 + (m.ms ?? 0) * 0.2 : m.ms ?? 0);
-              if (snapNext && live.current.tour) {
+              if (snapNext && (live.current.tour || live.current.mirror)) {
                 const shown = live.current.snap;
                 live.current.snap = snapNext;
                 snapNext = shown;
@@ -1231,6 +1245,28 @@ export function AirControl({
         raf = requestAnimationFrame(frame);
         lastRaf = performance.now();
         timer = setInterval(backup, 100);
+        // The app in front: logged when it changes, and a plain warning when
+        // Windows won't let Izuki click there (it runs as administrator).
+        frontTimer = setInterval(() => {
+          void api
+            .airFront()
+            .then((f) => {
+              if (!f || !alive) return;
+              const key = `${f.app}|${f.blocked}|${f.unknown}`;
+              const was = frontBlocked;
+              frontBlocked = f.blocked;
+              if (key !== frontApp) {
+                frontApp = key;
+                void api
+                  .log(`[air] in front: ${f.app || "the desktop"}${f.blocked ? " — runs as administrator, so Windows blocks Izuki's clicks and keys there" : f.unknown ? " — Windows wouldn't let Izuki check it" : ""}`)
+                  .catch(() => undefined);
+              }
+              // Kept up while that app is in front (a "Resting…" line can't hide it for good).
+              if (f.blocked) setStatus(`Windows won't let Izuki click in ${f.app.replace(/\.exe$/i, "")} — it's running as administrator. Open it normally (or run Izuki as administrator).`);
+              else if (was) setStatus("Air control on");
+            })
+            .catch(() => undefined);
+        }, 1500);
       } catch (e) {
         const why = e instanceof Error ? e.message : String(e);
         void api.log(`[air] couldn't start: ${why}`).catch(() => undefined);
@@ -1245,6 +1281,7 @@ export function AirControl({
       alive = false;
       cancelAnimationFrame(raf);
       clearInterval(timer);
+      clearInterval(frontTimer);
       releaseKeys();
       // A pick-up in progress ends here (a drag of Izuki's own things, not a Windows mouse press).
       if (grabbing) fake("pointerup", pointer);
@@ -1261,6 +1298,7 @@ export function AirControl({
   return (
     <>
       {tour && <AirTour video={video} live={live} onClose={() => setTour(false)} onCamera={() => setCamKey((k) => k + 1)} />}
+      {mirror && !tour && <AirMirror video={video} live={live} />}
       <AirKeyboard />
       <video ref={video} muted playsInline style={{ position: "fixed", left: -4, top: -4, width: 2, height: 2, opacity: 0, pointerEvents: "none" }} />
       <canvas ref={canvas} className="pointer-events-none fixed inset-0 z-[70]" />
@@ -1301,10 +1339,12 @@ type AirLive = {
   pinch: number;
   /** The guide is open: keep the picture the hand was found in. */
   tour: boolean;
+  /** The camera window is open (it shows the picture each look used, too). */
+  mirror: boolean;
   /** That picture (mirrored), so the dots sit exactly on the fingers. */
   snap: HTMLCanvasElement | null;
 };
-const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
+const BONES = HAND_BONES;
 
 /** Counters a step is measured from (so "Try again" starts it fresh). */
 type Base = { moved: number; scrolls: number; pauses: number; clicked: boolean; dragged: boolean; pinches: number };

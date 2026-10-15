@@ -27,6 +27,67 @@ pub fn button(right: bool, down: bool) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// The app in front: Windows doesn't let an ordinary app click or type into an
+// app running as administrator, so Air control says so instead of silently
+// doing nothing there.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Front {
+    pub app: String,
+    /// Runs as administrator while Izuki doesn't: Windows blocks Izuki's clicks and keys there.
+    pub blocked: bool,
+    /// Windows wouldn't let Izuki look at that app at all (so `blocked` is a guess).
+    pub unknown: bool,
+}
+
+pub fn front() -> Front {
+    #[cfg(windows)]
+    unsafe {
+        use windows::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+        use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION};
+        use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+
+        /// Some(true) elevated, Some(false) not, None = Windows wouldn't say.
+        fn elevated(process: HANDLE) -> Option<bool> {
+            unsafe {
+                let mut token = HANDLE::default();
+                OpenProcessToken(process, TOKEN_QUERY, &mut token).ok()?;
+                let mut e = TOKEN_ELEVATION::default();
+                let mut len = 0u32;
+                let ok = GetTokenInformation(token, TokenElevation, Some(&mut e as *mut _ as *mut _), std::mem::size_of::<TOKEN_ELEVATION>() as u32, &mut len).is_ok();
+                let _ = CloseHandle(token);
+                ok.then_some(e.TokenIsElevated != 0)
+            }
+        }
+
+        let hwnd = GetForegroundWindow();
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        let app = crate::uia::foreground_app();
+        if pid == 0 || pid == std::process::id() {
+            return Front { app, blocked: false, unknown: false };
+        }
+        if elevated(GetCurrentProcess()).unwrap_or(false) {
+            // Izuki itself runs as administrator: nothing is out of reach.
+            return Front { app, blocked: false, unknown: false };
+        }
+        match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+            Ok(h) => {
+                // An ordinary app can't even read an administrator app's token.
+                let blocked = elevated(h).unwrap_or(true);
+                let _ = CloseHandle(h);
+                Front { app, blocked, unknown: false }
+            }
+            Err(_) => Front { app, blocked: false, unknown: true },
+        }
+    }
+    #[cfg(not(windows))]
+    Front { app: String::new(), blocked: false, unknown: false }
+}
+
+// ---------------------------------------------------------------------------
 // 3D apps: a pinch dragged turns the model (orbit), the way each app wants
 // it — Blender orbits with the middle button, Unity with Alt + left… A quick
 // pinch is still a click (the frontend decides), and ✌️ zooms (scroll).

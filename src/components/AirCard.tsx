@@ -114,6 +114,12 @@ export function AirCard() {
         </div>
       </Row>
       <Row
+        label="Show the camera"
+        hint="A small window with you and your hand as the camera sees them, the tracked hand drawn on, and a red warning on the edge your hand is about to leave — so you always know if it's in view. Drag it anywhere; S/M/L sizes it."
+      >
+        <Toggle checked={!!settings.air_mirror} onChange={(v) => patch({ air_mirror: v })} />
+      </Row>
+      <Row
         label="3D apps: turn models with your hand"
         hint="In Blender, SketchUp, Fusion 360, Unity, Maya, 3ds Max, Cinema 4D, FreeCAD, 3D Viewer and Paint 3D: pinch and move to turn the model (the right buttons and keys for each app); a quick pinch still clicks; ✌️ up and down zooms. Nothing changes in other apps. Off by default: while it's on, dragging a slider in those apps turns the model instead."
       >

@@ -433,6 +433,9 @@ pub struct Settings {
     /// In 3D apps (Blender, Unity…), a pinch dragged turns the model.
     #[serde(default)]
     pub air_3d: bool,
+    /// Air control: a small camera window (you and your hand, with edge warnings).
+    #[serde(default)]
+    pub air_mirror: bool,
     /// Your own Air gestures: a taught hand pose and what it does.
     #[serde(default)]
     pub air_gestures: Vec<AirGesture>,
@@ -1068,6 +1071,7 @@ impl Default for Settings {
             mate_wander: true,
             air_enabled: false,
             air_3d: false,
+            air_mirror: false,
             air_gestures: Vec::new(),
             air_mode: default_air_mode(),
             air_bindings: Default::default(),
