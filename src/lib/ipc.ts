@@ -762,6 +762,8 @@ export const api = {
   airPointer: (nx: number, ny: number) => call<void>("air_pointer", { nx, ny }, () => undefined),
   /** Air control: press / let go of a mouse button. */
   airButton: (right: boolean, down: boolean) => call<void>("air_button", { right, down }, () => undefined),
+  /** Two pinches in a row: a real double-click (opens desktop icons and files). */
+  airDoubleClick: (sinceFirstMs: number) => call<void>("air_double_click", { sinceFirstMs }, () => undefined),
   /** Air control: scroll notches (down when positive). */
   airScroll: (amount: number) => call<void>("air_scroll", { amount }, () => undefined),
   /** The 3D app in front (Blender, Unity…) when Air's 3D controls are on, else null. */

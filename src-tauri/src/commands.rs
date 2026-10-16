@@ -1416,6 +1416,13 @@ pub fn air_button(right: bool, down: bool) -> R<()> {
     crate::air::button(right, down).map_err(err)
 }
 
+/// Air control: two pinches in a row — a real double-click where the pointer is.
+#[tauri::command]
+pub async fn air_double_click(since_first_ms: u64) -> R<()> {
+    // Off the main thread: its short pause between clicks must never hold the windows up.
+    blocking(move || crate::air::double_click(since_first_ms).map_err(err)).await?
+}
+
 /// Air control: scroll notches where the pointer is (down when positive).
 #[tauri::command]
 pub fn air_scroll(amount: i32) -> R<()> {

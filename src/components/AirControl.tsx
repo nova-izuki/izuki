@@ -288,6 +288,12 @@ export function AirControl({
     // Gesture state.
     let pinchDown = false;
     let pinchAt = 0;
+    /** The last quick pinch-click: when it pressed (Windows times double-clicks
+     * from the first press), when it let go, and where. */
+    let lastClick: { down: number; up: number; x: number; y: number; target: string | null } | null = null;
+    /** A second pinch, held back until it's clear it's a quick one (then a
+     * double-click) and not a press-and-drag. */
+    let pendingDouble: { down: number; x: number; y: number } | null = null;
     let dragging = false;
     /** This pinch has clearly moved: from now on it's a drag. Until then the
      * pointer holds still, so a click stays a click. */
@@ -973,7 +979,19 @@ export function AirControl({
         }
         pend3d = !ownDown && !grabbing && !!app3d;
         grip3d = false;
-        if (!ownDown && !grabbing && !pend3d) void api.airButton(false, true).catch(() => undefined);
+        // Two pinches in a row on the same thing: a double-click, at exactly
+        // where the first one landed (a hand drifts a few pixels; Windows
+        // only pairs clicks within 4).
+        // The same thing under the hand both times (its box), when there's one.
+        const target = box ? `${box.nx.toFixed(3)},${box.ny.toFixed(3)},${box.nw.toFixed(3)},${box.nh.toFixed(3)}` : null;
+        const same = !lastClick?.target || !target || lastClick.target === target;
+        const again = lastClick && same && !ownDown && !grabbing && !pend3d && now - lastClick.up < 900 && Math.hypot(pointer.x - lastClick.x, pointer.y - lastClick.y) < 0.035;
+        pendingDouble = null;
+        if (again && lastClick) {
+          // Nothing pressed yet: let go quickly → a double-click; hold or move → a press.
+          pendingDouble = { down: lastClick.down, x: lastClick.x, y: lastClick.y };
+          lastClick = null;
+        } else if (!ownDown && !grabbing && !pend3d) void api.airButton(false, true).catch(() => undefined);
         // A box you can type in: the air keyboard comes up by itself.
         if (!ownDown && !grabbing && box?.field && pointer.x >= box.nx && pointer.x <= box.nx + box.nw && pointer.y >= box.ny && pointer.y <= box.ny + box.nh) {
           window.dispatchEvent(new Event(AIR_KEYBOARD_OPEN));
@@ -993,12 +1011,30 @@ export function AirControl({
         } else if (pend3d) {
           // A quick pinch in a 3D app is still a click.
           void api.airButton(false, true).then(() => api.airButton(false, false)).catch(() => undefined);
-        } else void api.airButton(false, false).catch(() => undefined);
+        } else if (pendingDouble) {
+          // A quick second pinch: the double-click, where the first one landed.
+          const first = pendingDouble;
+          pendingDouble = null;
+          pointer = { x: first.x, y: first.y };
+          void api
+            .airPointer(first.x, first.y)
+            .then(() => api.airDoubleClick(Math.round(now - first.down)))
+            .catch(() => undefined);
+        } else {
+          void api.airButton(false, false).catch(() => undefined);
+          // A quick click (not a drag) can be the first of a double-click.
+          lastClick = now - pinchAt < 600 && (!pinchFrom || Math.hypot(raw.x - pinchFrom.x, raw.y - pinchFrom.y) < 0.03) ? { down: pinchAt, up: now, x: pointer.x, y: pointer.y, target: box ? `${box.nx.toFixed(3)},${box.ny.toFixed(3)},${box.nw.toFixed(3)},${box.nh.toFixed(3)}` : null } : null;
+        }
         pend3d = false;
         grip3d = false;
         dragOut = false;
         pinchFrom = null;
-      } else if (pinchDown && now - pinchAt > 250) {
+      } else if (pinchDown && pendingDouble && (now - pinchAt > 600 || (pinchFrom && Math.hypot(raw.x - pinchFrom.x, raw.y - pinchFrom.y) > 0.03))) {
+        // The second pinch was held or moved: not a double-click after all —
+        // press now, and from here it's an ordinary press (and drag).
+        pendingDouble = null;
+        void api.airButton(false, true).catch(() => undefined);
+      } else if (pinchDown && !pendingDouble && now - pinchAt > 250) {
         // A drag: the pinch held while the hand itself moves (measured from
         // the hand, not the ring, which holds still for a moment at first).
         if (pinchFrom && Math.hypot(raw.x - pinchFrom.x, raw.y - pinchFrom.y) > 0.05) L.dragged = true;

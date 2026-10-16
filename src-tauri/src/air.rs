@@ -16,6 +16,35 @@ pub fn pointer(x: i32, y: i32) {
     crate::automation::pointer_to(x, y);
 }
 
+/// A double-click where the pointer is — two pinches in a row. A hand can't
+/// click twice inside Windows' double-click time and spot, so the second
+/// pinch is turned into a real double-click: one more click when the first
+/// was recent enough for Windows to pair them, otherwise two fast clicks.
+/// Either way Windows sees exactly one double-click (Chrome opens once).
+pub fn double_click(since_first_ms: u64) -> Result<()> {
+    let window = double_click_ms();
+    let clicks = if since_first_ms + 80 < window { 1 } else { 2 };
+    for i in 0..clicks {
+        if i > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(60));
+        }
+        crate::automation::mouse_button(false, true)?;
+        crate::automation::mouse_button(false, false)?;
+    }
+    Ok(())
+}
+
+fn double_click_ms() -> u64 {
+    #[cfg(windows)]
+    {
+        u64::from(unsafe { windows::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime() })
+    }
+    #[cfg(not(windows))]
+    {
+        500
+    }
+}
+
 /// Press or let go of a mouse button where the pointer is (a pinch held is a drag).
 /// Letting go of the left button also lets go of a 3D grip — every way a
 /// pinch can end (hand gone, paused, lowered) comes through here.
