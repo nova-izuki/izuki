@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🎹", title: "FL Studio: 808s, melodies, timing, mix, intros", how: "With a beat open in FL: “add an 808”, “add a melody in C minor”, “fix the timing on the hats”, “balance the mix”, “make an intro” or “make a fill”. In key, read back from FL before it says it's done, and one Ctrl+Z each.", try: { label: "FL Studio", tab: "settings", id: "settings-flstudio" } },
   { icon: "🎙️", title: "Lecture Mode and Campus in Notes", how: "Notes → Campus: what's due soon and what was due lately, and Lecture Mode — confirm you're allowed to record, and Izuki writes the lecture down as it goes, then makes notes with key points, definitions, examples and dates, each with its time. Each note also has “Explain in 60 seconds” and “Teach me like a beginner”.", try: { label: "Open Notes", tab: "notes", id: "notes-campus" } },
   { icon: "🖱️", title: "It clicks the button it says it will", how: "In apps like FL Studio whose pop-ups Windows can't see into, Izuki now reads the button's word on screen to click it exactly — and never says “done” after only promising to click." },
   { icon: "🏝️", title: "The Island asks, warns and listens", how: "When Izuki needs your OK (an email to send), the Island says so — open it and press Allow or No. It shows when your phone is connected (with End), and errors with a Get help button. Right-click the open Island for a quick menu; double-click its top to talk." },

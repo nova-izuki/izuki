@@ -8,9 +8,18 @@
 //! (only the ones it knows) and answers. Every change starts with an undo
 //! point, so Ctrl+Z in FL takes it back.
 //!
-//! Phase 1 (here): "make afrobeats", "make a trap beat at 140" — a fresh
-//! pattern, the drums written step by step so you watch it build, the tempo
-//! set, and it plays. Play / stop / tempo by voice too.
+//! Phase 1: "make afrobeats", "make a trap beat at 140" — a fresh pattern,
+//! the drums written step by step so you watch it build, the tempo set, and
+//! it plays. Play / stop / tempo by voice too.
+//!
+//! Phases 2–5 (what FL's scripting really allows — said plainly where it doesn't):
+//! - "add an 808" / "add a melody": key-aware lines written into a melodic
+//!   channel's steps (one note per step — FL's controller scripts can't
+//!   write chords or note lengths into the piano roll).
+//! - "fix the timing on the hats": FL's own Quick quantize.
+//! - "balance the mix": channel levels and a little panning, by role.
+//! - "make an intro" / "make a fill": variation patterns of the current beat,
+//!   to drag into the Playlist (scripts can't place patterns there).
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{channel, Receiver};
@@ -634,7 +643,48 @@ fn bpm_of(said: &str) -> Option<f64> {
 pub fn is_request(said: &str) -> bool {
     let s = said.to_lowercase();
     let fl = s.contains("fl studio") || s.contains(" in fl") || s.contains("on fl") || s.starts_with("fl ");
-    fl || wants_beat(&s)
+    // "Add an 808", "fix the timing": FL's when it's open and linked.
+    fl || wants_beat(&s) || (job_of(&s).is_some() && fl_running() && has_cable())
+}
+
+/// The parts of a beat Izuki can add, fix or vary (phases 2–5).
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Job {
+    Bass,
+    Melody,
+    Quantize,
+    Balance,
+    Intro,
+    Fill,
+}
+
+fn job_of(s: &str) -> Option<Job> {
+    // Whole words only ("lead" isn't in "leader", "add" isn't in "address").
+    let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric() && c != '#').filter(|w| !w.is_empty()).collect();
+    let has = |ws: &[&str]| ws.iter().any(|w| words.contains(w));
+    let phrase = |ps: &[&str]| ps.iter().any(|p| s.contains(p));
+    let add = has(&["add", "make", "put", "give", "write", "lay", "create", "need", "want"]);
+    // Unless FL is named, it has to be about music.
+    let fl = s.contains("fl studio") || words.contains(&"fl");
+    let music = fl || has(&["beat", "beats", "track", "song", "pattern", "808", "melody", "melodies", "drums", "drum", "hats", "hat", "kick", "snare", "clap", "bass", "bassline", "mix", "instrumental", "loop"]);
+    if !music {
+        return None;
+    }
+    if (has(&["timing", "quantize", "quantise", "tighten"]) || phrase(&["off beat", "off-beat", "on beat", "on the grid"])) && !has(&["melody"]) {
+        Some(Job::Quantize)
+    } else if (has(&["balance"]) && has(&["mix", "levels", "beat", "track", "song"])) || phrase(&["mix my beat", "mix the beat", "mixdown", "mix down"]) {
+        Some(Job::Balance)
+    } else if add && (has(&["808", "bassline", "bass"]) || phrase(&["bass line", "sub bass"])) {
+        Some(Job::Bass)
+    } else if add && (has(&["melody", "melodies", "lead", "hook", "riff"]) || phrase(&["piano line"])) {
+        Some(Job::Melody)
+    } else if add && has(&["intro"]) {
+        Some(Job::Intro)
+    } else if add && (has(&["fill"]) || phrase(&["drum roll", "transition"])) {
+        Some(Job::Fill)
+    } else {
+        None
+    }
 }
 
 /// Making a beat (not mixing, arranging or anything else in FL).
@@ -650,7 +700,8 @@ pub fn handle(said: &str) -> Result<Option<String>> {
     let words = s.trim().trim_end_matches(['.', '!']);
     let opening = ["open fl", "launch fl", "start fl", "open up fl"].iter().any(|w| words.starts_with(w));
     let transport = ["stop", "pause", "play", "start", "tempo", "bpm", "faster", "slower"].iter().any(|w| words.contains(w));
-    if !opening && !wants_beat(&s) && !transport {
+    let job = job_of(&s);
+    if !opening && !wants_beat(&s) && !transport && job.is_none() {
         return Ok(None);
     }
     // "Make afrobeats" without naming FL: FL only when it's open and linked —
@@ -669,6 +720,9 @@ pub fn handle(said: &str) -> Result<Option<String>> {
     }
     if !has_cable() {
         return Ok(Some("I'm not linked to FL Studio yet — open Settings → FL Studio and press Set up (one time).".into()));
+    }
+    if let Some(job) = job {
+        return do_job(job, &s).map(Some);
     }
     if wants_beat(&s) {
         return make_beat(said).map(Some);
@@ -699,6 +753,293 @@ pub fn handle(said: &str) -> Result<Option<String>> {
         return Ok(Some(format!("Tempo's {} BPM now.", to.round())));
     }
     Ok(None)
+}
+
+// ------------------------------------------------------------ phases 2–5
+
+/// Instruments that play notes (not drums), by the names FL gives them.
+fn is_melodic_name(name: &str) -> bool {
+    let n = name.to_lowercase();
+    ["808", "bass", "sub", "keys", "piano", "lead", "pluck", "synth", "sytrus", "flex", "3x osc", "3xosc", "harmless", "harmor", "bell", "pad", "guitar", "strings", "vital", "serum", "nexus", "omnisphere", "keyscape", "gms", "transistor", "flute", "choir", "organ"]
+        .iter()
+        .any(|w| n.contains(w))
+}
+
+fn is_bass_name(name: &str) -> bool {
+    let n = name.to_lowercase();
+    ["808", "bass", "sub"].iter().any(|w| n.contains(w))
+}
+
+/// The key a genre usually sits in: (root pitch class 0=C, minor).
+fn key_for(genre: &str) -> (u8, bool) {
+    match genre {
+        "trap" | "drill" => (5, true),        // F minor
+        "afrobeats" => (9, true),             // A minor
+        "amapiano" => (2, true),              // D minor
+        "house" | "pop" => (0, false),        // C major
+        "rnb" | "lofi" => (4, true),          // E minor
+        "reggaeton" | "dancehall" => (7, true), // G minor
+        _ => (9, true),
+    }
+}
+
+const NOTES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+/// "in C minor", "key of G", "in F#".
+fn key_of(s: &str) -> Option<(u8, bool)> {
+    let words: Vec<&str> = s.split_whitespace().collect();
+    for (i, w) in words.iter().enumerate() {
+        if *w == "in" || *w == "of" {
+            let Some(n) = words.get(i + 1) else { continue };
+            let n = n.trim_matches(|c: char| !c.is_alphanumeric() && c != '#').to_uppercase();
+            if let Some(pc) = NOTES.iter().position(|x| x.eq_ignore_ascii_case(&n)) {
+                // "in C minor", "key of G", "in F#" — not "in a minute".
+                let next = words.get(i + 2).map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()));
+                let keyish = n.contains('#') || next.is_none_or(|w| ["major", "minor", "maj", "min", "key", "please", "and"].contains(&w)) || words[i - usize::from(i > 0)] == "key";
+                if keyish {
+                    let minor = next.is_none_or(|m| !m.starts_with("maj"));
+                    return Some((pc as u8, minor));
+                }
+            }
+        }
+    }
+    None
+}
+
+fn key_name(k: (u8, bool)) -> String {
+    format!("{} {}", NOTES[k.0 as usize % 12], if k.1 { "minor" } else { "major" })
+}
+
+/// Scale degrees as semitones above the root.
+fn scale(minor: bool) -> &'static [u8] {
+    if minor { &[0, 3, 5, 7, 10] } else { &[0, 2, 4, 7, 9] }
+}
+
+/// The 808: on the kick's steps, the root, moving to the 5th or the minor
+/// 7th near the end of the bar. FL notes: 60 is C5 (the sample's own pitch).
+fn bass_line(genre: &str, key: (u8, bool)) -> Vec<(u8, u8, u8)> {
+    let kick: Vec<u8> = beat_for(genre).rows.iter().find(|(r, _)| *r == Role::Kick).map(|(_, s)| s.iter().map(|(st, _)| *st).collect()).unwrap_or_else(|| vec![0, 8]);
+    let root = 48 + key.0; // an octave below the sample's own pitch: deep
+    let n = kick.len();
+    kick.iter()
+        .enumerate()
+        .map(|(i, st)| {
+            let pitch = if i + 1 == n && n > 2 { root + 7 } else if i + 2 == n && n > 3 { root + if key.1 { 10 } else { 9 } - 12 } else { root };
+            (*st, pitch, 112)
+        })
+        .collect()
+}
+
+/// A one-bar melody: the genre's rhythm, notes from the scale, starting and
+/// ending on the root. `seed` makes each ask a new idea.
+fn melody_line(genre: &str, key: (u8, bool), seed: u64) -> Vec<(u8, u8, u8)> {
+    let rhythm: &[u8] = match genre {
+        "afrobeats" | "amapiano" | "dancehall" | "reggaeton" => &[0, 3, 6, 8, 10, 13],
+        "trap" | "drill" => &[0, 3, 6, 10, 12],
+        "house" | "pop" => &[0, 2, 4, 6, 8, 10, 12, 14],
+        _ => &[0, 4, 7, 10, 12],
+    };
+    let sc = scale(key.1);
+    let root = 72 + key.0; // an octave above middle C: clear over the beat
+    let mut x = seed | 1;
+    let mut next = || {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        x
+    };
+    let mut degree: i32 = 0;
+    let last = rhythm.len() - 1;
+    rhythm
+        .iter()
+        .enumerate()
+        .map(|(i, st)| {
+            if i > 0 && i < last {
+                // A small step up or down the scale, now and then a leap.
+                let r = next() % 10;
+                degree += match r { 0..=3 => 1, 4..=7 => -1, 8 => 2, _ => -2 };
+                degree = degree.clamp(-2, 6);
+            } else if i == last {
+                degree = if next() % 2 == 0 { 0 } else { 2 };
+            }
+            let octave = degree.div_euclid(sc.len() as i32);
+            let step = degree.rem_euclid(sc.len() as i32) as usize;
+            let pitch = (root as i32 + octave * 12 + sc[step] as i32).clamp(36, 108) as u8;
+            let vel = if st % 4 == 0 { 104 } else { 88 };
+            (*st, pitch, vel)
+        })
+        .collect()
+}
+
+/// The genre of the beat in front of you: the pattern's name ("Izuki
+/// Afrobeats"), the request, or trap.
+fn genre_now(st: &Value, s: &str) -> &'static str {
+    let pat = st["pattern_name"].as_str().unwrap_or("").to_lowercase();
+    genre_of(s).or_else(|| genre_of(&pat)).unwrap_or("trap")
+}
+
+fn channel_list(st: &Value) -> Vec<(usize, String)> {
+    st["channels"].as_array().map(|a| a.iter().filter_map(|c| Some((c["i"].as_u64()? as usize, c["name"].as_str()?.to_string()))).collect()).unwrap_or_default()
+}
+
+/// How many steps the channel's row has in this pattern (16 when unsure).
+fn row_len(ch: usize) -> usize {
+    match one(json!(["row", ch])) {
+        Ok(Value::Array(row)) if !row.is_empty() => row.len(),
+        _ => 16,
+    }
+}
+
+fn steps_on(ch: usize) -> Vec<u8> {
+    match one(json!(["row", ch])) {
+        Ok(Value::Array(row)) => row.iter().enumerate().filter(|(_, v)| v.as_i64().unwrap_or(0) != 0).map(|(i, _)| i as u8).collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn do_job(job: Job, s: &str) -> Result<String> {
+    match run_job(job, s) {
+        // FL is still running the older script (it loads scripts when it
+        // starts): put the new one in place and say what to do.
+        Err(e) if e.to_string().contains("unknown op") => {
+            install_script()?;
+            Ok("I've just updated my FL Studio script for this — close FL Studio and open it again once, then ask me again.".into())
+        }
+        r => r,
+    }
+}
+
+fn run_job(job: Job, s: &str) -> Result<String> {
+    let st = one(json!(["state"]))?;
+    let chans = channel_list(&st);
+    let genre = genre_now(&st, s);
+    match job {
+        Job::Bass | Job::Melody => {
+            let selected = one(json!(["selected"])).ok().and_then(|v| v.as_i64()).filter(|i| *i >= 0).map(|i| i as usize);
+            let wanted = |n: &str| if job == Job::Bass { is_bass_name(n) } else { is_melodic_name(n) && !is_bass_name(n) };
+            // Your selected channel if it plays notes, else one named for the job.
+            let ch = selected
+                .and_then(|i| chans.iter().find(|(c, n)| *c == i && role_of(n).is_none() && is_melodic_name(n)).cloned())
+                .or_else(|| chans.iter().find(|(_, n)| wanted(n)).cloned());
+            let Some((ch, name)) = ch else {
+                bail!(
+                    "I need an instrument for that: add {} to the Channel rack (click it so it's selected), then ask again. I won't put notes on a drum sound.",
+                    if job == Job::Bass { "an 808 (or any bass)" } else { "a synth or keys — FLEX, FL Keys or Sytrus" }
+                );
+            };
+            let had = steps_on(ch);
+            let replace = s.contains("replace") || s.contains("new one") || s.contains("another");
+            if !had.is_empty() && !replace {
+                bail!("“{name}” already has notes in this pattern — say “replace the {}” to write over them (Ctrl+Z brings them back), or select an empty instrument.", if job == Job::Bass { "808" } else { "melody" });
+            }
+            let key = key_of(s).unwrap_or_else(|| key_for(genre));
+            let seed = (crate::model::now_ms() as u64) ^ (ch as u64 * 7919);
+            let line = if job == Job::Bass { bass_line(genre, key) } else { melody_line(genre, key, seed) };
+            one(json!(["undo_point", format!("Izuki: {}", if job == Job::Bass { "808" } else { "melody" })]))?;
+            let _ = one(json!(["show", "rack"]));
+            for s in had {
+                call(vec![json!(["step", ch, s, false])], true)?;
+            }
+            for (step, pitch, vel) in &line {
+                call(vec![json!(["step", ch, step, true]), json!(["pitch", ch, step, pitch]), json!(["vel", ch, step, vel])], true)?;
+                std::thread::sleep(Duration::from_millis(35));
+            }
+            // Read it back: only say it's there if it is.
+            let on = steps_on(ch);
+            if line.iter().any(|(st, _, _)| !on.contains(st)) {
+                bail!("Some notes didn't land on “{name}” — press Ctrl+Z in FL and ask me again.");
+            }
+            one(json!(["play"]))?;
+            Ok(format!(
+                "{} on “{name}” in {}{} — playing. Ctrl+Z in FL takes it back. (Notes go on the Channel rack steps, one per step; for chords or long notes, open it in the Piano roll.)",
+                if job == Job::Bass { "Added an 808" } else { "Wrote a melody" },
+                key_name(key),
+                if job == Job::Bass { ", following the kick" } else { "" }
+            ))
+        }
+        Job::Quantize => {
+            // Which sound: named in the request ("the hats"), else the selected one.
+            const FILLER: &[&str] = &["the", "fix", "timing", "quantize", "quantise", "tighten", "my", "beat", "on", "of", "and", "please", "can", "you", "make", "them", "it", "grid", "off", "fl", "studio", "in", "channel"];
+            let asked: Vec<String> = s.split(|c: char| !c.is_alphanumeric()).filter(|w| w.len() >= 2 && !FILLER.contains(w)).map(|w| w.trim_end_matches('s').to_string()).collect();
+            let named = chans.iter().find(|(_, n)| {
+                let n = n.to_lowercase();
+                n.split(|c: char| !c.is_alphanumeric()).filter(|w| w.len() >= 2 && !FILLER.contains(w)).any(|w| asked.iter().any(|a| a == w.trim_end_matches('s')))
+            });
+            let selected = one(json!(["selected"])).ok().and_then(|v| v.as_i64()).filter(|i| *i >= 0).map(|i| i as usize);
+            let target = named.cloned().or_else(|| selected.and_then(|i| chans.iter().find(|(c, _)| *c == i).cloned()));
+            let Some((ch, name)) = target else { bail!("Which sound should I tighten? Say “fix the timing on the hats”, or click the channel in the Channel rack and ask again.") };
+            one(json!(["undo_point", format!("Izuki: quantize {name}")]))?;
+            one(json!(["quantize", ch, false]))?;
+            Ok(format!("Quick-quantized “{name}” with FL's own Quick quantize — its notes snap to the grid. Ctrl+Z in FL takes it back."))
+        }
+        Job::Balance => {
+            // Levels by role (FL's default channel level is 0.78).
+            let mut changed = Vec::new();
+            one(json!(["undo_point", "Izuki: balance"]))?;
+            for (ch, name) in &chans {
+                let (vol, pan) = match role_of(name) {
+                    Some(Role::Kick) => (0.80, 0.0),
+                    Some(Role::Clap) | Some(Role::Snare) => (0.70, 0.0),
+                    Some(Role::Hat) => (0.52, 0.12),
+                    Some(Role::OpenHat) => (0.48, 0.18),
+                    Some(Role::Perc) => (0.50, -0.2),
+                    None if is_bass_name(name) => (0.74, 0.0),
+                    None if is_melodic_name(name) => (0.62, 0.0),
+                    None => continue,
+                };
+                call(vec![json!(["chan_vol", ch, vol]), json!(["chan_pan", ch, pan])], true)?;
+                changed.push(name.clone());
+            }
+            if changed.is_empty() {
+                bail!("I couldn't tell which channel is which from their names, so I left the levels alone. Name them (Kick, 808, Hat…) and ask again.");
+            }
+            Ok(format!(
+                "Balanced {} channel{}: kick and 808 up front, claps and snares just under, hats and percussion softer and a little to the sides, melodies in the middle. Ctrl+Z in FL undoes it. (Izuki can't add effects; EQ and compression are still yours.)",
+                changed.len(),
+                if changed.len() == 1 { "" } else { "s" }
+            ))
+        }
+        Job::Intro | Job::Fill => {
+            // The drums now, read from FL, varied into a new pattern.
+            let drums: Vec<(usize, Option<Role>, Vec<u8>)> = chans.iter().filter_map(|(c, n)| role_of(n).map(|r| (*c, Some(r), steps_on(*c)))).filter(|(_, _, s)| !s.is_empty()).collect();
+            if drums.is_empty() {
+                bail!("There are no drums in this pattern to vary — make a beat first.");
+            }
+            let name = if job == Job::Intro { "Intro" } else { "Fill" };
+            one(json!(["undo_point", format!("Izuki: {name}")]))?;
+            one(json!(["new_pattern", format!("Izuki {name}")])).map_err(|e| anyhow!("FL Studio couldn't make a new pattern ({e})"))?;
+            let mut written: Vec<(usize, Vec<u8>)> = Vec::new();
+            for (ch, role, steps) in &drums {
+                let len = row_len(*ch).max(16) as u8;
+                let roll = len - 4;
+                let keep: Vec<u8> = match (job, role) {
+                    // Intro: no kick, half the hats.
+                    (Job::Intro, Some(Role::Kick)) => Vec::new(),
+                    (Job::Intro, Some(Role::Hat)) => steps.iter().copied().filter(|s| s % 4 == 0).collect(),
+                    (Job::Intro, _) => steps.clone(),
+                    // Fill: the bar as it is, then a snare/clap roll on the last four steps.
+                    (_, Some(Role::Snare)) | (_, Some(Role::Clap)) => steps.iter().copied().filter(|s| *s < roll).chain(roll..len).collect(),
+                    (_, Some(Role::Kick)) => steps.iter().copied().filter(|s| *s < roll).collect(),
+                    _ => steps.clone(),
+                };
+                for s in &keep {
+                    call(vec![json!(["step", ch, s, true])], true)?;
+                }
+                written.push((*ch, keep));
+            }
+            // Read it back: only say it's there if it is.
+            if written.iter().any(|(ch, keep)| {
+                let on = steps_on(*ch);
+                keep.iter().any(|s| !on.contains(s))
+            }) {
+                bail!("The {} didn't come out right in FL Studio — press Ctrl+Z in FL and ask me again.", name.to_lowercase());
+            }
+            Ok(format!(
+                "Made a new pattern, “Izuki {name}”, from your beat{}. Drag it into the Playlist where you want it — FL's scripts can't place patterns there for me. Ctrl+Z in FL takes it back.",
+                if job == Job::Intro { " — no kick and lighter hats, to build up" } else { ", with a snare roll on the last beat" }
+            ))
+        }
+    }
 }
 
 /// A fresh pattern with the drums written step by step — you watch it build —
@@ -836,6 +1177,50 @@ mod tests {
         assert_eq!(role_of("Sytrus"), None);
         assert_eq!(pick(&["Izuki (B)".into(), "Izuki (A)".into()]), Some(1));
         assert_eq!(pick(&["Microsoft GS".into(), "Izuki".into()]), Some(1));
+    }
+
+    #[test]
+    fn hears_the_new_jobs() {
+        assert_eq!(job_of("add an 808"), Some(Job::Bass));
+        assert_eq!(job_of("put a bassline on this"), Some(Job::Bass));
+        assert_eq!(job_of("add a melody in c minor"), Some(Job::Melody));
+        assert_eq!(job_of("fix the timing on the hats"), Some(Job::Quantize));
+        assert_eq!(job_of("balance the mix"), Some(Job::Balance));
+        assert_eq!(job_of("make an intro for this beat"), Some(Job::Intro));
+        assert_eq!(job_of("add a drum fill"), Some(Job::Fill));
+        assert_eq!(job_of("play the beat"), None);
+        assert_eq!(job_of("add a lead to my email list"), None, "not about music");
+        assert_eq!(job_of("fix the timing of my meeting"), None);
+        assert_eq!(job_of("balance my budget"), None);
+        assert_eq!(job_of("add a lead synth to the beat"), Some(Job::Melody));
+        assert_eq!(key_of("add a melody in a minute"), None, "not the key of A");
+        assert_eq!(key_of("make it in the key of d"), Some((2, true)));
+        assert_eq!(key_of("key of d minor"), Some((2, true)));
+        assert_eq!(key_of("add a melody in c minor"), Some((0, true)));
+        assert_eq!(key_of("808 in f# please"), Some((6, true)));
+        assert_eq!(key_of("in g major"), Some((7, false)));
+        assert!(is_bass_name("Sub 808") && !is_bass_name("FL Keys") && is_melodic_name("FL Keys"));
+    }
+
+    #[test]
+    fn lines_stay_in_key_and_in_the_bar() {
+        for g in ["afrobeats", "trap", "drill", "house", "rnb", "amapiano", "lofi"] {
+            for key in [(0u8, true), (9, true), (7, false)] {
+                let allowed: Vec<u8> = scale(key.1).to_vec();
+                for seed in [1u64, 42, 99_999] {
+                    let m = melody_line(g, key, seed);
+                    assert!(!m.is_empty());
+                    for (st, p, v) in &m {
+                        assert!(*st < 16 && *v <= 127 && (36..=108).contains(p), "{g}");
+                        assert!(allowed.contains(&(((*p as i32 - key.0 as i32).rem_euclid(12)) as u8)), "{g} {p} out of key");
+                    }
+                    assert_eq!((m[0].1 as i32 - key.0 as i32).rem_euclid(12), 0, "starts on the root");
+                }
+                let b = bass_line(g, key);
+                assert!(b.iter().all(|(st, p, _)| *st < 16 && (36..=72).contains(p)));
+                assert_eq!((b[0].1 as i32 - key.0 as i32).rem_euclid(12), 0, "808 starts on the root");
+            }
+        }
     }
 
     #[test]

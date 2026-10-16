@@ -112,6 +112,7 @@ def op_selftest():
         "patterns.findFirstNextEmptyPat", "patterns.setPatternName", "patterns.jumpToPattern",
         "general.processRECEvent", "general.saveUndo", "mixer.getCurrentTempo", "transport.start",
         "plugins.setParamValue", "mixer.setTrackVolume", "ui.showWindow",
+        "channels.quickQuantize", "channels.selectedChannel",
     ]
     mods = {"channels": channels, "patterns": patterns, "general": general, "mixer": mixer, "transport": transport, "plugins": plugins, "ui": ui}
     missing = [n for n in names if not hasattr(mods[n.split(".")[0]], n.split(".")[1])]
@@ -218,12 +219,26 @@ def op_plugin_set(index, slot, param, value):
     return True
 
 
+def op_selected():
+    # The channel you last clicked in the Channel rack (-1: none).
+    try:
+        return int(channels.selectedChannel())
+    except Exception:
+        return -1
+
+
+def op_quantize(ch, start_only):
+    # FL's own Quick quantize on one channel (Ctrl+Z takes it back).
+    channels.quickQuantize(int(ch), 1 if start_only else 0)
+    return True
+
+
 OPS = {
     "state": op_state, "selftest": op_selftest, "play": op_play, "stop": op_stop, "tempo": op_tempo,
     "undo_point": op_undo_point, "new_pattern": op_new_pattern, "show": op_show, "step": op_step,
     "vel": op_vel, "pitch": op_pitch, "clear_row": op_clear_row, "row": op_row, "chan_vol": op_chan_vol,
     "chan_pan": op_chan_pan, "mute": op_mute, "track_vol": op_track_vol, "plugin_params": op_plugin_params,
-    "plugin_set": op_plugin_set,
+    "plugin_set": op_plugin_set, "selected": op_selected, "quantize": op_quantize,
 }
 
 
