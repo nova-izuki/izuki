@@ -68,7 +68,7 @@ const fn d(id: &'static str, group: &'static str, label: &'static str, hint: &'s
 const DEFS: &[Def] = &[
     // ---- Taskbar ----
     d("taskbar_left", "taskbar", "Taskbar icons on the left", "Start and your apps sit on the left, like Windows 10.", false, How::Values(&[(ADV, "TaskbarAl", 0, 1)])),
-    d("taskbar_autohide", "taskbar", "Hide the taskbar", "It slides away until your mouse touches the bottom edge — more room for everything else.", false, How::AutoHide),
+    d("taskbar_autohide", "taskbar", "Hide the taskbar", "Heads-up: the taskbar then hides behind your apps — you can only reach it by moving the mouse to the very bottom of the screen. Turn this off if you want it always there.", false, How::AutoHide),
     d("never_combine", "taskbar", "App names on the taskbar", "Each window gets its own button with its name, instead of stacked icons (Windows 11 23H2 and later).", false, How::Values(&[(ADV, "TaskbarGlomLevel", 2, 0), (ADV, "MMTaskbarGlomLevel", 2, 0)])),
     d("clock_seconds", "taskbar", "Seconds on the clock", "The taskbar clock shows seconds too.", false, How::Values(&[(ADV, "ShowSecondsInSystemClock", 1, 0)])),
     d("end_task", "taskbar", "\"End task\" on the taskbar", "Right-click an app on the taskbar to close a frozen one straight away.", false, How::Values(&[(r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\TaskbarDeveloperSettings", "TaskbarEndTask", 1, 0)])),

@@ -65,7 +65,16 @@ pub fn refine(steps: &mut Vec<ActionStep>, req: &VisionRequest) {
         }
         let Some(what) = describe(step) else { continue };
         looks += 1;
-        let Some((ix, iy)) = locate(req, &what, s.sharp_eye_tars) else { continue };
+        let Some((ix, iy)) = locate(req, &what, s.sharp_eye_tars) else {
+            // No pointer answer (busy, out of quota): read the words around
+            // the plan's own guess and land on the button's label if it's there.
+            if let Some((x, y)) = confirm_by_text(&what, step.x, step.y, 260, 120).filter(|&(x, y)| safe_under(req, &what, x, y)) {
+                eprintln!("[sharp-eye] \"{what}\": no pointer answer — the label is on screen, moved to {x},{y}");
+                step.x = x;
+                step.y = y;
+            }
+            continue;
+        };
         let (x, y) = to_desktop(req, ix, iy);
         if pin(step, req, &what, x, y) {
             eprintln!("[sharp-eye] \"{what}\": moved to {x},{y}");
@@ -129,8 +138,20 @@ fn pin(step: &mut ActionStep, req: &VisionRequest, what: &str, x: i32, y: i32) -
     match under {
         Some(c) => {
             let named = { let n = c.name.to_lowercase(); words(what).iter().any(|w| n.contains(w.as_str())) };
-            if !(near || named) || unasked_risk(&c.name, what) {
+            if unasked_risk(&c.name, what) {
                 return false;
+            }
+            if !(near || named) {
+                // The pointer and the plan disagree — the words on screen decide.
+                return match confirm_by_text(what, x, y, 160, 70).filter(|&(tx, ty)| safe_under(req, what, tx, ty)) {
+                    Some((tx, ty)) => {
+                        eprintln!("[sharp-eye] \"{what}\": the label is there on screen — trusting the pointer");
+                        step.x = tx;
+                        step.y = ty;
+                        true
+                    }
+                    None => false,
+                };
             }
             if !named {
                 // Near, but its name doesn't say what was meant: move there,
@@ -154,8 +175,80 @@ fn pin(step: &mut ActionStep, req: &VisionRequest, what: &str, x: i32, y: i32) -
             step.y = y;
             true
         }
-        None => false,
+        // Nothing Windows can see there (FL Studio, games, custom pop-ups) and
+        // far from the plan's guess: only if the button's words are really there.
+        None => match confirm_by_text(what, x, y, 160, 70).filter(|&(tx, ty)| safe_under(req, what, tx, ty)) {
+            Some((tx, ty)) => {
+                eprintln!("[sharp-eye] \"{what}\": no control here, but the label is on screen — clicking it");
+                step.x = tx;
+                step.y = ty;
+                true
+            }
+            None => false,
+        },
     }
+}
+
+/// Whatever Windows control is under a text-confirmed point mustn't be a
+/// risky one the plan didn't ask for.
+fn safe_under(req: &VisionRequest, what: &str, x: i32, y: i32) -> bool {
+    req.controls
+        .iter()
+        .filter(|c| x >= c.rect.x && x <= c.rect.x + c.rect.w && y >= c.rect.y && y <= c.rect.y + c.rect.h)
+        .min_by_key(|c| c.rect.w as i64 * c.rect.h as i64)
+        .is_none_or(|c| !unasked_risk(&c.name, what))
+}
+
+/// The button's label in what the plan said: quoted text ("Continue"), or
+/// the word after the click verb ("hitting that Continue button" → continue).
+pub fn label_of(what: &str) -> Option<String> {
+    // (Not plain ' — "it's" and "Izuki's" would read as quotes.)
+    for (open, close) in [('“', '”'), ('"', '"'), ('‘', '’')] {
+        if let Some(a) = what.find(open) {
+            let rest = &what[a + open.len_utf8()..];
+            if let Some(b) = rest.find(close) {
+                let inside = rest[..b].trim();
+                if (2..=40).contains(&inside.chars().count()) {
+                    return Some(inside.to_string());
+                }
+            }
+        }
+    }
+    const VERBS: &[&str] = &["click", "clicking", "clicked", "press", "pressing", "hit", "hitting", "tap", "tapping", "select", "selecting", "choose", "choosing", "pick"];
+    const FILLER: &[&str] = &["on", "the", "that", "this", "a", "an", "its", "it", "button", "link", "now", "right", "for", "you", "fr", "so", "to"];
+    let words: Vec<String> = what.split(|c: char| !c.is_alphanumeric() && c != '\'').filter(|w| !w.is_empty()).map(str::to_string).collect();
+    let at = words.iter().position(|w| VERBS.contains(&w.to_lowercase().as_str()))?;
+    let rest = &words[at + 1..];
+    let first = rest.iter().position(|w| !FILLER.contains(&w.to_lowercase().as_str()) && w.chars().count() >= 2)?;
+    // "Sign in", "Save as", "Log In Now": the label runs on through capitalised
+    // words and the little words of a button; `confirm_by_text` falls back to
+    // the first word when the whole run isn't on screen.
+    const JOINERS: &[&str] = &["in", "as", "up", "out", "all", "now"];
+    let mut label = vec![rest[first].clone()];
+    for w in &rest[first + 1..] {
+        let capital = w.chars().next().is_some_and(char::is_uppercase);
+        if (capital || JOINERS.contains(&w.to_lowercase().as_str())) && label.len() < 4 && !FILLER.contains(&w.to_lowercase().as_str()) {
+            label.push(w.clone());
+        } else {
+            break;
+        }
+    }
+    Some(label.join(" "))
+}
+
+/// The label's centre, if a fresh look at the screen around (x, y) finds it
+/// written there — never a risky word the plan didn't ask for.
+fn confirm_by_text(what: &str, x: i32, y: i32, half_w: i32, half_h: i32) -> Option<(i32, i32)> {
+    let label = label_of(what)?;
+    if unasked_risk(&label, what) {
+        return None;
+    }
+    let area = crate::model::Rect { x: x - half_w, y: y - half_h, w: half_w * 2, h: half_h * 2 };
+    let frame = crate::capture::capture(area).ok()?;
+    let words = crate::ocr::read_words(&frame).ok()?;
+    let first = label.split_whitespace().next().unwrap_or(&label).to_string();
+    let r = crate::ocr::find_phrase(&words, &label, Some((x, y))).or_else(|| (first != label).then(|| crate::ocr::find_phrase(&words, &first, Some((x, y)))).flatten())?;
+    Some(r.center())
 }
 
 /// Where `what` is in the screenshot, in image pixels.
@@ -288,6 +381,17 @@ pub fn tars_point(text: &str, (iw, ih): (u32, u32)) -> Option<(f64, f64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_the_button_label_in_what_the_plan_said() {
+        assert_eq!(label_of("Clicking Continue on the Cloud path warning pop-up").as_deref(), Some("Continue"));
+        assert_eq!(label_of("Bet, hitting that Continue button for you, no cap.").as_deref(), Some("Continue"));
+        assert_eq!(label_of("Click “Save as” in the menu").as_deref(), Some("Save as"));
+        assert_eq!(label_of("Press the OK button").as_deref(), Some("OK"));
+        assert_eq!(label_of("Click Sign in at the top").as_deref(), Some("Sign in"));
+        assert_eq!(label_of("Clicking Save As to keep a copy").as_deref(), Some("Save As"));
+        assert_eq!(label_of("Scrolling down the page"), None);
+    }
 
     #[test]
     fn never_lands_on_an_unasked_risky_button() {

@@ -103,6 +103,7 @@ type Live =
   | { kind: "lesson"; text: string }
   | { kind: "activity"; a: Activity }
   | { kind: "approval"; id: string; app: string; text: string }
+  | { kind: "lecture"; title: string; secs: number }
   | { kind: "error"; message: string }
   | { kind: "remote"; device: string; controlling: boolean }
   | { kind: "rest" };
@@ -435,6 +436,8 @@ export function Island({
     ? { kind: "approval", id: status.approval[0], app: status.approval[1], text: status.approval[2] }
     : failure && !busy
     ? { kind: "error", message: failure }
+    : status.lecture
+    ? { kind: "lecture", title: status.lecture[0], secs: status.lecture[1] }
     : quiet
     ? { kind: "rest" }
     : finished
@@ -584,6 +587,8 @@ function same(a: IslandStatus, b: IslandStatus) {
     a.context === b.context &&
     JSON.stringify(a.missions ?? null) === JSON.stringify(b.missions ?? null) &&
     (a.lesson ?? null) === (b.lesson ?? null) &&
+    Math.floor((a.lecture?.[1] ?? -60) / 60) === Math.floor((b.lecture?.[1] ?? -60) / 60) &&
+    (a.lecture?.[0] ?? null) === (b.lecture?.[0] ?? null) &&
     // A change waiting for your OK (or answered) must show at once.
     JSON.stringify(a.approval ?? null) === JSON.stringify(b.approval ?? null) &&
     labels(a.suggestions) === labels(b.suggestions) &&
@@ -686,6 +691,18 @@ function Compact({ live, dancing, wave = "auto" }: { live: Live; dancing: boolea
           <span className="max-w-[300px] truncate text-[13px] font-semibold text-white/95">
             Waiting for your OK · {live.app}
             {live.text ? `: ${live.text}` : ""}
+          </span>
+        </>
+      );
+    case "lecture":
+      return (
+        <>
+          <span className="relative flex h-[24px] w-[24px] items-center justify-center rounded-full bg-rose-600 text-[12px]">
+            🎙️
+            <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-black/60" />
+          </span>
+          <span className="max-w-[300px] truncate text-[13px] font-semibold tracking-wide text-white/95">
+            LECTURE MODE • RECORDING · {Math.floor(live.secs / 60)} min
           </span>
         </>
       );

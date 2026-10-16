@@ -685,6 +685,8 @@ export interface IslandStatus {
   lesson?: string | null;
   /** A change waiting for your OK: [id, app, what it would do]. */
   approval?: [string, string, string] | null;
+  /** Lecture Mode recording: [title, seconds so far]. */
+  lecture?: [string, number] | null;
 }
 
 /** Something happening right now, with its smart next steps. */

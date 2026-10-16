@@ -17,6 +17,8 @@ pub enum Ask {
     /// "Which should I do first?"
     First,
     Connect,
+    /// "Show me everything overdue."
+    Overdue,
 }
 
 pub fn parse(said: &str) -> Option<Ask> {
@@ -27,6 +29,11 @@ pub fn parse(said: &str) -> Option<Ask> {
     }
     // Clearly about school deadlines: "due", "homework", "deadline" — or
     // assignments/labs/quizzes with a when ("this week", "do I have").
+    let school_work = [" assignment", " homework", " lab", " quiz", " exam", " essay", " project", " discussion"].iter().any(|w| s.contains(w));
+    let missed = [" missed", " miss any", " miss an ", " miss a ", " missing"].iter().any(|w| s.contains(w));
+    if (s.contains(" overdue") || s.contains(" past due") || (missed && school_work) || (s.contains(" late ") && school_work)) && !s.contains(" connect") {
+        return Some(Ask::Overdue);
+    }
     let due = [" due", " homework", " deadline"].iter().any(|w| s.contains(w));
     let work = [" assignment", " lab ", " labs", " quiz", " exam"].iter().any(|w| s.contains(w));
     let timed = [" today", " tonight", " tomorrow", " week", " upcoming", " coming up", " next", " do i have", " left to do"].iter().any(|w| s.contains(w));
@@ -56,6 +63,11 @@ pub fn parse(said: &str) -> Option<Ask> {
 
 /// Everything due in the next two weeks, soonest first: (title, when).
 fn upcoming() -> anyhow::Result<Vec<(String, chrono::DateTime<Local>)>> {
+    items(0, 14)
+}
+
+/// Calendar items from `back` days ago to `ahead` days ahead, soonest first.
+fn items(back: i64, ahead: i64) -> anyhow::Result<Vec<(String, chrono::DateTime<Local>)>> {
     let feeds: Vec<String> = crate::state::store().settings().school_feeds.iter().map(|f| f.trim().to_string()).filter(|f| !f.is_empty()).collect();
     if feeds.is_empty() {
         anyhow::bail!("no school calendar is linked yet");
@@ -75,7 +87,7 @@ fn upcoming() -> anyhow::Result<Vec<(String, chrono::DateTime<Local>)>> {
     let mut seen = std::collections::HashSet::new();
     let mut out: Vec<(String, chrono::DateTime<Local>)> = all
         .into_iter()
-        .filter(|(uid, _, at)| *at > now && *at < now + chrono::Duration::days(14) && seen.insert(uid.clone()))
+        .filter(|(uid, _, at)| *at > now - chrono::Duration::days(back) && *at < now + chrono::Duration::days(ahead) && seen.insert(uid.clone()))
         .map(|(_, t, at)| (t, at))
         .collect();
     out.sort_by_key(|(_, at)| *at);
@@ -98,6 +110,24 @@ fn when(at: chrono::DateTime<Local>) -> String {
 pub fn handle(ask: Ask) -> String {
     match ask {
         Ask::Connect => connect(),
+        Ask::Overdue => match items(14, 0) {
+            Ok(items) if items.is_empty() => "Nothing on your school calendar was due in the last two weeks. 🎉".into(),
+            Ok(items) => {
+                let mut out = format!(
+                    "{} on your school calendar {} due in the last two weeks — the calendar can't show whether you submitted, so check any you haven't:",
+                    if items.len() == 1 { "One thing".to_string() } else { format!("{} things", items.len()) },
+                    if items.len() == 1 { "was" } else { "were" }
+                );
+                for (t, at) in items.iter().rev().take(10) {
+                    out.push_str(&format!("\n• {t} — was due {}", when(*at)));
+                }
+                if items.len() > 10 {
+                    out.push_str(&format!("\n…and {} more.", items.len() - 10));
+                }
+                out
+            }
+            Err(e) => no_feed(&e.to_string()),
+        },
         Ask::First => match upcoming() {
             Ok(items) if items.is_empty() => "Nothing's due in the next two weeks on your school calendar. 🎉".into(),
             Ok(items) => {
@@ -140,6 +170,35 @@ pub fn handle(ask: Ask) -> String {
             }
             Err(e) => no_feed(&e.to_string()),
         },
+    }
+}
+
+/// What the Campus hub shows: past two weeks and next two weeks.
+#[derive(Debug, Clone, serde::Serialize, Default)]
+pub struct Hub {
+    /// A school calendar is linked.
+    pub linked: bool,
+    /// (title, unix ms) — was due in the last 14 days (submission unknown).
+    pub past: Vec<(String, i64)>,
+    /// (title, unix ms) — due in the next 14 days.
+    pub coming: Vec<(String, i64)>,
+    /// Why the calendar couldn't be read, if it couldn't.
+    pub error: Option<String>,
+}
+
+pub fn hub() -> Hub {
+    let linked = crate::state::store().settings().school_feeds.iter().any(|f| !f.trim().is_empty());
+    if !linked {
+        return Hub::default();
+    }
+    match items(14, 14) {
+        Ok(all) => {
+            let now = Local::now();
+            let (past, coming): (Vec<_>, Vec<_>) = all.into_iter().partition(|(_, at)| *at <= now);
+            let ms = |v: Vec<(String, chrono::DateTime<Local>)>| v.into_iter().map(|(t, at)| (t, at.timestamp_millis())).collect();
+            Hub { linked, past: ms(past), coming: ms(coming), error: None }
+        }
+        Err(e) => Hub { linked, error: Some(e.to_string()), ..Default::default() },
     }
 }
 
@@ -227,6 +286,9 @@ mod tests {
         assert_eq!(parse("teach me this assignment"), None, "that's the study coach");
         assert_eq!(parse("what labs are in this folder"), None, "not a deadline question");
         assert_eq!(parse("show me the lab instructions"), None);
+        assert_eq!(parse("show me everything overdue"), Some(Ask::Overdue));
+        assert_eq!(parse("did I miss any assignments?"), Some(Ask::Overdue));
+        assert_eq!(parse("I'm running late"), None);
     }
 
     #[test]

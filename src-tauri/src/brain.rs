@@ -1007,6 +1007,11 @@ fn goal_words(summary: &str) -> Vec<String> {
 /// With no step attached, the task isn't over: the step is still to come.
 fn promises_action(summary: &str) -> bool {
     let s = summary.to_lowercase();
+    // "Done — saved it, now checking…" reports a finish, not a promise.
+    let first = s.split(|c: char| !c.is_alphanumeric()).find(|w| !w.is_empty()).unwrap_or("");
+    if ["done", "finished", "saved", "sent", "completed"].contains(&first) || s.starts_with("all set") || s.starts_with("all done") {
+        return false;
+    }
     let refuses = ["can't", "cannot", "can not", "unable", "won't", "not able", "isn't possible", "not possible", "don't have access"]
         .iter()
         .any(|p| s.contains(p));
@@ -1016,6 +1021,7 @@ fn promises_action(summary: &str) -> bool {
     const DOING: &[&str] = &[
         "let me", "i'll", "i will", "i'm going to", "going to", "on it", "getting you", "get you", "bringing up", "pulling up",
         "wait for", "waiting for", "still loading", "finish loading", "here we go", "one sec", "hang on", "hold on",
+        "right now", "right away", "i got you", "i gotchu", "gotchu",
     ];
     if DOING.iter().any(|p| s.contains(p)) {
         return true;
@@ -1025,10 +1031,13 @@ fn promises_action(summary: &str) -> bool {
         "opening", "clicking", "signing", "logging", "typing", "searching", "launching", "starting", "scrolling", "selecting",
         "picking", "heading", "switching", "loading", "closing", "playing", "pressing", "tapping", "filling", "entering",
         "navigating", "going", "checking", "finding", "moving", "dragging", "saving", "sending", "pasting", "copying",
+        "hitting", "smashing", "punching", "choosing", "accepting", "confirming", "continuing", "dismissing",
     ];
+    // The first dozen words: a chatty opener ("Say less, I got you fam —")
+    // mustn't hide the promise behind it.
     s.split(|c: char| !c.is_alphanumeric())
         .filter(|w| !w.is_empty())
-        .take(6)
+        .take(12)
         .any(|w| VERBS.contains(&w))
 }
 
@@ -3215,6 +3224,8 @@ mod speed_tests {
     #[test]
     fn promises_action_tells_a_promise_from_an_answer() {
         for s in [
+            "Bet, hitting that Continue button for you, no cap.",
+            "Say less, I got you fam — clicking Continue right now.",
             "Opening Blackboard for you now.",
             "Clicking the first Blackboard link for you now, Solomon.",
             "Let me wait for the Blackboard page to finish loading.",
@@ -3227,6 +3238,8 @@ mod speed_tests {
         }
         for s in [
             "Your next assignment is due Friday at 11:59 PM.",
+            "All set — I saved it after checking the totals.",
+            "Done — saved it, then checking the next one.",
             "I can't open that — it needs your password.",
             "That's a photo of a sunset over the ocean.",
             "Done — the file is saved to your Desktop.",

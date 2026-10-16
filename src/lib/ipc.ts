@@ -538,6 +538,14 @@ export interface LookAuto {
   last: number;
 }
 
+/** The Campus hub (campus.rs): [title, unix ms] pairs. */
+export interface CampusHub {
+  linked: boolean;
+  past: [string, number][];
+  coming: [string, number][];
+  error: string | null;
+}
+
 /** Account health (accounts.rs). */
 export interface AccountHealth {
   apps: Array<{
@@ -801,6 +809,12 @@ export const api = {
   missionsRun: () => call<boolean>("missions_run", undefined, () => false),
   /** End the phone remote from this PC (switches it off). */
   remoteEnd: () => call<void>("remote_end", undefined, () => undefined),
+  lectureStart: (title: string) => call<string>("lecture_start", { title }, () => "test-lecture"),
+  lecturePiece: (id: string, index: number, start: number, audio: string, mime: string) => call<void>("lecture_piece", { id, index, start, audio, mime }, () => undefined),
+  lectureFinish: (id: string) => call<[string, string]>("lecture_finish", { id }, () => ["", ""]),
+  lectureCancel: (id: string) => call<void>("lecture_cancel", { id }, () => undefined),
+  lectureSoFar: (id: string) => call<string | null>("lecture_so_far", { id }, () => null),
+  campusHub: () => call<CampusHub>("campus_hub", undefined, () => ({ linked: false, past: [], coming: [], error: null })),
   /** Allow / No on a waiting approval (from the Island). */
   approvalAnswer: (id: string, allow: boolean) => call<string>("approval_answer", { id, allow }, () => "Done"),
   doingNow: () => call<string>("doing_now", undefined, () => "Nothing right now."),

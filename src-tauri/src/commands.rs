@@ -1854,6 +1854,44 @@ pub fn chat_cancel(id: u64) {
     crate::research::cancel(id);
 }
 
+/// Lecture Mode (lecture.rs): start recording, after the user confirmed they may.
+#[tauri::command]
+pub async fn lecture_start(title: String) -> R<String> {
+    blocking(move || crate::lecture::start(&title).map_err(|e| e.to_string())).await?
+}
+
+/// One finished piece of the recording (base64 audio), written down in the background.
+#[tauri::command]
+pub async fn lecture_piece(id: String, index: u32, start: u32, audio: String, mime: String) -> R<()> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(audio.as_bytes()).map_err(|e| e.to_string())?;
+    blocking(move || crate::lecture::piece(&id, index, start, bytes, &mime).map_err(|e| e.to_string())).await?
+}
+
+/// Stop, write the notes, save them in Notes: (note id, title).
+#[tauri::command]
+pub async fn lecture_finish(id: String) -> R<(String, String)> {
+    blocking(move || crate::lecture::finish(&id).map_err(|e| e.to_string())).await?
+}
+
+/// Throw the recording away.
+#[tauri::command]
+pub async fn lecture_cancel(id: String) -> R<()> {
+    blocking(move || crate::lecture::cancel(&id)).await
+}
+
+/// The transcript so far, for the live view.
+#[tauri::command]
+pub async fn lecture_so_far(id: String) -> R<Option<String>> {
+    blocking(move || crate::lecture::so_far(&id)).await
+}
+
+/// The Campus hub: what was due lately and what's coming (campus.rs).
+#[tauri::command]
+pub async fn campus_hub() -> R<crate::campus::Hub> {
+    blocking(crate::campus::hub).await
+}
+
 /// Allow / No on a waiting approval, from the Island (approvals.rs).
 #[tauri::command]
 pub async fn approval_answer(id: String, allow: bool) -> R<String> {

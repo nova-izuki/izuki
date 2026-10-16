@@ -18,6 +18,7 @@ assistant is also changing.
 | --- | --- | --- |
 | Gmail across every account, briefings | `mail.rs`, `headsup.rs` (email parts) | Claude |
 | Account health (all linked apps) | `accounts.rs`, `AccountHealthCard.tsx` | Claude |
+| Campus hub, Lecture Mode | `campus.rs`, `lecture.rs`, `CampusHub.tsx` | Claude |
 | Terminal tutor (CMD/PowerShell lessons) | `tutor.rs` | Claude |
 | Discord reconnect/resume | `discord.rs` | Claude |
 | Style tab: looks, auto, tweaks | `winlook.rs`, `tweaks.rs`, `StyleTab.tsx`, `lib/styleNav.ts` | Claude |

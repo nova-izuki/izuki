@@ -4,6 +4,7 @@ import { api } from "../../lib/ipc";
 import type { Note } from "../../lib/types";
 import { sendChatCommand } from "../VoiceEngine";
 import { JumpBar } from "../JumpBar";
+import { CampusHub } from "../CampusHub";
 import { EmptyState, Section, cx } from "../ui";
 
 /** The words of a note, trimmed for asking the AI about it. */
@@ -86,7 +87,13 @@ export function NotesTab() {
 
   return (
     <>
-      <JumpBar topId="notes-top" jumps={[{ label: "✍️ Take notes", id: "notes-capture" }, { label: "📚 Your notes", id: "notes-list" }]} />
+      <JumpBar topId="notes-top" jumps={[{ label: "🎓 Campus", id: "notes-campus" }, { label: "✍️ Take notes", id: "notes-capture" }, { label: "📚 Your notes", id: "notes-list" }]} />
+      <CampusHub
+        onNote={(id) => {
+          reload();
+          setOpen(id);
+        }}
+      />
       <Section
         id="notes-capture"
         title="Nova Notes"
@@ -173,6 +180,8 @@ export function NotesTab() {
                         { icon: <BookOpen size={13} />, label: "Open", run: () => setOpen(n.id) },
                         { icon: <Sparkles size={13} />, label: "Summarise", run: () => summarise([n]) },
                         { icon: <Brain size={13} />, label: "Quiz me", run: () => void sendChatCommand(`Quiz me on these notes — one question at a time, and tell me if I'm right:\n\n${bodyOf(n)}`) },
+                        { icon: <Sparkles size={13} />, label: "Explain in 60 seconds", run: () => void sendChatCommand(`Explain these notes in about 60 seconds of reading: simple words, the 3 ideas that matter most, and one real-life example. Say which parts come from the notes and which are your own examples.\n\n${bodyOf(n)}`) },
+                        { icon: <BookOpen size={13} />, label: "Teach me like a beginner", run: () => void sendChatCommand(`Teach me these notes like I'm a complete beginner, step by step (about 5 minutes): an everyday analogy for each idea, then a quick question to check I understood before moving on. Keep to what the notes say; label anything you add.\n\n${bodyOf(n)}`) },
                         { icon: <Copy size={13} />, label: "Copy text", run: () => copy([n]) },
                         { icon: <Check size={13} />, label: "Select…", run: () => setPicked(new Set([n.id])) },
                         { icon: <Trash2 size={13} />, label: "Delete", danger: true, run: () => void remove([n]) },

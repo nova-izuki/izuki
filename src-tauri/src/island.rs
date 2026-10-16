@@ -47,6 +47,8 @@ pub struct IslandStatus {
     pub lesson: Option<String>,
     /// A change waiting for your OK (approvals.rs): (id, app, what it would do, briefly).
     pub approval: Option<(String, String, String)>,
+    /// Lecture Mode recording (lecture.rs): (title, seconds so far).
+    pub lecture: Option<(String, u64)>,
 }
 
 /// "To sam@x.com · Running late" from an approval's draft.
@@ -128,6 +130,7 @@ pub fn status() -> IslandStatus {
         page,
         missions: crate::missions::glance(),
         lesson: crate::tutor::glance(),
+        lecture: crate::lecture::now().map(|(t, s, _)| (t, s)),
         approval: crate::approvals::list().into_iter().find(|a| a.state == "waiting").map(|a| (a.id.clone(), a.app.clone(), approval_summary(&a.draft))),
     }
 }
