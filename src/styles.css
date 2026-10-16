@@ -959,3 +959,8 @@ html.izk-away .izk-aurora span {
   .izk-hero-layer, .izk-hero-sweep, .izk-twinkle, .izk-rise { animation: none !important; }
   .izk-look-pic { transition: none; }
 }
+
+/* The Island asking for an OK: a few gentle pulses, then still. */
+.izk-island-ask { animation: izk-island-ask 1.4s ease-in-out 3; box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.6); }
+@keyframes izk-island-ask { 0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.55); } 70% { box-shadow: 0 0 0 8px rgba(251, 191, 36, 0); } 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); } }
+@media (prefers-reduced-motion: reduce) { .izk-island-ask { animation: none; } }

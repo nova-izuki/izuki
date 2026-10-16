@@ -45,6 +45,20 @@ pub struct IslandStatus {
     pub missions: Option<(String, usize)>,
     /// A terminal lesson in progress ("CMD lesson · step 3 of 9 · …").
     pub lesson: Option<String>,
+    /// A change waiting for your OK (approvals.rs): (id, app, what it would do, briefly).
+    pub approval: Option<(String, String, String)>,
+}
+
+/// "To sam@x.com · Running late" from an approval's draft.
+pub fn approval_summary(draft: &str) -> String {
+    let field = |name: &str| draft.lines().find_map(|l| l.strip_prefix(name)).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    let parts: Vec<String> = [field("To:").map(|t| format!("To {t}")), field("Subject:")].into_iter().flatten().collect();
+    let s = if parts.is_empty() {
+        draft.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with("From:")).unwrap_or("").to_string()
+    } else {
+        parts.join(" · ")
+    };
+    s.chars().take(90).collect()
 }
 
 const BROWSERS: &[&str] = &["chrome", "msedge", "firefox", "brave", "opera", "vivaldi", "arc"];
@@ -114,6 +128,7 @@ pub fn status() -> IslandStatus {
         page,
         missions: crate::missions::glance(),
         lesson: crate::tutor::glance(),
+        approval: crate::approvals::list().into_iter().find(|a| a.state == "waiting").map(|a| (a.id.clone(), a.app.clone(), approval_summary(&a.draft))),
     }
 }
 

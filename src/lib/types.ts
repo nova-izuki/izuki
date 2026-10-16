@@ -683,6 +683,8 @@ export interface IslandStatus {
   missions?: [string, number] | null;
   /** A terminal lesson in progress ("CMD lesson · step 3 of 9 · mkdir"). */
   lesson?: string | null;
+  /** A change waiting for your OK: [id, app, what it would do]. */
+  approval?: [string, string, string] | null;
 }
 
 /** Something happening right now, with its smart next steps. */

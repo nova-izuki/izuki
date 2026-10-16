@@ -102,6 +102,9 @@ type Live =
   | { kind: "missions"; now: string; left: number; step: string | null }
   | { kind: "lesson"; text: string }
   | { kind: "activity"; a: Activity }
+  | { kind: "approval"; id: string; app: string; text: string }
+  | { kind: "error"; message: string }
+  | { kind: "remote"; device: string; controlling: boolean }
   | { kind: "rest" };
 
 export function Island({
@@ -145,6 +148,14 @@ export function Island({
   const scaleRef = useRef(islandScale(size));
   scaleRef.current = islandScale(size);
   const [finished, setFinished] = useState(false);
+  /** Something went wrong (a status error): shown with a way to recover, then fades. */
+  const [failure, setFailure] = useState<string | null>(null);
+  /** A phone watching or controlling this PC (remote.rs). */
+  const [remote, setRemote] = useState<{ device: string; controlling: boolean } | null>(null);
+  /** Right-click menu, where it opened (in the Island's own box). */
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  /** "Hide for an hour" from the menu (until then, only approvals and errors show). */
+  const [quietUntil, setQuietUntil] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const pill = useRef<HTMLDivElement>(null);
   const openRef = useRef(false);
@@ -193,6 +204,31 @@ export function Island({
       clearTimeout(hide);
     };
   }, [busy]);
+
+  // ---- errors (with a way to recover) and remote sessions
+  useEffect(() => {
+    let hide = 0;
+    const offStatus = on<{ kind: string; message: string }>(EV.status, (s) => {
+      if (s.kind !== "error" || !s.message) return;
+      setFailure(s.message);
+      clearTimeout(hide);
+      hide = window.setTimeout(() => setFailure(null), 15_000);
+    });
+    const offRemote = on<{ device: string; controlling: boolean } | null>(EV.remoteActive, (v) => setRemote(v ?? null));
+    return () => {
+      clearTimeout(hide);
+      void offStatus.then((f) => f());
+      void offRemote.then((f) => f());
+    };
+  }, []);
+  // A new task replaces an old failure.
+  useEffect(() => {
+    if (busy) setFailure(null);
+  }, [busy]);
+  // The menu goes when the Island closes.
+  useEffect(() => {
+    if (!open) setMenu(null);
+  }, [open]);
 
   // ---- what's playing / full screen: a cheap look every couple of seconds
   useEffect(() => {
@@ -394,12 +430,21 @@ export function Island({
     void api.islandAudioMeter(true);
     return () => void api.islandAudioMeter(false);
   }, [musicOn, open]);
-  const live: Live = finished
+  const quiet = quietUntil > now;
+  const live: Live = status.approval
+    ? { kind: "approval", id: status.approval[0], app: status.approval[1], text: status.approval[2] }
+    : failure && !busy
+    ? { kind: "error", message: failure }
+    : quiet
+    ? { kind: "rest" }
+    : finished
     ? { kind: "finished" }
     : status.missions
       ? { kind: "missions", now: status.missions[0], left: status.missions[1], step: busy ? doing : null }
     : busy
       ? { kind: "working", text: doing || "Thinking…" }
+      : remote
+      ? { kind: "remote", device: remote.device, controlling: remote.controlling }
       : soon && soon.at - now <= 5 * 60_000
         ? { kind: "reminder", r: soon, urgent: true }
         : status.lesson
@@ -445,9 +490,40 @@ export function Island({
         style={{ borderRadius: look === "squircle" ? (open ? 16 : 11) : open ? 28 : 22 }}
         // Esc closes it from anywhere inside (not just the Ask box).
         onKeyDown={(e) => {
-          if (e.key === "Escape" && open) setOpen(false);
+          if (e.key === "Escape" && menu) setMenu(null);
+          else if (e.key === "Escape" && open) setOpen(false);
+        }}
+        // Right-click: the Island's own quick menu.
+        onContextMenu={(e) => {
+          if (!open) return;
+          e.preventDefault();
+          const r = pill.current?.getBoundingClientRect();
+          setMenu({ x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) });
+        }}
+        // Double-click the Island's top: talk to Nova.
+        onDoubleClick={(e) => {
+          const t = e.target as HTMLElement;
+          if (!open || !t.closest("[data-island-top]") || t.closest("button, input, textarea, a, [role=tab]")) return;
+          void emit(EV.airCall);
+          setOpen(false);
         }}
       >
+        {menu && (
+          <IslandMenu
+            at={menu}
+            onClose={() => setMenu(null)}
+            onTalk={() => {
+              void emit(EV.airCall);
+              setOpen(false);
+            }}
+            onQuiet={() => {
+              setQuietUntil(Date.now() + 60 * 60_000);
+              setOpen(false);
+            }}
+            quiet={quiet}
+            onWake={() => setQuietUntil(0)}
+          />
+        )}
         <AnimatePresence mode="popLayout" initial={false}>
           {open ? (
             <motion.div key="open" {...fade} className="relative z-10 w-[372px] max-w-[calc(100vw-32px)] p-3.5">
@@ -471,6 +547,8 @@ export function Island({
                 onMoveStart={beginMove}
                 onMoveKey={moveByKeyboard}
                 onDone={() => setOpen(false)}
+                onClearError={() => setFailure(null)}
+                remote={remote}
                 scale={scale}
               />
             </motion.div>
@@ -506,6 +584,8 @@ function same(a: IslandStatus, b: IslandStatus) {
     a.context === b.context &&
     JSON.stringify(a.missions ?? null) === JSON.stringify(b.missions ?? null) &&
     (a.lesson ?? null) === (b.lesson ?? null) &&
+    // A change waiting for your OK (or answered) must show at once.
+    JSON.stringify(a.approval ?? null) === JSON.stringify(b.approval ?? null) &&
     labels(a.suggestions) === labels(b.suggestions) &&
     labels(a.clip) === labels(b.clip) &&
     JSON.stringify(a.activities ?? []) === JSON.stringify(b.activities ?? []) &&
@@ -599,9 +679,158 @@ function Compact({ live, dancing, wave = "auto" }: { live: Live; dancing: boolea
           </span>
         </>
       );
+    case "approval":
+      return (
+        <>
+          <span className="izk-island-ask flex h-[24px] w-[24px] items-center justify-center rounded-full bg-amber-400 text-[13px] text-black">✋</span>
+          <span className="max-w-[300px] truncate text-[13px] font-semibold text-white/95">
+            Waiting for your OK · {live.app}
+            {live.text ? `: ${live.text}` : ""}
+          </span>
+        </>
+      );
+    case "error":
+      return (
+        <>
+          <span className="flex h-[24px] w-[24px] items-center justify-center rounded-full bg-rose-500/90 text-[13px]">!</span>
+          <span className="max-w-[300px] truncate text-[13px] font-medium text-white/90">{live.message}</span>
+        </>
+      );
+    case "remote":
+      return (
+        <>
+          <span className={"relative flex h-[24px] w-[24px] items-center justify-center rounded-full text-[13px] " + (live.controlling ? "bg-rose-500/85" : "bg-sky-500/80")}>
+            📱
+            <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-black/60" />
+          </span>
+          <span className="max-w-[260px] truncate text-[13px] font-medium text-white/90">
+            {live.device || "Your phone"} {live.controlling ? "is controlling this PC" : "is viewing your screen"}
+          </span>
+        </>
+      );
     default:
       return <Face size={24} mood={dancing ? "dancing" : "idle"} />;
   }
+}
+
+/** The Island's right-click menu: a few quick things, nothing hidden. */
+function IslandMenu({ at, onClose, onTalk, onQuiet, quiet, onWake }: { at: { x: number; y: number }; onClose: () => void; onTalk: () => void; onQuiet: () => void; quiet: boolean; onWake: () => void }) {
+  const place = (where: "left" | "center" | "right") => {
+    void emit(EV.islandPlace, { where });
+    onClose();
+  };
+  const item = "flex w-full items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-left text-[12px] text-white/90 hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none";
+  return (
+    <div
+      role="menu"
+      aria-label="Island menu"
+      className="absolute z-30 w-[188px] rounded-[12px] border border-white/15 bg-[#0d1018]/95 p-1 shadow-[0_12px_32px_rgba(0,0,0,0.5)] backdrop-blur-md"
+      // Inside the Island: opens above the pointer when there's no room below.
+      style={{ left: Math.min(at.x, 372 - 196), top: at.y + 260 > (typeof window === "undefined" ? 9999 : window.innerHeight) ? Math.max(4, at.y - 250) : at.y }}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
+      <button type="button" role="menuitem" autoFocus className={item} onClick={onTalk}>🎙️ Talk to Nova</button>
+      <div className="my-1 h-px bg-white/10" />
+      <div className="px-2.5 pb-0.5 pt-1 text-[10px] uppercase tracking-wider text-white/40">Move</div>
+      <div className="grid grid-cols-3 gap-1 px-1 pb-1">
+        {(["left", "center", "right"] as const).map((w) => (
+          <button key={w} type="button" role="menuitem" onClick={() => place(w)} className="rounded-[7px] bg-white/[0.06] py-1 text-[11px] capitalize text-white/85 hover:bg-white/15">
+            {w === "center" ? "Centre" : w}
+          </button>
+        ))}
+      </div>
+      <div className="my-1 h-px bg-white/10" />
+      {quiet ? (
+        <button type="button" role="menuitem" className={item} onClick={() => { onWake(); onClose(); }}>🔔 Show things again</button>
+      ) : (
+        <button type="button" role="menuitem" className={item} onClick={onQuiet}>🌙 Quiet for an hour</button>
+      )}
+      <button type="button" role="menuitem" className={item} onClick={() => { void emit(EV.patchSettings, { island_suggestions: false }); onClose(); }}>💡 No more suggestions</button>
+      <button type="button" role="menuitem" className={item} onClick={() => { void emit(EV.patchSettings, { island_enabled: false }); onClose(); }}>🙈 Hide the Island</button>
+    </div>
+  );
+}
+
+/** At the top of the open Island: what needs you (an OK, an error, a remote session). */
+function NeedsYou({ live, onClearError }: { live: Live; onClearError?: () => void }) {
+  const [said, setSaid] = useState("");
+  const [failed, setFailed] = useState("");
+  const [busy, setBusy] = useState(false);
+  // A new approval (even right after another) starts with its own buttons.
+  const key = live.kind === "approval" ? `approval:${live.id}` : live.kind;
+  useEffect(() => {
+    setSaid("");
+    setFailed("");
+  }, [key]);
+  if (live.kind === "approval") {
+    const answer = (allow: boolean) => {
+      setBusy(true);
+      setFailed("");
+      void api
+        .approvalAnswer(live.id, allow)
+        .then(setSaid)
+        .catch(() => setFailed("That didn't go through — try again, or answer in Chat."))
+        .finally(() => setBusy(false));
+    };
+    return (
+      <div className="rounded-[14px] border border-amber-300/35 bg-amber-300/[0.08] p-2.5">
+        <div className="text-[12.5px] font-semibold">✋ {live.app} is waiting for your OK</div>
+        {live.text && <div className="mt-0.5 truncate text-[12px] text-white/70">{live.text}</div>}
+        {failed && <div className="mt-1.5 text-[11.5px] text-rose-300">{failed}</div>}
+        {said ? (
+          <div className="mt-2 text-[12px] text-white/80">{said}</div>
+        ) : (
+          <div className="mt-2 flex gap-2">
+            <button type="button" disabled={busy} onClick={() => answer(true)} className="flex-1 rounded-full bg-emerald-500/90 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
+              Allow
+            </button>
+            <button type="button" disabled={busy} onClick={() => answer(false)} className="flex-1 rounded-full bg-white/10 py-1.5 text-[12px] font-semibold text-white/90 hover:bg-white/15 disabled:opacity-50">
+              No
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (live.kind === "error") {
+    return (
+      <div className="rounded-[14px] border border-rose-400/35 bg-rose-400/[0.08] p-2.5">
+        <div className="text-[12.5px] font-semibold">Something went wrong</div>
+        <div className="mt-0.5 line-clamp-2 text-[12px] text-white/75">{live.message}</div>
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              void emit(EV.runChat, { id: Date.now(), text: `That didn't work — it said: “${live.message}”. Can you help me sort it out?` });
+              onClearError?.();
+            }}
+            className="flex-1 rounded-full bg-white/15 py-1.5 text-[12px] font-semibold text-white hover:bg-white/20"
+          >
+            Get help
+          </button>
+          <button type="button" onClick={onClearError} className="rounded-full px-3 py-1.5 text-[12px] text-white/70 hover:bg-white/10">
+            Dismiss
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (live.kind === "remote") {
+    return (
+      <div className="flex items-center gap-2 rounded-[14px] border border-sky-300/30 bg-sky-300/[0.07] p-2.5">
+        <span className="text-[18px]">📱</span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[12.5px] font-semibold">{live.controlling ? "Your phone is controlling this PC" : "Your phone is viewing your screen"}</div>
+          <div className="truncate text-[11.5px] text-white/60">{live.device || "Paired phone"}</div>
+        </div>
+        <button type="button" onClick={() => void api.remoteEnd()} className="rounded-full bg-rose-500/85 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-rose-500">
+          End
+        </button>
+      </div>
+    );
+  }
+  return null;
 }
 
 // ----------------------------------------------------------------- expanded
@@ -620,6 +849,8 @@ function Expanded({
   onMoveStart,
   onMoveKey,
   onDone,
+  onClearError,
+  remote = null,
   activities = [],
   copies = [],
   weather = null,
@@ -649,6 +880,9 @@ function Expanded({
   busy: boolean;
   doing: string | null;
   onDone: () => void;
+  onClearError?: () => void;
+  /** A phone connected right now: its card shows whatever else is going on. */
+  remote?: { device: string; controlling: boolean } | null;
 }) {
   const [optimistic, setOptimistic] = useState<boolean | null>(null);
   const playing = optimistic ?? !!media?.playing;
@@ -677,7 +911,7 @@ function Expanded({
       >
         <GripHorizontal size={16} />
       </div>
-      <div className="flex items-center gap-3">
+      <div data-island-top title="Double-click to talk to Nova" className="flex items-center gap-3">
         <Face size={40} mood={busy ? "busy" : live.kind === "finished" ? "happy" : dancing ? "dancing" : "idle"} pokeable />
         <div className="min-w-0 flex-1">
           <div className="text-[15px] font-semibold leading-tight">{busy ? "On it" : greeting(now)}</div>
@@ -693,6 +927,9 @@ function Expanded({
         </div>
         <div className="text-[22px] font-semibold tabular-nums tracking-tight text-white/90">{clock(now)}</div>
       </div>
+
+      <NeedsYou live={live} onClearError={onClearError} />
+      {remote && live.kind !== "remote" && <NeedsYou live={{ kind: "remote", device: remote.device, controlling: remote.controlling }} />}
 
       <div role="tablist" aria-label="Island" className="grid grid-cols-3 gap-1 rounded-full bg-white/[0.06] p-1">
         {([["now", "Now"], ["vitals", "Vitals"], ["apps", "Apps"]] as const).map(([k, l]) => (

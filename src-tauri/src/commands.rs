@@ -1854,6 +1854,17 @@ pub fn chat_cancel(id: u64) {
     crate::research::cancel(id);
 }
 
+/// Allow / No on a waiting approval, from the Island (approvals.rs).
+#[tauri::command]
+pub async fn approval_answer(id: String, allow: bool) -> R<String> {
+    blocking(move || {
+        let r = if allow { crate::approvals::approve(&id, "the PC") } else { crate::approvals::reject(&id, "the PC") };
+        r.map(|a| if a.state == "sent" { "Done ✓".to_string() } else if a.state == "rejected" { "Cancelled — nothing was sent.".to_string() } else { a.result.clone() })
+            .map_err(|e| e.to_string())
+    })
+    .await?
+}
+
 /// Every linked app and account, and whether each really works (accounts.rs).
 #[tauri::command]
 pub async fn accounts_health(fresh: bool) -> R<crate::accounts::Health> {

@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🏝️", title: "The Island asks, warns and listens", how: "When Izuki needs your OK (an email to send), the Island says so — open it and press Allow or No. It shows when your phone is connected (with End), and errors with a Get help button. Right-click the open Island for a quick menu; double-click its top to talk." },
   { icon: "🔐", title: "Which accounts really work", how: "Apps → Account health (or ask “check my connected accounts”): every linked app and account, each checked with one quick read-only call — working, needs signing in again, couldn't check, or a sign-in that was never finished — with a one-tap fix. Sending email now says which account it sends from.", try: { label: "Account health", tab: "apps", id: "apps-health" } },
   { icon: "📷", title: "Air control: see your hand", how: "Settings → Air control → Show the camera: a small window with you and your hand, the tracked fingers drawn on, and a red warning on the edge your hand is about to leave — plus which way to move it back. And if an app in front runs as administrator (so Windows blocks Izuki there), Air control now says so.", try: { label: "Air control", tab: "settings", id: "settings-air" } },
   { icon: "🔭", title: "Deep research makes what you ask for", how: "Ask it to write a prompt, plan, email or checklist and you get the finished thing first, ready to copy — built from what it read and its own knowledge, with sources for the facts." },

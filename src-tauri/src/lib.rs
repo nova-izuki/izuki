@@ -417,6 +417,7 @@ pub fn run() {
             commands::look_preview,
             commands::research_start,
             commands::accounts_health,
+            commands::approval_answer,
             commands::research_save,
             commands::restart_explorer,
             commands::mate_line,

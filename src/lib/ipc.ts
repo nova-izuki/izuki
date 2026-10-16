@@ -801,6 +801,8 @@ export const api = {
   missionsRun: () => call<boolean>("missions_run", undefined, () => false),
   /** End the phone remote from this PC (switches it off). */
   remoteEnd: () => call<void>("remote_end", undefined, () => undefined),
+  /** Allow / No on a waiting approval (from the Island). */
+  approvalAnswer: (id: string, allow: boolean) => call<string>("approval_answer", { id, allow }, () => "Done"),
   doingNow: () => call<string>("doing_now", undefined, () => "Nothing right now."),
   polishText: (text: string) => call<string>("polish_text", { text }, () => text),
   tweaksList: () => call<WindowsTweak[]>("tweaks_list", undefined, () => []),
