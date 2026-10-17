@@ -369,6 +369,10 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
             return blocking(|| crate::study::coach().unwrap_or_else(|e| e.to_string())).await.ok();
         }
     }
+    // Empire: "check my website", "what needs my attention?" (empire.rs).
+    if let Some(ask) = crate::empire::parse(&said) {
+        return blocking(move || crate::empire::handle(ask)).await.ok();
+    }
     // "Check my connected accounts": every app, every account, really checked (accounts.rs).
     if crate::accounts::asks(&said) {
         return blocking(|| {
@@ -1891,6 +1895,42 @@ pub async fn lecture_cancel(id: String) -> R<()> {
 #[tauri::command]
 pub async fn lecture_so_far(id: String) -> R<Option<String>> {
     blocking(move || crate::lecture::so_far(&id)).await
+}
+
+/// Empire (empire.rs): your businesses.
+#[tauri::command]
+pub async fn empire_list() -> R<Vec<crate::empire::Business>> {
+    blocking(crate::empire::businesses).await
+}
+
+/// Add or update a business; the fresh list back.
+#[tauri::command]
+pub async fn empire_save(business: crate::empire::Business) -> R<Vec<crate::empire::Business>> {
+    blocking(move || crate::empire::save_business(business).map_err(|e| e.to_string())).await?
+}
+
+#[tauri::command]
+pub async fn empire_remove(id: String) -> R<Vec<crate::empire::Business>> {
+    blocking(move || crate::empire::remove_business(&id).map_err(|e| e.to_string())).await?
+}
+
+/// Check a business's website for real; (the check, said plainly).
+#[tauri::command]
+pub async fn empire_check(id: String) -> R<(crate::empire::SiteCheck, String)> {
+    blocking(move || {
+        let b = crate::empire::businesses().into_iter().find(|b| b.id == id).ok_or_else(|| "that business isn't here any more".to_string())?;
+        let before = b.checks.last().cloned();
+        let c = crate::empire::check_business(&id).map_err(|e| e.to_string())?;
+        let said = crate::empire::say_check(&b.name, &c, before.as_ref());
+        Ok((c, said))
+    })
+    .await?
+}
+
+/// "What needs my attention?" — from what's really connected.
+#[tauri::command]
+pub async fn empire_attention() -> R<String> {
+    blocking(crate::empire::attention).await
 }
 
 /// The Campus hub: what was due lately and what's coming (campus.rs).

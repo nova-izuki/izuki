@@ -538,6 +538,33 @@ export interface LookAuto {
   last: number;
 }
 
+/** A business in Empire (empire.rs). */
+export interface Business {
+  id: string;
+  name: string;
+  what: string;
+  website: string;
+  goals: string[];
+  hours: string;
+  checks: SiteCheck[];
+}
+
+/** A real website check (empire.rs). */
+export interface SiteCheck {
+  at: number;
+  url: string;
+  up: boolean;
+  status: number;
+  ms: number;
+  https: boolean;
+  bytes: number;
+  title: string;
+  issues: string[];
+  broken: [string, string][];
+  links_checked: number;
+  error: string;
+}
+
 /** The Campus hub (campus.rs): [title, unix ms] pairs. */
 export interface CampusHub {
   linked: boolean;
@@ -816,6 +843,11 @@ export const api = {
   lectureFinish: (id: string) => call<[string, string]>("lecture_finish", { id }, () => ["", ""]),
   lectureCancel: (id: string) => call<void>("lecture_cancel", { id }, () => undefined),
   lectureSoFar: (id: string) => call<string | null>("lecture_so_far", { id }, () => null),
+  empireList: () => call<Business[]>("empire_list", undefined, () => []),
+  empireSave: (business: Business) => call<Business[]>("empire_save", { business }, () => [business]),
+  empireRemove: (id: string) => call<Business[]>("empire_remove", { id }, () => []),
+  empireCheck: (id: string) => call<[SiteCheck, string]>("empire_check", { id }, () => { throw new Error("Website checks work in the Izuki app."); }),
+  empireAttention: () => call<string>("empire_attention", undefined, () => "Nothing needs you right now."),
   campusHub: () => call<CampusHub>("campus_hub", undefined, () => ({ linked: false, past: [], coming: [], error: null })),
   /** Allow / No on a waiting approval (from the Island). */
   approvalAnswer: (id: string, allow: boolean) => call<string>("approval_answer", { id, allow }, () => "Done"),

@@ -1,5 +1,6 @@
 import { InboxCard } from "../InboxCard";
 import { AccountHealthCard } from "../AccountHealthCard";
+import { EmpireCard } from "../EmpireCard";
 import { JumpBar } from "../JumpBar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bell, CheckCircle2, Copy, Download, ExternalLink, Loader2, Plus, RefreshCw, Search, Sparkles, Trash2, Workflow, X } from "lucide-react";
@@ -489,6 +490,9 @@ export function AppsTab() {
 
       {/* ------------------------------------------------ account health */}
       <AccountHealthCard />
+
+      {/* ------------------------------------------------ Empire (your business) */}
+      <EmpireCard />
 
       {/* ------------------------------------------------ inbox */}
       <InboxCard />

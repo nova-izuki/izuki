@@ -46,6 +46,7 @@ pub mod winlook;
 pub mod research;
 pub mod accounts;
 pub mod lecture;
+pub mod empire;
 pub mod remote;
 pub mod rtools;
 pub mod offline;
@@ -426,6 +427,11 @@ pub fn run() {
             commands::lecture_cancel,
             commands::lecture_so_far,
             commands::campus_hub,
+            commands::empire_list,
+            commands::empire_save,
+            commands::empire_remove,
+            commands::empire_check,
+            commands::empire_attention,
             commands::research_save,
             commands::restart_explorer,
             commands::mate_line,
