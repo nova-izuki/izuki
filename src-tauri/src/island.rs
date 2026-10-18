@@ -195,7 +195,7 @@ pub fn status() -> IslandStatus {
         weather: weather_glance(),
         page,
         missions: crate::missions::glance(),
-        lesson: crate::tutor::glance(),
+        lesson: crate::coach::glance().or_else(crate::tutor::glance),
         lecture: crate::lecture::now().map(|(t, s, _)| (t, s)),
         approval: crate::approvals::list().into_iter().find(|a| a.state == "waiting").map(|a| (a.id.clone(), a.app.clone(), approval_summary(&a.draft))),
         due,

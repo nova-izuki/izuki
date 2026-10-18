@@ -401,6 +401,12 @@ export function spokenToTyped(said: string, before: string): string {
   return t;
 }
 
+/** Quiz coach just started (coach.rs): the reply ends the session instead of listening. */
+let coachStarted = false;
+void on<boolean>("izuki://coach", (v) => {
+  coachStarted = !!v;
+});
+
 /** Every time Izuki is cut off; lets a pending follow-up listen stand down. */
 let interruptions = 0;
 /** Lines handed in from outside (EV.say), newest last. */
@@ -580,7 +586,7 @@ function chime(up = true) {
 function answerOnScreen(t: string): string {
   const bare = t.trim().replace(/[?.!]+$/, "").toLowerCase();
   return /^(?:(?:the|what'?s the|whats the|give me the|tell me the|say the)\s+)?answers?(?:\s+(?:it|this|that|please|pls|now|quick|fast))?$/.test(bare)
-    ? "What's the answer to the question on my screen? Tell me the answer and, in one or two sentences, why."
+    ? "Help me with the question on my screen. If it's part of a quiz, test, exam or graded assignment, explain what it's asking and the idea behind it in plain words, but don't say which answer is right — I'll choose. If it's just practice or a puzzle, tell me the answer and, in one or two sentences, why."
     : t;
 }
 
@@ -589,7 +595,7 @@ function answerOnScreen(t: string): string {
 // lets the student answer, says whether they're right and why, and moves on
 // when they're ready. It never picks answers by itself.
 const TUTOR_START =
-  /^(?:(?:hey |ok |okay )?(?:nova|izuki|atlas)[,. ]*)?(?:please )?(?:(?:start|turn on|use|go into|switch to) )?(?:teacher|tutor|teaching) mode\b|^(?:please )?teach me (?:this|the|my) (?:quiz|test|questions?|worksheet)\b|^(?:be|act as|act like) my (?:teacher|tutor)\b|^help me (?:through|with) (?:this|the|my) (?:quiz|test|worksheet)\b/i;
+  /^(?:(?:hey |ok |okay )?(?:nova|izuki|atlas)[,. ]*)?(?:please )?(?:(?:start|turn on|use|go into|switch to) )?(?:teacher|tutor|teaching) mode\b|^(?:please )?teach me (?:this|the|my) (?:questions?|worksheet)\b|^(?:be|act as|act like) my (?:teacher|tutor)\b|^help me (?:through|with) (?:this|the|my) worksheet\b/i;
 const TUTOR_STOP = /^(?:please )?(?:stop|end|exit|quit|turn off|leave|close) (?:the )?(?:teacher|tutor|teaching) mode\b|^stop (?:teaching|tutoring)( me)?\b|^(?:that's|thats) enough (?:teaching|for today)\b/i;
 const TUTOR_FOR_MS = 20 * 60_000;
 
@@ -1033,6 +1039,8 @@ export function VoiceEngine() {
 
     // Everyday commands — "scroll down", "louder", "pause", "next song", "go
     // back", "new tab" — done at once, no AI to wait for or get wrong.
+    // Only a coach start from THIS request counts (coach.rs's event).
+    coachStarted = false;
     const quick = await api.instantCommand(t).catch(() => null);
     if (requestSeq !== at) return;
     if (quick) {
@@ -1041,6 +1049,13 @@ export function VoiceEngine() {
       remember("assistant", quick);
       startSession(from === "voice", "speaking");
       await respond(quick, "cheerful");
+      // Quiz coach waits for your click, not your voice: no listening after this.
+      // (The event and the reply can arrive in either order: the reply's own words count too.)
+      if (coachStarted || quick.startsWith("Quiz coach on")) {
+        coachStarted = false;
+        endAfterSpeaking("quiz coach is waiting for your pick");
+        return;
+      }
       void afterReply(at, false);
       return;
     }

@@ -652,6 +652,12 @@ pub fn is_request(said: &str) -> bool {
 enum Job {
     Bass,
     Melody,
+    /// Chords / pads, held a bar each (the Piano roll, through a script).
+    Chords,
+    /// A melody of long, held notes over the chords (the Piano roll too).
+    LongMelody,
+    /// Vocal tracks: levels, panning, and what their effect chain is missing.
+    Vocals,
     Quantize,
     Balance,
     Intro,
@@ -666,11 +672,18 @@ fn job_of(s: &str) -> Option<Job> {
     let add = has(&["add", "make", "put", "give", "write", "lay", "create", "need", "want"]);
     // Unless FL is named, it has to be about music.
     let fl = s.contains("fl studio") || words.contains(&"fl");
-    let music = fl || has(&["beat", "beats", "track", "song", "pattern", "808", "melody", "melodies", "drums", "drum", "hats", "hat", "kick", "snare", "clap", "bass", "bassline", "mix", "instrumental", "loop"]);
+    let music = fl || has(&["beat", "beats", "track", "song", "pattern", "808", "melody", "melodies", "drums", "drum", "hats", "hat", "kick", "snare", "clap", "bass", "bassline", "mix", "instrumental", "loop", "chords", "chord", "pads", "vocals", "vocal", "vox"]);
+    let long = phrase(&["long notes", "held notes", "sustained", "long note", "hold the notes", "slow melody"]);
     if !music {
         return None;
     }
-    if (has(&["timing", "quantize", "quantise", "tighten"]) || phrase(&["off beat", "off-beat", "on beat", "on the grid"])) && !has(&["melody"]) {
+    if has(&["vocals", "vocal", "vox"]) && (has(&["mix", "balance", "levels", "level", "sit", "clean", "better", "eq", "polish", "chain", "louder", "quieter"]) || phrase(&["sound better", "sound good"])) {
+        Some(Job::Vocals)
+    } else if add && (has(&["chords", "chord", "pads", "pad", "progression"]) || (long && !has(&["melody", "lead", "hook"]))) {
+        Some(Job::Chords)
+    } else if add && long && has(&["melody", "lead", "hook", "melodies"]) {
+        Some(Job::LongMelody)
+    } else if (has(&["timing", "quantize", "quantise", "tighten"]) || phrase(&["off beat", "off-beat", "on beat", "on the grid"])) && !has(&["melody"]) {
         Some(Job::Quantize)
     } else if (has(&["balance"]) && has(&["mix", "levels", "beat", "track", "song"])) || phrase(&["mix my beat", "mix the beat", "mixdown", "mix down"]) {
         Some(Job::Balance)
@@ -897,6 +910,168 @@ fn steps_on(ch: usize) -> Vec<u8> {
     }
 }
 
+// ------------------------------------------------------------ chords and long notes
+
+/// A chord: its root above the key's root, and its notes above that.
+type Chord = (u8, &'static [u8]);
+const MIN: &[u8] = &[0, 3, 7];
+const MAJ: &[u8] = &[0, 4, 7];
+const MIN7: &[u8] = &[0, 3, 7, 10];
+const MAJ7: &[u8] = &[0, 4, 7, 11];
+const DOM7: &[u8] = &[0, 4, 7, 10];
+
+/// Four bars of chords that suit the genre and key; `seed` picks one of a few.
+pub fn progression(genre: &str, minor: bool, seed: u64) -> Vec<Chord> {
+    let sevenths = matches!(genre, "rnb" | "lofi" | "amapiano");
+    let options: Vec<Vec<Chord>> = match (minor, sevenths) {
+        (true, false) => vec![
+            vec![(0, MIN), (8, MAJ), (3, MAJ), (10, MAJ)], // i–VI–III–VII
+            vec![(0, MIN), (5, MIN), (8, MAJ), (7, MAJ)],  // i–iv–VI–V
+            vec![(0, MIN), (10, MAJ), (8, MAJ), (10, MAJ)], // i–VII–VI–VII
+            vec![(0, MIN), (5, MIN), (10, MAJ), (3, MAJ)], // i–iv–VII–III
+        ],
+        (true, true) => vec![
+            vec![(0, MIN7), (5, MIN7), (10, DOM7), (3, MAJ7)], // i7–iv7–VII7–IIImaj7
+            vec![(0, MIN7), (8, MAJ7), (5, MIN7), (7, MIN7)],  // i7–VImaj7–iv7–v7
+        ],
+        (false, false) => vec![
+            vec![(0, MAJ), (7, MAJ), (9, MIN), (5, MAJ)], // I–V–vi–IV
+            vec![(0, MAJ), (9, MIN), (5, MAJ), (7, MAJ)], // I–vi–IV–V
+            vec![(9, MIN), (5, MAJ), (0, MAJ), (7, MAJ)], // vi–IV–I–V
+        ],
+        (false, true) => vec![
+            vec![(2, MIN7), (7, DOM7), (0, MAJ7), (0, MAJ7)], // ii7–V7–Imaj7
+            vec![(0, MAJ7), (9, MIN7), (2, MIN7), (7, DOM7)], // Imaj7–vi7–ii7–V7
+        ],
+    };
+    options[(seed as usize) % options.len()].clone()
+}
+
+/// The chords as notes: each voiced near the last (smooth, like a player's
+/// hands), around middle C, held a whole bar. (pitch, start beat, beats, velocity)
+pub fn chord_notes(key_root: u8, chords: &[Chord]) -> Vec<(u8, f32, f32, f32)> {
+    let mut out = Vec::new();
+    let mut centre = 62.0f32;
+    for (bar, (root, shape)) in chords.iter().enumerate() {
+        // Every inversion in a comfortable range; the one nearest the last chord wins.
+        let base = 48 + ((key_root + root) % 12);
+        let mut best: Option<(f32, Vec<u8>)> = None;
+        for octave in [0u8, 12] {
+            for inv in 0..shape.len() {
+                let mut notes: Vec<u8> = shape.iter().enumerate().map(|(i, s)| base + octave + s + if i < inv { 12 } else { 0 }).collect();
+                notes.sort_unstable();
+                if notes[0] < 52 || *notes.last().unwrap_or(&0) > 79 {
+                    continue;
+                }
+                let avg = notes.iter().map(|n| *n as f32).sum::<f32>() / notes.len() as f32;
+                let d = (avg - centre).abs();
+                if best.as_ref().is_none_or(|(bd, _)| d < *bd) {
+                    best = Some((d, notes));
+                }
+            }
+        }
+        let notes = best.map(|(_, n)| n).unwrap_or_else(|| shape.iter().map(|s| base + 12 + s).collect());
+        centre = notes.iter().map(|n| *n as f32).sum::<f32>() / notes.len() as f32;
+        // The root an octave below, for weight.
+        out.push((base.saturating_sub(12).max(36), bar as f32 * 4.0, 4.0, 0.62));
+        for n in notes {
+            out.push((n, bar as f32 * 4.0, 4.0, 0.72));
+        }
+    }
+    out
+}
+
+/// A slow melody over the chords: two held notes a bar, chord tones up high.
+pub fn long_melody_notes(key_root: u8, chords: &[Chord], seed: u64) -> Vec<(u8, f32, f32, f32)> {
+    let mut out = Vec::new();
+    for (bar, (root, shape)) in chords.iter().enumerate() {
+        let base = 72 + ((key_root + root) % 12);
+        for half in 0..2u64 {
+            let pick = ((seed >> (bar * 2 + half as usize)) as usize + bar + half as usize) % shape.len();
+            let mut p = base + shape[pick];
+            while p > 84 {
+                p -= 12;
+            }
+            out.push((p, bar as f32 * 4.0 + half as f32 * 2.0, if half == 1 && bar == chords.len() - 1 { 2.0 } else { 1.9 }, 0.8));
+        }
+    }
+    out
+}
+
+/// A Piano roll script (FL Studio's own scripting) that adds these notes.
+pub fn piano_roll_script(what: &str, notes: &[(u8, f32, f32, f32)]) -> String {
+    let what = what.replace(['"', '\\', '\n'], " ");
+    let list: Vec<String> = notes.iter().map(|(p, s, l, v)| format!("({p}, {s:.3}, {l:.3}, {v:.2})")).collect();
+    format!(
+        "\"\"\"Izuki: {what}\"\"\"\n\
+         # Written by Izuki. Piano roll → Tools → Scripting → Izuki notes, then Accept.\n\
+         # Ctrl+Z takes the notes back.\n\
+         import flpianoroll as flp\n\n\
+         NOTES = [{}]\n\n\
+         def createDialog():\n    \
+             return flp.ScriptDialog(\"Izuki notes\", \"{what}. Press Accept to add them (Ctrl+Z takes them back).\")\n\n\
+         def apply(form):\n    \
+             ppq = flp.score.PPQ\n    \
+             for pitch, start, length, vel in NOTES:\n        \
+                 n = flp.Note()\n        \
+                 n.number = pitch\n        \
+                 n.time = int(start * ppq)\n        \
+                 n.length = int(length * ppq)\n        \
+                 n.velocity = vel\n        \
+                 flp.score.addNote(n)\n",
+        list.join(", ")
+    )
+}
+
+/// FL Studio's Piano roll scripts folder.
+fn piano_roll_dir() -> Option<std::path::PathBuf> {
+    Some(dirs::document_dir()?.join("Image-Line").join("FL Studio").join("Settings").join("Piano roll scripts"))
+}
+
+// ------------------------------------------------------------ vocals
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VocalRole {
+    Lead,
+    Backing,
+    Adlib,
+}
+
+/// What a mixer track's name says it carries.
+pub fn vocal_role(name: &str) -> Option<VocalRole> {
+    let n = format!(" {} ", name.to_lowercase().replace(['-', '_', '.'], " "));
+    let has = |ws: &[&str]| ws.iter().any(|w| n.contains(w));
+    if has(&[" adlib", " ad lib", " adlibs", " ad libs", " fx vox"]) {
+        Some(VocalRole::Adlib)
+    } else if has(&[" bv ", " bvs ", " backing", " harmony", " harmonies", " dbl", " double", " stack"]) && has(&[" vox", " vocal", " voc ", " bv ", " bvs ", " harmony", " harmonies"]) {
+        Some(VocalRole::Backing)
+    } else if has(&[" vocal", " vox", " voc ", " lead vox", " lead vocal"]) {
+        Some(VocalRole::Lead)
+    } else {
+        None
+    }
+}
+
+/// What a vocal chain is missing, from its effect names, as plain advice.
+pub fn chain_advice(slots: &[String]) -> Vec<&'static str> {
+    let names: Vec<String> = slots.iter().map(|s| s.to_lowercase()).collect();
+    let has = |ws: &[&str]| names.iter().any(|n| ws.iter().any(|w| n.contains(w)));
+    let mut out = Vec::new();
+    if !has(&["eq", "parametric", "pro-q", "equo"]) {
+        out.push("an EQ first (Fruity Parametric EQ 2): cut everything below about 100 Hz, and a small dip around 300 Hz if it sounds muddy");
+    }
+    if !has(&["compressor", "comp", "pro-c", "1176", "la-2a", "cla-", "rcompressor", "fruity limiter"]) {
+        out.push("a compressor (Fruity Compressor): ratio about 3:1 to 4:1, so the loudest words come down 3–6 dB");
+    }
+    if !has(&["de-ess", "deess", "de ess", "pro-ds", "sibil"]) {
+        out.push("a de-esser if the S sounds are sharp (Maximus or a free de-esser)");
+    }
+    if !has(&["reverb", "reeverb", "valhalla", "room", "plate", "delay"]) {
+        out.push("reverb and a little delay on a send track, not on the vocal itself, kept low so the voice stays up front");
+    }
+    out
+}
+
 fn do_job(job: Job, s: &str) -> Result<String> {
     match run_job(job, s) {
         // FL is still running the older script (it loads scripts when it
@@ -914,6 +1089,78 @@ fn run_job(job: Job, s: &str) -> Result<String> {
     let chans = channel_list(&st);
     let genre = genre_now(&st, s);
     match job {
+        Job::Chords | Job::LongMelody => {
+            // The instrument: your selected one if it plays notes, else one that does.
+            let selected = one(json!(["selected"])).ok().and_then(|v| v.as_i64()).filter(|i| *i >= 0).map(|i| i as usize);
+            let ch = selected
+                .and_then(|i| chans.iter().find(|(c, n)| *c == i && role_of(n).is_none() && is_melodic_name(n) && !is_bass_name(n)).cloned())
+                .or_else(|| chans.iter().find(|(_, n)| is_melodic_name(n) && !is_bass_name(n)).cloned());
+            let Some((ch, name)) = ch else {
+                bail!("I need an instrument for that: add keys, a pad or a synth to the Channel rack (FL Keys, FLEX or Sytrus) and click it, then ask again.");
+            };
+            let key = key_of(s).unwrap_or_else(|| key_for(genre));
+            let seed = (crate::model::now_ms() as u64) ^ (ch as u64 * 7919);
+            let chords = progression(genre, key.1, seed);
+            let (notes, what) = if job == Job::Chords {
+                (chord_notes(key.0, &chords), format!("Chords in {} for {name}, a bar each", key_name(key)))
+            } else {
+                (long_melody_notes(key.0, &chords, seed), format!("A long-note melody in {} for {name}", key_name(key)))
+            };
+            let dir = piano_roll_dir().ok_or_else(|| anyhow!("couldn't find your Documents folder"))?;
+            std::fs::create_dir_all(&dir)?;
+            std::fs::write(dir.join("Izuki notes.pyscript"), piano_roll_script(&what, &notes))?;
+            // Open that instrument's Piano roll.
+            one(json!(["select", ch]))?;
+            let _ = one(json!(["show", "pianoroll"]));
+            let names: Vec<String> = chords.iter().map(|(r, shape)| {
+                let n = NOTES[((key.0 + r) % 12) as usize];
+                let q = if *shape == MIN { "m" } else if *shape == MIN7 { "m7" } else if *shape == MAJ7 { "maj7" } else if *shape == DOM7 { "7" } else { "" };
+                format!("{n}{q}")
+            }).collect();
+            Ok(format!(
+                "{what}: {} — four bars, held. I've opened “{name}” in the Piano roll; to drop them in: Piano roll menu → Tools → Scripting → “Izuki notes”, then Accept. (FL only lets scripts add Piano roll notes that way.) Ctrl+Z takes them back; ask again for a different idea.",
+                names.join(" → ")
+            ))
+        }
+        Job::Vocals => {
+            let tracks: Vec<(usize, String)> = one(json!(["tracks"]))?
+                .as_array()
+                .map(|a| a.iter().filter_map(|t| Some((t[0].as_u64()? as usize, t[1].as_str()?.to_string()))).collect())
+                .unwrap_or_default();
+            let vocal: Vec<(usize, String, VocalRole)> = tracks.iter().filter_map(|(i, n)| vocal_role(n).map(|r| (*i, n.clone(), r))).collect();
+            if vocal.is_empty() {
+                bail!("I can't find a vocal mixer track — name it in the Mixer (right-click the track → Rename): “Vocals”, “Backing vox” or “Adlibs”, then ask again.");
+            }
+            one(json!(["undo_point", "Izuki: vocal levels"]))?;
+            let (mut backs, mut adlibs) = (0, 0);
+            let mut lines = Vec::new();
+            for (i, name, role) in &vocal {
+                let (vol, pan) = match role {
+                    VocalRole::Lead => (0.8, 0.0),
+                    VocalRole::Backing => {
+                        backs += 1;
+                        (0.64, if backs % 2 == 1 { -0.35 } else { 0.35 })
+                    }
+                    VocalRole::Adlib => {
+                        adlibs += 1;
+                        (0.56, if adlibs % 2 == 1 { 0.5 } else { -0.5 })
+                    }
+                };
+                call(vec![json!(["track_vol", i, vol]), json!(["track_pan", i, pan])], true)?;
+                let slots: Vec<String> = one(json!(["slots", i])).ok().and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().filter_map(|s| s.as_str().map(String::from)).collect();
+                let advice = chain_advice(&slots);
+                let has = if slots.is_empty() { "no effects yet".to_string() } else { slots.join(", ") };
+                lines.push(if advice.is_empty() {
+                    format!("• “{name}” ({has}) — the chain looks complete.")
+                } else {
+                    format!("• “{name}” ({has}) — add {}.", advice.join("; then "))
+                });
+            }
+            Ok(format!(
+                "Set your vocal levels: lead in the middle at full level, backing vocals a little lower and spread left and right, adlibs softer and wider. Ctrl+Z in FL undoes it.\n{}\n(FL doesn't let scripts add plugins, so the effects are yours to add — say “mix my vocals” again after, and I'll check the chain.)",
+                lines.join("\n")
+            ))
+        }
         Job::Bass | Job::Melody => {
             let selected = one(json!(["selected"])).ok().and_then(|v| v.as_i64()).filter(|i| *i >= 0).map(|i| i as usize);
             let wanted = |n: &str| if job == Job::Bass { is_bass_name(n) } else { is_melodic_name(n) && !is_bass_name(n) };
@@ -1126,6 +1373,40 @@ fn make_beat(said: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chords_long_notes_and_vocals() {
+        assert_eq!(job_of("add some chords in fl"), Some(Job::Chords));
+        assert_eq!(job_of("make pads for my beat"), Some(Job::Chords));
+        assert_eq!(job_of("add a melody with long notes"), Some(Job::LongMelody));
+        assert_eq!(job_of("mix my vocals"), Some(Job::Vocals));
+        assert_eq!(job_of("make my vocals sound better"), Some(Job::Vocals));
+        assert_eq!(job_of("add a melody"), Some(Job::Melody), "short notes stay on the Channel rack");
+        // A minor: i–VI–III–VII is Am F C G; voiced close together.
+        let ch = progression("trap", true, 0);
+        assert_eq!(ch.iter().map(|(r, _)| *r).collect::<Vec<_>>(), vec![0, 8, 3, 10]);
+        let notes = chord_notes(9, &ch);
+        let bar = |b: f32| notes.iter().filter(|(_, s, _, _)| *s == b).map(|(p, _, _, _)| *p).collect::<Vec<_>>();
+        assert_eq!(notes.len(), 16, "a bass note and a triad, four bars");
+        let pcs = |v: Vec<u8>| { let mut x: Vec<u8> = v.iter().map(|p| p % 12).collect(); x.sort_unstable(); x.dedup(); x };
+        assert_eq!(pcs(bar(0.0)), vec![0, 4, 9], "A minor: A C E");
+        assert_eq!(pcs(bar(4.0)), vec![0, 5, 9], "F major: F A C");
+        assert!(notes.iter().all(|(_, _, l, _)| *l == 4.0), "held a whole bar");
+        let mel = long_melody_notes(9, &ch, 42);
+        assert_eq!(mel.len(), 8);
+        assert!(mel.iter().all(|(p, _, l, _)| (60..=84).contains(p) && *l >= 1.9));
+        let script = piano_roll_script("Chords in A minor", &notes[..2]);
+        assert!(script.contains("import flpianoroll as flp") && script.contains("def apply(form)") && script.contains("NOTES = [(45, 0.000, 4.000, 0.62)"), "{script}");
+        assert_eq!(vocal_role("Lead Vox"), Some(VocalRole::Lead));
+        assert_eq!(vocal_role("Backing vox L"), Some(VocalRole::Backing));
+        assert_eq!(vocal_role("Adlibs"), Some(VocalRole::Adlib));
+        assert_eq!(vocal_role("Kick"), None);
+        assert_eq!(vocal_role("Hook synth"), None, "a hook isn't always a voice");
+        assert_eq!(vocal_role("Double bass"), None);
+        assert_eq!(vocal_role("Vox double"), Some(VocalRole::Backing));
+        let advice = chain_advice(&["Fruity Parametric EQ 2".into(), "Fruity Compressor".into()]);
+        assert_eq!(advice.len(), 2, "de-esser and reverb still to add: {advice:?}");
+    }
 
     #[test]
     fn literals_round_trip() {

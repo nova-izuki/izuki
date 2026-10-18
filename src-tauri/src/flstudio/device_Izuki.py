@@ -227,6 +227,36 @@ def op_selected():
         return -1
 
 
+def op_select(ch):
+    # Make one channel the selected one (its Piano roll opens with "show").
+    channels.selectOneChannel(int(ch))
+    return True
+
+
+def op_tracks():
+    # Mixer tracks you've named: [index, name] (not "Insert 3", not the master).
+    out = []
+    for i in range(1, min(mixer.trackCount(), 126)):
+        name = mixer.getTrackName(i)
+        if name and not name.startswith("Insert "):
+            out.append([i, name])
+    return out
+
+
+def op_slots(t):
+    # The effects on a mixer track, by name, slot by slot.
+    out = []
+    for slot in range(10):
+        if plugins.isValid(int(t), slot):
+            out.append(plugins.getPluginName(int(t), slot))
+    return out
+
+
+def op_track_pan(t, v):
+    mixer.setTrackPan(int(t), max(-1.0, min(1.0, float(v))))
+    return True
+
+
 def op_quantize(ch, start_only):
     # FL's own Quick quantize on one channel (Ctrl+Z takes it back).
     channels.quickQuantize(int(ch), 1 if start_only else 0)
@@ -239,6 +269,7 @@ OPS = {
     "vel": op_vel, "pitch": op_pitch, "clear_row": op_clear_row, "row": op_row, "chan_vol": op_chan_vol,
     "chan_pan": op_chan_pan, "mute": op_mute, "track_vol": op_track_vol, "plugin_params": op_plugin_params,
     "plugin_set": op_plugin_set, "selected": op_selected, "quantize": op_quantize,
+    "select": op_select, "tracks": op_tracks, "slots": op_slots, "track_pan": op_track_pan,
 }
 
 

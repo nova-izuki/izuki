@@ -205,26 +205,72 @@ fn grounded_element(identity: &ControlIdentity) -> anyhow::Result<(uiautomation:
         None
     };
     let (x, y) = identity.rect.center();
-    let mut found = at_point(x, y);
-    if found.is_none() {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(250);
+    // Every element in the window, in order, until `want` says stop (bounded:
+    // a long web page — a lab guide, a PDF — has thousands).
+    // `true` when the whole window was seen (or `want` stopped it on purpose),
+    // `false` when the time or size limit cut it short.
+    let walk = |ms: u64, nodes: usize, want: &mut dyn FnMut(&uiautomation::UIElement) -> bool| -> bool {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(ms);
         let mut stack = vec![root.clone()];
         let mut visited = 0;
         while let Some(el) = stack.pop() {
             visited += 1;
-            if visited > 1500 || std::time::Instant::now() > deadline { break; }
-            if is_target(&el) { found = Some(el); break; }
+            if visited > nodes || std::time::Instant::now() > deadline { return false; }
+            if want(&el) { return true; }
             let mut child = walker.get_first_child(&el).ok();
             let mut children = Vec::new();
             while let Some(el) = child {
-                if children.len() >= 400 || std::time::Instant::now() > deadline { break; }
+                if children.len() >= 400 || std::time::Instant::now() > deadline { return false; }
                 child = walker.get_next_sibling(&el).ok();
                 children.push(el);
             }
             stack.extend(children.into_iter().rev());
         }
+        true
+    };
+    let mut found = at_point(x, y);
+    if found.is_none() {
+        walk(700, 4000, &mut |el| {
+            if is_target(el) { found = Some(el.clone()); true } else { false }
+        });
+    }
+    // The page drew it again (a web page re-renders, and the element gets a
+    // new id): the same name and kind, and the ONLY one in the window, is the
+    // same control. Two or more and it's a guess — then the planner looks again.
+    if found.is_none() && identity.name.trim().len() >= 2 {
+        let mut same: Vec<uiautomation::UIElement> = Vec::new();
+        let complete = walk(1200, 8000, &mut |el| {
+            let hit = el.get_name().unwrap_or_default() == identity.name && el.get_control_type().map(|c| format!("{c:?}")).unwrap_or_default() == identity.kind;
+            if hit { same.push(el.clone()); }
+            same.len() > 1
+        });
+        // Only when the whole window was seen (so there really is just one),
+        // and it's still about where it was.
+        let near = |e: &uiautomation::UIElement| {
+            e.get_bounding_rectangle().ok().is_some_and(|r| {
+                let (ax, ay) = to_rect(&r).center();
+                let (bx, by) = identity.rect.center();
+                (ax - bx).abs() <= 400 && (ay - by).abs() <= 400
+            })
+        };
+        if complete && same.len() == 1 && near(&same[0]) {
+            eprintln!("[uia] the control was redrawn; found it again by its name");
+            found = same.pop();
+        }
     }
     let el = found.ok_or_else(|| anyhow!("target_changed: the detected control is no longer present; parse the screen again"))?;
+    // What's under the point must be THIS element (by its id now).
+    let el_id = el.get_runtime_id().unwrap_or_default();
+    let is_found = |e: &uiautomation::UIElement| !el_id.is_empty() && e.get_runtime_id().unwrap_or_default() == el_id;
+    let under = |x, y| {
+        let mut current = a.element_from_point(Point::new(x, y)).ok();
+        for _ in 0..8 {
+            let Some(e) = current else { return false };
+            if is_found(&e) { return true; }
+            current = walker.get_parent(&e).ok();
+        }
+        false
+    };
     if !el.is_enabled().unwrap_or(false) { return Err(anyhow!("disabled: the detected control is disabled")); }
     if el.is_offscreen().unwrap_or(true) { return Err(anyhow!("target_changed: the detected control is not visible")); }
     let mut visible = to_rect(&el.get_bounding_rectangle()?).intersect(&to_rect(&root.get_bounding_rectangle()?));
@@ -238,7 +284,7 @@ fn grounded_element(identity: &ControlIdentity) -> anyhow::Result<(uiautomation:
     }
     let rect = visible.filter(|r| r.w > 2 && r.h > 2).ok_or_else(|| anyhow!("target_changed: control is clipped out of view"))?;
     let (cx, cy) = rect.center();
-    if at_point(cx, cy).is_none() {
+    if !under(cx, cy) {
         return Err(anyhow!("target_changed: another element covers the detected control; parse the screen again"));
     }
     Ok((el, cx, cy))
@@ -722,6 +768,12 @@ fn collect(
                                     .unwrap_or_default()
                             };
                             (value, el.has_keyboard_focus().unwrap_or(false))
+                        } else if matches!(ct, C::RadioButton | C::CheckBox | C::ListItem) && !offscreen {
+                            // Chosen or not (Quiz coach waits for the student's pick).
+                            use uiautomation::patterns::{UISelectionItemPattern, UITogglePattern};
+                            let selected = el.get_pattern::<UISelectionItemPattern>().ok().and_then(|p| p.is_selected().ok()).unwrap_or(false)
+                                || el.get_pattern::<UITogglePattern>().ok().and_then(|p| p.get_toggle_state().ok()).is_some_and(|s| s == uiautomation::types::ToggleState::On);
+                            (if selected { "selected".to_string() } else { String::new() }, false)
                         } else {
                             (String::new(), false)
                         };

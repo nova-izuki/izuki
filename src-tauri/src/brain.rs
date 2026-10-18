@@ -3190,6 +3190,7 @@ pub fn reserve_draw_task() -> u64 {
 /// question it was waiting on. (Stop hotkey, Esc, the orb's ✕, "stop".)
 pub fn cancel_task() {
     TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    crate::coach::stop();
     automation::request_abort();
     UNFINISHED.lock().take();
     answer_help(None);

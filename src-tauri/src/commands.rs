@@ -383,6 +383,23 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     if let Some(ask) = crate::textbook::parse(&said, crate::textbook::has_books()) {
         return blocking(move || crate::textbook::handle(ask)).await.ok();
     }
+    // Quiz coach: through a quiz WITH the student — explains, waits for their pick, presses Next (coach.rs).
+    if let Some(ask) = crate::coach::parse(&said) {
+        return Some(match ask {
+            crate::coach::Ask::Start => {
+                let app2 = app.clone();
+                let text = blocking(move || crate::coach::start(&app2)).await.unwrap_or_default();
+                if crate::coach::active() {
+                    let _ = app.emit("izuki://coach", true);
+                }
+                text
+            }
+            crate::coach::Ask::Stop => {
+                crate::coach::stop();
+                "Stopped coaching. Good luck — say “go over my results” after you submit and we'll look at what you missed.".into()
+            }
+        });
+    }
     // Money and the shop: "how much did I spend?", "any new orders?" (money.rs, shop.rs).
     if let Some(ask) = crate::money::parse_here(&said) {
         return blocking(move || crate::money::handle(ask)).await.ok();

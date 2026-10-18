@@ -62,7 +62,7 @@ export function FlStudioCard() {
     <Section
       id="settings-flstudio"
       title="FL Studio"
-      hint="Izuki as your producer: it controls FL Studio directly (not the mouse) — fast and exact. Say “make afrobeats”, then “add an 808”, “add a melody in C minor”, “fix the timing on the hats”, “balance the mix”, “make an intro”, “stop”, “tempo 128”. Every change is one undo step: Ctrl+Z in FL takes it back."
+      hint="Izuki as your producer: it controls FL Studio directly (not the mouse) — fast and exact. Say “make afrobeats”, then “add an 808”, “add a melody in C minor”, “fix the timing on the hats”, “balance the mix”, “make an intro”, “add chords”, “add a melody with long notes”, “mix my vocals”, “stop”, “tempo 128”. Chords and long notes go into the Piano roll through a little script (Tools → Scripting → Izuki notes); vocal effects are yours to add — Izuki sets the levels and tells you what's missing. Ctrl+Z in FL takes any change back."
     >
       <div className="izk-inset mb-2 rounded-[14px] p-2.5">
         <div className="mb-1 flex items-center justify-between">
@@ -89,7 +89,7 @@ export function FlStudioCard() {
             {settingUp ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />} {status?.cable && status.script ? "Set up again" : "Set up (one time)"}
           </button>
           {status?.connected &&
-            ["Make afrobeats", "Make a trap beat at 140", "Add an 808", "Add a melody", "Fix the timing", "Balance the mix", "Make an intro"].map((t) => (
+            ["Make afrobeats", "Make a trap beat at 140", "Add an 808", "Add a melody", "Add chords", "Add a melody with long notes", "Mix my vocals", "Fix the timing", "Balance the mix", "Make an intro"].map((t) => (
               <button key={t} type="button" onClick={() => ask(t)} className="izk-pill izk-no-drag h-[28px] px-3 text-[11px]">
                 {t}
               </button>
@@ -105,7 +105,7 @@ export function FlStudioCard() {
         {result && <p className="mt-1.5 text-[11px] leading-snug">{result}</p>}
       </div>
       <p className="text-[10.5px] leading-snug text-izk-muted">
-        Set up puts Izuki's script into FL Studio and makes a private virtual MIDI cable with Windows' own MIDI system (loopMIDI if FL can't see it). Then one step in FL: Options → MIDI settings → pick the Izuki cable as input and output, Controller type “Izuki”, Port 236. Still to come: chords and long notes in the piano roll, and mixing vocals with effects — FL's controller scripts can't do those yet.
+        Set up puts Izuki's script into FL Studio and makes a private virtual MIDI cable with Windows' own MIDI system (loopMIDI if FL can't see it). Then one step in FL: Options → MIDI settings → pick the Izuki cable as input and output, Controller type “Izuki”, Port 236. Chords and long notes go into the Piano roll through a little script Izuki writes (Tools → Scripting → Izuki notes). For vocals, Izuki sets levels and panning and tells you which effects to add — FL's scripts can't add plugins themselves.
       </p>
     </Section>
   );

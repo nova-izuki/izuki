@@ -23,6 +23,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🎓", title: "Quiz coach", how: "Say “coach me through this quiz”: Izuki explains each question (never which answer is right), waits quietly while you pick, then presses Next for you. It never presses Submit — and after you submit, “go over my results” reviews what you missed." },
+  { icon: "🎹", title: "FL Studio: chords, long notes, vocals", how: "“Add chords”, “add a melody with long notes” (dropped into the Piano roll with Tools → Scripting → Izuki notes) and “mix my vocals” — levels and panning set, and what each vocal chain is missing.", try: { label: "FL Studio", tab: "settings", id: "settings-flstudio" } },
   { icon: "🧵", title: "It follows the conversation", how: "Ask “which webcam fits my laptop?”, then “open Amazon and find that one” — Izuki now knows which one. When you ask it to do something that leans on what came before (“it”, “that one”, “again”), the part that works your screen gets the conversation too, from the PC or your phone." },
   { icon: "🛑", title: "Never submits on its own", how: "Submit, End test, Send, Pay, Delete, Post: Izuki now always stops and asks first unless you told it to — a hard rule in its code, not just a request to the AI. And on a quiz or test, you pick the answers: Izuki explains and coaches." },
   { icon: "💰", title: "Your bank statement, understood", how: "Apps → Money → Import a statement (the CSV from your bank's website). See money in and out, where it went, unusual charges and double charges, and every subscription with its yearly cost — or ask “how much did I spend this month?”. Stays on this PC; read only.", try: { label: "Money", tab: "apps", id: "apps-money" } },
