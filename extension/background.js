@@ -56,6 +56,8 @@ async function inPage(tabId, func, args = []) {
 }
 
 async function run(op, args) {
+  // Blackboard's API needs no tab (and must work with none in front).
+  if (op === "bbfetch") return await bbFetch(String(args.url || ""));
   const tab = await activeTab();
   switch (op) {
     case "snapshot":
@@ -78,6 +80,36 @@ async function run(op, args) {
       return await Promise.all((args.urls || []).slice(0, 4).map((u) => readLinked(String(u))));
     default:
       throw new Error(`unknown request: ${op}`);
+  }
+}
+
+/**
+ * Blackboard's own API, read with your Blackboard sign-in (Izuki never sees a
+ * password). Only GET, only Blackboard's /learn/api/ paths: nothing else can
+ * be fetched this way, and nothing can be changed.
+ */
+async function bbFetch(url) {
+  let u;
+  try {
+    u = new URL(url);
+  } catch {
+    throw new Error("not a web address");
+  }
+  if (u.protocol !== "https:" || !u.pathname.startsWith("/learn/api/")) throw new Error("only Blackboard's read-only API can be fetched");
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const r = await fetch(u.href, { credentials: "include", signal: ctrl.signal, headers: { Accept: "application/json" } });
+    const text = (await r.text()).slice(0, 2000000);
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      /* not JSON: a sign-in page */
+    }
+    return { status: json === null && r.ok ? 401 : r.status, json };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

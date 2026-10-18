@@ -226,6 +226,14 @@ export function TalkToIzuki() {
             <Toggle checked={settings.island_suggestions} onChange={(v) => patch({ island_suggestions: v })} />
           </Row>
         )}
+        {settings.island_enabled && (
+          <Row
+            label="Character reacts on the Island"
+            hint="When your companion is a character (Settings → Character), it pops up beside the Island for a few seconds: it points at what needs you and cheers when a task or your missions finish."
+          >
+            <Toggle checked={settings.island_reactions ?? false} onChange={(v) => patch({ island_reactions: v })} />
+          </Row>
+        )}
         {settings.island_enabled && <QuietHoursRow value={settings.quiet_hours ?? ""} onChange={(v) => patch({ quiet_hours: v })} />}
         {settings.island_enabled && (
           <Row label="Island look" hint="Choose how the Island — the pill at the top of your screen — looks (themes like Windhawk's).">

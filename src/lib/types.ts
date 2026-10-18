@@ -500,6 +500,10 @@ export interface Settings {
   heads_up_pc: boolean;
   /** Heads-ups sent to the paired phone. */
   heads_up_phone: boolean;
+  /** How the user writes, for drafts Izuki writes for them to send. */
+  writing_style: string;
+  /** The character pops up beside the Island to point and cheer. */
+  island_reactions: boolean;
   /** Every question and its answer saved to today's Study log note. */
   study_log: boolean;
   /** Heads-up when missions finish. */

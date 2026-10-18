@@ -394,9 +394,12 @@ pub fn speak_line(settings: &Settings, engine: &str, text: &str, mood: Option<&s
     if engine != settings.voice_engine {
         return synthesize(settings, engine, text, mood);
     }
-    let failing = CHOSEN_FAILED.lock().is_some_and(|t| t.elapsed() < STICK);
+    // While the chosen voice is resting (its allowance used up), the voice
+    // that stood in keeps speaking — the whole reply in one voice, no wait.
+    let resting = is_resting(engine);
+    let failing = resting || CHOSEN_FAILED.lock().is_some_and(|t| t.elapsed() < STICK);
     if failing {
-        let sub = LAST_STAND_IN.lock().clone().filter(|(_, t)| t.elapsed() < STICK).map(|(e, _)| e);
+        let sub = LAST_STAND_IN.lock().clone().filter(|(_, t)| resting || t.elapsed() < STICK).map(|(e, _)| e);
         if let Some(sub) = sub {
             if let Ok(audio) = synthesize(settings, &sub, text, mood) {
                 return Ok(audio);
@@ -413,6 +416,18 @@ pub fn speak_line(settings: &Settings, engine: &str, text: &str, mood: Option<&s
             Err(e)
         }
     }
+}
+
+/// Is this voice resting (out of its allowance or credits for now)?
+fn is_resting(engine: &str) -> bool {
+    let now = std::time::Instant::now();
+    let until = match engine {
+        "orpheus" => *ORPHEUS_RESTING_UNTIL.lock(),
+        "openai" => *OPENAI_RESTING_UNTIL.lock(),
+        "elevenlabs" => *ELEVEN_RESTING_UNTIL.lock(),
+        _ => None,
+    };
+    until.is_some_and(|t| now < t)
 }
 
 /// One line of speech as WAV bytes.
@@ -582,7 +597,9 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
             // through the day). A per-minute one: in a minute.
             let lower = body.to_lowercase();
             let daily = lower.contains("per day") || lower.contains("(tpd)") || lower.contains("(rpd)");
-            let rest = std::time::Duration::from_secs(if daily { 3600 } else { 60 });
+            // A daily allowance rolls over through the day: six hours, not one
+            // (it used to fail again every hour, mid-reply, and switch voices).
+            let rest = std::time::Duration::from_secs(if daily { 6 * 3600 } else { 60 });
             *ORPHEUS_RESTING_UNTIL.lock() = Some(std::time::Instant::now() + rest);
             eprintln!("[tts] resting the Groq voice for {} s", rest.as_secs());
         }

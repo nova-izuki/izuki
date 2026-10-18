@@ -2848,9 +2848,50 @@ fn submit_task(
     if completed && alive() && restates(&plan.summary, &last_said) {
         plan.summary = "Done.".into();
     }
+    // "Yo, I already broke that one down for you — the answer is B": the
+    // remark about having said it only confuses. The answer stays.
+    if !last_said.is_empty() {
+        plan.summary = drop_already_said(&plan.summary);
+    }
     finalize_execution(&mut plan, completed && alive());
     if !alive() { plan.outcome = crate::model::TaskOutcome::Cancelled; }
     plan
+}
+
+/// The clause saying it was already said ("I already broke that down for
+/// you", "like I said") taken out; the rest of the line kept as it was.
+pub fn drop_already_said(line: &str) -> String {
+    const META: &[&str] = &[
+        "i already broke", "i already explained", "i already told", "i already said", "i already covered", "i already answered", "i already went over", "i already walked you",
+        "i've already explained", "i've already told", "i've already covered", "i've already answered", "i've already broken",
+        "as i said", "like i said", "as i mentioned", "like i mentioned", "as i explained",
+    ];
+    const DELIMS: &[&str] = &[" — ", " – ", " - ", ", ", ". ", "! ", "? ", ": ", "; "];
+    let lower = line.to_ascii_lowercase();
+    let Some((m, mlen)) = META.iter().filter_map(|p| lower.find(p).map(|i| (i, p.len()))).min_by_key(|x| x.0) else {
+        return line.to_string();
+    };
+    // The clause holding it: from the break before it to the break after.
+    let before = DELIMS.iter().filter_map(|d| line[..m].rfind(d)).max();
+    let after = DELIMS.iter().filter_map(|d| line[m + mlen..].find(d).map(|i| (m + mlen + i, *d))).min_by_key(|x| x.0);
+    let prefix = before.map(|i| line[..i].trim_end()).unwrap_or("");
+    let (rest, joint) = match after {
+        Some((i, d)) => (line[i + d.len()..].trim_start(), d),
+        None => ("", ""),
+    };
+    let out = match (prefix.is_empty(), rest.is_empty()) {
+        (true, true) => return "Done.".into(),
+        (true, false) => rest.to_string(),
+        (false, true) => {
+            if prefix.ends_with(['.', '!', '?']) { prefix.to_string() } else { format!("{prefix}.") }
+        }
+        (false, false) => format!("{prefix}{joint}{rest}"),
+    };
+    let mut chars = out.chars();
+    match chars.next() {
+        Some(c) => c.to_uppercase().chain(chars).collect(),
+        None => "Done.".into(),
+    }
 }
 
 /// Does the final reply mostly say again what was said mid-task? Compared
@@ -3256,6 +3297,12 @@ mod speed_tests {
         assert!(!restates("Your total is $42.10.", "Opening your cart."));
         assert!(!restates("Sent it — Maria will see it in her inbox.", "Writing the email now."));
         assert!(!restates("All set.", ""));
+        assert_eq!(drop_already_said("Yo Solomon, I already broke that one down for you — the answer is B, Personally identifiable information."), "Yo Solomon — the answer is B, Personally identifiable information.");
+        assert_eq!(drop_already_said("Like I said, the answer is B."), "The answer is B.");
+        assert_eq!(drop_already_said("The answer is B, as I said. It's PII."), "The answer is B. It's PII.");
+        assert_eq!(drop_already_said("I already explained it."), "Done.");
+        assert_eq!(drop_already_said("The answer is C."), "The answer is C.");
+        assert_eq!(drop_already_said("Maria already answered your email."), "Maria already answered your email.");
         assert!(!restates("Opened Notepad and wrote the whole shopping list: eggs, bread, milk, coffee, rice, beans.", "Opening Notepad now."));
     }
 

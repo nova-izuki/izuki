@@ -135,6 +135,7 @@ pub fn record(question: &str, answer: &str) {
     let answer = answer.to_string();
     // Off the reply's thread: a slow disk never holds up the answer.
     std::thread::spawn(move || {
+        crate::studytrack::add("question", "", &question, "", None);
         if let Err(e) = save(&question, &answer) {
             eprintln!("[studylog] couldn't save: {e}");
         }

@@ -369,6 +369,19 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
             return blocking(|| crate::study::coach().unwrap_or_else(|e| e.to_string())).await.ok();
         }
     }
+    // "What do I keep getting wrong?", "what have I studied this week?" (studytrack.rs).
+    // ("Quiz me on my mistakes" goes on to the chat, with the cards.)
+    if let Some(ask) = crate::studytrack::parse(&said).filter(|a| *a != crate::studytrack::Ask::Practise || crate::studytrack::mistakes(&crate::studytrack::events()).is_empty()) {
+        return Some(crate::studytrack::handle(ask));
+    }
+    // "What are my grades?", "announcements", "course materials" (blackboard.rs).
+    if let Some(ask) = crate::blackboard::parse(&said) {
+        return blocking(move || crate::blackboard::handle(ask)).await.ok();
+    }
+    // "Explain chapter 4 of my biology book" (textbook.rs).
+    if let Some(ask) = crate::textbook::parse(&said, crate::textbook::has_books()) {
+        return blocking(move || crate::textbook::handle(ask)).await.ok();
+    }
     // "Save every question and answer to my notes" (studylog.rs).
     if let Some(on) = crate::studylog::parse(&said) {
         return Some(crate::studylog::handle(on));
@@ -1033,6 +1046,48 @@ pub fn ext_status() -> bool {
 #[tauri::command]
 pub fn notes_list() -> Vec<crate::notes::Note> {
     crate::notes::list()
+}
+
+/// Textbooks (textbook.rs): the Windows "Open" box for a PDF.
+#[tauri::command]
+pub async fn textbook_pick() -> R<Option<String>> {
+    blocking(|| crate::textbook::pick_pdf().map_err(err)).await?
+}
+
+#[tauri::command]
+pub async fn textbook_add(path: String) -> R<String> {
+    blocking(move || crate::textbook::add(&path).map_err(err)).await?
+}
+
+#[tauri::command]
+pub async fn textbook_shelf() -> R<Vec<crate::textbook::Shelf>> {
+    blocking(crate::textbook::shelf).await
+}
+
+#[tauri::command]
+pub async fn textbook_remove(id: String) -> R<()> {
+    blocking(move || crate::textbook::remove(&id).map_err(err)).await?
+}
+
+/// "Explain chapter 4", typed in the textbook's own box.
+#[tauri::command]
+pub async fn textbook_ask(text: String) -> R<String> {
+    blocking(move || match crate::textbook::parse(&text, true) {
+        Some(ask) => crate::textbook::handle(ask),
+        None => crate::textbook::handle(crate::textbook::Ask { how: crate::textbook::How::Explain, part: crate::textbook::Part::Topic(text.trim().to_string()), book: String::new() }),
+    })
+    .await
+}
+
+/// A flashcard marked right or wrong (studytrack.rs).
+#[tauri::command]
+pub async fn study_mark(topic: String, q: String, a: String, right: bool) -> R<()> {
+    blocking(move || crate::studytrack::mark_card(&topic, &q, &a, right).map_err(err)).await?
+}
+
+#[tauri::command]
+pub async fn study_week() -> R<crate::studytrack::Week> {
+    blocking(crate::studytrack::week).await
 }
 
 /// A quick note jotted on the Island: saved to Notes as it was typed.

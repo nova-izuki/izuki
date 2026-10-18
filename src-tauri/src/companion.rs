@@ -243,6 +243,25 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         push("assistant", &text);
         return Reply::text(text);
     }
+    // Study diary, Blackboard and textbooks from the phone too.
+    if let Some(ask) = crate::studytrack::parse(said).filter(|a| *a != crate::studytrack::Ask::Practise || crate::studytrack::mistakes(&crate::studytrack::events()).is_empty()) {
+        push("user", said);
+        let text = crate::studytrack::handle(ask);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
+    if let Some(ask) = crate::blackboard::parse(said) {
+        push("user", said);
+        let text = crate::blackboard::handle(ask);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
+    if let Some(ask) = crate::textbook::parse(said, crate::textbook::has_books()) {
+        push("user", said);
+        let text = crate::textbook::handle(ask);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // "Save every question and answer to my notes" from the phone too (studylog.rs).
     if let Some(on) = crate::studylog::parse(said) {
         push("user", said);

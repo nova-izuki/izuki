@@ -109,7 +109,7 @@ pub fn from_screen() -> Result<Note> {
         bail!("the AI didn't write anything — try again");
     }
     let now = crate::model::now_ms();
-    save(Note {
+    let note = save(Note {
         id: uuid::Uuid::new_v4().to_string(),
         title: tidy_title(&title),
         text: notes,
@@ -118,7 +118,9 @@ pub fn from_screen() -> Result<Note> {
         updated_at: now,
         cards: Vec::new(),
         lesson: false,
-    })
+    })?;
+    crate::studytrack::add("notes", &note.title, "", "", None);
+    Ok(note)
 }
 
 /// A note from the browser extension: the selected text kept as it is, or a

@@ -212,6 +212,7 @@ pub fn finish(id: &str) -> Result<(String, String)> {
     l.note_id = Some(note.id.clone());
     save(&l);
     eprintln!("[lecture] notes saved ({} pieces)", l.pieces.len());
+    crate::studytrack::add("lecture", &l.title, "", "", None);
     Ok((note.id, l.title))
 }
 

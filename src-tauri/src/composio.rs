@@ -370,7 +370,7 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
             hooks.iter().map(|h| format!("\"{}\"", h.name)).collect::<Vec<_>>().join(", ")
         )
     };
-    let mut messages = vec![json!({ "role": "system", "content": format!("{PROMPT}{n8n}\n{}{}{}", crate::reminders::prompt_block(), crate::memory::prompt_block(), crate::voices::prompt_block()) })];
+    let mut messages = vec![json!({ "role": "system", "content": format!("{PROMPT}{n8n}\n{}{}{}{}", crate::reminders::prompt_block(), crate::memory::prompt_block(), crate::voices::prompt_block(), crate::chat::writing_style_block()) })];
     for t in history.iter().rev().take(10).rev() {
         let role = if t.role == "assistant" { "assistant" } else { "user" };
         messages.push(json!({ "role": role, "content": t.content }));

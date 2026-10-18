@@ -302,6 +302,8 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
     }
     let token = crate::state::store().settings().call_token;
     let url = req.url().split('?').next().unwrap_or("").to_string();
+    let query = req.url().split_once('?').map(|(_, q)| q.to_string()).unwrap_or_default();
+    let param = |name: &str| query.split('&').find_map(|kv| kv.split_once('=').filter(|(k, _)| *k == name).map(|(_, v)| v.to_string())).unwrap_or_default();
     let base = format!("/{token}");
     let path = url.strip_prefix(&base).filter(|_| token.len() >= 20);
     let method = req.method().clone();
@@ -586,6 +588,51 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
                 eprintln!("[bug] call page: {msg} ({phone})");
             }
             json_reply(req, json!({ "ok": true }))
+        }
+        // Lecture Mode from the phone (lecture.rs): the phone records, the PC
+        // writes it down and makes the notes. The phone asks the student to
+        // confirm they're allowed to record before it starts.
+        (tiny_http::Method::Post, Some("/lecture/start")) => {
+            let mut body = String::new();
+            let _ = req.as_reader().take(8 * 1024).read_to_string(&mut body);
+            let v = serde_json::from_str::<Value>(&body).unwrap_or_default();
+            if v["allowed"].as_bool() != Some(true) {
+                return json_reply(req, json!({ "ok": false, "error": "confirm you're allowed to record this lecture first" }));
+            }
+            match crate::lecture::start(v["title"].as_str().unwrap_or("")) {
+                Ok(id) => json_reply(req, json!({ "ok": true, "id": id })),
+                Err(e) => json_reply(req, json!({ "ok": false, "error": e.to_string() })),
+            }
+        }
+        (tiny_http::Method::Post, Some("/lecture/piece")) => {
+            let mime = req
+                .headers()
+                .iter()
+                .find(|h| h.field.equiv("Content-Type"))
+                .map(|h| h.value.as_str().split(';').next().unwrap_or("audio/webm").trim().to_string())
+                .unwrap_or_else(|| "audio/webm".into());
+            let mut audio = Vec::new();
+            let _ = req.as_reader().take(25 * 1024 * 1024).read_to_end(&mut audio);
+            let (id, index, start) = (param("id"), param("index").parse::<u32>().unwrap_or(0), param("start").parse::<u32>().unwrap_or(0));
+            match crate::lecture::piece(&id, index, start, audio, &mime) {
+                Ok(()) => json_reply(req, json!({ "ok": true })),
+                Err(e) => json_reply(req, json!({ "ok": false, "error": e.to_string() })),
+            }
+        }
+        (tiny_http::Method::Post, Some("/lecture/finish")) | (tiny_http::Method::Post, Some("/lecture/cancel")) => {
+            let finish = url.ends_with("/finish");
+            let mut body = String::new();
+            let _ = req.as_reader().take(8 * 1024).read_to_string(&mut body);
+            let v = serde_json::from_str::<Value>(&body).unwrap_or_default();
+            let id = v["id"].as_str().unwrap_or("").to_string();
+            if !finish {
+                crate::lecture::cancel(&id);
+                return json_reply(req, json!({ "ok": true }));
+            }
+            match crate::lecture::finish(&id) {
+                Ok((note, title)) => json_reply(req, json!({ "ok": true, "note": note, "title": title })),
+                Err(e) => json_reply(req, json!({ "ok": false, "error": e.to_string() })),
+            }
         }
         (tiny_http::Method::Post, Some("/hear")) => {
             // For phones whose browser has no speech recognition: the

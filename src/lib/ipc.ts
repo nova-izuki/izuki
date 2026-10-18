@@ -300,6 +300,8 @@ export const MOCK_SETTINGS: Settings = {
   heads_up_phone: true,
   heads_up_missions: true,
   study_log: false,
+  writing_style: "",
+  island_reactions: false,
   quiet_hours: "",
   n8n_hooks: [],
   n8n_url: "",
@@ -574,6 +576,30 @@ export interface CampusHub {
   past: [string, number][];
   coming: [string, number][];
   error: string | null;
+}
+
+/** A textbook on the shelf (textbook.rs). */
+export interface Shelf {
+  id: string;
+  title: string;
+  pages: number;
+  chapters: Array<{ level: number; title: string; page: number }>;
+  /** Still reading: [pages done, pages in all]. */
+  reading: [number, number] | null;
+  error: string | null;
+}
+
+/** Your study week (studytrack.rs). */
+export interface StudyWeek {
+  questions: number;
+  cards: number;
+  cards_right: number;
+  notes: number;
+  lectures: number;
+  textbook: number;
+  topics: Array<[string, number]>;
+  days: number[];
+  mistakes: Array<{ topic: string; q: string; a: string; missed: number; right: number }>;
 }
 
 /** Account health (accounts.rs). */
@@ -852,6 +878,13 @@ export const api = {
   empireRemove: (id: string) => call<Business[]>("empire_remove", { id }, () => []),
   empireCheck: (id: string) => call<[SiteCheck, string]>("empire_check", { id }, () => { throw new Error("Website checks work in the Izuki app."); }),
   empireAttention: () => call<string>("empire_attention", undefined, () => "Nothing needs you right now."),
+  textbookPick: () => call<string | null>("textbook_pick", undefined, () => null),
+  textbookAdd: (path: string) => call<string>("textbook_add", { path }, () => "test-book"),
+  textbookShelf: () => call<Shelf[]>("textbook_shelf", undefined, () => []),
+  textbookRemove: (id: string) => call<void>("textbook_remove", { id }, () => undefined),
+  textbookAsk: (text: string) => call<string>("textbook_ask", { text }, () => "📚 (preview) Add a PDF first."),
+  studyMark: (topic: string, q: string, a: string, right: boolean) => call<void>("study_mark", { topic, q, a, right }, () => undefined),
+  studyWeek: () => call<StudyWeek>("study_week", undefined, () => ({ questions: 0, cards: 0, cards_right: 0, notes: 0, lectures: 0, textbook: 0, topics: [], days: [0, 0, 0, 0, 0, 0, 0], mistakes: [] })),
   campusHub: () => call<CampusHub>("campus_hub", undefined, () => ({ linked: false, past: [], coming: [], error: null })),
   /** Allow / No on a waiting approval (from the Island). */
   approvalAnswer: (id: string, allow: boolean) => call<string>("approval_answer", { id, allow }, () => "Done"),

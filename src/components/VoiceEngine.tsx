@@ -52,14 +52,14 @@ async function hideConfigWindow() {
  * box paces its words to the voice when the voice is on, and manages its
  * own lifetime from there.
  */
-async function respond(text: string, mood?: string | null, reply = false, quick = false) {
+async function respond(text: string, mood?: string | null, reply = false, quick = false, stale?: () => boolean) {
   const state = useIzuki.getState();
   // What Izuki says shows on the Izuki TV channel too (if it's open there) —
   // and when the TV says it out loud, this PC only shows the words.
   if (state.settingsLoaded && text.trim() && (state.settings.tv_host || state.settings.lan_link)) {
     const onTv = await api.tvShow("talk", text).catch(() => false);
     if (onTv) {
-      await say(text, { ...state.settings, speak_responses: false }, mood, reply, quick);
+      await say(text, { ...state.settings, speak_responses: false }, mood, reply, quick, stale);
       return;
     }
   }
@@ -71,7 +71,7 @@ async function respond(text: string, mood?: string | null, reply = false, quick 
     void emit(EV.say, payload);
     return;
   }
-  await say(text, state.settings, mood, reply, quick);
+  await say(text, state.settings, mood, reply, quick, stale);
 }
 
 /**
@@ -166,23 +166,46 @@ function showCaption(text: string, paced: boolean, msPerWord?: number) {
 /** Cloud voice problems already shown, so each is captioned only once. */
 const cloudProblemsShown = new Set<string>();
 
-async function say(text: string, settings: Settings, mood?: string | null, _reply = false, quick = false) {
+/**
+ * Lines take turns. Each new line used to stop the one being said at once,
+ * so a task's "Option A's locked in, let's hit Next" was cut off by its next
+ * step and long answers lost their ends ("it keeps breaking"). Now a line
+ * waits for the one before it to finish; only a real interruption — a new
+ * request, Esc, talking over Izuki — cuts in, and lines still waiting then
+ * are dropped (the user has moved on). `stale`: checked when its turn comes
+ * (a newer progress line made this one old news).
+ */
+let lineChain: Promise<unknown> = Promise.resolve();
+function takeTurn(run: () => Promise<void>, stale?: () => boolean): Promise<void> {
+  const at = interruptions;
+  const turn = lineChain.then(async () => {
+    if (isSpeaking() && !(await untilQuiet())) return; // cut off meanwhile
+    if (interruptions !== at || stale?.()) return;
+    await run();
+  });
+  lineChain = turn.catch(() => undefined);
+  return turn;
+}
+
+async function say(text: string, settings: Settings, mood?: string | null, _reply = false, quick = false, stale?: () => boolean) {
   const caption = settings.show_captions;
   if (!settings.speak_responses) {
-    if (caption) showCaption(speakable(text), false);
+    if (caption && !stale?.()) showCaption(speakable(text), false);
     return;
   }
-  // Bluetooth headsets play everything in "phone call" quality while their
-  // mic is open — let go of it so the voice sounds like a person, and take
-  // it back once Izuki has finished (not merely started) talking. A quick
-  // "Mhm?" keeps the mic: you're about to answer, and the switch would
-  // cost a second.
-  if (!quick) await holdMicForVoice();
-  try {
-    await speakLine(text, settings, mood);
-  } finally {
-    if (!quick) void untilQuiet().then(() => releaseMicForVoice());
-  }
+  await takeTurn(async () => {
+    // Bluetooth headsets play everything in "phone call" quality while their
+    // mic is open — let go of it so the voice sounds like a person, and take
+    // it back once Izuki has finished (not merely started) talking. A quick
+    // "Mhm?" keeps the mic: you're about to answer, and the switch would
+    // cost a second.
+    if (!quick) await holdMicForVoice();
+    try {
+      await speakLine(text, settings, mood);
+    } finally {
+      if (!quick) void untilQuiet().then(() => releaseMicForVoice());
+    }
+  }, stale);
 }
 
 async function speakLine(raw: string, settings: Settings, mood: string | null | undefined) {
@@ -380,6 +403,8 @@ export function spokenToTyped(said: string, before: string): string {
 
 /** Every time Izuki is cut off; lets a pending follow-up listen stand down. */
 let interruptions = 0;
+/** Lines handed in from outside (EV.say), newest last. */
+let sayLines = 0;
 
 /** Silence Izuki immediately, whichever voice is talking. */
 /**
@@ -1539,9 +1564,14 @@ ${result}`);
   useEffect(() => {
     const offs = [
       // Lines to say: the overlay's, and "what I'm doing" while a task runs.
-      on<SayPayload | string>(EV.say, (p) =>
-        void (typeof p === "string" ? respond(p) : respond(p.text, p.mood, p.reply, p.quick))
-      ),
+      // A "doing this…" line still waiting when a newer one arrives is old
+      // news: only the newest is said (never cutting the one being said).
+      on<SayPayload | string>(EV.say, (p) => {
+        const line = typeof p === "string" ? { text: p } : p;
+        const mine = ++sayLines;
+        const stale = line.quick ? () => mine !== sayLines : undefined;
+        void respond(line.text, line.mood, line.reply, line.quick, stale);
+      }),
       on<Partial<Settings>>(EV.patchSettings, (patch) => useIzuki.getState().patchSettings(patch)),
       on<string>("izuki://wake-elsewhere", () => {
         wakeHeardElsewhereUntil = Date.now() + 8000;

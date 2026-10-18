@@ -30,6 +30,7 @@
 <script src="drive.js"></script>
 <script src="remote.js"></script>
 <script src="touchgrass.js"></script>
+<script src="lecture.js"></script>
 <script type="module" src="tv.js"></script>
 <style>
   :root {
@@ -282,6 +283,9 @@
       </button>
       <button class="icon-btn compact-action" id="go-remote" type="button" aria-label="Remote — control your PC from this phone" title="Remote for your PC">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6M6 9h12"/></svg><span>Remote</span>
+      </button>
+      <button class="icon-btn compact-action" id="go-lecture" type="button" aria-label="Record a lecture — your PC makes the notes" title="Record a lecture">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c3 2 9 2 12 0v-5"/></svg><span>Lecture</span>
       </button>
       <button class="icon-btn compact-action" id="go-touch" type="button" aria-label="Touch Grass — your PC's missions and approvals" title="Touch Grass">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M7 20c0-5 1-9 3-12"/><path d="M12 20c0-6 .5-10 1-14"/><path d="M17 20c0-4-1-7-3-9"/></svg><span>Grass</span>
@@ -589,6 +593,11 @@
     window.IzukiTouch?.open(pc, { pass: store.get("pcPass", ""), onPair: remote });
   };
   document.getElementById("go-touch")?.addEventListener("click", openTouch);
+  // 🎙️ Record a lecture here; the linked PC writes it down and makes the notes (lecture.js).
+  document.getElementById("go-lecture")?.addEventListener("click", () => {
+    if (!pc) return alert("Link this phone to your PC first: on the PC, Izuki → Settings → Phone → Call Izuki from your phone, then scan the QR code.");
+    window.IzukiLecture?.open(pc);
+  });
   // A tapped notification opens Touch Grass (#touch, or a message from the worker).
   if (location.hash === "#touch") setTimeout(openTouch, 300);
   navigator.serviceWorker?.addEventListener("message", (e) => { if (e.data?.type === "open-touch") openTouch(); });

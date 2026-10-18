@@ -3,6 +3,7 @@ import { CalendarClock, Loader2, Mic, Square, X } from "lucide-react";
 import { api, type CampusHub as Hub } from "../lib/ipc";
 import { sendChatCommand } from "./VoiceEngine";
 import { Section, cx } from "./ui";
+import { SchoolReader, StudyWeekCard, Textbooks } from "./StudyCards";
 
 /** Minutes per recorded piece: each is a whole audio file, written down as soon as it's done. */
 const PIECE_MS = 120_000;
@@ -43,6 +44,9 @@ export function CampusHub({ onNote }: { onNote: (id: string) => void }) {
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <Deadlines hub={hub} />
         <LectureMode onNote={onNote} />
+        <Textbooks />
+        <SchoolReader />
+        <StudyWeekCard />
       </div>
     </Section>
   );

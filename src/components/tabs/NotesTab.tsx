@@ -212,6 +212,20 @@ function NoteView({ note, onBack, onChanged }: { note: Note; onBack: () => void;
   const [error, setError] = useState<string | null>(null);
   const [card, setCard] = useState(0);
   const [flipped, setFlipped] = useState(false);
+  /** Cards marked this time through: index → right. */
+  const [marked, setMarked] = useState<Record<number, boolean>>({});
+  const cardsKey = useMemo(() => JSON.stringify(note.cards), [note.cards]);
+  useEffect(() => setMarked({}), [note.id, cardsKey]);
+  const mark = (right: boolean) => {
+    if (card in marked) return;
+    const [q, a] = note.cards[card];
+    setMarked((m) => ({ ...m, [card]: right }));
+    void api.studyMark(note.title, q, a, right).catch(() => undefined);
+    if (card < note.cards.length - 1) {
+      setCard((c) => c + 1);
+      setFlipped(false);
+    }
+  };
   const [question, setQuestion] = useState("");
   const body = note.text.slice(0, 4000);
 
@@ -270,6 +284,21 @@ function NoteView({ note, onBack, onChanged }: { note: Note; onBack: () => void;
             </span>
             <span className="mt-2 text-[15px] font-semibold leading-snug text-izk-ink">{flipped ? note.cards[card][1] : note.cards[card][0]}</span>
           </button>
+          {flipped && !(card in marked) && (
+            <div className="mt-2 flex gap-2">
+              <button type="button" onClick={() => mark(false)} className="izk-pill flex-1 justify-center py-1.5 text-[12px] text-rose-200">
+                ✗ Missed it
+              </button>
+              <button type="button" onClick={() => mark(true)} className="izk-pill flex-1 justify-center py-1.5 text-[12px] text-emerald-200">
+                ✓ Got it
+              </button>
+            </div>
+          )}
+          {Object.keys(marked).length > 0 && (
+            <p className="mt-1.5 text-center text-[11px] text-izk-muted">
+              {Object.values(marked).filter(Boolean).length} of {Object.keys(marked).length} right this time — cards you keep missing show up in Campus → Your study.
+            </p>
+          )}
           <div className="mt-2 flex justify-between">
             <button type="button" disabled={card === 0} onClick={() => { setCard((c) => c - 1); setFlipped(false); }} className="izk-pill px-3 py-1 text-[11.5px] disabled:opacity-40">← Back</button>
             <button type="button" disabled={card >= note.cards.length - 1} onClick={() => { setCard((c) => c + 1); setFlipped(false); }} className="izk-pill px-3 py-1 text-[11.5px] disabled:opacity-40">Next →</button>

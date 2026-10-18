@@ -348,6 +348,7 @@ fn system_prompt(style: Style, apps: bool) -> String {
     if crate::studylog::on() {
         s.push_str(crate::studylog::RULE);
     }
+    s.push_str(&writing_style_block());
     s.push_str(&crate::reminders::prompt_block());
     s.push_str(&crate::memory::prompt_block());
     s.push_str(&crate::voices::prompt_block());
@@ -954,7 +955,30 @@ fn complete_with_tools(mut messages: Vec<Value>) -> anyhow::Result<String> {
 }
 
 fn messages_for(history: &[Turn], style: Style) -> Vec<Value> {
+    // "Quiz me on my mistakes": the cards you keep missing go with the ask.
+    if history.last().is_some_and(|t| t.role == "user" && crate::studytrack::parse(&t.content) == Some(crate::studytrack::Ask::Practise)) {
+        let list = crate::studytrack::mistakes(&crate::studytrack::events());
+        if !list.is_empty() {
+            let prompt = crate::studytrack::practise_prompt(&list);
+            let mut h = history.to_vec();
+            for t in h.iter_mut().filter(|t| t.role == "user" && crate::studytrack::parse(&t.content) == Some(crate::studytrack::Ask::Practise)) {
+                t.content = prompt.clone();
+            }
+            return with_system(&h, system_prompt(style, crate::composio::configured()));
+        }
+    }
     with_system(history, system_prompt(style, crate::composio::configured()))
+}
+
+/// The user's own writing style (Settings), for anything written for them to send.
+pub fn writing_style_block() -> String {
+    let style = crate::state::store().settings().writing_style;
+    let style = style.trim();
+    if style.is_empty() {
+        return String::new();
+    }
+    let style: String = style.chars().take(600).collect();
+    format!("\n\nTHE USER'S WRITING STYLE — use it for anything you write for them to send or post (emails, messages, replies, posts, cover letters), not for your own chat replies: {style}\n")
 }
 
 fn with_system(history: &[Turn], system: String) -> Vec<Value> {

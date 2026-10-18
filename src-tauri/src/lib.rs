@@ -48,6 +48,9 @@ pub mod accounts;
 pub mod lecture;
 pub mod empire;
 pub mod studylog;
+pub mod studytrack;
+pub mod textbook;
+pub mod blackboard;
 pub mod remote;
 pub mod rtools;
 pub mod offline;
@@ -365,6 +368,13 @@ pub fn run() {
             commands::notes_list,
             commands::notes_delete,
             commands::notes_jot,
+            commands::textbook_pick,
+            commands::textbook_add,
+            commands::textbook_shelf,
+            commands::textbook_remove,
+            commands::textbook_ask,
+            commands::study_mark,
+            commands::study_week,
             commands::notes_capture,
             commands::notes_lesson,
             commands::notes_flashcards,

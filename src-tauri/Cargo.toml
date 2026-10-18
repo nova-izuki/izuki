@@ -1,6 +1,6 @@
 [package]
 name = "izuki"
-version = "1.0.134"
+version = "1.0.135"
 description = "IZUKI — draw on your screen, Izuki does it."
 authors = ["Izuki"]
 edition = "2021"
@@ -37,6 +37,8 @@ base64 = "0.23"
 # Web Push to the phone (webpush.rs) — already in the build for HTTPS.
 ring = "0.17"
 uuid = { version = "1", features = ["v4"] }
+# Textbooks (textbook.rs): a PDF's text and chapter list.
+lopdf = "0.38"
 # FL Studio: the virtual MIDI cable to the Izuki controller script.
 midir = "0.10"
 sha2 = "0.10"
@@ -74,6 +76,8 @@ version = "0.62"
 features = [
   "Foundation",
   "Foundation_Collections",
+  "Data_Pdf",
+  "Storage",
   "Globalization",
   "Graphics_Imaging",
   "Media_Control",

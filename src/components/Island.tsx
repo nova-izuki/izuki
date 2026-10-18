@@ -5,6 +5,7 @@ import { AlarmClock, Brain, Camera, Check, FileText, GripHorizontal, History, Mi
 import { api, CAMERA_PICTURE_KEY, emit, EV, IS_TAURI, ISLAND_CHATS_KEY, ISLAND_DEEP_KEY, ISLAND_TO_CHAT_KEY, on } from "../lib/ipc";
 import { workArea } from "../lib/floating";
 import { lockHit, markHit, unlockHit } from "../lib/hitTest";
+import { IslandPal, type PalCue } from "./IslandPal";
 import { ChatText } from "./ChatText";
 import { listCameras, openCamera, saveCamera } from "../lib/camera";
 import type { Activity, IslandStatus, NowPlaying, OrbState, Reminder, Suggestion } from "../lib/types";
@@ -486,12 +487,40 @@ export function Island({
             ? { kind: "due", count: due[0], title: due[1], at: due[2] }
             : { kind: "rest" };
 
+  // Your character reacts beside the Island (IslandPal): it points at what
+  // needs you and cheers when a task or your missions finish.
+  const [palCue, setPalCue] = useState<PalCue | null>(null);
+  const cueKey =
+    live.kind === "approval"
+      ? `point:approval:${live.id}`
+      : live.kind === "sitedown"
+        ? `point:site:${live.url}`
+        : live.kind === "error"
+          ? `point:error:${live.message}`
+          : live.kind === "reminder" && live.urgent
+            ? `point:reminder:${live.r.at}`
+            : live.kind === "finished"
+              ? "cheer:finished"
+              : "";
+  useEffect(() => {
+    if (cueKey) setPalCue({ kind: cueKey.startsWith("cheer") ? "cheer" : "point", key: `${cueKey}:${Date.now()}` });
+  }, [cueKey]);
+  const missionsOn = !!status.missions;
+  const hadMissions = useRef(missionsOn);
+  useEffect(() => {
+    if (hadMissions.current && !missionsOn) setPalCue({ kind: "cheer", key: `cheer:missions:${Date.now()}` });
+    hadMissions.current = missionsOn;
+  }, [missionsOn]);
+  const palAway = quiet || status.fullscreen || orb !== "hidden";
+
   const dancing = !!media?.playing;
   if (status.fullscreen && !open) return null;
 
   const scale = islandScale(size);
   const fitted = fitIslandPosition(position, scale);
   return (
+    <>
+    <IslandPal cue={palCue} pill={pill} away={palAway} />
     <div
       className="pointer-events-none fixed z-[60] flex justify-center"
       style={{ left: fitted.x - ISLAND_WIDTH / 2, width: ISLAND_WIDTH, top: fitted.y, transform: scale !== 1 ? `scale(${scale})` : undefined, transformOrigin: "top center" }}
@@ -590,6 +619,7 @@ export function Island({
         </AnimatePresence>
       </motion.div>
     </div>
+    </>
   );
 }
 

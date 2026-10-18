@@ -276,6 +276,7 @@ export function AppsTab() {
         { label: "🔌 Connect", id: "apps-connect" },
         { label: "🌐 Websites", id: "apps-browser" },
         { label: "📥 Inbox", id: "apps-inbox" },
+        { label: "✍️ Writing style", id: "apps-style" },
         { label: "🔔 Heads-ups", id: "apps-headsups" },
         { label: "⚡ Automations", id: "apps-n8n" },
       ]} />
@@ -497,6 +498,44 @@ export function AppsTab() {
 
       {/* ------------------------------------------------ inbox */}
       <InboxCard />
+
+      {/* ------------------------------------------------ writing style */}
+      <Section
+        id="apps-style"
+        title="Your writing style"
+        hint="Emails, messages and posts Izuki drafts for you sound like you. (Its own chat replies stay its own.)"
+      >
+        <div className="flex flex-wrap gap-1.5">
+          {(
+            [
+              ["Casual", "Casual and friendly, like texting a friend. Short sentences."],
+              ["Professional", "Professional and polite, clear and to the point, no slang."],
+              ["Short & direct", "Very short and direct: one or two sentences, no small talk."],
+              ["Warm", "Warm and kind, a little personal, thanks people."],
+              ["No emojis", "Never use emojis."],
+            ] as const
+          ).map(([label, add]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => {
+                const now = settings.writing_style.trim();
+                if (!now.includes(add)) patch({ writing_style: now ? `${now} ${add}` : add });
+              }}
+              className="izk-pill izk-no-drag px-2.5 py-1 text-[11px]"
+            >
+              + {label}
+            </button>
+          ))}
+        </div>
+        <textarea
+          value={settings.writing_style}
+          onChange={(e) => patch({ writing_style: e.target.value.slice(0, 600) })}
+          rows={3}
+          placeholder="e.g. Short and friendly, British spelling, no emojis, sign off “Cheers, Sam”."
+          className="izk-field izk-no-drag mt-2 w-full resize-none py-2 text-[12px]"
+        />
+      </Section>
 
       {/* ------------------------------------------------ heads-ups */}
       <Section

@@ -545,6 +545,14 @@ pub struct Settings {
     /// today's "Study log" note, explained to learn from later.
     #[serde(default)]
     pub study_log: bool,
+    /// How the user writes, for drafts Izuki writes for them to send
+    /// ("short and friendly, no emojis, sign off 'Cheers, Sam'"). Empty: Izuki's own.
+    #[serde(default)]
+    pub writing_style: String,
+    /// The character pops up beside the Island to point at news and cheer
+    /// when things finish (IslandPal.tsx) — when the companion is a character.
+    #[serde(default)]
+    pub island_reactions: bool,
     /// Heads-up: a mission finished, paused or needs checking (missions.rs).
     #[serde(default = "default_true")]
     pub heads_up_missions: bool,
@@ -1115,6 +1123,8 @@ impl Default for Settings {
             heads_up_phone: true,
             heads_up_missions: true,
             study_log: false,
+            writing_style: String::new(),
+            island_reactions: false,
             quiet_hours: String::new(),
             buddy_speaks: true,
             buddy_acts: true,
