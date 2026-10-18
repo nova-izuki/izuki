@@ -545,6 +545,16 @@ pub struct Settings {
     /// today's "Study log" note, explained to learn from later.
     #[serde(default)]
     pub study_log: bool,
+    /// Stripe, read only: a restricted key (rk_…) with Read on charges and
+    /// balance (shop.rs). Never logged, never sent to the phone.
+    #[serde(default)]
+    pub stripe_key: String,
+    /// Shopify store ("ama-bakery" or its .myshopify.com address) and a custom
+    /// app's Admin API token with read_orders/read_products (shop.rs).
+    #[serde(default)]
+    pub shopify_store: String,
+    #[serde(default)]
+    pub shopify_token: String,
     /// How the user writes, for drafts Izuki writes for them to send
     /// ("short and friendly, no emojis, sign off 'Cheers, Sam'"). Empty: Izuki's own.
     #[serde(default)]
@@ -1124,6 +1134,9 @@ impl Default for Settings {
             heads_up_missions: true,
             study_log: false,
             writing_style: String::new(),
+            stripe_key: String::new(),
+            shopify_store: String::new(),
+            shopify_token: String::new(),
             island_reactions: false,
             quiet_hours: String::new(),
             buddy_speaks: true,

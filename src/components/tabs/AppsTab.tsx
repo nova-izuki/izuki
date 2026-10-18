@@ -1,6 +1,7 @@
 import { InboxCard } from "../InboxCard";
 import { AccountHealthCard } from "../AccountHealthCard";
 import { EmpireCard } from "../EmpireCard";
+import { MoneyCard } from "../MoneyCard";
 import { QuietHoursRow } from "../QuietHoursRow";
 import { JumpBar } from "../JumpBar";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -276,6 +277,8 @@ export function AppsTab() {
         { label: "🔌 Connect", id: "apps-connect" },
         { label: "🌐 Websites", id: "apps-browser" },
         { label: "📥 Inbox", id: "apps-inbox" },
+        { label: "🏢 Empire", id: "apps-empire" },
+        { label: "💰 Money", id: "apps-money" },
         { label: "✍️ Writing style", id: "apps-style" },
         { label: "🔔 Heads-ups", id: "apps-headsups" },
         { label: "⚡ Automations", id: "apps-n8n" },
@@ -495,6 +498,7 @@ export function AppsTab() {
 
       {/* ------------------------------------------------ Empire (your business) */}
       <EmpireCard />
+      <MoneyCard />
 
       {/* ------------------------------------------------ inbox */}
       <InboxCard />

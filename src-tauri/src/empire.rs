@@ -438,6 +438,18 @@ pub fn attention() -> String {
             lines.push(format!("🌐 {}'s website has {} broken link{} on the home page.", b.name, c.broken.len(), if c.broken.len() == 1 { "" } else { "s" }));
         }
     }
+    // Shop and payments (shop.rs), and the latest bank statement (money.rs).
+    let (shop_lines, shop_not, shop_checked) = crate::shop::attention();
+    if shop_checked {
+        checked.push("your shop".into());
+    }
+    lines.extend(shop_lines);
+    not.extend(shop_not);
+    let money = crate::money::attention();
+    if !crate::money::load().txs.is_empty() {
+        checked.push("your latest bank statement".into());
+    }
+    lines.extend(money);
     let mut out = if lines.is_empty() { "Nothing needs you right now. 🎉".to_string() } else { format!("Here's what needs you ({}):", lines.len()) };
     for l in &lines {
         out.push_str(&format!("\n{l}"));
@@ -447,6 +459,36 @@ pub fn attention() -> String {
         out.push_str(&format!(" Couldn't check: {}.", not.join("; ")));
     }
     out
+}
+
+/// The phone's Business view (Touch Grass): money this month, the shop,
+/// and each website's last check. Only for the paired phone.
+pub fn phone_view() -> serde_json::Value {
+    let money = crate::money::view();
+    let month = money.months.last().cloned();
+    let mut shop = crate::shop::view();
+    if let Some(s) = shop.stripe.as_mut() {
+        s.recent.clear();
+    }
+    if let Some(s) = shop.shopify.as_mut() {
+        s.recent.clear();
+    }
+    let sites: Vec<serde_json::Value> = businesses()
+        .into_iter()
+        .filter(|b| !b.website.trim().is_empty())
+        .map(|b| {
+            let c = b.checks.last();
+            serde_json::json!({ "name": b.name, "up": c.map(|c| c.up), "ms": c.map(|c| c.ms), "at": c.map(|c| c.at), "issues": c.map(|c| c.issues.len()).unwrap_or(0) })
+        })
+        .collect();
+    serde_json::json!({
+        "month": month,
+        "unusual": money.unusual.len(),
+        "subscriptions": money.subscriptions.iter().map(|s| s.amount).sum::<f64>(),
+        "watchlist": money.watchlist,
+        "shop": shop,
+        "sites": sites,
+    })
 }
 
 // ---- Voice and chat

@@ -437,7 +437,7 @@ pub fn scrub(s: &str) -> String {
 }
 
 fn scrub_word(w: &str) -> String {
-    const KEY_STARTS: &[&str] = &["AIza", "sk-", "sk_", "gsk_", "nvapi-", "xai-", "hf_", "ghp_", "github_pat_", "AKIA", "ak_"];
+    const KEY_STARTS: &[&str] = &["AIza", "sk-", "sk_", "rk_", "gsk_", "nvapi-", "xai-", "hf_", "ghp_", "github_pat_", "AKIA", "ak_", "shpat_", "shpca_", "shppa_"];
     let long = w.chars().count() >= 16;
     if long && KEY_STARTS.iter().any(|p| w.starts_with(p)) {
         return "[key]".into();

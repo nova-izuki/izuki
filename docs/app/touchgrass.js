@@ -63,6 +63,7 @@
       <p class="note" role="status"></p>
       <section class="pairbox" hidden><h3>First, pair this phone</h3><div>Touch Grass needs this phone paired with your PC (once). Tap Pair — a code pops up on your PC to type in here.</div><button class="pair go" type="button">Pair this phone</button></section>
       <section class="bell"><h3>Notifications</h3><div class="muted belltext">Get a buzz on this phone when Izuki needs your yes or your missions finish — even with Izuki closed.</div><button class="push" type="button">🔔 Notify me on this phone</button></section>
+      <section class="biz"><h3>Your business <button class="bizgo" type="button" aria-label="Refresh your business" style="float:right;padding:4px 10px;font-size:12px">↻</button></h3><div class="bizbody muted">Loading…</div></section>
       <section class="pc"><h3>Your PC</h3><div class="now">…</div><div class="warn locked" hidden>Your PC is locked, so anything that needs the screen waits. Email, apps and files still work.</div><button class="stop all" type="button">⏹ Stop everything</button></section>
       <section class="asks"><h3>Waiting for your yes</h3><div class="list"></div></section>
       <section class="ms"><h3>Missions</h3>
@@ -80,6 +81,7 @@
     $(".run").onclick = () => act({ op: "run" }, "Missions started.");
     $(".clear").onclick = () => act({ op: "clear" }, "");
     $(".push").onclick = togglePush;
+    $(".bizgo").onclick = loadBusiness;
     const add = () => {
       const t = $(".new").value.trim();
       if (!t) return;
@@ -139,12 +141,12 @@
 
   function showPair() {
     $(".pairbox").hidden = false;
-    for (const s of [".pc", ".asks", ".ms", ".bell"]) $(s).hidden = true;
+    for (const s of [".pc", ".asks", ".ms", ".bell", ".biz"]) $(s).hidden = true;
   }
 
   function render(v) {
     $(".pairbox").hidden = true;
-    for (const s of [".pc", ".asks", ".ms", ".bell"]) $(s).hidden = false;
+    for (const s of [".pc", ".asks", ".ms", ".bell", ".biz"]) $(s).hidden = false;
     vapid = v.vapid || "";
     pushOn = !!v.push_on;
     $(".push").textContent = pushOn ? "🔕 Turn notifications off" : "🔔 Notify me on this phone";
@@ -207,6 +209,37 @@
     $(".run").textContent = v.running ? "⚙️ Working…" : "▶ Start missions";
   }
 
+  const usd = (v) => (v < 0 ? "−" : "") + "$" + Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: Math.abs(v) >= 1000 ? 0 : 2, minimumFractionDigits: Math.abs(v) >= 1000 ? 0 : 2 });
+  const cents = (c, cur) => (String(cur || "usd").toLowerCase() === "usd" ? usd(c / 100) : (c / 100).toFixed(2) + " " + String(cur).toUpperCase());
+
+  /** Money, shop and websites — once when opened (they're network calls on the PC), and on ↻. */
+  async function loadBusiness() {
+    const box = $(".bizbody");
+    box.textContent = "Loading…";
+    try {
+      const r = await fetch(base + "touch/business", { headers: auth(), cache: "no-store" });
+      if (r.status === 401) return showPair();
+      if (r.status === 404) { box.textContent = "Update Izuki on your PC (1.0.136 or newer) to see your business here."; return; }
+      const v = await r.json();
+      const parts = [];
+      if (v.month) {
+        const kept = v.month.money_in - v.month.money_out;
+        parts.push(`<div class="card"><div class="now">💰 ${esc(new Date(v.month.month + "-01T12:00:00").toLocaleDateString([], { month: "long" }))}: ${usd(v.month.money_in)} in · ${usd(v.month.money_out)} out</div><div class="muted">${kept >= 0 ? "Kept" : "Down"} ${usd(Math.abs(kept))}${v.unusual ? ` · <span class="warn">${v.unusual} unusual charge${v.unusual === 1 ? "" : "s"}</span>` : ""}${v.subscriptions ? ` · ${usd(v.subscriptions)}/mo in subscriptions` : ""}</div></div>`);
+      }
+      const st = v.shop?.stripe;
+      if (st) parts.push(`<div class="card"><div class="now">💳 Today ${cents(st.today, st.currency)} · month ${cents(st.month, st.currency)}</div><div class="muted">${cents(st.available, st.currency)} available, ${cents(st.pending, st.currency)} on the way</div></div>`);
+      else if (v.shop?.stripe_error) parts.push(`<div class="muted">Stripe: ${esc(v.shop.stripe_error)}</div>`);
+      const sh = v.shop?.shopify;
+      if (sh) parts.push(`<div class="card"><div class="now">🛍️ ${sh.today_orders} order${sh.today_orders === 1 ? "" : "s"} today · ${sh.month_orders} this month</div>${sh.to_ship ? `<div class="warn">📦 ${sh.to_ship} to send</div>` : ""}${sh.low_stock.length ? `<div class="warn">⚠️ Low: ${esc(sh.low_stock.slice(0, 3).map(([n, q]) => `${n} (${q})`).join(", "))}</div>` : ""}</div>`);
+      else if (v.shop?.shopify_error) parts.push(`<div class="muted">Shopify: ${esc(v.shop.shopify_error)}</div>`);
+      for (const s of v.sites || []) parts.push(`<div class="muted">🌐 ${esc(s.name)}: ${s.up === null ? "not checked yet" : s.up ? `up${s.ms ? ` (${(s.ms / 1000).toFixed(1)} s)` : ""}${s.issues ? ` · ${s.issues} thing${s.issues === 1 ? "" : "s"} to fix` : ""}` : `<span class="warn">DOWN</span>`}</div>`);
+      box.classList.toggle("muted", !parts.length);
+      box.innerHTML = parts.length ? parts.join("") : "Nothing here yet. On your PC: Apps → Empire (your business), Money (a bank statement) or Shop & payments (Stripe/Shopify).";
+    } catch {
+      box.textContent = "Can't reach your PC — is it on, with Izuki running?";
+    }
+  }
+
   async function refresh() {
     clearTimeout(timer);
     if (!root || root.hidden) return;
@@ -229,6 +262,7 @@
     say("");
     if (!pass) return showPair();
     refresh();
+    loadBusiness();
   }
 
   function close() {

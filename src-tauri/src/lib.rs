@@ -51,6 +51,9 @@ pub mod studylog;
 pub mod studytrack;
 pub mod textbook;
 pub mod blackboard;
+pub mod money;
+pub mod shop;
+pub mod picker;
 pub mod remote;
 pub mod rtools;
 pub mod offline;
@@ -375,6 +378,12 @@ pub fn run() {
             commands::textbook_ask,
             commands::study_mark,
             commands::study_week,
+            commands::money_view,
+            commands::money_import,
+            commands::money_clear,
+            commands::money_watch,
+            commands::money_quotes,
+            commands::shop_view,
             commands::notes_capture,
             commands::notes_lesson,
             commands::notes_flashcards,

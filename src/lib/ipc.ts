@@ -301,6 +301,9 @@ export const MOCK_SETTINGS: Settings = {
   heads_up_missions: true,
   study_log: false,
   writing_style: "",
+  stripe_key: "",
+  shopify_store: "",
+  shopify_token: "",
   island_reactions: false,
   quiet_hours: "",
   n8n_hooks: [],
@@ -587,6 +590,24 @@ export interface Shelf {
   /** Still reading: [pages done, pages in all]. */
   reading: [number, number] | null;
   error: string | null;
+}
+
+/** Money (money.rs). */
+export interface MoneyView {
+  months: Array<{ month: string; money_in: number; money_out: number; categories: Array<[string, number]> }>;
+  unusual: Array<{ date: string; desc: string; amount: number; why: string }>;
+  subscriptions: Array<{ merchant: string; amount: number; last: string; went_up: [number, number] | null }>;
+  watchlist: string[];
+  transactions: number;
+  recent: Array<{ date: string; desc: string; amount: number; category: string; source: string }>;
+}
+
+/** Stripe and Shopify, read only (shop.rs). */
+export interface ShopView {
+  stripe: { currency: string; today: number; today_count: number; month: number; month_count: number; refunded: number; available: number; pending: number; recent: Array<[number, string, number]> } | null;
+  stripe_error: string | null;
+  shopify: { currency: string; today_orders: number; today_total: number; month_orders: number; month_total: number; to_ship: number; recent: Array<[string, string, number, string]>; low_stock: Array<[string, number]> } | null;
+  shopify_error: string | null;
 }
 
 /** Your study week (studytrack.rs). */
@@ -883,6 +904,12 @@ export const api = {
   textbookShelf: () => call<Shelf[]>("textbook_shelf", undefined, () => []),
   textbookRemove: (id: string) => call<void>("textbook_remove", { id }, () => undefined),
   textbookAsk: (text: string) => call<string>("textbook_ask", { text }, () => "📚 (preview) Add a PDF first."),
+  moneyView: () => call<MoneyView>("money_view", undefined, () => ({ months: [], unusual: [], subscriptions: [], watchlist: [], transactions: 0, recent: [] })),
+  moneyImport: () => call<string | null>("money_import", undefined, () => null),
+  moneyClear: () => call<void>("money_clear", undefined, () => undefined),
+  moneyWatch: (symbol: string, add: boolean) => call<string[]>("money_watch", { symbol, add }, () => []),
+  moneyQuotes: () => call<string>("money_quotes", undefined, () => "(preview) no prices"),
+  shopView: () => call<ShopView>("shop_view", undefined, () => ({ stripe: null, stripe_error: null, shopify: null, shopify_error: null })),
   studyMark: (topic: string, q: string, a: string, right: boolean) => call<void>("study_mark", { topic, q, a, right }, () => undefined),
   studyWeek: () => call<StudyWeek>("study_week", undefined, () => ({ questions: 0, cards: 0, cards_right: 0, notes: 0, lectures: 0, textbook: 0, topics: [], days: [0, 0, 0, 0, 0, 0, 0], mistakes: [] })),
   campusHub: () => call<CampusHub>("campus_hub", undefined, () => ({ linked: false, past: [], coming: [], error: null })),

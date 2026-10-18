@@ -369,14 +369,106 @@ pub fn safe_terminal_line(text: &str) -> bool {
     }
 }
 
+/// What the last look saw that the step guard needs: the answer choices on
+/// screen (radio buttons, check boxes) and whether the page is a quiz or test.
+#[derive(Debug, Clone, Default)]
+pub struct Look {
+    pub options: Vec<String>,
+    pub test_page: bool,
+}
+
+static LOOK: Mutex<Look> = Mutex::new(Look { options: Vec::new(), test_page: false });
+
+impl Look {
+    pub fn of(controls: &[uia::Control], page_text: &str, title: &str) -> Look {
+        let options: Vec<String> = controls
+            .iter()
+            .filter(|c| matches!(c.kind.as_str(), "RadioButton" | "CheckBox") && !c.name.trim().is_empty())
+            .map(|c| c.name.trim().to_lowercase())
+            .collect();
+        let words = format!("{} {}", title.to_lowercase(), page_text.chars().take(4000).collect::<String>().to_lowercase());
+        let testy = ["quiz", " test", "exam", "assessment", "practice test", "midterm", "final exam"].iter().any(|w| words.contains(w))
+            || (words.contains("question ") && words.contains(" of "));
+        Look { test_page: testy && options.len() >= 2, options }
+    }
+}
+
+/// Buttons that finish or send something: never pressed unless the user
+/// said to in this request (the brain is told to ask first; this makes sure).
+const FINAL_BUTTONS: &[&str] = &[
+    "submit", "finish test", "end test", "finish quiz", "end quiz", "finish attempt", "end exam", "finish exam", "hand in", "turn in",
+    "send", "pay ", "pay now", "buy", "place order", "checkout", "check out", "purchase", "delete", "remove account", "post", "publish", "transfer",
+];
+
+/// " words like this " — lower-case, punctuation gone, padded for whole-word matching.
+fn words_of(s: &str) -> String {
+    let w: String = s.to_lowercase().chars().map(|c| if c.is_alphanumeric() || c == '\'' { c } else { ' ' }).collect();
+    format!(" {} ", w.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+/// Which FINAL_BUTTONS phrase a final button's name holds ("submit quiz" → "submit").
+fn final_phrase(name: &str) -> Option<&'static str> {
+    let padded = words_of(name);
+    FINAL_BUTTONS.iter().map(|f| f.trim()).find(|f| padded.contains(&format!(" {f} ")))
+}
+
+/// The final button a step would press, if any.
+fn final_button(step: &ActionStep) -> Option<String> {
+    if !matches!(step.action, Intent::Click | Intent::DoubleClick | Intent::Auto) {
+        return None;
+    }
+    // Whole words only: "Submit quiz" is final, "Sending options" and "Postcode" aren't.
+    let raw = step.snapped_to.as_deref()?.trim().to_lowercase();
+    let words: String = raw.chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect();
+    let padded = format!(" {} ", words.split_whitespace().collect::<Vec<_>>().join(" "));
+    FINAL_BUTTONS.iter().any(|f| padded.contains(&format!(" {} ", f.trim()))).then_some(raw)
+}
+
 /// Never on a guess: typing a command into a terminal (it runs, and can
 /// delete things) unless the user spelled that command out, and writing
 /// notes on the screen unless they asked to be shown or taught something.
 /// Drops those steps (and what came after a held-back command) and says why,
 /// for the next look. `None` when the plan was fine.
 fn guard_steps(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, front: &str) -> Option<String> {
+    let look = LOOK.lock().clone();
+    guard_steps_with(steps, prompt, lesson, front, &look)
+}
+
+fn guard_steps_with(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, front: &str, look: &Look) -> Option<String> {
     let asked = prompt.to_lowercase();
     let mut why = Vec::new();
+    // 0. A final button (Submit, End test, Send, Pay…) only when the user said
+    //    so in this very request. The model is told to ask first; a backup
+    //    model once submitted a whole test anyway — this makes it certain.
+    // Every final step is checked; the plan stops at the first one not said.
+    let said = words_of(&asked);
+    let held = steps.iter().enumerate().find_map(|(i, s)| {
+        let name = final_button(s)?;
+        let phrase = final_phrase(&name)?;
+        // Consent is the button's whole phrase in the request ("submit it",
+        // "yes, end the test" doesn't count for "Finish attempt"), not negated.
+        let negated = ["don't ", "dont ", "do not ", "never ", "without ", "not "].iter().any(|n| said.contains(&format!(" {n}{phrase} ")));
+        let told = said.contains(&format!(" {phrase} ")) && !negated;
+        (!told).then_some((i, name, phrase))
+    });
+    if let Some((i, name, phrase)) = held {
+        steps.truncate(i);
+        why.push(format!("Pressing “{name}” wasn't done: it's final. Stop right before it and set \"ask\" to check with the user first (\"Want me to {phrase} it?\")."));
+    }
+    // 0b. On a quiz or test the student picks the answers: Izuki explains,
+    //     points at the key words and lets them choose (academic honesty).
+    if look.test_page {
+        let before = steps.len();
+        steps.retain(|s| {
+            let picks_answer = matches!(s.action, Intent::Click | Intent::DoubleClick | Intent::Auto)
+                && s.snapped_to.as_deref().is_some_and(|n| look.options.contains(&n.trim().to_lowercase()));
+            let types_answer = s.action == Intent::Type && s.text_to_type.as_deref().is_some_and(|t| !asked.contains(&t.trim().to_lowercase()));
+            !(picks_answer || types_answer)
+        });
+        if steps.len() < before {
+            why.push("This is a quiz or test, so the answer wasn't picked: the student chooses. Explain the question and the idea behind it, point at the key words, and let them click their answer — then you can tell them why it's right or wrong.".to_string());
+        }
+    }
     // 1. Commands.
     let terminal = TERMINALS.contains(&front);
     let cut = steps.iter().position(|s| {
@@ -552,6 +644,7 @@ fn ask_model(
         .collect::<Vec<_>>()
         .join("\n");
 
+    *LOOK.lock() = Look::of(&controls, &page_text, &uia::foreground_title());
     let req = VisionRequest {
         image_jpeg,
         image_size: (scaled.width, scaled.height),
@@ -3357,6 +3450,56 @@ mod speed_tests {
         assert!(steps.is_empty());
         let mut steps = vec![note()];
         assert!(guard_steps(&mut steps, "explain this page", false, "chrome").is_none());
+    }
+
+    fn radio(id: u32, name: &str) -> uia::Control {
+        uia::Control { id, kind: "RadioButton".into(), name: name.into(), rect: crate::model::Rect::default(), hidden: false, value: String::new(), focused: false, below: false, section: String::new(), identity: None }
+    }
+
+    #[test]
+    fn final_buttons_and_tests_wait_for_the_student() {
+        let click = |name: &str| {
+            let mut s = step(serde_json::json!({ "action": "click" }));
+            s.snapped_to = Some(name.into());
+            s
+        };
+        let none = Look::default();
+        // A whole quiz done by the AI and submitted at the end: never.
+        let mut steps = vec![click("Next"), click("Submit")];
+        assert!(guard_steps_with(&mut steps, "do this quiz for me", false, "chrome", &none).is_some());
+        assert_eq!(steps.len(), 1, "Next stays, Submit is held");
+        let mut steps = vec![click("End Test")];
+        assert!(guard_steps_with(&mut steps, "finish it", false, "chrome", &none).is_some());
+        // Said in so many words: fine.
+        let mut steps = vec![click("Submit")];
+        assert!(guard_steps_with(&mut steps, "yes submit it", false, "chrome", &none).is_none());
+        let mut steps = vec![click("Send")];
+        assert!(guard_steps_with(&mut steps, "send it", false, "outlook", &none).is_none());
+        // Saying something near it isn't saying it.
+        let mut steps = vec![click("Checkout")];
+        assert!(guard_steps_with(&mut steps, "check my cart", false, "chrome", &none).is_some(), "checking a cart isn't checking out");
+        let mut steps = vec![click("Finish attempt")];
+        assert!(guard_steps_with(&mut steps, "finish it", false, "chrome", &none).is_some());
+        let mut steps = vec![click("Submit")];
+        assert!(guard_steps_with(&mut steps, "fill it in but don't submit", false, "chrome", &none).is_some());
+        // Each final step needs its own yes.
+        let mut steps = vec![click("Send"), click("Delete")];
+        assert!(guard_steps_with(&mut steps, "send it", false, "outlook", &none).is_some());
+        assert_eq!(steps.len(), 1, "the send was asked for, the delete wasn't");
+        // Not final.
+        let mut steps = vec![click("Sending options"), click("Postcode")];
+        assert!(guard_steps_with(&mut steps, "open settings", false, "chrome", &none).is_none(), "words that merely start the same aren't final");
+        // On a test page, the answer is the student's.
+        let quiz = Look { options: vec!["a. phishing".into(), "b. personally identifiable information".into()], test_page: true };
+        let mut steps = vec![click("B. Personally identifiable information"), click("Next")];
+        assert!(guard_steps_with(&mut steps, "help me with this question", true, "chrome", &quiz).is_some());
+        assert_eq!(steps.len(), 1, "the answer isn't clicked; Next is the student's call but harmless");
+        let controls = vec![
+            radio(1, "A. Phishing"),
+            radio(2, "B. PII"),
+        ];
+        assert!(Look::of(&controls, "Question 3 of 20", "uCertify").test_page);
+        assert!(!Look::of(&controls, "Choose your shipping speed", "Checkout").test_page, "radio buttons alone aren't a test");
         assert_eq!(steps.len(), 1);
     }
 

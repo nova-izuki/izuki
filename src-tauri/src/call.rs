@@ -376,6 +376,11 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
                 Err(e) => return respond(req, 401, "application/json", json!({ "ok": false, "error": e.to_string() }).to_string().into_bytes()),
             };
             match (req.method().clone(), p) {
+                // Your business at a glance (empire.rs): money, shop, websites.
+                (tiny_http::Method::Get, "/touch/business") => {
+                    let v = std::thread::spawn(crate::empire::phone_view).join().unwrap_or_else(|_| json!({ "error": "something went wrong on the PC" }));
+                    json_reply(req, v)
+                }
                 (tiny_http::Method::Get, "/touch/status") => {
                     let mut v = crate::touch::status();
                     v["push_on"] = json!(crate::touch::push_on(&device));

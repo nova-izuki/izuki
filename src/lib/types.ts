@@ -500,6 +500,11 @@ export interface Settings {
   heads_up_pc: boolean;
   /** Heads-ups sent to the paired phone. */
   heads_up_phone: boolean;
+  /** Stripe restricted (read-only) key — stays on this PC. */
+  stripe_key: string;
+  /** Shopify store address and Admin API token (read only). */
+  shopify_store: string;
+  shopify_token: string;
   /** How the user writes, for drafts Izuki writes for them to send. */
   writing_style: string;
   /** The character pops up beside the Island to point and cheer. */

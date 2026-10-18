@@ -262,6 +262,19 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         push("assistant", &text);
         return Reply::text(text);
     }
+    // Money and the shop from the phone too (money.rs, shop.rs).
+    if let Some(ask) = crate::money::parse_here(said) {
+        push("user", said);
+        let text = crate::money::handle(ask);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
+    if let Some(ask) = crate::shop::parse_here(said) {
+        push("user", said);
+        let text = crate::shop::handle(ask);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // "Save every question and answer to my notes" from the phone too (studylog.rs).
     if let Some(on) = crate::studylog::parse(said) {
         push("user", said);

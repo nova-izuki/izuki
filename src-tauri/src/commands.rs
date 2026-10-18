@@ -382,6 +382,13 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     if let Some(ask) = crate::textbook::parse(&said, crate::textbook::has_books()) {
         return blocking(move || crate::textbook::handle(ask)).await.ok();
     }
+    // Money and the shop: "how much did I spend?", "any new orders?" (money.rs, shop.rs).
+    if let Some(ask) = crate::money::parse_here(&said) {
+        return blocking(move || crate::money::handle(ask)).await.ok();
+    }
+    if let Some(ask) = crate::shop::parse_here(&said) {
+        return blocking(move || crate::shop::handle(ask)).await.ok();
+    }
     // "Save every question and answer to my notes" (studylog.rs).
     if let Some(on) = crate::studylog::parse(&said) {
         return Some(crate::studylog::handle(on));
@@ -1077,6 +1084,45 @@ pub async fn textbook_ask(text: String) -> R<String> {
         None => crate::textbook::handle(crate::textbook::Ask { how: crate::textbook::How::Explain, part: crate::textbook::Part::Topic(text.trim().to_string()), book: String::new() }),
     })
     .await
+}
+
+/// Empire part two (money.rs): the money view for the panel.
+#[tauri::command]
+pub async fn money_view() -> R<crate::money::View> {
+    blocking(crate::money::view).await
+}
+
+/// Import a bank statement: the Windows "Open" box, then read it. None: cancelled.
+#[tauri::command]
+pub async fn money_import() -> R<Option<String>> {
+    blocking(|| {
+        let Some(path) = crate::picker::pick("Import a bank statement (CSV)", "Bank statements (CSV)", "*.csv;*.txt").map_err(err)? else {
+            return Ok(None);
+        };
+        crate::money::import_file(&path).map(Some).map_err(err)
+    })
+    .await?
+}
+
+#[tauri::command]
+pub async fn money_clear() -> R<()> {
+    blocking(|| crate::money::clear().map_err(err)).await?
+}
+
+#[tauri::command]
+pub async fn money_watch(symbol: String, add: bool) -> R<Vec<String>> {
+    blocking(move || crate::money::set_watch(&symbol, add).map_err(err)).await?
+}
+
+#[tauri::command]
+pub async fn money_quotes() -> R<String> {
+    blocking(|| crate::money::say_quotes(&crate::money::quotes(&crate::money::load().watchlist))).await
+}
+
+/// Stripe and Shopify, read only (shop.rs).
+#[tauri::command]
+pub async fn shop_view() -> R<crate::shop::View> {
+    blocking(crate::shop::view).await
 }
 
 /// A flashcard marked right or wrong (studytrack.rs).

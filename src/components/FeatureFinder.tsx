@@ -43,6 +43,8 @@ export const FEATURES: Feature[] = [
   { label: "Textbooks", hint: "PDF textbook, explain chapter 4, page 87, quiz me on section, where does the book talk about", tab: "notes", id: "notes-campus" },
   { label: "Blackboard grades & announcements", hint: "My grades, grade in biology, announcements, course materials, syllabus, slides", tab: "notes", id: "notes-campus" },
   { label: "Study progress & mistakes", hint: "What have I studied this week, what do I keep getting wrong, practise my mistakes, flashcards", tab: "notes", id: "notes-campus" },
+  { label: "Empire: your business", hint: "Business, website check, is my site down, what needs my attention, briefing", tab: "apps", id: "apps-empire" },
+  { label: "Money: bank statement, spending, subscriptions", hint: "How much did I spend, unusual spending, double charge, subscriptions, budget, CSV, bank, watchlist, stocks, Stripe, Shopify, sales, orders, low stock", tab: "apps", id: "apps-money" },
   { label: "Your writing style", hint: "Write like me, tone of my emails, casual, professional, no emojis, sign off", tab: "apps", id: "apps-style" },
   { label: "Quiet hours", hint: "Do not disturb at night, silence notifications, sleep, hold heads-ups", tab: "apps", id: "apps-headsups" },
   { label: "App colours", hint: "Theme, background colour, auto by time of day, your own colour", tab: "settings", id: "settings-theme" },
