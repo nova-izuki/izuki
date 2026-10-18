@@ -53,6 +53,7 @@ pub mod textbook;
 pub mod blackboard;
 pub mod money;
 pub mod coach;
+pub mod cite;
 pub mod shop;
 pub mod picker;
 pub mod remote;

@@ -383,6 +383,11 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     if let Some(ask) = crate::textbook::parse(&said, crate::textbook::has_books()) {
         return blocking(move || crate::textbook::handle(ask)).await.ok();
     }
+    // "Cite this page in APA", "APA reference for 10.1037/…", "cite ISBN …" (cite.rs).
+    if crate::cite::asks(&said) {
+        let s2 = said.clone();
+        return blocking(move || crate::cite::handle(&s2)).await.ok();
+    }
     // Quiz coach: through a quiz WITH the student — explains, waits for their pick, presses Next (coach.rs).
     if let Some(ask) = crate::coach::parse(&said) {
         return Some(match ask {

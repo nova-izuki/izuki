@@ -262,6 +262,13 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         push("assistant", &text);
         return Reply::text(text);
     }
+    // APA references from the phone too (a link, DOI or ISBN) (cite.rs).
+    if crate::cite::asks(said) && crate::cite::target_of(said) != crate::cite::Target::ThisPage {
+        push("user", said);
+        let text = crate::cite::handle(said);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // Money and the shop from the phone too (money.rs, shop.rs).
     if let Some(ask) = crate::money::parse_here(said) {
         push("user", said);
