@@ -313,9 +313,10 @@ pub async fn submit_draw(app: AppHandle, session: DrawSession) -> VisionPlan {
 /// A spoken ("Hey Izuki, …") or typed command with nothing drawn to anchor
 /// it. Izuki looks at the whole screen instead.
 #[tauri::command]
-pub async fn submit_voice_command(app: AppHandle, prompt: String) -> VisionPlan {
+pub async fn submit_voice_command(app: AppHandle, prompt: String, recent: Option<Vec<crate::chat::Turn>>) -> VisionPlan {
     crate::tv::heard(&prompt);
-    blocking(move || brain::submit_voice_command(&app, &state::store(), prompt))
+    let recent = recent.unwrap_or_default();
+    blocking(move || brain::submit_voice_command_in(&app, &state::store(), prompt, &recent))
         .await
         .unwrap_or_else(failed_plan)
 }

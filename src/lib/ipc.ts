@@ -1050,8 +1050,8 @@ export const api = {
   /** "Scroll down", "louder", "next song"…: done at once in Rust with no AI;
    *  the few words to say back, or null when it isn't one (instant.rs). */
   instantCommand: (said: string) => call<string | null>("instant_command", { said }, () => null),
-  submitVoiceCommand: (prompt: string) =>
-    call<VisionPlan>("submit_voice_command", { prompt }, () => ({
+  submitVoiceCommand: (prompt: string, recent?: Array<{ role: "user" | "assistant"; content: string }>) =>
+    call<VisionPlan>("submit_voice_command", { prompt, recent: recent?.slice(-8) ?? null }, () => ({
       steps: [],
       summary: "Not running inside Izuki.",
       provider: "mock",

@@ -576,7 +576,9 @@ fn on_pc(app: &AppHandle, said: &str, status: &dyn Fn(&str)) -> Reply {
         return Reply::text("Your PC is locked, so I can't do that right now — unlock it and ask again.").with_outcome(crate::model::TaskOutcome::Blocked);
     }
     status("On it — doing that on your PC…");
-    let plan = crate::brain::submit_voice_command(app, &store, said.to_string());
+    // What was said on the phone just before, so "that one" means something.
+    let recent: Vec<Turn> = HISTORY.lock().iter().rev().take(8).rev().cloned().collect();
+    let plan = crate::brain::submit_voice_command_in(app, &store, said.to_string(), &recent);
     Reply::from_plan(&plan)
 }
 

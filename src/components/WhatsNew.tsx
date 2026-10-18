@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🧵", title: "It follows the conversation", how: "Ask “which webcam fits my laptop?”, then “open Amazon and find that one” — Izuki now knows which one. When you ask it to do something that leans on what came before (“it”, “that one”, “again”), the part that works your screen gets the conversation too, from the PC or your phone." },
   { icon: "🛑", title: "Never submits on its own", how: "Submit, End test, Send, Pay, Delete, Post: Izuki now always stops and asks first unless you told it to — a hard rule in its code, not just a request to the AI. And on a quiz or test, you pick the answers: Izuki explains and coaches." },
   { icon: "💰", title: "Your bank statement, understood", how: "Apps → Money → Import a statement (the CSV from your bank's website). See money in and out, where it went, unusual charges and double charges, and every subscription with its yearly cost — or ask “how much did I spend this month?”. Stays on this PC; read only.", try: { label: "Money", tab: "apps", id: "apps-money" } },
   { icon: "🛍️", title: "Stripe, Shopify and a watchlist", how: "Connect Stripe (a read-only key) or Shopify (a read-only token) and ask “how are sales today?”, “any new orders?”, “what's low on stock?”. Add stocks to a watchlist for prices — never advice, never a trade. “What needs my attention?” now covers all of it, and your phone's Touch Grass has a Your business view.", try: { label: "Shop & payments", tab: "apps", id: "apps-money" } },

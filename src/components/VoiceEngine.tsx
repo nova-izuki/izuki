@@ -1219,7 +1219,8 @@ ${result}`);
         await useIzuki.getState().flushSettings();
         if (useIzuki.getState().settings.speak_responses) void holdMicForVoice();
         // Pasted directions ("1. Open Settings 2. Click…"): follow them on screen.
-        const plan = await api.submitVoiceCommand(tutoring ? tutorPrompt(t, tutoring.first) : looksLikeDirections(t) ? directionsTask(t) : t);
+        // With the conversation so far: "find that one" means the one just talked about.
+        const plan = await api.submitVoiceCommand(tutoring ? tutorPrompt(t, tutoring.first) : looksLikeDirections(t) ? directionsTask(t) : t, recentHistory());
         if (tutoring) {
           tutoring.first = false;
           // Every explanation goes into today's lesson notes, to study later.

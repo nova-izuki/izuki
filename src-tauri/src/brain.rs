@@ -1760,6 +1760,12 @@ pub fn run_flow(app: &AppHandle, store: &Arc<Store>, id: &str) -> Result<()> {
 /// model gets — the same pipeline `submit_draw` uses, just with an empty
 /// mark list standing in for the geometry-only fast path.
 pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String) -> VisionPlan {
+    submit_voice_command_in(app, store, prompt, &[])
+}
+
+/// The same, knowing the conversation so far (chat answers included), so
+/// "open Amazon and find that one" knows which one was being talked about.
+pub fn submit_voice_command_in(app: &AppHandle, store: &Arc<Store>, prompt: String, recent: &[crate::chat::Turn]) -> VisionPlan {
     // A TV request that reached the screen path (a hand-over from the chat
     // lane, a follow-up mid-conversation) still goes to the TV — never "I
     // can't control your TV" while it opens Netflix on the PC instead.
@@ -1768,7 +1774,7 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
         remember_task(&prompt, &said);
         return VisionPlan { summary: said, provider: "tv".into(), ..Default::default() };
     }
-    let asked = with_what_came_before(&prompt);
+    let asked = with_conversation(&with_what_came_before(&prompt), &prompt, recent);
     let plan = submit_task(app, store, asked, Vec::new(), None, None);
     remember_task(&prompt, &plan.summary);
     plan
@@ -1817,6 +1823,44 @@ fn with_what_came_before(prompt: &str) -> String {
              if it's clearly something new, just do the new thing.)"
         )
     }
+}
+
+/// Words that lean on something said before: "it", "that one", "the same".
+fn leans_on_before(said: &str) -> bool {
+    let s = format!(" {} ", said.to_lowercase().replace(['?', '!', ',', '.'], " "));
+    [" it ", " that ", " this ", " those ", " them ", " these ", " the one ", " that one ", " same ", " again ", " instead ", " also ", " what you said", " you said", " you mentioned", " above ", " earlier "]
+        .iter()
+        .any(|w| s.contains(w))
+}
+
+/// The conversation so far, for a request that leans on it. The chat lane
+/// answers many things the screen never saw ("which webcam fits my
+/// ThinkPad?"); without this, "open Amazon and find that one" meant nothing
+/// to the agent — "it doesn't follow what I said".
+pub fn with_conversation(asked: &str, prompt: &str, recent: &[crate::chat::Turn]) -> String {
+    let mut turns: Vec<&crate::chat::Turn> = recent.iter().filter(|t| !t.content.trim().is_empty()).collect();
+    // The request itself is often already the last turn.
+    if turns.last().is_some_and(|t| t.role == "user" && t.content.trim() == prompt.trim()) {
+        turns.pop();
+    }
+    if turns.is_empty() || !(is_follow_on(prompt) || leans_on_before(prompt)) {
+        return asked.to_string();
+    }
+    let mut lines: Vec<String> = turns
+        .iter()
+        .rev()
+        .take(6)
+        .map(|t| {
+            let who = if t.role == "assistant" { "Izuki" } else { "User" };
+            let text: String = t.content.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(400).collect();
+            format!("{who}: {text}")
+        })
+        .collect();
+    lines.reverse();
+    format!(
+        "{asked}\n\n(The conversation just before, oldest first — use it to know what \"it\", \"that one\" or \"the same\" mean. Act only on the latest request:\n{})",
+        lines.join("\n")
+    )
 }
 
 /// Keep the task a follow-on belongs to: a follow-on keeps the original
@@ -3395,6 +3439,16 @@ mod speed_tests {
         assert_eq!(drop_already_said("The answer is B, as I said. It's PII."), "The answer is B. It's PII.");
         assert_eq!(drop_already_said("I already explained it."), "Done.");
         assert_eq!(drop_already_said("The answer is C."), "The answer is C.");
+        // The conversation reaches the screen agent when the request leans on it.
+        let recent = vec![
+            crate::chat::Turn::new("user", "which webcam fits my ThinkPad T14?"),
+            crate::chat::Turn::new("assistant", "The Lenovo 5M11C21471 camera module fits the T14 Gen 1."),
+            crate::chat::Turn::new("user", "open amazon and find that one"),
+        ];
+        let asked = with_conversation("open amazon and find that one", "open amazon and find that one", &recent);
+        assert!(asked.contains("5M11C21471") && asked.contains("User: which webcam") && !asked.ends_with("User: open amazon and find that one)"), "{asked}");
+        assert_eq!(with_conversation("open notepad and write a long shopping list for the week with eggs and bread and milk please", "open notepad and write a long shopping list for the week with eggs and bread and milk please", &recent), "open notepad and write a long shopping list for the week with eggs and bread and milk please", "a long new request stands alone");
+        assert_eq!(with_conversation("open it", "open it", &[]), "open it");
         assert_eq!(drop_already_said("Maria already answered your email."), "Maria already answered your email.");
         assert!(!restates("Opened Notepad and wrote the whole shopping list: eggs, bread, milk, coffee, rice, beans.", "Opening Notepad now."));
     }
