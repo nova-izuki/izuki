@@ -204,7 +204,7 @@ fn run(id: u64, question: &str, history: &[crate::chat::Turn], send: &dyn Fn(Upd
         send(Update { kind: "text", text: note, ..Default::default() });
     }
     let messages = [
-        json!({ "role": "system", "content": WRITE_PROMPT }),
+        json!({ "role": "system", "content": if crate::studylog::on() { format!("{WRITE_PROMPT}{}", crate::studylog::RULE) } else { WRITE_PROMPT.to_string() } }),
         json!({ "role": "user", "content": format!(
             "{}Request: {question}\nToday is {}.\n\nSources:\n\n{material}",
             if context.is_empty() { String::new() } else { format!("The conversation so far (for context):\n{context}\n") },
@@ -237,6 +237,7 @@ fn run(id: u64, question: &str, history: &[crate::chat::Turn], send: &dyn Fn(Upd
     for s in &list {
         tail.push_str(&format!("[{}] {} — {}\n", s.n, s.title, s.url));
     }
+    crate::studylog::record(&question, &format!("{answer}{tail}"));
     send(Update { kind: "text", text: tail, ..Default::default() });
     send(Update { kind: "done", text: String::new(), sources: list, ..Default::default() });
     eprintln!("[research] done: {} pages", pages.len());

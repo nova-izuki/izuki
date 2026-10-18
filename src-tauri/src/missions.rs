@@ -275,7 +275,7 @@ pub fn run_all(app: &AppHandle) -> bool {
             let m = match claim(&m.id) {
                 Ok(Some(m)) => m,
                 Ok(None) => { let _ = app.emit(CHANGED, ()); continue; }
-                Err(reason) => { crate::headsup::deliver(&app, "Missions paused", reason); break; }
+                Err(reason) => { if crate::state::store().settings().heads_up_missions { crate::headsup::deliver(&app, "Missions paused", reason); } break; }
             };
             if STOPS.load(Ordering::SeqCst) != started {
                 set(&m.id, "stopped", "Stopped before execution.", TaskOutcome::Cancelled, None);
@@ -312,7 +312,7 @@ pub fn run_all(app: &AppHandle) -> bool {
         drop(_running);
         let _ = app.emit(CHANGED, ());
         eprintln!("[missions] finished ({} looked at)", report.len());
-        if !report.is_empty() {
+        if !report.is_empty() && crate::state::store().settings().heads_up_missions {
             let waiting = report.iter().filter(|l| !l.starts_with('✅')).count();
             let title = if waiting > 0 { format!("Missions checked — {waiting} need review") } else { "Missions verified".to_string() };
             crate::headsup::deliver(&app, &title, &report.join("\n"));

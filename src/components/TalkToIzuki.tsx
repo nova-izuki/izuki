@@ -24,6 +24,7 @@ import { api, EV, emit } from "../lib/ipc";
 import { sendChatCommand } from "./VoiceEngine";
 import { VoicePicker } from "./VoicePicker";
 import { MicPicker } from "./MicPicker";
+import { QuietHoursRow } from "./QuietHoursRow";
 import { WakeWords } from "./WakeWords";
 import { hasNaturalVoice, openVoiceSettings } from "../lib/speak";
 
@@ -225,6 +226,7 @@ export function TalkToIzuki() {
             <Toggle checked={settings.island_suggestions} onChange={(v) => patch({ island_suggestions: v })} />
           </Row>
         )}
+        {settings.island_enabled && <QuietHoursRow value={settings.quiet_hours ?? ""} onChange={(v) => patch({ quiet_hours: v })} />}
         {settings.island_enabled && (
           <Row label="Island look" hint="Choose how the Island — the pill at the top of your screen — looks (themes like Windhawk's).">
             <div className="flex flex-wrap justify-end gap-1">

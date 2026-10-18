@@ -303,8 +303,37 @@ pub fn check_business(id: &str) -> Result<SiteCheck> {
         }
     }
     save_all(&all)?;
+    drop(_turn);
+    crate::island::refresh_glance();
     eprintln!("[empire] checked a website: {}, {} ms, {} issue(s), {} broken link(s)", if c.up { "up" } else { "DOWN" }, c.ms, c.issues.len(), c.broken.len());
     Ok(c)
+}
+
+/// Businesses whose website was down at its last check: (name, url). A site
+/// you've checked before is looked at again first when that check is old:
+/// 3 hours while it was up, 25 minutes while it was down (so the alert clears
+/// soon after it's back). A site never checked waits for you to check it.
+pub fn sites_down() -> Vec<(String, String)> {
+    let now = crate::model::now_ms();
+    for b in businesses() {
+        let stale = match b.checks.last() {
+            None => false,
+            Some(c) => now - c.at > if c.up { 3 * 3600 * 1000 } else { 25 * 60 * 1000 },
+        };
+        if !b.website.trim().is_empty() && stale {
+            if let Err(e) = check_business(&b.id) {
+                eprintln!("[empire] background check: {e}");
+            }
+        }
+    }
+    businesses()
+        .into_iter()
+        .filter(|b| !b.website.trim().is_empty())
+        .filter_map(|b| {
+            let c = b.checks.last()?;
+            (!c.up).then(|| (b.name.clone(), c.url.clone()))
+        })
+        .collect()
 }
 
 /// The check in words, compared with the one before (pure, so it's tested).

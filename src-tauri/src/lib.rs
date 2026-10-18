@@ -47,6 +47,7 @@ pub mod research;
 pub mod accounts;
 pub mod lecture;
 pub mod empire;
+pub mod studylog;
 pub mod remote;
 pub mod rtools;
 pub mod offline;
@@ -363,6 +364,7 @@ pub fn run() {
             commands::ext_status,
             commands::notes_list,
             commands::notes_delete,
+            commands::notes_jot,
             commands::notes_capture,
             commands::notes_lesson,
             commands::notes_flashcards,

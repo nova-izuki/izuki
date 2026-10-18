@@ -97,6 +97,7 @@ fn set_reason(app: &AppHandle, st: &mut State, why: &str) {
 }
 
 fn tick(app: &AppHandle) {
+    release_held(app);
     let settings = crate::state::store().settings();
     let mut guard = STATE.lock();
     let st = guard.get_or_insert_with(State::default);
@@ -703,9 +704,98 @@ fn deliver_many(app: &AppHandle, icon: &str, lines: &[String], plural: &str) {
     }
 }
 
+/// "22:00-07:00" → minutes since midnight (start, end). None: off or unreadable.
+pub fn quiet_span(spec: &str) -> Option<(u32, u32)> {
+    let (a, b) = spec.trim().split_once('-')?;
+    let mins = |t: &str| -> Option<u32> {
+        let (h, m) = t.trim().split_once(':')?;
+        let (h, m) = (h.trim().parse::<u32>().ok()?, m.trim().parse::<u32>().ok()?);
+        (h < 24 && m < 60).then_some(h * 60 + m)
+    };
+    let (a, b) = (mins(a)?, mins(b)?);
+    (a != b).then_some((a, b))
+}
+
+/// Is `now` (minutes since midnight) inside the quiet span? It may run past
+/// midnight ("22:00-07:00").
+pub fn in_quiet(spec: &str, now: u32) -> bool {
+    match quiet_span(spec) {
+        None => false,
+        Some((a, b)) if a < b => now >= a && now < b,
+        Some((a, b)) => now >= a || now < b,
+    }
+}
+
+/// Quiet hours right now (Settings → Island → Quiet hours).
+pub fn quiet_now() -> bool {
+    use chrono::Timelike;
+    let n = chrono::Local::now();
+    in_quiet(&crate::state::store().settings().quiet_hours, n.hour() * 60 + n.minute())
+}
+
+/// Heads-ups that came during quiet hours, kept on disk so a restart
+/// overnight doesn't lose them.
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+struct Held {
+    /// (title, first line) — the first 50.
+    items: Vec<(String, String)>,
+    /// How many came in all.
+    count: usize,
+}
+
+static HELD: parking_lot::Mutex<Option<Held>> = parking_lot::Mutex::new(None);
+
+fn held_path() -> std::path::PathBuf {
+    crate::store::data_dir().join("headsup-held.json")
+}
+
+fn with_held<T>(f: impl FnOnce(&mut Held) -> T) -> T {
+    let mut g = HELD.lock();
+    let held = g.get_or_insert_with(|| std::fs::read_to_string(held_path()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default());
+    let before = (held.count, held.items.len());
+    let out = f(held);
+    if (held.count, held.items.len()) != before {
+        let _ = std::fs::write(held_path(), serde_json::to_string(&*held).unwrap_or_default());
+    }
+    out
+}
+
+/// When quiet hours end: everything held, as one heads-up.
+fn release_held(app: &AppHandle) {
+    if quiet_now() {
+        return;
+    }
+    let held = with_held(std::mem::take);
+    if held.count == 0 {
+        return;
+    }
+    let mut lines: Vec<String> = held.items.iter().take(8).map(|(t, b)| format!("• {t}: {b}")).collect();
+    if held.count > 8 {
+        lines.push(format!("…and {} more", held.count - 8));
+    }
+    deliver(app, &format!("While it was quiet ({})", held.count), &lines.join("\n"));
+}
+
 /// Tell the user, wherever they chose: a Windows notification (and the
-/// panel's toast) on this PC, and/or their phone.
+/// panel's toast) on this PC, and/or their phone. During quiet hours it
+/// waits, and comes with the others in one summary when they end.
 pub fn deliver(app: &AppHandle, title: &str, body: &str) {
+    if quiet_now() {
+        eprintln!("[headsup] held for after quiet hours: {title}");
+        with_held(|held| {
+            held.count += 1;
+            if held.items.len() < 50 {
+                held.items.push((title.to_string(), body.lines().next().unwrap_or("").chars().take(120).collect()));
+            }
+        });
+        return;
+    }
+    deliver_now(app, title, body);
+}
+
+/// Straight away, quiet hours or not: an answer to something you just did
+/// (a test, "calendar linked").
+pub fn deliver_now(app: &AppHandle, title: &str, body: &str) {
     let settings = crate::state::store().settings();
     eprintln!("[headsup] {title}: {}", body.lines().next().unwrap_or(""));
     if settings.heads_up_pc {
@@ -724,7 +814,7 @@ pub fn deliver(app: &AppHandle, title: &str, body: &str) {
 
 /// A sample, from the Apps tab, so the user sees where heads-ups land.
 pub fn test(app: &AppHandle) {
-    deliver(app, "Izuki heads-up", "👋 This is how I'll tell you about new email, meetings and more.");
+    deliver_now(app, "Izuki heads-up", "👋 This is how I'll tell you about new email, meetings and more.");
 }
 
 // ---------------------------------------------------------------------------
@@ -770,6 +860,21 @@ fn clip(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quiet_hours_run_past_midnight() {
+        let at = |h: u32, m: u32| h * 60 + m;
+        assert!(in_quiet("22:00-07:00", at(23, 30)));
+        assert!(in_quiet("22:00-07:00", at(3, 0)));
+        assert!(!in_quiet("22:00-07:00", at(7, 0)), "ends at 7 sharp");
+        assert!(!in_quiet("22:00-07:00", at(12, 0)));
+        assert!(in_quiet("13:00-14:30", at(14, 0)));
+        assert!(!in_quiet("13:00-14:30", at(15, 0)));
+        assert!(!in_quiet("", at(23, 0)), "empty is off");
+        assert!(!in_quiet("late-ish", at(23, 0)));
+        assert!(!in_quiet("22:00-22:00", at(22, 0)));
+        assert!(in_quiet(" 9:05 - 9:10 ", at(9, 7)));
+    }
 
     #[test]
     fn reads_a_digest_and_hears_inbox_questions() {

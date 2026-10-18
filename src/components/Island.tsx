@@ -106,6 +106,8 @@ type Live =
   | { kind: "lecture"; title: string; secs: number }
   | { kind: "error"; message: string }
   | { kind: "remote"; device: string; controlling: boolean }
+  | { kind: "sitedown"; name: string; url: string }
+  | { kind: "due"; count: number; title: string; at: number }
   | { kind: "rest" };
 
 export function Island({
@@ -157,18 +159,27 @@ export function Island({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   /** "Hide for an hour" from the menu (until then, only approvals and errors show). */
   const [quietUntil, setQuietUntil] = useState(0);
+  /** "Wake up" from the menu during quiet hours: shown again until they end. */
+  const [woke, setWoke] = useState(false);
+  /** A down website the user dismissed (shown again if another goes down). */
+  const [siteSeen, setSiteSeen] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const pill = useRef<HTMLDivElement>(null);
   const openRef = useRef(false);
   openRef.current = open;
   // Held open while you're asking about the page or reading the answer —
   // moving the mouse away mustn't throw the answer away.
+  // Each thing holding it (the Ask box, the quick note) counts on its own.
+  const holders = useRef(new Set<string>());
   const holdRef = useRef(false);
   const wantRef = useRef(false);
-  const hold = useCallback((on: boolean) => {
-    if (holdRef.current === on) return;
-    holdRef.current = on;
-    if (!on) {
+  const hold = useCallback((on: boolean, who = "ask") => {
+    if (on) holders.current.add(who);
+    else holders.current.delete(who);
+    const any = holders.current.size > 0;
+    if (holdRef.current === any) return;
+    holdRef.current = any;
+    if (!any) {
       window.setTimeout(() => {
         if (!wantRef.current && !holdRef.current) setOpen(false);
       }, CLOSE_AFTER_MS);
@@ -431,7 +442,12 @@ export function Island({
     void api.islandAudioMeter(true);
     return () => void api.islandAudioMeter(false);
   }, [musicOn, open]);
-  const quiet = quietUntil > now;
+  useEffect(() => {
+    if (!status.quiet) setWoke(false);
+  }, [status.quiet]);
+  const quiet = quietUntil > now || (!!status.quiet && !woke);
+  const down = (status.sites_down ?? []).find(([, url]) => url !== siteSeen);
+  const due = status.due && status.due[2] > now ? status.due : null;
   const live: Live = status.approval
     ? { kind: "approval", id: status.approval[0], app: status.approval[1], text: status.approval[2] }
     : failure && !busy
@@ -450,6 +466,8 @@ export function Island({
       ? { kind: "remote", device: remote.device, controlling: remote.controlling }
       : soon && soon.at - now <= 5 * 60_000
         ? { kind: "reminder", r: soon, urgent: true }
+        : down
+        ? { kind: "sitedown", name: down[0], url: down[1] }
         : status.lesson
         ? { kind: "lesson", text: status.lesson }
         : peek
@@ -464,6 +482,8 @@ export function Island({
           ? { kind: "music", m: media }
           : soon
             ? { kind: "reminder", r: soon, urgent: false }
+            : due && due[2] - now <= 24 * 60 * 60_000
+            ? { kind: "due", count: due[0], title: due[1], at: due[2] }
             : { kind: "rest" };
 
   const dancing = !!media?.playing;
@@ -524,7 +544,10 @@ export function Island({
               setOpen(false);
             }}
             quiet={quiet}
-            onWake={() => setQuietUntil(0)}
+            onWake={() => {
+              setQuietUntil(0);
+              setWoke(true);
+            }}
           />
         )}
         <AnimatePresence mode="popLayout" initial={false}>
@@ -551,6 +574,8 @@ export function Island({
                 onMoveKey={moveByKeyboard}
                 onDone={() => setOpen(false)}
                 onClearError={() => setFailure(null)}
+                onSeenSite={(url) => setSiteSeen(url)}
+                due={due}
                 remote={remote}
                 scale={scale}
               />
@@ -591,6 +616,9 @@ function same(a: IslandStatus, b: IslandStatus) {
     (a.lecture?.[0] ?? null) === (b.lecture?.[0] ?? null) &&
     // A change waiting for your OK (or answered) must show at once.
     JSON.stringify(a.approval ?? null) === JSON.stringify(b.approval ?? null) &&
+    JSON.stringify(a.due ?? null) === JSON.stringify(b.due ?? null) &&
+    JSON.stringify(a.sites_down ?? []) === JSON.stringify(b.sites_down ?? []) &&
+    !!a.quiet === !!b.quiet &&
     labels(a.suggestions) === labels(b.suggestions) &&
     labels(a.clip) === labels(b.clip) &&
     JSON.stringify(a.activities ?? []) === JSON.stringify(b.activities ?? []) &&
@@ -706,6 +734,23 @@ function Compact({ live, dancing, wave = "auto" }: { live: Live; dancing: boolea
           </span>
         </>
       );
+    case "sitedown":
+      return (
+        <>
+          <span className="flex h-[24px] w-[24px] items-center justify-center rounded-full bg-rose-500/90 text-[13px]">🌐</span>
+          <span className="max-w-[300px] truncate text-[13px] font-semibold text-white/95">{live.name}'s website is down</span>
+        </>
+      );
+    case "due":
+      return (
+        <>
+          <span className="flex h-[24px] w-[24px] items-center justify-center rounded-full bg-cyan-500/80 text-[13px]">🎓</span>
+          <span className="max-w-[300px] truncate text-[13px] font-medium text-white/90">
+            {live.title} · due {until(live.at)}
+          </span>
+          {live.count > 1 && <span className="text-[12px] tabular-nums text-white/55">+{live.count - 1}</span>}
+        </>
+      );
     case "error":
       return (
         <>
@@ -770,7 +815,7 @@ function IslandMenu({ at, onClose, onTalk, onQuiet, quiet, onWake }: { at: { x: 
 }
 
 /** At the top of the open Island: what needs you (an OK, an error, a remote session). */
-function NeedsYou({ live, onClearError }: { live: Live; onClearError?: () => void }) {
+function NeedsYou({ live, onClearError, onSeenSite }: { live: Live; onClearError?: () => void; onSeenSite?: (url: string) => void }) {
   const [said, setSaid] = useState("");
   const [failed, setFailed] = useState("");
   const [busy, setBusy] = useState(false);
@@ -833,6 +878,26 @@ function NeedsYou({ live, onClearError }: { live: Live; onClearError?: () => voi
       </div>
     );
   }
+  if (live.kind === "sitedown") {
+    return (
+      <div className="rounded-[14px] border border-rose-400/35 bg-rose-400/[0.08] p-2.5">
+        <div className="text-[12.5px] font-semibold">🌐 {live.name}'s website didn't answer</div>
+        <div className="mt-0.5 truncate text-[12px] text-white/65">{live.url} · at the last check</div>
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            onClick={() => void emit(EV.runChat, { id: Date.now(), text: `Is ${live.url} down? Check it again and tell me what's wrong.` })}
+            className="flex-1 rounded-full bg-white/15 py-1.5 text-[12px] font-semibold text-white hover:bg-white/20"
+          >
+            Check again
+          </button>
+          <button type="button" onClick={() => onSeenSite?.(live.url)} className="rounded-full px-3 py-1.5 text-[12px] text-white/70 hover:bg-white/10">
+            Dismiss
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (live.kind === "remote") {
     return (
       <div className="flex items-center gap-2 rounded-[14px] border border-sky-300/30 bg-sky-300/[0.07] p-2.5">
@@ -848,6 +913,68 @@ function NeedsYou({ live, onClearError }: { live: Live; onClearError?: () => voi
     );
   }
   return null;
+}
+
+/** Jot a thought down without leaving what you're doing: saved to Notes. */
+function JotBox({ onHold }: { onHold?: (on: boolean, who?: string) => void }) {
+  const [text, setText] = useState("");
+  // Held open while a note is half-typed: the mouse wandering off mustn't lose it.
+  const typing = text.trim().length > 0;
+  useEffect(() => {
+    onHold?.(typing, "jot");
+  }, [typing, onHold]);
+  useEffect(() => () => onHold?.(false, "jot"), [onHold]);
+  const [said, setSaid] = useState("");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (!said) return;
+    const t = setTimeout(() => setSaid(""), 2500);
+    return () => clearTimeout(t);
+  }, [said]);
+  const save = () => {
+    const t = text.trim();
+    if (t.length < 3 || saving) return;
+    setSaving(true);
+    void api
+      .notesJot(t)
+      .then(() => {
+        setText("");
+        setSaid("Saved to Notes ✓");
+      })
+      .catch(() => setSaid("Couldn't save that — try again."))
+      .finally(() => setSaving(false));
+  };
+  return (
+    <div className="flex items-center gap-2 rounded-2xl bg-white/[0.06] px-3 py-1.5">
+      <span className="text-[14px]">📝</span>
+      <input
+        value={text}
+        // The overlay doesn't take the keyboard by itself: ask for it.
+        onMouseDown={() => void api.setOverlayInteractive(true).then(() => markHit())}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            save();
+          }
+        }}
+        maxLength={2000}
+        placeholder="Jot a quick note…"
+        aria-label="Quick note"
+        className="min-w-0 flex-1 bg-transparent text-[12.5px] text-white outline-none placeholder:text-white/45"
+      />
+      {said && (
+        <span role="status" className={"shrink-0 text-[11px] " + (said.startsWith("Saved") ? "text-emerald-300" : "text-rose-300")}>
+          {said}
+        </span>
+      )}
+      {text.trim().length >= 3 && (
+        <button type="button" disabled={saving} onClick={save} className="rounded-full bg-white/15 px-2.5 py-0.5 text-[11.5px] font-semibold hover:bg-white/20 disabled:opacity-50">
+          Save
+        </button>
+      )}
+    </div>
+  );
 }
 
 // ----------------------------------------------------------------- expanded
@@ -867,6 +994,8 @@ function Expanded({
   onMoveKey,
   onDone,
   onClearError,
+  onSeenSite,
+  due = null,
   remote = null,
   activities = [],
   copies = [],
@@ -880,7 +1009,7 @@ function Expanded({
   scale?: number;
   wave?: string;
   page?: string | null;
-  onHold?: (on: boolean) => void;
+  onHold?: (on: boolean, who?: string) => void;
   weather?: [string, number, string] | null;
   activities?: Activity[];
   copies?: string[];
@@ -898,6 +1027,9 @@ function Expanded({
   doing: string | null;
   onDone: () => void;
   onClearError?: () => void;
+  onSeenSite?: (url: string) => void;
+  /** School work due this week: [how many, the next one, its unix ms]. */
+  due?: [number, string, number] | null;
   /** A phone connected right now: its card shows whatever else is going on. */
   remote?: { device: string; controlling: boolean } | null;
 }) {
@@ -945,7 +1077,7 @@ function Expanded({
         <div className="text-[22px] font-semibold tabular-nums tracking-tight text-white/90">{clock(now)}</div>
       </div>
 
-      <NeedsYou live={live} onClearError={onClearError} />
+      <NeedsYou live={live} onClearError={onClearError} onSeenSite={onSeenSite} />
       {remote && live.kind !== "remote" && <NeedsYou live={{ kind: "remote", device: remote.device, controlling: remote.controlling }} />}
 
       <div role="tablist" aria-label="Island" className="grid grid-cols-3 gap-1 rounded-full bg-white/[0.06] p-1">
@@ -987,6 +1119,25 @@ function Expanded({
       {tab === "apps" && <AppsTab onDone={onDone} />}
       {tab === "now" && (
         <>
+      {!busy && <JotBox onHold={onHold} />}
+      {due && (
+        <button
+          type="button"
+          onClick={() => {
+            void emit(EV.runChat, { id: Date.now(), text: "What's due this week?" });
+            onDone();
+          }}
+          className="flex items-center gap-2.5 rounded-2xl bg-white/[0.07] p-2.5 text-left hover:bg-white/[0.1]"
+        >
+          <span className="text-[18px]">🎓</span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[12.5px] font-semibold">{due[0] === 1 ? "1 thing due this week" : `${due[0]} things due this week`}</span>
+            <span className="block truncate text-[11.5px] text-white/60">
+              Next: {due[1]} · {when(due[2], now)}
+            </span>
+          </span>
+        </button>
+      )}
       {media && (
         <div className="flex items-center gap-3 rounded-2xl bg-white/[0.07] p-2.5">
           <Cover m={media} size={52} />
@@ -1302,6 +1453,7 @@ function AppsTab({ onDone }: { onDone: () => void }) {
       >
         <input
           value={q}
+          onMouseDown={() => void api.setOverlayInteractive(true).then(() => markHit())}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Open an app — e.g. Spotify"
           aria-label="App to open"

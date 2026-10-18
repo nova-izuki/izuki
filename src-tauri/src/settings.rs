@@ -541,6 +541,17 @@ pub struct Settings {
     /// …and/or the paired phone (Telegram / Discord).
     #[serde(default = "default_true")]
     pub heads_up_phone: bool,
+    /// Study log (studylog.rs): every question asked and its answer go into
+    /// today's "Study log" note, explained to learn from later.
+    #[serde(default)]
+    pub study_log: bool,
+    /// Heads-up: a mission finished, paused or needs checking (missions.rs).
+    #[serde(default = "default_true")]
+    pub heads_up_missions: bool,
+    /// Quiet hours, "22:00-07:00" (empty: off). Heads-ups wait and come as
+    /// one summary when they end; the Island doesn't pop up suggestions.
+    #[serde(default)]
+    pub quiet_hours: String,
     /// Buddy mode: Izuki speaks up by itself — an important message, the
     /// battery running low, the internet dropping, "welcome back" with what
     /// you missed — with the orb, like a friend at your desk.
@@ -1102,6 +1113,9 @@ impl Default for Settings {
             morning_brief_at: default_brief_at(),
             heads_up_pc: true,
             heads_up_phone: true,
+            heads_up_missions: true,
+            study_log: false,
+            quiet_hours: String::new(),
             buddy_speaks: true,
             buddy_acts: true,
             buddy_breaks: true,

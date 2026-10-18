@@ -500,6 +500,12 @@ export interface Settings {
   heads_up_pc: boolean;
   /** Heads-ups sent to the paired phone. */
   heads_up_phone: boolean;
+  /** Every question and its answer saved to today's Study log note. */
+  study_log: boolean;
+  /** Heads-up when missions finish. */
+  heads_up_missions: boolean;
+  /** "22:00-07:00", empty: off. Heads-ups wait and come as one summary. */
+  quiet_hours: string;
   /** The user's n8n workflows, started by name. */
   n8n_hooks: N8nHook[];
   /** The user's n8n address and API key — to import their workflows. */
@@ -687,6 +693,12 @@ export interface IslandStatus {
   approval?: [string, string, string] | null;
   /** Lecture Mode recording: [title, seconds so far]. */
   lecture?: [string, number] | null;
+  /** School work due in the next 7 days: [how many, the next one, its unix ms]. */
+  due?: [number, string, number] | null;
+  /** Business websites down at their last check: [name, url]. */
+  sites_down?: Array<[string, string]>;
+  /** Quiet hours right now: no peeks. */
+  quiet?: boolean;
 }
 
 /** Something happening right now, with its smart next steps. */

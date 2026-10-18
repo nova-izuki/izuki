@@ -49,6 +49,71 @@ pub struct IslandStatus {
     pub approval: Option<(String, String, String)>,
     /// Lecture Mode recording (lecture.rs): (title, seconds so far).
     pub lecture: Option<(String, u64)>,
+    /// School work due in the next 7 days: (how many, the next one, its unix ms).
+    pub due: Option<(usize, String, i64)>,
+    /// Business websites that were down at their last check: (name, url).
+    pub sites_down: Vec<(String, String)>,
+    /// Quiet hours right now (Settings): no peeks, heads-ups held for later.
+    pub quiet: bool,
+}
+
+/// How many things are due in the next 7 days, and the next one.
+pub fn due_soon(coming: &[(String, i64)], now_ms: i64) -> Option<(usize, String, i64)> {
+    let week = now_ms + 7 * 86_400_000;
+    let mut soon: Vec<&(String, i64)> = coming.iter().filter(|(_, at)| *at > now_ms && *at <= week).collect();
+    soon.sort_by_key(|(_, at)| *at);
+    let first = soon.first()?;
+    Some((soon.len(), first.0.clone(), first.1))
+}
+
+type Glance = (Option<(usize, String, i64)>, Vec<(String, String)>);
+
+struct GlanceState {
+    shown: Glance,
+    /// When it was last read.
+    at: Option<std::time::Instant>,
+    /// A read is under way (one at a time).
+    reading: bool,
+    /// Asked to read again while one was under way: done right after.
+    again: bool,
+}
+
+static GLANCE: parking_lot::Mutex<GlanceState> = parking_lot::Mutex::new(GlanceState { shown: (None, Vec::new()), at: None, reading: false, again: false });
+
+/// Read deadlines and websites again on the next look (a calendar was just
+/// linked, a website just checked).
+pub fn refresh_glance() {
+    let mut g = GLANCE.lock();
+    if g.reading {
+        g.again = true;
+    } else {
+        g.at = None;
+    }
+}
+
+/// Deadlines and business websites for the Island. Both live on the network,
+/// so they're read off to the side every 30 minutes and shown instantly.
+fn background_glance() -> Glance {
+    let mut g = GLANCE.lock();
+    let shown = g.shown.clone();
+    if !g.reading && g.at.is_none_or(|t| t.elapsed() > std::time::Duration::from_secs(1800)) {
+        g.reading = true;
+        g.again = false;
+        std::thread::spawn(|| {
+            let read = std::panic::catch_unwind(|| {
+                let hub = crate::campus::hub();
+                (due_soon(&hub.coming, crate::model::now_ms()), crate::empire::sites_down())
+            });
+            let mut g = GLANCE.lock();
+            if let Ok(v) = read {
+                g.shown = v;
+            }
+            g.reading = false;
+            // A website checked during this read changed what's true: read again next look.
+            g.at = if std::mem::take(&mut g.again) { None } else { Some(std::time::Instant::now()) };
+        });
+    }
+    shown
 }
 
 /// "To sam@x.com · Running late" from an approval's draft.
@@ -117,6 +182,7 @@ pub fn status() -> IslandStatus {
     let page = in_browser.then(|| page_title(&title)).filter(|t| !t.is_empty());
     let context = format!("{app}|{title}");
     let question = question_on_screen(&context);
+    let (due, sites_down) = background_glance();
     IslandStatus {
         media,
         fullscreen: front_is_fullscreen(),
@@ -132,6 +198,9 @@ pub fn status() -> IslandStatus {
         lesson: crate::tutor::glance(),
         lecture: crate::lecture::now().map(|(t, s, _)| (t, s)),
         approval: crate::approvals::list().into_iter().find(|a| a.state == "waiting").map(|a| (a.id.clone(), a.app.clone(), approval_summary(&a.draft))),
+        due,
+        sites_down,
+        quiet: crate::headsup::quiet_now(),
     }
 }
 
@@ -332,6 +401,15 @@ fn front_is_fullscreen() -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn deadlines_this_week_only() {
+        let now = 1_000_000_000_000i64;
+        let day = 86_400_000;
+        let coming = vec![("Essay".to_string(), now + 3 * day), ("Quiz".to_string(), now + day), ("Final".to_string(), now + 10 * day), ("Old".to_string(), now - day)];
+        assert_eq!(super::due_soon(&coming, now), Some((2, "Quiz".to_string(), now + day)), "the soonest first, the final in 10 days isn't this week");
+        assert_eq!(super::due_soon(&[], now), None);
+    }
 
     #[test]
     fn page_titles_lose_the_browser_name() {

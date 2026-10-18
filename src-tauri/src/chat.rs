@@ -345,6 +345,9 @@ fn system_prompt(style: Style, apps: bool) -> String {
         );
     }
     s.push_str(SELF_HELP);
+    if crate::studylog::on() {
+        s.push_str(crate::studylog::RULE);
+    }
     s.push_str(&crate::reminders::prompt_block());
     s.push_str(&crate::memory::prompt_block());
     s.push_str(&crate::voices::prompt_block());
@@ -478,6 +481,10 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             whole.lock().push_str(&text);
             if done {
                 crate::reminders::take_tags(&whole.lock());
+                if error.is_none() {
+                    let asked = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.as_str()).unwrap_or("");
+                    crate::studylog::record(asked, &whole.lock());
+                }
             }
             let _ = app.emit(DELTA, Delta { id, text, done, error, status: None, action: None, step: None, call: None });
         };
@@ -985,7 +992,11 @@ fn with_system(history: &[Turn], system: String) -> Vec<Value> {
 /// as the streamed one. Reminder tags are left in for the caller.
 pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
     crate::execution::check().map_err(|r| anyhow::anyhow!(r.explanation()))?;
-    complete_with_tools(messages_for(history, style))
+    let answer = complete_with_tools(messages_for(history, style))?;
+    if let Some(asked) = history.iter().rev().find(|t| t.role == "user") {
+        crate::studylog::record(&asked.content, &answer);
+    }
+    Ok(answer)
 }
 
 /// A written reply that never hands over to the apps lane — for when it

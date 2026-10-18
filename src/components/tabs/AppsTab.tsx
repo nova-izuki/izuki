@@ -1,6 +1,7 @@
 import { InboxCard } from "../InboxCard";
 import { AccountHealthCard } from "../AccountHealthCard";
 import { EmpireCard } from "../EmpireCard";
+import { QuietHoursRow } from "../QuietHoursRow";
 import { JumpBar } from "../JumpBar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bell, CheckCircle2, Copy, Download, ExternalLink, Loader2, Plus, RefreshCw, Search, Sparkles, Trash2, Workflow, X } from "lucide-react";
@@ -524,6 +525,12 @@ export function AppsTab() {
             <Toggle checked={settings.morning_brief} onChange={(v) => patch({ morning_brief: v })} />
           </div>
         </Row>
+        <div className="izk-divider" />
+        <Row label="Missions finished" hint="What your missions did, when they're done.">
+          <Toggle checked={settings.heads_up_missions} onChange={(v) => patch({ heads_up_missions: v })} />
+        </Row>
+        <div className="izk-divider" />
+        <QuietHoursRow value={settings.quiet_hours} onChange={(v) => patch({ quiet_hours: v })} />
         <div className="izk-divider" />
         <Row label="On this PC" hint="A Windows notification.">
           <Toggle checked={settings.heads_up_pc} onChange={(v) => patch({ heads_up_pc: v })} />

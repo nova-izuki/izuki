@@ -5,7 +5,8 @@ import type { Note } from "../../lib/types";
 import { sendChatCommand } from "../VoiceEngine";
 import { JumpBar } from "../JumpBar";
 import { CampusHub } from "../CampusHub";
-import { EmptyState, Section, cx } from "../ui";
+import { EmptyState, Row, Section, Toggle, cx } from "../ui";
+import { useIzuki } from "../../lib/store";
 
 /** The words of a note, trimmed for asking the AI about it. */
 const bodyOf = (n: Note) => n.text.slice(0, 4000);
@@ -71,6 +72,9 @@ export function NotesTab() {
   };
   const copy = (list: Note[]) => void navigator.clipboard?.writeText(list.map((n) => `${n.title}\n\n${n.text}`).join("\n\n———\n\n")).catch(() => undefined);
 
+  const studyLog = useIzuki((s) => s.settings.study_log);
+  const patch = useIzuki((s) => s.patchSettings);
+
   const capture = async () => {
     setBusy("capture");
     setError(null);
@@ -103,6 +107,11 @@ export function NotesTab() {
           {busy === "capture" ? <Loader2 size={15} className="animate-spin" /> : <Wand2 size={15} />}
           {busy === "capture" ? "Reading your screen…" : "Take notes from my screen"}
         </button>
+        <div className="mt-2">
+          <Row label="Study log" hint="Every question you ask — typed, spoken or from your phone — saved here with its answer explained, in one note a day. Or just say “save every question and answer to my notes”.">
+            <Toggle checked={studyLog} onChange={(v) => patch({ study_log: v })} />
+          </Row>
+        </div>
         <p className="mt-2 text-[11px] text-izk-muted">Tip: in teacher mode, every question Izuki explains is saved here by itself.</p>
         {error && <p className="mt-2 text-[12px] text-izk-danger">{error}</p>}
       </Section>

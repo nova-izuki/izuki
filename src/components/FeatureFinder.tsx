@@ -39,6 +39,8 @@ export const FEATURES: Feature[] = [
   { label: "Talk: Hey Nova or hold a key", hint: "Wake word, hold-to-talk, strictness, voice, language, Island, music mode, keep answer", tab: "draw", id: "talk-card" },
   { label: "Browser extension", hint: "Chrome, Edge, exact clicks on web pages, links", tab: "settings", id: "settings-extension" },
   { label: "Nova Notes", hint: "Study notes from your screen, flashcards, quiz me, summarise", tab: "notes" },
+  { label: "Study log", hint: "Save every question and answer to my notes, explain so I can learn later, study diary", tab: "notes", id: "notes-capture" },
+  { label: "Quiet hours", hint: "Do not disturb at night, silence notifications, sleep, hold heads-ups", tab: "apps", id: "apps-headsups" },
   { label: "App colours", hint: "Theme, background colour, auto by time of day, your own colour", tab: "settings", id: "settings-theme" },
   { label: "New orbs", hint: "Stardust, ferrofluid, hologram face, pure water, music, orb style", tab: "settings", id: "settings-look" },
   { label: "3D faces", hint: "3D face, hologram woman, hologram man, avatar, my face, avaturn, glb, upload face, character, skin, glow", tab: "settings", id: "settings-look" },

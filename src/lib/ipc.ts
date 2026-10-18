@@ -298,6 +298,9 @@ export const MOCK_SETTINGS: Settings = {
   morning_brief_at: "08:00",
   heads_up_pc: true,
   heads_up_phone: true,
+  heads_up_missions: true,
+  study_log: false,
+  quiet_hours: "",
   n8n_hooks: [],
   n8n_url: "",
   n8n_api_key: "",
@@ -694,6 +697,7 @@ export const api = {
   /** Nova Notes. */
   notesList: () => call<Note[]>("notes_list", undefined, () => []),
   notesDelete: (id: string) => call<void>("notes_delete", { id }, () => undefined),
+  notesJot: (text: string) => call<Note>("notes_jot", { text }, () => ({ id: "jot", title: `Quick note — ${text.slice(0, 48)}`, source: "Island", text, created_at: Date.now(), updated_at: Date.now(), cards: [], lesson: false })),
   notesCapture: () => call<Note>("notes_capture", undefined, () => { throw new Error("Notes work in the Izuki app on your PC."); }),
   notesLesson: (text: string) => call<Note>("notes_lesson", { text }, () => { throw new Error("no app"); }),
   notesFlashcards: (id: string) => call<Note>("notes_flashcards", { id }, () => { throw new Error("no app"); }),

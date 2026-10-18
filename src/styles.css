@@ -117,6 +117,21 @@ html.izuki-overlay body {
   user-select: none;
 }
 
+/* Izuki's own clickable things on the overlay (the Island, the chat bubble,
+   the camera window, the Air keyboard) take the mouse while you're over
+   them, so they show the normal cursor: the hidden one above left you
+   pointing blind. :where() keeps explicit cursor classes (grab…) winning. */
+:where(html.izuki-overlay [data-izk-hit], html.izuki-overlay [data-izk-hit] *) {
+  cursor: default;
+}
+:where(html.izuki-overlay [data-izk-hit]) :where(button, a, [role="button"], [role="tab"], [role="switch"], [role="menuitem"], label, summary, select) {
+  cursor: pointer;
+}
+:where(html.izuki-overlay [data-izk-hit]) :where(input:not([type="range"], [type="checkbox"], [type="radio"]), textarea, [contenteditable="true"]) {
+  cursor: text;
+  user-select: text;
+}
+
 #root,
 #overlay-root {
   height: 100%;

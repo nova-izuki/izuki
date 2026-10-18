@@ -206,6 +206,36 @@ pub fn add_to_lesson(text: &str) -> Result<Note> {
     save(note)
 }
 
+/// A running note by title for today (the Study log): appended to, or made.
+pub fn add_to_log(title: &str, source: &str, text: &str) -> Result<Note> {
+    let today = chrono::Local::now().date_naive();
+    let now = crate::model::now_ms();
+    let same_day = |ms: i64| chrono::DateTime::from_timestamp_millis(ms).is_some_and(|d| d.with_timezone(&chrono::Local).date_naive() == today);
+    let _turn = LOG_TURN.lock();
+    let note = match read().into_iter().find(|n| n.title == title && n.source == source && same_day(n.created_at)) {
+        Some(mut n) => {
+            n.text = format!("{}\n\n{}", n.text.trim_end(), text.trim());
+            n.updated_at = now;
+            n
+        }
+        None => Note {
+            id: uuid::Uuid::new_v4().to_string(),
+            title: title.to_string(),
+            text: text.trim().to_string(),
+            source: source.to_string(),
+            created_at: now,
+            updated_at: now,
+            cards: Vec::new(),
+            lesson: true,
+        },
+    };
+    save(note)
+}
+
+/// One Study log write at a time: two answers finishing together mustn't
+/// both make today's note.
+static LOG_TURN: Mutex<()> = Mutex::new(());
+
 /// Make (or remake) flashcards for a note.
 pub fn flashcards(id: &str) -> Result<Note> {
     let Some(mut note) = get(id) else { bail!("that note is gone") };

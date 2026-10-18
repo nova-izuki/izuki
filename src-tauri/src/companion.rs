@@ -243,6 +243,13 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         push("assistant", &text);
         return Reply::text(text);
     }
+    // "Save every question and answer to my notes" from the phone too (studylog.rs).
+    if let Some(on) = crate::studylog::parse(said) {
+        push("user", said);
+        let text = crate::studylog::handle(on);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // "What's due this week?" from the phone and Discord too (campus.rs).
     if let Some(ask) = crate::campus::parse(said) {
         push("user", said);

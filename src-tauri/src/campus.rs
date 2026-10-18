@@ -262,8 +262,9 @@ fn watch_clipboard() {
                     crate::state::settings_changed_elsewhere();
                 }
                 eprintln!("[campus] school calendar linked");
+                crate::island::refresh_glance();
                 if let Some(app) = crate::state::app() {
-                    crate::headsup::deliver(&app, "School calendar linked ✓", "Ask me “what's due this week?” any time — and I'll remind you before things are due.");
+                    crate::headsup::deliver_now(&app, "School calendar linked ✓", "Ask me “what's due this week?” any time — and I'll remind you before things are due.");
                 }
                 break;
             }

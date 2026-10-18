@@ -369,6 +369,10 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
             return blocking(|| crate::study::coach().unwrap_or_else(|e| e.to_string())).await.ok();
         }
     }
+    // "Save every question and answer to my notes" (studylog.rs).
+    if let Some(on) = crate::studylog::parse(&said) {
+        return Some(crate::studylog::handle(on));
+    }
     // Empire: "check my website", "what needs my attention?" (empire.rs).
     if let Some(ask) = crate::empire::parse(&said) {
         return blocking(move || crate::empire::handle(ask)).await.ok();
@@ -1029,6 +1033,20 @@ pub fn ext_status() -> bool {
 #[tauri::command]
 pub fn notes_list() -> Vec<crate::notes::Note> {
     crate::notes::list()
+}
+
+/// A quick note jotted on the Island: saved to Notes as it was typed.
+#[tauri::command]
+pub async fn notes_jot(text: String) -> R<crate::notes::Note> {
+    blocking(move || {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err("there was nothing to save".to_string());
+        }
+        let first: String = text.lines().next().unwrap_or("").chars().take(48).collect();
+        crate::notes::keep(&format!("Quick note — {first}"), "Island", text).map_err(err)
+    })
+    .await?
 }
 
 #[tauri::command]
