@@ -1,14 +1,16 @@
-# Working together on Izuki (Claude + ChatGPT/Codex)
+# Working together on Izuki (Claude + ChatGPT/Codex + Freebuff)
 
-Two AI assistants work in this repo for the same owner, sometimes at the same
-time. Read this before editing, and update it when you take or finish
+Three AI assistants work in this repo for the same owner, sometimes at the
+same time. The full rules are in [AGENTS.md](../AGENTS.md). Read this before editing, and update it when you take or finish
 something. Small, atomic edits only: never rewrite a whole file another
 assistant is also changing.
 
 ## Ground rules (from the owner)
-- Ship tested work straight to `main` with a version bump (the owner's standing
-  instruction). Before pushing, run `cargo test --lib`, `npx tsc --noEmit`,
-  `npm run build` and the `test:*` scripts.
+- Ship tested work straight to `main`. Before pushing, run `cargo test --lib`,
+  `npx tsc --noEmit`, `npm run build` and the `test:*` scripts.
+- **Only Claude bumps the version and releases.** Codex and Freebuff push
+  without touching versions, then add a line to `docs/NEXT-RELEASE.md`.
+  Claude ships it with the next release.
 - Never commit the owner's personal face model, keys, emails or phone numbers.
 - Nothing is sent, posted, deleted or bought without the user's explicit yes.
 - Never claim something works without testing it; say what wasn't verified.
@@ -28,6 +30,10 @@ assistant is also changing.
 | Island glances (missions, lesson) | `island.rs`, `Island.tsx` | Claude |
 | Execution verdicts, contracts, budgets | `execution.rs`, `model.rs` (`TaskOutcome`) | ChatGPT |
 | Mission evidence journal | `mission_journal.rs`, `missions.rs` | ChatGPT |
+| Textbooks, Blackboard, study diary, Study log | `textbook.rs`, `blackboard.rs`, `studytrack.rs`, `studylog.rs`, `StudyCards.tsx` | Claude |
+| Voice turn-taking, quiet hours | `VoiceEngine.tsx` (say/takeTurn), `headsup.rs` (quiet hours), `tts.rs` | Claude |
+| Releases: version bumps, release notes, What's New | `package.json` and the other version files, `docs/RELEASE-*.md`, `WhatsNew.tsx` | Claude |
+| Website: bring it up to date with features through 1.0.135 | `docs/index.html`, `docs/llms.txt`, `docs/sitemap.xml` | Freebuff (first task) |
 | Missions card | `MissionsCard.tsx`, `ipc.ts` mission types | ChatGPT |
 
 ## Shared skills (local, in `.claude/skills/`, not in git)
