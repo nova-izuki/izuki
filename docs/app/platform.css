@@ -1,0 +1,342 @@
+/* Izuki on each phone, in that phone's own language.
+ *
+ * <html data-os="ios|android"> is set from the device itself before anything
+ * paints (index.html), in the browser and in the app alike. TVs keep their
+ * own ten-foot design (html.tv, tv.css) and never get these. The identity
+ * stays Izuki's: the dark night ground, violet and teal, the orb. What
+ * changes is how it behaves and is built: bars, bubbles, sheets, controls,
+ * feedback and motion the way an iPhone or an Android phone does them.
+ */
+
+/* ------------------------------------------------------------------ both */
+
+html[data-os] ::selection { background: rgba(139, 108, 255, 0.45); color: #fff; }
+html[data-os] textarea, html[data-os] input { caret-color: var(--teal); }
+html[data-os] #log { scrollbar-width: none; }
+
+/* ------------------------------------------------------------------ iPhone
+ * The navigation bar is iOS's own bar material (a specific effect, not
+ * decoration): the conversation scrolls under it, blurred. Tinted glyph
+ * buttons, iMessage bubbles and composer, page sheets with a grabber and
+ * inset-grouped rows, and the system's sheet curve. */
+
+html[data-os="ios"] {
+  --ios-bar: rgba(16, 15, 25, 0.74);
+  --ios-group: #1c1b25;
+  --ios-sep: rgba(255, 255, 255, 0.12);
+  --ios-bubble: #2a2934;
+  --ios-tint: #9c84ff;
+  --ios-curve: cubic-bezier(0.32, 0.72, 0, 1);
+}
+html[data-os="ios"] .app { padding-inline: 0; }
+html[data-os="ios"] .app > header {
+  margin: 0;
+  padding: calc(var(--safe-top) + 6px) 16px 8px;
+  margin-top: calc(-1 * var(--safe-top));
+  border: 0;
+  border-bottom: 0.5px solid var(--ios-sep);
+  border-radius: 0;
+  background: var(--ios-bar);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+  backdrop-filter: saturate(180%) blur(22px);
+  box-shadow: none;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+html[data-os="ios"] .who-text b { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+html[data-os="ios"] .who-text span { font-size: 13px; }
+html[data-os="ios"] .avatar { width: 34px; height: 34px; box-shadow: none; }
+html[data-os="ios"] .icon-btn {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: none;
+  color: var(--ios-tint);
+}
+html[data-os="ios"] .icon-btn svg { width: 22px; height: 22px; }
+html[data-os="ios"] .icon-btn.on { background: var(--ios-tint); color: #0b0a14; }
+html[data-os="ios"] .icon-btn:active, html[data-os="ios"] .compact-action:active { opacity: 0.45; transform: none; }
+html[data-os="ios"] .call-btn { background: var(--ios-tint); color: #0b0a14; box-shadow: none; height: 34px; padding: 0 14px; font-size: 15px; font-weight: 650; }
+html[data-os="ios"] .call-btn:active { opacity: 0.7; transform: none; }
+html[data-os="ios"] #log, html[data-os="ios"] .welcome { padding-inline: 16px; }
+html[data-os="ios"] footer { padding-inline: 12px; }
+
+/* iMessage bubbles: tight radius steps, the tail corner on the speaker's side. */
+html[data-os="ios"] .msg { border-radius: 19px; padding: 8px 13px; font-size: 17px; line-height: 1.32; max-width: 78%; }
+html[data-os="ios"] .me { background: #7d62f2; box-shadow: none; border-bottom-right-radius: 5px; }
+html[data-os="ios"] .izuki { background: var(--ios-bubble); border: 0; box-shadow: none; border-bottom-left-radius: 5px; }
+html[data-os="ios"] .izuki:not(.error) { background: var(--ios-bubble); border: 0; box-shadow: none; }
+html[data-os="ios"] .chip { border: 0; background: rgba(156, 132, 255, 0.16); color: #cfc4ff; font-weight: 550; padding: 7px 12px; }
+html[data-os="ios"] .chip.primary { background: var(--ios-tint); color: #0b0a14; }
+
+/* The composer: a capsule field with + on the left, the arrow inside it. */
+html[data-os="ios"] .composer {
+  border: 0.5px solid rgba(255, 255, 255, 0.2);
+  border-radius: 22px;
+  background: rgba(28, 27, 38, 0.92);
+  box-shadow: none;
+  padding: 4px;
+}
+html[data-os="ios"] .composer::before { display: none; }
+html[data-os="ios"] #clip { width: 36px; height: 36px; background: rgba(255, 255, 255, 0.12); align-self: flex-end; margin: 0 2px 0 0; }
+html[data-os="ios"] #clip svg { width: 18px; height: 18px; }
+html[data-os="ios"] #text { padding: 8px 4px; font-size: 17px; }
+html[data-os="ios"] #send { width: 32px; height: 32px; background: var(--ios-tint); color: #0b0a14; margin: 0 2px 2px 0; }
+html[data-os="ios"] #send svg { width: 17px; height: 17px; }
+
+/* Home: grouped tiles, no outlines. */
+html[data-os="ios"] .idea, html[data-os="ios"] .pulse, html[data-os="ios"] .step {
+  border: 0;
+  background: var(--ios-group);
+  box-shadow: none;
+  border-radius: 14px;
+}
+html[data-os="ios"] .idea:active, html[data-os="ios"] .step:active { background: #2a2933; }
+
+/* Page sheets: a grabber, inset-grouped sections, the system's slide. */
+html[data-os="ios"] .sheet { background: rgba(0, 0, 0, 0.45); -webkit-backdrop-filter: none; backdrop-filter: none; }
+html[data-os="ios"] .panel {
+  margin: 0;
+  border: 0;
+  border-radius: 14px 14px 0 0 !important;
+  background: #0f0e16;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35);
+  padding-top: 26px;
+  position: relative;
+}
+html[data-os="ios"] .panel::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  width: 36px;
+  height: 5px;
+  margin-left: -18px;
+  border-radius: 2.5px;
+  background: rgba(255, 255, 255, 0.28);
+}
+html[data-os="ios"] .sheet:not([hidden]) .panel { animation: ios-sheet 480ms var(--ios-curve); }
+@keyframes ios-sheet { from { transform: translateY(100%); } to { transform: none; } }
+html[data-os="ios"] .panel h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+html[data-os="ios"] .panel section { background: var(--ios-group); border: 0; box-shadow: none; border-radius: 12px; }
+html[data-os="ios"] .panel h3 { font-size: 13px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.02em; color: #9d99ad; }
+html[data-os="ios"] .field input, html[data-os="ios"] .field select, html[data-os="ios"] .panel textarea {
+  border: 0;
+  border-radius: 10px;
+  background: #2a2934;
+  font-size: 17px;
+}
+html[data-os="ios"] .btn { background: var(--ios-tint); color: #0b0a14; font-weight: 650; border-radius: 12px; padding: 12px 18px; }
+html[data-os="ios"] .btn.ghost { background: rgba(156, 132, 255, 0.16); color: #cfc4ff; border: 0; }
+html[data-os="ios"] .btn.danger { border: 0; background: rgba(255, 69, 58, 0.16); color: #ff6961; }
+html[data-os="ios"] .btn:active { opacity: 0.7; transform: none; }
+html[data-os="ios"] .mem { border-bottom: 0.5px solid var(--ios-sep); }
+
+/* ------------------------------------------------------------------ Android
+ * Material 3 on Izuki's violet: tonal surfaces instead of glass, a solid top
+ * app bar, 48dp targets with state layers (the press shows on the control),
+ * 8dp chips, the FAB's rounded-square shape for talking, and bottom sheets
+ * with a drag handle and Material's emphasized curve. */
+
+html[data-os="android"] {
+  --m-primary: #d0bcff;
+  --m-on-primary: #381e72;
+  --m-primary-container: #4f378b;
+  --m-on-primary-container: #eaddff;
+  --m-tertiary-container: #1f5d58;
+  --m-on-tertiary-container: #b8f2ea;
+  --m-surface: #141218;
+  --m-container-low: #1d1b20;
+  --m-container: #211f26;
+  --m-container-high: #2b2930;
+  --m-container-highest: #36343b;
+  --m-outline: #938f99;
+  --m-outline-variant: #49454f;
+  --m-on-surface-variant: #cac4d0;
+  --m-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --ground: var(--m-surface);
+}
+html[data-os="android"] body { font-family: "Google Sans Text", Roboto, system-ui, sans-serif; background: var(--m-surface); }
+html[data-os="android"] .app { padding-inline: 0; }
+html[data-os="android"] .app > header {
+  margin: 0;
+  margin-top: calc(-1 * var(--safe-top));
+  padding: calc(var(--safe-top) + 8px) 8px 8px 16px;
+  border: 0;
+  border-radius: 0;
+  background: var(--m-container);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+html[data-os="android"] .who-text b { font-size: 20px; font-weight: 500; }
+html[data-os="android"] .who-text span { font-size: 13px; color: var(--m-on-surface-variant); }
+html[data-os="android"] .avatar { box-shadow: none; }
+
+/* State layers: a press tints the control itself (Material's ripple, without the costume). */
+html[data-os="android"] .icon-btn,
+html[data-os="android"] .chip,
+html[data-os="android"] .btn,
+html[data-os="android"] .idea,
+html[data-os="android"] .step,
+html[data-os="android"] .call-btn,
+html[data-os="android"] #clip,
+html[data-os="android"] #send { position: relative; overflow: hidden; }
+html[data-os="android"] .icon-btn::after,
+html[data-os="android"] .chip::after,
+html[data-os="android"] .btn::after,
+html[data-os="android"] .idea::after,
+html[data-os="android"] .step::after,
+html[data-os="android"] .call-btn::after,
+html[data-os="android"] #clip::after,
+html[data-os="android"] #send::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity 150ms linear;
+  pointer-events: none;
+}
+html[data-os="android"] .icon-btn:active::after,
+html[data-os="android"] .chip:active::after,
+html[data-os="android"] .btn:active::after,
+html[data-os="android"] .idea:active::after,
+html[data-os="android"] .step:active::after,
+html[data-os="android"] .call-btn:active::after,
+html[data-os="android"] #clip:active::after,
+html[data-os="android"] #send:active::after { opacity: 0.12; }
+html[data-os="android"] .icon-btn:active,
+html[data-os="android"] .chip:active,
+html[data-os="android"] .btn:active,
+html[data-os="android"] .call-btn:active { transform: none; }
+
+html[data-os="android"] .icon-btn { width: 48px; height: 48px; border: 0; background: none; color: var(--m-on-surface-variant); }
+html[data-os="android"] .icon-btn svg { width: 24px; height: 24px; }
+html[data-os="android"] .icon-btn.on { background: var(--m-primary-container); color: var(--m-on-primary-container); }
+html[data-os="android"] .call-btn { background: var(--m-primary); color: var(--m-on-primary); box-shadow: none; height: 40px; border-radius: 20px; font-weight: 500; font-size: 14px; letter-spacing: 0.01em; }
+html[data-os="android"] #log, html[data-os="android"] .welcome { padding-inline: 16px; }
+html[data-os="android"] footer { padding-inline: 12px; }
+
+/* Messages: Material's large shape, tonal containers. */
+html[data-os="android"] .msg { border-radius: 20px; font-size: 16px; line-height: 1.5; }
+html[data-os="android"] .me { background: var(--m-primary-container); color: var(--m-on-primary-container); box-shadow: none; border-bottom-right-radius: 6px; }
+html[data-os="android"] .izuki, html[data-os="android"] .izuki:not(.error) { background: var(--m-container-high); border: 0; box-shadow: none; border-bottom-left-radius: 6px; }
+html[data-os="android"] .chip {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--m-outline-variant);
+  background: none;
+  color: var(--m-on-surface-variant);
+  font-size: 14px;
+  font-weight: 500;
+}
+html[data-os="android"] .chip.primary { background: var(--m-tertiary-container); color: var(--m-on-tertiary-container); border-color: transparent; }
+
+/* The composer: a filled field, and the talk button in the FAB's shape. */
+html[data-os="android"] .composer {
+  border: 0;
+  border-radius: 28px;
+  background: var(--m-container-highest);
+  box-shadow: none;
+  padding: 4px 4px 4px 6px;
+}
+html[data-os="android"] .composer::before { display: none; }
+html[data-os="android"] #clip { width: 40px; height: 40px; background: none; color: var(--m-on-surface-variant); }
+html[data-os="android"] #send { width: 48px; height: 48px; border-radius: 16px; background: var(--m-primary); color: var(--m-on-primary); }
+html[data-os="android"] #orb { width: 48px; height: 48px; border-radius: 16px; background: var(--m-primary-container); overflow: hidden; }
+html[data-os="android"] #orb canvas { inset: -4px; width: 56px; height: 56px; }
+
+/* Home: tonal cards (12dp), no outlines or glass. */
+html[data-os="android"] .idea, html[data-os="android"] .pulse, html[data-os="android"] .step {
+  border: 0;
+  background: var(--m-container-low);
+  box-shadow: none;
+  border-radius: 12px;
+}
+html[data-os="android"] .home-label { color: var(--m-on-surface-variant); letter-spacing: 0.06em; }
+
+/* Bottom sheets: 28dp corners, a drag handle, the emphasized curve. */
+html[data-os="android"] .sheet { background: rgba(0, 0, 0, 0.32); -webkit-backdrop-filter: none; backdrop-filter: none; }
+html[data-os="android"] .panel {
+  margin: 0;
+  border: 0;
+  border-radius: 28px 28px 0 0 !important;
+  background: var(--m-container-low);
+  box-shadow: none;
+  padding-top: 30px;
+  position: relative;
+}
+html[data-os="android"] .panel::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  width: 32px;
+  height: 4px;
+  margin-left: -16px;
+  border-radius: 2px;
+  background: var(--m-outline);
+  opacity: 0.5;
+}
+html[data-os="android"] .sheet:not([hidden]) .panel { animation: m3-sheet 400ms var(--m-emphasized); }
+@keyframes m3-sheet { from { transform: translateY(60%); opacity: 0; } to { transform: none; opacity: 1; } }
+html[data-os="android"] .panel h2 { font-size: 22px; font-weight: 500; }
+html[data-os="android"] .panel section { background: var(--m-container); border: 0; box-shadow: none; border-radius: 16px; }
+html[data-os="android"] .panel h3 { font-size: 14px; font-weight: 500; color: var(--m-primary); letter-spacing: 0.01em; }
+html[data-os="android"] .field input, html[data-os="android"] .field select, html[data-os="android"] .panel textarea {
+  border: 0;
+  border-bottom: 1px solid var(--m-outline);
+  border-radius: 4px 4px 0 0;
+  background: var(--m-container-highest);
+}
+html[data-os="android"] .field input:focus, html[data-os="android"] .field select:focus, html[data-os="android"] .panel textarea:focus {
+  outline: none;
+  border-bottom: 2px solid var(--m-primary);
+}
+html[data-os="android"] .btn { background: var(--m-primary); color: var(--m-on-primary); font-weight: 500; border-radius: 20px; padding: 10px 24px; letter-spacing: 0.01em; }
+html[data-os="android"] .btn.ghost { background: none; border: 1px solid var(--m-outline); color: var(--m-primary); }
+html[data-os="android"] .btn.danger { background: none; border: 1px solid var(--m-outline); color: #ffb4ab; }
+html[data-os="android"] .mem { border-bottom: 1px solid var(--m-outline-variant); }
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-os] .sheet:not([hidden]) .panel { animation: none; }
+  html[data-os="android"] .icon-btn::after, html[data-os="android"] .btn::after { transition: none; }
+}
+
+/* ------------------------------------------------------------------ the toolbar on a phone
+ * Nine controls don't fit in a row on a phone: the shortcuts scroll sideways
+ * under the two that matter most, Call and Settings, which stay pinned at
+ * the right edge on the bar's own colour. */
+:root { --bar-bg: #171726; }
+html[data-os="ios"] { --bar-bg: #12111b; }
+html[data-os="android"] { --bar-bg: var(--m-container); }
+@media (max-width: 560px) {
+  .app > header { flex-wrap: wrap; row-gap: 6px; }
+  header .tools {
+    width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    justify-content: flex-start;
+    scroll-padding-inline: 8px;
+  }
+  header .tools::-webkit-scrollbar { display: none; }
+  header .tools #open-settings { position: sticky; right: 0; z-index: 1; background: var(--bar-bg); flex: none; }
+  header .tools .call-btn {
+    position: sticky;
+    right: 46px;
+    z-index: 1;
+    flex: none;
+    box-shadow: -18px 0 14px -4px var(--bar-bg);
+  }
+  html[data-os="android"] header .tools .call-btn { right: 50px; }
+  html[data-os="ios"] header .tools #open-settings { background: var(--bar-bg); border-radius: 0; }
+}

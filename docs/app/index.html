@@ -20,6 +20,21 @@
   if (/\b(Android TV|GoogleTV|Google TV|AFT[A-Z]|BRAVIA|SMART-TV|SmartTV|Tizen|Web0S|webOS|AppleTV|CrKey)\b/i.test(navigator.userAgent) || matchMedia("(pointer: none)").matches) {
     document.documentElement.classList.add("tv");
   }
+  // Each phone in its own language (platform.css): the device's own OS,
+  // in the browser and in the app alike. TVs keep their own design.
+  (() => {
+    const h = document.documentElement;
+    if (h.classList.contains("tv")) return;
+    const ua = navigator.userAgent;
+    const asked = new URLSearchParams(location.search).get("os");
+    const os = asked === "ios" || asked === "android" ? asked
+      : /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? "ios"
+      : /Android/.test(ua) ? "android" : "";
+    if (!os) return;
+    h.dataset.os = os;
+    // The status bar matches the top bar on Android.
+    if (os === "android") document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#211f26");
+  })();
 </script>
 <script src="../shared/bugs.js" data-app="phone" data-version="2.1"></script>
 <script src="native.js"></script>
@@ -260,6 +275,7 @@
   code { background: rgba(255, 255, 255, 0.08); padding: 1px 6px; border-radius: 6px; font-size: 13px; overflow-wrap: anywhere; word-break: break-all; }
 </style>
 <link rel="stylesheet" href="companion.css">
+<link rel="stylesheet" href="platform.css">
 </head>
 <body>
 <div class="app">
