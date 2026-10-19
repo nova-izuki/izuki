@@ -349,6 +349,7 @@ pub fn run_on_phone(prompt: &str) -> String {
             memory: crate::memory::prompt_block(),
             windows: Vec::new(),
             page_text: String::new(),
+            think: false,
         };
         let plan = match ask_any(&req) {
             Ok(p) => p,

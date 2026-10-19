@@ -370,7 +370,18 @@ pub fn snapshot() -> Option<Page> {
         return None;
     }
     let v = request("snapshot", json!({}), Duration::from_millis(2500)).ok()?;
-    Some(parse_page(&v))
+    let page = parse_page(&v);
+    *LAST_URL.lock() = Some((page.url.clone(), crate::uia::foreground_hwnd()));
+    Some(page)
+}
+
+/// The address of the page last read, and the window it was in front in.
+static LAST_URL: Mutex<Option<(String, Option<isize>)>> = Mutex::new(None);
+
+/// That address — only while the same browser window is still in front (no new request).
+pub fn snapshot_url_cached() -> Option<String> {
+    let (url, win) = LAST_URL.lock().clone()?;
+    (url.starts_with("http") && win.is_some() && win == crate::uia::foreground_hwnd()).then_some(url)
 }
 
 /// The extension's snapshot → elements in screen pixels. The page reports

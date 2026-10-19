@@ -206,7 +206,7 @@ pub fn submit_draw(app: &AppHandle, store: &Arc<Store>, mut session: DrawSession
     if should_ask_model(&session, &local) {
         if let Some(f) = &frame {
             let _ = app.emit(events::STATUS, StatusEvent::working("Izuki is looking…"));
-            match ask_model(store, &session, f, &local, false, false) {
+            match ask_model(store, &session, f, &local, false, false, false) {
                 Ok(refined) if !refined.steps.is_empty() => plan = refined,
                 Ok(_) => {}
                 Err(e) => {
@@ -569,6 +569,7 @@ fn ask_model(
     draft: &[ActionStep],
     zoomed: bool,
     wants_action: bool,
+    think: bool,
 ) -> Result<VisionPlan> {
     let _ = store; // brains now come from `brain_chain()`
     let started = std::time::Instant::now();
@@ -658,9 +659,13 @@ fn ask_model(
         // Izuki's "hands": the real controls on screen, numbered, so the
         // model can say "click #7" instead of guessing pixels.
         controls,
-        memory: crate::memory::prompt_block() + &crate::reminders::prompt_block() + &crate::voices::prompt_block(),
+        memory: crate::memory::prompt_block()
+            + &crate::reminders::prompt_block()
+            + &crate::voices::prompt_block()
+            + &crate::lessons::prompt_block(&uia::foreground_app(), crate::ext::snapshot_url_cached().as_deref()),
         windows: uia::open_windows(14),
         page_text,
+        think,
     };
     let prep_ms = started.elapsed().as_millis();
 
@@ -1215,6 +1220,48 @@ fn skip_broken(chain: &mut Vec<crate::settings::ProviderConfig>) {
     }
 }
 
+/// How much a brain knows and reasons, roughly (higher is stronger). The
+/// paid frontier models top it, then Gemini, then the big free ones; the
+/// small fast ones last.
+pub fn strength(c: &crate::settings::ProviderConfig) -> u8 {
+    use crate::settings::ProviderId as P;
+    let m = c.model.to_lowercase();
+    match c.id {
+        P::Anthropic | P::Openai | P::Xai => 9,
+        P::Gemini if m.contains("pro") => 9,
+        P::Gemini if m.contains("lite") => 6,
+        P::Gemini => 8,
+        P::Mistral if m.contains("large") || m.contains("medium") => 7,
+        P::Groq if m.contains("70b") || m.contains("120b") || m.contains("kimi") || m.contains("qwen3") => 6,
+        _ if m.contains("405b") || m.contains("70b") || m.contains("deepseek") => 6,
+        _ => 4,
+    }
+}
+
+/// A question that needs real knowledge or reasoning (not "hi" or "thanks"):
+/// explaining, comparing, working something out, or a long ask.
+pub fn needs_thought(asked: &str) -> bool {
+    let s = format!(" {} ", asked.to_lowercase());
+    let words = s.split_whitespace().count();
+    words >= 18
+        || [" why ", " how does", " how do ", " how is ", " how can ", " explain", " compare", " difference between", " analy", " solve", " calculate", " prove", " step by step", " what causes", " pros and cons", " should i ", " plan ", " strategy", " write ", " essay", " summar", " teach me", " understand"]
+            .iter()
+            .any(|w| s.contains(w))
+}
+
+/// For a thinking question: the strongest brain that's working first (the
+/// rest stay as backups). Speed still wins for small talk.
+pub fn prefer_strong(chain: &mut [crate::settings::ProviderConfig]) {
+    if chain.len() < 2 {
+        return;
+    }
+    let best = (0..chain.len()).max_by_key(|i| (strength(&chain[*i]), std::cmp::Reverse(*i))).unwrap_or(0);
+    if best != 0 && strength(&chain[best]) > strength(&chain[0]) {
+        eprintln!("[brain] a thinking question — asking {} first", chain[best].label);
+        chain[..=best].rotate_right(1);
+    }
+}
+
 /// Keep the user's chosen brain first — unless it has been slow and
 /// another has been far faster lately, then ask the fast one first (the
 /// chosen one is still asked if the fast one stalls or fails). A free model
@@ -1665,6 +1712,20 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             );
                             return false;
                         }
+                        // A click that didn't land: the same button, another way —
+                        // the way a person tries again differently instead of
+                        // clicking the same spot four times.
+                        Err(e) if matches!(step.action, Intent::Click | Intent::DoubleClick)
+                            && e.to_string().starts_with("target_changed:")
+                            && !e.to_string().contains("covers")
+                            && recover_click(&app, step).is_some() =>
+                        {
+                            executed.set(i + 1);
+                            if let Some(evidence) = evidence {
+                                if evidence.finish(crate::mission_journal::EvidenceOutcome::Returned).is_err() { return false; }
+                            }
+                            crate::lessons::note(&app_name, "pressing things by name worked when the screen position didn't");
+                        }
                         Err(e) => {
                             let why = e.to_string();
                             if let Some(evidence) = evidence { let _ = evidence.finish(crate::mission_journal::EvidenceOutcome::Unknown); }
@@ -1690,6 +1751,50 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
             };
 
             (run(), executed.get())
+}
+
+/// The control a click was meant for, pressed another way: 1) inside the
+/// page through the browser extension, 2) through Windows' accessibility
+/// (no mouse), 3) by its words on screen (OCR). Only when exactly one thing
+/// matches: two candidates is a guess, and then the brain looks again.
+fn recover_click(app: &AppHandle, step: &ActionStep) -> Option<&'static str> {
+    let name = step.snapped_to.as_deref().or(step.grounding.as_ref().map(|g| g.name.as_str()))?.trim().to_string();
+    if name.chars().count() < 2 {
+        return None;
+    }
+    // Never a final button by a back door (the guard allowed it only by name, and only here).
+    let same = |a: &str| a.trim().eq_ignore_ascii_case(&name);
+    // 1. The page's own element, by name — exact, no mouse.
+    if crate::ext::connected() && is_browser(&uia::foreground_app()) {
+        if let Some(page) = crate::ext::snapshot() {
+            let hits: Vec<_> = page.elements.iter().filter(|e| same(&e.name)).collect();
+            if hits.len() == 1 && crate::ext::click(&hits[0].dom_id).is_ok() {
+                eprintln!("[agent] recovered: pressed “{name}” inside the page");
+                return Some("page");
+            }
+        }
+    }
+    // 2. Windows' accessibility: the control by its name, near where it was.
+    if let Some(win) = step.grounding.as_ref().map(|g| g.window).or_else(uia::target_window) {
+        if let Ok(Some(_)) = uia::act_behind(win, uia::Behind::Press { name: Some(&name), identity: None, x: step.x, y: step.y }) {
+            eprintln!("[agent] recovered: pressed “{name}” through accessibility");
+            return Some("accessibility");
+        }
+    }
+    // 3. Its words on screen: read them, click the middle.
+    let frame = capture::capture_all().ok()?;
+    let words = crate::ocr::read_words(&frame).ok()?;
+    let rect = crate::ocr::find_phrase(&words, &name, Some((step.x, step.y)))?;
+    let (x, y) = rect.center();
+    if (x - step.x).abs() > 600 || (y - step.y).abs() > 600 {
+        return None; // far from where it was meant to be: not the same thing
+    }
+    let _acting = overlay::acting(app);
+    let button = enigo::Button::Left;
+    let times = if step.action == Intent::DoubleClick { 2 } else { 1 };
+    automation::click_at(x, y, button, times, 120).ok()?;
+    eprintln!("[agent] recovered: clicked “{name}” by its words on screen");
+    Some("words")
 }
 
 /// When Izuki last moved the mouse or typed (shared across a task's rounds).
@@ -2310,6 +2415,7 @@ fn submit_task(
     // The app that was in front before this round's steps (see unexpected_app_note).
     let mut front_before = String::new();
     let mut done_so_far: Vec<String> = resumed;
+    let mut progress_mark = done_so_far.len();
     // What the user showed or told Izuki when it asked, for the next look.
     // What the user drew, kept for the whole task: its clicks belong there.
     let user_marks: Vec<crate::model::Mark> = marks.clone();
@@ -2457,6 +2563,9 @@ fn submit_task(
                 done_so_far.join("; ")
             )
         };
+        // Something went wrong last time (a failed or repeated step, something
+        // to fix): this look thinks it through properly; otherwise it's fast.
+        let think = told.is_some() || repeats > 0 || goal_repeats > 0;
         if let Some(note) = told.take() {
             ask.push_str(&format!("\n{note}"));
         }
@@ -2486,7 +2595,7 @@ fn submit_task(
         // try again rather than dropping the task halfway.
         let mut attempt = 0u64;
         let asked_now = loop {
-            match ask_model(store, &session, &frame, &[], zoomed.is_some(), wants_action || round > 0) {
+            match ask_model(store, &session, &frame, &[], zoomed.is_some(), wants_action || round > 0, think) {
                 Ok(plan) => break Ok(plan),
                 Err(e) => {
                     attempt += 1;
@@ -2775,6 +2884,7 @@ fn submit_task(
                 continue;
             }
             eprintln!("[agent] {MAX_IDLE_ROUNDS} rounds in a row without a step — stopping");
+            crate::lessons::note(&uia::foreground_app(), "pages here can take a long time to be ready — wait for them to finish loading before acting");
             *UNFINISHED.lock() = Some((prompt.clone(), done_so_far.clone()));
             let mut plan = plan;
             plan.summary = "It's still not ready after a good while, so I'll pause here. Say \"keep going\" and I'll pick it up, or tell me what to click.".into();
@@ -2858,6 +2968,7 @@ fn submit_task(
                  carry on from where you were. Do not redo steps already done."
                     .to_string()
             } else if why.starts_with("target_changed:") {
+                crate::lessons::note(&uia::foreground_app(), "controls here move or redraw: take a fresh look and pick the control by its label right before clicking");
                 format!("Your last action was NOT executed — {why}. Parse this fresh screenshot and select the intended numbered control by its label and position. Do not reuse old IDs or coordinates. Do not close or minimise windows to fix a changed target. If the intended control is absent, explain that instead of guessing.")
             } else { format!(
                 "Your last click didn't happen — {why}. Deal with it like a person would: close what's on top (its ✕ \
@@ -2888,6 +2999,20 @@ fn submit_task(
         }
         // A snag (something on top, greyed out) means look again and fix it — not stop.
         let fixable = snag.is_some();
+        // Every so often: still getting somewhere? (New steps done, not the same ones.)
+        if (round + 1) % PROGRESS_EVERY == 0 && !done {
+            let fresh = done_so_far.len().saturating_sub(progress_mark);
+            progress_mark = done_so_far.len();
+            if fresh < 3 {
+                eprintln!("[agent] little progress in the last {PROGRESS_EVERY} rounds — pausing");
+                crate::lessons::note(&uia::foreground_app(), "a task here stalled before: check the instructions on screen, scroll to find what's missing, and say what's in the way instead of retrying");
+                *UNFINISHED.lock() = Some((prompt.clone(), done_so_far.clone()));
+                if let Some(p) = last_plan.as_mut() {
+                    p.summary = "I've been at this a while without getting much further, so I'll pause here. Say \"keep going\" and I'll pick it up from where it is, or tell me what's in the way.".into();
+                }
+                break;
+            }
+        }
         if (!finished && !fixable) || !alive() || (done && !fixable) || round + 1 == MAX_ROUNDS {
             // Ran out of rounds mid-task: "keep going" carries on from here.
             if round + 1 == MAX_ROUNDS && !done && finished {
@@ -3170,7 +3295,12 @@ Only ask the user after three honest, different tries.";
 
 /// How many look-act rounds one request may take. Long jobs (a lab, a
 /// worksheet) need plenty; "keep going" carries on past it.
-const MAX_ROUNDS: usize = 16;
+/// A safety cap only: tasks keep going while they're making progress (a long
+/// form, a setup, many pages) — the old fixed 16 cut real work off halfway.
+/// Loops are caught separately (same steps, same goal), and progress is
+/// checked every PROGRESS_EVERY rounds.
+const MAX_ROUNDS: usize = 60;
+const PROGRESS_EVERY: usize = 12;
 
 /// Bumped by every new task and by "stop". A task remembers its number and
 /// stops (before its next click, and without answering) once it changes —
@@ -3386,6 +3516,7 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
         memory: String::new(),
         windows: Vec::new(),
         page_text: String::new(),
+        think: false,
     };
 
     let answer = vision::ask(&cfg, &req);
@@ -3509,6 +3640,19 @@ mod speed_tests {
 
     fn radio(id: u32, name: &str) -> uia::Control {
         uia::Control { id, kind: "RadioButton".into(), name: name.into(), rect: crate::model::Rect::default(), hidden: false, value: String::new(), focused: false, below: false, section: String::new(), identity: None }
+    }
+
+    #[test]
+    fn hard_questions_get_the_strong_brain() {
+        assert!(needs_thought("why does the moon change shape?"));
+        assert!(needs_thought("explain the difference between a virus and a worm"));
+        assert!(!needs_thought("hi"));
+        assert!(!needs_thought("thanks!"));
+        let cfg = |id: crate::settings::ProviderId, model: &str| crate::settings::ProviderConfig { id, model: model.into(), label: model.into(), base_url: String::new(), api_key: String::new(), enabled: true };
+        let mut chain = vec![cfg(crate::settings::ProviderId::Groq, "llama-3.1-8b-instant"), cfg(crate::settings::ProviderId::Openrouter, "free"), cfg(crate::settings::ProviderId::Gemini, "gemini-2.5-flash")];
+        prefer_strong(&mut chain);
+        assert_eq!(chain[0].model, "gemini-2.5-flash");
+        assert_eq!(chain[1].model, "llama-3.1-8b-instant", "the fast one stays as the first backup");
     }
 
     #[test]

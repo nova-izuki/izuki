@@ -465,6 +465,7 @@ mod tests {
             memory: String::new(),
             windows: Vec::new(),
             page_text: String::new(),
+            think: false,
         }
     }
 

@@ -331,6 +331,9 @@ pub struct VisionRequest {
     pub windows: Vec<String>,
     /// The page or document's own text, word for word (`uia::document_text`).
     pub page_text: String,
+    /// Think it through this time (the last step failed or repeated): the
+    /// brain gets a thinking budget instead of its fastest no-think mode.
+    pub think: bool,
 }
 
 impl VisionRequest {
@@ -1019,7 +1022,14 @@ fn ask_gemini_as(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Res
     // a word of the plan. Reading a screenshot and picking a click doesn't
     // need it. (Pro models can't switch it off.)
     let knob = gemini_no_think(&cfg.model);
-    if let Some(config) = knob.thinking_config() {
+    if req.think && knob != NoThink::Neither {
+        // A real think this time (the last try didn't work), with room for the plan after it.
+        body["generationConfig"]["thinkingConfig"] = match knob {
+            NoThink::Level => json!({ "thinkingLevel": "low" }),
+            _ => json!({ "thinkingBudget": 1024 }),
+        };
+        body["generationConfig"]["maxOutputTokens"] = json!(4000);
+    } else if let Some(config) = knob.thinking_config() {
         body["generationConfig"]["thinkingConfig"] = config;
     }
 
@@ -1702,6 +1712,7 @@ Safety Categories: PII/Privacy"));
             memory: String::new(),
             windows: Vec::new(),
             page_text: String::new(),
+            think: false,
         }
     }
 

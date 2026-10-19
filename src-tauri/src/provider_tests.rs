@@ -119,6 +119,7 @@ fn request() -> VisionRequest {
         memory: String::new(),
         windows: Vec::new(),
         page_text: String::new(),
+        think: false,
     }
 }
 

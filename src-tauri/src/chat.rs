@@ -496,7 +496,12 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             let _ = app.emit(DELTA, Delta { id, text: String::new(), done: false, error: None, status: None, action: None, step: None, call: Some(c) });
         };
         let files = style == Style::Text;
-        let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
+        let mut chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
+        // A real question (why, how, explain, compare…) goes to the strongest
+        // brain that's working; quick chat stays with the fastest.
+        if history.iter().rev().find(|t| t.role == "user").is_some_and(|t| crate::brain::needs_thought(&t.content)) {
+            crate::brain::prefer_strong(&mut chain);
+        }
         if chain.is_empty() {
             if !crate::brain::online() {
                 // Offline with no AI on this PC: help anyway (offline.rs).

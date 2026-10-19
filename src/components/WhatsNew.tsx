@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🧠", title: "Smarter in general", how: "No more 16-step limit — it keeps going while it's making progress. A click that doesn't work gets tried another way (inside the page, through Windows, by the words on screen). It keeps tips for each app and site and uses them next time, thinks harder after a mistake, and real questions go to your strongest AI." },
   { icon: "📚", title: "APA 7 references, from the real source", how: "“Cite this page in APA”, “APA reference for 10.1037/…” or “cite ISBN 978…”: the details come from the source itself (Crossref, Open Library, the page's own tags) — never made up — with the in-text citation, and every reference saved to your “References (APA)” note." },
   { icon: "🎓", title: "Quiz coach", how: "Say “coach me through this quiz”: Izuki explains each question (never which answer is right), waits quietly while you pick, then presses Next for you. It never presses Submit — and after you submit, “go over my results” reviews what you missed." },
   { icon: "🎹", title: "FL Studio: chords, long notes, vocals", how: "“Add chords”, “add a melody with long notes” (dropped into the Piano roll with Tools → Scripting → Izuki notes) and “mix my vocals” — levels and panning set, and what each vocal chain is missing.", try: { label: "FL Studio", tab: "settings", id: "settings-flstudio" } },
