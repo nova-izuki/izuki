@@ -1256,6 +1256,8 @@ ${result}`);
             void emit(EV.penClear);
             await api.closeOverlay().catch(() => undefined);
           }
+        } else {
+          clearInkLater(at, plan);
         }
         void afterReply(at, listeningThrough);
       } catch (e) {
@@ -1274,6 +1276,17 @@ ${result}`);
   };
 
   /** A Ctrl+D / draw-overlay request — the same session, the same orb. */
+  /** The ink belongs to the answer: it goes a little after the answer's been
+   *  said, instead of staying on the screen until the next task. */
+  const clearInkLater = (at: number, plan: { steps: { action: string }[] }) => {
+    if (!plan.steps.some((s) => s.action === "draw")) return;
+    void (async () => {
+      if (useIzuki.getState().settings.speak_responses) await untilQuiet();
+      await new Promise((r) => setTimeout(r, 8000));
+      if (requestSeq === at) void emit(EV.penClear);
+    })();
+  };
+
   const handleDraw = async (payload: DrawSession) => {
     stopAllSpeech("a new request", useIzuki.getState().settings.speak_responses);
     const at = ++requestSeq;
@@ -1288,6 +1301,7 @@ ${result}`);
       if (plan.remember?.length) void emit(EV.memoryChanged);
       // A plan read straight off the marks by geometry has nothing to say.
       if (plan.summary && plan.provider !== "local") await respond(sayable(plan.summary, "Done."), plan.mood, true);
+      clearInkLater(at, plan);
       void afterReply(at, false);
     } catch (e) {
       if (requestSeq !== at) return;

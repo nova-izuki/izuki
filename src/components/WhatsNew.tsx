@@ -23,6 +23,9 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🏝️", title: "Move the Island any time, clear its history", how: "The Island's move handle stays at the top while you scroll a long answer, and its saved chats (🕘) have a Clear history button — pinned chats stay." },
+  { icon: "🖊️", title: "The pen cleans up after itself", how: "Circles and underlines vanish as soon as Izuki clicks, scrolls or types (the page is about to change), a few seconds after an answer, and never stay longer than two minutes, so they don't sit over the next question's answers." },
+  { icon: "📝", title: "Reviews go into your notes", how: "“Review all the questions and save them to my notes”: every explanation Izuki gives on the way is added to one “Review — …” note in Izuki Notes, so you can study it after.", try: { label: "Open Notes", tab: "notes" } },
   { icon: "📚", title: "Blackboard due dates, straight from Blackboard", how: "“Check my assignments on Blackboard and tell me the due dates” now works even without a linked calendar: with Blackboard open in your browser (and the Izuki extension), Izuki reads the due dates from Blackboard itself and remembers where it is. Typos like “chrck” are fine too.", try: { label: "Campus", tab: "notes", id: "notes-campus" } },
   { icon: "🎯", title: "Missions do more", how: "One-tap example missions; ↻ Try again on any finished one; 📝 Save a result to Notes; 📅 Every morning turns a mission into a daily routine; and “Start them when I'm away” runs your list by itself after 10 minutes away.", try: { label: "Missions", tab: "draw", id: "draw-missions" } },
   { icon: "🧭", title: "Easier to find your way around", how: "Every tab shows its name, every section of a tab is one tap away (the quick-jump chips no longer hide off the edge), search boxes read cleanly, and the Draw tab's long list of switches is split into The Island, On its own, Memory, The hand, and Answers and voice." },

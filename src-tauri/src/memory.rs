@@ -85,6 +85,43 @@ fn normalise(s: &str) -> String {
 }
 
 /// Things that must never be written down, whoever asks.
+/// Answers to a quiz or test, kept to be given back during one: never
+/// remembered. Study notes in Izuki Notes are where those belong — to learn
+/// from, not to be answered for.
+fn test_answer(s: &str) -> bool {
+    let l = format!(" {} ", s.to_lowercase());
+    let about_a_test = [" quiz", " test", " exam", " midterm", " final", " question ", " questions", " q1", " q2", " ucertify", " assessment"].iter().any(|w| l.contains(w));
+    let an_answer = [" answer", " correct option", " correct choice", " is true", " is false", " option a", " option b", " option c", " option d", " choice a", " choice b"].iter().any(|w| l.contains(w));
+    about_a_test && an_answer || numbered_choice(&l)
+}
+
+/// "Question 3: B", "q12 - c", "#4) a": a numbered question with a letter answer.
+fn numbered_choice(l: &str) -> bool {
+    let b = l.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        let rest = &l[i..];
+        let after = rest.strip_prefix("question").or_else(|| rest.strip_prefix('q')).or_else(|| rest.strip_prefix('#'));
+        // The marker starts a word: "Q3", never the q in "unique".
+        let starts_word = i == 0 || !b[i - 1].is_ascii_alphanumeric();
+        if let (Some(after), true) = (after, starts_word) {
+            let after = after.trim_start();
+            let digits = after.chars().take_while(|c| c.is_ascii_digit()).count();
+            if digits > 0 {
+                let tail = after[digits..].trim_start_matches([':', '-', ')', '.', '=', ' ']);
+                let mut cs = tail.chars();
+                if let Some(c) = cs.next() {
+                    if ('a'..='e').contains(&c) && cs.next().is_none_or(|n| !n.is_alphanumeric()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        i += rest.chars().next().map_or(1, char::len_utf8);
+    }
+    false
+}
+
 fn looks_secret(s: &str) -> bool {
     let l = s.to_lowercase();
     ["password", "passcode", "api key", "apikey", "secret key", "pin code", "credit card", "cvv"]
@@ -105,7 +142,7 @@ pub fn list() -> Vec<Memory> {
 /// or something that shouldn't be stored.
 pub fn add(text: &str) -> Option<Memory> {
     let text: String = text.trim().trim_end_matches('.').chars().take(MAX_LEN).collect();
-    if text.len() < 3 || looks_secret(&text) || is_misheard_name(&text) {
+    if text.len() < 3 || looks_secret(&text) || is_misheard_name(&text) || test_answer(&text) {
         return None;
     }
     let _g = LOCK.lock();
@@ -163,7 +200,8 @@ pub fn clear() {
 
 /// The block that goes into every request, or "" when there's nothing yet.
 pub fn prompt_block() -> String {
-    let all = list();
+    // Test answers kept before this rule existed are never handed back either.
+    let all: Vec<Memory> = list().into_iter().filter(|m| !test_answer(&m.text)).collect();
     if all.is_empty() {
         return String::new();
     }
@@ -192,6 +230,18 @@ mod tests {
         assert!(!is_misheard_name("User's name is Sam"));
         assert!(!is_misheard_name("User wants to be called Ada"));
         assert!(!is_misheard_name("User likes jazz"));
+    }
+
+    #[test]
+    fn never_keeps_test_answers() {
+        assert!(test_answer("Quiz question 3 answer: the Tax Return hoax"));
+        assert!(test_answer("For the security test, the correct option is B"));
+        assert!(!test_answer("User has a security exam on Friday"));
+        assert!(!test_answer("User likes to be quizzed with flashcards"));
+        assert!(test_answer("Question 3: B"));
+        assert!(test_answer("q12 - c and q13 - a"));
+        assert!(!test_answer("User's unique id is 4"));
+        assert!(!test_answer("Question 3 was hard for the user"));
     }
 
     #[test]

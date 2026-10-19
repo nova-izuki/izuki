@@ -50,9 +50,16 @@ pub fn parse(said: &str) -> Option<Ask> {
     // "Don't save this to my notes" is a no.
     let negated = [" don't save", " dont save", " do not save", " don't put", " never save", " not save"].iter().any(|w| s.contains(w));
     // Only what's on screen: "add buy milk to my notes" is a note to write,
-    // not a page to read.
-    if notes_word && !negated && (take_notes || (save_verb && (my_notes || ours) && what_in_front)) {
+    // not a page to read. And one page: "go through all the questions and
+    // save them" is the agent's — it keeps each explanation as it goes.
+    let many = [" all the ", " all of ", " every ", " each ", " questions", " all my "].iter().any(|w| s.contains(w));
+    if notes_word && !negated && !many && (take_notes || (save_verb && (my_notes || ours) && what_in_front)) {
         return Some(Ask::SaveNotes);
+    }
+    // Many pages to save ("open my notes and go through all the questions and
+    // save them"): the agent's whole job, not just opening a tab.
+    if notes_word && !negated && many && (save_verb || take_notes) {
+        return None;
     }
     // Opening one of Izuki's own parts.
     let open = [" open", " show", " go to", " take me to", " bring up", " pull up", " launch"].iter().any(|w| s.contains(w));
@@ -92,6 +99,8 @@ mod tests {
         assert_eq!(parse("open settings"), None, "Windows settings, unless it's Izuki's");
         assert_eq!(parse("don't save this to my notes"), None);
         assert_eq!(parse("add buy milk to my notes"), None, "a note to write, not the screen");
+        assert_eq!(parse("go through all the questions and save them to my notes"), None, "many pages: the agent keeps each one");
+        assert_eq!(parse("open my notes and go through all the questions and save them to my notes"), None, "not just the tab");
         assert_eq!(parse("open my notes in onenote"), None, "OneNote when OneNote is named");
     }
 }

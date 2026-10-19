@@ -1607,6 +1607,15 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                         return false;
                     }
 
+                    // The ink belongs to the screen it was drawn on: anything that
+                    // changes the page takes the old marks away first, so they
+                    // never sit over the next question's answers.
+                    if matches!(
+                        step.action,
+                        Intent::Auto | Intent::Click | Intent::DoubleClick | Intent::RightClick | Intent::Type | Intent::Drag | Intent::Scroll | Intent::Key | Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube
+                    ) {
+                        let _ = app.emit("izuki://pen-clear", ());
+                    }
                     // Pointing is only seen on the overlay — make sure it's up.
                     if matches!(step.action, Intent::Point | Intent::Draw) {
                         let _ = crate::overlay::ensure_caption_visible(app);
@@ -2447,6 +2456,12 @@ fn submit_task(
     let mut last_plan: Option<VisionPlan> = None;
     // What was last said while working, so it isn't said again.
     let mut last_said = String::new();
+    // "…and save it to my notes": each explanation goes into one note for
+    // this task, (title, source) fixed by the first one kept.
+    let keep_notes = keeps_notes(&prompt);
+    let mut kept_note: Option<(String, String)> = None;
+    let mut last_kept = String::new();
+    let mut kept = 0u32;
     // The agent's own running plan and findings, carried from look to look.
     let mut notes: Option<String> = None;
     // Looking up close at part of the screen this round (and how often it has).
@@ -2707,6 +2722,28 @@ fn submit_task(
         // A real lesson ("teach me git in the terminal") may show harmless
         // basics; anything else still needs the exact command spelled out.
         let teaching_now = lesson || crate::companion::asks_to_learn(&prompt);
+        let explaining = teaching_now || explains_as_it_goes(&prompt);
+        if keep_notes {
+            let line = strip_filler(&plan.summary);
+            // Every explanation, short ones too — only "Moving to question 4"
+            // (where it's going, not what it means) and repeats are left out.
+            if !line.is_empty() && line != last_kept && !only_progress(&line) && !crate::easy::narrates(&line) {
+                let (title, source) = kept_note
+                    .get_or_insert_with(|| {
+                        let source = uia::foreground_title();
+                        (format!("Review — {}", crate::notes::tidy_title(&source)), source)
+                    })
+                    .clone();
+                match crate::notes::add_to_log(&title, &source, &line) {
+                    Ok(_) => {
+                        kept += 1;
+                        last_kept = line;
+                        let _ = app.emit("izuki://notes-changed", ());
+                    }
+                    Err(e) => eprintln!("[agent] couldn't keep that in Notes: {e}"),
+                }
+            }
+        }
         let held = match guard_steps(&mut steps, &prompt, teaching_now, &uia::front_app()) {
             Some(why) => {
                 eprintln!("[agent] held back: {why}");
@@ -2936,7 +2973,7 @@ fn submit_task(
         // than about every 12 seconds ("Bet, hold up, I'ma…" every step).
         let progress = strip_filler(&plan.summary);
         // (Teaching: the explanation is the point — it's never held back.)
-        let spaced = teaching_now || last_said_at.elapsed() >= Duration::from_secs(12);
+        let spaced = explaining || last_said_at.elapsed() >= Duration::from_secs(12);
         if !steps.is_empty() && !done && !plan.done && spaced && worth_saying(&progress, &last_said) {
             last_said = progress.clone();
             last_said_at = std::time::Instant::now();
@@ -3141,6 +3178,11 @@ fn submit_task(
     // remark about having said it only confuses. The answer stays.
     if !last_said.is_empty() {
         plan.summary = strip_filler(&drop_already_said(&plan.summary));
+    }
+    if kept > 0 {
+        let title = kept_note.as_ref().map(|(t, _)| t.as_str()).unwrap_or("Review");
+        let said = format!("I saved {kept} explanation{} to Izuki Notes (“{title}”) so you can study them.", if kept == 1 { "" } else { "s" });
+        plan.summary = if plan.summary.trim().is_empty() || plan.summary.trim() == "Done." { said } else { format!("{} {said}", plan.summary.trim_end()) };
     }
     finalize_execution(&mut plan, completed && alive());
     if !alive() { plan.outcome = crate::model::TaskOutcome::Cancelled; }
@@ -3356,6 +3398,38 @@ pub fn cancel_task() {
 /// Worth saying out loud while working? Not the same thing twice, and not
 /// just "Got it!" — the user heard "Got it, let's do this" five times in a
 /// row on a quiz.
+/// "Review all the questions and answers", "go over my results", "explain
+/// each one": the explanations are the point, so every one is said (never
+/// held back to space progress lines out).
+fn explains_as_it_goes(prompt: &str) -> bool {
+    let s = format!(" {} ", prompt.to_lowercase());
+    [" review", " go over", " go through", " explain", " study", " understand", " walk me through", " teach", " break down", " break it down"].iter().any(|w| s.contains(w))
+}
+
+/// "Moving to question 4", "Opening the page": where it's going, not an
+/// explanation worth keeping in notes.
+fn only_progress(line: &str) -> bool {
+    let l = line.trim().to_lowercase();
+    l.chars().count() < 80
+        && ["moving to", "moving on", "opening", "clicking", "scrolling", "going to", "heading to", "switching", "let me", "loading", "waiting", "next question", "on to", "pressing", "done"]
+            .iter()
+            .any(|p| l.starts_with(p))
+}
+
+/// "…and save it on my notes": what's explained on the way is kept in Izuki
+/// Notes as it goes — every question's explanation, not just the last word.
+pub fn keeps_notes(prompt: &str) -> bool {
+    let s: String = prompt.to_lowercase().chars().map(|c| if c.is_alphanumeric() || c == '\'' { c } else { ' ' }).collect();
+    let s = format!(" {} ", s.split_whitespace().collect::<Vec<_>>().join(" "));
+    const VERBS: &[&str] = &["save", "put", "add", "keep", "write", "store", "copy", "jot", "take", "make"];
+    // "Do not write it in my notes", "don't save", "never put": a no, whatever the verb.
+    let negated = s.contains(" no notes ")
+        || VERBS.iter().any(|v| [" don't ", " dont ", " do not ", " never ", " not "].iter().any(|n| s.contains(&format!("{n}{v}"))));
+    (s.contains(" notes ") || s.contains(" note ") || s.contains(" notebook "))
+        && VERBS.iter().any(|v| s.contains(&format!(" {v}")))
+        && !negated
+}
+
 /// The line without its chatty opener: "Bet, hold up — I'ma get that script
 /// written" → "I'ma get that script written". The persona stays in the
 /// answer; the play-by-play doesn't need it every time.
@@ -3732,6 +3806,18 @@ mod speed_tests {
         assert_eq!(strip_filler("Yo Solomon— opening the lab now."), "Opening the lab now.", "an em dash after a name, no panic");
         assert_eq!(strip_filler("Word is open — typing the title."), "Word is open — typing the title.", "the app, not filler");
         assert_eq!(strip_filler("Sure, Notepad, then Word."), "Notepad, then Word.", "a name only straight after a greeting");
+        assert!(keeps_notes("review all the quests and ans and save on the notes for me to study"));
+        assert!(keeps_notes("go over my results and put them in my notes"));
+        assert!(!keeps_notes("don't save this to my notes"));
+        assert!(!keeps_notes("do not write it in my notes"));
+        assert!(!keeps_notes("never put this in my notebook"));
+        assert!(!keeps_notes("review all the questions"));
+        assert!(explains_as_it_goes("review all the quests and ans"));
+        assert!(keeps_notes("go over this and take notes"));
+        assert!(!keeps_notes("don't take notes"));
+        assert!(only_progress("Moving to Question 4."));
+        assert!(!only_progress("Phishing tricks people into giving away passwords."));
+        assert!(!explains_as_it_goes("open spotify"));
         assert_eq!(strip_filler("Bet."), "");
     }
 

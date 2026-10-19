@@ -95,6 +95,12 @@ export function OverlayCanvas() {
   const [pointOuts, setPointOuts] = useState<PointOut[]>([]);
   /** What Izuki has drawn while explaining — up until the talk moves on. */
   const [penMarks, setPenMarks] = useState<PenMark[]>([]);
+  /** Each mark's two-minute expiry, cancelled when the marks are cleared or the overlay goes. */
+  const penTimers = useRef(new Set<number>());
+  useEffect(() => () => {
+    penTimers.current.forEach((t) => window.clearTimeout(t));
+    penTimers.current.clear();
+  }, []);
   /** Push-to-talk's mic state, mirrored from the config panel's VoiceEngine. */
   const [listening, setListening] = useState(false);
   /** The hands-free voice sphere, driven by the config panel's VoiceEngine. */
@@ -477,7 +483,11 @@ export function OverlayCanvas() {
     }
     offs.push(
       on<void>(EV.overlayClose, () => close()),
-      on<void>(EV.penClear, () => setPenMarks([])),
+      on<void>(EV.penClear, () => {
+        penTimers.current.forEach((t) => window.clearTimeout(t));
+        penTimers.current.clear();
+        setPenMarks([]);
+      }),
       // "Which one? Circle it for me." — draw with the mouse (no key held),
       // or just type/say it in the box that's already open.
       on<string>(EV.helpAsk, (question) => {
@@ -562,12 +572,17 @@ export function OverlayCanvas() {
         // marks use, so it reads as one language rather than a separate UI.
         const id = `po${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
         if (cmd.action === "draw") {
-          // The teaching pen: the mark stays while Izuki explains.
+          // The teaching pen: the mark stays while Izuki explains — and never
+          // longer than two minutes (the page under it may have moved).
           const shape = (["circle", "box", "underline", "arrow", "note"] as const).find((s) => s === cmd.shape) ?? "circle";
+          const penId = `pen${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
+          penTimers.current.add(
+            window.setTimeout(() => setPenMarks((prev) => prev.filter((m) => m.id !== penId)), 120_000)
+          );
           setPenMarks((prev) => [
             ...prev,
             {
-              id: `pen${Date.now()}${prev.length}`,
+              id: penId,
               shape,
               x: cx2,
               y: cy2,

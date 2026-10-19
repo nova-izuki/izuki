@@ -1086,7 +1086,9 @@ function Expanded({
         title="Drag to move the Island"
         onPointerDown={onMoveStart}
         onKeyDown={onMoveKey}
-        className="-mb-1 flex h-4 cursor-grab items-center justify-center rounded-full text-white/35 hover:bg-white/[0.06] hover:text-white/65 active:cursor-grabbing"
+        // Stays at the top while a long answer scrolls under it: the Island
+        // could only be moved before you scrolled down.
+        className="sticky top-0 z-10 -mb-1 flex h-5 shrink-0 cursor-grab items-center justify-center rounded-full bg-black/55 text-white/45 backdrop-blur-sm hover:bg-white/[0.1] hover:text-white/75 active:cursor-grabbing"
       >
         <GripHorizontal size={16} />
       </div>
@@ -1978,6 +1980,17 @@ function AskPage({ page, onHold, onClose }: { page: string | null; onHold?: (on:
     if (chatId.current === c.id) reset();
     setSaved((list) => storeAsks(list.filter((x) => x.id !== c.id)));
   };
+  /** "Clear history": every chat that isn't pinned (pinned ones are kept for good). Asks twice. */
+  const [clearing, setClearing] = useState(false);
+  const clearAll = () => {
+    if (!clearing) {
+      setClearing(true);
+      return;
+    }
+    setClearing(false);
+    if (saved.some((x) => x.id === chatId.current && !x.pinned)) reset();
+    setSaved((list) => storeAsks(list.filter((x) => x.pinned)));
+  };
   // "Do it for me": the steps go to the screen agent, which does them with
   // Stop on the Island the whole way.
   const doIt = () => {
@@ -2049,6 +2062,19 @@ function AskPage({ page, onHold, onClose }: { page: string | null; onHold?: (on:
       )}
       {allChats && (
         <div className="max-h-[180px] overflow-y-auto rounded-xl bg-black/30 p-1 [scrollbar-width:thin]">
+          {saved.some((c) => !c.pinned) && (
+            <div className="flex items-center justify-between px-1.5 pb-1 text-[10.5px] text-white/45">
+              <span>{saved.length} saved{saved.some((c) => c.pinned) ? " · pinned ones stay" : ""}</span>
+              <button
+                type="button"
+                onClick={clearAll}
+                onBlur={() => setClearing(false)}
+                className={"rounded-full px-2 py-0.5 font-semibold transition " + (clearing ? "bg-rose-500/80 text-white" : "text-white/60 hover:bg-white/10 hover:text-rose-300")}
+              >
+                {clearing ? `Clear ${saved.filter((c) => !c.pinned).length}? Tap again` : "Clear history"}
+              </button>
+            </div>
+          )}
           {saved.map((c) => (
             <div key={c.id} className="group flex items-center gap-1 rounded-lg px-1.5 py-1 hover:bg-white/[0.06]">
               <button type="button" onClick={() => open(c)} className="min-w-0 flex-1 text-left">
