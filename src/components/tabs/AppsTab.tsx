@@ -324,7 +324,7 @@ export function AppsTab() {
             value={appSearch}
             onChange={(e) => setAppSearch(e.target.value)}
             placeholder="Search all apps — Teams, TikTok, Google Tasks…"
-            className="izk-field izk-no-drag w-full py-2 pl-9 pr-16 text-[12px]"
+            className="izk-field izk-field-icon izk-field-clear izk-no-drag w-full py-2 text-[12px]"
           />
           {appSearch && (
             <button

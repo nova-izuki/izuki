@@ -9,7 +9,10 @@ export function jumpTo(id: string) {
   let box = el.parentElement;
   while (box && !(box.scrollHeight > box.clientHeight && /auto|scroll/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
   if (!box) return el.scrollIntoView({ behavior: "smooth", block: "start" });
-  const margin = parseFloat(getComputedStyle(el).scrollMarginTop) || 52;
+  // The bar wraps onto a second row when a tab has many parts: land below that too.
+  const bar = box.querySelector(".izk-jumpbar");
+  const extra = bar ? Math.max(0, bar.getBoundingClientRect().height - 40) : 0;
+  const margin = (parseFloat(getComputedStyle(el).scrollMarginTop) || 52) + extra;
   const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - margin;
   box.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
 }
@@ -33,8 +36,10 @@ export function JumpBar({ jumps, topId, below = 0 }: { jumps: { label: string; i
   return (
     <>
       <div ref={topRef} id={topId} className="h-0" aria-hidden />
-      {/* Follows you down the page, so any part is always one tap away. */}
-      <nav aria-label="Jump to" style={{ top: below - 16 }} className="izk-no-drag izk-jumpbar sticky z-20 -mx-1 flex gap-1 overflow-x-auto rounded-[14px] px-1 py-1 [scrollbar-width:none]">
+      {/* Follows you down the page, so any part is always one tap away. It
+          wraps rather than scrolling sideways: a mouse wheel can't scroll
+          sideways, so the last parts were out of reach. */}
+      <nav aria-label="Jump to" style={{ top: below - 16 }} className="izk-no-drag izk-jumpbar sticky z-20 -mx-1 flex flex-wrap gap-1 rounded-[14px] px-1 py-1">
         {jumps.map((j) => (
           <button key={j.id} type="button" onClick={() => go(j)} className="izk-pill izk-no-drag shrink-0 px-2.5 py-1 text-[10.5px]">
             {j.label}

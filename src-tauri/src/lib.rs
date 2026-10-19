@@ -56,6 +56,7 @@ pub mod coach;
 pub mod cite;
 pub mod lessons;
 pub mod budget;
+pub mod selfknow;
 pub mod shop;
 pub mod picker;
 pub mod remote;
@@ -430,6 +431,10 @@ pub fn run() {
             commands::mission_remove,
             commands::missions_clear_done,
             commands::missions_run,
+            commands::mission_retry,
+            commands::ext_info,
+            commands::mission_save_note,
+            commands::mission_make_daily,
             commands::inbox_digest,
             commands::sent_history,
             commands::follow_up,
@@ -542,6 +547,7 @@ pub fn run() {
             link::spawn(handle.clone());
             offline::spawn(handle.clone());
             routines::spawn(handle.clone());
+            missions::spawn_away_watch(handle.clone());
             // Looks that change by themselves (Style → Auto).
             winlook::spawn_auto();
             recall::spawn();

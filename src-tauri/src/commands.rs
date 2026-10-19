@@ -383,6 +383,37 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     if let Some(ask) = crate::textbook::parse(&said, crate::textbook::has_books()) {
         return blocking(move || crate::textbook::handle(ask)).await.ok();
     }
+    // Izuki's own app: "open Izuki notes" opens Izuki's Notes (never Notepad);
+    // "look through this and save it to my notes" saves study notes from the
+    // page in front straight into Izuki Notes (selfknow.rs).
+    if let Some(ask) = crate::selfknow::parse(&said) {
+        match ask {
+            crate::selfknow::Ask::Open(tab) => {
+                if crate::overlay::show_config(&app).is_err() || app.emit(crate::events::NAVIGATE, tab).is_err() {
+                    return Some("I couldn't bring the Izuki window up just now — click Izuki in the system tray.".into());
+                }
+                return Some(match tab {
+                    "notes" => "Here's your Izuki Notes.".to_string(),
+                    "settings" => "Here are Izuki's settings.".to_string(),
+                    "chat" => "Here's your chat with me.".to_string(),
+                    t => format!("Here's Izuki's {t} tab."),
+                });
+            }
+            crate::selfknow::Ask::SaveNotes => {
+                let saved = blocking(crate::notes::from_screen).await;
+                return Some(match saved {
+                    Ok(Ok(note)) => {
+                        let _ = crate::overlay::show_config(&app);
+                        let _ = app.emit(crate::events::NAVIGATE, "notes");
+                        let _ = app.emit("izuki://notes-changed", ());
+                        format!("Saved to your Izuki Notes: “{}” — the key points from what's on screen. Want flashcards or a quiz from it?", note.title)
+                    }
+                    Ok(Err(e)) => format!("I couldn't save that to your notes — {e}. Make sure the page is in front, then ask again."),
+                    Err(e) => format!("I couldn't save that to your notes — {e}."),
+                });
+            }
+        }
+    }
     // "Cite this page in APA", "APA reference for 10.1037/…", "cite ISBN …" (cite.rs).
     if crate::cite::asks(&said) {
         let s2 = said.clone();
@@ -1072,6 +1103,12 @@ pub fn ext_status() -> bool {
     crate::ext::connected()
 }
 
+/// The extension's version and whether it needs updating.
+#[tauri::command]
+pub fn ext_info() -> serde_json::Value {
+    serde_json::json!({ "connected": crate::ext::connected(), "version": crate::ext::version(), "latest": crate::ext::LATEST, "outdated": crate::ext::outdated() })
+}
+
 /// Nova Notes, newest first.
 #[tauri::command]
 pub fn notes_list() -> Vec<crate::notes::Note> {
@@ -1463,6 +1500,32 @@ pub fn missions_clear_done(app: AppHandle) -> Vec<crate::missions::Mission> {
 #[tauri::command]
 pub fn missions_run(app: AppHandle) -> bool {
     crate::missions::run_all(&app)
+}
+
+/// "Try again" on a finished mission: a fresh copy in its place.
+#[tauri::command]
+pub fn mission_retry(app: AppHandle, id: String) -> Vec<crate::missions::Mission> {
+    let all = crate::missions::retry(&id);
+    let _ = app.emit(crate::missions::CHANGED, ());
+    all
+}
+
+/// A mission's result into Izuki Notes.
+#[tauri::command]
+pub async fn mission_save_note(app: AppHandle, id: String) -> Result<String, String> {
+    let out = blocking(move || crate::missions::save_to_notes(&id)).await.map_err(|e| e.to_string())?;
+    if out.is_ok() {
+        let _ = app.emit("izuki://notes-changed", ());
+    }
+    out
+}
+
+/// A mission done every day at `at` ("08:00"): a routine, on straight away.
+#[tauri::command]
+pub async fn mission_make_daily(id: String, at: String) -> Result<String, String> {
+    let task = crate::missions::text_of(&id).ok_or("That mission isn't on the list any more.")?;
+    let at = if at.len() == 5 && at.as_bytes()[2] == b':' { at } else { "08:00".into() };
+    blocking(move || crate::routines::add_active(&task, "daily", &at)).await.map_err(|e| e.to_string())
 }
 
 /// The PC's "End" on the phone-remote indicator: remote off until switched on again.

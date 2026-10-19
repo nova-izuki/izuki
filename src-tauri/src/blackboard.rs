@@ -64,15 +64,114 @@ pub fn parse(said: &str) -> Option<Ask> {
     Some(Ask { want, course })
 }
 
-/// The school's Blackboard address, from the linked calendar feed.
+/// "https://host" of an address.
+fn base_of(url: &str) -> Option<String> {
+    let rest = url.trim().strip_prefix("https://").or_else(|| url.trim().strip_prefix("http://"))?;
+    let host = rest.split(['/', '?', '#']).next()?.to_lowercase();
+    (host.contains('.') && !host.is_empty()).then(|| format!("https://{host}"))
+}
+
+/// Blackboard's own website (not a school's).
+fn vendor(base: &str) -> bool {
+    ["https://blackboard.com", "https://www.blackboard.com", "https://help.blackboard.com"].contains(&base)
+}
+
+/// The school's Blackboard address: from the linked calendar feed, else a
+/// Blackboard site Izuki opened for you before, else a Blackboard tab open in
+/// your browser (remembered once found, so it works after that too).
 pub fn host() -> Option<String> {
     let feeds = crate::state::store().settings().school_feeds;
-    feeds.iter().find_map(|f| {
+    let from_feed = feeds.iter().find_map(|f| {
         let f = f.trim();
-        let rest = f.strip_prefix("https://").or_else(|| f.strip_prefix("http://"))?;
-        let host = rest.split('/').next()?;
-        (f.contains("/webapps/calendar") || host.contains("blackboard")).then(|| format!("https://{host}"))
-    })
+        let base = base_of(f)?;
+        (f.contains("/webapps/calendar") || base.contains("blackboard")).then_some(base)
+    });
+    if from_feed.is_some() {
+        return from_feed;
+    }
+    // Found in a tab before (remembered as "blackboard", whatever its address).
+    if let Some(base) = crate::sites::list().into_iter().find(|s| s.name == "blackboard").and_then(|s| base_of(&s.url)).filter(|b| !vendor(b)) {
+        return Some(base);
+    }
+    if let Some(base) = crate::sites::school_site().and_then(|u| base_of(&u)).filter(|b| b.contains("blackboard") && !vendor(b)) {
+        return Some(base);
+    }
+    if !crate::ext::connected() {
+        return None;
+    }
+    let tabs = crate::ext::request("lmstabs", serde_json::json!({}), Duration::from_secs(4)).ok()?;
+    let mut candidates: Vec<String> = tabs
+        .as_array()?
+        .iter()
+        .filter_map(|t| {
+            let url = t["url"].as_str()?;
+            let base = base_of(url)?;
+            let path = url.trim().strip_prefix(&base).unwrap_or("").to_lowercase();
+            let looks = base.contains("blackboard") || t["title"].as_str().is_some_and(|x| x.contains("Blackboard")) || ["/ultra", "/webapps/", "/learn/"].iter().any(|p| path.starts_with(p));
+            (looks && !vendor(&base)).then_some(base)
+        })
+        .collect();
+    candidates.dedup();
+    // Only a site that answers Blackboard's own API, signed in, is remembered.
+    let base = candidates.into_iter().take(3).find(|b| get(b, "/learn/api/public/v1/users/me").is_ok())?;
+    eprintln!("[blackboard] found your school's Blackboard in an open tab: {base}");
+    crate::sites::remember("blackboard", &base);
+    Some(base)
+}
+
+/// Where to read due dates from when no school calendar is linked: a known
+/// Blackboard, through the browser extension.
+pub fn can_read_due() -> bool {
+    crate::ext::connected() && host().is_some()
+}
+
+/// Everything due from `back` days ago to `ahead` days ahead, read from
+/// Blackboard itself: (id, "title — course", when). Blackboard's calendar
+/// first; if it won't say, each course's gradebook due dates.
+pub fn due_items(back: i64, ahead: i64) -> Result<Vec<(String, String, chrono::DateTime<chrono::Local>)>> {
+    use chrono::{Local, Utc};
+    let Some(base) = host() else {
+        bail!("open your school's Blackboard in your browser (signed in), then ask again — I'll remember where it is");
+    };
+    let since = Utc::now() - chrono::Duration::days(back.max(0));
+    let until = Utc::now() + chrono::Duration::days(ahead.max(0));
+    let iso = |t: chrono::DateTime<Utc>| t.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    let when = |v: &Value| v.as_str().and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok()).map(|d| d.with_timezone(&Local));
+    let in_range = |t: &chrono::DateTime<Local>| t.with_timezone(&Utc) >= since && t.with_timezone(&Utc) <= until;
+    *DEADLINE.lock() = Some(std::time::Instant::now() + Duration::from_secs(45));
+    let out = (|| -> Result<Vec<(String, String, chrono::DateTime<Local>)>> {
+        let mut out = Vec::new();
+        if let Ok(v) = get(&base, &format!("/learn/api/public/v1/calendars/items?type=GradebookColumn&since={}&until={}&limit=200", iso(since), iso(until))) {
+            for x in results(&v) {
+                let Some(at) = when(&x["end"]).or_else(|| when(&x["start"])) else { continue };
+                let title = x["title"].as_str().unwrap_or("Something").trim();
+                let course = x["calendarName"].as_str().unwrap_or("").trim();
+                let id = x["id"].as_str().unwrap_or(title).to_string();
+                if in_range(&at) {
+                    out.push((id, if course.is_empty() { title.to_string() } else { format!("{title} — {course}") }, at));
+                }
+            }
+            if !out.is_empty() {
+                return Ok(out);
+            }
+        }
+        // The calendar wouldn't say: the due dates on each course's work.
+        let user = me(&base)?;
+        for c in courses(&base, &user)?.iter().take(12) {
+            let Ok(v) = get(&base, &format!("/learn/api/public/v2/courses/{}/gradebook/columns?limit=200", c.id)) else { continue };
+            for col in results(&v) {
+                let Some(at) = when(&col["grading"]["due"]) else { continue };
+                let title = col["name"].as_str().unwrap_or("Something").trim();
+                let id = col["id"].as_str().map(|i| format!("{}:{i}", c.id)).unwrap_or_else(|| title.to_string());
+                if in_range(&at) {
+                    out.push((id, format!("{title} — {}", c.name), at));
+                }
+            }
+        }
+        Ok(out)
+    })();
+    *DEADLINE.lock() = None;
+    out
 }
 
 /// The whole answer's time budget: one slow course can't hold it up forever.
@@ -171,7 +270,7 @@ fn pick<'a>(all: &'a [Course], named: &str) -> Vec<&'a Course> {
 
 pub fn answer(ask: &Ask) -> Result<String> {
     let Some(base) = host() else {
-        bail!("Link your Blackboard first: say “connect my Blackboard” and copy its calendar link — then I can read your grades, announcements and course materials too.");
+        bail!("I don't know where your school's Blackboard is yet. Open it in your browser (signed in) and ask again — I'll remember it. Or say “connect my Blackboard” to link its calendar.");
     };
     if !crate::ext::connected() {
         bail!("I read Blackboard through the Izuki browser extension, signed in as you — it isn't connected. Install it from Settings → Browser extension, open Blackboard in that browser, then ask again.");
@@ -301,6 +400,15 @@ mod tests {
         assert_eq!(parse("read the announcement email from my boss"), None);
         assert_eq!(parse("what materials do I need for this recipe"), None);
         assert_eq!(parse("what are the announcements in my biology class"), Some(Ask { want: Want::Announcements, course: "biology".into() }));
+    }
+
+    #[test]
+    fn finds_the_schools_address() {
+        assert_eq!(base_of("https://blackboard.sanjac.edu/ultra/course?x=1").as_deref(), Some("https://blackboard.sanjac.edu"));
+        assert_eq!(base_of("http://Learn.School.edu"), Some("https://learn.school.edu".into()));
+        assert_eq!(base_of("chrome://newtab"), None);
+        assert!(vendor("https://www.blackboard.com"));
+        assert!(!vendor("https://blackboard.sanjac.edu"));
     }
 
     #[test]

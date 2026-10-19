@@ -220,6 +220,76 @@ fn result_state(reply: &crate::companion::Reply, stopped: bool) -> &'static str 
     }
 }
 
+/// "Try again": a fresh copy of a finished mission, in its place (the old
+/// one's record goes with it — you've seen how it ended). Never one that's
+/// running or still waiting.
+pub fn retry(id: &str) -> Vec<Mission> {
+    let _g = LOCK.lock();
+    let mut all = read();
+    let original = all.clone();
+    let Some(i) = all.iter().position(|m| m.id == id && m.state != "running" && m.state != "waiting") else { return original };
+    let text = all[i].text.clone();
+    all[i] = Mission { id: uuid::Uuid::new_v4().to_string(), text: text.clone(), state: "waiting".into(), result: String::new(), at: now(), outcome: TaskOutcome::Unverified,
+        contract: Some(TaskContract::new(&text)), checkpoint: None, attempts: 0 };
+    if !write(&all) { return original; }
+    if crate::mission_journal::remove(&journal_root(), id).is_err() { eprintln!("[missions] could not remove a retried mission's evidence journal"); }
+    for m in &mut all { load_evidence(m, &journal_root()); }
+    all
+}
+
+/// A mission's result kept in Izuki Notes, with what was asked.
+pub fn save_to_notes(id: &str) -> Result<String, String> {
+    let m = { let _g = LOCK.lock(); read().into_iter().find(|m| m.id == id) }.ok_or("That mission isn't on the list any more.")?;
+    if m.result.trim().is_empty() {
+        return Err("This mission has no result to save yet.".into());
+    }
+    let title: String = m.text.chars().take(70).collect();
+    crate::notes::keep(&title, "Missions", &format!("Mission: {}
+
+{}", m.text, m.result)).map_err(|e| e.to_string())?;
+    Ok("Saved to Izuki Notes ✓".into())
+}
+
+/// The mission's words, for making it a routine.
+pub fn text_of(id: &str) -> Option<String> {
+    let _g = LOCK.lock();
+    read().into_iter().find(|m| m.id == id).map(|m| m.text)
+}
+
+/// How long you've been away before "start them when I'm away" starts them.
+const AWAY_FOR_SECS: u64 = 10 * 60;
+
+/// Rest mode by itself: with "start when I'm away" on, waiting missions
+/// start once nobody has touched the PC for ten minutes. Once per time away.
+pub fn spawn_away_watch(app: AppHandle) {
+    std::thread::Builder::new()
+        .name("izuki-missions-away".into())
+        .spawn(move || {
+            let mut started_this_time = false;
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(60));
+                let idle = crate::buddy::idle_secs();
+                if idle < AWAY_FOR_SECS {
+                    started_this_time = false;
+                    continue;
+                }
+                if started_this_time || running() || !crate::state::store().settings().missions_when_away {
+                    continue;
+                }
+                // Never on the lock screen: they start once you're away but the PC is still unlocked.
+                if crate::uia::screen_locked() {
+                    continue;
+                }
+                let waiting = { let _g = LOCK.lock(); read().iter().any(|m| m.state == "waiting") };
+                if waiting && run_all(&app) {
+                    eprintln!("[missions] you've been away {} min — starting your missions", idle / 60);
+                    started_this_time = true;
+                }
+            }
+        })
+        .ok();
+}
+
 /// Esc / Stop: the missions stop (the one running is cancelled with the task).
 pub fn stop() {
     STOPS.fetch_add(1, Ordering::SeqCst);

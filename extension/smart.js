@@ -32,11 +32,11 @@ const MENU = [
   { id: "izk-translate", title: "Translate to English", contexts: ["selection"] },
   { id: "izk-summarise", title: "Sum it up", contexts: ["selection"] },
   { id: "izk-read", title: "Read it aloud", contexts: ["selection"] },
-  { id: "izk-note", title: "Save to Nova Notes", contexts: ["selection"] },
+  { id: "izk-note", title: "Save to Izuki Notes", contexts: ["selection"] },
   { id: "izk-later", title: "Remind me later", contexts: ["selection"] },
   { id: "izk-link", title: "Sum up this link", contexts: ["link"] },
   { id: "izk-page", title: "Sum up this page", contexts: ["page"] },
-  { id: "izk-page-note", title: "Save this page to Nova Notes", contexts: ["page"] },
+  { id: "izk-page-note", title: "Save this page to Izuki Notes", contexts: ["page"] },
   { id: "izk-page-read", title: "Read this page aloud", contexts: ["page"] },
 ];
 
@@ -96,7 +96,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       return show("Reading aloud", "Reading it now. Click Stop to end.", { stopVoice: true });
     case "izk-note": {
       const r = await izuki("note", { ...base, text: sel, page: false });
-      return show("Nova Notes", r.text, { ok: r.ok, brief: true });
+      return show("Izuki Notes", r.text, { ok: r.ok, brief: true });
     }
     case "izk-later": {
       const r = await izuki("later", { text: sel });
@@ -113,9 +113,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       return show("This page, in short", r.text, { ok: r.ok });
     }
     case "izk-page-note": {
-      await show("Nova Notes", "Making notes from this page…", { loading: true });
+      await show("Izuki Notes", "Making notes from this page…", { loading: true });
       const r = await izuki("note", { ...base, text: await pageText(tab.id), page: true });
-      return show("Nova Notes", r.text, { ok: r.ok, brief: true });
+      return show("Izuki Notes", r.text, { ok: r.ok, brief: true });
     }
     case "izk-page-read":
       speak(await pageText(tab.id));

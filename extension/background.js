@@ -9,7 +9,8 @@
 importScripts("smart.js");
 
 const BRIDGE = "http://127.0.0.1:47615/izuki";
-const HEADERS = { "X-Izuki-Extension": "1", "Content-Type": "application/json" };
+// The version tells Izuki when this copy is too old for what it asks of it.
+const HEADERS = { "X-Izuki-Extension": "1", "X-Izuki-Extension-Version": chrome.runtime.getManifest().version, "Content-Type": "application/json" };
 let running = false;
 
 async function loop() {
@@ -58,6 +59,14 @@ async function inPage(tabId, func, args = []) {
 async function run(op, args) {
   // Blackboard's API needs no tab (and must work with none in front).
   if (op === "bbfetch") return await bbFetch(String(args.url || ""));
+  // Where your school's site is: the addresses and titles of open tabs that
+  // look like a learning site (nothing else is read from them).
+  if (op === "lmstabs") {
+    const tabs = await chrome.tabs.query({});
+    return tabs
+      .filter((t) => /^https:/.test(t.url || "") && (/blackboard|instructure|canvas|moodle|brightspace|d2l/i.test(t.url || "") || /Blackboard/.test(t.title || "")))
+      .map((t) => ({ url: t.url, title: t.title || "" }));
+  }
   const tab = await activeTab();
   switch (op) {
     case "snapshot":
@@ -191,8 +200,17 @@ function clickEl(id) {
   if (!el) return false;
   el.scrollIntoView({ block: "center", inline: "center" });
   if (el.focus) el.focus({ preventScroll: true });
-  el.click();
-  return true;
+  // Answers only once the click really happened (false: the element went
+  // away first). A button that opens a confirm() box holds the page until
+  // it's closed, so no answer comes back — Izuki then takes a fresh look
+  // instead of clicking a second time.
+  return new Promise((done) =>
+    setTimeout(() => {
+      if (!el.isConnected) return done(false);
+      el.click();
+      done(true);
+    }, 0)
+  );
 }
 
 function typeEl(id, text) {

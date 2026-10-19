@@ -46,8 +46,12 @@ pub fn parse(said: &str) -> Option<Ask> {
     if [" do first", " start with", " prioriti", " most urgent", " what should i do"].iter().any(|w| s.contains(w)) {
         return Some(Ask::First);
     }
-    let asks = [" what", " whats", " what's", " any ", " do i have", " show", " list", " check", " when is", " when's"].iter().any(|w| s.contains(w));
-    if !asks {
+    let asks = [" what", " whats", " what's", " any ", " do i have", " show", " list", " check", " chck", " chrck", " chek", " cheak", " tell me", " give me", " see ", " see my", " look", " find", " get ", " read", " pull up", " when is", " when's", " when are"].iter().any(|w| s.contains(w));
+    // "Blackboard due dates": with the school's site named, a "due" needs no
+    // question word to be one. Never a reminder or a statement, though
+    // ("remind me my essay is due Friday", "I submitted the lab due today").
+    let statement = [" remind", " reminder", " alarm", " remember that", " note that", " i finished", " i submitted", " i turned in"].iter().any(|w| s.contains(w));
+    if !asks && (statement || !school) {
         return None;
     }
     Some(Ask::Due(if s.contains(" today") || s.contains(" tonight") {
@@ -69,12 +73,17 @@ fn upcoming() -> anyhow::Result<Vec<(String, chrono::DateTime<Local>)>> {
 /// Calendar items from `back` days ago to `ahead` days ahead, soonest first.
 fn items(back: i64, ahead: i64) -> anyhow::Result<Vec<(String, chrono::DateTime<Local>)>> {
     let feeds: Vec<String> = crate::state::store().settings().school_feeds.iter().map(|f| f.trim().to_string()).filter(|f| !f.is_empty()).collect();
-    if feeds.is_empty() {
-        anyhow::bail!("no school calendar is linked yet");
-    }
     let now = Local::now();
     let mut all = Vec::new();
     let mut errors = Vec::new();
+    if feeds.is_empty() {
+        // No calendar link: read Blackboard itself, signed in as you, through
+        // the browser extension.
+        if !crate::blackboard::can_read_due() {
+            anyhow::bail!("no school calendar is linked yet");
+        }
+        all = crate::blackboard::due_items(back, ahead)?;
+    }
     for f in &feeds {
         match crate::headsup::fetch_school_feed(f) {
             Ok(items) => all.extend(items),
@@ -203,8 +212,10 @@ pub fn hub() -> Hub {
 }
 
 fn no_feed(e: &str) -> String {
-    if e.contains("no school calendar") {
-        "I can't see your due dates yet — your school calendar isn't linked. Say “connect my Blackboard” and I'll open it; just press Copy on its calendar link and I'll do the rest.".into()
+    if e.contains("no school calendar") && crate::ext::outdated() {
+        "I can't see your due dates yet — your Izuki browser extension is an older version that can't read Blackboard. Update it (Settings → Browser extension → download it again, then reload it), keep Blackboard open, and ask again. Or say “connect my Blackboard” to link its calendar once.".into()
+    } else if e.contains("no school calendar") {
+        "I can't see your due dates yet. Open your school's Blackboard in Chrome or Edge (signed in, with the Izuki browser extension) and ask again — I'll read them from there and remember it. Or say “connect my Blackboard” to link its calendar once.".into()
     } else {
         e.to_string()
     }
@@ -290,6 +301,11 @@ mod tests {
         assert_eq!(parse("show me everything overdue"), Some(Ask::Overdue));
         assert_eq!(parse("did I miss any assignments?"), Some(Ask::Overdue));
         assert_eq!(parse("I'm running late"), None);
+        assert_eq!(parse("chrck my assignments on blackboard and tell me the due dates"), Some(Ask::Due("all")), "typos and “tell me”");
+        assert_eq!(parse("blackboard due dates"), Some(Ask::Due("all")));
+        assert_eq!(parse("tell me what assignments are due this week"), Some(Ask::Due("week")));
+        assert_eq!(parse("remind me my essay is due friday"), None, "a reminder");
+        assert_eq!(parse("my essay is due friday"), None, "a statement");
     }
 
     #[test]

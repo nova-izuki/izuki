@@ -33,7 +33,8 @@ export function ScrollButtons({ tab }: { tab: string }) {
   };
   const btn = "izk-no-drag pointer-events-auto flex h-[30px] items-center gap-1 rounded-full px-2.5 text-[10.5px] shadow-[0_6px_18px_rgba(0,0,0,0.35)] backdrop-blur-md transition-opacity";
   return (
-    <div ref={ref} className="pointer-events-none sticky bottom-0 z-30 -mb-[16px] flex justify-end gap-1.5 pb-1">
+    // Centred: on the right they sat on top of the switches every row ends with.
+    <div ref={ref} className="pointer-events-none sticky bottom-0 z-30 -mb-[16px] flex justify-center gap-1.5 pb-1">
       {up && (
         <button type="button" onClick={() => go("top")} aria-label="Back to the top" title="Back to the top" className={`${btn} izk-btn-primary`}>
           <ArrowUp size={12} strokeWidth={2.6} /> Top

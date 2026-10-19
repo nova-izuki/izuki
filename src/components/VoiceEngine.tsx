@@ -1106,7 +1106,7 @@ ${result}`);
       }
     }
 
-    // Nova Notes: "take notes on this", "save this to my notes", "jot this down".
+    // Izuki Notes: "take notes on this", "save this to my notes", "jot this down".
     if (/^(?:please\s+)?(?:take|make|write)\s+(?:some\s+|study\s+)?notes?(?:\s+(?:on|about|from|of)\s+(?:this|that|it|the page|the screen|my screen))?$|^(?:save|add|put)\s+(?:this|that|it)\s+(?:to|in|into)\s+(?:my\s+)?notes$|^jot\s+(?:this|that|it)\s+down$|^note\s+(?:this|that)(?:\s+down)?$/i.test(t.trim().replace(/[.!]+$/, ""))) {
       startSession(from === "voice", "thinking");
       remember("user", t);

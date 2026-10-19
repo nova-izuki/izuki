@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, EV, on, type Mission } from "../lib/ipc";
-import { Section } from "./ui";
+import { useIzuki } from "../lib/store";
+import { Row, Section, Toggle } from "./ui";
+
+/** One tap to add: the missions people give most. */
+const EXAMPLES = [
+  "What's due on Blackboard this week",
+  "Check my grades on Blackboard",
+  "Any new announcements in my classes",
+  "Sum up my unread emails",
+];
 
 /** The saved progress, in plain words. */
 const PHASE: Record<string, string> = {
@@ -45,6 +54,10 @@ export function MissionsCard() {
   const [open, setOpen] = useState<string | null>(null);
   const [addError, setAddError] = useState("");
   const [evidenceOpen, setEvidenceOpen] = useState<string | null>(null);
+  /** What a button just did, said under that mission: (mission id, words). */
+  const [said, setSaid] = useState<[string, string] | null>(null);
+  const settings = useIzuki((s) => s.settings);
+  const patch = useIzuki((s) => s.patchSettings);
 
   const refresh = useCallback(() => {
     void api
@@ -61,14 +74,16 @@ export function MissionsCard() {
     return () => void off.then((f) => f());
   }, [refresh]);
 
-  const add = () => {
-    const t = text.trim();
+  const add = (typed?: string) => {
+    const t = (typed ?? text).trim();
     if (!t) return;
     setAddError("");
     const ids = new Set(missions.map((m) => m.id));
     void api.missionAdd(t).then((all) => {
       setMissions(all);
-      if (all.some((m) => !ids.has(m.id) && m.text === t)) setText("");
+      if (all.some((m) => !ids.has(m.id) && m.text === t)) {
+        if (typed === undefined) setText("");
+      }
       else setAddError("The mission wasn't added. Keep it within 400 characters and check that Izuki can save its data.");
     }).catch(() => setAddError("The mission couldn't be saved. Your text is still here to try again."));
   };
@@ -93,10 +108,17 @@ export function MissionsCard() {
           aria-label="New mission"
           className="izk-no-drag min-w-0 flex-1 rounded-xl border border-white/12 bg-black/25 px-3 py-1.5 text-[12px] text-izk-ink outline-none"
         />
-        <button type="button" onClick={add} className="izk-pill izk-no-drag px-3 text-[11.5px]">Add</button>
+        <button type="button" onClick={() => add()} className="izk-pill izk-no-drag px-3 text-[11.5px]">Add</button>
       </div>
       {addError && <p role="alert" className="mt-1.5 text-[11px] text-izk-muted">{addError}</p>}
-      {missions.length === 0 && <p className="mt-2 text-[11.5px] text-izk-muted">No missions yet. Or say “add to my missions: …”.</p>}
+      {missions.length === 0 && <p className="mt-2 text-[11.5px] text-izk-muted">No missions yet. Tap one below, type your own, or say “add to my missions: …”.</p>}
+      {missions.length < 3 && (
+        <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Add a common mission">
+          {EXAMPLES.filter((e) => !missions.some((m) => m.text === e)).map((e) => (
+            <button key={e} type="button" onClick={() => add(e)} className="izk-pill izk-no-drag px-2.5 py-1 text-[11px]">+ {e}</button>
+          ))}
+        </div>
+      )}
       <ul className="mt-2 space-y-1">
         {missions.map((m) => (
           <li key={m.id} className="rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11.5px]">
@@ -113,6 +135,16 @@ export function MissionsCard() {
                 {open === m.id ? m.result : `${m.result.slice(0, 110)}${m.result.length > 110 ? "…" : ""}`}
               </button>
             )}
+            {m.state !== "running" && m.state !== "waiting" && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                <button type="button" onClick={() => void api.missionRetry(m.id).then(setMissions).catch(() => undefined)} className="izk-pill izk-no-drag px-2 py-0.5 text-[10.5px]" title="Put it back on the list to do again">↻ Try again</button>
+                {m.result && (
+                  <button type="button" onClick={() => void api.missionSaveNote(m.id).then((r) => setSaid([m.id, r])).catch((e) => setSaid([m.id, String(e)]))} className="izk-pill izk-no-drag px-2 py-0.5 text-[10.5px]">📝 Save to Notes</button>
+                )}
+                <button type="button" onClick={() => void api.missionMakeDaily(m.id, "08:00").then((r) => setSaid([m.id, r])).catch((e) => setSaid([m.id, String(e)]))} className="izk-pill izk-no-drag px-2 py-0.5 text-[10.5px]" title="Izuki does this by itself every morning at 8 and tells you (and your phone)">📅 Every morning</button>
+              </div>
+            )}
+            {said?.[0] === m.id && <p role="status" className="mt-1 text-[11px] text-izk-teal">{said[1]}</p>}
             {m.contract && (
               <details className="mt-1 text-[11px] leading-snug text-izk-muted">
                 <summary className="izk-no-drag cursor-pointer">What Izuki may do, and what it did</summary>
@@ -154,6 +186,9 @@ export function MissionsCard() {
         )}
       </div>
       {running && <p className="mt-1.5 text-[10.5px] text-izk-muted">Esc or Stop stops them. You can keep using your PC — Izuki works in its own window when it can.</p>}
+      <Row label="Start them when I'm away" hint="Waiting missions start by themselves once you haven't touched the PC for 10 minutes (while it's still unlocked), and you get one report when they're done.">
+        <Toggle checked={settings.missions_when_away ?? false} onChange={(v) => patch({ missions_when_away: v })} />
+      </Row>
     </Section>
   );
 }

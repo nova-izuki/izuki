@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Brain, Check, CheckSquare, Copy, Loader2, MessageSquare, MoreHorizontal, Search, Sparkles, Square, Trash2, Wand2, X } from "lucide-react";
-import { api } from "../../lib/ipc";
+import { api, on } from "../../lib/ipc";
 import type { Note } from "../../lib/types";
 import { sendChatCommand } from "../VoiceEngine";
 import { JumpBar } from "../JumpBar";
@@ -18,7 +18,7 @@ const summarise = (notes: Note[]) =>
   );
 
 /**
- * Nova Notes: study notes from anything on screen, kept on this PC — with
+ * Izuki Notes: study notes from anything on screen, kept on this PC — with
  * flashcards, quizzes and summaries made from them. Say "take notes on
  * this" anywhere, or tap the button here.
  */
@@ -36,7 +36,12 @@ export function NotesTab() {
   useEffect(() => {
     reload();
     const t = setInterval(reload, 8000);
-    return () => clearInterval(t);
+    // A note saved by asking ("save this to my notes"): shown at once.
+    const off = on<void>("izuki://notes-changed", reload);
+    return () => {
+      clearInterval(t);
+      void off.then((f) => f());
+    };
   }, [reload]);
 
   const shown = useMemo(() => {
@@ -100,7 +105,7 @@ export function NotesTab() {
       />
       <Section
         id="notes-capture"
-        title="Nova Notes"
+        title="Izuki Notes"
         hint="Study notes from any page, PDF or quiz — kept on this PC. Say “take notes on this” anywhere, or tap below."
       >
         <button type="button" disabled={!!busy} onClick={() => void capture()} className="izk-btn-primary flex w-full items-center justify-center gap-2 py-2.5 text-[13px] disabled:opacity-60">

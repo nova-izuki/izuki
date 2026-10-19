@@ -48,7 +48,7 @@ export function DrawCommandBar() {
   return <section id="draw-command" className="relative" aria-label="Type a command">
     <label htmlFor="draw-command-input" className="sr-only">Or type it</label>
     <form className="izk-inset flex items-center gap-2 rounded-[16px] p-1.5" onSubmit={e=>{e.preventDefault();submit();}}>
-      <input ref={input} id="draw-command-input" value={text} onChange={e=>{setText(e.target.value);api.prefetchWhileTyping();}} onKeyDown={e=>{if(e.key==='Enter'&&e.nativeEvent.isComposing)e.preventDefault();}} disabled={busy} placeholder="Type a command or find anything in Izuki… (Enter to send)" className="h-[38px] min-w-0 flex-1 bg-transparent px-2 text-[12.5px] text-izk-ink outline-none placeholder:text-izk-muted/55"/>
+      <input ref={input} id="draw-command-input" value={text} onChange={e=>{setText(e.target.value);api.prefetchWhileTyping();}} onKeyDown={e=>{if(e.key==='Enter'&&e.nativeEvent.isComposing)e.preventDefault();}} disabled={busy} placeholder="Tell Izuki what to do — “open Spotify”, “summarise this page”…" className="h-[38px] min-w-0 flex-1 bg-transparent px-2 text-[12.5px] text-izk-ink outline-none placeholder:text-izk-muted/55"/>
       <button type="submit" aria-label="Send command" disabled={busy||!text.trim()} className="izk-btn-primary flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[12px] disabled:opacity-40"><Send size={15}/></button>
     </form>
     {found.length>0&&<div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10.5px]" aria-label="Found in Izuki">
@@ -157,66 +157,13 @@ export function TalkToIzuki() {
         )}
         <MicPicker />
 
-        <div className="izk-divider" />
-
+        <Group>The Island</Group>
         <Row
           label="Island at the top of the screen"
           hint="A little pill that shows what I'm doing, what's playing and your next reminder. Push your mouse to the top of the screen to open it."
           icon={<PanelTop size={14} strokeWidth={2.3} />}
         >
           <Toggle checked={settings.island_enabled} onChange={(v) => patch({ island_enabled: v })} />
-        </Row>
-        <Row
-          label="Screen time"
-          hint="Ask “how long was I on YouTube today?” — Izuki counts minutes per app and big site (only names and minutes, never what was on screen), on this PC, for two weeks. It's on the status screen too."
-        >
-          <Toggle checked={settings.screen_time_enabled} onChange={(v) => patch({ screen_time_enabled: v })} />
-        </Row>
-        <Row label="Your town or city" hint="For the weather on the Island and the status screen. Leave empty and I'll use what I remember about where you live.">
-          <input
-            value={settings.home_city}
-            onChange={(e) => patch({ home_city: e.target.value })}
-            placeholder="e.g. Lagos"
-            className="izk-field izk-no-drag w-[140px] py-1 text-[12px]"
-          />
-        </Row>
-        <Row
-          label="Recall (what was on my screen)"
-          hint="Ask “what was that site I was on this morning?” or “what was I doing at 3?”. Izuki notes only the titles of the windows you had open — never what's in them, never private or sign-in windows — keeps a week, on this PC only. Off until you turn it on."
-        >
-          <Toggle checked={settings.recall_enabled} onChange={(v) => patch({ recall_enabled: v })} />
-        </Row>
-        {settings.recall_enabled && (
-          <div className="-mt-1 flex justify-end">
-            <button type="button" className="izk-pill izk-no-drag px-2.5 py-1 text-[11px]" onClick={() => void api.recallForget()}>
-              Forget everything Recall noted
-            </button>
-          </div>
-        )}
-        <Row
-          label="Speak up by itself (buddy mode)"
-          hint="Like a friend at your desk: I'll tell you about an important email (a job, money, a deadline), a meeting coming up, the battery getting low, the internet dropping — and say “welcome back” with what you missed. Never over a film or game unless it's urgent, and quiet at night. While you're away, important things go to your phone too."
-        >
-          <Toggle checked={settings.buddy_speaks} onChange={(v) => patch({ buddy_speaks: v })} />
-        </Row>
-        {settings.buddy_speaks && (
-          <>
-            <Row
-              label="Handle small things on my own"
-              hint="Undoable things only, and I'll always say what I did — like switching on battery saver when the battery's nearly empty (it switches back when you plug in)."
-            >
-              <Toggle checked={settings.buddy_acts} onChange={(v) => patch({ buddy_acts: v })} />
-            </Row>
-            <Row label="Remind me to take breaks" hint="A friendly nudge after about two and a half hours without a break.">
-              <Toggle checked={settings.buddy_breaks} onChange={(v) => patch({ buddy_breaks: v })} />
-            </Row>
-          </>
-        )}
-        <Row
-          label="Dance with my music"
-          hint="When music plays on this PC, the orb comes up and flows with it. Close it any time with ×. (Only the volume is read — nothing is recorded.)"
-        >
-          <Toggle checked={settings.music_visuals} onChange={(v) => patch({ music_visuals: v })} />
         </Row>
         {settings.island_enabled && (
           <Row
@@ -293,6 +240,61 @@ export function TalkToIzuki() {
           </Row>
         )}
 
+        <Group>On its own</Group>
+        <Row
+          label="Speak up by itself (buddy mode)"
+          hint="Like a friend at your desk: I'll tell you about an important email (a job, money, a deadline), a meeting coming up, the battery getting low, the internet dropping — and say “welcome back” with what you missed. Never over a film or game unless it's urgent, and quiet at night. While you're away, important things go to your phone too."
+        >
+          <Toggle checked={settings.buddy_speaks} onChange={(v) => patch({ buddy_speaks: v })} />
+        </Row>
+        {settings.buddy_speaks && (
+          <>
+            <Row
+              label="Handle small things on my own"
+              hint="Undoable things only, and I'll always say what I did — like switching on battery saver when the battery's nearly empty (it switches back when you plug in)."
+            >
+              <Toggle checked={settings.buddy_acts} onChange={(v) => patch({ buddy_acts: v })} />
+            </Row>
+            <Row label="Remind me to take breaks" hint="A friendly nudge after about two and a half hours without a break.">
+              <Toggle checked={settings.buddy_breaks} onChange={(v) => patch({ buddy_breaks: v })} />
+            </Row>
+          </>
+        )}
+        <Row
+          label="Dance with my music"
+          hint="When music plays on this PC, the orb comes up and flows with it. Close it any time with ×. (Only the volume is read — nothing is recorded.)"
+        >
+          <Toggle checked={settings.music_visuals} onChange={(v) => patch({ music_visuals: v })} />
+        </Row>
+        <Group>Memory</Group>
+        <Row
+          label="Screen time"
+          hint="Ask “how long was I on YouTube today?” — Izuki counts minutes per app and big site (only names and minutes, never what was on screen), on this PC, for two weeks. It's on the status screen too."
+        >
+          <Toggle checked={settings.screen_time_enabled} onChange={(v) => patch({ screen_time_enabled: v })} />
+        </Row>
+        <Row label="Your town or city" hint="For the weather on the Island and the status screen. Leave empty and I'll use what I remember about where you live.">
+          <input
+            value={settings.home_city}
+            onChange={(e) => patch({ home_city: e.target.value })}
+            placeholder="e.g. Lagos"
+            className="izk-field izk-no-drag w-[140px] py-1 text-[12px]"
+          />
+        </Row>
+        <Row
+          label="Recall (what was on my screen)"
+          hint="Ask “what was that site I was on this morning?” or “what was I doing at 3?”. Izuki notes only the titles of the windows you had open — never what's in them, never private or sign-in windows — keeps a week, on this PC only. Off until you turn it on."
+        >
+          <Toggle checked={settings.recall_enabled} onChange={(v) => patch({ recall_enabled: v })} />
+        </Row>
+        {settings.recall_enabled && (
+          <div className="-mt-1 flex justify-end">
+            <button type="button" className="izk-pill izk-no-drag px-2.5 py-1 text-[11px]" onClick={() => void api.recallForget()}>
+              Forget everything Recall noted
+            </button>
+          </div>
+        )}
+        <Group>The hand</Group>
         <Row
           label="Always show the hand"
           hint="Keeps the glowing hand on your screen, tracking your cursor — close this window and it keeps going."
@@ -339,8 +341,7 @@ export function TalkToIzuki() {
           )}
         </AnimatePresence>
 
-        <div className="izk-divider" />
-
+        <Group>Answers and voice</Group>
         <Row
           label="Chat instead of speaking"
           hint="Keep a text box here — type a command, press Enter, watch it run."
@@ -544,6 +545,11 @@ const PRESETS: Array<[string, number]> = [
  * closes by itself — so you don't have to call it again every time you
  * pause to think. "That's all" / "bye" still closes it straight away.
  */
+/** A heading over a run of related rows, so a long card reads in parts. */
+function Group({ children }: { children: string }) {
+  return <h3 className="mt-3 border-t border-white/[0.06] pt-4 pb-0.5 text-[12px] font-semibold tracking-[-0.01em] text-izk-ink/85">{children}</h3>;
+}
+
 function FollowUpPicker() {
   const secs = useIzuki((s) => s.settings.follow_up_secs) || MAX_SECS;
   const patch = useIzuki((s) => s.patchSettings);

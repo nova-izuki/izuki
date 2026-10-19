@@ -134,7 +134,7 @@ export function SettingsTab() {
       <JumpBar jumps={JUMPS} topId="settings-top" />
       <div className="relative">
         <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-izk-muted" size={15} />
-        <input aria-label="Find a setting" value={settingsSearch} onChange={(e) => setSettingsSearch(e.target.value)} placeholder="Find a setting — orb, Android, reminders…" className="izk-field izk-no-drag w-full py-2 pl-9 text-[12px]" />
+        <input aria-label="Find a setting" value={settingsSearch} onChange={(e) => setSettingsSearch(e.target.value)} placeholder="Find a setting — orb, Android, reminders…" className="izk-field izk-field-icon izk-no-drag w-full py-2 text-[12px]" />
         {searchMatches.length > 0 && <div className="mt-1 flex flex-wrap gap-1.5">{searchMatches.map(({ label, id }) => <button key={id} type="button" className="izk-pill izk-no-drag px-2 py-1 text-[10.5px]" onClick={() => { document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" }); setSettingsSearch(""); }}>{label}</button>)}</div>}
       </div>
       <button

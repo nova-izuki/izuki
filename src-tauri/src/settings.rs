@@ -566,6 +566,10 @@ pub struct Settings {
     /// Heads-up: a mission finished, paused or needs checking (missions.rs).
     #[serde(default = "default_true")]
     pub heads_up_missions: bool,
+    /// Rest mode by itself: waiting missions start once you've been away
+    /// from the PC for ten minutes (missions.rs).
+    #[serde(default)]
+    pub missions_when_away: bool,
     /// Quiet hours, "22:00-07:00" (empty: off). Heads-ups wait and come as
     /// one summary when they end; the Island doesn't pop up suggestions.
     #[serde(default)]
@@ -1132,6 +1136,7 @@ impl Default for Settings {
             heads_up_pc: true,
             heads_up_phone: true,
             heads_up_missions: true,
+            missions_when_away: false,
             study_log: false,
             writing_style: String::new(),
             stripe_key: String::new(),

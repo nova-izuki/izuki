@@ -1,6 +1,6 @@
 [package]
 name = "izuki"
-version = "1.0.141"
+version = "1.0.142"
 description = "IZUKI — draw on your screen, Izuki does it."
 authors = ["Izuki"]
 edition = "2021"
@@ -111,6 +111,9 @@ features = [
 
 [target.'cfg(windows)'.dependencies]
 tauri-plugin-single-instance = "=2.4.5"
+# Already in the build through arboard; used directly to see what's on the
+# clipboard before borrowing it (automation::clipboard_is_plain_text).
+clipboard-win = "5.4"
 
 [profile.release]
 opt-level = 3

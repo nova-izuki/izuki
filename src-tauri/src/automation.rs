@@ -312,13 +312,39 @@ pub fn stroke(points: &[[i32; 2]], move_ms: u64) -> Result<()> {
 }
 
 pub fn type_text(text: &str) -> Result<()> {
+    // A paragraph or more: pasted in one go — exact, instant, and nothing
+    // half-typed if you touch the PC meanwhile. Your clipboard is put back.
+    // Only when the clipboard holds nothing but plain text, which Izuki can
+    // put back exactly: a picture, a file or formatted text you copied is
+    // never lost — then it's typed instead.
+    if text.chars().count() > 120 && clipboard_is_plain_text() {
+        if let Ok(before) = read_clipboard() {
+            if write_clipboard(text).is_ok() {
+                std::thread::sleep(Duration::from_millis(40));
+                if aborted() {
+                    let _ = write_clipboard(&before);
+                    return Err(anyhow!("stopped"));
+                }
+                let pasted = press_key("ctrl+v");
+                std::thread::sleep(Duration::from_millis(300));
+                // Put yours back — unless you copied something new meanwhile.
+                if read_clipboard().ok().as_deref() == Some(text) {
+                    let _ = write_clipboard(&before);
+                }
+                // A failed paste may still have landed: never type it a second time.
+                return pasted.map_err(|e| anyhow!("{} pasting the text didn't go through ({e}) — it may have; take a fresh look before trying again", crate::ext::UNCONFIRMED));
+            }
+        }
+    }
     let mut e = enigo()?;
-    // Chunked so a long paragraph still responds to the panic key.
-    for chunk in text.as_bytes().chunks(48) {
+    // Whole characters at a time (cutting bytes split “quotes”, dashes and
+    // emoji into garbage), in chunks so Stop still lands mid-paragraph.
+    let chars: Vec<char> = text.chars().collect();
+    for chunk in chars.chunks(40) {
         if aborted() {
             return Err(anyhow!("stopped"));
         }
-        let part = String::from_utf8_lossy(chunk);
+        let part: String = chunk.iter().collect();
         e.text(&part)
             .map_err(|err| anyhow!("typing failed: {err:?}"))?;
         std::thread::sleep(Duration::from_millis(12));
@@ -574,6 +600,8 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
             };
             match done {
                 Ok(what) => return Ok(format!("{what} page element {} directly (browser extension)", step.target.unwrap_or(0))),
+                // It may have gone through: never do it a second time with the mouse.
+                Err(e) if e.to_string().starts_with(crate::ext::UNCONFIRMED) => return Err(e),
                 Err(e) => eprintln!("[ext] couldn't act inside the page ({e}) — using the screen instead"),
             }
         }
@@ -628,6 +656,7 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         if let Some(listed) = verified_name {
             // A page link is listed as "Next → https://…"; Windows calls it "Next".
             let name = listed.split(" → ").next().unwrap_or(listed);
+            let mut right_here = false;
             match uia::check_target(x, y, name) {
                 // The page shifted since the screenshot (an ad or picture loaded).
                 uia::AtPoint::Moved(nx, ny) => {
@@ -636,11 +665,14 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
                     y = ny;
                 }
                 uia::AtPoint::Disabled => return Err(anyhow!("disabled: \"{name}\" is greyed out, so clicking it does nothing yet")),
-                uia::AtPoint::Right => {}
+                uia::AtPoint::Right => right_here = true,
                 uia::AtPoint::Unknown => return Err(anyhow!("target_changed: I can't verify \"{name}\" here anymore; take another look before clicking")),
             }
             // Another window or pop-up on top: press it directly, no mouse.
-            if let Some(cover) = uia::covered_at(x, y) {
+            // (A taskbar button is *in* the taskbar: the button itself is
+            // right under the point, so the taskbar isn't covering anything.)
+            let cover = uia::covered_at(x, y).filter(|c| !(right_here && c == "the taskbar"));
+            if let Some(cover) = cover {
                 if step.action == Intent::Click && uia::press_named(name) {
                     eprintln!("[hands] \"{name}\" was under {cover} — pressed it directly");
                     return Ok(format!("pressed \"{name}\" directly (it was behind {cover})"));
@@ -841,14 +873,18 @@ fn execute_behind(step: &ActionStep, win: isize) -> Result<String> {
     // whether or not the browser is in front.
     if let Some(dom) = step.target.and_then(crate::ext::dom_id_for) {
         let done = match step.action {
-            Intent::Click | Intent::Auto => crate::ext::click(&dom).ok().map(|_| "clicked the page element in the background".to_string()),
-            Intent::Type => crate::ext::type_into(&dom, step.text_to_type.as_deref().unwrap_or_default())
-                .ok()
-                .map(|_| "typed into the page in the background".to_string()),
+            Intent::Click | Intent::Auto => Some(crate::ext::click(&dom).map(|_| "clicked the page element in the background".to_string())),
+            Intent::Type => Some(
+                crate::ext::type_into(&dom, step.text_to_type.as_deref().unwrap_or_default())
+                    .map(|_| "typed into the page in the background".to_string()),
+            ),
             _ => None,
         };
-        if let Some(done) = done {
-            return Ok(done);
+        match done {
+            Some(Ok(done)) => return Ok(done),
+            // It may have gone through: never do it again through Windows.
+            Some(Err(e)) if e.to_string().starts_with(crate::ext::UNCONFIRMED) => return Err(e),
+            _ => {}
         }
     }
     let done = match step.action {
@@ -942,6 +978,28 @@ pub fn selected_text() -> Result<String> {
     let got = copy_selection().unwrap_or_default();
     let _ = write_clipboard(&before);
     Ok(if got == marker { String::new() } else { got })
+}
+
+/// The clipboard holds nothing but text, which `read_clipboard` can put back
+/// exactly. A copied picture, file or formatted text (a browser copy carries
+/// HTML too) would lose its other parts, so Izuki types instead of pasting.
+#[cfg(windows)]
+fn clipboard_is_plain_text() -> bool {
+    use clipboard_win::formats::{CF_LOCALE, CF_OEMTEXT, CF_TEXT, CF_UNICODETEXT};
+    let Ok(_open) = clipboard_win::Clipboard::new_attempts(10) else { return false };
+    let mut any = false;
+    for format in clipboard_win::EnumFormats::new() {
+        if ![CF_UNICODETEXT, CF_TEXT, CF_OEMTEXT, CF_LOCALE].contains(&format) {
+            return false;
+        }
+        any = true;
+    }
+    any
+}
+
+#[cfg(not(windows))]
+fn clipboard_is_plain_text() -> bool {
+    false
 }
 
 pub fn read_clipboard() -> Result<String> {

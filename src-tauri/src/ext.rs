@@ -36,10 +36,38 @@ static WAITING: Mutex<Option<HashMap<u64, Sender<Value>>>> = Mutex::new(None);
 static LAST_SEEN: Mutex<Option<Instant>> = Mutex::new(None);
 static WAKE: Mutex<Option<Sender<()>>> = Mutex::new(None);
 
+/// The newest extension (extension/manifest.json). Older copies don't know
+/// every request Izuki makes (Blackboard, finding your school's tab).
+pub const LATEST: &str = "1.4.1";
+/// The connected extension's version; empty: one from before 1.4.1, which
+/// didn't say.
+static VERSION: Mutex<String> = Mutex::new(String::new());
+
+/// "1.4.1" → (1, 4, 1).
+fn parts(v: &str) -> (u32, u32, u32) {
+    let mut it = v.trim().split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    (it.next().unwrap_or(0), it.next().unwrap_or(0), it.next().unwrap_or(0))
+}
+
+/// The connected extension's version, if it said.
+pub fn version() -> Option<String> {
+    let v = VERSION.lock().clone();
+    (!v.is_empty()).then_some(v)
+}
+
+/// Connected, but older than this Izuki needs: time to download it again.
+pub fn outdated() -> bool {
+    connected() && version().is_none_or(|v| parts(&v) < parts(LATEST))
+}
+
 /// Is the extension there (it polls at least every ~20 s)?
 pub fn connected() -> bool {
     LAST_SEEN.lock().is_some_and(|t| t.elapsed() < Duration::from_secs(30))
 }
+
+/// Starts the error of a request the extension took but never answered: it
+/// may have happened. Never retried another way — only after a fresh look.
+pub const UNCONFIRMED: &str = "unconfirmed:";
 
 /// Ask the extension to do something and wait for the answer.
 pub fn request(op: &str, args: Value, timeout: Duration) -> Result<Value> {
@@ -55,7 +83,22 @@ pub fn request(op: &str, args: Value, timeout: Duration) -> Result<Value> {
     }
     let out = rx.recv_timeout(timeout);
     WAITING.lock().get_or_insert_with(HashMap::new).remove(&id);
-    let v = out.map_err(|_| anyhow!("the browser extension didn't answer in time"))?;
+    let v = match out {
+        Ok(v) => v,
+        Err(_) => {
+            // Never picked up (the browser was asleep): nothing happened, so
+            // the screen can do it instead. Picked up but unanswered: it may
+            // well have gone through (a link that navigated) — doing it again
+            // with the mouse would click twice, so take a fresh look instead.
+            let mut q = QUEUE.lock();
+            let waiting = q.len();
+            q.retain(|j| j.id != id);
+            if q.len() < waiting {
+                return Err(anyhow!("the browser extension didn't answer in time"));
+            }
+            return Err(anyhow!("{UNCONFIRMED} the page didn't confirm in time — it may have gone through; take a fresh look before doing it again"));
+        }
+    };
     if v["ok"].as_bool() == Some(false) {
         return Err(anyhow!("{}", v["error"].as_str().unwrap_or("the browser couldn't do that")));
     }
@@ -103,6 +146,12 @@ pub fn spawn() {
                     continue;
                 }
                 *LAST_SEEN.lock() = Some(Instant::now());
+                if let Some(v) = req.headers().iter().find(|h| h.field.to_string().eq_ignore_ascii_case("X-Izuki-Extension-Version")) {
+                    let v = v.value.as_str().trim();
+                    if !v.is_empty() && v.len() < 20 {
+                        *VERSION.lock() = v.to_string();
+                    }
+                }
                 let url = req.url().to_string();
                 // The extension's own smart features: Explain / Translate /
                 // Sum up / Ask about this page, Save to Notes, Remind me later,
@@ -456,6 +505,13 @@ pub fn type_into(dom_id: &str, text: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compares_versions() {
+        assert!(parts("1.4.0") < parts(LATEST));
+        assert!(parts("1.10.0") > parts("1.4.1"));
+        assert_eq!(parts("1.4.1"), parts(LATEST));
+    }
 
     #[test]
     fn places_page_elements_on_the_screen() {

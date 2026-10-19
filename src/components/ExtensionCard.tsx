@@ -10,8 +10,16 @@ import { Badge, Section } from "./ui";
  */
 export function ExtensionCard() {
   const [on, setOn] = useState(false);
+  const [old, setOld] = useState<{ version: string | null; latest: string } | null>(null);
   useEffect(() => {
-    const look = () => void api.extStatus().then(setOn).catch(() => undefined);
+    const look = () =>
+      void api
+        .extInfo()
+        .then((i) => {
+          setOn(i.connected);
+          setOld(i.outdated ? { version: i.version, latest: i.latest } : null);
+        })
+        .catch(() => undefined);
     look();
     const t = setInterval(look, 5000);
     return () => clearInterval(t);
@@ -21,14 +29,20 @@ export function ExtensionCard() {
     <Section
       id="settings-extension"
       title="Browser extension"
-      hint="Izuki in your browser: right-click any text to Explain, Translate, Sum up, Read aloud, Save to Nova Notes or Remind me later; Alt+Shift+I asks about the page; a Focus guard during Focus mode. It also lets Izuki see pages exactly, so clicks never miss."
-      right={<Badge tone={on ? "good" : "warn"}>{on ? "connected" : "not added"}</Badge>}
+      hint="Izuki in your browser: right-click any text to Explain, Translate, Sum up, Read aloud, Save to Izuki Notes or Remind me later; Alt+Shift+I asks about the page; a Focus guard during Focus mode. It also lets Izuki see pages exactly, so clicks never miss."
+      right={<Badge tone={on && !old ? "good" : "warn"}>{on ? (old ? "update it" : "connected") : "not added"}</Badge>}
     >
       {on ? (
         <div className="flex flex-col gap-1.5 text-[12.5px] text-izk-ink">
-          <p>✅ Connected. Try it: select some text on any page, right-click → <b>Izuki</b>.</p>
+          {old ? (
+            <p role="status">
+              ⚠️ Your extension is an older version{old.version ? ` (${old.version})` : ""} — version {old.latest} is out, and Blackboard and some clicks need it.
+            </p>
+          ) : (
+            <p>✅ Connected. Try it: select some text on any page, right-click → <b>Izuki</b>.</p>
+          )}
           <p className="text-[11.5px] text-izk-muted">
-            Added it before version 1.1? To get the new right-click menu:{" "}
+            To update:{" "}
             <button
               type="button"
               onClick={() => void api.openUrl("https://nova-izuki.github.io/izuki/extension/izuki-extension.zip")}

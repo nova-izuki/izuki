@@ -23,6 +23,8 @@ const TICK: Duration = Duration::from_secs(30);
 const EMAIL_EVERY: Duration = Duration::from_secs(3 * 60);
 const CALENDAR_EVERY: Duration = Duration::from_secs(2 * 60);
 const APPS_EVERY: Duration = Duration::from_secs(10 * 60);
+/// While the list can't be fetched (offline): look again this soon.
+const APPS_RETRY: Duration = Duration::from_secs(2 * 60);
 const SCHOOL_EVERY: Duration = Duration::from_secs(30 * 60);
 /// How far ahead a meeting is announced.
 const MEETING_AHEAD_MIN: i64 = 15;
@@ -31,6 +33,12 @@ const MEETING_AHEAD_MIN: i64 = 15;
 struct State {
     account_scope: String,
     connected: Vec<String>,
+    /// The linked-apps list loaded at least once for this account. Until it
+    /// has, nothing says "Gmail isn't linked" — offline isn't "not linked".
+    apps_known: bool,
+    /// The last look at the linked apps failed (offline): look again sooner,
+    /// and say so in the log once per outage, not every time.
+    apps_failing: bool,
     apps_at: Option<Instant>,
     email_at: Option<Instant>,
     calendar_at: Option<Instant>,
@@ -60,6 +68,8 @@ pub fn connections_checked(list: &[String]) {
             st.email_at = None;
             st.calendar_at = None;
         }
+        st.apps_known = true;
+        st.apps_failing = false;
         st.apps_at = Some(Instant::now());
     }
 }
@@ -105,6 +115,7 @@ fn tick(app: &AppHandle) {
     if st.account_scope != scope {
         st.account_scope = scope;
         st.connected.clear(); st.apps_at = None;
+        st.apps_known = false; st.apps_failing = false;
         st.email_at = None; st.calendar_at = None;
         st.seen_mail = None; st.told_events.clear();
         st.reason.clear();
@@ -145,26 +156,40 @@ fn tick(app: &AppHandle) {
         return;
     }
 
-    if due(st.apps_at, APPS_EVERY) {
+    if due(st.apps_at, if st.apps_failing { APPS_RETRY } else { APPS_EVERY }) {
         st.apps_at = Some(Instant::now());
         match crate::composio::connected() {
-            Ok(list) => st.connected = list,
-            Err(e) => eprintln!("[headsup] couldn't list linked apps: {e}"),
+            Ok(list) => {
+                if st.apps_failing {
+                    eprintln!("[headsup] linked apps reachable again");
+                }
+                st.connected = list;
+                st.apps_known = true;
+                st.apps_failing = false;
+            }
+            Err(e) => {
+                if !st.apps_failing {
+                    eprintln!("[headsup] couldn't list linked apps (trying again every couple of minutes): {e}");
+                }
+                st.apps_failing = true;
+            }
         }
     }
     let linked = st.connected.clone();
     let has = |slug: &str| linked.iter().any(|c| c == slug);
 
     // Connected, but not to anything this watches: say so rather than leaving
-    // every switch on and nothing arriving.
+    // every switch on and nothing arriving. (Never on a guess: offline at
+    // start-up isn't "Gmail isn't linked".)
     set_reason(
         app,
         st,
-        match (!has("gmail"), !has("googlecalendar")) {
-            (true, true) => "Connected, but Gmail and Google Calendar aren't linked yet. Link either one and heads-ups start on their own.",
-            (true, false) => "Google Calendar is linked, but Gmail isn't — link Gmail for new-mail heads-ups.",
-            (false, true) => "Gmail is linked, but Google Calendar isn't — link it for meeting heads-ups.",
-            (false, false) => "",
+        match (!st.apps_known, !has("gmail"), !has("googlecalendar")) {
+            (true, _, _) => "",
+            (false, true, true) => "Connected, but Gmail and Google Calendar aren't linked yet. Link either one and heads-ups start on their own.",
+            (false, true, false) => "Google Calendar is linked, but Gmail isn't — link Gmail for new-mail heads-ups.",
+            (false, false, true) => "Gmail is linked, but Google Calendar isn't — link it for meeting heads-ups.",
+            (false, false, false) => "",
         },
     );
 

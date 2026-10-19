@@ -49,6 +49,27 @@ static STARTED: AtomicBool = AtomicBool::new(false);
 /// address, last sequence number).
 static RESUME: Mutex<Option<(String, String, Value)>> = Mutex::new(None);
 
+/// The DM conversation with the paired user: (token, user, channel). Opened
+/// once and reused — opening it for every heads-up got "You are opening
+/// direct messages too fast" from Discord and the alert was lost.
+static DM: Mutex<Option<(String, String, String)>> = Mutex::new(None);
+/// One alert at a time, so a burst of heads-ups goes out in order instead of
+/// racing to open the conversation.
+static SENDING: Mutex<()> = Mutex::new(());
+
+/// The DM conversation with `user`, opened at most once per bot and user.
+fn dm_channel(token: &str, user: &str) -> Result<String> {
+    if let Some((t, u, ch)) = DM.lock().as_ref() {
+        if t == token && u == user {
+            return Ok(ch.clone());
+        }
+    }
+    let dm = rest(token, reqwest::Method::POST, "/users/@me/channels", Some(&json!({ "recipient_id": user })))?;
+    let ch = dm["id"].as_str().ok_or_else(|| anyhow!("Discord didn't open the conversation."))?.to_string();
+    *DM.lock() = Some((token.to_string(), user.to_string(), ch.clone()));
+    Ok(ch)
+}
+
 /// Messages already answered (Discord can deliver one twice around a
 /// reconnect) — the newest few hundred ids.
 static ANSWERED: Mutex<std::collections::VecDeque<String>> = Mutex::new(std::collections::VecDeque::new());
@@ -142,9 +163,8 @@ pub fn test_delivery() -> Result<()> {
     if s.discord_token.trim().is_empty() || s.discord_user_id.is_empty() {
         return Err(anyhow!("Pair Discord with this PC first."));
     }
-    let dm = rest(s.discord_token.trim(), reqwest::Method::POST, "/users/@me/channels", Some(&json!({ "recipient_id": s.discord_user_id })))?;
-    let channel = dm["id"].as_str().ok_or_else(|| anyhow!("Discord didn't open the conversation."))?;
-    send_text_checked(s.discord_token.trim(), channel, "Izuki connection check: this PC can message you here. Email and calendar alerts use your Apps → Heads-ups settings while Izuki is running.")
+    let channel = dm_channel(s.discord_token.trim(), &s.discord_user_id)?;
+    send_text_checked(s.discord_token.trim(), &channel, "Izuki connection check: this PC can message you here. Email and calendar alerts use your Apps → Heads-ups settings while Izuki is running.")
 }
 
 fn typing(token: &str, channel: &str) {
@@ -185,10 +205,24 @@ pub fn notify(text: &str) {
     }
     let text = text.to_string();
     std::thread::spawn(move || {
-        match rest(&token, reqwest::Method::POST, "/users/@me/channels", Some(&json!({ "recipient_id": user }))) {
-            Ok(dm) => {
-                if let Some(ch) = dm["id"].as_str() {
-                    send_text(&token, ch, &text);
+        let _one_at_a_time = SENDING.lock();
+        match dm_channel(&token, &user) {
+            Ok(ch) => {
+                match send_text_checked(&token, &ch, &text) {
+                    Ok(()) => {}
+                    // The conversation is gone (the bot was re-made): open it afresh once.
+                    Err(e) if e.to_string().contains("404") => {
+                        DM.lock().take();
+                        match dm_channel(&token, &user) {
+                            Ok(ch) => send_text(&token, &ch, &text),
+                            Err(e) => eprintln!("[discord] couldn't open the DM: {e}"),
+                        }
+                    }
+                    // Anything else: part may have gone out, so never send it all again.
+                    Err(e) => {
+                        eprintln!("[discord] couldn't send: {e}");
+                        STATUS.lock().error = Some("A Discord message could not be delivered. Check your internet and that DMs from the bot are allowed.".into());
+                    }
                 }
             }
             Err(e) => eprintln!("[discord] couldn't open the DM: {e}"),
@@ -460,6 +494,10 @@ fn handle(app: &AppHandle, token: &str, m: &Value) -> Result<()> {
     let (Some(channel), Some(author)) = (m["channel_id"].as_str(), m["author"]["id"].as_str()) else { return Ok(()) };
     let store = crate::state::store();
     let settings = store.settings();
+    // The paired user wrote in their DM: that's the conversation alerts go to.
+    if !settings.discord_user_id.is_empty() && author == settings.discord_user_id {
+        *DM.lock() = Some((token.to_string(), author.to_string(), channel.to_string()));
+    }
     let text = m["content"].as_str().unwrap_or_default().trim().to_string();
 
     // ---- pairing ---------------------------------------------------------

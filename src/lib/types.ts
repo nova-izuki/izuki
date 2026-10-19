@@ -513,6 +513,8 @@ export interface Settings {
   study_log: boolean;
   /** Heads-up when missions finish. */
   heads_up_missions: boolean;
+  /** Waiting missions start by themselves after 10 minutes away. */
+  missions_when_away?: boolean;
   /** "22:00-07:00", empty: off. Heads-ups wait and come as one summary. */
   quiet_hours: string;
   /** The user's n8n workflows, started by name. */

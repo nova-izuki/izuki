@@ -293,6 +293,25 @@ fn pick(all: &[Routine], which: &str) -> Option<usize> {
     if all.is_empty() { None } else { Some(all.len() - 1) }
 }
 
+/// A routine made with a button (Missions → "Every day"): on straight away —
+/// pressing it is the yes. Results go to the phone too.
+pub fn add_active(task: &str, every: &str, at: &str) -> String {
+    let _g = LOCK.lock();
+    let mut all = list();
+    if all.iter().any(|r| r.task == task && r.every == every && r.at == at) {
+        return "That's already one of your routines.".into();
+    }
+    let mut r = Routine { id: uuid::Uuid::new_v4().simple().to_string()[..10].to_string(), task: task.to_string(), every: every.to_string(), at: at.to_string(), phone: true, active: true, next: 0, last_run: 0, last_result: String::new(), last_outcome: String::new(), made: now_ms(), run_once: false };
+    r.next = next_after(&r, Local::now());
+    let said = r.describe();
+    let when = chrono::DateTime::from_timestamp_millis(r.next).map(|t| t.with_timezone(&Local).format("%A at %-I:%M %p").to_string()).unwrap_or_default();
+    all.push(r);
+    if !save(&all) {
+        return "I couldn't save that routine on this PC.".into();
+    }
+    format!("On ✓ {said}. First run: {when}. Change or pause it in Routines, or say “change it to 9am”.")
+}
+
 pub fn handle(ask: Ask) -> String {
     let _g = LOCK.lock();
     let mut all = list();

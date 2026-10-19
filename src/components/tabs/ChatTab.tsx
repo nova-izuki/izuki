@@ -103,7 +103,7 @@ const wantsApps = (t: string) => (ACCOUNTS.test(t) || needsApps(t)) && !opensAnA
 const APPS = /^\s*\[?APPS\]?\s*$/i;
 const REMIND_TAG = /\s*\[(?:REMIND|ALARM)[^\]]*\]?\s*/gi;
 // Focus mode and Recall are answered on the PC itself, at once.
-const INSTANT_ASK = /\bcite (?:https?:\/\/|www\.|10\.)|\b(?:apa (?:reference|citation|format|style)|in apa|cite (?:this|the|my|isbn)|coach me|quiz coach|coach mode|stop coaching|(?:walk me|go|help me) through (?:this|the|my) (?:quiz|test|exam)|help me with (?:this|the|my) (?:quiz|test|exam)|do (?:this|the) (?:quiz|test) with me|how much did i (?:spend|make)|how much have i (?:spent|made)|(?:unusual|weird|suspicious) (?:spending|charges?)|double charge|subscriptions|monthly charges|watch ?list|my stocks|my portfolio|my sales|sales today|stripe (?:balance|payments|sales)|my stripe|shopify orders|new orders|any orders|low (?:on )?stock|out of stock|my revenue|keep getting wrong|i keep missing|what do i get wrong|my weak spots|what are my mistakes|(?:have|did) i stud(?:y|ied)|study (?:progress|stats)|quiz me on my mistakes|practi[cs]e my mistakes|my grades?\b|blackboard|course materials|syllabus|announcements? (?:in|for|on) my|(?:chapter|section|page|pages) \d|my (?:text)?book|study log|(?:save|keep|log|record|stop saving|don'?t save) (?:every|all|each|my)\b[^.?!]{0,30}\b(?:quest|questions?|answers?|q ?(?:and|&) ?a)|what needs my attention|business briefing|check my (?:website|site)|is my (?:website|site)|check (?:my )?(?:connected )?(?:accounts|apps|connections)|(?:which|what) (?:accounts|apps) are (?:connected|linked)|are my (?:apps|accounts) (?:connected|linked|working)|(?:connected|linked) accounts|account health)\b|^(?:hey nova,?\s*)?(?:focus\b|stop focus|end focus|pomodoro|help me focus|i need to focus)|\bwhat was (?:i doing|i looking at|i working on|i reading|i watching|that (?:site|page|website|video|document|file))|\bwhat did i have open|\bfind (?:the|that) (?:page|site) i/i;
+const INSTANT_ASK = /\bcite (?:https?:\/\/|www\.|10\.)|\b(?:(?:izuki|nova)(?:'s)? (?:notes|settings|chat|style|apps)|my (?:study )?notes|take notes|make notes|save (?:this|it|the|my)\b[^.?!]{0,60}\bnotes|apa (?:reference|citation|format|style)|in apa|cite (?:this|the|my|isbn)|coach me|quiz coach|coach mode|stop coaching|(?:walk me|go|help me) through (?:this|the|my) (?:quiz|test|exam)|help me with (?:this|the|my) (?:quiz|test|exam)|do (?:this|the) (?:quiz|test) with me|how much did i (?:spend|make)|how much have i (?:spent|made)|(?:unusual|weird|suspicious) (?:spending|charges?)|double charge|subscriptions|monthly charges|watch ?list|my stocks|my portfolio|my sales|sales today|stripe (?:balance|payments|sales)|my stripe|shopify orders|new orders|any orders|low (?:on )?stock|out of stock|my revenue|keep getting wrong|i keep missing|what do i get wrong|my weak spots|what are my mistakes|(?:have|did) i stud(?:y|ied)|study (?:progress|stats)|quiz me on my mistakes|practi[cs]e my mistakes|my grades?\b|blackboard|course materials|syllabus|announcements? (?:in|for|on) my|(?:chapter|section|page|pages) \d|my (?:text)?book|study log|(?:save|keep|log|record|stop saving|don'?t save) (?:every|all|each|my)\b[^.?!]{0,30}\b(?:quest|questions?|answers?|q ?(?:and|&) ?a)|what needs my attention|business briefing|check my (?:website|site)|is my (?:website|site)|check (?:my )?(?:connected )?(?:accounts|apps|connections)|(?:which|what) (?:accounts|apps) are (?:connected|linked)|are my (?:apps|accounts) (?:connected|linked|working)|(?:connected|linked) accounts|account health)\b|^(?:hey nova,?\s*)?(?:focus\b|stop focus|end focus|pomodoro|help me focus|i need to focus)|\bwhat was (?:i doing|i looking at|i working on|i reading|i watching|that (?:site|page|website|video|document|file))|\bwhat did i have open|\bfind (?:the|that) (?:page|site) i/i;
 /** Anything about disk space — the core decides exactly, and answers with no AI. */
 const STORAGE_ASK = /spac|storag|disk|hard drive|\bssd\b|\bgb\b|\btb\b/i;
 const LATER = /^(?:hey nova,?\s*)?(?:remind me later|remember for later|don'?t let me forget|add .+ to (?:my|the) (?:shopping |later )?list|what'?s on my (?:shopping |later )?list|what do i need to (?:buy|get)|i (?:got|bought) )/i;
@@ -826,20 +826,11 @@ export function ChatTab() {
             className="izk-no-drag text-[10.5px] text-izk-muted transition-colors hover:text-izk-ink"
             title="Tap to switch: Jarvis mode works without moving the mouse; Mouse mode moves a visible hand."
           >
-            {settings.control_style === "precision" ? "⚡ Jarvis mode (no mouse)" : "↗ Mouse"} · {settings.economy_mode ? "Save credits" : "Fast backups"}
+            {/* What this button switches, and nothing else ("· Save credits"
+                beside it read like a second switch that wasn't there). */}
+            {settings.control_style === "precision" ? "⚡ Jarvis mode — no mouse" : "↗ Mouse mode — moves the pointer"}
           </button>
-          <button
-            type="button"
-            onClick={() => patch({ chat_auto_run: !settings.chat_auto_run })}
-            className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
-            title={
-              settings.chat_auto_run
-                ? "Auto: saves and commands run on their own (the command is still shown). Tap to switch to Ask."
-                : "Ask: you tap Allow before any save or command runs. Tap to switch to Auto."
-            }
-          >
-            {settings.chat_auto_run ? "⚡ Auto-run" : "🛡️ Ask first"}
-          </button>
+          {/* (Ask first ↔ Auto lives once, beside the message box.) */}
           <AirToggle className="h-[26px]" />
           {msgs.length > 0 && (
             <button

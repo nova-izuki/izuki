@@ -60,7 +60,7 @@ export function FlowLibrary() {
       <Section id="flows-list" title="Your flows" hint="Keep useful routines and clear the clutter. Cleared flows are archived on this PC.">
         <div className="flex flex-wrap items-center gap-2">
           <button className="izk-pill izk-no-drag px-3 py-1.5 text-[11.5px]" onClick={() => patch({ autosave_flows: !autosave })}>Auto-save: {autosave ? "on" : "off"}</button>
-          <button disabled={!shown.length || clearing} className="izk-pill izk-no-drag px-3 py-1.5 text-[11.5px] disabled:opacity-40" onClick={() => { setClearIds(shown.map((f) => f.id)); setConfirmClear(true); }}>Clear {q.trim() ? "matching" : "all"} flows ({shown.length})</button>
+          {flows.length > 0 && <button disabled={!shown.length || clearing} className="izk-pill izk-no-drag px-3 py-1.5 text-[11.5px] disabled:opacity-40" onClick={() => { setClearIds(shown.map((f) => f.id)); setConfirmClear(true); }}>Clear {q.trim() ? "matching" : "all"} flows ({shown.length})</button>}
           {archive && <button disabled={clearing} className="izk-pill izk-no-drag px-3 py-1.5 text-[11.5px]" onClick={async () => {
             setClearing(true); setError("");
             try { await api.restoreFlows(archive); setArchive(""); await reload(); } catch (e) { setError(String(e)); } finally { setClearing(false); }
@@ -78,19 +78,20 @@ export function FlowLibrary() {
         </div>}
         {error && <p role="alert" className="mt-2 text-[11.5px] text-izk-danger">{error}</p>}
       </Section>
-      <div className="relative">
+      {/* Nothing to search until there's a flow. */}
+      {flows.length > 0 && <div className="relative">
         <Search
           size={14}
           strokeWidth={2.4}
           className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-izk-muted"
         />
         <input
-          className="izk-field izk-no-drag pl-[36px]"
+          className="izk-field izk-field-icon izk-no-drag"
           placeholder="Search flows, apps, prompts…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-      </div>
+      </div>}
 
       {shown.length === 0 ? (
         <EmptyState

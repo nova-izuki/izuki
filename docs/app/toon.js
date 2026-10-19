@@ -1508,20 +1508,33 @@ function drawPainted(ctx, size, P, s, t, framing, orb, e, accent) {
   return true;
 }
 
+/** Every number in the pose is a real number (one NaN froze the character for good). */
+function allFinite(v) {
+  if (typeof v === "number") return Number.isFinite(v);
+  if (Array.isArray(v)) return v.every(allFinite);
+  if (v && typeof v === "object") return Object.values(v).every(allFinite);
+  return true;
+}
+
 export function drawToon(ctx, size, opts = {}) {
+  // A canvas that hasn't been sized yet: nothing to draw.
+  if (!Number.isFinite(size) || size <= 0) return false;
   const C = characterFor(opts.persona);
   // Painted art where it has loaded; ink (the closest drawn look) until then.
   const painting = opts.render === "painted" || opts.render === "concept" ? paintedFor(opts.persona, opts.render) : null;
   const render = opts.render === "comic" || opts.render === "ink" ? opts.render : opts.render === "painted" || opts.render === "concept" ? "ink" : "flat";
   const framing = FRAMES[opts.framing] ? opts.framing : "half";
   const orb = opts.orb !== false;
-  const time = opts.time || 0;
+  const time = Number.isFinite(opts.time) ? opts.time : 0;
   // Comic: posed "on twos" (12 a second), like the films.
   const t = render === "comic" ? Math.floor(time * 12) / 12 : time;
   let s = states.get(ctx.canvas);
   if (!s || s.who !== opts.persona) { s = newState(t); s.who = opts.persona; states.set(ctx.canvas, s); }
   const dt = clamp(t - s.last, 0, 0.1);
   if (dt > 0 || render !== "comic") { animate(s, opts, dt || 1 / 30, t); s.last = t; }
+  // A bad value (a slider read as NaN, say) poisoned the pose and every frame
+  // after it threw: start the pose afresh instead.
+  if (!allFinite(s)) { s = newState(t); s.who = opts.persona; states.set(ctx.canvas, s); }
 
   const accent = opts.accent || C.top[2] || "#8b5cf6";
   const c = size / 2, R = size * 0.46;

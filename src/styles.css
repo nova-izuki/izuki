@@ -352,36 +352,50 @@ html.izuki-config #root,
   transform: scale(0.975);
 }
 
-.izk-field {
-  width: 100%;
-  border-radius: 16px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: var(--color-izk-ink);
-  padding: 11px 14px;
-  font-size: 13.5px;
-  outline: none;
-  transition:
-    border-color 180ms var(--ease-glass),
-    box-shadow 180ms var(--ease-glass),
-    background 180ms var(--ease-glass);
-}
+/* Text boxes. In a layer, so a box's own size classes (py-1, text-[12px],
+   w-[140px]…) win: unlayered, this padding and font size beat every one of
+   them — icons sat on search words and compact boxes came out big. */
+@layer components {
+  .izk-field {
+    width: 100%;
+    border-radius: 16px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--color-izk-ink);
+    padding: 11px 14px;
+    font-size: 13.5px;
+    outline: none;
+    transition:
+      border-color 180ms var(--ease-glass),
+      box-shadow 180ms var(--ease-glass),
+      background 180ms var(--ease-glass);
+  }
 
-/* A drop-down's text sits centred on its own; the text-box padding
-   pushed it half out of a short select ("nvidia" cut in two). */
-select.izk-field {
-  padding-top: 0;
-  padding-bottom: 0;
-}
+  /* A drop-down's text sits centred on its own; the text-box padding
+     pushed it half out of a short select ("nvidia" cut in two). */
+  select.izk-field {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
 
-.izk-field::placeholder {
-  color: rgba(158, 160, 173, 0.55);
-}
+  /* A field with an icon inside on the left (search boxes): room for the icon;
+     with a clear button on the right: room for that. */
+  .izk-field.izk-field-icon {
+    padding-left: 36px;
+  }
+  .izk-field.izk-field-clear {
+    padding-right: 64px;
+  }
 
-.izk-field:focus {
-  border-color: rgba(124, 92, 255, 0.55);
-  background: rgba(0, 0, 0, 0.42);
-  box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.16);
+  .izk-field::placeholder {
+    color: rgba(158, 160, 173, 0.55);
+  }
+
+  .izk-field:focus {
+    border-color: rgba(124, 92, 255, 0.55);
+    background: rgba(0, 0, 0, 0.42);
+    box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.16);
+  }
 }
 
 .izk-range {

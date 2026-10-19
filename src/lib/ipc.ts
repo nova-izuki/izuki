@@ -299,6 +299,7 @@ export const MOCK_SETTINGS: Settings = {
   heads_up_pc: true,
   heads_up_phone: true,
   heads_up_missions: true,
+  missions_when_away: false,
   study_log: false,
   writing_style: "",
   stripe_key: "",
@@ -741,6 +742,7 @@ export const api = {
     call<void>("chat_stream", { id, history, expressive }, () => undefined),
   /** Is the Izuki browser extension connected? */
   extStatus: () => call<boolean>("ext_status", undefined, () => false),
+  extInfo: () => call<{ connected: boolean; version: string | null; latest: string; outdated: boolean }>("ext_info", undefined, () => ({ connected: false, version: null, latest: "", outdated: false })),
   /** Nova Notes. */
   notesList: () => call<Note[]>("notes_list", undefined, () => []),
   notesDelete: (id: string) => call<void>("notes_delete", { id }, () => undefined),
@@ -887,6 +889,9 @@ export const api = {
   missionRemove: (id: string) => call<Mission[]>("mission_remove", { id }, () => []),
   missionsClearDone: () => call<Mission[]>("missions_clear_done", undefined, () => []),
   missionsRun: () => call<boolean>("missions_run", undefined, () => false),
+  missionRetry: (id: string) => call<Mission[]>("mission_retry", { id }, () => []),
+  missionSaveNote: (id: string) => call<string>("mission_save_note", { id }, () => "Saved to Izuki Notes ✓"),
+  missionMakeDaily: (id: string, at: string) => call<string>("mission_make_daily", { id, at }, () => "On ✓"),
   /** End the phone remote from this PC (switches it off). */
   remoteEnd: () => call<void>("remote_end", undefined, () => undefined),
   lectureStart: (title: string) => call<string>("lecture_start", { title }, () => "test-lecture"),

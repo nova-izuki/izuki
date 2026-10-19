@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Eye, Radar, Trash2 } from "lucide-react";
-import { Badge, EmptyState, Section, Toggle, cx } from "../ui";
+import { Badge, Section, Toggle, cx } from "../ui";
 import { JumpBar } from "../JumpBar";
 import { useIzuki } from "../../lib/store";
 import { api } from "../../lib/ipc";
@@ -58,19 +58,15 @@ export function WatcherManager() {
             </h2>
             <p className="mt-0.5 text-[11px] leading-snug text-izk-muted">
               Draw a box, right-click, pick <span className="text-izk-ink">Watch</span>. Izuki keeps
-              an eye on that patch of screen and acts the moment it changes.
+              an eye on that patch of screen and acts the moment it changes — good for drops,
+              ticket queues and slow forms.
             </p>
           </div>
         </div>
       </div>
 
-      {watchers.length === 0 ? (
-        <EmptyState
-          icon={<Eye size={30} strokeWidth={1.6} />}
-          title="No watchers running"
-          body="Perfect for drops, ticket queues and slow forms: Izuki polls the region in the background and clicks the instant your condition is met."
-        />
-      ) : (
+      {/* With none yet, the card above already says how to start one. */}
+      {watchers.length > 0 && (
         <div className="flex flex-col gap-2">
           {watchers.map((w) => (
             <WatcherRow key={w.id} w={w} onChanged={reload} />

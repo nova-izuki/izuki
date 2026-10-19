@@ -662,7 +662,8 @@ fn ask_model(
         memory: crate::memory::prompt_block()
             + &crate::reminders::prompt_block()
             + &crate::voices::prompt_block()
-            + &crate::lessons::prompt_block(&uia::foreground_app(), crate::ext::snapshot_url_cached().as_deref()),
+            + &crate::lessons::prompt_block(&uia::foreground_app(), crate::ext::snapshot_url_cached().as_deref())
+            + crate::selfknow::PROMPT,
         windows: uia::open_windows(14),
         page_text,
         think,
@@ -1313,7 +1314,8 @@ fn good_enough(plan: &VisionPlan, wants_action: bool) -> bool {
 /// one that narrates, which would be read aloud as if it were an answer.
 fn last_resort(mut plan: VisionPlan, wants_action: bool) -> VisionPlan {
     if wants_action {
-        eprintln!("[bug] no brain acted on a request to do something (best was {} {})", plan.provider, plan.model);
+        // A model's choice, not a fault in Izuki: logged, not reported.
+        eprintln!("[brain] no brain acted on a request to do something (best was {} {})", plan.provider, plan.model);
     }
     if crate::easy::narrates(&plan.summary) || plan.summary.trim().is_empty() {
         plan.summary = if wants_action {
@@ -1731,7 +1733,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             if let Some(evidence) = evidence { let _ = evidence.finish(crate::mission_journal::EvidenceOutcome::Unknown); }
                             // Something on top, or greyed out: the brain can fix
                             // that on its next look — the task goes on.
-                            if why.starts_with("covered:") || why.starts_with("disabled:") || why.starts_with("target_changed:") {
+                            if why.starts_with("covered:") || why.starts_with("disabled:") || why.starts_with("target_changed:") || why.starts_with(crate::ext::UNCONFIRMED) {
                                 *STEP_SNAG.lock() = Some(why.clone());
                             }
                             let _ = app.emit(
@@ -2415,6 +2417,10 @@ fn submit_task(
     // The app that was in front before this round's steps (see unexpected_app_note).
     let mut front_before = String::new();
     let mut done_so_far: Vec<String> = resumed;
+    // Steps that brought up windows the task never mentioned.
+    let mut detours = 0u32;
+    // When a progress line was last said (they're spaced out).
+    let mut last_said_at = std::time::Instant::now() - Duration::from_secs(60);
     let mut progress_mark = done_so_far.len();
     // What the user showed or told Izuki when it asked, for the next look.
     // What the user drew, kept for the whole task: its clicks belong there.
@@ -2483,6 +2489,19 @@ fn submit_task(
         if round > 0 && !last_round.is_empty() && !front.is_empty() && !front_before.is_empty() && front != front_before {
             if let Some(note) = unexpected_app_note(&prompt, &front) {
                 eprintln!("[agent] a step brought {front} to the front, which the task didn't mention");
+                detours += 1;
+                // Flipping between windows the task never named is a mess, not
+                // progress (it bounced Chrome ↔ Notepad seven times): stop and ask.
+                if detours >= 3 {
+                    eprintln!("[agent] kept switching to windows the task didn't mention — stopping to ask");
+                    crate::lessons::note(&front, "a task kept switching between windows it wasn't asked to use — stay in the window the task is about");
+                    *UNFINISHED.lock() = Some((prompt.clone(), done_so_far.clone()));
+                    let mut plan = last_plan.take().unwrap_or_default();
+                    plan.summary = "I kept ending up in windows you didn't ask about, so I've stopped before making a mess. Tell me exactly where you want this done and I'll do just that.".into();
+                    plan.mood = Some("sympathetic".into());
+                    last_plan = Some(plan);
+                    break;
+                }
                 told = Some(match told.take() {
                     Some(t) => format!("{t}\n{note}"),
                     None => note,
@@ -2913,11 +2932,17 @@ fn submit_task(
         // Say what it's doing as it goes — "Opening Blackboard…" — unless
         // this is the last word (that one is the reply), or it's the same
         // thing again, or just "Got it!".
-        if !steps.is_empty() && !done && !plan.done && worth_saying(&plan.summary, &last_said) {
-            last_said = plan.summary.clone();
+        // Not every step out loud: something new, no filler, and not more
+        // than about every 12 seconds ("Bet, hold up, I'ma…" every step).
+        let progress = strip_filler(&plan.summary);
+        // (Teaching: the explanation is the point — it's never held back.)
+        let spaced = teaching_now || last_said_at.elapsed() >= Duration::from_secs(12);
+        if !steps.is_empty() && !done && !plan.done && spaced && worth_saying(&progress, &last_said) {
+            last_said = progress.clone();
+            last_said_at = std::time::Instant::now();
             let _ = app.emit(
                 "izuki://say",
-                serde_json::json!({ "text": plan.summary, "mood": plan.mood, "reply": true, "quick": true }),
+                serde_json::json!({ "text": progress, "mood": plan.mood, "reply": true, "quick": true }),
             );
             // An explanation (teaching as it works) is heard before the click
             // it explains: give it about as long as it takes to say.
@@ -2967,6 +2992,8 @@ fn submit_task(
                  be in front: parse this fresh screenshot, bring the window you were working in back if needed, and \
                  carry on from where you were. Do not redo steps already done."
                     .to_string()
+            } else if why.starts_with(crate::ext::UNCONFIRMED) {
+                format!("Your last action may already have happened, but it wasn't confirmed — {why}. Check this fresh screenshot for whether it did (a new page, a ticked box, the typed text) before anything else, and do NOT repeat it if it did.")
             } else if why.starts_with("target_changed:") {
                 crate::lessons::note(&uia::foreground_app(), "controls here move or redraw: take a fresh look and pick the control by its label right before clicking");
                 format!("Your last action was NOT executed — {why}. Parse this fresh screenshot and select the intended numbered control by its label and position. Do not reuse old IDs or coordinates. Do not close or minimise windows to fix a changed target. If the intended control is absent, explain that instead of guessing.")
@@ -3113,7 +3140,7 @@ fn submit_task(
     // "Yo, I already broke that one down for you — the answer is B": the
     // remark about having said it only confuses. The answer stays.
     if !last_said.is_empty() {
-        plan.summary = drop_already_said(&plan.summary);
+        plan.summary = strip_filler(&drop_already_said(&plan.summary));
     }
     finalize_execution(&mut plan, completed && alive());
     if !alive() { plan.outcome = crate::model::TaskOutcome::Cancelled; }
@@ -3329,6 +3356,59 @@ pub fn cancel_task() {
 /// Worth saying out loud while working? Not the same thing twice, and not
 /// just "Got it!" — the user heard "Got it, let's do this" five times in a
 /// row on a quiz.
+/// The line without its chatty opener: "Bet, hold up — I'ma get that script
+/// written" → "I'ma get that script written". The persona stays in the
+/// answer; the play-by-play doesn't need it every time.
+pub fn strip_filler(line: &str) -> String {
+    const OPENERS: &[&str] = &[
+        "bet", "say less", "yo", "aight", "alright", "all right", "okay", "ok", "hold up", "hold on", "gotchu", "got you", "i got you",
+        // (Not "word", "man", "nice", "lit", "facts": those start real sentences — "Word is open".)
+        "on it", "fam", "bro", "sure", "cool", "real talk", "let's keep cookin'", "let's keep cooking",
+    ];
+    let mut s = line.trim().to_string();
+    loop {
+        // ASCII lower-casing keeps every byte where it was, so offsets match `s`.
+        let lower = s.to_ascii_lowercase();
+        // "Yo Solomon," — an opener with a name after it.
+        let hit = OPENERS.iter().find_map(|o| {
+            let rest = lower.strip_prefix(o)?;
+            let rest_trim = rest.trim_start_matches(|c: char| c == ',' || c == '!' || c == '.' || c == '—' || c == '-' || c.is_whitespace());
+            if rest.len() == rest_trim.len() && !rest.is_empty() && !rest.starts_with(['!', ',', '.', '—', ' ']) {
+                return None; // part of a longer word ("okayed")
+            }
+            let mut cut = s.len() - rest_trim.len();
+            // A name right after "Yo"/"Bet": "Yo Solomon, …" — only straight
+            // after a greeting ("Sure, Notepad, then Word" keeps Notepad).
+            let vocative = ["yo", "bet", "aight", "alright", "okay", "ok", "say less", "hold up"].contains(o) && rest.starts_with(' ') && rest.len() - rest.trim_start().len() == rest.len() - rest_trim.len();
+            let after = &s[cut..];
+            if let Some((comma, mark)) = after.char_indices().find(|(_, c)| [',', '!', '—'].contains(c)).filter(|_| vocative) {
+                let name = &after[..comma];
+                if name.split_whitespace().count() == 1 && name.chars().next().is_some_and(|c| c.is_uppercase()) {
+                    // The whole mark: "—" is three bytes, and cutting inside it panicked.
+                    cut += comma + mark.len_utf8();
+                }
+            }
+            Some(cut)
+        });
+        match hit {
+            Some(cut) if cut > 0 && cut <= s.len() && s.is_char_boundary(cut) => s = s[cut..].trim_start_matches(|c: char| c == ',' || c == '!' || c == '.' || c == '—' || c == '-' || c.is_whitespace()).to_string(),
+            _ => break,
+        }
+    }
+    // "…for you, fam." → "…for you." (the closing mark kept).
+    let (body, end) = match s.char_indices().last() {
+        Some((i, c)) if ".!?".contains(c) => (&s[..i], &s[i..]),
+        _ => (s.as_str(), ""),
+    };
+    let body = body.trim_end().trim_end_matches(", fam").trim_end_matches(" fam").trim_end_matches(", bro").trim_end_matches(',');
+    let s = if body.trim().is_empty() { String::new() } else { format!("{body}{end}") };
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().chain(c).collect(),
+        None => String::new(),
+    }
+}
+
 fn worth_saying(line: &str, last: &str) -> bool {
     let words = |s: &str| -> Vec<String> {
         s.to_lowercase()
@@ -3640,6 +3720,19 @@ mod speed_tests {
 
     fn radio(id: u32, name: &str) -> uia::Control {
         uia::Control { id, kind: "RadioButton".into(), name: name.into(), rect: crate::model::Rect::default(), hidden: false, value: String::new(), focused: false, below: false, section: String::new(), identity: None }
+    }
+
+    #[test]
+    fn progress_lines_lose_their_filler() {
+        assert_eq!(strip_filler("Bet, hold up — I'ma get that script written up for you, fam."), "I'ma get that script written up for you.");
+        assert_eq!(strip_filler("Yo Solomon, I see the discussion prompt on Remote Work."), "I see the discussion prompt on Remote Work.");
+        assert_eq!(strip_filler("Say less, let's knock out the Purpose section."), "Let's knock out the Purpose section.");
+        assert_eq!(strip_filler("Opening the discussion."), "Opening the discussion.");
+        assert_eq!(strip_filler("Okayed the change."), "Okayed the change.", "not part of a word");
+        assert_eq!(strip_filler("Yo Solomon— opening the lab now."), "Opening the lab now.", "an em dash after a name, no panic");
+        assert_eq!(strip_filler("Word is open — typing the title."), "Word is open — typing the title.", "the app, not filler");
+        assert_eq!(strip_filler("Sure, Notepad, then Word."), "Notepad, then Word.", "a name only straight after a greeting");
+        assert_eq!(strip_filler("Bet."), "");
     }
 
     #[test]
