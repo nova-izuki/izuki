@@ -44,6 +44,23 @@ async function loop() {
   }
 }
 
+/** The tab a request is for: Izuki's pinned tab (where its task runs, even
+ *  while you're on another tab), else the one in front. */
+async function targetTab(args) {
+  if (args && args.tab) {
+    let t = null;
+    try {
+      t = await chrome.tabs.get(Number(args.tab));
+    } catch {
+      /* closed */
+    }
+    if (!t) throw new Error("Izuki's tab was closed");
+    if (!/^https?:|^file:/.test(t.url || "")) throw new Error("this page can't be read (a browser page)");
+    return t;
+  }
+  return activeTab();
+}
+
 async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   if (!tab || !tab.id) throw new Error("no browser tab in front");
@@ -67,7 +84,22 @@ async function run(op, args) {
       .filter((t) => /^https:/.test(t.url || "") && (/blackboard|instructure|canvas|moodle|brightspace|d2l/i.test(t.url || "") || /Blackboard/.test(t.title || "")))
       .map((t) => ({ url: t.url, title: t.title || "" }));
   }
-  const tab = await activeTab();
+  // Pin the tab in front for a task; and is a pinned tab what you're looking at?
+  if (op === "pin") {
+    const t = await activeTab();
+    return { tab: t.id, url: t.url, title: t.title || "" };
+  }
+  if (op === "tabinfo") {
+    let t = null;
+    try {
+      t = await chrome.tabs.get(Number(args.tab));
+    } catch {
+      return { open: false, visible: false };
+    }
+    const w = await chrome.windows.get(t.windowId);
+    return { open: true, visible: !!t.active && w.state !== "minimized", url: t.url, title: t.title || "" };
+  }
+  const tab = await targetTab(args);
   switch (op) {
     case "snapshot":
       return { ...(await inPage(tab.id, snapshot)), url: tab.url, title: tab.title };

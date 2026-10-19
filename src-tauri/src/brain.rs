@@ -608,10 +608,24 @@ fn ask_model(
         eprintln!("[brain] the window was slow to list its controls — going by the picture");
         Default::default()
     });
-    // With the Izuki browser extension: the page's real elements — names,
-    // where links go, exact places — instead of the screen reader's rougher
-    // view of the page. The browser's own buttons (tabs, address bar) stay.
-    if crate::ext::connected() && is_browser(&uia::foreground_app()) {
+    // The task's tab is out of sight (you opened another tab): the look is the
+    // page itself, read through the extension — no screenshot, which would
+    // only show your tab — and every step goes into that page by number.
+    let tab_mode = crate::ext::check_tab_hidden();
+    let mut tab_title = String::new();
+    if tab_mode {
+        controls.clear();
+        page_text.clear();
+        if let Some(page) = crate::ext::snapshot() {
+            tab_title = page.title.clone();
+            merge_page(&mut controls, &mut page_text, page);
+        }
+        page_text = format!(
+            "WORKING IN A TAB THE USER ISN'T LOOKING AT: the user switched to another tab, so there is no screenshot and you must not use the mouse or keyboard. \
+             Act only on the numbered page elements with \"target\" (click, type) or scroll the page; nothing else can happen until they come back.\n{page_text}"
+        );
+        eprintln!("[agent] working in the pinned tab while you're on another one");
+    } else if crate::ext::connected() && is_browser(&uia::foreground_app()) {
         if let Some(page) = crate::ext::snapshot() {
             // A question whose answer may be behind a link: read the most
             // related linked pages in the background, with your sign-ins.
@@ -636,7 +650,7 @@ fn ask_model(
         });
     }
     crate::tags::draw(&mut scaled, &desktop, &controls);
-    let image_jpeg = scaled.to_jpeg(80)?;
+    let image_jpeg = if tab_mode { Vec::new() } else { scaled.to_jpeg(80)? };
 
     let ocr_text = session
         .marks
@@ -645,7 +659,8 @@ fn ask_model(
         .collect::<Vec<_>>()
         .join("\n");
 
-    *LOOK.lock() = Look::of(&controls, &page_text, &uia::foreground_title());
+    let title = if tab_mode && !tab_title.is_empty() { tab_title } else { uia::foreground_title() };
+    *LOOK.lock() = Look::of(&controls, &page_text, &title);
     let req = VisionRequest {
         image_jpeg,
         image_size: (scaled.width, scaled.height),
@@ -654,7 +669,7 @@ fn ask_model(
         user_prompt: session.prompt.clone(),
         ocr_text,
         app: uia::foreground_app(),
-        window_title: uia::foreground_title(),
+        window_title: title,
         draft: draft.to_vec(),
         // Izuki's "hands": the real controls on screen, numbered, so the
         // model can say "click #7" instead of guessing pixels.
@@ -1288,6 +1303,9 @@ fn order_by_speed(chain: &mut [crate::settings::ProviderConfig]) {
     }
 }
 
+/// The snag left when Izuki waited ten minutes for you to come back to its tab.
+const TAB_WAIT_OVER: &str = "tab_wait_over: you stayed on another tab";
+
 /// How long the chosen brain gets before a backup is asked as well.
 // Every hedge is an extra request against a free quota; 2 s fired a second
 // (and third) brain on nearly every look and burned through the daily
@@ -1627,7 +1645,9 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     // Switched to another app? Izuki keeps working in its own
                     // window behind yours (automation::execute_behind).
                     uia::follow_or_hold(person_touched(own.get()));
-                    let behind = uia::working_behind().is_some();
+                    // (Working in a tab you aren't looking at counts as behind:
+                    // nothing there uses your mouse or keyboard.)
+                    let behind = uia::working_behind().is_some() || crate::ext::in_tab_mode();
                     // You grabbed the mouse or keyboard in the same window:
                     // let go until you pause, then take a fresh look.
                     if !placeless && !behind && yield_to_user(app, own.get(), alive) {
@@ -1699,6 +1719,34 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                                 },
                             );
                         }
+                        Err(e) if e.to_string().starts_with("needs_front:") && crate::ext::in_tab_mode() => {
+                            // In a tab you aren't looking at: never pull you
+                            // over to it — wait until you go back there yourself.
+                            let _ = app.emit(
+                                events::STATUS,
+                                StatusEvent::working("Izuki's tab needs the screen for the next step — it carries on when you go back to that tab."),
+                            );
+                            let until = std::time::Instant::now() + Duration::from_secs(600);
+                            while alive() && std::time::Instant::now() < until && crate::ext::check_tab_hidden() {
+                                std::thread::sleep(Duration::from_millis(1000));
+                            }
+                            if !alive() {
+                                let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
+                                return false;
+                            }
+                            if crate::ext::in_tab_mode() {
+                                // Ten minutes and you're still elsewhere: stop
+                                // here, and pick it up when you say so.
+                                *STEP_SNAG.lock() = Some(TAB_WAIT_OVER.into());
+                                return false;
+                            }
+                            own.set(std::time::Instant::now());
+                            *LAST_OWN.lock() = Some(own.get());
+                            *STEP_SNAG.lock() = Some(
+                                "paused: you were on another tab, so Izuki waited for you to come back to its tab — look again first".into(),
+                            );
+                            return false;
+                        }
                         Err(e) if e.to_string().starts_with("needs_front:") => {
                             // Needs the real mouse or keyboard: wait for you
                             // to pause, borrow the window, look again.
@@ -1729,6 +1777,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                         Err(e) if matches!(step.action, Intent::Click | Intent::DoubleClick)
                             && e.to_string().starts_with("target_changed:")
                             && !e.to_string().contains("covers")
+                            && !crate::ext::in_tab_mode()
                             && recover_click(&app, step).is_some() =>
                         {
                             executed.set(i + 1);
@@ -2407,15 +2456,21 @@ fn submit_task(
 
     // Hold the window this task works in: switch to another app and Izuki
     // carries on there behind you (uia::working_behind). Let go at the end.
-    struct LetGo;
+    struct LetGo(Option<u64>);
     impl Drop for LetGo {
         fn drop(&mut self) {
             uia::hold_window(None);
+            if let Some(pin) = self.0 {
+                crate::ext::unpin_own(pin);
+            }
         }
     }
     uia::hold_window(uia::target_window());
+    // In a browser: pin this tab too — open another tab and Izuki keeps
+    // working in its own, through the extension, without touching yours.
+    let pin = if crate::ext::connected() && is_browser(&uia::foreground_app()) { crate::ext::pin_front_tab() } else { None };
     *LAST_OWN.lock() = Some(std::time::Instant::now());
-    let _let_go = LetGo;
+    let _let_go = LetGo(pin);
 
     // Look, act, look again — the way a person does a task. One plan made
     // from one screenshot runs blind: "open Chrome and play some music"
@@ -2459,6 +2514,8 @@ fn submit_task(
     // "…and save it to my notes": each explanation goes into one note for
     // this task, (title, source) fixed by the first one kept.
     let keep_notes = keeps_notes(&prompt);
+    // Working in the pinned tab while you're on another one (said once).
+    let mut in_own_tab = false;
     let mut kept_note: Option<(String, String)> = None;
     let mut last_kept = String::new();
     let mut kept = 0u32;
@@ -2555,12 +2612,17 @@ fn submit_task(
         // Did the last steps actually do anything? A person notices at once
         // when a click did nothing — and says so, and tries again smarter.
         if round > 0 && !last_round.is_empty() {
-            let unchanged = last_look
+            // (In a tab you aren't looking at, the screenshot is your tab: it
+            // says nothing about whether the step worked.)
+            let unchanged = !crate::ext::in_tab_mode()
+                && last_look
                 .as_ref()
                 .is_some_and(|prev| crate::live::changed_share(prev, &frame.downscaled(160)) <= 0.02);
             // The mouse click didn't take: press the same button directly.
             let mut rescued = false;
-            if unchanged {
+            // (In a tab you aren't looking at, the screenshot is your tab:
+            // "nothing changed" means nothing, and pressing again would click twice.)
+            if unchanged && !crate::ext::in_tab_mode() {
                 if let Some((name, target)) = last_click.take() {
                     let pressed = uia::press_named(&name)
                         || target.and_then(crate::ext::dom_id_for).is_some_and(|d| crate::ext::click(&d).is_ok());
@@ -2654,6 +2716,13 @@ fn submit_task(
         if !alive() {
             eprintln!("[agent] stopped while thinking (replaced or cancelled)");
             break;
+        }
+        // Say it once when Izuki starts working in its own tab behind yours.
+        if crate::ext::in_tab_mode() != in_own_tab {
+            in_own_tab = crate::ext::in_tab_mode();
+            if in_own_tab {
+                let _ = app.emit(events::STATUS, StatusEvent::working("Working in its own tab — use your other tabs freely."));
+            }
         }
         let plan = match asked_now {
             Ok(plan) => plan,
@@ -2791,10 +2860,13 @@ fn submit_task(
         crate::state::task_step(&plan.summary);
         let this_round: Vec<(Intent, i32, i32)> = steps.iter().map(|s| (s.action, s.x / 12, s.y / 12)).collect();
         let look = frame.downscaled(160);
-        let screen_changed = last_look
-            .as_ref()
-            .map(|prev| crate::live::changed_share(prev, &look) > 0.02)
-            .unwrap_or(true);
+        // (In a tab you aren't looking at, the screenshot is your tab — the
+        // same-goal and progress limits catch a stuck loop there instead.)
+        let screen_changed = crate::ext::in_tab_mode()
+            || last_look
+                .as_ref()
+                .map(|prev| crate::live::changed_share(prev, &look) > 0.02)
+                .unwrap_or(true);
         last_look = Some(look);
         if !this_round.is_empty() && this_round == last_round && !screen_changed {
             repeats += 1;
@@ -3022,6 +3094,14 @@ fn submit_task(
         // A click that couldn't happen (something on top, a greyed-out
         // button) isn't the end: tell the brain, and it deals with it.
         let snag = STEP_SNAG.lock().take();
+        if snag.as_deref() == Some(TAB_WAIT_OVER) {
+            *UNFINISHED.lock() = Some((prompt.clone(), done_so_far.clone()));
+            let mut plan = last_plan.take().unwrap_or_default();
+            plan.summary = "The next step needs Izuki's tab on screen, and you've been on another tab for a while — so I've paused. Go back to that tab and say \"keep going\" when you're ready.".into();
+            plan.mood = Some("calm".into());
+            last_plan = Some(plan);
+            break;
+        }
         if let Some(why) = &snag {
             eprintln!("[agent] a click couldn't happen — {why}");
             let note = if why.starts_with("paused:") {

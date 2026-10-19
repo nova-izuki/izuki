@@ -38,7 +38,7 @@ static WAKE: Mutex<Option<Sender<()>>> = Mutex::new(None);
 
 /// The newest extension (extension/manifest.json). Older copies don't know
 /// every request Izuki makes (Blackboard, finding your school's tab).
-pub const LATEST: &str = "1.4.1";
+pub const LATEST: &str = "1.4.2";
 /// The connected extension's version; empty: one from before 1.4.1, which
 /// didn't say.
 static VERSION: Mutex<String> = Mutex::new(String::new());
@@ -69,10 +69,93 @@ pub fn connected() -> bool {
 /// may have happened. Never retried another way — only after a fresh look.
 pub const UNCONFIRMED: &str = "unconfirmed:";
 
+/// The browser tab a task is working in (the extension's tab id): page
+/// requests go to it even while you're on another tab.
+static PINNED: Mutex<Option<i64>> = Mutex::new(None);
+/// Which pin this is: a task only takes away its own (a replacement task may
+/// have pinned another tab by the time the old one lets go).
+static PIN_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// The pinned tab isn't the one you're looking at (checked at each look):
+/// Izuki works in it through the extension only — never the mouse or keys.
+static TAB_HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Pin the tab in front for the task starting now. Returns the pin's number
+/// (for `unpin_own`); `None` without the extension (or one too old).
+pub fn pin_front_tab() -> Option<u64> {
+    let gen = PIN_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    PINNED.lock().take();
+    TAB_HIDDEN.store(false, std::sync::atomic::Ordering::SeqCst);
+    if !connected() {
+        return None;
+    }
+    let v = request("pin", json!({}), Duration::from_secs(3)).ok()?;
+    let id = v["tab"].as_i64()?;
+    // Another task may have started meanwhile: then its pin stands.
+    if PIN_GEN.load(std::sync::atomic::Ordering::SeqCst) != gen {
+        return None;
+    }
+    *PINNED.lock() = Some(id);
+    eprintln!("[ext] pinned the task's tab: {}", v["title"].as_str().unwrap_or(""));
+    Some(gen)
+}
+
+/// The task that pinned `gen` is over: requests go to the tab in front
+/// again — unless a newer task has pinned its own tab since.
+pub fn unpin_own(gen: u64) {
+    if PIN_GEN.load(std::sync::atomic::Ordering::SeqCst) == gen {
+        PINNED.lock().take();
+        TAB_HIDDEN.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// A tab is pinned for the running task.
+pub fn pinned() -> bool {
+    PINNED.lock().is_some()
+}
+
+/// Is the task's tab out of sight (you switched to another tab, or minimised
+/// the browser)? Checked with the extension and remembered for the steps.
+pub fn check_tab_hidden() -> bool {
+    let Some(id) = *PINNED.lock() else {
+        TAB_HIDDEN.store(false, std::sync::atomic::Ordering::SeqCst);
+        return false;
+    };
+    let hidden = match request("tabinfo", json!({ "tab": id }), Duration::from_secs(2)) {
+        Ok(v) if v["open"].as_bool() == Some(false) => {
+            // Closed: nothing pinned any more — carry on in front.
+            PINNED.lock().take();
+            false
+        }
+        Ok(v) => v["visible"].as_bool() == Some(false),
+        // Couldn't tell: stay as we were — a hiccup must never hand your
+        // screen back to Izuki while you're on another tab.
+        Err(_) => TAB_HIDDEN.load(std::sync::atomic::Ordering::SeqCst),
+    };
+    TAB_HIDDEN.store(hidden, std::sync::atomic::Ordering::SeqCst);
+    hidden
+}
+
+/// The last `check_tab_hidden`: working in a tab you aren't looking at.
+pub fn in_tab_mode() -> bool {
+    TAB_HIDDEN.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Scroll the page in the task's tab (no mouse).
+pub fn scroll(dy: i32) -> Result<()> {
+    request("scroll", json!({ "dy": dy }), Duration::from_secs(4)).map(|_| ())
+}
+
 /// Ask the extension to do something and wait for the answer.
 pub fn request(op: &str, args: Value, timeout: Duration) -> Result<Value> {
     if !connected() {
         return Err(anyhow!("the Izuki browser extension isn't connected"));
+    }
+    // Page work goes to the task's own tab while one is pinned.
+    let mut args = args;
+    if matches!(op, "snapshot" | "click" | "type" | "scroll" | "open") {
+        if let (Some(id), Some(map)) = (*PINNED.lock(), args.as_object_mut()) {
+            map.entry("tab").or_insert(json!(id));
+        }
     }
     let id = rand::random::<u32>() as u64 + 1;
     let (tx, rx): (Sender<Value>, Receiver<Value>) = channel();
@@ -510,7 +593,9 @@ mod tests {
     fn compares_versions() {
         assert!(parts("1.4.0") < parts(LATEST));
         assert!(parts("1.10.0") > parts("1.4.1"));
-        assert_eq!(parts("1.4.1"), parts(LATEST));
+        // LATEST is the extension this build ships: they never drift apart.
+        let manifest: Value = serde_json::from_str(include_str!("../../extension/manifest.json")).unwrap();
+        assert_eq!(manifest["version"].as_str(), Some(LATEST));
     }
 
     #[test]

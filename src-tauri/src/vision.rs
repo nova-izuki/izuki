@@ -931,7 +931,7 @@ fn ask_ollama(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Result
         Ok((status, value))
     };
 
-    let (mut status, mut value) = send(true)?;
+    let (mut status, mut value) = send(!req.image_jpeg.is_empty())?;
     // A text-only local model (llama3.2, qwen…) refuses pictures; the
     // controls list is enough for it to act.
     let refuses_pictures = |v: &Value| {
@@ -1073,10 +1073,16 @@ fn ask_gemini_as(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Res
         "systemInstruction": { "parts": [{ "text": style.system() }] },
         "contents": [{
             "role": "user",
-            "parts": [
-                { "text": style.user(req) },
-                { "inline_data": { "mime_type": "image/jpeg", "data": req.b64() } }
-            ]
+            // No picture when there's nothing to show (a task in a tab you're
+            // not looking at): the page's elements and words are the look.
+            "parts": if req.image_jpeg.is_empty() {
+                json!([{ "text": format!("{}\n{}", style.user(req), style.no_picture()) }])
+            } else {
+                json!([
+                    { "text": style.user(req) },
+                    { "inline_data": { "mime_type": "image/jpeg", "data": req.b64() } }
+                ])
+            }
         }],
         "generationConfig": {
             "temperature": 0.1,
@@ -1149,11 +1155,15 @@ fn ask_anthropic(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Res
             // The words first, then the picture: knowing what to look for
             // before seeing the screenshot makes clicks land more accurately
             // (Anthropic's computer-use guidance).
-            "content": [
-                { "type": "text", "text": style.user(req) },
-                { "type": "image", "source": {
-                    "type": "base64", "media_type": "image/jpeg", "data": req.b64() } }
-            ]
+            "content": if req.image_jpeg.is_empty() {
+                json!([{ "type": "text", "text": format!("{}\n{}", style.user(req), style.no_picture()) }])
+            } else {
+                json!([
+                    { "type": "text", "text": style.user(req) },
+                    { "type": "image", "source": {
+                        "type": "base64", "media_type": "image/jpeg", "data": req.b64() } }
+                ])
+            }
         }]
     });
 
@@ -1249,7 +1259,7 @@ fn ask_openai_compatible(cfg: &ProviderConfig, req: &VisionRequest, style: Style
     // (the parser tolerates chatter around it), so just ask again without.
     let mut budget = screen_token_budget(cfg.id);
     let mut json_mode = style.json();
-    let mut with_image = true;
+    let mut with_image = !req.image_jpeg.is_empty();
     let (mut status, mut value) = send(json_mode, with_image, budget)?;
     if style.json() && (status.as_u16() == 400 || status.as_u16() == 422) {
         json_mode = false;

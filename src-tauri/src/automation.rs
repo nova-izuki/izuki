@@ -571,6 +571,17 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     }
     // You're using another app: work in Izuki's window behind it, through
     // Windows, without touching your mouse or keyboard.
+    if !dry_run && crate::ext::pinned() {
+        // You may have switched tabs since the look: check right before acting.
+        // Was in front then and isn't now — nothing happens; a fresh look first.
+        let was_hidden = crate::ext::in_tab_mode();
+        if crate::ext::check_tab_hidden() {
+            if !was_hidden {
+                return Err(anyhow!("target_changed: you switched to another tab since the look — taking a fresh look in Izuki's own tab"));
+            }
+            return execute_in_tab(step);
+        }
+    }
     if !dry_run {
         if let Some(win) = uia::working_behind() {
             return execute_behind(step, win);
@@ -859,6 +870,34 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     }
 
     Ok(format!("{} at {}", step.action.as_str(), label))
+}
+
+/// One step in Izuki's own tab while you're on another one: only through the
+/// page itself (the browser extension). The screen shows *your* tab, so the
+/// mouse, the keyboard and Windows' own buttons would all land there.
+fn execute_in_tab(step: &ActionStep) -> Result<String> {
+    let dom = step.target.and_then(crate::ext::dom_id_for);
+    match step.action {
+        Intent::Click | Intent::Auto => match dom {
+            Some(d) => crate::ext::click(&d).map(|_| format!("clicked page element {} in Izuki's tab", step.target.unwrap_or(0))),
+            None => Err(anyhow!("needs_front: that click isn't on a numbered page element, and you're on another tab — it waits until you're back on Izuki's tab")),
+        },
+        Intent::Type => match dom {
+            Some(d) => crate::ext::type_into(&d, step.text_to_type.as_deref().unwrap_or_default()).map(|_| "typed into the page in Izuki's tab".to_string()),
+            None => Err(anyhow!("needs_front: that box isn't a numbered page element, and you're on another tab — it waits until you're back on Izuki's tab")),
+        },
+        Intent::Scroll => {
+            let (amount, axis) = scroll_direction(step.key.as_deref(), step.scroll_amount.unwrap_or(3));
+            if matches!(axis, Axis::Horizontal) {
+                return Err(anyhow!("needs_front: sideways scrolling waits until you're back on Izuki's tab"));
+            }
+            // Same as the wheel: positive is down, at most 40 notches.
+            crate::ext::scroll(amount.clamp(-40, 40) * 120).map(|_| "scrolled the page in Izuki's tab".to_string())
+        }
+        // Marks and pointing would land on your tab: skipped there.
+        Intent::Point | Intent::Draw | Intent::Stroke | Intent::Hover | Intent::Watch => Ok("skipped (you're on another tab)".into()),
+        _ => Err(anyhow!("needs_front: that step needs the screen, and you're on another tab — it waits until you're back on Izuki's tab")),
+    }
 }
 
 /// One step in a window behind the one you're using. Steps that need the

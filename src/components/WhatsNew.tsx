@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "📌", title: "Izuki keeps working in its own tab", how: "Start a task in Chrome or Edge, then switch to another tab: Izuki carries on in its own tab through the browser extension — clicking, typing and scrolling there, never touching your mouse or your tab. Steps that need the screen wait until you go back. Needs extension 1.4.2.", try: { label: "Update the extension", tab: "settings", id: "settings-extension" } },
   { icon: "🏝️", title: "Move the Island any time, clear its history", how: "The Island's move handle stays at the top while you scroll a long answer, and its saved chats (🕘) have a Clear history button — pinned chats stay." },
   { icon: "🖊️", title: "The pen cleans up after itself", how: "Circles and underlines vanish as soon as Izuki clicks, scrolls or types (the page is about to change), a few seconds after an answer, and never stay longer than two minutes, so they don't sit over the next question's answers." },
   { icon: "📝", title: "Reviews go into your notes", how: "“Review all the questions and save them to my notes”: every explanation Izuki gives on the way is added to one “Review — …” note in Izuki Notes, so you can study it after.", try: { label: "Open Notes", tab: "notes" } },
