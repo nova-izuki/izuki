@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🎓", title: "On a quiz, Izuki coaches", how: "While a quiz or test is on screen, Izuki explains what the question asks and the idea behind it — it doesn't say, mark or confirm the answer, however you ask. Study mode, flashcards and “quiz me” on your notes are the way to practise." },
   { icon: "🧩", title: "Its own abilities, whatever words you use", how: "Grades, what's due, class announcements, textbooks, APA references, money, study progress, screen time — ask in any words (slang and typos too) from the Chat tab, voice, your phone, Discord or a mission, and Izuki picks the right ability itself instead of guessing." },
   { icon: "✅", title: "A to-do list for every task", how: "For anything with more than one step, Izuki writes a short to-do list, ticks items off as they're really done (watch it on the Island), and checks the list before saying it's finished — so it doesn't stop halfway." },
   { icon: "📌", title: "Izuki keeps working in its own tab", how: "Start a task in Chrome or Edge, then switch to another tab: Izuki carries on in its own tab through the browser extension — clicking, typing and scrolling there, never touching your mouse or your tab. Steps that need the screen wait until you go back. Needs extension 1.4.2.", try: { label: "Update the extension", tab: "settings", id: "settings-extension" } },

@@ -375,22 +375,106 @@ pub fn safe_terminal_line(text: &str) -> bool {
 pub struct Look {
     pub options: Vec<String>,
     pub test_page: bool,
+    /// Where each answer choice is on screen (a mark there marks the choice).
+    pub choice_rects: Vec<Rect>,
 }
 
-static LOOK: Mutex<Look> = Mutex::new(Look { options: Vec::new(), test_page: false });
+thread_local! {
+    /// What this thread's last look saw. Each task runs on its own thread, so
+    /// the guards always judge a plan by the look it was made from — never by
+    /// another task's.
+    static LOOK: std::cell::RefCell<Look> = std::cell::RefCell::new(Look::default());
+}
+
+/// This task's last look.
+fn this_look() -> Look {
+    LOOK.with(|l| l.borrow().clone())
+}
 
 impl Look {
     pub fn of(controls: &[uia::Control], page_text: &str, title: &str) -> Look {
-        let options: Vec<String> = controls
-            .iter()
-            .filter(|c| matches!(c.kind.as_str(), "RadioButton" | "CheckBox") && !c.name.trim().is_empty())
-            .map(|c| c.name.trim().to_lowercase())
-            .collect();
-        let words = format!("{} {}", title.to_lowercase(), page_text.chars().take(4000).collect::<String>().to_lowercase());
+        // (A space in front, so "Test 3 …" at the very start counts as " test".)
+        let words = format!(" {} {}", title.to_lowercase(), page_text.chars().take(4000).collect::<String>().to_lowercase());
         let testy = ["quiz", " test", "exam", "assessment", "practice test", "midterm", "final exam"].iter().any(|w| words.contains(w))
             || (words.contains("question ") && words.contains(" of "));
-        Look { test_page: testy && options.len() >= 2, options }
+        // Choices: radio buttons and tick boxes — and, on a quiz, buttons that
+        // read as choices ("A. Phishing", "(b) …", "True", "False").
+        let chosen: Vec<&uia::Control> = controls
+            .iter()
+            .filter(|c| !c.name.trim().is_empty())
+            .filter(|c| matches!(c.kind.as_str(), "RadioButton" | "CheckBox") || (testy && c.kind == "Button" && reads_as_choice(&c.name)))
+            .collect();
+        let options: Vec<String> = chosen.iter().map(|c| c.name.trim().to_lowercase()).collect();
+        let choice_rects = chosen.iter().map(|c| c.rect).collect();
+        Look { test_page: testy && options.len() >= 2, options, choice_rects }
     }
+}
+
+/// A button named like an answer choice: "A. Phishing", "(b) …", "True".
+fn reads_as_choice(name: &str) -> bool {
+    let n = name.trim().to_lowercase();
+    let b = n.as_bytes();
+    let lettered = n.len() > 2
+        && ((b'a'..=b'e').contains(&b[0]) && matches!(b[1], b'.' | b')' | b':') || n.starts_with('(') && n.len() > 3 && (b'a'..=b'e').contains(&b[1]) && b[2] == b')');
+    lettered || ["true", "false", "a", "b", "c", "d"].contains(&n.as_str())
+}
+
+/// Told to the brain while a quiz or test is on screen.
+const QUIZ_PROMPT: &str = "QUIZ OR TEST IN PROGRESS: the student answers it. Explain what the question asks and the idea behind it, point at the key words in the question, and help them reason it out — but never say, hint at or mark which choice is correct, and never confirm or reject a choice they picked. Never click or type an answer. Going to the next question when they ask is fine.\n";
+
+/// On a quiz or test page: what Izuki says never names the right choice and
+/// its pen never marks one — the same rule Quiz coach follows (coach.rs),
+/// whatever the request was. Sentences naming a choice are left out; marks
+/// on a choice are dropped. Explaining the question itself stays.
+fn keep_answers_out(plan: &mut VisionPlan, steps: &mut Vec<ActionStep>, look: &Look) {
+    if !look.test_page {
+        return;
+    }
+    let said = crate::coach::leak_guard(&plan.summary, &look.options);
+    if said != plan.summary.trim() {
+        eprintln!("[agent] quiz page: kept the answer out of what's said");
+        plan.summary = said;
+    }
+    if let Some(q) = plan.ask.take() {
+        plan.ask = Some(crate::coach::leak_guard(&q, &look.options));
+    }
+    let before = steps.len();
+    steps.retain(|s| !(matches!(s.action, Intent::Draw | Intent::Point | Intent::Stroke) && marks_a_choice(s, look)));
+    if steps.len() < before {
+        eprintln!("[agent] quiz page: dropped {} mark(s) on an answer choice", before - steps.len());
+    }
+}
+
+/// A pen mark or pointer on one of the answer choices: by its control, by
+/// the words it marks, or by where it is (a point, a box, a drawn path).
+fn marks_a_choice(step: &ActionStep, look: &Look) -> bool {
+    let options = &look.options;
+    let norm = |s: &str| s.to_lowercase().chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ");
+    let on_choice = |x: i32, y: i32| look.choice_rects.iter().any(|r| Rect { x: r.x - 6, y: r.y - 6, w: r.w + 12, h: r.h + 12 }.contains(x, y));
+    let placed = (step.x != 0 || step.y != 0) && on_choice(step.x, step.y)
+        || step.x2.zip(step.y2).is_some_and(|(x, y)| on_choice(x, y))
+        || step.path.as_ref().is_some_and(|p| {
+            // Every point, and along each segment between them (a quick swipe
+            // across a choice has its points on either side of it).
+            p.iter().any(|[x, y]| on_choice(*x, *y))
+                || p.windows(2).any(|w| {
+                    let ([x1, y1], [x2, y2]) = (w[0], w[1]);
+                    let n = ((x2 - x1).abs().max((y2 - y1).abs()) / 6).clamp(1, 400);
+                    (1..n).any(|i| on_choice(x1 + (x2 - x1) * i / n, y1 + (y2 - y1) * i / n))
+                })
+        });
+    if placed {
+        return true;
+    }
+    let on_control = step.snapped_to.as_deref().is_some_and(|n| options.contains(&n.trim().to_lowercase()));
+    let words = step.text_to_type.as_deref().map(norm).unwrap_or_default();
+    let on_words = words.chars().count() >= 3
+        && options.iter().map(|o| norm(o)).any(|o| {
+            // "a. phishing emails" is the same choice as "phishing emails".
+            let o = o.split_once(' ').filter(|(l, _)| l.len() == 1).map(|(_, r)| r.to_string()).unwrap_or(o);
+            o.contains(&words) || (words.contains(&o) && o.chars().count() >= 3)
+        });
+    on_control || on_words
 }
 
 /// Buttons that finish or send something: never pressed unless the user
@@ -430,7 +514,7 @@ fn final_button(step: &ActionStep) -> Option<String> {
 /// Drops those steps (and what came after a held-back command) and says why,
 /// for the next look. `None` when the plan was fine.
 fn guard_steps(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, front: &str) -> Option<String> {
-    let look = LOOK.lock().clone();
+    let look = this_look();
     guard_steps_with(steps, prompt, lesson, front, &look)
 }
 
@@ -660,7 +744,9 @@ fn ask_model(
         .join("\n");
 
     let title = if tab_mode && !tab_title.is_empty() { tab_title } else { uia::foreground_title() };
-    *LOOK.lock() = Look::of(&controls, &page_text, &title);
+    let look = Look::of(&controls, &page_text, &title);
+    let on_a_test = look.test_page;
+    LOOK.with(|l| *l.borrow_mut() = look);
     let req = VisionRequest {
         image_jpeg,
         image_size: (scaled.width, scaled.height),
@@ -678,7 +764,8 @@ fn ask_model(
             + &crate::reminders::prompt_block()
             + &crate::voices::prompt_block()
             + &crate::lessons::prompt_block(&uia::foreground_app(), crate::ext::snapshot_url_cached().as_deref())
-            + crate::selfknow::PROMPT,
+            + crate::selfknow::PROMPT
+            + if on_a_test { QUIZ_PROMPT } else { "" },
         windows: uia::open_windows(14),
         page_text,
         think,
@@ -2185,6 +2272,12 @@ pub fn run_named_click(app: &AppHandle, store: &Arc<Store>, said: &str) -> Optio
     // The exact name first; else a quick text-only pick from the numbered
     // list (no screenshot): "click settings" finds "Preferences".
     let c = unique_named(&wanted, &controls).or_else(|| pick_by_text(said, &controls))?.clone();
+    // A choice (a radio button or tick box — or, on a quiz, a button that reads
+    // as one) goes through the full agent with its quiz guard: this quick path
+    // is for plain buttons and links.
+    if matches!(c.kind.as_str(), "RadioButton" | "CheckBox") || (c.kind == "Button" && reads_as_choice(&c.name)) {
+        return None;
+    }
     let my_task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     automation::clear_abort();
     let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted() && crate::execution::allowed();
@@ -2763,7 +2856,7 @@ fn submit_task(
                 let _ = app.emit(events::STATUS, StatusEvent::working("Working in its own tab — use your other tabs freely."));
             }
         }
-        let plan = match asked_now {
+        let mut plan = match asked_now {
             Ok(plan) => plan,
             // Partway through: keep what was done, say so, and remember
             // where it got to so "keep going" can pick it up.
@@ -2829,6 +2922,8 @@ fn submit_task(
         }
         // A real lesson ("teach me git in the terminal") may show harmless
         // basics; anything else still needs the exact command spelled out.
+        // (Before anything is said, saved or drawn from this plan.)
+        keep_answers_out(&mut plan, &mut steps, &this_look());
         let teaching_now = lesson || crate::companion::asks_to_learn(&prompt);
         let explaining = teaching_now || explains_as_it_goes(&prompt);
         if keep_notes {
@@ -2860,6 +2955,7 @@ fn submit_task(
             }
             None => false,
         };
+
         // An action being planned is not evidence that it succeeded. Check
         // a fresh screen before accepting "done" for an autonomous task —
         // and a plan whose steps were held back isn't done at all.
@@ -4026,7 +4122,7 @@ mod speed_tests {
         let mut steps = vec![click("Sending options"), click("Postcode")];
         assert!(guard_steps_with(&mut steps, "open settings", false, "chrome", &none).is_none(), "words that merely start the same aren't final");
         // On a test page, the answer is the student's.
-        let quiz = Look { options: vec!["a. phishing".into(), "b. personally identifiable information".into()], test_page: true };
+        let quiz = Look { options: vec!["a. phishing".into(), "b. personally identifiable information".into()], test_page: true, ..Default::default() };
         let mut steps = vec![click("B. Personally identifiable information"), click("Next")];
         assert!(guard_steps_with(&mut steps, "help me with this question", true, "chrome", &quiz).is_some());
         assert_eq!(steps.len(), 1, "the answer isn't clicked; Next is the student's call but harmless");
@@ -4035,6 +4131,33 @@ mod speed_tests {
             radio(2, "B. PII"),
         ];
         assert!(Look::of(&controls, "Question 3 of 20", "uCertify").test_page);
+        assert!(Look::of(&controls, "", "Test 3 - Network Security").test_page, "\"Test\" at the very start");
+        // Said and drawn on a quiz page: the question explained, the answer kept out.
+        let look = Look { options: vec!["a. phishing".into(), "b. personally identifiable information".into()], test_page: true, choice_rects: vec![Rect { x: 100, y: 300, w: 400, h: 30 }] };
+        let mut plan = VisionPlan { summary: "This one is about data that can identify someone. The answer is B, personally identifiable information.".into(), ..Default::default() };
+        let mark = |words: &str| step(serde_json::json!({ "action": "draw", "shape": "underline", "x": 10, "y": 10, "text_to_type": words }));
+        let mut steps = vec![mark("personally identifiable information"), mark("identify a person")];
+        keep_answers_out(&mut plan, &mut steps, &look);
+        assert_eq!(plan.summary, "This one is about data that can identify someone.");
+        assert_eq!(steps.len(), 1, "the mark on the question's own words stays");
+        // Not a test page: nothing changes.
+        let mut plan2 = VisionPlan { summary: "The answer is B.".into(), ..Default::default() };
+        let mut steps2 = vec![mark("phishing")];
+        keep_answers_out(&mut plan2, &mut steps2, &Look { options: vec!["a. phishing".into()], test_page: false, ..Default::default() });
+        assert_eq!((plan2.summary.as_str(), steps2.len()), ("The answer is B.", 1));
+        // A circle placed on a choice by position alone is dropped too.
+        let mut plan3 = VisionPlan::default();
+        let mut steps3 = vec![step(serde_json::json!({ "action": "draw", "shape": "circle", "x": 150, "y": 310 })), step(serde_json::json!({ "action": "draw", "shape": "circle", "x": 150, "y": 100 }))];
+        keep_answers_out(&mut plan3, &mut steps3, &look);
+        assert_eq!(steps3.len(), 1, "only the mark off the choices stays");
+        // A quick swipe across a choice (points either side of it) is dropped.
+        let mut steps4 = vec![step(serde_json::json!({ "action": "stroke", "x": 50, "y": 250, "path": [[50, 250], [300, 360]] }))];
+        keep_answers_out(&mut VisionPlan::default(), &mut steps4, &look);
+        assert!(steps4.is_empty());
+        // A question to the user can't name a choice either.
+        let mut plan5 = VisionPlan { ask: Some("Do you want to go with personally identifiable information?".into()), ..Default::default() };
+        keep_answers_out(&mut plan5, &mut Vec::new(), &look);
+        assert!(!plan5.ask.unwrap().to_lowercase().contains("personally identifiable"));
         assert!(!Look::of(&controls, "Choose your shipping speed", "Checkout").test_page, "radio buttons alone aren't a test");
         assert_eq!(steps.len(), 1);
     }

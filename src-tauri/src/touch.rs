@@ -11,7 +11,7 @@
 //! Every change from the phone goes in the remote audit log.
 
 use serde_json::{json, Value};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 /// Everything the phone's Touch Grass page shows.
 pub fn status() -> Value {
@@ -86,6 +86,27 @@ pub fn act(app: &AppHandle, asked: &Value, device: &str) -> anyhow::Result<Value
             crate::missions::remove(id);
             crate::remote::audit(device, "mission removed", "");
             Ok(json!({ "ok": true }))
+        }
+        // The same three as the PC's Missions card.
+        "retry" => {
+            let id = asked["id"].as_str().unwrap_or_default();
+            crate::missions::retry(id);
+            let _ = app.emit(crate::missions::CHANGED, ());
+            crate::remote::audit(device, "mission put back to try again", "");
+            Ok(json!({ "ok": true }))
+        }
+        "note" => {
+            let id = asked["id"].as_str().unwrap_or_default();
+            let said = crate::missions::save_to_notes(id).map_err(|e| anyhow::anyhow!(e))?;
+            let _ = app.emit("izuki://notes-changed", ());
+            Ok(json!({ "ok": true, "said": said }))
+        }
+        "daily" => {
+            let id = asked["id"].as_str().unwrap_or_default();
+            let task = crate::missions::text_of(id).ok_or_else(|| anyhow::anyhow!("that mission isn't on the list any more"))?;
+            let said = crate::routines::add_active(&task, "daily", "08:00");
+            crate::remote::audit(device, "mission made a daily routine", "");
+            Ok(json!({ "ok": true, "said": said }))
         }
         "push_on" => {
             crate::webpush::subscribe(device, &asked["sub"])?;

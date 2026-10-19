@@ -202,6 +202,25 @@
         x.type = "button"; x.className = "x"; x.textContent = "Remove"; x.setAttribute("aria-label", "Remove this mission");
         x.onclick = () => act({ op: "remove", id: m.id }, "");
         el.append(x);
+      } else if (m.state !== "running") {
+        // The same as the PC's Missions card: again, keep the result, every morning.
+        const row = document.createElement("div");
+        row.className = "row";
+        const btn = (label, op, done) => {
+          const b = document.createElement("button");
+          b.type = "button"; b.className = "x"; b.textContent = label;
+          // One tap, one request: the row waits while it's on its way.
+          b.onclick = async () => {
+            const all = [...row.querySelectorAll("button")];
+            all.forEach((x) => (x.disabled = true));
+            if (!(await act({ op, id: m.id }, done))) all.forEach((x) => (x.disabled = false));
+          };
+          row.append(b);
+        };
+        btn("↻ Try again", "retry", "Put back on the list.");
+        if (m.result) btn("📝 Save to Notes", "note", "Saved to Izuki Notes.");
+        btn("📅 Every morning", "daily", "It'll run every morning at 8.");
+        el.querySelector(".t").append(row);
       }
       list.append(el);
     }
