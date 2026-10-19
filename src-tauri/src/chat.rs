@@ -262,6 +262,14 @@ if they don't say).\n\
 NotebookLM, Classroom, their accounts). Use it for anything behind a sign-in.\n\
 [CLICK: n] and [TYPE: n | text] — click, or type into, thing number n on the page you last browsed \
 (end the text with ⏎ to press Enter).\n\
+[IZUKI: ability | details] — Izuki's own abilities, which read the user's real data. Name the ability and fill in \
+the details: due | today, tomorrow, week or all (what's due, from their Blackboard or school calendar) · overdue · \
+first (what to do first) · grades | a course, or empty for all · announcements | a course or empty · materials | a \
+course · textbook | their question about their textbook · cite | a link, DOI or ISBN (APA reference) · money | what \
+they asked (spending, unusual charges, subscriptions) · shop | orders, sales or stock · study | progress or mistakes · \
+screentime | their question · recall | their question about what was on their screen earlier. E.g. \
+[IZUKI: grades | biology], [IZUKI: due | week]. For these, use it BEFORE [APPS] or [BROWSE]; if it says it has no \
+ability for that, try another way.\n\
 Use a few at most, then answer in your normal way and say where it came from. Never type passwords or \
 card numbers, and never send, post, submit, buy or delete anything through the browser unless the \
 user clearly said yes to exactly that.\n";
@@ -697,7 +705,7 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
 
 const TOOL_ROUNDS: usize = 7;
 const NO_MORE_TOOLS: &str = "[No more tools now — answer with what you have.]";
-const TOOL_WORDS: &[&str] = &["SEARCH", "READ", "BROWSE", "CLICK", "TYPE", "FIND", "FILES", "OPEN", "WRITE", "RUN", "WEATHER", "FLOW"];
+const TOOL_WORDS: &[&str] = &["SEARCH", "READ", "BROWSE", "CLICK", "TYPE", "FIND", "FILES", "OPEN", "WRITE", "RUN", "WEATHER", "FLOW", "IZUKI"];
 const MOODS: &[&str] = &["cheerful", "excited", "calm", "serious", "sympathetic", "playful", "curious"];
 
 #[derive(Debug, PartialEq)]
@@ -715,6 +723,8 @@ enum Tool {
     Weather(String),
     /// One of the user's n8n workflows: (name, what to hand it).
     Flow(String, String),
+    /// One of Izuki's own abilities, asked in plain words (companion::local_skill).
+    Izuki(String),
 }
 
 impl Tool {
@@ -733,6 +743,7 @@ impl Tool {
             Tool::Run(c) => format!("[RUN: {c}]"),
             Tool::Weather(a) => format!("[WEATHER: {a}]"),
             Tool::Flow(n, w) => format!("[FLOW: {n} | {w}]"),
+            Tool::Izuki(a) => format!("[IZUKI: {a}]"),
         }
     }
 
@@ -747,6 +758,7 @@ impl Tool {
             Tool::Open(_) => "📄 Reading the file…",
             Tool::Weather(_) => "🌤️ Checking the weather…",
             Tool::Flow(..) => "⚡ Running your workflow…",
+            Tool::Izuki(_) => "🧩 Checking with Izuki's own tools…",
             Tool::Write(..) | Tool::Run(_) => "…",
         }
     }
@@ -769,6 +781,7 @@ impl Tool {
             Tool::Open(p) => ("Read file", p.clone()),
             Tool::Weather(p) => ("Weather", p.clone()),
             Tool::Flow(n, what) => ("Workflow", format!("{n}: {what}")),
+            Tool::Izuki(a) => ("Izuki", a.clone()),
             Tool::Write(p, body) => ("Save file", format!("{p}\n{}", crate::web::clip(body, 600))),
             Tool::Run(c) => ("PowerShell", c.clone()),
         };
@@ -795,6 +808,7 @@ impl Tool {
             Tool::Open(p) => format!("📄 Read {}", clip(p)),
             Tool::Weather(p) => format!("🌤️ Checked the weather: {}", clip(p)),
             Tool::Flow(name, _) => format!("⚡ Ran your workflow: {}", clip(name)),
+            Tool::Izuki(a) => format!("🧩 Asked Izuki's own tools: {}", clip(a)),
             Tool::Write(p, _) => format!("📄 Saved {}", clip(p)),
             Tool::Run(c) => format!("▶ {} · {}", in_plain_words(c), clip(c)),
         }
@@ -906,6 +920,7 @@ fn parse_tool(reply: &str) -> Option<Tool> {
         "OPEN" if !arg.is_empty() => Some(Tool::Open(arg.to_string())),
         "RUN" if !arg.is_empty() => Some(Tool::Run(arg.to_string())),
         "WEATHER" if !arg.is_empty() => Some(Tool::Weather(arg.to_string())),
+        "IZUKI" if !arg.is_empty() => Some(Tool::Izuki(arg.to_string())),
         "FLOW" if !arg.is_empty() => {
             let (name, what) = arg.split_once('|').unwrap_or((arg, ""));
             Some(Tool::Flow(name.trim().to_string(), what.trim().to_string()))
@@ -934,6 +949,10 @@ fn run_tool(tool: &Tool) -> String {
         Tool::Weather(place) => crate::web::weather(place),
         Tool::Flow(name, what) => crate::composio::run_n8n(name, &json!({ "request": what, "from": "Izuki" }))
             .map(|r| format!("The \"{name}\" workflow ran. It answered: {r}")),
+        // Never invented: either a real ability answered, or it says none fits.
+        Tool::Izuki(request) => Ok(crate::companion::izuki_tool(request).unwrap_or_else(|| {
+            "Izuki has no built-in ability for that request. Try another way (search, browse, hand over to the screen or the apps), or tell the user plainly.".into()
+        })),
         // Never straight from here — only through the Allow card.
         Tool::Write(..) | Tool::Run(_) => Err(anyhow::anyhow!("that needs the user's OK in the Chat tab")),
     };
@@ -1656,6 +1675,9 @@ mod tool_tests {
     #[test]
     fn reads_tool_tags() {
         assert_eq!(parse_tool("[SEARCH: burna boy tour 2026]"), Some(Tool::Search("burna boy tour 2026".into())));
+        assert_eq!(parse_tool("[IZUKI: due | week]"), Some(Tool::Izuki("due | week".into())));
+        assert_eq!(parse_tool("[curious] [IZUKI: my grades]"), Some(Tool::Izuki("my grades".into())));
+        assert_eq!(parse_tool("[IZUKI: ]"), None);
         assert_eq!(parse_tool("[WEATHER: Lagos]"), Some(Tool::Weather("Lagos".into())));
         assert_eq!(
             parse_tool("[FLOW: weekly report | send it to the team]"),

@@ -218,6 +218,13 @@ export function Island({
     };
   }, [busy]);
 
+  // ---- the task's to-do list (brain.rs keeps it; ticked as Izuki works)
+  const [todo, setTodo] = useState<TodoItem[]>([]);
+  useEffect(() => {
+    const off = on<TodoItem[]>(EV.taskTodo, (items) => setTodo(Array.isArray(items) ? items.slice(0, 10) : []));
+    return () => void off.then((f) => f());
+  }, []);
+
   // ---- errors (with a way to recover) and remote sessions
   useEffect(() => {
     let hide = 0;
@@ -597,6 +604,7 @@ export function Island({
                 dancing={dancing}
                 busy={busy}
                 doing={doing}
+                todo={todo}
                 visualizing={visualizing}
                 onVisualize={onVisualize}
                 onMoveStart={beginMove}
@@ -1018,6 +1026,7 @@ function Expanded({
   dancing,
   busy,
   doing,
+  todo = [],
   visualizing,
   onVisualize,
   onMoveStart,
@@ -1035,6 +1044,8 @@ function Expanded({
   wave = "auto",
   scale = 1,
 }: {
+  /** The running task's to-do list. */
+  todo?: TodoItem[];
   /** The Island's size scale: the panel's height limit allows for it. */
   scale?: number;
   wave?: string;
@@ -1139,6 +1150,7 @@ function Expanded({
           <Square size={14} fill="currentColor" /> Stop
         </button>
       )}
+      {busy && todo.length > 0 && <TodoList items={todo} />}
 
       {/* Kept alive on every tab, so switching to Vitals or Apps never
           throws away a question being answered — just hidden. */}
@@ -1759,6 +1771,36 @@ type SavedAsk = { id: number; title: string; where: string; turns: PageTurn[]; a
 const ASK_FILE_TYPES = "image/*,.txt,.md,.csv,.json,.log,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.rs,.java,.c,.cpp,.cs,.go,.sql";
 /** The most unpinned chats kept (pinned ones are always kept). */
 const KEEP_ASKS = 12;
+
+/** One line of the task's to-do list. */
+interface TodoItem {
+  text: string;
+  done: boolean;
+}
+
+/** The task's to-do list while Izuki works: what's done, what's left. */
+function TodoList({ items }: { items: TodoItem[] }) {
+  const left = items.filter((i) => !i.done).length;
+  return (
+    <div className="rounded-2xl bg-white/[0.05] px-3 py-2" aria-label="Izuki's to-do list">
+      <div className="mb-1 flex items-center justify-between text-[11px] font-semibold text-white/55">
+        <span>To do</span>
+        <span>{left === 0 ? "All done" : `${items.length - left} of ${items.length}`}</span>
+      </div>
+      <ul className="space-y-0.5">
+        {items.map((i, n) => (
+          <li key={n} className={"flex items-start gap-2 text-[12px] leading-snug " + (i.done ? "text-white/45 line-through decoration-white/25" : "text-white/85")}>
+            <span aria-hidden className={"mt-[3px] flex h-3 w-3 shrink-0 items-center justify-center rounded-full border " + (i.done ? "border-emerald-400/70 bg-emerald-400/70" : "border-white/35")}>
+              {i.done && <Check size={8} strokeWidth={3.5} className="text-black" />}
+            </span>
+            <span className="sr-only">{i.done ? "Done: " : "To do: "}</span>
+            {i.text}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function ago(at: number) {
   const m = Math.round((Date.now() - at) / 60_000);

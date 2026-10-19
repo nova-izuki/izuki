@@ -1110,6 +1110,8 @@ export const EV = {
   overlayClose: "izuki://overlay-close",
   /** A new task: clear what Izuki drew while explaining the last one. */
   penClear: "izuki://pen-clear",
+  /** The running task's to-do list (brain.rs): [{ text, done }]. */
+  taskTodo: "izuki://task-todo",
   frozenFrame: "izuki://frozen-frame",
   hand: "izuki://hand",
   status: "izuki://status",

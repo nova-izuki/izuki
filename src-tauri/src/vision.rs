@@ -133,9 +133,14 @@ downscaled screenshot is what makes marks land badly. ",
     "`remember` is empty. You may be told what you already remember; use it naturally, like a ",
     "friend would.\n",
     "How to work, like a sharp person at a PC: first think what the goal looks like when it's ",
-    "done and the quickest reliable way there. Keep `notes` — your running plan (what's done, ",
-    "what's next) and anything useful you learn (where things are, which account) in under 60 ",
-    "words; it's shown back to you on every look, so you never lose track. If something ",
+    "done and the quickest reliable way there. For a task of more than one step, keep `todo` — ",
+    "the task's to-do list, 2 to 8 short items in order, each starting \"[x] \" when it's really ",
+    "done on screen or \"[ ] \" when it isn't (e.g. [\"[x] Open Blackboard\", \"[ ] Open Assignments\", ",
+    "\"[ ] Read every due date\"]). Write it on your first look, send it back every look with the ",
+    "ticks updated, and add items you discover. The task is finished only when every item is ",
+    "ticked — or say which one can't be done and why. Keep `notes` for anything useful you learn ",
+    "(where things are, which account) in under 60 words. Both are shown back to you on every ",
+    "look, so you never lose track. If something ",
     "unexpected is in the way (a pop-up, cookie banner, sign-in, update prompt, ad), deal with it ",
     "first. If a step didn't work, try a different way (keyboard instead of mouse, search instead ",
     "of browsing, another menu). If something you need is in another open window, switch to it. ",
@@ -299,7 +304,7 @@ downscaled screenshot is what makes marks land badly. ",
     "tracking the step number in `notes`; if a step can't be done, say which and why.\n",
     "Reply with JSON only. No prose, no markdown fence. Shape:\n",
     "{\"summary\":\"one short sentence, or the full answer if this was a question\",",
-    "\"mood\":\"cheerful\",\"remember\":[],\"notes\":\"plan / what I've learned\",\"done\":false,\"wait\":0,\"zoom\":[x1,y1,x2,y2] only to look closer,",
+    "\"mood\":\"cheerful\",\"remember\":[],\"todo\":[\"[x] done item\",\"[ ] next item\"],\"notes\":\"what I've learned\",\"done\":false,\"wait\":0,\"zoom\":[x1,y1,x2,y2] only to look closer,",
     "\"steps\":[{\"action\":\"click|double_click|right_click|",
     "type|drag|stroke|hover|scroll|key|copy|point|draw|open_app|open_url|search|play_youtube\",\"target\":int|null,\"target2\":int|null,",
     "\"path\":[[x,y],…] only for stroke,",
@@ -627,6 +632,7 @@ fn finish_plan(cfg: &ProviderConfig, req: &VisionRequest, style: Style, raw: Str
     let more = parse_more(&raw);
     let (done, wait) = parse_progress(&raw);
     let notes = parse_notes(&raw);
+    let todo = parse_todo(&raw);
     let ask = parse_ask(&raw);
     let zoom = parse_zoom(&raw, req);
     // Remember which steps came with a point of their own *before* rescale
@@ -648,6 +654,7 @@ fn finish_plan(cfg: &ProviderConfig, req: &VisionRequest, style: Style, raw: Str
         done: done && !more,
         wait,
         notes,
+        todo,
         zoom,
         outcome: crate::model::TaskOutcome::Unverified,
     })
@@ -718,13 +725,56 @@ fn parse_zoom(raw: &str, req: &VisionRequest) -> Option<Rect> {
     })
 }
 
+/// The task's to-do list from the reply: "[x] Open Blackboard" / "[ ] …"
+/// strings (or {"task": …, "done": …} objects, which some models prefer).
+/// Ten items at most; the example from the prompt is never taken as a list.
+pub fn parse_todo(raw: &str) -> Vec<(String, bool)> {
+    let cleaned = strip_thinking(raw);
+    let Some(v) = extract_json(&cleaned).and_then(|s| serde_json::from_str::<Value>(s).ok()) else {
+        return Vec::new();
+    };
+    let items: Vec<Value> = match &v["todo"] {
+        Value::Array(a) => a.clone(),
+        Value::String(s) => s.lines().map(|l| Value::String(l.to_string())).collect(),
+        _ => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    for it in items.iter().take(10) {
+        let (text, done) = match it {
+            Value::String(s) => {
+                let t = s.trim().trim_start_matches(['-', '*', '•']).trim();
+                let lower = t.to_lowercase();
+                let ticked = ["[x]", "[✓]", "[✔]", "✅", "✓", "✔", "(done)", "done:"].iter().find(|p| lower.starts_with(*p));
+                let open = ["[ ]", "[]", "☐", "(todo)", "todo:"].iter().find(|p| lower.starts_with(*p));
+                match (ticked, open) {
+                    (Some(p), _) => (t[p.len()..].trim().to_string(), true),
+                    (None, Some(p)) => (t[p.len()..].trim().to_string(), false),
+                    _ => (t.to_string(), false),
+                }
+            }
+            Value::Object(o) => {
+                let text = ["task", "text", "item", "title", "step"].iter().find_map(|k| o.get(*k).and_then(Value::as_str)).unwrap_or("").trim().to_string();
+                let done = o.get("done").and_then(Value::as_bool).unwrap_or(false)
+                    || o.get("status").and_then(Value::as_str).is_some_and(|s| ["done", "complete", "completed", "x"].contains(&s.to_lowercase().as_str()));
+                (text, done)
+            }
+            _ => continue,
+        };
+        let text: String = text.chars().take(80).collect();
+        if !text.is_empty() && !["done item", "next item"].contains(&text.to_lowercase().as_str()) {
+            out.push((text, done));
+        }
+    }
+    out
+}
+
 /// The agent's working notes, if it kept any.
 fn parse_notes(raw: &str) -> Option<String> {
     let cleaned = strip_thinking(raw);
     extract_json(&cleaned)
         .and_then(|s| serde_json::from_str::<Value>(s).ok())
         .and_then(|v| v["notes"].as_str().map(|n| n.trim().chars().take(400).collect::<String>()))
-        .filter(|n| !n.is_empty() && n != "plan / what I've learned")
+        .filter(|n| !n.is_empty() && n != "plan / what I've learned" && n != "what I've learned")
 }
 
 /// `done` (the goal is reached) and `wait` (seconds before the next look,
@@ -1754,6 +1804,18 @@ Safety Categories: PII/Privacy"));
     }
 
     use super::*;
+
+    #[test]
+    fn reads_the_task_to_do_list() {
+        let r = r#"{"summary":"Opening Assignments","todo":["[x] Open Blackboard","[ ] Open Assignments","- [ ] Read every due date"],"steps":[]}"#;
+        assert_eq!(parse_todo(r), vec![("Open Blackboard".into(), true), ("Open Assignments".into(), false), ("Read every due date".into(), false)]);
+        let objects = r#"{"summary":"x","todo":[{"task":"Open the site","done":true},{"text":"Log in","status":"pending"}]}"#;
+        assert_eq!(parse_todo(objects), vec![("Open the site".into(), true), ("Log in".into(), false)]);
+        let one_string = r#"{"summary":"x","todo":"✅ Opened Spotify\n☐ Play lofi"}"#;
+        assert_eq!(parse_todo(one_string), vec![("Opened Spotify".into(), true), ("Play lofi".into(), false)]);
+        assert!(parse_todo(r#"{"summary":"x","todo":["[x] done item","[ ] next item"]}"#).is_empty(), "the prompt's own example");
+        assert!(parse_todo(r#"{"summary":"x"}"#).is_empty());
+    }
     use crate::uia::Control;
 
     #[test]

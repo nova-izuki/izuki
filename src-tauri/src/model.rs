@@ -294,6 +294,10 @@ pub struct VisionPlan {
     /// (where things are) — shown back to it on the next look.
     #[serde(default)]
     pub notes: Option<String>,
+    /// The task's to-do list as the model keeps it — (item, ticked) — shown
+    /// to the user while it works and checked before "done" is believed.
+    #[serde(default)]
+    pub todo: Vec<(String, bool)>,
     /// Too small to read or hit exactly: the desktop region to look at up
     /// close next round (full resolution, enlarged) — see `brain::submit_task`.
     #[serde(default)]

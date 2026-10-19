@@ -23,6 +23,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🧩", title: "Its own abilities, whatever words you use", how: "Grades, what's due, class announcements, textbooks, APA references, money, study progress, screen time — ask in any words (slang and typos too) from the Chat tab, voice, your phone, Discord or a mission, and Izuki picks the right ability itself instead of guessing." },
+  { icon: "✅", title: "A to-do list for every task", how: "For anything with more than one step, Izuki writes a short to-do list, ticks items off as they're really done (watch it on the Island), and checks the list before saying it's finished — so it doesn't stop halfway." },
   { icon: "📌", title: "Izuki keeps working in its own tab", how: "Start a task in Chrome or Edge, then switch to another tab: Izuki carries on in its own tab through the browser extension — clicking, typing and scrolling there, never touching your mouse or your tab. Steps that need the screen wait until you go back. Needs extension 1.4.2.", try: { label: "Update the extension", tab: "settings", id: "settings-extension" } },
   { icon: "🏝️", title: "Move the Island any time, clear its history", how: "The Island's move handle stays at the top while you scroll a long answer, and its saved chats (🕘) have a Clear history button — pinned chats stay." },
   { icon: "🖊️", title: "The pen cleans up after itself", how: "Circles and underlines vanish as soon as Izuki clicks, scrolls or types (the page is about to change), a few seconds after an answer, and never stay longer than two minutes, so they don't sit over the next question's answers." },

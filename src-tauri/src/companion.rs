@@ -157,6 +157,169 @@ pub fn opens_an_app(said: &str) -> bool {
 /// Connected-account work takes priority over generic verbs such as
 /// "read", "open" and "send" on every remote channel — except opening the
 /// app itself ([`opens_an_app`]).
+/// Izuki's own abilities that answer from the user's data (no screen, no
+/// UI): study progress, Blackboard, textbooks, APA, money, the shop, the
+/// study log, school deadlines. In the order respond() has always tried them.
+fn school_and_data(said: &str) -> Option<String> {
+    if let Some(ask) = crate::studytrack::parse(said).filter(|a| *a != crate::studytrack::Ask::Practise || crate::studytrack::mistakes(&crate::studytrack::events()).is_empty()) {
+        return Some(crate::studytrack::handle(ask));
+    }
+    if let Some(ask) = crate::blackboard::parse(said) {
+        return Some(crate::blackboard::handle(ask));
+    }
+    if let Some(ask) = crate::textbook::parse(said, crate::textbook::has_books()) {
+        return Some(crate::textbook::handle(ask));
+    }
+    // APA references (a link, DOI or ISBN) (cite.rs).
+    if crate::cite::asks(said) && crate::cite::target_of(said) != crate::cite::Target::ThisPage {
+        return Some(crate::cite::handle(said));
+    }
+    if let Some(ask) = crate::money::parse_here(said) {
+        return Some(crate::money::handle(ask));
+    }
+    if let Some(ask) = crate::shop::parse_here(said) {
+        return Some(crate::shop::handle(ask));
+    }
+    if let Some(on) = crate::studylog::parse(said) {
+        return Some(crate::studylog::handle(on));
+    }
+    if let Some(ask) = crate::campus::parse(said) {
+        return Some(if ask == crate::campus::Ask::Connect {
+            pc_allowed().unwrap_or_else(|| crate::campus::handle(ask))
+        } else {
+            crate::campus::handle(ask)
+        });
+    }
+    None
+}
+
+/// Izuki's own abilities, for the chat's [IZUKI: …] tool: the AI rewrites
+/// whatever the user said (any wording, typos and all) as a plain request,
+/// and it lands here — so a new way of asking still reaches the ability
+/// instead of a lane that doesn't have it. `None`: no built-in ability fits.
+pub fn local_skill(request: &str) -> Option<String> {
+    if let Some(text) = school_and_data(request) {
+        return Some(text);
+    }
+    if let Some(ask) = crate::routines::parse(request) {
+        return Some(crate::routines::handle(ask));
+    }
+    if crate::screentime::is_question(request) {
+        return Some(crate::screentime::answer(request));
+    }
+    if crate::recall::is_recall_question(request) {
+        if let Some(text) = crate::recall::answer(request) {
+            return Some(text);
+        }
+    }
+    if let Some(ask) = crate::later::parse_for_list(request) {
+        return Some(crate::later::run(ask));
+    }
+    None
+}
+
+/// One of Izuki's own abilities, as the chat's [IZUKI: …] tool names it.
+#[derive(Debug, Clone, PartialEq)]
+enum Ability {
+    Due(&'static str),
+    Overdue,
+    First,
+    Blackboard(crate::blackboard::Want, String),
+    Textbook(String),
+    Cite(String),
+    Money(crate::money::Ask),
+    Shop(crate::shop::Ask),
+    Study(crate::studytrack::Ask),
+    ScreenTime(String),
+    Recall(String),
+    /// Not a named ability: the words, for `local_skill`.
+    Words(String),
+}
+
+/// "grades | biology" → which ability, with what. Pure: nothing runs here.
+fn ability_of(arg: &str) -> Ability {
+    let (action, details) = match arg.split_once('|') {
+        Some((a, d)) => (a.trim().to_lowercase(), d.trim().to_string()),
+        None => (arg.trim().to_lowercase(), String::new()),
+    };
+    let d = details.to_lowercase();
+    // "biology", "in my biology class", "all" → the course to look in ("" = every course).
+    let course = || {
+        let c = d.trim().trim_start_matches("in ").trim_start_matches("for ").trim_start_matches("my ").trim_start_matches("the ");
+        let c = c.trim_end_matches(" class").trim_end_matches(" course").trim();
+        if ["", "all", "every", "everything", "all courses", "all classes", "any"].contains(&c) { String::new() } else { c.to_string() }
+    };
+    let range = || -> &'static str {
+        if d.contains("today") || d.contains("tonight") {
+            "today"
+        } else if d.contains("tomorrow") {
+            "tomorrow"
+        } else if d.contains("week") || ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "weekend"].iter().any(|w| d.contains(w)) {
+            "week"
+        } else {
+            "all"
+        }
+    };
+    let words = || if details.is_empty() { arg.trim().to_string() } else { details.clone() };
+    use crate::blackboard::Want;
+    match action.split_whitespace().next().unwrap_or("") {
+        "due" | "deadlines" | "deadline" | "assignments" | "homework" if arg.contains('|') || action.split_whitespace().count() == 1 => Ability::Due(range()),
+        "overdue" | "missed" | "late" if action.split_whitespace().count() == 1 => Ability::Overdue,
+        "first" | "priority" if action.split_whitespace().count() == 1 => Ability::First,
+        "grades" | "grade" => Ability::Blackboard(Want::Grades, course()),
+        "announcements" | "announcement" => Ability::Blackboard(Want::Announcements, course()),
+        "materials" | "material" | "slides" | "syllabus" => Ability::Blackboard(Want::Materials, course()),
+        "textbook" | "book" => Ability::Textbook(details.clone()),
+        "cite" | "apa" | "reference" | "citation" => Ability::Cite(details.clone()),
+        "money" | "spending" | "spend" | "budget" => Ability::Money(if ["unusual", "strange", "weird", "double"].iter().any(|w| d.contains(w)) {
+            crate::money::Ask::Unusual
+        } else if d.contains("subscription") {
+            crate::money::Ask::Subscriptions
+        } else if ["stock", "share", "quote"].iter().any(|w| d.contains(w)) {
+            crate::money::Ask::Quotes
+        } else {
+            crate::money::Ask::Month
+        }),
+        "shop" | "store" | "orders" | "sales" => Ability::Shop(if d.contains("stock") || d.contains("inventory") {
+            crate::shop::Ask::Stock
+        } else if d.contains("sale") || d.contains("revenue") {
+            crate::shop::Ask::Sales
+        } else {
+            crate::shop::Ask::Orders
+        }),
+        "study" | "progress" | "flashcards" => Ability::Study(if ["mistake", "wrong", "weak"].iter().any(|w| d.contains(w)) {
+            crate::studytrack::Ask::Mistakes
+        } else {
+            crate::studytrack::Ask::Week
+        }),
+        "screentime" => Ability::ScreenTime(if details.is_empty() { "how long was I on my PC today".into() } else { details.clone() }),
+        "recall" => Ability::Recall(words()),
+        _ => Ability::Words(words()),
+    }
+}
+
+/// The chat's [IZUKI: ability | details] tool: the AI names the ability and
+/// fills in the details, and it runs straight away — no phrase-matching on the
+/// user's words or on the AI's rewording of them. Anything else falls back
+/// to `local_skill`. `None`: no ability fits.
+pub fn izuki_tool(arg: &str) -> Option<String> {
+    use crate::blackboard::Ask as Bb;
+    Some(match ability_of(arg) {
+        Ability::Due(range) => crate::campus::handle(crate::campus::Ask::Due(range)),
+        Ability::Overdue => crate::campus::handle(crate::campus::Ask::Overdue),
+        Ability::First => crate::campus::handle(crate::campus::Ask::First),
+        Ability::Blackboard(want, course) => crate::blackboard::handle(Bb { want, course }),
+        Ability::Textbook(q) => return crate::textbook::parse(&format!("in my textbook, {q}"), true).map(crate::textbook::handle),
+        Ability::Cite(target) => crate::cite::handle(&format!("APA reference for {target}")),
+        Ability::Money(ask) => crate::money::handle(ask),
+        Ability::Shop(ask) => crate::shop::handle(ask),
+        Ability::Study(ask) => crate::studytrack::handle(ask),
+        Ability::ScreenTime(q) => crate::screentime::answer(&q),
+        Ability::Recall(q) => return crate::recall::answer(&q),
+        Ability::Words(w) => return local_skill(&w).or_else(|| local_skill(arg)),
+    })
+}
+
 pub fn needs_apps(said: &str) -> bool {
     if wants_reminder(said) || opens_an_app(said) { return false; }
     let t = said.to_lowercase();
@@ -243,60 +406,10 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         push("assistant", &text);
         return Reply::text(text);
     }
-    // Study diary, Blackboard and textbooks from the phone too.
-    if let Some(ask) = crate::studytrack::parse(said).filter(|a| *a != crate::studytrack::Ask::Practise || crate::studytrack::mistakes(&crate::studytrack::events()).is_empty()) {
+    // Study, school, money and the rest of Izuki's own data abilities —
+    // from the phone, Discord and missions too (see `local_skill`).
+    if let Some(text) = school_and_data(said) {
         push("user", said);
-        let text = crate::studytrack::handle(ask);
-        push("assistant", &text);
-        return Reply::text(text);
-    }
-    if let Some(ask) = crate::blackboard::parse(said) {
-        push("user", said);
-        let text = crate::blackboard::handle(ask);
-        push("assistant", &text);
-        return Reply::text(text);
-    }
-    if let Some(ask) = crate::textbook::parse(said, crate::textbook::has_books()) {
-        push("user", said);
-        let text = crate::textbook::handle(ask);
-        push("assistant", &text);
-        return Reply::text(text);
-    }
-    // APA references from the phone too (a link, DOI or ISBN) (cite.rs).
-    if crate::cite::asks(said) && crate::cite::target_of(said) != crate::cite::Target::ThisPage {
-        push("user", said);
-        let text = crate::cite::handle(said);
-        push("assistant", &text);
-        return Reply::text(text);
-    }
-    // Money and the shop from the phone too (money.rs, shop.rs).
-    if let Some(ask) = crate::money::parse_here(said) {
-        push("user", said);
-        let text = crate::money::handle(ask);
-        push("assistant", &text);
-        return Reply::text(text);
-    }
-    if let Some(ask) = crate::shop::parse_here(said) {
-        push("user", said);
-        let text = crate::shop::handle(ask);
-        push("assistant", &text);
-        return Reply::text(text);
-    }
-    // "Save every question and answer to my notes" from the phone too (studylog.rs).
-    if let Some(on) = crate::studylog::parse(said) {
-        push("user", said);
-        let text = crate::studylog::handle(on);
-        push("assistant", &text);
-        return Reply::text(text);
-    }
-    // "What's due this week?" from the phone and Discord too (campus.rs).
-    if let Some(ask) = crate::campus::parse(said) {
-        push("user", said);
-        let text = if ask == crate::campus::Ask::Connect {
-            pc_allowed().unwrap_or_else(|| crate::campus::handle(ask))
-        } else {
-            crate::campus::handle(ask)
-        };
         push("assistant", &text);
         return Reply::text(text);
     }
@@ -601,6 +714,35 @@ pub fn asks_to_learn(said: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn own_abilities_by_name() {
+        use crate::blackboard::Want;
+        // The AI names the ability: the user's own words never have to match.
+        assert_eq!(ability_of("grades | biology"), Ability::Blackboard(Want::Grades, "biology".into()));
+        assert_eq!(ability_of("grades | in my biology class"), Ability::Blackboard(Want::Grades, "biology".into()));
+        assert_eq!(ability_of("grades"), Ability::Blackboard(Want::Grades, String::new()));
+        assert_eq!(ability_of("due | week"), Ability::Due("week"));
+        assert_eq!(ability_of("due | before friday"), Ability::Due("week"));
+        assert_eq!(ability_of("due | all"), Ability::Due("all"));
+        assert_eq!(ability_of("overdue"), Ability::Overdue);
+        assert_eq!(ability_of("announcements | chemistry"), Ability::Blackboard(Want::Announcements, "chemistry".into()));
+        assert_eq!(ability_of("money | food spending this month"), Ability::Money(crate::money::Ask::Month));
+        assert_eq!(ability_of("money | any weird charges"), Ability::Money(crate::money::Ask::Unusual));
+        assert_eq!(ability_of("cite | 10.1037/0003-066X.59.1.29"), Ability::Cite("10.1037/0003-066X.59.1.29".into()));
+        assert_eq!(ability_of("study | my mistakes"), Ability::Study(crate::studytrack::Ask::Mistakes));
+        // A plain sentence, or an unknown name, goes to the phrase parsers as words.
+        assert_eq!(ability_of("what's due this week on Blackboard"), Ability::Words("what's due this week on Blackboard".into()));
+        assert_eq!(ability_of("dance | salsa"), Ability::Words("salsa".into()));
+    }
+
+    #[test]
+    fn plain_sentences_reach_the_same_parsers() {
+        // What `local_skill` tries first, checked without running anything.
+        assert!(crate::campus::parse("what's due this week on Blackboard").is_some());
+        assert!(crate::blackboard::parse("what are my grades").is_some());
+        assert!(crate::campus::parse("tell me a joke").is_none() && crate::blackboard::parse("tell me a joke").is_none());
+    }
 
     #[test]
     fn knows_a_request_to_be_taught() {

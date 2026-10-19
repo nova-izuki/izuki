@@ -1303,6 +1303,36 @@ fn order_by_speed(chain: &mut [crate::settings::ProviderConfig]) {
     }
 }
 
+/// The task's to-do list, for the Island: [{text, done}] (empty: none).
+const TODO_EVENT: &str = "izuki://task-todo";
+
+/// The list as the model sent it now — plus anything still open from before
+/// that it left out (a shortened list must not quietly drop unfinished work).
+fn merge_todo(old: &[(String, bool)], new: &[(String, bool)]) -> Vec<(String, bool)> {
+    let key = |t: &str| t.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut out = new.to_vec();
+    for (text, done) in old {
+        if !done && !new.iter().any(|(t, _)| key(t) == key(text)) {
+            out.push((text.clone(), false));
+        }
+    }
+    // Too long: finished items go first, so open work is never cut.
+    while out.len() > 12 {
+        match out.iter().position(|(_, d)| *d) {
+            Some(i) => {
+                out.remove(i);
+            }
+            None => out.truncate(12),
+        }
+    }
+    out
+}
+
+/// "[x] Open Blackboard; [ ] Open Assignments" — the list as shown back to the model.
+fn todo_line(todo: &[(String, bool)]) -> String {
+    todo.iter().map(|(t, d)| format!("[{}] {t}", if *d { "x" } else { " " })).collect::<Vec<_>>().join("; ")
+}
+
 /// The snag left when Izuki waited ten minutes for you to come back to its tab.
 const TAB_WAIT_OVER: &str = "tab_wait_over: you stayed on another tab";
 
@@ -2516,6 +2546,12 @@ fn submit_task(
     let keep_notes = keeps_notes(&prompt);
     // Working in the pinned tab while you're on another one (said once).
     let mut in_own_tab = false;
+    // The task's to-do list (the model keeps it; shown on the Island), and
+    // whether "done" with items left has already been sent back once.
+    let mut todo: Vec<(String, bool)> = Vec::new();
+    let mut todo_nudged = false;
+    // A new task: the last one's list goes.
+    let _ = app.emit(TODO_EVENT, serde_json::json!([]));
     let mut kept_note: Option<(String, String)> = None;
     let mut last_kept = String::new();
     let mut kept = 0u32;
@@ -2667,6 +2703,9 @@ fn submit_task(
         }
         if let Some(n) = &notes {
             ask.push_str(&format!("\nYour notes so far: {n}"));
+        }
+        if !todo.is_empty() {
+            ask.push_str(&format!("\nYour to-do list so far: {}", todo_line(&todo)));
         }
         if zoomed.is_some() {
             ask.push_str(
@@ -2824,10 +2863,35 @@ fn submit_task(
         // An action being planned is not evidence that it succeeded. Check
         // a fresh screen before accepting "done" for an autonomous task —
         // and a plan whose steps were held back isn't done at all.
-        let done = !held && (lesson || completion_observed(&plan, steps.is_empty(), round));
+        let mut done = !held && (lesson || completion_observed(&plan, steps.is_empty(), round));
         let wait = plan.wait;
         if plan.notes.is_some() {
             notes = plan.notes.clone();
+        }
+        if !plan.todo.is_empty() && plan.todo != todo {
+            todo = merge_todo(&todo, &plan.todo);
+            let items: Vec<serde_json::Value> = todo.iter().map(|(t, d)| serde_json::json!({ "text": t, "done": d })).collect();
+            let _ = app.emit(TODO_EVENT, serde_json::Value::Array(items));
+        }
+        // "Done", with things on its own list still unticked: one look back at
+        // them first — the way a person checks their list before saying
+        // they're finished. (Once only: a model that never ticks can't loop.)
+        if done && !todo_nudged && todo.iter().any(|(_, d)| !d) && alive() {
+            todo_nudged = true;
+            done = false;
+            let left: Vec<&str> = todo.iter().filter(|(_, d)| !d).map(|(t, _)| t.as_str()).collect();
+            eprintln!("[agent] said done with {} to-do item(s) left — checking them first", left.len());
+            told = Some(format!(
+                "You said it's finished, but your to-do list still has: {}. Check this fresh screen: do what's left now, \
+                 or if an item is already done tick it, or if it can't be done say which and why — then finish.",
+                left.join("; ")
+            ));
+            last_plan = Some(plan);
+            match capture::capture_all() {
+                Ok(f) => frame = f,
+                Err(_) => break,
+            }
+            continue;
         }
         // "Let me look closer": the next look is that part of the screen at
         // full resolution, enlarged — the way a person leans in to read small
@@ -3264,7 +3328,17 @@ fn submit_task(
         let said = format!("I saved {kept} explanation{} to Izuki Notes (“{title}”) so you can study them.", if kept == 1 { "" } else { "s" });
         plan.summary = if plan.summary.trim().is_empty() || plan.summary.trim() == "Done." { said } else { format!("{} {said}", plan.summary.trim_end()) };
     }
-    finalize_execution(&mut plan, completed && alive());
+    // Its own list still has open items: not "verified done", even after the
+    // one look back — say what's left instead of claiming the whole task.
+    let open: Vec<&str> = todo.iter().filter(|(_, d)| !d).map(|(t, _)| t.as_str()).collect();
+    let list_finished = open.is_empty();
+    let said = plan.summary.clone();
+    finalize_execution(&mut plan, completed && alive() && list_finished);
+    if completed && alive() && !list_finished {
+        plan.outcome = crate::model::TaskOutcome::Partial;
+        let base = if said.trim().is_empty() || said.trim() == "Done." { "I did part of it.".to_string() } else { said.trim_end().to_string() };
+        plan.summary = format!("{base} Still open on my list: {}.", open.join("; "));
+    }
     if !alive() { plan.outcome = crate::model::TaskOutcome::Cancelled; }
     plan
 }
@@ -3896,6 +3970,10 @@ mod speed_tests {
         assert!(keeps_notes("go over this and take notes"));
         assert!(!keeps_notes("don't take notes"));
         assert!(only_progress("Moving to Question 4."));
+        assert_eq!(todo_line(&[("Open Blackboard".into(), true), ("Read due dates".into(), false)]), "[x] Open Blackboard; [ ] Read due dates");
+        let old = vec![("Open Blackboard".to_string(), true), ("Read due dates".to_string(), false), ("Save to notes".to_string(), false)];
+        let new = vec![("Open Blackboard".to_string(), true), ("read  due dates".to_string(), true)];
+        assert_eq!(merge_todo(&old, &new), vec![("Open Blackboard".into(), true), ("read  due dates".into(), true), ("Save to notes".into(), false)], "a dropped open item stays");
         assert!(!only_progress("Phishing tricks people into giving away passwords."));
         assert!(!explains_as_it_goes("open spotify"));
         assert_eq!(strip_filler("Bet."), "");
