@@ -276,6 +276,11 @@ pub fn write(path: &str, content: &str) -> Result<String> {
 /// Run a PowerShell command (only ever after the user clicked Allow) and
 /// return what it printed.
 pub fn run(command: &str) -> Result<String> {
+    run_within(command, Duration::from_secs(90))
+}
+
+/// [`run`] with its own time limit: stopped (and said so) past `limit`.
+pub fn run_within(command: &str, limit: Duration) -> Result<String> {
     use std::io::Read;
     let mut cmd = std::process::Command::new("powershell.exe");
     cmd.args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command])
@@ -291,7 +296,11 @@ pub fn run(command: &str) -> Result<String> {
     // Read what it prints *while* it runs: a command with a lot to say (the
     // installed-apps list) otherwise fills the pipe, stalls, and hits the
     // 90-second limit with half an answer.
+    // Each pipe is read on its own thread and handed back over a channel, so
+    // waiting for it can be bounded: a program the command started may keep
+    // the pipe open after the command itself has been stopped.
     let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
         std::thread::spawn(move || {
             let mut text = String::new();
             if let Some(mut p) = pipe {
@@ -299,8 +308,9 @@ pub fn run(command: &str) -> Result<String> {
                 let _ = p.read_to_end(&mut bytes);
                 text = String::from_utf8_lossy(&bytes).into_owned();
             }
-            text
-        })
+            let _ = tx.send(text);
+        });
+        rx
     };
     let out_reader = drain(child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
     let err_reader = drain(child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
@@ -309,16 +319,18 @@ pub fn run(command: &str) -> Result<String> {
         if let Some(s) = child.try_wait()? {
             break Some(s);
         }
-        if started.elapsed() > Duration::from_secs(90) {
+        if started.elapsed() > limit {
             let _ = child.kill();
             break None;
         }
         std::thread::sleep(Duration::from_millis(100));
     };
-    let out = out_reader.join().unwrap_or_default();
-    let err = err_reader.join().unwrap_or_default();
+    // Finished: what it printed comes right away. Stopped: a couple of seconds at most.
+    let wait = if status.is_some() { Duration::from_secs(30) } else { Duration::from_secs(2) };
+    let out = out_reader.recv_timeout(wait).unwrap_or_default();
+    let err = err_reader.recv_timeout(wait).unwrap_or_default();
     let mut s = match status {
-        None => "It took over 90 seconds, so I stopped it.\n".to_string(),
+        None => format!("It took over {} seconds, so I stopped it.\n", limit.as_secs()),
         Some(st) if st.success() => "Done.\n".to_string(),
         // Told to skip what it can't touch (files in use, already gone) and it
         // did: that's done, with some things skipped — not a failure.

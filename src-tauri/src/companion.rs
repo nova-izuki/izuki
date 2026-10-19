@@ -201,6 +201,9 @@ pub fn local_skill(request: &str) -> Option<String> {
     if let Some(text) = school_and_data(request) {
         return Some(text);
     }
+    if let Some(ask) = crate::storage::parse(request) {
+        return Some(crate::storage::handle(ask));
+    }
     if let Some(ask) = crate::routines::parse(request) {
         return Some(crate::routines::handle(ask));
     }
@@ -232,6 +235,7 @@ enum Ability {
     Study(crate::studytrack::Ask),
     ScreenTime(String),
     Recall(String),
+    Storage(crate::storage::Ask),
     /// Not a named ability: the words, for `local_skill`.
     Words(String),
 }
@@ -293,6 +297,13 @@ fn ability_of(arg: &str) -> Ability {
             crate::studytrack::Ask::Week
         }),
         "screentime" => Ability::ScreenTime(if details.is_empty() { "how long was I on my PC today".into() } else { details.clone() }),
+        "storage" | "disk" | "space" | "drive" => Ability::Storage(if d.contains("recycle") {
+            crate::storage::Ask::EmptyBin
+        } else if ["clear", "free up", "clean", "make room", "delete temp"].iter().any(|w| d.contains(w)) && !["what", "check", "show", "taking", "using"].iter().any(|w| d.contains(w)) {
+            crate::storage::Ask::ClearSafe
+        } else {
+            crate::storage::Ask::Report
+        }),
         "recall" => Ability::Recall(words()),
         _ => Ability::Words(words()),
     }
@@ -316,6 +327,7 @@ pub fn izuki_tool(arg: &str) -> Option<String> {
         Ability::Study(ask) => crate::studytrack::handle(ask),
         Ability::ScreenTime(q) => crate::screentime::answer(&q),
         Ability::Recall(q) => return crate::recall::answer(&q),
+        Ability::Storage(ask) => crate::storage::handle(ask),
         Ability::Words(w) => return local_skill(&w).or_else(|| local_skill(arg)),
     })
 }
@@ -731,6 +743,9 @@ mod tests {
         assert_eq!(ability_of("money | any weird charges"), Ability::Money(crate::money::Ask::Unusual));
         assert_eq!(ability_of("cite | 10.1037/0003-066X.59.1.29"), Ability::Cite("10.1037/0003-066X.59.1.29".into()));
         assert_eq!(ability_of("study | my mistakes"), Ability::Study(crate::studytrack::Ask::Mistakes));
+        assert_eq!(ability_of("storage | what's using the space"), Ability::Storage(crate::storage::Ask::Report));
+        assert_eq!(ability_of("storage | free up space"), Ability::Storage(crate::storage::Ask::ClearSafe));
+        assert_eq!(ability_of("storage | empty the recycle bin"), Ability::Storage(crate::storage::Ask::EmptyBin));
         // A plain sentence, or an unknown name, goes to the phrase parsers as words.
         assert_eq!(ability_of("what's due this week on Blackboard"), Ability::Words("what's due this week on Blackboard".into()));
         assert_eq!(ability_of("dance | salsa"), Ability::Words("salsa".into()));

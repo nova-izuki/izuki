@@ -309,7 +309,10 @@ fn disk_and_memory(app: &AppHandle) {
             say(
                 app,
                 "disk-low",
-                &format!("Your C drive is nearly full — about {gb} GB left. Want me to find what's taking the space, or clear out temporary files?"),
+                &format!(
+                    "Your C drive is nearly full — {} left. Want me to find what's taking the space? Say “what's taking up space”, or “clear the safe stuff” for old temporary files.",
+                    if gb == 0 { "less than 1 GB".to_string() } else { format!("about {gb} GB") }
+                ),
                 Level::Important,
             );
         }

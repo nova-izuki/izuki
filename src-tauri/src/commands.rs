@@ -514,9 +514,10 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     if crate::pccare::is_care_question(&said) {
         return blocking(crate::pccare::spoken).await.ok();
     }
-    // "What's taking up my space?" — measured right here, no AI needed.
-    if crate::storage::is_storage_question(&said) {
-        return blocking(crate::storage::report).await.ok();
+    // "What's taking up my space?", "free up some space", "empty the recycle
+    // bin" — measured and done right here, no AI needed.
+    if let Some(ask) = crate::storage::parse(&said) {
+        return blocking(move || crate::storage::handle(ask)).await.ok();
     }
     // "Find my Home Depot email" — every linked Gmail account, searched for real.
     if let Some(ask) = crate::mail::parse_ask(&said).filter(|_| crate::composio::configured()) {
@@ -641,6 +642,13 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
             }
         });
         return Some(hud.said);
+    }
+    // Izuki's own abilities the phone, Discord and missions use (one shared
+    // list, companion::local_skill): an ability added there works here too,
+    // instead of only on whichever path it was first wired into.
+    let asked = said.clone();
+    if let Some(text) = blocking(move || crate::companion::local_skill(&asked)).await.ok().flatten() {
+        return Some(text);
     }
     crate::instant::parse(&said)?;
     blocking(move || brain::run_instant(&app, &state::store(), &said).map(|p| p.summary))

@@ -127,6 +127,23 @@ pub fn answer_action(id: u64, allow: bool) -> anyhow::Result<String> {
 
 /// Save the file / run the command — only once it's allowed (the card, a
 /// spoken "allow", auto-run, or a command that only looks).
+/// How long a background check may take: well under the app's own "no
+/// progress for a minute" limit, so a slow check ends with a clear answer
+/// instead of the whole request being called stalled.
+const LOOK_LIMIT: std::time::Duration = std::time::Duration::from_secs(40);
+
+/// A command that only looks, run in the background — within [`LOOK_LIMIT`].
+fn look_only(tool: &Tool) -> String {
+    match tool {
+        Tool::Run(cmd) => match crate::files::run_within(cmd, LOOK_LIMIT) {
+            Ok(out) if out.starts_with("It took over") => format!("{out}\n[That check was too slow. Try a quicker way, or for disk space use [IZUKI: storage | what's taking up space].]"),
+            Ok(out) => out,
+            Err(e) => format!("That didn't work: {e}"),
+        },
+        other => do_change(other).unwrap_or_else(|e| format!("That didn't work: {e}")),
+    }
+}
+
 fn do_change(tool: &Tool) -> anyhow::Result<String> {
     match tool {
         Tool::Write(path, content) => crate::files::write(path, content),
@@ -267,7 +284,8 @@ the details: due | today, tomorrow, week or all (what's due, from their Blackboa
 first (what to do first) · grades | a course, or empty for all · announcements | a course or empty · materials | a \
 course · textbook | their question about their textbook · cite | a link, DOI or ISBN (APA reference) · money | what \
 they asked (spending, unusual charges, subscriptions) · shop | orders, sales or stock · study | progress or mistakes · \
-screentime | their question · recall | their question about what was on their screen earlier. E.g. \
+screentime | their question · recall | their question about what was on their screen earlier · storage | \
+what they want (what's taking up space, free up space, empty the Recycle Bin). E.g. \
 [IZUKI: grades | biology], [IZUKI: due | week]. For these, use it BEFORE [APPS] or [BROWSE]; if it says it has no \
 ability for that, try another way.\n\
 Use a few at most, then answer in your normal way and say where it came from. Never type passwords or \
@@ -323,7 +341,8 @@ measure them with [RUN:] first.\n";
 const PC_LOOK_RULE: &str = "You're running on the user's Windows PC and can check it yourself, in the \
 background, without opening anything on the screen. Same rule — reply with only the tag:\n\
 [RUN: command] — one PowerShell command that only LOOKS (Get-…, Measure-Object, winget list, tasklist, \
-ipconfig): app sizes, installed apps, disk space, what's running, battery, network, big files.\n\
+ipconfig): app sizes, installed apps, what's running, battery, network. It must finish within 40 seconds — never \
+add up a whole drive or a big folder with it; for what's taking up space use [IZUKI: storage | …] (fast, made for it).\n\
 [FIND: words] / [FILES: folder] — find files, or see what's in a folder.\n\
 [OPEN: path] — read a file (PDF, Word, text, slides, a spreadsheet) to sum it up or answer about it.\n\
 Use these for questions like \"how many GB is Zoom\", \"what apps don't I use\", \"how much space is \
@@ -686,7 +705,7 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             let result = if style == Style::Phone && tool.is_files() {
                 "Files can only be used from the Chat tab on the PC.".into()
             } else if only_looks {
-                do_change(&tool).unwrap_or_else(|e| format!("That didn't work: {e}"))
+                look_only(&tool)
             } else {
                 run_tool(&tool)
             };
