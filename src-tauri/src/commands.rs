@@ -348,6 +348,8 @@ pub fn open_log_folder() -> R<()> {
 /// everyday commands (instant.rs).
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
+    // "Yes" to something Izuki just offered: that, as if asked for (offers.rs).
+    let said = crate::offers::answer(&said).unwrap_or(said);
     crate::tv::heard(&said);
     // "What's due this week?", "connect my Blackboard" (campus.rs).
     if let Some(ask) = crate::campus::parse(&said) {

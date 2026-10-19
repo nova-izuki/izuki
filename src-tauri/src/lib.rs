@@ -34,6 +34,7 @@ pub mod page_ask;
 pub mod dupes;
 pub mod sharpeye;
 pub mod recyclebin;
+pub mod offers;
 pub mod storage;
 pub mod pccare;
 pub mod services;

@@ -23,6 +23,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🙋", title: "Just say yes", how: "When Izuki offers to help — your drive's nearly full, your PC's memory is full — a plain “yes” does exactly what it offered, on the PC, your phone or Discord. “No” lets it go." },
+  { icon: "⏰", title: "Due-date reminders from Blackboard", how: "No calendar link needed: with the browser extension, Izuki reads your due dates from Blackboard and tells you a day before and two hours before." },
   { icon: "💾", title: "“What's taking up my space?” — from anywhere", how: "Ask in any words — voice, chat, the Island, your phone: Izuki shows the biggest folders and what's inside them, the biggest files, and what's safe to clear. “Clear the safe stuff” removes old temporary files; your own files are only shown, never deleted." },
   { icon: "🎓", title: "On a quiz, Izuki coaches", how: "While a quiz or test is on screen, Izuki explains what the question asks and the idea behind it — it doesn't say, mark or confirm the answer, however you ask. Study mode, flashcards and “quiz me” on your notes are the way to practise." },
   { icon: "🧩", title: "Its own abilities, whatever words you use", how: "Grades, what's due, class announcements, textbooks, APA references, money, study progress, screen time — ask in any words (slang and typos too) from the Chat tab, voice, your phone, Discord or a mission, and Izuki picks the right ability itself instead of guessing." },

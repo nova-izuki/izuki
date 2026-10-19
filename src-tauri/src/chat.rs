@@ -228,6 +228,11 @@ fn proof_plan(cmd: &str) -> Option<(String, String, bool, &'static str)> {
 /// waiting for the user to say or type "allow".
 static VOICE_PENDING: Mutex<Option<u64>> = Mutex::new(None);
 
+/// A command is waiting for the user's spoken or typed "allow".
+pub fn voice_pending() -> bool {
+    VOICE_PENDING.lock().is_some()
+}
+
 /// "Allow" / "no" said or typed for the change Izuki just asked about out
 /// loud. `None` when nothing is waiting.
 pub fn answer_last(allow: bool) -> Option<anyhow::Result<String>> {

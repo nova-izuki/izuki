@@ -386,6 +386,9 @@ pub fn respond(app: &AppHandle, said: &str, spoken: bool, status: &dyn Fn(&str))
 /// brain looks at them with the words — "what's this?", "fix this error",
 /// "solve question 3".
 pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bool, status: &dyn Fn(&str)) -> Reply {
+    // "Yes" to something Izuki just offered: that, as if asked for (offers.rs).
+    let offered = crate::offers::answer(said);
+    let said: &str = offered.as_deref().unwrap_or(said);
     if let Err(reason) = crate::execution::check() {
         return Reply::text(reason.explanation()).with_outcome(if reason == crate::execution::StopReason::Cancelled { crate::model::TaskOutcome::Cancelled } else { crate::model::TaskOutcome::Blocked });
     }

@@ -87,14 +87,23 @@ pub fn spawn(app: AppHandle) {
     });
 }
 
+/// Something Izuki brings up that it can also do: said like [`say`], and if
+/// it was said, a plain "yes" next asks for `request` (offers.rs).
+pub fn offer(app: &AppHandle, key: &str, text: &str, level: Level, request: &str) {
+    if say(app, key, text, level) {
+        crate::offers::make(request);
+    }
+}
+
 /// Something Izuki might bring up. `key` stops repeats; `level` decides
-/// whether now is the moment.
-pub fn say(app: &AppHandle, key: &str, text: &str, level: Level) {
+/// whether now is the moment. True only when it reached the user now —
+/// spoken, or sent to their phone — not when it was kept for later.
+pub fn say(app: &AppHandle, key: &str, text: &str, level: Level) -> bool {
     // The desktop mate says the important ones in its bubble too.
     if level >= Level::Important {
         crate::mate::notify("say", text);
     }
-    let Some(store) = crate::state::try_store() else { return };
+    let Some(store) = crate::state::try_store() else { return false };
     let settings = store.settings();
     let idle = idle_for();
     let away = idle >= AWAY_AFTER;
@@ -136,14 +145,18 @@ pub fn say(app: &AppHandle, key: &str, text: &str, level: Level) {
         s.last_spoke = Some(Instant::now());
         Some((false, true))
     });
-    let Some((to_phone, out_loud)) = decision else { return };
+    let Some((to_phone, out_loud)) = decision else { return false };
     eprintln!("[buddy] {key}: {text} (phone {to_phone}, aloud {out_loud})");
+    let mut reached = false;
     if to_phone && settings.heads_up_phone {
         crate::companion::notify_everywhere(text);
+        reached = true;
     }
     if out_loud && settings.buddy_speaks {
         let _ = app.emit(EVENT, Say { text: text.to_string(), urgent: level == Level::Urgent });
+        reached = true;
     }
+    reached
 }
 
 fn tick(app: &AppHandle) {
@@ -284,7 +297,9 @@ fn battery(app: &AppHandle, may_act: bool) {
         return;
     }
     match stage {
-        1 => say(app, "battery-20", &format!("Heads up — the battery's at {pct}%. Might be time to find the charger."), Level::Important),
+        1 => {
+            say(app, "battery-20", &format!("Heads up — the battery's at {pct}%. Might be time to find the charger."), Level::Important);
+        }
         2 => {
             // Only say it's on if Windows really did it.
             let saver = may_act && crate::files::run_ok("powercfg /setdcvalueindex SCHEME_CURRENT SUB_ENERGYSAVER ESBATTTHRESHOLD 100; powercfg /setactive SCHEME_CURRENT");
@@ -298,7 +313,9 @@ fn battery(app: &AppHandle, may_act: bool) {
             };
             say(app, "battery-15", &text, Level::Important);
         }
-        _ => say(app, "battery-10", &format!("Battery's at {pct}% — plug in now or save your work, it'll shut down soon."), Level::Urgent),
+        _ => {
+            say(app, "battery-10", &format!("Battery's at {pct}% — plug in now or save your work, it'll shut down soon."), Level::Urgent);
+        }
     }
 }
 
@@ -306,14 +323,15 @@ fn disk_and_memory(app: &AppHandle) {
     let (memory, disk_gb) = crate::briefing::health_raw();
     if let Some(gb) = disk_gb {
         if gb < 5 {
-            say(
+            offer(
                 app,
                 "disk-low",
                 &format!(
-                    "Your C drive is nearly full — {} left. Want me to find what's taking the space? Say “what's taking up space”, or “clear the safe stuff” for old temporary files.",
+                    "Your C drive is nearly full — {} left. Want me to find what's taking the space? Just say yes (or “clear the safe stuff” for old temporary files).",
                     if gb == 0 { "less than 1 GB".to_string() } else { format!("about {gb} GB") }
                 ),
                 Level::Important,
+                "what's taking up space on my drive",
             );
         }
     }
@@ -330,11 +348,13 @@ fn disk_and_memory(app: &AppHandle) {
             .ok()
             .map(|t| t.trim().lines().last().unwrap_or("").trim().to_string())
             .filter(|t| !t.is_empty() && !t.contains(' '));
+        // The offer is the safe clean-up (background helpers only, never a
+        // window with your work in it); the heaviest app is just named.
         let text = match top {
-            Some(name) => format!("Your PC's memory is almost full, which is why things may feel slow — {name} is using the most. Want me to close it?"),
-            None => "Your PC's memory is almost full, which is why things may feel slow. Want me to see what's using it?".into(),
+            Some(name) => format!("Your PC's memory is almost full, which is why things may feel slow — {name} is using the most. Want me to free some up? I'll close background helpers, never your windows. Just say yes."),
+            None => "Your PC's memory is almost full, which is why things may feel slow. Want me to free some up? I'll close background helpers, never your windows. Just say yes.".into(),
         };
-        say(app, "memory-high", &text, Level::Chat);
+        offer(app, "memory-high", &text, Level::Chat, "speed up my pc");
     }
 }
 

@@ -2676,7 +2676,7 @@ fn submit_task(
         // Locked PC: stop, and say so — never try to get past the lock screen.
         if uia::screen_locked() {
             eprintln!("[agent] the PC is locked — stopping");
-            *UNFINISHED.lock() = Some((prompt.clone(), done_so_far.clone()));
+            set_unfinished((prompt.clone(), done_so_far.clone()));
             let mut plan = last_plan.take().unwrap_or_default();
             plan.summary = "Your PC is locked. Unlock it and say \"keep going\", and I'll carry on.".into();
             plan.mood = Some("calm".into());
@@ -2696,7 +2696,7 @@ fn submit_task(
                 if detours >= 3 {
                     eprintln!("[agent] kept switching to windows the task didn't mention — stopping to ask");
                     crate::lessons::note(&front, "a task kept switching between windows it wasn't asked to use — stay in the window the task is about");
-                    *UNFINISHED.lock() = Some((prompt.clone(), done_so_far.clone()));
+                    set_unfinished((prompt.clone(), done_so_far.clone()));
                     let mut plan = last_plan.take().unwrap_or_default();
                     plan.summary = "I kept ending up in windows you didn't ask about, so I've stopped before making a mess. Tell me exactly where you want this done and I'll do just that.".into();
                     plan.mood = Some("sympathetic".into());
@@ -2862,7 +2862,7 @@ fn submit_task(
             // where it got to so "keep going" can pick it up.
             Err(e) if round > 0 => {
                 eprintln!("[agent] giving up for now: {e}");
-                *UNFINISHED.lock() = Some((prompt.clone(), done_so_far.clone()));
+                set_unfinished((prompt.clone(), done_so_far.clone()));
                 let mut plan = last_plan.take().unwrap_or_default();
                 plan.summary = "The free AI brains are maxed out right now, so I had to stop there. Say \"keep going\" in a minute and I'll pick up where I left off.".into();
                 plan.mood = Some("sympathetic".into());
@@ -3173,7 +3173,7 @@ fn submit_task(
             }
             eprintln!("[agent] {MAX_IDLE_ROUNDS} rounds in a row without a step — stopping");
             crate::lessons::note(&uia::foreground_app(), "pages here can take a long time to be ready — wait for them to finish loading before acting");
-            *UNFINISHED.lock() = Some((prompt.clone(), done_so_far.clone()));
+            set_unfinished((prompt.clone(), done_so_far.clone()));
             let mut plan = plan;
             plan.summary = "It's still not ready after a good while, so I'll pause here. Say \"keep going\" and I'll pick it up, or tell me what to click.".into();
             plan.mood = Some("sympathetic".into());
@@ -3255,7 +3255,7 @@ fn submit_task(
         // button) isn't the end: tell the brain, and it deals with it.
         let snag = STEP_SNAG.lock().take();
         if snag.as_deref() == Some(TAB_WAIT_OVER) {
-            *UNFINISHED.lock() = Some((prompt.clone(), done_so_far.clone()));
+            set_unfinished((prompt.clone(), done_so_far.clone()));
             let mut plan = last_plan.take().unwrap_or_default();
             plan.summary = "The next step needs Izuki's tab on screen, and you've been on another tab for a while — so I've paused. Go back to that tab and say \"keep going\" when you're ready.".into();
             plan.mood = Some("calm".into());
@@ -3310,7 +3310,7 @@ fn submit_task(
             if fresh < 3 {
                 eprintln!("[agent] little progress in the last {PROGRESS_EVERY} rounds — pausing");
                 crate::lessons::note(&uia::foreground_app(), "a task here stalled before: check the instructions on screen, scroll to find what's missing, and say what's in the way instead of retrying");
-                *UNFINISHED.lock() = Some((prompt.clone(), done_so_far.clone()));
+                set_unfinished((prompt.clone(), done_so_far.clone()));
                 if let Some(p) = last_plan.as_mut() {
                     p.summary = "I've been at this a while without getting much further, so I'll pause here. Say \"keep going\" and I'll pick it up from where it is, or tell me what's in the way.".into();
                 }
@@ -3320,7 +3320,7 @@ fn submit_task(
         if (!finished && !fixable) || !alive() || (done && !fixable) || round + 1 == MAX_ROUNDS {
             // Ran out of rounds mid-task: "keep going" carries on from here.
             if round + 1 == MAX_ROUNDS && !done && finished {
-                *UNFINISHED.lock() = Some((prompt.clone(), done_so_far.clone()));
+                set_unfinished((prompt.clone(), done_so_far.clone()));
             }
             break;
         }
@@ -3775,6 +3775,20 @@ fn worth_saying(line: &str, last: &str) -> bool {
 /// A task that had to stop partway (busy brains, out of rounds): what was
 /// asked and what's been done, for "keep going".
 static UNFINISHED: parking_lot::Mutex<Option<(String, Vec<String>)>> = parking_lot::Mutex::new(None);
+
+/// When the task waiting for "keep going" stopped.
+static UNFINISHED_AT: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
+
+/// A task stopped partway: kept (with when) for "keep going".
+fn set_unfinished(task: (String, Vec<String>)) {
+    *UNFINISHED.lock() = Some(task);
+    *UNFINISHED_AT.lock() = Some(std::time::Instant::now());
+}
+
+/// When the task waiting for "keep going" stopped (`None`: nothing waits).
+pub fn unfinished_since() -> Option<std::time::Instant> {
+    UNFINISHED.lock().as_ref().and(*UNFINISHED_AT.lock())
+}
 
 /// "Keep going", "continue", "carry on"…
 fn is_keep_going(said: &str) -> bool {

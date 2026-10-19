@@ -135,6 +135,17 @@ fn tick(app: &AppHandle) {
         if !all.is_empty() {
             st.school = all;
         }
+    } else if feeds.is_empty() && settings.heads_up_school && due(st.school_at, SCHOOL_EVERY) && crate::blackboard::can_read_due() {
+        // No calendar link: the same due dates Campus reads from Blackboard
+        // itself (through the browser extension, signed in as you).
+        st.school_at = Some(Instant::now());
+        match crate::blackboard::due_items(0, 14) {
+            Ok(items) => {
+                st.school = items.into_iter().map(|(uid, title, at)| Due { uid, title, at }).collect();
+                eprintln!("[headsup] school: {} due date(s) read from Blackboard", st.school.len());
+            }
+            Err(e) => eprintln!("[headsup] Blackboard due dates: {e}"),
+        }
     }
     if settings.heads_up_school {
         for line in school_due_soon(st) {
