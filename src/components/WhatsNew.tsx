@@ -23,6 +23,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "⚡", title: "Fewer “the free AI's busy” waits", how: "Izuki learns each free AI's per-minute allowance, sends leaner requests to the tight ones, and moves straight on when one is full — so more requests go to the fast AI and fewer tasks stall." },
+  { icon: "📱", title: "iPhone and Android each get their own design", how: "On the phone app: an iOS look on iPhones (frosted bar, iMessage-style bubbles, iOS sheets) and Material 3 on Android — and the top buttons now fit on every phone, with Call and Settings always visible." },
   { icon: "🧠", title: "Smarter in general", how: "No more 16-step limit — it keeps going while it's making progress. A click that doesn't work gets tried another way (inside the page, through Windows, by the words on screen). It keeps tips for each app and site and uses them next time, thinks harder after a mistake, and real questions go to your strongest AI." },
   { icon: "📚", title: "APA 7 references, from the real source", how: "“Cite this page in APA”, “APA reference for 10.1037/…” or “cite ISBN 978…”: the details come from the source itself (Crossref, Open Library, the page's own tags) — never made up — with the in-text citation, and every reference saved to your “References (APA)” note." },
   { icon: "🎓", title: "Quiz coach", how: "Say “coach me through this quiz”: Izuki explains each question (never which answer is right), waits quietly while you pick, then presses Next for you. It never presses Submit — and after you submit, “go over my results” reviews what you missed." },

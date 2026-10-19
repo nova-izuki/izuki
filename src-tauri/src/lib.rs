@@ -55,6 +55,7 @@ pub mod money;
 pub mod coach;
 pub mod cite;
 pub mod lessons;
+pub mod budget;
 pub mod shop;
 pub mod picker;
 pub mod remote;

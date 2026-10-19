@@ -8,7 +8,7 @@
 //! The model is never load-bearing: `planner::local_plan` already produced a
 //! runnable plan from the geometry of the marks. This layer only refines it.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine;
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
@@ -309,6 +309,7 @@ downscaled screenshot is what makes marks land badly. ",
     "to a few words."
 );
 
+#[derive(Clone)]
 pub struct VisionRequest {
     /// Full screenshot with the marks burned in, already downscaled.
     pub image_jpeg: Vec<u8>,
@@ -526,10 +527,70 @@ pub fn warm_up() {
 }
 
 /// Ask a provider to turn the marks into a plan.
+/// A leaner copy for an AI with a small per-minute allowance: the ask and
+/// the screenshot stay whole; the controls, page text and extras shrink.
+fn lean(req: &VisionRequest) -> VisionRequest {
+    let mut r = req.clone();
+    // Everything on screen stays (so a visible button is never guessed at);
+    // what's scrolled off or hover-only goes first.
+    let visible = r.controls.iter().filter(|c| !c.below && !c.hidden).count();
+    r.controls.retain(|c| !c.below && !c.hidden || visible < 50);
+    // Visible ones first (a stable sort keeps their order), so a cut only ever drops off-screen ones.
+    r.controls.sort_by_key(|c| c.below || c.hidden);
+    r.controls.truncate(60.max(visible));
+    r.page_text = r.page_text.chars().take(1500).collect();
+    r.memory = r.memory.chars().take(800).collect();
+    r.windows.truncate(6);
+    r
+}
+
 pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
     let started = Instant::now();
     let style = Style::of(cfg);
-    let raw = match cfg.id {
+    // Within this AI's per-minute allowance (budget.rs): leaner when tight,
+    // skipped (with how long to wait) when it would only refuse.
+    // (Not Gemini: its free limits count requests, and it swaps to its Lite model itself.)
+    let key = crate::budget::key(&format!("{:?}", cfg.id), &cfg.model);
+    let budgeted = cfg.id != ProviderId::Gemini;
+    let size = |r: &VisionRequest| crate::budget::estimate(style.system().len() + style.user(r).len(), (!r.image_jpeg.is_empty()).then_some(r.image_size));
+    let mut tokens = size(req);
+    let slim;
+    let req = if budgeted && crate::budget::tight(&key, tokens) {
+        slim = lean(req);
+        tokens = size(&slim);
+        &slim
+    } else {
+        req
+    };
+    if let Some(wait) = crate::budget::room_in(&key, tokens).filter(|_| budgeted) {
+        bail!(
+            "{} is rate-limiting you (429 Too Many Requests): its per-minute allowance is used up for now ({tokens} more tokens wouldn't fit) — try again in {}s",
+            cfg.label,
+            wait.as_secs().max(1)
+        );
+    }
+    if budgeted {
+        crate::budget::record(&key, tokens);
+    }
+    let raw = match ask_raw(cfg, req, style) {
+        Ok(raw) => raw,
+        Err(e) => {
+            let why = e.to_string();
+            if budgeted {
+                crate::budget::learn(&key, &why);
+                // Refused outright: it didn't use the allowance.
+                if why.contains("429") || why.to_lowercase().contains("rate limit") {
+                    crate::budget::release(&key, tokens);
+                }
+            }
+            return Err(e);
+        }
+    };
+    finish_plan(cfg, req, style, raw, started)
+}
+
+fn ask_raw(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Result<String> {
+    Ok(match cfg.id {
         ProviderId::Ollama => ask_ollama(cfg, req, style)?,
         ProviderId::Gemini => ask_gemini(cfg, req, style)?,
         ProviderId::Anthropic => ask_anthropic(cfg, req, style)?,
@@ -544,8 +605,10 @@ pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
         | ProviderId::Mistral
         | ProviderId::Meta
         | ProviderId::Custom => ask_openai_compatible(cfg, req, style)?,
-    };
+    })
+}
 
+fn finish_plan(cfg: &ProviderConfig, req: &VisionRequest, style: Style, raw: String, started: Instant) -> Result<VisionPlan> {
     // Command lines (Easy Mode — or any model that answered that way).
     let cleaned = strip_thinking(&raw);
     let lines = crate::easy::parse(&cleaned, req, style == Style::Easy);
