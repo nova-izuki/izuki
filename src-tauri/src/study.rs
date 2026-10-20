@@ -26,6 +26,12 @@ static GUIDE: Mutex<Option<(Vec<String>, usize, std::time::Instant)>> = Mutex::n
 const WORK: &[&str] = &["assignment", "lab", "homework", "worksheet", "quiz", "project", "essay", "discussion", "module", "exercise", "problem set", "task"];
 const COACH: &[&str] = &["teach me", "help me with", "help me do", "walk me through", "explain", "go through", "do it with me", "do this with me", "guide me", "study", "save to my notes", "save it to my notes", "take notes", "notes"];
 
+/// Asks to be taught (not just to keep something in Notes).
+fn asks_for_lesson(said: &str) -> bool {
+    let s = said.to_lowercase();
+    COACH.iter().filter(|w| !w.contains("notes")).any(|w| s.contains(w))
+}
+
 /// "teach me this assignment", "open my lab assignment and walk me through it and save notes".
 pub fn parse(said: &str) -> Option<Ask> {
     let s = format!(" {} ", said.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" "));
@@ -65,8 +71,12 @@ Rules: only use what the assignment text says — never invent requirements, dat
 explain how and why, give a small worked example of the method if useful, but do NOT write the final answers, the essay, or the code \
 they're meant to hand in. If the text isn't an assignment, say so in WHAT IT ASKS.";
 
-/// Read the assignment in front, make the guide, save it to Notes, start walking through it.
-pub fn coach() -> anyhow::Result<String> {
+/// The last guide made (title, text), for "save the guide to my notes" later.
+static LAST_GUIDE: Mutex<Option<(String, String, std::time::Instant)>> = Mutex::new(None);
+
+/// Read the assignment in front, make the guide, start walking through it —
+/// and keep it in Notes only when asked (`said` mentions saving to notes).
+pub fn coach(said: &str) -> anyhow::Result<String> {
     let title = crate::uia::foreground_title();
     let mut text = crate::uia::document_text(14_000);
     if text.trim().len() < 120 {
@@ -85,18 +95,26 @@ pub fn coach() -> anyhow::Result<String> {
     if guide.trim().is_empty() {
         anyhow::bail!("the AI didn't write a guide — try again in a moment");
     }
-    let note = crate::notes::from_text(&format!("Assignment — {}", crate::notes::tidy_title(&title)), &title, &guide, false)?;
+    let note_title = format!("Assignment — {}", crate::notes::tidy_title(&title));
+    let saved = if crate::notes::may_keep(said) { Some(crate::notes::from_text(&note_title, &title, &guide, false)?) } else { None };
+    *LAST_GUIDE.lock() = Some((note_title.clone(), guide.clone(), std::time::Instant::now()));
+    if saved.is_none() {
+        crate::offers::make("save the assignment guide to my notes");
+    }
     let steps = steps_of(&guide);
     let asks = section(&guide, "WHAT IT ASKS").unwrap_or_default();
     let due = section(&guide, "DUE").filter(|d| !d.to_lowercase().contains("not shown"));
     *GUIDE.lock() = Some((steps.clone(), 0, std::time::Instant::now()));
-    eprintln!("[study] guide saved ({} steps)", steps.len());
+    eprintln!("[study] guide ready ({} steps, {})", steps.len(), if saved.is_some() { "saved to Notes" } else { "not saved" });
     let first = steps.first().cloned().unwrap_or_default();
     Ok(format!(
-        "{}{}\nI saved a step-by-step guide to your Notes (“{}”).{}",
+        "{}{}\n{}{}",
         if asks.is_empty() { "Here's the plan.".to_string() } else { asks },
         due.map(|d| format!(" Due: {d}.")).unwrap_or_default(),
-        note.title,
+        match &saved {
+            Some(note) => format!("I saved the step-by-step guide to your Notes (“{}”).", note.title),
+            None => "Want the step-by-step guide kept in your Notes? Just say yes.".to_string(),
+        },
         if first.is_empty() { String::new() } else { format!("\nStep 1 of {}: {first}\nSay “next step” when you're ready, or “explain that”.", steps.len()) }
     ))
 }
@@ -123,6 +141,19 @@ fn steps_of(guide: &str) -> Vec<String> {
 
 /// "next step" / "explain that" / "repeat" while a guide is open (2 hours).
 pub fn follow_up(said: &str) -> Option<String> {
+    // "Save the guide to my notes" (or "yes" to that offer): the last guide, kept.
+    // (A new coaching request — "teach me this assignment and save the guide" —
+    // makes a new guide instead.)
+    if crate::notes::asks_to_save(said) && !asks_for_lesson(said) && ["guide", "plan", "steps", "assignment"].iter().any(|w| said.to_lowercase().contains(w)) {
+        let last = LAST_GUIDE.lock().clone();
+        if let Some((title, text, at)) = last.filter(|(_, _, at)| at.elapsed() < std::time::Duration::from_secs(4 * 3600)) {
+            let _ = at;
+            return Some(match crate::notes::from_text(&title, "Study coach", &text, false) {
+                Ok(n) => format!("Saved the guide to your Notes (“{}”).", n.title),
+                Err(e) => format!("I couldn't save the guide: {e}"),
+            });
+        }
+    }
     let s = said.to_lowercase();
     let s = s.trim().trim_end_matches(['.', '!', '?']);
     let mut g = GUIDE.lock();
@@ -169,8 +200,11 @@ pub fn explain_current(said: &str) -> Option<String> {
         json!({ "role": "user", "content": step }),
     ])
     .ok()?;
-    let _ = crate::notes::add_to_lesson(&more);
-    Some(format!("{more}\n(Added to your lesson notes.)"))
+    // Kept only when asked, or while the Study log is on.
+    if crate::notes::may_keep(said) && crate::notes::add_to_lesson(&more).is_ok() {
+        return Some(format!("{more}\n(Added to your lesson notes.)"));
+    }
+    Some(more)
 }
 
 #[cfg(test)]
@@ -184,6 +218,9 @@ mod tests {
         assert_eq!(a.open_first.as_deref(), Some("open my lab assignment on blackboard"));
         assert!(parse("open blackboard").is_none());
         assert!(parse("teach me python").is_none());
+        // "Yes" to the offer runs its words: a save of the guide, not a new lesson.
+        assert!(!asks_for_lesson("save the assignment guide to my notes"));
+        assert!(asks_for_lesson("teach me this assignment and save the guide to my notes"));
     }
 
     #[test]

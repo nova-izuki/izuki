@@ -171,7 +171,7 @@ fn school_and_data(said: &str) -> Option<String> {
         return Some(crate::textbook::handle(ask));
     }
     // APA references (a link, DOI or ISBN) (cite.rs).
-    if crate::cite::asks(said) && crate::cite::target_of(said) != crate::cite::Target::ThisPage {
+    if crate::cite::asks(said) && (crate::cite::target_of(said) != crate::cite::Target::ThisPage || (crate::cite::has_last() && crate::notes::asks_to_save(said))) {
         return Some(crate::cite::handle(said));
     }
     if let Some(ask) = crate::money::parse_here(said) {
@@ -236,6 +236,8 @@ enum Ability {
     ScreenTime(String),
     Recall(String),
     Storage(crate::storage::Ask),
+    /// Something to do in FL Studio, in plain words ("line the 808 up with the kick").
+    Fl(String),
     /// Not a named ability: the words, for `local_skill`.
     Words(String),
 }
@@ -297,6 +299,7 @@ fn ability_of(arg: &str) -> Ability {
             crate::studytrack::Ask::Week
         }),
         "screentime" => Ability::ScreenTime(if details.is_empty() { "how long was I on my PC today".into() } else { details.clone() }),
+        "fl" | "flstudio" | "music" | "beat" | "daw" => Ability::Fl(words()),
         "storage" | "disk" | "space" | "drive" => Ability::Storage(if d.contains("recycle") {
             crate::storage::Ask::EmptyBin
         } else if ["clear", "free up", "clean", "make room", "delete temp"].iter().any(|w| d.contains(w)) && !["what", "check", "show", "taking", "using"].iter().any(|w| d.contains(w)) {
@@ -328,6 +331,11 @@ pub fn izuki_tool(arg: &str) -> Option<String> {
         Ability::ScreenTime(q) => crate::screentime::answer(&q),
         Ability::Recall(q) => return crate::recall::answer(&q),
         Ability::Storage(ask) => crate::storage::handle(ask),
+        Ability::Fl(what) => match crate::flstudio::handle(&format!("in fl studio, {what}")) {
+            Ok(Some(text)) => text,
+            Ok(None) => "That isn't something Izuki's FL Studio link can do yet. It can: quantize a sound, line the 808 up with the kick (by ear), balance the mix, add an 808, a melody or chords, mix the vocals, add an intro or a fill, play, stop and set the tempo.".into(),
+            Err(e) => e.to_string(),
+        },
         Ability::Words(w) => return local_skill(&w).or_else(|| local_skill(arg)),
     })
 }
@@ -438,7 +446,7 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         push("user", said);
         let text = match pc_allowed() {
             Some(no) => no,
-            None => crate::study::coach().unwrap_or_else(|e| e.to_string()),
+            None => crate::study::coach(said).unwrap_or_else(|e| e.to_string()),
         };
         push("assistant", &text);
         return Reply::text(text);
@@ -749,6 +757,7 @@ mod tests {
         assert_eq!(ability_of("storage | what's using the space"), Ability::Storage(crate::storage::Ask::Report));
         assert_eq!(ability_of("storage | free up space"), Ability::Storage(crate::storage::Ask::ClearSafe));
         assert_eq!(ability_of("storage | empty the recycle bin"), Ability::Storage(crate::storage::Ask::EmptyBin));
+        assert_eq!(ability_of("fl | line the 808 up with the kick"), Ability::Fl("line the 808 up with the kick".into()));
         // A plain sentence, or an unknown name, goes to the phrase parsers as words.
         assert_eq!(ability_of("what's due this week on Blackboard"), Ability::Words("what's due this week on Blackboard".into()));
         assert_eq!(ability_of("dance | salsa"), Ability::Words("salsa".into()));

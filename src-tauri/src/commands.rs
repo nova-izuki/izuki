@@ -369,7 +369,8 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         // "Open my lab assignment and teach me…" needs the screen agent first —
         // that goes on to submit_task, which opens it and then coaches.
         if ask.open_first.is_none() {
-            return blocking(|| crate::study::coach().unwrap_or_else(|e| e.to_string())).await.ok();
+            let s2 = said.clone();
+            return blocking(move || crate::study::coach(&s2).unwrap_or_else(|e| e.to_string())).await.ok();
         }
     }
     // "What do I keep getting wrong?", "what have I studied this week?" (studytrack.rs).

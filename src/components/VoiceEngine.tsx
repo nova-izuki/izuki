@@ -596,6 +596,11 @@ function answerOnScreen(t: string): string {
 // when they're ready. It never picks answers by itself.
 const TUTOR_START =
   /^(?:(?:hey |ok |okay )?(?:nova|izuki|atlas)[,. ]*)?(?:please )?(?:(?:start|turn on|use|go into|switch to) )?(?:teacher|tutor|teaching) mode\b|^(?:please )?teach me (?:this|the|my) (?:questions?|worksheet)\b|^(?:be|act as|act like) my (?:teacher|tutor)\b|^help me (?:through|with) (?:this|the|my) worksheet\b/i;
+/** Asked for it to be kept: "…and save it to my notes", "put it in my notes", "take notes". */
+const SAVE_TO_NOTES = /\b(?:save|put|keep|add|store|write)\b.*\b(?:my|izuki|the|study)\s+notes?\b|\btake\s+(?:some\s+)?notes\b/i;
+/** "Don't save it to my notes", "no notes": the opposite (as notes.rs reads it). */
+const NO_SAVE = /\b(?:don['’]?t|do\s+not|never|not)\s+(?:save|put|keep|add|store|write|take|make|record|copy|jot)\b|\bno\s+notes\b/i;
+const asksToSave = (t: string) => SAVE_TO_NOTES.test(t) && !NO_SAVE.test(t);
 const TUTOR_STOP = /^(?:please )?(?:stop|end|exit|quit|turn off|leave|close) (?:the )?(?:teacher|tutor|teaching) mode\b|^stop (?:teaching|tutoring)( me)?\b|^(?:that's|thats) enough (?:teaching|for today)\b/i;
 const TUTOR_FOR_MS = 20 * 60_000;
 
@@ -778,7 +783,7 @@ export function VoiceEngine() {
    * or do.
    */
   /** Teacher mode: on while set; `first` until the first question is explained. */
-  const tutor = useRef<{ first: boolean; at: number } | null>(null);
+  const tutor = useRef<{ first: boolean; at: number; save: boolean } | null>(null);
   const handleRequest = async (text: string, from: "voice" | "typed") => {
     // Teacher mode lapses after a long break, like a lesson ending.
     if (tutor.current && Date.now() - tutor.current.at > TUTOR_FOR_MS) tutor.current = null;
@@ -1134,7 +1139,9 @@ ${result}`);
       void afterReply(at, false);
       return;
     }
-    if (TUTOR_START.test(t)) tutor.current = { first: true, at: Date.now() };
+    // Lessons go to Notes only when asked for ("…and save it to my notes") or
+    // with the Study log on — never on Izuki's own say-so.
+    if (TUTOR_START.test(t)) tutor.current = { first: true, at: Date.now(), save: asksToSave(t) || !!useIzuki.getState().settings.study_log };
     const tutoring = tutor.current;
     if (tutoring) tutoring.at = Date.now();
 
@@ -1238,8 +1245,8 @@ ${result}`);
         const plan = await api.submitVoiceCommand(tutoring ? tutorPrompt(t, tutoring.first) : looksLikeDirections(t) ? directionsTask(t) : t, recentHistory());
         if (tutoring) {
           tutoring.first = false;
-          // Every explanation goes into today's lesson notes, to study later.
-          if (plan.summary?.trim()) void api.notesLesson(plan.summary).catch(() => undefined);
+          // Kept in today's lesson notes only when asked (or the Study log is on).
+          if (tutoring.save && plan.summary?.trim()) void api.notesLesson(plan.summary).catch(() => undefined);
         }
         if (requestSeq !== at) return; // stopped, or you've moved on — don't answer over you
         thinkingNow.current = false;

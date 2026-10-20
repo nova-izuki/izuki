@@ -411,7 +411,38 @@ fn web(url: &str) -> Result<Source> {
     Ok(s)
 }
 
+/// The last reference made (reference, in-text, when), for "save it to my notes".
+static LAST_REF: parking_lot::Mutex<Option<(String, String, std::time::Instant)>> = parking_lot::Mutex::new(None);
+
+/// The last reference, while it's still the one being talked about (4 hours).
+fn last_ref() -> Option<(String, String)> {
+    LAST_REF.lock().clone().filter(|(_, _, at)| at.elapsed() < std::time::Duration::from_secs(4 * 3600)).map(|(r, c, _)| (r, c))
+}
+
+/// "Save it to my notes" about the reference just made — not a request to
+/// cite a source ("cite this page and save it" cites the page).
+fn wants_last_saved(said: &str) -> bool {
+    let lower = said.to_lowercase();
+    let new_source = matches!(target_of(said), Target::Url(_) | Target::Doi(_) | Target::Isbn(_))
+        || ["this page", "this article", "this source", "this website", "this site", "this book", "this paper", "this journal", "this link"].iter().any(|p| lower.contains(p));
+    crate::notes::asks_to_save(said) && !new_source && last_ref().is_some()
+}
+
+/// A reference was just made (a "save it" can follow).
+pub fn has_last() -> bool {
+    last_ref().is_some()
+}
+
 pub fn handle(said: &str) -> String {
+    // "Save it to my notes" (or "yes" to that offer) after a reference: that one.
+    if wants_last_saved(said) {
+        if let Some((r, cite)) = last_ref() {
+            return match crate::notes::add_to_log("References (APA)", "APA", &format!("{r}\n  In-text: {cite}")) {
+                Ok(_) => "Saved to today's “References (APA)” note.".into(),
+                Err(e) => format!("I couldn't save it: {e}"),
+            };
+        }
+    }
     let target = match target_of(said) {
         Target::ThisPage => match crate::ext::snapshot().map(|p| p.url).filter(|u| u.starts_with("http")) {
             Some(u) => Target::Url(u),
@@ -442,12 +473,17 @@ pub fn handle(said: &str) -> String {
         checks.push("no author was listed");
     }
     checks.push("titles are in sentence case — capitalize names of people, places and organizations in the title yourself");
-    let saved = crate::notes::add_to_log("References (APA)", "APA", &format!("{r}\n  In-text: {}", in_text(&s)));
+    *LAST_REF.lock() = Some((r.clone(), in_text(&s), std::time::Instant::now()));
+    // Kept in Notes only when asked (or while the Study log is on).
+    let saved = crate::notes::may_keep(said) && crate::notes::add_to_log("References (APA)", "APA", &format!("{r}\n  In-text: {}", in_text(&s))).is_ok();
+    if !saved {
+        crate::offers::make("save the last APA reference to my notes");
+    }
     format!(
         "📚 APA 7 reference:\n{r}\n\nIn-text: {}\n\nCheck: {}.\n{}",
         in_text(&s),
         checks.join("; "),
-        if saved.is_ok() { "(Saved to today's “References (APA)” note. *Asterisks* mark what goes in italics.)" } else { "(*Asterisks* mark what goes in italics.)" }
+        if saved { "(Saved to today's “References (APA)” note. *Asterisks* mark what goes in italics.)" } else { "(*Asterisks* mark what goes in italics. Want it kept in your Notes? Just say yes.)" }
     )
 }
 

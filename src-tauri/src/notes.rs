@@ -155,6 +155,41 @@ pub fn from_text(title: &str, source: &str, text: &str, make_notes: bool) -> Res
     })
 }
 
+/// Did the user ask for something to be kept in their Notes? Izuki never
+/// saves there on its own: only when asked ("save this to my notes", "put
+/// them on the notes", "take notes"), or while the Study log is switched on
+/// (`may_keep`). "Notes" alone isn't asking — in FL Studio, "the 808 notes"
+/// are musical notes.
+pub fn asks_to_save(said: &str) -> bool {
+    let t: String = said.to_lowercase().chars().map(|c| if c.is_alphanumeric() || c == '\'' { c } else { ' ' }).collect();
+    let s = format!(" {} ", t.split_whitespace().collect::<Vec<_>>().join(" "));
+    const VERBS: &[&str] = &["save", "put", "add", "keep", "write", "store", "copy", "jot", "take", "make", "record"];
+    let negated = s.contains(" no notes ") || VERBS.iter().any(|v| [" don't ", " dont ", " do not ", " never ", " not "].iter().any(|n| s.contains(&format!("{n}{v}"))));
+    if negated {
+        return false;
+    }
+    let to_notes = [
+        " my notes ", " izuki notes ", " nova notes ", " in notes ", " to notes ", " on notes ", " on the notes ", " to the notes ", " in the notes ",
+        " into notes ", " into my notes ", " in my notes ", " to my notes ", " on my notes ", " study notes ", " notes tab ", " my notebook ", " as a note ", " in a note ",
+    ]
+    .iter()
+    .any(|w| s.contains(w));
+    let saving = [" save", " put", " add", " keep", " store", " write", " jot", " copy", " record"].iter().any(|w| s.contains(w));
+    let take = [" take notes ", " take some notes ", " make notes ", " make some notes ", " note this down ", " note that down ", " jot this down ", " jot that down ", " write this down ", " write that down "]
+        .iter()
+        .any(|w| s.contains(w));
+    // Musical notes: only Izuki's own Notes, named outright, count there.
+    let music = [" 808", " piano roll ", " melody ", " midi ", " chord", " bassline ", " beat ", " fl studio ", " fl ", " drums ", " kick "].iter().any(|w| s.contains(w));
+    let named = [" my notes ", " izuki notes ", " nova notes ", " in my notes ", " to my notes "].iter().any(|w| s.contains(w));
+    (saving && to_notes || take) && (!music || named)
+}
+
+/// May Izuki keep this in Notes: asked to, or the Study log is on (the one
+/// thing that saves as you go, and only because you switched it on).
+pub fn may_keep(said: &str) -> bool {
+    asks_to_save(said) || crate::state::try_store().is_some_and(|s| s.settings().study_log)
+}
+
 /// A finished piece of writing kept as it is (a deep-research answer with
 /// its sources), up to 60,000 characters.
 pub fn keep(title: &str, source: &str, text: &str) -> Result<Note> {

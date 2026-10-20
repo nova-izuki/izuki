@@ -263,6 +263,14 @@ def op_quantize(ch, start_only):
     return True
 
 
+def op_metronome(on):
+    # Izuki's clock while it listens; the old setting is handed back to restore.
+    was = bool(ui.isMetronomeEnabled())
+    if was != bool(on):
+        transport.globalTransport(midi.FPT_Metronome, 1)
+    return was
+
+
 OPS = {
     "state": op_state, "selftest": op_selftest, "play": op_play, "stop": op_stop, "tempo": op_tempo,
     "undo_point": op_undo_point, "new_pattern": op_new_pattern, "show": op_show, "step": op_step,
@@ -270,6 +278,7 @@ OPS = {
     "chan_pan": op_chan_pan, "mute": op_mute, "track_vol": op_track_vol, "plugin_params": op_plugin_params,
     "plugin_set": op_plugin_set, "selected": op_selected, "quantize": op_quantize,
     "select": op_select, "tracks": op_tracks, "slots": op_slots, "track_pan": op_track_pan,
+    "metronome": op_metronome,
 }
 
 

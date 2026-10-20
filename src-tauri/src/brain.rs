@@ -2455,7 +2455,7 @@ fn submit_task(
             if matches!(opened.outcome, crate::model::TaskOutcome::Failed | crate::model::TaskOutcome::Cancelled | crate::model::TaskOutcome::Blocked) {
                 return opened;
             }
-            let summary = match crate::study::coach() {
+            let summary = match crate::study::coach(&prompt) {
                 Ok(text) => text,
                 Err(e) => format!("{} — but {e}", opened.summary.trim()),
             };
@@ -3667,17 +3667,10 @@ fn only_progress(line: &str) -> bool {
 }
 
 /// "…and save it on my notes": what's explained on the way is kept in Izuki
-/// Notes as it goes — every question's explanation, not just the last word.
+/// Notes as it goes — only when asked (notes::asks_to_save; "the 808 notes"
+/// in FL Studio are musical notes, not a request to save anything).
 pub fn keeps_notes(prompt: &str) -> bool {
-    let s: String = prompt.to_lowercase().chars().map(|c| if c.is_alphanumeric() || c == '\'' { c } else { ' ' }).collect();
-    let s = format!(" {} ", s.split_whitespace().collect::<Vec<_>>().join(" "));
-    const VERBS: &[&str] = &["save", "put", "add", "keep", "write", "store", "copy", "jot", "take", "make"];
-    // "Do not write it in my notes", "don't save", "never put": a no, whatever the verb.
-    let negated = s.contains(" no notes ")
-        || VERBS.iter().any(|v| [" don't ", " dont ", " do not ", " never ", " not "].iter().any(|n| s.contains(&format!("{n}{v}"))));
-    (s.contains(" notes ") || s.contains(" note ") || s.contains(" notebook "))
-        && VERBS.iter().any(|v| s.contains(&format!(" {v}")))
-        && !negated
+    crate::notes::asks_to_save(prompt)
 }
 
 /// The line without its chatty opener: "Bet, hold up — I'ma get that script
@@ -4075,6 +4068,11 @@ mod speed_tests {
         assert!(!keeps_notes("don't save this to my notes"));
         assert!(!keeps_notes("do not write it in my notes"));
         assert!(!keeps_notes("never put this in my notebook"));
+        // Musical notes are not Izuki Notes.
+        assert!(!keeps_notes("make the 808 notes line up with the kick"));
+        assert!(!keeps_notes("help me quantize this 808 notes cos they not aligning with the beat"));
+        assert!(!keeps_notes("put the notes on the beat in fl studio"));
+        assert!(keeps_notes("explain this beat and save it to my notes"), "Izuki's Notes named outright");
         assert!(!keeps_notes("review all the questions"));
         assert!(explains_as_it_goes("review all the quests and ans"));
         assert!(keeps_notes("go over this and take notes"));
