@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🎛️", title: "Honest about FL Studio", how: "If FL is open but not connected to Izuki yet, Izuki now says so — and how to connect — instead of pressing FL's quantize (which only snaps to the grid). Say “set up FL Studio” to connect it from the chat, then switch Izuki on in FL's MIDI settings." },
   { icon: "🖼️", title: "A real photo every day, colours to match", how: "Style → Auto → Daily photo: a new 4K photo every day (Bing's photo of the day, or Windows Spotlight's own pictures), with your accent colour and light or dark mode matched to it. New photo now for a different one; Undo puts yours back. Plus Tweaks → Premium & minimal for a clean taskbar.", try: { label: "Open Style", tab: "style" } },
   { icon: "🎚️", title: "Your 808 in tune, by ear", how: "“Tune the 808”: Izuki plays it alone, measures every hit's real pitch, and if they're all off by the same amount (the sample's own tuning) sets its pitch knob to match — then listens again and keeps it only if that offset is gone. Slides and deliberate detunes are left alone." },
   { icon: "💻", title: "Coding mode — Izuki's own Claude Code", how: "Turn on </> Code in the Chat tab, pick your project, and ask in plain words. Izuki works in a separate copy of your project — to-do list, reading, exact edits, running your tests, then a review of its own change — and shows you the diff: Apply to my files, Discard, or Undo after. Your files are never touched until you choose Apply.", try: { label: "Open Chat", tab: "chat" } },

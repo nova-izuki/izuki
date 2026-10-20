@@ -643,9 +643,44 @@ fn bpm_of(said: &str) -> Option<f64> {
 pub fn is_request(said: &str) -> bool {
     let s = said.to_lowercase();
     let fl = s.contains("fl studio") || s.contains(" in fl") || s.contains("on fl") || s.starts_with("fl ");
-    // "Add an 808", "fix the timing": FL's when it's open and linked.
-    fl || wants_beat(&s) || (job_of(&s).is_some() && fl_running() && has_cable())
+    // "Add an 808", "fix the timing": FL's whenever it's open — linked or
+    // not (not linked, it says so instead of the screen helper snapping the
+    // notes to the grid with FL's quantize).
+    fl || asks_setup(&s) || wants_beat(&s) || (job_of(&s).is_some() && fl_running())
 }
+
+/// "Set up FL Studio", "connect Izuki to FL", "link FL".
+fn asks_setup(s: &str) -> bool {
+    let s = format!(" {} ", s.to_lowercase());
+    ["set up fl", "setup fl", "set fl up", "connect fl", "connect to fl", "connect izuki to fl", "link fl", "link to fl", "link izuki to fl", "hook up fl", "hook fl up"].iter().any(|p| s.contains(&format!(" {p}")))
+}
+
+/// Where an FL request goes, from what's known: FL named in it, FL
+/// running, linked to Izuki, an FL job asked for.
+#[derive(Debug, PartialEq)]
+enum Route {
+    /// Not for FL (the beat starter or others take it).
+    Pass,
+    /// FL named but not running: open it.
+    Open,
+    /// FL open but not linked: said honestly (never snapped to the grid).
+    NotLinked,
+    Go,
+}
+
+fn route(named: bool, running: bool, linked: bool, job: bool) -> Route {
+    match (named, running, linked) {
+        (false, false, _) => Route::Pass,
+        (false, true, false) if job => Route::NotLinked,
+        (false, true, false) => Route::Pass,
+        (true, false, _) => Route::Open,
+        (_, true, false) => Route::NotLinked,
+        _ => Route::Go,
+    }
+}
+
+/// What to say when FL is open but not linked to Izuki — honestly, with the way to fix it.
+const NOT_LINKED: &str = "I can't do that inside FL Studio yet — I'm not connected to it. Clicking around FL's screen only gives me FL's own quantize, which snaps your notes to the grid (the thing that makes it sound more off), so I won't fake it that way. One-time setup, about 2 minutes: say “set up FL Studio” (or Settings → FL Studio → Set up). Then restart FL and switch “Izuki” on in Options → MIDI settings — after that I can listen to your beat and line your notes up by ear, tune the 808 and more.";
 
 /// The parts of a beat Izuki can add, fix or vary (phases 2–5).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -765,25 +800,29 @@ pub fn handle(said: &str) -> Result<Option<String>> {
     let opening = ["open fl", "launch fl", "start fl", "open up fl"].iter().any(|w| words.starts_with(w));
     let transport = ["stop", "pause", "play", "start", "tempo", "bpm", "faster", "slower"].iter().any(|w| words.contains(w));
     let job = job_of(&s);
+    // "Set up FL Studio": the script and the cable, right from the chat.
+    if asks_setup(&s) {
+        return setup(&|line| eprintln!("[fl] {line}")).map(Some);
+    }
     if !opening && !wants_beat(&s) && !transport && job.is_none() {
         return Ok(None);
     }
     // "Make afrobeats" without naming FL: FL only when it's open and linked —
     // otherwise the beat starter makes a MIDI file (beats.rs), as before.
     let named = s.contains("fl studio") || s.contains(" in fl") || s.contains("on fl") || s.starts_with("fl ");
-    if !named && (!fl_running() || !has_cable()) {
-        return Ok(None);
-    }
-    if !fl_running() {
-        let Some(exe) = fl_exe() else { bail!("FL Studio isn't installed on this PC.") };
-        let _ = std::process::Command::new(exe).spawn();
-        return Ok(Some(if opening { "Opening FL Studio.".into() } else { "Opening FL Studio — give it a few seconds, then ask me again.".into() }));
+    match route(named, fl_running(), has_cable(), job.is_some()) {
+        Route::Pass => return Ok(None),
+        Route::Open => {
+            let Some(exe) = fl_exe() else { bail!("FL Studio isn't installed on this PC.") };
+            let _ = std::process::Command::new(exe).spawn();
+            return Ok(Some(if opening { "Opening FL Studio.".into() } else { "Opening FL Studio — give it a few seconds, then ask me again.".into() }));
+        }
+        // ("Open FL Studio" when it's already open is just that.)
+        Route::NotLinked if !opening => return Ok(Some(NOT_LINKED.into())),
+        _ => {}
     }
     if opening {
         return Ok(Some("FL Studio's already open.".into()));
-    }
-    if !has_cable() {
-        return Ok(Some("I'm not linked to FL Studio yet — open Settings → FL Studio and press Set up (one time).".into()));
     }
     if let Some(job) = job {
         return do_job(job, &s).map(Some);
@@ -2019,6 +2058,16 @@ mod tests {
         assert_eq!(job_of("pitch the 808 up an octave"), None, "moving it, not tuning it");
         assert_eq!(job_of("fix the timing on my 808"), Some(Job::Align), "timing isn't tuning");
         assert_eq!(job_of("the 808 in this tune is late"), Some(Job::Align), "a tune (the song), and timing");
+        assert!(asks_setup("set up FL Studio") && asks_setup("can you connect izuki to fl") && asks_setup("link fl please"));
+        assert!(!asks_setup("set up my flight") && !asks_setup("reflect on it"), "not FL");
+        // FL open but not linked: an FL job is told so — never handed to the screen.
+        assert_eq!(route(false, true, false, true), Route::NotLinked);
+        assert_eq!(route(false, true, false, false), Route::Pass, "not a job: others take it");
+        assert_eq!(route(false, false, false, true), Route::Pass, "FL closed: the beat starter");
+        assert_eq!(route(true, false, false, true), Route::Open);
+        assert_eq!(route(true, true, false, false), Route::NotLinked);
+        assert_eq!(route(true, true, true, true), Route::Go);
+        assert_eq!(route(false, true, true, true), Route::Go);
         assert_eq!(job_of("fix the timing on the hats"), Some(Job::Quantize));
         assert!(!aligning(&["along", "allow", "alone", "agreement", "apartment", "assign", "assigned", "assignment", "alien", "alike", "alive", "malign"]));
         assert!(aligning(&["allign"]) && aligning(&["alighn"]) && aligning(&["misaligned"]) && aligning(&["misaallgiment"]) && aligning(&["alligned"]));
