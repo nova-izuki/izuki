@@ -667,15 +667,30 @@ enum Job {
     Fill,
 }
 
+/// "Align" in any spelling: "allign", "alighn", "misaligned", "misaallgiment"…
+/// but not the real words that look like it ("assign", "alien", "alike").
+fn aligning(words: &[&str]) -> bool {
+    const LOOKALIKES: &[&str] = &["alien", "aliens", "alike", "alive", "alight", "allied", "allies", "alliance"];
+    words.iter().any(|w| {
+        let w = w.strip_prefix("mis").unwrap_or(w);
+        w.len() >= 5
+            && (w.starts_with("al") || w.starts_with("aal"))
+            && !LOOKALIKES.contains(&w)
+            && ["align", "aligns", "aligning", "aligned", "alignment"].iter().any(|a| crate::sites::edits(w, a) <= if a.len() >= 8 { 3 } else { 2 })
+    })
+}
+
 fn job_of(s: &str) -> Option<Job> {
     // Whole words only ("lead" isn't in "leader", "add" isn't in "address").
     let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric() && c != '#').filter(|w| !w.is_empty()).collect();
     let has = |ws: &[&str]| ws.iter().any(|w| words.contains(w));
     let phrase = |ps: &[&str]| ps.iter().any(|p| s.contains(p));
     let add = has(&["add", "make", "put", "give", "write", "lay", "create", "need", "want"]);
+    // A new part, not fixing one: "add …", "make an …", "give me a …".
+    let new_part = has(&["add", "write", "create", "lay"]) || phrase(&["make a ", "make an ", "put a ", "put an ", "give me a ", "give me an ", "need a ", "need an ", "want a ", "want an "]);
     // Unless FL is named, it has to be about music.
     let fl = s.contains("fl studio") || words.contains(&"fl");
-    let music = fl || has(&["beat", "beats", "track", "song", "pattern", "808", "melody", "melodies", "drums", "drum", "hats", "hat", "kick", "snare", "clap", "bass", "bassline", "mix", "instrumental", "loop", "chords", "chord", "pads", "vocals", "vocal", "vox"]);
+    let music = fl || has(&["beat", "beats", "track", "song", "pattern", "808", "melody", "melodies", "drums", "drum", "hats", "hat", "kick", "snare", "clap", "bass", "bassline", "mix", "instrumental", "loop", "loops", "sample", "samples", "clip", "chords", "chord", "pads", "vocals", "vocal", "vox"]) || phrase(&["piano roll"]);
     let long = phrase(&["long notes", "held notes", "sustained", "long note", "hold the notes", "slow melody"]);
     if !music {
         return None;
@@ -686,11 +701,24 @@ fn job_of(s: &str) -> Option<Job> {
         Some(Job::Chords)
     } else if add && long && has(&["melody", "lead", "hook", "melodies"]) {
         Some(Job::LongMelody)
-    } else if has(&["808", "808s", "bass", "bassline", "sub"])
-        && (has(&["align", "aligning", "aligned", "alignment", "sync", "synced", "timing", "pocket", "groove", "rhythm", "rhyme"])
-            || phrase(&["line up", "lined up", "line it up", "lining up", "sounding off", "sounds off", "sound off", "still off", "feels off", "feel off", "off beat", "off-beat", "off time", "not on time", "not in time", "out of time"])
-            || (!add && (has(&["late", "early", "rushing", "rushes", "dragging", "drags"])
-                || phrase(&["with the kick", "to the kick", "on the kick", "with the beat", "to the beat", "with the drums", "follow the kick", "match the kick", "lock to the kick"]))))
+    } else if (has(&["808", "808s", "bass", "bassline", "sub", "notes", "note"]) || phrase(&["piano roll"]))
+        && (aligning(&words)
+            || has(&["synced", "syncing", "timing"])
+            // Vaguer: not when a new part is asked for ("add an 808 with groove").
+            || (!new_part && has(&["sync", "pocket", "groove", "rhythm", "rhyme"]))
+            || phrase(&[
+                "line up", "lined up", "line it up", "lining up", "sounding off", "sounds off", "sound off", "still off", "feels off", "feel off", "off beat", "off-beat",
+                "off time", "not on time", "not in time", "out of time", "not flowing", "isn't flowing", "isnt flowing", "aint flowing", "ain't flowing", "not flowin",
+            ])
+            // Softer words: unless a new part is being asked for ("add an
+            // 808 that flows with the beat" writes one).
+            || (!new_part
+                && (has(&["late", "early", "rushing", "rushes", "dragging", "drags"])
+                    || phrase(&[
+                        "with the kick", "to the kick", "on the kick", "with the beat", "to the beat", "with the drums", "follow the kick", "match the kick", "lock to the kick",
+                        "flow with", "flowing with", "flows with", "flow wit", "sit with", "sits with", "sitting with", "lock in with", "off with", "with the sample",
+                        "with the loop", "with the clip", "to the sample", "to the loop", "with the sound",
+                    ]))))
     {
         Some(Job::Align)
     } else if (has(&["timing", "quantize", "quantise", "tighten"]) || phrase(&["off beat", "off-beat", "on beat", "on the grid"])) && !has(&["melody"]) {
@@ -1124,15 +1152,21 @@ fn common_lag(hits: &[f64], kicks: &[f64], loop_beats: f64, bpm: f64) -> f64 {
 /// (`kicks`: beats within the loop, off the grid where the kick is), and
 /// gives the notes between kicks the kick's own feel. Lengths are kept, so
 /// 808 slides (overlapping notes) stay slides.
-pub fn align_script(name: &str, kicks: &[f64], loop_beats: f64, lag: f64) -> String {
+/// `heard`: where the notes themselves were heard (Song mode — then the
+/// script finds where the pattern sits in that loop by matching its notes to
+/// them; empty when it plays from its own start).
+pub fn align_script(name: &str, kicks: &[f64], loop_beats: f64, lag: f64, heard: &[f64]) -> String {
     let name = name.replace(['"', '\\', '\n'], " ");
     let list: Vec<String> = kicks.iter().map(|k| format!("{k:.4}")).collect();
+    let heard_list: Vec<String> = heard.iter().map(|k| format!("{k:.4}")).collect();
     format!(
         "\"\"\"Izuki: line {name} up with the kick, by ear\"\"\"\n\
          # Written by Izuki. Piano roll → Tools → Scripting → Izuki align, then Accept.\n\
          # Ctrl+Z takes it back.\n\
          import flpianoroll as flp\n\n\
          KICKS = [{}]\n\
+         # Where the notes themselves were heard (Song mode), in the same loop.\n\
+         HEARD = [{}]\n\
          LOOP = {loop_beats:.4}\n\
          # How late the sound itself is (its attack, a plugin): notes start this much earlier.\n\
          LAG = {lag:.4}\n\
@@ -1143,17 +1177,36 @@ pub fn align_script(name: &str, kicks: &[f64], loop_beats: f64, lag: f64) -> Str
              form.AddInputKnob(\"Reach (beats)\", {WITH_KICK}, 0.02, 0.24)\n    \
              form.AddInputKnob(\"Strength\", 100, 0, 100)\n    \
              return form\n\n\
-         def _nearest(beat):\n    \
+         def _shift(beats):\n    \
+             # Where the pattern sits in the loop that was heard: its notes\n    \
+             # (sounding LAG late) best meet the hits heard from them.\n    \
+             if not HEARD or not beats:\n        \
+                 return 0.0\n    \
+             best, best_score = 0.0, None\n    \
+             for k in range(int(LOOP * 4)):\n        \
+                 o = k / 4.0\n        \
+                 met, gap = 0, 0.0\n        \
+                 for b in beats:\n            \
+                     p = (b + o + LAG) % LOOP\n            \
+                     d = min(min(abs(p - h), LOOP - abs(p - h)) for h in HEARD)\n            \
+                     if d < 0.12:\n                \
+                         met += 1\n                \
+                         gap += d\n        \
+                 score = (met, -gap)\n        \
+                 if best_score is None or score > best_score:\n            \
+                     best, best_score = o, score\n    \
+             return best\n\n\
+         def _nearest(beat, anchors):\n    \
              base = (beat // LOOP) * LOOP\n    \
              best = None\n    \
-             for k in KICKS:\n        \
+             for k in anchors:\n        \
                  for c in (base + k - LOOP, base + k, base + k + LOOP):\n            \
                      if best is None or abs(c - beat) < abs(best - beat):\n                \
                          best = c\n    \
              return best\n\n\
-         def _feel(beat):\n    \
+         def _feel(beat, anchors):\n    \
              pos = beat % LOOP\n    \
-             near = min(KICKS, key=lambda k: min(abs(k - pos), LOOP - abs(k - pos)))\n    \
+             near = min(anchors, key=lambda k: min(abs(k - pos), LOOP - abs(k - pos)))\n    \
              return near - round(near * 4) / 4.0\n\n\
          def _fine(beat):\n    \
              # On a triplet or a 32nd (a roll), not a 16th.\n    \
@@ -1166,22 +1219,25 @@ pub fn align_script(name: &str, kicks: &[f64], loop_beats: f64, lag: f64) -> Str
              ppq = flp.score.PPQ\n    \
              reach = form.GetInputValue(\"Reach (beats)\")\n    \
              strength = form.GetInputValue(\"Strength\") / 100.0\n    \
+             o = _shift([flp.score.getNote(i).time / float(ppq) for i in range(flp.score.noteCount)])\n    \
+             anchors = [(k - o) % LOOP for k in KICKS]\n    \
              for i in range(flp.score.noteCount):\n        \
                  n = flp.score.getNote(i)\n        \
                  beat = n.time / float(ppq)\n        \
-                 k = _nearest(beat)\n        \
+                 k = _nearest(beat, anchors)\n        \
                  if k is not None and abs(k - beat) < reach:\n            \
                      target = k\n        \
                  else:\n            \
                      g = round(beat * 4) / 4.0\n            \
-                     felt = g + _feel(beat)\n            \
+                     felt = g + _feel(beat, anchors)\n            \
                      if not _fine(beat) and (abs(beat - felt) < ON_GRID or abs(beat - g) < ON_GRID):\n                \
                          target = felt\n            \
                      else:\n                \
                          target = beat\n        \
                  target = target - LAG\n        \
                  n.time = max(0, int(round((beat + (target - beat) * strength) * ppq)))\n",
-        list.join(", ")
+        list.join(", "),
+        heard_list.join(", ")
     )
 }
 
@@ -1382,8 +1438,9 @@ fn run_job(job: Job, s: &str) -> Result<String> {
             Ok(format!("Quick-quantized “{name}” with FL's own Quick quantize — its notes snap to the grid. Ctrl+Z in FL takes it back."))
         }
         Job::Align => {
-            // The sound to line up: named in the request, else the selected
-            // channel if it plays notes, else one named like a bass.
+            // The notes to line up: named in the request, else the selected
+            // channel (the one open in the Piano roll) if it plays notes, else
+            // one named like a bass.
             let selected = one(json!(["selected"])).ok().and_then(|v| v.as_i64()).filter(|i| *i >= 0).map(|i| i as usize);
             let named = chans.iter().find(|(_, n)| {
                 let lower = n.to_lowercase();
@@ -1394,16 +1451,24 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                 .or_else(|| selected.and_then(|i| chans.iter().find(|(c, n)| *c == i && role_of(n).is_none()).cloned()))
                 .or_else(|| chans.iter().find(|(_, n)| role_of(n).is_none() && is_bass_name(n)).cloned());
             let Some((ch, name)) = target else {
-                bail!("Which one's the 808? Click it in the Channel rack (or name it “808”), then ask again.");
-            };
-            let Some((kick, kick_name)) = chans.iter().find(|(_, n)| role_of(n) == Some(Role::Kick)).cloned() else {
-                bail!("I need to know which channel is the kick — name it “Kick” in the Channel rack (right-click → Rename), then ask again.");
+                bail!("Which notes should I line up? Click their channel in the Channel rack (or open them in the Piano roll), then ask again.");
             };
             let bpm = st["tempo"].as_f64().filter(|t| *t > 20.0).unwrap_or(140.0);
-            let steps = row_len(kick).max(16);
-            let loop_beats = steps as f64 / 4.0;
-            // Where the first kick is written (the anchor for what's heard).
-            let anchor = steps_on(kick).first().map(|s| *s as f64 / 4.0).unwrap_or(0.0);
+            // What they go with. A kick programmed in the Channel rack — unless
+            // the sample / loop / clip is what's named. Else the beat itself
+            // as it plays: a sample loop or a clip in the Playlist (not made on
+            // FL's grid, so its hits needn't sit on it) — everything you hear
+            // but these notes, in Song mode, where the Playlist plays.
+            let kick = chans.iter().find(|(_, n)| role_of(n) == Some(Role::Kick)).cloned().filter(|(k, _)| !steps_on(*k).is_empty());
+            let names_sample = ["sample", "loop", "clip", "audio", "playlist", "song"].iter().any(|w| s.contains(w));
+            let by_kick = kick.filter(|_| !names_sample);
+            let loop_beats = match &by_kick {
+                Some((k, _)) => row_len(*k).max(16) as f64 / 4.0,
+                // FL gives the pattern's length in beats.
+                None => st["pattern_beats"].as_f64().filter(|b| *b >= 1.0).unwrap_or(16.0),
+            };
+            // Where the first kick is written (the anchor when there's no click).
+            let anchor = by_kick.as_ref().and_then(|(k, _)| steps_on(*k).first().map(|s| *s as f64 / 4.0)).unwrap_or(0.0);
             // Listen with only `keep` playing — and FL's metronome as the clock,
             // like a producer checking against the click — two loops. Every mute
             // and the metronome go back exactly as they were. The hits, as beats
@@ -1445,71 +1510,125 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                     let _ = one(json!(["metronome", false]));
                 }
                 let (samples, rate) = heard?;
-                let lows = crate::loopback::low_hits(&samples, rate);
+                // A loop without a deep kick: its snares and claps count too.
+                let mut lows = crate::loopback::low_hits(&samples, rate);
+                if lows.len() < 2 {
+                    lows = crate::loopback::body_hits(&samples, rate);
+                }
                 Ok(match crate::loopback::click_grid(&crate::loopback::high_clicks(&samples, rate), bpm) {
                     Some(beat0) => (crate::loopback::hits_on_clock(&lows, beat0, bpm, loop_beats), true),
                     None => (crate::loopback::hits_to_beats(&lows, bpm, anchor, loop_beats), false),
                 })
             };
-            // 1. The kick alone: the beat's real feel.
-            let (kicks, clocked) = listen(&[kick])?;
-            if kicks.is_empty() {
-                bail!("I couldn't hear the kick. Is FL's sound coming out of your speakers or headphones (and the kick not silent)? Other sound playing on the PC can get in the way too.");
+            // Song mode for the beat; put back as it was afterwards, whatever happens.
+            let song_was = match by_kick {
+                None => Some(one(json!(["songmode", true]))?.as_bool().unwrap_or(false)),
+                Some(_) => None,
+            };
+            let done = (|| -> Result<String> {
+                let off_grid = |hits: &[f64]| -> Vec<String> {
+                    hits.iter().filter(|k| (*k - (*k * 4.0).round() / 4.0).abs() > 0.02).take(6).map(|k| format!("beat {:.2}", k + 1.0)).collect()
+                };
+                let plural = |n: usize| if n == 1 { "" } else { "s" };
+                let (beat, hits, separate, intro) = match &by_kick {
+                    Some((kick, kick_name)) => {
+                        // 1. The kick alone: the beat's real feel.
+                        let (kicks, clocked) = listen(&[*kick])?;
+                        if kicks.is_empty() {
+                            bail!("I couldn't hear the kick. Is FL's sound coming out of your speakers or headphones (and the kick not silent)? Other sound playing on the PC can get in the way too.");
+                        }
+                        // 2. The notes alone against the same click: where each
+                        //    hit really sounds — late (or early) on every hit is
+                        //    the sound itself (its attack, a plugin's delay), which
+                        //    no grid fixes. No click: kick and notes together, the
+                        //    notes' own hits only (timed the same way as the kick's).
+                        let together = || listen(&[*kick, ch]).ok().filter(|(_, c)| *c == clocked).map(|(h, _)| h).unwrap_or_default();
+                        let (hits, separate) = if clocked {
+                            match listen(&[ch]) {
+                                Ok((h, true)) if !h.is_empty() => (h, true),
+                                _ => (together(), false),
+                            }
+                        } else {
+                            (together(), false)
+                        };
+                        let off = off_grid(&kicks);
+                        let intro = format!(
+                            "I listened to “{kick_name}”: it lands {} time{} in each loop{}.",
+                            kicks.len(),
+                            plural(kicks.len()),
+                            if off.is_empty() { ", right on the grid".to_string() } else { format!(" — off the grid at {} (that's the groove “{name}” will follow)", off.join(", ")) },
+                        );
+                        (kicks, hits, separate, intro)
+                    }
+                    None => {
+                        // 1. The beat as you hear it, without these notes.
+                        let keep: Vec<usize> = was_muted.iter().filter(|(c, m)| !*m && *c != ch).map(|(c, _)| *c).collect();
+                        let (beat, clocked) = listen(&keep)?;
+                        if beat.is_empty() {
+                            bail!("I couldn't hear the beat. Is FL's sound coming out of your speakers or headphones? Highlight your loop in the Playlist (the part with your sample) so it plays there, then ask again.");
+                        }
+                        if !clocked {
+                            bail!("I couldn't hear FL's metronome click — it's my clock for timing against your sample. Turn the metronome's volume up (I switch it on and off myself), then ask again.");
+                        }
+                        // 2. The notes alone, in the same loop and the same clock.
+                        let (hits, clocked) = listen(&[ch])?;
+                        if hits.is_empty() || !clocked {
+                            bail!("I heard your beat, but not “{name}” playing with it in Song mode. Put its pattern in the Playlist under your highlighted loop, then ask again.");
+                        }
+                        let off = off_grid(&beat);
+                        let intro = format!(
+                            "I listened to your beat as it plays — everything but “{name}”, in Song mode: its main hits land {} time{} in each {:.0}-beat loop{}.",
+                            beat.len(),
+                            plural(beat.len()),
+                            loop_beats,
+                            if off.is_empty() {
+                                ", on FL's grid".to_string()
+                            } else {
+                                format!(" — off FL's grid at {} (a sample isn't made on FL's grid, so that's the groove “{name}” has to follow)", off.join(", "))
+                            },
+                        );
+                        (beat, hits, true, intro)
+                    }
+                };
+                let song = by_kick.is_none();
+                let with = if song { "the beat" } else { "the kick" };
+                let lag = if separate { common_lag(&hits, &beat, loop_beats, bpm) } else { 0.0 };
+                let review = review_hits(&hits, &beat, bpm, loop_beats, lag, !separate);
+                let dir = piano_roll_dir().ok_or_else(|| anyhow!("couldn't find your Documents folder"))?;
+                std::fs::create_dir_all(&dir)?;
+                std::fs::write(dir.join("Izuki align.pyscript"), align_script(&name, &beat, loop_beats, lag, if song { &hits } else { &[] }))?;
+                one(json!(["select", ch]))?;
+                let _ = one(json!(["show", "pianoroll"]));
+                let lag_ms = lag * 60_000.0 / bpm;
+                let sound = if lag_ms.abs() >= 8.0 {
+                    format!(
+                        " Your {name} sounds about {:.0} ms {} on every hit even where the notes are on time — that's the sound itself (its attack, or a plugin on its mixer track), which is why quantizing didn't fix it. The fix starts each note {:.0} ms {} so it lands with {with}.",
+                        lag_ms.abs(),
+                        if lag_ms > 0.0 { "late" } else { "early" },
+                        lag_ms.abs(),
+                        if lag_ms > 0.0 { "earlier" } else { "later" }
+                    )
+                } else {
+                    String::new()
+                };
+                // The hits there was anything to judge: heard together with the
+                // kick, a hit on a kick can't be told from the kick.
+                let judged = hits.iter().filter(|b| separate || !beat.iter().any(|k| loop_gap(**b, *k, loop_beats) < 0.06)).count();
+                let heard_808 = if judged == 0 {
+                    format!("I couldn't pick out your {name} clearly{}, so I can't tell you yet whether it rushes or drags.", if separate { "" } else { " apart from the kick" })
+                } else if review.is_empty() {
+                    format!("Against it, your {name} sounds in the pocket — nothing rushing or dragging that I could hear.{sound}")
+                } else {
+                    format!("Against it, your {name} is off in {} place{}: {}.{sound}", review.len(), plural(review.len()), review.join(", "))
+                };
+                Ok(format!(
+                    "{intro} {heard_808} Your notes and rhythm stay as you wrote them. I've opened “{name}” in the Piano roll — to fix the timing: Piano roll menu → Tools → Scripting → “Izuki align”, then Accept. Notes right by a hit of {with} move onto it exactly as it plays and the 16ths between get the same feel; triplets, rolls and notes you placed a 16th or a 32nd away stay put, and so do lengths and slides. Ctrl+Z takes it back."
+                ))
+            })();
+            if song_was == Some(false) {
+                let _ = one(json!(["songmode", false]));
             }
-            // 2. The 808 alone against the same click: where each hit really
-            //    sounds — and if it's late (or early) on every hit, that's the
-            //    sound itself (its attack, a plugin's delay), which no grid fixes.
-            //    No click to go by: kick and 808 together, the 808's own hits only.
-            //    (Only hits timed the same way as the kick's can be compared with it.)
-            let together = || listen(&[kick, ch]).ok().filter(|(_, c)| *c == clocked).map(|(h, _)| h).unwrap_or_default();
-            let (hits, separate) = if clocked {
-                match listen(&[ch]) {
-                    Ok((h, true)) if !h.is_empty() => (h, true),
-                    _ => (together(), false),
-                }
-            } else {
-                (together(), false)
-            };
-            let lag = if separate { common_lag(&hits, &kicks, loop_beats, bpm) } else { 0.0 };
-            let review = review_hits(&hits, &kicks, bpm, loop_beats, lag, !separate);
-            let dir = piano_roll_dir().ok_or_else(|| anyhow!("couldn't find your Documents folder"))?;
-            std::fs::create_dir_all(&dir)?;
-            std::fs::write(dir.join("Izuki align.pyscript"), align_script(&name, &kicks, loop_beats, lag))?;
-            one(json!(["select", ch]))?;
-            let _ = one(json!(["show", "pianoroll"]));
-            let off: Vec<String> = kicks
-                .iter()
-                .filter(|k| (*k - (*k * 4.0).round() / 4.0).abs() > 0.02)
-                .map(|k| format!("beat {:.2}", k + 1.0))
-                .collect();
-            let lag_ms = lag * 60_000.0 / bpm;
-            let sound = if lag_ms.abs() >= 8.0 {
-                format!(
-                    " Your {name} sounds about {:.0} ms {} on every hit even where the notes are on time — that's the sound itself (its attack, or a plugin on its mixer track), which is why quantizing didn't fix it. The fix starts each note {:.0} ms {} so it lands with the kick.",
-                    lag_ms.abs(),
-                    if lag_ms > 0.0 { "late" } else { "early" },
-                    lag_ms.abs(),
-                    if lag_ms > 0.0 { "earlier" } else { "later" }
-                )
-            } else {
-                String::new()
-            };
-            // The 808 hits there was anything to judge: heard together with
-            // the kick, a hit on a kick can't be told from the kick.
-            let judged = hits.iter().filter(|b| separate || !kicks.iter().any(|k| loop_gap(**b, *k, loop_beats) < 0.06)).count();
-            let heard_808 = if judged == 0 {
-                format!("I couldn't pick out your {name} clearly{}, so I can't tell you yet whether it rushes or drags.", if separate { "" } else { " apart from the kick" })
-            } else if review.is_empty() {
-                format!("Against it, your {name} sounds in the pocket — nothing rushing or dragging that I could hear.{sound}")
-            } else {
-                format!("Against it, your {name} is off in {} place{}: {}.{sound}", review.len(), if review.len() == 1 { "" } else { "s" }, review.join(", "))
-            };
-            Ok(format!(
-                "I listened to “{kick_name}”: it lands {} time{} in each loop{}. {heard_808} Your notes and rhythm stay as you wrote them. I've opened “{name}” in the Piano roll — to fix the timing: Piano roll menu → Tools → Scripting → “Izuki align”, then Accept. Notes right by a kick move onto it exactly as it plays and the 16ths between get the same feel; triplets, rolls and notes you placed a 16th or a 32nd from the kick stay put, and so do lengths and slides. Ctrl+Z takes it back.",
-                kicks.len(),
-                if kicks.len() == 1 { "" } else { "s" },
-                if off.is_empty() { ", right on the grid".to_string() } else { format!(" — off the grid at {} (that's the groove the {name} will follow)", off.join(", ")) },
-            ))
+            done
         }
         Job::Balance => {
             // Levels by role (FL's default channel level is 0.78).
@@ -1762,6 +1881,20 @@ mod tests {
         assert_eq!(job_of("my 808 is sounding off with the kick"), Some(Job::Align));
         assert_eq!(job_of("line the bass up with the drums"), Some(Job::Align));
         assert_eq!(job_of("quantize the 808"), Some(Job::Quantize), "the grid, when that's all that's asked");
+        // The user's own words (typos and all): lining up, by ear.
+        assert_eq!(job_of("i ur a profssional producer. so pls my notes here some of them are not flowing with the beat"), Some(Job::Align));
+        assert_eq!(job_of("theres an misaallgiment the 808 isnt flowing with the sample"), Some(Job::Align));
+        assert_eq!(job_of("even tho its on grid some notes wouldnt allign with the loops"), Some(Job::Align));
+        assert_eq!(job_of("make the 808 flow with the beat"), Some(Job::Align), "fixing it, not a new one");
+        assert_eq!(job_of("add an 808 that flows with the beat"), Some(Job::Bass), "a new one");
+        assert_eq!(job_of("add an 808 with some groove"), Some(Job::Bass));
+        assert_eq!(job_of("make a bass with a nice rhythm"), Some(Job::Bass));
+        assert_eq!(job_of("put the 808 in the pocket"), Some(Job::Align), "fixing the one there");
+        assert_eq!(job_of("my notes aren't syncing"), None, "Izuki's Notes, not music");
+        assert_eq!(job_of("fix the timing on the hats"), Some(Job::Quantize));
+        assert!(!aligning(&["along", "allow", "alone", "agreement", "apartment", "assign", "assigned", "assignment", "alien", "alike", "alive", "malign"]));
+        assert!(aligning(&["allign"]) && aligning(&["alighn"]) && aligning(&["misaligned"]) && aligning(&["misaallgiment"]) && aligning(&["alligned"]));
+        assert_eq!(job_of("assign the 808 to a mixer track"), None, "not lining it up");
         assert_eq!(job_of("my 808 is still off even after i quantize"), Some(Job::Align));
         assert_eq!(job_of("the 808 comes in late on beat 3"), Some(Job::Align));
         assert_eq!(job_of("add a bass line"), Some(Job::Bass), "writing one, not lining one up");
@@ -1783,7 +1916,7 @@ mod tests {
         let big = common_lag(&[0.11, 1.11, 2.11, 3.11], &[0.0, 2.0], 4.0, 120.0);
         assert!((big - 0.11).abs() < 0.001, "{big}");
         assert!(review_hits(&[0.11, 1.11, 2.11, 3.11], &[0.0, 2.0], 120.0, 4.0, big, false).is_empty());
-        let script = align_script("808", &[0.0, 1.56, 3.0], 4.0, 0.06);
+        let script = align_script("808", &[0.0, 1.56, 3.0], 4.0, 0.06, &[]);
         assert!(script.contains("ON_GRID = 0.075") && script.contains("0.08, 0.02, 0.24") && script.contains("def _fine(beat):"));
         // (To run the real script against a stand-in Piano roll.)
         if let Ok(path) = std::env::var("IZUKI_DUMP_ALIGN") {

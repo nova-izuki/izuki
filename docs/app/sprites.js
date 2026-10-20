@@ -20,12 +20,43 @@ const loads = new Map();
 export function loadMoves(id) {
   if (!loads.has(id)) {
     const art = MOVES_ART[id];
+    const picture = (src) => new Promise((ok, fail) => { const im = new Image(); im.decoding = "async"; im.onload = () => ok(im); im.onerror = () => fail(new Error("picture didn't load")); im.src = src; });
+    // The in-betweens: the paintings on the way from one pose to the next
+    // (.work/tween.py). Without them it still plays, with blends instead.
+    const between = !art?.tweens ? Promise.resolve(null) : Promise.all([fetch(art.tweens).then((r) => (r.ok ? r.json() : null)), picture(art.tweenAtlas)])
+      .then(([tw, timg]) => (tw ? { tw, timg } : null))
+      .catch(() => null);
     loads.set(id, !art ? Promise.resolve(null) : Promise.all([
       fetch(art.json).then((r) => (r.ok ? r.json() : Promise.reject(new Error("no moves")))),
-      new Promise((ok, fail) => { const im = new Image(); im.decoding = "async"; im.onload = () => ok(im); im.onerror = () => fail(new Error("picture didn't load")); im.src = art.atlas; }),
-    ]).then(([data, img]) => ({ id, data, img })).catch((e) => { console.warn("[moves] " + id + ":", e?.message || e); loads.delete(id); return null; }));
+      picture(art.atlas),
+      between,
+    ]).then(([data, img, more]) => {
+      // Which painting each frame is ("talk.3"), to find the way between two.
+      const ref = new Map();
+      for (const [s, frames] of Object.entries(data.states)) frames.forEach((f, i) => ref.set(f, `${s}.${i}`));
+      return { id, data, img, tw: more?.tw || null, timg: more?.timg || null, ref, ways: new Map() };
+    }).catch((e) => { console.warn("[moves] " + id + ":", e?.message || e); loads.delete(id); return null; }));
   }
   return loads.get(id);
+}
+
+/**
+ * The paintings on the way from frame a to frame b: a, the in-betweens, b
+ * (null when there are none — then it blends). Real animation's in-betweens,
+ * so a hand travels instead of one picture fading into another.
+ */
+function route(pack, a, b) {
+  if (!pack.tw || !a || !b || a === b) return null;
+  const ra = pack.ref.get(a), rb = pack.ref.get(b);
+  if (!ra || !rb) return null;
+  const key = `${ra}>${rb}`;
+  let way = pack.ways.get(key);
+  if (way === undefined) {
+    const there = pack.tw[key], back = pack.tw[`${rb}>${ra}`];
+    way = there ? [a, ...there, b] : back ? [a, ...back.slice().reverse(), b] : null;
+    pack.ways.set(key, way);
+  }
+  return way;
 }
 
 /** Which characters are really animated. */
@@ -42,8 +73,8 @@ export const movesIds = () => Object.keys(MOVES_ART);
  *   cycle: a true frame-by-frame cycle (walking), no blending.
  */
 const PLAY = {
-  idle: { hold: [3.2, 5.5], away: [1.1, 1.8], blend: 0.5, order: "rest" },
-  talk: { hold: [0.75, 1.25], blend: 0.32, order: "shuffle" },
+  idle: { hold: [1e9, 1e9], blend: 0.5, order: "rest" },
+  talk: { hold: [1.0, 1.8], blend: 0.3, order: "shuffle" },
   walk: { cycle: 10 },
   think: { hold: [1.5, 2.3], blend: 0.55, order: "bounce" },
   type: { hold: [0.3, 0.42], blend: 0.16, order: "loop" },
@@ -136,7 +167,7 @@ function posed(m, pose, frames, p, t) {
       pose.dir = dir;
       i += dir;
     } else i = (i + 1) % n;
-    const hold = p.order === "rest" && i !== 0 ? between(p.away) : between(p.hold);
+    const hold = p.order === "rest" && i !== 0 && p.away ? between(p.away) : between(p.hold);
     pose = { i, from: pose.i, at: t, until: t + hold, dir: pose.dir };
   }
   const k = pose.from < 0 ? 1 : Math.min(1, (t - pose.at) / p.blend);
@@ -158,9 +189,16 @@ function frameAt(pack, state, t, holder) {
   const all = pack.data.states[s];
   const frames = s === "talk" ? talkFrames(all) : all;
   const p = PLAY[s] || PLAY.idle;
-  if (p.cycle) return { f: frames[Math.floor(t * p.cycle) % frames.length], old: null, k: 1, walk: true };
+  if (p.cycle) {
+    // Each step through its in-betweens (three times the pictures a second).
+    const n = frames.length, q = (t * p.cycle) % n, i = Math.floor(q);
+    const way = route(pack, frames[i], frames[(i + 1) % n]);
+    const f = way ? way[Math.min(way.length - 2, Math.floor((q - i) * (way.length - 1)))] : frames[i];
+    return { f, old: null, k: 1, walk: true };
+  }
   // A new phrase starting: the next gesture now (once it's been held a moment).
-  if (holder.nudge && holder.pose && t - holder.pose.at > 0.55) holder.pose.until = t;
+  // Standing stays on its one painting.
+  if (holder.nudge && s !== "idle" && holder.pose && t - holder.pose.at > 0.55) holder.pose.until = t;
   holder.nudge = false;
   const r = posed(holder, holder.pose, frames, p, t);
   // A new gesture: the body settles into it (see drawMover).
@@ -170,7 +208,8 @@ function frameAt(pack, state, t, holder) {
 }
 
 function drawFrame(ctx, pack, f, { x, y, height, facing, breath = 0, mouth = 0, blink = 0, face = false, sx = null, lean = 0, squash = 0 }) {
-  const s = height / pack.data.height;
+  // (In-betweens are stored smaller — `s` — and drawn back at full size.)
+  const s = height / pack.data.height / (f.s || 1);
   ctx.save();
   // All body movement pivots at the feet: turning (sx), leaning, breathing
   // (a slight rise and fall) and the settle after a new gesture (squash).
@@ -184,7 +223,7 @@ function drawFrame(ctx, pack, f, { x, y, height, facing, breath = 0, mouth = 0, 
   }
   const ox = x - f.fx * s;
   const oy = y - f.fy * s;
-  ctx.drawImage(pack.img, f.x, f.y, f.w, f.h, ox, oy, f.w * s, f.h * s);
+  ctx.drawImage(f.t ? pack.timg : pack.img, f.x, f.y, f.w, f.h, ox, oy, f.w * s, f.h * s);
   if (face && f.face) drawFace(ctx, f.face, ox, oy, s, mouth, blink);
   ctx.restore();
 }
@@ -258,7 +297,21 @@ function drawFace(ctx, fc, ox, oy, s, mouth, blink) {
  * body stays solid and only the moving arm ghosts for a moment.
  */
 function blendFrames(ctx, pack, old, cur, k, o) {
-  if (old && k < 1) {
+  const way = old && k < 1 ? route(pack, old, cur) : null;
+  if (way) {
+    // Through the in-betweens, easing out of one pose and into the next.
+    const e = k * k * (3 - 2 * k);
+    const p = e * (way.length - 1);
+    const i = Math.min(way.length - 2, Math.floor(p));
+    const frac = p - i;
+    drawFrame(ctx, pack, way[i], { ...o, face: frac < 0.5 });
+    if (frac > 0.02) {
+      ctx.save();
+      ctx.globalAlpha = frac;
+      drawFrame(ctx, pack, way[i + 1], { ...o, face: frac >= 0.5 });
+      ctx.restore();
+    }
+  } else if (old && k < 1) {
     ctx.save();
     ctx.globalAlpha = 1 - k;
     drawFrame(ctx, pack, old, { ...o, face: false });

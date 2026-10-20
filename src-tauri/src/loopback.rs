@@ -119,10 +119,20 @@ pub fn record(_seconds: f32, _start: impl FnOnce()) -> Result<(Vec<f32>, u32)> {
 /// end (under ~140 Hz), followed millisecond by millisecond, and each sharp
 /// rise taken back to where it began. Hits closer than 90 ms are one hit.
 pub fn low_hits(samples: &[f32], rate: u32) -> Vec<f64> {
+    hits_below(samples, rate, 140.0)
+}
+
+/// Hits with their body under ~400 Hz: kicks, and snares, claps and toms
+/// too — for a sample loop whose kick isn't deep enough to find alone.
+pub fn body_hits(samples: &[f32], rate: u32) -> Vec<f64> {
+    hits_below(samples, rate, 400.0)
+}
+
+fn hits_below(samples: &[f32], rate: u32, cutoff: f64) -> Vec<f64> {
     if samples.is_empty() || rate == 0 {
         return Vec::new();
     }
-    let a = 1.0 - (-2.0 * std::f64::consts::PI * 140.0 / rate as f64).exp();
+    let a = 1.0 - (-2.0 * std::f64::consts::PI * cutoff / rate as f64).exp();
     let (mut y1, mut y2) = (0.0f64, 0.0f64);
     let hop = (rate as usize / 1000).max(1);
     let mut env = Vec::with_capacity(samples.len() / hop + 1);

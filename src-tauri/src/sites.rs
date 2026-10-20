@@ -55,7 +55,8 @@ fn squash(s: &str) -> String {
     tidy(s).replace(' ', "")
 }
 
-fn edits(a: &str, b: &str) -> usize {
+/// Letters to add, drop or change to turn `a` into `b` (typos and mishearings).
+pub(crate) fn edits(a: &str, b: &str) -> usize {
     let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
     let mut prev: Vec<usize> = (0..=b.len()).collect();
     for (i, ca) in a.iter().enumerate() {

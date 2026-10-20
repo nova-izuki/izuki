@@ -339,7 +339,9 @@ function Stage({
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
       if (document.hidden) { last = now; return; }
-      if (now - last < 32) return; // 30 a second is plenty
+      // 30 a second is plenty standing; walking across the screen, 60 so
+      // the move is smooth (the walk itself has in-betweens now).
+      if (now - last < (goal.current ? 15 : 32)) return;
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       const c = canvas.current;

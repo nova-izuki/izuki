@@ -70,50 +70,89 @@ pub struct Front {
     pub unknown: bool,
 }
 
+/// Some(true) elevated, Some(false) not, None = Windows wouldn't say.
+#[cfg(windows)]
+fn elevated(process: windows::Win32::Foundation::HANDLE) -> Option<bool> {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+    use windows::Win32::System::Threading::OpenProcessToken;
+    unsafe {
+        let mut token = HANDLE::default();
+        OpenProcessToken(process, TOKEN_QUERY, &mut token).ok()?;
+        let mut e = TOKEN_ELEVATION::default();
+        let mut len = 0u32;
+        let ok = GetTokenInformation(token, TokenElevation, Some(&mut e as *mut _ as *mut _), std::mem::size_of::<TOKEN_ELEVATION>() as u32, &mut len).is_ok();
+        let _ = CloseHandle(token);
+        ok.then_some(e.TokenIsElevated != 0)
+    }
+}
+
+/// Whether Windows blocks Izuki's clicks and keys in this process: Some(true)
+/// when it runs as administrator and Izuki doesn't; None when Windows wouldn't say.
+#[cfg(windows)]
+fn blocked_pid(pid: u32) -> Option<bool> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    if pid == 0 || pid == std::process::id() {
+        return Some(false);
+    }
+    unsafe {
+        if elevated(GetCurrentProcess()).unwrap_or(false) {
+            // Izuki itself runs as administrator: nothing is out of reach.
+            return Some(false);
+        }
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        // An ordinary app can't even read an administrator app's token.
+        let blocked = elevated(h).unwrap_or(true);
+        let _ = CloseHandle(h);
+        Some(blocked)
+    }
+}
+
 pub fn front() -> Front {
     #[cfg(windows)]
     unsafe {
-        use windows::Win32::Foundation::{CloseHandle, HANDLE};
-        use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
-        use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION};
         use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
-
-        /// Some(true) elevated, Some(false) not, None = Windows wouldn't say.
-        fn elevated(process: HANDLE) -> Option<bool> {
-            unsafe {
-                let mut token = HANDLE::default();
-                OpenProcessToken(process, TOKEN_QUERY, &mut token).ok()?;
-                let mut e = TOKEN_ELEVATION::default();
-                let mut len = 0u32;
-                let ok = GetTokenInformation(token, TokenElevation, Some(&mut e as *mut _ as *mut _), std::mem::size_of::<TOKEN_ELEVATION>() as u32, &mut len).is_ok();
-                let _ = CloseHandle(token);
-                ok.then_some(e.TokenIsElevated != 0)
-            }
-        }
-
         let hwnd = GetForegroundWindow();
         let mut pid = 0u32;
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
         let app = crate::uia::foreground_app();
-        if pid == 0 || pid == std::process::id() {
-            return Front { app, blocked: false, unknown: false };
-        }
-        if elevated(GetCurrentProcess()).unwrap_or(false) {
-            // Izuki itself runs as administrator: nothing is out of reach.
-            return Front { app, blocked: false, unknown: false };
-        }
-        match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
-            Ok(h) => {
-                // An ordinary app can't even read an administrator app's token.
-                let blocked = elevated(h).unwrap_or(true);
-                let _ = CloseHandle(h);
-                Front { app, blocked, unknown: false }
-            }
-            Err(_) => Front { app, blocked: false, unknown: true },
+        match blocked_pid(pid) {
+            Some(blocked) => Front { app, blocked, unknown: false },
+            None => Front { app, blocked: false, unknown: true },
         }
     }
     #[cfg(not(windows))]
     Front { app: String::new(), blocked: false, unknown: false }
+}
+
+/// The window that would get Izuki's input — the one under `at` for a click,
+/// else the one in front — when Windows will drop Izuki's clicks and keys
+/// there (it runs as administrator): that app's name. None when it's fine
+/// or Windows wouldn't say (then it's tried as usual).
+pub fn blocked_target(at: Option<(i32, i32)>) -> Option<String> {
+    #[cfg(windows)]
+    unsafe {
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GetForegroundWindow, GetWindowThreadProcessId, WindowFromPoint, GA_ROOT};
+        let hwnd = match at {
+            Some((x, y)) => GetAncestor(WindowFromPoint(POINT { x, y }), GA_ROOT),
+            None => GetForegroundWindow(),
+        };
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if blocked_pid(pid) != Some(true) {
+            return None;
+        }
+        let exe = crate::uia::process_name(pid);
+        let name = exe.strip_suffix(".exe").or_else(|| exe.strip_suffix(".EXE")).unwrap_or(&exe).to_string();
+        Some(if name.is_empty() { "That window".into() } else { name })
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = at;
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -476,6 +515,19 @@ pub fn app_spot_norm(name: &str) -> Option<(f64, f64)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    #[cfg(windows)]
+    fn ordinary_windows_are_never_blocked() {
+        use super::blocked_pid;
+        // A false "running as administrator" would stop a task that works.
+        assert_eq!(blocked_pid(std::process::id()), Some(false));
+        assert_eq!(blocked_pid(0), Some(false));
+        let mut child = std::process::Command::new("cmd").args(["/c", "ping -n 3 127.0.0.1 >nul"]).spawn().unwrap();
+        let r = blocked_pid(child.id());
+        let _ = child.kill();
+        assert_eq!(r, Some(false), "a plain process this test started");
+    }
+
     #[test]
     fn knows_how_each_3d_app_orbits() {
         use super::{profile, Btn};

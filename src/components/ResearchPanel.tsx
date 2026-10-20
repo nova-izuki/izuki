@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BookOpen, ChevronDown, ChevronRight, Eye, Monitor, Search } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, Eye, Monitor, Search, SearchCheck } from "lucide-react";
 import { api, type ResearchSource, type ResearchUpdate } from "../lib/ipc";
 import { cx } from "./ui";
 
@@ -18,11 +18,20 @@ export interface ResearchState {
   sources: ResearchSource[];
 }
 
+/** Carrying on an earlier research (mirrors `research::continues`). */
+const CARRY_ON = /^(?:continue (?:(?:the|my|that|this) )?research(?:ing)?|keep researching|resume (?:the |my )?research|pick up the research|pick the research back up|research (?:more|further)|do more research)(?![a-z0-9])/i;
+/** Vaguer: right after a research reply only (elsewhere "go deeper" means "explain more"). */
+const DEEPER = /^(?:dig deeper|go deeper|look deeper|keep digging)(?![a-z0-9])/i;
+
 /**
  * "Research …", "deep research on …", "do a deep dive into …": the question
- * (mirrors `research::asks`), or null.
+ * (mirrors `research::asks`), or null. "Continue the research", "research
+ * more about …" (and, after a research reply, "dig deeper …") carry on the
+ * kept one: the whole request goes through.
  */
-export function researchAsk(said: string): string | null {
+export function researchAsk(said: string, afterResearch = false): string | null {
+  const t = said.trim();
+  if (CARRY_ON.test(t) || (afterResearch && DEEPER.test(t))) return t.replace(/[.!?]+$/, "");
   const m = said
     .trim()
     .match(/^(?:do (?:a |some )?)?(?:deep research|deep dive|research)(?: (?:on|about|into|this))?[:\s]+(.+)$/i);
@@ -78,7 +87,7 @@ function nowDoing(r: ResearchState): string {
  * with an eye and what it's doing, every search and page as a step (folded
  * away once done), and at the end the sources and "Save to Notes".
  */
-export function ResearchPanel({ r, footer, text }: { r: ResearchState; footer?: boolean; text?: string }) {
+export function ResearchPanel({ r, footer, text, onContinue }: { r: ResearchState; footer?: boolean; text?: string; onContinue?: () => void }) {
   const live = r.phase === "working";
   const [open, setOpen] = useState(false);
   const [saved, setSaved] = useState<"" | "saving" | "saved" | string>("");
@@ -123,6 +132,17 @@ export function ResearchPanel({ r, footer, text }: { r: ResearchState; footer?: 
             <BookOpen size={12} strokeWidth={2.4} />
             {saved === "saved" ? "Saved to Notes ✓" : saved === "saving" ? "Saving…" : "Save to Notes"}
           </button>
+          {onContinue && (
+            <button
+              type="button"
+              onClick={onContinue}
+              title="Carry on from these sources: search for what's still missing and update the answer"
+              className="izk-no-drag flex h-[26px] items-center gap-1.5 rounded-full border border-white/10 bg-white/6 px-2.5 text-[11px] text-izk-ink hover:bg-white/12"
+            >
+              <SearchCheck size={12} strokeWidth={2.4} />
+              Dig deeper
+            </button>
+          )}
           {saved && saved !== "saving" && saved !== "saved" && <span className="text-[10.5px] text-izk-danger">{saved}</span>}
         </div>
       </div>

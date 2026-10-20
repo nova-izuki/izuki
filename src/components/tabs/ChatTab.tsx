@@ -552,7 +552,7 @@ export function ChatTab() {
         });
       // Deep research (research.rs): many searches, many pages, an answer
       // with its sources — with the Deep switch on, or "research …".
-      const researchQ = !note && !here && !images.length ? (deep ? t : researchAsk(t)) : null;
+      const researchQ = !note && !here && !images.length ? (deep ? t : researchAsk(t, !!msgs[msgs.length - 1]?.research)) : null;
       if (researchQ) {
         setLast({ status: undefined, research: { question: researchQ, phase: "working", steps: [], sources: [] } });
         await runResearch(id, researchQ, history, setLast, finish);
@@ -922,7 +922,9 @@ export function ChatTab() {
                     <Loader2 size={13} className="animate-spin" /> {m.status ?? "Thinking…"}
                   </span>
                 ) : null}
-                {m.research?.phase === "done" && m.content && <ResearchPanel r={m.research} footer text={m.content} />}
+                {m.research?.phase === "done" && m.content && (
+                  <ResearchPanel r={m.research} footer text={m.content} onContinue={i === msgs.length - 1 && !busy ? () => void send("continue the research") : undefined} />
+                )}
                 {m.role === "assistant" && m.content && !m.failed && !(busy && i === msgs.length - 1) && (
                   <ReplyTools text={m.content} onRetry={i === msgs.length - 1 ? () => retry(i) : undefined} onAsk={i === msgs.length - 1 ? (ask) => void send(ask) : undefined} />
                 )}

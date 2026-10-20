@@ -21,6 +21,8 @@ reviews:
     - "!**/*.glb"
     - "!**/*.webp"
     - "!**/*.png"
+    # Generated character frame data (.work/tween.py, frames.py).
+    - "!docs/app/painted/**/*.json"
   path_instructions:
     - path: "src-tauri/src/{automation,uia,vision,planner,brain,patience}.rs"
       instructions: |

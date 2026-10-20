@@ -6,11 +6,16 @@
 //!
 //! Only public web pages are read (web.rs); nothing is signed into, bought,
 //! posted or submitted.
+//!
+//! Every investigation is kept (questions, searches, the pages read, the
+//! pages that couldn't be, the answer) in %APPDATA%\Izuki\research, so
+//! "continue the research" / "dig deeper into …" picks it up later: what was
+//! read stays read, and only what's missing is searched for.
 
 use std::collections::HashSet;
 use std::sync::Mutex;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
 
@@ -73,6 +78,10 @@ pub fn asks(said: &str) -> Option<String> {
         "do some deep research about ", "do some research on ", "do some research about ", "deep research on ", "deep research about ", "deep research: ",
         "deep research ", "deep dive into ", "do a deep dive on ", "do a deep dive into ", "research this: ", "research: ", "research ",
     ] {
+        // "Research more about …" carries on an earlier one (see `continues`).
+        if continues(t).is_some() {
+            return Some(t.trim_end_matches(['.', '!']).to_string());
+        }
         // Compared on the original text (lower-casing can change its length).
         if t.get(..lead.len()).is_some_and(|p| p.eq_ignore_ascii_case(lead)) {
             let q = t[lead.len()..].trim().trim_end_matches(['.', '!']).trim();
@@ -124,10 +133,133 @@ const WRITE_PROMPT: &str = "You are Izuki, a smart assistant who just researched
 - End with a short '## Bottom line' (for a question) or '## How to use it' (for something you made). Don't write a sources list — it's added for you.
 - Plain, friendly English. Markdown is fine.";
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Page {
     title: String,
     url: String,
     text: String,
+}
+
+/// A page (or a search) that couldn't be read, and why — said in the answer,
+/// never quietly dropped.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct Missed {
+    title: String,
+    site: String,
+    why: String,
+}
+
+/// One investigation, kept so it can be picked up again.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Saved {
+    question: String,
+    at: i64,
+    queries: Vec<String>,
+    pages: Vec<Page>,
+    #[serde(default)]
+    missed: Vec<Missed>,
+    answer: String,
+}
+
+/// How many investigations are kept (the newest).
+const KEEP: usize = 40;
+
+fn saved_dir() -> std::path::PathBuf {
+    crate::store::data_dir().join("research")
+}
+
+fn save(s: &Saved) {
+    let dir = saved_dir();
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    if let Ok(text) = serde_json::to_string(s) {
+        let _ = std::fs::write(dir.join(format!("{}.json", s.at)), text);
+    }
+    // Only the newest are kept.
+    let mut files: Vec<_> = std::fs::read_dir(&dir).map(|d| d.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")).collect()).unwrap_or_default();
+    files.sort();
+    while files.len() > KEEP {
+        let _ = std::fs::remove_file(files.remove(0));
+    }
+}
+
+/// The investigation to carry on (see `pick`).
+fn latest(about: &str) -> Option<Saved> {
+    let mut files: Vec<_> = std::fs::read_dir(saved_dir()).ok()?.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")).collect();
+    files.sort();
+    files.reverse();
+    let all: Vec<Saved> = files.iter().take(KEEP).filter_map(|p| serde_json::from_str(&std::fs::read_to_string(p).ok()?).ok()).collect();
+    pick(all, about, chrono::Local::now().timestamp_millis())
+}
+
+/// Which kept investigation "continue / dig deeper into `about`" means: the
+/// newest one sharing a word with it. No topic named: the newest. A topic no
+/// kept one is about: the newest only if it's from the last half hour (going
+/// on from what was just done), else none — a new research on that.
+fn pick(all: Vec<Saved>, about: &str, now_ms: i64) -> Option<Saved> {
+    const SMALL: &[&str] = &["that", "this", "those", "these", "them", "they", "their", "there", "here", "more", "into", "about", "with", "from", "what", "stuff", "part", "parts", "thing", "things", "topic", "info", "information", "details", "deeper", "further", "again", "some", "please", "research"];
+    let words: Vec<String> = about.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| w.len() >= 4 && !SMALL.contains(w)).map(str::to_string).collect();
+    if words.is_empty() {
+        return all.into_iter().next();
+    }
+    if let Some(s) = all.iter().find(|s| {
+        let q = s.question.to_lowercase();
+        q.split(|c: char| !c.is_alphanumeric()).any(|qw| words.iter().any(|w| same_word(w, qw)))
+    }) {
+        return Some(s.clone());
+    }
+    all.into_iter().next().filter(|s| now_ms - s.at < 30 * 60 * 1000)
+}
+
+/// The same word, give or take its ending: "batteries" / "battery",
+/// "prices" / "price", "rent" / "rental".
+fn same_word(a: &str, b: &str) -> bool {
+    let shared = a.chars().zip(b.chars()).take_while(|(x, y)| x == y).count();
+    shared >= 5 || (shared >= 4 && shared == a.chars().count().min(b.chars().count()))
+}
+
+/// "Continue the research", "keep researching …", "dig deeper into …",
+/// "research more about …": carry on an earlier investigation. The words
+/// after it (maybe none) say what to go deeper on.
+pub fn continues(said: &str) -> Option<String> {
+    let t = said.trim().trim_end_matches(['.', '!', '?']).trim();
+    for lead in [
+        "continue the research", "continue my research", "continue that research", "continue this research", "continue researching", "continue research",
+        "keep researching", "keep digging", "resume the research", "resume my research", "pick up the research", "pick the research back up",
+        "dig deeper", "go deeper", "research more", "do more research", "research further", "look deeper",
+    ] {
+        if t.get(..lead.len()).is_some_and(|p| p.eq_ignore_ascii_case(lead)) && t[lead.len()..].chars().next().is_none_or(|c| !c.is_alphanumeric()) {
+            let mut rest = t[lead.len()..].trim().trim_start_matches([':', ',', '-', '—']).trim();
+            for joint in ["on ", "into ", "about ", "in ", "for "] {
+                if rest.get(..joint.len()).is_some_and(|p| p.eq_ignore_ascii_case(joint)) {
+                    rest = rest[joint.len()..].trim();
+                    break;
+                }
+            }
+            return Some(rest.to_string());
+        }
+    }
+    None
+}
+
+/// Why a page couldn't be read, in plain words.
+fn why_not(err: &str) -> String {
+    let l = err.to_lowercase();
+    let status = |codes: &[&str]| codes.iter().any(|c| l.contains(&format!("answered {c}")));
+    if status(&["401", "403", "429", "451"]) {
+        "the site turned Izuki away (a sign-in, paywall or bot check)".into()
+    } else if status(&["404", "410"]) {
+        "the page is gone".into()
+    } else if l.contains("pdf") {
+        "it's a PDF (open it on screen and Izuki can read it there)".into()
+    } else if l.contains("timed out") || l.contains("timeout") {
+        "it didn't load in time".into()
+    } else if status(&["500", "502", "503", "504"]) {
+        "the site had an error".into()
+    } else {
+        "it wouldn't load".into()
+    }
 }
 
 pub fn start(app: AppHandle, id: u64, question: String, history: Vec<crate::chat::Turn>) {
@@ -151,26 +283,59 @@ fn run(id: u64, question: &str, history: &[crate::chat::Turn], send: &dyn Fn(Upd
     // What the chat was about, so "research that" style follow-ups make sense.
     let context: String = history.iter().rev().skip(1).take(4).rev().map(|t| format!("{}: {}\n", t.role, t.content.chars().take(400).collect::<String>())).collect();
 
-    send(Update { kind: "plan", text: "Planning the searches…".into(), ..Default::default() });
-    let plan = crate::chat::complete(&[
-        json!({ "role": "system", "content": PLAN_PROMPT }),
-        json!({ "role": "user", "content": format!("{}Question: {question}\nToday is {}.", if context.is_empty() { String::new() } else { format!("Conversation so far:\n{context}\n") }, chrono::Local::now().format("%A %-d %B %Y")) }),
-    ])
-    .unwrap_or_default();
-    // The question itself always goes first, so a planner that drifts
-    // can't lose it.
-    let queries = query_lines(&format!("{question}\n{plan}"), FIRST_SEARCHES + 1);
-    // An encyclopedia view of it too (Wikipedia always answers).
-    let wiki_query = query_lines(question, 1).pop().unwrap_or_else(|| question.to_string());
-    stop()?;
+    // "Continue the research" / "dig deeper into …": pick up a kept one —
+    // what was read stays read; only what's missing is searched for.
+    let deeper = continues(question);
+    let resumed = deeper.as_deref().and_then(latest);
+    if deeper.is_some() && resumed.is_none() {
+        match deeper.as_deref().filter(|d| d.split_whitespace().count() >= 2) {
+            // Nothing to carry on, but it says what about: a new one on that.
+            Some(about) => return run(id, about, history, send),
+            None => anyhow::bail!("There's no earlier research to continue yet — say “research …” and what about to start one."),
+        }
+    }
+    let extra = deeper.unwrap_or_default();
+    // What it's about, kept as first asked (going deeper doesn't pile up in it).
+    let topic = resumed.as_ref().map(|s| s.question.clone()).unwrap_or_else(|| question.to_string());
+    let asked = match &resumed {
+        Some(s) if !extra.is_empty() => format!("{} — and now, going deeper: {extra}", s.question),
+        Some(s) => s.question.clone(),
+        None => question.to_string(),
+    };
+    let question = asked.as_str();
 
     let mut pages: Vec<Page> = Vec::new();
+    let mut missed: Vec<Missed> = Vec::new();
     let mut seen_urls = HashSet::new();
     let mut per_site: std::collections::HashMap<String, usize> = Default::default();
-    gather(id, &queries, FIRST_PAGES, &mut pages, &mut seen_urls, &mut per_site, send)?;
-    gather_wiki(id, &wiki_query, &mut pages, &mut seen_urls, send);
+    let mut queries: Vec<String>;
+    if let Some(s) = &resumed {
+        send(Update { kind: "plan", text: format!("Picking up your research on “{}” — {} pages already read…", s.question, s.pages.len()), ..Default::default() });
+        for p in &s.pages {
+            seen_urls.insert(p.url.split('#').next().unwrap_or(&p.url).trim_end_matches('/').to_string());
+            *per_site.entry(site_of(&p.url)).or_default() += 1;
+        }
+        pages = s.pages.clone();
+        missed = s.missed.clone();
+        queries = s.queries.clone();
+    } else {
+        send(Update { kind: "plan", text: "Planning the searches…".into(), ..Default::default() });
+        let plan = crate::chat::complete(&[
+            json!({ "role": "system", "content": PLAN_PROMPT }),
+            json!({ "role": "user", "content": format!("{}Question: {question}\nToday is {}.", if context.is_empty() { String::new() } else { format!("Conversation so far:\n{context}\n") }, chrono::Local::now().format("%A %-d %B %Y")) }),
+        ])
+        .unwrap_or_default();
+        // The question itself always goes first, so a planner that drifts
+        // can't lose it.
+        queries = query_lines(&format!("{question}\n{plan}"), FIRST_SEARCHES + 1);
+        // An encyclopedia view of it too (Wikipedia always answers).
+        let wiki_query = query_lines(question, 1).pop().unwrap_or_else(|| question.to_string());
+        stop()?;
+        gather(id, &queries, FIRST_PAGES, &mut pages, &mut seen_urls, &mut per_site, &mut missed, send)?;
+        gather_wiki(id, &wiki_query, &mut pages, &mut seen_urls, &mut missed, send);
+    }
 
-    // Round two: what's still missing?
+    // Round two (or, carrying on, the round): what's still missing?
     if !pages.is_empty() {
         send(Update { kind: "think", text: "Checking what's still missing…".into(), ..Default::default() });
         let notes: String = pages.iter().map(|p| format!("- {}: {}\n", p.title, p.text.chars().take(600).collect::<String>().replace('\n', " "))).collect();
@@ -180,11 +345,18 @@ fn run(id: u64, question: &str, history: &[crate::chat::Turn], send: &dyn Fn(Upd
         ])
         .unwrap_or_default();
         stop()?;
+        let (searches, reads) = if resumed.is_some() { (MORE_SEARCHES + 1, MORE_PAGES + 2) } else { (MORE_SEARCHES, MORE_PAGES) };
+        let mut more: Vec<String> = Vec::new();
         if !gaps.trim().eq_ignore_ascii_case("none") && !gaps.to_uppercase().starts_with("NONE") {
-            let more: Vec<String> = query_lines(&gaps, MORE_SEARCHES).into_iter().filter(|q| !queries.iter().any(|d| d.eq_ignore_ascii_case(q))).collect();
-            if !more.is_empty() {
-                gather(id, &more, MORE_PAGES, &mut pages, &mut seen_urls, &mut per_site, send)?;
-            }
+            more = query_lines(&gaps, searches).into_iter().filter(|q| !queries.iter().any(|d| d.eq_ignore_ascii_case(q))).collect();
+        }
+        // Asked to go deeper on something: that's searched for, whatever the check said.
+        if !extra.is_empty() && !more.iter().any(|q| q.eq_ignore_ascii_case(&extra)) {
+            more.insert(0, query_lines(&extra, 1).pop().unwrap_or_else(|| extra.clone()));
+        }
+        if !more.is_empty() {
+            gather(id, &more, reads, &mut pages, &mut seen_urls, &mut per_site, &mut missed, send)?;
+            queries.extend(more);
         }
     }
     if pages.is_empty() {
@@ -193,7 +365,8 @@ fn run(id: u64, question: &str, history: &[crate::chat::Turn], send: &dyn Fn(Upd
 
     let sources: Vec<Source> = pages.iter().enumerate().map(|(i, p)| Source { n: i + 1, title: p.title.clone(), url: p.url.clone(), site: site_of(&p.url) }).collect();
     send(Update { kind: "write", text: format!("Writing it up from {} sources…", sources.len()), sources: sources.clone(), ..Default::default() });
-    let material: String = pages.iter().enumerate().map(|(i, p)| format!("[{}] {} — {}\n{}\n\n", i + 1, p.title, p.url, p.text)).collect();
+    let each = (PAGE_CHARS * 15 / pages.len().max(15)).max(400);
+    let material: String = pages.iter().enumerate().map(|(i, p)| format!("[{}] {} — {}\n{}\n\n", i + 1, p.title, p.url, p.text.chars().take(each).collect::<String>())).collect();
     if pages.len() < 3 {
         // Thin research says so up front, instead of posing as deep.
         let note = format!(
@@ -237,6 +410,22 @@ fn run(id: u64, question: &str, history: &[crate::chat::Turn], send: &dyn Fn(Upd
     for s in &list {
         tail.push_str(&format!("[{}] {} — {}\n", s.n, s.title, s.url));
     }
+    // What couldn't be read is said, not quietly dropped.
+    if !missed.is_empty() {
+        tail.push_str("\n## Couldn't read\n");
+        for m in missed.iter().take(8) {
+            if m.site.is_empty() {
+                tail.push_str(&format!("- {} — {}\n", m.title, m.why));
+            } else {
+                tail.push_str(&format!("- {} ({}) — {}\n", m.title, m.site, m.why));
+            }
+        }
+        if missed.len() > 8 {
+            tail.push_str(&format!("- and {} more\n", missed.len() - 8));
+        }
+    }
+    tail.push_str("\n_Say “continue the research” or “dig deeper into …” to carry on from here._\n");
+    save(&Saved { question: topic, at: chrono::Local::now().timestamp_millis(), queries: queries.clone(), pages: pages.clone(), missed: missed.clone(), answer: format!("{answer}{tail}") });
     crate::studylog::record(&question, &format!("{answer}{tail}"));
     send(Update { kind: "text", text: tail, ..Default::default() });
     send(Update { kind: "done", text: String::new(), sources: list, ..Default::default() });
@@ -245,7 +434,7 @@ fn run(id: u64, question: &str, history: &[crate::chat::Turn], send: &dyn Fn(Upd
 }
 
 /// The top Wikipedia article(s) for the question, read like any page.
-fn gather_wiki(id: u64, q: &str, pages: &mut Vec<Page>, seen: &mut HashSet<String>, send: &dyn Fn(Update)) {
+fn gather_wiki(id: u64, q: &str, pages: &mut Vec<Page>, seen: &mut HashSet<String>, missed: &mut Vec<Missed>, send: &dyn Fn(Update)) {
     if cancelled(id) {
         return;
     }
@@ -258,7 +447,14 @@ fn gather_wiki(id: u64, q: &str, pages: &mut Vec<Page>, seen: &mut HashSet<Strin
         send(Update { kind: "read", text: h.title.clone(), url: Some(h.url.clone()), site: Some("wikipedia.org".into()), ..Default::default() });
         match crate::web::read_page(&h.url) {
             Ok((landed, text)) if text.split_whitespace().count() > 80 => pages.push(Page { title: h.title, url: landed, text: text.chars().take(PAGE_CHARS).collect() }),
-            _ => send(Update { kind: "skip", text: h.title, url: Some(h.url), site: Some("wikipedia.org".into()), ..Default::default() }),
+            r => {
+                let why = match r {
+                    Err(e) => why_not(&e.to_string()),
+                    Ok(_) => "almost no readable text".into(),
+                };
+                missed.push(Missed { title: h.title.clone(), site: "wikipedia.org".into(), why });
+                send(Update { kind: "skip", text: h.title, url: Some(h.url), site: Some("wikipedia.org".into()), ..Default::default() });
+            }
         }
     }
 }
@@ -272,6 +468,7 @@ fn gather(
     pages: &mut Vec<Page>,
     seen: &mut HashSet<String>,
     per_site: &mut std::collections::HashMap<String, usize>,
+    missed: &mut Vec<Missed>,
     send: &dyn Fn(Update),
 ) -> anyhow::Result<()> {
     let mut picks: Vec<crate::web::Hit> = Vec::new();
@@ -289,7 +486,10 @@ fn gather(
         send(Update { kind: "search", text: q.clone(), ..Default::default() });
         match crate::web::search(q) {
             Ok(h) => lists.push(h.into_iter().filter(|h| relevant(q, h)).collect()),
-            Err(e) => eprintln!("[research] search failed: {e}"),
+            Err(e) => {
+                eprintln!("[research] search failed: {e}");
+                missed.push(Missed { title: format!("the search “{q}”"), site: String::new(), why: "no search engine answered (they slow down after many searches)".into() });
+            }
         }
     }
     let mut rank = 0;
@@ -333,12 +533,20 @@ fn gather(
                     // The real address (Google's results are redirects).
                     pages.push(Page { title, url: landed, text: text.chars().take(PAGE_CHARS).collect() });
                 }
-                Ok(_) | Err(_) => {
-                    // A page that wouldn't load (or had nothing on it): its search snippet still counts.
+                r => {
+                    // A page that wouldn't load (or had nothing on it): said in
+                    // the answer — and its search snippet still counts.
+                    let mut why = match r {
+                        Err(e) => why_not(&e.to_string()),
+                        Ok(_) => "almost no readable text (often a sign-in page, a paywall or an app-only page)".into(),
+                    };
                     send(Update { kind: "skip", text: hit.title.clone(), url: Some(hit.url.clone()), site: Some(hit_site(&hit)), ..Default::default() });
                     if hit.snippet.split_whitespace().count() > 12 {
-                        pages.push(Page { title: hit.title, url: hit.url, text: hit.snippet });
+                        why.push_str(" — only its search summary was used");
+                        pages.push(Page { title: hit.title.clone(), url: hit.url.clone(), text: hit.snippet.clone() });
                     }
+                    let site = hit_site(&hit);
+                    missed.push(Missed { title: hit.title, site, why });
                 }
             }
         }
@@ -424,6 +632,40 @@ mod tests {
         assert_eq!(asks("İİİİ research"), None, "no panic on letters that change length when lower-cased");
         assert_eq!(asks("what's the weather"), None);
         assert_eq!(asks("researchers found a new planet"), None);
+        // Carrying on an earlier one (the whole request goes to `run`).
+        assert_eq!(asks("research more about the battery prices").as_deref(), Some("research more about the battery prices"));
+        assert_eq!(continues("Continue the research."), Some(String::new()));
+        assert_eq!(continues("dig deeper into the battery prices"), Some("the battery prices".into()));
+        assert_eq!(continues("keep researching: rent in Houston"), Some("rent in Houston".into()));
+        assert_eq!(continues("research more about EVs"), Some("EVs".into()));
+        assert_eq!(continues("digger deeper"), None);
+        assert_eq!(continues("go deeper"), Some(String::new()));
+        assert_eq!(continues("research how solar works"), None, "a new one");
+    }
+
+    #[test]
+    fn carries_on_the_right_one_and_says_what_it_missed() {
+        let s = |q: &str, at: i64| Saved { question: q.into(), at, queries: vec![], pages: vec![], missed: vec![], answer: String::new() };
+        let now = 10 * 3600 * 1000;
+        let all = vec![s("Houston rent prices 2026", now - 3600 * 1000), s("best laptops for college", 2), s("EV battery prices", 1)];
+        assert_eq!(pick(all.clone(), "the battery stuff", now).unwrap().question, "EV battery prices", "the one it's about");
+        assert_eq!(pick(all.clone(), "", now).unwrap().question, "Houston rent prices 2026", "no topic: the newest");
+        assert_eq!(pick(all.clone(), "that", now).unwrap().question, "Houston rent prices 2026", "“dig deeper into that”");
+        assert_eq!(pick(all.clone(), "quantum batteries", now).unwrap().question, "EV battery prices", "shares a word");
+        assert!(pick(all.clone(), "quantum computing", now).is_none(), "a new topic, the last one an hour old: a new research");
+        let fresh = vec![s("Houston rent prices 2026", now - 60 * 1000)];
+        assert_eq!(pick(fresh, "the costs", now).unwrap().question, "Houston rent prices 2026", "just researched: going on from it");
+        assert_eq!(pick(vec![], "x", now).map(|s| s.question), None);
+        assert!(same_word("batteries", "battery") && same_word("rent", "rental") && same_word("prices", "price"));
+        assert!(!same_word("rent", "recent") && !same_word("cost", "coast"));
+        assert_eq!(why_not("that page answered 403 Forbidden"), "the site turned Izuki away (a sign-in, paywall or bot check)");
+        assert_eq!(why_not("that page answered 404 Not Found"), "the page is gone");
+        assert_eq!(why_not("error sending request: operation timed out"), "it didn't load in time");
+        assert_eq!(why_not("that's a PDF — open it on screen and I'll read it there"), "it's a PDF (open it on screen and Izuki can read it there)");
+        assert_eq!(why_not("connection refused"), "it wouldn't load");
+        // Old saved files without the newer fields still load.
+        let old: Saved = serde_json::from_str(r#"{"question":"q","at":1,"queries":[],"pages":[],"answer":"a"}"#).unwrap();
+        assert!(old.missed.is_empty());
     }
 
     /// Real research with this PC's AI and the live web:

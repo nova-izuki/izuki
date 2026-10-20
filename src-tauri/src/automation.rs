@@ -617,6 +617,24 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
             }
         }
     }
+    // Windows drops an ordinary app's clicks and keys in an app running as
+    // administrator (its own protection). Say so plainly, instead of acting
+    // for nothing and leaving the next look to wonder why nothing changed.
+    // (Copy triple-clicks at its spot first.)
+    let at_point = matches!(step.action, Intent::Click | Intent::Auto | Intent::DoubleClick | Intent::RightClick | Intent::Drag | Intent::Hover | Intent::Scroll | Intent::Stroke | Intent::Copy) || targeted_type;
+    if !dry_run && (at_point || matches!(step.action, Intent::Type | Intent::Key)) {
+        let at = match step.action {
+            Intent::Stroke => step.path.as_ref().and_then(|p| p.first()).map(|p| (p[0], p[1])),
+            // A scroll with no spot turns the wheel wherever the pointer is.
+            Intent::Scroll if x <= 0 && y <= 0 => Some(crate::capture::cursor_pos()),
+            _ => (at_point && (x != 0 || y != 0)).then_some((x, y)),
+        };
+        if let Some(app) = crate::air::blocked_target(at) {
+            return Err(anyhow!(
+                "{app} is running as administrator, so Windows doesn't let Izuki click or type in it. Do this part yourself, or run Izuki as administrator (right-click Izuki → Run as administrator) and ask again."
+            ));
+        }
+    }
     // Precision must select an element from the parsed screen. Snapping a
     // guessed answer onto a nearby radio button only verifies the guess.
     if precision && !dry_run && (clicking || targeted_type) && step.grounding.is_none() {

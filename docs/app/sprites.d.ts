@@ -2,6 +2,9 @@ export interface MovesPack {
   id: string;
   data: { height: number; states: Record<string, { x: number; y: number; w: number; h: number; fx: number; fy: number }[]> };
   img: HTMLImageElement;
+  /** In-betweens ("talk.0>talk.3": frames on the way), in `timg`; null without them. */
+  tw: Record<string, { x: number; y: number; w: number; h: number; fx: number; fy: number; t: 1 }[]> | null;
+  timg: HTMLImageElement | null;
 }
 export interface Mover {
   state: string;
