@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Clock, Gamepad2, Layers, Moon, Palette, RotateCcw, Shuffle, Sparkles, Sun, Undo2, Wand2, Wrench, Zap } from "lucide-react";
+import { Clock, Gamepad2, Gem, Image as ImageIcon, Layers, Moon, Palette, RefreshCw, RotateCcw, Shuffle, Sparkles, Sun, Undo2, Wand2, Wrench, Zap } from "lucide-react";
 import { api, type LookAuto, type LookPreset, type LooksStatus, type WindowsTweak } from "../../lib/ipc";
 import { onStyleSection, takeStyleSection, type StyleSection } from "../../lib/styleNav";
 import { cx } from "../ui";
@@ -135,6 +135,7 @@ const GROUPS: Array<{ id: string; label: string; icon: string }> = [
 const PACKS: Array<{ id: string; label: string; hint: string; icon: React.ReactNode; colours: string }> = [
   { id: "gamer", label: "Gamer", hint: "Snappy windows, no game recording, no Sticky Keys pop-up", icon: <Gamepad2 size={15} />, colours: "from-fuchsia-500/30 to-indigo-500/25" },
   { id: "clean", label: "Clean & private", hint: "No ads, tips, nags or tracking ID", icon: <Sparkles size={15} />, colours: "from-emerald-500/25 to-cyan-500/25" },
+  { id: "premium", label: "Premium & minimal", hint: "Just your apps on the taskbar: no search box, Task view, Widgets, Copilot or badges", icon: <Gem size={15} />, colours: "from-sky-500/25 to-violet-500/25" },
   { id: "power", label: "Power user", hint: "Extensions, hidden files, full paths, End task, seconds", icon: <Wrench size={15} />, colours: "from-amber-500/25 to-rose-500/25" },
 ];
 
@@ -249,7 +250,7 @@ export function StyleTab() {
     if (busy) return;
     const next = { ...auto, ...patch };
     setS((cur) => (cur ? { ...cur, auto: next } : cur));
-    run("auto", () => api.lookAuto(next), setLooks, next.mode === "off" ? "Auto is off." : next.mode === "daynight" ? "Day & night is on." : "Shuffle is on.", () => {
+    run("auto", () => api.lookAuto(next), setLooks, next.mode === "off" ? "Auto is off." : next.mode === "daynight" ? "Day & night is on." : next.mode === "photo" ? "Daily photo is on — a new photo every day, colours to match." : "Shuffle is on.", () => {
       // Show what's really saved, not what failed to save.
       void api.looksStatus().then(setLooks).catch(() => setS((cur) => (cur ? { ...cur, auto } : cur)));
     });
@@ -464,10 +465,11 @@ export function StyleTab() {
 
       {section === "auto" && auto && (
         <div id="style-auto" className="izk-card izk-grain izk-rise flex flex-col gap-3 p-3">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {(
               [
                 ["off", "Off", "Your look stays as it is.", <Zap key="z" size={16} />],
+                ["photo", "Daily photo", "A real new photo every day, like Windows Spotlight — colours matched to it.", <ImageIcon key="i" size={16} />],
                 ["daynight", "Day & night", "A light look by day, a dark one at night.", <Sun key="s" size={16} />],
                 ["shuffle", "Shuffle", "A fresh look every so often.", <Shuffle key="h" size={16} />],
               ] as const
@@ -484,6 +486,55 @@ export function StyleTab() {
               </button>
             ))}
           </div>
+
+          {auto.mode === "photo" && (
+            <div className="flex flex-col gap-2.5">
+              {(
+                <div className="flex items-center gap-2.5 rounded-[14px] border border-white/10 bg-white/[0.03] p-2.5">
+                  <span className="h-[38px] w-[38px] shrink-0 rounded-[10px] border border-white/15" style={{ background: s?.photo?.accent ?? "rgba(255,255,255,0.06)" }} title={s?.photo ? `Accent ${s.photo.accent}` : undefined} />
+                  {s?.photo ? (
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12px] font-semibold text-izk-ink">{s.photo.title && s.photo.title !== s.photo.source ? s.photo.title : `Today's photo`}</span>
+                      <span className="block truncate text-[10.5px] text-izk-muted" title={s.photo.credit}>
+                        {s.photo.source}
+                        {s.photo.credit ? ` · ${s.photo.credit}` : ""} · {s.photo.dark ? "dark" : "light"} mode
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="min-w-0 flex-1 text-[11px] leading-snug text-izk-muted">Today's photo hasn't come through yet (maybe offline) — tap New photo now, or it tries again by itself.</span>
+                  )}
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => run("photo", () => api.lookPhotoNow(true), setLooks, "A new photo, with colours to match.")}
+                    className="izk-no-drag flex h-[30px] shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/6 px-3 text-[11px] font-semibold text-izk-ink hover:bg-white/12 disabled:opacity-60"
+                  >
+                    <RefreshCw size={12} /> New photo now
+                  </button>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-[12px] font-semibold text-izk-ink">Photos from</span>
+                {(
+                  [
+                    ["both", "Bing & Spotlight"],
+                    ["bing", "Bing (4K, new daily)"],
+                    ["spotlight", "Windows Spotlight"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => setAuto({ source: id })}
+                    className={cx("izk-no-drag rounded-full border px-2.5 py-1 text-[11px]", auto.source === id ? "border-izk-teal/50 bg-izk-teal/15 text-izk-ink" : "border-white/10 text-izk-muted")}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {auto.mode === "daynight" && (
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -575,9 +626,11 @@ export function StyleTab() {
 
           {auto.mode !== "off" && (
             <div className="flex items-center gap-2 text-[11px] text-izk-muted">
-              <button type="button" disabled={busy !== null} onClick={() => setAuto({ wallpaper: !auto.wallpaper })} className="izk-no-drag flex items-center gap-1.5 text-izk-ink">
-                <MiniSwitch on={auto.wallpaper} /> Change the wallpaper too
-              </button>
+              {auto.mode !== "photo" && (
+                <button type="button" disabled={busy !== null} onClick={() => setAuto({ wallpaper: !auto.wallpaper })} className="izk-no-drag flex items-center gap-1.5 text-izk-ink">
+                  <MiniSwitch on={auto.wallpaper} /> Change the wallpaper too
+                </button>
+              )}
               <span className="ml-auto flex items-center gap-1">
                 <Layers size={12} /> Windows fades smoothly between pictures. Undo turns Auto off.
               </span>

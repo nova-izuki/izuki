@@ -371,6 +371,8 @@ pub struct Status {
     pub note: Option<String>,
     /// Looks that change by themselves.
     pub auto: Auto,
+    /// Daily photo: the picture showing now.
+    pub photo: Option<Photo>,
 }
 
 /// A registry value exactly as it was: its type and bytes (None = it didn't exist).
@@ -402,13 +404,38 @@ struct Memory {
     current: Option<String>,
     #[serde(default)]
     auto: Auto,
+    /// Daily photo: the one showing.
+    #[serde(default)]
+    photo: Option<Photo>,
+}
+
+/// Daily photo: today's picture, where it came from, and the colours it set.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Photo {
+    /// "2026-10-20".
+    pub day: String,
+    pub file: String,
+    /// "Bing" or "Windows Spotlight".
+    pub source: String,
+    pub title: String,
+    pub credit: String,
+    pub accent: String,
+    pub dark: bool,
+    /// "New photo now" pressed this many times today (the next one along).
+    #[serde(default)]
+    pub turn: u32,
 }
 
 /// Looks that change by themselves.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Auto {
-    /// "off", "daynight" (one look by day, another at night) or "shuffle" (a new look every so often).
+    /// "off", "daynight" (one look by day, another at night), "shuffle" (a
+    /// new look every so often) or "photo" (a new photo every day, like
+    /// Windows Spotlight, with colours to match).
     pub mode: String,
+    /// Daily photo's pictures: "both", "bing" or "spotlight".
+    #[serde(default = "both_sources")]
+    pub source: String,
     pub day: String,
     pub night: String,
     /// "HH:MM", 24-hour.
@@ -437,8 +464,13 @@ impl Default for Auto {
             pool: Vec::new(),
             wallpaper: true,
             last: 0,
+            source: both_sources(),
         }
     }
+}
+
+fn both_sources() -> String {
+    "both".into()
 }
 
 fn minutes(hhmm: &str) -> Option<u32> {
@@ -477,8 +509,11 @@ fn due(a: &Auto, current: Option<&str>, now_min: u32, now_ms: i64) -> Option<Str
 
 /// Turn Auto on, change it, or turn it off. The look changes straight away if it should.
 pub fn set_auto(mut a: Auto) -> Result<Status> {
-    if !["off", "daynight", "shuffle"].contains(&a.mode.as_str()) {
+    if !["off", "daynight", "shuffle", "photo"].contains(&a.mode.as_str()) {
         return Err(anyhow!("no auto mode called {}", a.mode));
+    }
+    if !["both", "bing", "spotlight"].contains(&a.source.as_str()) {
+        return Err(anyhow!("no photo source called {}", a.source));
     }
     for id in [&a.day, &a.night].into_iter().chain(a.pool.iter()) {
         if !PRESETS.iter().any(|p| p.id == id) {
@@ -506,6 +541,28 @@ fn tick() {
     // ago can't be overtaken by a decision made just before.
     let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
     let m = memory();
+    if m.auto.mode == "photo" {
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        if m.photo.as_ref().map(|p| p.day.as_str()) == Some(today.as_str()) {
+            return;
+        }
+        // Offline or a site down: try again in half an hour, not every minute.
+        static TRIED: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+        let mut tried = TRIED.lock().unwrap_or_else(|e| e.into_inner());
+        if tried.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(30 * 60)) {
+            return;
+        }
+        *tried = Some(std::time::Instant::now());
+        drop(tried);
+        match photo_locked(&m.auto.source, false) {
+            Ok(_) => {
+                *TRIED.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                eprintln!("[looks] daily photo for {today}");
+            }
+            Err(e) => eprintln!("[looks] daily photo couldn't change: {e}"),
+        }
+        return;
+    }
     let now = chrono::Local::now();
     let now_min = chrono::Timelike::hour(&now) * 60 + chrono::Timelike::minute(&now);
     let now_ms = now.timestamp_millis();
@@ -1061,6 +1118,193 @@ fn apply_locked(id: &str, wallpaper: bool) -> Result<Status> {
     Ok(status_now(m))
 }
 
+// ---- Daily photo: a real photo each day, like Windows Spotlight ----
+
+/// An accent and light/dark that suit a photo: its most vivid colour that
+/// covers real area (kept readable on both themes), and dark mode unless
+/// the photo is bright. A grey photo gets a calm slate.
+fn photo_colours(img: &image::RgbImage) -> (u32, bool) {
+    let small = image::imageops::thumbnail(img, 160, 90);
+    let (mut lum, mut n) = (0.0f64, 0.0f64);
+    // 36 hue bins: weight, and the colour summed.
+    let mut bins = [(0.0f64, [0.0f64; 3]); 36];
+    for p in small.pixels() {
+        let [r, g, b] = p.0.map(|v| v as f64 / 255.0);
+        lum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        n += 1.0;
+        let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+        let (v, s) = (max, if max > 0.0 { (max - min) / max } else { 0.0 });
+        if s < 0.28 || !(0.18..=0.97).contains(&v) {
+            continue;
+        }
+        let d = max - min;
+        let h = if max == r { ((g - b) / d).rem_euclid(6.0) } else if max == g { (b - r) / d + 2.0 } else { (r - g) / d + 4.0 } * 60.0;
+        let bin = ((h / 10.0) as usize).min(35);
+        let w = s * (1.0 - (v - 0.62).abs());
+        bins[bin].0 += w;
+        bins[bin].1[0] += r * w;
+        bins[bin].1[1] += g * w;
+        bins[bin].1[2] += b * w;
+    }
+    let dark = n == 0.0 || lum / n < 0.6;
+    // The strongest hue with its neighbours (a sky spreads over two bins).
+    let score = |i: usize| bins[(i + 35) % 36].0 * 0.5 + bins[i].0 + bins[(i + 1) % 36].0 * 0.5;
+    let best = (0..36).max_by(|&a, &b| score(a).partial_cmp(&score(b)).unwrap_or(std::cmp::Ordering::Equal)).unwrap_or(0);
+    let total: f64 = bins.iter().map(|b| b.0).sum();
+    if bins[best].0 < 1e-6 || score(best) < total * 0.08 || total < n * 0.02 {
+        return (0x6B7C93, dark);
+    }
+    let w = bins[best].0;
+    let [r, g, b] = bins[best].1.map(|c| c / w);
+    // Kept vivid enough to see and calm enough to live with.
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    let (s, v) = (if max > 0.0 { (max - min) / max } else { 0.0 }, max);
+    let (s2, v2) = (s.clamp(0.45, 0.8), v.clamp(0.58, 0.86));
+    let f = |c: f64| -> u32 {
+        let x = if max > min { (c - min) / (max - min) } else { 0.0 };
+        ((v2 * (1.0 - s2 + s2 * x)) * 255.0).round().clamp(0.0, 255.0) as u32
+    };
+    ((f(r) << 16) | (f(g) << 8) | f(b), dark)
+}
+
+/// The photo client: patient, plain, and named.
+fn photo_client() -> Result<reqwest::blocking::Client> {
+    Ok(reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(40)).user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Izuki").build()?)
+}
+
+/// Bing's photo of the day (`back` days ago, 0–7), in 4K when it has it.
+fn bing_photo(back: u32) -> Result<(Vec<u8>, String, String)> {
+    let c = photo_client()?;
+    let meta: serde_json::Value = c.get(format!("https://www.bing.com/HPImageArchive.aspx?format=js&idx={}&n=1&mkt=en-US", back.min(7))).send()?.error_for_status()?.json()?;
+    let img = &meta["images"][0];
+    let base = img["urlbase"].as_str().ok_or_else(|| anyhow!("Bing didn't say which photo"))?;
+    let title = img["title"].as_str().unwrap_or("").to_string();
+    let credit = img["copyright"].as_str().unwrap_or("").to_string();
+    for size in ["_UHD.jpg", "_1920x1080.jpg"] {
+        if let Ok(r) = c.get(format!("https://www.bing.com{base}{size}")).send().and_then(|r| r.error_for_status()) {
+            let bytes = r.bytes()?.to_vec();
+            if bytes.len() > 50_000 {
+                return Ok((bytes, title, credit));
+            }
+        }
+    }
+    Err(anyhow!("Bing's photo didn't download"))
+}
+
+/// Windows Spotlight's own pictures, already on this PC (the lock screen's,
+/// and the desktop's on newer Windows): the wide ones, in a steady order.
+fn spotlight_pictures() -> Vec<std::path::PathBuf> {
+    let Some(local) = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from) else { return Vec::new() };
+    let roots = [
+        local.join(r"Packages\Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy\LocalState\Assets"),
+        local.join(r"Packages\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\LocalCache\Microsoft\IrisService"),
+    ];
+    let mut out = Vec::new();
+    let mut stack: Vec<std::path::PathBuf> = roots.into_iter().filter(|r| r.is_dir()).collect();
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if e.metadata().map(|m| m.len() > 200_000).unwrap_or(false) && size_of_picture(&p).is_some_and(|(w, h)| w >= 1600 && w > h) {
+                out.push(p);
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// A picture's size, read from its contents (Spotlight's files have no
+/// extension to go by).
+fn size_of_picture(p: &std::path::Path) -> Option<(u32, u32)> {
+    image::ImageReader::open(p).ok()?.with_guessed_format().ok()?.into_dimensions().ok()
+}
+
+fn spotlight_photo(pick: usize) -> Result<(Vec<u8>, String, String)> {
+    let all = spotlight_pictures();
+    if all.is_empty() {
+        return Err(anyhow!("there are no Windows Spotlight pictures on this PC yet (turn Spotlight on for the lock screen and they arrive)"));
+    }
+    Ok((std::fs::read(&all[pick % all.len()])?, "Windows Spotlight".into(), String::new()))
+}
+
+/// Days since 1970 (a steady counter for taking turns).
+fn day_number() -> i64 {
+    chrono::Local::now().timestamp() / 86_400
+}
+
+/// A new photo now (`next`: the one after today's), applied with matching
+/// colours. Keeps your own look saved for Undo, like every look.
+pub fn photo_now(next: bool) -> Result<Status> {
+    let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+    let source = memory().auto.source;
+    photo_locked(&source, next)
+}
+
+fn photo_locked(source: &str, next: bool) -> Result<Status> {
+    let m = memory();
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let turn = m.photo.as_ref().filter(|p| p.day == today).map(|p| p.turn + u32::from(next)).unwrap_or(0);
+    // Which to try first: the one asked for, else Bing and Spotlight by turns.
+    let bing_first = match source {
+        "bing" => true,
+        "spotlight" => false,
+        _ => (day_number() + i64::from(turn)) % 2 == 0,
+    };
+    let order = if bing_first { ["bing", "spotlight"] } else { ["spotlight", "bing"] };
+    let mut why = Vec::new();
+    let mut got = None;
+    for src in order {
+        let r = if src == "bing" { bing_photo(turn % 8).map(|x| (x, "Bing")) } else { spotlight_photo(day_number() as usize + turn as usize).map(|x| (x, "Windows Spotlight")) };
+        match r {
+            Ok(x) => {
+                got = Some(x);
+                break;
+            }
+            Err(e) => why.push(e.to_string()),
+        }
+    }
+    let Some(((bytes, title, credit), from)) = got else {
+        return Err(anyhow!("no photo today: {}", why.join("; ")));
+    };
+    let img = image::load_from_memory(&bytes)?.to_rgb8();
+    if img.width() < 1280 || img.height() < 600 {
+        return Err(anyhow!("that photo was too small to look good"));
+    }
+    let (accent, dark) = photo_colours(&img);
+    std::fs::create_dir_all(dir())?;
+    let file = dir().join(format!("photo-{today}-{turn}.jpg"));
+    if bytes.starts_with(&[0xFF, 0xD8]) {
+        std::fs::write(&file, &bytes)?;
+    } else {
+        let mut out = std::io::BufWriter::new(std::fs::File::create(&file)?);
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 95).encode_image(&img)?;
+    }
+    save_before()?;
+    put_switches(dark, true, false, false)?;
+    put_accent(accent)?;
+    put_wallpaper(&file.to_string_lossy())?;
+    win::announce();
+    // Only the newest few photos are kept.
+    if let Ok(entries) = std::fs::read_dir(dir()) {
+        let mut old: Vec<std::path::PathBuf> = entries.flatten().map(|e| e.path()).filter(|p| p != &file && p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("photo-"))).collect();
+        old.sort();
+        let extra = old.len().saturating_sub(4);
+        for p in old.into_iter().take(extra) {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+    let mut m2 = memory();
+    m2.current = Some("photo".into());
+    m2.photo = Some(Photo { day: today, file: file.to_string_lossy().into_owned(), source: from.into(), title, credit, accent: hex(accent), dark, turn });
+    remember(&m2)?;
+    eprintln!("[looks] photo from {from}");
+    Ok(status_now(m2))
+}
+
 /// Just the accent colour ("#rrggbb").
 pub fn set_accent(colour: &str) -> Result<Status> {
     let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
@@ -1167,6 +1411,7 @@ pub fn undo() -> Result<Status> {
     }
     m.before = None;
     m.current = None;
+    m.photo = None;
     // Auto would only bring a look straight back.
     m.auto.mode = "off".into();
     remember(&m)?;
@@ -1196,7 +1441,10 @@ fn status_now(m: Memory) -> Status {
     let bars = win::get_dword(THEME, "ColorPrevalence") == Some(1);
     let titles = win::get_dword(DWM, "ColorPrevalence") == Some(1);
     // "Current" only while Windows still matches that look.
-    let current = m.current.filter(|id| PRESETS.iter().any(|p| p.id == id && p.accent == accent && p.dark == dark));
+    let photo = m.photo.clone().filter(|_| m.current.as_deref() == Some("photo"));
+    let current = m.current.filter(|id| {
+        PRESETS.iter().any(|p| p.id == id && p.accent == accent && p.dark == dark) || (id == "photo" && photo.as_ref().is_some_and(|p| parse_hex(&p.accent) == Some(accent) && p.dark == dark))
+    });
     Status {
         presets: PRESETS
             .iter()
@@ -1213,6 +1461,7 @@ fn status_now(m: Memory) -> Status {
         can_undo: m.before.is_some(),
         note: None,
         auto: m.auto,
+        photo,
     }
 }
 
@@ -1223,6 +1472,10 @@ pub enum Ask {
     Apply(&'static str),
     Undo,
     Accent(u32),
+    /// A new photo every day, like Windows Spotlight.
+    DailyPhoto,
+    /// Another photo now.
+    NextPhoto,
 }
 
 pub fn parse(said: &str) -> Option<Ask> {
@@ -1249,6 +1502,27 @@ pub fn parse(said: &str) -> Option<Ask> {
         if t > u && s[u..t].split_whitespace().count() <= 4 {
             return Some(Ask::Undo);
         }
+    }
+    // Daily photo: "a new wallpaper every day like Windows Spotlight".
+    // Only the desktop's picture: "a new photo of a cat" or "take a picture
+    // every day" isn't about the wallpaper.
+    // (Not a virtual desktop, an icon, a slide's or a page's background.)
+    let elsewhere = [" virtual", " icon", " slide", " document", " colour", " color", " screenshot", " powerpoint", " website", " page", " essay", " teams", " zoom", " video call"].iter().any(|w| s.contains(w));
+    let desk = !elsewhere && [" wallpaper", " background", " lock screen", " lockscreen", " desktop picture", " desktop photo", " desktop image"].iter().any(|w| s.contains(w));
+    let pics = [" photo", " picture", " pic ", " pics ", " image", " cover"].iter().any(|w| s.contains(w));
+    let on_pc = [" cover", " like windows", " windows does", " spotlight", " my pc", " my screen", " my laptop"].iter().any(|w| s.contains(w));
+    let daily = [" every day", " everyday", " daily", " each day", " spotlight", " every morning", " randomly", " random "].iter().any(|w| s.contains(w));
+    // "Don't change my wallpaper", "stop…", "never…": not asking for one.
+    let refused = [" stop", " turn off", " no more", " don t", " dont", " do not", " never"].iter().any(|w| s.contains(w));
+    if (desk || pics && on_pc && !elsewhere) && daily && !refused {
+        return Some(Ask::DailyPhoto);
+    }
+    // "How do I change my wallpaper" is a question; "…to a picture of my dog"
+    // is a particular picture — neither is "a new photo now".
+    let asking_how = [" how do", " how to", " how can", " how would"].iter().any(|w| s.contains(w));
+    let particular = [" to a ", " to an ", " to my ", " to this ", " to that ", " to the "].iter().any(|w| s.contains(w));
+    if desk && [" new", " another", " next", " different", " change"].iter().any(|w| s.contains(w)) && !looks && !s.contains(" profile") && !refused && !asking_how && !particular {
+        return Some(Ask::NextPhoto);
     }
     if s.contains(" accent") || s.contains(" highlight colo") {
         if let Some(h) = s.split_whitespace().find_map(|w| w.starts_with('#').then(|| parse_hex(w)).flatten()) {
@@ -1318,6 +1592,24 @@ pub fn handle(ask: Ask) -> String {
         Ask::Undo => match undo() {
             Ok(s) => s.note.unwrap_or_else(|| "Done — your old colours and wallpaper are back.".into()),
             Err(e) => e.to_string(),
+        },
+        Ask::DailyPhoto => {
+            let mut a = memory().auto;
+            a.mode = "photo".into();
+            match set_auto(a) {
+                Ok(s) => match s.photo {
+                    Some(p) => format!("Done — a new photo every day, like Windows Spotlight, with your colours matched to it. Today's is from {}{}. Say “another wallpaper” for a different one, or “undo the look” to put yours back.", p.source, if p.title.is_empty() || p.title == p.source { String::new() } else { format!(": {}", p.title) }),
+                    None => "Daily photo is on — today's photo didn't come through yet; I'll keep trying.".into(),
+                },
+                Err(e) => format!("I couldn't turn on the daily photo: {e}"),
+            }
+        }
+        Ask::NextPhoto => match photo_now(true) {
+            Ok(s) => match s.photo {
+                Some(p) => format!("Done — a new photo from {}{}, with your colours matched to it.", p.source, if p.title.is_empty() || p.title == p.source { String::new() } else { format!(": {}", p.title) }),
+                None => "Done.".into(),
+            },
+            Err(e) => format!("I couldn't get a new photo: {e}"),
         },
         Ask::Accent(c) => match set_accent(&hex(c)) {
             Ok(_) => format!("Done — your accent colour is now {}.", COLOURS.iter().find(|(_, v)| *v == c).map(|(n, _)| n.to_string()).unwrap_or_else(|| hex(c))),
@@ -1567,6 +1859,65 @@ mod win {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn photos_set_matching_colours() {
+        let make = |f: &dyn Fn(u32, u32) -> [u8; 3]| image::RgbImage::from_fn(320, 180, |x, y| image::Rgb(f(x, y)));
+        // A night city: dark, with a strong blue.
+        let (accent, dark) = photo_colours(&make(&|x, _| if x % 7 == 0 { [40, 90, 220] } else { [12, 14, 30] }));
+        assert!(dark);
+        let (r, g, b) = ((accent >> 16) & 255, (accent >> 8) & 255, accent & 255);
+        assert!(b > r && b > g, "a blue accent: {accent:06x}");
+        // A bright beach: light, with the sea's turquoise.
+        let (accent, dark) = photo_colours(&make(&|_, y| if y < 90 { [120, 210, 220] } else { [236, 226, 200] }));
+        assert!(!dark);
+        let (r, g, b) = ((accent >> 16) & 255, (accent >> 8) & 255, accent & 255);
+        assert!(g > r && b > r, "turquoise: {accent:06x}");
+        // Black and white: a calm slate.
+        assert_eq!(photo_colours(&make(&|x, y| { let v = ((x + y) % 255) as u8; [v, v, v] })).0, 0x6B7C93);
+        // Accents stay readable: never near-black or washed out.
+        let (accent, _) = photo_colours(&make(&|_, _| [30, 5, 5]));
+        let v = ((accent >> 16) & 255).max((accent >> 8) & 255).max(accent & 255);
+        assert!(v >= 140, "{accent:06x}");
+    }
+
+    #[test]
+    fn hears_daily_photo_requests() {
+        assert_eq!(parse("is there any way to put new pics as the cover randomly like windows does"), Some(Ask::DailyPhoto));
+        assert_eq!(parse("give me a new wallpaper every day like windows spotlight"), Some(Ask::DailyPhoto));
+        assert_eq!(parse("change my wallpaper"), Some(Ask::NextPhoto));
+        assert_eq!(parse("another background please"), Some(Ask::NextPhoto));
+        assert_eq!(parse("new desktop picture"), Some(Ask::NextPhoto));
+        assert_eq!(parse("stop changing my wallpaper every day"), None, "not turning it on");
+        // Photos that aren't the desktop's.
+        for other in [
+            "send me a new photo of a cat", "take a picture every day", "show me random pictures of dogs", "change my profile picture", "make a new image for my essay",
+            "make a new desktop", "change my desktop icons", "change the background colour of my slide", "new background for my teams call", "take a new screenshot every day",
+            "don't change my wallpaper", "never change my background", "how do i change my wallpaper", "change my wallpaper to a picture of my dog",
+        ] {
+            assert_eq!(parse(other), None, "{other}");
+        }
+        assert_eq!(parse("make my pc look nova"), Some(Ask::Apply("nova")));
+    }
+
+    /// Today's real photo from Bing and this PC's Spotlight pictures (no
+    /// change to Windows): `cargo test --lib real_photos -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn real_photos() {
+        let (bytes, title, credit) = bing_photo(0).expect("Bing's photo");
+        let img = image::load_from_memory(&bytes).unwrap().to_rgb8();
+        let (accent, dark) = photo_colours(&img);
+        eprintln!("Bing: {}x{} “{title}” ({credit}) → accent #{accent:06x}, {}", img.width(), img.height(), if dark { "dark" } else { "light" });
+        assert!(img.width() >= 1920);
+        let all = spotlight_pictures();
+        eprintln!("Spotlight pictures on this PC: {}", all.len());
+        if let Some(p) = all.first() {
+            let img = image::load_from_memory(&std::fs::read(p).unwrap()).unwrap().to_rgb8();
+            let (accent, dark) = photo_colours(&img);
+            eprintln!("Spotlight: {}x{} → accent #{accent:06x}, {}", img.width(), img.height(), if dark { "dark" } else { "light" });
+        }
+    }
 
     #[test]
     fn colours_round_trip_the_way_windows_stores_them() {

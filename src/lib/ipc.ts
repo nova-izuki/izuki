@@ -530,11 +530,28 @@ export interface LooksStatus {
   note?: string | null;
   /** Looks that change by themselves. */
   auto: LookAuto;
+  /** Daily photo: the picture showing now. */
+  photo?: LookPhoto | null;
+}
+
+/** Daily photo's picture of the day (winlook.rs `Photo`). */
+export interface LookPhoto {
+  day: string;
+  file: string;
+  /** "Bing" or "Windows Spotlight". */
+  source: string;
+  title: string;
+  credit: string;
+  accent: string;
+  dark: boolean;
+  turn: number;
 }
 
 /** Looks that change by themselves (winlook.rs `Auto`). */
 export interface LookAuto {
-  mode: "off" | "daynight" | "shuffle";
+  mode: "off" | "daynight" | "shuffle" | "photo";
+  /** Daily photo's pictures. */
+  source: "both" | "bing" | "spotlight";
   day: string;
   night: string;
   /** "HH:MM", 24-hour. */
@@ -950,6 +967,8 @@ export const api = {
   lookSwitch: (name: string, on: boolean) => call<LooksStatus | null>("look_switch", { name, on }, () => null),
   lookUndo: () => call<LooksStatus | null>("look_undo", undefined, () => null),
   lookAuto: (auto: LookAuto) => call<LooksStatus | null>("look_auto", { auto }, () => null),
+  /** Daily photo: a new photo now (`next`: a different one from today's). */
+  lookPhotoNow: (next: boolean) => call<LooksStatus | null>("look_photo_now", { next }, () => null),
   lookPreview: (id: string) => call<string | null>("look_preview", { id }, () => null),
   tweakPack: (id: string) => call<WindowsTweak[]>("tweak_pack", { id }, () => []),
   restartExplorer: () => call<void>("restart_explorer", undefined, () => undefined),

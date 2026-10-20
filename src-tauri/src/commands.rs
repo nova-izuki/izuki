@@ -2217,6 +2217,12 @@ pub async fn coding_pick_folder() -> R<Option<String>> {
     blocking(|| crate::coding::pick_folder().map_err(err)).await?
 }
 
+/// Daily photo: a new photo now (`next`: a different one from today's).
+#[tauri::command]
+pub async fn look_photo_now(next: bool) -> R<crate::winlook::Status> {
+    blocking(move || crate::winlook::photo_now(next).map_err(err)).await?
+}
+
 /// Keep a deep-research answer in Notes, as written.
 #[tauri::command]
 pub async fn research_save(question: String, text: String) -> R<crate::notes::Note> {

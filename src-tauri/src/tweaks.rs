@@ -135,6 +135,7 @@ pub struct Pack {
 pub const PACKS: &[Pack] = &[
     Pack { id: "gamer", ids: &["no_animations", "fast_menus", "no_startup_delay", "no_game_dvr", "no_sticky_popup", "no_windows_tips", "no_badges"] },
     Pack { id: "clean", ids: &["no_suggested_apps", "no_lock_tips", "no_windows_tips", "no_welcome", "no_finish_setup", "no_ad_id", "no_tailored", "no_start_tips", "no_account_nags", "no_spotlight_icon", "no_copilot_button", "no_widgets"] },
+    Pack { id: "premium", ids: &["no_search_box", "no_task_view", "no_widgets", "no_copilot_button", "no_spotlight_icon", "no_badges"] },
     Pack { id: "power", ids: &["file_extensions", "hidden_files", "full_path", "open_this_pc", "end_task", "clock_seconds", "classic_menu", "never_combine", "this_pc_icon"] },
 ];
 

@@ -453,6 +453,7 @@ pub fn run() {
             commands::look_preview,
             commands::research_start,
             commands::coding_start,
+            commands::look_photo_now,
             commands::coding_apply,
             commands::coding_undo,
             commands::coding_discard,
