@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🚶", title: "Izuki's character moves like someone", how: "It speeds up and slows down when it walks. It turns round to face you before walking back. It leans into the walk, shifts its weight while standing, nods as it talks and settles into each gesture. To keep it still, turn off Animation effects in Windows: Settings → Accessibility → Visual effects." },
   { icon: "🎧", title: "Your 808, lined up by ear", how: "“Line the 808 up with the beat” (any words): Izuki listens to your kick and 808 against FL's metronome, tells you what's rushing, dragging or late in the sound itself, and the Piano roll's “Izuki align” script fixes the timing — off the grid where the beat is, keeping your pattern and slides." },
   { icon: "📝", title: "Notes only when you ask", how: "Izuki saves to your Notes only when you ask (“save it to my notes”) or with the Study log on — not on its own, and “808 notes” never count." },
   { icon: "🙋", title: "Just say yes", how: "When Izuki offers to help — your drive's nearly full, your PC's memory is full — a plain “yes” does exactly what it offered, on the PC, your phone or Discord. “No” lets it go." },

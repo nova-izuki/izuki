@@ -251,6 +251,8 @@ function Stage({
   /** While it walks, it's moved directly (no re-render per step) — this far
    * from its saved spot; the new spot is saved once, when it gets there. */
   const walkOff = useRef(0);
+  /** Walking speed now: it speeds up setting off and slows arriving, like a person. */
+  const walkV = useRef(0);
   const settling = useRef<number | null>(null);
   const petImg = useRef<HTMLImageElement | null>(null);
   const petState = useRef({ x: 0, vx: 0, hop: 0, cheered: false });
@@ -353,8 +355,14 @@ function Stage({
       const g = goal.current;
       if (g) {
         const dx = g.x - x;
-        const speed = Math.max(220, b.h * 1.4);
+        const top = Math.max(220, b.h * 1.4);
+        // Speeds up over the first steps; slows over the last stretch.
+        const arrive = top * 0.45;
+        const want = Math.abs(dx) < arrive ? Math.max(45, top * (Math.abs(dx) / arrive)) : top;
+        walkV.current += (want - walkV.current) * Math.min(1, dt * 5);
+        const speed = walkV.current;
         if (Math.abs(dx) < 4 || now > g.until) {
+          walkV.current = 0;
           pointing.current = { ...g.target, until: now + 2600 };
           goal.current = null;
           const off = walkOff.current;

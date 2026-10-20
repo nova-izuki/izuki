@@ -88,20 +88,32 @@ export function nudgeMover(m) {
 }
 
 export function createMover() {
-  return { state: "idle", t: 0, clock: 0, prev: null, fade: 0, pose: null };
+  // face: which way the body faces, turning smoothly (-1..1); kickAt: when a
+  // new gesture began (a little settle follows); sway: where its weight-shift starts.
+  return { state: "idle", t: 0, clock: 0, prev: null, fade: 0, pose: null, face: null, kickAt: -9, sway: Math.random() * 7, drawAt: null };
 }
+
+/** Windows' "reduce motion" on: the extra body movement stays off. */
+const STILL = (() => {
+  try {
+    return !!globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+})();
 
 /** One beat toward the state wanted. A new state blends in over a moment. */
 export function stepMover(m, dt, want) {
+  m.clock = (m.clock || 0) + dt;
   if (want && want !== m.state) {
     m.prev = { state: m.state, t: m.t, pose: m.pose };
     m.state = want;
     m.t = 0;
     m.fade = 1;
     m.pose = null;
+    m.kickAt = m.clock;
   }
   m.t += dt;
-  m.clock = (m.clock || 0) + dt;
   m.fade = Math.max(0, m.fade - dt / 0.3);
   if (!m.fade) m.prev = null;
   return m;
@@ -151,16 +163,25 @@ function frameAt(pack, state, t, holder) {
   if (holder.nudge && holder.pose && t - holder.pose.at > 0.55) holder.pose.until = t;
   holder.nudge = false;
   const r = posed(holder, holder.pose, frames, p, t);
+  // A new gesture: the body settles into it (see drawMover).
+  if (holder.pose && r.pose !== holder.pose && holder.clock != null) holder.kickAt = holder.clock;
   holder.pose = r.pose;
   return { f: r.f, old: r.old, k: r.k, walk: false };
 }
 
-function drawFrame(ctx, pack, f, { x, y, height, facing, breath = 0, mouth = 0, blink = 0, face = false }) {
+function drawFrame(ctx, pack, f, { x, y, height, facing, breath = 0, mouth = 0, blink = 0, face = false, sx = null, lean = 0, squash = 0 }) {
   const s = height / pack.data.height;
   ctx.save();
-  if (facing < 0) { ctx.translate(x, 0); ctx.scale(-1, 1); ctx.translate(-x, 0); }
-  // Breathing: a slight rise and fall, from the feet up.
-  if (breath) { ctx.translate(0, y); ctx.scale(1, 1 + breath); ctx.translate(0, -y); }
+  // All body movement pivots at the feet: turning (sx), leaning, breathing
+  // (a slight rise and fall) and the settle after a new gesture (squash).
+  const across = (sx ?? (facing < 0 ? -1 : 1)) * (1 + squash * 0.5);
+  const up = 1 + breath - squash;
+  if (across !== 1 || up !== 1 || lean) {
+    ctx.translate(x, y);
+    if (lean) ctx.rotate(lean);
+    ctx.scale(across, up);
+    ctx.translate(-x, -y);
+  }
   const ox = x - f.fx * s;
   const oy = y - f.fy * s;
   ctx.drawImage(pack.img, f.x, f.y, f.w, f.h, ox, oy, f.w * s, f.h * s);
@@ -264,9 +285,31 @@ export function drawMover(ctx, pack, m, { x, y, height, facing = 1, shadow = tru
     ctx.restore();
   }
   const cur = retro ? retroFrame(pack, m.state, m.t) : frameAt(pack, m.state, m.t, m);
-  const breath = cur.walk || retro ? 0 : 0.006 * Math.sin(((m.clock || 0) * Math.PI * 2) / 3.8);
-  const o = { x, y, height, facing, breath, mouth, blink, face: true };
-  if (m.prev && m.fade > 0) {
+  const clock = m.clock || 0;
+  const breath = cur.walk || retro ? 0 : 0.006 * Math.sin((clock * Math.PI * 2) / 3.8);
+  // Like a person, not a picture: it turns round instead of flipping, shifts
+  // its weight while it stands, leans into a walk, nods a touch with the
+  // voice, and settles into each new gesture. All small.
+  const calm = STILL || retro;
+  const dt = m.drawAt == null ? 0 : Math.max(0, Math.min(0.1, clock - m.drawAt));
+  m.drawAt = clock;
+  const goal = facing < 0 ? -1 : 1;
+  // Turning round takes a quarter of a second. Walking (drawn side-on), it
+  // turns the way a drawn character does: the side view narrows, it faces
+  // you for a moment, then it's side-on the other way.
+  m.face = m.face == null || calm ? goal : m.face + Math.max(-dt * 8, Math.min(dt * 8, goal - m.face));
+  const side = m.face < 0 ? -1 : 1;
+  const square = cur.walk && Math.abs(m.face) < 0.5;
+  const sx = square || !cur.walk ? side : side * (0.82 + 0.18 * Math.abs(m.face));
+  const since = clock - (m.kickAt ?? -9);
+  const settle = calm || since < 0 || since > 0.42 ? 0 : 0.02 * Math.sin((since / 0.42) * Math.PI * 2) * (1 - since / 0.42);
+  const lean = calm || square ? 0 : cur.walk ? 0.035 * side : 0.0055 * Math.sin(((clock + (m.sway || 0)) * Math.PI * 2) / 7.3);
+  const nod = calm ? 0 : Math.min(1, mouth) * 0.012;
+  const o = { x, y, height, facing: side, breath: breath + nod, mouth, blink, face: true, sx, lean, squash: settle };
+  const front = square ? pack.data.states[resolve(pack, "idle")]?.[0] : null;
+  if (front) {
+    drawFrame(ctx, pack, front, o);
+  } else if (m.prev && m.fade > 0) {
     // Into a new state: the last state's pose fades out under the new one.
     const before = retro ? retroFrame(pack, m.prev.state, m.prev.t) : frameAt(pack, m.prev.state, m.prev.t, m.prev);
     blendFrames(ctx, pack, before.f, cur.f, 1 - m.fade, o);
