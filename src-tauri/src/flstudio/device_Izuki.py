@@ -265,6 +265,15 @@ def op_quantize(ch, start_only):
     return True
 
 
+def op_fine(ch, cents=None):
+    # The channel's own pitch in cents (its pitch knob); set when given.
+    # Returns what it was, so it can be put back.
+    was = channels.getChannelPitch(int(ch), 1)
+    if cents is not None:
+        channels.setChannelPitch(int(ch), float(cents), 1)
+    return was
+
+
 def op_songmode(on):
     # Song mode plays the Playlist (where sample loops and clips are); the
     # mode it was in comes back so it can be put back.
@@ -289,7 +298,7 @@ OPS = {
     "chan_pan": op_chan_pan, "mute": op_mute, "track_vol": op_track_vol, "plugin_params": op_plugin_params,
     "plugin_set": op_plugin_set, "selected": op_selected, "quantize": op_quantize,
     "select": op_select, "tracks": op_tracks, "slots": op_slots, "track_pan": op_track_pan,
-    "metronome": op_metronome, "songmode": op_songmode,
+    "metronome": op_metronome, "songmode": op_songmode, "fine": op_fine,
 }
 
 

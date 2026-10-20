@@ -294,9 +294,175 @@ pub fn hits_to_beats(hits: &[f64], bpm: f64, anchor: f64, loop_beats: f64) -> Ve
     fold(beats, loop_beats)
 }
 
+// ---------------------------------------------------------------- pitch
+
+/// The pitch of a sustained low sound (an 808, a bass note) in a stretch of
+/// the recording, by YIN — in Hz, or None when it isn't one clear pitch
+/// (noise, a chord, a sound too short or too quiet to tell).
+pub fn pitch_at(samples: &[f32], rate: u32, from_s: f64, len_s: f64) -> Option<f64> {
+    if rate == 0 || len_s <= 0.0 {
+        return None;
+    }
+    let a = (from_s.max(0.0) * rate as f64) as usize;
+    let b = (((from_s + len_s) * rate as f64) as usize).min(samples.len());
+    if b <= a + 64 {
+        return None;
+    }
+    // Low-passed (an 808 lives under ~250 Hz) and taken down to ~4 kHz.
+    let step = (rate as usize / 4000).max(1);
+    let fs = rate as f64 / step as f64;
+    let k = 1.0 - (-2.0 * std::f64::consts::PI * 600.0 / rate as f64).exp();
+    let (mut y1, mut y2) = (0.0f64, 0.0f64);
+    let mut x: Vec<f64> = Vec::with_capacity((b - a) / step + 1);
+    for (i, &s) in samples[a..b].iter().enumerate() {
+        y1 += k * (s as f64 - y1);
+        y2 += k * (y1 - y2);
+        if i % step == 0 {
+            x.push(y2);
+        }
+    }
+    let rms = (x.iter().map(|v| v * v).sum::<f64>() / x.len() as f64).sqrt();
+    if rms < 1e-4 {
+        return None;
+    }
+    // Periods for 25–250 Hz.
+    let (tmin, tmax) = ((fs / 250.0) as usize, (fs / 25.0) as usize);
+    let w = x.len().saturating_sub(tmax + 1);
+    if w < tmax || tmin < 2 {
+        return None;
+    }
+    let mut d = vec![0.0f64; tmax + 2];
+    for tau in 1..=tmax + 1 {
+        d[tau] = (0..w).map(|j| (x[j] - x[j + tau]).powi(2)).sum();
+    }
+    // Cumulative-mean-normalised difference.
+    let mut cm = vec![1.0f64; tmax + 2];
+    let mut run = 0.0;
+    for tau in 1..=tmax + 1 {
+        run += d[tau];
+        cm[tau] = if run > 0.0 { d[tau] * tau as f64 / run } else { 1.0 };
+    }
+    let mut tau = (tmin..=tmax).find(|&t| cm[t] < 0.12)?;
+    while tau < tmax && cm[tau + 1] < cm[tau] {
+        tau += 1;
+    }
+    // Between samples, from the dip's shape.
+    let (l, c, r) = (cm[tau - 1], cm[tau], cm[tau + 1]);
+    let bend = l - 2.0 * c + r;
+    let shift = if bend.abs() > 1e-12 { 0.5 * (l - r) / bend } else { 0.0 };
+    Some(fs / (tau as f64 + shift.clamp(-1.0, 1.0)))
+}
+
+/// How far a pitch sits from the nearest note, in cents (−50…50).
+pub fn cents_off(hz: f64) -> f64 {
+    let m = 69.0 + 12.0 * (hz / 440.0).log2();
+    (m - m.round()) * 100.0
+}
+
+/// The nearest note's name, like "G1".
+pub fn note_name(hz: f64) -> String {
+    const NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    let m = (69.0 + 12.0 * (hz / 440.0).log2()).round() as i64;
+    format!("{}{}", NAMES[m.rem_euclid(12) as usize], m.div_euclid(12) - 1)
+}
+
+/// One tuning shared by every hit: the middle offset when they agree within
+/// ±15 cents (the sound itself is off), else None — notes off by different
+/// amounts are slides or a choice, not a sample to retune.
+pub fn common_detune(cents: &[f64]) -> Option<f64> {
+    if cents.len() < 2 {
+        return None;
+    }
+    // Around the circle (+48 and −49 cents are 3 apart).
+    let first = cents[0];
+    let mut c: Vec<f64> = cents.iter().map(|v| first + ((v - first + 50.0).rem_euclid(100.0) - 50.0)).collect();
+    c.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mid = c[c.len() / 2];
+    if c.iter().any(|v| (v - mid).abs() > 15.0) {
+        return None;
+    }
+    Some((mid + 50.0).rem_euclid(100.0) - 50.0)
+}
+
+/// Each hit's pitch, measured on the sustain (past the first moments, where
+/// an 808 drops into its note), up to the next hit.
+pub fn hit_pitches(samples: &[f32], rate: u32, hits: &[f64]) -> Vec<f64> {
+    hits.iter()
+        .enumerate()
+        .filter_map(|(i, &t)| {
+            let next = hits.get(i + 1).copied().unwrap_or(t + 0.6);
+            // A long note: past the drop entirely; a short one: as late as it allows.
+            let from = t + if next - t > 0.36 { 0.12 } else { 0.07 };
+            let len = (next - from - 0.02).min(0.22);
+            if len < 0.09 {
+                return None;
+            }
+            pitch_at(samples, rate, from, len)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An 808-like note: `hz` with its 2nd and 3rd harmonics, an attack that
+    /// drops into the note (`drop` semitones above at the start), dying away,
+    /// `drive` > 0 for distortion.
+    fn eight08(hz: f64, start: f64, secs: f64, rate: u32, drop: f64, drive: f64, out: &mut [f32]) {
+        let mut phase = 0.0f64;
+        let n = (secs * rate as f64) as usize;
+        let s0 = (start * rate as f64) as usize;
+        for i in 0..n {
+            let t = i as f64 / rate as f64;
+            let f = hz * 2f64.powf(drop * (-t * 40.0).exp() / 12.0);
+            phase += 2.0 * std::f64::consts::PI * f / rate as f64;
+            let mut v = (phase.sin() + 0.35 * (2.0 * phase).sin() + 0.15 * (3.0 * phase).sin()) * 0.6 * (-t * 2.5).exp();
+            if drive > 0.0 {
+                v = (v * drive).tanh() / drive.tanh();
+            }
+            if let Some(o) = out.get_mut(s0 + i) {
+                *o += v as f32;
+            }
+        }
+    }
+
+    #[test]
+    fn hears_the_808s_pitch_and_its_tuning() {
+        let rate = 48_000;
+        let g1 = 48.999; // G1
+        let sharp = g1 * 2f64.powf(28.0 / 1200.0); // G1 + 28 cents
+        // Clean, distorted, and dropping into the note: all G1 + 28¢.
+        for (drop, drive) in [(0.0, 0.0), (0.0, 4.0), (5.0, 0.0), (5.0, 3.0)] {
+            let mut s = vec![0.0f32; rate as usize];
+            eight08(sharp, 0.0, 0.9, rate, drop, drive, &mut s);
+            let hz = *hit_pitches(&s, rate, &[0.0]).first().expect("a clear pitch");
+            assert!((cents_off(hz) - 28.0).abs() < 4.0, "drop {drop} drive {drive}: {hz:.2} Hz = {:.1}¢", cents_off(hz));
+            assert_eq!(note_name(hz), "G1");
+        }
+        // A pattern of hits on different notes, all from the same detuned sample.
+        let mut s = vec![0.0f32; rate as usize * 3];
+        let notes = [(0.0, 0.0), (0.5, 3.0), (1.0, 5.0), (1.75, -2.0), (2.25, 0.0)];
+        for (t, semis) in notes {
+            eight08(sharp * 2f64.powf(semis / 12.0), t, 0.45, rate, 4.0, 2.0, &mut s);
+        }
+        let hits: Vec<f64> = notes.iter().map(|n| n.0).collect();
+        let cents: Vec<f64> = hit_pitches(&s, rate, &hits).into_iter().map(cents_off).collect();
+        assert!(cents.len() >= 4, "{cents:?}");
+        let d = common_detune(&cents).expect("one tuning");
+        assert!((d - 28.0).abs() < 4.0, "{d}");
+        // Notes off by different amounts (slides, a choice): no retuning.
+        assert_eq!(common_detune(&[5.0, 40.0, -20.0]), None);
+        assert!(common_detune(&[48.0, -49.0, 49.0]).is_some_and(|d| d.abs() > 45.0), "around the circle");
+        // Noise isn't a pitch.
+        let mut seed = 7u64;
+        let noise: Vec<f32> = (0..rate).map(|_| {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((seed >> 33) as f32 / u32::MAX as f32 - 0.25) * 0.8
+        }).collect();
+        assert_eq!(pitch_at(&noise, rate, 0.1, 0.22), None);
+        assert_eq!(pitch_at(&vec![0.0; rate as usize], rate, 0.1, 0.22), None, "silence");
+    }
 
     /// A kick-like thump (a 55 Hz tone that dies away) at each time.
     fn thumps(at: &[f64], rate: u32, secs: f64) -> Vec<f32> {

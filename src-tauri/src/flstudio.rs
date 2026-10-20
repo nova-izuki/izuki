@@ -659,6 +659,9 @@ enum Job {
     /// Vocal tracks: levels, panning, and what their effect chain is missing.
     Vocals,
     Quantize,
+    /// The 808's own tuning, by ear: retuned (its pitch knob) when every hit
+    /// is off its note by the same amount — and checked again after.
+    Tune,
     /// The 808 (or bass) lined up with the kick as it really plays — by ear,
     /// off the grid where the kick is — and the notes between with its feel.
     Align,
@@ -701,6 +704,16 @@ fn job_of(s: &str) -> Option<Job> {
         Some(Job::Chords)
     } else if add && long && has(&["melody", "lead", "hook", "melodies"]) {
         Some(Job::LongMelody)
+    } else if has(&["808", "808s", "bass", "bassline", "sub"])
+        && !new_part
+        && !has(&["octave", "octaves", "semitone", "semitones", "transpose"])
+        // ("The 808 in this tune is late" is timing, not tuning.)
+        && !has(&["late", "early", "rushing", "rushes", "dragging", "drags", "sync", "synced", "groove", "pocket", "timing", "align", "aligned"])
+        && !phrase(&["off beat", "off-beat", "out of time", "off time", "on time", "in time", "on the beat", "with the beat"])
+        && (has(&["tune", "tuned", "tuning", "retune", "detuned", "pitch"])
+            || phrase(&["out of tune", "off key", "off-key", "not in key", "wrong key", "in key", "sounds flat", "sounds sharp", "too flat", "too sharp"]))
+    {
+        Some(Job::Tune)
     } else if (has(&["808", "808s", "bass", "bassline", "sub", "notes", "note"]) || phrase(&["piano roll"]))
         && (aligning(&words)
             || has(&["synced", "syncing", "timing"])
@@ -1437,6 +1450,107 @@ fn run_job(job: Job, s: &str) -> Result<String> {
             one(json!(["quantize", ch, false]))?;
             Ok(format!("Quick-quantized “{name}” with FL's own Quick quantize — its notes snap to the grid. Ctrl+Z in FL takes it back."))
         }
+        Job::Tune => {
+            // The sound to tune: named, else the selected channel, else one named like a bass.
+            let selected = one(json!(["selected"])).ok().and_then(|v| v.as_i64()).filter(|i| *i >= 0).map(|i| i as usize);
+            let named = chans.iter().find(|(_, n)| {
+                let lower = n.to_lowercase();
+                role_of(n).is_none() && ((s.contains("808") && lower.contains("808")) || (s.contains("bass") && lower.contains("bass")))
+            });
+            let Some((ch, name)) = named
+                .cloned()
+                .or_else(|| selected.and_then(|i| chans.iter().find(|(c, n)| *c == i && role_of(n).is_none()).cloned()))
+                .or_else(|| chans.iter().find(|(_, n)| role_of(n).is_none() && is_bass_name(n)).cloned())
+            else {
+                bail!("Which one's the 808? Click it in the Channel rack (or name it “808”), then ask again.");
+            };
+            let bpm = st["tempo"].as_f64().filter(|t| *t > 20.0).unwrap_or(140.0);
+            let beats = st["pattern_beats"].as_f64().filter(|b| *b >= 1.0).unwrap_or(16.0);
+            let secs = ((beats * 60.0 / bpm) + 0.5).clamp(4.0, 12.0) as f32;
+            let was_muted: Vec<(usize, bool)> = st["channels"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|c| Some((c["i"].as_u64()? as usize, c["muted"].as_bool().unwrap_or(false)))).collect())
+                .unwrap_or_default();
+            // The 808 alone, every mute put back after — in the pattern, and
+            // in Song mode when the pattern alone is silent.
+            let hear = || -> Result<Vec<f64>> {
+                let flips: Vec<(usize, bool)> = was_muted.iter().filter_map(|(c, m)| (*c != ch && !*m).then_some((*c, true))).chain((was_muted.iter().any(|(c, m)| *c == ch && *m)).then_some((ch, false))).collect();
+                let _ = one(json!(["stop"]));
+                if !flips.is_empty() {
+                    if let Err(e) = call(flips.iter().map(|(c, on)| json!(["mute", c, on])).collect(), false) {
+                        let _ = call(flips.iter().map(|(c, on)| json!(["mute", c, !on])).collect(), false);
+                        return Err(e);
+                    }
+                }
+                let heard = crate::loopback::record(secs, || {
+                    let _ = one(json!(["play"]));
+                });
+                let _ = one(json!(["stop"]));
+                if !flips.is_empty() {
+                    let _ = call(flips.iter().map(|(c, on)| json!(["mute", c, !on])).collect(), false);
+                }
+                let (samples, rate) = heard?;
+                let hits = crate::loopback::low_hits(&samples, rate);
+                Ok(crate::loopback::hit_pitches(&samples, rate, &hits))
+            };
+            // Heard in Song mode (the pattern alone was silent): checked there too.
+            let hear_in = |song: bool| -> Result<Vec<f64>> {
+                if !song {
+                    return hear();
+                }
+                let was = one(json!(["songmode", true]))?.as_bool().unwrap_or(false);
+                let got = hear();
+                if !was {
+                    let _ = one(json!(["songmode", false]));
+                }
+                got
+            };
+            let mut song = false;
+            let mut pitches = hear_in(false)?;
+            if pitches.len() < 2 {
+                song = true;
+                pitches = hear_in(true)?;
+            }
+            if pitches.len() < 2 {
+                bail!("I couldn't hear clear notes from “{name}” on its own (too short, too distorted, or nothing playing), so I'm not changing its tuning.");
+            }
+            let cents: Vec<f64> = pitches.iter().map(|h| crate::loopback::cents_off(*h)).collect();
+            let heard: Vec<String> = pitches.iter().zip(&cents).take(6).map(|(h, c)| format!("{} {:+.0}¢", crate::loopback::note_name(*h), c)).collect();
+            let Some(detune) = crate::loopback::common_detune(&cents) else {
+                return Ok(format!("I listened to “{name}”: {}. Its notes are off by different amounts — that's slides or a choice, not the sound's own tuning — so I left it alone.", heard.join(", ")));
+            };
+            let spread = cents.iter().fold(0.0f64, |m, c| m.max(c.abs()));
+            if detune.abs() < 8.0 {
+                return Ok(format!(
+                    "I listened to “{name}”: {}. On average it's {detune:+.0} cents from in tune (each note within {spread:.0}), so there's nothing to change.",
+                    heard.join(", ")
+                ));
+            }
+            // Retuned by its pitch knob, then heard again: kept only if it landed.
+            let before = one(json!(["fine", ch]))?.as_f64().unwrap_or(0.0);
+            let set = before - detune;
+            one(json!(["fine", ch, set]))?;
+            // Kept only when the shared offset is gone and no note is further
+            // out than detection allows (the same ±15 cents).
+            let after: Vec<f64> = hear_in(song).map(|p| p.into_iter().map(crate::loopback::cents_off).collect()).unwrap_or_default();
+            let worst = after.iter().fold(0.0f64, |m, c| m.max(c.abs()));
+            let left = crate::loopback::common_detune(&after);
+            if after.len() >= 2 && worst <= 15.0 && left.is_some_and(|l| l.abs() <= 8.0) {
+                return Ok(format!(
+                    "I listened to “{name}”: every hit was about {detune:+.0} cents off its note ({}) — the sound's own tuning, which is why it didn't sit with the beat. I set its pitch knob from {before:+.0} to {set:+.0} cents and listened again: now {:+.0} cents on average, each note within {worst:.0}. (To undo it, set its pitch back to {before:+.0}.)",
+                    heard.join(", "),
+                    left.unwrap_or(0.0)
+                ));
+            }
+            if let Err(e) = one(json!(["fine", ch, before])) {
+                bail!("Retuning “{name}” didn't check out when I listened again, and I couldn't put its pitch back ({e}). Set the pitch knob of “{name}” back to {before:+.0} cents yourself.");
+            }
+            Ok(format!(
+                "I heard “{name}” about {detune:+.0} cents off its notes ({}), but after retuning, {} when I listened again, so I put its pitch back to {before:+.0} cents. Its pitch range may be too small, or a plugin changes the pitch.",
+                heard.join(", "),
+                if after.len() < 2 { "I couldn't hear clear notes".to_string() } else { format!("some notes were still {worst:.0} cents off") }
+            ))
+        }
         Job::Align => {
             // The notes to line up: named in the request, else the selected
             // channel (the one open in the Piano roll) if it plays notes, else
@@ -1478,7 +1592,7 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                 .as_array()
                 .map(|a| a.iter().filter_map(|c| Some((c["i"].as_u64()? as usize, c["muted"].as_bool().unwrap_or(false)))).collect())
                 .unwrap_or_default();
-            let listen = |keep: &[usize]| -> Result<(Vec<f64>, bool)> {
+            let listen = |keep: &[usize]| -> Result<(Vec<f64>, bool, Vec<f64>)> {
                 let flips: Vec<(usize, bool)> = was_muted
                     .iter()
                     .filter_map(|(c, m)| {
@@ -1515,9 +1629,11 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                 if lows.len() < 2 {
                     lows = crate::loopback::body_hits(&samples, rate);
                 }
+                // Each hit's pitch too (for the notes alone: their tuning).
+                let pitches = crate::loopback::hit_pitches(&samples, rate, &lows);
                 Ok(match crate::loopback::click_grid(&crate::loopback::high_clicks(&samples, rate), bpm) {
-                    Some(beat0) => (crate::loopback::hits_on_clock(&lows, beat0, bpm, loop_beats), true),
-                    None => (crate::loopback::hits_to_beats(&lows, bpm, anchor, loop_beats), false),
+                    Some(beat0) => (crate::loopback::hits_on_clock(&lows, beat0, bpm, loop_beats), true, pitches),
+                    None => (crate::loopback::hits_to_beats(&lows, bpm, anchor, loop_beats), false, pitches),
                 })
             };
             // Song mode for the beat; put back as it was afterwards, whatever happens.
@@ -1530,10 +1646,10 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                     hits.iter().filter(|k| (*k - (*k * 4.0).round() / 4.0).abs() > 0.02).take(6).map(|k| format!("beat {:.2}", k + 1.0)).collect()
                 };
                 let plural = |n: usize| if n == 1 { "" } else { "s" };
-                let (beat, hits, separate, intro) = match &by_kick {
+                let (beat, hits, separate, intro, pitches) = match &by_kick {
                     Some((kick, kick_name)) => {
                         // 1. The kick alone: the beat's real feel.
-                        let (kicks, clocked) = listen(&[*kick])?;
+                        let (kicks, clocked, _) = listen(&[*kick])?;
                         if kicks.is_empty() {
                             bail!("I couldn't hear the kick. Is FL's sound coming out of your speakers or headphones (and the kick not silent)? Other sound playing on the PC can get in the way too.");
                         }
@@ -1542,14 +1658,14 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                         //    the sound itself (its attack, a plugin's delay), which
                         //    no grid fixes. No click: kick and notes together, the
                         //    notes' own hits only (timed the same way as the kick's).
-                        let together = || listen(&[*kick, ch]).ok().filter(|(_, c)| *c == clocked).map(|(h, _)| h).unwrap_or_default();
-                        let (hits, separate) = if clocked {
+                        let together = || listen(&[*kick, ch]).ok().filter(|(_, c, _)| *c == clocked).map(|(h, _, _)| h).unwrap_or_default();
+                        let (hits, separate, pitches) = if clocked {
                             match listen(&[ch]) {
-                                Ok((h, true)) if !h.is_empty() => (h, true),
-                                _ => (together(), false),
+                                Ok((h, true, p)) if !h.is_empty() => (h, true, p),
+                                _ => (together(), false, Vec::new()),
                             }
                         } else {
-                            (together(), false)
+                            (together(), false, Vec::new())
                         };
                         let off = off_grid(&kicks);
                         let intro = format!(
@@ -1558,12 +1674,12 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                             plural(kicks.len()),
                             if off.is_empty() { ", right on the grid".to_string() } else { format!(" — off the grid at {} (that's the groove “{name}” will follow)", off.join(", ")) },
                         );
-                        (kicks, hits, separate, intro)
+                        (kicks, hits, separate, intro, pitches)
                     }
                     None => {
                         // 1. The beat as you hear it, without these notes.
                         let keep: Vec<usize> = was_muted.iter().filter(|(c, m)| !*m && *c != ch).map(|(c, _)| *c).collect();
-                        let (beat, clocked) = listen(&keep)?;
+                        let (beat, clocked, _) = listen(&keep)?;
                         if beat.is_empty() {
                             bail!("I couldn't hear the beat. Is FL's sound coming out of your speakers or headphones? Highlight your loop in the Playlist (the part with your sample) so it plays there, then ask again.");
                         }
@@ -1571,7 +1687,7 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                             bail!("I couldn't hear FL's metronome click — it's my clock for timing against your sample. Turn the metronome's volume up (I switch it on and off myself), then ask again.");
                         }
                         // 2. The notes alone, in the same loop and the same clock.
-                        let (hits, clocked) = listen(&[ch])?;
+                        let (hits, clocked, pitches) = listen(&[ch])?;
                         if hits.is_empty() || !clocked {
                             bail!("I heard your beat, but not “{name}” playing with it in Song mode. Put its pattern in the Playlist under your highlighted loop, then ask again.");
                         }
@@ -1587,9 +1703,15 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                                 format!(" — off FL's grid at {} (a sample isn't made on FL's grid, so that's the groove “{name}” has to follow)", off.join(", "))
                             },
                         );
-                        (beat, hits, true, intro)
+                        (beat, hits, true, intro, pitches)
                     }
                 };
+                // Heard alone, every hit off its note by the same amount: the
+                // sample's own tuning — said, and offered.
+                let detune = crate::loopback::common_detune(&pitches.iter().map(|h| crate::loopback::cents_off(*h)).collect::<Vec<_>>()).filter(|d| d.abs() >= 10.0);
+                let tuning = detune
+                    .map(|d| format!(" Its pitch is also about {:+.0} cents off the notes it plays on every hit — that's the sound's own tuning; say “tune the 808” and I'll fix that too.", d))
+                    .unwrap_or_default();
                 let song = by_kick.is_none();
                 let with = if song { "the beat" } else { "the kick" };
                 let lag = if separate { common_lag(&hits, &beat, loop_beats, bpm) } else { 0.0 };
@@ -1622,7 +1744,7 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                     format!("Against it, your {name} is off in {} place{}: {}.{sound}", review.len(), plural(review.len()), review.join(", "))
                 };
                 Ok(format!(
-                    "{intro} {heard_808} Your notes and rhythm stay as you wrote them. I've opened “{name}” in the Piano roll — to fix the timing: Piano roll menu → Tools → Scripting → “Izuki align”, then Accept. Notes right by a hit of {with} move onto it exactly as it plays and the 16ths between get the same feel; triplets, rolls and notes you placed a 16th or a 32nd away stay put, and so do lengths and slides. Ctrl+Z takes it back."
+                    "{intro} {heard_808}{tuning} Your notes and rhythm stay as you wrote them. I've opened “{name}” in the Piano roll — to fix the timing: Piano roll menu → Tools → Scripting → “Izuki align”, then Accept. Notes right by a hit of {with} move onto it exactly as it plays and the 16ths between get the same feel; triplets, rolls and notes you placed a 16th or a 32nd away stay put, and so do lengths and slides. Ctrl+Z takes it back."
                 ))
             })();
             if song_was == Some(false) {
@@ -1891,6 +2013,12 @@ mod tests {
         assert_eq!(job_of("make a bass with a nice rhythm"), Some(Job::Bass));
         assert_eq!(job_of("put the 808 in the pocket"), Some(Job::Align), "fixing the one there");
         assert_eq!(job_of("my notes aren't syncing"), None, "Izuki's Notes, not music");
+        assert_eq!(job_of("tune the 808"), Some(Job::Tune));
+        assert_eq!(job_of("my 808 is out of tune with the sample"), Some(Job::Tune));
+        assert_eq!(job_of("the 808 sounds off key"), Some(Job::Tune));
+        assert_eq!(job_of("pitch the 808 up an octave"), None, "moving it, not tuning it");
+        assert_eq!(job_of("fix the timing on my 808"), Some(Job::Align), "timing isn't tuning");
+        assert_eq!(job_of("the 808 in this tune is late"), Some(Job::Align), "a tune (the song), and timing");
         assert_eq!(job_of("fix the timing on the hats"), Some(Job::Quantize));
         assert!(!aligning(&["along", "allow", "alone", "agreement", "apartment", "assign", "assigned", "assignment", "alien", "alike", "alive", "malign"]));
         assert!(aligning(&["allign"]) && aligning(&["alighn"]) && aligning(&["misaligned"]) && aligning(&["misaallgiment"]) && aligning(&["alligned"]));
