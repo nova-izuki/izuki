@@ -2079,6 +2079,7 @@ pub async fn chat_allow_last(allow: bool) -> R<Option<String>> {
 pub fn chat_cancel(id: u64) {
     crate::chat::cancel(id);
     crate::research::cancel(id);
+    crate::coding::cancel(id);
 }
 
 /// Lecture Mode (lecture.rs): start recording, after the user confirmed they may.
@@ -2183,6 +2184,37 @@ pub async fn accounts_health(fresh: bool) -> R<crate::accounts::Health> {
 #[tauri::command]
 pub fn research_start(app: AppHandle, id: u64, question: String, history: Vec<crate::chat::Turn>) {
     crate::research::start(app, id, question, history);
+}
+
+/// Coding mode (coding.rs): steps, the change and its checks arrive as
+/// `izuki://coding` events tagged `id`. Stopped with `chat_cancel`.
+#[tauri::command]
+pub fn coding_start(app: AppHandle, id: u64, project: String, task: String, history: Vec<crate::chat::Turn>) {
+    crate::coding::start(app, id, project, task, history);
+}
+
+/// Put a coding task's changes into the project (never committed).
+#[tauri::command]
+pub async fn coding_apply(name: String) -> R<String> {
+    blocking(move || crate::coding::apply(&name).map_err(err)).await?
+}
+
+/// Take back exactly what Apply put in.
+#[tauri::command]
+pub async fn coding_undo(name: String) -> R<String> {
+    blocking(move || crate::coding::undo(&name).map_err(err)).await?
+}
+
+/// Throw a coding task's copy away.
+#[tauri::command]
+pub async fn coding_discard(name: String) -> R<String> {
+    blocking(move || crate::coding::discard(&name).map_err(err)).await?
+}
+
+/// "Which project?" — the Windows folder picker.
+#[tauri::command]
+pub async fn coding_pick_folder() -> R<Option<String>> {
+    blocking(|| crate::coding::pick_folder().map_err(err)).await?
 }
 
 /// Keep a deep-research answer in Notes, as written.

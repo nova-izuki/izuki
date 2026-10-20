@@ -35,6 +35,7 @@ pub mod dupes;
 pub mod sharpeye;
 pub mod recyclebin;
 pub mod loopback;
+pub mod coding;
 pub mod offers;
 pub mod storage;
 pub mod pccare;
@@ -451,6 +452,11 @@ pub fn run() {
             commands::look_auto,
             commands::look_preview,
             commands::research_start,
+            commands::coding_start,
+            commands::coding_apply,
+            commands::coding_undo,
+            commands::coding_discard,
+            commands::coding_pick_folder,
             commands::accounts_health,
             commands::approval_answer,
             commands::lecture_start,

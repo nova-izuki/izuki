@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, RotateCcw, Send, Sparkles, Square, Volume2, X } from "lucide-react";
-import { api, CAMERA_PICTURE_KEY, emit, EV, ISLAND_TO_CHAT_KEY, on, type ResearchUpdate } from "../../lib/ipc";
+import { api, CAMERA_PICTURE_KEY, emit, EV, ISLAND_TO_CHAT_KEY, on, type CodingUpdate, type ResearchUpdate } from "../../lib/ipc";
 import { ResearchPanel, researchAsk, type ResearchState } from "../ResearchPanel";
+import { CodingPanel, type CodingState } from "../CodingPanel";
 import { ChatText } from "../ChatText";
 import { LaterCard } from "../LaterCard";
 import { useDictation } from "../../hooks/useDictation";
@@ -53,6 +54,8 @@ interface Msg {
   images?: string[];
   /** A deep research: its searches, the pages read, and its sources. */
   research?: ResearchState;
+  /** A coding task: its steps, plan and change (Apply / Discard / Undo). */
+  coding?: CodingState;
 }
 
 /**
@@ -145,12 +148,116 @@ function clean(v: unknown): Msg[] {
           ? ({ ...a, title: text(a.title), detail: text(a.detail) } as Msg["action"])
           : undefined,
       research: storedResearch(m.research),
+      coding: storedCoding(m.coding),
     });
   }
   return out;
 }
 
 const DEEP_KEY = "izk.chatDeep";
+/** Coding mode on, and the project it works on (remembered on this PC). */
+const CODE_KEY = "izk.chatCode";
+const PROJECT_KEY = "izk.codeProject";
+
+/** A saved coding task, tidied: the diff isn't kept (Apply works without it). */
+function storedCoding(c: unknown): CodingState | undefined {
+  if (!c || typeof c !== "object") return undefined;
+  const o = c as Record<string, unknown>;
+  if (typeof o.project !== "string") return undefined;
+  const steps = Array.isArray(o.steps) ? (o.steps as CodingState["steps"]).filter((x) => x && typeof x.text === "string").slice(-60) : [];
+  const todo = Array.isArray(o.todo) ? (o.todo as CodingState["todo"]).filter((x) => Array.isArray(x) && typeof x[0] === "string").slice(0, 20) : [];
+  const files = Array.isArray(o.files) ? (o.files as CodingState["files"]).filter((f) => f && typeof f.path === "string").slice(0, 200) : [];
+  const state = o.state === "applied" || o.state === "discarded" || o.state === "undone" ? o.state : undefined;
+  return {
+    project: o.project,
+    phase: o.phase === "done" ? "done" : o.phase === "working" ? "working" : "error",
+    steps,
+    todo,
+    files,
+    diff: typeof o.diff === "string" ? o.diff : undefined,
+    workspace: typeof o.workspace === "string" ? o.workspace : undefined,
+    state,
+    task: typeof o.task === "number" ? o.task : undefined,
+  };
+}
+
+/**
+ * Run one coding task: each step arrives as it happens, then the summary
+ * and the change. Ends on "done", an error, or Stop. Tests can take a long
+ * while, so only half an hour of silence counts as stuck.
+ */
+function runCoding(
+  id: number,
+  project: string,
+  task: string,
+  history: Array<{ role: string; content: string }>,
+  setLast: (patch: Partial<Msg> | ((last: Msg) => Partial<Msg>)) => void,
+  finish: { current: ((why: string) => void) | null }
+): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let ended = false;
+    let stopping = false;
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    let grace: ReturnType<typeof setTimeout> | undefined;
+    const coding = (last: Msg, patch: Partial<CodingState>): CodingState => ({
+      ...(last.coding ?? { project, phase: "working", steps: [], todo: [], files: [], task: id }),
+      ...patch,
+    });
+    const end = () => {
+      if (ended) return;
+      ended = true;
+      clearTimeout(quiet);
+      clearTimeout(grace);
+      if (finish.current === stopNow) finish.current = null;
+      void off.then((f) => f());
+      resolve();
+    };
+    const fail = (why: string) => {
+      setLast((last) => ({ content: last.content || why, failed: !last.content, coding: coding(last, { phase: "error" }) }));
+      end();
+    };
+    const wait = () => {
+      clearTimeout(quiet);
+      quiet = setTimeout(() => {
+        void api.chatCancel(id);
+        fail("The coding task stopped answering — try again.");
+      }, 30 * 60_000);
+    };
+    // Stop: the task is told to stop, and its last word — what it changed so
+    // far, to Apply or Discard — is still heard for a few seconds.
+    const stopNow = (why: string) => {
+      if (stopping || ended) return;
+      stopping = true;
+      void api.chatCancel(id);
+      setLast((last) => ({ coding: { ...coding(last, {}), steps: [...coding(last, {}).steps, { kind: "plan", text: "Stopping…" }] } }));
+      grace = setTimeout(() => fail(why), 20_000);
+    };
+    finish.current = stopNow;
+    const off = on<CodingUpdate>(EV.coding, (u) => {
+      if (u.id !== id || ended) return;
+      wait();
+      if (u.kind === "text") {
+        setLast({ content: u.text });
+      } else if (u.kind === "todo") {
+        setLast((last) => ({ coding: coding(last, { todo: u.todo ?? [] }) }));
+      } else if (u.kind === "changes") {
+        setLast((last) => ({ coding: coding(last, { files: u.files ?? [], diff: u.diff, workspace: u.workspace, todo: u.todo?.length ? u.todo : last.coding?.todo ?? [] }) }));
+      } else if (u.kind === "done") {
+        setLast((last) => ({ coding: coding(last, { phase: "done", workspace: u.workspace ?? last.coding?.workspace }) }));
+        end();
+      } else if (u.kind === "error") {
+        fail(u.text);
+      } else {
+        setLast((last) => {
+          const c = coding(last, u.workspace ? { workspace: u.workspace } : {});
+          return { coding: { ...c, steps: [...c.steps, { kind: u.kind, text: u.text, ok: u.ok, detail: u.detail }].slice(-60) } };
+        });
+      }
+    });
+    wait();
+    void off.then(() => api.codingStart(id, project, task, history)).catch((e) => fail(String(e)));
+  });
+}
 
 /** A saved research, tidied (one still "working" when the app closed was cut short). */
 function storedResearch(r: unknown): ResearchState | undefined {
@@ -159,7 +266,7 @@ function storedResearch(r: unknown): ResearchState | undefined {
   if (typeof o.question !== "string") return undefined;
   const steps = Array.isArray(o.steps) ? (o.steps as ResearchState["steps"]).filter((x) => x && typeof x.text === "string").slice(-40) : [];
   const sources = Array.isArray(o.sources) ? (o.sources as ResearchState["sources"]).filter((x) => x && typeof x.url === "string").slice(0, 30) : [];
-  return { question: o.question, phase: o.phase === "done" ? "done" : "error", steps, sources };
+  return { question: o.question, phase: o.phase === "done" ? "done" : o.phase === "working" ? "working" : "error", steps, sources };
 }
 
 /**
@@ -249,8 +356,14 @@ function load(): Msg[] {
     // mid-answer) would spin forever — say so and offer to ask again.
     return clean(raw ? JSON.parse(raw) : [])
       .slice(-KEEP)
+      .map((m) => ({
+        ...m,
+        // Still working when the app closed: it was cut short.
+        research: m.research?.phase === "working" ? { ...m.research, phase: "error" as const } : m.research,
+        coding: m.coding?.phase === "working" ? { ...m.coding, phase: "error" as const } : m.coding,
+      }))
       .map((m) =>
-        m.role === "assistant" && !m.content.trim() && !m.action
+        m.role === "assistant" && !m.content.trim() && !m.action && !m.coding
           ? { ...m, content: "That reply didn't come through.", failed: true, retry: true }
           : m
       );
@@ -261,8 +374,12 @@ function load(): Msg[] {
 
 function save(msgs: Msg[]) {
   try {
-    // Pictures are big: they're kept for this session only.
-    const light = msgs.slice(-KEEP).map((m) => (m.images?.length ? { ...m, images: undefined, content: `${m.content} 🖼️`.trim() } : m));
+    // Pictures are big: they're kept for this session only. So are a coding
+    // change's diff and its logs (Apply works without them).
+    const light = msgs.slice(-KEEP).map((m) => {
+      const lean = m.coding ? { ...m, coding: { ...m.coding, diff: undefined, steps: m.coding.steps.map(({ kind, text, ok }) => ({ kind, text, ok })) } } : m;
+      return lean.images?.length ? { ...lean, images: undefined, content: `${lean.content} 🖼️`.trim() } : lean;
+    });
     localStorage.setItem(KEY, JSON.stringify(light));
   } catch {
     /* private mode / full — the chat still works, it just isn't kept */
@@ -445,6 +562,34 @@ export function ChatTab() {
     shareHistory(msgs.slice(baseline.current).map(({ role, content }) => ({ role, content })));
   }, [msgs]);
 
+  /** Coding mode on, and its project (remembered on this PC). */
+  const [code, setCode] = useState(() => {
+    try {
+      return localStorage.getItem(CODE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [project, setProject] = useState(() => {
+    try {
+      return localStorage.getItem(PROJECT_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  /** Ask which project (the folder picker); remembered. "" when cancelled. */
+  const pickProject = useCallback(async (): Promise<string> => {
+    const picked = await api.codingPickFolder().catch(() => null);
+    if (!picked) return "";
+    setProject(picked);
+    try {
+      localStorage.setItem(PROJECT_KEY, picked);
+    } catch {
+      /* only a convenience */
+    }
+    return picked;
+  }, []);
+
   /** Deep research on (remembered on this PC). */
   const [deep, setDeep] = useState(() => {
     try {
@@ -550,6 +695,29 @@ export function ChatTab() {
           copy[copy.length - 1] = { ...last, ...(typeof patch === "function" ? patch(last) : patch) };
           return copy;
         });
+      // Coding mode (coding.rs): the task goes to Izuki's coding agent, in a
+      // separate copy of the project.
+      if (code && !note && !here) {
+        const where = project || (await pickProject());
+        if (!where) {
+          setLast({ content: "Pick the project folder first (the 📁 next to Code), then ask again.", status: undefined });
+          if (streamId.current === id) {
+            streamId.current = null;
+            setBusy(false);
+          }
+          return;
+        }
+        setLast({ status: undefined, coding: { project: where, phase: "working", steps: [], todo: [], files: [], task: id } });
+        // This task's own message (by its id), so updates still land after Stop.
+        const setThis = (patch: Partial<Msg> | ((m: Msg) => Partial<Msg>)) =>
+          setMsgs((all) => all.map((x) => (x.coding?.task === id ? { ...x, ...(typeof patch === "function" ? patch(x) : patch) } : x)));
+        await runCoding(id, where, t, history, setThis, finish);
+        if (streamId.current === id) {
+          streamId.current = null;
+          setBusy(false);
+        }
+        return;
+      }
       // Deep research (research.rs): many searches, many pages, an answer
       // with its sources — with the Deep switch on, or "research …".
       const researchQ = !note && !here && !images.length ? (deep ? t : researchAsk(t, !!msgs[msgs.length - 1]?.research)) : null;
@@ -712,7 +880,7 @@ export function ChatTab() {
       setBusy(false);
       input.current?.focus();
     },
-    [busy, msgs, deep]
+    [busy, msgs, deep, code, project, pickProject]
   );
 
   const stop = () => {
@@ -915,9 +1083,15 @@ export function ChatTab() {
                 {m.steps && m.steps.length > 0 && !m.calls?.length && <Steps steps={m.steps} />}
                 {m.action && <ActionCard action={m.action} busy={busy} onAnswer={(allow) => void answer(i, allow)} ran={m.ran} />}
                 {m.research && <ResearchPanel r={m.research} />}
+                {m.coding && (
+                  <CodingPanel
+                    c={m.coding}
+                    onChange={(patch) => setMsgs((all) => all.map((x, j) => (j === i && x.coding ? { ...x, coding: { ...x.coding, ...patch } } : x)))}
+                  />
+                )}
                 {m.content ? (
                   m.role === "assistant" ? <ChatText text={m.content} /> : m.content
-                ) : busy && i === msgs.length - 1 && !m.research ? (
+                ) : busy && i === msgs.length - 1 && !m.research && !m.coding ? (
                   <span className={cx("flex items-center gap-1.5 text-izk-muted", (!!m.steps?.length || !!m.action) && "mt-1.5")}>
                     <Loader2 size={13} className="animate-spin" /> {m.status ?? "Thinking…"}
                   </span>
@@ -1076,6 +1250,41 @@ export function ChatTab() {
             >
               🔭 Deep
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !code;
+                setCode(next);
+                try {
+                  localStorage.setItem(CODE_KEY, next ? "1" : "0");
+                } catch {
+                  /* only a convenience */
+                }
+                if (next && !project) void pickProject();
+              }}
+              aria-pressed={code}
+              title={
+                code
+                  ? `Coding mode is on${project ? ` (${project})` : ""}: Izuki works like Claude Code in a separate copy of your project, runs the tests, and shows you the change to Apply or Discard. Tap to turn off.`
+                  : "Coding mode: Izuki reads, edits and tests your project in a separate copy, then shows you the change to Apply or Discard."
+              }
+              className={cx(
+                "flex h-[36px] shrink-0 items-center gap-1 rounded-full border px-2.5 text-[11px] font-semibold transition-colors",
+                code ? "border-izk-teal/50 bg-izk-teal/15 text-izk-teal" : "border-white/10 bg-white/6 text-izk-ink hover:bg-white/10"
+              )}
+            >
+              {"</>"} Code
+            </button>
+            {code && (
+              <button
+                type="button"
+                onClick={() => void pickProject()}
+                title={project ? `Project: ${project} — tap to pick another` : "Pick the project folder"}
+                className="flex h-[36px] max-w-[120px] shrink-0 items-center gap-1 rounded-full border border-white/10 bg-white/6 px-2.5 text-[11px] text-izk-ink hover:bg-white/10"
+              >
+                📁 <span className="truncate">{project ? project.replace(/[\\/]+$/, "").split(/[\\/]/).pop() : "Pick…"}</span>
+              </button>
+            )}
             <textarea
               ref={input}
               value={draft}

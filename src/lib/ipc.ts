@@ -655,6 +655,26 @@ export interface ResearchUpdate {
   sources?: ResearchSource[];
 }
 
+/** One file a coding task changed (coding.rs). */
+export interface CodingFile {
+  path: string;
+  added: number;
+  removed: number;
+}
+
+/** A coding task's progress (coding.rs). */
+export interface CodingUpdate {
+  id: number;
+  kind: "plan" | "workspace" | "todo" | "tool" | "test" | "review" | "text" | "changes" | "done" | "error";
+  text: string;
+  detail?: string;
+  ok?: boolean;
+  workspace?: string;
+  files?: CodingFile[];
+  diff?: string;
+  todo?: [string, boolean][];
+}
+
 /** A Windows tweak (tweaks.rs): a switch, read live from Windows. */
 export interface WindowsTweak {
   id: string;
@@ -982,6 +1002,16 @@ export const api = {
   /** Deep research: updates arrive as EV.research tagged `id`; stop with chatCancel. */
   researchStart: (id: number, question: string, history: Array<{ role: string; content: string }>) =>
     call<void>("research_start", { id, question, history }, () => undefined),
+  /** Coding mode: updates arrive as EV.coding tagged `id`; stop with chatCancel. */
+  codingStart: (id: number, project: string, task: string, history: Array<{ role: string; content: string }>) =>
+    call<void>("coding_start", { id, project, task, history }, () => {
+      throw new Error("Coding mode works in the Izuki app on your PC.");
+    }),
+  codingApply: (name: string) => call<string>("coding_apply", { name }, () => { throw new Error("not in Izuki"); }),
+  codingUndo: (name: string) => call<string>("coding_undo", { name }, () => { throw new Error("not in Izuki"); }),
+  codingDiscard: (name: string) => call<string>("coding_discard", { name }, () => { throw new Error("not in Izuki"); }),
+  /** The Windows folder picker; null when cancelled. */
+  codingPickFolder: () => call<string | null>("coding_pick_folder", undefined, () => null),
   researchSave: (question: string, text: string) =>
     call<Note>("research_save", { question, text }, () => {
       throw new Error("Notes work in the Izuki app on your PC.");
@@ -1189,6 +1219,8 @@ export const EV = {
   chatDelta: "izuki://chat-delta",
   /** Deep research progress and answer (research.rs). */
   research: "izuki://research",
+  /** Coding mode progress and its change (coding.rs). */
+  coding: "izuki://coding",
   /** The one-tap replies to offer next (string[]). */
   suggestions: "izuki://suggestions",
   /** Custom wake words were added or removed — the detector reloads. */

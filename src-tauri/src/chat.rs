@@ -1101,6 +1101,31 @@ pub fn complete_streaming(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -
     if is_deep(id) {
         chain.sort_by_key(|c| if c.id == ProviderId::Gemini { 0 } else { 1 });
     }
+    finish_with(chain, messages, id, on_text)
+}
+
+/// For work that needs a capable model (coding): the strongest working brain
+/// first, small models only after all the others, room to think.
+pub fn complete_strong(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -> anyhow::Result<String> {
+    let mut chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
+    if chain.is_empty() {
+        return complete_streaming(messages, id, on_text);
+    }
+    crate::brain::prefer_strong(&mut chain);
+    // (A stable sort: the order stays as it was, small ones moved last.)
+    chain.sort_by_key(crate::easy::is_small);
+    struct Unmark(u64);
+    impl Drop for Unmark {
+        fn drop(&mut self) {
+            DEEP.lock().retain(|d| *d != self.0);
+        }
+    }
+    DEEP.lock().push(id);
+    let _unmark = Unmark(id);
+    finish_with(chain, messages, id, on_text)
+}
+
+fn finish_with(chain: Vec<ProviderConfig>, messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -> anyhow::Result<String> {
     let text = Mutex::new(String::new());
     let failed = Mutex::new(None::<String>);
     let emit = |t: String, done: bool, error: Option<String>| {
@@ -1215,6 +1240,10 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
     let mut failed = 0;
     let mut errors = Vec::new();
     loop {
+        // Stopped: no more waiting on anyone.
+        if cancelled(id) {
+            return emit(String::new(), true, Some("stopped".into()));
+        }
         let won = winner.load(Ordering::SeqCst);
         let local = chain[..launched].iter().any(|c| c.id.is_local());
         // Nobody has said a word for this long: stop waiting and say why.
@@ -1232,7 +1261,21 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
         } else {
             Duration::from_secs(patience)
         };
-        match rx.recv_timeout(wait) {
+        // The same wait, in short slices, so a Stop is noticed at once (a
+        // brain that hasn't started answering can keep it waiting a while).
+        let deadline = Instant::now() + wait;
+        let got = loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match rx.recv_timeout(left.min(Duration::from_millis(250))) {
+                Err(mpsc::RecvTimeoutError::Timeout) if Instant::now() < deadline => {
+                    if cancelled(id) {
+                        return emit(String::new(), true, Some("stopped".into()));
+                    }
+                }
+                other => break other,
+            }
+        };
+        match got {
             Ok(Event::Text(i, t)) => {
                 // The first brain to say anything is the one that's heard.
                 let _ = winner.compare_exchange(usize::MAX, i, Ordering::SeqCst, Ordering::SeqCst);

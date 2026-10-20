@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "💻", title: "Coding mode — Izuki's own Claude Code", how: "Turn on </> Code in the Chat tab, pick your project, and ask in plain words. Izuki works in a separate copy of your project — to-do list, reading, exact edits, running your tests, then a review of its own change — and shows you the diff: Apply to my files, Discard, or Undo after. Your files are never touched until you choose Apply.", try: { label: "Open Chat", tab: "chat" } },
   { icon: "🎧", title: "Lined up with your sample loop, by ear", how: "“My notes aren't flowing with the beat” (any words, typos too): with a sample loop or clip as your beat, Izuki plays your highlighted loop in Song mode, listens to the beat without your notes and to your notes alone, then the Piano roll's “Izuki align” script lines them up with the sample's real hits, off FL's grid where the sample is. Your rhythm, triplets and slides stay." },
   { icon: "🎞️", title: "The character really moves", how: "In-between frames for every character: a hand travels to the chin, a gesture eases into the next, and walking is three times smoother — no more cutting from picture to picture." },
   { icon: "🔭", title: "Research you can continue", how: "Every deep research is kept: say “continue the research” or “dig deeper into …” (or tap Dig deeper) and Izuki carries on from what it already read. Answers now end with what it couldn't read, and why." },
