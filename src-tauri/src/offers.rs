@@ -23,18 +23,57 @@ pub fn make(request: &str) {
     *OFFER.lock() = Some((request.trim().to_string(), Instant::now()));
 }
 
-/// A short yes, on its own: "yes", "yeah do it", "sure, go ahead", "ok please".
+/// A short yes, on its own, in everyday words: "yes", "yeah do it", "sure, go
+/// ahead", "yea bro", "bet, run it", "yesss", "for sure", "let's go", "why not".
+/// Not "yes but first open Spotify", "let me think", "go away" or "yes?".
 pub fn is_yes(said: &str) -> bool {
-    let s = said.trim().trim_end_matches(['.', '!', '?']).to_lowercase();
-    let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric() && c != '\'').filter(|w| !w.is_empty()).collect();
-    if words.is_empty() || words.len() > 5 {
+    let s = said.trim().trim_end_matches(['.', '!']).to_lowercase().replace('\u{2019}', "'");
+    // "Yes?" asks something back.
+    if s.ends_with('?') {
         return false;
     }
-    const YES: &[&str] = &["yes", "yeah", "yep", "yup", "ya", "yea", "sure", "ok", "okay", "please", "go", "ahead", "do", "it", "that", "alright", "absolutely", "definitely", "nova", "izuki", "bet", "pls", "plz"];
-    const START: &[&str] = &["yes", "yeah", "yep", "yup", "ya", "yea", "sure", "ok", "okay", "alright", "absolutely", "definitely", "bet", "please", "go", "do"];
-    // "Go" or "do" alone isn't a yes; "go ahead" and "do it" are.
-    let bare_verb = words.len() == 1 && ["go", "do"].contains(&words[0]);
-    !bare_verb && START.contains(&words[0]) && words.iter().all(|w| YES.contains(w))
+    let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric() && c != '\'').map(|w| w.trim_matches('\'')).filter(|w| !w.is_empty()).collect();
+    if words.is_empty() || words.len() > 6 {
+        return false;
+    }
+    // Stretched for feeling: "yesss", "yeaaa", "okayyy", "brooo", "gooo".
+    let squash = |w: &str| -> String {
+        let mut out = String::new();
+        for c in w.chars() {
+            if !out.ends_with(c) {
+                out.push(c);
+            }
+        }
+        out
+    };
+    let any = |list: &[&str], w: &str| list.contains(&w) || list.contains(&squash(w).as_str());
+    // A yes on its own.
+    const ALONE: &[&str] = &[
+        "yes", "yeah", "yep", "yup", "ya", "yea", "yeh", "yah", "yh", "yuh", "yas", "yesir", "yessir", "sure", "ok", "okay", "k", "kk", "alright",
+        "aight", "ight", "absolutely", "definitely", "certainly", "bet", "please", "pls", "plz", "ofc", "fs", "cool", "perfect", "mhm",
+    ];
+    // How a yes starts ("go ahead", "do it", "for sure", "let's go", "run it").
+    const START: &[&str] = &["go", "do", "for", "of", "sounds", "lets", "let's", "let", "why", "run", "connect", "set", "hook", "start", "proceed"];
+    // What can follow.
+    const MORE: &[&str] = &[
+        "go", "ahead", "do", "it", "that", "this", "nova", "izuki", "for", "of", "course", "sounds", "good", "great", "fine", "lets", "let's", "let", "s",
+        "why", "not", "bro", "bruh", "fam", "man", "dude", "sir", "g", "gang", "lol", "now", "then", "just", "right", "run", "connect", "set", "up", "hook",
+        "start", "proceed", "please", "pls", "plz", "me", "on", "already", "thing",
+    ];
+    if words.len() == 1 {
+        return any(ALONE, words[0]);
+    }
+    // "Yeah, not now", "yes not yet": a no in the end — "why not" is the only yes with "not".
+    if words.iter().enumerate().any(|(i, w)| squash(w) == "not" && (i == 0 || words[i - 1] != "why")) {
+        return false;
+    }
+    (any(ALONE, words[0]) || START.contains(&words[0])) && words.iter().all(|w| any(ALONE, w) || any(MORE, w))
+}
+
+/// The request a "yes" would ask for right now, if an offer is still fresh
+/// (without using it up).
+pub fn pending() -> Option<String> {
+    OFFER.lock().as_ref().filter(|(_, at)| at.elapsed() <= FRESH).map(|(r, _)| r.clone())
 }
 
 /// A no: "no", "nah", "no thanks", "no, don't", "no way", "not now".
@@ -80,6 +119,19 @@ mod tests {
             assert!(is_yes(said), "{said}");
         }
         for said in ["yesterday's notes", "yes but first open spotify and play lofi", "do my homework", "no", "what's taking up space"] {
+            assert!(!is_yes(said), "{said}");
+        }
+        // Everyday yeses: a casual one used to go to the screen helper instead.
+        for said in [
+            "yea bro", "yuh", "yesss", "Yeaaa", "bet, run it", "for sure", "let's go", "lets gooo", "of course", "sounds good", "why not", "ok connect it",
+            "yeah set it up", "aight bet", "k", "yessir", "ofc", "yes pls", "sure thing bro",
+        ] {
+            assert!(is_yes(said), "{said}");
+        }
+        for said in [
+            "let me think", "go away", "set an alarm", "run chrome", "start over", "yes?", "why", "not now", "cool story", "sure?", "connect my keyboard",
+            "yeah not now", "yes not yet", "ok but not now", "yeah nottt now",
+        ] {
             assert!(!is_yes(said), "{said}");
         }
         assert!(is_no("no thanks") && is_no("Nah.") && is_no("no, don't") && is_no("no way") && !is_no("now") && !is_no("nobody told me"));

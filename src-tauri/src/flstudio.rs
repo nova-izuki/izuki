@@ -714,9 +714,12 @@ fn setup_follow_up(s: &str) -> bool {
     fresh && words.len() <= 8 && words.iter().all(|w| BARE.contains(w)) && aimed_setup(&words, &["it", "that", "izuki", "fl", "everything", "setup"])
 }
 
+/// What a "yes" to "want me to connect it now?" asks for.
+const SETUP_OFFER: &str = "set up FL Studio";
+
 /// FL open but not linked, said honestly — and a "yes" next runs the setup.
 fn not_linked() -> String {
-    crate::offers::make("set up FL Studio");
+    crate::offers::make(SETUP_OFFER);
     *NOT_LINKED_AT.lock() = Some(Instant::now());
     NOT_LINKED.into()
 }
@@ -728,7 +731,10 @@ fn not_linked() -> String {
 /// `resumes`: the task a "yes"/"keep going" would carry on.
 pub fn screen_guard(prompt: &str, resumes: Option<&str>) -> Option<String> {
     let s = prompt.to_lowercase();
-    if asks_setup(&s) || setup_follow_up(&s) {
+    // A "yes" to Izuki's own offer to connect FL that reached the screen
+    // agent anyway (typed in the chat, said mid-conversation) is still that yes.
+    let yes_to_setup = crate::offers::pending().as_deref() == Some(SETUP_OFFER) && crate::offers::answer(prompt).is_some();
+    if yes_to_setup || asks_setup(&s) || setup_follow_up(&s) {
         return Some(setup(&|line| eprintln!("[fl] {line}")).unwrap_or_else(|e| format!("I couldn't finish connecting FL Studio: {e}")));
     }
     let all = format!("{s} {}", resumes.unwrap_or("").to_lowercase());
