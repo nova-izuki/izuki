@@ -291,7 +291,7 @@ course · textbook | their question about their textbook · cite | a link, DOI o
 they asked (spending, unusual charges, subscriptions) · shop | orders, sales or stock · study | progress or mistakes · \
 screentime | their question · recall | their question about what was on their screen earlier · storage | \
 what they want (what's taking up space, free up space, empty the Recycle Bin) · fl | what to do in FL Studio, in \
-plain words (quantize the hats, line the 808 up with the kick or the sample, tune the 808, balance the mix, add an 808 / a melody / chords, mix the \
+plain words (quantize the hats, line the 808 up with the kick or the sample, tune the 808, match the sample to the metronome, balance the mix, add an 808 / a melody / chords, mix the \
 vocals, add an intro or a fill, tempo 140). E.g. \
 [IZUKI: grades | biology], [IZUKI: due | week]. For these, use it BEFORE [APPS] or [BROWSE]; if it says it has no \
 ability for that, try another way.\n\

@@ -294,6 +294,65 @@ pub fn hits_to_beats(hits: &[f64], bpm: f64, anchor: f64, loop_beats: f64) -> Ve
     fold(beats, loop_beats)
 }
 
+// ---------------------------------------------------------------- tempo
+
+/// How a recording's hits sit on a steady 16th-note grid near `bpm` (within
+/// ±12%): the tempo that fits them best, where that grid falls (seconds into
+/// a 16th), and how tight the fit is (0–1, 1 = every hit exactly on it).
+/// None with too few hits to tell.
+pub fn beat_fit(hits: &[f64], bpm: f64) -> Option<(f64, f64, f64)> {
+    if hits.len() < 6 || bpm <= 0.0 {
+        return None;
+    }
+    let tau = 2.0 * std::f64::consts::PI;
+    // Each hit as an angle on the 16th's circle; aligned hits point the same way.
+    let fit = |b: f64| -> (f64, f64) {
+        let s = 60.0 / b / 4.0;
+        let (mut c, mut si) = (0.0f64, 0.0f64);
+        for &t in hits {
+            let a = tau * t / s;
+            c += a.cos();
+            si += a.sin();
+        }
+        let r = (c * c + si * si).sqrt() / hits.len() as f64;
+        (r, (si.atan2(c) / tau).rem_euclid(1.0) * s)
+    };
+    let mut best = (bpm, 0.0, -1.0);
+    let mut b = bpm * 0.88;
+    while b <= bpm * 1.12 {
+        let (r, ph) = fit(b);
+        if r > best.2 {
+            best = (b, ph, r);
+        }
+        b += 0.02;
+    }
+    // Finer, around the best.
+    let (around, mut b) = (best.0, best.0 - 0.03);
+    while b <= around + 0.03 {
+        let (r, ph) = fit(b);
+        if r > best.2 {
+            best = (b, ph, r);
+        }
+        b += 0.002;
+    }
+    Some(best)
+}
+
+/// A fit from `beat_fit` worth acting on: tight enough, and not chance —
+/// with few hits a tight-looking fit can happen by luck (and many tempos
+/// were tried), so by Rayleigh's test n·R² must clear a margin too.
+pub fn steady(hits: usize, tightness: f64) -> bool {
+    tightness >= 0.45 && hits as f64 * tightness * tightness >= 6.0
+}
+
+/// How far, in seconds, `phase` sits after the click's grid (`beat0`) on a
+/// 16th of `bpm` — between minus and plus half a 16th.
+pub fn grid_offset(phase: f64, beat0: f64, bpm: f64) -> f64 {
+    let s = 60.0 / bpm / 4.0;
+    let d = (phase - beat0).rem_euclid(s);
+    if d > s / 2.0 { d - s } else { d }
+}
+
 // ---------------------------------------------------------------- pitch
 
 /// The pitch of a sustained low sound (an 808, a bass note) in a stretch of
@@ -425,6 +484,34 @@ mod tests {
                 *o += v as f32;
             }
         }
+    }
+
+    #[test]
+    fn hears_a_samples_own_tempo_and_where_it_sits() {
+        // A trap pattern (kicks, snares, a few hats) at 141.3 BPM, starting
+        // 35 ms after the bar, heard for 12 s; FL is at 140.
+        let pattern = [0, 3, 6, 8, 10, 11, 14]; // 16ths in a bar
+        let (bpm, start) = (141.3, 0.035);
+        let s = 60.0 / bpm / 4.0;
+        let hits: Vec<f64> = (0..400).filter(|i| pattern.contains(&(i % 16))).map(|i| start + i as f64 * s).filter(|t| *t < 12.0).collect();
+        let (b, ph, r) = beat_fit(&hits, 140.0).expect("a fit");
+        assert!((b - 141.3).abs() < 0.05, "its own tempo: {b}");
+        assert!(r > 0.95, "{r}");
+        assert!((grid_offset(ph, 0.0, b) - 0.035).abs() < 0.003, "35 ms late: {ph}");
+        // On FL's tempo but late: the tempo's right, the start isn't.
+        let s = 60.0 / 140.0 / 4.0;
+        let late: Vec<f64> = (0..300).filter(|i| pattern.contains(&(i % 16))).map(|i| 0.035 + i as f64 * s).filter(|t| *t < 12.0).collect();
+        let (b, ph, _) = beat_fit(&late, 140.0).unwrap();
+        assert!((b - 140.0).abs() < 0.05, "{b}");
+        assert!((grid_offset(ph, 0.010, 140.0) - 0.025).abs() < 0.003, "25 ms after a click at 10 ms");
+        // Hits on no steady grid: a loose fit (so nothing is changed).
+        let mut seed = 3u64;
+        let loose: Vec<f64> = (0..60).map(|_| { seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1); (seed >> 33) as f64 / u32::MAX as f64 * 12.0 }).collect();
+        let (_, _, r) = beat_fit(&loose, 140.0).unwrap();
+        assert!(!steady(loose.len(), r), "random hits: {r}");
+        assert!(steady(hits.len(), 0.97), "the trap loop");
+        assert!(!steady(8, 0.8), "8 hits, tight by luck: 8·0.64 = 5.1");
+        assert_eq!(beat_fit(&[0.1, 0.2], 140.0), None, "too few to tell");
     }
 
     #[test]

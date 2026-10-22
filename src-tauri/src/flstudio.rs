@@ -420,6 +420,8 @@ fn install_script() -> Result<std::path::PathBuf> {
 /// Set everything up: the script, then the cable (Windows' own; loopMIDI if
 /// FL can't see that). What happened, and what's left to do in FL Studio.
 pub fn setup(progress: &dyn Fn(&str)) -> Result<String> {
+    // The offer to set up is answered: a later "set it up" is a new ask.
+    *NOT_LINKED_AT.lock() = None;
     progress("Putting Izuki's script into FL Studio…");
     install_script()?;
     *LINK.lock() = None;
@@ -646,13 +648,96 @@ pub fn is_request(said: &str) -> bool {
     // "Add an 808", "fix the timing": FL's whenever it's open — linked or
     // not (not linked, it says so instead of the screen helper snapping the
     // notes to the grid with FL's quantize).
-    fl || asks_setup(&s) || wants_beat(&s) || (job_of(&s).is_some() && fl_running())
+    fl || asks_setup(&s) || setup_follow_up(&s) || wants_beat(&s) || (job_of(&s).is_some() && fl_running())
 }
 
-/// "Set up FL Studio", "connect Izuki to FL", "link FL".
+/// "Set up FL Studio", "connect Izuki to FL", "hook Izuki up in FL",
+/// "enable Izuki in FL's MIDI settings" — the link itself, in any words.
+/// Not "link my sample to the grid in FL" or "connect my MIDI keyboard to FL"
+/// (the verb must be aimed at Izuki or FL itself, and no gear is named).
 fn asks_setup(s: &str) -> bool {
-    let s = format!(" {} ", s.to_lowercase());
-    ["set up fl", "setup fl", "set fl up", "connect fl", "connect to fl", "connect izuki to fl", "link fl", "link to fl", "link izuki to fl", "hook up fl", "hook fl up"].iter().any(|p| s.contains(&format!(" {p}")))
+    let s = s.to_lowercase();
+    let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let has = |w: &str| words.contains(&w);
+    // About FL (or Izuki's MIDI link), and not undoing it.
+    let about_fl = has("fl") || has("flstudio") || has("fruity") || s.contains("fruityloops") || (has("midi") && (has("izuki") || has("nova")));
+    if !about_fl || ["disconnect", "unlink", "uninstall", "remove", "disable", "stop", "dont", "don"].iter().any(|w| has(w)) {
+        return false;
+    }
+    // Your own gear goes in FL's MIDI settings too — that's not Izuki's link.
+    const GEAR: &[&str] = &[
+        "keyboard", "keyboards", "controller", "controllers", "launchpad", "speaker", "speakers", "monitors", "mic", "microphone",
+        "interface", "headphones", "vst", "vsts", "plugin", "plugins", "akai", "arturia", "novation", "minilab", "keylab",
+    ];
+    if GEAR.iter().any(|g| has(g)) {
+        return false;
+    }
+    aimed_setup(&words, &["izuki", "nova", "fl", "flstudio", "studio", "script", "link", "connection", "setup"])
+}
+
+/// A setup verb aimed (within a few words) at one of `aimed`: "set Izuki
+/// up", "connect to FL", "do the setup".
+fn aimed_setup(words: &[&str], aimed: &[&str]) -> bool {
+    words.iter().enumerate().any(|(i, w)| {
+        let next = &words[i + 1..words.len().min(i + 5)];
+        let verb = match *w {
+            // "set up", "set it up", "set izuki up"
+            "set" => next.iter().take(3).any(|n| *n == "up"),
+            // "setup" as a thing ("my studio setup in FL") isn't asking for one.
+            "setup" => i == 0 || !["my", "your", "our", "his", "her", "their", "studio", "this", "fl", "whole"].contains(&words[i - 1]),
+            "connect" | "link" | "hook" | "pair" | "install" | "enable" | "activate" => true,
+            _ => false,
+        };
+        // "Install FL Studio" is the app; "install Izuki's script in FL" is the link.
+        let own = ["izuki", "nova", "script"];
+        let target = if ["install", "enable", "activate"].contains(w) { next.iter().any(|n| own.contains(n)) } else { next.iter().any(|n| aimed.contains(n)) };
+        verb && (target || (*w == "setup" && i > 0 && words[i - 1] == "the"))
+    })
+}
+
+/// When Izuki last said FL isn't linked yet: "set it up" or "hook it up"
+/// right after means the link.
+static NOT_LINKED_AT: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// A short "set it up", "hook it up", "do the setup" soon after Izuki said FL
+/// isn't linked yet (used up once the setup runs).
+fn setup_follow_up(s: &str) -> bool {
+    let fresh = NOT_LINKED_AT.lock().is_some_and(|t| t.elapsed() < Duration::from_secs(10 * 60));
+    let s = s.to_lowercase();
+    let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    // Only a bare go-ahead: "set it up for my meeting" is something else.
+    const BARE: &[&str] = &[
+        "set", "it", "up", "setup", "the", "do", "connect", "link", "hook", "pair", "ok", "okay", "yes", "yeah", "yea", "ya", "please", "pls", "plz", "now",
+        "go", "ahead", "and", "then", "izuki", "fl", "studio", "everything", "that", "bro", "just", "can", "you", "run", "start", "sure", "alright", "bet",
+        "lets", "let", "s", "me", "for", "finish", "all", "of", "this",
+    ];
+    fresh && words.len() <= 8 && words.iter().all(|w| BARE.contains(w)) && aimed_setup(&words, &["it", "that", "izuki", "fl", "everything", "setup"])
+}
+
+/// FL open but not linked, said honestly — and a "yes" next runs the setup.
+fn not_linked() -> String {
+    crate::offers::make("set up FL Studio");
+    *NOT_LINKED_AT.lock() = Some(Instant::now());
+    NOT_LINKED.into()
+}
+
+/// The screen agent's check before it works FL Studio like a person: linking
+/// Izuki to FL is Izuki's own setup (a virtual MIDI cable, then FL's MIDI
+/// settings) — clicking through FL's menus only ever reaches an empty MIDI
+/// list. And FL's jobs need the link: without it, the truth and the offer.
+/// `resumes`: the task a "yes"/"keep going" would carry on.
+pub fn screen_guard(prompt: &str, resumes: Option<&str>) -> Option<String> {
+    let s = prompt.to_lowercase();
+    if asks_setup(&s) || setup_follow_up(&s) {
+        return Some(setup(&|line| eprintln!("[fl] {line}")).unwrap_or_else(|e| format!("I couldn't finish connecting FL Studio: {e}")));
+    }
+    let all = format!("{s} {}", resumes.unwrap_or("").to_lowercase());
+    let words: Vec<&str> = all.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let about_link = words.contains(&"midi") && (words.contains(&"izuki") || words.contains(&"fl") || all.contains("fl studio"));
+    if job_of(&all).is_none() && !about_link {
+        return None;
+    }
+    (fl_running() && !has_cable()).then(not_linked)
 }
 
 /// Where an FL request goes, from what's known: FL named in it, FL
@@ -680,7 +765,7 @@ fn route(named: bool, running: bool, linked: bool, job: bool) -> Route {
 }
 
 /// What to say when FL is open but not linked to Izuki — honestly, with the way to fix it.
-const NOT_LINKED: &str = "I can't do that inside FL Studio yet — I'm not connected to it. Clicking around FL's screen only gives me FL's own quantize, which snaps your notes to the grid (the thing that makes it sound more off), so I won't fake it that way. One-time setup, about 2 minutes: say “set up FL Studio” (or Settings → FL Studio → Set up). Then restart FL and switch “Izuki” on in Options → MIDI settings — after that I can listen to your beat and line your notes up by ear, tune the 808 and more.";
+const NOT_LINKED: &str = "I can't do that inside FL Studio yet — I'm not connected to it. Clicking around FL's screen only gives me FL's own quantize, which snaps your notes to the grid (the thing that makes it sound more off), so I won't fake it that way. Want me to connect it now? Say yes — it's a one-time setup of about 2 minutes (Windows may ask permission), then I'll tell you the one switch to flip in FL's MIDI settings. After that I can listen to your beat and line your notes up by ear, tune the 808 and more.";
 
 /// The parts of a beat Izuki can add, fix or vary (phases 2–5).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -694,6 +779,10 @@ enum Job {
     /// Vocal tracks: levels, panning, and what their effect chain is missing.
     Vocals,
     Quantize,
+    /// The sample (a loop or clip in the Playlist) against FL's metronome:
+    /// its own tempo (FL's tempo set to match, then checked) and how late it
+    /// starts (said, to trim — FL doesn't let scripts move clips).
+    Match,
     /// The 808's own tuning, by ear: retuned (its pitch knob) when every hit
     /// is off its note by the same amount — and checked again after.
     Tune,
@@ -739,6 +828,18 @@ fn job_of(s: &str) -> Option<Job> {
         Some(Job::Chords)
     } else if add && long && has(&["melody", "lead", "hook", "melodies"]) {
         Some(Job::LongMelody)
+    } else if has(&["sample", "samples", "loop", "loops", "clip", "audio"])
+        && !has(&["808", "808s", "bass", "bassline", "sub", "notes", "note", "melody", "chords"])
+        && !new_part
+        && (has(&["metronome", "grid", "drift", "drifting", "drifts", "stretch", "warp"])
+            || phrase(&["off time", "out of time", "not in time", "off beat", "off-beat", "not on beat", "match the tempo", "match fl"])
+            // "Tempo" or the click only with a mismatch ("what tempo is my sample"
+            // is a question; "click on the sample" isn't the metronome's click).
+            || ((has(&["tempo", "bpm"]) || words.iter().enumerate().any(|(i, w)| *w == "click" && i > 0 && ["the", "a", "fl", "s", "metronome", "its", "fls"].contains(&words[i - 1])))
+                && (has(&["match", "matching", "sync", "synced", "fit", "fits", "flow", "flowing", "sit", "sits", "off", "align", "aligned"])
+                    || phrase(&["doesn't", "doesnt", "isn't", "isnt", "not on", "not with"]))))
+    {
+        Some(Job::Match)
     } else if has(&["808", "808s", "bass", "bassline", "sub"])
         && !new_part
         && !has(&["octave", "octaves", "semitone", "semitones", "transpose"])
@@ -801,7 +902,7 @@ pub fn handle(said: &str) -> Result<Option<String>> {
     let transport = ["stop", "pause", "play", "start", "tempo", "bpm", "faster", "slower"].iter().any(|w| words.contains(w));
     let job = job_of(&s);
     // "Set up FL Studio": the script and the cable, right from the chat.
-    if asks_setup(&s) {
+    if asks_setup(&s) || setup_follow_up(&s) {
         return setup(&|line| eprintln!("[fl] {line}")).map(Some);
     }
     if !opening && !wants_beat(&s) && !transport && job.is_none() {
@@ -818,7 +919,7 @@ pub fn handle(said: &str) -> Result<Option<String>> {
             return Ok(Some(if opening { "Opening FL Studio.".into() } else { "Opening FL Studio — give it a few seconds, then ask me again.".into() }));
         }
         // ("Open FL Studio" when it's already open is just that.)
-        Route::NotLinked if !opening => return Ok(Some(NOT_LINKED.into())),
+        Route::NotLinked if !opening => return Ok(Some(not_linked())),
         _ => {}
     }
     if opening {
@@ -1489,6 +1590,90 @@ fn run_job(job: Job, s: &str) -> Result<String> {
             one(json!(["quantize", ch, false]))?;
             Ok(format!("Quick-quantized “{name}” with FL's own Quick quantize — its notes snap to the grid. Ctrl+Z in FL takes it back."))
         }
+        Job::Match => {
+            let bpm = st["tempo"].as_f64().filter(|t| *t > 20.0).unwrap_or(140.0);
+            let secs = (16.0 * 60.0 / bpm * 1.5).clamp(8.0, 20.0) as f32;
+            // The beat as you hear it, in Song mode (where the Playlist's
+            // clips play), with FL's metronome as the clock. Mode and
+            // metronome go back as they were.
+            let hear = || -> Result<(Vec<f64>, Option<f64>)> {
+                let _ = one(json!(["stop"]));
+                let song_was = one(json!(["songmode", true]))?.as_bool().unwrap_or(false);
+                let click_was = one(json!(["metronome", true])).ok().and_then(|v| v.as_bool()).unwrap_or(false);
+                let heard = crate::loopback::record(secs, || {
+                    let _ = one(json!(["play"]));
+                });
+                let _ = one(json!(["stop"]));
+                if !click_was {
+                    let _ = one(json!(["metronome", false]));
+                }
+                if !song_was {
+                    let _ = one(json!(["songmode", false]));
+                }
+                let (samples, rate) = heard?;
+                let mut hits = crate::loopback::body_hits(&samples, rate);
+                if hits.len() < 6 {
+                    hits = crate::loopback::low_hits(&samples, rate);
+                }
+                let tempo_now = one(json!(["state"])).ok().and_then(|s| s["tempo"].as_f64()).unwrap_or(bpm);
+                Ok((hits, crate::loopback::click_grid(&crate::loopback::high_clicks(&samples, rate), tempo_now)))
+            };
+            let (hits, beat0) = hear()?;
+            let Some(beat0) = beat0 else {
+                bail!("I couldn't hear FL's metronome click — it's my clock here. Turn the metronome's volume up, highlight your loop in the Playlist, and ask again.");
+            };
+            let Some((fit, phase, tight)) = crate::loopback::beat_fit(&hits, bpm) else {
+                bail!("I couldn't hear enough of your sample to tell — highlight the loop in the Playlist so it plays there, and ask again.");
+            };
+            if !crate::loopback::steady(hits.len(), tight) {
+                return Ok("I listened to your sample against FL's metronome, but its hits don't sit on any steady grid (strong swing, or more than one loop playing at once), so I'm not changing anything — that's better done by ear in the Playlist.".into());
+            }
+            let late_ms = |phase: f64, beat0: f64, tempo: f64| crate::loopback::grid_offset(phase, beat0, tempo) * 1000.0;
+            let trim = |ms: f64| {
+                if ms.abs() < 12.0 {
+                    String::new()
+                } else if ms > 0.0 {
+                    format!(" Its hits land about {ms:.0} ms after FL's grid — there's a little silence (or a pickup) at the start of the clip. Trim {ms:.0} ms off the clip's start (zoom in and drag its left edge) or slide it left by that much; FL doesn't let me move clips myself.")
+                } else {
+                    format!(" Its hits land about {:.0} ms before FL's grid — slide the clip right by {:.0} ms (FL doesn't let me move clips myself).", -ms, -ms)
+                }
+            };
+            // Its own tempo isn't FL's: FL's tempo set to match, then heard again.
+            if (fit - bpm).abs() >= 0.15 {
+                let to = (fit * 100.0).round() / 100.0;
+                one(json!(["tempo", to]))?;
+                // Couldn't listen again: the tempo goes back before saying so.
+                let (again, beat1) = match hear() {
+                    Ok(x) => x,
+                    Err(e) => {
+                        return Err(match one(json!(["tempo", bpm])) {
+                            Ok(_) => e,
+                            Err(_) => anyhow!("{e} — and I couldn't put the tempo back: FL is at {to:.2} BPM now, so set it back to {bpm:.2} yourself"),
+                        });
+                    }
+                };
+                let after = beat1.and_then(|b1| crate::loopback::beat_fit(&again, to).map(|f| (f, b1)));
+                return match after {
+                    Some(((fit2, phase2, tight2), b1)) if (fit2 - to).abs() < 0.08 && tight2 >= tight - 0.05 => Ok(format!(
+                        "Your sample plays at about {to:.2} BPM, not FL's {bpm:.2} — that's why it drifted off the metronome and why snapping the 808 never felt right. I set FL's tempo to {to:.2} and listened again: it now sits on the click.{} Then snapping your 808 to the grid lines up with the sample.",
+                        trim(late_ms(phase2, b1, to))
+                    )),
+                    _ => {
+                        let back = if one(json!(["tempo", bpm])).is_ok() {
+                            format!("so I put the tempo back to {bpm:.2}")
+                        } else {
+                            format!("and I couldn't put the tempo back — FL is still at {to:.2}, so set it back to {bpm:.2} yourself")
+                        };
+                        Ok(format!("Your sample sounds like about {to:.2} BPM against FL's {bpm:.2}, but setting FL's tempo to that didn't make it sit on the click when I listened again, {back}. The clip may be stretching with FL's tempo (its stretch mode) — set the clip to play at its own speed, then ask me again."))
+                    }
+                };
+            }
+            let ms = late_ms(phase, beat0, bpm);
+            if ms.abs() < 12.0 {
+                return Ok(format!("Your sample sits on FL's metronome (its tempo matches {bpm:.2} BPM and its hits land within {:.0} ms of the grid), so snapping the 808 to the grid will line up with it.", ms.abs().max(1.0)));
+            }
+            Ok(format!("Your sample's tempo matches FL's {bpm:.2} BPM.{} Once it starts on the grid, snapping your 808 to the grid lines up with it.", trim(ms)))
+        }
         Job::Tune => {
             // The sound to tune: named, else the selected channel, else one named like a bass.
             let selected = one(json!(["selected"])).ok().and_then(|v| v.as_i64()).filter(|i| *i >= 0).map(|i| i as usize);
@@ -2058,8 +2243,41 @@ mod tests {
         assert_eq!(job_of("pitch the 808 up an octave"), None, "moving it, not tuning it");
         assert_eq!(job_of("fix the timing on my 808"), Some(Job::Align), "timing isn't tuning");
         assert_eq!(job_of("the 808 in this tune is late"), Some(Job::Align), "a tune (the song), and timing");
+        assert_eq!(job_of("the sample isnt flowing with the metronome"), Some(Job::Match));
+        assert_eq!(job_of("make the loop match the tempo"), Some(Job::Match));
+        assert_eq!(job_of("my sample is drifting off the grid"), Some(Job::Match));
+        assert_eq!(job_of("line my 808 up with the sample"), Some(Job::Align), "the 808 to the sample, not the sample itself");
+        assert_eq!(job_of("add a sample"), None);
+        assert_eq!(job_of("what tempo is my sample"), None, "a question, not a fix");
+        assert_eq!(job_of("add a click sample"), None);
+        assert_eq!(job_of("the sample is off the click"), Some(Job::Match));
+        assert_eq!(job_of("click on the sample and turn it off"), None, "a click of the mouse");
         assert!(asks_setup("set up FL Studio") && asks_setup("can you connect izuki to fl") && asks_setup("link fl please"));
         assert!(!asks_setup("set up my flight") && !asks_setup("reflect on it"), "not FL");
+        // The link, in any words.
+        for said in [
+            "set izuki up in fl", "hook izuki up to fl studio", "connect to FL studio", "enable izuki in fl's midi settings",
+            "install the izuki script in fl", "do the setup for fl", "set up izuki midi", "pair izuki with fruity loops", "setup fl",
+            "connect izuki to fl so it can fix my drums", "hook it up in fl",
+        ] {
+            assert!(asks_setup(said), "{said}");
+        }
+        // A verb aimed at something inside FL, your own gear, or undoing the link.
+        for said in [
+            "link my sample to the grid in fl", "connect the 808 to a mixer track in fl", "set the tempo up in fl", "disconnect izuki from fl", "don't set up fl",
+            "my studio setup in fl is messy", "connect my midi keyboard to fl", "set up my controller in fl studio", "hook my speakers up to fl", "install a vst in fl",
+            "install fl studio", "enable the metronome in fl", "activate my fl studio license",
+        ] {
+            assert!(!asks_setup(said), "{said}");
+        }
+        // Right after Izuki offered: "set it up" is the link; anything else isn't.
+        *NOT_LINKED_AT.lock() = Some(Instant::now());
+        assert!(setup_follow_up("set it up") && setup_follow_up("hook it up") && setup_follow_up("do the setup") && setup_follow_up("ok connect it"));
+        assert!(!setup_follow_up("set an alarm up") && !setup_follow_up("install spotify"), "not the link");
+        assert!(!setup_follow_up("set it up for my meeting") && !setup_follow_up("connect it to my wifi"), "something else");
+        assert!(setup_follow_up("yeah set it up for me"));
+        *NOT_LINKED_AT.lock() = None;
+        assert!(!setup_follow_up("set it up"), "no offer waiting");
         // FL open but not linked: an FL job is told so — never handed to the screen.
         assert_eq!(route(false, true, false, true), Route::NotLinked);
         assert_eq!(route(false, true, false, false), Route::Pass, "not a job: others take it");

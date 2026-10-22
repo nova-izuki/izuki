@@ -489,7 +489,11 @@ fn say(r: &Report) -> String {
         s.push_str(&format!(" I also found {} — say “remove the bloatware” or tap Remove to finish the job.", found.join(" and ")));
     }
     if !r.skipped.is_empty() {
-        s.push_str(&format!(" ({} was open, so I left its cache.)", r.skipped.join(" and ")));
+        s.push_str(&match r.skipped.split_last() {
+            Some((only, [])) => format!(" ({only} was open, so I left its cache — close it and ask again to clear that too.)"),
+            Some((last, rest)) => format!(" ({} and {last} were open, so I left their caches — close them and ask again to clear those too.)", rest.join(", ")),
+            None => String::new(),
+        });
     }
     s
 }

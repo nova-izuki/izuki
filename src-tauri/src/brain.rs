@@ -513,6 +513,21 @@ fn final_button(step: &ActionStep) -> Option<String> {
 /// notes on the screen unless they asked to be shown or taught something.
 /// Drops those steps (and what came after a held-back command) and says why,
 /// for the next look. `None` when the plan was fine.
+/// A held-back step, said to the person in plain words (the reasons from
+/// `guard_steps` are written for the AI).
+fn plainly(why: &str) -> String {
+    if why.contains("Typing a command into a terminal") {
+        "I didn't type that command into your terminal — I only run commands you spell out exactly. Tell me the exact command, or say what you want done (like “clear the safe stuff” to free up space) and I'll do it my own way.".into()
+    } else if why.contains("This is a quiz or test") {
+        "On a quiz or test I don't pick the answers — I can explain the question and the idea behind it, and you choose.".into()
+    } else if let Some(rest) = why.strip_prefix("Pressing “") {
+        let name = rest.split('”').next().unwrap_or("that");
+        format!("I stopped before pressing “{name}” — it's a final button, so I only press it when you tell me to exactly.")
+    } else {
+        "I didn't do that part — it isn't something I do without you saying so exactly. Tell me exactly what you want, or do that part yourself.".into()
+    }
+}
+
 fn guard_steps(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, front: &str) -> Option<String> {
     let look = this_look();
     guard_steps_with(steps, prompt, lesson, front, &look)
@@ -1207,24 +1222,42 @@ fn goal_words(summary: &str) -> Vec<String> {
 /// "Let me wait for it to load") — as opposed to an answer or a refusal.
 /// With no step attached, the task isn't over: the step is still to come.
 fn promises_action(summary: &str) -> bool {
-    let s = summary.to_lowercase();
+    let s = summary.to_lowercase().replace('\u{2019}', "'");
     // "Done — saved it, now checking…" reports a finish, not a promise.
     let first = s.split(|c: char| !c.is_alphanumeric()).find(|w| !w.is_empty()).unwrap_or("");
     if ["done", "finished", "saved", "sent", "completed"].contains(&first) || s.starts_with("all set") || s.starts_with("all done") {
         return false;
     }
-    let refuses = ["can't", "cannot", "can not", "unable", "won't", "not able", "isn't possible", "not possible", "don't have access"]
-        .iter()
-        .any(|p| s.contains(p));
-    if refuses {
-        return false;
-    }
+    // Each clause on its own: a refusal speaks only for its clause ("I can't
+    // open that right now" isn't a promise), but another clause can still
+    // promise ("I didn't type it, gonna run it now"), and so can a plain
+    // promise after the refusal in the same clause ("I couldn't find it so
+    // let me scroll down").
+    const REFUSES: &[&str] = &["can't", "cannot", "can not", "unable", "won't", "not able", "isn't possible", "not possible", "don't have access", "couldn't", "could not", "didn't", "did not", "wasn't"];
+    const STRONG: &[&str] = &["let me", "i'll", "i will", "i'm going to", "gonna", "finna", "about to", "imma", "i'ma"];
+    let s = s.replace("let me know", "");
+    let s = s
+        .split(['.', '!', '?', ',', ';', '\u{2014}', '\u{2013}'])
+        .filter_map(|c| match REFUSES.iter().filter_map(|p| c.rfind(p).map(|i| i + p.len())).max() {
+            None => Some(c.to_string()),
+            Some(end) => STRONG.iter().any(|p| c[end..].contains(p)).then(|| c[end..].to_string()),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
     const DOING: &[&str] = &[
-        "let me", "i'll", "i will", "i'm going to", "going to", "on it", "getting you", "get you", "bringing up", "pulling up",
+        "let me", "i'll", "i will", "i'm going to", "on it", "getting you", "get you", "bringing up", "pulling up",
         "wait for", "waiting for", "still loading", "finish loading", "here we go", "one sec", "hang on", "hold on",
-        "right now", "right away", "i got you", "i gotchu", "gotchu",
+        "right now", "right away", "i got you", "i gotchu", "gotchu", "imma", "i'ma", "fixing to",
     ];
     if DOING.iter().any(|p| s.contains(p)) {
+        return true;
+    }
+    let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    // "Gonna", "about to", "going to": Izuki's own intent — not news about
+    // something else ("it's gonna rain", "your battery is about to die").
+    let news = |i: usize| i > 0 && ["it", "s", "is", "are", "was", "were", "that", "thats", "they", "re", "battery", "pc", "windows", "computer", "laptop"].contains(&words[i - 1]);
+    const LOOSE: &[&[&str]] = &[&["gonna"], &["finna"], &["about", "to"], &["bout", "to"], &["going", "to"]];
+    if (0..words.len()).any(|i| !news(i) && LOOSE.iter().any(|p| words[i..].starts_with(p))) {
         return true;
     }
     // "Opening…", "Clicking the first link now", "Signing you in".
@@ -1232,14 +1265,15 @@ fn promises_action(summary: &str) -> bool {
         "opening", "clicking", "signing", "logging", "typing", "searching", "launching", "starting", "scrolling", "selecting",
         "picking", "heading", "switching", "loading", "closing", "playing", "pressing", "tapping", "filling", "entering",
         "navigating", "going", "checking", "finding", "moving", "dragging", "saving", "sending", "pasting", "copying",
-        "hitting", "smashing", "punching", "choosing", "accepting", "confirming", "continuing", "dismissing",
+        "hitting", "smashing", "punching", "choosing", "accepting", "confirming", "continuing", "dismissing", "running", "clearing",
+        "cleaning", "deleting", "removing", "emptying", "freeing", "installing", "downloading", "fixing", "setting", "changing",
+        "updating", "quantizing", "aligning", "tuning",
     ];
     // The first dozen words: a chatty opener ("Say less, I got you fam —")
-    // mustn't hide the promise behind it.
-    s.split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .take(12)
-        .any(|w| VERBS.contains(&w))
+    // mustn't hide the promise behind it. Not a state ("your PC is running
+    // Windows 11", "Windows was updating").
+    let state = |i: usize| i > 0 && ["is", "are", "was", "were", "been", "be", "keeps", "keep", "s", "re"].contains(&words[i - 1]);
+    words.iter().take(12).enumerate().any(|(i, w)| VERBS.contains(w) && !state(i))
 }
 
 /// Empty rounds in a row (no step, not done) allowed while a task is waiting
@@ -2056,6 +2090,14 @@ pub fn submit_voice_command_in(app: &AppHandle, store: &Arc<Store>, prompt: Stri
         remember_task(&prompt, &said);
         return VisionPlan { summary: said, provider: "tv".into(), ..Default::default() };
     }
+    // FL Studio: connecting it is Izuki's own setup, and FL's jobs need that
+    // link — never worked out by clicking through FL's menus (that only ever
+    // reached FL's MIDI list, empty without Izuki's cable).
+    let resumes = (is_keep_going(&prompt) || is_yes(&prompt)).then(|| UNFINISHED.lock().as_ref().map(|(t, _)| t.clone())).flatten();
+    if let Some(said) = crate::flstudio::screen_guard(&prompt, resumes.as_deref()) {
+        remember_task(&prompt, &said);
+        return VisionPlan { summary: said, provider: "fl".into(), ..Default::default() };
+    }
     let asked = with_conversation(&with_what_came_before(&prompt), &prompt, recent);
     let plan = submit_task(app, store, asked, Vec::new(), None, None);
     remember_task(&prompt, &plan.summary);
@@ -2630,6 +2672,8 @@ fn submit_task(
     let mut waited_on_goal = false;
     // Rounds in a row that did nothing ("let me wait for it to load").
     let mut idle_rounds = 0u32;
+    // A step held back and nothing done since: the last word must say so.
+    let mut held_back: Option<String> = None;
     let mut all_steps: Vec<ActionStep> = Vec::new();
     let mut last_plan: Option<VisionPlan> = None;
     // What was last said while working, so it isn't said again.
@@ -2950,6 +2994,7 @@ fn submit_task(
         let held = match guard_steps(&mut steps, &prompt, teaching_now, &uia::front_app()) {
             Some(why) => {
                 eprintln!("[agent] held back: {why}");
+                held_back = Some(why.clone());
                 told = Some(why);
                 true
             }
@@ -3175,13 +3220,20 @@ fn submit_task(
             crate::lessons::note(&uia::foreground_app(), "pages here can take a long time to be ready — wait for them to finish loading before acting");
             set_unfinished((prompt.clone(), done_so_far.clone()));
             let mut plan = plan;
-            plan.summary = "It's still not ready after a good while, so I'll pause here. Say \"keep going\" and I'll pick it up, or tell me what to click.".into();
+            plan.summary = if let Some(why) = held_back.as_deref() {
+                plainly(why)
+            } else if wait > 0 {
+                "It's still not ready after a good while, so I'll pause here. Say \"keep going\" and I'll pick it up, or tell me what to click.".into()
+            } else {
+                "I kept meaning to do it but couldn't find a way on this screen, so I've stopped here rather than keep promising. Tell me what to click, or do that part yourself.".into()
+            };
             plan.mood = Some("sympathetic".into());
             last_plan = Some(plan);
             break;
         }
         if !steps.is_empty() {
             idle_rounds = 0;
+            held_back = None;
         }
         if round == 0 && steps.is_empty() && !wants_action {
             // A question, or nothing to do: answered in the summary.
@@ -3389,6 +3441,17 @@ fn submit_task(
     }
 
     let mut plan = last_plan.unwrap_or_default();
+    // A step held back and nothing done since: an empty last word, a promise
+    // or a claim of done is replaced by what wasn't done (kept through
+    // finalizing below, so no generic line replaces it).
+    let mut honest = None;
+    if let Some(why) = held_back.as_deref() {
+        if plan.summary.trim().is_empty() || promises_action(&plan.summary) || plan.done {
+            eprintln!("[agent] last word after a held-back step — saying what wasn't done instead");
+            plan.summary = plainly(why);
+            honest = Some(plan.summary.clone());
+        }
+    }
     if settings.autosave_flows && completed && alive() && !all_steps.is_empty() && !prompt.starts_with("Explain this video frame on my screen.") {
         let thumbnail = frame.downscaled(360).to_jpeg_data_url(58).ok();
         let app_name = uia::foreground_app();
@@ -3430,6 +3493,9 @@ fn submit_task(
     let list_finished = open.is_empty();
     let said = plan.summary.clone();
     finalize_execution(&mut plan, completed && alive() && list_finished);
+    if let Some(h) = honest {
+        plan.summary = h;
+    }
     if completed && alive() && !list_finished {
         plan.outcome = crate::model::TaskOutcome::Partial;
         let base = if said.trim().is_empty() || said.trim() == "Done." { "I did part of it.".to_string() } else { said.trim_end().to_string() };
@@ -4448,5 +4514,40 @@ mod speed_tests {
         assert!(same_goal(&goal_words("Clicking the first link on the left now."), &goal_words("Clicking that first link for you now.")));
         assert!(!same_goal(&goal_words("Opening Blackboard now."), &goal_words("Typing your password into the box.")));
         assert!(!same_goal(&goal_words("Searching for flights to Lagos."), &goal_words("Opening the Settings app.")));
+    }
+}
+
+#[cfg(test)]
+mod honesty_tests {
+    use super::{plainly, promises_action};
+
+    #[test]
+    fn promises_in_any_words_are_promises() {
+        // The reply that was spoken instead of an action.
+        assert!(promises_action("Alright, since you said yes, I'm finna run the Disk Cleanup utility to clear out those safe temporary files for you"));
+        assert!(promises_action("Bet, gonna clean that up for you"));
+        assert!(promises_action("I'm about to quantize those 808s"));
+        assert!(!promises_action("I couldn't run that — the terminal wasn't open"), "a refusal");
+        assert!(!promises_action("Done — cleared 1.8 GB of temp files"));
+        // A refusal decides its own clause only.
+        assert!(!promises_action("I can't do that right now"));
+        assert!(!promises_action("I can\u{2019}t open that one"), "curly apostrophe");
+        assert!(!promises_action("I can't open that, sorry. Let me know if you need anything else"));
+        assert!(promises_action("I didn't type the command, gonna run it now"));
+        assert!(promises_action("That didn't work. Let me try the Start menu instead"));
+        assert!(promises_action("I couldn't find it so let me scroll down"));
+        assert!(!promises_action("I can't do that right away"));
+        assert!(promises_action("Let me wait for it — the page wasn't ready"));
+        assert!(promises_action("I can't, but I'll try the other button"));
+        // News, not a promise.
+        assert!(!promises_action("Your PC is running Windows 11, version 24H2"));
+        assert!(!promises_action("It's gonna rain later today"));
+        assert!(!promises_action("Your battery is about to die — plug in soon"));
+        assert!(!promises_action("Windows was updating overnight, so it restarted"));
+        assert!(promises_action("I'm running Disk Cleanup now"));
+        // What a held-back step sounds like to the person.
+        let said = plainly("Typing a command into a terminal wasn't done: commands are only run when the user spells out the exact command.");
+        assert!(said.starts_with("I didn't type that command") && !said.contains("finna"));
+        assert!(plainly("Pressing “Submit” wasn't done: it's final.").contains("“Submit”"));
     }
 }
