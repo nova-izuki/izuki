@@ -637,7 +637,11 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     }
     // Precision must select an element from the parsed screen. Snapping a
     // guessed answer onto a nearby radio button only verifies the guess.
-    if precision && !dry_run && (clicking || targeted_type) && step.grounding.is_none() {
+    // (A label read on the screen itself — FL Studio's own buttons, which
+    // Windows can't list — is a real target too, for a click. Typing still
+    // needs a real field: a label isn't the box beside it.)
+    let read_here = clicking && crate::sharpeye::read_on_screen(step.x, step.y);
+    if precision && !dry_run && (clicking || targeted_type) && step.grounding.is_none() && !read_here {
         return Err(anyhow!("target_changed: Precision needs a numbered target from the current screen parser; choose its target ID, not guessed coordinates"));
     }
     if !dry_run { uia::invalidate_controls(); }
@@ -679,7 +683,7 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     // really there and can be pressed. A few milliseconds when all is well.
     let verified_name = step.snapped_to.as_deref().or(snapped.as_deref());
     if clicking && !dry_run && !step.hover_first && step.grounding.is_none() {
-        if verified_name.is_none() && precision {
+        if verified_name.is_none() && precision && !read_here {
             return Err(anyhow!("target_changed: Precision mode could not identify a real control at this point; take another look or use Mouse mode for a canvas-only target"));
         }
         if let Some(listed) = verified_name {

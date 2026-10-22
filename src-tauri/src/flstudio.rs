@@ -805,6 +805,51 @@ fn is_question(s: &str) -> bool {
     ["is", "are", "was", "were", "what", "what's", "whats", "why", "how", "does", "do", "did", "which", "where", "when", "who"].contains(&first)
 }
 
+/// When Izuki last wrote the “Izuki align” fix, and for which part: "do it"
+/// right after runs it.
+static ALIGN_READY: Mutex<Option<(Instant, String)>> = Mutex::new(None);
+
+/// "Do it", "fix it", "yes", "line them up" soon after Izuki wrote the align
+/// fix — or "run the Izuki align script" any time: the clicks that run it in
+/// the Piano roll (FL draws its own menus; Izuki reads their labels). `None`
+/// for anything else.
+pub fn apply_follow_up(said: &str) -> Option<String> {
+    let s = said.to_lowercase();
+    // "Don't run Izuki align", "never mind": not a go-ahead.
+    let refused = crate::offers::is_no(&s) || ["don't", "dont", "do not", "never", "stop", "cancel", "never mind", "nevermind"].iter().any(|w| s.contains(w));
+    if refused {
+        return None;
+    }
+    let named = s.contains("izuki align") && !is_question(&s);
+    let ready = ALIGN_READY.lock().clone().filter(|(t, _)| t.elapsed() < Duration::from_secs(15 * 60));
+    let go = named || (ready.is_some() && (crate::offers::is_yes(&s) || pushes_to_do_it(&s) || applies_fix(&s)));
+    if !go || !fl_running() {
+        return None;
+    }
+    *ALIGN_READY.lock() = None;
+    let part = ready.map(|(_, n)| n).unwrap_or_else(|| "your notes".into());
+    Some(format!(
+        "In FL Studio, the Piano roll should be open with “{part}”. First check its title shows “{part}” — if it doesn't, stop and say so. Then run its Piano roll script “Izuki align”: open the Piano roll's menu (the small arrow at the top-left corner of the Piano roll), then Tools, then Scripting, then click “Izuki align”; when its window opens, click Accept. Only those clicks — change nothing else in FL."
+    ))
+}
+
+/// A short "fix it", "apply it", "line them up", "run it" — made only of
+/// those words ("fix the hats" is another job).
+fn applies_fix(s: &str) -> bool {
+    let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    const GO: &[&str] = &["fix", "apply", "run", "do", "line", "go"];
+    const REST: &[&str] = &[
+        "it", "that", "this", "them", "those", "the", "my", "808", "notes", "timing", "now", "please", "pls", "bro", "yes", "yeah", "ok", "okay", "just",
+        "for", "me", "up", "ahead", "fix", "then", "already",
+    ];
+    !words.is_empty()
+        && words.len() <= 8
+        && !s.contains('?')
+        && !crate::offers::is_no(s)
+        && words.iter().any(|w| GO.contains(w))
+        && words.iter().all(|w| GO.contains(w) || REST.contains(w))
+}
+
 /// Izuki's words were about connecting FL ("I'm not connected to it…",
 /// "…Options → MIDI settings…", "say “set up FL Studio”").
 fn talked_about_link(said: &str) -> bool {
@@ -1023,6 +1068,10 @@ fn wants_beat(s: &str) -> bool {
 /// which goes on to Izuki's screen control (it works FL like a person).
 pub fn handle(said: &str) -> Result<Option<String>> {
     let s = said.to_lowercase();
+    // Running "Izuki align" in the Piano roll: clicks, done by the screen helper.
+    if s.contains("izuki align") && s.contains("piano roll") {
+        return Ok(None);
+    }
     let words = s.trim().trim_end_matches(['.', '!']);
     let opening = ["open fl", "launch fl", "start fl", "open up fl"].iter().any(|w| words.starts_with(w));
     let transport = ["stop", "pause", "play", "start", "tempo", "bpm", "faster", "slower", "metronome"].iter().any(|w| words.contains(w));
@@ -2085,7 +2134,11 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                 std::fs::create_dir_all(&dir)?;
                 std::fs::write(dir.join("Izuki align.pyscript"), align_script(&name, &beat, loop_beats, lag, if song { &hits } else { &[] }))?;
                 one(json!(["select", ch]))?;
-                let _ = one(json!(["show", "pianoroll"]));
+                // "Do it" next runs it in the Piano roll (apply_follow_up) — only
+                // once the Piano roll really shows this part.
+                if one(json!(["show", "pianoroll"])).is_ok() {
+                    *ALIGN_READY.lock() = Some((Instant::now(), name.to_string()));
+                }
                 let lag_ms = lag * 60_000.0 / bpm;
                 let sound = if lag_ms.abs() >= 8.0 {
                     format!(
@@ -2109,7 +2162,7 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                     format!("Against it, your {name} is off in {} place{}: {}.{sound}", review.len(), plural(review.len()), review.join(", "))
                 };
                 Ok(format!(
-                    "{intro} {heard_808}{tuning} Your notes and rhythm stay as you wrote them. I've opened “{name}” in the Piano roll — to fix the timing: Piano roll menu → Tools → Scripting → “Izuki align”, then Accept. Notes right by a hit of {with} move onto it exactly as it plays and the 16ths between get the same feel; triplets, rolls and notes you placed a 16th or a 32nd away stay put, and so do lengths and slides. Ctrl+Z takes it back."
+                    "{intro} {heard_808}{tuning} Your notes and rhythm stay as you wrote them. I've opened “{name}” in the Piano roll with the fix ready — say “do it” and I'll run it there for you (or yourself: Piano roll menu → Tools → Scripting → “Izuki align”, then Accept). Notes right by a hit of {with} move onto it exactly as it plays and the 16ths between get the same feel; triplets, rolls and notes you placed a 16th or a 32nd away stay put, and so do lengths and slides. Ctrl+Z takes it back."
                 ))
             })();
             if song_was == Some(false) {
@@ -2427,6 +2480,14 @@ mod tests {
         assert!(!setup_follow_up("set an alarm up") && !setup_follow_up("install spotify"), "not the link");
         assert!(!setup_follow_up("set it up for my meeting") && !setup_follow_up("connect it to my wifi"), "something else");
         assert!(setup_follow_up("yeah set it up for me"));
+        // After the 808 fix is written: "do it" runs it; another job doesn't.
+        for go in ["fix it", "do it", "apply it", "line them up", "fix my 808", "run it bro", "go ahead"] {
+            assert!(applies_fix(go), "{go}");
+        }
+        for other in ["fix the hats", "make it louder", "why is it off?", "no", "open youtube"] {
+            assert!(!applies_fix(other), "{other}");
+        }
+        assert_eq!(apply_follow_up("don't run izuki align"), None);
         // After Izuki talked about connecting FL: a short push is the setup.
         assert!(talked_about_link(NOT_LINKED) && talked_about_link("Set up. Now in FL Studio (restart it first if it's open): Options → MIDI settings."));
         assert!(!talked_about_link("Tempo's 140 BPM."));

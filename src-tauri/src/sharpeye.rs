@@ -25,6 +25,23 @@ const MAX_LOOKS: usize = 2;
 /// OpenRouter key changes.
 static TARS_REFUSED: parking_lot::Mutex<Option<(String, Option<std::time::Instant>)>> = parking_lot::Mutex::new(None);
 
+/// Spots where a click's own label was read on the screen (its words, by
+/// OCR) and the click moved onto it — for a minute. Not a guess: Precision
+/// lets these through in apps whose buttons Windows can't list (FL Studio
+/// draws its own, so every click there used to be refused).
+static READ_AT: parking_lot::Mutex<Vec<(i32, i32, std::time::Instant)>> = parking_lot::Mutex::new(Vec::new());
+
+/// Was (x, y) a click's label, read on the screen in the last minute?
+pub fn read_on_screen(x: i32, y: i32) -> bool {
+    READ_AT.lock().iter().any(|&(px, py, at)| at.elapsed() < Duration::from_secs(60) && (px - x).abs() <= 4 && (py - y).abs() <= 4)
+}
+
+fn mark_read(x: i32, y: i32) {
+    let mut read = READ_AT.lock();
+    read.retain(|(_, _, at)| at.elapsed() < Duration::from_secs(60));
+    read.push((x, y, std::time::Instant::now()));
+}
+
 fn openrouter_key() -> String {
     crate::state::try_store()
         .and_then(|s| s.settings().provider(ProviderId::Openrouter).map(|c| c.api_key.trim().to_string()))
@@ -72,6 +89,7 @@ pub fn refine(steps: &mut Vec<ActionStep>, req: &VisionRequest) {
                 eprintln!("[sharp-eye] \"{what}\": no pointer answer — the label is on screen, moved to {x},{y}");
                 step.x = x;
                 step.y = y;
+                mark_read(x, y);
             }
             continue;
         };
@@ -148,6 +166,7 @@ fn pin(step: &mut ActionStep, req: &VisionRequest, what: &str, x: i32, y: i32) -
                         eprintln!("[sharp-eye] \"{what}\": the label is there on screen — trusting the pointer");
                         step.x = tx;
                         step.y = ty;
+                        mark_read(tx, ty);
                         true
                     }
                     None => false,
@@ -182,6 +201,7 @@ fn pin(step: &mut ActionStep, req: &VisionRequest, what: &str, x: i32, y: i32) -
                 eprintln!("[sharp-eye] \"{what}\": no control here, but the label is on screen — clicking it");
                 step.x = tx;
                 step.y = ty;
+                mark_read(tx, ty);
                 true
             }
             None => false,

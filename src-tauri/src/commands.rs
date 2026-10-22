@@ -350,6 +350,12 @@ pub fn open_log_folder() -> R<()> {
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     // "Yes" to something Izuki just offered: that, as if asked for (offers.rs).
     let said = crate::offers::answer(&said).unwrap_or(said);
+    // "Do it" right after Izuki wrote the 808 fix: Izuki runs it in FL's Piano
+    // roll itself (flstudio.rs) instead of leaving the menu clicks to you.
+    if let Some(task) = crate::flstudio::apply_follow_up(&said) {
+        let app2 = app.clone();
+        return blocking(move || brain::submit_voice_command(&app2, &state::store(), task).summary).await.ok();
+    }
     crate::tv::heard(&said);
     // "What's due this week?", "connect my Blackboard" (campus.rs).
     if let Some(ask) = crate::campus::parse(&said) {
