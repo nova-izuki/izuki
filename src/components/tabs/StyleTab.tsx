@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Clock, Gamepad2, Gem, Image as ImageIcon, Layers, Moon, Palette, RefreshCw, RotateCcw, Shuffle, Sparkles, Sun, Undo2, Wand2, Wrench, Zap } from "lucide-react";
-import { api, type LookAuto, type LookPreset, type LooksStatus, type WindowsTweak } from "../../lib/ipc";
+import { Clock, Gamepad2, Gem, Heart, Image as ImageIcon, Layers, MapPin, Moon, Palette, RefreshCw, RotateCcw, Shuffle, Sparkles, Sun, Undo2, Wand2, Wrench, Zap } from "lucide-react";
+import { api, type LookAuto, type LookPhoto, type LookPreset, type LooksStatus, type WindowsTweak } from "../../lib/ipc";
 import { onStyleSection, takeStyleSection, type StyleSection } from "../../lib/styleNav";
 import { cx } from "../ui";
 
 /**
  * Style: how Windows looks, in one place — a big live preview of your
  * desktop, then Looks (one tap, painted wallpapers), Tweaks (Windhawk-style
- * switches as tiles) and Auto (day & night, shuffle). Laid out in tiles so
+ * switches as tiles) and Auto (daily photo, day & night, shuffle). Laid out in tiles so
  * nothing needs much scrolling. Movement only on hover or while applying,
  * so it costs nothing when you're not looking.
  */
@@ -43,12 +43,46 @@ function useBigPicture(id: string | null): string | null {
   return url;
 }
 
+/** Big pictures of Daily photo's photos, by file. */
+const bigPhotos = new Map<string, string>();
+
+function useBigPhoto(file: string | null): string | null {
+  const [url, setUrl] = useState<string | null>(file ? bigPhotos.get(file) ?? null : null);
+  useEffect(() => {
+    if (!file) return setUrl(null);
+    const have = bigPhotos.get(file);
+    if (have) return setUrl(have);
+    setUrl(null);
+    let alive = true;
+    void api
+      .lookPhotoPreview(file)
+      .then((u) => {
+        if (!u) return;
+        bigPhotos.set(file, u);
+        if (alive) setUrl(u);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [file]);
+  return url;
+}
+
+/** "Sporty summits", else the place, else where it's from. */
+function photoName(p: LookPhoto): string {
+  return p.title && p.title !== p.source ? p.title : p.place || p.source;
+}
+
 /** The hero: your desktop in a look — wallpaper, a window, the taskbar. */
-function Hero({ preset, label, sweep, accent, dark, bars, titles }: { preset: LookPreset | null; label: string; sweep: number; accent: string; dark: boolean; bars: boolean; titles: boolean }) {
-  const url = useBigPicture(preset?.id ?? null);
+function Hero({ preset, photo, label, sweep, accent, dark, bars, titles }: { preset: LookPreset | null; photo: LookPhoto | null; label: string; sweep: number; accent: string; dark: boolean; bars: boolean; titles: boolean }) {
+  const url = useBigPicture(photo ? null : preset?.id ?? null);
+  const photoUrl = useBigPhoto(photo?.file ?? null);
   // Two layers crossfade: the new picture fades in over the old one.
   const [{ layers, front }, setFade] = useState<{ layers: [string | null, string | null]; front: number }>({ layers: [null, null], front: 0 });
-  const bg = url ? `url(${url}) center / cover` : preset?.preview ?? "linear-gradient(135deg,#1e293b,#0f172a)";
+  // A photo: the big picture, its small one while that loads.
+  const shot = photoUrl ?? photo?.thumb;
+  const bg = photo && shot ? `url(${shot}) center / cover` : url ? `url(${url}) center / cover` : preset?.preview ?? "linear-gradient(135deg,#1e293b,#0f172a)";
   useEffect(() => {
     setFade((cur) => {
       if (cur.layers[cur.front] === bg) return cur;
@@ -70,8 +104,8 @@ function Hero({ preset, label, sweep, accent, dark, bars, titles }: { preset: Lo
           style={{ background: l ?? undefined, animationName: i === front ? (front ? "izk-hero-in-b" : "izk-hero-in-a") : "none" }}
         />
       ))}
-      {/* Stars that twinkle while you hover (dark looks). */}
-      {dark &&
+      {/* Stars that twinkle while you hover (dark painted looks). */}
+      {dark && !photo &&
         [12, 27, 44, 61, 78, 90].map((x, i) => (
           <span key={i} className="izk-twinkle absolute h-[2px] w-[2px] rounded-full bg-white" style={{ left: `${x}%`, top: `${8 + ((i * 17) % 40)}%`, animationDelay: `${i * 0.37}s` }} />
         ))}
@@ -111,6 +145,17 @@ function Hero({ preset, label, sweep, accent, dark, bars, titles }: { preset: Lo
           <span key={i} className="h-[46%] w-[2.6%] rounded-[4px] transition-colors duration-500" style={{ background: i === 0 ? accent : dark || bars ? "rgba(255,255,255,0.55)" : "rgba(15,23,42,0.38)" }} />
         ))}
       </div>
+      {/* About this picture, like Windows Spotlight's: where it is, and the story on hover. */}
+      {photo && (photo.place || photo.about || photo.title) && (
+        <div className="group absolute bottom-[14%] right-[3%] max-w-[46%] rounded-[12px] bg-black/50 px-2.5 py-1.5 text-white shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur-md">
+          <div className="flex items-center gap-1.5 text-[11.5px] font-semibold leading-tight">
+            <MapPin size={12} className="shrink-0 opacity-80" />
+            <span className="truncate">{photo.place || photoName(photo)}</span>
+          </div>
+          {photo.about && <p className="mt-1 hidden text-[10.5px] leading-snug text-white/80 group-hover:line-clamp-4 group-hover:block">{photo.about}</p>}
+          {photo.credit && <p className="mt-0.5 truncate text-[9.5px] text-white/60">© {photo.credit}</p>}
+        </div>
+      )}
       {/* The sweep of light when a look goes on. */}
       {sweep > 0 && <div key={sweep} className="izk-hero-sweep pointer-events-none absolute inset-0" />}
       <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full border border-white/15 bg-black/45 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">
@@ -195,14 +240,14 @@ export function StyleTab() {
     void api.tweaksList().then(setTweaks).catch((e) => setError(friendly(e)));
   }, []);
 
-  const run = <T,>(key: string, what: () => Promise<T>, then: (v: T) => void, said: string, failed?: () => void) => {
+  const run = <T,>(key: string, what: () => Promise<T>, then: (v: T) => void, said: string | ((v: T) => string), failed?: () => void) => {
     setBusy(key);
     setError("");
     setDone("");
     void what()
       .then((v) => {
         then(v);
-        setDone(said);
+        setDone(typeof said === "function" ? said(v) : said);
       })
       .catch((e) => {
         setError(friendly(e));
@@ -219,7 +264,9 @@ export function StyleTab() {
   const heroDark = hover && shown ? shown.dark : s?.dark ?? true;
   const heroBars = hover && shown ? shown.bars : s?.bars ?? false;
   const heroTitles = hover && shown ? shown.titles : s?.titles ?? false;
-  const heroLabel = hover && shown ? `Preview: ${shown.name} — tap to use it` : current ? `Your look: ${current.name}` : "Your own colours";
+  const photoNow = s?.current === "photo" && s.photo ? s.photo : null;
+  const heroPhoto = hover ? null : photoNow;
+  const heroLabel = hover && shown ? `Preview: ${shown.name} — tap to use it` : current ? `Your look: ${current.name}` : photoNow ? `Your look: ${photoName(photoNow)}` : "Your own colours";
 
   const counts = useMemo(() => {
     const c: Record<string, [number, number]> = {};
@@ -250,15 +297,44 @@ export function StyleTab() {
     if (busy) return;
     const next = { ...auto, ...patch };
     setS((cur) => (cur ? { ...cur, auto: next } : cur));
-    run("auto", () => api.lookAuto(next), setLooks, next.mode === "off" ? "Auto is off." : next.mode === "daynight" ? "Day & night is on." : next.mode === "photo" ? "Daily photo is on — a new photo every day, colours to match." : "Shuffle is on.", () => {
+    run("auto", () => api.lookAuto(next), setLooks, next.mode === "off" ? "Auto is off." : next.mode === "daynight" ? "Day & night is on." : next.mode === "photo" ? "Daily photo is on — fresh photos you haven't seen, colours to match." : "Shuffle is on.", () => {
       // Show what's really saved, not what failed to save.
       void api.looksStatus().then(setLooks).catch(() => setS((cur) => (cur ? { ...cur, auto } : cur)));
     });
   };
 
+  // One tap: real photos with matching colours, and a clean taskbar.
+  const makePremium = () => {
+    if (!auto || busy) return;
+    const next: LookAuto = { ...auto, mode: "photo" };
+    run(
+      "premium",
+      async () => {
+        const looks = await api.lookAuto(next);
+        // The clean taskbar is a bonus: the photo counts even if a tweak doesn't.
+        const tidy = await api.tweakPack("premium").catch(() => null);
+        return { looks, tidy };
+      },
+      ({ looks, tidy }) => {
+        setLooks(looks);
+        if (tidy?.length) {
+          setTweaks(tidy);
+          // Some of the clean taskbar shows only after Explorer restarts.
+          if (tidy.some((t) => t.on && t.restart)) setNeedsRestart(true);
+        }
+        setSweep((n) => n + 1);
+        setSection("auto");
+      },
+      // Only what really happened.
+      ({ looks, tidy }) =>
+        `${looks?.photo ? `Premium is on: ${photoName(looks.photo)}, with colours to match` : "Real photos are on — the first one is still on its way"}${tidy?.length ? ", and a clean taskbar." : "."}`
+    );
+  };
+  const photos = s?.history ?? [];
+
   return (
     <div className="flex flex-col gap-3">
-      <Hero preset={shown} label={heroLabel} sweep={sweep} accent={heroAccent} dark={heroDark} bars={heroBars} titles={heroTitles} />
+      <Hero preset={shown} photo={heroPhoto} label={heroLabel} sweep={sweep} accent={heroAccent} dark={heroDark} bars={heroBars} titles={heroTitles} />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex rounded-full border border-white/10 bg-white/5 p-[3px]">
@@ -286,9 +362,26 @@ export function StyleTab() {
           ))}
         </div>
         <span className="ml-auto text-[11px] text-izk-muted">
-          {busy ? "Working…" : error ? <span className="text-izk-danger">{error}</span> : done ? `✓ ${done}` : "Only your own Windows settings — nothing injected, all reversible."}
+          {busy ? (busy === "premium" || busy === "photo" || (busy === "auto" && auto?.mode === "photo") ? "Finding a fresh 4K photo…" : "Working…") : error ? <span className="text-izk-danger">{error}</span> : done ? `✓ ${done}` : "Only your own Windows settings — nothing injected, all reversible."}
         </span>
       </div>
+
+      {auto && auto.mode !== "photo" && (
+        <div className="izk-card izk-rise flex flex-wrap items-center gap-3 p-3" style={{ background: "linear-gradient(115deg, rgba(124,92,255,0.16), rgba(78,205,196,0.10) 60%, rgba(255,255,255,0.03))" }}>
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-white/12 text-izk-ink">
+            <Gem size={17} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] font-semibold text-izk-ink">
+              {auto.mode === "shuffle" ? "Your wallpaper is on Shuffle: Izuki's painted looks" : auto.mode === "daynight" ? "Your wallpaper is on Day & night: Izuki's painted looks" : "Make your PC feel premium"}
+            </span>
+            <span className="block text-[11px] leading-snug text-izk-muted">Real 4K photos from Windows Spotlight and Bing, a new one you haven't seen each time, with colours matched to it and a clean taskbar. Undo puts yours back.</span>
+          </span>
+          <button type="button" disabled={busy !== null} onClick={makePremium} className="izk-btn-primary izk-no-drag flex h-[32px] items-center gap-1.5 px-3.5 text-[12px] disabled:opacity-60">
+            <Sparkles size={13} /> {busy === "premium" ? "Finding a photo…" : "Make my PC premium"}
+          </button>
+        </div>
+      )}
 
       {section === "looks" && (
         <div id="style-looks" className="izk-card izk-grain izk-rise flex flex-col gap-3 p-3">
@@ -469,7 +562,7 @@ export function StyleTab() {
             {(
               [
                 ["off", "Off", "Your look stays as it is.", <Zap key="z" size={16} />],
-                ["photo", "Daily photo", "A real new photo every day, like Windows Spotlight — colours matched to it.", <ImageIcon key="i" size={16} />],
+                ["photo", "Daily photo", "Real 4K photos like Windows Spotlight — never one you've seen, colours matched.", <ImageIcon key="i" size={16} />],
                 ["daynight", "Day & night", "A light look by day, a dark one at night.", <Sun key="s" size={16} />],
                 ["shuffle", "Shuffle", "A fresh look every so often.", <Shuffle key="h" size={16} />],
               ] as const
@@ -488,51 +581,133 @@ export function StyleTab() {
           </div>
 
           {auto.mode === "photo" && (
-            <div className="flex flex-col gap-2.5">
-              {(
-                <div className="flex items-center gap-2.5 rounded-[14px] border border-white/10 bg-white/[0.03] p-2.5">
-                  <span className="h-[38px] w-[38px] shrink-0 rounded-[10px] border border-white/15" style={{ background: s?.photo?.accent ?? "rgba(255,255,255,0.06)" }} title={s?.photo ? `Accent ${s.photo.accent}` : undefined} />
-                  {s?.photo ? (
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12px] font-semibold text-izk-ink">{s.photo.title && s.photo.title !== s.photo.source ? s.photo.title : `Today's photo`}</span>
-                      <span className="block truncate text-[10.5px] text-izk-muted" title={s.photo.credit}>
-                        {s.photo.source}
-                        {s.photo.credit ? ` · ${s.photo.credit}` : ""} · {s.photo.dark ? "dark" : "light"} mode
-                      </span>
-                    </span>
-                  ) : (
-                    <span className="min-w-0 flex-1 text-[11px] leading-snug text-izk-muted">Today's photo hasn't come through yet (maybe offline) — tap New photo now, or it tries again by itself.</span>
-                  )}
-                  <button
-                    type="button"
-                    disabled={busy !== null}
-                    onClick={() => run("photo", () => api.lookPhotoNow(true), setLooks, "A new photo, with colours to match.")}
-                    className="izk-no-drag flex h-[30px] shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/6 px-3 text-[11px] font-semibold text-izk-ink hover:bg-white/12 disabled:opacity-60"
-                  >
-                    <RefreshCw size={12} /> New photo now
-                  </button>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3 rounded-[14px] border border-white/10 bg-white/[0.03] p-2.5 sm:flex-row">
+                <div className="relative aspect-video w-full shrink-0 overflow-hidden rounded-[10px] bg-white/[0.06] sm:w-[200px]">
+                  {s?.photo?.thumb && <img src={s.photo.thumb} alt={s.photo.place || s.photo.title || "Today's photo"} className="h-full w-full object-cover" />}
+                  {s?.photo && <span className="absolute bottom-1.5 left-1.5 h-3 w-3 rounded-full border border-white/70" style={{ background: s.photo.accent }} title={`Accent ${s.photo.accent}`} />}
+                  {busy === "photo" && <div className="izk-hero-sweep absolute inset-0" />}
                 </div>
-              )}
+                {s?.photo ? (
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="text-[13px] font-semibold leading-tight text-izk-ink">{photoName(s.photo)}</span>
+                    {s.photo.place && s.photo.place !== photoName(s.photo) && (
+                      <span className="flex items-center gap-1 text-[11px] text-izk-ink/80">
+                        <MapPin size={11} className="shrink-0" />
+                        <span className="truncate">{s.photo.place}</span>
+                      </span>
+                    )}
+                    {s.photo.about && <p className="line-clamp-3 text-[11px] leading-snug text-izk-muted">{s.photo.about}</p>}
+                    <span className="truncate text-[10px] text-izk-muted" title={s.photo.credit}>
+                      {s.photo.source}
+                      {s.photo.credit ? ` · © ${s.photo.credit}` : ""} · {s.photo.dark ? "dark" : "light"} mode
+                    </span>
+                    <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        disabled={busy !== null}
+                        onClick={() => run("photo", () => api.lookPhotoNow(true), setLooks, "A new photo, with colours to match.")}
+                        className="izk-no-drag flex h-[30px] items-center gap-1.5 rounded-full border border-white/10 bg-white/6 px-3 text-[11px] font-semibold text-izk-ink hover:bg-white/12 disabled:opacity-60"
+                      >
+                        <RefreshCw size={12} /> New photo
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy !== null || !!s.photo.kept}
+                        onClick={() => run("keep", () => api.lookPhotoKeep(), setLooks, "Kept in Pictures → Izuki Wallpapers.")}
+                        className={cx("izk-no-drag flex h-[30px] items-center gap-1.5 rounded-full border px-3 text-[11px] font-semibold disabled:cursor-default", s.photo.kept ? "border-rose-300/40 bg-rose-400/15 text-izk-ink" : "border-white/10 bg-white/6 text-izk-ink hover:bg-white/12 disabled:opacity-60")}
+                      >
+                        <Heart size={12} className={s.photo.kept ? "fill-rose-300 text-rose-300" : undefined} /> {s.photo.kept ? "Kept" : "Keep it"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
+                    <span className="text-[11.5px] leading-snug text-izk-muted">{busy === "auto" || busy === "photo" ? "Finding a fresh 4K photo…" : "The first photo hasn't come through yet (maybe offline). It tries again by itself, or tap New photo."}</span>
+                    <button
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={() => run("photo", () => api.lookPhotoNow(true), setLooks, "A new photo, with colours to match.")}
+                      className="izk-no-drag flex h-[30px] w-fit items-center gap-1.5 rounded-full border border-white/10 bg-white/6 px-3 text-[11px] font-semibold text-izk-ink hover:bg-white/12 disabled:opacity-60"
+                    >
+                      <RefreshCw size={12} /> New photo
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="mr-1 text-[12px] font-semibold text-izk-ink">Photos from</span>
+                <span className="mr-1 w-[110px] text-[12px] font-semibold text-izk-ink">New photo every</span>
                 {(
                   [
-                    ["both", "Bing & Spotlight"],
-                    ["bing", "Bing (4K, new daily)"],
-                    ["spotlight", "Windows Spotlight"],
+                    [30, "30 min"],
+                    [60, "hour"],
+                    [180, "3 hours"],
+                    [1440, "day"],
                   ] as const
-                ).map(([id, label]) => (
+                ).map(([min, label]) => (
                   <button
-                    key={id}
+                    key={min}
                     type="button"
                     disabled={busy !== null}
-                    onClick={() => setAuto({ source: id })}
-                    className={cx("izk-no-drag rounded-full border px-2.5 py-1 text-[11px]", auto.source === id ? "border-izk-teal/50 bg-izk-teal/15 text-izk-ink" : "border-white/10 text-izk-muted")}
+                    onClick={() => setAuto({ photo_every_min: min })}
+                    className={cx("izk-no-drag rounded-full border px-2.5 py-1 text-[11px]", (auto.photo_every_min ?? 1440) === min ? "border-izk-teal/50 bg-izk-teal/15 text-izk-ink" : "border-white/10 text-izk-muted hover:text-izk-ink")}
                   >
                     {label}
                   </button>
                 ))}
               </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 w-[110px] text-[12px] font-semibold text-izk-ink">Photos from</span>
+                {(
+                  [
+                    ["both", "Spotlight & Bing"],
+                    ["spotlight", "Windows Spotlight"],
+                    ["bing", "Bing"],
+                    ["favorites", `Your favourites${s?.favourites ? ` (${s.favourites})` : ""}`],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    disabled={busy !== null || (id === "favorites" && !s?.favourites)}
+                    title={id === "favorites" && !s?.favourites ? "Tap Keep it on a photo you love first" : undefined}
+                    onClick={() => setAuto({ source: id })}
+                    className={cx("izk-no-drag rounded-full border px-2.5 py-1 text-[11px] disabled:opacity-50", auto.source === id ? "border-izk-teal/50 bg-izk-teal/15 text-izk-ink" : "border-white/10 text-izk-muted hover:text-izk-ink")}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {photos.length > 1 && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[12px] font-semibold text-izk-ink">Recent photos</span>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {photos.map((p) => {
+                      const on = s?.photo?.file === p.file;
+                      return (
+                        <button
+                          key={p.file}
+                          type="button"
+                          title={[photoName(p), p.place].filter((x, i, all) => x && all.indexOf(x) === i).join(" · ")}
+                          disabled={busy !== null || on}
+                          onClick={() => run(`use-${p.file}`, () => api.lookPhotoUse(p.file), (n) => { setLooks(n); setSweep((x) => x + 1); }, `Back to ${photoName(p)}.`)}
+                          className={cx("izk-no-drag relative aspect-video w-[104px] shrink-0 overflow-hidden rounded-[9px] border-2 transition-transform duration-200 hover:-translate-y-[1px] disabled:cursor-default", on ? "border-white" : "border-transparent opacity-85 hover:opacity-100")}
+                        >
+                          {p.thumb ? <img src={p.thumb} alt="" className="h-full w-full object-cover" /> : <span className="block h-full w-full" style={{ background: p.accent }} />}
+                          {p.kept && (
+                            <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-black/55">
+                              <Heart size={9} className="fill-rose-300 text-rose-300" />
+                            </span>
+                          )}
+                          {busy === `use-${p.file}` && <div className="izk-hero-sweep absolute inset-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

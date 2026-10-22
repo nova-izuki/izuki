@@ -373,6 +373,10 @@ pub struct Status {
     pub auto: Auto,
     /// Daily photo: the picture showing now.
     pub photo: Option<Photo>,
+    /// Recent photos, newest first.
+    pub history: Vec<Photo>,
+    /// Photos kept in Pictures\Izuki Wallpapers.
+    pub favourites: usize,
 }
 
 /// A registry value exactly as it was: its type and bytes (None = it didn't exist).
@@ -407,6 +411,12 @@ struct Memory {
     /// Daily photo: the one showing.
     #[serde(default)]
     photo: Option<Photo>,
+    /// Photos already shown (never shown again while there are new ones).
+    #[serde(default)]
+    seen: Vec<String>,
+    /// The latest photos, newest first (for "use again").
+    #[serde(default)]
+    history: Vec<Photo>,
 }
 
 /// Daily photo: today's picture, where it came from, and the colours it set.
@@ -421,9 +431,23 @@ pub struct Photo {
     pub credit: String,
     pub accent: String,
     pub dark: bool,
-    /// "New photo now" pressed this many times today (the next one along).
+    /// Photos shown so far (taking turns between sources).
     #[serde(default)]
     pub turn: u32,
+    /// Where it is ("Mont Blanc massif, France").
+    #[serde(default)]
+    pub place: String,
+    /// The story behind it (Spotlight's "learn about this picture").
+    #[serde(default)]
+    pub about: String,
+    #[serde(default)]
+    pub id: String,
+    /// A small picture of it (a JPEG data URL).
+    #[serde(default)]
+    pub thumb: String,
+    /// Kept in Pictures\Izuki Wallpapers.
+    #[serde(default)]
+    pub kept: bool,
 }
 
 /// Looks that change by themselves.
@@ -433,9 +457,12 @@ pub struct Auto {
     /// new look every so often) or "photo" (a new photo every day, like
     /// Windows Spotlight, with colours to match).
     pub mode: String,
-    /// Daily photo's pictures: "both", "bing" or "spotlight".
+    /// Daily photo's pictures: "both", "bing", "spotlight" or "favorites".
     #[serde(default = "both_sources")]
     pub source: String,
+    /// Daily photo: minutes between photos (1440 = once a day).
+    #[serde(default = "a_day")]
+    pub photo_every_min: u32,
     pub day: String,
     pub night: String,
     /// "HH:MM", 24-hour.
@@ -465,12 +492,17 @@ impl Default for Auto {
             wallpaper: true,
             last: 0,
             source: both_sources(),
+            photo_every_min: a_day(),
         }
     }
 }
 
 fn both_sources() -> String {
     "both".into()
+}
+
+fn a_day() -> u32 {
+    1440
 }
 
 fn minutes(hhmm: &str) -> Option<u32> {
@@ -512,9 +544,10 @@ pub fn set_auto(mut a: Auto) -> Result<Status> {
     if !["off", "daynight", "shuffle", "photo"].contains(&a.mode.as_str()) {
         return Err(anyhow!("no auto mode called {}", a.mode));
     }
-    if !["both", "bing", "spotlight"].contains(&a.source.as_str()) {
+    if !["both", "bing", "spotlight", "favorites"].contains(&a.source.as_str()) {
         return Err(anyhow!("no photo source called {}", a.source));
     }
+    a.photo_every_min = a.photo_every_min.clamp(30, 7 * 24 * 60);
     for id in [&a.day, &a.night].into_iter().chain(a.pool.iter()) {
         if !PRESETS.iter().any(|p| p.id == id) {
             return Err(anyhow!("there's no look called {id}"));
@@ -524,10 +557,16 @@ pub fn set_auto(mut a: Auto) -> Result<Status> {
         return Err(anyhow!("times look like 07:00 or 19:30"));
     }
     a.every_min = a.every_min.clamp(5, 7 * 24 * 60);
-    a.last = 0;
     {
         let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
         let mut m = memory();
+        // Still Daily photo from the same place (only how often changed): the
+        // clock keeps running. Anything else starts over (a photo straight away).
+        let same_photos = m.auto.mode == "photo" && a.mode == "photo" && m.auto.source == a.source && m.current.as_deref() == Some("photo");
+        a.last = if same_photos { m.auto.last } else { 0 };
+        if !same_photos {
+            *PHOTO_TRIED.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        }
         m.auto = a;
         remember(&m)?;
     }
@@ -543,12 +582,19 @@ fn tick() {
     let m = memory();
     if m.auto.mode == "photo" {
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-        if m.photo.as_ref().map(|p| p.day.as_str()) == Some(today.as_str()) {
+        let every = m.auto.photo_every_min.max(30);
+        let due = if m.auto.last == 0 {
+            true
+        } else if every >= 1440 {
+            m.photo.as_ref().map(|p| p.day.as_str()) != Some(today.as_str())
+        } else {
+            m.photo.is_none() || chrono::Local::now().timestamp_millis() - m.auto.last >= i64::from(every) * 60_000
+        };
+        if !due {
             return;
         }
         // Offline or a site down: try again in half an hour, not every minute.
-        static TRIED: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
-        let mut tried = TRIED.lock().unwrap_or_else(|e| e.into_inner());
+        let mut tried = PHOTO_TRIED.lock().unwrap_or_else(|e| e.into_inner());
         if tried.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(30 * 60)) {
             return;
         }
@@ -556,7 +602,7 @@ fn tick() {
         drop(tried);
         match photo_locked(&m.auto.source, false) {
             Ok(_) => {
-                *TRIED.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                *PHOTO_TRIED.lock().unwrap_or_else(|e| e.into_inner()) = None;
                 eprintln!("[looks] daily photo for {today}");
             }
             Err(e) => eprintln!("[looks] daily photo couldn't change: {e}"),
@@ -577,6 +623,9 @@ fn tick() {
         Err(e) => eprintln!("[looks] auto couldn't change the look: {e}"),
     }
 }
+
+/// Daily photo's last failed try (offline, a site down): the next is half an hour later.
+static PHOTO_TRIED: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
 
 /// Auto's clock: checks once a minute (started with the app).
 pub fn spawn_auto() {
@@ -1172,23 +1221,85 @@ fn photo_client() -> Result<reqwest::blocking::Client> {
     Ok(reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(40)).user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Izuki").build()?)
 }
 
-/// Bing's photo of the day (`back` days ago, 0–7), in 4K when it has it.
-fn bing_photo(back: u32) -> Result<(Vec<u8>, String, String)> {
+/// One photo found, and what's known about it.
+struct Pic {
+    bytes: Vec<u8>,
+    /// Never shown twice: Spotlight's id, Bing's address, a file's path.
+    id: String,
+    title: String,
+    place: String,
+    about: String,
+    credit: String,
+    from: String,
+}
+
+/// Windows Spotlight's live feed: the same fresh, curated 4K photos Windows
+/// shows on its lock screen and desktop — the first one not shown before.
+fn spotlight_live(seen: &[String]) -> Result<Pic> {
     let c = photo_client()?;
-    let meta: serde_json::Value = c.get(format!("https://www.bing.com/HPImageArchive.aspx?format=js&idx={}&n=1&mkt=en-US", back.min(7))).send()?.error_for_status()?.json()?;
-    let img = &meta["images"][0];
-    let base = img["urlbase"].as_str().ok_or_else(|| anyhow!("Bing didn't say which photo"))?;
-    let title = img["title"].as_str().unwrap_or("").to_string();
-    let credit = img["copyright"].as_str().unwrap_or("").to_string();
-    for size in ["_UHD.jpg", "_1920x1080.jpg"] {
-        if let Ok(r) = c.get(format!("https://www.bing.com{base}{size}")).send().and_then(|r| r.error_for_status()) {
+    for _ in 0..3 {
+        let v: serde_json::Value = c
+            .get("https://fd.api.iris.microsoft.com/v4/api/selection?&placement=88000820&bcnt=4&country=US&locale=en-US&fmt=json")
+            .send()?
+            .error_for_status()?
+            .json()?;
+        let items = v["batchrsp"]["items"].as_array().cloned().unwrap_or_default();
+        if items.is_empty() {
+            break;
+        }
+        for it in items {
+            let Some(ad) = it["item"].as_str().and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok()).map(|v| v["ad"].clone()) else { continue };
+            let Some(url) = ad["landscapeImage"]["asset"].as_str() else { continue };
+            let id = ad["entityId"].as_str().map(str::to_string).unwrap_or_else(|| url.to_string());
+            if seen.contains(&id) {
+                continue;
+            }
+            let Ok(r) = c.get(url).send().and_then(|r| r.error_for_status()) else { continue };
             let bytes = r.bytes()?.to_vec();
-            if bytes.len() > 50_000 {
-                return Ok((bytes, title, credit));
+            if bytes.len() < 50_000 {
+                continue;
+            }
+            let place = ad["iconHoverText"].as_str().unwrap_or("").lines().next().unwrap_or("").trim().to_string();
+            return Ok(Pic {
+                bytes,
+                id,
+                title: ad["title"].as_str().unwrap_or("").trim().to_string(),
+                place,
+                about: ad["description"].as_str().unwrap_or("").trim().to_string(),
+                credit: ad["copyright"].as_str().unwrap_or("").trim().trim_start_matches(['©', ' ']).to_string(),
+                from: "Windows Spotlight".into(),
+            });
+        }
+    }
+    Err(anyhow!("Windows Spotlight had nothing new just now"))
+}
+
+/// Bing's photo of the day — today's, else the newest of the last eight
+/// not shown before — in 4K when it has it.
+fn bing_fresh(seen: &[String]) -> Result<Pic> {
+    let c = photo_client()?;
+    let meta: serde_json::Value = c.get("https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=en-US").send()?.error_for_status()?.json()?;
+    for img in meta["images"].as_array().cloned().unwrap_or_default() {
+        let Some(base) = img["urlbase"].as_str() else { continue };
+        if seen.iter().any(|s| s == base) {
+            continue;
+        }
+        // "Brown-throated sloth, Costa Rica (© Suzi Eszterhas/Minden Pictures)"
+        let copyright = img["copyright"].as_str().unwrap_or("");
+        let (place, credit) = match copyright.rsplit_once(" (") {
+            Some((p, by)) => (p.trim().to_string(), by.trim_end_matches(')').trim_start_matches(['©', ' ']).to_string()),
+            None => (String::new(), copyright.to_string()),
+        };
+        for size in ["_UHD.jpg", "_1920x1080.jpg"] {
+            if let Ok(r) = c.get(format!("https://www.bing.com{base}{size}")).send().and_then(|r| r.error_for_status()) {
+                let bytes = r.bytes()?.to_vec();
+                if bytes.len() > 50_000 {
+                    return Ok(Pic { bytes, id: base.to_string(), title: img["title"].as_str().unwrap_or("").to_string(), place, about: String::new(), credit, from: "Bing".into() });
+                }
             }
         }
     }
-    Err(anyhow!("Bing's photo didn't download"))
+    Err(anyhow!("Bing's recent photos have all been shown already"))
 }
 
 /// Windows Spotlight's own pictures, already on this PC (the lock screen's,
@@ -1223,62 +1334,109 @@ fn size_of_picture(p: &std::path::Path) -> Option<(u32, u32)> {
     image::ImageReader::open(p).ok()?.with_guessed_format().ok()?.into_dimensions().ok()
 }
 
-fn spotlight_photo(pick: usize) -> Result<(Vec<u8>, String, String)> {
-    let all = spotlight_pictures();
-    if all.is_empty() {
-        return Err(anyhow!("there are no Windows Spotlight pictures on this PC yet (turn Spotlight on for the lock screen and they arrive)"));
+/// The first picture in `files` not shown lately (else the one shown longest ago).
+fn least_recent(files: &[std::path::PathBuf], seen: &[String]) -> Option<std::path::PathBuf> {
+    files
+        .iter()
+        .min_by_key(|f| seen.iter().rposition(|s| *s == f.to_string_lossy()).map_or(-1, |i| i as i64))
+        .cloned()
+}
+
+fn spotlight_saved(seen: &[String]) -> Result<Pic> {
+    let p = least_recent(&spotlight_pictures(), seen).ok_or_else(|| anyhow!("there are no Windows Spotlight pictures saved on this PC"))?;
+    Ok(Pic { bytes: std::fs::read(&p)?, id: p.to_string_lossy().into_owned(), title: "Windows Spotlight".into(), place: String::new(), about: String::new(), credit: String::new(), from: "Windows Spotlight".into() })
+}
+
+/// Your favourites: Pictures\Izuki Wallpapers.
+fn favourites_dir() -> Option<std::path::PathBuf> {
+    dirs::picture_dir().map(|p| p.join("Izuki Wallpapers"))
+}
+
+fn favourite_files() -> Vec<std::path::PathBuf> {
+    let Some(d) = favourites_dir() else { return Vec::new() };
+    let mut out: Vec<std::path::PathBuf> = std::fs::read_dir(d)
+        .map(|e| e.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("jpg") || x.eq_ignore_ascii_case("jpeg") || x.eq_ignore_ascii_case("png"))).collect())
+        .unwrap_or_default();
+    out.sort();
+    out
+}
+
+fn favourite_pic(seen: &[String]) -> Result<Pic> {
+    let p = least_recent(&favourite_files(), seen).ok_or_else(|| anyhow!("you haven't kept any favourites yet — tap ♥ on a photo you love"))?;
+    let title = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    Ok(Pic { bytes: std::fs::read(&p)?, id: p.to_string_lossy().into_owned(), title, place: String::new(), about: String::new(), credit: String::new(), from: "Your favourites".into() })
+}
+
+/// A small picture of a photo, for the Style tab (a JPEG data URL).
+fn thumb_of(img: &image::RgbImage) -> String {
+    use base64::Engine;
+    let h = (192 * img.height() / img.width().max(1)).max(1);
+    let t = image::imageops::thumbnail(img, 192, h);
+    let mut buf = Vec::new();
+    if image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 72).encode_image(&t).is_err() {
+        return String::new();
     }
-    Ok((std::fs::read(&all[pick % all.len()])?, "Windows Spotlight".into(), String::new()))
+    format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(buf))
 }
 
-/// Days since 1970 (a steady counter for taking turns).
-fn day_number() -> i64 {
-    chrono::Local::now().timestamp() / 86_400
-}
-
-/// A new photo now (`next`: the one after today's), applied with matching
-/// colours. Keeps your own look saved for Undo, like every look.
+/// A new photo now, applied with matching colours. Keeps your own look
+/// saved for Undo, like every look.
 pub fn photo_now(next: bool) -> Result<Status> {
     let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
     let source = memory().auto.source;
     photo_locked(&source, next)
 }
 
-fn photo_locked(source: &str, next: bool) -> Result<Status> {
+fn photo_locked(source: &str, _next: bool) -> Result<Status> {
     let m = memory();
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let turn = m.photo.as_ref().filter(|p| p.day == today).map(|p| p.turn + u32::from(next)).unwrap_or(0);
-    // Which to try first: the one asked for, else Bing and Spotlight by turns.
-    let bing_first = match source {
-        "bing" => true,
-        "spotlight" => false,
-        _ => (day_number() + i64::from(turn)) % 2 == 0,
+    let turn = m.photo.as_ref().map(|p| p.turn + 1).unwrap_or(0);
+    // Fresh first: Spotlight's live feed and Bing take turns ("both"), the
+    // pictures saved on this PC only when the internet can't help.
+    let order: &[&str] = match source {
+        "favorites" => &["favorites"],
+        "bing" => &["bing", "live", "saved"],
+        "spotlight" => &["live", "saved", "bing"],
+        _ if turn % 2 == 0 => &["live", "bing", "saved"],
+        _ => &["bing", "live", "saved"],
     };
-    let order = if bing_first { ["bing", "spotlight"] } else { ["spotlight", "bing"] };
     let mut why = Vec::new();
     let mut got = None;
     for src in order {
-        let r = if src == "bing" { bing_photo(turn % 8).map(|x| (x, "Bing")) } else { spotlight_photo(day_number() as usize + turn as usize).map(|x| (x, "Windows Spotlight")) };
+        let r = match *src {
+            "live" => spotlight_live(&m.seen),
+            "bing" => bing_fresh(&m.seen),
+            "saved" => spotlight_saved(&m.seen),
+            _ => favourite_pic(&m.seen),
+        };
         match r {
-            Ok(x) => {
-                got = Some(x);
+            Ok(p) => {
+                got = Some(p);
                 break;
             }
             Err(e) => why.push(e.to_string()),
         }
     }
-    let Some(((bytes, title, credit), from)) = got else {
-        return Err(anyhow!("no photo today: {}", why.join("; ")));
+    let Some(pic) = got else {
+        eprintln!("[looks] no new photo: {}", why.join("; "));
+        // Favourites only: why is already plain ("you haven't kept any yet").
+        if order == ["favorites"] {
+            return Err(anyhow!("{}", why.join("; ")));
+        }
+        return Err(anyhow!("I couldn't get a new photo right now — maybe the internet is down. Daily photo tries again by itself"));
     };
-    let img = image::load_from_memory(&bytes)?.to_rgb8();
+    apply_pic(pic, turn)
+}
+
+fn apply_pic(pic: Pic, turn: u32) -> Result<Status> {
+    let img = image::load_from_memory(&pic.bytes)?.to_rgb8();
     if img.width() < 1280 || img.height() < 600 {
         return Err(anyhow!("that photo was too small to look good"));
     }
     let (accent, dark) = photo_colours(&img);
     std::fs::create_dir_all(dir())?;
-    let file = dir().join(format!("photo-{today}-{turn}.jpg"));
-    if bytes.starts_with(&[0xFF, 0xD8]) {
-        std::fs::write(&file, &bytes)?;
+    let file = dir().join(format!("photo-{}.jpg", chrono::Local::now().format("%Y%m%d-%H%M%S")));
+    if pic.bytes.starts_with(&[0xFF, 0xD8]) {
+        std::fs::write(&file, &pic.bytes)?;
     } else {
         let mut out = std::io::BufWriter::new(std::fs::File::create(&file)?);
         image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 95).encode_image(&img)?;
@@ -1288,21 +1446,126 @@ fn photo_locked(source: &str, next: bool) -> Result<Status> {
     put_accent(accent)?;
     put_wallpaper(&file.to_string_lossy())?;
     win::announce();
-    // Only the newest few photos are kept.
+    // The newest photos are kept (for "use again"); older ones go.
     if let Ok(entries) = std::fs::read_dir(dir()) {
         let mut old: Vec<std::path::PathBuf> = entries.flatten().map(|e| e.path()).filter(|p| p != &file && p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("photo-"))).collect();
         old.sort();
-        let extra = old.len().saturating_sub(4);
+        let extra = old.len().saturating_sub(15);
         for p in old.into_iter().take(extra) {
             let _ = std::fs::remove_file(p);
         }
     }
-    let mut m2 = memory();
-    m2.current = Some("photo".into());
-    m2.photo = Some(Photo { day: today, file: file.to_string_lossy().into_owned(), source: from.into(), title, credit, accent: hex(accent), dark, turn });
-    remember(&m2)?;
-    eprintln!("[looks] photo from {from}");
-    Ok(status_now(m2))
+    let photo = Photo {
+        day: chrono::Local::now().format("%Y-%m-%d").to_string(),
+        file: file.to_string_lossy().into_owned(),
+        source: pic.from,
+        title: pic.title,
+        credit: pic.credit,
+        accent: hex(accent),
+        dark,
+        turn,
+        place: pic.place,
+        about: pic.about,
+        id: pic.id.clone(),
+        thumb: thumb_of(&img),
+        kept: false,
+    };
+    let mut m = memory();
+    m.current = Some("photo".into());
+    m.seen.retain(|s| s != &pic.id);
+    m.seen.push(pic.id);
+    let over = m.seen.len().saturating_sub(500);
+    m.seen.drain(..over);
+    m.history.retain(|h| h.file != photo.file && std::path::Path::new(&h.file).exists());
+    m.history.insert(0, photo.clone());
+    m.history.truncate(16);
+    m.photo = Some(photo);
+    m.auto.last = chrono::Local::now().timestamp_millis();
+    remember(&m)?;
+    eprintln!("[looks] photo from {}", m.photo.as_ref().map(|p| p.source.as_str()).unwrap_or(""));
+    Ok(status_now(m))
+}
+
+/// ♥: the photo showing, kept in Pictures\Izuki Wallpapers (yours, for good).
+pub fn photo_keep() -> Result<Status> {
+    let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+    let mut m = memory();
+    let p = m.photo.clone().filter(|_| m.current.as_deref() == Some("photo")).ok_or_else(|| anyhow!("there's no photo showing to keep"))?;
+    let dir = favourites_dir().ok_or_else(|| anyhow!("couldn't find your Pictures folder"))?;
+    std::fs::create_dir_all(&dir)?;
+    let base: String = {
+        let raw = if !p.place.is_empty() { p.place.clone() } else if !p.title.is_empty() { p.title.clone() } else { "Izuki photo".into() };
+        let clean: String = raw.chars().map(|c| if c.is_alphanumeric() || " -,'".contains(c) { c } else { ' ' }).collect();
+        clean.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(60).collect()
+    };
+    let mut target = dir.join(format!("{base}.jpg"));
+    let mut n = 2;
+    while target.exists() {
+        target = dir.join(format!("{base} {n}.jpg"));
+        n += 1;
+    }
+    std::fs::copy(&p.file, &target)?;
+    if let Some(cur) = m.photo.as_mut() {
+        cur.kept = true;
+    }
+    for h in m.history.iter_mut().filter(|h| h.file == p.file) {
+        h.kept = true;
+    }
+    remember(&m)?;
+    let mut s = status_now(m);
+    s.note = Some(format!("Kept in Pictures → Izuki Wallpapers ({}).", target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()));
+    Ok(s)
+}
+
+/// A recent photo, big enough for the Style tab's preview (a JPEG data URL).
+/// Only Izuki's own recent photos.
+pub fn photo_preview(file: &str) -> Result<String> {
+    use base64::Engine;
+    static CACHE: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+    if let Some((_, url)) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|(k, _)| k == file) {
+        return Ok(url.clone());
+    }
+    let m = memory();
+    if !m.history.iter().chain(m.photo.iter()).any(|h| h.file == file) {
+        return Err(anyhow!("that isn't one of your recent photos"));
+    }
+    let img = image::load_from_memory(&std::fs::read(file)?)?.to_rgb8();
+    let w = 1280.min(img.width());
+    let h = (u64::from(w) * u64::from(img.height()) / u64::from(img.width().max(1))).max(1) as u32;
+    let small = image::imageops::resize(&img, w, h, image::imageops::FilterType::Triangle);
+    let mut buf = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 82).encode_image(&small)?;
+    let url = format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(buf));
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    cache.push((file.to_string(), url.clone()));
+    let over = cache.len().saturating_sub(4);
+    cache.drain(..over);
+    Ok(url)
+}
+
+/// A recent photo again (from the Style tab's strip).
+pub fn photo_use(file: &str) -> Result<Status> {
+    let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+    let mut m = memory();
+    let h = m.history.iter().find(|h| h.file == file).cloned().ok_or_else(|| anyhow!("that photo isn't in your recent ones any more"))?;
+    if !std::path::Path::new(&h.file).exists() {
+        return Err(anyhow!("that photo isn't on this PC any more"));
+    }
+    let accent = parse_hex(&h.accent).ok_or_else(|| anyhow!("that photo's colours weren't saved"))?;
+    save_before()?;
+    put_switches(h.dark, true, false, false)?;
+    put_accent(accent)?;
+    put_wallpaper(&h.file)?;
+    win::announce();
+    let mut h = h;
+    h.day = chrono::Local::now().format("%Y-%m-%d").to_string();
+    m.current = Some("photo".into());
+    m.auto.last = chrono::Local::now().timestamp_millis();
+    m.history.retain(|x| x.file != h.file);
+    m.history.insert(0, h.clone());
+    m.photo = Some(h);
+    remember(&m)?;
+    Ok(status_now(m))
 }
 
 /// Just the accent colour ("#rrggbb").
@@ -1462,6 +1725,8 @@ fn status_now(m: Memory) -> Status {
         note: None,
         auto: m.auto,
         photo,
+        history: m.history.into_iter().filter(|h| std::path::Path::new(&h.file).exists()).collect(),
+        favourites: favourite_files().len(),
     }
 }
 
@@ -1476,6 +1741,12 @@ pub enum Ask {
     DailyPhoto,
     /// Another photo now.
     NextPhoto,
+    /// "Save this wallpaper": kept in Pictures\Izuki Wallpapers.
+    KeepPhoto,
+    /// "What's this wallpaper?": where it is and the story behind it.
+    AboutPhoto,
+    /// "Make my PC look premium": real photos, matching colours, a clean taskbar.
+    Premium,
 }
 
 pub fn parse(said: &str) -> Option<Ask> {
@@ -1520,6 +1791,22 @@ pub fn parse(said: &str) -> Option<Ask> {
     // "How do I change my wallpaper" is a question; "…to a picture of my dog"
     // is a particular picture — neither is "a new photo now".
     let asking_how = [" how do", " how to", " how can", " how would"].iter().any(|w| s.contains(w));
+    // The photo showing: "save this wallpaper", "I love this background, keep it".
+    let this_one = [" this ", " that ", " current", " today s"].iter().any(|w| s.contains(w));
+    if desk && this_one && !refused && !asking_how && [" save", " favourite", " favorite", " keep"].iter().any(|w| s.contains(w)) {
+        return Some(Ask::KeepPhoto);
+    }
+    // "What's this wallpaper?", "where is this background from?"
+    if desk && this_one && [" what s this", " what is this", " whats this", " where is this", " where s this", " wheres this", " about this", " what is that", " where is that", " what place"].iter().any(|w| s.contains(w)) {
+        return Some(Ask::AboutPhoto);
+    }
+    // "Make my PC look premium" — asked for, not "it doesn't look premium".
+    let my_pc = [" my pc", " my laptop", " my computer", " my desktop", " my screen", " windows"].iter().any(|w| s.contains(w));
+    let make = [" make", " turn", " give", " set ", " change", " upgrade", " transform"].iter().any(|w| s.contains(w));
+    let negated = [" doesn t", " does not", " isn t", " is not", " not ", " don t", " dont"].iter().any(|w| s.contains(w));
+    if s.contains(" premium") && my_pc && make && !negated && !refused && !asking_how && !elsewhere {
+        return Some(Ask::Premium);
+    }
     let particular = [" to a ", " to an ", " to my ", " to this ", " to that ", " to the "].iter().any(|w| s.contains(w));
     if desk && [" new", " another", " next", " different", " change"].iter().any(|w| s.contains(w)) && !looks && !s.contains(" profile") && !refused && !asking_how && !particular {
         return Some(Ask::NextPhoto);
@@ -1606,16 +1893,68 @@ pub fn handle(ask: Ask) -> String {
         }
         Ask::NextPhoto => match photo_now(true) {
             Ok(s) => match s.photo {
-                Some(p) => format!("Done — a new photo from {}{}, with your colours matched to it.", p.source, if p.title.is_empty() || p.title == p.source { String::new() } else { format!(": {}", p.title) }),
+                Some(p) => format!("Done — a new photo, {}, with your colours matched to it.", describe(&p)),
                 None => "Done.".into(),
             },
+            // Already a sentence for you ("I couldn't get a new photo right now…"), or a reason to explain.
+            Err(e) if e.to_string().starts_with("I ") => format!("{e}."),
             Err(e) => format!("I couldn't get a new photo: {e}"),
         },
+        Ask::KeepPhoto => match photo_keep() {
+            Ok(s) => format!("{} It can come back any time: Style → Auto → Photos from → Your favourites.", s.note.unwrap_or_else(|| "Kept.".into())),
+            Err(e) => format!("I couldn't keep it: {e}. Daily photo's pictures can be kept — say “give me a new wallpaper every day” to start them."),
+        },
+        Ask::AboutPhoto => {
+            let m = memory();
+            match m.photo.filter(|_| m.current.as_deref() == Some("photo")) {
+                Some(p) => {
+                    let mut out = format!("It's {}.", describe(&p));
+                    if !p.about.is_empty() {
+                        out.push(' ');
+                        out.push_str(&p.about);
+                    }
+                    out.push_str(" Say “save this wallpaper” to keep it.");
+                    out
+                }
+                None => "Your wallpaper right now isn't one of my photos, so I don't know its story. Say “give me a new wallpaper every day” for real photos that come with where they are and the story behind them.".into(),
+            }
+        }
+        Ask::Premium => {
+            let mut a = memory().auto;
+            a.mode = "photo".into();
+            match set_auto(a) {
+                Ok(s) => {
+                    let tidy = crate::tweaks::set_pack("premium");
+                    format!(
+                        "Done — {}{} Say “another wallpaper” for a different photo, or “undo the look” to put yours back.",
+                        match s.photo {
+                            Some(p) => format!("a fresh 4K photo, {}, with your accent colour and dark or light mode matched to it", describe(&p)),
+                            None => "real 4K photos are on (the first one didn't come through yet; I'll keep trying)".into(),
+                        },
+                        if tidy.is_ok() { ", and a clean taskbar: just your apps, with the search box, Task view, Widgets and Copilot hidden. Some of that shows after Explorer restarts (Style → Tweaks)." } else { "." }
+                    )
+                }
+                Err(e) => format!("I couldn't make the change: {e}"),
+            }
+        }
         Ask::Accent(c) => match set_accent(&hex(c)) {
             Ok(_) => format!("Done — your accent colour is now {}.", COLOURS.iter().find(|(_, v)| *v == c).map(|(n, _)| n.to_string()).unwrap_or_else(|| hex(c))),
             Err(e) => format!("I couldn't change the accent colour: {e}"),
         },
     }
+}
+
+/// A photo in a few words: "“Sporty summits” — Mont Blanc massif, France (from Windows Spotlight)".
+fn describe(p: &Photo) -> String {
+    let title = (!p.title.is_empty() && p.title != p.source).then(|| format!("“{}”", p.title));
+    let place = (!p.place.is_empty()).then(|| p.place.clone());
+    let what = match (title, place) {
+        (Some(t), Some(pl)) => format!("{t} — {pl}"),
+        (Some(t), None) => t,
+        (None, Some(pl)) => pl,
+        (None, None) => "a photo".into(),
+    };
+    format!("{what} (from {})", p.source)
 }
 
 fn join_words(w: &[&str]) -> String {
@@ -1898,6 +2237,20 @@ mod tests {
             assert_eq!(parse(other), None, "{other}");
         }
         assert_eq!(parse("make my pc look nova"), Some(Ask::Apply("nova")));
+        // The photo showing.
+        assert_eq!(parse("save this wallpaper"), Some(Ask::KeepPhoto));
+        assert_eq!(parse("i love this background keep it"), Some(Ask::KeepPhoto));
+        assert_eq!(parse("favourite the current wallpaper"), Some(Ask::KeepPhoto));
+        assert_eq!(parse("keep my wallpaper"), None, "maybe “don't change it”");
+        assert_eq!(parse("what's this wallpaper"), Some(Ask::AboutPhoto));
+        assert_eq!(parse("where is this background from"), Some(Ask::AboutPhoto));
+        assert_eq!(parse("save this slide background"), None, "a slide's");
+        assert_eq!(parse("how do i save this wallpaper"), None, "a question");
+        // Premium: asked for, not complained about.
+        assert_eq!(parse("make my pc look premium"), Some(Ask::Premium));
+        assert_eq!(parse("make my laptop feel premium"), Some(Ask::Premium));
+        assert_eq!(parse("the style side doesn't make my pc look or feel premium"), None, "a complaint goes to the chat");
+        assert_eq!(parse("is youtube premium worth it on my pc"), None);
     }
 
     /// Today's real photo from Bing and this PC's Spotlight pictures (no
@@ -1905,11 +2258,17 @@ mod tests {
     #[test]
     #[ignore]
     fn real_photos() {
-        let (bytes, title, credit) = bing_photo(0).expect("Bing's photo");
-        let img = image::load_from_memory(&bytes).unwrap().to_rgb8();
+        let bing = bing_fresh(&[]).expect("Bing's photo");
+        let img = image::load_from_memory(&bing.bytes).unwrap().to_rgb8();
         let (accent, dark) = photo_colours(&img);
-        eprintln!("Bing: {}x{} “{title}” ({credit}) → accent #{accent:06x}, {}", img.width(), img.height(), if dark { "dark" } else { "light" });
+        eprintln!("Bing: {}x{} “{}” at {} ({}) → accent #{accent:06x}, {}", img.width(), img.height(), bing.title, bing.place, bing.credit, if dark { "dark" } else { "light" });
         assert!(img.width() >= 1920);
+        let live = spotlight_live(&[]).expect("Spotlight's live feed");
+        let img = image::load_from_memory(&live.bytes).unwrap().to_rgb8();
+        eprintln!("Spotlight live: {}x{} “{}” — {} ({}): {}", img.width(), img.height(), live.title, live.place, live.credit, live.about.chars().take(80).collect::<String>());
+        // Never the same one twice.
+        let again = spotlight_live(std::slice::from_ref(&live.id)).expect("another");
+        assert_ne!(again.id, live.id);
         let all = spotlight_pictures();
         eprintln!("Spotlight pictures on this PC: {}", all.len());
         if let Some(p) = all.first() {

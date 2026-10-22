@@ -2223,6 +2223,24 @@ pub async fn look_photo_now(next: bool) -> R<crate::winlook::Status> {
     blocking(move || crate::winlook::photo_now(next).map_err(err)).await?
 }
 
+/// Daily photo: ♥ keep the photo showing in Pictures\Izuki Wallpapers.
+#[tauri::command]
+pub async fn look_photo_keep() -> R<crate::winlook::Status> {
+    blocking(|| crate::winlook::photo_keep().map_err(err)).await?
+}
+
+/// Daily photo: a big picture of a recent photo, for the Style tab's preview.
+#[tauri::command]
+pub async fn look_photo_preview(file: String) -> R<String> {
+    blocking(move || crate::winlook::photo_preview(&file).map_err(err)).await?
+}
+
+/// Daily photo: a recent photo again.
+#[tauri::command]
+pub async fn look_photo_use(file: String) -> R<crate::winlook::Status> {
+    blocking(move || crate::winlook::photo_use(&file).map_err(err)).await?
+}
+
 /// Keep a deep-research answer in Notes, as written.
 #[tauri::command]
 pub async fn research_save(question: String, text: String) -> R<crate::notes::Note> {

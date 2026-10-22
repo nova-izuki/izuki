@@ -532,6 +532,10 @@ export interface LooksStatus {
   auto: LookAuto;
   /** Daily photo: the picture showing now. */
   photo?: LookPhoto | null;
+  /** Recent photos, newest first. */
+  history?: LookPhoto[];
+  /** Photos kept in Pictures\Izuki Wallpapers. */
+  favourites?: number;
 }
 
 /** Daily photo's picture of the day (winlook.rs `Photo`). */
@@ -545,13 +549,24 @@ export interface LookPhoto {
   accent: string;
   dark: boolean;
   turn: number;
+  /** Where it is ("Mont Blanc massif, France"). */
+  place?: string;
+  /** The story behind it. */
+  about?: string;
+  id?: string;
+  /** A small picture of it (a JPEG data URL). */
+  thumb?: string;
+  /** Kept in Pictures\Izuki Wallpapers. */
+  kept?: boolean;
 }
 
 /** Looks that change by themselves (winlook.rs `Auto`). */
 export interface LookAuto {
   mode: "off" | "daynight" | "shuffle" | "photo";
   /** Daily photo's pictures. */
-  source: "both" | "bing" | "spotlight";
+  source: "both" | "bing" | "spotlight" | "favorites";
+  /** Daily photo: minutes between photos (1440 = once a day). */
+  photo_every_min?: number;
   day: string;
   night: string;
   /** "HH:MM", 24-hour. */
@@ -970,6 +985,12 @@ export const api = {
   /** Daily photo: a new photo now (`next`: a different one from today's). */
   lookPhotoNow: (next: boolean) => call<LooksStatus | null>("look_photo_now", { next }, () => null),
   lookPreview: (id: string) => call<string | null>("look_preview", { id }, () => null),
+  /** Daily photo: keep the photo showing in Pictures\Izuki Wallpapers. */
+  lookPhotoKeep: () => call<LooksStatus | null>("look_photo_keep", undefined, () => null),
+  /** Daily photo: a recent photo again. */
+  lookPhotoUse: (file: string) => call<LooksStatus | null>("look_photo_use", { file }, () => null),
+  /** Daily photo: a big picture of a recent photo (a data URL). */
+  lookPhotoPreview: (file: string) => call<string | null>("look_photo_preview", { file }, () => null),
   tweakPack: (id: string) => call<WindowsTweak[]>("tweak_pack", { id }, () => []),
   restartExplorer: () => call<void>("restart_explorer", undefined, () => undefined),
   boostLive: () => call<{ on: boolean; looked_secs_ago: number | null; done_secs_ago: number | null; done: string | null }>("boost_live", undefined, () => ({ on: false, looked_secs_ago: null, done_secs_ago: null, done: null })),
