@@ -562,6 +562,8 @@ pub fn run() {
             missions::spawn_away_watch(handle.clone());
             // Looks that change by themselves (Style → Auto).
             winlook::spawn_auto();
+            // Sound a previous run left turned down (closed mid-duck) comes back.
+            duck::heal();
             recall::spawn();
             activity::spawn();
             boost::spawn(handle.clone());

@@ -277,6 +277,42 @@ pub fn call(ops: Vec<Value>, quiet: bool) -> Result<Vec<Value>> {
 }
 
 /// One op's value, or its error.
+/// Play FL and record the speakers for `secs`, then stop it. Checks FL
+/// really played and that something was heard — and logs what was — so "I
+/// couldn't hear it" says which: FL not playing, or silence at the speakers.
+fn play_and_record(secs: f32) -> Result<(Vec<f32>, u32)> {
+    // Never turned down while it's being heard (Izuki talking ducks other apps).
+    let _up = crate::duck::Held::on();
+    let play_failed = std::cell::RefCell::new(None);
+    let heard = crate::loopback::record(secs, || {
+        if let Err(e) = one(json!(["play"])) {
+            *play_failed.borrow_mut() = Some(e);
+        }
+    });
+    // Asked before stopping it.
+    let playing = one(json!(["state"])).ok().and_then(|s| s["playing"].as_bool());
+    let _ = one(json!(["stop"]));
+    if let Some(e) = play_failed.into_inner() {
+        bail!("I couldn't start FL playing ({e}). Make sure FL is open with Izuki on in its MIDI settings, then ask again.");
+    }
+    if playing.is_none() {
+        bail!("I couldn't check that FL was playing — its link to Izuki didn't answer. Ask again in a moment.");
+    }
+    let (samples, rate) = heard?;
+    let peak = samples.iter().fold(0f32, |m, s| m.max(s.abs()));
+    let rms = (samples.iter().map(|s| s * s).sum::<f32>() / samples.len().max(1) as f32).sqrt();
+    eprintln!("[fl] listened {secs:.1}s: FL playing {playing:?}, peak {peak:.3}, rms {rms:.4}");
+    if playing == Some(false) {
+        bail!("I pressed play, but FL didn't start playing. Click once in FL's Playlist (and close any FL window asking something), then ask again.");
+    }
+    if peak < 0.003 {
+        bail!(
+            "FL was playing, but your speakers got silence. FL's sound must be going somewhere else: in FL, Options → Audio settings, set the output to your speakers (with “FL Studio ASIO”, choose “Speakers (Realtek)” in its output list) — or everything that played is muted. Highlight your loop in the Playlist, then ask again."
+        );
+    }
+    Ok((samples, rate))
+}
+
 fn one(op: Value) -> Result<Value> {
     let r = call(vec![op], false)?;
     let first = r.into_iter().next().ok_or_else(|| anyhow!("no answer"))?;
@@ -648,7 +684,7 @@ pub fn is_request(said: &str) -> bool {
     // "Add an 808", "fix the timing": FL's whenever it's open — linked or
     // not (not linked, it says so instead of the screen helper snapping the
     // notes to the grid with FL's quantize).
-    fl || asks_setup(&s) || setup_follow_up(&s) || wants_beat(&s) || (job_of(&s).is_some() && fl_running())
+    fl || asks_setup(&s) || setup_follow_up(&s) || wants_beat(&s) || ((job_of(&s).is_some() || s.contains("metronome")) && fl_running())
 }
 
 /// Your own gear goes in FL's MIDI settings too — that's not Izuki's link.
@@ -743,6 +779,16 @@ pub fn screen_guard(prompt: &str, resumes: Option<&str>, last_said: Option<&str>
     if yes_to_setup || pushed || asks_setup(&s) || setup_follow_up(&s) {
         return Some(setup(&|line| eprintln!("[fl] {line}")).unwrap_or_else(|e| format!("I couldn't finish connecting FL Studio: {e}")));
     }
+    // Linked: what the link does (the metronome, play/stop, tempo, the jobs)
+    // is done through it — never by clicking around FL's screen. (A question
+    // about it is answered, never acted on.)
+    if is_request(prompt) && !is_question(&s) && fl_running() && has_cable() {
+        match handle(prompt) {
+            Ok(Some(said)) => return Some(said),
+            Err(e) => return Some(e.to_string()),
+            Ok(None) => {}
+        }
+    }
     let all = format!("{s} {}", resumes.unwrap_or("").to_lowercase());
     let words: Vec<&str> = all.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
     let about_link = words.contains(&"midi") && (words.contains(&"izuki") || words.contains(&"fl") || all.contains("fl studio"));
@@ -750,6 +796,13 @@ pub fn screen_guard(prompt: &str, resumes: Option<&str>, last_said: Option<&str>
         return None;
     }
     (fl_running() && !has_cable()).then(not_linked)
+}
+
+/// A question ("is the metronome on?", "what tempo is it"), not a request —
+/// "can you turn the metronome on?" is a request.
+fn is_question(s: &str) -> bool {
+    let first = s.split(|c: char| !c.is_alphanumeric() && c != '\'').find(|w| !w.is_empty()).unwrap_or("");
+    ["is", "are", "was", "were", "what", "what's", "whats", "why", "how", "does", "do", "did", "which", "where", "when", "who"].contains(&first)
 }
 
 /// Izuki's words were about connecting FL ("I'm not connected to it…",
@@ -941,9 +994,29 @@ fn job_of(s: &str) -> Option<Job> {
 }
 
 /// Making a beat (not mixing, arranging or anything else in FL).
+/// A NEW beat asked for: "make a beat", "cook up an afrobeat", "give me a
+/// drill beat", "make afrobeats". Not anything about the beat that's there —
+/// "fix the beat", "make the beat louder", "make my beat hit harder", "the
+/// beat doesn't make sense" (each of those once wrote fresh trap drums into
+/// the person's project).
 fn wants_beat(s: &str) -> bool {
-    let make = ["make", "cook", "build", "create", "produce", "give me", "do a", "start a", "drop a"].iter().any(|w| s.contains(w));
-    make && (["beat", "drums", "drum pattern", "instrumental"].iter().any(|w| s.contains(w)) || genre_of(s).is_some())
+    let s = s.to_lowercase();
+    let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let has = |ws: &[&str]| ws.iter().any(|w| words.contains(w));
+    // Working on what's there.
+    if has(&[
+        "fix", "louder", "quieter", "better", "harder", "mix", "balance", "flow", "flowing", "align", "tune", "quantize", "clean", "master", "eq", "sync",
+        "synced", "match", "off", "volume", "level", "levels", "sounds", "sound", "sense", "add",
+    ]) {
+        return false;
+    }
+    // "the beat", "my beat", "this beat": the one that's there.
+    let beatish = |w: &str| ["beat", "beats", "drums", "drum", "instrumental"].contains(&w) || genre_of(w).is_some();
+    if words.iter().enumerate().any(|(i, w)| beatish(w) && i > 0 && ["the", "my", "this", "that", "our", "your", "his", "her", "their", "its"].contains(&words[i - 1])) {
+        return false;
+    }
+    let make = has(&["make", "cook", "build", "create", "produce", "start", "drop", "give", "whip"]);
+    make && (has(&["beat", "beats", "drums", "instrumental"]) || s.contains("drum pattern") || genre_of(&s).is_some())
 }
 
 /// Do it: what to say back — or `None` for anything this doesn't do yet,
@@ -952,7 +1025,7 @@ pub fn handle(said: &str) -> Result<Option<String>> {
     let s = said.to_lowercase();
     let words = s.trim().trim_end_matches(['.', '!']);
     let opening = ["open fl", "launch fl", "start fl", "open up fl"].iter().any(|w| words.starts_with(w));
-    let transport = ["stop", "pause", "play", "start", "tempo", "bpm", "faster", "slower"].iter().any(|w| words.contains(w));
+    let transport = ["stop", "pause", "play", "start", "tempo", "bpm", "faster", "slower", "metronome"].iter().any(|w| words.contains(w));
     let job = job_of(&s);
     // "Set up FL Studio": the script and the cable, right from the chat.
     if asks_setup(&s) || setup_follow_up(&s) {
@@ -994,6 +1067,28 @@ pub fn handle(said: &str) -> Result<Option<String>> {
     if ["play it", "play the beat", "play", "start it", "start playing", "play it back"].iter().any(|w| fl_words(w)) {
         one(json!(["play"]))?;
         return Ok(Some("Playing.".into()));
+    }
+    // "Turn the metronome on", "metronome off" — through the link, never by
+    // hunting for its button (that pressed FL shortcuts and opened dialogs).
+    if s.contains("metronome") && ["volume", "louder", "quieter", "softer", "turn it up", "turn it down", "up the metronome"].iter().any(|w| s.contains(w)) {
+        return Ok(Some(
+            "FL doesn't let other apps change the metronome's volume, so that one's yours to set in FL. I switch the metronome itself on and off whenever I listen, so you never need to."
+                .into(),
+        ));
+    }
+    if s.contains("metronome") && !is_question(&s) {
+        let off = [
+            "metronome off", "off the metronome", "disable the metronome", "mute the metronome", "stop the metronome", "no metronome", "without the metronome",
+            "kill the metronome",
+        ]
+        .iter()
+        .any(|w| s.contains(w));
+        one(json!(["metronome", !off]))?;
+        return Ok(Some(if off {
+            "Metronome's off.".into()
+        } else {
+            "Metronome's on. (When I listen to your beat I switch it on and off myself, so you never need to.)".into()
+        }));
     }
     if let Some(bpm) = bpm_of(&s).or_else(|| {
         // "set the tempo to 128"
@@ -1653,10 +1748,7 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                 let _ = one(json!(["stop"]));
                 let song_was = one(json!(["songmode", true]))?.as_bool().unwrap_or(false);
                 let click_was = one(json!(["metronome", true])).ok().and_then(|v| v.as_bool()).unwrap_or(false);
-                let heard = crate::loopback::record(secs, || {
-                    let _ = one(json!(["play"]));
-                });
-                let _ = one(json!(["stop"]));
+                let heard = play_and_record(secs);
                 if !click_was {
                     let _ = one(json!(["metronome", false]));
                 }
@@ -1759,10 +1851,7 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                         return Err(e);
                     }
                 }
-                let heard = crate::loopback::record(secs, || {
-                    let _ = one(json!(["play"]));
-                });
-                let _ = one(json!(["stop"]));
+                let heard = play_and_record(secs);
                 if !flips.is_empty() {
                     let _ = call(flips.iter().map(|(c, on)| json!(["mute", c, !on])).collect(), false);
                 }
@@ -1890,10 +1979,7 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                     }
                 }
                 let secs = (loop_beats * 2.0 * 60.0 / bpm + 0.8) as f32;
-                let heard = crate::loopback::record(secs, || {
-                    let _ = one(json!(["play"]));
-                });
-                let _ = one(json!(["stop"]));
+                let heard = play_and_record(secs);
                 if !flips.is_empty() {
                     let _ = call(flips.iter().map(|(c, on)| json!(["mute", c, !on])).collect(), false);
                 }
@@ -1906,9 +1992,11 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                 if lows.len() < 2 {
                     lows = crate::loopback::body_hits(&samples, rate);
                 }
+                let clicks = crate::loopback::high_clicks(&samples, rate);
+                eprintln!("[fl] {} channel(s) playing: {} hit(s), {} click(s)", keep.len(), lows.len(), clicks.len());
                 // Each hit's pitch too (for the notes alone: their tuning).
                 let pitches = crate::loopback::hit_pitches(&samples, rate, &lows);
-                Ok(match crate::loopback::click_grid(&crate::loopback::high_clicks(&samples, rate), bpm) {
+                Ok(match crate::loopback::click_grid(&clicks, bpm) {
                     Some(beat0) => (crate::loopback::hits_on_clock(&lows, beat0, bpm, loop_beats), true, pitches),
                     None => (crate::loopback::hits_to_beats(&lows, bpm, anchor, loop_beats), false, pitches),
                 })
@@ -2305,6 +2393,16 @@ mod tests {
         assert_eq!(job_of("add a click sample"), None);
         assert_eq!(job_of("the sample is off the click"), Some(Job::Match));
         assert_eq!(job_of("click on the sample and turn it off"), None, "a click of the mouse");
+        // A new beat only when one is asked for — never "fix the beat".
+        for new in ["make a beat", "make afrobeats", "cook up a trap beat", "give me a drill beat", "make me a beat in fl", "start a beat", "make an afrobeat at 105"] {
+            assert!(wants_beat(new), "{new}");
+        }
+        for there in [
+            "fix the beat", "make the beat louder", "make my beat hit harder", "the beat doesn't make sense", "make the 808 flow with the beat",
+            "this beat makes me happy", "make the drums sound better", "why is the beat so quiet", "add an 808 to my beat",
+        ] {
+            assert!(!wants_beat(there), "{there}");
+        }
         assert!(asks_setup("set up FL Studio") && asks_setup("can you connect izuki to fl") && asks_setup("link fl please"));
         assert!(!asks_setup("set up my flight") && !asks_setup("reflect on it"), "not FL");
         // The link, in any words.

@@ -498,7 +498,7 @@ fn chat_url(cfg: &ProviderConfig) -> String {
 /// How long one brain may take for a whole reply. A model on the PC itself
 /// may first have to load into memory, and runs slower on a laptop.
 fn reply_timeout(cfg: &ProviderConfig) -> Duration {
-    if cfg.id.is_local() {
+    if cfg.on_this_pc() {
         Duration::from_secs(240)
     } else {
         Duration::from_secs(30)
@@ -1245,7 +1245,7 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
             return emit(String::new(), true, Some("stopped".into()));
         }
         let won = winner.load(Ordering::SeqCst);
-        let local = chain[..launched].iter().any(|c| c.id.is_local());
+        let local = chain[..launched].iter().any(|c| c.on_this_pc());
         // Nobody has said a word for this long: stop waiting and say why.
         let deep = is_deep(id);
         let first_words = Duration::from_secs(if local { 240 } else if deep { 150 } else { 40 });
@@ -1320,7 +1320,7 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
     let deep = DEEP_HERE.with(|d| d.get());
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(6))
-        .timeout(if deep && !cfg.id.is_local() { Duration::from_secs(150) } else { reply_timeout(cfg) })
+        .timeout(if deep && !cfg.on_this_pc() { Duration::from_secs(150) } else { reply_timeout(cfg) })
         .build()?;
     let body = json!({
         "model": cfg.model,

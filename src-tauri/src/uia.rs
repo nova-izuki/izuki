@@ -1114,6 +1114,79 @@ pub fn raise_window(_raw: isize) -> bool {
     false
 }
 
+/// Which of a window's minimise / maximise / close buttons is at (x, y) —
+/// the top-right corner of the window under the point — if any. Izuki's own
+/// windows and the taskbar don't count. Worked out from the window's frame,
+/// so it holds for apps that draw their own title bar too (FL Studio).
+#[cfg(windows)]
+pub fn window_button_at(x: i32, y: i32) -> Option<&'static str> {
+    use windows::Win32::Foundation::{POINT, RECT};
+    use windows::Win32::UI::HiDpi::GetDpiForWindow;
+    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GetWindowRect, GetWindowThreadProcessId, IsZoomed, WindowFromPoint, GA_ROOT};
+    if on_taskbar(x, y) {
+        return None;
+    }
+    unsafe {
+        let hwnd = WindowFromPoint(POINT { x, y });
+        if hwnd.0.is_null() {
+            return None;
+        }
+        let root = GetAncestor(hwnd, GA_ROOT);
+        let root = if root.0.is_null() { hwnd } else { root };
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(root, Some(&mut pid));
+        if pid == std::process::id() {
+            return None;
+        }
+        let mut r = RECT::default();
+        if GetWindowRect(root, &mut r).is_err() {
+            return None;
+        }
+        let s = f64::from(GetDpiForWindow(root).max(96)) / 96.0;
+        // A maximised window's frame hangs a few pixels off the screen.
+        let frame = if IsZoomed(root).as_bool() { (8.0 * s).round() as i32 } else { 0 };
+        let (top, right) = (r.top + frame, r.right - frame);
+        let (button, caption) = ((46.0 * s).round() as i32, (36.0 * s).round() as i32);
+        if y < top || y >= top + caption || x > right || x <= right - 3 * button {
+            return None;
+        }
+        Some(match (right - x) / button {
+            0 => "close",
+            1 => "maximise",
+            _ => "minimise",
+        })
+    }
+}
+
+#[cfg(not(windows))]
+pub fn window_button_at(_x: i32, _y: i32) -> Option<&'static str> {
+    None
+}
+
+/// The window in front right now (Izuki's own overlay doesn't count: then
+/// the window it's working in).
+#[cfg(windows)]
+pub fn front_raw() -> Option<isize> {
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    unsafe {
+        let h = GetForegroundWindow();
+        if h.0.is_null() {
+            return target_window();
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(h, Some(&mut pid));
+        if pid == std::process::id() {
+            return target_window();
+        }
+        Some(h.0 as isize)
+    }
+}
+
+#[cfg(not(windows))]
+pub fn front_raw() -> Option<isize> {
+    None
+}
+
 /// If the window `raw` (from [`target_window`]) has been minimised, put it
 /// back in front and say what it was called. For when one of Izuki's own
 /// steps minimised the very window it was working in.

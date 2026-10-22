@@ -527,7 +527,7 @@ pub fn warm_up() {
     std::thread::spawn(|| {
         let Ok(c) = client() else { return };
         for cfg in crate::brain::brain_chain().into_iter().take(2) {
-            if cfg.id.is_local() {
+            if cfg.on_this_pc() {
                 continue;
             }
             let base = cfg.base_url.trim_end_matches('/').to_string();
@@ -863,7 +863,7 @@ pub fn probe(cfg: &ProviderConfig) -> Result<String> {
             }
         }
         // Local servers (LM Studio, llama.cpp, vLLM…) usually need no key.
-        _ if cfg.api_key.trim().is_empty() && !cfg.id.is_local() => {
+        _ if cfg.api_key.trim().is_empty() && !cfg.on_this_pc() => {
             Err(anyhow!("add an API key first"))
         }
         ProviderId::Gemini => {

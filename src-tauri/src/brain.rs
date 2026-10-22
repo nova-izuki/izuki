@@ -482,11 +482,12 @@ fn marks_a_choice(step: &ActionStep, look: &Look) -> bool {
 const FINAL_BUTTONS: &[&str] = &[
     "submit", "finish test", "end test", "finish quiz", "end quiz", "finish attempt", "end exam", "finish exam", "hand in", "turn in",
     "send", "pay ", "pay now", "buy", "place order", "checkout", "check out", "purchase", "delete", "remove account", "post", "publish", "transfer",
+    "don't save", "dont save", "do not save", "discard", "close without saving",
 ];
 
 /// " words like this " — lower-case, punctuation gone, padded for whole-word matching.
 fn words_of(s: &str) -> String {
-    let w: String = s.to_lowercase().chars().map(|c| if c.is_alphanumeric() || c == '\'' { c } else { ' ' }).collect();
+    let w: String = s.to_lowercase().replace('\u{2019}', "'").chars().map(|c| if c.is_alphanumeric() || c == '\'' { c } else { ' ' }).collect();
     format!(" {} ", w.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
@@ -501,11 +502,12 @@ fn final_button(step: &ActionStep) -> Option<String> {
     if !matches!(step.action, Intent::Click | Intent::DoubleClick | Intent::Auto) {
         return None;
     }
-    // Whole words only: "Submit quiz" is final, "Sending options" and "Postcode" aren't.
+    // Whole words only: "Submit quiz" is final, "Sending options" and "Postcode"
+    // aren't — names and entries put through the same normaliser, so "Don’t
+    // Save" (any apostrophe) is caught.
     let raw = step.snapped_to.as_deref()?.trim().to_lowercase();
-    let words: String = raw.chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect();
-    let padded = format!(" {} ", words.split_whitespace().collect::<Vec<_>>().join(" "));
-    FINAL_BUTTONS.iter().any(|f| padded.contains(&format!(" {} ", f.trim()))).then_some(raw)
+    let padded = words_of(&raw);
+    FINAL_BUTTONS.iter().any(|f| padded.contains(&words_of(f))).then_some(raw)
 }
 
 /// Never on a guess: typing a command into a terminal (it runs, and can
@@ -856,12 +858,12 @@ fn brain_chain_inner() -> Vec<crate::settings::ProviderConfig> {
     };
     let mut chain = vec![primary];
     if let Some(f) = settings.fallback_provider.and_then(|id| settings.provider(id).cloned()) {
-        if f.id != chain[0].id && (!f.api_key.trim().is_empty() || f.id.is_local()) {
+        if f.id != chain[0].id && (!f.api_key.trim().is_empty() || f.on_this_pc()) {
             chain.push(f);
         }
     }
     for p in &settings.providers {
-        if !p.api_key.trim().is_empty() && !p.id.is_local() && !chain.iter().any(|c| c.id == p.id) {
+        if !p.api_key.trim().is_empty() && !p.on_this_pc() && !chain.iter().any(|c| c.id == p.id) {
             chain.push(p.clone());
         }
     }
@@ -926,7 +928,7 @@ fn local_up(base_url: &str) -> bool {
 }
 
 /// An address on this PC (localhost, 127.x, ::1).
-fn on_this_pc(base_url: &str) -> bool {
+pub(crate) fn on_this_pc(base_url: &str) -> bool {
     host_port(base_url).is_some_and(|(h, _)| {
         let h = h.to_ascii_lowercase();
         h == "localhost" || h.starts_with("127.") || h == "::1" || h == "0.0.0.0"
@@ -1903,10 +1905,55 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                         Ok(evidence) => evidence,
                         Err(_) => return false,
                     };
+                    // A window's minimise / maximise / close buttons (its top-right
+                    // corner), alt+f4 or win+d, when the task didn't ask: a slip
+                    // that minimised FL Studio three times — and close is right next
+                    // to minimise. Never clicked or pressed.
+                    let slip = match step.action {
+                        Intent::Click | Intent::DoubleClick | Intent::Auto | Intent::Drag => uia::window_button_at(step.x, step.y),
+                        Intent::Key => match step.key.as_deref().map(|k| k.to_lowercase().replace(' ', "")).as_deref() {
+                            Some("alt+f4") | Some("ctrl+q") => Some("close"),
+                            Some("win+d") | Some("win+m") | Some("win+down") => Some("minimise"),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    if let Some(which) = slip {
+                        let task = WORK_TASK.lock().1.clone();
+                        if !asked_for_window(&task, which) {
+                            eprintln!("[agent] that step would {which} a window the task didn't ask about — not done");
+                            *STEP_SNAG.lock() = Some(format!(
+                                "Not done: that step would {which} a window (its {which} button in the top-right corner, or the shortcut), \
+                                 and the task didn't ask for that — closing an app can lose the person's work. Aim at the control you \
+                                 meant (use its target id), press esc for a menu or pop-up, and never minimise, maximise or close a \
+                                 window unless asked."
+                            ));
+                            return false;
+                        }
+                    }
+                    // Clicking the taskbar button of the window that's already in
+                    // front minimises it (Windows' toggle) — "switch to FL Studio"
+                    // while FL was open hid it, again and again.
+                    let front_before = (matches!(step.action, Intent::Click | Intent::Auto)
+                        && uia::on_taskbar(step.x, step.y)
+                        && !asked_for_window(&WORK_TASK.lock().1, "minimise"))
+                    .then(uia::front_raw)
+                    .flatten();
                     match automation::execute(step, move_ms, settings.magnetic_hand, settings.dry_run)
                     {
                         Ok(detail) => {
                             executed.set(i + 1);
+                            if let Some(raw) = front_before {
+                                // (The minimise animation takes a moment.)
+                                std::thread::sleep(Duration::from_millis(350));
+                                if let Some(title) = uia::restore_if_minimised(raw) {
+                                    eprintln!("[agent] a taskbar click minimised \"{title}\", which was already in front — put it back");
+                                    *STEP_SNAG.lock() = Some(format!(
+                                        "\"{title}\" was already open in front — clicking its taskbar button minimised it, so Izuki put it straight back. \
+                                         It's in front now: carry on in it, and never click the taskbar to switch to a window that's already in front."
+                                    ));
+                                }
+                            }
                             if let Some(evidence) = evidence {
                                 if evidence.finish(crate::mission_journal::EvidenceOutcome::Returned).is_err() { return false; }
                             }
@@ -2498,6 +2545,28 @@ fn unique_named<'a>(wanted: &str, controls: &'a [uia::Control]) -> Option<&'a ui
     (partial.len() == 1).then(|| partial[0])
 }
 
+/// The task asks for a window to be closed, minimised or maximised (`which`:
+/// "close", "minimise", "maximise") — else a click on that window button, or
+/// alt+f4 / win+d, is a slip that could close your app and lose your work.
+/// Replays (no task) do what was recorded.
+fn asked_for_window(task: &str, which: &str) -> bool {
+    if task.trim().is_empty() {
+        return true;
+    }
+    let t = words_of(task);
+    let asks: &[&str] = match which {
+        "close" => &["close", "exit", "quit", "x out", "shut down", "shut"],
+        "minimise" => &["minimise", "minimize", "minimised", "minimized", "hide", "show desktop", "show my desktop", "clear my screen", "clear the screen"],
+        _ => &["maximise", "maximize", "full screen", "fullscreen", "make it bigger", "bigger window", "restore"],
+    };
+    // Whole words ("a closer look" isn't "close"), and not "don't close FL".
+    asks.iter().any(|a| {
+        t.match_indices(&format!(" {a} ")).any(|(i, _)| {
+            !t[..i].split_whitespace().rev().take(2).any(|w| ["don't", "dont", "not", "never", "no", "without"].contains(&w))
+        })
+    })
+}
+
 /// The user asked for windows to be minimised or hidden — then a minimised
 /// window is the job done, not a slip to undo.
 fn asked_to_minimise(prompt: &str) -> bool {
@@ -3081,6 +3150,12 @@ fn submit_task(
         // a fresh screen before accepting "done" for an autonomous task —
         // and a plan whose steps were held back isn't done at all.
         let mut done = !held && (lesson || completion_observed(&plan, steps.is_empty(), round));
+        // "Done — turning the metronome on now", with nothing attached: a
+        // promise, not a finish (it was said as done and nothing happened).
+        if done && steps.is_empty() && !lesson && promises_action(&plan.summary) {
+            eprintln!("[agent] said done but only promised (\"{}\") — not done", plan.summary.chars().take(60).collect::<String>());
+            done = false;
+        }
         let wait = plan.wait;
         if plan.notes.is_some() {
             notes = plan.notes.clone();
@@ -3745,8 +3820,8 @@ fn unexpected_app_note(prompt: &str, front: &str) -> Option<String> {
     }
     Some(format!(
         "Check yourself: your last step brought {friendly} to the front, and this task didn't ask for it. If that was a mistake, \
-         close it now (press alt+f4 while it's in front, or esc for a menu) and go back to what you were doing; if the task \
-         really needs it, carry on."
+         press esc if it's a menu or pop-up, or switch back to the window you were working in — never close an app you \
+         didn't open; if the task really needs it, carry on."
     ))
 }
 
@@ -4260,6 +4335,11 @@ mod speed_tests {
         assert_eq!(steps.len(), 1, "Next stays, Submit is held");
         let mut steps = vec![click("End Test")];
         assert!(guard_steps_with(&mut steps, "finish it", false, "chrome", &none).is_some());
+        // Work thrown away is final too, whatever the apostrophe.
+        for name in ["Don't Save", "Don\u{2019}t Save", "Discard changes"] {
+            let mut steps = vec![click(name)];
+            assert!(guard_steps_with(&mut steps, "line my 808 up", false, "fl64", &none).is_some(), "{name}");
+        }
         // Said in so many words: fine.
         let mut steps = vec![click("Submit")];
         assert!(guard_steps_with(&mut steps, "yes submit it", false, "chrome", &none).is_none());
@@ -4594,6 +4674,25 @@ mod speed_tests {
         assert!(same_goal(&goal_words("Clicking the first link on the left now."), &goal_words("Clicking that first link for you now.")));
         assert!(!same_goal(&goal_words("Opening Blackboard now."), &goal_words("Typing your password into the box.")));
         assert!(!same_goal(&goal_words("Searching for flights to Lagos."), &goal_words("Opening the Settings app.")));
+    }
+}
+
+#[cfg(test)]
+mod window_tests {
+    use super::asked_for_window;
+
+    #[test]
+    fn closing_or_hiding_a_window_only_when_asked() {
+        assert!(!asked_for_window("line my 808 up with the beat", "close"));
+        assert!(!asked_for_window("get into fl's midi settings and enable izuki", "minimise"));
+        assert!(!asked_for_window("open chrome and search afro beats", "maximise"));
+        assert!(asked_for_window("close notepad", "close"));
+        assert!(asked_for_window("minimise everything", "minimise"));
+        assert!(asked_for_window("make chrome full screen", "maximise"));
+        assert!(asked_for_window("", "close"), "a replay does what was recorded");
+        assert!(!asked_for_window("take a closer look at the mixer", "close"));
+        assert!(!asked_for_window("don't close fl studio", "close"));
+        assert!(!asked_for_window("never minimise my windows", "minimise"));
     }
 }
 

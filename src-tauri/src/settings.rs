@@ -85,6 +85,20 @@ pub struct ProviderConfig {
     pub enabled: bool,
 }
 
+impl ProviderConfig {
+    /// Runs on this PC: Ollama, or a custom endpoint at this PC's own address
+    /// (no key, slow first answers). A custom endpoint on the internet — GitHub
+    /// Models, any OpenAI-style service — is a cloud brain like the others, so
+    /// it joins the backups when another one is busy.
+    pub fn on_this_pc(&self) -> bool {
+        match self.id {
+            ProviderId::Ollama => true,
+            ProviderId::Custom => self.base_url.trim().is_empty() || crate::brain::on_this_pc(&self.base_url),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BackdropMode {
@@ -1165,6 +1179,18 @@ impl Default for Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_custom_brain_on_the_internet_is_a_cloud_brain() {
+        let mut c = Settings::default().providers.into_iter().find(|p| p.id == ProviderId::Custom).expect("custom slot");
+        assert!(c.on_this_pc(), "the default custom slot is this PC's");
+        c.base_url = "https://models.github.ai/inference".into();
+        assert!(!c.on_this_pc(), "GitHub Models is on the internet");
+        c.base_url = "http://localhost:1234/v1".into();
+        assert!(c.on_this_pc());
+        c.base_url = "https://localhost.example.com/v1".into();
+        assert!(!c.on_this_pc(), "a website whose name starts with localhost");
+    }
 
     fn key_after_heal(pasted: &str) -> String {
         let mut s = Settings::default();

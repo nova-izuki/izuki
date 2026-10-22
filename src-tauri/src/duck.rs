@@ -21,7 +21,7 @@ const DUCKED_TO: f32 = 0.2;
 const SAFETY: Duration = Duration::from_secs(45);
 
 #[derive(Clone, Copy)]
-enum Request { Listening(bool), Speaking(bool), Reset }
+enum Request { Listening(bool), Speaking(bool), Reset, Hold(bool), Heal }
 
 static WORKER: OnceLock<Sender<Request>> = OnceLock::new();
 
@@ -34,6 +34,32 @@ pub fn set(on: bool) {
 pub fn set_speaking(on: bool) { send(Request::Speaking(on)); }
 
 pub fn reset() { send(Request::Reset); }
+
+/// Keep other apps' sound up (`true`) — while Izuki records one of them
+/// (FL Studio for the 808 check) — and let ducking work again (`false`).
+pub fn hold(on: bool) { send(Request::Hold(on)); }
+
+/// Put back any app a previous run left turned down (Izuki closed mid-duck,
+/// or an app restarted its sound while ducked). Called at start-up.
+pub fn heal() { send(Request::Heal); }
+
+/// Other apps' sound kept up for as long as this lives.
+pub struct Held;
+
+impl Held {
+    pub fn on() -> Self {
+        hold(true);
+        // The audio thread puts the sound back first.
+        std::thread::sleep(Duration::from_millis(250));
+        Held
+    }
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        hold(false);
+    }
+}
 
 fn send(request: Request) {
     let tx = WORKER.get_or_init(|| {
@@ -48,18 +74,20 @@ fn send(request: Request) {
 }
 
 #[derive(Default)]
-struct Claims { listening: Option<std::time::Instant>, speaking: Option<std::time::Instant> }
+struct Claims { listening: Option<std::time::Instant>, speaking: Option<std::time::Instant>, held: Option<std::time::Instant> }
 impl Claims {
     fn update(&mut self, request: Request, now: std::time::Instant) {
         let until = |on: bool| on.then_some(now + SAFETY);
         match request {
             Request::Listening(on) => self.listening = until(on),
             Request::Speaking(on) => self.speaking = until(on),
+            Request::Hold(on) => self.held = until(on),
             Request::Reset => { self.listening = None; self.speaking = None; }
+            Request::Heal => {}
         }
     }
     fn active(&self, now: std::time::Instant) -> bool {
-        self.listening.is_some_and(|t| t > now) || self.speaking.is_some_and(|t| t > now)
+        !self.held.is_some_and(|t| t > now) && (self.listening.is_some_and(|t| t > now) || self.speaking.is_some_and(|t| t > now))
     }
 }
 
@@ -75,6 +103,7 @@ fn worker(rx: std::sync::mpsc::Receiver<Request>) {
     loop {
         let wait = if !media_down { Duration::from_secs(3600) } else { Duration::from_secs(1) };
         match rx.recv_timeout(wait) {
+            Ok(Request::Heal) if !media_down => imp::heal(),
             Ok(request) => claims.update(request, std::time::Instant::now()),
             Err(RecvTimeoutError::Timeout) => {},
             Err(RecvTimeoutError::Disconnected) => {
@@ -123,6 +152,76 @@ mod imp {
         pub(super) set_to: f32,
     }
 
+    /// Each app turned down, by name: (its own level, what it was set to).
+    /// Kept on disk until it's put back — an app that restarts its sound while
+    /// turned down (FL Studio does) comes back at the turned-down level, which
+    /// the handle alone can't fix, and the next turn-down would stack on it
+    /// (a fifth of a fifth: "FL keeps getting quieter").
+    type Records = std::collections::HashMap<String, (f32, f32)>;
+
+    fn records_file() -> std::path::PathBuf {
+        crate::store::data_dir().join("ducked.json")
+    }
+
+    fn load() -> Records {
+        std::fs::read_to_string(records_file()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    }
+
+    fn save(records: &Records) {
+        if records.is_empty() {
+            let _ = std::fs::remove_file(records_file());
+        } else if let Ok(text) = serde_json::to_string(records) {
+            let _ = std::fs::write(records_file(), text);
+        }
+    }
+
+    /// Every sound session on the speakers (any state), with its app's name.
+    fn sessions() -> Vec<(String, ISimpleAudioVolume)> {
+        let mut out = Vec::new();
+        unsafe {
+            let Ok(devices) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else { return out };
+            let Ok(speaker) = devices.GetDefaultAudioEndpoint(eRender, eMultimedia) else { return out };
+            let Ok(manager) = speaker.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else { return out };
+            let Ok(list) = manager.GetSessionEnumerator() else { return out };
+            for i in 0..list.GetCount().unwrap_or(0) {
+                let Ok(control) = list.GetSession(i) else { continue };
+                let Ok(control2) = control.cast::<IAudioSessionControl2>() else { continue };
+                let pid = control2.GetProcessId().unwrap_or(0);
+                if pid == 0 {
+                    continue;
+                }
+                let Ok(volume) = control.cast::<ISimpleAudioVolume>() else { continue };
+                out.push((crate::uia::process_name(pid).to_ascii_lowercase(), volume));
+            }
+        }
+        out
+    }
+
+    /// Any session of a remembered app still at its turned-down level goes
+    /// back to its own level (one moved by the person meanwhile stays put).
+    fn sweep(records: &Records) {
+        if records.is_empty() {
+            return;
+        }
+        for (app, volume) in sessions() {
+            let Some(&(was, set_to)) = records.get(&app) else { continue };
+            unsafe {
+                let now = volume.GetMasterVolume().unwrap_or(-1.0);
+                if (now - set_to).abs() < 0.02 {
+                    let _ = volume.SetMasterVolume(was, std::ptr::null());
+                    eprintln!("[duck] {app} was left turned down — put back to {:.0}%", was * 100.0);
+                }
+            }
+        }
+    }
+
+    /// Put back what a previous run left turned down.
+    pub fn heal() {
+        let records = load();
+        sweep(&records);
+        save(&Records::new());
+    }
+
     /// Processes whose sound is Izuki's own (its voice, its chimes).
     fn is_ours(pid: u32) -> bool {
         if pid == std::process::id() {
@@ -134,6 +233,7 @@ mod imp {
 
     pub fn duck_all() -> Vec<Ducked> {
         let mut out = Vec::new();
+        let mut records = load();
         unsafe {
             let Ok(devices) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else {
                 return out;
@@ -158,16 +258,27 @@ mod imp {
                     continue;
                 }
                 let Ok(volume) = control.cast::<ISimpleAudioVolume>() else { continue };
-                let Ok(was) = volume.GetMasterVolume() else { continue };
+                let Ok(mut was) = volume.GetMasterVolume() else { continue };
+                // Still at the level an earlier turn-down set (its sound restarted
+                // meanwhile): its own level is the remembered one — never a fifth
+                // of a fifth.
+                let app = crate::uia::process_name(pid).to_ascii_lowercase();
+                if let Some(&(own, set)) = records.get(&app) {
+                    if (was - set).abs() < 0.02 {
+                        was = own;
+                    }
+                }
                 if was < 0.03 {
                     continue;
                 }
                 let set_to = was * super::DUCKED_TO;
                 if volume.SetMasterVolume(set_to, std::ptr::null()).is_ok() {
+                    records.insert(app, (was, set_to));
                     out.push(Ducked { volume, was, set_to });
                 }
             }
         }
+        save(&records);
         out
     }
 
@@ -191,6 +302,10 @@ mod imp {
                 }
             }
         }
+        // An app that restarted its sound meanwhile: found again by name.
+        let records = load();
+        sweep(&records);
+        save(&Records::new());
     }
 }
 
@@ -214,6 +329,12 @@ mod tests {
         claims.update(Request::Speaking(true), now);
         claims.update(Request::Reset, now);
         assert!(!claims.active(now));
+        // Recording an app: kept up even while Izuki talks.
+        claims.update(Request::Speaking(true), now);
+        claims.update(Request::Hold(true), now);
+        assert!(!claims.active(now));
+        claims.update(Request::Hold(false), now);
+        assert!(claims.active(now));
     }
 
     /// Another app playing (a near-silent WAV looped by PowerShell) is turned
