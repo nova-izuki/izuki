@@ -1742,6 +1742,47 @@ where F: FnOnce() + Send + 'static,
 /// on its next look (a window on top of the button, a greyed-out button).
 static STEP_SNAG: Mutex<Option<String>> = Mutex::new(None);
 
+/// What the screen is being worked for right now (the agent's task, a named
+/// click) and its number, so each step can be checked against it; empty for
+/// replays.
+static WORK_TASK: Mutex<(u64, String)> = Mutex::new((0, String::new()));
+static WORK_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Steps stopped on purpose (FL's MIDI settings without Izuki's link): which
+/// task's, and what to say instead.
+static FL_STOP: Mutex<Option<(u64, String)>> = Mutex::new(None);
+
+/// One task's hold on `WORK_TASK`, for as long as it lives. A task finishing
+/// late never clears or takes the next task's.
+struct Working(u64);
+
+impl Working {
+    fn on(task: &str) -> Self {
+        let id = WORK_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        *WORK_TASK.lock() = (id, task.to_string());
+        Working(id)
+    }
+
+    /// This task's steps were stopped on purpose: what to say instead.
+    fn stopped(&self) -> Option<String> {
+        let mut stop = FL_STOP.lock();
+        if stop.as_ref().is_some_and(|(id, _)| *id == self.0) {
+            stop.take().map(|(_, said)| said)
+        } else {
+            None
+        }
+    }
+}
+
+impl Drop for Working {
+    fn drop(&mut self) {
+        let mut w = WORK_TASK.lock();
+        if w.0 == self.0 {
+            *w = (0, String::new());
+        }
+    }
+}
+
 /// Run `steps` on this thread. `true` if every step ran (not stopped and
 /// no step failed).
 fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> (bool, usize) {
@@ -1774,6 +1815,17 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     if !alive() {
                         let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
                         return false;
+                    }
+                    // A step earlier in this same run may have opened FL's MIDI
+                    // settings: never press or type there without Izuki's link.
+                    // (Replays too: with no task, nothing exempts the step.)
+                    if matches!(step.action, Intent::Auto | Intent::Click | Intent::DoubleClick | Intent::RightClick | Intent::Type | Intent::Key) {
+                        let (id, task) = WORK_TASK.lock().clone();
+                        if let Some(said) = crate::flstudio::midi_window_guard(&task) {
+                            eprintln!("[agent] in FL's MIDI settings without Izuki's link — stopping before the step");
+                            *FL_STOP.lock() = Some((id, said));
+                            return false;
+                        }
                     }
 
                     // The ink belongs to the screen it was drawn on: anything that
@@ -2094,7 +2146,14 @@ pub fn submit_voice_command_in(app: &AppHandle, store: &Arc<Store>, prompt: Stri
     // link — never worked out by clicking through FL's menus (that only ever
     // reached FL's MIDI list, empty without Izuki's cable).
     let resumes = (is_keep_going(&prompt) || is_yes(&prompt)).then(|| UNFINISHED.lock().as_ref().map(|(t, _)| t.clone())).flatten();
-    if let Some(said) = crate::flstudio::screen_guard(&prompt, resumes.as_deref()) {
+    // What Izuki said last: the conversation's, else the last screen task's.
+    let last_said = recent
+        .iter()
+        .rev()
+        .find(|t| t.role == "assistant")
+        .map(|t| t.content.clone())
+        .or_else(|| LAST_TASK.lock().as_ref().filter(|(_, _, at)| at.elapsed() < FOLLOW_ON_FOR).map(|(_, said, _)| said.clone()));
+    if let Some(said) = crate::flstudio::screen_guard(&prompt, resumes.as_deref(), last_said.as_deref()) {
         remember_task(&prompt, &said);
         return VisionPlan { summary: said, provider: "fl".into(), ..Default::default() };
     }
@@ -2332,7 +2391,13 @@ pub fn run_named_click(app: &AppHandle, store: &Arc<Store>, said: &str) -> Optio
     step.scroll_first = c.below;
     step.grounding = c.identity.clone();
     eprintln!("[named] \"{said}\" → clicking \"{}\" directly", c.name);
+    let working = Working::on(said);
     let (worked, _) = run_steps_blocking(app, store, std::slice::from_ref(&step), &alive);
+    let stop = working.stopped();
+    drop(working);
+    if let Some(stop) = stop {
+        return Some(VisionPlan { summary: stop, provider: "fl".into(), ..Default::default() });
+    }
     if !worked {
         // Covered or greyed out: the brain takes it from here.
         return None;
@@ -2711,6 +2776,9 @@ fn submit_task(
 
     // "What are you doing?" is answered from this, while the task runs.
     let _doing = crate::state::Doing::start(&prompt);
+    // Izuki's last word, set when it stops on purpose (kept through finalizing).
+    let mut final_word: Option<String> = None;
+    let working = Working::on(&prompt);
     for round in 0..MAX_ROUNDS {
         if crate::execution::charge(crate::execution::Work::Round).is_err() { break; }
         if !alive() {
@@ -2725,6 +2793,14 @@ fn submit_task(
             plan.summary = "Your PC is locked. Unlock it and say \"keep going\", and I'll carry on.".into();
             plan.mood = Some("calm".into());
             last_plan = Some(plan);
+            break;
+        }
+        // FL Studio's MIDI settings while FL isn't linked to Izuki: no click
+        // there can connect Izuki (its port doesn't exist yet) — stop and
+        // offer the real setup instead of clicking around.
+        if let Some(said) = crate::flstudio::midi_window_guard(&prompt) {
+            eprintln!("[agent] in FL's MIDI settings without Izuki's link — offering the real setup instead of clicking");
+            final_word = Some(said);
             break;
         }
         // A step brought a different app to the front that the task never
@@ -3293,6 +3369,10 @@ fn submit_task(
             .last();
         all_steps.extend(steps.iter().take(executed).cloned());
         done_so_far.extend(steps.iter().take(executed).map(describe_step));
+        if let Some(said) = working.stopped() {
+            final_word = Some(said);
+            break;
+        }
         if uia::working_behind().is_some() {
             let note = "The person switched to another app while you work, so you're working in your window BEHIND \
                         theirs (the screenshot shows your window as if it were in front). Clicking buttons, links, \
@@ -3493,7 +3573,7 @@ fn submit_task(
     let list_finished = open.is_empty();
     let said = plan.summary.clone();
     finalize_execution(&mut plan, completed && alive() && list_finished);
-    if let Some(h) = honest {
+    if let Some(h) = final_word.or(honest) {
         plan.summary = h;
     }
     if completed && alive() && !list_finished {

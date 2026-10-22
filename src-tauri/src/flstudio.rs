@@ -651,6 +651,12 @@ pub fn is_request(said: &str) -> bool {
     fl || asks_setup(&s) || setup_follow_up(&s) || wants_beat(&s) || (job_of(&s).is_some() && fl_running())
 }
 
+/// Your own gear goes in FL's MIDI settings too — that's not Izuki's link.
+const GEAR: &[&str] = &[
+    "keyboard", "keyboards", "controller", "controllers", "launchpad", "speaker", "speakers", "monitors", "mic", "microphone",
+    "interface", "headphones", "vst", "vsts", "plugin", "plugins", "akai", "arturia", "novation", "minilab", "keylab",
+];
+
 /// "Set up FL Studio", "connect Izuki to FL", "hook Izuki up in FL",
 /// "enable Izuki in FL's MIDI settings" — the link itself, in any words.
 /// Not "link my sample to the grid in FL" or "connect my MIDI keyboard to FL"
@@ -664,11 +670,6 @@ fn asks_setup(s: &str) -> bool {
     if !about_fl || ["disconnect", "unlink", "uninstall", "remove", "disable", "stop", "dont", "don"].iter().any(|w| has(w)) {
         return false;
     }
-    // Your own gear goes in FL's MIDI settings too — that's not Izuki's link.
-    const GEAR: &[&str] = &[
-        "keyboard", "keyboards", "controller", "controllers", "launchpad", "speaker", "speakers", "monitors", "mic", "microphone",
-        "interface", "headphones", "vst", "vsts", "plugin", "plugins", "akai", "arturia", "novation", "minilab", "keylab",
-    ];
     if GEAR.iter().any(|g| has(g)) {
         return false;
     }
@@ -728,13 +729,18 @@ fn not_linked() -> String {
 /// Izuki to FL is Izuki's own setup (a virtual MIDI cable, then FL's MIDI
 /// settings) — clicking through FL's menus only ever reaches an empty MIDI
 /// list. And FL's jobs need the link: without it, the truth and the offer.
-/// `resumes`: the task a "yes"/"keep going" would carry on.
-pub fn screen_guard(prompt: &str, resumes: Option<&str>) -> Option<String> {
+/// `resumes`: the task a "yes"/"keep going" would carry on. `last_said`:
+/// Izuki's last words in this conversation.
+pub fn screen_guard(prompt: &str, resumes: Option<&str>, last_said: Option<&str>) -> Option<String> {
     let s = prompt.to_lowercase();
     // A "yes" to Izuki's own offer to connect FL that reached the screen
     // agent anyway (typed in the chat, said mid-conversation) is still that yes.
     let yes_to_setup = crate::offers::pending().as_deref() == Some(SETUP_OFFER) && crate::offers::answer(prompt).is_some();
-    if yes_to_setup || asks_setup(&s) || setup_follow_up(&s) {
+    // Izuki just talked about connecting FL, and this is a short push to do
+    // it ("make it", "do it bro", "enable it", "connect it") — even after a
+    // restart, when the offer itself is gone.
+    let pushed = last_said.is_some_and(talked_about_link) && pushes_to_do_it(&s) && fl_running() && !has_cable();
+    if yes_to_setup || pushed || asks_setup(&s) || setup_follow_up(&s) {
         return Some(setup(&|line| eprintln!("[fl] {line}")).unwrap_or_else(|e| format!("I couldn't finish connecting FL Studio: {e}")));
     }
     let all = format!("{s} {}", resumes.unwrap_or("").to_lowercase());
@@ -744,6 +750,47 @@ pub fn screen_guard(prompt: &str, resumes: Option<&str>) -> Option<String> {
         return None;
     }
     (fl_running() && !has_cable()).then(not_linked)
+}
+
+/// Izuki's words were about connecting FL ("I'm not connected to it…",
+/// "…Options → MIDI settings…", "say “set up FL Studio”").
+fn talked_about_link(said: &str) -> bool {
+    let t = said.to_lowercase();
+    t.contains("fl") && ["not connected", "connect it", "midi settings", "set up fl studio", "connecting fl", "connect fl"].iter().any(|p| t.contains(p))
+}
+
+/// A short push to just do it: a yes, or "make it", "do it bro", "enable it",
+/// "connect it", "set it up" — made only of those words. Not a question, a
+/// no, your own gear, or something else ("turn it up", "make it louder",
+/// "open YouTube").
+fn pushes_to_do_it(s: &str) -> bool {
+    let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    if words.is_empty() || words.len() > 8 || s.contains('?') || crate::offers::is_no(s) || GEAR.iter().any(|g| words.contains(g)) {
+        return false;
+    }
+    const DO: &[&str] = &["make", "do", "connect", "enable", "link", "hook", "set", "setup", "pair", "install", "run"];
+    const REST: &[&str] = &[
+        "it", "that", "this", "izuki", "fl", "studio", "midi", "up", "everything", "work", "happen", "already", "now", "then", "just", "please", "pls",
+        "bro", "bruh", "fam", "man", "g", "ok", "okay", "yes", "yeah", "yea", "ya", "so", "can", "you", "go", "ahead", "right", "the", "connection",
+    ];
+    crate::offers::is_yes(s) || (words.iter().any(|w| DO.contains(w)) && words.iter().all(|w| DO.contains(w) || REST.contains(w)))
+}
+
+/// The screen agent has ended up in FL's MIDI settings while FL isn't linked
+/// to Izuki: no click there can connect Izuki (its port doesn't exist yet),
+/// so it stops and offers the real setup. Your own gear (a keyboard, a
+/// controller) is still fine to help with.
+pub fn midi_window_guard(task: &str) -> Option<String> {
+    // FL's own "Settings - MIDI input / output devices" window.
+    if !crate::uia::foreground_title().to_lowercase().contains("midi input") || !crate::uia::foreground_app().to_lowercase().starts_with("fl") {
+        return None;
+    }
+    let t = task.to_lowercase();
+    let words: Vec<&str> = t.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    if GEAR.iter().any(|g| words.contains(g)) || !fl_running() || has_cable() {
+        return None;
+    }
+    Some(not_linked())
 }
 
 /// Where an FL request goes, from what's known: FL named in it, FL
@@ -2282,6 +2329,18 @@ mod tests {
         assert!(!setup_follow_up("set an alarm up") && !setup_follow_up("install spotify"), "not the link");
         assert!(!setup_follow_up("set it up for my meeting") && !setup_follow_up("connect it to my wifi"), "something else");
         assert!(setup_follow_up("yeah set it up for me"));
+        // After Izuki talked about connecting FL: a short push is the setup.
+        assert!(talked_about_link(NOT_LINKED) && talked_about_link("Set up. Now in FL Studio (restart it first if it's open): Options → MIDI settings."));
+        assert!(!talked_about_link("Tempo's 140 BPM."));
+        for push in ["make it", "do it bro", "enable it", "connect it", "just set it up", "yea bro", "make it work", "ok do the connection"] {
+            assert!(pushes_to_do_it(push), "{push}");
+        }
+        for other in [
+            "open youtube", "how long does it take?", "no", "enable my midi keyboard", "fix my 808", "what's the weather", "turn it up", "make it louder",
+            "turn it on", "set the volume up",
+        ] {
+            assert!(!pushes_to_do_it(other), "{other}");
+        }
         *NOT_LINKED_AT.lock() = None;
         assert!(!setup_follow_up("set it up"), "no offer waiting");
         // FL open but not linked: an FL job is told so — never handed to the screen.
