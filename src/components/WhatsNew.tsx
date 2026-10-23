@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "📂", title: "Izuki reads your FL project", how: "Ask “what's in my FL project?” — Izuki saves it and reads the project itself: every channel and its sound file, every note exactly where you put it, every clip in the Playlist and which part of the sound it plays. Exact even when something's muted. (First time: restart FL once so Izuki can save it for you.)", try: { label: "Ask it", say: "what's in my FL project?" } },
   { icon: "🎯", title: "It does the clicks in FL", how: "After Izuki works out your 808's timing, just say “do it” — it runs the fix in FL's Piano roll itself. And it can finally click in FL at all: FL draws its own buttons, which Windows can't list, so Izuki now clicks the labels it reads on screen." },
   { icon: "🔉", title: "Your apps' volume comes back", how: "Izuki still turns other apps down a little while it talks — but now always puts them back exactly, even if FL Studio restarted its sound meanwhile, and never stacks one turn-down on another (FL kept getting quieter). It never turns FL down while it's listening to your beat." },
   { icon: "🎛️", title: "FL Studio through the link", how: "Once FL is connected, Izuki works it directly — metronome, play/stop, tempo, your 808 — never by hunting with the mouse. “Fix the beat” never makes a new beat any more (only “make a beat” does), and if listening fails it tells you exactly why: FL didn't play, or your speakers got silence." },

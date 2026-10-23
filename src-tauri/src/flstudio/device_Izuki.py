@@ -283,6 +283,12 @@ def op_songmode(on):
     return was
 
 
+def op_save():
+    # Izuki reads the saved project (clips, notes, sample files): saved first.
+    transport.globalTransport(midi.FPT_Save, 1)
+    return True
+
+
 def op_metronome(on):
     # Izuki's clock while it listens; the old setting is handed back to restore.
     was = bool(ui.isMetronomeEnabled())
@@ -298,7 +304,8 @@ OPS = {
     "chan_pan": op_chan_pan, "mute": op_mute, "track_vol": op_track_vol, "plugin_params": op_plugin_params,
     "plugin_set": op_plugin_set, "selected": op_selected, "quantize": op_quantize,
     "select": op_select, "tracks": op_tracks, "slots": op_slots, "track_pan": op_track_pan,
-    "metronome": op_metronome, "songmode": op_songmode, "fine": op_fine,
+    "metronome": op_metronome,
+    "save": op_save, "songmode": op_songmode, "fine": op_fine,
 }
 
 

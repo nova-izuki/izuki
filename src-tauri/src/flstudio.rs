@@ -684,7 +684,7 @@ pub fn is_request(said: &str) -> bool {
     // "Add an 808", "fix the timing": FL's whenever it's open — linked or
     // not (not linked, it says so instead of the screen helper snapping the
     // notes to the grid with FL's quantize).
-    fl || asks_setup(&s) || setup_follow_up(&s) || wants_beat(&s) || ((job_of(&s).is_some() || s.contains("metronome")) && fl_running())
+    fl || asks_setup(&s) || setup_follow_up(&s) || wants_beat(&s) || ((job_of(&s).is_some() || s.contains("metronome") || asks_project(&s)) && fl_running())
 }
 
 /// Your own gear goes in FL's MIDI settings too — that's not Izuki's link.
@@ -803,6 +803,103 @@ pub fn screen_guard(prompt: &str, resumes: Option<&str>, last_said: Option<&str>
 fn is_question(s: &str) -> bool {
     let first = s.split(|c: char| !c.is_alphanumeric() && c != '\'').find(|w| !w.is_empty()).unwrap_or("");
     ["is", "are", "was", "were", "what", "what's", "whats", "why", "how", "does", "do", "did", "which", "where", "when", "who"].contains(&first)
+}
+
+/// The project as it is now: FL saves it first (through the link), then
+/// Izuki reads the file — exact clips, notes and sample files, muted or not.
+/// With FL's older script (no "save"), the last save is read and the new
+/// script put in place for FL's next start. (`true`: saved just now.)
+fn project_now(save: bool) -> Result<(crate::flp::Project, std::path::PathBuf, bool)> {
+    let path = crate::flp::open_project()?;
+    let when = |p: &std::path::Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    let before = when(&path);
+    let saved = !save || match one(json!(["save"])) {
+        Ok(_) => {
+            // FL writes the file a moment later.
+            for _ in 0..30 {
+                std::thread::sleep(Duration::from_millis(150));
+                if when(&path) != before {
+                    std::thread::sleep(Duration::from_millis(300));
+                    break;
+                }
+            }
+            true
+        }
+        Err(e) if e.to_string().contains("unknown op") => {
+            let _ = install_script();
+            false
+        }
+        Err(_) => false,
+    };
+    Ok((crate::flp::read(&path)?, path, saved))
+}
+
+/// "What's in my project?", "read my beat", "go through my FL project".
+fn asks_project(s: &str) -> bool {
+    // "My beat" is FL's; "my project" only with FL (or the beat) named — not a school project.
+    let music = ["fl", "flp", "studio", "beat", "song", "track", "instrumental"].iter().any(|w| s.split(|c: char| !c.is_alphanumeric()).any(|x| x == *w));
+    let about = ["my beat", "this beat", "my flp", "the flp", "my fl project"].iter().any(|w| s.contains(w))
+        || (music && ["my project", "this project", "the project", "my session", "this session"].iter().any(|w| s.contains(w)));
+    let asks = ["what's in", "whats in", "what is in", "read my", "read the", "read this", "look at my", "look through", "what do you see in", "what you see in", "break down", "go through", "what's on", "whats on"]
+        .iter()
+        .any(|w| s.contains(w));
+    about && asks
+}
+
+/// What's really in the project, from the file: the sample, the parts with
+/// notes, what's unused.
+fn describe_project() -> Result<String> {
+    let (p, path, saved) = project_now(true)?;
+    let title = path.file_stem().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+    let when = if saved { "just saved".to_string() } else { "as last saved".to_string() };
+    // Audio clips, by the file they play.
+    let mut audio: Vec<(String, usize, std::collections::BTreeSet<u16>)> = Vec::new();
+    for c in &p.clips {
+        let crate::flp::ClipOf::Audio(i) = c.of else { continue };
+        let Some(ch) = p.channels.iter().find(|x| x.index == i) else { continue };
+        match audio.iter_mut().find(|(n, _, _)| *n == ch.name) {
+            Some((_, n, tracks)) => {
+                *n += 1;
+                tracks.insert(c.track + 1);
+            }
+            None => audio.push((ch.name.clone(), 1, [c.track + 1].into_iter().collect())),
+        }
+    }
+    // Parts with notes in the song.
+    let mut parts: Vec<(String, usize)> = p.channels.iter().map(|c| (c.name.clone(), p.song_notes(c.index).len())).filter(|(_, n)| *n > 0).collect();
+    parts.sort_by(|a, b| b.1.cmp(&a.1));
+    let used: std::collections::HashSet<&str> = audio.iter().map(|(n, _, _)| n.as_str()).chain(parts.iter().map(|(n, _)| n.as_str())).collect();
+    let unused: Vec<&str> = p.channels.iter().map(|c| c.name.as_str()).filter(|n| !used.contains(n)).collect();
+    let mut out = format!("“{title}” ({when}): {} channels.", p.channels.len());
+    if !audio.is_empty() {
+        let list: Vec<String> = audio
+            .iter()
+            .take(6)
+            .map(|(n, k, t)| format!("{n} ({k} clip{} on track{} {})", if *k == 1 { "" } else { "s" }, if t.len() == 1 { "" } else { "s" }, t.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ")))
+            .collect();
+        out.push_str(&format!(" Audio in the Playlist: {}.", list.join("; ")));
+    }
+    if !parts.is_empty() {
+        let list: Vec<String> = parts.iter().take(8).map(|(n, k)| format!("{n} plays {k} note{}", if *k == 1 { "" } else { "s" })).collect();
+        out.push_str(&format!(" With notes in the song: {}.", list.join("; ")));
+    }
+    if !unused.is_empty() {
+        out.push_str(&format!(" Not used in the song yet: {}.", unused.iter().take(8).cloned().collect::<Vec<_>>().join(", ")));
+    }
+    Ok(out)
+}
+
+/// How late a channel's own sample punches after each note starts, in ms,
+/// read from its file (`None` when it isn't a WAV this PC has).
+fn sample_attack_ms(channel: &str) -> Option<f64> {
+    // (Only its sound file is needed: the last save, never a save mid-job.)
+    let (p, _, _) = project_now(false).ok()?;
+    let path = p.channel(channel)?.sample.clone()?;
+    if path.starts_with('%') {
+        return None;
+    }
+    let (samples, rate) = crate::audiofile::read_wav(std::path::Path::new(&path)).ok()?;
+    crate::audiofile::attack_s(&samples, rate).map(|s| s * 1000.0)
 }
 
 /// When Izuki last wrote the “Izuki align” fix, and for which part: "do it"
@@ -1071,6 +1168,10 @@ pub fn handle(said: &str) -> Result<Option<String>> {
     // Running "Izuki align" in the Piano roll: clicks, done by the screen helper.
     if s.contains("izuki align") && s.contains("piano roll") {
         return Ok(None);
+    }
+    // "What's in my project?": read from the saved file — exact, muted or not.
+    if asks_project(&s) && fl_running() {
+        return describe_project().map(Some);
     }
     let words = s.trim().trim_end_matches(['.', '!']);
     let opening = ["open fl", "launch fl", "start fl", "open up fl"].iter().any(|w| words.starts_with(w));
@@ -2128,7 +2229,10 @@ fn run_job(job: Job, s: &str) -> Result<String> {
                     .unwrap_or_default();
                 let song = by_kick.is_none();
                 let with = if song { "the beat" } else { "the kick" };
-                let lag = if separate { common_lag(&hits, &beat, loop_beats, bpm) } else { 0.0 };
+                let heard_lag = if separate { common_lag(&hits, &beat, loop_beats, bpm) } else { 0.0 };
+                // Not clear by ear: the sample's own punch, read from its file.
+                let file_ms = if heard_lag == 0.0 { sample_attack_ms(&name).filter(|ms| *ms >= 8.0) } else { None };
+                let lag = file_ms.map(|ms| ms * bpm / 60_000.0).unwrap_or(heard_lag);
                 let review = review_hits(&hits, &beat, bpm, loop_beats, lag, !separate);
                 let dir = piano_roll_dir().ok_or_else(|| anyhow!("couldn't find your Documents folder"))?;
                 std::fs::create_dir_all(&dir)?;
@@ -2488,6 +2592,13 @@ mod tests {
             assert!(!applies_fix(other), "{other}");
         }
         assert_eq!(apply_follow_up("don't run izuki align"), None);
+        // "What's in my project?"
+        for ask in ["what's in my fl project", "read my beat", "go through my fl project", "what do you see in this beat", "what's in this project in fl studio"] {
+            assert!(asks_project(ask), "{ask}");
+        }
+        for not in ["save my project", "make a beat", "what's the weather", "export my project", "what's in my project folder for school"] {
+            assert!(!asks_project(not), "{not}");
+        }
         // After Izuki talked about connecting FL: a short push is the setup.
         assert!(talked_about_link(NOT_LINKED) && talked_about_link("Set up. Now in FL Studio (restart it first if it's open): Options → MIDI settings."));
         assert!(!talked_about_link("Tempo's 140 BPM."));

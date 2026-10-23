@@ -41,6 +41,8 @@ pub mod storage;
 pub mod pccare;
 pub mod services;
 pub mod flstudio;
+pub mod flp;
+pub mod audiofile;
 pub mod mate;
 pub mod air;
 pub mod daw;
