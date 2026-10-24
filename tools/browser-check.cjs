@@ -149,13 +149,33 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   await pause(100);
   assert(await evaluate('document.getElementById("native-feedback").textContent.startsWith("Tap sent")'));
   await evaluate('document.getElementById("close-settings").click()');
-  for (const width of [320, 390, 768]) {
+  for (const width of [320, 390, 768, 1024]) {
     await call('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: false });
     await pause(150);
     assert(await evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'phone layout overflow at ' + width);
     assert(await evaluate('[...document.querySelectorAll("header button")].every(b=>{const r=b.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth})'), 'phone toolbar overflow at ' + width);
   }
   fs.writeFileSync(path.join(os.tmpdir(), 'izuki-phone-glass-preview.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  for (const phoneOS of ['ios', 'android']) {
+    await navigate('/docs/app/?os=' + phoneOS, '!!document.getElementById("open-settings")');
+    for (const width of [320, 390, 768, 1024]) {
+      await call('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: false });
+      await pause(150);
+      const toolbar = await evaluate(`(() => {
+        const rects = [...document.querySelectorAll('header .tools > button')].map(b => b.getBoundingClientRect());
+        return {
+          fits: rects.length === 9 && rects.every(r => r.left >= 0 && r.right <= innerWidth),
+          touchable: rects.every(r => r.width >= 44 && r.height >= 44),
+          iconsVisible: [...document.querySelectorAll('header .tools > button svg')].every(svg => svg.getBoundingClientRect().width >= 17),
+          separate: rects.every((r, i) => rects.slice(i + 1).every(s => r.right <= s.left || s.right <= r.left || r.bottom <= s.top || s.bottom <= r.top))
+        };
+      })()`);
+      assert(toolbar.fits && toolbar.touchable && toolbar.iconsVisible && toolbar.separate, phoneOS + ' toolbar must fit with separate touch targets at ' + width + ': ' + JSON.stringify(toolbar));
+      fs.writeFileSync(path.join(os.tmpdir(), 'izuki-toolbar-' + phoneOS + '-' + width + '.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    }
+    fs.writeFileSync(path.join(os.tmpdir(), 'izuki-toolbar-' + phoneOS + '.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  }
+  console.log('Phone toolbar: iOS and Android fit at 320, 390, 768 and 1024 with separate 44px touch targets.');
   await call('Page.removeScriptToEvaluateOnNewDocument', { identifier: nativeMock.identifier });
   await navigate('/dist/index.html', '!!document.querySelector(".izk-finder-trigger")');
   assert(await evaluate('(() => { const bar=document.getElementById("draw-command");return !!bar && !bar.closest("main") && bar.getBoundingClientRect().top<innerHeight*0.4; })()'), 'the Draw command bar must stay in the header, at the top — not scroll away with the page');

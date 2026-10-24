@@ -311,32 +311,25 @@ html[data-os="android"] .mem { border-bottom: 1px solid var(--m-outline-variant)
   html[data-os="android"] .icon-btn::after, html[data-os="android"] .btn::after { transition: none; }
 }
 
-/* ------------------------------------------------------------------ the toolbar on a phone
- * Nine controls don't fit in a row on a phone: the shortcuts scroll sideways
- * under the two that matter most, Call and Settings, which stay pinned at
- * the right edge on the bar's own colour. */
-:root { --bar-bg: #171726; }
-html[data-os="ios"] { --bar-bg: #12111b; }
-html[data-os="android"] { --bar-bg: var(--m-container); }
-@media (max-width: 560px) {
-  .app > header { flex-wrap: wrap; row-gap: 6px; }
-  header .tools {
-    width: 100%;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scrollbar-width: none;
-    justify-content: flex-start;
-    scroll-padding-inline: 8px;
-  }
-  header .tools::-webkit-scrollbar { display: none; }
-  header .tools #open-settings { position: sticky; right: 0; z-index: 1; background: var(--bar-bg); flex: none; }
-  header .tools .call-btn {
-    position: sticky;
-    right: 46px;
-    z-index: 1;
-    flex: none;
-    box-shadow: -18px 0 14px -4px var(--bar-bg);
-  }
-  html[data-os="android"] header .tools .call-btn { right: 50px; }
-  html[data-os="ios"] header .tools #open-settings { background: var(--bar-bg); border-radius: 0; }
+/* Keep all nine shortcuts visible with comfortable touch targets. The app
+ * is also width-limited on tablets, so wrap there as well as on phones. */
+.app > header { flex-wrap: wrap; row-gap: 6px; }
+.app > header .who { flex: 1 1 100%; }
+header .tools {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+.app > header .tools > button {
+  width: 100%;
+  min-width: 44px;
+  min-height: 44px;
+  padding-inline: 4px;
+  justify-content: center;
+}
+.app > header .tools svg { flex-shrink: 0; }
+header .tools .call-btn { gap: 4px; font-size: 12px; }
+@media (max-width: 360px) {
+  header .tools .call-btn { font-size: 0; gap: 0; }
 }

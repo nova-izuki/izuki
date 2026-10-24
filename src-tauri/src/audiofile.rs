@@ -18,25 +18,38 @@ pub fn decode_wav(d: &[u8]) -> Result<(Vec<f32>, u32)> {
     }
     let u16_at = |i: usize| d.get(i..i + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
     let u32_at = |i: usize| d.get(i..i + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    let riff_end = 8usize.checked_add(u32_at(4).ok_or_else(|| anyhow!("cut short"))? as usize)
+        .filter(|end| *end >= 12 && *end <= d.len()).ok_or_else(|| anyhow!("WAV data cut short"))?;
+    let d = &d[..riff_end];
     let mut fmt: Option<(u16, u16, u32, u16)> = None;
     let mut i = 12;
     while i + 8 <= d.len() {
         let id = &d[i..i + 4];
         let size = u32_at(i + 4).unwrap_or(0) as usize;
         let body = i + 8;
+        let end = body.checked_add(size).filter(|end| *end <= d.len()).ok_or_else(|| anyhow!("WAV chunk cut short"))?;
         if id == b"fmt " {
+            if size < 16 { bail!("WAV format cut short"); }
             let mut tag = u16_at(body).ok_or_else(|| anyhow!("cut short"))?;
             let channels = u16_at(body + 2).ok_or_else(|| anyhow!("cut short"))?;
             let rate = u32_at(body + 4).ok_or_else(|| anyhow!("cut short"))?;
             let bits = u16_at(body + 14).ok_or_else(|| anyhow!("cut short"))?;
             // WAVE_FORMAT_EXTENSIBLE: the real format is in its sub-format.
             if tag == 0xFFFE {
-                tag = u16_at(body + 24).unwrap_or(1);
+                if size < 40 || u16_at(body + 16).unwrap_or(0) < 22 {
+                    bail!("WAV extended format cut short");
+                }
+                // Only the standard PCM/IEEE-float subformat GUIDs are supported.
+                if d.get(body + 26..body + 40) != Some(&[0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113]) {
+                    bail!("unsupported WAV subformat");
+                }
+                tag = u16_at(body + 24).ok_or_else(|| anyhow!("cut short"))?;
             }
-            fmt = Some((tag, channels.max(1), rate, bits));
+            if channels == 0 || rate == 0 { bail!("invalid WAV channel count or sample rate"); }
+            fmt = Some((tag, channels, rate, bits));
         } else if id == b"data" {
             let (tag, channels, rate, bits) = fmt.ok_or_else(|| anyhow!("no format before the sound"))?;
-            let data = &d[body..(body + size).min(d.len())];
+            let data = &d[body..end];
             let step = (bits / 8) as usize;
             if step == 0 {
                 bail!("a WAV with {bits}-bit samples");
@@ -55,7 +68,9 @@ pub fn decode_wav(d: &[u8]) -> Result<(Vec<f32>, u32)> {
                 bail!("a WAV in a format I don't read yet ({tag}, {bits}-bit)");
             }
             let frame = step * channels as usize;
-            let mono = data.chunks_exact(frame).map(|f| f.chunks_exact(step).map(one).sum::<f32>() / f32::from(channels)).collect();
+            if data.len() % frame != 0 { bail!("WAV sample frame cut short"); }
+            let mono: Vec<f32> = data.chunks_exact(frame).map(|f| f.chunks_exact(step).map(|b| one(b) / f32::from(channels)).sum()).collect();
+            if mono.iter().any(|sample| !sample.is_finite()) { bail!("WAV contains invalid sample values"); }
             return Ok((mono, rate));
         }
         i = body + size + (size & 1);
@@ -125,6 +140,54 @@ mod tests {
         let (s, _) = decode_wav(&wav(1, 2, 48000, 24, &frames)).unwrap();
         assert!((s[2] + 0.5).abs() < 1e-3);
         assert!(decode_wav(b"RIFF....WAVE").is_err());
+    }
+
+    #[test]
+    fn rejects_truncated_chunks_and_invalid_audio_metadata() {
+        let valid = wav(1, 1, 48000, 16, &[vec![0.5], vec![-0.5]]);
+        for end in 0..valid.len() {
+            assert!(decode_wav(&valid[..end]).is_err(), "accepted truncation at {end}");
+        }
+        for (offset, bytes) in [(20, vec![255, 255]), (22, vec![0, 0]), (24, vec![0, 0, 0, 0]), (16, vec![2, 0, 0, 0])] {
+            let mut broken = valid.clone();
+            broken[offset..offset + bytes.len()].copy_from_slice(&bytes);
+            assert!(decode_wav(&broken).is_err());
+        }
+        let mut partial_frame = valid.clone();
+        partial_frame.pop();
+        let len = partial_frame.len();
+        partial_frame[4..8].copy_from_slice(&((len - 8) as u32).to_le_bytes());
+        partial_frame[40..44].copy_from_slice(&3u32.to_le_bytes());
+        assert!(decode_wav(&partial_frame).is_err());
+        for sample in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert!(decode_wav(&wav(3, 1, 48000, 32, &[vec![sample]])).is_err());
+        }
+    }
+
+    #[test]
+    fn reads_standard_extensible_pcm_and_float_but_rejects_other_guids() {
+        for (tag, bits) in [(1u16, 16), (3, 32)] {
+            let mut d = wav(tag, 1, 48000, bits, &[vec![0.5], vec![-0.5]]);
+            let mut extension = Vec::new();
+            extension.extend(22u16.to_le_bytes());
+            extension.extend(bits.to_le_bytes());
+            extension.extend(0u32.to_le_bytes());
+            extension.extend(tag.to_le_bytes());
+            extension.extend([0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113]);
+            d.splice(36..36, extension);
+            let len = d.len();
+            d[4..8].copy_from_slice(&((len - 8) as u32).to_le_bytes());
+            d[16..20].copy_from_slice(&40u32.to_le_bytes());
+            d[20..22].copy_from_slice(&0xfffeu16.to_le_bytes());
+            let (samples, rate) = decode_wav(&d).unwrap();
+            assert_eq!(rate, 48000);
+            assert!((samples[0] - 0.5).abs() < 0.001);
+            d[59] ^= 1;
+            assert!(decode_wav(&d).is_err());
+        }
+        let mut short = wav(1, 1, 48000, 16, &[vec![0.5]]);
+        short[20..22].copy_from_slice(&0xfffeu16.to_le_bytes());
+        assert!(decode_wav(&short).is_err());
     }
 
     #[test]

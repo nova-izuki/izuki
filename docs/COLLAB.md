@@ -18,6 +18,9 @@ assistant is also changing.
 ## Who's on what
 | Area | Files | Owner |
 | --- | --- | --- |
+| WAV sample validation | `audiofile.rs` | Codex (done locally, 2026-10-24) |
+| Phone toolbar overflow | `docs/app/platform.css`, `docs/app/sw.js`, `tools/browser-check.cjs` | Codex (done locally, 2026-10-24) |
+| FL project reader validation and song timing | `flp.rs`, atomic summary/save fixes in `flstudio.rs` | Codex (done locally, 2026-10-24) |
 | Gmail across every account, briefings | `mail.rs`, `headsup.rs` (email parts) | Claude |
 | Account health (all linked apps) | `accounts.rs`, `AccountHealthCard.tsx` | Claude |
 | Campus hub, Lecture Mode | `campus.rs`, `lecture.rs`, `CampusHub.tsx` | Claude |

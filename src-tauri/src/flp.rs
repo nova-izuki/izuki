@@ -93,6 +93,52 @@ impl Project {
         self.channels.iter().find(|c| c.name.trim().to_lowercase() == n)
     }
 
+    /// Broken Playlist references cannot be described as successfully read music.
+    /// Count each missing source once even if the song repeats its clips.
+    pub fn arrangement_warnings(&self) -> Vec<String> {
+        let channels: std::collections::HashSet<_> = self.channels.iter().map(|c| c.index).collect();
+        let patterns: std::collections::HashMap<_, _> = self.patterns.iter().map(|p| (p.number, p)).collect();
+        let mut missing_patterns = std::collections::BTreeSet::new();
+        let mut missing_channels = std::collections::BTreeSet::new();
+        for clip in &self.clips {
+            match clip.of {
+                ClipOf::Pattern(n) => match patterns.get(&n) {
+                    None => { missing_patterns.insert(n); }
+                    Some(pattern) => {
+                        for note in pattern.notes.iter().filter(|n| n.pos < clip.len) {
+                            if !channels.contains(&note.channel) { missing_channels.insert(note.channel); }
+                        }
+                    }
+                },
+                ClipOf::Audio(n) if !channels.contains(&n) => { missing_channels.insert(n); }
+                _ => {}
+            }
+        }
+        let mut warnings = Vec::new();
+        if !missing_patterns.is_empty() {
+            warnings.push(format!("{} pattern source(s) could not be found", missing_patterns.len()));
+        }
+        if !missing_channels.is_empty() {
+            warnings.push(format!("{} channel source(s) could not be found", missing_channels.len()));
+        }
+        warnings
+    }
+
+    /// Count arranged notes in one pass without building or sorting a timeline
+    /// for every channel. Repeated clips count each audible occurrence.
+    pub fn song_note_counts(&self) -> std::collections::HashMap<u16, usize> {
+        let patterns: std::collections::HashMap<_, _> = self.patterns.iter().map(|p| (p.number, p)).collect();
+        let mut counts = std::collections::HashMap::new();
+        for clip in &self.clips {
+            let ClipOf::Pattern(number) = clip.of else { continue };
+            let Some(pattern) = patterns.get(&number) else { continue };
+            for note in pattern.notes.iter().filter(|n| n.pos < clip.len) {
+                *counts.entry(note.channel).or_insert(0) += 1;
+            }
+        }
+        counts
+    }
+
     /// Every note `channel` plays in the song, in beats from the song's start
     /// (each pattern clip's notes, cut to the clip's length).
     pub fn song_notes(&self, channel: u16) -> Vec<(f64, Note)> {
@@ -102,7 +148,9 @@ impl Project {
             let ClipOf::Pattern(number) = clip.of else { continue };
             let Some(p) = self.patterns.iter().find(|p| p.number == number) else { continue };
             for n in p.notes.iter().filter(|n| n.channel == channel && n.pos < clip.len) {
-                out.push((f64::from(clip.pos + n.pos) / ppq, *n));
+                let mut note = *n;
+                note.len = note.len.min(clip.len - note.pos);
+                out.push(((f64::from(clip.pos) + f64::from(note.pos)) / ppq, note));
             }
         }
         out.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -122,20 +170,30 @@ pub fn parse(d: &[u8]) -> Result<Project> {
         bail!("not an FL Studio project");
     }
     let hlen = u32_at(4).ok_or_else(|| anyhow!("cut short"))? as usize;
+    if hlen < 6 {
+        bail!("invalid FL Studio project header");
+    }
     let ppq = u16_at(12).ok_or_else(|| anyhow!("cut short"))?;
-    let mut p = 8 + hlen;
+    if ppq == 0 {
+        bail!("invalid FL Studio project timing (zero ticks per beat)");
+    }
+    let mut p = 8usize.checked_add(hlen).ok_or_else(|| anyhow!("a bad header length"))?;
     if d.get(p..p + 4) != Some(b"FLdt") {
         bail!("not an FL Studio project (no data)");
     }
     let dlen = u32_at(p + 4).ok_or_else(|| anyhow!("cut short"))? as usize;
     p += 8;
-    let end = (p + dlen).min(d.len());
+    let end = p.checked_add(dlen).filter(|end| *end <= d.len()).ok_or_else(|| anyhow!("project data cut short"))?;
     let mut project = Project { ppq, ..Default::default() };
     let mut channel: Option<usize> = None;
     let mut pattern: Option<usize> = None;
     while p < end {
         let id = d[p];
         p += 1;
+        let width = match id { 0..=63 => 1, 64..=127 => 2, 128..=191 => 4, _ => 0 };
+        if end - p < width {
+            bail!("project event cut short");
+        }
         match id {
             0..=63 => p += 1,
             64..=127 => {
@@ -162,8 +220,9 @@ pub fn parse(d: &[u8]) -> Result<Project> {
             _ => {
                 let (n, used) = varint(&d[p..end])?;
                 p += used;
-                let blob = d.get(p..p + n).ok_or_else(|| anyhow!("cut short"))?;
-                p += n;
+                let next = p.checked_add(n).filter(|next| *next <= end).ok_or_else(|| anyhow!("project event cut short"))?;
+                let blob = &d[p..next];
+                p = next;
                 match id {
                     VERSION => project.version = String::from_utf8_lossy(blob).trim_end_matches('\0').to_string(),
                     NAME => {
@@ -184,6 +243,9 @@ pub fn parse(d: &[u8]) -> Result<Project> {
                         }
                     }
                     NOTES => {
+                        if blob.len() % 24 != 0 {
+                            bail!("project notes cut short");
+                        }
                         if let Some(pt) = pattern.and_then(|i| project.patterns.get_mut(i)) {
                             pt.notes.extend(blob.chunks_exact(24).map(|n| Note {
                                 pos: u32::from_le_bytes([n[0], n[1], n[2], n[3]]),
@@ -194,7 +256,12 @@ pub fn parse(d: &[u8]) -> Result<Project> {
                             }));
                         }
                     }
-                    PLAYLIST => project.clips.extend(clips(blob)),
+                    PLAYLIST => {
+                        if !blob.is_empty() && ![80, 60, 32].iter().any(|size| blob.len() % size == 0) {
+                            bail!("project Playlist clips cut short or unsupported");
+                        }
+                        project.clips.extend(clips(blob));
+                    },
                     _ => {}
                 }
             }
@@ -207,6 +274,9 @@ pub fn parse(d: &[u8]) -> Result<Project> {
 fn varint(d: &[u8]) -> Result<(usize, usize)> {
     let mut n = 0usize;
     for (i, b) in d.iter().enumerate().take(5) {
+        if i == 4 && b & 0xf0 != 0 {
+            bail!("a bad length in the project");
+        }
         n |= ((b & 0x7f) as usize) << (7 * i);
         if b & 0x80 == 0 {
             return Ok((n, i + 1));
@@ -466,6 +536,112 @@ mod tests {
     fn says_what_isnt_a_project() {
         assert!(parse(b"RIFF....").is_err());
         assert!(parse(b"FLhd").is_err());
+    }
+
+    #[test]
+    fn warns_about_missing_sources_without_counting_repeated_clips_twice() {
+        let mut p = parse(&project()).unwrap();
+        assert!(p.arrangement_warnings().is_empty());
+        p.patterns.clear();
+        p.channels.retain(|c| c.index != 9);
+        assert_eq!(p.arrangement_warnings(), vec![
+            "1 pattern source(s) could not be found",
+            "1 channel source(s) could not be found",
+        ]);
+        let mut p = parse(&project()).unwrap();
+        p.channels.retain(|c| c.index != 23);
+        assert_eq!(p.arrangement_warnings(), vec!["1 channel source(s) could not be found"]);
+        p.clips.retain(|c| !matches!(c.of, ClipOf::Pattern(_)));
+        assert!(p.arrangement_warnings().is_empty(), "unarranged drafts do not affect the overview");
+    }
+
+    #[test]
+    fn fast_note_counts_match_arranged_timelines() {
+        let p = parse(&project()).unwrap();
+        let counts = p.song_note_counts();
+        for channel in &p.channels {
+            assert_eq!(counts.get(&channel.index).copied().unwrap_or(0), p.song_notes(channel.index).len());
+        }
+        assert_eq!(counts.get(&23), Some(&5));
+        assert_eq!(counts.get(&7), Some(&2));
+    }
+
+    #[test]
+    fn large_arrangement_counts_match_without_building_each_timeline() {
+        let mut p = Project { ppq: 96, ..Default::default() };
+        for channel in 0..128 {
+            p.channels.push(Channel { index: channel, name: format!("Part {channel}"), sample: None });
+        }
+        for number in 0..64 {
+            p.patterns.push(Pattern { number, name: String::new(), notes: (0..128).map(|i| Note {
+                pos: u32::from(i) * 24, len: 24, key: 60, channel: (number + i) % 128, velocity: 100,
+            }).collect() });
+        }
+        for i in 0..512u32 {
+            p.clips.push(Clip { pos: i * 3072, len: if i % 2 == 0 { 1536 } else { 3072 }, track: 0,
+                of: ClipOf::Pattern((i % 64) as u16), start_ms: None, end_ms: None });
+        }
+        let start = std::time::Instant::now();
+        let expected: Vec<_> = p.channels.iter().map(|c| (c.index, p.song_notes(c.index).len())).collect();
+        let old_time = start.elapsed();
+        let start = std::time::Instant::now();
+        let counts = p.song_note_counts();
+        let new_time = start.elapsed();
+        for (channel, count) in expected {
+            assert_eq!(counts.get(&channel).copied().unwrap_or(0), count);
+        }
+        eprintln!("128 channels, 512 clips: timelines {old_time:?}; single-pass counts {new_time:?}");
+    }
+
+    #[test]
+    fn rejects_every_truncated_project() {
+        let d = project();
+        for end in 0..d.len() {
+            assert!(parse(&d[..end]).is_err(), "accepted truncation at {end}");
+        }
+    }
+
+    fn with_events(events: &[u8]) -> Vec<u8> {
+        let mut d = project()[..22].to_vec();
+        d[18..22].copy_from_slice(&(events.len() as u32).to_le_bytes());
+        d.extend_from_slice(events);
+        d
+    }
+
+    #[test]
+    fn events_cannot_read_past_declared_data_into_trailing_bytes() {
+        for event in [vec![0], vec![64, 0], vec![128, 0, 0, 0], vec![NAME, 4, 0, 0]] {
+            let mut d = with_events(&event);
+            d.extend_from_slice(&[0; 16]);
+            assert!(parse(&d).is_err());
+        }
+        assert!(parse(&with_events(&[NEW_PATTERN, 1, 0, NOTES, 1, 0])).is_err());
+        assert!(parse(&with_events(&[PLAYLIST, 1, 0])).is_err());
+        assert!(varint(&[255, 255, 255, 255, 16]).is_err());
+        assert_eq!(varint(&[255, 255, 255, 255, 15]).unwrap(), (u32::MAX as usize, 5));
+        assert!(parse(&with_events(&[NAME, 255, 255, 255, 255, 255])).is_err());
+    }
+
+    #[test]
+    fn invalid_header_and_timing_are_rejected() {
+        let mut d = project();
+        d[4..8].copy_from_slice(&0u32.to_le_bytes());
+        assert!(parse(&d).is_err());
+        let mut d = project();
+        d[12..14].copy_from_slice(&0u16.to_le_bytes());
+        assert!(parse(&d).is_err());
+    }
+
+    #[test]
+    fn song_notes_clip_tails_and_do_not_overflow_long_timelines() {
+        let mut p = parse(&project()).unwrap();
+        p.clips.truncate(1);
+        p.clips[0].pos = u32::MAX;
+        p.clips[0].len = 400;
+        let notes = p.song_notes(23);
+        assert_eq!(notes.len(), 2);
+        assert_eq!(notes[1].1.len, 32);
+        assert_eq!(notes[1].0, (f64::from(u32::MAX) + 368.0) / 96.0);
     }
 
     /// A real project: `IZUKI_FLP=<path> cargo test --lib real_project -- --ignored --nocapture`.

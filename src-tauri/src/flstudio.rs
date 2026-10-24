@@ -816,14 +816,16 @@ fn project_now(save: bool) -> Result<(crate::flp::Project, std::path::PathBuf, b
     let saved = !save || match one(json!(["save"])) {
         Ok(_) => {
             // FL writes the file a moment later.
+            let mut observed_save = false;
             for _ in 0..30 {
                 std::thread::sleep(Duration::from_millis(150));
                 if when(&path) != before {
                     std::thread::sleep(Duration::from_millis(300));
+                    observed_save = true;
                     break;
                 }
             }
-            true
+            observed_save
         }
         Err(e) if e.to_string().contains("unknown op") => {
             let _ = install_script();
@@ -866,7 +868,8 @@ fn describe_project() -> Result<String> {
         }
     }
     // Parts with notes in the song.
-    let mut parts: Vec<(String, usize)> = p.channels.iter().map(|c| (c.name.clone(), p.song_notes(c.index).len())).filter(|(_, n)| *n > 0).collect();
+    let counts = p.song_note_counts();
+    let mut parts: Vec<(String, usize)> = p.channels.iter().map(|c| (c.name.clone(), counts.get(&c.index).copied().unwrap_or(0))).filter(|(_, n)| *n > 0).collect();
     parts.sort_by(|a, b| b.1.cmp(&a.1));
     let used: std::collections::HashSet<&str> = audio.iter().map(|(n, _, _)| n.as_str()).chain(parts.iter().map(|(n, _)| n.as_str())).collect();
     let unused: Vec<&str> = p.channels.iter().map(|c| c.name.as_str()).filter(|n| !used.contains(n)).collect();
@@ -885,6 +888,10 @@ fn describe_project() -> Result<String> {
     }
     if !unused.is_empty() {
         out.push_str(&format!(" Not used in the song yet: {}.", unused.iter().take(8).cloned().collect::<Vec<_>>().join(", ")));
+    }
+    let warnings = p.arrangement_warnings();
+    if !warnings.is_empty() {
+        out.push_str(&format!(" Project check: {}. This overview may be incomplete.", warnings.join("; ")));
     }
     Ok(out)
 }
