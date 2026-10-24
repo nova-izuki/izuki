@@ -19,7 +19,7 @@ assistant is also changing.
 ## Who's on what
 | Area | Files | Owner |
 | --- | --- | --- |
-| 1.0.163 release (owner explicitly requested Codex release on 2026-10-24) | Version manifests, release notes, WhatsNew | Codex |
+| 1.0.163 release (owner explicitly requested Codex release on 2026-10-24) | Version manifests, release notes, WhatsNew | Codex (released and verified) |
 | WAV sample validation | `audiofile.rs` | Codex (done locally, 2026-10-24) |
 | Phone toolbar overflow | `docs/app/platform.css`, `docs/app/sw.js`, `tools/browser-check.cjs` | Codex (done locally, 2026-10-24) |
 | FL project reader validation and song timing | `flp.rs`, atomic summary/save fixes in `flstudio.rs` | Codex (done locally, 2026-10-24) |
