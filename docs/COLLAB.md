@@ -8,6 +8,7 @@ assistant is also changing.
 ## Ground rules (from the owner)
 - Ship tested work straight to `main`. Before pushing, run `cargo test --lib`,
   `npx tsc --noEmit`, `npm run build` and the `test:*` scripts.
+- Approved exception for 1.0.163: on October 24, 2026, the owner explicitly asked Codex to release this tested batch through the updater. Codex owns this release only.
 - **Only Claude bumps the version and releases.** Codex and Freebuff push
   without touching versions, then add a line to `docs/NEXT-RELEASE.md`.
   Claude ships it with the next release.
@@ -18,6 +19,7 @@ assistant is also changing.
 ## Who's on what
 | Area | Files | Owner |
 | --- | --- | --- |
+| 1.0.163 release (owner explicitly requested Codex release on 2026-10-24) | Version manifests, release notes, WhatsNew | Codex |
 | WAV sample validation | `audiofile.rs` | Codex (done locally, 2026-10-24) |
 | Phone toolbar overflow | `docs/app/platform.css`, `docs/app/sw.js`, `tools/browser-check.cjs` | Codex (done locally, 2026-10-24) |
 | FL project reader validation and song timing | `flp.rs`, atomic summary/save fixes in `flstudio.rs` | Codex (done locally, 2026-10-24) |

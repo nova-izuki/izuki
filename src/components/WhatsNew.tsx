@@ -23,6 +23,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "\u{1F6E0}", title: "A clearer check of your FL project", how: "Ask what's in my FL project. Izuki now warns when arranged patterns or channels are missing, stops when a project file is incomplete or a WAV file is damaged, and only says just saved after the project file changes. Note summaries do less work on large arrangements.", try: { label: "Check my project", say: "what's in my FL project?" } },
+  { icon: "\u{1F4F1}", title: "Phone controls that stay in view", how: "Home, new chat, voice, Drive, Remote, Lecture, Grass, Call and Settings now fit in rows on iPhone and Android, with full-size icons and room to tap." },
   { icon: "📂", title: "Izuki reads your FL project", how: "Ask “what's in my FL project?” — Izuki saves it and reads the project itself: every channel and its sound file, every note exactly where you put it, every clip in the Playlist and which part of the sound it plays. Exact even when something's muted. (First time: restart FL once so Izuki can save it for you.)", try: { label: "Ask it", say: "what's in my FL project?" } },
   { icon: "🎯", title: "It does the clicks in FL", how: "After Izuki works out your 808's timing, just say “do it” — it runs the fix in FL's Piano roll itself. And it can finally click in FL at all: FL draws its own buttons, which Windows can't list, so Izuki now clicks the labels it reads on screen." },
   { icon: "🔉", title: "Your apps' volume comes back", how: "Izuki still turns other apps down a little while it talks — but now always puts them back exactly, even if FL Studio restarted its sound meanwhile, and never stacks one turn-down on another (FL kept getting quieter). It never turns FL down while it's listening to your beat." },
