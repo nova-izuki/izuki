@@ -68,8 +68,32 @@ function islandScale(size: string): number {
   return size === "small" ? 0.88 : size === "large" ? 1.15 : 1;
 }
 
+/** How close to the top edge counts as "reaching for the Island". */
+const PEEK_EDGE = 4;
+/** Dragged this far down from the top and it leaves the edge for good. */
+const UNDOCK_AT = 46;
+const ISLAND_DOCKED_KEY = "izk.island.docked";
+
+function loadIslandDocked(): boolean {
+  try {
+    return localStorage.getItem(ISLAND_DOCKED_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function storeIslandDocked(on: boolean) {
+  try {
+    localStorage.setItem(ISLAND_DOCKED_KEY, on ? "1" : "0");
+  } catch {
+    /* a private window: it just won't be remembered */
+  }
+}
+
 /** "Move it anywhere" (setting): the Island isn't held to the top strip. */
 let freeMove = false;
+/** Sitting on the top edge rather than pulled out to its own place. */
+let dockedNow = true;
 
 /** Kept on screen at its real (scaled) width. */
 function fitIslandPosition(position: IslandPosition, scale = 1): IslandPosition {
@@ -80,7 +104,7 @@ function fitIslandPosition(position: IslandPosition, scale = 1): IslandPosition 
     // Keep it in a top rail: movable away from tabs/address fields without
     // letting a short drag strand it over the middle of the screen — unless
     // "Move it anywhere" is on.
-    y: Math.min(freeMove ? wa.bottom - 48 : wa.top + 120, Math.max(wa.top + 6, position.y)),
+    y: Math.min(freeMove || !dockedNow ? wa.bottom - 48 : wa.top + 120, Math.max(wa.top + (dockedNow ? 0 : 6), position.y)),
   };
 }
 
@@ -158,13 +182,29 @@ export function Island({
   const lastPeek = useRef(0);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [open, setOpen] = useState(false);
+  /** Sitting on the top edge (hidden until the mouse goes up there), rather
+   *  than pulled out to its own place on screen. */
+  const [docked, setDocked] = useState(() => loadIslandDocked());
+  /** The mouse is at the very top of the screen, so a docked Island peeks. */
+  const [peeking, setPeeking] = useState(false);
   freeMove = free;
+  dockedNow = docked;
   /** Holding the talk key (the orb stays away then): you're being heard. */
   const [talking, setTalking] = useState(false);
   useEffect(() => {
     const off = on<string>(EV.talkWave, (state) => setTalking(state === "listening"));
     return () => void off.then((f) => f());
   }, []);
+  // Reaching for a docked Island: the top few pixels of the screen bring it
+  // down, iPhone-style. Pulled out of the dock, it's simply always there.
+  useEffect(() => {
+    if (!docked) {
+      setPeeking(false);
+      return;
+    }
+    const off = watchPointer((_x, y) => setPeeking(y - workArea().top <= PEEK_EDGE));
+    return off;
+  }, [docked]);
   const [position, setPosition] = useState<IslandPosition>(loadIslandPosition);
   const positionRef = useRef(position);
   positionRef.current = position;
@@ -382,7 +422,16 @@ export function Island({
     const sx = event.clientX;
     const sy = event.clientY;
     lockHit();
-    const move = (e: PointerEvent) => setPosition(fitIslandPosition({ x: start.x + e.clientX - sx, y: start.y + e.clientY - sy }, scaleRef.current));
+    const move = (e: PointerEvent) => {
+      const wanted = { x: start.x + e.clientX - sx, y: start.y + e.clientY - sy };
+      // Pulled down off the top edge: it leaves the edge and lives wherever
+      // you drop it, like dragging a window off a dock.
+      if (docked && wanted.y - workArea().top > UNDOCK_AT) {
+        setDocked(false);
+        storeIslandDocked(false);
+      }
+      setPosition(fitIslandPosition(wanted, scaleRef.current));
+    };
     const cleanup = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
@@ -590,12 +639,14 @@ export function Island({
           "izk-island relative overflow-hidden text-white " +
           (open ? "pointer-events-auto" : "pointer-events-none") +
           // At rest: the always-on pill, or fully hidden until your mouse
-          // goes up there (or something's happening).
-          (live.kind === "rest" && !open && !always ? " izk-island-hidden" : "") +
+          // reaches the top edge (or something's happening). Pulled out of
+          // the dock it stays where you put it and is always there.
+          (live.kind === "rest" && !open && !always && docked && !peeking ? " izk-island-hidden" : "") +
           (open ? " izk-island-open" : "") +
           // Lit up while Izuki is really listening, thinking or working.
           (busy || orb === "listening" || orb === "speaking" || live.kind === "missions" ? " izk-island-active" : "") +
-          (look !== "default" ? ` izk-theme-${look}` : "")
+          (look !== "default" ? ` izk-theme-${look}` : "") +
+          (docked ? " izk-island-docked" : "")
         }
         style={{ borderRadius: look === "squircle" ? (open ? 16 : 11) : open ? 28 : 22 }}
         // Esc closes it from anywhere inside (not just the Ask box).
@@ -1193,7 +1244,11 @@ function Expanded({
     // Scrolls when it holds more than fits on the screen.
     <div
       className="izk-island-scroll flex flex-col gap-3 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:thin]"
-      style={{ maxHeight: `${Math.max(220, Math.min(maxH ?? 1e9, (typeof window === "undefined" ? 800 : window.innerHeight) - 48)) / scale}px` }}
+      // Never taller than the room actually below the pill: "Move it
+      // anywhere" can put it low, and a 220px floor ran the reminder rows and
+      // their Cancel buttons off the bottom of the screen with no way to reach
+      // them (the scroll box thought it fitted).
+      style={{ maxHeight: `${Math.max(96, Math.min(maxH ?? 1e9, (typeof window === "undefined" ? 800 : window.innerHeight) - 48)) / scale}px` }}
     >
       <div
         role="button"

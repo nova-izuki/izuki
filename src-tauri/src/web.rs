@@ -376,6 +376,49 @@ fn public_address(address: std::net::IpAddr) -> bool {
     }
 }
 
+/// The page's own charset: `Content-Type: text/html; charset=windows-1252`,
+/// else a `<meta charset=...>` near the top, else UTF-8.
+fn decode_body(bytes: &[u8], kind: &str) -> String {
+    let declared = kind
+        .split(';')
+        .find_map(|p| p.trim().strip_prefix("charset="))
+        .map(|c| c.trim_matches(['"', '\'']).to_ascii_lowercase());
+    let charset = declared.or_else(|| {
+        let head = String::from_utf8_lossy(&bytes[..bytes.len().min(2048)]).to_ascii_lowercase();
+        let at = head.find("charset")? + "charset".len();
+        let rest = head[at..].trim_start_matches(['=', ' ', '"', '\'']);
+        let end = rest.find(['"', '\'', '>', ';', ' ', '/']).unwrap_or(rest.len());
+        (end > 0).then(|| rest[..end].to_string())
+    });
+    match charset.as_deref() {
+        // Everything else (and no label at all) is read as UTF-8, which is
+        // what the web overwhelmingly is.
+        Some("windows-1252") | Some("cp1252") | Some("iso-8859-1") | Some("latin1") | Some("ascii") | Some("us-ascii") => {
+            bytes.iter().map(|&b| WINDOWS_1252[b as usize]).collect()
+        }
+        _ => String::from_utf8_lossy(bytes).into_owned(),
+    }
+}
+
+/// windows-1252: the same as Latin-1 except for 0x80-0x9f, where it puts
+/// curly quotes, dashes and the euro sign that these pages are full of.
+static WINDOWS_1252: [char; 256] = {
+    let mut t = ['\u{0}'; 256];
+    let mut i = 0;
+    while i < 256 {
+        t[i] = i as u8 as char;
+        i += 1;
+    }
+    t[0x80] = '\u{20ac}'; t[0x82] = '\u{201a}'; t[0x83] = '\u{192}'; t[0x84] = '\u{201e}';
+    t[0x85] = '\u{2026}'; t[0x86] = '\u{2020}'; t[0x87] = '\u{2021}'; t[0x88] = '\u{2c6}';
+    t[0x89] = '\u{2030}'; t[0x8a] = '\u{160}'; t[0x8b] = '\u{2039}'; t[0x8c] = '\u{152}';
+    t[0x8e] = '\u{17d}'; t[0x91] = '\u{2018}'; t[0x92] = '\u{2019}'; t[0x93] = '\u{201c}';
+    t[0x94] = '\u{201d}'; t[0x95] = '\u{2022}'; t[0x96] = '\u{2013}'; t[0x97] = '\u{2014}';
+    t[0x98] = '\u{2dc}'; t[0x99] = '\u{2122}'; t[0x9a] = '\u{161}'; t[0x9b] = '\u{203a}';
+    t[0x9c] = '\u{153}'; t[0x9e] = '\u{17e}'; t[0x9f] = '\u{178}';
+    t
+};
+
 fn page_response(url: &str, allow_local_fixture: bool) -> Result<reqwest::blocking::Response> {
     use std::net::ToSocketAddrs;
     let allow_local_fixture = cfg!(test) && allow_local_fixture;
@@ -432,7 +475,10 @@ fn read_page_inner(url: &str, allow_local_fixture: bool) -> Result<(String, Stri
     let mut bytes = Vec::new();
     std::io::Read::read_to_end(&mut std::io::Read::take(res, MAX_PAGE_BYTES + 1), &mut bytes)?;
     if bytes.len() as u64 > MAX_PAGE_BYTES { anyhow::bail!("That page is too large to read in the background."); }
-    let body = String::from_utf8_lossy(&bytes);
+    // Decode by the charset the page declares. `from_utf8_lossy` alone turned
+    // every byte over 0x7f into "?" on the windows-1252 / ISO-8859-1 pages
+    // that older .edu and .gov syllabuses still use.
+    let body = decode_body(&bytes, &kind);
     if !kind.contains("html") && !body.trim_start().starts_with('<') {
         return Ok((landed, clip(&body, PAGE_CHARS)));
     }

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 export function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -12,6 +12,8 @@ export function Section({
   children,
   className,
   id,
+  group,
+  foldable = false,
 }: {
   title?: string;
   hint?: string;
@@ -19,21 +21,99 @@ export function Section({
   children: ReactNode;
   className?: string;
   id?: string;
+  /** Which part of Settings this belongs to ("Voice", "Island", …). */
+  group?: string;
+  /** Can be folded away, and remembers that you folded it. */
+  foldable?: boolean;
 }) {
+  const key = `izk.fold.${id ?? title ?? ""}`;
+  const [folded, setFolded] = useState(() => {
+    if (!foldable) return false;
+    try {
+      return localStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const fold = (on: boolean) => {
+    setFolded(on);
+    try {
+      localStorage.setItem(key, on ? "1" : "0");
+    } catch {
+      /* a private window: it just won't be remembered */
+    }
+  };
   return (
-    <div id={id} className={cx("izk-card izk-grain p-4", className)}>
+    <div
+      id={id}
+      // The search box in Settings finds sections by this, and by their words.
+      data-izk-section={title ?? ""}
+      data-izk-group={group ?? ""}
+      className={cx("izk-card izk-grain p-4", className)}
+    >
       {(title || right) && (
         <div className="mb-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
-            {title && (
-              <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-izk-ink">{title}</h3>
-            )}
-            {hint && <p className="mt-0.5 text-[11.5px] leading-snug text-izk-muted">{hint}</p>}
+            {title &&
+              (foldable ? (
+                <button
+                  type="button"
+                  onClick={() => fold(!folded)}
+                  aria-expanded={!folded}
+                  className="flex items-center gap-1.5 text-left text-[13px] font-semibold tracking-[-0.01em] text-izk-ink"
+                >
+                  <span className={cx("text-[10px] text-izk-muted transition-transform", folded ? "" : "rotate-90")}>▶</span>
+                  {title}
+                </button>
+              ) : (
+                <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-izk-ink">{title}</h3>
+              ))}
+            {hint && !folded && <p className="mt-0.5 text-[11.5px] leading-snug text-izk-muted">{hint}</p>}
           </div>
           {right}
         </div>
       )}
-      {children}
+      {!folded && children}
+    </div>
+  );
+}
+
+/**
+ * Find any setting by name.
+ *
+ * Settings has grown past what anyone can scan, so this hides every section
+ * that doesn't mention what you typed. It reads the rendered words rather
+ * than a hand-kept list, so a setting added later is findable with no extra
+ * work — and nothing can fall out of the index by being forgotten.
+ */
+export function SettingsSearch({ placeholder = "Search settings…" }: { placeholder?: string }) {
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    const want = q.trim().toLowerCase();
+    const sections = Array.from(document.querySelectorAll<HTMLElement>("[data-izk-section]"));
+    for (const el of sections) {
+      const hit = !want || (el.textContent ?? "").toLowerCase().includes(want) || (el.dataset.izkGroup ?? "").toLowerCase().includes(want);
+      el.style.display = hit ? "" : "none";
+    }
+    return () => {
+      for (const el of sections) el.style.display = "";
+    };
+  }, [q]);
+  return (
+    <div className="izk-card izk-grain flex items-center gap-2 px-3 py-2">
+      <span aria-hidden className="text-[12px] text-izk-muted">🔍</span>
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={placeholder}
+        aria-label="Search settings"
+        className="izk-no-drag min-w-0 flex-1 bg-transparent text-[12.5px] text-izk-ink outline-none placeholder:text-izk-muted"
+      />
+      {q && (
+        <button type="button" onClick={() => setQ("")} aria-label="Clear the search" className="izk-pill px-2 py-0.5 text-[11px]">
+          Clear
+        </button>
+      )}
     </div>
   );
 }

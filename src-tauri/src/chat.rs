@@ -1107,7 +1107,12 @@ pub fn complete_with_web(messages: &[Value], id: u64, deep: bool, on_text: &dyn 
         };
         let reply = if deep { complete_streaming_deep(&messages, id, &chunk)? } else { complete_streaming(&messages, id, &chunk)? };
         if cancelled(id) { anyhow::bail!("Stopped."); }
-        let Some(tool) = parse_tool(&reply) else {
+        // `find_tool`, not `parse_tool`: `parse_tool` only accepts a reply
+        // that is nothing but the tag, so a weak model writing "Let me check
+        // that page for you. [READ: ...]" had the raw tag streamed at the user
+        // as the answer, with no page read and invented contents presented as
+        // real. (The main chat loop has always used `find_tool` here.)
+        let Some(tool) = find_tool(&reply).map(|(_, t)| t) else {
             let held = buffer.into_inner().0;
             if !held.is_empty() { on_text(&held); }
             return Ok(reply);
@@ -1116,7 +1121,10 @@ pub fn complete_with_web(messages: &[Value], id: u64, deep: bool, on_text: &dyn 
         let result = match &tool {
             Tool::Search(query) => crate::web::search_text(query),
             Tool::Read(url) => crate::web::read(url),
-            _ => anyhow::bail!("This chat can read webpages. Use a separate command for actions on your PC."),
+            // A tool this lane doesn't have is no reason to throw the whole
+            // answer away with rounds still left: tell the model so and let it
+            // finish, exactly as a failed search or read does below.
+            _ => Err(anyhow::anyhow!("This chat can only search and read webpages. Answer without that tool, and don't claim you used it.")),
         };
         if cancelled(id) { anyhow::bail!("Stopped."); }
         let result = match result { Ok(text) => text, Err(error) => format!("The web request failed: {error}. Do not present a successful read or invent its contents.") };

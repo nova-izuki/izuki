@@ -466,6 +466,12 @@ fn keep_answers_out(plan: &mut VisionPlan, steps: &mut Vec<ActionStep>, look: &L
 }
 
 fn apply_answer_mode(plan: &mut VisionPlan, steps: &mut Vec<ActionStep>, look: &Look, prompt: &str) {
+    // Only a quiz or test needs the answer kept out of Izuki's hands. On an
+    // ordinary page this used to throw away the scroll that reaches the
+    // question and the ask that says "I can't read the choices".
+    if !look.test_page {
+        return keep_answers_out(plan, steps, look);
+    }
     if direct_answer_requested(prompt) {
         // Naming a fact is not permission to act on the test or page.
         let latest = prompt.split("\n\n(The conversation just before,").next().unwrap_or(prompt).to_lowercase();

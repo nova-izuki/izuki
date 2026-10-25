@@ -32,7 +32,7 @@ import { TvCard } from "../TvCard";
 import { ThemePicker } from "../ThemePicker";
 import { ExtensionCard } from "../ExtensionCard";
 import { BugCard } from "../BugCard";
-import { Badge, Row, Section, Segmented, Slider, Toggle, cx } from "../ui";
+import { Badge, Row, Section, Segmented, SettingsSearch, Slider, Toggle, cx } from "../ui";
 import { AutonomousCard } from "../AutonomousCard";
 import { useIzuki } from "../../lib/store";
 import { api } from "../../lib/ipc";
@@ -151,9 +151,13 @@ export function SettingsTab() {
         </span>
       </button>
 
+      {/* Settings has grown past what anyone can scan: find any one by name. */}
+      <SettingsSearch />
+
       {/* ------------------------------------------------ brain */}
       <Section
         id="settings-brain"
+        group="Brain"
         title="Izuki's brain"
         hint="Local first, cloud when you want the smarter answer. Both are free."
         right={<Badge tone="accent">{settings.active_provider}</Badge>}
@@ -372,7 +376,7 @@ export function SettingsTab() {
       </Section>
 
       {/* ------------------------------------------------ hotkeys */}
-      <Section id="settings-shortcuts" title="Shortcuts" hint="Global — they work from any app, even full-screen games.">
+      <Section id="settings-shortcuts" title="Shortcuts" group="Keys" foldable hint="Global — they work from any app, even full-screen games.">
         <HotkeyRow
           label="Draw overlay"
           value={settings.hotkey_draw}
@@ -405,7 +409,7 @@ export function SettingsTab() {
       </Section>
 
       {/* ------------------------------------------------ execution */}
-      <Section id="settings-execution" title="Execution" hint="How the hand behaves once the plan comes back.">
+      <Section id="settings-execution" title="Execution" group="Screen control" foldable hint="How the hand behaves once the plan comes back.">
         <Row label="Control style" hint="Jarvis mode presses buttons and types into boxes directly through Windows — no mouse moving, so it's faster and your own mouse stays free. Mouse mode moves a visible hand like a person would (best for games and drawing apps).">
           <select aria-label="Control style" className="izk-field izk-no-drag max-w-[165px] py-1 text-[11.5px]" value={settings.control_style} onChange={(e) => patch({ control_style: e.target.value as typeof settings.control_style })}>
             <option value="mouse">Mouse</option>
@@ -483,7 +487,7 @@ export function SettingsTab() {
 
       {/* ------------------------------------------------ system */}
       <ThemePicker />
-      <Section id="settings-look" title="Chat & caption colours" hint="How the chat box, Izuki's replies and your words look on screen.">
+      <Section id="settings-look" title="Chat & caption colours" group="Look" foldable hint="How the chat box, Izuki's replies and your words look on screen.">
         <Row label="Voice orb" hint="Choose your look: an orb, a 3D face, any .glb face you add, or your own face from Avaturn. Animates only while visible.">
           <span className="text-[11px] text-izk-muted">Pick below</span>
         </Row>
@@ -530,7 +534,7 @@ export function SettingsTab() {
         )}
       </Section>
 
-      <Section id="settings-system" title="Window & system">
+      <Section id="settings-system" title="Window & system" group="System" foldable>
         <Row
           label="Glass backdrop"
           hint="Acrylic blurs hardest; Mica is calmer and cheaper on battery."
@@ -576,7 +580,7 @@ export function SettingsTab() {
       <div id="settings-browser"><ExtensionCard /></div>
 
       {/* ------------------------------------------------ help */}
-      <Section id="settings-help" title="Help">
+      <Section id="settings-help" title="Help" group="Help" foldable>
         <Row
           label="New here?"
           hint="Replay the quick welcome tour — setting up, talking, asking, drawing, memory."

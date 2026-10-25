@@ -339,7 +339,7 @@ export interface Settings {
   /** Drag it anywhere on screen (off: along the top). */
   island_free: boolean;
   /** The Island's look (Windhawk-style themes). */
-  island_style: "default" | "glass" | "bubble" | "squircle" | "outline" | "aero" | "nova";
+  island_style: "default" | "glass" | "bubble" | "squircle" | "outline" | "aero" | "nova" | "windows" | "dot" | "strip";
   /** How big the Island is. */
   island_size?: "small" | "normal" | "large";
   /** A click picked by eye gets a second look from a pointing model (Gemini) first. */

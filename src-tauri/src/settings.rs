@@ -832,7 +832,7 @@ impl Settings {
         if !self.edge_glow { self.glow_only = false; }
         if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro"].contains(&self.orb_style.as_str()) && !face_ok(&self.orb_style) && !toon_ok(&self.orb_style) { self.orb_style = "liquid".into(); }
         if !["auto", "silk", "bars", "mirror", "neon", "dots"].contains(&self.island_wave.as_str()) { self.island_wave = default_island_wave(); }
-        if !["default", "glass", "bubble", "squircle", "outline", "aero", "nova"].contains(&self.island_style.as_str()) { self.island_style = default_island_style(); }
+        if !["default", "glass", "bubble", "squircle", "outline", "aero", "nova", "windows", "dot", "strip"].contains(&self.island_style.as_str()) { self.island_style = default_island_style(); }
         if !["small", "normal", "large"].contains(&self.island_size.as_str()) { self.island_size = default_island_size(); }
         self.orb_response = if self.orb_response.is_finite() { self.orb_response.clamp(0.5, 1.5) } else { 1.0 };
         let defaults = Self::default();

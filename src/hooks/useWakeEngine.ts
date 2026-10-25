@@ -39,11 +39,24 @@ export function useWakeEngine(
   const listeningRef = useRef(listen);
   listeningRef.current = listen;
   const [voiceVersion, setVoiceVersion] = useState(0);
+  /** Is the enrolled-voice filter on? Read once per change, not per frame. */
+  const voiceFilterOn = useRef(false);
   useEffect(() => {
     const changed = () => { gateGeneration.current++; setVoiceVersion((v) => v + 1); };
     window.addEventListener(SPEAKER_CHANGED, changed);
     return () => { gateGeneration.current++; window.removeEventListener(SPEAKER_CHANGED, changed); };
   }, []);
+  useEffect(() => {
+    // A damaged profile file counts as on: the gate then refuses every wake
+    // rather than letting anyone through.
+    voiceFilterOn.current = (() => {
+      try {
+        return readSpeakers().enabled;
+      } catch {
+        return true;
+      }
+    })();
+  }, [voiceVersion, loaded]);
   useEffect(() => {
     if (!loaded) return;
     try {
@@ -136,6 +149,13 @@ export function useWakeEngine(
     let resting = false;
     const onAudio = (samples: Float32Array) => {
       // Copy before the wake worker takes ownership of the audio buffer.
+      // Only the enrolled-voice filter needs this, and it is off by default:
+      // copying ~4 s of audio on every frame for nothing is real work in the
+      // always-listening path.
+      if (!voiceFilterOn.current) {
+        recentVoice.current.length = 0;
+        return;
+      }
       recentVoice.current.push(samples.slice());
       let length = recentVoice.current.reduce((sum, c) => sum + c.length, 0);
       while (recentVoice.current.length > 1 && length > 64_000) length -= recentVoice.current.shift()!.length;

@@ -185,9 +185,9 @@ export function TalkToIzuki() {
         )}
         {settings.island_enabled && <QuietHoursRow value={settings.quiet_hours ?? ""} onChange={(v) => patch({ quiet_hours: v })} />}
         {settings.island_enabled && (
-          <Row label="Island look" hint="Choose how the Island — the pill at the top of your screen — looks (themes like Windhawk's).">
+          <Row label="Island look" hint="How the Island looks. “Windows bar” makes it flat and squared in your system colours, so docked at the top it reads as part of Windows rather than a floating pill. “Tiny dot” stays out of the way until something happens; “Wide strip” runs across the top.">
             <div className="flex flex-wrap justify-end gap-1">
-              {([["nova", "✨ Nova"], ["default", "Default"], ["glass", "Glass"], ["bubble", "Bubble"], ["squircle", "Squircle"], ["outline", "Neon outline"], ["aero", "Aero (classic)"]] as const).map(([k, l]) => (
+              {([["nova", "✨ Nova"], ["default", "Default"], ["windows", "Windows bar"], ["dot", "Tiny dot"], ["strip", "Wide strip"], ["glass", "Glass"], ["bubble", "Bubble"], ["squircle", "Squircle"], ["outline", "Neon outline"], ["aero", "Aero (classic)"]] as const).map(([k, l]) => (
                 <button
                   key={k}
                   type="button"

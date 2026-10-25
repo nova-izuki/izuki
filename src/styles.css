@@ -706,6 +706,36 @@ html[data-backdrop="tabbed"] .izk-card {
 }
 /* Island looks (Settings → Talk → Island look), Windhawk-style. All static —
    no backdrop blur, no animation — because the Island sits over video all day. */
+/* Docked at the top it should read as part of Windows: flat, squared, the
+   system's own colours — not a floating pill sitting on top of everything. */
+.izk-island.izk-theme-windows {
+  background: color-mix(in srgb, Canvas 92%, #000 8%);
+  color: CanvasText;
+  border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+  border-radius: 6px !important;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+  backdrop-filter: none;
+}
+
+/* Sitting right on the top edge: square off the top corners so it looks
+   joined to the edge of the screen rather than floating under it. */
+.izk-island.izk-theme-windows.izk-island-docked {
+  border-top: 0;
+  border-radius: 0 0 6px 6px !important;
+}
+
+/* Out of the way until something happens. */
+.izk-island.izk-theme-dot {
+  background: radial-gradient(circle at 35% 35%, #3b4a6b, #0b0d14);
+  border-radius: 999px !important;
+}
+
+/* A thin strip across the top. */
+.izk-island.izk-theme-strip {
+  border-radius: 0 0 10px 10px !important;
+  background: linear-gradient(180deg, rgba(10, 12, 20, 0.96), rgba(10, 12, 20, 0.88));
+}
+
 .izk-island.izk-theme-glass {
   background: rgba(22, 26, 40, 0.6);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 8px 24px rgba(0, 0, 0, 0.3);

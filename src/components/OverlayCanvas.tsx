@@ -26,7 +26,7 @@ import { VoiceOrb } from "./VoiceOrb";
 import { CursorWave, type TalkWaveState } from "./CursorWave";
 import { createDrawSurface, TOOL_COLOUR, type DrawSurface } from "../lib/draw";
 import { workArea } from "../lib/floating";
-import { hitTest, reassertHit, resetHit } from "../lib/hitTest";
+import { hitTest, reassertHit, resetHit, scrollableAt } from "../lib/hitTest";
 import { api, EV, emit, on } from "../lib/ipc";
 import { useDictation } from "../hooks/useDictation";
 import { VoiceSphere } from "./VoiceSphere";
@@ -666,16 +666,10 @@ export function OverlayCanvas() {
         const sy = Math.max(1, window.innerHeight) / Math.max(1, desktop.h || window.innerHeight);
         const cx = (x - desktop.x) * sx;
         const cy = (y - desktop.y) * sy;
-        let el = document.elementFromPoint(cx, cy) as HTMLElement | null;
-        while (el) {
-          const oy = getComputedStyle(el).overflowY;
-          if ((oy === "auto" || oy === "scroll") && el.scrollHeight > el.clientHeight + 1) {
-            // +120 forward = scroll up; ~60px a notch.
-            el.scrollTop -= (delta / 120) * 60;
-            break;
-          }
-          el = el.parentElement;
-        }
+        // The same test the core used to decide to take the wheel at all.
+        const el = scrollableAt(cx, cy);
+        // +120 forward = scroll up; ~60px a notch.
+        if (el) el.scrollTop -= (delta / 120) * 60;
       }),
       // Quickdraw's key-up — commit() already closes with nothing to send
       // when no mark was drawn, so this is safe to fire on a bare tap too.

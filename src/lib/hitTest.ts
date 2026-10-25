@@ -34,6 +34,18 @@ function apply(want: boolean, force = false) {
  * answer, or the bubble's padding, has nothing to scroll — and swallowing
  * the wheel there meant nothing moved at all.
  */
+/** The same question the wheel handler asks, so the two can't disagree about
+ *  what scrolls (one swallowing the wheel the other then can't use). */
+export function scrollableAt(x: number, y: number): HTMLElement | null {
+  let node = document.elementFromPoint(x, y) as HTMLElement | null;
+  while (node) {
+    const overflow = getComputedStyle(node).overflowY;
+    if ((overflow === "auto" || overflow === "scroll") && node.scrollHeight > node.clientHeight + 1) return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
 function scrolls(el: Element | null): boolean {
   let node = el as HTMLElement | null;
   while (node) {
@@ -53,10 +65,13 @@ function applyWheel(want: boolean) {
 /** Feed a cursor position in overlay client pixels. */
 export function hitTest(clientX: number, clientY: number) {
   last = [clientX, clientY];
-  const el = document.elementFromPoint(clientX, clientY);
-  applyWheel(!!el && scrolls(el));
+  // During a drag nothing is being hovered or scrolled: skip the DOM work
+  // entirely (elementFromPoint plus a getComputedStyle walk forces a layout,
+  // and this runs on every cursor update).
   if (locks > 0) return apply(true);
+  const el = document.elementFromPoint(clientX, clientY);
   apply(!!el?.closest("[data-izk-hit]"));
+  applyWheel(!!el && scrolls(el));
 }
 
 /**

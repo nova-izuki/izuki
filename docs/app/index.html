@@ -1456,7 +1456,16 @@
       const t = reminderWords(r.text);
       // "Delete old photos" while a reminder says that is asking to do it.
       const sameVerb = !saysKind && t[0] === verb[0];
-      return !sameVerb && content.every((x) => hasReminderWord(t, x));
+      if (sameVerb || !content.every((x) => hasReminderWord(t, x))) return false;
+      // Without the word "reminder" or "alarm" nothing says this is about a
+      // reminder, so the whole thing has to be named: "cancel check in with
+      // Solomon" removes it, a bare "cancel check" must not. (Same rule as
+      // reminders.rs plan_cancel, which has tests for exactly these.)
+      if (!saysKind) {
+        const named = t.filter((w) => !FILLER.has(w));
+        return named.every((w) => content.some((c) => hasReminderWord([w], c)));
+      }
+      return true;
     });
     if (!matched.length) {
       if (!saysKind) return null;

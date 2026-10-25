@@ -25,6 +25,10 @@ static TX: OnceLock<std::sync::mpsc::Sender<Wheel>> = OnceLock::new();
 /// The hook thread, so the overlay can have the hook put in and taken out.
 #[cfg(windows)]
 static HOOK_THREAD: OnceLock<u32> = OnceLock::new();
+/// Whether the hook should be in right now. Kept separately from the message
+/// so a decision made before the thread finished starting isn't lost.
+#[cfg(windows)]
+static WANTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(windows)]
 #[derive(Clone, serde::Serialize)]
@@ -41,9 +45,11 @@ struct Wheel {
 #[cfg(windows)]
 pub fn watching(on: bool) {
     use windows::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_APP};
+    WANTED.store(on, std::sync::atomic::Ordering::Relaxed);
+    // Still starting up: it reads WANTED itself once its queue exists.
     if let Some(thread) = HOOK_THREAD.get() {
         unsafe {
-            let _ = PostThreadMessageW(*thread, WM_APP, windows::Win32::Foundation::WPARAM(on as usize), windows::Win32::Foundation::LPARAM(0));
+            let _ = PostThreadMessageW(*thread, WM_APP, windows::Win32::Foundation::WPARAM(0), windows::Win32::Foundation::LPARAM(0));
         }
     }
 }
@@ -55,7 +61,7 @@ pub fn watching(_on: bool) {}
 pub fn install(app: &AppHandle) {
     use windows::Win32::System::Threading::{GetCurrentThread, GetCurrentThreadId, SetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL};
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetMessageW, SetTimer, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK, MSG, WH_MOUSE_LL, WM_APP, WM_TIMER,
+        GetMessageW, PeekMessageW, SetTimer, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK, MSG, PM_NOREMOVE, WH_MOUSE_LL, WM_APP, WM_TIMER,
     };
     let (tx, rx) = std::sync::mpsc::channel::<Wheel>();
     if TX.set(tx).is_err() {
@@ -76,11 +82,15 @@ pub fn install(app: &AppHandle) {
         .name("izuki-wheel".into())
         .spawn(|| unsafe {
             let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-            // A thread message queue has to exist before anything can post to it.
+            // A thread message queue has to exist before anything can post to
+            // it, and PeekMessageW makes one without blocking. Waiting on
+            // GetMessageW here instead meant the id below was never published,
+            // so the hook was never put in and the wheel did nothing at all.
             let mut msg = MSG::default();
-            let _ = GetMessageW(&mut msg, None, WM_APP, WM_APP);
+            let _ = PeekMessageW(&mut msg, None, WM_APP, WM_APP, PM_NOREMOVE);
             let _ = HOOK_THREAD.set(GetCurrentThreadId());
             let mut hook: Option<HHOOK> = None;
+            let want = || WANTED.load(std::sync::atomic::Ordering::Relaxed);
             let put_in = |hook: &mut Option<HHOOK>| {
                 if hook.is_none() {
                     match SetWindowsHookExW(WH_MOUSE_LL, Some(wheel_hook), None, 0) {
@@ -94,8 +104,8 @@ pub fn install(app: &AppHandle) {
                     let _ = UnhookWindowsHookEx(h);
                 }
             };
-            // The first message is the one that woke the queue up.
-            if msg.message == WM_APP && msg.wParam.0 != 0 {
+            // Whatever was decided while this thread was still starting.
+            if want() {
                 put_in(&mut hook);
             }
             // While the hook is in, put it back every 30 s in case Windows
@@ -103,7 +113,7 @@ pub fn install(app: &AppHandle) {
             SetTimer(None, 0, 30_000, None);
             while GetMessageW(&mut msg, None, 0, 0).as_bool() {
                 match msg.message {
-                    WM_APP if msg.wParam.0 != 0 => put_in(&mut hook),
+                    WM_APP if want() => put_in(&mut hook),
                     WM_APP => take_out(&mut hook),
                     WM_TIMER if hook.is_some() => {
                         if let Ok(fresh) = SetWindowsHookExW(WH_MOUSE_LL, Some(wheel_hook), None, 0) {

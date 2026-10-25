@@ -61,7 +61,15 @@ The repo is public: github.com/nova-izuki/izuki.
    - Nothing is sent, posted, bought or deleted without the user's explicit yes.
    - No unauthenticated remote control.
    - Never inject into Explorer.
-   - For school work, coach; never write graded answers.
+   - For school work: **never click, type or submit an answer** into a quiz,
+     test or graded form, and never write the essay or code they hand in.
+     Izuki *may* say a factual answer when the owner explicitly asks for one
+     ("what's the answer", "which option is correct") and then explain it —
+     that is tutoring, and the owner asked for it repeatedly. Saying something
+     is never permission to act on the page: a request that also asks Izuki to
+     *do* something goes back to coaching (`brain::direct_answer_requested`,
+     which defers to `companion::asks_to_do`). Coaching mode ("coach me",
+     "don't answer") still withholds.
 7. **Don't touch anything outside this `izuki/` folder.** The parent folder
    is the owner's separate robot project.
 
