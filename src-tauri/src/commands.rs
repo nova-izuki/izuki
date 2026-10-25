@@ -420,6 +420,17 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
                     t => format!("Here's Izuki's {t} tab."),
                 });
             }
+            crate::selfknow::Ask::LinkNote(name) => {
+                let Some(from) = crate::notes::focused() else {
+                    return Some("Open the note you want to link first, then say it again.".into());
+                };
+                return blocking(move || match crate::notes::link_by_name(&from, &name) {
+                    Ok(said) => said,
+                    Err(e) => e.to_string(),
+                })
+                .await
+                .ok();
+            }
             crate::selfknow::Ask::SaveNotes => {
                 let saved = blocking(crate::notes::from_screen).await;
                 return Some(match saved {
@@ -1173,6 +1184,16 @@ pub async fn notes_answer(prompt: String) -> R<String> {
             serde_json::json!({"role":"user", "content":prompt}),
         ]).map_err(err)
     }).await?
+}
+
+#[tauri::command]
+pub async fn notes_links(id: String) -> R<crate::notes::Links> {
+    blocking(move || crate::notes::links_of(&id)).await.map_err(err)?.map_err(err)
+}
+
+#[tauri::command]
+pub async fn notes_link(from: String, to: String) -> R<crate::notes::Note> {
+    blocking(move || crate::notes::link_notes(&from, &to)).await.map_err(err)?.map_err(err)
 }
 
 #[tauri::command]

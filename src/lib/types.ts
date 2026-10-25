@@ -656,6 +656,24 @@ export interface N8nImport {
 }
 
 /** A Nova Note: study notes kept on this PC. */
+/** One note pointing at another. */
+export interface NoteLink {
+  id: string;
+  title: string;
+  /** What the note called it, which may not be its exact title. */
+  said: string;
+}
+
+/** A note's place in the web of notes. */
+export interface NoteLinks {
+  /** Notes this one points at. */
+  out: NoteLink[];
+  /** Notes that point here. */
+  back: NoteLink[];
+  /** Filed in the same chapter, without anyone writing a link. */
+  shelf: NoteLink[];
+}
+
 export interface Note {
   id: string;
   title: string;

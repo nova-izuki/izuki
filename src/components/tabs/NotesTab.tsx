@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Brain, Check, CheckSquare, ChevronDown, ChevronRight, Copy, FolderTree, Loader2, MessageSquare, MoreHorizontal, Search, Sparkles, Square, Trash2, Wand2, X } from "lucide-react";
 import { api, on } from "../../lib/ipc";
-import type { Note } from "../../lib/types";
+import type { Note, NoteLink, NoteLinks } from "../../lib/types";
 import { noteStudyText } from "../../lib/notes";
 import { sendChatCommand } from "../VoiceEngine";
 import { JumpBar } from "../JumpBar";
@@ -46,15 +46,83 @@ function bySubject(notes: Note[]): Array<{ subject: string; notes: Note[] }> {
 }
 
 /** **bold** inside a line, kept as text (never HTML). */
+/** Opening a [[linked note]] from inside another note's text. */
+let openLinked: ((name: string) => void) | null = null;
+
 function inline(text: string): React.ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-    part.startsWith("**") && part.endsWith("**") && part.length > 4 ? (
-      <strong key={i} className="font-semibold text-izk-ink">
-        {part.slice(2, -2)}
-      </strong>
-    ) : (
-      <span key={i}>{part}</span>
-    )
+  return text.split(/(\*\*[^*]+\*\*|\[\[[^\]\n]+\]\])/g).map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return (
+        <strong key={i} className="font-semibold text-izk-ink">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    // A link to another note, the way Notion and wikis write one.
+    if (part.startsWith("[[") && part.endsWith("]]") && part.length > 4) {
+      const name = part.slice(2, -2).trim();
+      return (
+        <button
+          key={i}
+          type="button"
+          onClick={() => openLinked?.(name)}
+          title={`Open “${name}”`}
+          className="mx-0.5 rounded-[5px] bg-izk-teal/12 px-1 py-px text-izk-teal underline decoration-izk-teal/40 underline-offset-2 transition-colors hover:bg-izk-teal/20"
+        >
+          {name}
+        </button>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
+/** What this note points at, what points back, and what shares its chapter. */
+function NoteWeb({ note, onOpen, revision }: { note: Note; onOpen: (id: string) => void; revision: number }) {
+  const [links, setLinks] = useState<NoteLinks>({ out: [], back: [], shelf: [] });
+  useEffect(() => {
+    let alive = true;
+    void api
+      .notesLinks(note.id)
+      .then((l) => alive && setLinks(l))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+    // `revision` changes whenever the notes list reloads, so a link written
+    // from the other note shows up here without reopening this one.
+  }, [note.id, note.text, revision]);
+  const groups: Array<[string, NoteLink[], string]> = [
+    ["Links to", links.out, "This note points at these."],
+    ["Linked from", links.back, "These notes point here."],
+    ["Same chapter", links.shelf, "Filed together, without anyone writing a link."],
+  ];
+  if (!groups.some(([, list]) => list.length)) return null;
+  return (
+    <div className="mt-3 space-y-2 rounded-[12px] border border-white/10 p-2.5">
+      {groups.map(([label, list, hint]) =>
+        list.length ? (
+          <div key={label}>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-izk-muted" title={hint}>
+              {label}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {list.map((l) => (
+                <button
+                  key={`${label}-${l.id}`}
+                  type="button"
+                  onClick={() => onOpen(l.id)}
+                  className="izk-pill px-2 py-0.5 text-[11px]"
+                  title={l.said !== l.title ? `Written as “${l.said}”` : undefined}
+                >
+                  {l.title}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null
+      )}
+    </div>
   );
 }
 
@@ -247,7 +315,7 @@ export function NotesTab() {
       </Section>
 
       {note ? (
-        <NoteView key={note.id} note={note} onBack={() => setOpen(null)} onChanged={reload} />
+        <NoteView key={note.id} note={note} notes={notes} onBack={() => setOpen(null)} onChanged={reload} onOpen={(id) => setOpen(id)} />
       ) : (
         <Section
           id="notes-list"
@@ -366,7 +434,25 @@ export function NotesTab() {
   );
 }
 
-function NoteView({ note, onBack, onChanged }: { note: Note; onBack: () => void; onChanged: () => void }) {
+function NoteView({ note, onBack, onChanged, onOpen, notes }: { note: Note; onBack: () => void; onChanged: () => void; onOpen: (id: string) => void; notes: Note[] }) {
+  // Changes when any note is added, removed or edited — a link written from
+  // the other side still counts, so the panels below stay honest.
+  const notesRevision = useMemo(() => notes.length * 31 + notes.reduce((sum, n) => sum + (n.updated_at || 0), 0), [notes]);
+  // A [[name]] inside the text opens that note, the way a wiki link does.
+  // Resolved the same way the core does: the exact title, else the only
+  // note that contains it — never a guess between two.
+  useEffect(() => {
+    openLinked = (name: string) => {
+      const want = name.trim().toLowerCase();
+      const exact = notes.find((n) => n.title.trim().toLowerCase() === want);
+      const near = notes.filter((n) => n.title.toLowerCase().includes(want));
+      const hit = exact ?? (near.length === 1 ? near[0] : null);
+      if (hit) onOpen(hit.id);
+    };
+    return () => {
+      openLinked = null;
+    };
+  }, [notes, onOpen]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [card, setCard] = useState(0);
@@ -528,6 +614,7 @@ function NoteView({ note, onBack, onChanged }: { note: Note; onBack: () => void;
       </form>
 
       <NoteBody text={note.text} />
+      <NoteWeb note={note} onOpen={onOpen} revision={notesRevision} />
     </Section>
   );
 }

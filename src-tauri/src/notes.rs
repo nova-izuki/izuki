@@ -35,7 +35,7 @@ pub struct Entry {
     pub source_digest: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Note {
     pub id: String,
     pub title: String,
@@ -56,6 +56,184 @@ pub struct Note {
     pub context: Context,
     #[serde(default)]
     pub entries: Vec<Entry>,
+}
+
+/// A note this note points at, or one that points here.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Link {
+    pub id: String,
+    pub title: String,
+    /// What the note called it, which may not be its exact title.
+    pub said: String,
+}
+
+/// Both directions for one note: what it links to, and what links to it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Links {
+    pub out: Vec<Link>,
+    pub back: Vec<Link>,
+    /// Notes filed in the same chapter — the same shelf, not a written link.
+    pub shelf: Vec<Link>,
+}
+
+/// Every `[[name]]` in a note, in the order written, without repeats.
+pub fn links_in(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("[[") {
+        rest = &rest[start + 2..];
+        let Some(end) = rest.find("]]") else { break };
+        let name = rest[..end].trim();
+        rest = &rest[end + 2..];
+        // A whole paragraph between brackets is a mistake, not a link.
+        if name.is_empty() || name.len() > 120 || name.contains('\n') {
+            continue;
+        }
+        if !out.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+            out.push(name.to_string());
+        }
+    }
+    out
+}
+
+/// The note a `[[name]]` means: its exact title first, then the only note
+/// whose title contains it. Nothing on a tie — a guess would open the wrong
+/// note and quietly teach the user that links don't work.
+fn note_named<'a>(name: &str, all: &'a [Note]) -> Option<&'a Note> {
+    let want = name.trim().to_lowercase();
+    // A link is written as its title, so two notes with the same title are
+    // genuinely ambiguous — picking the first would open the wrong one.
+    let mut exact = all.iter().filter(|n| n.title.trim().to_lowercase() == want);
+    if let Some(first) = exact.next() {
+        return exact.next().is_none().then_some(first);
+    }
+    let mut near = all.iter().filter(|n| n.title.to_lowercase().contains(&want));
+    let first = near.next()?;
+    near.next().is_none().then_some(first)
+}
+
+/// Another note already has this title, so `[[that title]]` couldn't say
+/// which one is meant.
+fn title_is_shared(note: &Note, all: &[Note]) -> bool {
+    let title = note.title.trim().to_lowercase();
+    all.iter().any(|n| n.id != note.id && n.title.trim().to_lowercase() == title)
+}
+
+fn link_to(n: &Note, said: &str) -> Link {
+    Link { id: n.id.clone(), title: n.title.clone(), said: said.to_string() }
+}
+
+/// What this note links to, what links back, and what shares its chapter.
+pub fn links_of(id: &str) -> Result<Links> {
+    let all = list()?;
+    let Some(note) = all.iter().find(|n| n.id == id) else {
+        return Ok(Links::default());
+    };
+    let mut links = Links::default();
+    for name in links_in(&note.text) {
+        if let Some(hit) = note_named(&name, &all) {
+            if hit.id != note.id {
+                links.out.push(link_to(hit, &name));
+            }
+        }
+    }
+    for other in all.iter().filter(|n| n.id != note.id) {
+        for name in links_in(&other.text) {
+            if note_named(&name, &all).is_some_and(|hit| hit.id == note.id) {
+                links.back.push(link_to(other, &name));
+                break;
+            }
+        }
+    }
+    // Same subject and chapter: found together without anyone writing a link.
+    let c = &note.context;
+    if !c.subject.trim().is_empty() && !c.chapter.trim().is_empty() {
+        links.shelf = all
+            .iter()
+            .filter(|n| {
+                n.id != note.id
+                    && n.context.subject.eq_ignore_ascii_case(&c.subject)
+                    && n.context.chapter.eq_ignore_ascii_case(&c.chapter)
+                    && !links.out.iter().any(|l| l.id == n.id)
+                    && !links.back.iter().any(|l| l.id == n.id)
+            })
+            .map(|n| link_to(n, &n.title))
+            .collect();
+    }
+    Ok(links)
+}
+
+/// "Link this to Chapter 4", "connect this note to botnets": what to link
+/// the note being studied to, or None when it isn't that kind of request.
+pub fn link_request(said: &str) -> Option<String> {
+    let s = said.trim().trim_end_matches(['.', '!', '?']).to_lowercase();
+    let s = s.trim_start_matches("hey nova").trim_start_matches("hey izuki").trim_start_matches([',', ' ']).trim();
+    for opener in [
+        "link this note to ", "link this to ", "link it to ", "link that to ",
+        "connect this note to ", "connect this to ", "connect it to ",
+        "see also ", "related to ", "this relates to ", "this is related to ",
+    ] {
+        if let Some(rest) = s.strip_prefix(opener) {
+            let name = rest.trim_start_matches("my ").trim_start_matches("the ").trim();
+            let name = name.trim_start_matches("note about ").trim_start_matches("note on ").trim();
+            if !name.is_empty() && name.len() <= 120 {
+                return Some(name.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Link the note just studied to the one named, by what it's called.
+pub fn link_by_name(from: &str, name: &str) -> Result<String> {
+    let all = list()?;
+    let Some(target) = note_named(name, &all) else {
+        let near: Vec<&str> = all.iter().take(6).map(|n| n.title.as_str()).collect();
+        if near.is_empty() {
+            bail!("You don't have any notes to link to yet.");
+        }
+        bail!("I couldn't tell which note you meant by \u{201c}{name}\u{201d}. You have: {}.", near.join(", "));
+    };
+    if target.id == from {
+        bail!("That's this note.");
+    }
+    let title = target.title.clone();
+    let to = target.id.clone();
+    link_notes(from, &to)?;
+    Ok(format!("Linked it to \u{201c}{title}\u{201d}. It shows on both notes now."))
+}
+
+/// Write a link into `from`'s text, so it shows on both notes from then on.
+pub fn link_notes(from: &str, to: &str) -> Result<Note> {
+    let result = {
+        // One lock for the whole thing: reading the target, deciding whether
+        // the link is already there and writing it have to see the same notes.
+        let _g = LOCK.lock();
+        let mut all = read()?;
+        let target = all.iter().find(|n| n.id == to).ok_or_else(|| anyhow::anyhow!("That note is no longer available"))?;
+        let title = target.title.clone();
+        // The link is written as the title, so it has to name one note.
+        if title_is_shared(target, &all) {
+            bail!("Two notes are called \u{201c}{title}\u{201d}, so a link couldn't tell them apart. Rename one of them first.");
+        }
+        let already = links_in(&all.iter().find(|n| n.id == from).map(|n| n.text.clone()).unwrap_or_default())
+            .iter()
+            .any(|l| l.eq_ignore_ascii_case(&title));
+        let note = all.iter_mut().find(|n| n.id == from).ok_or_else(|| anyhow::anyhow!("That note is no longer available"))?;
+        // Already linked: say so by giving the note back unchanged, rather
+        // than writing "See also" into it twice.
+        if !already {
+            if !note.text.ends_with('\n') {
+                note.text.push('\n');
+            }
+            note.text.push_str(&format!("\nSee also: [[{title}]]\n"));
+            note.updated_at = crate::model::now_ms();
+        }
+        let result = note.clone();
+        write(&all)?;
+        result
+    };
+    Ok(result)
 }
 
 static LOCK: Mutex<()> = Mutex::new(());
@@ -135,6 +313,13 @@ struct Focus {
     at: std::time::Instant,
 }
 static FOCUS: Mutex<Option<Focus>> = Mutex::new(None);
+
+/// The note being studied right now, if one still is: what "this note" means
+/// when the user says "link this to Chapter 4". Goes stale with the focus.
+pub fn focused() -> Option<String> {
+    let focus = FOCUS.lock().clone()?;
+    (focus.at.elapsed() < std::time::Duration::from_secs(30 * 60)).then_some(focus.id)
+}
 
 fn remember(note: &Note, practice: bool) {
     let words = context::normalized(&format!("{} {} {} {}", note.title, note.context.topic, note.context.subject, study_excerpt(&note.text, 6000)))
@@ -451,6 +636,48 @@ pub fn parse_cards(reply: &str) -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn linking_by_voice_is_understood() {
+        assert_eq!(link_request("link this to chapter 4").as_deref(), Some("chapter 4"));
+        assert_eq!(link_request("Hey Nova, connect this note to the botnets note").as_deref(), Some("botnets note"));
+        assert_eq!(link_request("link it to my note about malware").as_deref(), Some("malware"));
+        assert_eq!(link_request("see also chapter 2").as_deref(), Some("chapter 2"));
+        // Not a linking request.
+        assert!(link_request("link my bank account").is_none());
+        assert!(link_request("what links to this").is_none());
+        assert!(link_request("link this to ").is_none());
+    }
+
+    fn page(id: &str, title: &str, text: &str) -> Note {
+        Note { id: id.into(), title: title.into(), text: text.into(), ..Default::default() }
+    }
+
+    #[test]
+    fn links_are_found_and_resolved_both_ways() {
+        assert_eq!(links_in("See [[Chapter 4]] and [[Botnets]]."), ["Chapter 4", "Botnets"]);
+        // Repeats collapse; empty, huge and multi-line brackets aren't links.
+        assert_eq!(links_in("[[A]] [[a]] [[]] [[x\ny]]"), ["A"]);
+        assert!(links_in("nothing here").is_empty());
+
+        let all = vec![
+            page("1", "Chapter 4 - Malware", "Leads into [[Chapter 5 - Networks]]."),
+            page("2", "Chapter 5 - Networks", "Botnets live here."),
+            page("3", "Scratch", "Unrelated."),
+        ];
+        // Exact title wins; a unique partial also resolves.
+        assert_eq!(note_named("Chapter 5 - Networks", &all).unwrap().id, "2");
+        assert_eq!(note_named("networks", &all).unwrap().id, "2");
+        // Two notes could match "Chapter": pick neither rather than the wrong one.
+        assert!(note_named("Chapter", &all).is_none());
+        assert!(note_named("nothing like this", &all).is_none());
+        // The same title twice: a [[link]] couldn't say which one, so neither
+        // is picked (picking the first would quietly open the wrong note).
+        let twins = vec![page("1", "Chapter 5", "a"), page("2", "Chapter 5", "b")];
+        assert!(note_named("Chapter 5", &twins).is_none(), "picked one of two notes with the same title");
+        assert!(title_is_shared(&twins[0], &twins));
+        assert!(!title_is_shared(&all[0], &all));
+    }
+
     use super::*;
 
     #[test]

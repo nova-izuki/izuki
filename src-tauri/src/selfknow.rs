@@ -12,6 +12,8 @@ pub enum Ask {
     Open(&'static str),
     /// Read what's in front and save it to Izuki Notes.
     SaveNotes,
+    /// Link the note being studied to the one named ("link this to Chapter 4").
+    LinkNote(String),
 }
 
 /// Izuki's own parts, by what people call them → the tab that holds them.
@@ -32,6 +34,11 @@ fn words(said: &str) -> String {
 }
 
 pub fn parse(said: &str) -> Option<Ask> {
+    // "Link this to Chapter 4": joining two of their own notes, which is
+    // nothing to do with the notes apps ruled out just below.
+    if let Some(name) = crate::notes::link_request(said) {
+        return Some(Ask::LinkNote(name));
+    }
     let s = words(said);
     // Another notes app named outright: that app, not Izuki's.
     if [" onenote", " one note", " evernote", " google keep", " keep notes", " sticky notes", " notion", " notepad", " apple notes", " samsung notes"].iter().any(|w| s.contains(w)) {

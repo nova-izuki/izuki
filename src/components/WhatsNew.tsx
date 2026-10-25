@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🔗", title: "Your notes link to each other", how: "Write [[Chapter 5]] in a note and it becomes a link you can click — or just say “link this to chapter 4”. Every note then shows what it points at, what points back at it, and what else is filed in the same chapter. If a name could mean two notes, Izuki opens neither instead of guessing wrong.", try: { label: "Open Notes", tab: "notes" } },
   { icon: "🖱️", title: "Scrolling that really works now", how: "Last update said the answer bubble scrolls. It didn't — the part that watches the wheel was never switched on, so the window behind scrolled instead. Fixed properly: the bubble and the Island's lists scroll under your mouse, and your other windows still scroll exactly as before." },
   { icon: "🏝️", title: "Pull the Island off the top", how: "Put your mouse at the very top of the screen and the Island comes down, same small size. Drag it down off the edge and it's yours — it stays wherever you drop it and remembers next time. New looks in Settings too: Windows bar (flat and squared, like part of Windows), Tiny dot and Wide strip.", try: { label: "Island looks", tab: "settings" } },
   { icon: "🔍", title: "Search your settings", how: "Settings got big, so there's a search box at the top now — type “mic” or “island” and only what matters stays on screen. Sections fold away too, and remember how you left them." },
