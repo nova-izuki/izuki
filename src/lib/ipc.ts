@@ -63,13 +63,17 @@ export async function call<T>(
 
 export async function on<T>(event: string, handler: (payload: T) => void): Promise<() => void> {
   const c = await core();
-  if (!c) return () => {};
+  if (!c) {
+    const listener = (e: Event) => handler((e as CustomEvent<T>).detail);
+    window.addEventListener(`izuki-preview:${event}`, listener);
+    return () => window.removeEventListener(`izuki-preview:${event}`, listener);
+  }
   return c.listen<T>(event, (e) => handler(e.payload));
 }
 
 export async function emit(event: string, payload?: unknown): Promise<void> {
   const c = await core();
-  if (!c) return;
+  if (!c) { window.dispatchEvent(new CustomEvent(`izuki-preview:${event}`, { detail: payload })); return; }
   await c.emit(event, payload);
 }
 
@@ -223,6 +227,8 @@ export const MOCK_SETTINGS: Settings = {
   glow_only: false,
   island_suggestions: true,
   island_wave: "auto",
+  island_always: true,
+  island_free: false,
   island_style: "default",
   island_size: "normal",
   tidy_dupes_auto: false,
@@ -743,6 +749,7 @@ export const api = {
     call<void>("set_overlay_interactive", { interactive }, () => undefined),
   /** Clickable only while the cursor is over a floating widget — no focus steal. */
   setOverlayHit: (hit: boolean) => call<void>("set_overlay_hit", { hit }, () => undefined),
+  setOverlayWheel: (on: boolean) => call<void>("set_overlay_wheel", { on }, () => undefined),
   /** Bring the overlay up (click-through) if a caption needs somewhere to render. */
   showCaptionOverlay: () => call<void>("show_caption_overlay", undefined, () => undefined),
   /** Write a diagnostic line into the app's process log. */
@@ -798,6 +805,7 @@ export const api = {
   /** Nova Notes. */
   notesList: () => call<Note[]>("notes_list", undefined, () => []),
   notesFocus: (id: string, practice = false) => call<void>("notes_focus", { id, practice }, () => undefined),
+  notesAnswer: (prompt: string) => call<string>("notes_answer", { prompt }, () => "Here is a study question based on your notes: how would you explain the main idea?"),
   notesOrganize: (id: string, subject: string, chapter: string, topic: string) => call<Note>("notes_organize", { id, subject, chapter, topic }, () => { throw new Error("Organizing notes works in the desktop app."); }),
   notesDelete: (id: string) => call<void>("notes_delete", { id }, () => undefined),
   notesJot: (text: string) => call<Note>("notes_jot", { text }, () => ({ id: "jot", title: `Quick note — ${text.slice(0, 48)}`, source: "Island", text, created_at: Date.now(), updated_at: Date.now(), cards: [], lesson: false })),
@@ -1299,4 +1307,5 @@ export const EV = {
   /** Frontend-only: hold-to-talk's waveform under the mouse — "listening",
    *  "loading" (let go, thinking) or "off". */
   talkWave: "izuki://talk-wave",
+  wheel: "izuki://wheel",
 } as const;

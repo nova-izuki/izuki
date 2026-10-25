@@ -509,7 +509,7 @@ impl Action {
             // to leave the hand up afterward if follow mode was already on.
             Action::Voice => {
                 let _ = crate::overlay::show_follow(app);
-                let _ = app.emit(events::PUSH_TO_TALK, ());
+                let _ = app.emit(events::PUSH_TO_TALK, serde_json::json!({"mode": "hold"}));
             }
             Action::Quickdraw => {}
         }

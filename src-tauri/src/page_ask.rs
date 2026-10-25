@@ -79,6 +79,11 @@ fn screen_picture() -> Option<String> {
 
 const SYSTEM: &str = "You are Izuki, answering a question about what the user has open: a web page, or their screen (a screenshot is attached). Answer from it (and any linked pages or files given) when you can; if the answer isn't there, say so in a few words and answer from what you know. Lead with the answer, keep it short (a few sentences or a few bullet points with -), plain friendly words, no headings. When they ask what to do, give short numbered steps that name the exact buttons, menus and boxes on their screen — they can press \"Do it for me\" and you'll do those steps. Never ask for or repeat passwords or card numbers.";
 
+fn backend_web_request(question: &str) -> bool {
+    let q = question.to_lowercase();
+    q.contains("https://") || q.contains("http://") || ["scrape", "search the web", "search online", "look up online"].iter().any(|word| q.contains(word))
+}
+
 /// Deep thinking: take the time, and show the work that matters.
 const DEEP: &str = "DEEP THINKING is on: the user wants your most careful answer, not your fastest. Think it through properly before you write: read everything given closely, work the problem step by step, consider other readings and check your result. Then answer clearly — the answer first, then the reasoning that matters (short steps or bullets), and anything they should double-check. Longer is fine when it helps; no filler.";
 
@@ -141,7 +146,9 @@ pub fn ask(app: &AppHandle, id: u64, question: &str, history: &[Turn], files: &[
     let send = |p: Piece| {
         let _ = app.emit(EVENT, p);
     };
-    let read = if on_screen { None } else { Some(read_page(question)).filter(|r| !r.text.trim().is_empty()) };
+    let read = if backend_web_request(question) {
+        Some(Read { title: "Requested web research".into(), url: String::new(), text: "No requested website has been fetched yet. Use the backend SEARCH and READ tools to get real page content. This request does not require a screenshot or an open browser.".into(), linked: String::new() })
+    } else if on_screen { None } else { Some(read_page(question)).filter(|r| !r.text.trim().is_empty()) };
     // Away from the browser, a page that couldn't be read, or "+ Screenshot":
     // look at the screen itself.
     let wants_shot = read.is_none() || files.iter().any(|f| f.kind == "screen");
@@ -159,7 +166,12 @@ pub fn ask(app: &AppHandle, id: u64, question: &str, history: &[Turn], files: &[
         }
     }
     let on_piece = |t: &str| send(Piece { id, text: t.to_string(), done: false, error: None, page: None });
-    let result = if deep {
+    // Only an explicit web request gets the search/read tools. A question about
+    // the page or screen already has its words and picture, and the tool loop
+    // only made it slower (and tempted the model to go looking elsewhere).
+    let result = if backend_web_request(question) {
+        crate::chat::complete_with_web(&msgs, id, deep, &on_piece)
+    } else if deep {
         crate::chat::complete_streaming_deep(&msgs, id, &on_piece)
     } else {
         crate::chat::complete_streaming(&msgs, id, &on_piece)
@@ -173,6 +185,13 @@ pub fn ask(app: &AppHandle, id: u64, question: &str, history: &[Turn], files: &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_web_reads_do_not_need_a_browser_or_screen_capture() {
+        assert!(backend_web_request("extract the table from https://example.com"));
+        assert!(backend_web_request("scrape these public sites"));
+        assert!(!backend_web_request("explain this button on my screen"));
+    }
 
     #[test]
     fn question_goes_last_with_the_page_first() {

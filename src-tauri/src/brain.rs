@@ -422,6 +422,26 @@ fn reads_as_choice(name: &str) -> bool {
 /// Told to the brain while a quiz or test is on screen.
 const QUIZ_PROMPT: &str = "QUIZ OR TEST IN PROGRESS: the student answers it. Explain what the question asks and the idea behind it, point at the key words in the question, and help them reason it out — but never say, hint at or mark which choice is correct, and never confirm or reject a choice they picked. Never click or type an answer. Going to the next question when they ask is fine.\n";
 
+/// The owner asked for direct answers when explicitly requested. Coaching
+/// remains a separate mode; answering never authorizes a click or submission.
+pub(crate) fn direct_answer_requested(prompt: &str) -> bool {
+    let latest = prompt.split("\n\n(The conversation just before,").next().unwrap_or(prompt);
+    let s = latest.to_lowercase();
+    if ["don't answer", "do not answer", "without the answer", "coach me", "tutor mode", "teacher mode"].iter().any(|p| s.contains(p)) {
+        return false;
+    }
+    // "Answer it and submit", "tell me the answer then click next": a request
+    // to *do* something keeps the ordinary rules, which never pick or send an
+    // answer on a test. Only a plain question gets the plain answer.
+    if crate::companion::asks_to_do(latest) {
+        return false;
+    }
+    ["answer the question", "what's the answer", "whats the answer", "what is the answer", "give me the answer", "tell me the answer", "which option is correct", "which answer is correct", "just the answer", "straight answer"].iter().any(|p| s.contains(p))
+        || matches!(s.trim().trim_end_matches(['?', '!', '.']), "answer" | "answer it" | "answer this" | "ans")
+}
+
+const DIRECT_ANSWER_PROMPT: &str = "The user explicitly asked for the answer. Answer the visible factual question directly: answer first, with the option label only when clearly visible, then a short explanation. Do not refuse to name a factual answer or turn this into a walkthrough. Do not guess unreadable choices. This is an explanation-only request: do not select, click, type or submit answers. Do not offer to save Notes.\n";
+
 /// On a quiz or test page: what Izuki says never names the right choice and
 /// its pen never marks one — the same rule Quiz coach follows (coach.rs),
 /// whatever the request was. Sentences naming a choice are left out; marks
@@ -442,6 +462,26 @@ fn keep_answers_out(plan: &mut VisionPlan, steps: &mut Vec<ActionStep>, look: &L
     steps.retain(|s| !(matches!(s.action, Intent::Draw | Intent::Point | Intent::Stroke) && marks_a_choice(s, look)));
     if steps.len() < before {
         eprintln!("[agent] quiz page: dropped {} mark(s) on an answer choice", before - steps.len());
+    }
+}
+
+fn apply_answer_mode(plan: &mut VisionPlan, steps: &mut Vec<ActionStep>, look: &Look, prompt: &str) {
+    if direct_answer_requested(prompt) {
+        // Naming a fact is not permission to act on the test or page.
+        let latest = prompt.split("\n\n(The conversation just before,").next().unwrap_or(prompt).to_lowercase();
+        steps.retain(|step| {
+            let name = step.snapped_to.as_deref().unwrap_or("").trim().to_lowercase();
+            let navigation = match name.as_str() {
+                "next" | "next question" => latest.contains("next question") || latest.contains("click next"),
+                "previous" | "previous question" | "back" => latest.contains("previous question") || latest.contains("click back"),
+                _ => false,
+            };
+            navigation && matches!(step.action, Intent::Click | Intent::Auto)
+                && !look.options.contains(&name)
+        });
+        plan.ask = None;
+    } else {
+        keep_answers_out(plan, steps, look);
     }
 }
 
@@ -782,7 +822,7 @@ fn ask_model(
             + &crate::voices::prompt_block()
             + &crate::lessons::prompt_block(&uia::foreground_app(), crate::ext::snapshot_url_cached().as_deref())
             + crate::selfknow::PROMPT
-            + if on_a_test { QUIZ_PROMPT } else { "" },
+            + if direct_answer_requested(&session.prompt) { DIRECT_ANSWER_PROMPT } else if on_a_test { QUIZ_PROMPT } else { "" },
         windows: uia::open_windows(14),
         page_text,
         think,
@@ -3112,7 +3152,7 @@ fn submit_task(
         // A real lesson ("teach me git in the terminal") may show harmless
         // basics; anything else still needs the exact command spelled out.
         // (Before anything is said, saved or drawn from this plan.)
-        keep_answers_out(&mut plan, &mut steps, &this_look());
+        apply_answer_mode(&mut plan, &mut steps, &this_look(), &prompt);
         let teaching_now = lesson || crate::companion::asks_to_learn(&prompt);
         let explaining = teaching_now || explains_as_it_goes(&prompt);
         if keep_notes {
@@ -4162,6 +4202,23 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
 #[cfg(test)]
 mod speed_tests {
     use super::promises_action;
+
+    #[test]
+    fn direct_factual_answers_are_kept_without_acting_on_the_page() {
+        assert!(super::direct_answer_requested("Answer the question on my screen directly."));
+        assert!(super::direct_answer_requested("which option is correct?"));
+        assert!(!super::direct_answer_requested("Coach me but don't answer the question"));
+        // Asking it to act keeps the ordinary rules (which never answer a test).
+        assert!(!super::direct_answer_requested("give me the answer and click it"));
+        assert!(!super::direct_answer_requested("answer the question and submit the test"));
+        assert!(!super::direct_answer_requested("Next question\n\n(The conversation just before, oldest first: User: give me the answer)"));
+        let look = super::Look { options: vec!["b. botnet".into()], test_page: true, ..Default::default() };
+        let mut plan = crate::model::VisionPlan { summary: "B. Botnet. It is a network of infected devices.".into(), ..Default::default() };
+        let mut steps = vec![serde_json::from_value(serde_json::json!({"action":"click","x":10,"y":10})).unwrap()];
+        super::apply_answer_mode(&mut plan, &mut steps, &look, "give me the answer");
+        assert!(plan.summary.starts_with("B. Botnet."));
+        assert!(steps.is_empty(), "an answer request cannot authorize page actions");
+    }
 
     #[test]
     fn promises_action_tells_a_promise_from_an_answer() {

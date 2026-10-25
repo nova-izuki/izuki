@@ -79,6 +79,18 @@
         return false;
       }
     },
+    /** Take back a reminder's phone notification (it was cancelled). */
+    async cancelReminder({ at, text }) {
+      const local = plugin();
+      if (!local || !Number.isFinite(at)) return false;
+      try {
+        await local.cancel({ notifications: [{ id: notificationId(at, text) }] });
+        return true;
+      } catch (error) {
+        console.warn("Izuki native reminder cancel unavailable", error);
+        return false;
+      }
+    },
     /** A newer Izuki app than this one, if there is: { latest, current, url }. */
     async checkUpdate() {
       try {

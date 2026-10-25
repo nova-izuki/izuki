@@ -36,12 +36,16 @@ export function TranscriptText({ text, final }: { text: string; final: boolean }
   const card = useRef<HTMLDivElement>(null);
   const look = useBackdropTone(card);
   return (
-    <div ref={card} className={`izk-transcript flex items-start gap-2 rounded-[18px] px-3.5 py-2 ${look.className}`} style={look.style}>
+    <div ref={card} data-izk-hit className={`izk-transcript pointer-events-auto flex items-start gap-2 rounded-[18px] px-3.5 py-2 ${look.className}`} style={look.style}
+      onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
       <span className="relative mt-[5px] flex h-[8px] w-[8px] shrink-0">
         <span className={final ? "absolute inset-0 rounded-full bg-izk-teal" : "izk-breathe absolute inset-0 rounded-full bg-izk-hand"} />
       </span>
       <span
-        className="izk-tone-text line-clamp-3 text-center text-[13.5px] font-medium leading-snug text-izk-ink"
+        tabIndex={0}
+        role="region"
+        aria-label="Conversation transcript"
+        className="izk-tone-text block max-h-[min(40vh,240px)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-words text-[13.5px] font-medium leading-snug text-izk-ink"
         style={{ opacity: final ? 1 : 0.82 }}
       >
         {text}

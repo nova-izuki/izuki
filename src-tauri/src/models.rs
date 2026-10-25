@@ -23,6 +23,7 @@ pub const SCHEME: &str = "izukimodel";
 
 /// Only these repos are ever fetched — this is not a general proxy.
 const REPOS: &[&str] = &[
+    "Xenova/wavlm-base-plus-sv",
     "onnx-community/Kokoro-82M-v1.0-ONNX",
     "onnx-community/whisper-base.en",
     "onnx-community/moonshine-base-ONNX",

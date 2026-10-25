@@ -334,6 +334,10 @@ export interface Settings {
   island_suggestions: boolean;
   /** The Island's waveform while music plays. */
   island_wave: "auto" | "silk" | "bars" | "mirror" | "neon" | "dots";
+  /** Always at the top like an iPhone's Dynamic Island (not only on hover). */
+  island_always: boolean;
+  /** Drag it anywhere on screen (off: along the top). */
+  island_free: boolean;
   /** The Island's look (Windhawk-style themes). */
   island_style: "default" | "glass" | "bubble" | "squircle" | "outline" | "aero" | "nova";
   /** How big the Island is. */
@@ -717,7 +721,7 @@ export interface IslandStatus {
 /** Something happening right now, with its smart next steps. */
 export interface Activity {
   id: string;
-  kind: "timer" | "download" | "downloading" | "screenshot" | "charging";
+  kind: "timer" | "download" | "downloading" | "screenshot" | "charging" | "update";
   icon: string;
   title: string;
   detail: string;

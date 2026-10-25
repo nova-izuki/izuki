@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { canListen, streamMic } from "../lib/speechInput";
 import { api } from "../lib/ipc";
+import { readSpeakers, prepareSpeakers, speakerEmbedding, speakerEnrollmentActive, SPEAKER_CHANGED } from "../lib/speakers";
+import { matchingSpeaker } from "../lib/speakerMath";
 
 /**
  * The dedicated wake-word detector (lib/wakeEngine.ts, in wakeWorker.ts):
@@ -31,6 +33,47 @@ export function useWakeEngine(
   const thresholdRef = useRef(threshold);
   thresholdRef.current = threshold;
   const [ready, setReady] = useState(false);
+  const recentVoice = useRef<Float32Array[]>([]);
+  const checkingVoice = useRef(false);
+  const gateGeneration = useRef(0);
+  const listeningRef = useRef(listen);
+  listeningRef.current = listen;
+  const [voiceVersion, setVoiceVersion] = useState(0);
+  useEffect(() => {
+    const changed = () => { gateGeneration.current++; setVoiceVersion((v) => v + 1); };
+    window.addEventListener(SPEAKER_CHANGED, changed);
+    return () => { gateGeneration.current++; window.removeEventListener(SPEAKER_CHANGED, changed); };
+  }, []);
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      if (readSpeakers().enabled) void prepareSpeakers().catch(() => {
+        void api.log("wake voice filter: model unavailable; hold the talk key to speak");
+      });
+    } catch { /* Invalid profiles fail closed on detection, never bypassed. */ }
+  }, [loaded, voiceVersion]);
+  const acceptWake = async (name: string) => {
+    if (!listeningRef.current || checkingVoice.current || speakerEnrollmentActive()) return;
+    const generation = gateGeneration.current;
+    checkingVoice.current = true;
+    try {
+      const preferences = readSpeakers();
+      if (preferences.enabled) {
+        if (!preferences.profiles.length) return;
+        const chunks = recentVoice.current;
+        const audio = new Float32Array(chunks.reduce((sum, c) => sum + c.length, 0));
+        let at = 0;
+        for (const chunk of chunks) { audio.set(chunk, at); at += chunk.length; }
+        const vector = await speakerEmbedding(audio);
+        if (!matchingSpeaker(vector, preferences.profiles)) return;
+      }
+      if (generation === gateGeneration.current && listeningRef.current && !speakerEnrollmentActive()) onWakeRef.current(name);
+    } catch {
+      void api.log("wake voice filter: could not verify voice; use the talk key or check voice profiles");
+    } finally { checkingVoice.current = false; }
+  };
+  const acceptWakeRef = useRef(acceptWake);
+  acceptWakeRef.current = acceptWake;
   const key = custom.join("|");
   const log = (m: string) => void api.log(`wake engine: ${m}`).catch(() => undefined);
 
@@ -50,7 +93,7 @@ export function useWakeEngine(
         log(`loaded: ${(m.words ?? []).join(", ")}`);
       } else if (m.kind === "wake" && m.name) {
         log(`heard "${m.name}" (score ${m.score?.toFixed(2)})`);
-        onWakeRef.current(m.name);
+        void acceptWakeRef.current(m.name);
       } else if (m.kind === "near") {
         log(`near miss: "${m.name}" scored ${m.score?.toFixed(2)} (needs ${thresholdRef.current.toFixed(2)})`);
       } else if (m.kind === "load") {
@@ -92,6 +135,10 @@ export function useWakeEngine(
     let quietFor = 0;
     let resting = false;
     const onAudio = (samples: Float32Array) => {
+      // Copy before the wake worker takes ownership of the audio buffer.
+      recentVoice.current.push(samples.slice());
+      let length = recentVoice.current.reduce((sum, c) => sum + c.length, 0);
+      while (recentVoice.current.length > 1 && length > 64_000) length -= recentVoice.current.shift()!.length;
       let mean = 0;
       for (let i = 0; i < samples.length; i++) mean += samples[i];
       mean /= samples.length;
@@ -130,6 +177,8 @@ export function useWakeEngine(
     feed();
     return () => {
       alive = false;
+      gateGeneration.current++;
+      recentVoice.current = [];
       stopMic();
       w.postMessage({ kind: "reset" });
     };

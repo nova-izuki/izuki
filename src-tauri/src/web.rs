@@ -316,14 +316,108 @@ pub fn search_text(query: &str) -> Result<String> {
 
 /// A page as clean, readable text: title, the main words, and its links.
 pub fn read(url: &str) -> Result<String> {
-    read_page(url).map(|(_, text)| text)
+    let urls = scrape_urls(url)?;
+    if urls.len() == 1 {
+        return read_page(&urls[0]).map(|(landed, text)| format!("Source: {landed}\n{text}"));
+    }
+    // Bounded parallel reads: one slow site cannot make the other pages wait
+    // for its entire timeout. These run on backend workers, never the UI.
+    let results = std::thread::scope(|scope| {
+        let jobs: Vec<_> = urls.iter().map(|url| scope.spawn(move || read_page(url))).collect();
+        jobs.into_iter().map(|job| job.join().unwrap_or_else(|_| Err(anyhow!("page reader stopped")))).collect::<Vec<_>>()
+    });
+    let mut output = String::new();
+    let mut succeeded = 0;
+    for (url, result) in urls.iter().zip(results) {
+        match result {
+            Ok((landed, text)) => { succeeded += 1; output.push_str(&format!("\nSource: {landed}\n{text}\n")); }
+            Err(error) => output.push_str(&format!("\nSource: {url}\nCould not read this page: {error}\n")),
+        }
+    }
+    if succeeded == 0 { anyhow::bail!("None of those webpages could be read. {}", output.trim()); }
+    Ok(output)
+}
+
+fn scrape_urls(input: &str) -> Result<Vec<String>> {
+    let mut urls = Vec::new();
+    for raw in input.split('|').map(str::trim).filter(|s| !s.is_empty()) {
+        let raw = raw.trim_matches(['<', '>']);
+        let supplied = if raw.contains("://") { raw.to_string() } else { format!("https://{raw}") };
+        let mut parsed = reqwest::Url::parse(&supplied)?;
+        if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() || !parsed.username().is_empty() || parsed.password().is_some() {
+            anyhow::bail!("Give me an HTTP or HTTPS webpage link without login credentials.");
+        }
+        parsed.set_fragment(None);
+        let url = parsed.to_string();
+        if !urls.contains(&url) { urls.push(url); }
+        if urls.len() > 4 { anyhow::bail!("I can read up to four webpage links in one request."); }
+    }
+    if urls.is_empty() { anyhow::bail!("Give me a webpage link to read."); }
+    Ok(urls)
+}
+
+fn public_address(address: std::net::IpAddr) -> bool {
+    match address {
+        std::net::IpAddr::V4(ip) => {
+            let [a, b, c, _] = ip.octets();
+            !(ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified()
+                || ip.is_broadcast() || ip.is_documentation() || ip.is_multicast()
+                || a == 0 || a >= 224 || (a == 100 && (64..=127).contains(&b))
+                || (a == 198 && (b == 18 || b == 19)) || (a == 192 && b == 0 && c == 0))
+        }
+        std::net::IpAddr::V6(ip) => {
+            if let Some(ip) = ip.to_ipv4() { return public_address(ip.into()); }
+            let s = ip.segments();
+            !(ip.is_loopback() || ip.is_unspecified() || ip.is_multicast()
+                || s[0] & 0xe000 != 0x2000 || s[0] == 0x2002
+                || s[0] & 0xfe00 == 0xfc00 || s[0] & 0xffc0 == 0xfe80
+                || s[0] & 0xffc0 == 0xfec0 || (s[0] == 0x2001 && s[1] == 0x0db8))
+        }
+    }
+}
+
+fn page_response(url: &str, allow_local_fixture: bool) -> Result<reqwest::blocking::Response> {
+    use std::net::ToSocketAddrs;
+    let allow_local_fixture = cfg!(test) && allow_local_fixture;
+    let began = std::time::Instant::now();
+    let mut url = reqwest::Url::parse(url)?;
+    for hop in 0..=5 {
+        let checked = scrape_urls(url.as_str())?;
+        url = reqwest::Url::parse(&checked[0])?;
+        let host = url.host_str().ok_or_else(|| anyhow!("That link has no hostname."))?.trim_matches(['[', ']']).to_string();
+        let port = url.port_or_known_default().ok_or_else(|| anyhow!("That link has no HTTP port."))?;
+        let addresses: Vec<_> = (host.as_str(), port).to_socket_addrs()?.collect();
+        let remaining = Duration::from_secs(20).checked_sub(began.elapsed()).filter(|d| !d.is_zero()).ok_or_else(|| anyhow!("That webpage took too long to respond."))?;
+        if addresses.is_empty() || (!allow_local_fixture && addresses.iter().any(|address| !public_address(address.ip()))) {
+            anyhow::bail!("The public webpage reader cannot access a local or private network address.");
+        }
+        // Pin this hop to the addresses just checked. Resolving the hostname
+        // again during connection would permit DNS rebinding. Redirects are
+        // followed manually so each new destination gets the same checks.
+        let response = reqwest::blocking::Client::builder()
+            .user_agent(UA).timeout(remaining).connect_timeout(remaining.min(Duration::from_secs(8)))
+            .no_proxy().redirect(reqwest::redirect::Policy::none())
+            .resolve_to_addrs(&host, &addresses).build()?.get(url.clone()).send()?;
+        if response.status().is_redirection() {
+            let location = response.headers().get(reqwest::header::LOCATION).ok_or_else(|| anyhow!("The page redirected without a destination."))?.to_str()?;
+            if hop == 5 { anyhow::bail!("That page redirected too many times."); }
+            url = url.join(location)?;
+        } else {
+            return Ok(response);
+        }
+    }
+    anyhow::bail!("The webpage did not finish redirecting.")
 }
 
 /// `read`, plus the address it really landed on (after any redirect).
 pub fn read_page(url: &str) -> Result<(String, String)> {
-    let url = url.trim().trim_matches(|c| c == '<' || c == '>');
-    let url = if url.starts_with("http") { url.to_string() } else { format!("https://{url}") };
-    let res = client()?.get(&url).send()?;
+    read_page_inner(url, false)
+}
+
+fn read_page_inner(url: &str, allow_local_fixture: bool) -> Result<(String, String)> {
+    let urls = scrape_urls(url)?;
+    if urls.len() != 1 { anyhow::bail!("Read one page at a time here."); }
+    let res = page_response(&urls[0], allow_local_fixture)?;
     let landed = res.url().to_string();
     let status = res.status();
     let kind = res.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_lowercase();
@@ -333,7 +427,12 @@ pub fn read_page(url: &str) -> Result<(String, String)> {
     if kind.contains("pdf") {
         return Err(anyhow!("that's a PDF — open it on screen and I'll read it there"));
     }
-    let body = res.text()?;
+    const MAX_PAGE_BYTES: u64 = 2 * 1024 * 1024;
+    if res.content_length().is_some_and(|n| n > MAX_PAGE_BYTES) { anyhow::bail!("That page is too large to read in the background."); }
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut std::io::Read::take(res, MAX_PAGE_BYTES + 1), &mut bytes)?;
+    if bytes.len() as u64 > MAX_PAGE_BYTES { anyhow::bail!("That page is too large to read in the background."); }
+    let body = String::from_utf8_lossy(&bytes);
     if !kind.contains("html") && !body.trim_start().starts_with('<') {
         return Ok((landed, clip(&body, PAGE_CHARS)));
     }
@@ -481,6 +580,47 @@ pub fn clip(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scrape_links_are_bounded_normalized_and_credential_free() {
+        assert_eq!(scrape_urls("example.com/a#one | https://example.com/a#two").unwrap(), vec!["https://example.com/a"]);
+        assert!(scrape_urls("file:///private").is_err());
+        assert!(scrape_urls("https://name:password@example.com").is_err());
+        assert!(scrape_urls("https://a.example|https://b.example|https://c.example|https://d.example|https://e.example").is_err());
+        assert!(scrape_urls(" | ").is_err());
+        assert!(super::read("http://127.0.0.1|http://127.0.0.2").is_err(), "failed batch reads cannot be reported as successful");
+    }
+
+    #[test]
+    fn background_reader_extracts_real_http_content_and_rejects_oversized_pages() {
+        use std::io::{Read, Write};
+        fn serve(body: &'static str, length: usize) -> String {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+                let mut request = [0; 2048];
+                let _ = socket.read(&mut request);
+                let response = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n{body}");
+                let _ = socket.write_all(response.as_bytes());
+            });
+            format!("http://{address}/article")
+        }
+        let html = "<html><title>Fixture source</title><body><nav>Navigation noise</nav><main><h1>Chapter five</h1><table><tr><th>Topic</th><th>Meaning</th></tr><tr><td>Botnet</td><td>A network of infected devices</td></tr></table><script>Hidden script noise</script></main></body></html>";
+        let url = serve(html, html.len());
+        let (landed, text) = read_page_inner(&url, true).unwrap();
+        assert_eq!(landed, url);
+        assert!(text.contains("Botnet") && text.contains("network of infected devices"));
+        assert!(!text.contains("Hidden script noise"));
+        let oversized = serve("", 3 * 1024 * 1024);
+        assert!(read_page_inner(&oversized, true).unwrap_err().to_string().contains("too large"));
+        for address in ["127.0.0.1", "10.0.0.1", "192.168.1.1", "169.254.169.254", "0.0.0.0", "100.64.0.1", "::1", "fc00::1", "fe80::1", "::ffff:127.0.0.1"] {
+            assert!(!public_address(address.parse().unwrap()), "{address}");
+        }
+        assert!(public_address("8.8.8.8".parse().unwrap()));
+        assert!(public_address("2606:4700:4700::1111".parse().unwrap()));
+    }
 
     /// The real web, no AI: a search and a page read. Needs the internet, so
     /// only when asked: `cargo test live_web -- --ignored --nocapture`.

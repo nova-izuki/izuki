@@ -19,10 +19,17 @@ assistant is also changing.
 ## Who's on what
 | Area | Files | Owner |
 | --- | --- | --- |
+| Shared backend webpage scraping requested across chat surfaces | `web.rs`, read-only web tool loop in `chat.rs`, atomic `page_ask.rs` integration | Codex |
+| Owner requested independent Island chat history, detachable bubble and docking (active) | New `IslandChatWorkspace.tsx`, atomic AskPage extraction/export and dock placeholder in `Island.tsx`, overlay mount | Codex |
+| Owner explicitly requests direct factual answers instead of blanket quiz refusals; optional local enrolled-voice wake filter with multiple people | Atomic answer-policy fixes in `brain.rs`, `vision.rs`; new speaker worker/profile UI and helpers, wake hook integration, model allowlist | Codex + Claude (released in 1.0.165; Claude added `tools/speaker-match-check.cjs`, 12 cases, and the release notes) |
+| Follow-up bugs requested by owner: cancelled dictation, strict physical key release, readable/scrollable transcript, direct-question routing and unsolicited guide offers (active) | `useDictation.ts`, atomic fixes in `VoiceEngine.tsx`, `hotkey.rs`, `speechInput.ts`, `TranscriptBar.tsx`, `VoiceSphere.tsx`, `study.rs` | Codex |
 | Smart notes (Codex built the backend; Claude finished, checked and released it in 1.0.164 at the owner's request, 2026-10-24) | `notes.rs`, `notes/context.rs`, `studylog.rs`, NotesTab | Claude (released) |
-| Persistent Dynamic Island (owner asked Claude to continue it, 2026-10-24) | Island.tsx, related IPC/types/settings | Claude |
+| Persistent Dynamic Island (owner asked Claude to continue it, 2026-10-24; released in 1.0.165: always-on pill, hidden-until-hover, move anywhere, reminder cancel) | Island.tsx, related IPC/types/settings | Claude (released) |
 | 1.0.163 release (owner explicitly requested Codex release on 2026-10-24) | Version manifests, release notes, WhatsNew | Codex (released and verified) |
 | WAV sample validation | `audiofile.rs` | Codex (done locally, 2026-10-24) |
+| Finished and shipped 1.0.165 (owner asked to continue from where Claude/Codex stopped): smart-notes release work, the Dynamic Island, wheel fix below | Version manifests, `docs/RELEASE-1.0.165.md`, `WhatsNew.tsx` | Freebuff (released, 2026-10-24) |
+| Mouse wheel: only taken when the pointer is really over something that scrolls (`overlay::set_wheel_target` + `hitTest.scrolls`) | `wheel.rs`, atomic edits in `overlay.rs`, `commands.rs`, `lib.rs`, `lib/hitTest.ts`, `lib/ipc.ts` | Freebuff + Claude (released in 1.0.165: Claude wrote the WH_MOUSE_LL hook and the overlay scroll handler, Freebuff added the "only where it scrolls" gate; Claude registered `set_overlay_wheel` and the `setOverlayWheel` api, which were still missing, and de-duplicated the concurrent edits) |
+| Island chat browser check repairs (stale Vite dep cache, broken selector quoting, Enter key fields, wait after reload) | `tools/island-chat-check.cjs` | Freebuff (done locally, 2026-10-24) |
 | Phone toolbar overflow | `docs/app/platform.css`, `docs/app/sw.js`, `tools/browser-check.cjs` | Codex (done locally, 2026-10-24) |
 | FL project reader validation and song timing | `flp.rs`, atomic summary/save fixes in `flstudio.rs` | Codex (done locally, 2026-10-24) |
 | Gmail across every account, briefings | `mail.rs`, `headsup.rs` (email parts) | Claude |

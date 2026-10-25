@@ -26,6 +26,7 @@ import { VoicePicker } from "./VoicePicker";
 import { MicPicker } from "./MicPicker";
 import { QuietHoursRow } from "./QuietHoursRow";
 import { WakeWords } from "./WakeWords";
+import { WakeSpeakers } from "./WakeSpeakers";
 import { hasNaturalVoice, openVoiceSettings } from "../lib/speak";
 
 /**
@@ -121,8 +122,8 @@ export function TalkToIzuki() {
           label="How do you start talking?"
           hint={
             settings.voice_wake_enabled
-              ? 'Say your wake word (like "Hey Nova") from anywhere — the orb pops up and you just talk. The talk key works too.'
-              : `Hold ${prettyKeys(settings.hotkey_voice)}, talk while the orb moves with your voice, and let go — it sends. Nothing listens until you press it.`
+              ? 'Say your wake word (like "Hey Nova") from anywhere — the orb pops up and you keep talking, back and forth. Holding the talk key works too.'
+              : `Hold ${prettyKeys(settings.hotkey_voice)} and talk — a little waveform under your mouse moves with your voice. Let go: it sends, and the orb answers. The mic is only on while you hold it — "Hey Nova" doesn't work in this mode.`
           }
           icon={<Sparkles size={14} strokeWidth={2.3} />}
         >
@@ -138,6 +139,7 @@ export function TalkToIzuki() {
         </Row>
 
         {settings.voice_wake_enabled && <WakeWords />}
+        {settings.voice_wake_enabled && <WakeSpeakers />}
         {settings.voice_wake_enabled && (
           <Row
             label="Wake-up strictness"
@@ -197,6 +199,16 @@ export function TalkToIzuki() {
                 </button>
               ))}
             </div>
+          </Row>
+        )}
+        {settings.island_enabled && (
+          <Row label="Always show the Island" hint="On: like an iPhone's Dynamic Island — a black pill at the top that grows to show what Izuki's doing. Off: hidden until your mouse goes to the top of the screen, or something's happening (music, listening, answering, timers).">
+            <Toggle checked={settings.island_always ?? true} onChange={(v) => patch({ island_always: v })} />
+          </Row>
+        )}
+        {settings.island_enabled && (
+          <Row label="Move it anywhere" hint="Drag the Island anywhere on your screen by its handle. Off: it stays along the top.">
+            <Toggle checked={!!settings.island_free} onChange={(v) => patch({ island_free: v })} />
           </Row>
         )}
         {settings.island_enabled && (

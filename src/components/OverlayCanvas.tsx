@@ -16,6 +16,7 @@ import { CaptionBox } from "./CaptionBox";
 import { FloatingChat } from "./FloatingChat";
 import { HandCursor, type HandCursorHandle } from "./HandCursor";
 import { Island, islandPointer } from "./Island";
+import { IslandChatWorkspace } from "./IslandChatWorkspace";
 import { Hud } from "./Hud";
 import { HandGlyph } from "./IzukiMark";
 import { PointOutLayer, type PointOut } from "./PointOutLayer";
@@ -133,6 +134,10 @@ export function OverlayCanvas() {
   const [handOn, setHandOn] = useState(false);
   // The Island at the top of the screen (on unless switched off in Talk).
   const [islandOn, setIslandOn] = useState(true);
+  /** The Island always showing, like an iPhone's (not only on hover). */
+  const [islandAlways, setIslandAlways] = useState(true);
+  /** The Island can be dragged anywhere. */
+  const [islandFree, setIslandFree] = useState(false);
   const [islandPeeks, setIslandPeeks] = useState(true);
   const [islandWave, setIslandWave] = useState<string>("auto");
   const [islandStyle, setIslandStyle] = useState<string>("default");
@@ -475,6 +480,8 @@ export function OverlayCanvas() {
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
           setIslandWave(s.island_wave || "auto");
+          setIslandAlways(s.island_always ?? true);
+          setIslandFree(!!s.island_free);
           setIslandStyle(s.island_style || "default");
           setIslandSize(s.island_size || "normal");
           setKeepReply(s.keep_reply);
@@ -544,6 +551,8 @@ export function OverlayCanvas() {
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
           setIslandWave(s.island_wave || "auto");
+          setIslandAlways(s.island_always ?? true);
+          setIslandFree(!!s.island_free);
           setIslandStyle(s.island_style || "default");
           setIslandSize(s.island_size || "normal");
           setKeepReply(s.keep_reply);
@@ -647,6 +656,26 @@ export function OverlayCanvas() {
         handRef.current?.setPointer(cx, cy);
         islandPointer(cx, cy);
         hitTest(cx, cy);
+      }),
+      // The wheel over one of Izuki's widgets (the answer bubble, the open
+      // Island): the core caught it and sent it here, so it scrolls the thing
+      // under the pointer instead of the app behind — without the overlay
+      // ever taking focus.
+      on<{ x: number; y: number; delta: number }>(EV.wheel, ({ x, y, delta }) => {
+        const sx = Math.max(1, window.innerWidth) / Math.max(1, desktop.w || window.innerWidth);
+        const sy = Math.max(1, window.innerHeight) / Math.max(1, desktop.h || window.innerHeight);
+        const cx = (x - desktop.x) * sx;
+        const cy = (y - desktop.y) * sy;
+        let el = document.elementFromPoint(cx, cy) as HTMLElement | null;
+        while (el) {
+          const oy = getComputedStyle(el).overflowY;
+          if ((oy === "auto" || oy === "scroll") && el.scrollHeight > el.clientHeight + 1) {
+            // +120 forward = scroll up; ~60px a notch.
+            el.scrollTop -= (delta / 120) * 60;
+            break;
+          }
+          el = el.parentElement;
+        }
       }),
       // Quickdraw's key-up — commit() already closes with nothing to send
       // when no mark was drawn, so this is safe to fire on a bare tap too.
@@ -785,7 +814,15 @@ export function OverlayCanvas() {
     return () => clearTimeout(t);
   }, [transcript]);
 
-  const idle = open && mode === "follow" && !handOn && !islandOn && !air && !listening && !caption && orb === "hidden" && !transcript;
+  const [islandChatVisible, setIslandChatVisible] = useState(() => {
+    try { return localStorage.getItem("izuki.island-chat-detached.v1") === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    const changed = (event: Event) => setIslandChatVisible(!!(event as CustomEvent<boolean>).detail);
+    window.addEventListener("izuki:island-chat-visible", changed);
+    return () => window.removeEventListener("izuki:island-chat-visible", changed);
+  }, []);
+  const idle = open && mode === "follow" && !handOn && !islandOn && !islandChatVisible && !talkWave && !air && !listening && !caption && orb === "hidden" && !transcript;
   useEffect(() => {
     if (!idle) return;
     const t = setTimeout(() => void api.closeOverlay(), 1500);
@@ -844,7 +881,10 @@ export function OverlayCanvas() {
           </div>
         )}
         <Hud />
+        <IslandChatWorkspace />
         {islandOn && <Island
+            always={islandAlways}
+            free={islandFree}
             orb={orb}
             doing={doing}
             thinking={thinking}

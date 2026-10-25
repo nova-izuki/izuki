@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Brain, Check, CheckSquare, ChevronDown, ChevronRight, Copy, FolderTree, Loader2, MessageSquare, MoreHorizontal, Search, Sparkles, Square, Trash2, Wand2, X } from "lucide-react";
 import { api, on } from "../../lib/ipc";
 import type { Note } from "../../lib/types";
+import { noteStudyText } from "../../lib/notes";
 import { sendChatCommand } from "../VoiceEngine";
 import { JumpBar } from "../JumpBar";
 import { CampusHub } from "../CampusHub";
@@ -9,7 +10,7 @@ import { EmptyState, Row, Section, Toggle, cx } from "../ui";
 import { useIzuki } from "../../lib/store";
 
 /** The words of a note, trimmed for asking the AI about it. */
-const bodyOf = (n: Note) => n.text.slice(0, 4000);
+const bodyOf = (n: Note) => noteStudyText(n);
 const summarise = (notes: Note[]) =>
   void sendChatCommand(
     notes.length === 1
@@ -141,14 +142,25 @@ export function NotesTab() {
   const [picked, setPicked] = useState<Set<string> | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
 
-  const reload = useCallback(() => void api.notesList().then(setNotes).catch(() => undefined), []);
+  const reloadSequence = useRef(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const reload = useCallback(() => {
+    const mine = ++reloadSequence.current;
+    void api.notesList().then((next) => {
+      if (reloadSequence.current !== mine) return;
+      setNotes(next); setLoadError(null);
+    }).catch((e) => {
+      if (reloadSequence.current === mine) setLoadError(e instanceof Error ? e.message : String(e));
+    });
+  }, []);
   useEffect(() => {
     reload();
-    const t = setInterval(reload, 8000);
+    const t = setInterval(() => { if (!document.hidden) reload(); }, 30_000);
     // A note saved by asking ("save this to my notes"): shown at once.
     const off = on<void>("izuki://notes-changed", reload);
     return () => {
       clearInterval(t);
+      reloadSequence.current++;
       void off.then((f) => f());
     };
   }, [reload]);
@@ -231,10 +243,11 @@ export function NotesTab() {
         </div>
         <p className="mt-2 text-[11px] text-izk-muted">Tip: in teacher mode, every question Izuki explains is saved here by itself.</p>
         {error && <p className="mt-2 text-[12px] text-izk-danger">{error}</p>}
+        {loadError && <div role="alert" className="mt-2 text-[12px] text-izk-danger">{loadError} <button type="button" onClick={reload} className="underline">Try loading again</button></div>}
       </Section>
 
       {note ? (
-        <NoteView note={note} onBack={() => setOpen(null)} onChanged={reload} />
+        <NoteView key={note.id} note={note} onBack={() => setOpen(null)} onChanged={reload} />
       ) : (
         <Section
           id="notes-list"
@@ -332,7 +345,7 @@ export function NotesTab() {
                       items={[
                         { icon: <BookOpen size={13} />, label: "Open", run: () => setOpen(n.id) },
                         { icon: <Sparkles size={13} />, label: "Summarise", run: () => summarise([n]) },
-                        { icon: <Brain size={13} />, label: "Quiz me", run: () => void api.notesFocus(n.id, true).catch(() => undefined).finally(() => void sendChatCommand(`Quiz me on these notes — one question at a time, and tell me if I'm right:\n\n${bodyOf(n)}`)) },
+                        { icon: <Brain size={13} />, label: "Quiz me", run: () => void api.notesFocus(n.id, true).then(() => sendChatCommand(`Quiz me on these notes — one question at a time, and tell me if I'm right:\n\n${bodyOf(n)}`)).catch((e) => setError(e instanceof Error ? e.message : String(e))) },
                         { icon: <Sparkles size={13} />, label: "Explain in 60 seconds", run: () => void sendChatCommand(`Explain these notes in about 60 seconds of reading: simple words, the 3 ideas that matter most, and one real-life example. Say which parts come from the notes and which are your own examples.\n\n${bodyOf(n)}`) },
                         { icon: <BookOpen size={13} />, label: "Teach me like a beginner", run: () => void sendChatCommand(`Teach me these notes like I'm a complete beginner, step by step (about 5 minutes): an everyday analogy for each idea, then a quick question to check I understood before moving on. Keep to what the notes say; label anything you add.\n\n${bodyOf(n)}`) },
                         { icon: <Copy size={13} />, label: "Copy text", run: () => copy([n]) },
@@ -361,9 +374,9 @@ function NoteView({ note, onBack, onChanged }: { note: Note; onBack: () => void;
   /** Cards marked this time through: index → right. */
   const [marked, setMarked] = useState<Record<number, boolean>>({});
   const cardsKey = useMemo(() => JSON.stringify(note.cards), [note.cards]);
-  useEffect(() => setMarked({}), [note.id, cardsKey]);
+  useEffect(() => { setMarked({}); setCard(0); setFlipped(false); }, [note.id, cardsKey]);
   const mark = (right: boolean) => {
-    if (card in marked) return;
+    if (card in marked || !note.cards[card]) return;
     const [q, a] = note.cards[card];
     setMarked((m) => ({ ...m, [card]: right }));
     void api.studyMark(note.title, q, a, right).catch(() => undefined);
@@ -373,7 +386,7 @@ function NoteView({ note, onBack, onChanged }: { note: Note; onBack: () => void;
     }
   };
   const [question, setQuestion] = useState("");
-  const body = note.text.slice(0, 4000);
+  const body = bodyOf(note);
   /** Changing where this note is filed (subject / chapter / topic). */
   const [filing, setFiling] = useState<{ subject: string; chapter: string; topic: string } | null>(null);
   const saveFiling = async () => {
@@ -446,7 +459,7 @@ function NoteView({ note, onBack, onChanged }: { note: Note; onBack: () => void;
         <Tool
           icon={<Brain size={15} />}
           label="Quiz me"
-          onClick={() => void api.notesFocus(note.id, true).catch(() => undefined).finally(() => void sendChatCommand(`Quiz me on these notes — one question at a time, and tell me if I'm right:\n\n${body}`))}
+          onClick={() => void api.notesFocus(note.id, true).then(() => sendChatCommand(`Quiz me on these notes — one question at a time, and tell me if I'm right:\n\n${body}`)).catch((e) => setError(e instanceof Error ? e.message : String(e)))}
         />
         <Tool icon={<BookOpen size={15} />} label="Summarise" onClick={() => void sendChatCommand(`Summarise these notes in 3 short bullet points:\n\n${body}`)} />
         <Tool
@@ -477,7 +490,7 @@ function NoteView({ note, onBack, onChanged }: { note: Note; onBack: () => void;
             <span className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-izk-muted">
               {flipped ? "Answer" : `Card ${card + 1} of ${note.cards.length} — tap to flip`}
             </span>
-            <span className="mt-2 text-[15px] font-semibold leading-snug text-izk-ink">{flipped ? note.cards[card][1] : note.cards[card][0]}</span>
+            <span className="mt-2 text-[15px] font-semibold leading-snug text-izk-ink">{note.cards[Math.min(card, note.cards.length - 1)]?.[flipped ? 1 : 0]}</span>
           </button>
           {flipped && !(card in marked) && (
             <div className="mt-2 flex gap-2">

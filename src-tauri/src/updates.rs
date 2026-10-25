@@ -34,21 +34,47 @@ pub fn check_later(app: &AppHandle) {
     if cfg!(debug_assertions) || std::env::var("IZUKI_SELFTEST").is_ok() { return; }
     let app=app.clone();
     tauri::async_runtime::spawn(async move {
-        // Check soon after startup, then every hour — a single small request,
-        // and new versions often land several times a day.
-        tokio::time::sleep(Duration::from_secs(8)).await;
+        // Soon after startup, then every hour by the clock on the wall — a PC
+        // that slept through the hour checks once it wakes. A check that
+        // failed (Wi-Fi not up yet right after Windows starts) tries again in
+        // a few minutes, not an hour later: that left updates unseen until
+        // "Check now" was clicked.
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        let mut next = 0i64;
+        let mut failures = 0usize;
         loop {
-            if crate::state::store().settings().automatic_update_checks { auto_update(&app).await; }
-            tokio::time::sleep(Duration::from_secs(60*60)).await;
+            if crate::model::now_ms() >= next && crate::state::store().settings().automatic_update_checks {
+                let ok = auto_update(&app).await;
+                failures = if ok { 0 } else { failures + 1 };
+                next = crate::model::now_ms() + retry_minutes(failures) * 60_000;
+            }
+            tokio::time::sleep(Duration::from_secs(60)).await;
         }
     });
 }
 
+/// Minutes to the next automatic check after `failures` failed ones in a row.
+fn retry_minutes(failures: usize) -> i64 {
+    if failures == 0 { 60 } else { [2, 5, 10, 30, 60][(failures - 1).min(4)] }
+}
+
 /// Automatic checks may notify; downloading/installing requires a user action.
-async fn auto_update(app: &AppHandle) {
-    let Ok(status) = check(app).await else { return };
-    if status.phase != "available" && status.phase != "ready" { return; }
-    alert(&status.version);
+/// Whether the check itself worked.
+async fn auto_update(app: &AppHandle) -> bool {
+    match check(app).await {
+        Ok(status) if status.phase == "available" || status.phase == "ready" => {
+            alert(app, &status.version);
+            true
+        }
+        Ok(_) => {
+            eprintln!("[update] checked: {} is the newest", env!("CARGO_PKG_VERSION"));
+            true
+        }
+        Err(e) => {
+            eprintln!("[update] automatic check failed: {e}");
+            false
+        }
+    }
 }
 
 /// The version downloaded and waiting to be installed, if any.
@@ -65,12 +91,27 @@ pub fn offered_version() -> Option<(String, bool)> {
         .filter(|(version, _)| !version.is_empty())
 }
 
-/// Tell you once per version that an update is available.
-fn alert(version: &str) {
+/// Tell you once per version that an update is available — where you'll
+/// see it without going to look: a Windows notification, and the Island's
+/// pill (whenever nothing else is on it) until it's installed.
+fn alert(app: &AppHandle, version: &str) {
     static TOLD: Mutex<String> = Mutex::new(String::new());
     if version.is_empty() || *TOLD.lock() == version { return; }
     *TOLD.lock() = version.to_string();
+    eprintln!("[update] {version} is available (you have {})", env!("CARGO_PKG_VERSION"));
     crate::activity::show_update(version);
+    {
+        use tauri_plugin_notification::NotificationExt;
+        if let Err(e) = app
+            .notification()
+            .builder()
+            .title(format!("Izuki {version} is out"))
+            .body("Hover over the Island at the top of your screen (or open Settings \u{2192} Updates) to download and install it.")
+            .show()
+        {
+            eprintln!("[update] Windows notification failed: {e}");
+        }
+    }
     crate::companion::notify_everywhere(&format!("⬆️ Izuki {version} is available — open Settings → Updates on your PC to review, download and install it."));
 }
 
@@ -149,6 +190,12 @@ pub async fn install_update(app: AppHandle, window: WebviewWindow, version: Stri
 }
 #[cfg(test)] mod tests {
     use super::*;
+    #[test] fn a_failed_check_tries_again_soon() {
+        assert_eq!(retry_minutes(0), 60);
+        assert_eq!(retry_minutes(1), 2);
+        assert_eq!(retry_minutes(2), 5);
+        assert_eq!(retry_minutes(9), 60);
+    }
     #[test] fn install_requires_reviewed_verified_version_and_idle_app() {
         assert!(install_allowed("1.0.22","1.0.22",true,false).is_ok());
         assert!(install_allowed("1.0.22","1.0.22",true,true).is_err());

@@ -123,6 +123,7 @@ pub mod readaloud;
 pub mod tts;
 pub mod uia;
 pub mod updates;
+pub mod wheel;
 pub mod vision;
 pub mod voices;
 pub mod watcher;
@@ -301,6 +302,7 @@ pub fn run() {
             commands::close_overlay,
             commands::set_overlay_interactive,
             commands::set_overlay_hit,
+            commands::set_overlay_wheel,
             commands::frontend_log,
             commands::list_memories,
             commands::add_memory,
@@ -398,6 +400,7 @@ pub fn run() {
             commands::notes_lesson,
             commands::notes_flashcards,
             commands::notes_focus,
+            commands::notes_answer,
             commands::notes_organize,
             commands::island_status,
             commands::media_control,
@@ -541,6 +544,7 @@ pub fn run() {
             tray::build(&handle)?;
             hotkey::rebind(&handle, &settings);
             hotkey::install_escape_watch(&handle);
+            wheel::install(&handle);
             updates::check_later(&handle);
             watcher::spawn(handle.clone(), store.clone());
             follow::spawn(handle.clone(), store.clone());

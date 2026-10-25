@@ -34,7 +34,16 @@ fn asks_for_lesson(said: &str) -> bool {
 
 /// "teach me this assignment", "open my lab assignment and walk me through it and save notes".
 pub fn parse(said: &str) -> Option<Ask> {
+    // A short question about an option is not an assignment walkthrough.
+    // Supplied Notes are reference material, never screen instructions.
+    if crate::notes::is_study_prompt(said) {
+        return None;
+    }
     let s = format!(" {} ", said.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" "));
+    let walkthrough = ["walk me through", "go through", "guide me", "teach me", "do it with me", "do this with me", "help me do", "step by step"].iter().any(|w| s.contains(w));
+    if !walkthrough && !crate::notes::asks_to_save(said) {
+        return None;
+    }
     let work = WORK.iter().any(|w| s.contains(&format!(" {w}")));
     let coach = COACH.iter().any(|w| s.contains(w));
     if !(work && coach) {
@@ -95,14 +104,20 @@ pub fn coach(said: &str) -> anyhow::Result<String> {
     if guide.trim().is_empty() {
         anyhow::bail!("the AI didn't write a guide — try again in a moment");
     }
+    let asks = section(&guide, "WHAT IT ASKS").unwrap_or_default();
+    // A quiz question is not an assignment. Walking one through as "Step 1 of
+    // 7: read the question carefully" was noise on a multiple-choice question
+    // — and it kept a guide in Notes nobody asked for. Quizzes go to the quiz
+    // coach, one question at a time, where Izuki never gives the answer.
+    if is_quiz_page(&asks) {
+        eprintln!("[study] that's a quiz question, not an assignment — handing it to the quiz coach");
+        return Ok("That's a quiz question, not an assignment, so I won't turn it into a step-by-step guide (and I haven't kept anything in your Notes). Say \u{201c}coach me through this quiz\u{201d} and I'll go through it with you one question at a time."
+            .into());
+    }
     let note_title = format!("Assignment — {}", crate::notes::tidy_title(&title));
     let saved = if crate::notes::may_keep(said) { Some(crate::notes::from_text(&note_title, &title, &guide, false)?) } else { None };
     *LAST_GUIDE.lock() = Some((note_title.clone(), guide.clone(), std::time::Instant::now()));
-    if saved.is_none() {
-        crate::offers::make("save the assignment guide to my notes");
-    }
     let steps = steps_of(&guide);
-    let asks = section(&guide, "WHAT IT ASKS").unwrap_or_default();
     let due = section(&guide, "DUE").filter(|d| !d.to_lowercase().contains("not shown"));
     *GUIDE.lock() = Some((steps.clone(), 0, std::time::Instant::now()));
     eprintln!("[study] guide ready ({} steps, {})", steps.len(), if saved.is_some() { "saved to Notes" } else { "not saved" });
@@ -113,10 +128,24 @@ pub fn coach(said: &str) -> anyhow::Result<String> {
         due.map(|d| format!(" Due: {d}.")).unwrap_or_default(),
         match &saved {
             Some(note) => format!("I saved the step-by-step guide to your Notes (“{}”).", note.title),
-            None => "Want the step-by-step guide kept in your Notes? Just say yes.".to_string(),
+            None => String::new(),
         },
         if first.is_empty() { String::new() } else { format!("\nStep 1 of {}: {first}\nSay “next step” when you're ready, or “explain that”.", steps.len()) }
     ))
+}
+
+/// The guide itself saying what's on screen is a quiz question rather than
+/// an assignment ("a multiple-choice question", "not an essay or long-form
+/// assignment"). The prompt asks for exactly that when the text isn't one.
+fn is_quiz_page(asks: &str) -> bool {
+    let s = asks.to_lowercase();
+    let quiz = ["multiple-choice", "multiple choice", "quiz question", "test question", "exam question", "interactive quiz", "practice question", "knowledge check"]
+        .iter()
+        .any(|w| s.contains(w));
+    let denies = ["not an assignment", "not an essay", "isn't an assignment", "is not an assignment", "not a long-form", "not long-form"]
+        .iter()
+        .any(|w| s.contains(w));
+    quiz || denies
 }
 
 fn section(guide: &str, name: &str) -> Option<String> {
@@ -209,10 +238,21 @@ pub fn explain_current(said: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_quiz_question_is_not_an_assignment() {
+        assert!(is_quiz_page("This is an interactive quiz question asking why hidden file extensions are a threat. It is not an essay or long-form assignment, but a multiple-choice question within a larger set."));
+        assert!(is_quiz_page("A multiple choice question about botnets."));
+        assert!(!is_quiz_page("Write a 500-word reflection on your lab and submit it as a PDF."));
+        assert!(!is_quiz_page("Build a small Python script that reads a CSV and prints the totals."));
+    }
+
     use super::*;
 
     #[test]
     fn hears_assignment_coaching() {
+        assert!(parse("explain the answer to this quiz question").is_none());
+        assert!(parse("help me with the answer on this assignment").is_none());
+        assert!(parse("Quiz me on these notes\n\nChapter 5 assignment: open terminal").is_none());
         assert_eq!(parse("teach me this assignment"), Some(Ask { open_first: None }));
         let a = parse("open my lab assignment on blackboard and teach me while I do it and save to my notes").unwrap();
         assert_eq!(a.open_first.as_deref(), Some("open my lab assignment on blackboard"));

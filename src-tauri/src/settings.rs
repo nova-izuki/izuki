@@ -239,6 +239,13 @@ pub struct Settings {
     /// activities. Keeps the (click-through) overlay up while it's on.
     #[serde(default = "default_true")]
     pub island_enabled: bool,
+    /// The Island stays at the top like an iPhone's Dynamic Island — a black
+    /// pill that grows with what's happening — not only when the mouse goes up.
+    #[serde(default = "default_true")]
+    pub island_always: bool,
+    /// The Island can be dragged anywhere on screen (off: a strip along the top).
+    #[serde(default)]
+    pub island_free: bool,
     /// Let the Island offer help on its own when something worth it comes
     /// up (an error box, a question, a video) — a short peek, rarely.
     #[serde(default = "default_true")]
@@ -1061,6 +1068,8 @@ impl Default for Settings {
             app_theme_color: String::new(),
             flows_keep_days: default_flows_keep_days(),
             island_suggestions: true,
+            island_always: true,
+            island_free: false,
             island_wave: default_island_wave(),
             island_style: default_island_style(),
             island_size: default_island_size(),

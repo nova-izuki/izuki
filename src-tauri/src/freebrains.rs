@@ -191,7 +191,7 @@ pub fn rest_model(cfg: &ProviderConfig, d: Duration) {
     eprintln!("[free-brains] resting {} for {} s — its siblings carry on", cfg.model, d.as_secs());
 }
 
-fn resting(id: ProviderId, model: &str) -> bool {
+pub(crate) fn resting(id: ProviderId, model: &str) -> bool {
     let mut r = RESTING.lock();
     let now = Instant::now();
     r.retain(|(_, _, until)| *until > now);

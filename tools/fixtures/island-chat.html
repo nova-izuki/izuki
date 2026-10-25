@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Island chat regression fixture</title></head>
+<body style="background:#263442"><div id="root"></div><script type="module">
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { IslandChatWorkspace } from '/src/components/IslandChatWorkspace.tsx';
+import { TranscriptText } from '/src/components/TranscriptBar.tsx';
+import { api, emit, EV } from '/src/lib/ipc.ts';
+import '/src/styles.css';
+window.testCalls = { asks: [], cancels: [], config: 0 };
+api.showConfig = async () => { window.testCalls.config++; };
+api.pageAskCancel = async (id) => { window.testCalls.cancels.push(id); };
+api.pageAsk = async (id, question, history) => {
+  window.testCalls.asks.push({ id, question, history });
+  void emit(EV.pageAnswer, { id, text: `Answer for ${question}. `, done: false });
+};
+window.finishAsk = async () => { const id=window.testCalls.asks.at(-1).id; await emit(EV.pageAnswer, {id,text:'Explanation complete.',done:true}); };
+const longText = Array.from({ length: 80 }, (_, i) => `Transcript line ${i + 1}: a readable answer.`).join('\n');
+createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode, null,
+  React.createElement('div', { className:'izk-island', style:{ position:'fixed',left:350,top:10,width:380,background:'#111',borderRadius:24,padding:12 } },
+    React.createElement('div', { id:'izuki-island-chat-dock', 'data-page':'Test chapter' }, React.createElement('button', { onClick:()=>window.dispatchEvent(new Event('izuki:island-chat-open')) }, 'Open Island chat'))),
+  React.createElement(IslandChatWorkspace),
+  React.createElement('aside', { style:{position:'fixed',left:20,bottom:20,width:300} }, React.createElement(TranscriptText, {text:longText,final:true}))));
+window.testReady = true;
+</script></body></html>

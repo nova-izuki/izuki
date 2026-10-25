@@ -29,6 +29,8 @@ export interface Dictation {
 
 export interface StartOptions {
   noSpeechMs?: number;
+  /** Physical push-to-talk waits for release, including pauses between words. */
+  hold?: boolean;
   /** Listen while Izuki is still busy, so you can cut in (see `listen`). */
   cutIn?: { busy: () => boolean; onCutIn: () => void; allowed?: () => boolean };
 }
@@ -57,6 +59,7 @@ export function useDictation(onFinal: (text: string) => void, opts: DictationOpt
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
   const session = useRef<Listening | null>(null);
+  const generation = useRef(0);
   const finalRef = useRef(onFinal);
   finalRef.current = onFinal;
   const optsRef = useRef(opts);
@@ -68,6 +71,7 @@ export function useDictation(onFinal: (text: string) => void, opts: DictationOpt
 
   const start = useCallback((o?: StartOptions) => {
     if (session.current) return;
+    const mine = ++generation.current;
     if (!canListen()) {
       setError("No microphone is available — type instead.");
       return;
@@ -94,6 +98,8 @@ export function useDictation(onFinal: (text: string) => void, opts: DictationOpt
           .finally(() => (partialBusy.current = false));
       },
       noSpeechMs: o?.noSpeechMs ?? optsRef.current.noSpeechMs ?? 8000,
+      silenceMs: o?.hold ? Infinity : undefined,
+      maxMs: o?.hold ? 60_000 : undefined,
       cutIn: o?.cutIn,
     });
     session.current = s;
@@ -106,6 +112,7 @@ export function useDictation(onFinal: (text: string) => void, opts: DictationOpt
     const unduck = () => void api.duckAudio(false).catch(() => undefined);
 
     void s.audio.then(async (audio) => {
+      if (generation.current !== mine) return;
       unduck();
       if (session.current === s) session.current = null;
       setListening(false);
@@ -116,6 +123,7 @@ export function useDictation(onFinal: (text: string) => void, opts: DictationOpt
       setTranscribing(true);
       try {
         const text = await transcribe(audio);
+        if (generation.current !== mine) return;
         if (!text) {
           optsRef.current.onNothing?.("unclear");
           return;
@@ -123,12 +131,14 @@ export function useDictation(onFinal: (text: string) => void, opts: DictationOpt
         setTranscript(text);
         finalRef.current(text);
       } catch (e) {
+        if (generation.current !== mine) return;
         setError(`Couldn't make that out — ${e instanceof Error ? e.message : String(e)}`);
         optsRef.current.onNothing?.("error");
       } finally {
-        setTranscribing(false);
+        if (generation.current === mine) setTranscribing(false);
       }
     }, (e: unknown) => {
+      if (generation.current !== mine) return;
       unduck();
       if (session.current === s) session.current = null;
       setListening(false);
@@ -142,9 +152,20 @@ export function useDictation(onFinal: (text: string) => void, opts: DictationOpt
   }, []);
 
   const stop = useCallback(() => session.current?.finish(), []);
-  const cancel = useCallback(() => session.current?.cancel(), []);
+  const cancel = useCallback(() => {
+    generation.current++;
+    session.current?.cancel();
+    session.current = null;
+    setListening(false);
+    setTranscribing(false);
+    void api.duckAudio(false).catch(() => undefined);
+  }, []);
 
-  useEffect(() => () => session.current?.cancel(), []);
+  useEffect(() => () => {
+    generation.current++;
+    session.current?.cancel();
+    void api.duckAudio(false).catch(() => undefined);
+  }, []);
 
   return { available, listening, transcribing, transcript, error, start, stop, cancel };
 }

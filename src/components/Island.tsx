@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AirToggle } from "./AirToggle";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, Brain, Camera, Check, FileText, GripHorizontal, History, Mic, Monitor, Paperclip, Pause, Pencil, Pin, Play, Plus, Settings2, SkipBack, SkipForward, Sparkles, Square, Wand2, X } from "lucide-react";
-import { api, CAMERA_PICTURE_KEY, emit, EV, IS_TAURI, ISLAND_CHATS_KEY, ISLAND_DEEP_KEY, ISLAND_TO_CHAT_KEY, on } from "../lib/ipc";
+import { AlarmClock, Camera, Check, GripHorizontal, Mic, Pause, Pencil, Play, Settings2, SkipBack, SkipForward, Sparkles, Square, X } from "lucide-react";
+import { api, CAMERA_PICTURE_KEY, emit, EV, IS_TAURI, on } from "../lib/ipc";
 import { workArea } from "../lib/floating";
 import { lockHit, markHit, unlockHit } from "../lib/hitTest";
 import { IslandPal, type PalCue } from "./IslandPal";
-import { ChatText } from "./ChatText";
 import { listCameras, openCamera, saveCamera } from "../lib/camera";
 import type { Activity, IslandStatus, NowPlaying, OrbState, Reminder, Suggestion } from "../lib/types";
 import type { IslandVitals } from "../lib/ipc";
@@ -70,6 +68,9 @@ function islandScale(size: string): number {
   return size === "small" ? 0.88 : size === "large" ? 1.15 : 1;
 }
 
+/** "Move it anywhere" (setting): the Island isn't held to the top strip. */
+let freeMove = false;
+
 /** Kept on screen at its real (scaled) width. */
 function fitIslandPosition(position: IslandPosition, scale = 1): IslandPosition {
   const wa = workArea();
@@ -77,8 +78,9 @@ function fitIslandPosition(position: IslandPosition, scale = 1): IslandPosition 
   return {
     x: Math.min(wa.right - half, Math.max(wa.left + half, position.x)),
     // Keep it in a top rail: movable away from tabs/address fields without
-    // letting a short drag strand it over the middle of the screen.
-    y: Math.min(wa.top + 120, Math.max(wa.top + 6, position.y)),
+    // letting a short drag strand it over the middle of the screen — unless
+    // "Move it anywhere" is on.
+    y: Math.min(freeMove ? wa.bottom - 48 : wa.top + 120, Math.max(wa.top + 6, position.y)),
   };
 }
 
@@ -109,6 +111,10 @@ type Live =
   | { kind: "remote"; device: string; controlling: boolean }
   | { kind: "sitedown"; name: string; url: string }
   | { kind: "due"; count: number; title: string; at: number }
+  /** You're talking to Izuki (hands-free or holding the talk key). */
+  | { kind: "listening" }
+  /** Izuki is answering out loud. */
+  | { kind: "speaking" }
   | { kind: "rest" };
 
 export function Island({
@@ -116,6 +122,8 @@ export function Island({
   doing,
   thinking,
   peeks = true,
+  always = true,
+  free = false,
   wave = "auto",
   look = "default",
   size = "normal",
@@ -128,6 +136,10 @@ export function Island({
   thinking: boolean;
   /** Let a helpful suggestion peek out on its own (setting). */
   peeks?: boolean;
+  /** Always at the top like an iPhone's Dynamic Island (setting). */
+  always?: boolean;
+  /** Drag it anywhere on screen (setting); off: a strip along the top. */
+  free?: boolean;
   /** The waveform style while music plays (setting). */
   wave?: string;
   /** The Island's look (setting island_style): Windhawk-style themes. */
@@ -146,9 +158,21 @@ export function Island({
   const lastPeek = useRef(0);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [open, setOpen] = useState(false);
+  freeMove = free;
+  /** Holding the talk key (the orb stays away then): you're being heard. */
+  const [talking, setTalking] = useState(false);
+  useEffect(() => {
+    const off = on<string>(EV.talkWave, (state) => setTalking(state === "listening"));
+    return () => void off.then((f) => f());
+  }, []);
   const [position, setPosition] = useState<IslandPosition>(loadIslandPosition);
   const positionRef = useRef(position);
   positionRef.current = position;
+  // The setting arrives after the first paint: the saved place again, now
+  // held to the top strip or not.
+  useEffect(() => {
+    setPosition(loadIslandPosition());
+  }, [free]);
   const scaleRef = useRef(islandScale(size));
   scaleRef.current = islandScale(size);
   const [finished, setFinished] = useState(false);
@@ -186,6 +210,11 @@ export function Island({
       }, CLOSE_AFTER_MS);
     }
   }, []);
+  useEffect(() => {
+    const changed = (event: Event) => hold(!!(event as CustomEvent<boolean>).detail, "island-chat");
+    window.addEventListener("izuki:island-chat-hold", changed);
+    return () => window.removeEventListener("izuki:island-chat-hold", changed);
+  }, [hold]);
 
   // ---- what Izuki is doing
   const busy = thinking || orb === "thinking";
@@ -279,7 +308,18 @@ export function Island({
       clearInterval(tick);
     };
   }, []);
-  const next = reminders.filter((r) => r.at > now).sort((a, b) => a.at - b.at)[0];
+  const coming = reminders.filter((r) => r.at > now).sort((a, b) => a.at - b.at);
+  const next = coming[0];
+  /** Cancel one (gone from the list at once; the core tells every window). */
+  const cancelReminder = (id: string) => {
+    setReminders((list) => list.filter((r) => r.id !== id));
+    void api.reminderRemove(id).catch(() =>
+      api
+        .remindersList()
+        .then(setReminders)
+        .catch(() => undefined)
+    );
+  };
   const soon = next && next.at - now <= REMINDER_SOON_MS ? next : undefined;
 
   // ---- open on dwell, close shortly after the mouse leaves
@@ -434,6 +474,9 @@ export function Island({
   for (const a of acts) if (!firstSeen.current.has(a.id)) firstSeen.current.set(a.id, Date.now());
   const fresh = acts.find((a) => a.kind !== "timer" && (a.kind === "downloading" || Date.now() - (firstSeen.current.get(a.id) ?? 0) < 10_000));
   const timer = acts.find((a) => a.kind === "timer");
+  /** A new Izuki version: on the pill whenever nothing else is (not just its
+   *  first 10 s), so it's seen without opening Settings. */
+  const update = acts.find((a) => a.kind === "update");
   const media = status.media;
   const musicOn = !!media?.playing;
   const onPlayingRef = useRef(onPlaying);
@@ -468,6 +511,10 @@ export function Island({
     ? { kind: "finished" }
     : status.missions
       ? { kind: "missions", now: status.missions[0], left: status.missions[1], step: busy ? doing : null }
+    : orb === "listening" || talking
+      ? { kind: "listening" }
+    : orb === "speaking" && !busy
+      ? { kind: "speaking" }
     : busy
       ? { kind: "working", text: doing || "Thinking…" }
       : remote
@@ -492,6 +539,8 @@ export function Island({
             ? { kind: "reminder", r: soon, urgent: false }
             : due && due[2] - now <= 24 * 60 * 60_000
             ? { kind: "due", count: due[0], title: due[1], at: due[2] }
+            : update
+            ? { kind: "activity", a: update }
             : { kind: "rest" };
 
   // Your character reacts beside the Island (IslandPal): it points at what
@@ -540,7 +589,9 @@ export function Island({
         className={
           "izk-island relative overflow-hidden text-white " +
           (open ? "pointer-events-auto" : "pointer-events-none") +
-          (live.kind === "rest" && !open ? " izk-island-rest" : "") +
+          // At rest: the always-on pill, or fully hidden until your mouse
+          // goes up there (or something's happening).
+          (live.kind === "rest" && !open && !always ? " izk-island-hidden" : "") +
           (open ? " izk-island-open" : "") +
           // Lit up while Izuki is really listening, thinking or working.
           (busy || orb === "listening" || orb === "speaking" || live.kind === "missions" ? " izk-island-active" : "") +
@@ -600,6 +651,8 @@ export function Island({
                 onHold={hold}
                 wave={wave}
                 next={next}
+                coming={coming}
+                onCancelReminder={cancelReminder}
                 now={now}
                 dancing={dancing}
                 busy={busy}
@@ -615,10 +668,15 @@ export function Island({
                 due={due}
                 remote={remote}
                 scale={scale}
+                maxH={(typeof window === "undefined" ? 800 : window.innerHeight) - fitted.y - 16}
               />
             </motion.div>
           ) : live.kind === "rest" ? (
-            <motion.div key="rest" {...fade} className="h-[5px] w-[72px]" />
+            // At rest: the black pill of an iPhone's Dynamic Island (still —
+            // it sits over everything all day), or the faint sliver.
+            <motion.div key="rest" {...fade} className={always ? "flex h-[30px] w-[118px] items-center justify-end pr-3" : "h-[5px] w-[72px]"}>
+              {always && <span className="h-[7px] w-[7px] rounded-full bg-[radial-gradient(circle_at_35%_35%,#3b4a6b,#0b0d14)] ring-1 ring-white/[0.06]" />}
+            </motion.div>
           ) : (
             <motion.div key={live.kind} {...fade} className="flex h-[34px] items-center gap-2.5 pl-1.5 pr-3">
               <Compact live={live} dancing={dancing} wave={wave} />
@@ -668,8 +726,43 @@ function same(a: IslandStatus, b: IslandStatus) {
 
 // ------------------------------------------------------------------ compact
 
+/** Your voice (or Izuki's) as a few live bars — only while it lasts. */
+function LiveBars({ color }: { color: string }) {
+  const [levels, setLevels] = useState<number[]>(() => Array(7).fill(0.1));
+  useEffect(() => {
+    const off = on<number>(EV.voiceLevel, (l) => setLevels((p) => [...p.slice(1), Math.max(0.1, Math.min(1, l))]));
+    return () => void off.then((f) => f());
+  }, []);
+  return (
+    <span className="flex h-[18px] items-center gap-[2px]" aria-hidden>
+      {levels.map((l, i) => (
+        <span key={i} className="w-[3px] rounded-full transition-[height] duration-75" style={{ height: `${3 + l * 15}px`, background: color }} />
+      ))}
+    </span>
+  );
+}
+
 function Compact({ live, dancing, wave = "auto" }: { live: Live; dancing: boolean; wave?: string }) {
   switch (live.kind) {
+    case "listening":
+      return (
+        <>
+          <span className="relative flex h-[24px] w-[24px] items-center justify-center">
+            <span className="absolute inset-0 animate-ping rounded-full bg-izk-teal/30" />
+            <span className="h-[10px] w-[10px] rounded-full bg-izk-teal" />
+          </span>
+          <span className="text-[13px] font-semibold text-white/90">Listening</span>
+          <LiveBars color="#5eead4" />
+        </>
+      );
+    case "speaking":
+      return (
+        <>
+          <Face size={24} mood="happy" />
+          <span className="text-[13px] font-medium text-white/85">Izuki</span>
+          <LiveBars color="#c4b5fd" />
+        </>
+      );
     case "finished":
       return (
         <>
@@ -692,7 +785,9 @@ function Compact({ live, dancing, wave = "auto" }: { live: Live; dancing: boolea
         <>
           <span className="flex h-[24px] w-[24px] items-center justify-center rounded-full bg-white/12 text-[13px]">{live.a.icon}</span>
           <span className="max-w-[200px] truncate text-[13px] font-medium text-white/90">{live.a.title}</span>
-          <span className={"text-[12.5px] text-white/60" + (live.a.kind === "timer" ? " tabular-nums" : "")}>{live.a.detail}</span>
+          <span className={"text-[12.5px] text-white/60" + (live.a.kind === "timer" ? " tabular-nums" : "")}>
+            {live.a.kind === "update" ? "Hover to update" : live.a.detail}
+          </span>
         </>
       );
     case "missions":
@@ -1022,6 +1117,9 @@ function Expanded({
   media,
   suggestions,
   next,
+  maxH,
+  coming = [],
+  onCancelReminder,
   now,
   dancing,
   busy,
@@ -1062,6 +1160,13 @@ function Expanded({
   media: NowPlaying | null;
   suggestions: Suggestion[];
   next: Reminder | undefined;
+  /** How much room there is below the pill (px) — "Move it anywhere" can put
+   *  it low, and the panel must still fit and stay scrollable. */
+  maxH?: number;
+  /** Every reminder still to come, soonest first. */
+  coming?: Reminder[];
+  /** Cancel a reminder (the × on its row). */
+  onCancelReminder?: (id: string) => void;
   now: number;
   dancing: boolean;
   busy: boolean;
@@ -1088,7 +1193,7 @@ function Expanded({
     // Scrolls when it holds more than fits on the screen.
     <div
       className="izk-island-scroll flex flex-col gap-3 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:thin]"
-      style={{ maxHeight: `calc((100vh - 48px) / ${scale})` }}
+      style={{ maxHeight: `${Math.max(220, Math.min(maxH ?? 1e9, (typeof window === "undefined" ? 800 : window.innerHeight) - 48)) / scale}px` }}
     >
       <div
         role="button"
@@ -1156,7 +1261,9 @@ function Expanded({
           throws away a question being answered — just hidden. */}
       {!busy && (
         <div hidden={tab !== "now"}>
-          <AskPage page={page} onHold={onHold} onClose={onDone} />
+          <div id="izuki-island-chat-dock" data-page={page || ""}>
+            <button type="button" onClick={() => window.dispatchEvent(new Event("izuki:island-chat-open"))} className="w-full rounded-2xl bg-white/10 px-3 py-2 text-[12px] text-white/80">Open Island chat</button>
+          </div>
         </div>
       )}
       {tab === "vitals" && <VitalsTab />}
@@ -1255,13 +1362,25 @@ function Expanded({
         </button>
       )}
 
-      {next && (
-        <div className="flex items-center gap-3 rounded-2xl bg-white/[0.07] px-3 py-2.5">
+      {(coming.length ? coming.slice(0, 3) : next ? [next] : []).map((r) => (
+        <div key={r.id} className="group flex items-center gap-3 rounded-2xl bg-white/[0.07] py-2.5 pl-3 pr-1.5">
           <AlarmClock size={18} className="shrink-0 text-amber-400" />
-          <div className="min-w-0 flex-1 truncate text-[13.5px]">{next.text}</div>
-          <div className="shrink-0 text-[12.5px] text-white/55">{when(next.at, now)}</div>
+          <div className="min-w-0 flex-1 truncate text-[13.5px]">{r.text}</div>
+          <div className="shrink-0 text-[12.5px] text-white/55">{when(r.at, now)}</div>
+          {onCancelReminder && (
+            <button
+              type="button"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/12 hover:text-white focus-visible:bg-white/12 focus-visible:text-white"
+              aria-label={`Cancel the reminder: ${r.text}`}
+              title={r.repeat ? "Cancel (it won't repeat)" : "Cancel this reminder"}
+              onClick={() => onCancelReminder(r.id)}
+            >
+              <X size={15} strokeWidth={2.4} />
+            </button>
+          )}
         </div>
-      )}
+      ))}
+      {coming.length > 3 && <div className="-mt-1 px-1 text-[12px] text-white/45">+{coming.length - 3} more in Chat</div>}
 
       {activities.length > 0 && (
         <div className="flex flex-col gap-1.5">
@@ -1745,33 +1864,6 @@ function Cover({ m, size }: { m: NowPlaying; size: number }) {
   );
 }
 
-type PageTurn = { role: "user" | "assistant"; content: string };
-type PagePiece = { id: number; text: string; done: boolean; error?: string | null; page?: string | null };
-
-/** Reveal text a little at a time, catching up faster the further behind it is. */
-function useTypewriter(text: string) {
-  const [n, setN] = useState(0);
-  useEffect(() => {
-    if (text.length < n) setN(0);
-  }, [text, n]);
-  useEffect(() => {
-    if (n >= text.length) return;
-    const step = Math.max(1, Math.ceil((text.length - n) / 14));
-    const t = setTimeout(() => setN((v) => Math.min(text.length, v + step)), 16);
-    return () => clearTimeout(t);
-  }, [n, text]);
-  return text.slice(0, n);
-}
-
-/** Something added with + : a photo, a text file's words, or a fresh look at the screen. */
-type AskFile = { name: string; kind: "image" | "text" | "screen"; data: string };
-/** A saved Island conversation: its tab, and where it was asked. */
-type SavedAsk = { id: number; title: string; where: string; turns: PageTurn[]; at: number; pinned?: boolean };
-
-const ASK_FILE_TYPES = "image/*,.txt,.md,.csv,.json,.log,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.rs,.java,.c,.cpp,.cs,.go,.sql";
-/** The most unpinned chats kept (pinned ones are always kept). */
-const KEEP_ASKS = 12;
-
 /** One line of the task's to-do list. */
 interface TodoItem {
   text: string;
@@ -1798,488 +1890,6 @@ function TodoList({ items }: { items: TodoItem[] }) {
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-function ago(at: number) {
-  const m = Math.round((Date.now() - at) / 60_000);
-  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : new Date(at).toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
-function loadAsks(): SavedAsk[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem(ISLAND_CHATS_KEY) || "[]");
-    if (!Array.isArray(raw)) return [];
-    return raw
-      .filter((c) => c && typeof c.id === "number" && Array.isArray(c.turns))
-      .map((c) => ({
-        id: c.id,
-        title: String(c.title || "Chat"),
-        where: String(c.where || ""),
-        at: Number(c.at) || c.id,
-        pinned: !!c.pinned,
-        turns: c.turns
-          .filter((t: PageTurn) => t && (t.role === "user" || t.role === "assistant") && typeof t.content === "string")
-          .slice(-16),
-      }))
-      .filter((c) => c.turns.length > 0);
-  } catch {
-    return [];
-  }
-}
-
-function storeAsks(list: SavedAsk[]): SavedAsk[] {
-  const pinned = list.filter((c) => c.pinned);
-  const rest = list.filter((c) => !c.pinned).sort((a, b) => b.at - a.at).slice(0, KEEP_ASKS);
-  const kept = [...pinned, ...rest].sort((a, b) => b.at - a.at);
-  try {
-    localStorage.setItem(ISLAND_CHATS_KEY, JSON.stringify(kept));
-  } catch {
-    /* storage full / private — the chat still works, it just isn't kept */
-  }
-  return kept;
-}
-
-/** A file from the + menu, ready to send (photos made small, text files read). */
-async function askFile(f: File): Promise<AskFile | string> {
-  if (f.type.startsWith("image/")) {
-    const data = await new Promise<string>((resolve, reject) => {
-      const url = URL.createObjectURL(f);
-      const img = new Image();
-      img.onload = () => {
-        const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
-        const c = document.createElement("canvas");
-        c.width = Math.max(1, Math.round(img.width * scale));
-        c.height = Math.max(1, Math.round(img.height * scale));
-        c.getContext("2d")?.drawImage(img, 0, 0, c.width, c.height);
-        URL.revokeObjectURL(url);
-        resolve(c.toDataURL("image/jpeg", 0.85));
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("not a picture"));
-      };
-      img.src = url;
-    }).catch(() => "");
-    return data ? { name: f.name, kind: "image", data } : `I couldn't open “${f.name}”.`;
-  }
-  if (f.size > 400_000) return `“${f.name}” is too big — I can read text files up to 400 KB.`;
-  const words = await f.text().catch(() => "");
-  // A binary file read as text is mostly replacement characters.
-  if (!words.trim() || (words.match(/�/g)?.length ?? 0) > words.length / 50) return `I can't read “${f.name}” — try a photo or a text file.`;
-  return { name: f.name, kind: "text", data: words };
-}
-
-/** "Ask about this page" — like asking Gemini in Chrome, from the Island.
- * Izuki reads the page in front (and, with the browser extension, the
- * pages it links to that matter) and the answer types itself out here.
- * Away from the browser it asks about the screen. + adds photos, files or
- * a screenshot; "Do it for me" hands the steps to the screen agent; every
- * conversation is kept as a tab to come back to (or carry on in Chat). */
-function AskPage({ page, onHold, onClose }: { page: string | null; onHold?: (on: boolean) => void; onClose: () => void }) {
-  const [draft, setDraft] = useState("");
-  const [focused, setFocused] = useState(false);
-  const [asked, setAsked] = useState("");
-  const [full, setFull] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [working, setWorking] = useState(false);
-  const [copied, setCopied] = useState(false);
-  /** Finished turns of this conversation (user, assistant, …). */
-  const [turns, setTurns] = useState<PageTurn[]>([]);
-  const [files, setFiles] = useState<AskFile[]>([]);
-  const [menu, setMenu] = useState(false);
-  const [saved, setSaved] = useState<SavedAsk[]>(() => loadAsks());
-  const [allChats, setAllChats] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-  /** Deep thinking: slower, reasoned answers (remembered between uses). */
-  const [deep, setDeep] = useState(() => {
-    try { return localStorage.getItem(ISLAND_DEEP_KEY) === "1"; } catch { return false; }
-  });
-  const toggleDeep = () =>
-    setDeep((v) => {
-      try { localStorage.setItem(ISLAND_DEEP_KEY, v ? "0" : "1"); } catch { /* storage is optional */ }
-      return !v;
-    });
-  /** Whether the answer in progress was asked deeply (for its "thinking" line). */
-  const [askedDeep, setAskedDeep] = useState(false);
-  const turnsRef = useRef<PageTurn[]>([]);
-  const chatId = useRef<number | null>(null);
-  const current = useRef(0);
-  const asking = useRef("");
-  const answer = useRef("");
-  const picker = useRef<HTMLInputElement>(null);
-  const shown = useTypewriter(full);
-  const where = page || "your screen";
-
-  const setLog = (next: PageTurn[]) => {
-    turnsRef.current = next;
-    setTurns(next);
-  };
-  const reset = () => {
-    if (current.current) void api.pageAskCancel(current.current);
-    current.current = 0;
-    chatId.current = null;
-    setLog([]);
-    setAsked("");
-    setFull("");
-    setError(null);
-    setWorking(false);
-    setFiles([]);
-    setNote(null);
-  };
-
-  // A different page starts a fresh conversation (the last one stays saved).
-  useEffect(reset, [page]);
-  useEffect(() => () => {
-    if (current.current) void api.pageAskCancel(current.current);
-  }, []);
-  // Keep the Island open while typing, choosing, or while there's an answer to read.
-  const onHoldRef = useRef(onHold);
-  onHoldRef.current = onHold;
-  const holding = focused || !!asked || menu || allChats || files.length > 0;
-  useEffect(() => onHoldRef.current?.(holding), [holding]);
-  useEffect(() => () => onHoldRef.current?.(false), []);
-
-  const keep = (log: PageTurn[]) => {
-    const first = log.find((t) => t.role === "user")?.content ?? "Chat";
-    const id = chatId.current ?? Date.now();
-    chatId.current = id;
-    setSaved((list) => {
-      const was = list.find((c) => c.id === id);
-      const chat: SavedAsk = { id, title: was?.title ?? (first.length > 40 ? first.slice(0, 39) + "…" : first), where: was?.where ?? (page || "Your screen"), turns: log.slice(-16), at: Date.now(), pinned: was?.pinned };
-      return storeAsks([chat, ...list.filter((c) => c.id !== id)]);
-    });
-  };
-
-  useEffect(() => {
-    const off = on<PagePiece>(EV.pageAnswer, (p) => {
-      if (!p || p.id !== current.current) return;
-      if (p.text) {
-        answer.current += p.text;
-        setFull(answer.current);
-      }
-      if (p.done) {
-        setWorking(false);
-        if (p.error && !answer.current) {
-          // The question went unanswered: it isn't part of the conversation.
-          setError(p.error);
-        } else {
-          const log = [...turnsRef.current, { role: "user" as const, content: asking.current }, { role: "assistant" as const, content: answer.current }].slice(-16);
-          setLog(log);
-          keep(log);
-        }
-      }
-    });
-    return () => void off.then((f) => f());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
-
-  const send = (text?: string) => {
-    const q = (text ?? draft).trim();
-    if (!q || working) return;
-    const id = Date.now();
-    current.current = id;
-    asking.current = q;
-    answer.current = "";
-    setAsked(q);
-    setDraft("");
-    setFull("");
-    setError(null);
-    setCopied(false);
-    setMenu(false);
-    setAllChats(false);
-    setNote(null);
-    setWorking(true);
-    const sending = files;
-    setFiles([]);
-    setAskedDeep(deep);
-    void api.pageAsk(id, q, turnsRef.current.slice(-8), sending, !page, deep);
-  };
-  const stop = () => {
-    if (current.current) void api.pageAskCancel(current.current);
-    setWorking(false);
-  };
-  const close = () => {
-    stop();
-    onHoldRef.current?.(false);
-    onClose();
-  };
-  const open = (c: SavedAsk) => {
-    stop();
-    chatId.current = c.id;
-    setLog(c.turns);
-    const lastQ = [...c.turns].reverse().find((t) => t.role === "user")?.content ?? "";
-    const lastA = c.turns[c.turns.length - 1]?.role === "assistant" ? c.turns[c.turns.length - 1].content : "";
-    setAsked(lastQ);
-    setFull(lastA);
-    setError(null);
-    setAllChats(false);
-    setNote(c.where && c.where !== (page || "Your screen") ? `Asked on “${c.where}”` : null);
-  };
-  const pin = (c: SavedAsk) => setSaved((list) => storeAsks(list.map((x) => (x.id === c.id ? { ...x, pinned: !x.pinned } : x))));
-  const forget = (c: SavedAsk) => {
-    if (chatId.current === c.id) reset();
-    setSaved((list) => storeAsks(list.filter((x) => x.id !== c.id)));
-  };
-  /** "Clear history": every chat that isn't pinned (pinned ones are kept for good). Asks twice. */
-  const [clearing, setClearing] = useState(false);
-  const clearAll = () => {
-    if (!clearing) {
-      setClearing(true);
-      return;
-    }
-    setClearing(false);
-    if (saved.some((x) => x.id === chatId.current && !x.pinned)) reset();
-    setSaved((list) => storeAsks(list.filter((x) => x.pinned)));
-  };
-  // "Do it for me": the steps go to the screen agent, which does them with
-  // Stop on the Island the whole way.
-  const doIt = () => {
-    const steps = full.trim().slice(0, 1500);
-    close();
-    void emit(EV.runChat, { id: Date.now(), text: `On my screen, do this for me: ${asked}\n\nThe steps you gave me:\n${steps}` });
-  };
-  // Carry the conversation on in Chat (Chat may open after this event has
-  // gone by, so it waits in shared storage too).
-  const toChat = () => {
-    const handoff = { title: asked, where: page || "Your screen", turns: turnsRef.current };
-    try { localStorage.setItem(ISLAND_TO_CHAT_KEY, JSON.stringify(handoff)); } catch { /* the event below still carries it */ }
-    void emit(EV.chatImport, handoff);
-    void api.showConfig("chat");
-    close();
-  };
-  const addFiles = async (list: FileList | null) => {
-    setMenu(false);
-    if (!list?.length) return;
-    const ready = await Promise.all([...list].slice(0, 4).map(askFile));
-    const ok = ready.filter((r): r is AskFile => typeof r !== "string");
-    const problems = ready.filter((r): r is string => typeof r === "string");
-    // Room is counted on what's attached now (another pick may have landed
-    // while these were being read).
-    setFiles((now) => {
-      const room = Math.max(0, 4 - now.length);
-      setNote(problems[0] ?? (ok.length > room || list.length > 4 ? "Up to 4 things at a time." : null));
-      return [...now, ...ok.slice(0, room)];
-    });
-  };
-  const addScreen = () => {
-    setMenu(false);
-    if (files.some((f) => f.kind === "screen")) return;
-    if (files.length >= 4) return setNote("Up to 4 things at a time.");
-    setFiles((f) => [...f, { name: "Screenshot", kind: "screen", data: "" }]);
-  };
-
-  const ideas = page ? ["Sum this page up", "What should I do here?", "Explain it simply"] : ["What do I do here?", "Explain what's on my screen", "What does this error mean?"];
-  const tabs = [...saved.filter((c) => c.pinned), ...saved.filter((c) => !c.pinned)].slice(0, 4);
-  const earlier = asked && !working && !error && full && turns.length >= 2 && turns[turns.length - 1].content === full ? turns.slice(0, -2) : turns;
-  const chip = "rounded-full bg-white/10 px-2 py-[3px] text-[11px] font-medium text-white/80 transition hover:bg-white/16";
-
-  return (
-    <div className="flex flex-col gap-2 rounded-2xl bg-white/[0.07] p-2.5">
-      {saved.length > 0 && (
-        <div className="flex items-center gap-1 overflow-hidden">
-          <button type="button" onClick={reset} aria-label="New chat" title="New chat" className="flex h-6 shrink-0 items-center rounded-full bg-white/10 px-2.5 text-[11px] font-semibold text-white/85 hover:bg-white/16">
-            New
-          </button>
-          {tabs.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => open(c)}
-              title={`${c.title} — ${c.where}`}
-              className={
-                "h-6 min-w-0 max-w-[110px] shrink truncate rounded-full px-2 text-[11px] font-medium transition " +
-                (chatId.current === c.id ? "bg-fuchsia-500/70 text-white" : "bg-white/[0.06] text-white/70 hover:bg-white/12")
-              }
-            >
-              {c.pinned ? "📌 " : ""}
-              {c.title}
-            </button>
-          ))}
-          <button type="button" onClick={() => setAllChats((v) => !v)} aria-label="All saved chats" title="All saved chats" className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white/60 hover:bg-white/10 hover:text-white">
-            <History size={12} />
-          </button>
-        </div>
-      )}
-      {allChats && (
-        <div className="max-h-[180px] overflow-y-auto rounded-xl bg-black/30 p-1 [scrollbar-width:thin]">
-          {saved.some((c) => !c.pinned) && (
-            <div className="flex items-center justify-between px-1.5 pb-1 text-[10.5px] text-white/45">
-              <span>{saved.length} saved{saved.some((c) => c.pinned) ? " · pinned ones stay" : ""}</span>
-              <button
-                type="button"
-                onClick={clearAll}
-                onBlur={() => setClearing(false)}
-                className={"rounded-full px-2 py-0.5 font-semibold transition " + (clearing ? "bg-rose-500/80 text-white" : "text-white/60 hover:bg-white/10 hover:text-rose-300")}
-              >
-                {clearing ? `Clear ${saved.filter((c) => !c.pinned).length}? Tap again` : "Clear history"}
-              </button>
-            </div>
-          )}
-          {saved.map((c) => (
-            <div key={c.id} className="group flex items-center gap-1 rounded-lg px-1.5 py-1 hover:bg-white/[0.06]">
-              <button type="button" onClick={() => open(c)} className="min-w-0 flex-1 text-left">
-                <div className="truncate text-[12px] text-white/90">{c.title}</div>
-                <div className="truncate text-[10.5px] text-white/45">
-                  {c.where} · {ago(c.at)}
-                </div>
-              </button>
-              <button type="button" onClick={() => pin(c)} aria-label={c.pinned ? "Unpin" : "Pin"} title={c.pinned ? "Unpin" : "Pin — kept for good"} className={"flex h-6 w-6 items-center justify-center rounded-full hover:bg-white/10 " + (c.pinned ? "text-amber-300" : "text-white/45")}>
-                <Pin size={11} />
-              </button>
-              <button type="button" onClick={() => forget(c)} aria-label="Delete chat" title="Delete" className="flex h-6 w-6 items-center justify-center rounded-full text-white/45 hover:bg-white/10 hover:text-rose-300">
-                <X size={11} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      <form
-        className="flex items-center gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          send();
-        }}
-      >
-        <div className="relative shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              void api.setOverlayInteractive(true).then(() => markHit());
-              setMenu((v) => !v);
-            }}
-            aria-label="Add a photo, file or screenshot"
-            title="Add a photo, file or screenshot"
-            className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-white/85 hover:bg-white/20"
-          >
-            <Plus size={13} />
-          </button>
-          {menu && (
-            <div className="absolute left-0 top-7 z-20 flex w-max min-w-[180px] flex-col whitespace-nowrap rounded-xl bg-[#17171a] p-1 shadow-2xl ring-1 ring-white/12">
-              <button type="button" onClick={() => picker.current?.click()} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] text-white/90 hover:bg-white/10">
-                <Paperclip size={13} /> Photo or file
-              </button>
-              <button type="button" onClick={addScreen} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] text-white/90 hover:bg-white/10">
-                <Monitor size={13} /> Screenshot of my screen
-              </button>
-            </div>
-          )}
-          <input ref={picker} type="file" multiple accept={ASK_FILE_TYPES} className="hidden" onChange={(e) => { void addFiles(e.target.files); e.target.value = ""; }} />
-        </div>
-        <button
-          type="button"
-          onClick={toggleDeep}
-          aria-pressed={deep}
-          aria-label="Deep thinking"
-          title={deep ? "Deep thinking is on — slower, carefully reasoned answers" : "Deep thinking — for hard questions: slower, carefully reasoned answers"}
-          className={
-            "flex h-6 shrink-0 items-center gap-1 rounded-full px-2 text-[11px] font-semibold transition " +
-            (deep ? "bg-violet-500/80 text-white" : "bg-white/10 text-white/70 hover:bg-white/20")
-          }
-        >
-          <Brain size={12} /> Deep
-        </button>
-        <AirToggle variant="mini" className="h-6 w-6" />
-        <input
-          value={draft}
-          // The overlay doesn't take the keyboard by itself: ask for it.
-          onMouseDown={() => void api.setOverlayInteractive(true).then(() => markHit())}
-          onChange={(e) => setDraft(e.target.value)}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") close();
-          }}
-          placeholder={asked ? "Ask a follow-up…" : `Ask about ${page ? `“${page.length > 30 ? page.slice(0, 29) + "…" : page}”` : "your screen"}`}
-          aria-label={`Ask about ${where}`}
-          className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-white/45"
-        />
-        {working ? (
-          <button type="button" onClick={stop} aria-label="Stop" className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-white/85 hover:bg-white/20">
-            <Square size={11} fill="currentColor" />
-          </button>
-        ) : (
-          <button type="submit" disabled={!draft.trim()} aria-label="Ask" className="rounded-full bg-white px-2.5 py-1 text-[12px] font-semibold text-black transition hover:bg-white/90 disabled:opacity-35">
-            Ask
-          </button>
-        )}
-        {asked && (
-          <button type="button" onClick={close} aria-label="Close" className="flex h-7 w-7 items-center justify-center rounded-full text-white/60 hover:bg-white/10 hover:text-white">
-            <X size={13} />
-          </button>
-        )}
-      </form>
-      {files.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {files.map((f, i) => (
-            <span key={`${f.name}-${i}`} className="flex max-w-[150px] items-center gap-1 rounded-full bg-white/10 py-[2px] pl-1 pr-1.5 text-[11px] text-white/85">
-              {f.kind === "image" ? <img src={f.data} alt="" className="h-4 w-4 rounded-full object-cover" /> : f.kind === "screen" ? <Monitor size={11} /> : <FileText size={11} />}
-              <span className="truncate">{f.name}</span>
-              <button type="button" onClick={() => setFiles((all) => all.filter((_, j) => j !== i))} aria-label={`Remove ${f.name}`} className="text-white/55 hover:text-white">
-                <X size={10} />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-      {note && <div className="text-[11px] text-amber-200/90">{note}</div>}
-      {!asked && (
-        <div className="flex flex-wrap gap-1.5">
-          {ideas.map((q) => (
-            <button key={q} type="button" onClick={() => send(q)} className={chip}>
-              {q}
-            </button>
-          ))}
-        </div>
-      )}
-      {asked && (
-        <div className="max-h-[220px] overflow-y-auto pr-1 text-[13px] leading-snug text-white/90 [scrollbar-width:thin]">
-          {earlier.map((t, i) =>
-            t.role === "user" ? (
-              <div key={i} className="mb-1 mt-2 text-[11.5px] text-white/50 first:mt-0">{t.content}</div>
-            ) : (
-              <div key={i} className="text-white/75">
-                <ChatText text={t.content} />
-              </div>
-            )
-          )}
-          <div className={"mb-1 text-[11.5px] text-white/50 " + (earlier.length ? "mt-2" : "")}>{asked}</div>
-          {error ? (
-            <div className="text-[12.5px] text-rose-300">{error}</div>
-          ) : shown ? (
-            <ChatText text={shown} />
-          ) : askedDeep ? (
-            <div className="flex items-center gap-2 text-[12px] text-violet-200/90">
-              <Brain size={13} className="animate-pulse" /> Thinking it through…
-            </div>
-          ) : (
-            <Dots />
-          )}
-        </div>
-      )}
-      {asked && !working && !error && full && (
-        <div className="flex flex-wrap gap-1.5">
-          <button type="button" onClick={doIt} title="Izuki does these steps on your screen — Stop any time" className="flex items-center gap-1 rounded-full bg-fuchsia-500/85 px-2.5 py-[3px] text-[11px] font-semibold text-white transition hover:bg-fuchsia-500">
-            <Wand2 size={11} /> Do it for me
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              void navigator.clipboard?.writeText(full).then(() => setCopied(true)).catch(() => undefined);
-            }}
-            className={chip}
-          >
-            {copied ? "Copied" : "Copy"}
-          </button>
-          <button type="button" onClick={toChat} className={chip}>
-            Continue in Chat
-          </button>
-          <button type="button" onClick={reset} className={chip}>
-            New chat
-          </button>
-        </div>
-      )}
     </div>
   );
 }

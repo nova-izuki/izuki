@@ -41,25 +41,39 @@ let model: Promise<Transcriber> | null = null;
 function workerTranscriber(): Promise<Transcriber> {
   const worker = new Worker(new URL("./sttWorker.ts", import.meta.url), { type: "module" });
   let seq = 0;
-  const pending = new Map<number, { ok: (v: string) => void; fail: (e: Error) => void }>();
+  let dead = false;
+  const pending = new Map<number, { ok: (v: string) => void; fail: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  const failed = (err: Error) => {
+    dead = true;
+    worker.terminate();
+    pending.forEach((p) => { clearTimeout(p.timer); p.fail(err); });
+    pending.clear();
+  };
   worker.onmessage = (e: MessageEvent<{ id: number; ok: boolean; text?: string; error?: string }>) => {
     const p = pending.get(e.data.id);
     if (!p) return;
+    clearTimeout(p.timer);
     pending.delete(e.data.id);
     if (e.data.ok) p.ok(e.data.text ?? "");
     else p.fail(new Error(e.data.error ?? "transcription failed"));
   };
   worker.onerror = (e) => {
     const err = new Error(e.message || "speech worker crashed");
-    pending.forEach((p) => p.fail(err));
-    pending.clear();
+    failed(err);
   };
   const ask = (msg: { kind: "load"; size: ModelSize } | { kind: "transcribe"; size: ModelSize; audio: Float32Array }) =>
     new Promise<string>((ok, fail) => {
+      if (dead) { model = null; fail(new Error("Speech recognition stopped. Try again.")); return; }
       const id = ++seq;
-      pending.set(id, { ok, fail });
-      if (msg.kind === "transcribe") worker.postMessage({ id, ...msg }, [msg.audio.buffer]);
-      else worker.postMessage({ id, ...msg });
+      const timer = setTimeout(() => {
+        model = null;
+        failed(new Error("Speech recognition timed out. Try again or check the model download."));
+      }, msg.kind === "load" ? 240_000 : 60_000);
+      pending.set(id, { ok, fail, timer });
+      try {
+        if (msg.kind === "transcribe") worker.postMessage({ id, ...msg }, [msg.audio.buffer]);
+        else worker.postMessage({ id, ...msg });
+      } catch (e) { failed(e instanceof Error ? e : new Error(String(e))); }
     });
   // Tiny first — it's what the wake word needs, and it's small.
   return ask({ kind: "load", size: "tiny" })
@@ -222,8 +236,33 @@ export async function transcribe(
   // Sent before the on-device worker takes ownership of the buffer.
   const cloud: Promise<string> = Promise.race([api.cloudTranscribe(base64(toWav(audio))), timeout<string>(CLOUD_MAX_MS)]);
   cloud.catch(() => undefined);
+  // The cloud has been quick lately: give it a moment alone before this PC
+  // starts its own (slow here: 5–13 s of CPU that slowed everything else,
+  // for words the cloud already had in under a second).
+  if (cloudQuick >= 2) {
+    const alone = await Promise.race([cloud, timeout<string>(CLOUD_ALONE_MS)]).then(
+      (t) => ({ ok: true, t }),
+      () => ({ ok: false, t: "" })
+    );
+    if (alone.ok) {
+      cloudQuick = Math.min(cloudQuick + 1, 6);
+      const heard = notHallucinated(alone.t);
+      log(`cloud alone in ${Date.now() - began}ms: "${heard.slice(0, 80)}"`);
+      if (!heard || (PHANTOMS.test(heard) && seconds < 1.2)) return "";
+      return heard;
+    }
+    cloudQuick = 0;
+  }
   const here = transcribeHere(audio, size, { ...o, whisperFallback: false });
   here.catch(() => undefined);
+  void cloud.then(
+    () => {
+      cloudQuick = Date.now() - began < CLOUD_ALONE_MS ? cloudQuick + 1 : 0;
+    },
+    () => {
+      cloudQuick = 0;
+    }
+  );
 
   const first = await Promise.race([
     cloud.then((text) => ({ from: "cloud" as const, text }), () => ({ from: "cloud-failed" as const, text: "" })),
@@ -248,11 +287,28 @@ export async function transcribe(
   // Cloud out of reach and nothing heard here: Whisper's careful second
   // opinion, as without cloud ears.
   if (!text && cloudFailed && spare && o.whisperFallback !== false) {
-    text = (await whisperCheck(spare).catch(() => null)) ?? "";
+    text = notHallucinated((await whisperCheck(spare).catch(() => null)) ?? "");
   }
+  text = notHallucinated(text);
   log(`final in ${Date.now() - began}ms: "${text.slice(0, 80)}"`);
   if (!text || (PHANTOMS.test(text) && seconds < 1.2)) return "";
   return text;
+}
+
+/** Cloud answers in a row that came back quickly (it goes first when ≥ 2). */
+let cloudQuick = 0;
+/** How long the cloud gets alone before this PC starts its own. */
+const CLOUD_ALONE_MS = 1500;
+
+/** What Whisper "hears" in silence or noise (from the subtitles it learned
+ *  on): never a real request — it once answered "Субтитры создавал
+ *  DimaTorzok" for a quiet room. */
+const HALLUCINATIONS =
+  /^(?:субтитры (?:создавал|сделал|подготовил|делал)|редактор субтитров|продолжение следует|(?:thanks?|thank you) (?:so much |very much )?for watching|(?:subtitles?|captions?|transcription) (?:by|made by|created by|provided by)\b|.*\bamara\.org\b|sous-titres (?:réalisés |faits )?par|ご視聴ありがとうございました|字幕(?:由|製作|制作)|untertitel (?:im auftrag|von)\b|(?:please )?(?:like and )?subscribe(?: to (?:my|the|our) channel)?[.!]*$|see you (?:in the )?next (?:video|one)[.!]*$)/i;
+
+function notHallucinated(text: string): string {
+  const t = text.trim();
+  return HALLUCINATIONS.test(t) && t.split(/\s+/).length <= 10 ? "" : t;
 }
 
 /** Words from this PC's own models only. */
@@ -585,8 +641,24 @@ async function acquireMic(): Promise<OpenMic> {
         stream = await navigator.mediaDevices.getUserMedia({ audio: base });
       }
       // The context resamples the mic to the 16 kHz the model wants.
-      const ctx = new AudioContext({ sampleRate: RATE });
-      void ctx.resume().catch(() => undefined);
+      let ctx: AudioContext;
+      try {
+        ctx = new AudioContext({ sampleRate: RATE });
+      } catch (e) {
+        stream.getTracks().forEach((t) => t.stop());
+        throw e;
+      }
+      try {
+        await Promise.race([
+          ctx.resume(),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Microphone audio did not start. Try the microphone test in Talk to Izuki.")), 5000)),
+        ]);
+        if (ctx.state !== "running") throw new Error("Microphone audio is paused. Open Izuki and try the microphone test.");
+      } catch (e) {
+        stream.getTracks().forEach((t) => t.stop());
+        void ctx.close().catch(() => undefined);
+        throw e;
+      }
       const m: OpenMic = {
         stream,
         ctx,

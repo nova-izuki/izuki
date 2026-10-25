@@ -17,6 +17,7 @@ import { api } from "./ipc";
 
 let current = false;
 let locks = 0;
+let wheelOk = false;
 let last: [number, number] | null = null;
 
 function apply(want: boolean, force = false) {
@@ -25,11 +26,36 @@ function apply(want: boolean, force = false) {
   void api.setOverlayHit(want);
 }
 
+/**
+ * Whether this element, or anything above it, really scrolls right now.
+ *
+ * The mouse wheel is taken away from the app behind while it's over one of
+ * Izuki's widgets, so that widget has to be what moves instead. A short
+ * answer, or the bubble's padding, has nothing to scroll — and swallowing
+ * the wheel there meant nothing moved at all.
+ */
+function scrolls(el: Element | null): boolean {
+  let node = el as HTMLElement | null;
+  while (node) {
+    const overflow = getComputedStyle(node).overflowY;
+    if ((overflow === "auto" || overflow === "scroll") && node.scrollHeight > node.clientHeight + 1) return true;
+    node = node.parentElement;
+  }
+  return false;
+}
+
+function applyWheel(want: boolean) {
+  if (want === wheelOk) return;
+  wheelOk = want;
+  void api.setOverlayWheel(want);
+}
+
 /** Feed a cursor position in overlay client pixels. */
 export function hitTest(clientX: number, clientY: number) {
   last = [clientX, clientY];
-  if (locks > 0) return apply(true);
   const el = document.elementFromPoint(clientX, clientY);
+  applyWheel(!!el && scrolls(el));
+  if (locks > 0) return apply(true);
   apply(!!el?.closest("[data-izk-hit]"));
 }
 
@@ -51,6 +77,7 @@ export function unlockHit() {
 export function resetHit() {
   current = false;
   locks = 0;
+  wheelOk = false;
 }
 
 /**
@@ -73,5 +100,6 @@ export function markHit() {
 export function reassertHit() {
   if (locks > 0) return;
   const el = last ? document.elementFromPoint(last[0], last[1]) : null;
+  applyWheel(!!el && scrolls(el));
   apply(!!el?.closest("[data-izk-hit]"), true);
 }

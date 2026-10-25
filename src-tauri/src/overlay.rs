@@ -18,6 +18,9 @@ pub const OVERLAY_LABEL: &str = "overlay";
 /// follow mode — because that's what lets the overlay hit-test its floating
 /// widgets (chat bubble, caption box) while the window is click-through.
 static OVERLAY_SHOWN: AtomicBool = AtomicBool::new(false);
+/// The overlay is taking the mouse right now (the pointer is over one of its
+/// widgets, or the Island opened). The wheel hook (wheel.rs) only acts then.
+static OVERLAY_CLICKABLE: AtomicBool = AtomicBool::new(false);
 /// The voice orb is up (a conversation, or Izuki answering). It lives in the
 /// overlay window, so while it's up the window must never be hidden — only
 /// dropped back to its click-through "follow" state. Kept in step with the
@@ -399,12 +402,42 @@ pub fn set_overlay_hit(app: &AppHandle, hit: bool) -> Result<()> {
     // While Izuki's own hands are working, its orb and bubbles never catch
     // the click it's making — see `Acting`.
     if hit && ACTING.load(std::sync::atomic::Ordering::SeqCst) {
+        OVERLAY_CLICKABLE.store(false, Ordering::Relaxed);
         return Ok(());
     }
     if let Some(w) = app.get_webview_window(OVERLAY_LABEL) {
         w.set_ignore_cursor_events(!hit)?;
     }
+    OVERLAY_CLICKABLE.store(hit, Ordering::Relaxed);
     Ok(())
+}
+
+/// Set by the overlay as the pointer moves: is it over something that really
+/// scrolls (an answer long enough to overflow, the open Island's list)?
+static WHEEL_TARGET: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The overlay reports this from its own hit-test — it is the only side that
+/// can see what is under the pointer.
+pub fn set_wheel_target(on: bool) {
+    if WHEEL_TARGET.swap(on, Ordering::Relaxed) == on {
+        return;
+    }
+    // The hook is put in only while there's something to scroll, and taken
+    // straight back out: it sees every mouse move on the PC while it's there.
+    crate::wheel::watching(on);
+}
+
+/// Whether the mouse wheel should scroll an Izuki widget right now: the
+/// overlay is up, the pointer is over one of its widgets, that widget can
+/// actually scroll, and Izuki isn't in the middle of its own clicks.
+///
+/// Without the "can actually scroll" part the wheel was taken from the app
+/// behind even when there was nothing to scroll here, so nothing moved at all.
+pub fn wheel_wanted() -> bool {
+    OVERLAY_SHOWN.load(Ordering::Relaxed)
+        && OVERLAY_CLICKABLE.load(Ordering::Relaxed)
+        && WHEEL_TARGET.load(Ordering::Relaxed)
+        && !ACTING.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 static ACTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -418,6 +451,7 @@ pub struct Acting(AppHandle);
 
 pub fn acting(app: &AppHandle) -> Acting {
     ACTING.store(true, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_CLICKABLE.store(false, Ordering::Relaxed);
     if let Some(w) = app.get_webview_window(OVERLAY_LABEL) {
         let _ = w.set_ignore_cursor_events(true);
     }
@@ -447,6 +481,7 @@ pub fn set_overlay_interactive(app: &AppHandle, interactive: bool) -> Result<()>
         .get_webview_window(OVERLAY_LABEL)
         .ok_or_else(|| anyhow!("the overlay is not open"))?;
     w.set_ignore_cursor_events(!interactive)?;
+    OVERLAY_CLICKABLE.store(interactive, Ordering::Relaxed);
     if interactive {
         w.set_focus().ok();
     }

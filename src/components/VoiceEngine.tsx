@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { researchAsk } from "./ResearchPanel";
 import { useWakeEngine, WAKE_THRESHOLD } from "../hooks/useWakeEngine";
 import { expandShortWords } from "../lib/shortWords";
 import { useDictation } from "../hooks/useDictation";
+import { isNoteStudyPrompt } from "../lib/notes";
 import { AIR_SLOTS, actionLabel, airBindings, parseAirVoice, slotLabel } from "../lib/airActions";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
 import { answersInBackground, cancelChat, chatLane, directionsTask, looksLikeDirections, needsApps, needsScreen, recentHistory, remember, wantsBackground, wantsToWatch, type LaneResult } from "../lib/conversation";
@@ -28,7 +30,7 @@ import {
 } from "../lib/naturalVoice";
 import { voiceFor } from "../lib/personas";
 import { holdMicForVoice, micIsHeadset, pickMicAhead, preloadSpeechInput, releaseMicForVoice, setKeepMicWhileTalking } from "../lib/speechInput";
-import { api, EV, emit, IS_TAURI, on } from "../lib/ipc";
+import { api, EV, emit, IS_TAURI, on, type ResearchSource, type ResearchUpdate } from "../lib/ipc";
 import { useIzuki } from "../lib/store";
 import type { CaptionPayload, DrawSession, OrbState, SayPayload, Settings, TranscriptPayload } from "../lib/types";
 
@@ -72,6 +74,21 @@ async function respond(text: string, mood?: string | null, reply = false, quick 
     return;
   }
   await say(text, state.settings, mood, reply, quick, stale);
+}
+
+/** The last answer was a deep research (so "dig deeper" carries it on). */
+let lastWasResearch = false;
+
+/** A research answer's gist, to say out loud (the whole one is shown). */
+function gistOf(text: string): string {
+  const plain = text.replace(/\[\d+\]/g, "").replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim();
+  const sentences = plain.match(/[^.!?]+[.!?]+/g) ?? [plain];
+  let out = "";
+  for (const s of sentences) {
+    if (out && (out + s).split(/\s+/).length > 55) break;
+    out += s;
+  }
+  return `${out.trim()} The full answer, with its sources, is on screen.`;
 }
 
 /**
@@ -335,7 +352,6 @@ let requestSeq = 0;
 let lastProgressAt = 0;
 const SAY_STILL_AFTER_MS = 12_000;
 const GIVE_UP_AFTER_MS = 60_000;
-const STILL = ["Still on it — one moment.", "Nearly there, hang on.", "Still working on that."];
 function watchThinking(at: number, isOurs: () => boolean, waitingOnYou: () => boolean, stop: () => void) {
   const began = Date.now();
   lastProgressAt = began;
@@ -349,7 +365,9 @@ function watchThinking(at: number, isOurs: () => boolean, waitingOnYou: () => bo
     const now = Date.now();
     if (!saidStill && now - began > SAY_STILL_AFTER_MS && now - lastProgressAt > 4000) {
       saidStill = true;
-      void respond(pick(STILL), "calm", false, true);
+      // Progress belongs on screen; a canned spoken line can queue ahead
+      // of the answer or interrupt a reply that has just started.
+      void emit(EV.status, { kind: "working", message: "Still working..." });
     }
     if (now - lastProgressAt > GIVE_UP_AFTER_MS) {
       clearInterval(t);
@@ -586,7 +604,7 @@ function chime(up = true) {
 function answerOnScreen(t: string): string {
   const bare = t.trim().replace(/[?.!]+$/, "").toLowerCase();
   return /^(?:(?:the|what'?s the|whats the|give me the|tell me the|say the)\s+)?answers?(?:\s+(?:it|this|that|please|pls|now|quick|fast))?$/.test(bare)
-    ? "Help me with the question on my screen. If it's part of a quiz, test, exam or graded assignment, explain what it's asking and the idea behind it in plain words, but don't say which answer is right — I'll choose. If it's just practice or a puzzle, tell me the answer and, in one or two sentences, why."
+    ? "Answer the question on my screen directly. Give the answer first (including the option label if clearly visible), then explain why in one or two sentences. If the question or options are unreadable, say what you need to see. Do not start a walkthrough, offer Notes, or click or submit anything."
     : t;
 }
 
@@ -626,6 +644,11 @@ function tutorPrompt(said: string, first: boolean): string {
 }
 
 export function VoiceEngine() {
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("izuki.island-chat-detached.v1") === "1") void api.showCaptionOverlay().catch(() => undefined);
+    } catch { /* optional floating-chat preference */ }
+  }, []);
   const enabled = useIzuki((s) => s.settings.voice_wake_enabled);
   const setVoice = useIzuki((s) => s.setVoice);
 
@@ -664,6 +687,9 @@ export function VoiceEngine() {
 
   /** This turn began by holding the talk key: no orb until the answer starts. */
   const holdTalk = useRef(false);
+  /** "Hold a key" mode (hands-free off): the mic is open only while the key
+   *  is — no follow-up listening after the answer, no talking over it. */
+  const keyOnly = useRef(false);
   const orb = (state: OrbState) => {
     // Hold-to-talk: let go and it "loads" right under the mouse; the orb (or
     // character) only comes up once Izuki starts answering.
@@ -685,13 +711,101 @@ export function VoiceEngine() {
     }
   };
 
+  /**
+   * A deep research by voice: Izuki says it's on it, the steps show under the
+   * orb and in the Island ("Searching…", "Reading…"), then the gist is said
+   * and the whole answer — with its sources — stays in the answer bubble to
+   * scroll through. Something new said (or Esc) stops it.
+   */
+  const voiceResearch = async (question: string, said: string, at: number, from: "voice" | "typed") => {
+    startSession(from === "voice", "thinking");
+    thinkingNow.current = true;
+    void emit(EV.trace, `Researching: ${question}`.slice(0, 90));
+    void respond(pick(["On it — researching that now. I'll read a few sources.", "Researching — I'll read a few pages and tell you what I find."]), "calm", false, true);
+    const id = Date.now();
+    let text = "";
+    let sources: ResearchSource[] = [];
+    let failed = "";
+    await new Promise<void>((resolve) => {
+      let quiet = 0;
+      let ended = false;
+      let stop: () => void = () => {};
+      const done = () => {
+        if (ended) return;
+        ended = true;
+        window.clearTimeout(quiet);
+        stop();
+        resolve();
+      };
+      const wait = () => {
+        window.clearTimeout(quiet);
+        quiet = window.setTimeout(() => {
+          void api.chatCancel(id);
+          failed = "The research stopped answering — check your internet and try again.";
+          done();
+        }, 120_000);
+      };
+      const off = on<ResearchUpdate>(EV.research, (u) => {
+        if (u.id !== id || ended) return;
+        // Something newer was asked (or Esc): stop the research.
+        if (requestSeq !== at) {
+          void api.chatCancel(id);
+          done();
+          return;
+        }
+        wait();
+        if (u.kind === "text") text += u.text;
+        else if (u.kind === "done") {
+          sources = u.sources ?? sources;
+          done();
+        } else if (u.kind === "error") {
+          failed = u.text;
+          done();
+        } else {
+          if (u.sources) sources = u.sources;
+          const line = u.kind === "search" ? `Searching: ${u.text}` : u.kind === "read" ? `Reading ${u.site || u.text}` : u.text;
+          if (line) void emit(EV.trace, line.slice(0, 90));
+        }
+      });
+      stop = () => void off.then((f) => f());
+      wait();
+      // Listening first, so the first steps aren't missed.
+      void off
+        .then(() => api.researchStart(id, question, recentHistory()))
+        .catch((e) => {
+          failed = String(e);
+          done();
+        });
+    });
+    if (requestSeq !== at) return;
+    thinkingNow.current = false;
+    remember("user", said);
+    if (!text.trim()) {
+      await respond(failed || "I couldn't find enough to answer that — try asking it a different way.", "calm");
+      void afterReply(at, false);
+      return;
+    }
+    remember("assistant", text);
+    lastWasResearch = true;
+    await respond(gistOf(text), "calm", true);
+    if (requestSeq !== at) return;
+    const list = sources
+      .slice(0, 8)
+      .map((s) => `[${s.n}] ${s.title} — ${s.site}`)
+      .join("\n");
+    showCaption(list ? `${text.trim()}\n\nSources:\n${list}` : text.trim(), false);
+    void afterReply(at, false);
+  };
+
   const startSession = (voice: boolean, state: OrbState, orbNow = true) => {
     if (lingerTimer.current) {
       clearTimeout(lingerTimer.current);
       lingerTimer.current = null;
     }
     const was = session.current;
-    const showOrb = voice || was.orb || useIzuki.getState().settings.sphere_on_replies;
+    const showOrb = !orbNow || holdTalk.current
+      ? useIzuki.getState().settings.sphere_on_replies
+      : voice || was.orb || useIzuki.getState().settings.sphere_on_replies;
     session.current = { on: true, voice: was.voice || voice, orb: showOrb };
     if (!was.on) {
       setSessionOn(true);
@@ -725,6 +839,7 @@ export function VoiceEngine() {
     session.current = { on: false, voice: false, orb: false };
     setSessionOn(false);
     holdTalk.current = false;
+    keyOnly.current = false;
     void emit(EV.talkWave, "off");
     pendingPrefix.current = "";
     thinkingNow.current = false;
@@ -786,6 +901,15 @@ export function VoiceEngine() {
       holdTalk.current = false;
       void emit(EV.talkWave, "off");
     }
+    // "Hold a key": answered, done — hold it again for the next thing.
+    if (keyOnly.current) {
+      if (!(await untilQuiet())) return;
+      if (requestSeq !== at || !session.current.on || !keyOnly.current) return;
+      lingerTimer.current = setTimeout(() => {
+        if (requestSeq === at && keyOnly.current) endSession("answered (hold the key to talk again)");
+      }, 1500);
+      return;
+    }
     if (session.current.voice) {
       // Already listening since the request went off — that listen carries on.
       if (listeningThrough && listeningNow.current) return;
@@ -842,6 +966,25 @@ export function VoiceEngine() {
     stopAllSpeech("a new request", useIzuki.getState().settings.speak_responses);
     const at = ++requestSeq;
     listenErrors.current = 0;
+
+    if (isNoteStudyPrompt(t)) {
+      startSession(from === "voice", "thinking");
+      thinkingNow.current = true;
+      remember("user", t);
+      try {
+        const answer = await api.notesAnswer(t);
+        if (requestSeq !== at) return;
+        thinkingNow.current = false;
+        remember("assistant", answer);
+        await respond(answer, null, true);
+      } catch (e) {
+        if (requestSeq !== at) return;
+        thinkingNow.current = false;
+        await respond(failure(e), "sympathetic");
+      }
+      if (requestSeq === at) void afterReply(at, false);
+      return;
+    }
 
     // Talk to type: "type what I say" … "stop typing".
     if (!dictating && DICTATE_START.test(t.trim())) {
@@ -1092,6 +1235,15 @@ export function VoiceEngine() {
       return;
     }
 
+    // "Research …", "deep search …", "deep dive into …": the real research
+    // (many searches, many pages) — by voice and from the orb or character
+    // too, not only in the Chat tab.
+    const researchQ = researchAsk(t, lastWasResearch);
+    if (researchQ) {
+      await voiceResearch(researchQ, t, at, from);
+      return;
+    }
+    lastWasResearch = false;
 
     // Instant skills: "open Notepad", "open YouTube" — through Windows,
     // well under a second, no AI.
@@ -1168,6 +1320,7 @@ ${result}`);
     }
     // Lessons go to Notes only when asked for ("…and save it to my notes") or
     // with the Study log on — never on Izuki's own say-so.
+    if (/^Answer the question on my screen directly\./i.test(t)) tutor.current = null;
     if (TUTOR_START.test(t)) tutor.current = { first: true, at: Date.now(), save: asksToSave(t) || !!useIzuki.getState().settings.study_log };
     const tutoring = tutor.current;
     if (tutoring) tutoring.at = Date.now();
@@ -1415,7 +1568,17 @@ ${result}`);
       // Only real silence on your turn ends a conversation. A cough, noise,
       // or words that couldn't be made out just mean "keep listening".
       onNothing: (why) => {
+        if (holdTalk.current) {
+          physicalTalk.current = false;
+          endSession(why === "error" ? "hold-to-talk failed" : "nothing spoken while the key was held");
+          return;
+        }
         if (!session.current.on || !session.current.voice) return;
+        // "Hold a key": nothing heard while you held it — that's the turn.
+        if (keyOnly.current && !pendingPrefix.current) {
+          if (!thinkingNow.current && !isSpeaking()) endSession("nothing heard while the key was held");
+          return;
+        }
         const prefix = pendingPrefix.current;
         if (prefix) {
           pendingPrefix.current = "";
@@ -1448,12 +1611,12 @@ ${result}`);
   cancelListen.current = cancelDictation;
 
   listenAgain.current = () => {
-    if (!session.current.on || !session.current.voice) return;
+    if (!session.current.on || !session.current.voice || keyOnly.current) return;
     startPushToTalk({ noSpeechMs: followUpMs() });
   };
   listenThrough.current = () => {
     const s = useIzuki.getState().settings;
-    if (!s.barge_in || !session.current.on || !session.current.voice) return false;
+    if (!s.barge_in || !session.current.on || !session.current.voice || keyOnly.current) return false;
     startPushToTalk({
       noSpeechMs: followUpMs(),
       cutIn: {
@@ -1563,12 +1726,13 @@ ${result}`);
   }, [pttError]);
 
   // ---- the talk hotkey -----------------------------------------------------
-  const pressedAt = useRef(0);
+  const physicalTalk = useRef(false);
   useEffect(() => {
-    // Held down: talk while holding, let go to send. A quick tap keeps
-    // listening until you pause.
+    // Release can arrive before React has rendered the listening state.
     const off = on<void>(EV.pushToTalkRelease, () => {
-      if (listeningNow.current && Date.now() - pressedAt.current > 600) {
+      if (physicalTalk.current) {
+        physicalTalk.current = false;
+        if (!session.current.on || !holdTalk.current) return;
         // Let go: the waveform turns into "thinking" dots until the answer.
         void emit(EV.talkWave, "loading");
         finishPushToTalk();
@@ -1598,11 +1762,12 @@ ${result}`);
       void api.log("air call: listening").catch(() => undefined);
       void emit(EV.pushToTalk);
     });
-    const off = on<void>(EV.pushToTalk, () => {
+    const off = on<{ mode?: string } | null>(EV.pushToTalk, (payload) => {
+      const held = payload?.mode === "hold";
       // A press while listening in a conversation means "I'm done". But a
       // listen left running with no conversation open (stuck) used to turn
       // every press into "done" — nothing happened, no orb, no waveform.
-      if (listeningNow.current && session.current.on) {
+      if (!held && listeningNow.current && session.current.on) {
         void api.log("talk key: finishing the listen").catch(() => undefined);
         finishPushToTalk();
         return;
@@ -1611,15 +1776,20 @@ ${result}`);
         void api.log("talk key: a listen was left running — starting fresh").catch(() => undefined);
         cancelListen.current?.();
       } else void api.log("talk key: listening").catch(() => undefined);
-      pressedAt.current = Date.now();
       // The key means "my turn": it cuts Izuki off.
       const wasTalking = isSpeaking();
       stopAllSpeech("you pressed the talk key");
+      // Cancel pending transcription too: an older recording cannot answer
+      // over a newly held key. Air/click actions retain pause-to-send.
+      cancelDictation();
+      physicalTalk.current = held;
       if (!wasTalking) chime();
       startSession(true, "listening", false);
+      // (After startSession: a new session starts with it cleared.)
+      keyOnly.current = !useIzuki.getState().settings.voice_wake_enabled;
       // The first listen gives up after a few seconds of nothing (you pressed
       // it by accident); follow-ups wait as long as the setting says.
-      startPushToTalk({ noSpeechMs: 8000 });
+      startPushToTalk({ noSpeechMs: held ? 60_000 : 8000, hold: held });
     });
     return () => {
       void off.then((f) => f());

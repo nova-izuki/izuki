@@ -13,7 +13,7 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     host: "127.0.0.1",
-    watch: { ignored: ["**/src-tauri/**"] },
+    watch: { ignored: ["**/src-tauri/**", "**/.work/**"] },
     // Vite's red error box can't be dismissed on the overlay window — it
     // covers the whole desktop and clicks pass straight through it. Errors
     // still reach the terminal.

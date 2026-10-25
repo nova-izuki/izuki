@@ -1027,6 +1027,12 @@
       `It is now ${now.toLocaleString([], { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })} on the user's phone.`,
       `If they ask to be reminded of something, confirm it and add on its own line at the very end: [REMIND YYYY-MM-DD HH:MM | what to remind them] in their local time, 24-hour clock ("in 20 minutes" is ${stamp(in20)}).`,
       "For an ALARM (\"wake me up at 7\", \"set an alarm for 6:30\") add [ALARM YYYY-MM-DD HH:MM | label | repeat] instead (repeat: empty, daily, weekdays, weekends) — the first time is the next time that clock time comes round. If they share their plans or ask you to plan their day, lay it out briefly and add a [REMIND] a few minutes before each thing (an [ALARM] for getting up), one tag per line.",
+      (() => {
+        const set = reminders.filter((r) => !r.done && r.at > Date.now()).sort((a, b) => a.at - b.at).slice(0, 8);
+        return set.length
+          ? "Their reminders now: " + set.map((r) => "\u201c" + r.text + "\u201d (" + new Date(r.at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) + ")").join("; ") + ". If they ask to cancel one (in any words), confirm it and add on its own line [REMIND-CANCEL what it says]."
+          : "They have no reminders set.";
+      })(),
       "If they tell you something lasting about themselves (name, likes, work, people in their life, how they want you to act), add a line [REMEMBER short third-person fact]. Never passwords, codes or card numbers.",
       "If they want something kept for later with no time (\"remind me later I'm buying Sensodyne and milk\", \"add bread to my list\", \"don't let me forget the charger\"), confirm it warmly and add one line per thing: [LATER the thing]. If they've done one (\"I got the toothpaste\"), add [LATER-DONE the thing]. " +
         (later.some((l) => !l.done) ? "Their Later list right now: " + later.filter((l) => !l.done).map((l) => l.text).join(", ") + "." : "Their Later list is empty."),
@@ -1287,6 +1293,14 @@
       const words = m[1].toLowerCase().split(/\s+/).filter((w) => w.length > 3);
       for (const l of later) if (!l.done && words.some((w) => l.text.toLowerCase().includes(w))) { l.done = true; l.at = Date.now(); }
     }
+    for (const m of reply.matchAll(/\[REMIND-CANCEL\s+([^\]]+)\]/gi)) {
+      const want = reminderWords(m[1]);
+      if (!want.length) continue;
+      const open = reminders.filter((r) => !r.done);
+      const exact = open.filter((r) => reminderWords(r.text).join(" ") === want.join(" "));
+      const near = open.filter((r) => want.every((w) => hasReminderWord(reminderWords(r.text), w)));
+      for (const r of exact.length ? exact : near.length === 1 ? near : []) dropReminder(r);
+    }
     for (const m of reply.matchAll(/\[REMIND\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})\s*\|\s*([^\]]+)\]/gi)) {
       const at = new Date(`${m[1]}T${m[2]}:00`).getTime();
       const what = m[3].trim();
@@ -1360,6 +1374,8 @@
     const next = reminders.filter((r) => !r.done).sort((a, b) => a.at - b.at)[0];
     if (!next) return;
     reminderTimer = setTimeout(() => {
+      // Cancelled meanwhile: never said.
+      if (next.done) { scheduleReminders(); return; }
       if (next.at > Date.now()) { scheduleReminders(); return; }
       next.done = true;
       saveAll();
@@ -1370,6 +1386,103 @@
     }, Math.max(0, Math.min(next.at - Date.now(), 2 ** 31 - 1)));
   }
 
+  /** Words of a reminder, lower case ("Solomon's" → "solomons"). */
+  const reminderWords = (t) => String(t).toLowerCase().replace(/['\u2019]/g, "").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  /** "solomon" is in "Check in with Solomon's". */
+  const hasReminderWord = (text, w) => text.some((t) => t === w || t === w + "s" || w === t + "s" || (w.length >= 5 && t.startsWith(w)));
+
+  /** Gone: never said, and its phone notification taken back. */
+  function dropReminder(r) {
+    r.done = true;
+    r.cancelled = true;
+    void window.IzukiNative?.cancelReminder?.({ at: r.at, text: r.text });
+    saveAll();
+    scheduleReminders();
+  }
+
+  /** "Cancel check in with Solomon", "don't remind me to call Mum", "turn off
+   * my 7am alarm": { say, gone } — or null when it isn't about a reminder (the
+   * AI answers). Same rules as the PC (reminders.rs plan_cancel). */
+  function cancelAsk(said) {
+    const w = reminderWords(said);
+    const POLITE = new Set(["please", "hey", "nova", "izuki", "ok", "okay", "actually", "just", "so", "and", "also", "can", "could", "would", "you", "i", "want", "to", "need", "wanna", "yo", "oh"]);
+    // Strong verbs can name a reminder by what it says alone; the others
+    // ("stop the music") must say "reminder" or "alarm".
+    const VERBS = [[["cancel"], 1], [["delete"], 1], [["remove"], 1], [["clear"], 1], [["unset"], 1], [["get", "rid", "of"], 1], [["dont", "remind", "me"], 1], [["do", "not", "remind", "me"], 1], [["no", "need", "to", "remind", "me"], 1],
+      [["stop"], 0], [["turn", "off"], 0], [["switch", "off"], 0], [["skip"], 0], [["never", "mind"], 0], [["nevermind"], 0]];
+    let start = -1, verb = null, strong = 0;
+    for (let i = 0; i < Math.min(w.length, 6) && start < 0; i++) {
+      if (!w.slice(0, i).every((x) => POLITE.has(x))) break;
+      const hit = VERBS.find(([v]) => v.every((x, j) => w[i + j] === x));
+      if (hit) { start = i; [verb, strong] = hit; }
+    }
+    if (start < 0) return null;
+    const rest = w.slice(start + verb.length);
+    const KIND = new Set(["reminder", "reminders", "remind", "reminding", "alarm", "alarms", "alert"]);
+    const saysKind = verb.includes("remind") || rest.some((x) => KIND.has(x));
+    if (!strong && !saysKind) return null;
+    const saysAlarm = rest.some((x) => x === "alarm" || x === "alarms");
+    const saysReminder = verb.includes("remind") || rest.some((x) => ["reminder", "reminders", "remind", "reminding"].includes(x));
+    const every = rest.some((x) => ["all", "every", "everything"].includes(x));
+    const newest = rest.some((x) => ["that", "last", "latest", "just"].includes(x));
+    const soonest = rest.includes("next");
+    // "my 7am alarm", "the one at 5": the hour it's at.
+    let hour = null;
+    rest.forEach((x, i) => {
+      const m = /^(\d{1,2})(am|pm)?$/.exec(x);
+      if (!m || hour) return;
+      const pm = m[2] === "pm" || rest[i + 1] === "pm", am = m[2] === "am" || rest[i + 1] === "am";
+      const n = +m[1];
+      if ((pm || am || rest[i - 1] === "at" || rest[i + 1] === "oclock") && n >= 1 && n <= 12) hour = { h: n % 12, pm, am };
+    });
+    const FILLER = new Set(["the", "my", "a", "an", "that", "this", "those", "these", "to", "about", "for", "me", "please", "it", "one", "ones", "set", "i", "you", "of", "on", "at", "in", "with", "and", "up", "now", "today", "tonight", "tomorrow", "timer", "timers", "countdown", "o",
+      "all", "every", "everything", "last", "latest", "just", "next", "am", "pm", "oclock"]);
+    const content = rest.filter((x) => !FILLER.has(x) && !KIND.has(x) && !/^\d/.test(x));
+    if (!content.length && !saysKind) return null;
+    const what = saysAlarm && !saysReminder ? "alarm" : "reminder";
+    const isAlarm = (r) => r.text.startsWith("\u23f0");
+    const all = reminders.filter((r) => !r.done && r.at > Date.now());
+    let pool = all.filter((r) => !saysAlarm || saysReminder || isAlarm(r));
+    if (hour) pool = pool.filter((r) => { const h = new Date(r.at).getHours(); return h % 12 === hour.h && (!hour.pm || h >= 12) && (!hour.am || h < 12); });
+    const when = (r) => new Date(r.at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
+    const listing = (list, or) => {
+      const shown = [...list].sort((a, b) => a.at - b.at).slice(0, 4).map((r) => r.text + " (" + when(r) + ")");
+      const more = list.length - shown.length;
+      if (!shown.length) return "nothing set";
+      if (more > 0) return shown.join(", ") + " and " + more + " more";
+      return shown.length === 1 ? shown[0] : shown.slice(0, -1).join(", ") + (or ? " or " : " and ") + shown[shown.length - 1];
+    };
+    let matched = pool.filter((r) => {
+      const t = reminderWords(r.text);
+      // "Delete old photos" while a reminder says that is asking to do it.
+      const sameVerb = !saysKind && t[0] === verb[0];
+      return !sameVerb && content.every((x) => hasReminderWord(t, x));
+    });
+    if (!matched.length) {
+      if (!saysKind) return null;
+      const have = all.length ? "You've got " + listing(pool.length ? pool : all, false) + "." : "You don't have any " + what + "s set.";
+      if (!content.length && hour) return { say: "I couldn't find a " + what + " at that time. " + have, gone: [] };
+      if (!content.length || !all.length) return { say: have, gone: [] };
+      return { say: "I couldn't find a " + what + " about \u201c" + content.join(" ") + "\u201d. " + have, gone: [] };
+    }
+    if (every) {
+      // "Delete all my reminders" leaves the alarms that wake them up.
+      if (saysReminder && !saysAlarm) matched = matched.filter((r) => !isAlarm(r));
+      // Only alarms were set: say so rather than "Cancelled all 0 reminders".
+      if (!matched.length) return { say: "You don't have any " + what + "s set \u2014 only alarms. Say \u201ccancel all my alarms\u201d if you want those gone.", gone: [] };
+      return { say: matched.length === 1 ? "Cancelled \u201c" + matched[0].text + "\u201d." : "Cancelled all " + matched.length + " " + what + "s.", gone: matched };
+    }
+    if (matched.length > 1 && !content.length) {
+      if (newest) matched = [matched[matched.length - 1]];
+      else if (soonest) matched = [[...matched].sort((a, b) => a.at - b.at)[0]];
+    }
+    // The same reminder set twice goes together.
+    const first = reminderWords(matched[0].text).join(" ");
+    if (matched.length > 1 && !matched.every((r) => reminderWords(r.text).join(" ") === first)) return { say: "Which one? " + listing(matched, true) + ".", gone: [] };
+    const r = matched[0];
+    return { say: isAlarm(r) ? "Turned off the \u201c" + r.text.replace(/^\u23f0\s*/, "") + "\u201d alarm." : "Cancelled \u201c" + r.text + "\u201d (" + when(r) + ").", gone: matched };
+  }
+
   /** Until when the PC counts as out of reach from this network (school
    * and work Wi-Fi often block the link to it): meanwhile reminders and
    * questions are handled here, and only an "on my PC" request tries again. */
@@ -1378,7 +1491,7 @@
   async function askPc(said) {
     const base = pc.endsWith("/") ? pc : pc + "/";
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 9000);
+    const timer = setTimeout(() => controller.abort(), wantsWebRead(said) ? 90000 : 30000);
     try {
       const r = await fetch(base + "talk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: said }), signal: controller.signal });
       if (!r.ok) throw new Error("pc");
@@ -1453,7 +1566,14 @@
   // Explicit device intent wins over app names and generic action verbs.
   const phoneTarget = (said) => /\b(?:my phone|the phone|this phone|my iphone|the iphone|this iphone|my android|the android|this android|on (?:phone|iphone|android|mobile)|open (?:phone|iphone|android))\b/i.test(String(said || ""));
   const pcTarget = (said) => /\b(?:my pc|the pc|my computer|the computer|my laptop|the laptop|on (?:pc|desktop|windows))\b/i.test(String(said || ""));
+  const wantsWebRead = (said) => {
+    const text = String(said || "");
+    return /\b(?:scrape|crawl|search the web|search online|look up online)\b/i.test(text)
+      || (/https?:\/\//i.test(text) && /\b(?:read|extract|summari[sz]e|compare|check|research)\b/i.test(text));
+  };
   const requestLane = (said, haveApps, havePc) => {
+    // A web read uses the backend, with no mouse/device-control ambiguity.
+    if (wantsWebRead(said)) return havePc ? "pc" : "web-unavailable";
     if (phoneTarget(said)) return pcTarget(said) ? "clarify" : "phone";
     if (wantsReminder(said)) return havePc ? "pc" : "chat";
     if (wantsAccount(said)) return haveApps ? "apps" : havePc ? "pc" : "chat";
@@ -1578,6 +1698,19 @@
       if (talking) listen();
       return;
     }
+    // "Cancel check in with Solomon", "don't remind me to call Mum" — done
+    // here at once, no AI round trip.
+    if (!audio && !files.length) {
+      const c = cancelAsk(said);
+      if (c) {
+        for (const r of c.gone) dropReminder(r);
+        history.push({ role: "user", text: said }, { role: "model", text: c.say }); saveAll();
+        bubble("me", said); bubble("izuki", c.say); liveSaid(c.say);
+        await speak(c.say);
+        if (talking) listen();
+        return;
+      }
+    }
     // A tiny, direct Android lane: no AI, no screen guesswork and no hidden
     // action. Only explicit, allowlisted phone-navigation phrases can use it.
     if (!audio && !files.length) {
@@ -1644,6 +1777,12 @@
       const haveApps = !!window.izukiApps?.configured();
       // A PC this network can't reach: only an "on my PC" request tries again.
       const lane = requestLane(said, haveApps, !!pc && (Date.now() > pcAway || pcTarget(said)));
+      if (lane === "web-unavailable") {
+        reply = "Pair with your running PC to read webpages in the background. I haven't fetched those pages yet.";
+        out.textContent = reply;
+        history.push({ role: "user", text: said }, { role: "model", text: reply }); saveAll();
+        await speak(reply); return;
+      }
       if (!files.length && (lane === "phone" || lane === "clarify")) {
         reply = lane === "clarify"
           ? "Do you want that on your phone or your PC? Please repeat the action with ‘on my phone’ or ‘on my PC’. I haven't changed either device."

@@ -34,7 +34,7 @@ export function researchAsk(said: string, afterResearch = false): string | null 
   if (CARRY_ON.test(t) || (afterResearch && DEEPER.test(t))) return t.replace(/[.!?]+$/, "");
   const m = said
     .trim()
-    .match(/^(?:do (?:a |some )?)?(?:deep research|deep dive|research)(?: (?:on|about|into|this))?[:\s]+(.+)$/i);
+    .match(/^(?:do (?:a |some )?)?(?:deep research|deep dive|deep search|research)(?: (?:on|about|into|this|for))?[:\s]+(.+)$/i);
   if (!m) return null;
   const q = m[1].trim().replace(/[.!]+$/, "");
   return q.split(/\s+/).length >= 2 ? q : null;

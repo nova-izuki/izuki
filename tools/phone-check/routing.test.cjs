@@ -86,5 +86,8 @@ is("Gmail uses PC connections without phone key", requestLane("read Gmail", fals
 is("ordinary conversation needs neither bridge", requestLane("hello", true, true), "chat");
 is("PC reminders take precedence over email keywords", requestLane("remind me to email Sam in 20 minutes", true, true), "pc");
 is("standalone phone reminder stays local", requestLane("remind me to email Sam", true, false), "chat");
+is("web scraping uses backend without a device-choice question", requestLane("scrape https://example.com", false, true), "pc");
+is("link extraction uses backend even with phone apps configured", requestLane("extract the table from https://example.com", true, true), "pc");
+is("unpaired phone never pretends it read a website", requestLane("summarize https://example.com", true, false), "web-unavailable");
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

@@ -768,6 +768,11 @@ html[data-backdrop="tabbed"] .izk-card {
 }
 
 /* Nothing to say: just a faint glowing line showing where it lives. */
+/* "Always show" off: nothing at rest until your mouse goes up there. */
+.izk-island-hidden {
+  opacity: 0;
+}
+
 .izk-island-rest {
   /* Static on purpose: this sits over live video all day, and a moving
      background would repaint every frame. */
