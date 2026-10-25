@@ -41,6 +41,24 @@ struct Wheel {
     delta: i32,
 }
 
+/// Give this thread a message queue and return its id, so other threads can
+/// post to it.
+///
+/// It must not block: waiting for a message here instead meant the id was
+/// never published, `watching()` could never reach this thread, the hook was
+/// never installed, and the whole wheel feature was dead code that every
+/// test still passed. `PeekMessageW` creates the queue and returns at once.
+#[cfg(windows)]
+fn open_queue() -> u32 {
+    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::UI::WindowsAndMessaging::{PeekMessageW, MSG, PM_NOREMOVE, WM_APP};
+    unsafe {
+        let mut msg = MSG::default();
+        let _ = PeekMessageW(&mut msg, None, WM_APP, WM_APP, PM_NOREMOVE);
+        GetCurrentThreadId()
+    }
+}
+
 /// Ask the hook thread to put the hook in (`on`) or take it out.
 #[cfg(windows)]
 pub fn watching(on: bool) {
@@ -59,9 +77,9 @@ pub fn watching(_on: bool) {}
 
 #[cfg(windows)]
 pub fn install(app: &AppHandle) {
-    use windows::Win32::System::Threading::{GetCurrentThread, GetCurrentThreadId, SetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL};
+    use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL};
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetMessageW, PeekMessageW, SetTimer, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK, MSG, PM_NOREMOVE, WH_MOUSE_LL, WM_APP, WM_TIMER,
+        GetMessageW, SetTimer, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK, MSG, WH_MOUSE_LL, WM_APP, WM_TIMER,
     };
     let (tx, rx) = std::sync::mpsc::channel::<Wheel>();
     if TX.set(tx).is_err() {
@@ -86,9 +104,8 @@ pub fn install(app: &AppHandle) {
             // it, and PeekMessageW makes one without blocking. Waiting on
             // GetMessageW here instead meant the id below was never published,
             // so the hook was never put in and the wheel did nothing at all.
+            let _ = HOOK_THREAD.set(open_queue());
             let mut msg = MSG::default();
-            let _ = PeekMessageW(&mut msg, None, WM_APP, WM_APP, PM_NOREMOVE);
-            let _ = HOOK_THREAD.set(GetCurrentThreadId());
             let mut hook: Option<HHOOK> = None;
             let want = || WANTED.load(std::sync::atomic::Ordering::Relaxed);
             let put_in = |hook: &mut Option<HHOOK>| {
@@ -155,3 +172,26 @@ unsafe extern "system" fn wheel_hook(
 
 #[cfg(not(windows))]
 pub fn install(_app: &tauri::AppHandle) {}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    /// The wheel feature once shipped doing nothing because the hook thread
+    /// waited for a message before saying which thread to send messages to.
+    /// Nothing could catch it: a mouse hook can't be driven from a test, and
+    /// every other test passed. So this covers the one step that was wrong —
+    /// opening the queue must hand back an id straight away, with nobody
+    /// posting anything.
+    #[test]
+    fn opening_the_queue_never_waits_for_a_message() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(open_queue());
+        });
+        let id = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("open_queue blocked: the hook thread would never be reachable and the wheel would do nothing");
+        assert_ne!(id, 0, "no thread id, so watching() could never reach the hook thread");
+    }
+}

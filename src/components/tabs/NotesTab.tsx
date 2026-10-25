@@ -11,6 +11,35 @@ import { useIzuki } from "../../lib/store";
 
 /** The words of a note, trimmed for asking the AI about it. */
 const bodyOf = (n: Note) => noteStudyText(n);
+
+/**
+ * Study a whole subject rather than one note at a time.
+ *
+ * The notes are already filed by chapter, so they go in chapter order and say
+ * which chapter each part came from — the point is to revise across the lot
+ * and see where the gaps are, which is invisible one note at a time.
+ */
+const studySubject = (subject: string, notes: Note[], how: "quiz" | "recap" | "gaps") => {
+  const inOrder = [...notes].sort(
+    (a, b) => chapterNumber(a.context?.chapter ?? "") - chapterNumber(b.context?.chapter ?? "") || a.created_at - b.created_at
+  );
+  // Each chapter gets a share of the budget, so chapter 1 can't crowd out the
+  // rest. The whole subject has to fit in one request.
+  const share = Math.max(700, Math.floor(16000 / Math.max(1, inOrder.length)));
+  const material = inOrder
+    .map((n) => `--- ${n.context?.chapter || "Unfiled"}${n.context?.topic ? ` · ${n.context.topic}` : ""}: ${n.title} ---\n${noteStudyText(n).slice(0, share)}`)
+    .join("\n\n");
+  const span = chapterSpan(inOrder);
+  const ask =
+    how === "quiz"
+      ? `Quiz me on everything I've kept for ${subject}${span ? ` (${span})` : ""} — one question at a time, hardest-to-remember first, and tell me if I'm right and why. Mix the chapters up rather than going in order. Only ask about what's in these notes, and say which chapter each question came from.`
+      : how === "recap"
+        ? `Recap ${subject}${span ? ` (${span})` : ""} chapter by chapter: for each chapter, the 2-3 ideas that matter and one line on how it connects to the chapter before. Keep to these notes; label anything you add as your own.`
+        : `Look across my ${subject} notes${span ? ` (${span})` : ""} and tell me what's thin or missing: chapters with far less than the others, ideas mentioned but never explained, and terms used without a definition. Be specific about which chapter. Don't invent material I don't have — this is about the gaps in my notes.`;
+  void sendChatCommand(`${ask}
+
+${material}`);
+};
 const summarise = (notes: Note[]) =>
   void sendChatCommand(
     notes.length === 1
@@ -25,6 +54,15 @@ const chapterNumber = (c: string) => {
 };
 
 /** Notes by subject (the newest subject first), each in chapter order. */
+/** "Ch 1-7" — what of a subject is actually kept, so a gap is visible. */
+function chapterSpan(notes: Note[]): string {
+  const ns = notes.map((n) => chapterNumber(n.context?.chapter ?? "")).filter((n) => n > 0 && n < 9999);
+  if (!ns.length) return "";
+  const low = Math.min(...ns);
+  const high = Math.max(...ns);
+  return low === high ? `Ch ${low}` : `Ch ${low}-${high}`;
+}
+
 function bySubject(notes: Note[]): Array<{ subject: string; notes: Note[] }> {
   const groups = new Map<string, Note[]>();
   for (const n of notes) {
@@ -370,7 +408,35 @@ export function NotesTab() {
                       {folded.has(g.subject) ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                       <span className="truncate">{g.subject}</span>
                       <span className="font-normal normal-case tracking-normal">· {g.notes.length}</span>
+                      <span className="ml-auto font-normal normal-case tracking-normal text-izk-muted/70">{chapterSpan(g.notes)}</span>
                     </button>
+                  )}
+                  {/* The whole subject at once — every chapter you've kept,
+                      in order, without opening them one at a time. */}
+                  {g.subject && !folded.has(g.subject) && g.notes.length > 1 && (
+                    <div className="flex flex-wrap gap-1 px-1">
+                      <button
+                        type="button"
+                        onClick={() => void studySubject(g.subject, g.notes, "quiz")}
+                        className="izk-pill flex items-center gap-1 px-2 py-0.5 text-[11px]"
+                      >
+                        <Brain size={11} /> Quiz me on {g.subject}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void studySubject(g.subject, g.notes, "recap")}
+                        className="izk-pill flex items-center gap-1 px-2 py-0.5 text-[11px]"
+                      >
+                        <Sparkles size={11} /> Recap every chapter
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void studySubject(g.subject, g.notes, "gaps")}
+                        className="izk-pill flex items-center gap-1 px-2 py-0.5 text-[11px]"
+                      >
+                        <Search size={11} /> What am I missing?
+                      </button>
+                    </div>
                   )}
                   {!folded.has(g.subject) && g.notes.map((n) => (
                 <div key={n.id} className="relative">

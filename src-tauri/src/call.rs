@@ -526,6 +526,46 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
         (tiny_http::Method::Get, Some("/manifest.webmanifest")) => {
             respond(req, 200, "application/manifest+json", MANIFEST.as_bytes().to_vec())
         }
+        // Your notes, for the phone to read and study from. Read-only, and
+        // only over the same paired link everything else here uses.
+        // One note in full, for reading and studying from.
+        (tiny_http::Method::Get, Some("/note")) => {
+            // `url` above has the query stripped, so read the raw one.
+            let wanted = req.url().split_once('?').map(|(_, q)| q).unwrap_or("").split('&').find_map(|p| p.strip_prefix("id=")).unwrap_or("").to_string();
+            match crate::notes::list() {
+                Ok(notes) => match notes.into_iter().find(|n| n.id == wanted) {
+                    Some(n) => json_reply(req, json!({ "id": n.id, "title": n.title, "text": n.text })),
+                    None => respond(req, 404, "text/plain", b"no such note".to_vec()),
+                },
+                Err(e) => respond(req, 500, "text/plain", e.to_string().into_bytes()),
+            }
+        }
+        (tiny_http::Method::Get, Some("/notes")) => {
+            // A failure must reach the phone as a failure: turning it into an
+            // empty list would show "no notes yet" when the notes are fine.
+            let notes = match crate::notes::list() {
+                Ok(notes) => notes,
+                Err(e) => return respond(req, 500, "text/plain", e.to_string().into_bytes()),
+            };
+            let list: Vec<Value> = notes
+                .iter()
+                .map(|n| {
+                    json!({
+                        "id": n.id,
+                        "title": n.title,
+                        "subject": n.context.subject,
+                        "chapter": n.context.chapter,
+                        "topic": n.context.topic,
+                        "updated_at": if n.updated_at > 0 { n.updated_at } else { n.created_at },
+                        // A preview only — listing notes shouldn't pull
+                        // megabytes on mobile data. Opening one fetches it in
+                        // full from /note.
+                        "text": crate::notes::study_excerpt(&n.text, 1200),
+                    })
+                })
+                .collect();
+            json_reply(req, json!({ "notes": list }))
+        }
         (tiny_http::Method::Post, Some("/talk")) => {
             let mut body = String::new();
             let _ = req.as_reader().take(64 * 1024).read_to_string(&mut body);

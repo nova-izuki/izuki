@@ -833,6 +833,12 @@
       item.append(el("b", "", title), el("span", "", sub));
       pulse.appendChild(item);
     };
+    if (pc) {
+      const notesBtn = el("button", "home-resume", "\ud83d\udcda Your notes");
+      notesBtn.type = "button";
+      notesBtn.onclick = () => void showNotes(true);
+      w.appendChild(notesBtn);
+    }
     const pendingReminders = reminders.filter((r) => !r.done).length;
     pulseItem("Private", "Chats stay on this phone");
     pulseItem(pendingReminders ? "Reminder set" : "No reminders", pendingReminders ? "Izuki will nudge you" : "Ask me to remember something");
@@ -1384,6 +1390,174 @@
       speak(line);
       scheduleReminders();
     }, Math.max(0, Math.min(next.at - Date.now(), 2 ** 31 - 1)));
+  }
+
+  // ---------------------------------------------------------------- notes
+  // Your PC's study notes, on your phone. Read-only: nothing here changes or
+  // deletes a note, so a tap on a phone can't lose work kept on the PC.
+  let pcNotes = [];
+  let notesAt = 0;
+
+  /** Chapter 1 before Chapter 10; anything unnumbered sorts last. */
+  const chapterNo = (c) => {
+    const m = /(\d+(?:\.\d+)?)/.exec(String(c || ""));
+    return m ? parseFloat(m[1]) : 9999;
+  };
+
+  /** Fetch them from the linked PC (cached for a minute). */
+  async function loadNotes(force) {
+    if (!pc) throw new Error("Link your PC first (Settings) — your notes live there.");
+    if (!force && pcNotes.length && Date.now() - notesAt < 60_000) return pcNotes;
+    const base = pc.endsWith("/") ? pc : pc + "/";
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const r = await fetch(base + "notes", { signal: controller.signal });
+      if (!r.ok) throw new Error("Your PC didn't send them back.");
+      pcNotes = (await r.json()).notes || [];
+      notesAt = Date.now();
+      return pcNotes;
+    } catch (e) {
+      if (e?.name === "AbortError" || e instanceof TypeError) throw new Error("I couldn't reach your PC. Is it on and on the same Wi-Fi?");
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Notes by subject, each subject's chapters in order. */
+  function notesBySubject(list) {
+    const groups = new Map();
+    for (const n of list) {
+      const subject = (n.subject || "").trim() || "Other notes";
+      if (!groups.has(subject)) groups.set(subject, []);
+      groups.get(subject).push(n);
+    }
+    for (const notes of groups.values()) {
+      notes.sort((a, b) => chapterNo(a.chapter) - chapterNo(b.chapter) || (b.updated_at || 0) - (a.updated_at || 0));
+    }
+    return [...groups.entries()].sort((a, b) => (a[0] === "Other notes") - (b[0] === "Other notes") || a[0].localeCompare(b[0]));
+  }
+
+  /** The notes screen: subjects, their chapters, and studying from them. */
+  async function showNotes(force) {
+    archiveChat();
+    homeView = false;
+    log.innerHTML = "";
+    const page = el("div", "notes-page");
+    const head = el("div", "notes-head");
+    const back = el("button", "btn ghost", "\u2190 Home");
+    back.type = "button";
+    back.onclick = () => { homeView = true; render(); };
+    head.append(back, el("b", "", "Your notes"));
+    page.appendChild(head);
+    const status = el("p", "note", "Getting them from your PC\u2026");
+    page.appendChild(status);
+    log.appendChild(page);
+    let list;
+    try {
+      list = await loadNotes(force);
+    } catch (e) {
+      status.textContent = e.message;
+      return;
+    }
+    status.remove();
+    if (!list.length) {
+      page.appendChild(el("p", "note", "No notes yet. On your PC, say \u201ctake notes on this\u201d while a page is open."));
+      return;
+    }
+    for (const [subject, notes] of notesBySubject(list)) {
+      const box = el("details", "notes-subject");
+      const sum = el("summary");
+      const span = (() => {
+        const ns = notes.map((n) => chapterNo(n.chapter)).filter((n) => n < 9999);
+        if (!ns.length) return "";
+        const lo = Math.min(...ns), hi = Math.max(...ns);
+        return lo === hi ? ` \u00b7 Ch ${lo}` : ` \u00b7 Ch ${lo}-${hi}`;
+      })();
+      sum.textContent = `${subject} (${notes.length})${span}`;
+      box.appendChild(sum);
+      // Study the whole subject, the way the PC's Notes tab does.
+      const tools = el("div", "notes-tools");
+      const quiz = el("button", "btn ghost", "Quiz me on this");
+      quiz.type = "button";
+      quiz.onclick = () => {
+        homeView = false;
+        void ask(`Quiz me on everything I've kept for ${subject} \u2014 one question at a time, mixed up rather than in order, and tell me if I'm right and why. Only from these notes, and say which chapter each question came from.\n\n` +
+          notes.map((n) => `--- ${n.chapter || "Unfiled"}: ${n.title} ---\n${String(n.text || "").slice(0, Math.max(700, Math.floor(14000 / notes.length)))}`).join("\n\n"));
+      };
+      tools.appendChild(quiz);
+      box.appendChild(tools);
+      for (const n of notes) {
+        const item = el("button", "notes-item");
+        item.type = "button";
+        item.append(el("b", "", n.title), el("small", "", [n.chapter, n.topic].filter(Boolean).join(" \u00b7 ") || "\u00a0"));
+        item.onclick = () => showNote(n);
+        box.appendChild(item);
+      }
+      page.appendChild(box);
+    }
+  }
+
+  /** One note: its words, and the study tools for it. */
+  /** The whole note, not the preview the list carries. */
+  async function fullNote(n) {
+    if (!pc || n.whole) return n;
+    const base = pc.endsWith("/") ? pc : pc + "/";
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const r = await fetch(base + "note?id=" + encodeURIComponent(n.id), { signal: controller.signal });
+      if (!r.ok) return n;
+      const whole = await r.json();
+      n.text = whole.text || n.text;
+      n.whole = true;
+      return n;
+    } catch {
+      // Keep the preview rather than showing nothing.
+      return n;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function showNote(n) {
+    log.innerHTML = "";
+    const page = el("div", "notes-page");
+    const head = el("div", "notes-head");
+    const back = el("button", "btn ghost", "\u2190 Notes");
+    back.type = "button";
+    back.onclick = () => void showNotes();
+    const again = el("button", "btn ghost", "\u21bb");
+    again.type = "button";
+    again.title = "Get them from my PC again";
+    again.onclick = () => void showNotes(true);
+    head.append(back, el("b", "", n.title));
+    page.appendChild(head);
+    const where = [n.subject, n.chapter, n.topic].filter(Boolean).join(" \u203a ");
+    if (where) page.appendChild(el("p", "note", where));
+    const tools = el("div", "notes-tools");
+    const add = (label, prompt) => {
+      const b = el("button", "btn ghost", label);
+      b.type = "button";
+      b.onclick = () => { homeView = false; void ask(`${prompt}\n\n${n.text}`); };
+      tools.appendChild(b);
+    };
+    add("Quiz me", "Quiz me on these notes \u2014 one question at a time, and tell me if I'm right:");
+    add("Explain simply", "Explain these notes like I'm a complete beginner: simple words, the 3 ideas that matter most, and one real-life example. Keep to the notes; label anything you add.");
+    add("Summarise", "Summarise these notes in 3 short bullet points:");
+    page.appendChild(tools);
+    const body = el("pre", "notes-body");
+    body.textContent = n.text || "";
+    page.appendChild(body);
+    log.appendChild(page);
+    // The list only carries a preview: get the rest before it's read or
+    // studied from, so nothing is quietly cut off.
+    if (!n.whole) {
+      void fullNote(n).then((whole) => {
+        if (body.isConnected) body.textContent = whole.text || "";
+      });
+    }
   }
 
   /** Words of a reminder, lower case ("Solomon's" → "solomons"). */
