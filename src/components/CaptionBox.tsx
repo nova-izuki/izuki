@@ -51,6 +51,8 @@ export function CaptionBox({
   const words = useMemo(() => caption.text.split(/\s+/).filter(Boolean), [caption.text]);
   const [shown, setShown] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
+  /** The mouse is over the words: reading — never closed under you. */
+  const hovered = useRef(false);
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
 
@@ -63,7 +65,16 @@ export function CaptionBox({
     let linger: ReturnType<typeof setTimeout> | null = null;
     const finish = () => {
       clearInterval(tick);
-      if (!linger && !stayRef.current) linger = setTimeout(() => doneRef.current(), LINGER_MS);
+      // Gone a few seconds after the last word — but not while you're
+      // reading or scrolling it (checked again each second).
+      const close = () => {
+        if (hovered.current) {
+          linger = setTimeout(close, 1000);
+          return;
+        }
+        doneRef.current();
+      };
+      if (!linger && !stayRef.current) linger = setTimeout(close, LINGER_MS);
     };
     const tick = setInterval(() => {
       i++;
@@ -165,15 +176,19 @@ export function CaptionBox({
         </div>
         <div
           ref={scroller}
-          // Kept answers scroll and can be selected; a live caption drags.
-          onPointerDown={stay ? undefined : (e) => begin(e, "move")}
+          // Every answer scrolls (wheel or its scrollbar) and its words can be
+          // selected; the bar at the top moves the bubble.
           onScroll={(e) => {
             const el = e.currentTarget;
             pinnedToEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
           }}
-          className={`izk-tone-text min-h-0 flex-1 overflow-y-auto px-3.5 pb-3 pt-1.5 text-[13px] leading-relaxed text-izk-ink ${
-            stay ? "select-text" : "cursor-grab active:cursor-grabbing"
-          }`}
+          onPointerEnter={() => {
+            hovered.current = true;
+          }}
+          onPointerLeave={() => {
+            hovered.current = false;
+          }}
+          className="izk-tone-text izk-scroll min-h-0 flex-1 select-text overflow-y-auto overscroll-contain px-3.5 pb-3 pt-1.5 text-[13px] leading-relaxed text-izk-ink"
         >
           {past.map((p, i) => (
             <div key={i} className="mb-2 border-b border-white/8 pb-2 opacity-60">

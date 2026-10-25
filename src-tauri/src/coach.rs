@@ -278,7 +278,7 @@ fn run(app: &AppHandle, my_gen: u64) {
                 return;
             }
             say(app, &text, false);
-            crate::studylog::record(&format!("Quiz question: {}", names.join(" / ")), &text);
+            crate::studylog::record_on_page(&format!("Quiz question: {}", names.join(" / ")), &text, &crate::uia::foreground_title(), &page);
             explained = Some(key);
             idle_since = Instant::now();
             stage(Some(if list.iter().any(|(_, _, c)| c.kind == "CheckBox") { "Quiz coach · your turn — tick what applies" } else { "Quiz coach · your turn — pick an answer" }));

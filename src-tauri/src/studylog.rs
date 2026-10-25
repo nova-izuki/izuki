@@ -4,7 +4,6 @@
 //! are written to teach (the answer, why, and one thing to remember). Every
 //! note can become flashcards or a quiz in Notes.
 
-use anyhow::Result;
 
 /// Added to the chat's instructions while the log is on.
 pub const RULE: &str = "\n\nSTUDY LOG IS ON: every question the user asks and your answer are saved to their notes so they can learn from them later. When they ask a question, answer so it teaches: the answer first, then why or how in a few short steps, then one last line starting \"Remember:\" with the key idea. Commands and small talk are answered normally.";
@@ -59,6 +58,7 @@ pub fn is_question(text: &str) -> bool {
     if t.len() < 6 || parse(&t).is_some() || asks_to_act(&t) {
         return false;
     }
+    if t.starts_with("quiz question:") || t.starts_with("quiz me on these notes") { return true; }
     if t.ends_with('?') {
         return true;
     }
@@ -128,26 +128,33 @@ pub fn entry(question: &str, answer: &str, at: chrono::DateTime<chrono::Local>) 
 
 /// Save a question and its answer, if the log is on and it was a question.
 pub fn record(question: &str, answer: &str) {
-    if !on() || !is_question(question) || clean(answer).len() < 3 {
-        return;
-    }
-    let question = question.to_string();
-    let answer = answer.to_string();
-    // Off the reply's thread: a slow disk never holds up the answer.
-    std::thread::spawn(move || {
-        crate::studytrack::add("question", "", &question, "", None);
-        if let Err(e) = save(&question, &answer) {
-            eprintln!("[studylog] couldn't save: {e}");
-        }
-    });
+    if !on() { return; }
+    let source = crate::uia::foreground_title();
+    record_on_page(question, answer, &source, "");
 }
 
-fn save(question: &str, answer: &str) -> Result<()> {
-    let now = chrono::Local::now();
-    let title = format!("Study log — {}", now.format("%a %-d %b"));
-    crate::notes::add_to_log(&title, "Study log", &entry(question, answer, now))?;
-    eprintln!("[studylog] saved a question");
-    Ok(())
+/// Quiz coach already has the page text: reuse it instead of reading the
+/// screen again, and snapshot the destination before the worker starts.
+pub fn record_on_page(question: &str, answer: &str, source: &str, page: &str) {
+    if !on() || clean(answer).len() < 3 || asks_to_act(&question.to_lowercase()) { return; }
+    let target = crate::notes::target_for(question, source);
+    if !is_question(question) && target.is_none() { return; }
+    let context = crate::notes::Context::infer(source, &format!("{page}\n{question}"));
+    let question: String = question.chars().take(4000).collect();
+    let answer = clean(answer);
+    let source = source.to_string();
+    std::thread::spawn(move || {
+        // Switching the log off cancels writes that have not begun yet.
+        if !on() { return; }
+        let title = if context.key().is_some() { context.title("Study notes") }
+            else { format!("Study log \u{2014} {}", chrono::Local::now().format("%a %-d %b")) };
+        let body = format!("### Question: {}\n\n{}", question.trim(), answer);
+        let origin = if source.trim().is_empty() { "Study log" } else { &source };
+        match crate::notes::keep_study(&title, origin, &body, context, "Questions & practice", target.as_deref()) {
+            Ok(note) => crate::studytrack::add("question", &note.title, &question, "", None),
+            Err(e) => eprintln!("[studylog] couldn't save: {e}"),
+        }
+    });
 }
 
 #[cfg(test)]

@@ -1128,8 +1128,18 @@ pub fn ext_info() -> serde_json::Value {
 
 /// Nova Notes, newest first.
 #[tauri::command]
-pub fn notes_list() -> Vec<crate::notes::Note> {
-    crate::notes::list()
+pub async fn notes_list() -> R<Vec<crate::notes::Note>> {
+    blocking(|| crate::notes::list().map_err(err)).await?
+}
+
+#[tauri::command]
+pub async fn notes_focus(id: String, practice: bool) -> R<()> {
+    blocking(move || crate::notes::focus(&id, practice).map_err(err)).await?
+}
+
+#[tauri::command]
+pub async fn notes_organize(id: String, subject: String, chapter: String, topic: String) -> R<crate::notes::Note> {
+    blocking(move || crate::notes::organize(&id, &subject, &chapter, &topic).map_err(err)).await?
 }
 
 /// Textbooks (textbook.rs): the Windows "Open" box for a PDF.
@@ -1228,8 +1238,8 @@ pub async fn notes_jot(text: String) -> R<crate::notes::Note> {
 }
 
 #[tauri::command]
-pub fn notes_delete(id: String) -> R<()> {
-    crate::notes::delete(&id).map_err(err)
+pub async fn notes_delete(id: String) -> R<()> {
+    blocking(move || crate::notes::delete(&id).map_err(err)).await?
 }
 
 /// "Take notes on this": read the screen and write study notes.

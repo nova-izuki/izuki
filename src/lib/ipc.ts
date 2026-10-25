@@ -797,6 +797,8 @@ export const api = {
   extInfo: () => call<{ connected: boolean; version: string | null; latest: string; outdated: boolean }>("ext_info", undefined, () => ({ connected: false, version: null, latest: "", outdated: false })),
   /** Nova Notes. */
   notesList: () => call<Note[]>("notes_list", undefined, () => []),
+  notesFocus: (id: string, practice = false) => call<void>("notes_focus", { id, practice }, () => undefined),
+  notesOrganize: (id: string, subject: string, chapter: string, topic: string) => call<Note>("notes_organize", { id, subject, chapter, topic }, () => { throw new Error("Organizing notes works in the desktop app."); }),
   notesDelete: (id: string) => call<void>("notes_delete", { id }, () => undefined),
   notesJot: (text: string) => call<Note>("notes_jot", { text }, () => ({ id: "jot", title: `Quick note — ${text.slice(0, 48)}`, source: "Island", text, created_at: Date.now(), updated_at: Date.now(), cards: [], lesson: false })),
   notesCapture: () => call<Note>("notes_capture", undefined, () => { throw new Error("Notes work in the Izuki app on your PC."); }),
@@ -1294,4 +1296,7 @@ export const EV = {
    * mic lives in the config panel's `VoiceEngine`, but the "I'm listening"
    * indicator has to render in the overlay window. */
   listening: "izuki://listening",
+  /** Frontend-only: hold-to-talk's waveform under the mouse — "listening",
+   *  "loading" (let go, thinking) or "off". */
+  talkWave: "izuki://talk-wave",
 } as const;

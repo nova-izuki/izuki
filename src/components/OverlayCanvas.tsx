@@ -22,6 +22,7 @@ import { PointOutLayer, type PointOut } from "./PointOutLayer";
 import { PenLayer, PEN_INKS, type PenMark } from "./PenLayer";
 import { RadialMenu } from "./RadialMenu";
 import { VoiceOrb } from "./VoiceOrb";
+import { CursorWave, type TalkWaveState } from "./CursorWave";
 import { createDrawSurface, TOOL_COLOUR, type DrawSurface } from "../lib/draw";
 import { workArea } from "../lib/floating";
 import { hitTest, reassertHit, resetHit } from "../lib/hitTest";
@@ -103,6 +104,15 @@ export function OverlayCanvas() {
   }, []);
   /** Push-to-talk's mic state, mirrored from the config panel's VoiceEngine. */
   const [listening, setListening] = useState(false);
+  /** Hold-to-talk's waveform under the mouse, and where the mouse is. */
+  const [talkWave, setTalkWave] = useState<TalkWaveState | null>(null);
+  const mouse = useRef({ x: -200, y: -200 });
+  const waveRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (talkWave !== "loading") return;
+    const t = window.setTimeout(() => setTalkWave(null), 20_000);
+    return () => window.clearTimeout(t);
+  }, [talkWave]);
   /** The hands-free voice sphere, driven by the config panel's VoiceEngine. */
   const [orb, setOrb] = useState<OrbState>("hidden");
   /** What Izuki says it's doing while it works — shown under the orb. */
@@ -513,6 +523,7 @@ export function OverlayCanvas() {
         captionText.current = p.text;
         setCaption({ ...p, id: Date.now() });
       }),
+      on<"listening" | "loading" | "off">(EV.talkWave, (state) => setTalkWave(state === "off" ? null : state)),
       on<OrbState>(EV.orb, (state) => {
         setOrb(state);
         if (state === "hidden") setPenMarks([]);
@@ -623,12 +634,16 @@ export function OverlayCanvas() {
       // and it's hit-tested against the floating widgets so those stay
       // clickable.
       on<CursorPosition>(EV.cursor, ({ x, y }) => {
-        const m = modeRef.current;
-        if (m !== "follow" && m !== "preview") return;
         const sx = Math.max(1, window.innerWidth) / Math.max(1, desktop.w || window.innerWidth);
         const sy = Math.max(1, window.innerHeight) / Math.max(1, desktop.h || window.innerHeight);
         const cx = (x - desktop.x) * sx;
         const cy = (y - desktop.y) * sy;
+        // The hold-to-talk waveform rides the mouse in every mode — moved
+        // straight on the page, no re-render per move.
+        mouse.current = { x: cx, y: cy };
+        if (waveRef.current) waveRef.current.style.transform = `translate(${cx + 14}px, ${cy + 22}px)`;
+        const m = modeRef.current;
+        if (m !== "follow" && m !== "preview") return;
         handRef.current?.setPointer(cx, cy);
         islandPointer(cx, cy);
         hitTest(cx, cy);
@@ -822,6 +837,7 @@ export function OverlayCanvas() {
   const floatingSlot =
     mode === "follow" || mode === "preview" ? (
       <>
+        {talkWave && <CursorWave ref={waveRef} state={talkWave} x={mouse.current.x} y={mouse.current.y} />}
         {penMarks.length > 0 && (
           <div className="pointer-events-none fixed inset-0">
             <PenLayer marks={penMarks} />

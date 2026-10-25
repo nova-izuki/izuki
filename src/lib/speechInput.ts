@@ -407,10 +407,93 @@ export async function chooseMic(): Promise<Mic | undefined> {
     if (hit) return hit;
   }
   const real = mics.filter((m) => !NOT_A_MIC.test(m.label));
-  // A headset first; otherwise any real mic. Never fall back to Windows'
-  // default blindly — here it had become an Oculus *virtual* mic, which
-  // hears nothing, so every "Hey Nova" went unheard.
-  return real.find((m) => HEADSET.test(m.label)) ?? real[0];
+  // A mic that sent pure silence this session (a closed laptop lid, a muted
+  // webcam) is skipped while there's another.
+  const live = real.filter((m) => !deafMics.has(m.label));
+  const pool = live.length ? live : real;
+  // A headset first. Never fall back to Windows' default blindly — here it
+  // had become an Oculus *virtual* mic, which hears nothing.
+  const headset = pool.find((m) => HEADSET.test(m.label));
+  if (headset) return headset;
+  // Several mics (a laptop's own and a webcam's): the one that hears,
+  // checked once — not whichever Windows lists first.
+  if (pool.length > 1) {
+    const set = pool.map((m) => m.label).sort().join("|");
+    if (heardBest?.set !== set) {
+      const probe = loudest(pool).then((best) => {
+        heardBest = { set, label: best?.label ?? pool[0].label };
+      });
+      heardBest = { set, label: "", probe };
+    }
+    const pending = heardBest?.probe;
+    if (pending) await pending;
+    return pool.find((m) => m.label === heardBest?.label) ?? pool[0];
+  }
+  return pool[0];
+}
+
+/** Below this, a whole listen was silence a working mic never gives (its
+ *  own hiss is louder): the mic itself isn't hearing. */
+const SILENT = 0.0012;
+/** Mics that sent pure silence for a whole listen this session. */
+const deafMics = new Set<string>();
+/** The mic picked by listening, for this set of mics (`probe` while it's
+ *  still being worked out). */
+let heardBest: { set: string; label: string; probe?: Promise<void> } | null = null;
+
+/** Work out which mic hears before the first listen — the level check takes
+ *  about a second, which the first hold-to-talk used to lose of your words. */
+export function pickMicAhead(): void {
+  void chooseMic().catch(() => undefined);
+}
+
+/** Each mic's level for half a second (nobody needs to talk: a mic that
+ *  hears gives the room's hiss, a dead one gives nothing). */
+async function loudest(mics: Mic[]): Promise<Mic | undefined> {
+  const levels: Array<[Mic, number]> = [];
+  for (const m of mics) {
+    let stream: MediaStream | null = null;
+    let ctx: AudioContext | null = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: m.deviceId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+      ctx = new AudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      // (resume() can hang in a hidden window: never wait on it for long.)
+      await Promise.race([ctx.resume(), new Promise((r) => setTimeout(r, 300))]);
+      await new Promise((r) => setTimeout(r, 300));
+      const buf = new Float32Array(analyser.fftSize);
+      let level = 0;
+      for (let k = 0; k < 4; k++) {
+        analyser.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (const v of buf) sum += v * v;
+        level = Math.max(level, Math.sqrt(sum / buf.length));
+        await new Promise((r) => setTimeout(r, 60));
+      }
+      levels.push([m, level]);
+    } catch {
+      // Busy or gone: not a candidate.
+    } finally {
+      stream?.getTracks().forEach((t) => t.stop());
+      void ctx?.close().catch(() => undefined);
+    }
+  }
+  levels.sort((a, b) => b[1] - a[1]);
+  log(`mic levels: ${levels.map(([m, l]) => `${m.label} ${l.toFixed(4)}`).join(", ") || "none readable"}`);
+  return levels[0] && levels[0][1] > SILENT ? levels[0][0] : undefined;
+}
+
+/** A listen heard only silence: a mic that sent nothing at all is skipped
+ *  from now on (while there's another), so the next listen hears you. */
+function noteSilence(label: string, level: number) {
+  if (level >= SILENT || deafMics.has(label)) return;
+  deafMics.add(label);
+  heardBest = null;
+  log(`mic "${label}" sent only silence (level ${level.toFixed(4)}) — using another mic from the next listen`);
 }
 
 /** Whether this webview can record at all. */
@@ -764,6 +847,8 @@ export function listen(opts: ListenOptions = {}): Listening {
     let roomFloor = 0.004;
     /** A freshly opened mic clicks and its gain settles — not speech. */
     const warmupUntil = mic.openedAt + 350;
+    /** The loudest moment heard (a mic that hears never gives pure silence). */
+    let loudestLevel = 0;
 
     proc.onaudioprocess = (e) => {
       if (ended) return;
@@ -780,6 +865,7 @@ export function listen(opts: ListenOptions = {}): Listening {
       const rms = Math.sqrt(sum / data.length);
       opts.onLevel?.(Math.min(1, Math.sqrt(rms) * 2.2));
       if (Date.now() < warmupUntil) return;
+      loudestLevel = Math.max(loudestLevel, rms);
       // Izuki talking out loud where its own voice can't be told apart from
       // yours: don't count anything as you cutting in (the wait still
       // doesn't run down meanwhile).
@@ -835,6 +921,7 @@ export function listen(opts: ListenOptions = {}): Listening {
           opts.onSpeech?.();
         } else if (noSpeechMs && elapsed - waitedWhileBusy > noSpeechMs) {
           endReason = "silence";
+          noteSilence(mic.label, loudestLevel);
           end(false);
         } else if (chunks.length > 40) {
           // Still waiting (it can be up to half an hour): only the last

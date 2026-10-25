@@ -397,6 +397,8 @@ pub fn run() {
             commands::notes_capture,
             commands::notes_lesson,
             commands::notes_flashcards,
+            commands::notes_focus,
+            commands::notes_organize,
             commands::island_status,
             commands::media_control,
             commands::music_meter,

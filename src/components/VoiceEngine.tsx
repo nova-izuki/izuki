@@ -27,7 +27,7 @@ import {
   prefetchCloud,
 } from "../lib/naturalVoice";
 import { voiceFor } from "../lib/personas";
-import { holdMicForVoice, micIsHeadset, preloadSpeechInput, releaseMicForVoice, setKeepMicWhileTalking } from "../lib/speechInput";
+import { holdMicForVoice, micIsHeadset, pickMicAhead, preloadSpeechInput, releaseMicForVoice, setKeepMicWhileTalking } from "../lib/speechInput";
 import { api, EV, emit, IS_TAURI, on } from "../lib/ipc";
 import { useIzuki } from "../lib/store";
 import type { CaptionPayload, DrawSession, OrbState, SayPayload, Settings, TranscriptPayload } from "../lib/types";
@@ -662,7 +662,18 @@ export function VoiceEngine() {
     void api.setBusy(busy).catch(() => undefined);
   };
 
+  /** This turn began by holding the talk key: no orb until the answer starts. */
+  const holdTalk = useRef(false);
   const orb = (state: OrbState) => {
+    // Hold-to-talk: let go and it "loads" right under the mouse; the orb (or
+    // character) only comes up once Izuki starts answering.
+    if (holdTalk.current && (state === "listening" || state === "thinking")) {
+      if (state === "thinking") void emit(EV.talkWave, "loading");
+      return;
+    }
+    holdTalk.current = false;
+    // Talking or done: hold-to-talk's waveform under the mouse goes.
+    if (state !== "listening") void emit(EV.talkWave, "off");
     if (!session.current.on || !session.current.orb) return;
     // The orb's window may have been put away by something else (a task
     // finishing, the draw layer closing) — bring it back first.
@@ -674,7 +685,7 @@ export function VoiceEngine() {
     }
   };
 
-  const startSession = (voice: boolean, state: OrbState) => {
+  const startSession = (voice: boolean, state: OrbState, orbNow = true) => {
     if (lingerTimer.current) {
       clearTimeout(lingerTimer.current);
       lingerTimer.current = null;
@@ -688,7 +699,17 @@ export function VoiceEngine() {
       void api.log(`session: start (${voice ? "voice" : "typed"})`);
     }
     setBusy(true);
-    orb(state);
+    // (Later calls in the same turn keep it: only the answer brings the orb.)
+    if (!orbNow) holdTalk.current = true;
+    if (orbNow) orb(state);
+    else {
+      // Hold-to-talk: the orb (or character) stays away while you talk — a
+      // tiny waveform rides under your mouse instead (HeyClicky's way); it
+      // comes up once you let go and Izuki thinks and answers.
+      void api.showCaptionOverlay().catch(() => undefined);
+      void emit(EV.orb, "hidden" satisfies OrbState);
+      void emit(EV.talkWave, "listening");
+    }
   };
 
   // `cancelListen` is set once the dictation hook exists (it's declared below).
@@ -703,6 +724,8 @@ export function VoiceEngine() {
     void api.log(`session: end (${why})`);
     session.current = { on: false, voice: false, orb: false };
     setSessionOn(false);
+    holdTalk.current = false;
+    void emit(EV.talkWave, "off");
     pendingPrefix.current = "";
     thinkingNow.current = false;
     cancelListen.current();
@@ -759,6 +782,10 @@ export function VoiceEngine() {
    */
   const afterReply = async (at: number, listeningThrough: boolean) => {
     if (requestSeq !== at || !session.current.on) return;
+    if (holdTalk.current) {
+      holdTalk.current = false;
+      void emit(EV.talkWave, "off");
+    }
     if (session.current.voice) {
       // Already listening since the request went off — that listen carries on.
       if (listeningThrough && listeningNow.current) return;
@@ -1541,7 +1568,11 @@ ${result}`);
     // Held down: talk while holding, let go to send. A quick tap keeps
     // listening until you pause.
     const off = on<void>(EV.pushToTalkRelease, () => {
-      if (listeningNow.current && Date.now() - pressedAt.current > 600) finishPushToTalk();
+      if (listeningNow.current && Date.now() - pressedAt.current > 600) {
+        // Let go: the waveform turns into "thinking" dots until the answer.
+        void emit(EV.talkWave, "loading");
+        finishPushToTalk();
+      }
     });
     return () => void off.then((f) => f());
   }, [finishPushToTalk]);
@@ -1585,7 +1616,7 @@ ${result}`);
       const wasTalking = isSpeaking();
       stopAllSpeech("you pressed the talk key");
       if (!wasTalking) chime();
-      startSession(true, "listening");
+      startSession(true, "listening", false);
       // The first listen gives up after a few seconds of nothing (you pressed
       // it by accident); follow-ups wait as long as the setting says.
       startPushToTalk({ noSpeechMs: 8000 });
@@ -1854,6 +1885,7 @@ ${result}`);
       // The offline voice only matters as a fallback here; loading its model
       // at start cost seconds of CPU on slower laptops. It loads on demand.
       void preloadSpeechInput().catch(() => undefined);
+      pickMicAhead();
       return;
     }
     // The saved short lines ("Mhm?", "Okay!") first — they're tiny, need no
@@ -1873,6 +1905,7 @@ ${result}`);
       void preloadSpeechInput()
         .catch(() => undefined)
         .finally(() => {
+          pickMicAhead();
           if (voiceEngine !== "system") {
             void prepareLines([...GREETINGS, ...GOODBYES], useIzuki.getState().settings.voice_name);
           }

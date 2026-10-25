@@ -663,6 +663,8 @@ export interface Note {
   cards: Array<[string, string]>;
   /** Teacher mode's running lesson note. */
   lesson: boolean;
+  context?: { subject: string; chapter: string; topic: string };
+  entries?: Array<{ kind: string; topic: string; text: string; source: string; at: number; source_digest?: string }>;
 }
 
 /** What's playing on the PC, as the Island shows it. */

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, Brain, Check, CheckSquare, Copy, Loader2, MessageSquare, MoreHorizontal, Search, Sparkles, Square, Trash2, Wand2, X } from "lucide-react";
+import { BookOpen, Brain, Check, CheckSquare, ChevronDown, ChevronRight, Copy, FolderTree, Loader2, MessageSquare, MoreHorizontal, Search, Sparkles, Square, Trash2, Wand2, X } from "lucide-react";
 import { api, on } from "../../lib/ipc";
 import type { Note } from "../../lib/types";
 import { sendChatCommand } from "../VoiceEngine";
@@ -16,6 +16,115 @@ const summarise = (notes: Note[]) =>
       ? `Summarise these notes in 3 short bullet points:\n\n${bodyOf(notes[0])}`
       : `Summarise these ${notes.length} notes together in a few short bullet points, then one line on what ties them together:\n\n${notes.map((n) => `--- ${n.title} ---\n${n.text.slice(0, 2500)}`).join("\n\n")}`
   );
+
+/** "Chapter 5" → 5 (so chapters sort 1, 2, … 10, not 1, 10, 2). */
+const chapterNumber = (c: string) => {
+  const m = /(\d+(?:\.\d+)?)/.exec(c);
+  return m ? parseFloat(m[1]) : Number.POSITIVE_INFINITY;
+};
+
+/** Notes by subject (the newest subject first), each in chapter order. */
+function bySubject(notes: Note[]): Array<{ subject: string; notes: Note[] }> {
+  const groups = new Map<string, Note[]>();
+  for (const n of notes) {
+    const subject = n.context?.subject?.trim() || "Other notes";
+    groups.set(subject, [...(groups.get(subject) ?? []), n]);
+  }
+  const newest = (list: Note[]) => Math.max(...list.map((n) => n.updated_at || n.created_at));
+  return [...groups.entries()]
+    .map(([subject, list]) => ({
+      subject,
+      notes: [...list].sort(
+        (a, b) =>
+          chapterNumber(a.context?.chapter ?? "") - chapterNumber(b.context?.chapter ?? "") ||
+          (a.context?.topic ?? "").localeCompare(b.context?.topic ?? "") ||
+          (b.updated_at || b.created_at) - (a.updated_at || a.created_at)
+      ),
+    }))
+    .sort((a, b) => (a.subject === "Other notes" ? 1 : b.subject === "Other notes" ? -1 : newest(b.notes) - newest(a.notes)));
+}
+
+/** **bold** inside a line, kept as text (never HTML). */
+function inline(text: string): React.ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    part.startsWith("**") && part.endsWith("**") && part.length > 4 ? (
+      <strong key={i} className="font-semibold text-izk-ink">
+        {part.slice(2, -2)}
+      </strong>
+    ) : (
+      <span key={i}>{part}</span>
+    )
+  );
+}
+
+/** A note laid out to study from: its sections as headings you can jump to,
+ *  bullets as a list, key terms in bold — not raw "## …" text. */
+function NoteBody({ text }: { text: string }) {
+  const lines = text.split(/\r?\n/);
+  const sections = lines.filter((l) => /^##\s+/.test(l)).map((l) => l.replace(/^##\s+/, "").trim());
+  const blocks: React.ReactNode[] = [];
+  let list: string[] = [];
+  const flush = () => {
+    if (!list.length) return;
+    const items = list;
+    list = [];
+    blocks.push(
+      <ul key={`ul${blocks.length}`} className="mb-2 ml-4 list-disc space-y-0.5">
+        {items.map((it, i) => (
+          <li key={i}>{inline(it)}</li>
+        ))}
+      </ul>
+    );
+  };
+  lines.forEach((raw, i) => {
+    const line = raw.trimEnd();
+    if (/^\s*[-*•]\s+/.test(line) || /^\s*\d+[.)]\s+/.test(line)) {
+      list.push(line.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, ""));
+      return;
+    }
+    flush();
+    if (/^##\s+/.test(line)) {
+      const title = line.replace(/^##\s+/, "").trim();
+      blocks.push(
+        <h4 key={i} id={`note-sec-${sections.indexOf(title)}`} className="mb-1 mt-3 scroll-mt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-izk-teal first:mt-0">
+          {title}
+        </h4>
+      );
+    } else if (/^###\s+/.test(line)) {
+      blocks.push(
+        <h5 key={i} className="mb-0.5 mt-2 text-[12.5px] font-semibold text-izk-ink">
+          {inline(line.replace(/^###\s+/, ""))}
+        </h5>
+      );
+    } else if (line.trim()) {
+      blocks.push(
+        <p key={i} className="mb-1.5">
+          {inline(line)}
+        </p>
+      );
+    }
+  });
+  flush();
+  return (
+    <>
+      {sections.length > 1 && (
+        <div className="mt-3 flex flex-wrap gap-1">
+          {sections.map((s, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => document.getElementById(`note-sec-${i}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              className="izk-pill px-2 py-0.5 text-[10.5px]"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="mt-2 rounded-[14px] bg-white/[0.04] p-3 text-[12.5px] leading-relaxed text-izk-ink/90">{blocks}</div>
+    </>
+  );
+}
 
 /**
  * Izuki Notes: study notes from anything on screen, kept on this PC — with
@@ -46,8 +155,11 @@ export function NotesTab() {
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? notes.filter((n) => `${n.title} ${n.text}`.toLowerCase().includes(q)) : notes;
+    return q ? notes.filter((n) => `${n.title} ${n.text} ${n.context?.subject ?? ""} ${n.context?.chapter ?? ""} ${n.context?.topic ?? ""}`.toLowerCase().includes(q)) : notes;
   }, [notes, query]);
+  const groups = useMemo(() => (query.trim() ? [{ subject: "", notes: shown }] : bySubject(shown)), [shown, query]);
+  /** Subjects folded away. */
+  const [folded, setFolded] = useState<Set<string>>(new Set());
   const note = notes.find((n) => n.id === open) ?? null;
   const chosen = picked ? notes.filter((n) => picked.has(n.id)) : [];
   const toggle = (id: string) =>
@@ -159,7 +271,27 @@ export function NotesTab() {
             <EmptyState icon={<BookOpen size={18} />} title="No notes yet" body="Open a page you're studying and tap “Take notes from my screen”." />
           ) : (
             <div className="flex flex-col gap-1.5">
-              {shown.map((n) => (
+              {groups.map((g) => (
+                <div key={g.subject || "results"} className="flex flex-col gap-1.5">
+                  {g.subject && (groups.length > 1 || g.subject !== "Other notes") && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFolded((f) => {
+                          const next = new Set(f);
+                          if (next.has(g.subject)) next.delete(g.subject);
+                          else next.add(g.subject);
+                          return next;
+                        })
+                      }
+                      className="mt-1 flex items-center gap-1.5 px-1 text-left text-[11px] font-bold uppercase tracking-[0.1em] text-izk-muted hover:text-izk-ink"
+                    >
+                      {folded.has(g.subject) ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                      <span className="truncate">{g.subject}</span>
+                      <span className="font-normal normal-case tracking-normal">· {g.notes.length}</span>
+                    </button>
+                  )}
+                  {!folded.has(g.subject) && g.notes.map((n) => (
                 <div key={n.id} className="relative">
                   <button
                     type="button"
@@ -173,7 +305,14 @@ export function NotesTab() {
                     )}
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] font-semibold text-izk-ink">{n.title}</span>
-                      <span className="block truncate text-[11.5px] text-izk-muted">{n.text.replace(/\s+/g, " ").slice(0, 90)}</span>
+                      {(n.context?.chapter || n.context?.topic || (n.entries?.length ?? 0) > 1) && (
+                        <span className="mt-0.5 flex flex-wrap items-center gap-1">
+                          {n.context?.chapter && <span className="rounded-full bg-izk-teal/15 px-1.5 py-[1px] text-[10px] font-semibold text-izk-teal">{n.context.chapter}</span>}
+                          {n.context?.topic && <span className="max-w-[160px] truncate rounded-full bg-white/8 px-1.5 py-[1px] text-[10px] text-izk-muted">{n.context.topic}</span>}
+                          {(n.entries?.length ?? 0) > 1 && <span className="text-[10px] text-izk-muted">{n.entries!.length} additions</span>}
+                        </span>
+                      )}
+                      <span className="block truncate text-[11.5px] text-izk-muted">{n.text.replace(/^#+\s+.*$/gm, "").replace(/\s+/g, " ").trim().slice(0, 90)}</span>
                     </span>
                     <span className="shrink-0 text-[10.5px] text-izk-muted">{new Date(n.updated_at || n.created_at).toLocaleDateString([], { month: "short", day: "numeric" })}</span>
                   </button>
@@ -193,7 +332,7 @@ export function NotesTab() {
                       items={[
                         { icon: <BookOpen size={13} />, label: "Open", run: () => setOpen(n.id) },
                         { icon: <Sparkles size={13} />, label: "Summarise", run: () => summarise([n]) },
-                        { icon: <Brain size={13} />, label: "Quiz me", run: () => void sendChatCommand(`Quiz me on these notes — one question at a time, and tell me if I'm right:\n\n${bodyOf(n)}`) },
+                        { icon: <Brain size={13} />, label: "Quiz me", run: () => void api.notesFocus(n.id, true).catch(() => undefined).finally(() => void sendChatCommand(`Quiz me on these notes — one question at a time, and tell me if I'm right:\n\n${bodyOf(n)}`)) },
                         { icon: <Sparkles size={13} />, label: "Explain in 60 seconds", run: () => void sendChatCommand(`Explain these notes in about 60 seconds of reading: simple words, the 3 ideas that matter most, and one real-life example. Say which parts come from the notes and which are your own examples.\n\n${bodyOf(n)}`) },
                         { icon: <BookOpen size={13} />, label: "Teach me like a beginner", run: () => void sendChatCommand(`Teach me these notes like I'm a complete beginner, step by step (about 5 minutes): an everyday analogy for each idea, then a quick question to check I understood before moving on. Keep to what the notes say; label anything you add.\n\n${bodyOf(n)}`) },
                         { icon: <Copy size={13} />, label: "Copy text", run: () => copy([n]) },
@@ -202,6 +341,8 @@ export function NotesTab() {
                       ]}
                     />
                   )}
+                </div>
+                  ))}
                 </div>
               ))}
             </div>
@@ -233,6 +374,23 @@ function NoteView({ note, onBack, onChanged }: { note: Note; onBack: () => void;
   };
   const [question, setQuestion] = useState("");
   const body = note.text.slice(0, 4000);
+  /** Changing where this note is filed (subject / chapter / topic). */
+  const [filing, setFiling] = useState<{ subject: string; chapter: string; topic: string } | null>(null);
+  const saveFiling = async () => {
+    if (!filing) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.notesOrganize(note.id, filing.subject, filing.chapter, filing.topic);
+      setFiling(null);
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const filedUnder = [note.context?.subject, note.context?.chapter, note.context?.topic].filter((x) => x && x.trim());
 
   const makeCards = async () => {
     setBusy(true);
@@ -254,10 +412,42 @@ function NoteView({ note, onBack, onChanged }: { note: Note; onBack: () => void;
       <button type="button" onClick={onBack} className="mb-2 text-[11.5px] text-izk-teal hover:underline">
         ← All notes
       </button>
+      <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11.5px] text-izk-muted">
+        <FolderTree size={13} />
+        {filedUnder.length ? <span className="text-izk-ink">{filedUnder.join(" › ")}</span> : <span>Not filed under a subject yet</span>}
+        {(note.entries?.length ?? 0) > 1 && <span>· {note.entries!.length} additions</span>}
+        <button
+          type="button"
+          onClick={() => setFiling(filing ? null : { subject: note.context?.subject ?? "", chapter: note.context?.chapter ?? "", topic: note.context?.topic ?? "" })}
+          className="ml-auto text-izk-teal hover:underline"
+        >
+          {filing ? "Cancel" : "Change"}
+        </button>
+      </div>
+      {filing && (
+        <form
+          className="izk-inset mb-2 grid grid-cols-1 gap-1.5 rounded-[14px] p-2 sm:grid-cols-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void saveFiling();
+          }}
+        >
+          <input value={filing.subject} onChange={(e) => setFiling({ ...filing, subject: e.target.value })} placeholder="Subject (Biology 101)" className="izk-field py-1 text-[12px]" />
+          <input value={filing.chapter} onChange={(e) => setFiling({ ...filing, chapter: e.target.value })} placeholder="Chapter (Chapter 5)" className="izk-field py-1 text-[12px]" />
+          <input value={filing.topic} onChange={(e) => setFiling({ ...filing, topic: e.target.value })} placeholder="Topic (Cells)" className="izk-field py-1 text-[12px]" />
+          <button type="submit" disabled={busy} className="izk-btn-primary py-1 text-[12px] disabled:opacity-60 sm:col-span-3">
+            Save — later notes on this go here too
+          </button>
+        </form>
+      )}
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Tool icon={<Sparkles size={15} />} label={note.cards.length ? "New cards" : "Flashcards"} busy={busy} onClick={() => void makeCards()} />
-        <Tool icon={<Brain size={15} />} label="Quiz me" onClick={() => void sendChatCommand(`Quiz me on these notes — one question at a time, and tell me if I'm right:\n\n${body}`)} />
+        <Tool
+          icon={<Brain size={15} />}
+          label="Quiz me"
+          onClick={() => void api.notesFocus(note.id, true).catch(() => undefined).finally(() => void sendChatCommand(`Quiz me on these notes — one question at a time, and tell me if I'm right:\n\n${body}`))}
+        />
         <Tool icon={<BookOpen size={15} />} label="Summarise" onClick={() => void sendChatCommand(`Summarise these notes in 3 short bullet points:\n\n${body}`)} />
         <Tool
           icon={<Trash2 size={15} />}
@@ -324,7 +514,7 @@ function NoteView({ note, onBack, onChanged }: { note: Note; onBack: () => void;
         <input value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Ask about these notes…" className="min-w-0 flex-1 bg-transparent text-[12.5px] outline-none" />
       </form>
 
-      <div className="mt-3 whitespace-pre-wrap rounded-[14px] bg-white/[0.04] p-3 text-[12.5px] leading-relaxed text-izk-ink">{note.text}</div>
+      <NoteBody text={note.text} />
     </Section>
   );
 }
