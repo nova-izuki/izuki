@@ -454,7 +454,7 @@ pub(crate) fn direct_answer_requested(prompt: &str) -> bool {
         || matches!(s.trim().trim_end_matches(['?', '!', '.']), "answer" | "answer it" | "answer this" | "ans")
 }
 
-const DIRECT_ANSWER_PROMPT: &str = "The user explicitly asked for the answer. Answer the visible factual question directly: answer first, with the option label only when clearly visible, then a short explanation. Do not refuse to name a factual answer or turn this into a walkthrough. Do not guess unreadable choices. This is an explanation-only request: do not select, click, type or submit answers. Do not offer to save Notes.\n";
+const DIRECT_ANSWER_PROMPT: &str = "The user explicitly asked for the answer. Answer the visible factual question directly: answer first, with the option label only when clearly visible, then a short explanation. Do not refuse to name a factual answer or turn this into a walkthrough. Do not guess unreadable choices. If you are not certain of the fact, say which part you are unsure about instead of stating it confidently — being wrong costs them marks, and saying it is probably B but they should check whether X applies is far more use than a confident wrong letter. This is an explanation-only request: do not select, click, type or submit answers. Do not offer to save Notes.\n";
 
 /// On a quiz or test page: what Izuki says never names the right choice and
 /// its pen never marks one — the same rule Quiz coach follows (coach.rs),

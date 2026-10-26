@@ -151,6 +151,17 @@ pub struct Settings {
     #[serde(default = "default_hotkey_quickdraw")]
     pub hotkey_quickdraw: String,
 
+    /// Hold this anywhere and talk: what you say is typed into whatever box
+    /// you're already in — an email, a chat, a form, a code comment. Let go
+    /// and it goes in, tidied. Nothing is sent or submitted.
+    #[serde(default = "default_hotkey_dictate")]
+    pub hotkey_dictate: String,
+    /// Tidy dictation before it's typed: fillers ("um", "you know"), false
+    /// starts and repeated words taken out, grammar and punctuation fixed.
+    /// Off: exactly the words heard.
+    #[serde(default = "default_true")]
+    pub dictate_tidy: bool,
+
     pub freeze_screen: bool,
     pub magnetic_hand: bool,
     #[serde(default)]
@@ -795,6 +806,11 @@ fn default_hotkey_voice() -> String {
     "Ctrl+Super+Space".into()
 }
 
+fn default_hotkey_dictate() -> String {
+    // Nothing else on Windows uses this, and it's reachable one-handed.
+    "Ctrl+Shift+Space".into()
+}
+
 fn default_hotkey_quickdraw() -> String {
     "Ctrl+D".into()
 }
@@ -1036,6 +1052,8 @@ impl Default for Settings {
             hotkey_voice: default_hotkey_voice(),
             wake_sensitivity: default_wake_sensitivity(),
             hotkey_quickdraw: default_hotkey_quickdraw(),
+            hotkey_dictate: default_hotkey_dictate(),
+            dictate_tidy: true,
             freeze_screen: true,
             magnetic_hand: true,
             control_style: "mouse".into(),

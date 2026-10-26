@@ -139,7 +139,9 @@ export function TalkToIzuki() {
         </Row>
 
         {settings.voice_wake_enabled && <WakeWords />}
-        {settings.voice_wake_enabled && <WakeSpeakers />}
+        {/* Shown whatever mode you're in: hiding it behind hands-free meant
+            nobody knew Izuki could learn their voice at all. */}
+        <WakeSpeakers handsFree={settings.voice_wake_enabled} />
         {settings.voice_wake_enabled && (
           <Row
             label="Wake-up strictness"

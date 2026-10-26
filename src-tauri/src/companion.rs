@@ -113,6 +113,16 @@ const DO: &[&str] = &[
     "reload ", "log in", "log out", "sign in", "sign out", "submit", "turn on ", "turn off ",
     "bookmark", "print ", "watch ", "listen to ", "put on ", "buy ", "order ", "fill in",
     "fill out", "skip the ad", "keep going", "carry on", "do the rest", "on youtube",
+    // How people actually ask for something to be done. Without these, a
+    // reply that only talks about the job counted as a fine answer, so
+    // "fix this" got an explanation of the problem instead of a fix.
+    "fix ", "fix it", "fix this", "sort out", "sort it", "sort this", "set up", "set it up",
+    "change ", "update ", "save ", "rename ", "create ", "make a", "make the", "make it",
+    "add ", "edit ", "select ", "choose ", "enable ", "disable ", "connect ", "disconnect ",
+    "start ", "stop ", "finish ", "complete ", "continue ", "try again", "retry",
+    "clear ", "clean ", "empty ", "move ", "copy ", "paste ", "cut ", "drag ",
+    "do this", "do that", "do it", "handle it", "take care of", "sign up", "check out",
+    "apply ", "accept ", "confirm ", "cancel ", "close it", "minimise", "minimize", "maximise", "maximize",
 ];
 /// Words that ask about what's on the screen.
 const LOOK: &[&str] = &[
@@ -736,6 +746,29 @@ pub fn asks_to_learn(said: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn asking_for_something_to_be_done_is_recognised() {
+        // The words people actually use. Each of these used to count as a
+        // question, so a reply that only talked about the job was accepted
+        // and nothing happened.
+        for said in [
+            "fix this", "fix the beat", "sort this out", "set up my email",
+            "change the volume", "save it", "create a new folder", "add a row",
+            "select all of them", "enable dark mode", "connect my gmail",
+            "start the download", "try again", "do it", "do this for me",
+            "handle it", "move that file", "sign up for me", "confirm it",
+        ] {
+            assert!(asks_to_do(said), "not treated as a job: {said}");
+        }
+        // Questions stay questions.
+        for said in [
+            "what is on my screen", "who wrote this", "how does this work",
+            "what's the weather", "explain this page", "why is it broken",
+        ] {
+            assert!(!asks_to_do(said), "treated as a job: {said}");
+        }
+    }
+
     use super::*;
 
     #[test]

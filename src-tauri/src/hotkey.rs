@@ -14,6 +14,8 @@ use crate::settings::Settings;
 
 /// Push-to-talk is being held down right now.
 static VOICE_DOWN: AtomicBool = AtomicBool::new(false);
+/// Hold-to-dictate is down (the key auto-repeats; only the first counts).
+static DICTATE_DOWN: AtomicBool = AtomicBool::new(false);
 
 /// The talk key, caught by the keyboard hook itself when Windows wouldn't
 /// register it — another program owns it (Windows uses Ctrl+Win+Space to
@@ -400,6 +402,7 @@ pub fn rebind(app: &AppHandle, settings: &Settings) {
         (settings.hotkey_panic.clone(), Action::Panic),
         (settings.hotkey_voice.clone(), Action::Voice),
         (settings.hotkey_quickdraw.clone(), Action::Quickdraw),
+        (settings.hotkey_dictate.clone(), Action::Dictate),
     ] {
         match parse(&combo) {
             Some(sc) => {
@@ -436,6 +439,20 @@ pub fn rebind(app: &AppHandle, settings: &Settings) {
                             eprintln!("[hotkey] talk key released");
                             VOICE_DOWN.store(false, Ordering::SeqCst);
                             let _ = handle.emit(events::PUSH_TO_TALK_RELEASE, ());
+                        }
+                        // Hold to dictate: the same press/release shape as
+                        // the talk key, but what you say is typed where you
+                        // already are instead of asked as a question.
+                        (Action::Dictate, ShortcutState::Pressed) => {
+                            if !DICTATE_DOWN.swap(true, Ordering::SeqCst) {
+                                eprintln!("[hotkey] dictate key pressed");
+                                let _ = handle.emit(events::DICTATE, ());
+                            }
+                        }
+                        (Action::Dictate, ShortcutState::Released) => {
+                            eprintln!("[hotkey] dictate key released");
+                            DICTATE_DOWN.store(false, Ordering::SeqCst);
+                            let _ = handle.emit(events::DICTATE_RELEASE, ());
                         }
                         (_, ShortcutState::Pressed) => action.run(&handle),
                         _ => {}
@@ -481,11 +498,16 @@ enum Action {
     /// Handled directly in `rebind`'s match on both press and release —
     /// never reaches `Action::run`.
     Quickdraw,
+    /// Same: both edges matter, so it never reaches `Action::run`.
+    Dictate,
 }
 
 impl Action {
     fn run(self, app: &AppHandle) {
         match self {
+            // Both of these are handled on press AND release in `rebind`, so
+            // they never reach here.
+            Action::Quickdraw | Action::Dictate => {}
             Action::Draw => crate::open_draw_overlay(app),
             Action::Replay => {
                 let store = crate::state::store();

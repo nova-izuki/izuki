@@ -12,6 +12,9 @@ pub const CURSOR: &str = "izuki://cursor";
 pub const PUSH_TO_TALK: &str = "izuki://push-to-talk";
 /// The push-to-talk key came back up — ends a held-down recording.
 pub const PUSH_TO_TALK_RELEASE: &str = "izuki://push-to-talk-release";
+/// Hold-to-dictate: talk and it's typed into whatever box you're already in.
+pub const DICTATE: &str = "izuki://dictate";
+pub const DICTATE_RELEASE: &str = "izuki://dictate-release";
 /// Fired when the quickdraw hotkey is released — tells the overlay to
 /// submit whatever's been sketched (or just quietly close if nothing was).
 pub const QUICKDRAW_COMMIT: &str = "izuki://quickdraw-commit";

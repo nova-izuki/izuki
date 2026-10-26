@@ -687,6 +687,9 @@ export function VoiceEngine() {
 
   /** This turn began by holding the talk key: no orb until the answer starts. */
   const holdTalk = useRef(false);
+  /** Holding the dictate key: the words get typed where you are, not asked.
+   *  (Separate from `dictating`, the spoken "type what I say" mode.) */
+  const holdDictate = useRef(false);
   /** "Hold a key" mode (hands-free off): the mic is open only while the key
    *  is — no follow-up listening after the answer, no talking over it. */
   const keyOnly = useRef(false);
@@ -1514,6 +1517,29 @@ ${result}`);
     return () => offs.forEach((o) => void o.then((f) => f()));
   }, []);
 
+  /**
+   * Put dictated words into whatever box the user is in.
+   *
+   * Tidied first when the setting is on — except short fragments, addresses,
+   * emails, paths and code, where "fixing" the words would wreck them. If no
+   * brain answers within four seconds the words go in exactly as heard:
+   * waiting longer for better punctuation is worse than typing it now.
+   */
+  const typeDictated = async (heard: string) => {
+    const said = heard.trim();
+    if (!said) return;
+    let text = spokenToTyped(said, "");
+    const delicate = /[@/\\{}<>]|\.(com|org|net|edu|io)\b|https?:/i.test(text);
+    if (useIzuki.getState().settings.dictate_tidy !== false && text.split(/\s+/).length >= 3 && !delicate) {
+      text = await Promise.race([
+        api.polishText(text).catch(() => text),
+        new Promise<string>((ok) => setTimeout(() => ok(text), 4000)),
+      ]);
+    }
+    const ok = await api.typeHere(text).catch(() => false);
+    if (!ok) showCaption("I couldn't type there — click into the box and hold the key again.", false);
+  };
+
   // ---- listening ----------------------------------------------------------
   const {
     start: startPushToTalk,
@@ -1525,6 +1551,14 @@ ${result}`);
   } = useDictation(
     (heard) => {
       listenErrors.current = 0;
+      // Dictation: type it where they already are. Never a question, never
+      // sent, and never through handleRequest.
+      if (holdDictate.current) {
+        holdDictate.current = false;
+        void emit(EV.talkWave, "off");
+        void typeDictated(heard);
+        return;
+      }
       // Answering Izuki's own question ("which account?") out loud — it goes
       // to the task that's waiting, not in as a new request.
       if (helpPending && !isEcho(heard)) {
@@ -1724,6 +1758,37 @@ ${result}`);
   useEffect(() => {
     if (pttError) showCaption(pttError, false);
   }, [pttError]);
+
+  // ---- hold to dictate ------------------------------------------------------
+  //
+  // Hold the dictate key anywhere and talk: what you say is typed into
+  // whatever box you were already in — an email, a chat, a comment — tidied
+  // on the way (fillers and false starts out, punctuation in). Nothing is
+  // sent and nothing is submitted; it only types.
+  //
+  // It shares the one microphone with everything else (two open mics flip a
+  // Bluetooth headset into call quality), and `dictating` tells the shared
+  // callback to type the words instead of asking Izuki about them.
+  useEffect(() => {
+    const offStart = on<void>(EV.dictate, () => {
+      if (holdDictate.current || listeningNow.current) return;
+      holdDictate.current = true;
+      // The same little waveform the talk key shows, under the mouse — and
+      // no orb, because this isn't a conversation.
+      void emit(EV.talkWave, "listening");
+      startPushToTalk({ noSpeechMs: 8000 });
+    });
+    const offEnd = on<void>(EV.dictateRelease, () => {
+      if (!holdDictate.current) return;
+      void emit(EV.talkWave, "loading");
+      finishPushToTalk();
+    });
+    return () => {
+      void offStart.then((f) => f());
+      void offEnd.then((f) => f());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startPushToTalk, finishPushToTalk]);
 
   // ---- the talk hotkey -----------------------------------------------------
   const physicalTalk = useRef(false);

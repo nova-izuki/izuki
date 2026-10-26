@@ -21,6 +21,8 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
 
   const brain = brainReady(settings);
   const brainName = settings.providers.find((p) => p.id === settings.active_provider)?.label ?? "";
+  /** Brains with a key of their own — a second one is the cure for waiting. */
+  const brainsWithKeys = settings.providers.filter((p) => p.api_key.trim()).length;
   const apps = !!settings.composio_api_key.trim();
   const flows = (settings.n8n_hooks ?? []).filter((h) => h.name && h.url).length;
   const patch = useIzuki((s) => s.patchSettings);
@@ -60,7 +62,7 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
   })();
   const tv = !!settings.tv_host || settings.linked_devices.some((d) => d.kind === "tv");
   const linked = settings.linked_devices.length > 0;
-  const steps = [brain, true, apps, handsFree, knowsVoices, codes, tv, linked, ext, settings.buddy_speaks, flows > 0];
+  const steps = [brain, brainsWithKeys > 1, true, apps, handsFree, knowsVoices, codes, tv, linked, ext, settings.buddy_speaks, flows > 0];
   const doneCount = steps.filter(Boolean).length;
 
   // Pasted instead: the same recognising as the clipboard, via the backend.
@@ -140,6 +142,20 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
               </button>
             )}
           </Step>
+
+          {brain && (
+            <Step
+              icon={<Brain size={16} />}
+              title="A spare brain"
+              done={brainsWithKeys > 1}
+              doneText={`${brainsWithKeys} brains — when one is busy the next one answers`}
+              text="Free AI has a limit per minute, and one key on its own is the whole reason Izuki ever makes you wait. A second free key (Groq is the quickest) means when one is busy the other answers. It still costs nothing."
+            >
+              <button type="button" onClick={() => getKey("groq")} className="izk-pill inline-flex h-[30px] items-center gap-1.5 px-3 text-[11.5px]">
+                <ExternalLink size={13} /> {brainsWithKeys > 1 ? "Add another" : "Get a free spare"}
+              </button>
+            </Step>
+          )}
 
           <Step
             icon={<AudioLines size={16} />}

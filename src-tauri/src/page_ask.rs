@@ -77,7 +77,27 @@ fn screen_picture() -> Option<String> {
     crate::capture::capture_all().ok()?.downscaled(1600).to_jpeg_data_url(70).ok()
 }
 
-const SYSTEM: &str = "You are Izuki, answering a question about what the user has open: a web page, or their screen (a screenshot is attached). Answer from it (and any linked pages or files given) when you can; if the answer isn't there, say so in a few words and answer from what you know. Lead with the answer, keep it short (a few sentences or a few bullet points with -), plain friendly words, no headings. When they ask what to do, give short numbered steps that name the exact buttons, menus and boxes on their screen — they can press \"Do it for me\" and you'll do those steps. Never ask for or repeat passwords or card numbers.";
+const SYSTEM: &str = "You are Izuki, answering a question about what the user has open: a web page, or their screen (a screenshot is attached). Answer from it (and any linked pages or files given) when you can; if the answer isn't there, say so in a few words and answer from what you know. Lead with the answer, keep it short (a few sentences or a few bullet points with -), plain friendly words, no headings. When they ask what to do, give short numbered steps that name the exact buttons, menus and boxes on their screen — they can press \"Do it for me\" and you'll do those steps. If the answer is not in what they have open and you are not certain, use the search and read tools to check before answering rather than guessing — say where it came from. Never ask for or repeat passwords or card numbers.";
+
+/// A question whose answer may simply not be on the screen — a definition, a
+/// fact, "which of these is right". The page is still read first; the web is
+/// only there so Izuki can check rather than guess, which is the difference
+/// between being right and sounding confident.
+fn worth_looking_up(question: &str) -> bool {
+    let q = question.to_lowercase();
+    let factual = [
+        "what is", "what are", "what does", "which of", "which one", "who is", "who was",
+        "define", "meaning of", "stands for", "difference between", "why does", "why is",
+        "how does", "correct answer", "the answer", "is it true", "explain",
+    ]
+    .iter()
+    .any(|w| q.contains(w));
+    // Plainly about the page in front, not the wider world.
+    let about_here = ["this page", "on my screen", "this screen", "this window", "what i'm looking at", "summarise this", "summarize this"]
+        .iter()
+        .any(|w| q.contains(w));
+    factual && !about_here
+}
 
 fn backend_web_request(question: &str) -> bool {
     let q = question.to_lowercase();
@@ -166,10 +186,11 @@ pub fn ask(app: &AppHandle, id: u64, question: &str, history: &[Turn], files: &[
         }
     }
     let on_piece = |t: &str| send(Piece { id, text: t.to_string(), done: false, error: None, page: None });
-    // Only an explicit web request gets the search/read tools. A question about
-    // the page or screen already has its words and picture, and the tool loop
-    // only made it slower (and tempted the model to go looking elsewhere).
-    let result = if backend_web_request(question) {
+    // A factual question the page itself may not answer gets the search and
+    // read tools as a backup — the prompt tells the model to use them only
+    // when what's on screen doesn't answer it, so an ordinary "what's this
+    // page about" still goes straight through with no tool round trip.
+    let result = if backend_web_request(question) || worth_looking_up(question) {
         crate::chat::complete_with_web(&msgs, id, deep, &on_piece)
     } else if deep {
         crate::chat::complete_streaming_deep(&msgs, id, &on_piece)

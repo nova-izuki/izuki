@@ -5,7 +5,7 @@ import { readSpeakers, saveSpeakers, prepareSpeakers, speakerEmbedding, setSpeak
 import { similarity, type SpeakerPreferences } from "../lib/speakerMath";
 import { Row, Toggle } from "./ui";
 
-export function WakeSpeakers() {
+export function WakeSpeakers({ handsFree = true }: { handsFree?: boolean }) {
   const [preferences, setPreferences] = useState<SpeakerPreferences>({ enabled: false, profiles: [] });
   const [name, setName] = useState("");
   const [takes, setTakes] = useState<number[][]>([]);
@@ -69,6 +69,11 @@ export function WakeSpeakers() {
       <Toggle checked={preferences.enabled} onChange={(enabled) => save({ ...preferences, enabled })} />
     </Row>
     {preferences.enabled && !preferences.profiles.length && <p className="mt-1 text-[11px] text-amber-200">Enroll someone below to enable voice wake-ups.</p>}
+    {!handsFree && (
+      <p className="mt-1 text-[11px] text-izk-muted">
+        This is for “Hey Nova”. You're set to hold a key, so it isn't doing anything yet — switch “How do you start talking?” above to “Say &ldquo;Hey Nova&rdquo;” and only the voices you enroll here will wake it.
+      </p>
+    )}
     <div className="mt-2 flex flex-col gap-1">
       {preferences.profiles.map((p) => <div key={p.id} className="flex items-center gap-2 text-[12px]">
         <Mic size={13} /><span className="flex-1">{p.name}</span>

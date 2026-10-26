@@ -977,6 +977,11 @@
   setInterval(refreshIsland, 30000);
   setTimeout(refreshIsland, 0);
 
+  // Watch for actually driving, so Drive mode can offer itself instead of
+  // being something you'd have to find while pulling away. Started late so
+  // it never competes with first paint, and it asks before taking over.
+  setTimeout(() => window.IzukiDrive?.watchForDriving?.(), 4000);
+
   /** First run: one free key in two taps, right on the home screen. */
   function setupCard() {
     const box = el("div", "setup");

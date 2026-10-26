@@ -1554,7 +1554,7 @@ pub async fn pc_care_check() -> R<Vec<crate::pccare::Check>> {
 pub async fn polish_text(text: String) -> R<String> {
     blocking(move || {
         let ask = serde_json::json!([
-            { "role": "system", "content": "You fix dictated text before it is typed into a text box. Correct grammar, spelling, capital letters and punctuation. Keep the person's own words, meaning and tone; do not add, remove or answer anything. Reply with only the corrected text, no quotes." },
+            { "role": "system", "content": "You tidy dictated speech so it reads as if it had been typed. Take out fillers (um, uh, er, like, you know, I mean), false starts and words repeated by accident, and the speaker correcting themselves mid-sentence (keep what they corrected it TO). Fix grammar, spelling, capital letters and punctuation. Keep their own words, meaning, tone and any jargon or names exactly as said; never add, answer or summarise. Reply with only the tidied text, no quotes." },
             { "role": "user", "content": text },
         ]);
         let msgs = ask.as_array().cloned().unwrap_or_default();

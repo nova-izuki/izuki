@@ -188,6 +188,8 @@ export const MOCK_SETTINGS: Settings = {
   hotkey_panic: "Ctrl+Shift+Q",
   hotkey_voice: "Ctrl+Super+Space",
   hotkey_quickdraw: "Ctrl+D",
+  hotkey_dictate: "Ctrl+Shift+Space",
+  dictate_tidy: true,
   freeze_screen: true,
   magnetic_hand: true,
   control_style: "mouse",
@@ -1204,6 +1206,8 @@ export const EV = {
   cursor: "izuki://cursor",
   pushToTalk: "izuki://push-to-talk",
   pushToTalkRelease: "izuki://push-to-talk-release",
+  dictate: "izuki://dictate",
+  dictateRelease: "izuki://dictate-release",
   /** Fired when the quickdraw hotkey is released — the overlay submits
    * whatever's been sketched, or just quietly closes if nothing was. */
   quickdrawCommit: "izuki://quickdraw-commit",

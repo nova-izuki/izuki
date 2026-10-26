@@ -92,3 +92,21 @@
 .notes-item small { opacity: 0.6; font-size: 12px; }
 .notes-body { white-space: pre-wrap; word-break: break-word; font: inherit; font-size: 14px;
   line-height: 1.55; margin: 0; padding: 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); }
+
+/* "Driving?" — offered once, big enough to answer without looking hard. */
+.drive-offer {
+  position: fixed; left: 12px; right: 12px; bottom: 18px; z-index: 60;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 14px 16px; border-radius: 18px;
+  background: rgba(10, 12, 20, 0.96); color: #fff;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  animation: drive-offer-in 0.25s ease;
+}
+.drive-offer b { font-size: 17px; }
+.drive-offer span { flex: 1 1 100%; opacity: 0.75; font-size: 13px; }
+.drive-offer button {
+  flex: 1 1 140px; min-height: 52px; border: 0; border-radius: 14px;
+  background: #22d3ee; color: #04121a; font: 700 16px/1 system-ui, sans-serif; cursor: pointer;
+}
+.drive-offer button.ghost { background: rgba(255, 255, 255, 0.12); color: #fff; }
+@keyframes drive-offer-in { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }

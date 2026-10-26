@@ -294,12 +294,84 @@
     if (!fromEnd) { /* the call carries on — only drive mode ends */ }
   }
 
+  // ---------------------------------------------------------------- driving?
+  //
+  // Getting the phone out and finding Drive mode is exactly what nobody does
+  // while pulling out of a parking space. So the phone watches its own speed
+  // in the background and offers once, when it's sure: a sustained speed no
+  // walk or bike reaches.
+  //
+  // Deliberately cautious. It asks rather than grabs the screen, it asks at
+  // most once a trip, and "No" is remembered for the rest of the day — being
+  // wrong about this is worse than being late to offer.
+  const DRIVING_SPEED = 11;      // m/s, about 25 mph / 40 kph
+  const DRIVING_FOR = 25_000;    // held that fast this long
+  let fastSince = 0;
+  let askedAt = 0;
+  let sentry = null;
+
+  const declinedToday = () => {
+    const no = store.get("noAuto", 0);
+    return no && new Date(no).toDateString() === new Date().toDateString();
+  };
+
+  function offerDrive() {
+    // Never over a call, never twice, never when it's already on.
+    if (active || askedAt || declinedToday() || core()?.busy?.()) return;
+    askedAt = Date.now();
+    const bar = document.createElement("div");
+    bar.className = "drive-offer";
+    bar.innerHTML = '<b>Driving?</b><span>I can take over hands-free.</span>';
+    const yes = document.createElement("button");
+    yes.type = "button";
+    yes.textContent = "Start Drive mode";
+    yes.onclick = () => { bar.remove(); start(); };
+    const no = document.createElement("button");
+    no.type = "button";
+    no.className = "ghost";
+    no.textContent = "Not driving";
+    no.onclick = () => { bar.remove(); store.set("noAuto", Date.now()); };
+    bar.append(yes, no);
+    document.body.appendChild(bar);
+    // Unanswered: it goes quietly rather than sitting on the screen.
+    setTimeout(() => bar.isConnected && bar.remove(), 30_000);
+  }
+
+  function watchForDriving() {
+    if (sentry !== null || !navigator.geolocation || store.get("autoOff", false)) return;
+    try {
+      sentry = navigator.geolocation.watchPosition(
+        (pos) => {
+          const v = pos?.coords?.speed;
+          if (typeof v !== "number" || Number.isNaN(v)) return;
+          if (v >= DRIVING_SPEED) {
+            if (!fastSince) fastSince = Date.now();
+            if (Date.now() - fastSince >= DRIVING_FOR) offerDrive();
+          } else if (v < DRIVING_SPEED * 0.5) {
+            // Properly stopped: ready to offer again on the next trip.
+            fastSince = 0;
+            if (askedAt && Date.now() - askedAt > 10 * 60_000) askedAt = 0;
+          }
+        },
+        () => undefined,
+        { enableHighAccuracy: false, maximumAge: 10_000, timeout: 30_000 }
+      );
+    } catch {
+      sentry = null;
+    }
+  }
+
   window.IzukiDrive = {
     gate,
     system,
     start,
     stop: () => stop(false),
     get active() { return active; },
+    /** Start watching for driving (called once the app is up). */
+    watchForDriving,
+    /** Turn the "Driving?" offer off or on. */
+    autoOffer(on) { store.set("autoOff", !on); if (on) watchForDriving(); },
+    get autoOfferOn() { return !store.get("autoOff", false); },
     get fun() { return fun; },
     /** Warn above this speed in the local unit (0 = never). */
     warnAbove(v) { store.set("warnAbove", Math.max(0, Number(v) || 0)); },

@@ -257,6 +257,10 @@ export interface Settings {
   hotkey_voice: string;
   /** Hold it, drag one mark anywhere on screen, let go — no toolbar, no window. */
   hotkey_quickdraw: string;
+  /** Hold to dictate into whatever box you're already in. */
+  hotkey_dictate: string;
+  /** Tidy dictation (fillers, false starts, grammar) before typing it. */
+  dictate_tidy: boolean;
 
   /** Paint the captured frame behind the overlay so the screen looks frozen. */
   freeze_screen: boolean;
