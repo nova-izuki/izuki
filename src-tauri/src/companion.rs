@@ -600,7 +600,7 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         Ok(r) => crate::reminders::take_tags(&r),
         Err(e) => {
             HISTORY.lock().pop();
-            return Reply::text(format!("My AI brain didn't answer ({e}). Try again in a moment?")).with_outcome(crate::model::TaskOutcome::Failed);
+            return Reply::text(crate::brain::plain_error(&e.to_string())).with_outcome(crate::model::TaskOutcome::Failed);
         }
     };
 

@@ -178,7 +178,7 @@ pub fn ask(app: &AppHandle, id: u64, question: &str, history: &[Turn], files: &[
     };
     match result {
         Ok(_) => send(Piece { id, text: String::new(), done: true, error: None, page: None }),
-        Err(e) => send(Piece { id, text: String::new(), done: true, error: Some(format!("My AI brain didn't answer: {e}")), page: None }),
+        Err(e) => send(Piece { id, text: String::new(), done: true, error: Some(crate::brain::plain_error(&e.to_string())), page: None }),
     }
 }
 

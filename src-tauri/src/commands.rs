@@ -628,6 +628,32 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     if crate::boost::is_request(&said) {
         return blocking(|| crate::boost::run(false)).await.ok();
     }
+    // "Write down this Zoom call" — from the speakers, not the mic,
+    // so a call heard through headphones is still written down.
+    if let Some(title) = crate::roomrec::parse(&said) {
+        return blocking(move || match crate::roomrec::start(&title) {
+            Ok(_) => format!("Recording what your PC is playing — I'll write down “{title}” as it goes, and turn it into notes when you say stop. You don't need to follow it."),
+            Err(e) => e.to_string(),
+        })
+        .await
+        .ok();
+    }
+    if crate::roomrec::is_recording() && crate::roomrec::asks_to_stop(&said) {
+        return blocking(|| match crate::roomrec::live_id() {
+            Some(id) => match crate::roomrec::stop(&id) {
+                Ok((title, _)) => format!("Stopped — “{title}” is in your Notes, with the whole transcript under it."),
+                Err(e) => e.to_string(),
+            },
+            None => "I wasn't recording anything.".to_string(),
+        })
+        .await
+        .ok();
+    }
+    // "What should I revise today?" — the cards spaced repetition says are
+    // ready, from the marks already kept. No AI call.
+    if crate::studytrack::asks_what_is_due(&said) {
+        return blocking(|| crate::studytrack::due_line(&crate::studytrack::events(), crate::model::now_ms())).await.ok();
+    }
     // "Catch me up on biology": what's kept, and the chapters missing.
     if let Some(subject) = crate::notes::catch_up_request(&said) {
         return blocking(move || crate::notes::catch_up(&subject).unwrap_or_else(|e| e.to_string())).await.ok();

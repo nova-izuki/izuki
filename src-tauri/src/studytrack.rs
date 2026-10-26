@@ -108,6 +108,128 @@ pub fn mistakes(all: &[Event]) -> Vec<Mistake> {
     out
 }
 
+/// A card waiting to be practised again.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct Due {
+    pub topic: String,
+    pub q: String,
+    pub a: String,
+    /// How many times in a row it's been right (its Leitner box).
+    pub streak: u32,
+    /// When it was last practised (Unix ms).
+    pub last: i64,
+    /// Days late: bigger means more overdue, so it goes first.
+    pub overdue: i64,
+}
+
+/// Days to wait after a card has been right `streak` times running.
+///
+/// Leitner's boxes: right again and it waits longer, missed and it comes
+/// back tomorrow. Spacing what you revise is the part of studying that
+/// actually moves exam marks, and all the marks needed to work it out are
+/// already in the diary.
+fn wait_days(streak: u32) -> i64 {
+    match streak {
+        0 => 1,
+        1 => 2,
+        2 => 4,
+        3 => 8,
+        4 => 16,
+        _ => 30,
+    }
+}
+
+const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// Cards ready to practise again, the most overdue first.
+///
+/// A card is only counted once it's been seen; a card marked today isn't
+/// due again today, however it went, so one sitting can't loop on itself.
+pub fn due_now(all: &[Event], now_ms: i64) -> Vec<Due> {
+    let mut by: BTreeMap<(String, String), Due> = BTreeMap::new();
+    for e in all.iter().filter(|e| e.kind == "card") {
+        let Some(right) = e.right else { continue };
+        let d = by.entry((e.topic.clone(), e.q.to_lowercase())).or_insert_with(|| Due { topic: e.topic.clone(), q: e.q.clone(), a: e.a.clone(), ..Default::default() });
+        d.streak = if right { d.streak + 1 } else { 0 };
+        d.last = d.last.max(e.at);
+        if !e.a.is_empty() {
+            d.a = e.a.clone();
+        }
+    }
+    let mut out: Vec<Due> = by
+        .into_values()
+        .filter_map(|mut d| {
+            if d.q.trim().is_empty() || d.a.trim().is_empty() {
+                return None;
+            }
+            let ready = d.last + wait_days(d.streak) * DAY_MS;
+            d.overdue = (now_ms - ready) / DAY_MS;
+            (now_ms >= ready).then_some(d)
+        })
+        .collect();
+    // Most overdue first; then the ones you know least well.
+    out.sort_by(|a, b| b.overdue.cmp(&a.overdue).then(a.streak.cmp(&b.streak)));
+    out
+}
+
+/// What to say when asked what's worth revising today.
+pub fn due_line(all: &[Event], now_ms: i64) -> String {
+    let due = due_now(all, now_ms);
+    if due.is_empty() {
+        let cards = all.iter().filter(|e| e.kind == "card" && e.right.is_some()).count();
+        return if cards == 0 {
+            "You haven't practised any flashcards yet. Open a note and tap Flashcards, and I'll start spacing them out for you.".into()
+        } else {
+            "Nothing's due for review — you're up to date. Practise anyway by opening a note and tapping Quiz me.".into()
+        };
+    }
+    let mut topics: Vec<(String, usize)> = {
+        let mut by: BTreeMap<String, usize> = BTreeMap::new();
+        for d in &due {
+            *by.entry(if d.topic.trim().is_empty() { "your notes".to_string() } else { d.topic.clone() }).or_default() += 1;
+        }
+        by.into_iter().collect()
+    };
+    topics.sort_by(|a, b| b.1.cmp(&a.1));
+    let where_from: Vec<String> = topics.iter().take(3).map(|(t, n)| format!("{t} ({n})")).collect();
+    let late = due.iter().filter(|d| d.overdue > 0).count();
+    format!(
+        "{} card{} ready to review: {}{}. Say \u{201c}practise my cards\u{201d} and I'll go through them with you.",
+        due.len(),
+        if due.len() == 1 { "" } else { "s" },
+        where_from.join(", "),
+        if late > 0 { format!(" \u{2014} {late} overdue") } else { String::new() }
+    )
+}
+
+/// "What should I revise?", "what's due for review today?"
+pub fn asks_what_is_due(said: &str) -> bool {
+    let s = said.to_lowercase();
+    let s = s.trim().trim_end_matches(['.', '!', '?']);
+    // Asking what's waiting — not any sentence with "study" in it, which
+    // would swallow "help me study this chapter".
+    [
+        "what should i revise",
+        "what should i review",
+        "what should i study today",
+        "what do i need to revise",
+        "what do i need to review",
+        "anything to revise",
+        "anything to review",
+        "anything due",
+        "what's due",
+        "whats due",
+        "what is due",
+        "any cards due",
+        "cards due",
+        "due for review",
+        "due to review",
+        "what to revise",
+    ]
+    .iter()
+    .any(|p| s.contains(p))
+}
+
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct Week {
     pub questions: usize,
@@ -254,6 +376,63 @@ pub fn practise_prompt(list: &[Mistake]) -> String {
 
 #[cfg(test)]
 mod tests {
+    fn mark(topic: &str, q: &str, days_ago: i64, right: bool, now: i64) -> Event {
+        Event { at: now - days_ago * DAY_MS, kind: "card".into(), topic: topic.into(), q: q.into(), a: "an answer".into(), right: Some(right) }
+    }
+
+    #[test]
+    fn cards_come_back_when_they_should() {
+        let now = 1_900_000_000_000i64;
+        // Missed yesterday: back today. Right once yesterday: not yet (2 days).
+        let all = vec![mark("Bio", "what is a cell", 1, false, now), mark("Bio", "what is dna", 1, true, now)];
+        let due = due_now(&all, now);
+        assert_eq!(due.len(), 1, "{due:?}");
+        assert_eq!(due[0].q, "what is a cell");
+
+        // Four right in a row waits 16 days: not due at 10, due at 20.
+        let streak: Vec<Event> = (0..4).map(|i| mark("Bio", "mitosis", 10 + (4 - i), true, now)).collect();
+        assert!(due_now(&streak, now).is_empty(), "a well-known card came back too soon");
+        let older: Vec<Event> = (0..4).map(|i| mark("Bio", "mitosis", 20 + (4 - i), true, now)).collect();
+        assert_eq!(due_now(&older, now).len(), 1, "a card 20 days old never came back");
+
+        // Missing it resets the wait, however well it went before.
+        let mut slipped = older.clone();
+        slipped.push(mark("Bio", "mitosis", 1, false, now));
+        assert_eq!(due_now(&slipped, now).len(), 1);
+        assert_eq!(due_now(&slipped, now)[0].streak, 0);
+
+        // Practised today is never due again today.
+        let today = vec![mark("Bio", "osmosis", 0, false, now)];
+        assert!(due_now(&today, now).is_empty(), "a card practised today came straight back");
+
+        // The most overdue goes first.
+        let mix = vec![mark("Bio", "old one", 30, false, now), mark("Bio", "newer one", 2, false, now)];
+        assert_eq!(due_now(&mix, now)[0].q, "old one");
+
+        // A card with no answer can't be practised.
+        let blank = vec![Event { a: String::new(), ..mark("Bio", "no answer", 5, false, now) }];
+        assert!(due_now(&blank, now).is_empty());
+    }
+
+    #[test]
+    fn it_says_what_is_due_in_plain_words() {
+        let now = 1_900_000_000_000i64;
+        assert!(due_line(&[], now).contains("haven't practised"));
+        let fresh = vec![mark("Bio", "q", 0, true, now)];
+        assert!(due_line(&fresh, now).contains("up to date"), "{}", due_line(&fresh, now));
+        let due = vec![mark("Bio", "q1", 5, false, now), mark("Chem", "q2", 3, false, now)];
+        let line = due_line(&due, now);
+        assert!(line.contains("2 cards ready") && line.contains("Bio") && line.contains("overdue"), "{line}");
+        // Asked in the ways people ask.
+        assert!(asks_what_is_due("what should I revise today"));
+        assert!(asks_what_is_due("anything due for review?"));
+        assert!(asks_what_is_due("any cards due?"));
+        // Ordinary studying talk isn't a question about what's waiting.
+        assert!(!asks_what_is_due("revise my essay"));
+        assert!(!asks_what_is_due("help me study this chapter"));
+        assert!(!asks_what_is_due("study with me"));
+    }
+
     use super::*;
 
     fn card(at: i64, q: &str, right: bool) -> Event {

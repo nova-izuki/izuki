@@ -171,6 +171,7 @@ fn tick(app: &AppHandle) {
     }
     battery(app, settings.buddy_acts);
     later_list(app);
+    revision(app);
     disk_and_memory(app);
     internet(app);
 }
@@ -206,6 +207,38 @@ fn welcome_back(app: &AppHandle, idle: Duration) {
 
 /// The Later list, at the moments it's useful: late afternoon (before the
 /// shops close) and the first time you're at the PC in the morning.
+/// Cards gone cold: mentioned once a day, in the evening.
+///
+/// Spaced repetition only works if something brings you back to it, and
+/// remembering to ask "what should I revise?" is exactly the thing a person
+/// with an exam coming doesn't do. So Izuki says it — once, quietly, and
+/// only when there's a real pile, never while you're busy with something.
+fn revision(app: &AppHandle) {
+    let now = chrono::Local::now();
+    // Early evening, when there's still time to do something about it.
+    if !(17..=21).contains(&now.hour()) {
+        return;
+    }
+    let due = crate::studytrack::due_now(&crate::studytrack::events(), crate::model::now_ms());
+    // A couple of cards isn't worth interrupting anyone for.
+    if due.len() < 5 {
+        return;
+    }
+    let overdue = due.iter().filter(|d| d.overdue > 0).count();
+    let subject = due
+        .iter()
+        .map(|d| d.topic.trim())
+        .find(|t| !t.is_empty())
+        .unwrap_or("your notes")
+        .to_string();
+    let line = format!(
+        "{} flashcards are ready to review{} \u{2014} mostly {subject}. Want to run through them? Say \u{201c}practise my cards\u{201d}.",
+        due.len(),
+        if overdue > 0 { format!(", {overdue} of them overdue") } else { String::new() }
+    );
+    say(app, &format!("revise-{}", now.format("%Y%m%d")), &line, Level::Chat);
+}
+
 fn later_list(app: &AppHandle) {
     let now = chrono::Local::now();
     let slot = match now.hour() {
@@ -423,6 +456,23 @@ const IMPORTANT_WORDS: &[&str] = &[
 ];
 
 /// Which lines matter, and (from the AI) a friendly sentence to say.
+/// Plainly an advert, a newsletter or a social notification.
+fn plainly_junk(line: &str) -> bool {
+    let l = line.to_lowercase();
+    ["newsletter", "unsubscribe", "% off", " sale", "promo", "deal of", "no-reply", "noreply", "digest", "notification", "new follower", "liked your", "commented on"]
+        .iter()
+        .any(|w| l.contains(w))
+}
+
+/// Is this batch worth an AI call?
+///
+/// Only when something might matter. A note from a friend has none of the
+/// "important" words either, so "no keyword" alone must never be enough to
+/// drop it — every line has to look like junk before the AI is skipped.
+fn worth_asking(lines: &[String], by_words: &[usize]) -> bool {
+    !by_words.is_empty() || !lines.iter().all(|l| plainly_junk(l))
+}
+
 fn judge(lines: &[String]) -> (Vec<usize>, Option<String>) {
     let by_words: Vec<usize> = lines
         .iter()
@@ -433,6 +483,15 @@ fn judge(lines: &[String]) -> (Vec<usize>, Option<String>) {
         })
         .map(|(i, _)| i)
         .collect();
+    // Nothing here even looks like it matters: don't spend an AI call on it.
+    //
+    // This runs in the background every few minutes. On a free tier that
+    // allows roughly one request a minute, every judgement here is one the
+    // user doesn't get for a question they actually asked — and the usual
+    // answer is "none of these matter", which the words already told us.
+    if !worth_asking(lines, &by_words) {
+        return (Vec::new(), None);
+    }
     let list: String = lines.iter().enumerate().map(|(i, l)| format!("{}) {l}\n", i + 1)).collect();
     let ask = serde_json::json!([
         { "role": "system", "content": "You are Izuki, the user's warm, sharp companion. You decide which new emails are worth interrupting them for RIGHT NOW: jobs and interviews, money and bills, deadlines, school results, family or friends who need them, security alerts, anything time-sensitive. Not newsletters, promotions, social media or receipts. Reply with ONLY JSON: {\"tell\":[numbers],\"say\":\"one or two short spoken sentences, friendly, naming who it's from and what it's about\"} — or {\"tell\":[]} if none matter." },
@@ -485,6 +544,26 @@ fn idle_for() -> Duration {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn plain_junk_never_costs_an_ai_call() {
+        // Nothing important-looking: judged by the words alone, no AI.
+        let junk = vec![
+            "Weekly newsletter from SomeShop".to_string(),
+            "50% off everything this weekend".to_string(),
+            "You have a new follower".to_string(),
+        ];
+        assert!(!worth_asking(&junk, &[]), "junk mail would have asked an AI what to think");
+        // A plain note from a person has none of the "important" words
+        // either, and must never be dropped to save a request.
+        assert!(worth_asking(&["Mum — are you free on Sunday?".to_string()], &[]), "a personal email was dropped without being read");
+        assert!(worth_asking(&["Re: the flat".to_string()], &[]));
+        // One real email among the adverts still gets read.
+        let mixed = vec!["Weekly newsletter".to_string(), "Mum — call me".to_string()];
+        assert!(worth_asking(&mixed, &[]));
+        // Something the words already flagged is always worth asking about.
+        assert!(worth_asking(&junk, &[0]));
+    }
+
     use super::*;
 
     #[test]

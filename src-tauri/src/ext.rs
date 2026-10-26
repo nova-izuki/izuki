@@ -343,7 +343,7 @@ fn page_helper(url: &str, v: &Value) -> Value {
     };
     match crate::chat::complete(&msgs) {
         Ok(t) => json!({ "ok": true, "text": t.trim() }),
-        Err(e) => json!({ "ok": false, "text": format!("My AI brain didn't answer: {e}") }),
+        Err(e) => json!({ "ok": false, "text": crate::brain::plain_error(&e.to_string()) }),
     }
 }
 

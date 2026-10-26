@@ -94,6 +94,7 @@ pub mod shots;
 pub mod deepclean;
 pub mod freebrains;
 pub mod rokudev;
+pub mod roomrec;
 pub mod planner;
 pub mod recipes;
 pub mod reminders;

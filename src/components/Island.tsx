@@ -376,12 +376,32 @@ export function Island({
       const atEdge = y <= wa.top + 3 && Math.abs(x - islandMiddle) < EDGE_BAND;
       const want = overPill || atEdge;
       wantRef.current = want;
-      if (want === wantOpen) return;
-      wantOpen = want;
-      clearTimeout(dwellTimer);
-      clearTimeout(closeTimer);
-      if (want && !openRef.current) dwellTimer = window.setTimeout(() => setOpen(true), DWELL_MS);
-      if (!want && openRef.current && !holdRef.current) closeTimer = window.setTimeout(() => setOpen(false), CLOSE_AFTER_MS);
+      // Only a change starts (or abandons) the dwell, so resting on the pill
+      // doesn't keep restarting the timer.
+      if (want !== wantOpen) {
+        wantOpen = want;
+        clearTimeout(dwellTimer);
+        if (want && !openRef.current) dwellTimer = window.setTimeout(() => setOpen(true), DWELL_MS);
+      }
+      // Closing is checked every time, not only on that change. It used to
+      // need a true→false flip, so an Island opened any other way — a click,
+      // a peek at the top edge, something opening it in code — had `wantOpen`
+      // already false, took the early return, and then never closed when the
+      // mouse left.
+      if (!want && openRef.current && !holdRef.current) {
+        if (!closeTimer) {
+          closeTimer = window.setTimeout(() => {
+            closeTimer = 0;
+            // Look again before closing: the pointer may be back, or a note
+            // may be being jotted, and neither sends a pointer update that
+            // would have cancelled this.
+            if (!wantRef.current && !holdRef.current) setOpen(false);
+          }, CLOSE_AFTER_MS);
+        }
+      } else if (closeTimer) {
+        clearTimeout(closeTimer);
+        closeTimer = 0;
+      }
     };
     pointerFns.add(fn);
     return () => {

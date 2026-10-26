@@ -1559,6 +1559,55 @@ fn last_resort(mut plan: VisionPlan, wants_action: bool) -> VisionPlan {
     plan
 }
 
+/// One short, honest sentence for "nothing could answer", instead of every
+/// provider's raw refusal joined together.
+///
+/// What the user used to be shown, in full: "groq is rate-limiting you (429
+/// Too Many Requests): Rate limit reached for model `qwen/qwen3.8-27b` in
+/// organization `org_01m3…` service tier `on_demand` on input tokens per
+/// minute (ITPM): Limit 7000, Used 1291, Requested 6038…" and then the same
+/// again for every other brain. It is unreadable, it says nothing anyone can
+/// act on, and it prints an account id that belongs to nobody but them.
+pub(crate) fn why_none_answered(errors: &[String]) -> String {
+    let all = errors.join(" ").to_lowercase();
+    let any = |words: &[&str]| words.iter().any(|w| all.contains(w));
+    // Out of credit is not the same as busy: waiting won't fix it.
+    if any(&["no credits remaining", "insufficient_quota", "exceeded your current quota", "billing"]) {
+        return "That AI has no free credit left. Add another free key in Settings \u{2192} Izuki's brain \u{2014} Google's Gemini and Groq both have a free one.".into();
+    }
+    if any(&["rate limit", "rate-limiting", "429", "too many requests", "quota"]) {
+        return "All your AI brains are busy right now \u{2014} free ones only allow so much a minute. Give it a moment and ask again, or add another free key in Settings \u{2192} Izuki's brain so there's one to spare.".into();
+    }
+    if any(&["api key", "unauthorized", "401", "403", "invalid key", "no credential"]) {
+        return "That AI didn't accept the key. Check it in Settings \u{2192} Izuki's brain, or paste a fresh one.".into();
+    }
+    if any(&["error sending request", "dns", "timed out", "timeout", "connection", "unreachable", "network"]) {
+        return "I couldn't reach the AI just now \u{2014} that's usually the internet. Check your connection and ask again.".into();
+    }
+    if any(&["overloaded", "503", "500", "internal server error", "unavailable"]) {
+        return "That AI is having a moment (its servers, not your PC). Try again shortly, or add another free key in Settings so Izuki has a spare.".into();
+    }
+    "None of the AI brains could answer that one. Give it a moment and try again \u{2014} if it keeps happening, add another free key in Settings \u{2192} Izuki's brain.".into()
+}
+
+/// Anything shown to a person: a provider's raw refusal becomes the plain
+/// sentence above; everything else (Izuki's own clear messages, like "that's
+/// a PDF — open it on screen") is left exactly as it is.
+pub(crate) fn plain_error(e: &str) -> String {
+    let low = e.to_lowercase();
+    let provider = [
+        "rate-limiting", "rate limit", "429", "too many requests", "no credits", "insufficient_quota",
+        "error sending request", "401 unauthorized", "invalid api key", "503", "internal server error",
+    ]
+    .iter()
+    .any(|w| low.contains(w));
+    if provider {
+        why_none_answered(&[e.to_string()])
+    } else {
+        e.to_string()
+    }
+}
+
 fn ask_racing(
     chain: &[crate::settings::ProviderConfig],
     req: VisionRequest,
@@ -1692,7 +1741,12 @@ fn ask_racing(
                 } else if finished == launched {
                     return match fallback.take() {
                         Some((_, plan)) => Ok(last_resort(plan, wants_action)),
-                        None => Err(anyhow!("{}", errors.join("; "))),
+                        None => {
+                            // The full reasons go to the log, where they help;
+                            // the user gets one sentence they can act on.
+                            eprintln!("[brain] nothing answered: {}", errors.join("; "));
+                            Err(anyhow!("{}", why_none_answered(&errors)))
+                        }
                     };
                 }
             }
@@ -4788,6 +4842,46 @@ mod window_tests {
         assert!(!asked_for_window("take a closer look at the mixer", "close"));
         assert!(!asked_for_window("don't close fl studio", "close"));
         assert!(!asked_for_window("never minimise my windows", "minimise"));
+    }
+}
+
+#[cfg(test)]
+mod failure_tests {
+    #[test]
+    fn a_person_can_understand_why_nothing_answered() {
+        // The real strings from a user's log, joined as they were shown.
+        let busy = vec![
+            "Groq (free, very fast): groq is rate-limiting you (429 Too Many Requests): Rate limit reached for model `qwen/qwen3.8-27b` in organization `org_examplexxxxxxxxxxxxxxxxxx` service tier `on_demand` on input tokens per minute (ITPM): Limit 7000, Used 1291, Requested 6038. Please try again in 2.82s.".to_string(),
+            "OpenRouter: openrouter is rate-limiting you (429 Too Many Requests): Provider returned error.".to_string(),
+        ];
+        let said = super::why_none_answered(&busy);
+        assert!(said.contains("busy"), "{said}");
+        // Never the raw refusal, the model name, or the account id.
+        assert!(!said.contains("429") && !said.contains("org_") && !said.contains("qwen"), "{said}");
+        assert!(said.chars().count() < 280, "too long to read: {said}");
+
+        // Out of credit needs a different answer: waiting won't help.
+        let broke = vec!["openai is rate-limiting you (429): You have no credits remaining".to_string()];
+        assert!(super::why_none_answered(&broke).contains("no free credit"));
+
+        // The internet being down is not the AI being busy.
+        let offline = vec!["error sending request for url (https://generativelanguage.googleapis.com/)".to_string()];
+        assert!(super::why_none_answered(&offline).contains("internet"));
+
+        // A bad key says so.
+        assert!(super::why_none_answered(&["401 Unauthorized: invalid api key".to_string()]).contains("key"));
+
+        // Izuki's own clear messages must survive untouched.
+        let mine = "that's a PDF — open it on screen and I'll read it there";
+        assert_eq!(super::plain_error(mine), mine);
+        assert_eq!(super::plain_error("I couldn't find an assignment on the screen."), "I couldn't find an assignment on the screen.");
+        // A provider's refusal is rewritten.
+        let raw = "groq is rate-limiting you (429 Too Many Requests): Limit 7000, Used 1291";
+        assert!(!super::plain_error(raw).contains("429"));
+
+        // Anything unrecognised still gets a usable sentence, never a dump.
+        let odd = super::why_none_answered(&["something nobody has seen before".to_string()]);
+        assert!(!odd.is_empty() && !odd.contains("something nobody"), "{odd}");
     }
 }
 

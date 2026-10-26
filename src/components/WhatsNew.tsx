@@ -23,6 +23,10 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "💬", title: "It tells you what's wrong in plain words", how: "When the free AIs were busy you used to get a wall of error text with rate limits and account ids in it. Now you get one sentence that says what happened and what to do — and a different one depending on whether it's busy, out of credit, a bad key, or your internet." },
+  { icon: "🎙️", title: "Write down a Zoom call or class", how: "Say “write down this zoom call” and Izuki records what your PC plays — not the mic, so headphones are fine. Say “stop recording” and it becomes study notes with timestamps and the full transcript underneath. You don't have to pay attention. No audio is kept." },
+  { icon: "📅", title: "Revision that comes to you", how: "Izuki now knows when a flashcard has gone cold: miss one and it's back tomorrow, know it and the gap grows to 2, 4, 8, 16 days. Ask “what should I revise today?”, or let it mention it once in the evening when five or more are due." },
+  { icon: "🔋", title: "A quieter background", how: "Checking your email used to ask an AI every few minutes whether anything mattered — using up the same free allowance as your own questions. Now it only asks when something actually looks important." },
   { icon: "📋", title: "No more “here's the plan” and nothing", how: "Asking for help with an assignment could end with “Here's the plan.” and silence — the plan was written, Izuki just couldn't read its steps unless they were numbered one exact way. It reads them however they're written now, and never shows you an empty plan." },
   { icon: "🔎", title: "The coding agent can look things up", how: "When a build fails with an error your project can't explain, it searches for it instead of guessing twice. Chat → Code." },
   { icon: "🧭", title: "Setup shows what you're missing", how: "The guide had stopped at older features. It now also shows the coding agent and voice match, with a tick once they're set up — so you can see what Izuki can do that you haven't turned on.", try: { label: "Open setup", tab: "settings" } },
