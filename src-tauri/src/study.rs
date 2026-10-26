@@ -121,6 +121,17 @@ pub fn coach(said: &str) -> anyhow::Result<String> {
     let due = section(&guide, "DUE").filter(|d| !d.to_lowercase().contains("not shown"));
     *GUIDE.lock() = Some((steps.clone(), 0, std::time::Instant::now()));
     eprintln!("[study] guide ready ({} steps, {})", steps.len(), if saved.is_some() { "saved to Notes" } else { "not saved" });
+    // No steps: never answer with a bare "Here's the plan." and stop, which
+    // is what the user saw. Give them the guide's own words instead.
+    if steps.is_empty() {
+        eprintln!("[study] the guide came back with no steps — giving its own words instead");
+        let words = guide.trim();
+        if words.chars().count() < 40 {
+            anyhow::bail!("I couldn't get a usable plan for that — the AI's answer came back nearly empty. Try again in a moment, or ask me to explain the assignment instead.");
+        }
+        *GUIDE.lock() = None;
+        return Ok(format!("{words}\n\n(I couldn't break that into steps I can walk you through — say \u{201c}explain that\u{201d} and I'll go deeper on any part.)"));
+    }
     let first = steps.first().cloned().unwrap_or_default();
     Ok(format!(
         "{}{}\n{}{}",
@@ -149,7 +160,10 @@ fn is_quiz_page(asks: &str) -> bool {
 }
 
 fn section(guide: &str, name: &str) -> Option<String> {
-    let start = guide.find(&format!("{name}:"))? + name.len() + 1;
+    // "STEPS:", "**STEPS:**", "## STEPS" — the same heading either way.
+    let flat = guide.replace("**", "").replace("##", "");
+    let guide: &str = &flat;
+    let start = guide.find(&format!("{name}:")).or_else(|| guide.find(name).map(|i| i + name.len() - 1))? + name.len() + 1;
     let rest = &guide[start..];
     let end = ["\nHAND IN:", "\nDUE:", "\nSTEPS:", "\nKEY TERMS:", "\nCHECK BEFORE SUBMITTING:", "\nWHAT IT ASKS:"].iter().filter_map(|m| rest.find(m)).min().unwrap_or(rest.len());
     let s = rest[..end].trim().to_string();
@@ -158,14 +172,36 @@ fn section(guide: &str, name: &str) -> Option<String> {
 
 /// The numbered steps ("1. …").
 fn steps_of(guide: &str) -> Vec<String> {
-    let Some(body) = section(guide, "STEPS") else { return Vec::new() };
+    // The shape was asked for, but a free model writes "**STEPS:**", or
+    // "Step 1 —", or plain bullets. Demanding "STEPS:" with "1." numbering
+    // meant an otherwise good guide came back with no steps at all, and the
+    // user was told "Here's the plan" with nothing after it.
+    let body = section(guide, "STEPS").unwrap_or_else(|| guide.to_string());
+    let found: Vec<String> = body.lines().map(str::trim).filter_map(numbered_step).collect();
+    if !found.is_empty() {
+        return found;
+    }
+    // Still nothing: any bulleted line long enough to be a step.
     body.lines()
         .map(str::trim)
         .filter_map(|l| {
-            let (n, rest) = l.split_once(['.', ')'])?;
-            (n.trim().parse::<u32>().is_ok() && !rest.trim().is_empty()).then(|| rest.trim().to_string())
+            let rest = l.strip_prefix("- ").or_else(|| l.strip_prefix("* "))?.trim();
+            (rest.chars().count() >= 12 && !rest.ends_with(':')).then(|| clean_step(rest))
         })
         .collect()
+}
+
+/// "1. do this", "1) do this", "Step 1: do this", "**2.** do this".
+fn numbered_step(line: &str) -> Option<String> {
+    let l = line.trim_start_matches(['-', '*', '#', ' ']).trim_start_matches("**").trim();
+    let l = l.strip_prefix("Step ").or_else(|| l.strip_prefix("step ")).unwrap_or(l);
+    let (n, rest) = l.split_once(['.', ')', ':', '\u{2014}', '\u{2013}'])?;
+    let n = n.trim().trim_end_matches("**").trim();
+    (n.parse::<u32>().is_ok() && rest.trim().chars().count() >= 3).then(|| clean_step(rest.trim()))
+}
+
+fn clean_step(s: &str) -> String {
+    s.trim().trim_start_matches("**").trim_end_matches("**").trim().to_string()
 }
 
 /// "next step" / "explain that" / "repeat" while a guide is open (2 hours).
@@ -238,6 +274,22 @@ pub fn explain_current(said: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn steps_are_read_however_the_model_writes_them() {
+        // The shape that was asked for.
+        let plain = "WHAT IT ASKS: do the lab.\nSTEPS:\n1. Open the VM — it hosts the target\n2. Run the scan\n";
+        assert_eq!(steps_of(plain).len(), 2);
+        assert_eq!(steps_of(plain)[0], "Open the VM \u{2014} it hosts the target");
+        // Markdown, and "Step 1:" instead of "1.".
+        let fancy = "**STEPS:**\n**Step 1:** Open the VM and sign in\n**Step 2 —** Run the scan against it\n";
+        assert_eq!(steps_of(fancy).len(), 2, "{:?}", steps_of(fancy));
+        // Bullets with no numbers at all.
+        let bullets = "STEPS:\n- Open the lab VM and sign in\n- Run the scan against the target\n- ok\n";
+        assert_eq!(steps_of(bullets).len(), 2, "too-short bullets aren't steps");
+        // Nothing step-like: empty, so the caller gives the guide's own words.
+        assert!(steps_of("WHAT IT ASKS: something.\nDUE: not shown").is_empty());
+    }
+
     #[test]
     fn a_quiz_question_is_not_an_assignment() {
         assert!(is_quiz_page("This is an interactive quiz question asking why hidden file extensions are a threat. It is not an essay or long-form assignment, but a multiple-choice question within a larger set."));

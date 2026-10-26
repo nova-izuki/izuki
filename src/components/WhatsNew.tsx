@@ -23,6 +23,9 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "📋", title: "No more “here's the plan” and nothing", how: "Asking for help with an assignment could end with “Here's the plan.” and silence — the plan was written, Izuki just couldn't read its steps unless they were numbered one exact way. It reads them however they're written now, and never shows you an empty plan." },
+  { icon: "🔎", title: "The coding agent can look things up", how: "When a build fails with an error your project can't explain, it searches for it instead of guessing twice. Chat → Code." },
+  { icon: "🧭", title: "Setup shows what you're missing", how: "The guide had stopped at older features. It now also shows the coding agent and voice match, with a tick once they're set up — so you can see what Izuki can do that you haven't turned on.", try: { label: "Open setup", tab: "settings" } },
   { icon: "⚡", title: "It stops binning the fast answer", how: "It was getting your answer in about a second, throwing it away because you'd also said “click next”, then waiting half a minute on AI brains that failed. Now the quick answer wins." },
   { icon: "💬", title: "Ask in your own words", how: "“Help me ans the quiz and explain” works now — it understands answer, ans, solve or correct plus what you mean, instead of only a handful of exact sentences. And “answer it and click next” works again. It still never ticks the box or submits a test." },
   { icon: "🎥", title: "Notes from a lecture video", how: "Paste a YouTube link with “take notes on this lecture”. Izuki uses the video's own captions, writes proper study notes with timestamps, and keeps the full transcript underneath so you can check anything. No captions means it tells you, rather than making a lecture up." },

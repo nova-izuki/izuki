@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { motion } from "motion/react";
-import { ArrowLeft, Brain, CheckCircle2, ExternalLink, Globe, HeartHandshake, Link2, Loader2, Mic, Palette, Plug, Smartphone, Sparkles, AudioLines, Tv, Workflow, X } from "lucide-react";
+import { ArrowLeft, Brain, CheckCircle2, CodeXml, ExternalLink, Globe, HeartHandshake, Link2, Loader2, Mic, Palette, Plug, Smartphone, Sparkles, AudioLines, Tv, Workflow, X } from "lucide-react";
 import { cx } from "./ui";
 import { useIzuki } from "../lib/store";
 import { applyKey, brainReady, getKey } from "../lib/setup";
@@ -41,9 +41,26 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
     if (id) setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }), 350);
   };
   const handsFree = settings.voice_wake_enabled;
+  /** Someone's voice is enrolled, so "Hey Nova" only answers them. */
+  const knowsVoices = (() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("izuki.wake-speakers.v1") || "null");
+      return !!saved?.enabled && Array.isArray(saved?.profiles) && saved.profiles.length > 0;
+    } catch {
+      return false;
+    }
+  })();
+  /** A project folder has been picked for the coding agent. */
+  const codes = (() => {
+    try {
+      return !!localStorage.getItem("izk.coding.project");
+    } catch {
+      return false;
+    }
+  })();
   const tv = !!settings.tv_host || settings.linked_devices.some((d) => d.kind === "tv");
   const linked = settings.linked_devices.length > 0;
-  const steps = [brain, true, apps, handsFree, tv, linked, ext, settings.buddy_speaks, flows > 0];
+  const steps = [brain, true, apps, handsFree, knowsVoices, codes, tv, linked, ext, settings.buddy_speaks, flows > 0];
   const doneCount = steps.filter(Boolean).length;
 
   // Pasted instead: the same recognising as the clipboard, via the backend.
@@ -191,6 +208,30 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
           >
             <button type="button" onClick={() => go("settings", "settings-tv")} className="izk-pill h-[30px] px-3 text-[11.5px]">
               Set up my TV
+            </button>
+          </Step>
+
+          <Step
+            icon={<CodeXml size={16} />}
+            title="Let Izuki write code for you"
+            done={codes}
+            doneText="Ready — ask in Chat with Code on, and watch the to-do list fill in"
+            text="Give it a job in your own project and it gets on with it: reads the code, makes the changes, runs your real tests, fixes what fails and reviews its own work. It works in a copy on its own branch, so your files only change when you press Apply."
+          >
+            <button type="button" onClick={() => go("chat")} className="izk-pill h-[30px] px-3 text-[11.5px]">
+              {codes ? "Open Chat" : "Try it in Chat"}
+            </button>
+          </Step>
+
+          <Step
+            icon={<Mic size={16} />}
+            title="Only answer your voice"
+            done={knowsVoices}
+            doneText="Enrolled — the TV and other people won't wake it"
+            text="Say a phrase three times and “Hey Nova” stops answering the TV, a video, or anyone walking past. You can add other people too. The talk key always works."
+          >
+            <button type="button" onClick={() => go("settings")} className="izk-pill h-[30px] px-3 text-[11.5px]">
+              {knowsVoices ? "Manage voices" : "Teach it my voice"}
             </button>
           </Step>
 
