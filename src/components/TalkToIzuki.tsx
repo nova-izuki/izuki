@@ -202,7 +202,7 @@ export function TalkToIzuki() {
           </Row>
         )}
         {settings.island_enabled && (
-          <Row label="Always show the Island" hint="On: like an iPhone's Dynamic Island — a black pill at the top that grows to show what Izuki's doing. Off: hidden until your mouse goes to the top of the screen, or something's happening (music, listening, answering, timers).">
+          <Row label="Always show the Island" hint="On: a small sliver sits at the top, and grows only while something's happening (music, listening, answering, timers). Off: nothing at all until your mouse goes to the top of the screen.">
             <Toggle checked={settings.island_always ?? true} onChange={(v) => patch({ island_always: v })} />
           </Row>
         )}

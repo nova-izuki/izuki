@@ -163,6 +163,93 @@ pub fn links_of(id: &str) -> Result<Links> {
     Ok(links)
 }
 
+/// The chapter number in "Chapter 5", "Module 2.1", "Week 3".
+fn chapter_no(chapter: &str) -> Option<f64> {
+    let digits: String = chapter.chars().skip_while(|c| !c.is_ascii_digit()).take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+    digits.trim_end_matches('.').parse().ok()
+}
+
+/// "Catch me up on biology", "where am I up to in chapter notes for maths".
+pub fn catch_up_request(said: &str) -> Option<String> {
+    let s = said.trim().trim_end_matches(['.', '!', '?']).to_lowercase();
+    let s = s.trim_start_matches("hey nova").trim_start_matches("hey izuki").trim_start_matches([',', ' ']).trim();
+    for opener in [
+        "catch me up on ", "where am i up to in ", "where am i up to with ", "where am i in ",
+        "what have i got for ", "what do i have for ", "what am i missing in ", "what am i missing for ",
+        "how far am i in ", "how far am i with ",
+    ] {
+        if let Some(rest) = s.strip_prefix(opener) {
+            let name = rest.trim_start_matches("my ").trim_start_matches("the ").trim();
+            let name = name.trim_end_matches(" notes").trim_end_matches(" chapters").trim();
+            if !name.is_empty() && name.len() <= 80 {
+                return Some(name.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// What's kept for a subject, and the chapters missing between the ends.
+pub fn catch_up(subject: &str) -> Result<String> {
+    let all = list()?;
+    let want = context::normalized(subject);
+    let mine: Vec<&Note> = all
+        .iter()
+        .filter(|n| {
+            let s = context::normalized(&n.context.subject);
+            !s.is_empty() && (s == want || s.contains(&want) || want.contains(&s))
+        })
+        .collect();
+    if mine.is_empty() {
+        let subjects: Vec<String> = {
+            let mut names: Vec<String> = all.iter().map(|n| n.context.subject.clone()).filter(|s| !s.trim().is_empty()).collect();
+            names.sort();
+            names.dedup();
+            names.into_iter().take(6).collect()
+        };
+        if subjects.is_empty() {
+            return Ok("You haven't kept any notes by subject yet. Open a chapter and say \u{201c}take notes on this\u{201d}, and I'll file it by subject and chapter from then on.".into());
+        }
+        return Ok(format!("I don't have notes filed under \u{201c}{subject}\u{201d}. You have: {}.", subjects.join(", ")));
+    }
+    let name = mine[0].context.subject.clone();
+    let mut numbered: Vec<f64> = mine.iter().filter_map(|n| chapter_no(&n.context.chapter)).collect();
+    numbered.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    numbered.dedup();
+    let unfiled = mine.len() - mine.iter().filter(|n| chapter_no(&n.context.chapter).is_some()).count();
+    if numbered.is_empty() {
+        return Ok(format!("You've got {} note{} for {name}, none of them filed to a chapter yet. Open one and use \u{201c}Change\u{201d} to say which chapter it is, and the rest will follow.", mine.len(), if mine.len() == 1 { "" } else { "s" }));
+    }
+    let (low, high) = (numbered[0], numbered[numbered.len() - 1]);
+    // Only whole chapters between the ends count as a gap: 5.1 and 5.3 are
+    // parts of one chapter, not a missing chapter 5.2.
+    let have: Vec<i64> = numbered.iter().map(|n| *n as i64).collect();
+    let missing: Vec<i64> = ((low as i64)..=(high as i64)).filter(|c| !have.contains(c)).collect();
+    let mut said = format!(
+        "{name}: {} note{} from Chapter {} to Chapter {}.",
+        mine.len(),
+        if mine.len() == 1 { "" } else { "s" },
+        low as i64,
+        high as i64
+    );
+    if !missing.is_empty() {
+        let names: Vec<String> = missing.iter().take(8).map(|c| c.to_string()).collect();
+        said.push_str(&format!(
+            " Nothing for Chapter {}{} \u{2014} open {} and say \u{201c}take notes on this\u{201d} and I'll file it in the right place.",
+            names.join(", "),
+            if missing.len() > 8 { " and more" } else { "" },
+            if missing.len() == 1 { "it" } else { "each one" }
+        ));
+    } else {
+        said.push_str(" No gaps in between.");
+    }
+    if unfiled > 0 {
+        said.push_str(&format!(" {unfiled} more aren't filed to a chapter yet."));
+    }
+    said.push_str(&format!(" Say \u{201c}quiz me on {name}\u{201d} to revise the lot."));
+    Ok(said)
+}
+
 /// "Link this to Chapter 4", "connect this note to botnets": what to link
 /// the note being studied to, or None when it isn't that kind of request.
 pub fn link_request(said: &str) -> Option<String> {
@@ -636,6 +723,20 @@ pub fn parse_cards(reply: &str) -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn catching_up_is_understood_and_counted() {
+        assert_eq!(catch_up_request("catch me up on biology").as_deref(), Some("biology"));
+        assert_eq!(catch_up_request("Where am I up to in my maths notes?").as_deref(), Some("maths"));
+        assert_eq!(catch_up_request("what am I missing in security").as_deref(), Some("security"));
+        assert!(catch_up_request("catch me up").is_none());
+        assert!(catch_up_request("where is my phone").is_none());
+        // Chapter numbers out of the words people actually use.
+        assert_eq!(chapter_no("Chapter 5"), Some(5.0));
+        assert_eq!(chapter_no("Module 2.1"), Some(2.1));
+        assert_eq!(chapter_no("Week 12"), Some(12.0));
+        assert_eq!(chapter_no("Introduction"), None);
+    }
+
     #[test]
     fn linking_by_voice_is_understood() {
         assert_eq!(link_request("link this to chapter 4").as_deref(), Some("chapter 4"));

@@ -123,6 +123,7 @@ pub mod readaloud;
 pub mod tts;
 pub mod uia;
 pub mod updates;
+pub mod videonotes;
 pub mod wheel;
 pub mod vision;
 pub mod voices;

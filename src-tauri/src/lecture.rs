@@ -217,7 +217,7 @@ pub fn finish(id: &str) -> Result<(String, String)> {
 }
 
 /// Notes from a transcript; a long one is taken in parts first.
-fn write_notes(title: &str, transcript: &str) -> Result<String> {
+pub(crate) fn write_notes(title: &str, transcript: &str) -> Result<String> {
     const PART: usize = 24_000;
     let source = if transcript.chars().count() <= PART {
         transcript.to_string()

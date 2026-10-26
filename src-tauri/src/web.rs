@@ -457,7 +457,28 @@ pub fn read_page(url: &str) -> Result<(String, String)> {
     read_page_inner(url, false)
 }
 
+/// The page as it was sent, not the readable part of it: the same checks and
+/// size cap, without the tidying that drops script data and XML.
+pub fn read_page_raw(url: &str) -> Result<(String, String)> {
+    read_page_inner_raw(url, false)
+}
+
 fn read_page_inner(url: &str, allow_local_fixture: bool) -> Result<(String, String)> {
+    let (landed, kind, body) = fetch_body(url, allow_local_fixture)?;
+    if !kind.contains("html") && !body.trim_start().starts_with('<') {
+        return Ok((landed, clip(&body, PAGE_CHARS)));
+    }
+    let text = page_text(&body, &landed);
+    Ok((landed, text))
+}
+
+fn read_page_inner_raw(url: &str, allow_local_fixture: bool) -> Result<(String, String)> {
+    let (landed, _, body) = fetch_body(url, allow_local_fixture)?;
+    Ok((landed, body))
+}
+
+/// Where it landed, what it says it is, and its words.
+fn fetch_body(url: &str, allow_local_fixture: bool) -> Result<(String, String, String)> {
     let urls = scrape_urls(url)?;
     if urls.len() != 1 { anyhow::bail!("Read one page at a time here."); }
     let res = page_response(&urls[0], allow_local_fixture)?;
@@ -479,11 +500,7 @@ fn read_page_inner(url: &str, allow_local_fixture: bool) -> Result<(String, Stri
     // every byte over 0x7f into "?" on the windows-1252 / ISO-8859-1 pages
     // that older .edu and .gov syllabuses still use.
     let body = decode_body(&bytes, &kind);
-    if !kind.contains("html") && !body.trim_start().starts_with('<') {
-        return Ok((landed, clip(&body, PAGE_CHARS)));
-    }
-    let text = page_text(&body, &landed);
-    Ok((landed, text))
+    Ok((landed, kind, body))
 }
 
 /// The readable part of an HTML page (what a person would read), then a

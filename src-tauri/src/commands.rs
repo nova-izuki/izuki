@@ -628,6 +628,19 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     if crate::boost::is_request(&said) {
         return blocking(|| crate::boost::run(false)).await.ok();
     }
+    // "Catch me up on biology": what's kept, and the chapters missing.
+    if let Some(subject) = crate::notes::catch_up_request(&said) {
+        return blocking(move || crate::notes::catch_up(&subject).unwrap_or_else(|e| e.to_string())).await.ok();
+    }
+    // A recorded lecture on YouTube: its own captions into study notes.
+    if let Some(ask) = crate::videonotes::parse(&said) {
+        return blocking(move || match crate::videonotes::notes_from(&ask) {
+            Ok(said) => said,
+            Err(e) => e.to_string(),
+        })
+        .await
+        .ok();
+    }
     // Timers: "set a pasta timer for 12 minutes", "cancel the timer".
     if let Some(ask) = crate::timers::parse(&said) {
         // "Cancel the check in with Solomon timer" with no timer running is

@@ -430,13 +430,27 @@ pub(crate) fn direct_answer_requested(prompt: &str) -> bool {
     if ["don't answer", "do not answer", "without the answer", "coach me", "tutor mode", "teacher mode"].iter().any(|p| s.contains(p)) {
         return false;
     }
-    // "Answer it and submit", "tell me the answer then click next": a request
-    // to *do* something keeps the ordinary rules, which never pick or send an
-    // answer on a test. Only a plain question gets the plain answer.
-    if crate::companion::asks_to_do(latest) {
+    // Moving between questions is allowed while explaining — "answer this and
+    // click next" is a normal way to work through a quiz, and the step filter
+    // below keeps it to Next/Previous. Anything that would *pick* or *send* an
+    // answer goes back to coaching, which never does either.
+    const PICKS_OR_SENDS: [&str; 11] = [
+        "submit", "select", "choose", "pick", "tick", "check the box", "mark it", "finish the test", "end test", "hand in", "turn it in",
+    ];
+    if PICKS_OR_SENDS.iter().any(|w| s.contains(w)) {
         return false;
     }
-    ["answer the question", "what's the answer", "whats the answer", "what is the answer", "give me the answer", "tell me the answer", "which option is correct", "which answer is correct", "just the answer", "straight answer"].iter().any(|p| s.contains(p))
+    if crate::companion::asks_to_do(latest) && !["next", "previous", "back", "forward", "carry on", "keep going"].iter().any(|w| s.contains(w)) {
+        return false;
+    }
+    // Not a list of exact sentences: people don't say "what is the answer",
+    // they say "help me ans the quiz and explain". Asking for the answer is
+    // an answering word plus the thing it's about.
+    let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let answering = words.iter().any(|w| matches!(*w, "answer" | "answers" | "ans" | "solve" | "correct"));
+    let about_this = words.iter().any(|w| matches!(*w, "this" | "that" | "it" | "them" | "these" | "question" | "questions" | "quiz" | "test" | "option" | "options" | "one"));
+    // "the answer" on its own is already asking for it ("give me the answer").
+    (answering && (about_this || s.contains("the answer") || s.contains("what") || s.contains("which")))
         || matches!(s.trim().trim_end_matches(['?', '!', '.']), "answer" | "answer it" | "answer this" | "ans")
 }
 
@@ -2734,7 +2748,11 @@ fn submit_task(
     let teaching = prompt.starts_with("Explain this video frame on my screen.");
     // Something to *do* (not a question)? Then an answer that does nothing
     // — a free model's essay about the request — never wins (good_enough).
-    let wants_action = !resumed.is_empty() || crate::companion::asks_to_do(&prompt);
+    // Asking for the answer is a question, even when it also says "and click
+    // next": the answer itself is the point, and on a test page every step is
+    // stripped anyway. Demanding an action here threw away a correct reply
+    // that arrived in 1.2 s and waited ~30 s for brains that then failed.
+    let wants_action = (!resumed.is_empty() || crate::companion::asks_to_do(&prompt)) && !direct_answer_requested(&prompt);
 
     let focus = matches!(settings.execution_mode, crate::settings::ExecutionMode::Focus);
 
@@ -4214,9 +4232,23 @@ mod speed_tests {
         assert!(super::direct_answer_requested("Answer the question on my screen directly."));
         assert!(super::direct_answer_requested("which option is correct?"));
         assert!(!super::direct_answer_requested("Coach me but don't answer the question"));
-        // Asking it to act keeps the ordinary rules (which never answer a test).
+        // How the owner actually asks, not a list of exact sentences.
+        assert!(super::direct_answer_requested("help me ans the quiz and explain"));
+        assert!(super::direct_answer_requested("help me answer this"));
+        assert!(super::direct_answer_requested("answer it and explain why"));
+        assert!(super::direct_answer_requested("which one is correct"));
+        // Working through a quiz: answering and moving on is allowed, and the
+        // step filter below keeps it to Next/Previous.
+        assert!(super::direct_answer_requested("answer this and click next"));
+        assert!(super::direct_answer_requested("answer the question then go to the next one"));
+        // Picking or sending an answer never is.
         assert!(!super::direct_answer_requested("give me the answer and click it"));
         assert!(!super::direct_answer_requested("answer the question and submit the test"));
+        assert!(!super::direct_answer_requested("answer this and select the right option"));
+        assert!(!super::direct_answer_requested("answer them all and finish the test"));
+        // Not about answering at all.
+        assert!(!super::direct_answer_requested("explain this page to me"));
+        assert!(!super::direct_answer_requested("open my email"));
         assert!(!super::direct_answer_requested("Next question\n\n(The conversation just before, oldest first: User: give me the answer)"));
         let look = super::Look { options: vec!["b. botnet".into()], test_page: true, ..Default::default() };
         let mut plan = crate::model::VisionPlan { summary: "B. Botnet. It is a network of infected devices.".into(), ..Default::default() };

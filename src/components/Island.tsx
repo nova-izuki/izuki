@@ -725,9 +725,11 @@ export function Island({
           ) : live.kind === "rest" ? (
             // At rest: the black pill of an iPhone's Dynamic Island (still —
             // it sits over everything all day), or the faint sliver.
-            <motion.div key="rest" {...fade} className={always ? "flex h-[30px] w-[118px] items-center justify-end pr-3" : "h-[5px] w-[72px]"}>
-              {always && <span className="h-[7px] w-[7px] rounded-full bg-[radial-gradient(circle_at_35%_35%,#3b4a6b,#0b0d14)] ring-1 ring-white/[0.06]" />}
-            </motion.div>
+            // The small sliver it has always been. "Always show" decides
+            // whether it's there at rest, not how big it is — growing it into
+            // a pill made something that sits over everything all day far too
+            // loud.
+            <motion.div key="rest" {...fade} className="h-[5px] w-[72px]" />
           ) : (
             <motion.div key={live.kind} {...fade} className="flex h-[34px] items-center gap-2.5 pl-1.5 pr-3">
               <Compact live={live} dancing={dancing} wave={wave} />
