@@ -289,8 +289,24 @@ fn pick(all: &[Routine], which: &str) -> Option<usize> {
         if let Some(i) = all.iter().position(|r| words.iter().any(|w| r.task.to_lowercase().contains(w))) {
             return Some(i);
         }
+        // They named one and nothing matched. Falling back to "the last one"
+        // meant "delete my backup routine", with no backup routine, quietly
+        // deleting something else entirely.
+        return None;
     }
+    // Nothing named ("pause my routine"): the most recent is the fair guess.
     if all.is_empty() { None } else { Some(all.len() - 1) }
+}
+
+/// When nothing matched: say so, and what they actually have.
+fn which_one(all: &[Routine], which: &str) -> String {
+    let names: Vec<String> = all.iter().take(5).map(|r| r.task.clone()).collect();
+    format!(
+        "I couldn't find a routine like {lq}{which}{rq}. You have: {}.",
+        names.join("; "),
+        lq = '\u{201c}',
+        rq = '\u{201d}'
+    )
 }
 
 /// A routine made with a button (Missions → "Every day"): on straight away —
@@ -348,14 +364,14 @@ pub fn handle(ask: Ask) -> String {
             "You don't have any routines yet.".into()
         }
         Ask::Pause(w) => {
-            let i = pick(&all, &w).unwrap();
+            let Some(i) = pick(&all, &w) else { return which_one(&all, &w) };
             all[i].active = false;
             let d = all[i].describe();
             save(&all);
             format!("Paused: {d}.")
         }
         Ask::Resume(w) => {
-            let i = pick(&all, &w).unwrap();
+            let Some(i) = pick(&all, &w) else { return which_one(&all, &w) };
             all[i].active = true;
             all[i].next = next_after(&all[i], Local::now());
             let d = all[i].describe();
@@ -363,13 +379,13 @@ pub fn handle(ask: Ask) -> String {
             format!("Back on: {d}.")
         }
         Ask::Delete(w) => {
-            let i = pick(&all, &w).unwrap();
+            let Some(i) = pick(&all, &w) else { return which_one(&all, &w) };
             let r = all.remove(i);
             save(&all);
             format!("Deleted: {}.", r.describe())
         }
         Ask::Retime(w, at) => {
-            let i = pick(&all, &w).unwrap();
+            let Some(i) = pick(&all, &w) else { return which_one(&all, &w) };
             all[i].at = at;
             if all[i].every == "hourly" {
                 all[i].every = "daily".into();
@@ -380,7 +396,7 @@ pub fn handle(ask: Ask) -> String {
             format!("Changed: {d}.")
         }
         Ask::RunNow(w) => {
-            let i = pick(&all, &w).unwrap();
+            let Some(i) = pick(&all, &w) else { return which_one(&all, &w) };
             // Once, within half a minute — its on/off setting stays as it was.
             all[i].run_once = true;
             let d = all[i].task.clone();
@@ -489,6 +505,42 @@ fn run_one(app: &AppHandle, r: &Routine) {
 
 #[cfg(test)]
 mod tests {
+    fn routine(task: &str) -> Routine {
+        Routine {
+            id: task.into(),
+            task: task.into(),
+            every: "daily".into(),
+            at: "08:00".into(),
+            phone: false,
+            active: true,
+            next: 0,
+            last_run: 0,
+            last_result: String::new(),
+            last_outcome: String::new(),
+            made: 0,
+            run_once: false,
+        }
+    }
+
+    #[test]
+    fn naming_a_routine_that_does_not_exist_never_hits_another_one() {
+        let all = vec![routine("water the plants"), routine("back up my photos")];
+        // A name that matches picks that one.
+        assert_eq!(pick(&all, "plants"), Some(0));
+        assert_eq!(pick(&all, "photos"), Some(1));
+        // A name that matches nothing picks NOTHING. It used to fall back to
+        // the last routine, so "delete my gym routine" with no gym routine
+        // deleted the photo backup instead.
+        assert_eq!(pick(&all, "gym routine"), None);
+        assert_eq!(pick(&all, "something else entirely"), None);
+        // Naming nothing at all still means "the one I just made".
+        assert_eq!(pick(&all, ""), Some(1));
+        assert_eq!(pick(&[], "anything"), None);
+        // And the reply says what they do have.
+        let said = which_one(&all, "gym");
+        assert!(said.contains("water the plants") && said.contains("back up my photos"), "{said}");
+    }
+
     use super::*;
 
     #[test]

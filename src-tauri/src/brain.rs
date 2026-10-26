@@ -851,7 +851,7 @@ fn ask_model(
 
     let mut chain = brain_chain();
     if chain.is_empty() {
-        return Err(anyhow!("{}", if online() { "no brain is configured" } else { OFFLINE }));
+        return Err(anyhow!("{}", if online() { NO_BRAIN } else { OFFLINE }));
     }
     // The smartest brain to hand goes first. Small models are quick, but they
     // got quiz answers wrong — and on tasks they mostly described the job
@@ -897,6 +897,11 @@ pub fn online() -> bool {
     *LAST.lock() = Some((up, std::time::Instant::now()));
     up
 }
+
+/// The very first thing someone can hit: installed, asked something, and
+/// no AI key added yet. "no brain is configured" is what a developer calls
+/// it, not what a person needs to be told.
+pub(crate) const NO_BRAIN: &str = "I haven't got an AI to think with yet. Add a free key in Settings → Izuki's brain — Google's Gemini takes about a minute and costs nothing.";
 
 /// What to say when the internet's down and no brain on this PC can answer.
 pub const OFFLINE: &str = "You're offline right now — check your Wi-Fi, then ask me again.";
@@ -4242,7 +4247,7 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
     let cfg = settings
         .provider(settings.active_provider)
         .cloned()
-        .ok_or_else(|| anyhow!("no brain is configured"))?;
+        .ok_or_else(|| anyhow!(NO_BRAIN))?;
 
     let scaled = frame.downscaled(768);
     let req = VisionRequest {
@@ -4757,7 +4762,7 @@ mod speed_tests {
         assert_eq!(chain[1].id, ProviderId::Nvidia);
         assert!(is_hopeless("openai is rate-limiting you (429 Too Many Requests): You have no credits remaining"));
         // Groq's per-minute limit mentions "Used 4029" — not a 402, not hopeless.
-        assert!(!is_hopeless("groq is rate-limiting you (429 Too Many Requests): Rate limit reached for model `qwen` in organization `org_01m3g02f` on input tokens per minute (ITPM): Limit 7000, Used 4029, Requested 4059. Please try again in 9.3s. Need more tokens? Upgrade to Dev Tier today"));
+        assert!(!is_hopeless("groq is rate-limiting you (429 Too Many Requests): Rate limit reached for model `qwen` in organization `org_example01` on input tokens per minute (ITPM): Limit 7000, Used 4029, Requested 4059. Please try again in 9.3s. Need more tokens? Upgrade to Dev Tier today"));
         assert!(is_hopeless("payment needed (402 Payment Required)"));
         assert!(!is_hopeless("took 4021 ms"));
         assert!(!is_hopeless("the model returned an empty reply"));

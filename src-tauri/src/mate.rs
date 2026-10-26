@@ -219,6 +219,13 @@ pub fn spawn(app: AppHandle) {
 /// thought), short enough for a speech bubble. Falls back to `None` when no
 /// AI answers — the character then uses its own stock lines.
 pub fn line(event: &str, detail: &str, recent: &[String]) -> Option<String> {
+    // Never while Izuki is working on something the user actually asked for.
+    // A free tier allows roughly one request a minute; a passing joke must
+    // not be the one that gets it. The character falls back to a stock line,
+    // which nobody can tell apart from the other side of the screen.
+    if crate::hotkey::is_busy() {
+        return None;
+    }
     let s = crate::state::store().settings();
     let who = crate::voices::active(&s);
     let style = if who.persona.style.is_empty() { "warm, quick and a little playful".to_string() } else { who.persona.style.to_string() };

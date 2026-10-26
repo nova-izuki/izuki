@@ -23,6 +23,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🗂️", title: "Routines stop acting on the wrong one", how: "Saying “delete my gym routine” when you haven't got one used to delete a different routine, quietly. Now Izuki tells you it couldn't find it and lists the ones you do have." },
+  { icon: "🔋", title: "Izuki stops taking your turn", how: "Free AI keys only allow about one request a minute. Izuki's desktop character used to spend one on a joke while you were waiting for a real answer — it now uses its own stock line instead. Checking your email got the same treatment last update." },
   { icon: "💬", title: "It tells you what's wrong in plain words", how: "When the free AIs were busy you used to get a wall of error text with rate limits and account ids in it. Now you get one sentence that says what happened and what to do — and a different one depending on whether it's busy, out of credit, a bad key, or your internet." },
   { icon: "🎙️", title: "Write down a Zoom call or class", how: "Say “write down this zoom call” and Izuki records what your PC plays — not the mic, so headphones are fine. Say “stop recording” and it becomes study notes with timestamps and the full transcript underneath. You don't have to pay attention. No audio is kept." },
   { icon: "📅", title: "Revision that comes to you", how: "Izuki now knows when a flashcard has gone cold: miss one and it's back tomorrow, know it and the gap grows to 2, 4, 8, 16 days. Ask “what should I revise today?”, or let it mention it once in the evening when five or more are due." },

@@ -517,9 +517,19 @@ mod tests {
         assert!(s.contains("[token]") && !s.contains("k3J9sd82"), "{s}");
         let s = scrub("text me on +2348012345678 or 08012345678");
         assert_eq!(s.matches("[number]").count(), 2, "{s}");
+        // Real lines from a user's log. The account ids in them identify a
+        // person and must never ride along in a report.
+        let s = scrub("[headsup] couldn't list linked apps: error sending request for url (https://backend.composio.dev/api/v3/connected_accounts?user_ids=izuki-0123456789abcdef0123456789abcdef&statuses=ACTIVE)");
+        assert!(!s.contains("0123456789abcdef") && s.contains("[token]"), "{s}");
+        // A provider's refusal names the organization it was refusing.
+        let s = scrub("groq is rate-limiting you: Rate limit reached for model `qwen/qwen3.8-27b` in organization `org_01x9example23abcd45ef67` service tier `on_demand`");
+        assert!(!s.contains("01x9example23") && s.contains("[token]"), "{s}");
         // Ordinary log lines stay readable.
         let s = scrub("[brain] Gemini (gemini-flash-latest) answered in 14996 ms");
         assert_eq!(s, "[brain] Gemini (gemini-flash-latest) answered in 14996 ms");
+        // Including the ones that carry a model name with digits in it.
+        let s = scrub("[brain] Groq (qwen/qwen3.8-27b) answered in 1179 ms");
+        assert_eq!(s, "[brain] Groq (qwen/qwen3.8-27b) answered in 1179 ms");
     }
 
     #[test]
