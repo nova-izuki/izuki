@@ -172,6 +172,7 @@ fn tick(app: &AppHandle) {
     battery(app, settings.buddy_acts);
     later_list(app);
     revision(app);
+    meeting(app);
     disk_and_memory(app);
     internet(app);
 }
@@ -237,6 +238,38 @@ fn revision(app: &AppHandle) {
         if overdue > 0 { format!(", {overdue} of them overdue") } else { String::new() }
     );
     say(app, &format!("revise-{}", now.format("%Y%m%d")), &line, Level::Chat);
+}
+
+/// A call or an online class just started: offer to write it down.
+///
+/// Nobody remembers to start a recorder in the ten seconds before a lecture
+/// begins, which is exactly when it matters. Izuki sees the meeting window
+/// come to the front and asks once — one answer and the whole thing is
+/// written down and turned into notes, with the user doing nothing.
+fn meeting(app: &AppHandle) {
+    // Already writing one down: nothing to offer.
+    if crate::roomrec::is_recording() {
+        return;
+    }
+    let title = crate::uia::foreground_title();
+    let app_name = crate::uia::foreground_app();
+    let hay = format!("{} {}", title.to_lowercase(), app_name.to_lowercase());
+    // The window has to look like a call that is actually happening, not the
+    // Zoom home screen or a tab someone left open.
+    const CALLING: [&str; 7] = ["zoom meeting", "microsoft teams", "google meet", "meet.google", "webex", "zoom workplace", "teams meeting"];
+    if !CALLING.iter().any(|w| hay.contains(w)) {
+        return;
+    }
+    // A meeting window that is merely open shouldn't nag: offered once, and
+    // not again for this title until it's been gone a while.
+    let name = if title.trim().is_empty() { "this call".to_string() } else { title.chars().take(60).collect() };
+    offer(
+        app,
+        &format!("meeting-{}", name.to_lowercase().replace(' ', "-")),
+        &format!("Looks like you're in {name}. Want me to write it down and turn it into notes? You won't have to follow it."),
+        Level::Chat,
+        &format!("write down this call: {name}"),
+    );
 }
 
 fn later_list(app: &AppHandle) {

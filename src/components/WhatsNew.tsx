@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🎧", title: "It offers to write down your call", how: "Join a Zoom, Teams or Meet call and Izuki asks if you want it written down. Say yes and you get proper notes with timestamps and the full transcript when it ends — you don't have to follow any of it, or remember to start anything." },
   { icon: "🧠", title: "It does things instead of talking about them", how: "Saying “fix this” or “sort this out” used to get a description of the problem instead of a fix — Izuki only recognised words like “open” and “click” as real jobs. It now understands how people actually ask. It can also look things up on the web when the screen doesn't answer the question, and it tells you when it isn't sure instead of guessing confidently." },
   { icon: "⌨️", title: "Hold a key and talk into any app", how: "Hold Ctrl+Shift+Space anywhere, talk, let go — it types into whatever box you're in: email, WhatsApp, a form. Fillers and false starts taken out, punctuation added. It never sends anything.", try: { label: "Shortcuts", tab: "settings" } },
   { icon: "🚗", title: "It notices when you're driving", how: "Your phone offers Drive mode once it's sure you're actually driving — hands-free, big buttons, spoken. It asks rather than taking the screen, once a trip, and remembers if you say no." },
