@@ -2804,9 +2804,12 @@ pub fn run_instant(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<Vi
     if !worked && alive() {
         eprintln!("[bug] instant command didn't work: {act:?}");
     }
+    // A few acts answer from the PC itself (the clock); their words are made
+    // now, not fixed in the parser.
+    let answer = crate::instant::spoken(act).unwrap_or_else(|| say.to_string());
     Some(VisionPlan {
         steps,
-        summary: if worked { say.to_string() } else { "Hmm, that didn't work — try asking me another way?".to_string() },
+        summary: if worked { answer } else { "Hmm, that didn't work — try asking me another way?".to_string() },
         provider: "local".into(),
         model: "instant".into(),
         mood: Some(if worked { "cheerful" } else { "sympathetic" }.into()),

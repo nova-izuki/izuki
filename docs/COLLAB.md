@@ -50,6 +50,7 @@ assistant is also changing.
 | Releases: version bumps, release notes, What's New | `package.json` and the other version files, `docs/RELEASE-*.md`, `WhatsNew.tsx` | Claude |
 | Website: bring it up to date with features through 1.0.135 | `docs/index.html`, `docs/llms.txt`, `docs/sitemap.xml` | Freebuff (first task) |
 | Missions card | `MissionsCard.tsx`, `ipc.ts` mission types | ChatGPT |
+| Voice OS instant commands (volume level, snap, lock, screenshot, task manager) and local clock/battery answers | `instant.rs`, `brain.rs` (`run_instant`), `VoiceEngine.tsx` comment, `docs/index.html` card | Freebuff (released in 1.0.176 at the owner's request; repo rule says Claude releases — owner asked Freebuff directly) |
 
 ## Shared skills (local, in `.claude/skills/`, not in git)
 - `izuki-dev`: architecture, traps and the checklist.

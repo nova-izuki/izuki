@@ -1216,7 +1216,8 @@ export function VoiceEngine() {
     }
 
     // Everyday commands — "scroll down", "louder", "pause", "next song", "go
-    // back", "new tab" — done at once, no AI to wait for or get wrong.
+    // back", "new tab", "set the volume to 30", "snap left", "lock my pc",
+    // "what time is it" — done at once, no AI to wait for or get wrong.
     // Only a coach start from THIS request counts (coach.rs's event).
     coachStarted = false;
     const quick = await api.instantCommand(t).catch(() => null);
