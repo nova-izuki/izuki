@@ -897,15 +897,40 @@ pub fn online() -> bool {
             return up;
         }
     }
-    let up = ["1.1.1.1:443", "8.8.8.8:53", "208.67.222.222:443"].iter().any(|a| {
-        a.parse::<std::net::SocketAddr>()
-            .is_ok_and(|addr| std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(900)).is_ok())
-    });
+    let up = raw_probe() || service_probe();
     if !up {
         eprintln!("[brain] this PC looks offline — only brains on this PC can answer");
     }
     *LAST.lock() = Some((up, std::time::Instant::now()));
     up
+}
+
+/// Pinging public DNS by raw IP is quick and works on most home networks —
+/// but school, campus and hotel Wi-Fi routinely drop traffic to those IPs
+/// while ordinary web browsing is perfectly fine. Judging the internet by
+/// them alone made Izuki announce "your internet just dropped", latch into
+/// offline, and throw away every cloud brain ("only brains on this PC can
+/// answer") while Discord, the browser and the updater all worked.
+fn raw_probe() -> bool {
+    ["1.1.1.1:443", "8.8.8.8:53", "208.67.222.222:443"].iter().any(|a| {
+        a.parse::<std::net::SocketAddr>()
+            .is_ok_and(|addr| std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(900)).is_ok())
+    })
+}
+
+/// The honest test: can Izuki reach the hosts it actually talks to? Asked
+/// only when the raw probes fail, so it costs nothing on a normal network.
+fn service_probe() -> bool {
+    use std::net::ToSocketAddrs;
+    ["generativelanguage.googleapis.com:443", "api.groq.com:443", "api.openai.com:443"]
+        .iter()
+        .any(|host| {
+            host.to_socket_addrs().is_ok_and(|addrs| {
+                addrs.take(2).any(|a| {
+                    std::net::TcpStream::connect_timeout(&a, std::time::Duration::from_millis(1200)).is_ok()
+                })
+            })
+        })
 }
 
 /// The very first thing someone can hit: installed, asked something, and
@@ -1379,6 +1404,21 @@ fn has_status(e: &str, code: &str) -> bool {
     })
 }
 
+/// Worth another try in a few seconds: a busy free tier, a queue that timed
+/// out, a connection that blipped. A rejected key or a wrong model name is
+/// not — asking again only makes the person wait for the same failure.
+fn temporary_trouble(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    [
+        "error sending request", "timed out", "timeout", "connection", "network", "unreachable",
+        "no such host", "dns", "429", "too many requests", "rate limit", "rate-limit",
+        "overloaded", "unavailable",
+    ]
+    .iter()
+    .any(|p| e.contains(p))
+        || ["500", "502", "503", "504"].iter().any(|c| has_status(&e, c))
+}
+
 /// An error that won't fix itself by asking again in a minute.
 fn is_hopeless(err: &str) -> bool {
     let e = err.to_ascii_lowercase();
@@ -1597,7 +1637,9 @@ pub(crate) fn why_none_answered(errors: &[String]) -> String {
         return "That AI didn't accept the key. Check it in Settings \u{2192} Izuki's brain, or paste a fresh one.".into();
     }
     if any(&["error sending request", "dns", "timed out", "timeout", "connection", "unreachable", "network"]) {
-        return "I couldn't reach the AI just now \u{2014} that's usually the internet. Check your connection and ask again.".into();
+        // "Usually the internet" sent people to check Wi-Fi that was fine:
+        // a school or work network can block the AI service itself.
+        return "I couldn't reach the AI just now \u{2014} it may be your internet, or this network blocking it. Try again, or switch networks.".into();
     }
     if any(&["overloaded", "503", "500", "internal server error", "unavailable"]) {
         return "That AI is having a moment (its servers, not your PC). Try again shortly, or add another free key in Settings so Izuki has a spare.".into();
@@ -3227,28 +3269,55 @@ fn submit_task(
             created_at: now_ms(),
         };
 
-        // Free brains get busy (rate limits, overloaded queues): wait and
-        // try again rather than dropping the task halfway.
+        // Free brains get busy (rate limits, overloaded queues) and campus
+        // Wi-Fi blips. A whole task used to be thrown away after just two
+        // tries six seconds apart — mid-assignment, with the work half done.
+        // Transient trouble is now waited out; a dropped connection is
+        // waited *for*, so the task picks itself back up when the net
+        // returns instead of telling the user it will "finish it later".
+        const TRIES: u64 = 5;
         let mut attempt = 0u64;
         let asked_now = loop {
             match ask_model(store, &session, &frame, &[], zoomed.is_some(), wants_action || round > 0, think) {
                 Ok(plan) => break Ok(plan),
                 Err(e) => {
                     attempt += 1;
+                    let why = e.to_string();
+                    let temporary = temporary_trouble(&why);
                     eprintln!("[agent] round {} try {attempt} failed: {e}", round + 1);
-                    if attempt >= 2 || !alive() {
+                    if !alive() || attempt >= if temporary { TRIES } else { 2 } {
                         break Err(e);
                     }
-                    if attempt == 1 {
-                        let _ = app.emit(
-                            "izuki://say",
-                            serde_json::json!({ "text": "The free AI's busy — give me a second.", "mood": "calm", "reply": true, "quick": true }),
-                        );
-                    }
-                    let _ = app.emit(events::STATUS, StatusEvent::working("Waiting for a free AI brain…"));
-                    let until = std::time::Instant::now() + Duration::from_secs(6 * attempt);
-                    while std::time::Instant::now() < until && alive() {
-                        std::thread::sleep(Duration::from_millis(200));
+                    // An offline PC needs a different sentence, and a
+                    // different wait, from a rate-limited free tier.
+                    let offline = !online();
+                    let line = if offline {
+                        "Your internet blipped — waiting for it to come back."
+                    } else if temporary {
+                        "The free AI's busy — give me a second."
+                    } else {
+                        "That didn't go through — giving it one more try."
+                    };
+                    let _ = app.emit(
+                        "izuki://say",
+                        serde_json::json!({ "text": line, "mood": "calm", "reply": true, "quick": true }),
+                    );
+                    let _ = app.emit(
+                        events::STATUS,
+                        StatusEvent::working(if offline { "Waiting for the internet…" } else { "Waiting for a free AI brain…" }),
+                    );
+                    if offline {
+                        // Waiting six seconds for a network that comes back
+                        // in thirty was pointless. Watch for it, up to 90 s.
+                        let give_up = std::time::Instant::now() + Duration::from_secs(90);
+                        while std::time::Instant::now() < give_up && alive() && !online() {
+                            std::thread::sleep(Duration::from_millis(500));
+                        }
+                    } else {
+                        let until = std::time::Instant::now() + Duration::from_secs(3 * attempt);
+                        while std::time::Instant::now() < until && alive() {
+                            std::thread::sleep(Duration::from_millis(200));
+                        }
                     }
                 }
             }

@@ -633,30 +633,58 @@ fn disk_and_memory(app: &AppHandle) {
 }
 
 fn internet(app: &AppHandle) {
-    let up = ["1.1.1.1:443", "8.8.8.8:53"].iter().any(|a| {
-        a.parse::<std::net::SocketAddr>().is_ok_and(|addr| std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(2)).is_ok())
+    let (down, told, dropped, back) = with(|s| {
+        let (down, told, dropped, back) = net_state(reachable(), s.net_down, s.net_told);
+        s.net_down = down;
+        s.net_told = told;
+        (down, told, dropped, back)
     });
-    let (dropped, back) = with(|s| {
-        if up {
-            let back = s.net_told;
-            s.net_down = 0;
-            s.net_told = false;
-            (false, back)
-        } else {
-            s.net_down = s.net_down.saturating_add(1);
-            let tell = s.net_down == 2;
-            if tell {
-                s.net_told = true;
-            }
-            (tell, false)
-        }
-    });
+    let _ = (down, told);
     let stamp = chrono::Local::now().format("%Y%m%d%H%M").to_string();
     if dropped {
-        say(app, &format!("net-down-{stamp}"), "Your internet just dropped. I'll tell you the moment it's back.", Level::Important);
+        say(app, &format!("net-down-{stamp}"), "Your internet looks down \u{2014} I'll tell you the moment it's back.", Level::Important);
     }
     if back {
         say(app, &format!("net-up-{stamp}"), "Internet's back.", Level::Chat);
+    }
+}
+
+/// Is anything actually reachable?
+///
+/// This used to be two raw IP probes (1.1.1.1:443, 8.8.8.8:53) and nothing
+/// else. Campus and filtered networks block exactly those while every normal
+/// site loads \u2014 so Izuki announced "your internet just dropped" on a working
+/// connection, then sat waiting for it to come back. The OS resolver is the
+/// honest first question: if a public name resolves, the internet is up,
+/// whatever the network thinks of Cloudflare's IP.
+fn reachable() -> bool {
+    use std::net::ToSocketAddrs;
+    if ("www.cloudflare.com", 443)
+        .to_socket_addrs()
+        .is_ok_and(|mut addrs| addrs.next().is_some())
+    {
+        return true;
+    }
+    // Resolving failed: fall back to a direct connection, which is the only
+    // test that works on a network whose DNS is the thing that's broken.
+    ["1.1.1.1:443", "8.8.8.8:53", "www.google.com:443"].iter().any(|a| {
+        a.to_socket_addrs().is_ok_and(|addrs| {
+            addrs.into_iter().any(|addr| std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(2)).is_ok())
+        })
+    })
+}
+
+/// The state machine behind the internet notice, pure so it can be tested:
+/// `(down, told, say_it_dropped, say_it_is_back)`. Three consecutive failed
+/// checks (90 seconds) before claiming anything, one notice, and "back" only
+/// if we had said it dropped.
+fn net_state(up: bool, down: u8, told: bool) -> (u8, bool, bool, bool) {
+    if up {
+        (0, false, false, told)
+    } else {
+        let down = down.saturating_add(1);
+        let first_time = down == 3 && !told;
+        (down, told || first_time, first_time, false)
     }
 }
 
@@ -829,5 +857,19 @@ mod tests {
     #[test]
     fn levels_are_ordered() {
         assert!(Level::Urgent > Level::Important && Level::Important > Level::Chat);
+    }
+
+    #[test]
+    fn a_blip_is_not_an_outage() {
+        // One or two failed checks say nothing: a 2-second probe failing twice
+        // is a busy Wi-Fi moment, not a dropped connection.
+        assert_eq!(net_state(false, 0, false), (1, false, false, false));
+        assert_eq!(net_state(false, 1, false), (2, false, false, false));
+        // The third says it, once.
+        assert_eq!(net_state(false, 2, false), (3, true, true, false));
+        assert_eq!(net_state(false, 3, true), (4, true, false, false));
+        // Back says it only if we had said it dropped, and resets.
+        assert_eq!(net_state(true, 4, true), (0, false, false, true));
+        assert_eq!(net_state(true, 0, false), (0, false, false, false));
     }
 }
