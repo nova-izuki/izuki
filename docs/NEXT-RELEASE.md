@@ -12,3 +12,5 @@ into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
 - Crash fixed: `thread 'tokio-rt-worker' has overflowed its stack` killed 1.0.175 mid-session (Windows event log, 0xc00000fd). Workers now get a 16 MB stack [Freebuff]
 - A task is no longer thrown away after two tries six seconds apart: five tries for transient trouble, and an offline PC is waited for (up to 90 s) so the same task resumes instead of being promised for "later" [Freebuff]
 - Offline detection now also connects to the AI hosts Izuki actually uses, so a campus network that blocks raw DNS IPs no longer hides every cloud brain [Freebuff]
+- Speed: a lean look now downscales the screenshot to 1280 wide (2,764 → 1,228 picture tokens, proven in a test) so free per-minute limits stop refusing the second look [Freebuff]
+- Autonomous: when the internet returns it names the unfinished task and offers to resume it instead of only saying "Internet's back" [Freebuff]

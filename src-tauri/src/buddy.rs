@@ -645,7 +645,21 @@ fn internet(app: &AppHandle) {
         say(app, &format!("net-down-{stamp}"), "Your internet looks down \u{2014} I'll tell you the moment it's back.", Level::Important);
     }
     if back {
-        say(app, &format!("net-up-{stamp}"), "Internet's back.", Level::Chat);
+        // Coming back from an outage with work half-done is the one moment to
+        // speak up about it. Waiting to be asked "keep going" meant an
+        // assignment that stopped mid-sentence stayed stopped for good.
+        let waiting = crate::brain::unfinished_since()
+            .filter(|at| at.elapsed() < Duration::from_secs(30 * 60))
+            .and_then(|_| crate::brain::unfinished_task());
+        match waiting {
+            Some(task) => say(
+                app,
+                &format!("net-up-{stamp}"),
+                &format!("Internet's back \u{2014} I still owe you the rest of \u{201c}{task}\u{201d}. Say keep going and I'll pick it up where I stopped."),
+                Level::Important,
+            ),
+            None => say(app, &format!("net-up-{stamp}"), "Internet's back.", Level::Chat),
+        };
     }
 }
 

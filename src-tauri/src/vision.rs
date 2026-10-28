@@ -546,11 +546,39 @@ pub fn warm_up() {
     });
 }
 
+/// The same picture, smaller. A screenshot costs about (width × height) / 750
+/// tokens on its own: a 1920-wide one is ~3,700 — over half of a free tier's
+/// whole per-minute allowance before a single word of text. The close-up
+/// path (`zoom`) already exists for small print, so a lean look can afford a
+/// coarser wide shot. Every coordinate the model gives back is in image
+/// pixels and is mapped through `image_size`, so scaling here stays correct.
+fn smaller_picture(jpeg: &[u8], size: (u32, u32), max_edge: u32) -> Option<(Vec<u8>, (u32, u32))> {
+    let long = size.0.max(size.1);
+    if long <= max_edge || jpeg.is_empty() {
+        return None;
+    }
+    let picture = image::load_from_memory(jpeg).ok()?;
+    let scale = max_edge as f64 / long as f64;
+    let nw = ((size.0 as f64 * scale).round() as u32).max(1);
+    let nh = ((size.1 as f64 * scale).round() as u32).max(1);
+    let small = picture.resize_exact(nw, nh, image::imageops::FilterType::Triangle).to_rgb8();
+    let mut out = Vec::new();
+    jpeg_encoder::Encoder::new(&mut out, 62)
+        .encode(small.as_raw(), nw as u16, nh as u16, jpeg_encoder::ColorType::Rgb)
+        .ok()?;
+    Some((out, (nw, nh)))
+}
+
 /// Ask a provider to turn the marks into a plan.
-/// A leaner copy for an AI with a small per-minute allowance: the ask and
-/// the screenshot stay whole; the controls, page text and extras shrink.
+/// A leaner copy for an AI with a small per-minute allowance: the ask and the
+/// controls stay whole; the screenshot and page text shrink.
 fn lean(req: &VisionRequest) -> VisionRequest {
     let mut r = req.clone();
+    // The picture first: it is usually the single biggest cost in the request.
+    if let Some((bytes, size)) = smaller_picture(&r.image_jpeg, r.image_size, 1280) {
+        r.image_jpeg = bytes;
+        r.image_size = size;
+    }
     // Everything on screen stays (so a visible button is never guessed at);
     // what's scrolled off or hover-only goes first.
     let visible = r.controls.iter().filter(|c| !c.below && !c.hidden).count();
@@ -2054,6 +2082,28 @@ Safety Categories: PII/Privacy"));
         assert_eq!(summary, "Pressing Enter.");
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].key.as_deref(), Some("enter"));
+    }
+
+    #[test]
+    fn a_lean_look_sends_a_much_smaller_picture() {
+        // A normal 1920×1080 screen: about 3,700 tokens of picture alone, which
+        // is over half of a free tier's whole per-minute allowance.
+        let full = image::RgbImage::from_fn(1920, 1080, |x, y| image::Rgb([(x % 251) as u8, (y % 241) as u8, 40]));
+        let mut jpeg = Vec::new();
+        jpeg_encoder::Encoder::new(&mut jpeg, 80)
+            .encode(full.as_raw(), 1920, 1080, jpeg_encoder::ColorType::Rgb)
+            .unwrap();
+        let (small, (w, h)) = smaller_picture(&jpeg, (1920, 1080), 1280).expect("downscaled");
+        assert_eq!((w, h), (1280, 720));
+        let before = crate::budget::estimate(0, Some((1920, 1080)));
+        let after = crate::budget::estimate(0, Some((w, h)));
+        assert!(after * 2 < before, "{after} tokens should be well under half of {before}");
+        assert!(small.len() < jpeg.len(), "and fewer bytes to upload");
+    }
+
+    #[test]
+    fn a_picture_already_small_enough_is_left_alone() {
+        assert!(smaller_picture(&[1, 2, 3], (800, 600), 1280).is_none());
     }
 
     #[test]

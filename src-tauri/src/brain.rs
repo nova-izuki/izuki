@@ -4381,6 +4381,15 @@ pub fn unfinished_since() -> Option<std::time::Instant> {
     UNFINISHED.lock().as_ref().and(*UNFINISHED_AT.lock())
 }
 
+/// What that task was about, clipped to a sentence (`None`: nothing waits).
+pub fn unfinished_task() -> Option<String> {
+    UNFINISHED
+        .lock()
+        .as_ref()
+        .map(|(task, _)| task.trim().chars().take(120).collect::<String>())
+        .filter(|t| !t.is_empty())
+}
+
 /// "Keep going", "continue", "carry on"…
 fn is_keep_going(said: &str) -> bool {
     let s = said.trim().trim_end_matches(['.', '!', '?']).to_lowercase();
