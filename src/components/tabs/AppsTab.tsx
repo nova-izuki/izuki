@@ -1,3 +1,4 @@
+import { rank } from "../../lib/search";
 import { InboxCard } from "../InboxCard";
 import { AccountHealthCard } from "../AccountHealthCard";
 import { EmpireCard } from "../EmpireCard";
@@ -167,9 +168,10 @@ export function AppsTab() {
   const [appSearch, setAppSearch] = useState("");
   const [connectedOnly, setConnectedOnly] = useState(false);
   const appResults = useMemo(() => {
-    const query = appSearch.trim().toLowerCase();
-    return APP_CATALOG.filter((app) => (!connectedOnly || linked.includes(app.slug)) &&
-      `${app.name} ${app.what} ${app.category ?? ""}`.toLowerCase().includes(query));
+    const pool = APP_CATALOG.filter((app) => !connectedOnly || linked.includes(app.slug));
+    const query = appSearch.trim();
+    if (!query) return pool;
+    return rank(pool, query, (app) => `${app.name} ${app.what} ${app.category ?? ""}`, pool.length, true);
   }, [appSearch, connectedOnly, linked]);
 
   const refresh = useCallback(async () => {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Brain, Check, CheckSquare, ChevronDown, ChevronRight, Copy, FolderTree, Loader2, MessageSquare, MoreHorizontal, Search, Sparkles, Square, Trash2, Wand2, X } from "lucide-react";
+import { rank } from "../../lib/search";
 import { api, on } from "../../lib/ipc";
 import type { Note, NoteLink, NoteLinks } from "../../lib/types";
 import { noteStudyText } from "../../lib/notes";
@@ -272,8 +273,10 @@ export function NotesTab() {
   }, [reload]);
 
   const shown = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return q ? notes.filter((n) => `${n.title} ${n.text} ${n.context?.subject ?? ""} ${n.context?.chapter ?? ""} ${n.context?.topic ?? ""}`.toLowerCase().includes(q)) : notes;
+    // Your own notes, found the way you'd ask for them: "that note about
+    // photosynthesis", not an exact substring of the whole phrase.
+    const q = query.trim();
+    return q ? rank(notes, q, (n) => `${n.title} ${n.text} ${n.context?.subject ?? ""} ${n.context?.chapter ?? ""} ${n.context?.topic ?? ""}`, notes.length, true) : notes;
   }, [notes, query]);
   const groups = useMemo(() => (query.trim() ? [{ subject: "", notes: shown }] : bySubject(shown)), [shown, query]);
   /** Subjects folded away. */

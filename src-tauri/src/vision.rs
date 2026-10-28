@@ -395,6 +395,16 @@ impl VisionRequest {
                 s.push_str(&format!("[{}] {} \"{}\" at {},{}{extra}\n", c.id, kind, c.name, ix, iy));
             }
         }
+        // A busy window has more controls than the list can hold. Saying so
+        // is the difference between scrolling to find a button and guessing a
+        // pixel for one that was never listed.
+        let hidden = crate::uia::controls_dropped();
+        if hidden > 0 {
+            s.push_str(&format!(
+                "({hidden} more control(s) in this window are not in the list. If what you need isn't above, scroll \
+                 the page or say what you can't find — do not guess a position for something unlisted.)\n"
+            ));
+        }
         s
     }
 

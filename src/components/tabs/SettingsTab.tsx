@@ -38,6 +38,8 @@ import { useIzuki } from "../../lib/store";
 import { api } from "../../lib/ipc";
 import { setChatLook } from "../../lib/tone";
 import { brainReady } from "../../lib/setup";
+import { rank } from "../../lib/search";
+import { canonicalShortcut, MODIFIER_KEYS, shortcutFromKey } from "../../lib/hotkeys";
 import { JumpBar } from "../JumpBar";
 import type { BackdropMode, ProviderId } from "../../lib/types";
 
@@ -78,10 +80,18 @@ export function SettingsTab() {
   const [probe, setProbe] = useState<Record<string, string>>({});
   const [reveal, setReveal] = useState<Record<string, boolean>>({});
   const [settingsSearch, setSettingsSearch] = useState("");
+  const hotkeys = {
+    draw: settings.hotkey_draw,
+    quickdraw: settings.hotkey_quickdraw,
+    voice: settings.hotkey_voice,
+    dictate: settings.hotkey_dictate,
+    replay: settings.hotkey_replay,
+    panic: settings.hotkey_panic,
+  };
   const searchMatches = useMemo(() => {
     const q = settingsSearch.trim().toLowerCase();
     if (!q) return [];
-    return [
+    const all = [
       { label: "Brain & AI keys", id: "settings-brain", keywords: "model gemini groq ollama provider api" },
       { label: "Shortcuts & hotkeys", id: "settings-shortcuts", keywords: "wake voice keyboard command" },
       { label: "Mouse, precision & screen control", id: "settings-execution", keywords: "jarvis click screen accuracy automation" },
@@ -98,7 +108,9 @@ export function SettingsTab() {
       { label: "Browser extension", id: "settings-browser", keywords: "chrome edge side panel ask page" },
       { label: "Meta Llama", id: "settings-brain", keywords: "meta llama facebook" },
       { label: "Help & tour", id: "settings-help", keywords: "tour guide how" },
-    ].filter(({ label, keywords }) => `${label} ${keywords}`.toLowerCase().includes(q)).slice(0, 4);
+      { label: "Hold to dictate", id: "settings-shortcuts", keywords: "dictate dictation wispr flow talk to type voice typing type what I say speech to text hold a key tidy filler words um" },
+    ];
+    return rank(all, q, (s) => `${s.label} ${s.keywords}`, 4, true);
   }, [settingsSearch]);
 
   function setProvider(id: ProviderId, fields: Partial<(typeof settings.providers)[number]>) {
@@ -376,34 +388,52 @@ export function SettingsTab() {
       </Section>
 
       {/* ------------------------------------------------ hotkeys */}
-      <Section id="settings-shortcuts" title="Shortcuts" group="Keys" foldable hint="Global — they work from any app, even full-screen games.">
+      <Section id="settings-shortcuts" title="Shortcuts" group="Keys" foldable hint="Global — they work from any app, even full-screen games. Hold the talk key to speak a question; hold the dictate key to have what you say typed where your cursor already is.">
         <HotkeyRow
           label="Draw overlay"
           value={settings.hotkey_draw}
+          taken={otherHotkeys(hotkeys, "draw")}
           onChange={(v) => patch({ hotkey_draw: v })}
         />
         <div className="izk-divider" />
         <HotkeyRow
           label="Quickdraw (hold)"
           value={settings.hotkey_quickdraw}
+          taken={otherHotkeys(hotkeys, "quickdraw")}
           onChange={(v) => patch({ hotkey_quickdraw: v })}
         />
         <div className="izk-divider" />
         <HotkeyRow
-          label="Push-to-talk"
+          label="Push-to-talk (hold and talk, let go to send)"
           value={settings.hotkey_voice}
+          taken={otherHotkeys(hotkeys, "voice")}
           onChange={(v) => patch({ hotkey_voice: v })}
         />
         <div className="izk-divider" />
         <HotkeyRow
+          label="Hold to dictate (types where you are)"
+          value={settings.hotkey_dictate}
+          taken={otherHotkeys(hotkeys, "dictate")}
+          onChange={(v) => patch({ hotkey_dictate: v })}
+        />
+        <Row
+          label="Tidy what I dictate"
+          hint="Takes out “um”, “you know”, false starts and words repeated by accident, and fixes punctuation. Off: exactly the words you said. Links, emails and code always go in untouched."
+        >
+          <Toggle checked={settings.dictate_tidy ?? true} onChange={(v) => patch({ dictate_tidy: v })} />
+        </Row>
+        <div className="izk-divider" />
+        <HotkeyRow
           label="Replay last flow"
           value={settings.hotkey_replay}
+          taken={otherHotkeys(hotkeys, "replay")}
           onChange={(v) => patch({ hotkey_replay: v })}
         />
         <div className="izk-divider" />
         <HotkeyRow
           label="Emergency stop — everything, every mode"
           value={settings.hotkey_panic}
+          taken={otherHotkeys(hotkeys, "panic")}
           onChange={(v) => patch({ hotkey_panic: v })}
         />
       </Section>
@@ -655,41 +685,78 @@ function LabelledField({
   );
 }
 
-const MODIFIERS = ["Control", "Shift", "Alt", "Meta"];
+/** Every global shortcut but this one, so the Shortcuts list can refuse a
+ *  chord that already has a job. One chord, one action. */
+function otherHotkeys(
+  keys: Record<"draw" | "quickdraw" | "voice" | "dictate" | "replay" | "panic", string>,
+  mine: keyof typeof keys
+): Array<[string, string]> {
+  const named: Array<[keyof typeof keys, string]> = [
+    ["draw", "Draw overlay"],
+    ["quickdraw", "Quickdraw"],
+    ["voice", "Push-to-talk"],
+    ["dictate", "Hold to dictate"],
+    ["replay", "Replay last flow"],
+    ["panic", "Emergency stop"],
+  ];
+  return named
+    .filter(([key]) => key !== mine && keys[key].trim())
+    .map(([key, label]) => [keys[key], label] as [string, string]);
+}
 
 /** Click, then press the combo you want. Esc cancels. */
 function HotkeyRow({
   label,
   value,
   onChange,
+  taken = [],
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  /** The other shortcuts, so one chord can't be given two jobs — Windows
+   *  keeps the first and quietly drops the second. */
+  taken?: Array<[string, string]>;
 }) {
   const [capturing, setCapturing] = useState(false);
+  const [clash, setClash] = useState("");
+  const [notice, setNotice] = useState("");
 
   return (
-    <Row label={label} icon={<Keyboard size={14} strokeWidth={2.3} />}>
+    <Row
+      label={label}
+      icon={<Keyboard size={14} strokeWidth={2.3} />}
+      hint={clash ? `That one already does “${clash}”. Pick another.` : notice || undefined}
+    >
       <button
         type="button"
-        onClick={() => setCapturing(true)}
+        onClick={() => { setClash(""); setNotice(""); setCapturing(true); }}
         onBlur={() => setCapturing(false)}
         onKeyDown={(e) => {
           if (!capturing) return;
           e.preventDefault();
+          e.stopPropagation();
           if (e.key === "Escape") {
             setCapturing(false);
             return;
           }
-          if (MODIFIERS.includes(e.key)) return;
-          const parts: string[] = [];
-          if (e.ctrlKey) parts.push("Ctrl");
-          if (e.shiftKey) parts.push("Shift");
-          if (e.altKey) parts.push("Alt");
-          if (e.metaKey) parts.push("Super");
-          parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
-          onChange(parts.join("+"));
+          const combo = shortcutFromKey(e);
+          if (!combo) {
+            // A key on its own would be taken from every app on the PC.
+            if (!MODIFIER_KEYS.has(e.key)) {
+              setNotice("Add Ctrl, Alt, Shift or Win — a key on its own would be taken from every other app. An F-key works alone.");
+            }
+            return;
+          }
+          setNotice("");
+          const clashes = taken.find(([other]) => canonicalShortcut(other) === canonicalShortcut(combo));
+          if (clashes) {
+            setClash(clashes[1]);
+            setCapturing(false);
+            return;
+          }
+          setClash("");
+          onChange(combo);
           setCapturing(false);
         }}
         className={cx(
@@ -699,7 +766,7 @@ function HotkeyRow({
             : "border-white/12 bg-white/6 text-izk-ink hover:bg-white/12"
         )}
       >
-        {capturing ? "press keys…" : value}
+        {capturing ? "press keys…" : value.trim() || "not set — click to pick"}
       </button>
     </Row>
   );

@@ -363,10 +363,22 @@ mod tests {
     #[cfg(windows)]
     fn long_output_does_not_stall() {
         // ~200 KB of output: used to fill the pipe and hang until the 90 s limit.
+        //
+        // The thing that goes wrong here is a deadlock, which shows up as
+        // hitting that limit and losing the output — not as being slow. This
+        // test used to allow 30 s and failed at 41 s on a loaded laptop
+        // (PowerShell's own start-up is seconds before a single line is
+        // printed), which is a test reporting the machine rather than the
+        // code. So: it has to come back under the limit, and it has to come
+        // back whole.
         let started = std::time::Instant::now();
         let out = run("1..4000 | ForEach-Object { 'line number ' + $_ + ' of a long listing that keeps going' }").unwrap();
-        assert!(started.elapsed() < Duration::from_secs(30), "took {:?}", started.elapsed());
+        assert!(started.elapsed() < Duration::from_secs(85), "took {:?} — the pipe deadlocked", started.elapsed());
         assert!(out.starts_with("Done."));
+        // A deadlock loses everything after the pipe filled up; a clean run
+        // is cut only by the 6000-character clip.
+        assert!(out.contains("line number 1 of"), "the start of the output is missing");
+        assert!(out.len() > 5000, "only {} characters came back", out.len());
         assert!(!run_ok("exit 3"));
         assert!(run_ok("Write-Output ok"));
     }

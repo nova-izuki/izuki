@@ -543,6 +543,16 @@ const FINAL_BUTTONS: &[&str] = &[
     "submit", "finish test", "end test", "finish quiz", "end quiz", "finish attempt", "end exam", "finish exam", "hand in", "turn in",
     "send", "pay ", "pay now", "buy", "place order", "checkout", "check out", "purchase", "delete", "remove account", "post", "publish", "transfer",
     "don't save", "dont save", "do not save", "discard", "close without saving",
+    // Destroys something, with no undo anywhere in Windows.
+    "erase", "wipe", "format", "uninstall", "empty bin", "empty trash", "delete forever", "delete permanently",
+    "permanently delete", "remove permanently", "factory reset", "reset device", "clear all data", "overwrite",
+    // Spends money or signs something up.
+    "donate", "confirm payment", "confirm order", "place bid", "buy now", "subscribe and pay", "start subscription",
+    // Reaches other people, and can't be taken back once it's gone.
+    "share", "invite", "send invite", "send message", "send email", "reply all", "post now", "go live", "publish now",
+    // Hands out access or cuts it off.
+    "revoke", "deactivate", "close account", "delete account", "cancel subscription", "unsubscribe",
+    "grant access", "allow access", "trust this", "sign out of all",
 ];
 
 /// " words like this " — lower-case, punctuation gone, padded for whole-word matching.
@@ -1974,15 +1984,25 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     let behind = uia::working_behind().is_some() || crate::ext::in_tab_mode();
                     // You grabbed the mouse or keyboard in the same window:
                     // let go until you pause, then take a fresh look.
-                    if !placeless && !behind && yield_to_user(app, own.get(), alive) {
-                        if !alive() {
-                            let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
-                            return false;
+                    if !placeless && !behind {
+                        match yield_to_user(app, own.get(), alive) {
+                            Yielded::No => {}
+                            Yielded::WaitedSameWindow if can_resume_after_input(step) => {}
+                            Yielded::Busy => {
+                                *STEP_SNAG.lock() = Some(USER_WAIT_OVER.into());
+                                return false;
+                            }
+                            Yielded::Moved | Yielded::WaitedSameWindow => {
+                                if !alive() {
+                                    let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
+                                    return false;
+                                }
+                                *STEP_SNAG.lock() = Some(
+                                    "paused: you used the PC while I worked — checking the current target before continuing".into(),
+                                );
+                                return false;
+                            }
                         }
-                        *STEP_SNAG.lock() = Some(
-                            "paused: you used the PC while I worked, so the screen may have changed — look again first".into(),
-                        );
-                        return false;
                     }
                     let highlight = settings.click_highlight
                         && matches!(step.action, Intent::Click | Intent::DoubleClick | Intent::RightClick | Intent::Auto | Intent::Type)
@@ -2241,18 +2261,69 @@ fn user_is_active(own: std::time::Instant) -> bool {
     idle < Duration::from_millis(1200) && idle + Duration::from_millis(250) < own.elapsed()
 }
 
-/// Izuki and you never fight over the mouse: while you're using the PC it
-/// waits (up to 30 s, or until stopped), then carries on. True if it waited.
-fn yield_to_user(app: &AppHandle, own: std::time::Instant, alive: &dyn Fn() -> bool) -> bool {
-    if !user_is_active(own) {
-        return false;
+/// What happened when the person started using the PC mid-step.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Yielded {
+    /// They weren't using it — nothing to do.
+    No,
+    /// Waited for them to pause, and the same window is still in front, so
+    /// the step it was about to do still makes sense.
+    WaitedSameWindow,
+    /// The wait limit elapsed while input was still arriving.
+    Busy,
+    /// They moved to another window (or stopped Izuki): the pinned point
+    /// belongs to a screen that isn't there any more.
+    Moved,
+}
+
+const USER_WAIT_OVER: &str = "user_input_wait_over";
+
+/// Only steps whose destination will be resolved again can survive a pause.
+/// A tab change, scroll or edit can replace content without changing HWND.
+fn can_resume_after_input(step: &ActionStep) -> bool {
+    match step.action {
+        Intent::Click | Intent::Auto | Intent::DoubleClick | Intent::RightClick => {
+            step.grounding.is_some()
+                || (!step.hover_first && step.snapped_to.as_deref().is_some_and(|name| !name.trim().is_empty()))
+        }
+        Intent::Type => step.grounding.is_some(),
+        _ => false,
     }
+}
+
+fn after_input_wait(alive: bool, idle: Duration, before: Option<isize>, after: Option<isize>) -> Yielded {
+    if !alive {
+        Yielded::Moved
+    } else if idle < Duration::from_millis(1500) {
+        Yielded::Busy
+    } else if before.is_some() && before == after {
+        Yielded::WaitedSameWindow
+    } else {
+        Yielded::Moved
+    }
+}
+
+/// Izuki and you never fight over the mouse: while you're using the PC it
+/// waits (up to 30 s, or until stopped), then carries on.
+///
+/// It used to wait politely and then throw the step away regardless, which
+/// cost a whole fresh look at the screen — ten seconds and a sixth of a
+/// minute's free AI allowance — because a trackpad was brushed once. The
+/// click itself is already re-checked against live Windows state
+/// (`uia::check_target` re-finds the control, or refuses), so carrying on is
+/// useful when the same window is still in front and the step's target can
+/// be revalidated. Raw coordinates and keyboard focus need a fresh look.
+fn yield_to_user(app: &AppHandle, own: std::time::Instant, alive: &dyn Fn() -> bool) -> Yielded {
+    if !user_is_active(own) {
+        return Yielded::No;
+    }
+    let was = uia::foreground_hwnd();
     let _ = app.emit(events::STATUS, StatusEvent::working("You're using the PC — I'll carry on when you pause."));
     let until = std::time::Instant::now() + Duration::from_secs(30);
     while alive() && std::time::Instant::now() < until && crate::buddy::idle_duration() < Duration::from_millis(1500) {
         std::thread::sleep(Duration::from_millis(150));
     }
-    true
+    after_input_wait(alive(), crate::buddy::idle_duration(), was, uia::foreground_hwnd())
 }
 
 pub fn run_flow(app: &AppHandle, store: &Arc<Store>, id: &str) -> Result<()> {
@@ -2638,9 +2709,26 @@ fn named_target(said: &str) -> Option<String> {
         return None;
     }
     // Final or hard to undo: these are confirmed first, by the brain.
+    //
+    // Being on this list only means "don't take the no-AI shortcut" — the
+    // request still happens, through the brain, which confirms first. So the
+    // cost of listing something harmless is a second or two, and the cost of
+    // leaving something out is a click nobody agreed to. List generously.
     const FINAL: &[&str] = &[
-        "delete", "remove", "send", "pay", "buy", "purchase", "order", "checkout", "check out", "submit", "confirm",
-        "sign out", "log out", "uninstall", "erase", "format", "transfer", "post", "publish", "yes",
+        // Destroys or writes over something
+        "delete", "remove", "erase", "wipe", "format", "reset", "discard", "overwrite", "replace", "empty",
+        "uninstall", "transfer",
+        // Spends money. Not "subscribe" or "upgrade": on YouTube and most
+        // apps those are free and asked for constantly.
+        "pay", "buy", "purchase", "order", "checkout", "check out", "donate", "place bid",
+        // Sends or shows something to other people. Not "forward" or "reply
+        // all" — those only open a draft, and Forward is a browser button.
+        "send", "post", "publish", "share", "invite", "submit", "report",
+        // Commits to something, or hands out access
+        "confirm", "accept", "agree", "approve", "allow", "grant", "trust", "install", "yes",
+        // Cuts you off from something
+        "sign out", "log out", "deactivate", "close account", "cancel subscription", "cancel order",
+        "unsubscribe", "withdraw", "revoke", "block", "unfollow", "unfriend", "leave meeting", "leave group",
     ];
     if FINAL.iter().any(|f| name.contains(f)) {
         return None;
@@ -2907,7 +2995,12 @@ fn submit_task(
     let mut detours = 0u32;
     // When a progress line was last said (they're spaced out).
     let mut last_said_at = std::time::Instant::now() - Duration::from_secs(60);
-    let mut progress_mark = done_so_far.len();
+    let mut progress_mark = 0usize;
+    // Rounds in a row whose every step had already been done, and every
+    // place acted on so far, so "already been done" has something to mean.
+    let mut going_in_circles = 0u32;
+    let mut places_seen: Vec<(usize, ActionProgress)> = Vec::new();
+    let mut screen_epoch = 0usize;
     // What the user showed or told Izuki when it asked, for the next look.
     // What the user drew, kept for the whole task: its clicks belong there.
     let user_marks: Vec<crate::model::Mark> = marks.clone();
@@ -2915,7 +3008,7 @@ fn submit_task(
     let mut told: Option<String> = None;
     let mut asked = 0;
     // The same steps twice in a row means they aren't working.
-    let mut last_round: Vec<(Intent, i32, i32)> = Vec::new();
+    let mut last_round: Vec<ActionProgress> = Vec::new();
     // The last named button clicked (and its number): if the mouse click
     // didn't take, it's pressed again "from behind" — Windows' own control,
     // or inside the web page — before anyone is asked anything.
@@ -3337,7 +3430,7 @@ fn submit_task(
             plan.summary.chars().take(80).collect::<String>()
         );
         crate::state::task_step(&plan.summary);
-        let this_round: Vec<(Intent, i32, i32)> = steps.iter().map(|s| (s.action, s.x / 12, s.y / 12)).collect();
+        let this_round: Vec<ActionProgress> = steps.iter().map(action_progress).collect();
         let look = frame.downscaled(160);
         // (In a tab you aren't looking at, the screenshot is your tab — the
         // same-goal and progress limits catch a stuck loop there instead.)
@@ -3347,6 +3440,9 @@ fn submit_task(
                 .map(|prev| crate::live::changed_share(prev, &look) > 0.02)
                 .unwrap_or(true);
         last_look = Some(look);
+        if screen_changed {
+            screen_epoch += 1;
+        }
         if !this_round.is_empty() && this_round == last_round && !screen_changed {
             repeats += 1;
             if repeats >= 2 && asked < 3 && alive() {
@@ -3566,7 +3662,38 @@ fn submit_task(
             .filter_map(|s| s.snapped_to.as_deref().map(|n| (n.split(" → ").next().unwrap_or(n).to_string(), s.target)))
             .last();
         all_steps.extend(steps.iter().take(executed).cloned());
+        // Going round in circles is not progress.
+        //
+        // The log caught the agent spending seven rounds — over a minute, and
+        // a screen look each — re-reading the same four answers on a quiz
+        // page: "let's check option C", "and option D", round after round.
+        // Every round did steps, so every count-based check was satisfied.
+        // What matters is whether a round did anything it hadn't done before.
+        // Where it acted, on the same coarse grid as the same-steps check
+        // just above. Not describe_step: that carries the model's own
+        // wording, which differs every round ("let's check option C", "and
+        // option D") even when the clicks go over the same ground, so
+        // comparing it would never see a loop.
+        // Repeated scrolling or Next clicks on a changing page are progress.
+        // Distinct text, keys and destinations also must not collapse into
+        // the same action merely because their coordinates match.
+        let places_now: Vec<(usize, ActionProgress)> =
+            steps.iter().take(executed).map(|s| (screen_epoch, action_progress(s))).collect();
+        going_in_circles = if only_repeats(&places_now, &places_seen) { going_in_circles + 1 } else { 0 };
+        places_seen.extend(places_now);
         done_so_far.extend(steps.iter().take(executed).map(describe_step));
+        if going_in_circles >= CIRCLES_BEFORE_STOPPING {
+            eprintln!("[agent] {going_in_circles} rounds doing only things already done — stopping");
+            crate::lessons::note(
+                &uia::foreground_app(),
+                "a task here went round in circles: the same clicks were repeated with nothing changing — read what's on screen and say what's in the way instead of trying again",
+            );
+            set_unfinished((prompt.clone(), done_so_far.clone()));
+            if let Some(p) = last_plan.as_mut() {
+                p.summary = "I'm going round in circles here — I keep doing the same thing and the screen isn't moving on. Tell me what I'm missing, or say \"keep going\" to try again.".into();
+            }
+            break;
+        }
         if let Some(said) = working.stopped() {
             final_word = Some(said);
             break;
@@ -3584,6 +3711,14 @@ fn submit_task(
         // A click that couldn't happen (something on top, a greyed-out
         // button) isn't the end: tell the brain, and it deals with it.
         let snag = STEP_SNAG.lock().take();
+        if snag.as_deref() == Some(USER_WAIT_OVER) {
+            set_unfinished((prompt.clone(), done_so_far.clone()));
+            let mut plan = last_plan.take().unwrap_or_default();
+            plan.summary = "You're still using the PC, so I've paused here. Say \"keep going\" when you're ready.".into();
+            plan.mood = Some("calm".into());
+            last_plan = Some(plan);
+            break;
+        }
         if snag.as_deref() == Some(TAB_WAIT_OVER) {
             set_unfinished((prompt.clone(), done_so_far.clone()));
             let mut plan = last_plan.take().unwrap_or_default();
@@ -3635,8 +3770,11 @@ fn submit_task(
         let fixable = snag.is_some();
         // Every so often: still getting somewhere? (New steps done, not the same ones.)
         if (round + 1) % PROGRESS_EVERY == 0 && !done {
-            let fresh = done_so_far.len().saturating_sub(progress_mark);
-            progress_mark = done_so_far.len();
+            // Steps done in this window that hadn't been done before it —
+            // repeating old ones used to count, so a loop looked productive.
+            let (before, window) = places_seen.split_at(progress_mark.min(places_seen.len()));
+            let fresh = new_among(window, before);
+            progress_mark = places_seen.len();
             if fresh < 3 {
                 eprintln!("[agent] little progress in the last {PROGRESS_EVERY} rounds — pausing");
                 crate::lessons::note(&uia::foreground_app(), "a task here stalled before: check the instructions on screen, scroll to find what's missing, and say what's in the way instead of retrying");
@@ -3964,6 +4102,50 @@ Only ask the user after three honest, different tries.";
 /// checked every PROGRESS_EVERY rounds.
 const MAX_ROUNDS: usize = 60;
 const PROGRESS_EVERY: usize = 12;
+/// Did this round do nothing it hadn't already done?
+///
+/// A round with no steps isn't a repeat — it's a look, which the idle-round
+/// count handles. A round that repeats one earlier step and does one new
+/// thing is progress. Only a round that is entirely old ground counts.
+fn only_repeats<T: PartialEq>(fresh: &[T], before: &[T]) -> bool {
+    !fresh.is_empty() && fresh.iter().all(|s| before.contains(s))
+}
+
+/// How many of `window` weren't already in `before`.
+fn new_among<T: PartialEq>(window: &[T], before: &[T]) -> usize {
+    window.iter().enumerate().filter(|(i, s)| !before.contains(s) && !window[..*i].contains(s)).count()
+}
+
+/// Operational content only: model explanations and renumbered target IDs
+/// change between looks even when the actual action does not.
+#[derive(Debug, PartialEq)]
+struct ActionProgress {
+    action: Intent,
+    point: (i32, i32),
+    destination: (Option<i32>, Option<i32>),
+    text: Option<String>,
+    key: Option<String>,
+    scroll: Option<i32>,
+    shape: Option<String>,
+    path: Option<Vec<[i32; 2]>>,
+}
+
+fn action_progress(step: &ActionStep) -> ActionProgress {
+    ActionProgress {
+        action: step.action,
+        point: (step.x.div_euclid(12), step.y.div_euclid(12)),
+        destination: (step.x2.map(|x| x.div_euclid(12)), step.y2.map(|y| y.div_euclid(12))),
+        text: step.text_to_type.clone(),
+        key: step.key.as_deref().map(|key| key.to_lowercase().replace(' ', "")),
+        scroll: step.scroll_amount,
+        shape: step.shape.clone(),
+        path: step.path.clone(),
+    }
+}
+
+/// Rounds in a row that only redo what's already been done, before Izuki
+/// stops and says so. Three is enough to tell a loop from a retry.
+const CIRCLES_BEFORE_STOPPING: u32 = 3;
 
 /// Bumped by every new task and by "stop". A task remembers its number and
 /// stops (before its next click, and without answering) once it changes —
@@ -4502,6 +4684,29 @@ mod speed_tests {
         // Saying something near it isn't saying it.
         let mut steps = vec![click("Checkout")];
         assert!(guard_steps_with(&mut steps, "check my cart", false, "chrome", &none).is_some(), "checking a cart isn't checking out");
+        // Everything else nobody would forgive Izuki for doing on its own:
+        // destroying something, spending money, or reaching other people.
+        for name in [
+            "Erase disk", "Wipe device", "Format drive", "Uninstall", "Empty bin", "Delete forever",
+            "Permanently delete", "Factory reset", "Overwrite file", "Donate", "Confirm payment",
+            "Buy now", "Place bid", "Share", "Invite people", "Send invite", "Reply all", "Go live",
+            "Revoke", "Deactivate", "Close account", "Cancel subscription", "Unsubscribe", "Grant access",
+        ] {
+            let mut steps = vec![click(name)];
+            assert!(
+                guard_steps_with(&mut steps, "sort this page out for me", false, "chrome", &none).is_some(),
+                "\"{name}\" must not be pressed on Izuki's own initiative"
+            );
+            assert!(steps.is_empty(), "\"{name}\" should have been held back");
+        }
+        // Still only whole words, so ordinary buttons stay instant.
+        for name in ["Sharepoint", "Formatting", "Postcode", "Deleted items", "Buyer guide", "Shared with me"] {
+            let mut steps = vec![click(name)];
+            assert!(
+                guard_steps_with(&mut steps, "open that", false, "chrome", &none).is_none(),
+                "\"{name}\" is not a final button and must not be held back"
+            );
+        }
         let mut steps = vec![click("Finish attempt")];
         assert!(guard_steps_with(&mut steps, "finish it", false, "chrome", &none).is_some());
         let mut steps = vec![click("Submit")];
@@ -4676,6 +4881,29 @@ mod speed_tests {
         assert_eq!(named_target("click delete"), None);
         assert_eq!(named_target("press send"), None);
         assert_eq!(named_target("click Pay now"), None);
+        // Anything that spends money, hands out access, reaches other people,
+        // or can't be undone goes the long way round — being on that list
+        // only costs a second, and leaving something off it costs a click
+        // nobody agreed to.
+        for said in [
+            "click Reset", "press Empty Trash", "click Share", "press Invite", "click Allow",
+            "press Agree", "click Install", "press Deactivate", "click Unsubscribe", "press Revoke",
+            "click Discard", "press Overwrite", "click Donate", "press Leave meeting", "click Block",
+        ] {
+            assert_eq!(named_target(said), None, "{said} must be confirmed, not clicked straight away");
+        }
+        // But not the ordinary things people ask for all day. Blocking these
+        // would make Izuki slower at exactly what it's for: Subscribe and
+        // Upgrade are free in most apps, Forward is a browser button, and
+        // Reply all only opens a draft — Send is what commits it.
+        for (said, want) in [
+            ("click Subscribe", "subscribe"),
+            ("press Upgrade", "upgrade"),
+            ("click Forward", "forward"),
+            ("press Reply all", "reply all"),
+        ] {
+            assert_eq!(named_target(said).as_deref(), Some(want), "{said} is harmless and asked for constantly");
+        }
         // Positions, "it", several steps: the brain works those out.
         assert_eq!(named_target("click the second video"), None);
         assert_eq!(named_target("click it"), None);
@@ -4892,7 +5120,91 @@ mod failure_tests {
 
 #[cfg(test)]
 mod honesty_tests {
-    use super::{plainly, promises_action};
+    use super::{action_progress, after_input_wait, can_resume_after_input, new_among, only_repeats, plainly, promises_action, ActionStep, Duration, Intent, Yielded};
+
+    #[test]
+    fn human_input_timeout_never_resumes_a_step() {
+        assert_eq!(after_input_wait(true, Duration::ZERO, Some(7), Some(7)), Yielded::Busy);
+        assert_eq!(after_input_wait(true, Duration::from_secs(2), Some(7), Some(7)), Yielded::WaitedSameWindow);
+        assert_eq!(after_input_wait(true, Duration::from_secs(2), Some(7), Some(8)), Yielded::Moved);
+        assert_eq!(after_input_wait(true, Duration::from_secs(2), None, None), Yielded::Moved);
+        assert_eq!(after_input_wait(false, Duration::from_secs(2), Some(7), Some(7)), Yielded::Moved);
+    }
+
+    #[test]
+    fn same_window_input_still_requires_a_verifiable_target() {
+        let mut step: ActionStep = serde_json::from_value(serde_json::json!({"action":"click", "x":120, "y":240})).unwrap();
+        assert!(!can_resume_after_input(&step), "raw coordinates can point to different content after a scroll");
+        step.snapped_to = Some("Next".into());
+        assert!(can_resume_after_input(&step));
+        step.hover_first = true;
+        assert!(!can_resume_after_input(&step), "hover-only targets bypass name checks");
+        step.hover_first = false;
+        step.action = Intent::Type;
+        assert!(!can_resume_after_input(&step), "typing must not trust the user's changed focus");
+        step.action = Intent::Key;
+        assert!(!can_resume_after_input(&step));
+    }
+
+    #[test]
+    fn progress_distinguishes_content_and_changed_screens() {
+        let mut step: ActionStep = serde_json::from_value(serde_json::json!({"action":"type", "text_to_type":"first"})).unwrap();
+        let first = action_progress(&step);
+        step.reasoning = "A different model explanation".into();
+        assert_eq!(first, action_progress(&step));
+        step.text_to_type = Some("second".into());
+        assert_ne!(first, action_progress(&step));
+        step.action = Intent::Key;
+        step.key = Some("ctrl+a".into());
+        let select = action_progress(&step);
+        step.key = Some("enter".into());
+        assert_ne!(select, action_progress(&step));
+        let mut scroll: ActionStep = serde_json::from_value(serde_json::json!({"action":"scroll", "x":300, "y":400, "key":"down"})).unwrap();
+        let seen = vec![(1usize, action_progress(&scroll))];
+        assert!(only_repeats(&[(1, action_progress(&scroll))], &seen));
+        assert!(!only_repeats(&[(2, action_progress(&scroll))], &seen), "the page visibly advanced");
+        scroll.key = Some("up".into());
+        assert!(!only_repeats(&[(1, action_progress(&scroll))], &seen));
+        assert_eq!(new_among(&[1, 1, 2, 2], &[1]), 1, "duplicates within this window aren't new progress");
+    }
+
+    /// The log caught the agent spending seven rounds on one quiz page —
+    /// over a minute, and a screen look each — re-reading the same four
+    /// answers: "let's check option C", "and option D", round after round.
+    /// Every round did steps, so every count-based check was happy.
+    #[test]
+    fn redoing_the_same_steps_is_not_progress() {
+        // What the agent is compared on: the action and where it happened,
+        // on a coarse grid. Not the model's description of it, which differs
+        // every round even when the clicks are identical.
+        let a = (Intent::Click, 40, 25);
+        let b = (Intent::Click, 40, 31);
+        let next = (Intent::Click, 70, 60);
+        let seen = vec![a, b];
+        // A round that only goes over old ground, in either order.
+        assert!(only_repeats(&[a], &seen));
+        assert!(only_repeats(&[b, a], &seen));
+        // One new thing among the repeats is progress.
+        assert!(!only_repeats(&[a, next], &seen));
+        // A round with no steps is a look, not a loop — the idle-round count
+        // owns that case, and counting it here would stop a task that is
+        // legitimately waiting for a page to load.
+        assert!(!only_repeats::<(Intent, i32, i32)>(&[], &seen));
+        // The every-so-often progress check counts new ground only.
+        assert_eq!(new_among(&[a, b], &seen), 0);
+        assert_eq!(new_among(&[a, next], &seen), 1);
+        assert_eq!(new_among::<(Intent, i32, i32)>(&[], &seen), 0);
+        assert_eq!(new_among(&[next], &[]), 1);
+        // The real case from the log: four answers clicked in round 1, the
+        // same four clicked again in round 5 — different words from the
+        // model each time, the same ground underneath.
+        let quiz = vec![(Intent::Click, 40, 25), (Intent::Click, 40, 31), (Intent::Click, 40, 37), (Intent::Click, 40, 43)];
+        assert!(only_repeats(&quiz.clone(), &quiz), "the same four answers again is a loop");
+        // Clicking Next after them is getting somewhere.
+        let mut moved_on = quiz.clone();
+        moved_on.push(next);
+        assert!(!only_repeats(&moved_on, &quiz));
+    }
 
     #[test]
     fn promises_in_any_words_are_promises() {

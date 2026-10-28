@@ -395,6 +395,10 @@ pub fn rebind(app: &AppHandle, settings: &Settings) {
     let _ = gs.unregister_all();
 
     let mut failed: Vec<String> = Vec::new();
+    // Settings::heal untangles duplicates before they get here; this is the
+    // belt and braces, because a chord registered twice means the OS keeps
+    // the first and drops the second with no error to show anyone.
+    let mut bound: Vec<String> = Vec::new();
 
     for (combo, action) in [
         (settings.hotkey_draw.clone(), Action::Draw),
@@ -404,6 +408,16 @@ pub fn rebind(app: &AppHandle, settings: &Settings) {
         (settings.hotkey_quickdraw.clone(), Action::Quickdraw),
         (settings.hotkey_dictate.clone(), Action::Dictate),
     ] {
+        // A shortcut left unset is not a failure to report — it's a shortcut
+        // nobody asked for.
+        if combo.trim().is_empty() {
+            continue;
+        }
+        if bound.iter().any(|b: &String| b.eq_ignore_ascii_case(combo.trim())) {
+            eprintln!("[hotkey] {combo} is already used by another Izuki shortcut — only the first one is bound");
+            continue;
+        }
+        bound.push(combo.trim().to_string());
         match parse(&combo) {
             Some(sc) => {
                 let handle = app.clone();
@@ -533,7 +547,6 @@ impl Action {
                 let _ = crate::overlay::show_follow(app);
                 let _ = app.emit(events::PUSH_TO_TALK, serde_json::json!({"mode": "hold"}));
             }
-            Action::Quickdraw => {}
         }
     }
 }

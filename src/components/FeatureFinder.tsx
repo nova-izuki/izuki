@@ -1,3 +1,4 @@
+import { matchScore, searchTerms } from "../lib/search";
 import { requestStyleSection } from "../lib/styleNav";
 import { useEffect, useRef, useState } from "react";
 import { Search, ArrowUpRight, X } from "lucide-react";
@@ -15,6 +16,8 @@ export const FEATURES: Feature[] = [
   { label: "On its own", hint: "skip youtube ads, reject cookie banners automatically", tab: "settings", id: "settings-autonomous" },
   { label: "Brain & AI keys", hint: "Models, providers and local Ollama", tab: "settings", id: "settings-brain" },
   { label: "Screen control", hint: "Jarvis precision, mouse, approval and clicking", tab: "settings", id: "settings-execution" },
+  { label: "Why it asks before some buttons", hint: "why does it keep asking me, confirm, are you sure, it won't click submit, send, pay, delete, share, invite, password, it won't type my password, final buttons, approval, permission", tab: "settings", id: "settings-execution" },
+  { label: "It clicked the wrong thing / didn't click", hint: "wrong button, misclick, clicked nothing, it does nothing, stuck, keeps looking again, goes in circles, repeating itself, slow to click, scroll not working, cant click the x, close button", tab: "settings", id: "settings-execution" },
   { label: "Looks", hint: "synthwave, sunset, ocean, matrix, arctic, galaxy, dune, theme, wallpaper, accent colour, color, dark mode, light mode, taskbar colour, title bar colour, nova, midnight, ember, forest, sakura, paper, focus, translucenttb, transparency, undo look", tab: "style", id: "style-looks" },
   { label: "Auto looks (day & night, shuffle)", hint: "auto change theme, wallpaper changes by itself, day night, dark at night, light in the day, shuffle looks, rotate wallpaper, every hour", tab: "style", id: "style-auto" },
   { label: "Windows tweaks", hint: "windhawk, taskbar left, hide taskbar, seconds on clock, end task, classic right-click menu, file extensions, hidden files, dark mode, transparency, task view, search box, widgets, app names, never combine, desktop icons, this pc, recycle bin, cursor, black cursor, big cursor, animations, gamer, game dvr, sticky keys, menus, startup delay, ads, tips, privacy, advertising id, open to this pc, checkboxes, full path, shortcut", tab: "style", id: "style-tweaks" },
@@ -39,7 +42,7 @@ export const FEATURES: Feature[] = [
   { label: "Talk: Hey Nova or hold a key", hint: "Wake word, hold-to-talk, strictness, voice, language, Island, music mode, keep answer", tab: "draw", id: "talk-card" },
   { label: "Browser extension", hint: "Chrome, Edge, exact clicks on web pages, links", tab: "settings", id: "settings-extension" },
   { label: "Missions (Rest mode)", hint: "Things to do while I'm away, start them when I'm away, every morning, try again, save the result to notes", tab: "draw", id: "draw-missions" },
-  { label: "Hold a key and talk to type anywhere", hint: "dictate, dictation, wispr, wispr flow, voice typing, talk to type, type what I say, speech to text, write for me, Ctrl+Shift+Space, type into any app, email, whatsapp, word", tab: "settings", id: "settings-shortcuts" },
+  { label: "Hold a key and talk to type anywhere", hint: "dictate, dictation, wispr, wispr flow, voice typing, talk to type, type what I say, speech to text, write for me, Ctrl+Alt+Space, Ctrl+Shift+Space, type into any app, email, whatsapp, word", tab: "settings", id: "settings-shortcuts" },
   { label: "Only answer my voice (Hey Nova)", hint: "voice match, voice recognition, speaker, enroll my voice, teach it my voice, siri voice training, hey google voice match, only me, multiple people, stop the TV waking it", tab: "draw", id: "talk-card" },
   { label: "Izuki writes code for you", hint: "coding agent, devin, write code, fix a bug in my project, build it for me, claude code, cursor, apply, discard, undo, worktree, run my tests", tab: "chat" },
   { label: "Write down a Zoom call or class", hint: "record a call, zoom, teams, google meet, webinar, online class, transcribe a meeting, take notes on a call, I don't want to pay attention, lecture recording", tab: "notes", id: "notes-capture" },
@@ -66,13 +69,31 @@ export const FEATURES: Feature[] = [
   { label: "Update the TV channel", hint: "Roku, update TV, install on my TV, developer password, channel version", tab: "settings", id: "settings-tv" },
 ];
 
-/** Features matching what's typed (every word must appear), best first. */
-export function findFeatures(query: string, max = 8): Feature[] {
-  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+/** Features matching what's typed, best first.
+ *
+ *  `loose` is for the search box, where nothing at all is the worst answer:
+ *  it falls back to the closest matches instead of an empty list. The command
+ *  box leaves it off, so a command like "open spotify" doesn't pull up
+ *  half-related settings while someone is typing it. */
+export function findFeatures(query: string, max = 8, loose = false): Feature[] {
+  const terms = searchTerms(query);
   if (!terms.length) return [];
-  return FEATURES.filter((f) => terms.every((t) => `${f.label} ${f.hint}`.toLowerCase().includes(t)))
-    .sort((a, b) => Number(b.label.toLowerCase().includes(terms[0])) - Number(a.label.toLowerCase().includes(terms[0])))
-    .slice(0, max);
+  const scored = FEATURES.map((f) => ({
+    f,
+    hits: matchScore(terms, `${f.label} ${f.hint}`),
+    // A match in the feature's own name beats one buried in its keywords.
+    named: Number(f.label.toLowerCase().includes(terms[0])),
+  }))
+    .filter((s) => s.hits > 0);
+  const best = Math.max(...scored.map((s) => s.hits), 1);
+  return scored.filter((s) => {
+      // Loosely: the closest matches, and anything within one word of them —
+      // "change the theme" should list Looks as well as Auto looks.
+      return s.hits >= (loose ? Math.max(best - 1, 1) : terms.length);
+    })
+    .sort((a, b) => b.hits - a.hits || b.named - a.named)
+    .slice(0, max)
+    .map((s) => s.f);
 }
 
 /** Open a feature: its tab, then scroll to it once it's drawn. */
@@ -126,8 +147,7 @@ export function FeatureFinder() {
     pending.current.observe(document.body, { childList: true, subtree: true });
     timer.current = setTimeout(() => pending.current?.disconnect(), 2000);
   };
-  const terms = query.trim().toLowerCase().split(/\s+/);
-  const results = FEATURES.filter(f => terms.every(t => `${f.label} ${f.hint}`.toLowerCase().includes(t)));
+  const results = findFeatures(query, 10, true);
   return <>
     <button type="button" className="izk-finder-trigger" onClick={open} aria-label="Find a feature (Ctrl+K)">
       <Search size={14} /><span>Find anything in Izuki</span><kbd>Ctrl K</kbd>

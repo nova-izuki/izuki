@@ -24,6 +24,8 @@ jobs:
       - run: npm run test:voice
       - run: npm run test:companion
       - run: npm run test:html
+      - run: npm run test:hotkeys
+      - run: npm run test:finder
       - run: node tools/browser-check.cjs
         env:
           IZUKI_TEST_BROWSER: /usr/bin/google-chrome

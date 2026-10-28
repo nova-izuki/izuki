@@ -808,7 +808,9 @@ fn default_hotkey_voice() -> String {
 
 fn default_hotkey_dictate() -> String {
     // Nothing else on Windows uses this, and it's reachable one-handed.
-    "Ctrl+Shift+Space".into()
+    // NOT Ctrl+Shift+Space: that is the draw key, and two features on one
+    // chord means Windows registers the first and silently drops the second.
+    "Ctrl+Alt+Space".into()
 }
 
 fn default_hotkey_quickdraw() -> String {
@@ -928,6 +930,48 @@ impl Settings {
         // fought over. Left alone if they rebound it to anything else.
         if self.hotkey_draw == "Ctrl+Shift+I" {
             self.hotkey_draw = defaults.hotkey_draw;
+        }
+        self.unclash_hotkeys();
+    }
+
+    /// One chord, one action.
+    ///
+    /// Windows registers the first shortcut on a chord and quietly refuses
+    /// the rest, so a duplicate doesn't look broken — the second feature
+    /// simply never happens, with nothing to show why. The more important
+    /// feature keeps the chord; the other falls back to its own default, or
+    /// is left blank so the Shortcuts list shows it needs one.
+    fn unclash_hotkeys(&mut self) {
+        let defaults = Settings::default();
+        // Most important first: whoever is earlier keeps the chord.
+        let mine: [(fn(&mut Settings) -> &mut String, fn(&Settings) -> &String); 6] = [
+            (|s| &mut s.hotkey_draw, |d| &d.hotkey_draw),
+            (|s| &mut s.hotkey_voice, |d| &d.hotkey_voice),
+            (|s| &mut s.hotkey_panic, |d| &d.hotkey_panic),
+            (|s| &mut s.hotkey_quickdraw, |d| &d.hotkey_quickdraw),
+            (|s| &mut s.hotkey_dictate, |d| &d.hotkey_dictate),
+            (|s| &mut s.hotkey_replay, |d| &d.hotkey_replay),
+        ];
+        let same = |a: &str, b: &str| a.trim().eq_ignore_ascii_case(b.trim());
+        let mut taken: Vec<String> = Vec::new();
+        for (get, fallback) in mine {
+            let fallback = fallback(&defaults).clone();
+            let slot = get(self);
+            if slot.trim().is_empty() {
+                continue;
+            }
+            if !taken.iter().any(|t| same(t, slot)) {
+                taken.push(slot.clone());
+                continue;
+            }
+            // Its own default is free: take that. Otherwise leave it unset
+            // rather than pretend it works.
+            if !fallback.trim().is_empty() && !taken.iter().any(|t| same(t, &fallback)) {
+                *slot = fallback.clone();
+                taken.push(fallback);
+            } else {
+                slot.clear();
+            }
         }
     }
 }
@@ -1238,6 +1282,57 @@ mod tests {
     fn clean_keys_are_left_alone() {
         assert_eq!(key_after_heal("sk-or-v1-xyz"), "sk-or-v1-xyz");
         assert_eq!(key_after_heal(""), "");
+    }
+
+    /// Windows registers the first shortcut on a chord and silently refuses
+    /// the rest. Shipping two features on one default chord means one of them
+    /// never works, with no error anywhere — this caught exactly that.
+    #[test]
+    fn no_two_shortcuts_share_a_chord_out_of_the_box() {
+        let s = Settings::default();
+        let all = [
+            ("draw", &s.hotkey_draw),
+            ("replay", &s.hotkey_replay),
+            ("panic", &s.hotkey_panic),
+            ("talk", &s.hotkey_voice),
+            ("quickdraw", &s.hotkey_quickdraw),
+            ("dictate", &s.hotkey_dictate),
+        ];
+        for (i, (name, combo)) in all.iter().enumerate() {
+            assert!(!combo.trim().is_empty(), "{name} has no default shortcut");
+            for (other, theirs) in all.iter().skip(i + 1) {
+                assert_ne!(
+                    combo.to_lowercase(),
+                    theirs.to_lowercase(),
+                    "{name} and {other} both default to {combo} — one of them would never fire"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_shortcut_set_twice_by_hand_is_untangled() {
+        let mut s = Settings::default();
+        // Someone binds dictation to the draw chord in the Shortcuts list.
+        s.hotkey_dictate = s.hotkey_draw.clone();
+        s.heal();
+        assert_eq!(s.hotkey_draw, Settings::default().hotkey_draw, "the more important one keeps it");
+        assert_eq!(s.hotkey_dictate, Settings::default().hotkey_dictate, "the other falls back to its own default");
+
+        // Both of its options taken: left blank rather than silently dead.
+        let mut s = Settings::default();
+        s.hotkey_draw = "Ctrl+Alt+Space".into();
+        s.hotkey_voice = "Ctrl+Alt+Space".into();
+        s.hotkey_dictate = "Ctrl+Alt+Space".into();
+        s.heal();
+        assert_eq!(s.hotkey_draw, "Ctrl+Alt+Space");
+        assert_eq!(s.hotkey_voice, Settings::default().hotkey_voice);
+        assert!(s.hotkey_dictate.is_empty());
+        // Case and stray spaces are the same chord.
+        let mut s = Settings::default();
+        s.hotkey_dictate = format!(" {} ", s.hotkey_draw.to_lowercase());
+        s.heal();
+        assert_ne!(s.hotkey_dictate.trim().to_lowercase(), s.hotkey_draw.to_lowercase());
     }
 
     #[test]

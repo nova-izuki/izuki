@@ -21,6 +21,14 @@ use crate::model::StatusEvent;
 
 const TICK: Duration = Duration::from_secs(30);
 const EMAIL_EVERY: Duration = Duration::from_secs(3 * 60);
+/// A quiet inbox is checked less and less often, up to this.
+///
+/// The log told on us: the same search ran every three minutes all day and
+/// returned the same already-seen emails every time — 480 round trips to
+/// Gmail for nothing, on a laptop, on battery. Mail arrives in bursts, so
+/// back off while it's quiet and come straight back the moment something
+/// lands.
+const EMAIL_IDLE_MAX: Duration = Duration::from_secs(30 * 60);
 const CALENDAR_EVERY: Duration = Duration::from_secs(2 * 60);
 const APPS_EVERY: Duration = Duration::from_secs(10 * 60);
 /// While the list can't be fetched (offline): look again this soon.
@@ -41,6 +49,9 @@ struct State {
     apps_failing: bool,
     apps_at: Option<Instant>,
     email_at: Option<Instant>,
+    /// How long to wait before the next inbox check — doubles while the inbox
+    /// is quiet, back to EMAIL_EVERY as soon as something new arrives.
+    email_wait: Option<Duration>,
     calendar_at: Option<Instant>,
     /// Emails already seen (the first look only learns what's there).
     seen_mail: Option<HashSet<String>>,
@@ -66,6 +77,7 @@ pub fn connections_checked(list: &[String]) {
         if st.connected != list {
             st.connected = list.to_vec();
             st.email_at = None;
+            st.email_wait = None;
             st.calendar_at = None;
         }
         st.apps_known = true;
@@ -86,6 +98,18 @@ pub fn spawn(app: AppHandle) {
 
 fn due(at: Option<Instant>, every: Duration) -> bool {
     at.is_none_or(|t| t.elapsed() >= every)
+}
+
+/// How long to wait before looking at the inbox again.
+///
+/// Nothing new: wait twice as long, up to half an hour. Something arrived:
+/// straight back to every few minutes, because mail comes in bursts and a
+/// reply you're waiting on shouldn't sit for 30 minutes.
+fn next_email_wait(now: Option<Duration>, quiet: bool) -> Duration {
+    if !quiet {
+        return EMAIL_EVERY;
+    }
+    (now.unwrap_or(EMAIL_EVERY) * 2).min(EMAIL_IDLE_MAX)
 }
 
 /// Say once — and only when it changes — why no heads-up is arriving, so the
@@ -116,7 +140,7 @@ fn tick(app: &AppHandle) {
         st.account_scope = scope;
         st.connected.clear(); st.apps_at = None;
         st.apps_known = false; st.apps_failing = false;
-        st.email_at = None; st.calendar_at = None;
+        st.email_at = None; st.email_wait = None; st.calendar_at = None;
         st.seen_mail = None; st.told_events.clear();
         st.reason.clear();
     }
@@ -204,10 +228,11 @@ fn tick(app: &AppHandle) {
         },
     );
 
-    if settings.heads_up_email && has("gmail") && due(st.email_at, EMAIL_EVERY) {
+    if settings.heads_up_email && has("gmail") && due(st.email_at, st.email_wait.unwrap_or(EMAIL_EVERY)) {
         st.email_at = Some(Instant::now());
         match new_emails(st) {
             Ok(mails) => {
+                st.email_wait = Some(next_email_wait(st.email_wait, mails.is_empty()));
                 // The newest on the Island too (a 📧 tile: tap it and Izuki reads it to you).
                 if let Some((from, subject)) = mails.first() {
                     let _ = app.emit(crate::events::ISLAND_MAIL, json!({ "from": from, "subject": subject, "more": mails.len().saturating_sub(1) }));
@@ -220,7 +245,12 @@ fn tick(app: &AppHandle) {
                 // The ones that matter, Izuki also says out loud (buddy mode).
                 crate::buddy::new_mail(app, &lines);
             }
-            Err(e) => eprintln!("[headsup] email check: {e}"),
+            // A failed check isn't a quiet inbox — but it shouldn't be retried
+            // at full speed either (offline means every 30 s forever).
+            Err(e) => {
+                st.email_wait = Some(next_email_wait(st.email_wait, true));
+                eprintln!("[headsup] email check: {e}");
+            }
         }
     }
 
@@ -896,6 +926,27 @@ fn clip(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The log showed the same inbox search running every three minutes all
+    /// day and returning nothing new every time. A quiet inbox has to cost
+    /// less than that.
+    #[test]
+    fn a_quiet_inbox_is_checked_less_and_less_often() {
+        let mut wait = None;
+        for _ in 0..3 {
+            wait = Some(next_email_wait(wait, true));
+        }
+        assert_eq!(wait, Some(EMAIL_EVERY * 8), "three quiet checks in a row: back off");
+        // However long it's been quiet, it never stops looking.
+        for _ in 0..50 {
+            wait = Some(next_email_wait(wait, true));
+        }
+        assert_eq!(wait, Some(EMAIL_IDLE_MAX), "capped, never off");
+        // And one new email puts it straight back to normal speed.
+        assert_eq!(next_email_wait(wait, false), EMAIL_EVERY);
+        // Half an hour of checks instead of 480 of them.
+        assert!(EMAIL_IDLE_MAX >= EMAIL_EVERY * 8);
+    }
 
     #[test]
     fn quiet_hours_run_past_midnight() {

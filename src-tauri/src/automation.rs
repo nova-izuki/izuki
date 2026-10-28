@@ -646,6 +646,29 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     }
     if !dry_run { uia::invalidate_controls(); }
 
+    // A point that isn't on any monitor.
+    //
+    // Windows clamps the pointer to the screen edge, so the move "worked"
+    // and then `land_exactly` found the cursor somewhere else and reported
+    // that something had moved it — true, but useless to the model that
+    // asked for a spot off the side of the screen. Say what's actually
+    // wrong, with the real size, so the next look can aim properly.
+    if clicking && !dry_run {
+        let b = crate::capture::virtual_bounds();
+        let inside = step.x >= b.x && step.y >= b.y && step.x < b.x + b.w && step.y < b.y + b.h;
+        if !inside {
+            return Err(anyhow!(
+                "target_changed: {},{} is off the screen — it is {}x{} starting at {},{}. Use a numbered target from the controls list, or a point inside the screen",
+                step.x,
+                step.y,
+                b.w,
+                b.h,
+                b.x,
+                b.y
+            ));
+        }
+    }
+
     // A step already pinned to a real control (by id) is exact — only guessed
     // pixels need the magnetic snap.
     let pointless = matches!(
@@ -856,6 +879,18 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
             if x != 0 || y != 0 {
                 click_at(x, y, Button::Left, 1, move_ms)?;
                 std::thread::sleep(Duration::from_millis(90));
+            }
+            // Never into a password box.
+            //
+            // The AI is told never to type a password, and Izuki already
+            // refuses to read one. Typing had only the instruction behind
+            // it, and an instruction is not a guarantee when the model
+            // driving the keyboard is a free one. The box is asked what it
+            // is, right after it takes the keyboard.
+            if crate::uia::focused_is_password() {
+                return Err(anyhow!(
+                    "password_box: that's a password box — Izuki never types into one. Ask the user to type it themselves, then carry on"
+                ));
             }
             if let Some(text) = &step.text_to_type {
                 type_text(text)?;

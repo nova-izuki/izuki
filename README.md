@@ -163,6 +163,7 @@ The first time you use voice, Izuki downloads its speech models once (a few hund
 | Say your wake word, e.g. **“Hey Nova”** | Start a conversation. It keeps listening between turns — say “that's all” to end it (or set how long it waits, up to 30 min). |
 | Just talk while Izuki is answering | Interrupt it — it stops and listens. |
 | Hold **Ctrl+Win+Space** | Push-to-talk without the wake word. |
+| Hold **Ctrl+Alt+Space**, talk, let go | Dictate: what you said is typed where your cursor already is, in any app. Nothing is ever sent. |
 | Hold **Ctrl+D**, draw, let go | Mark something and ask about it (Enter with nothing typed = “help me with this”). |
 | **Ctrl+Shift+Space** | The full drawing overlay, for multi-mark jobs. |
 | **Esc** (while Izuki is busy) or **Ctrl+Shift+Q** | Stop everything. |
@@ -180,6 +181,26 @@ Every shortcut can be changed in **Settings → Shortcuts**. To add a wake word:
 - When a request needs your screen, a screenshot is sent to **the AI provider you chose** — nowhere else. Plain conversation sends only text.
 - API keys, memories and settings stay in `%APPDATA%\Izuki` on your machine. Izuki never remembers passwords, keys or card numbers.
 - No accounts, no telemetry.
+
+## What Izuki will not do on its own
+
+Izuki drives your real mouse and keyboard, so these are enforced in the code, not
+left to the AI's judgement — a free model is told to behave and sometimes doesn't.
+
+- **It won't type into a password box.** It asks the box what it is first, and
+  refuses. It also never *reads* one, so a password can't reach the AI either.
+- **It won't act on the lock screen.** A keystroke there goes into your PIN.
+- **It won't press a button that can't be taken back** — Submit, Send, Pay,
+  Buy, Delete, Erase, Format, Share, Invite, Revoke, Close account and the rest —
+  unless you asked for that in so many words in that same request. Say "delete
+  that file" and it deletes it; say "sort this page out" and it does everything
+  else, then stops and asks.
+- **It won't pick or submit answers on a quiz or test.** It will explain the
+  question and the idea behind it, and point at what matters, and you choose.
+  Ask it outright and it will tell you an answer — it just won't click it.
+- **It won't type a command into your terminal** unless you spelled that command
+  out yourself.
+- **Esc stops everything**, mid-task, mid-click, every mode.
 
 ## Build from source
 

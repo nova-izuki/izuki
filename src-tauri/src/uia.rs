@@ -646,15 +646,30 @@ pub fn list_controls(max: usize) -> Vec<Control> {
     found.sort_by_key(|c| (c.rect.y / 12, c.rect.x));
     found.dedup_by(|a, b| a.rect == b.rect && a.name == b.name);
     // What's on screen first, but keep room for some of what's further down.
+    let total = found.len();
     let (mut here, below): (Vec<Control>, Vec<Control>) = found.into_iter().partition(|c| !c.below);
     let room_below = below.len().min(15).min(max / 4);
     here.truncate(max - room_below);
     here.extend(below.into_iter().take(room_below));
     let mut found = here;
+    // A window with three hundred controls gives the model eighty of them,
+    // in reading order, with nothing to say so. It would then guess a pixel
+    // for a button that was simply never listed. Now the prompt can tell it
+    // to scroll or ask instead of guessing.
+    DROPPED.store(total.saturating_sub(found.len()), std::sync::atomic::Ordering::Relaxed);
     for (i, c) in found.iter_mut().enumerate() {
         c.id = i as u32 + 1;
     }
     found
+}
+
+/// How many controls the last `list_controls` had to leave out.
+static DROPPED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Controls the last look couldn't fit in the numbered list. 0 means the
+/// model was shown everything there is.
+pub fn controls_dropped() -> usize {
+    DROPPED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// The taskbar's controls, and when they were read.
@@ -905,9 +920,6 @@ fn find_named(automation: &uiautomation::UIAutomation, name: &str) -> Option<uia
 pub fn check_target(x: i32, y: i32, name: &str) -> AtPoint {
     use uiautomation::types::Point;
     use uiautomation::UIAutomation;
-    if name.trim().chars().count() < 2 {
-        return AtPoint::Unknown;
-    }
     let Ok(automation) = UIAutomation::new().or_else(|_| UIAutomation::new_direct()) else { return AtPoint::Unknown };
     // What's under the point — or one of its parents (the text inside a link).
     if let Ok(hit) = automation.element_from_point(Point::new(x, y)) {
@@ -920,6 +932,12 @@ pub fn check_target(x: i32, y: i32, name: &str) -> AtPoint {
             }
             el = walker.as_ref().and_then(|w| w.get_parent(&e).ok());
         }
+    }
+    // Short labels are valid when the element at the point really has that
+    // label. Never relocate an ambiguous "X" or accept an unrelated enabled
+    // control just because it has appeared at the old coordinates.
+    if name.trim().chars().count() < 2 {
+        return AtPoint::Unknown;
     }
     // Not there: find it again.
     let Some(el) = find_named(&automation, name) else { return AtPoint::Unknown };
@@ -1016,6 +1034,32 @@ pub fn focused_value() -> Option<String> {
         return None;
     }
     el.get_pattern::<UIValuePattern>().ok()?.get_value().ok()
+}
+
+/// Is the box with the keyboard a password box?
+///
+/// Used to refuse to type into one. Unlike reading — where anything Windows
+/// won't vouch for is treated as a password, because failing to read costs
+/// nothing — this answers "no" when it can't tell. Plenty of apps Izuki has
+/// to type into (games, some Electron windows) tell Windows nothing about
+/// their boxes, and refusing every keystroke there would break typing in
+/// general to guard against a case those apps don't have. The places that
+/// really matter — a browser's login form, a Windows credential prompt —
+/// report it properly.
+#[cfg(windows)]
+pub fn focused_is_password() -> bool {
+    use uiautomation::UIAutomation;
+    let Ok(automation) = UIAutomation::new().or_else(|_| UIAutomation::new_direct()) else {
+        // No accessibility at all is a different problem, and refusing every
+        // keystroke because of it would break typing everywhere.
+        return false;
+    };
+    automation.get_focused_element().is_ok_and(|el| el.is_password().unwrap_or(false))
+}
+
+#[cfg(not(windows))]
+pub fn focused_is_password() -> bool {
+    false
 }
 
 /// Is the box with the keyboard a browser's address bar (Chrome / Edge:
@@ -1700,12 +1744,26 @@ pub fn prefetch_controls(max: usize) {
     *PREFETCH.lock() = Some((std::time::Instant::now(), window, handle));
 }
 
-/// The walk started by `prefetch_controls` if it's recent (waiting for it
-/// to finish if need be), otherwise a fresh one.
+/// How old a prefetched walk may be and still be used.
+///
+/// This used to be 500 ms — shorter than the walk it was caching, which
+/// takes about 900 ms on this laptop. The result was stale the moment it
+/// finished, so the walk was thrown away and done again, every time: the
+/// prefetch cost a background walk every few seconds and almost never saved
+/// one. Three seconds is long enough to be worth something and still safe,
+/// because the list is only reused while the same window is in front — and
+/// while someone types into Izuki's own box, the app behind it isn't
+/// changing. Every click is re-checked against live Windows state before it
+/// happens regardless (`check_target`).
+const PREFETCH_GOOD_FOR: std::time::Duration = std::time::Duration::from_millis(3000);
+
+/// The walk started by `prefetch_controls` if it's recent — waiting for it
+/// to finish if it's still going, rather than starting a second one beside
+/// it — otherwise a fresh one.
 pub fn controls_fresh_or_now(max: usize) -> Vec<Control> {
     let pending = PREFETCH.lock().take();
     if let Some((at, window, handle)) = pending {
-        if window == target_window() && at.elapsed() < std::time::Duration::from_millis(500) && handle.is_finished() {
+        if window == target_window() && at.elapsed() < PREFETCH_GOOD_FOR {
             if let Ok(controls) = handle.join() {
                 return controls;
             }
@@ -1733,6 +1791,10 @@ mod lock_tests {
 
     #[test]
     fn short_names_do_not_match_another_action_prefix() {
+        assert!(super::same_name("X", "x"));
+        assert!(super::same_name("+", "+"));
+        assert!(!super::same_name("Delete", "X"));
+        assert!(!super::same_name("", ""));
         assert!(super::same_name("NEXT", "Next"));
         assert!(!super::same_name("Next question", "Next"));
         assert!(!super::same_name("Answer ABC", "Answer A"));

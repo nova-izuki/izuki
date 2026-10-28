@@ -307,6 +307,54 @@ static ELEVEN_RESTING_UNTIL: parking_lot::Mutex<Option<std::time::Instant>> = pa
 /// instead of costing a failed try on every line.
 static OPENAI_RESTING_UNTIL: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
 
+/// A voice whose account has actually run dry — not busy, not over a daily
+/// allowance, but out of money until someone pays.
+///
+/// That is not something to rediscover every six hours, and certainly not on
+/// every launch: the log showed the first reply after each start spending a
+/// round trip (nearly two seconds of silence before Izuki said anything)
+/// learning again that an account emptied yesterday is still empty. So it is
+/// remembered on disk, against a mark of the key — paste a new key and it
+/// gets a fresh chance straight away.
+const DRY_FOR_DAYS: i64 = 7;
+
+fn dry_file() -> std::path::PathBuf {
+    crate::store::data_dir().join("voice-dry.json")
+}
+
+/// A short, stable mark of a key. The key itself never goes to disk outside
+/// settings.json.
+fn key_mark(key: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in key.trim().as_bytes() {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+fn dry_list() -> std::collections::HashMap<String, i64> {
+    std::fs::read_to_string(dry_file()).ok().and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default()
+}
+
+/// True while this engine's account is known to be out of credits.
+fn known_dry(engine: &str, key: &str) -> bool {
+    let until = dry_list().get(&format!("{engine}:{}", key_mark(key))).copied().unwrap_or(0);
+    crate::model::now_ms() < until
+}
+
+fn mark_dry(engine: &str, key: &str) {
+    let mut all = dry_list();
+    all.insert(format!("{engine}:{}", key_mark(key)), crate::model::now_ms() + DRY_FOR_DAYS * 24 * 3600 * 1000);
+    // Only the marks that still mean something.
+    let now = crate::model::now_ms();
+    all.retain(|_, until| *until > now);
+    if let Ok(raw) = serde_json::to_string_pretty(&all) {
+        let _ = std::fs::create_dir_all(crate::store::data_dir());
+        let _ = std::fs::write(dry_file(), raw);
+    }
+}
+
 /// ElevenLabs' ready-made voices (free on every plan).
 pub const ELEVEN_VOICES: &[(&str, &str)] = &[
     ("cgSgspJ2msm6clMCkdW9", "Jessica"),
@@ -567,6 +615,11 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
             if cfg.api_key.trim().is_empty() {
                 return Err("add an OpenAI key to use the ChatGPT voice".into());
             }
+            // Known empty from a previous run: skip it now, with no round
+            // trip, so the voice that does work starts speaking at once.
+            if known_dry("openai", &cfg.api_key) {
+                return Err("the ChatGPT voice has no credits on this account — another voice speaks".into());
+            }
             let base = if cfg.base_url.trim().is_empty() {
                 "https://api.openai.com/v1".to_string()
             } else {
@@ -604,13 +657,21 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
             eprintln!("[tts] resting the Groq voice for {} s", rest.as_secs());
         }
         if engine == "openai" && status.as_u16() == 429 {
-            // No credits: leave it six hours (it's back as soon as credits are
-            // added after that); just busy: a minute.
+            // Out of credits is not a rolling limit — it lasts until someone
+            // pays, so it's remembered on disk and across restarts. Just
+            // busy: a minute.
             let lower = body.to_lowercase();
             let broke = lower.contains("no credits") || lower.contains("insufficient_quota") || lower.contains("exceeded your current quota");
-            let rest = std::time::Duration::from_secs(if broke { 6 * 3600 } else { 60 });
+            let rest = std::time::Duration::from_secs(if broke { DRY_FOR_DAYS as u64 * 24 * 3600 } else { 60 });
             *OPENAI_RESTING_UNTIL.lock() = Some(std::time::Instant::now() + rest);
-            eprintln!("[tts] resting the ChatGPT voice for {} s{}", rest.as_secs(), if broke { " (no credits)" } else { "" });
+            if broke {
+                if let Some(cfg) = settings.provider(ProviderId::Openai) {
+                    mark_dry("openai", &cfg.api_key);
+                }
+                eprintln!("[tts] the ChatGPT voice has no credits — not asking again until credits or a new key");
+            } else {
+                eprintln!("[tts] resting the ChatGPT voice for {} s", rest.as_secs());
+            }
         }
         return Err(friendly_error(service, status, &body));
     }
@@ -620,6 +681,20 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An account that is out of money is out of money after a restart too.
+    /// Before this, every launch paid a failed round trip — about two seconds
+    /// of silence — before a working voice spoke.
+    #[test]
+    fn a_dry_account_is_marked_per_key_and_a_new_key_gets_a_fresh_chance() {
+        let old = "sk-the-empty-one";
+        let fresh = "sk-a-brand-new-one";
+        assert_ne!(key_mark(old), key_mark(fresh), "two keys, two marks");
+        assert_eq!(key_mark(old), key_mark(" sk-the-empty-one "), "stray spaces are the same key");
+        // The mark is not the key.
+        assert!(!key_mark(old).contains("sk-"));
+        assert_eq!(key_mark(old).len(), 16);
+    }
 
     #[test]
     fn moods_map_to_directions() {

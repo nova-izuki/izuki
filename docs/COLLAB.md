@@ -19,6 +19,7 @@ assistant is also changing.
 ## Who's on what
 | Area | Files | Owner |
 | --- | --- | --- |
+| Continue Claude's unfinished 1.0.175 work; verify action retries, web reading, voice delays, shortcuts, and test-process cleanup (2026-10-27) | Atomic fixes in existing pending files; browser harnesses; validation notes. Versions and existing edits preserved. | Codex with action, performance, and UI review agents |
 | Shared backend webpage scraping requested across chat surfaces | `web.rs`, read-only web tool loop in `chat.rs`, atomic `page_ask.rs` integration | Codex |
 | Owner requested independent Island chat history, detachable bubble and docking (active) | New `IslandChatWorkspace.tsx`, atomic AskPage extraction/export and dock placeholder in `Island.tsx`, overlay mount | Codex |
 | Owner explicitly requests direct factual answers instead of blanket quiz refusals; optional local enrolled-voice wake filter with multiple people | Atomic answer-policy fixes in `brain.rs`, `vision.rs`; new speaker worker/profile UI and helpers, wake hook integration, model allowlist | Codex + Claude (released in 1.0.165; Claude added `tools/speaker-match-check.cjs`, 12 cases, and the release notes) |

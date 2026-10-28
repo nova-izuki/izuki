@@ -180,7 +180,16 @@ fn step(v: serde_json::Value) -> ActionStep {
 pub fn steps(act: Act) -> Vec<ActionStep> {
     match act {
         Act::Scroll { down, notches } => {
-            let (x, y) = middle_of_window().unwrap_or((0, 0));
+            // Where a person would put the pointer to scroll: over the window,
+            // or failing that where their pointer already is.
+            //
+            // This used to fall back to (0, 0) — the very corner of the
+            // screen — so whenever there was no usable foreground window
+            // "scroll down" turned the wheel over the desktop and nothing
+            // moved, with no error to explain it.
+            let (x, y) = middle_of_window()
+                .or_else(|| Some(crate::capture::cursor_pos()).filter(|p| *p != (0, 0)))
+                .unwrap_or_else(middle_of_screen);
             vec![step(json!({
                 "action": "scroll", "x": x, "y": y,
                 "key": if down { "down" } else { "up" },
@@ -208,6 +217,14 @@ pub fn run_direct(act: Act) -> bool {
             .unwrap_or_else(|| crate::automation::press_key("playpause").is_ok()),
         _ => true,
     }
+}
+
+/// The middle of the desktop — the last resort for "scroll down" when there
+/// is no window in front and no pointer position to go by. Anywhere on the
+/// screen beats the corner, where the wheel reaches nothing.
+fn middle_of_screen() -> (i32, i32) {
+    let b = crate::capture::virtual_bounds();
+    (b.x + b.w / 2, b.y + b.h / 2)
 }
 
 /// Middle of the window in front, so "scroll down" turns the page — not

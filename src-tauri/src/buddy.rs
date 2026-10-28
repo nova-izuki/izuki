@@ -173,6 +173,11 @@ fn tick(app: &AppHandle) {
     later_list(app);
     revision(app);
     meeting(app);
+    due_soon(app);
+    morning(app);
+    week_in_review(app);
+    late_night(app, idle);
+    quiz_open(app);
     disk_and_memory(app);
     internet(app);
 }
@@ -269,6 +274,209 @@ fn meeting(app: &AppHandle) {
         &format!("Looks like you're in {name}. Want me to write it down and turn it into notes? You won't have to follow it."),
         Level::Chat,
         &format!("write down this call: {name}"),
+    );
+}
+
+/// The school calendar, read at most every fifteen minutes.
+///
+/// The morning and evening nudges ask what is due. They run on the 30-second
+/// tick, and `hub()` reads the calendar over the network (or out of the
+/// browser extension), so asking on every tick meant a request every thirty
+/// seconds for hours on end — bandwidth and battery for a line that can only
+/// be said once a day. Fifteen minutes is fresh enough for "due tomorrow"
+/// and cheap enough to leave running.
+fn calendar() -> crate::campus::Hub {
+    static CACHE: parking_lot::Mutex<Option<(std::time::Instant, crate::campus::Hub)>> =
+        parking_lot::Mutex::new(None);
+    let mut slot = CACHE.lock();
+    if let Some((at, hub)) = slot.as_ref() {
+        if at.elapsed() < Duration::from_secs(15 * 60) {
+            return hub.clone();
+        }
+    }
+    let hub = crate::campus::hub();
+    *slot = Some((std::time::Instant::now(), hub.clone()));
+    hub
+}
+
+/// Something is due soon and nothing has been done about it.
+///
+/// A reminder tells you at the time you chose, which is often the moment it
+/// is already too late to start. This is the other half: the evening before
+/// something is due, while there is still a night to do it in.
+fn due_soon(app: &AppHandle) {
+    let now = chrono::Local::now();
+    // Evening, when there is still time to act on it.
+    if !(17..=22).contains(&now.hour()) {
+        return;
+    }
+    let hub = calendar();
+    if !hub.linked {
+        return;
+    }
+    let now_ms = crate::model::now_ms();
+    let soon = now_ms + 48 * 3600 * 1000;
+    let mut due: Vec<&(String, i64)> = hub.coming.iter().filter(|(_, at)| *at > now_ms && *at <= soon).collect();
+    due.sort_by_key(|(_, at)| *at);
+    if due.is_empty() {
+        return;
+    }
+    // Soonest first, and only a couple so it stays a nudge, not a lecture.
+    let shown: Vec<String> = due
+        .iter()
+        .take(2)
+        .map(|(what, at)| {
+            let hours = (*at - now_ms) / (3600 * 1000);
+            format!("{what} ({})", if hours < 24 { format!("in {hours}h") } else { "tomorrow".to_string() })
+        })
+        .collect();
+    let more = due.len().saturating_sub(shown.len());
+    let line = format!(
+        "Heads up {dash} {} due in the next couple of days: {}{}. Want a hand starting?",
+        due.len(),
+        shown.join(", "),
+        if more > 0 { format!(" and {more} more") } else { String::new() },
+        dash = '\u{2014}'
+    );
+    say(app, &format!("due-{}", now.format("%Y%m%d")), &line, Level::Chat);
+}
+
+/// The first time you sit down in the morning: what today actually holds.
+///
+/// Not a greeting — a greeting is noise. This is the three things that
+/// change what you'd do next: what's due, what's on today, and what's gone
+/// cold. Said once, and only if there is something worth saying.
+fn morning(app: &AppHandle) {
+    let now = chrono::Local::now();
+    if !(6..=11).contains(&now.hour()) {
+        return;
+    }
+    let mut bits: Vec<String> = Vec::new();
+
+    // Today's reminders, by the clock.
+    let today = crate::reminders::list();
+    use chrono::TimeZone;
+    let end = now
+        .date_naive()
+        .and_hms_opt(23, 59, 0)
+        .and_then(|d| chrono::Local.from_local_datetime(&d).earliest())
+        .map(|d| d.timestamp_millis())
+        .unwrap_or(i64::MAX);
+    let now_ms = crate::model::now_ms();
+    let soon: Vec<&crate::reminders::Reminder> = today.iter().filter(|r| r.at > now_ms && r.at <= end).collect();
+    if let Some(first) = soon.first() {
+        bits.push(format!(
+            "{} at {}{}",
+            first.text,
+            crate::reminders::describe_time(first.at).split(" at ").nth(1).unwrap_or("later"),
+            if soon.len() > 1 { format!(" (and {} more today)", soon.len() - 1) } else { String::new() }
+        ));
+    }
+
+    // Anything due in the next two days.
+    let hub = calendar();
+    if hub.linked {
+        let close = now_ms + 48 * 3600 * 1000;
+        let due = hub.coming.iter().filter(|(_, at)| *at > now_ms && *at <= close).count();
+        if due > 0 {
+            bits.push(format!("{due} thing{} due within two days", if due == 1 { "" } else { "s" }));
+        }
+    }
+
+    // Flashcards that have gone cold.
+    let cards = crate::studytrack::due_now(&crate::studytrack::events(), now_ms).len();
+    if cards >= 5 {
+        bits.push(format!("{cards} flashcards ready to review"));
+    }
+
+    if bits.is_empty() {
+        return;
+    }
+    say(app, &format!("morning-{}", now.format("%Y%m%d")), &format!("Morning. {}.", bits.join("; ")), Level::Chat);
+}
+
+/// Sunday evening: what the week actually looked like, and what to fix.
+fn week_in_review(app: &AppHandle) {
+    use chrono::Datelike;
+    let now = chrono::Local::now();
+    if now.weekday() != chrono::Weekday::Sun || !(17..=21).contains(&now.hour()) {
+        return;
+    }
+    let events = crate::studytrack::events();
+    let week = crate::studytrack::week_of(&events, crate::model::now_ms());
+    // A week with nothing in it needs no report.
+    if week.questions + week.cards + week.notes + week.lectures == 0 {
+        return;
+    }
+    let mut line = format!(
+        "This week: {} question{}, {} flashcard{}, {} note{}",
+        week.questions,
+        if week.questions == 1 { "" } else { "s" },
+        week.cards,
+        if week.cards == 1 { "" } else { "s" },
+        week.notes,
+        if week.notes == 1 { "" } else { "s" }
+    );
+    if week.cards > 0 {
+        line.push_str(&format!(" ({} right)", week.cards_right));
+    }
+    if let Some((topic, n)) = week.topics.first() {
+        line.push_str(&format!(". Most of it on {topic} ({n})"));
+    }
+    let mistakes = crate::studytrack::mistakes(&events);
+    if !mistakes.is_empty() {
+        line.push_str(&format!(". You keep missing {} card{} \u{2014} say \u{201c}quiz me on my mistakes\u{201d}", mistakes.len(), if mistakes.len() == 1 { "" } else { "s" }));
+    }
+    line.push('.');
+    say(app, &format!("week-{}", now.format("%Y%W")), &line, Level::Chat);
+}
+
+/// Still at it very late, for hours.
+///
+/// Not a lecture about sleep — one line, once a night, because at 2am
+/// nobody has noticed how long they have been going.
+fn late_night(app: &AppHandle, idle: Duration) {
+    let now = chrono::Local::now();
+    // The small hours, and actually still working (not left on overnight).
+    if !(1..=4).contains(&now.hour()) || idle > Duration::from_secs(120) {
+        return;
+    }
+    let hours = with(|s| s.streak_since.map(|t| t.elapsed().as_secs() / 3600)).unwrap_or(0);
+    if hours < 3 {
+        return;
+    }
+    say(
+        app,
+        &format!("late-{}", now.format("%Y%m%d")),
+        &format!("It's {}, and you've been going about {hours} hours. Worth stopping soon — it'll still be here tomorrow.", now.format("%-I%P")),
+        Level::Chat,
+    );
+}
+
+/// A quiz is open: offer to go through it together.
+///
+/// Reads the window title only — cheap enough to check on every tick,
+/// unlike a full look at the screen. Coaching is the sanctioned way Izuki
+/// helps with a quiz: it explains and asks, and never picks or submits.
+fn quiz_open(app: &AppHandle) {
+    if crate::coach::active() {
+        return;
+    }
+    let title = crate::uia::foreground_title();
+    let t = title.to_lowercase();
+    // A real attempt, not a syllabus page that mentions the word.
+    let quizzy = ["quiz", "test", "exam", "assessment", "midterm"].iter().any(|w| t.contains(w));
+    let attempt = ["question", "attempt", "of 1", "of 2", "of 3", "ucertify", "blackboard", "canvas", "moodle"].iter().any(|w| t.contains(w));
+    if !quizzy || !attempt {
+        return;
+    }
+    let key = format!("quiz-{}", t.chars().take(40).collect::<String>().replace(' ', "-"));
+    offer(
+        app,
+        &key,
+        "Looks like a quiz. Want me to go through it with you — one question at a time, explaining as we go? I won't pick or submit anything.",
+        Level::Chat,
+        "coach me through this quiz",
     );
 }
 

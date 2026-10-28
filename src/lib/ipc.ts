@@ -188,7 +188,7 @@ export const MOCK_SETTINGS: Settings = {
   hotkey_panic: "Ctrl+Shift+Q",
   hotkey_voice: "Ctrl+Super+Space",
   hotkey_quickdraw: "Ctrl+D",
-  hotkey_dictate: "Ctrl+Shift+Space",
+  hotkey_dictate: "Ctrl+Alt+Space",
   dictate_tidy: true,
   freeze_screen: true,
   magnetic_hand: true,
@@ -340,6 +340,7 @@ export const MOCK_SETTINGS: Settings = {
 // ---------------------------------------------------------------------------
 
 let lastTypingPrefetch = 0;
+let typingPrefetchTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** PC Boost's look at the PC (boost.rs). */
 export interface CleanItem { id: string; name: string; kind: "bloat" | "startup"; recommended: boolean; scope: string }
@@ -1093,12 +1094,26 @@ export const api = {
   },
   /** Start reading the screen now — the user is about to ask something. */
   prefetchScreen: () => call<void>("prefetch_screen", {}, () => undefined).catch(() => undefined),
-  /** Same, from a keystroke — at most once every few seconds. */
+  /** Same, from a keystroke — on the pause before you press Enter.
+   *
+   *  It used to fire on a timer every 6 seconds while typing. Reading a
+   *  window's buttons takes about a second of real work, so that was a
+   *  steady drip of background effort on a slow laptop — and the backend
+   *  only reuses a walk under 3 seconds old, so by the time Enter came the
+   *  warm-up had almost always gone cold. All of the cost, none of the gain.
+   *
+   *  Typing a message always ends in a pause, so: wait for a short gap in
+   *  the keystrokes, then do it once. One walk per message instead of one
+   *  every few seconds, and it's fresh exactly when it's needed. */
   prefetchWhileTyping: () => {
-    const now = Date.now();
-    if (now - lastTypingPrefetch < 6000) return;
-    lastTypingPrefetch = now;
-    void api.prefetchScreen();
+    clearTimeout(typingPrefetchTimer);
+    typingPrefetchTimer = setTimeout(() => {
+      const now = Date.now();
+      // A floor as well, so holding a key down can't start a queue of walks.
+      if (now - lastTypingPrefetch < 2000) return;
+      lastTypingPrefetch = now;
+      void api.prefetchScreen();
+    }, 400);
   },
 
   /** "Report a problem": the user's words + recent log to the bug tracker.
