@@ -91,16 +91,23 @@ pub fn room_in(key: &str, tokens: usize) -> Option<Duration> {
         let cap = lim * 95 / 100;
         // Bigger than the whole allowance even with nothing else sent:
         // waiting won't help — send it and let the AI decide.
-        if tokens > cap || used(b, key, now) + tokens <= cap {
+        if tokens > cap {
+            return None;
+        }
+        // `used` first, because it also drops what has already aged out. Summing
+        // the queue directly counted a send from an hour ago as if it were this
+        // minute's — so the very first send after a pause was refused with
+        // "try again in 1s" and the AI was skipped while its allowance sat empty.
+        let have = used(b, key, now);
+        if have + tokens <= cap {
             return None;
         }
         // When enough of the last minute's sends age out.
         let q = b.sent.get(key)?;
         let mut freed = 0;
-        let total: usize = q.iter().map(|(_, n)| n).sum();
         for (t, n) in q {
             freed += n;
-            if total - freed + tokens <= cap {
+            if have - freed + tokens <= cap {
                 return Some(Duration::from_secs(60).saturating_sub(now.duration_since(*t)) + Duration::from_secs(1));
             }
         }
@@ -120,10 +127,13 @@ pub fn release(key: &str, tokens: usize) {
 }
 
 pub fn record(key: &str, tokens: usize) {
-    let now = Instant::now();
+    record_at(key, tokens, Instant::now());
+}
+
+fn record_at(key: &str, tokens: usize, when: Instant) {
     with(|b| {
-        used(b, key, now);
-        b.sent.entry(key.to_string()).or_default().push_back((now, tokens));
+        used(b, key, when);
+        b.sent.entry(key.to_string()).or_default().push_back((when, tokens));
     });
 }
 
@@ -148,6 +158,16 @@ mod tests {
         let wait = room_in(&k, 3000).expect("9,000 > 6,650: no room now");
         assert!(wait <= Duration::from_secs(61) && wait >= Duration::from_secs(1));
         assert_eq!(room_in(&key("groq", "never-refused"), 99_999), None, "unknown allowance: always try");
+
+        // A send from long ago isn't this minute's, so it must not be counted:
+        // the allowance is empty again and there is nothing to wait for.
+        let old = key("groq", "test-model-old");
+        learn(&old, err);
+        record_at(&old, 5000, Instant::now() - Duration::from_secs(90));
+        assert_eq!(room_in(&old, 3000), None, "an expired send can't block a fresh one");
+        // And one from moments ago still does.
+        record_at(&old, 5000, Instant::now() - Duration::from_secs(10));
+        assert!(room_in(&old, 3000).is_some(), "a send from this minute still counts");
         release(&k, 3000);
         assert_eq!(room_in(&k, 3000), None, "a refused request is taken back off");
         assert_eq!(room_in(&k, 50_000), None, "bigger than the whole allowance: try it anyway, waiting won't help");

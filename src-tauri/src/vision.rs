@@ -626,10 +626,11 @@ pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
             let why = e.to_string();
             if budgeted {
                 crate::budget::learn(&key, &why);
-                // Refused outright: it didn't use the allowance.
-                if why.contains("429") || why.to_lowercase().contains("rate limit") {
-                    crate::budget::release(&key, tokens);
-                }
+                // Nothing came back, so nothing was spent: a refusal never used
+                // the allowance, and a timeout or a dead connection certainly
+                // didn't. Staying charged made the *next* look refuse itself
+                // with "rate-limiting you" when the internet had merely hiccuped.
+                crate::budget::release(&key, tokens);
             }
             return Err(e);
         }
