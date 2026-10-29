@@ -430,7 +430,10 @@ function Stage({
       stepActor(actor.current, dt, { mode, energy: smooth, walk, music: L.music, look: look.current ?? undefined, point });
 
       // Canvas: wider and taller than the box, feet on the box's bottom.
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      // Never cap the scale: on a 250 % display a canvas drawn at 2× is
+      // stretched to 2.5× by the browser, which is what makes the character
+      // look soft when the screen is zoomed.
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
       // Room above the head for raised arms, and to the sides for pointing.
       const W = Math.round(b.w * 2.4), H = Math.round(b.h * 1.5);
       if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) {
@@ -441,6 +444,10 @@ function Stage({
       }
       const ctx = c.getContext("2d");
       if (!ctx) return;
+      // The paintings are 300 px tall, so a zoomed-in character is always
+      // scaled up. High-quality filtering at least keeps the edges clean
+      // instead of blocky.
+      ctx.imageSmoothingQuality = "high";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
       const feetX = W / 2, feetY = H - 6;

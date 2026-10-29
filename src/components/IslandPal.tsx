@@ -130,7 +130,9 @@ function PalStage({ id, kind, side, target, origin }: { id: string; kind: PalCue
       const sy = origin.y + feetY - FIG_H * 0.75;
       const point = pointing ? { side, up: Math.atan2(Math.abs(target.x - sx), target.y - sy) } : null;
       stepActor(actor.current, dt, { mode: "idle", point });
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      // Match the real display scale — a cap here softens the character on
+      // any screen that's zoomed past it.
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
       if (c.width !== Math.round(CANVAS_W * dpr)) {
         c.width = Math.round(CANVAS_W * dpr);
         c.height = Math.round(CANVAS_H * dpr);
@@ -139,6 +141,7 @@ function PalStage({ id, kind, side, target, origin }: { id: string; kind: PalCue
       }
       const ctx = c.getContext("2d");
       if (!ctx) return;
+      ctx.imageSmoothingQuality = "high";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
       const pack = moves.current;

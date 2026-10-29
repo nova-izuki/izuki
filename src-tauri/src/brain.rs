@@ -1217,13 +1217,31 @@ fn note_failure(id: crate::settings::ProviderId, err: &str) {
         }
         mark_broken(id);
     } else if let Some(d) = rest_for(err).or_else(|| unreachable_rest(err)) {
-        let d = escalate(id, d);
+        // When the provider said exactly when it's back ("Please try again in
+        // 15s"), that *is* the answer. Doubling it benched the fastest free
+        // brain for twice as long as it asked — the log has a 15 s window
+        // becoming a 30 s rest — and the wait looked like a freeze.
+        let stated = retry_after(&err.to_ascii_lowercase()).is_some();
+        let d = if stated { d } else { escalate(id, d) };
         let mut r = RESTING.lock();
         r.retain(|(p, _)| *p != id);
         r.push((id, std::time::Instant::now() + d));
         let why = if rest_for(err).is_some() { "rate-limited or busy" } else { "not answering" };
         eprintln!("[brain] resting {id:?} for {} s ({why})", d.as_secs());
     }
+}
+
+/// Seconds until a resting brain may be asked again — the soonest one. Long
+/// rests (a local brain that isn't running, a used-up daily quota) are left
+/// out on purpose: those mean "use another brain", not "wait five minutes".
+fn provider_wake() -> Option<std::time::Duration> {
+    let mut r = RESTING.lock();
+    let now = std::time::Instant::now();
+    r.retain(|(_, until)| *until > now);
+    r.iter()
+        .map(|(_, until)| until.saturating_duration_since(now))
+        .filter(|d| *d <= std::time::Duration::from_secs(180))
+        .min()
 }
 
 /// Leave out resting brains — unless that would leave none, then keep the
@@ -3326,7 +3344,17 @@ fn submit_task(
                     let wake = if offline {
                         Duration::ZERO
                     } else {
-                        crate::freebrains::soonest_wake().map(|d| d + Duration::from_secs(1)).unwrap_or_default()
+                        // Either kind of rest counts: a free model that was put
+                        // to bed, or a whole provider told to slow down. Only
+                        // asking the first kind made a 22 s Groq window read as
+                        // "give me a second", so the retry hit the same wall
+                        // and the rest doubled.
+                        crate::freebrains::soonest_wake()
+                            .into_iter()
+                            .chain(provider_wake())
+                            .min()
+                            .map(|d| d + Duration::from_secs(1))
+                            .unwrap_or_default()
                     };
                     let line = if offline {
                         "Your internet blipped — waiting for it to come back.".to_string()
@@ -5372,6 +5400,41 @@ mod honesty_tests {
         let said = plainly("Typing a command into a terminal wasn't done: commands are only run when the user spells out the exact command.");
         assert!(said.starts_with("I didn't type that command") && !said.contains("finna"));
         assert!(plainly("Pressing “Submit” wasn't done: it's final.").contains("“Submit”"));
+    }
+
+    #[test]
+    fn a_stated_wait_is_honoured_instead_of_doubled() {
+        // "Please try again in 15s" is the provider telling us the answer.
+        // Escalating it anyway benched the fastest free brain twice as long
+        // as it asked, and the silence read as the app freezing.
+        let id = crate::settings::ProviderId::Groq;
+        let clear = || {
+            super::RESTING.lock().retain(|(p, _)| *p != id);
+            super::STRIKES.lock().retain(|(p, _, _)| *p != id);
+        };
+        clear();
+        let said = "groq: 429 Too Many Requests: Limit 7000. Please try again in 15s.";
+        super::note_failure(id, said);
+        super::note_failure(id, said);
+        let woke = super::provider_wake().expect("a stated per-minute window is worth waiting for");
+        assert!(woke <= std::time::Duration::from_secs(16), "still resting {woke:?} when the provider asked for 15 s");
+        // No stated time at all still backs off, so a queue isn't made longer.
+        clear();
+        super::note_failure(id, "429 Too Many Requests");
+        super::note_failure(id, "429 Too Many Requests");
+        assert!(super::provider_wake().unwrap() > std::time::Duration::from_secs(60));
+        clear();
+    }
+
+    #[test]
+    fn a_brain_that_is_out_for_hours_is_not_waited_for() {
+        // A local brain that isn't running rests five minutes. Waiting for it
+        // would stall the task; the right move is a different brain.
+        let id = crate::settings::ProviderId::NineRouter;
+        super::RESTING.lock().retain(|(p, _)| *p != id);
+        super::RESTING.lock().push((id, std::time::Instant::now() + std::time::Duration::from_secs(300)));
+        assert!(super::provider_wake().is_none());
+        super::RESTING.lock().retain(|(p, _)| *p != id);
     }
 
     #[test]

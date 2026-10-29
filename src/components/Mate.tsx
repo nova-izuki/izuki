@@ -239,6 +239,7 @@ export function Mate() {
         c.height = H * dpr;
       }
       const g = c.getContext("2d")!;
+      g.imageSmoothingQuality = "high";
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, W, H);
       const t = now / 1000;

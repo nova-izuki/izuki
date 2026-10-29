@@ -356,7 +356,11 @@ export function drawMover(ctx, pack, m, { x, y, height, facing = 1, shadow = tru
   const sx = square || !cur.walk ? side : side * (0.82 + 0.18 * Math.abs(m.face));
   const since = clock - (m.kickAt ?? -9);
   const settle = calm || since < 0 || since > 0.42 ? 0 : 0.02 * Math.sin((since / 0.42) * Math.PI * 2) * (1 - since / 0.42);
-  const lean = calm || square ? 0 : cur.walk ? 0.035 * side : 0.0055 * Math.sin(((clock + (m.sway || 0)) * Math.PI * 2) / 7.3);
+  // Standing still is *straight*: a figure that rocks a fraction of a degree
+  // forever never looks like it's standing, it looks like it's swaying on a
+  // boat. Only a walk leans (into the step) — the weight shift while standing
+  // is in the painted frames and the breathing, not a tilt.
+  const lean = calm || square ? 0 : cur.walk ? 0.035 * side : 0;
   const nod = calm ? 0 : Math.min(1, mouth) * 0.012;
   const o = { x, y, height, facing: side, breath: breath + nod, mouth, blink, face: true, sx, lean, squash: settle };
   const front = square ? pack.data.states[resolve(pack, "idle")]?.[0] : null;
