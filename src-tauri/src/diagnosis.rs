@@ -75,25 +75,28 @@ fn report() -> String {
     // 2. Brains that are benched right now — the literal reason a task waits.
     let resting = crate::brain::resting_now();
     let chain = crate::brain::brain_chain();
+    // Rests are per *provider*, while the chain is per model (one key can offer
+    // six). Counting models here said "2 of my 18 brains" and made "all of
+    // them are out" impossible to ever be true.
+    let brains: std::collections::BTreeSet<&str> = chain.iter().map(|c| c.id.as_str()).collect();
+    let total = brains.len();
     if chain.is_empty() {
         said.push("No AI brain is set up at all, so anything needing one can't answer — add a free key in Settings → Izuki's brain.".into());
     } else if resting.is_empty() {
         said.push(format!(
-            "{} brain{} set up, and none {} resting: the delay is the model itself thinking, not me waiting on a limit.",
-            chain.len(),
-            if chain.len() == 1 { " is" } else { "s are" },
-            if chain.len() == 1 { "is" } else { "are" }
+            "{total} AI brain{} set up, and none {} resting: the delay is the model itself thinking, not me waiting on a limit.",
+            if total == 1 { " is" } else { "s are" },
+            if total == 1 { "is" } else { "are" }
         ));
     } else {
         let list: Vec<String> = resting.iter().take(4).map(|(name, secs)| format!("{name} {}s", clock(*secs))).collect();
         said.push(format!(
-            "{} of my {} brains {} benched right now: {}. While a free tier is benched I either wait for it or answer with a smaller, dumber one — that's the \"slow and stupid\" you're seeing.",
+            "{} of my {total} AI brains {} benched right now: {}. While a free tier is benched I either wait for it or answer with a smaller, dumber one — that's the \"slow and stupid\" you're seeing.",
             resting.len(),
-            chain.len(),
             if resting.len() == 1 { "is" } else { "are" },
             list.join(", ")
         ));
-        if resting.len() >= chain.len() {
+        if resting.len() >= total {
             said.push("All of them at once means nothing can answer until one comes back — asking again in a moment genuinely helps, asking again instantly doesn't.".into());
         }
     }
