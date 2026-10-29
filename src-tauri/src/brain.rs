@@ -3319,12 +3319,23 @@ fn submit_task(
                     // An offline PC needs a different sentence, and a
                     // different wait, from a rate-limited free tier.
                     let offline = !online();
-                    let line = if offline {
-                        "Your internet blipped — waiting for it to come back."
-                    } else if temporary {
-                        "The free AI's busy — give me a second."
+                    // When everything is resting, the first model back is a
+                    // known number of seconds away — so say that number. "Give
+                    // me a second" while waiting twenty-three is the kind of
+                    // small lie that makes the whole thing feel stuck.
+                    let wake = if offline {
+                        Duration::ZERO
                     } else {
-                        "That didn't go through — giving it one more try."
+                        crate::freebrains::soonest_wake().map(|d| d + Duration::from_secs(1)).unwrap_or_default()
+                    };
+                    let line = if offline {
+                        "Your internet blipped — waiting for it to come back.".to_string()
+                    } else if temporary && wake >= Duration::from_secs(8) {
+                        format!("The free AI is rate limited for another {}s — waiting for it.", wake.as_secs())
+                    } else if temporary {
+                        "The free AI's busy — give me a second.".to_string()
+                    } else {
+                        "That didn't go through — giving it one more try.".to_string()
                     };
                     let _ = app.emit(
                         "izuki://say",
@@ -3346,16 +3357,23 @@ fn submit_task(
                         // knocking three seconds later hit the same wall and
                         // doubled the rest (see `escalate`) — the retry made
                         // its own queue longer. Wait for the soonest brain to
-                        // come back, within a total budget.
-                        let wake = crate::freebrains::soonest_wake()
-                            .map(|d| d + Duration::from_secs(1))
-                            .unwrap_or_default();
+                        // come back, within a total budget — and count it down
+                        // so a long wait never looks like a freeze.
                         let budget = Duration::from_secs(90).saturating_sub(waited);
                         let wait = Duration::from_secs(3 * attempt).max(wake).min(budget);
                         waited += wait;
                         let until = std::time::Instant::now() + wait;
+                        let mut said = u64::MAX;
                         while std::time::Instant::now() < until && alive() {
                             std::thread::sleep(Duration::from_millis(200));
+                            let left = until.saturating_duration_since(std::time::Instant::now()).as_secs();
+                            if left > 3 && left % 3 == 0 && left != said {
+                                said = left;
+                                let _ = app.emit(
+                                    events::STATUS,
+                                    StatusEvent::working(format!("Waiting for a free AI brain — {left}s")),
+                                );
+                            }
                         }
                     }
                 }
