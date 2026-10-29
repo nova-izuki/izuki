@@ -198,6 +198,18 @@ pub(crate) fn resting(id: ProviderId, model: &str) -> bool {
     r.iter().any(|(p, m, _)| *p == id && m == model)
 }
 
+/// How long until the first resting model is free again, or `None` when
+/// nothing is resting. A free tier says exactly when it's back ("try again in
+/// 22s"); asking again after three seconds hit the same wall, and each failed
+/// try doubled the rest — so the task died waiting for a queue it had made
+/// longer itself. The retry loop waits *this* long instead.
+pub fn soonest_wake() -> Option<Duration> {
+    let mut r = RESTING.lock();
+    let now = Instant::now();
+    r.retain(|(_, _, until)| *until > now);
+    r.iter().map(|(_, _, until)| until.saturating_duration_since(now)).min()
+}
+
 /// The chain with every key's sibling models added (each provider's models
 /// together, its chosen one first), resting models left out — and, to drive
 /// the screen, no tiny model while a strong one is free.
@@ -283,5 +295,18 @@ mod tests {
         assert!(sees(ProviderId::Gemini, "gemini-2.5-flash-lite"));
         assert!(!sees(ProviderId::Gemini, "gemini-2.5-flash-preview-tts"));
         assert!(rank("meta-llama/llama-4-maverick-17b-128e-instruct") > rank("meta-llama/llama-4-scout-17b-16e-instruct"));
+    }
+
+    #[test]
+    fn soonest_wake_is_the_first_model_back() {
+        let a = ProviderConfig { id: ProviderId::Groq, label: "a".into(), base_url: "http://unused.invalid".into(), model: "izuki-test-wake-slow".into(), api_key: String::new(), enabled: true };
+        let b = ProviderConfig { model: "izuki-test-wake-fast".into(), ..a.clone() };
+        rest_model(&a, Duration::from_secs(40));
+        rest_model(&b, Duration::from_secs(5));
+        // The soonest one, not the slowest: waiting 40 s when a key returns in
+        // five would throw the task away for no reason.
+        let d = soonest_wake().expect("two models are resting");
+        assert!(d <= Duration::from_secs(5), "waited for the slowest: {d:?}");
+        assert!(d > Duration::from_secs(3), "never waits for a model that is already back: {d:?}");
     }
 }

@@ -747,6 +747,11 @@ fn ask_model(
     // Reading the window's buttons takes the longest part of the prep (up to
     // a second) — do it at the same time as the screenshot work.
     let (controls_tx, controls_rx) = std::sync::mpsc::channel();
+    // The page's words arrive separately: they used to be joined into the same
+    // message, so a slow text read held up a control list that was already
+    // finished — and when the wait ran out, the whole message was thrown away
+    // and a good list of buttons became "going by the picture".
+    let (text_tx, text_rx) = std::sync::mpsc::channel();
     let controls_job = std::thread::spawn(move || {
         let t = std::time::Instant::now();
         // The page's own words, read alongside the controls (not after).
@@ -754,10 +759,12 @@ fn ask_model(
         // Bind labels and rectangles to this look, not a prefetch made while
         // the user was still speaking or another page was foreground.
         let c = uia::list_controls(MAX_CONTROLS);
-        let text = text_job.join().unwrap_or_default();
-        eprintln!("[brain] screen controls: {}, page text: {} chars, in {} ms", c.len(), text.len(), t.elapsed().as_millis());
+        eprintln!("[brain] screen controls: {} in {} ms", c.len(), t.elapsed().as_millis());
         crate::state::trace(format!("Read your screen — {} things I can press", c.len()));
-        let _ = controls_tx.send((c, text));
+        let _ = controls_tx.send(c);
+        let text = text_job.join().unwrap_or_default();
+        eprintln!("[brain] page text: {} chars, in {} ms", text.len(), t.elapsed().as_millis());
+        let _ = text_tx.send(text);
     });
     let _ = controls_job;
 
@@ -775,10 +782,13 @@ fn ask_model(
     // Apps that draw their own screens (FL Studio, games) can take Windows
     // 15+ s to describe — and then list almost nothing. Wait 2.5 s at most;
     // past that the picture alone guides the step.
-    let (mut controls, mut page_text) = controls_rx.recv_timeout(std::time::Duration::from_millis(2500)).unwrap_or_else(|_| {
+    let mut controls = controls_rx.recv_timeout(std::time::Duration::from_millis(2500)).unwrap_or_else(|_| {
         eprintln!("[brain] the window was slow to list its controls — going by the picture");
-        Default::default()
+        Vec::new()
     });
+    // The page's words are a bonus on top of the numbered buttons, so they get
+    // a short slice of their own and never delay or discard the list.
+    let mut page_text: String = text_rx.recv_timeout(std::time::Duration::from_millis(400)).unwrap_or_default();
     // The task's tab is out of sight (you opened another tab): the look is the
     // page itself, read through the extension — no screenshot, which would
     // only show your tab — and every step goes into that page by number.
@@ -1680,7 +1690,22 @@ fn ask_racing(
     // Bound spend per look, even when every configured provider is failing
     // (a rate-limited model says so in well under a second).
     let chain = &expanded[..expanded.len().min(6)];
-    if chain.is_empty() { return Err(anyhow!("No suitable screen brain is available right now; configured models may be resting or too small for screen control.")); }
+    if chain.is_empty() {
+        // "may be resting or too small" was true and useless: it read like a
+        // settings problem, it named nothing the retry loop recognises as
+        // temporary, and so the loop cut itself to two tries and threw the
+        // task away on a single per-minute limit. Say when it's back instead
+        // — "rate limited" is also what tells the loop to wait and retry.
+        return Err(match crate::freebrains::soonest_wake() {
+            Some(d) => anyhow!(
+                "Every free AI I have is rate limited for another {}s — I'll wait for the first one back.",
+                d.as_secs().max(1)
+            ),
+            None => anyhow!(
+                "None of the AI models set up can drive a screen — they're too small or have no key. Add a vision model in Settings → Izuki's brain."
+            ),
+        });
+    }
     let economy = crate::state::try_store().map(|s| s.settings().economy_mode).unwrap_or(true);
     let began = Instant::now();
     let mut last_launch = began;
@@ -3277,6 +3302,9 @@ fn submit_task(
         // returns instead of telling the user it will "finish it later".
         const TRIES: u64 = 5;
         let mut attempt = 0u64;
+        // Waiting is worth more than failing, but not forever: a task may
+        // spend a minute and a half waiting for allowances, no more.
+        let mut waited = Duration::ZERO;
         let asked_now = loop {
             match ask_model(store, &session, &frame, &[], zoomed.is_some(), wants_action || round > 0, think) {
                 Ok(plan) => break Ok(plan),
@@ -3314,7 +3342,18 @@ fn submit_task(
                             std::thread::sleep(Duration::from_millis(500));
                         }
                     } else {
-                        let until = std::time::Instant::now() + Duration::from_secs(3 * attempt);
+                        // A per-minute allowance resets at a known moment, and
+                        // knocking three seconds later hit the same wall and
+                        // doubled the rest (see `escalate`) — the retry made
+                        // its own queue longer. Wait for the soonest brain to
+                        // come back, within a total budget.
+                        let wake = crate::freebrains::soonest_wake()
+                            .map(|d| d + Duration::from_secs(1))
+                            .unwrap_or_default();
+                        let budget = Duration::from_secs(90).saturating_sub(waited);
+                        let wait = Duration::from_secs(3 * attempt).max(wake).min(budget);
+                        waited += wait;
+                        let until = std::time::Instant::now() + wait;
                         while std::time::Instant::now() < until && alive() {
                             std::thread::sleep(Duration::from_millis(200));
                         }
@@ -5315,5 +5354,18 @@ mod honesty_tests {
         let said = plainly("Typing a command into a terminal wasn't done: commands are only run when the user spells out the exact command.");
         assert!(said.starts_with("I didn't type that command") && !said.contains("finna"));
         assert!(plainly("Pressing “Submit” wasn't done: it's final.").contains("“Submit”"));
+    }
+
+    #[test]
+    fn an_empty_brain_pool_is_waited_out_not_called_a_settings_problem() {
+        // The line the agent got while every free model was resting. It used
+        // to read "configured models may be resting or too small", which the
+        // retry loop saw as permanent, cut itself to two tries, and threw the
+        // task away 21 s into a 22 s allowance window.
+        let allowance = "Every free AI I have is rate limited for another 22s — I'll wait for the first one back.";
+        assert!(super::temporary_trouble(allowance), "a per-minute allowance must be waited out, not treated as permanent");
+        // A genuine setup problem still fails fast instead of burning five tries.
+        let setup = "None of the AI models set up can drive a screen — they're too small or have no key.";
+        assert!(!super::temporary_trouble(setup));
     }
 }
