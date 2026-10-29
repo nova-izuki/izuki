@@ -513,8 +513,15 @@ fn client() -> Result<reqwest::blocking::Client> {
     // Bounded so a stuck cloud call can't freeze "thinking" for long — the
     // agent checks for a stop between calls, so shorter here means a faster stop.
     let built = reqwest::blocking::Client::builder()
-        // A screen step is quick or it's stuck: give up and let the next brain answer.
-        .timeout(Duration::from_secs(14))
+        // A screen step is quick or it's stuck: give up and let the next brain
+        // answer. Twenty seconds, not fourteen: a free vision model on a busy
+        // day routinely needs 12–18 s to *start* describing a picture, and the
+        // old cap killed looks that were about to answer — the log is full of
+        // "failed in 14023 ms" with every brain dying within the same few
+        // milliseconds. A slow brain never holds the look up anyway: a backup
+        // is already racing it (see the hedge in brain::look), so this only
+        // decides how long the *last* one gets before the look is given up.
+        .timeout(Duration::from_secs(20))
         .connect_timeout(Duration::from_secs(5))
         .pool_idle_timeout(Duration::from_secs(90))
         .build()

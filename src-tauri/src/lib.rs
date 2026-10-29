@@ -16,6 +16,7 @@ pub mod commands;
 pub mod discord;
 pub mod companion;
 pub mod composio;
+pub mod diagnosis;
 pub mod events;
 pub mod ext;
 pub mod files;

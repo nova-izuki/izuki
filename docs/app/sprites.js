@@ -34,6 +34,10 @@ export function loadMoves(id) {
       // Which painting each frame is ("talk.3"), to find the way between two.
       const ref = new Map();
       for (const [s, frames] of Object.entries(data.states)) frames.forEach((f, i) => ref.set(f, `${s}.${i}`));
+      // Standing straight, measured from the paintings themselves.
+      try {
+        standStraight(data, img);
+      } catch {}
       return { id, data, img, tw: more?.tw || null, timg: more?.timg || null, ref, ways: new Map() };
     }).catch((e) => { console.warn("[moves] " + id + ":", e?.message || e); loads.delete(id); return null; }));
   }
@@ -53,10 +57,79 @@ function route(pack, a, b) {
   let way = pack.ways.get(key);
   if (way === undefined) {
     const there = pack.tw[key], back = pack.tw[`${rb}>${ra}`];
-    way = there ? [a, ...there, b] : back ? [a, ...back.slice().reverse(), b] : null;
+    // The in-betweens lean as little as the poses they run between: their tilt
+    // is walked from a to b, so the body doesn't jump upright mid-transition.
+    const ta = a.tilt || 0, tb = b.tilt || 0;
+    const tip = (list) => list.map((f, i) => { f.tilt = ta + (tb - ta) * ((i + 1) / (list.length + 1)); return f; });
+    way = there ? [a, ...tip(there), b] : back ? [a, ...tip(back.slice().reverse()), b] : null;
     pack.ways.set(key, way);
   }
   return way;
+}
+
+/**
+ * Stand them straight.
+ *
+ * The paintings come from pictures of a person, and a person standing for a
+ * camera stands in *contrapposto* — weight on one leg, hips and shoulders
+ * off the vertical while the head stays level. Eye-to-eye that looks upright
+ * (which is why measuring the eyes never caught it), but the body axis is
+ * 3–5° off, and every one of the 37 characters was drawn leaning that way.
+ * Standing still, it reads as "holding a pose" instead of "standing".
+ *
+ * So each painting's lean is measured from its own silhouette — the mass of
+ * the head against the mass of the feet — and stored on the frame. `drawFrame`
+ * turns it back upright, pivoting at the feet. Small leans only: past ~8° it's
+ * a deliberate lean (a shrug, a lean into something) and left alone, and the
+ * walk cycle is skipped because side-on travel confuses head-against-feet.
+ */
+function standStraight(data, img) {
+  if (typeof document === "undefined") return;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return;
+  const measure = (f) => {
+    const pic = f.t ? timg : img;
+    if (!pic || !f.w || !f.h) return 0;
+    if (canvas.width !== f.w || canvas.height !== f.h) {
+      canvas.width = f.w;
+      canvas.height = f.h;
+    }
+    ctx.clearRect(0, 0, f.w, f.h);
+    ctx.drawImage(pic, f.x, f.y, f.w, f.h, 0, 0, f.w, f.h);
+    let px;
+    try {
+      px = ctx.getImageData(0, 0, f.w, f.h).data;
+    } catch {
+      return 0;
+    }
+    const centre = (from, to) => {
+      let sum = 0, weight = 0;
+      for (let y = Math.floor(f.h * from); y < Math.floor(f.h * to); y++) {
+        for (let x = 0; x < f.w; x++) {
+          const a = px[(y * f.w + x) * 4 + 3];
+          if (a > 40) {
+            sum += x * a;
+            weight += a;
+          }
+        }
+      }
+      return weight ? sum / weight : NaN;
+    };
+    const head = centre(0.02, 0.14);
+    const feet = centre(0.9, 0.99);
+    if (!Number.isFinite(head) || !Number.isFinite(feet)) return 0;
+    const lean = Math.atan2(head - feet, f.h * 0.8);
+    return Math.abs(lean) > 0.02 && Math.abs(lean) < 0.14 ? lean : 0;
+  };
+  // Only the painted poses: 30 small read-backs, cheap enough to do while the
+  // pack loads. The in-betweens get their tilt from the poses they run between
+  // (see route) — measuring every one of them meant a read-back per picture and
+  // turned loading a character into a five-second wait.
+  for (const [state, frames] of Object.entries(data.states)) {
+    if (state === "walk") continue;
+    for (const f of frames) f.tilt = measure(f);
+  }
 }
 
 /** Which characters are really animated. */
@@ -215,9 +288,13 @@ function drawFrame(ctx, pack, f, { x, y, height, facing, breath = 0, mouth = 0, 
   // (a slight rise and fall) and the settle after a new gesture (squash).
   const across = (sx ?? (facing < 0 ? -1 : 1)) * (1 + squash * 0.5);
   const up = 1 + breath - squash;
-  if (across !== 1 || up !== 1 || lean) {
+  // The painting's own lean, taken back out (see standStraight), plus whatever
+  // lean the moment calls for — a walk into the step. Applied outside the
+  // mirror, so turning round doesn't turn the correction upside down.
+  const turn = (lean || 0) - (f.tilt || 0);
+  if (across !== 1 || up !== 1 || turn) {
     ctx.translate(x, y);
-    if (lean) ctx.rotate(lean);
+    if (turn) ctx.rotate(turn);
     ctx.scale(across, up);
     ctx.translate(-x, -y);
   }

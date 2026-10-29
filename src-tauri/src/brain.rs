@@ -1234,6 +1234,32 @@ fn note_failure(id: crate::settings::ProviderId, err: &str) {
 /// Seconds until a resting brain may be asked again — the soonest one. Long
 /// rests (a local brain that isn't running, a used-up daily quota) are left
 /// out on purpose: those mean "use another brain", not "wait five minutes".
+/// Which brains are resting right now, and for how much longer — for the
+/// answer to "why are you slow?". Named the way Settings names them, so the
+/// sentence can be checked against the screen.
+pub fn resting_now() -> Vec<(String, u64)> {
+    let now = std::time::Instant::now();
+    let mut r = RESTING.lock();
+    r.retain(|(_, until)| *until > now);
+    let mut out: Vec<(String, u64)> = r
+        .iter()
+        .map(|(id, until)| (pretty(*id), until.saturating_duration_since(now).as_secs()))
+        .collect();
+    out.sort_by_key(|(_, secs)| *secs);
+    out
+}
+
+fn pretty(id: crate::settings::ProviderId) -> String {
+    match id.as_str() {
+        "9router" => "9Router".into(),
+        "openrouter" => "OpenRouter".into(),
+        other => {
+            let mut chars = other.chars();
+            chars.next().map(|first| first.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default()
+        }
+    }
+}
+
 fn provider_wake() -> Option<std::time::Duration> {
     let mut r = RESTING.lock();
     let now = std::time::Instant::now();
@@ -1445,6 +1471,15 @@ fn temporary_trouble(err: &str) -> bool {
     .iter()
     .any(|p| e.contains(p))
         || ["500", "502", "503", "504"].iter().any(|c| has_status(&e, c))
+}
+
+/// Every brain said no at once. If any of those was *temporary* — a timeout, a
+/// busy queue, a blip — the look still has budget, so it's worth one more
+/// round rather than throwing it away. "It gave up with thirty seconds left"
+/// is exactly how a look that would have worked reads as the app doing
+/// nothing, and a free model often answers the second time.
+fn worth_another_round(errors: &[String], round: u8, spent: Duration) -> bool {
+    round == 0 && spent < Duration::from_secs(30) && errors.iter().any(|e| temporary_trouble(e))
 }
 
 /// An error that won't fix itself by asking again in a minute.
@@ -1770,6 +1805,7 @@ fn ask_racing(
     launch(0);
     let mut launched = 1;
     let mut finished = 0;
+    let mut round = 0u8;
     let mut errors = Vec::new();
     // The best reply so far that didn't act (the chosen-est brain's), in case
     // no brain does better.
@@ -1839,6 +1875,20 @@ fn ask_racing(
                         launched += 1;
                     }
                 } else if finished == launched {
+                    if worth_another_round(&errors, round, began.elapsed()) {
+                        round += 1;
+                        eprintln!(
+                            "[brain] all {} failed, but only temporarily — one more round with {}s left",
+                            finished,
+                            Duration::from_secs(45).saturating_sub(began.elapsed()).as_secs()
+                        );
+                        errors.clear();
+                        finished = 0;
+                        launched = 1;
+                        launch(0);
+                        last_launch = Instant::now();
+                        continue;
+                    }
                     return match fallback.take() {
                         Some((_, plan)) => Ok(last_resort(plan, wants_action)),
                         None => {
@@ -5448,5 +5498,23 @@ mod honesty_tests {
         // A genuine setup problem still fails fast instead of burning five tries.
         let setup = "None of the AI models set up can drive a screen — they're too small or have no key.";
         assert!(!super::temporary_trouble(setup));
+    }
+
+    #[test]
+    fn a_look_that_timed_out_gets_its_remaining_budget() {
+        // Three brains dying at 14.02 s each is a timeout, not a refusal — the
+        // look had 31 s of its budget left and used to be thrown away there.
+        let timed_out = vec![
+            "Groq: error sending request for url (…): operation timed out".to_string(),
+            "Gemini: timed out".to_string(),
+        ];
+        assert!(super::worth_another_round(&timed_out, 0, std::time::Duration::from_secs(14)));
+        // Exactly once: a second round can't loop the look forever.
+        assert!(!super::worth_another_round(&timed_out, 1, std::time::Duration::from_secs(14)));
+        // Too late in the budget to be worth starting again.
+        assert!(!super::worth_another_round(&timed_out, 0, std::time::Duration::from_secs(38)));
+        // A refused key is not a timeout: asking again wastes the person's time.
+        let broken = vec!["Groq: 401 Unauthorized: invalid api key".to_string()];
+        assert!(!super::worth_another_round(&broken, 0, std::time::Duration::from_secs(2)));
     }
 }

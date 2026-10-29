@@ -529,6 +529,14 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
         let call = |c: ToolCall| {
             let _ = app.emit(DELTA, Delta { id, text: String::new(), done: false, error: None, status: None, action: None, step: None, call: Some(c) });
         };
+        // "Why are you so slow?" — answered from the app's own state, with no
+        // model call, so it still answers when every brain is benched, which
+        // is exactly when it gets asked (see diagnosis.rs).
+        if let Some(asked) = history.iter().rev().find(|t| t.role == "user") {
+            if let Some(said) = crate::diagnosis::why(&asked.content) {
+                return emit(said, true, None);
+            }
+        }
         let files = style == Style::Text;
         let mut chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
         // A real question (why, how, explain, compare…) goes to the strongest
@@ -1065,6 +1073,12 @@ fn with_system(history: &[Turn], system: String) -> Vec<Value> {
 /// A whole reply at once (the phone lane), with the same racing of brains
 /// as the streamed one. Reminder tags are left in for the caller.
 pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
+    // The same self-diagnosis the chat window gets, for the phone lane.
+    if let Some(asked) = history.iter().rev().find(|t| t.role == "user") {
+        if let Some(said) = crate::diagnosis::why(&asked.content) {
+            return Ok(said);
+        }
+    }
     crate::execution::check().map_err(|r| anyhow::anyhow!(r.explanation()))?;
     let answer = complete_with_tools(messages_for(history, style))?;
     if let Some(asked) = history.iter().rev().find(|t| t.role == "user") {
