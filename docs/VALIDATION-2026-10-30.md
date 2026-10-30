@@ -1,6 +1,6 @@
 # Continuation of Claude's 1.0.186 work
 
-The checkout was already at 1.0.186; the desktop version changes were made by Claude. Codex continued the unfinished work and is completing that release under the owner's standing auto-update request. The extension is 1.5.1; stale Android and iOS display/build versions were aligned to 1.0.186/build 186.
+The checkout was already at 1.0.186; the desktop version changes were made by Claude. Codex continued the unfinished work and shipped that release under the owner's standing auto-update request. The extension is 1.5.1; stale Android and iOS display/build versions were aligned to 1.0.186/build 186. Freebuff subsequently shipped 1.0.187 on top of these changes.
 
 ## Changes
 
@@ -17,7 +17,7 @@ The checkout was already at 1.0.186; the desktop version changes were made by Cl
 - Phone, conversation, speaker matching, Air voice/scroll, voice, voice/Notes, companion, finder, panel, chat-text, hotkey and HTML/encoding suites: passed.
 - Edge Island fixture: passed detaching an in-flight answer without remounting, docking, follow-ups, stable history, active-thread restore, transcript scrolling and clearing history.
 - Edge panel fixture: passed scoped cancellation, rejecting an obsolete reply after New chat, one completed history pair, not reading an unshared page, custom AI handoff, question deduplication, navigation pause, visible task review/token handoff and fitting 360/390-pixel sidebars. Page, AI and desktop APIs are disposable mocks; no account or native action was used.
-- Initial native suite: 498 passed, zero failed, 43 existing ignored tests. Includes the new Looks and settings tests, predates the final review and extension wiring fixes. Final native rerun pending.
+- Initial native suite: 498 passed, zero failed, 43 existing ignored tests. Includes the new Looks and settings tests, predates the final review and extension wiring fixes.
 - Final native suite on the release source, including extension 1.5.1 and the last parser fix: **499 passed, zero failed, 43 existing ignored tests**, 28.12 seconds after compilation. No tests were disabled or thresholds relaxed.
 - Wallpaper fixture: passed. All five new wallpapers were rendered at 960×540 and visually checked; the native suite also checks portrait/wide output and voice routing. The desktop appearance was not changed.
 - CodeRabbit first pass: completed with five minor findings; all addressed. Second pass completed with two minor findings (plain wording and rejecting invalid first-person city statements before the bare-reply fallback); both addressed. Extracted production Rust helpers were also compiled and tested independently for routing, markup, decimal and city-parsing regressions.
@@ -26,4 +26,12 @@ The checkout was already at 1.0.186; the desktop version changes were made by Cl
 
 No signed-in AI website was operated. Website layouts and sign-in challenges can prevent a handoff; the panel reports this and offers copying. Task fixtures do not demonstrate live Word, browser or file editing. Owner microphone enrollment, native wheel delivery and cloud answers were not re-tested.
 
-Native validation is complete. Signed Windows and phone build checks are the publication gate. Publication status is recorded below once complete. Unpacked extension copies require replacing their files and reloading the extension.
+Unpacked extension copies require replacing their files and reloading the extension.
+
+## Publication and cooperation with Freebuff
+
+- Codex's tested handoff commit `b0e8a6d` shipped as [1.0.186](https://github.com/nova-izuki/izuki/releases/tag/v1.0.186). Its Windows and phone release workflows succeeded.
+- Freebuff's `a57b0b0` includes that commit and shipped as [1.0.187](https://github.com/nova-izuki/izuki/releases/tag/v1.0.187), adding local OCR fallback for windows that expose little text. Codex verified the commit ancestry rather than publishing the older release over it. Freebuff reports 500 native tests passed; Codex's independently run suite above covers the 1.0.186 source. The OCR fallback has not been exercised against the owner's foreground window by Codex.
+- The 1.0.187 [Windows](https://github.com/nova-izuki/izuki/actions/runs/41114451035) and [phone](https://github.com/nova-izuki/izuki/actions/runs/41114451265) workflows both completed successfully. The public release is neither draft nor prerelease.
+- The app's public `releases/latest/download/latest.json` endpoint returned 1.0.187 and matched that release's manifest. All three Windows updater platform entries point to that version. Both distinct installers were downloaded and checked with the same Minisign verification library used by Tauri's updater, using the public key configured in `tauri.conf.json`: both signatures passed. SHA-256 hashes also matched the published GitHub asset digests (MSI: `888b2f9e30f3353a69b719726dc4df520cf0608305ec5cb526b9f171c88151a9`; setup EXE: `ced4afddfbabfdb7b6c3063ea4aa810362c7659ca25effa4e618227b6a200062`). This verifies updater signatures, not Windows Authenticode signing.
+- No installer was executed and the owner's app was not restarted. The update is published and available through the existing updater; installation on this PC was not verified. Concurrent local `brain.rs` and `extension/connect.js` edits were left untouched and excluded from Codex's documentation commit. Rebase refused the dirty shared checkout; a fetch confirmed HEAD and origin/main matched before committing these two documentation files.
