@@ -40,6 +40,7 @@ pub const MAX_CONTROLS: usize = 80;
 /// How much of the page's own text the brain gets with each look.
 const PAGE_TEXT_CHARS: usize = 5000;
 
+
 pub fn set_frozen(frame: Option<Frame>) {
     *FROZEN.lock() = frame;
 }
@@ -731,6 +732,56 @@ fn merge_page(controls: &mut Vec<uia::Control>, page_text: &mut String, page: cr
     eprintln!("[ext] the page's own elements: {} (from the browser extension)", controls.len());
 }
 
+/// The words in the window in front: asked of the app first, then read off the
+/// screen's own picture when the app won't say.
+///
+/// Chromium and Electron apps (VS Code, Discord, Slack, and the app this was
+/// reported from) can expose a Document that returns no text at all — a look
+/// against one listed 17 buttons and *0 characters*, so the only honest answer
+/// left was "I can't see anything on screen". The words were there the whole
+/// time: as pixels. Windows' own OCR reads them locally, in a few hundred
+/// milliseconds, on a thread that was already waiting anyway.
+fn words_in_front() -> String {
+    let text = uia::document_text(PAGE_TEXT_CHARS);
+    if letters(&text) >= 80 {
+        return text;
+    }
+    let t = std::time::Instant::now();
+    // The same picture the brain is about to be shown: the frozen frame when
+    // the overlay took one (so the words match it, and Izuki's own overlay
+    // can't end up in the text), otherwise the screen as it is now.
+    let frame = frozen().or_else(|| capture::capture_all().ok());
+    let seen = frame.map(|f| ocr::read_frame(&f).unwrap_or_default()).unwrap_or_default();
+    let text = better_text(text, seen);
+    if letters(&text) >= 80 {
+        // Said out loud: this app keeps its words to itself, so it was read
+        // off the picture. Otherwise a slower look with good results looks
+        // like a bug from the outside.
+        crate::state::trace("Read your screen — that app wouldn't share its words, so I read the picture");
+    }
+    eprintln!(
+        "[brain] the window gave no words — read the screen's picture instead: {} chars in {} ms",
+        letters(&text),
+        t.elapsed().as_millis()
+    );
+    text
+}
+
+/// How much real text a string holds (whitespace and punctuation don't count).
+fn letters(s: &str) -> usize {
+    s.chars().filter(|c| c.is_alphanumeric()).count()
+}
+
+/// Whichever of the two says more. A window that gave a proper page keeps it:
+/// a stray menu label read off the picture must never replace a real document.
+fn better_text(from_window: String, from_pixels: String) -> String {
+    if letters(&from_pixels) > letters(&from_window) {
+        from_pixels.chars().take(PAGE_TEXT_CHARS).collect()
+    } else {
+        from_window
+    }
+}
+
 /// `wants_action`: the request is something to *do* (not a question), so a
 /// reply that does nothing can't win the race — see [`good_enough`].
 fn ask_model(
@@ -755,7 +806,7 @@ fn ask_model(
     let controls_job = std::thread::spawn(move || {
         let t = std::time::Instant::now();
         // The page's own words, read alongside the controls (not after).
-        let text_job = std::thread::spawn(|| uia::document_text(PAGE_TEXT_CHARS));
+        let text_job = std::thread::spawn(|| words_in_front());
         // Bind labels and rectangles to this look, not a prefetch made while
         // the user was still speaking or another page was foreground.
         let c = uia::list_controls(MAX_CONTROLS);
@@ -788,7 +839,10 @@ fn ask_model(
     });
     // The page's words are a bonus on top of the numbered buttons, so they get
     // a short slice of their own and never delay or discard the list.
-    let mut page_text: String = text_rx.recv_timeout(std::time::Duration::from_millis(400)).unwrap_or_default();
+    // Reading a window that won't hand over its words means OCR, which needs a
+    // little longer than a plain question to it — but only that case waits, so
+    // an ordinary page still arrives without a pause.
+    let mut page_text: String = text_rx.recv_timeout(std::time::Duration::from_millis(700)).unwrap_or_default();
     // The task's tab is out of sight (you opened another tab): the look is the
     // page itself, read through the extension — no screenshot, which would
     // only show your tab — and every step goes into that page by number.
@@ -5516,5 +5570,24 @@ mod honesty_tests {
         // A refused key is not a timeout: asking again wastes the person's time.
         let broken = vec!["Groq: 401 Unauthorized: invalid api key".to_string()];
         assert!(!super::worth_another_round(&broken, 0, std::time::Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn reading_the_picture_never_replaces_a_real_page() {
+        // A window that gave no words at all (VS Code, Discord, Electron): the
+        // OCR text is all there is, and it's the difference between answering
+        // and saying "I can't see anything on screen".
+        let seen = super::better_text(String::new(), "Retry   502 Bad Gateway   \nThe server is down".into());
+        assert!(seen.contains("502 Bad Gateway"), "the picture's words are used: {seen}");
+
+        // A real page keeps its own text. A stray menu label read off the
+        // screen must never overwrite a document that was read properly.
+        let page = "Question 4 of 20: which statement is true?".repeat(3);
+        let kept = super::better_text(page.clone(), "File  Edit  View".into());
+        assert_eq!(kept, page);
+
+        // Punctuation and whitespace don't make a window look talkative.
+        assert_eq!(super::letters("  \n\t , . ; : — "), 0);
+        assert_eq!(super::letters("Groq 15s"), 7);
     }
 }
