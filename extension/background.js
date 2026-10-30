@@ -97,7 +97,7 @@ async function run(op, args) {
       return { open: false, visible: false };
     }
     const w = await chrome.windows.get(t.windowId);
-    return { open: true, visible: !!t.active && w.state !== "minimized", url: t.url, title: t.title || "" };
+    return { open: true, tab: t.id, windowId: t.windowId, focused: !!w.focused, visible: !!t.active && w.state !== "minimized", url: t.url, title: t.title || "" };
   }
   const tab = await targetTab(args);
   switch (op) {

@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 use std::io::Read;
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Result};
@@ -38,7 +39,7 @@ static WAKE: Mutex<Option<Sender<()>>> = Mutex::new(None);
 
 /// The newest extension (extension/manifest.json). Older copies don't know
 /// every request Izuki makes (Blackboard, finding your school's tab).
-pub const LATEST: &str = "1.4.2";
+pub const LATEST: &str = "1.5.0";
 /// The connected extension's version; empty: one from before 1.4.1, which
 /// didn't say.
 static VERSION: Mutex<String> = Mutex::new(String::new());
@@ -191,8 +192,293 @@ pub fn request(op: &str, args: Value, timeout: Duration) -> Result<Value> {
 /// Only the extension may talk to the bridge.
 fn trusted(req: &tiny_http::Request) -> bool {
     let header = |name: &str| req.headers().iter().find(|h| h.field.to_string().eq_ignore_ascii_case(name)).map(|h| h.value.as_str().to_string());
-    let from_extension = header("Origin").map_or(true, |o| o.starts_with("chrome-extension://") || o.starts_with("moz-extension://"));
+    let from_extension = header("Origin").map_or(true, |o| extension_origin(&o));
     from_extension && header("X-Izuki-Extension").is_some()
+}
+
+fn extension_origin(origin: &str) -> bool {
+    let Some((scheme, host)) = origin.split_once("://") else { return false };
+    matches!(scheme, "chrome-extension" | "moz-extension") && !host.is_empty() && host.len() <= 80
+        && host.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
+}
+
+/// Browser-supplied Origin scopes the new side-panel controls. Old extension
+/// helpers without Origin still work, but cannot start desktop tasks.
+fn request_origin(req: &tiny_http::Request) -> String {
+    req.headers().iter().find(|h| h.field.to_string().eq_ignore_ascii_case("Origin"))
+        .map(|h| h.value.as_str().to_string()).unwrap_or_default()
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+struct SideKey { origin: String, request: String, kind: &'static str }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SideState { Prepared, Running, Finished, Cancelled }
+
+impl SideState {
+    fn name(self) -> &'static str {
+        match self { Self::Prepared => "prepared", Self::Running => "running", Self::Finished => "finished", Self::Cancelled => "cancelled" }
+    }
+}
+
+#[derive(Clone)]
+struct TaskReview { token: String, prompt: String, tab: i64, url: String, at: Instant }
+
+struct SideWork {
+    id: u64,
+    stop: Arc<AtomicBool>,
+    state: SideState,
+    updated: Instant,
+    text: String,
+    outcome: Option<String>,
+    review: Option<TaskReview>,
+}
+
+impl SideWork {
+    fn new(state: SideState) -> Self {
+        static NEXT: AtomicU64 = AtomicU64::new(1 << 63);
+        Self { id: NEXT.fetch_add(1, Ordering::Relaxed), stop: Arc::new(AtomicBool::new(state == SideState::Cancelled)),
+            state, updated: Instant::now(), text: String::new(), outcome: None, review: None }
+    }
+    fn json(&self) -> Value {
+        json!({"ok":true,"state":self.state.name(),"text":self.text,"outcome":self.outcome})
+    }
+}
+
+static SIDE_WORK: Mutex<Option<HashMap<SideKey, SideWork>>> = Mutex::new(None);
+static SIDE_TASK_RUNNING: AtomicBool = AtomicBool::new(false);
+const REVIEW_TTL: Duration = Duration::from_secs(120);
+const SIDE_TTL: Duration = Duration::from_secs(300);
+const SIDE_LIMIT: usize = 64;
+
+fn side_id(v: &Value) -> Result<String> {
+    let id = match &v["requestId"] {
+        Value::String(s) if !s.is_empty() && s.len() <= 128 && s.bytes().all(|c| c.is_ascii_alphanumeric() || b"-_:.".contains(&c)) => s.clone(),
+        Value::Number(n) => n.as_u64().filter(|n| *n <= 9_007_199_254_740_991).map(|n| n.to_string()).ok_or_else(|| anyhow!("Use a unique requestId."))?,
+        _ => return Err(anyhow!("Use a unique requestId.")),
+    };
+    Ok(id)
+}
+
+fn side_key(origin: &str, v: &Value, kind: &'static str) -> Result<SideKey> {
+    Ok(SideKey { origin: origin.into(), request: side_id(v)?, kind })
+}
+
+/// Keep cancellation tombstones long enough to cover Stop arriving before
+/// the request's worker starts. Never evict a running worker.
+fn tidy_side(map: &mut HashMap<SideKey, SideWork>) {
+    map.retain(|_, work| work.state == SideState::Running
+        || work.updated.elapsed() < if work.state == SideState::Prepared { REVIEW_TTL } else { SIDE_TTL });
+    while map.len() >= SIDE_LIMIT {
+        let oldest = map.iter().filter(|(_, w)| matches!(w.state, SideState::Finished | SideState::Cancelled))
+            .min_by_key(|(_, w)| w.updated).map(|(k, _)| k.clone());
+        match oldest { Some(key) => { map.remove(&key); }, None => break }
+    }
+}
+
+fn begin_side_chat(origin: &str, v: &Value) -> Result<(SideKey, u64, Arc<AtomicBool>)> {
+    let key = if v.get("requestId").is_some() { side_key(origin, v, "chat")? }
+        else { SideKey { origin: origin.into(), request: uuid::Uuid::new_v4().to_string(), kind: "chat" } };
+    let mut all = SIDE_WORK.lock();
+    let map = all.get_or_insert_with(HashMap::new);
+    tidy_side(map);
+    if let Some(work) = map.get(&key) {
+        return Err(anyhow!(if work.stop.load(Ordering::SeqCst) { "Stopped." } else { "That request already exists. Use a new requestId." }));
+    }
+    if map.len() >= SIDE_LIMIT || map.values().filter(|w| w.state == SideState::Running).count() >= 8 {
+        return Err(anyhow!("Izuki is busy with other browser requests. Stop one or try again shortly."));
+    }
+    let work = SideWork::new(SideState::Running);
+    let result = (key.clone(), work.id, work.stop.clone());
+    map.insert(key, work);
+    Ok(result)
+}
+
+fn finish_side(key: &SideKey, text: String, outcome: Option<String>) {
+    if let Some(work) = SIDE_WORK.lock().as_mut().and_then(|m| m.get_mut(key)) {
+        work.updated = Instant::now();
+        work.review = None;
+        if work.stop.load(Ordering::SeqCst) {
+            work.state = SideState::Cancelled;
+            work.text = "Stopped.".into();
+            work.outcome = Some("cancelled".into());
+        } else {
+            work.state = SideState::Finished;
+            work.text = text;
+            work.outcome = outcome;
+        }
+    }
+}
+
+fn cancel_side(origin: &str, v: &Value) -> Result<Value> {
+    let kind = match v["kind"].as_str().unwrap_or("chat") {
+        "chat" => "chat", "task" => "task", _ => return Err(anyhow!("Unknown request kind.")),
+    };
+    let key = side_key(origin, v, kind)?;
+    let mut all = SIDE_WORK.lock();
+    let map = all.get_or_insert_with(HashMap::new);
+    tidy_side(map);
+    if !map.contains_key(&key) && map.len() >= SIDE_LIMIT { return Err(anyhow!("Too many pending browser requests.")); }
+    let work = map.entry(key).or_insert_with(|| SideWork::new(SideState::Cancelled));
+    if work.state != SideState::Finished {
+        work.stop.store(true, Ordering::SeqCst);
+        if kind == "chat" { crate::chat::cancel(work.id); }
+        // A running task stays Running until its worker observes cancellation;
+        // the UI must not treat a request to stop as proof a click has ended.
+        if work.state != SideState::Running { work.state = SideState::Cancelled; }
+        work.review = None;
+        work.updated = Instant::now();
+        work.text = if work.state == SideState::Running { "Stopping at the next safe boundary…" } else { "Stopped." }.into();
+    }
+    Ok(json!({"ok":true,"cancelled":true,"state":work.state.name(),"text":work.text}))
+}
+
+fn side_error(error: impl std::fmt::Display) -> Value {
+    json!({"ok":false,"text":error.to_string()})
+}
+
+fn task_review(v: &Value) -> Result<TaskReview> {
+    let prompt = v["prompt"].as_str().unwrap_or("").trim();
+    if prompt.is_empty() || prompt.chars().count() > 400 {
+        return Err(anyhow!("Type a desktop task of 1–400 characters, then review it before running."));
+    }
+    let tab = v["tabId"].as_i64().filter(|id| *id >= 0).ok_or_else(|| anyhow!("Choose an open browser tab first."))?;
+    let url = v["url"].as_str().unwrap_or("");
+    let parsed = reqwest::Url::parse(url).map_err(|_| anyhow!("Open a normal webpage before handing over a task."))?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none()
+        || !parsed.username().is_empty() || parsed.password().is_some() || url.len() > 4000 {
+        return Err(anyhow!("Desktop handoff needs a normal webpage without embedded credentials."));
+    }
+    Ok(TaskReview { token: uuid::Uuid::new_v4().to_string(), prompt: prompt.into(), tab, url: url.into(), at: Instant::now() })
+}
+
+fn source_tab_matches(review: &TaskReview, info: &Value) -> bool {
+    info["open"] == true && info["visible"] == true && info["focused"] == true
+        && info["tab"].as_i64() == Some(review.tab) && info["url"].as_str() == Some(review.url.as_str())
+}
+
+fn check_task_source(review: &TaskReview) -> Result<()> {
+    if crate::uia::screen_locked() { return Err(anyhow!("Unlock your PC before running this task.")); }
+    let info = request("tabinfo", json!({"tab":review.tab}), Duration::from_secs(3))?;
+    if !source_tab_matches(review, &info) {
+        return Err(anyhow!("The page changed or its window is no longer in front. Return to that tab and review the task again."));
+    }
+    Ok(())
+}
+
+fn prepare_side_task(origin: &str, v: &Value) -> Result<Value> {
+    if !extension_origin(origin) { return Err(anyhow!("Desktop handoff must come from Izuki's browser side panel.")); }
+    let key = side_key(origin, v, "task")?;
+    let review = task_review(v)?;
+    check_task_source(&review)?;
+    let mut all = SIDE_WORK.lock();
+    let map = all.get_or_insert_with(HashMap::new);
+    tidy_side(map);
+    if map.contains_key(&key) { return Err(anyhow!("That request already exists or was stopped. Review it with a new requestId.")); }
+    if map.len() >= SIDE_LIMIT { return Err(anyhow!("Too many pending browser requests. Try again shortly.")); }
+    let out = json!({"ok":true,"state":"prepared","reviewToken":review.token,"prompt":review.prompt,
+        "text":"Review this exact request, then press Run with Izuki. Nothing has run yet."});
+    let mut work = SideWork::new(SideState::Prepared);
+    work.text = "Waiting for you to review and run this request.".into();
+    work.review = Some(review);
+    map.insert(key, work);
+    Ok(out)
+}
+
+fn consume_review(work: &mut SideWork, token: &str) -> Result<TaskReview> {
+    if work.state != SideState::Prepared || work.stop.load(Ordering::SeqCst) { return Err(anyhow!("This task was already started or stopped. Review a new request.")); }
+    let review = work.review.as_ref().ok_or_else(|| anyhow!("Review this task before running it."))?;
+    if token.is_empty() || token != review.token { return Err(anyhow!("The review token does not match this request.")); }
+    if review.at.elapsed() >= REVIEW_TTL { return Err(anyhow!("This review expired. Review the task again before running it.")); }
+    let review = work.review.take().expect("review was checked");
+    work.state = SideState::Running;
+    work.updated = Instant::now();
+    work.text = "Working on your reviewed request. Press Esc in Izuki to stop.".into();
+    Ok(review)
+}
+
+struct SideTaskLane;
+impl Drop for SideTaskLane {
+    fn drop(&mut self) { SIDE_TASK_RUNNING.store(false, Ordering::SeqCst); }
+}
+
+fn run_side_task(origin: &str, v: &Value) -> Result<Value> {
+    if !extension_origin(origin) { return Err(anyhow!("Desktop handoff must come from Izuki's browser side panel.")); }
+    let key = side_key(origin, v, "task")?;
+    let token = v["reviewToken"].as_str().unwrap_or("");
+    let app = crate::state::app().ok_or_else(|| anyhow!("Izuki is still starting. Try again shortly."))?.clone();
+    let store = crate::state::try_store().ok_or_else(|| anyhow!("Izuki is still starting. Try again shortly."))?;
+    if crate::state::task_running() || SIDE_TASK_RUNNING.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+        return Err(anyhow!("Another desktop task is running. Finish or stop it before starting this one."));
+    }
+    let lane = SideTaskLane;
+    let (review, stop) = {
+        let mut all = SIDE_WORK.lock();
+        let work = all.as_mut().and_then(|m| m.get_mut(&key)).ok_or_else(|| anyhow!("Review the task first."))?;
+        (consume_review(work, token)?, work.stop.clone())
+    };
+    let task_key = key.clone();
+    let spawned = std::thread::Builder::new().name("izuki-panel-task".into()).spawn(move || {
+        let _lane = lane;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<(String, String)> {
+            let cancelled = stop.clone();
+            let contract = crate::execution::TaskContract::new(&review.prompt);
+            let scope = crate::execution::Scope::enter(&contract, move || cancelled.load(Ordering::SeqCst)).map_err(|e| anyhow!(e))?;
+            crate::execution::check().map_err(|r| anyhow!(r.explanation()))?;
+            check_task_source(&review)?;
+            // A newer desktop request may have started during source validation.
+            if crate::state::task_running() { return Err(anyhow!("Another desktop task started. Review this one again when it finishes.")); }
+            crate::execution::check().map_err(|r| anyhow!(r.explanation()))?;
+            // Only the reviewed, user-written prompt is action authority.
+            // Neither page content nor a provider's answer is appended here.
+            let plan = crate::brain::submit_voice_command(&app, &store, review.prompt.clone());
+            let usage = scope.usage();
+            if let Some(reason) = usage.stop_reason {
+                if reason == crate::execution::StopReason::Cancelled { stop.store(true, Ordering::SeqCst); }
+                return Ok((reason.explanation().into(), if reason == crate::execution::StopReason::Cancelled { "cancelled" } else { "partial" }.into()));
+            }
+            let outcome = serde_json::to_value(&plan.outcome).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_else(|| "unknown".into());
+            Ok((plan.summary, outcome))
+        }));
+        let (text, outcome) = match result {
+            Ok(Ok(pair)) => pair,
+            Ok(Err(error)) => (crate::brain::plain_error(&error.to_string()), "blocked".into()),
+            Err(_) => ("The desktop task stopped unexpectedly. Check the page before trying again.".into(), "failed".into()),
+        };
+        finish_side(&task_key, text, Some(outcome));
+    });
+    if spawned.is_err() {
+        finish_side(&key, "Izuki couldn't start that task. Try again shortly.".into(), Some("failed".into()));
+        return Err(anyhow!("Izuki couldn't start that task."));
+    }
+    Ok(json!({"ok":true,"state":"running","text":"Izuki is checking the source page before starting."}))
+}
+
+fn side_task_status(origin: &str, v: &Value) -> Result<Value> {
+    let key = side_key(origin, v, "task")?;
+    let mut all = SIDE_WORK.lock();
+    let map = all.get_or_insert_with(HashMap::new);
+    tidy_side(map);
+    map.get(&key).map(SideWork::json).ok_or_else(|| anyhow!("This task is no longer available. Review a new request."))
+}
+
+fn companion_preference(v: Option<&Value>) -> Result<Value> {
+    let store = crate::state::try_store().ok_or_else(|| anyhow!("Izuki is still starting."))?;
+    if let Some(v) = v {
+        let show = v["show"].as_bool().ok_or_else(|| anyhow!("Choose whether to show the desktop companion."))?;
+        let mut settings = store.settings();
+        settings.glow_only = !show;
+        store.set_settings(settings);
+        crate::state::settings_changed_elsewhere();
+    }
+    Ok(json!({"ok":true,"show":!store.settings().glow_only}))
+}
+
+fn read_json_body(req: &mut tiny_http::Request, limit: u64) -> Result<Value> {
+    let mut body = String::new();
+    req.as_reader().take(limit + 1).read_to_string(&mut body)?;
+    if body.len() as u64 > limit { return Err(anyhow!("This browser request is too large.")); }
+    serde_json::from_str(&body).map_err(|_| anyhow!("The browser request was not valid JSON."))
 }
 
 /// Start the bridge (once, at launch). Quietly does nothing if the port is taken.
@@ -246,6 +532,35 @@ pub fn spawn() {
                     let v: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
                     std::thread::spawn(move || {
                         let out = page_helper(&url, &v);
+                        let _ = req.respond(json_response(out));
+                    });
+                    continue;
+                }
+                // The side panel's desktop handoff, in the order it has to
+                // happen: prepare shows the person the exact words and hands
+                // back a token, run needs that token back, status says how it
+                // went, and stop ends it. Only the reviewed prompt carries any
+                // authority — never the page, never an AI tab's answer.
+                let side = ["/izuki/side/prepare", "/izuki/side/run", "/izuki/side/status", "/izuki/side/stop", "/izuki/companion"]
+                    .into_iter()
+                    .find(|route| url.starts_with(route));
+                if let Some(route) = side {
+                    let origin = request_origin(&req);
+                    let body = read_json_body(&mut req, 8_000);
+                    std::thread::spawn(move || {
+                        let out = match body {
+                            Err(e) => side_error(e),
+                            Ok(v) => {
+                                let done = match route {
+                                    "/izuki/side/prepare" => prepare_side_task(&origin, &v),
+                                    "/izuki/side/run" => run_side_task(&origin, &v),
+                                    "/izuki/side/status" => side_task_status(&origin, &v),
+                                    "/izuki/side/stop" => cancel_side(&origin, &v),
+                                    _ => companion_preference(Some(&v)),
+                                };
+                                done.unwrap_or_else(side_error)
+                            }
+                        };
                         let _ = req.respond(json_response(out));
                     });
                     continue;

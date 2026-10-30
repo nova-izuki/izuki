@@ -3,7 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const http = require('http');
-const { spawn, execFileSync } = require('child_process');
+const { spawn } = require('child_process');
+const { closeTestBrowser } = require('./browser-cleanup.cjs');
 const assert = require('assert/strict');
 const root = path.resolve(__dirname, '..');
 const edge = process.env.IZUKI_TEST_BROWSER || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
@@ -205,8 +206,7 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   console.log('Website: updated feature cards, download links and mobile/desktop widths pass.');
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
   ws?.close();
-  if (browser?.pid && process.platform === 'win32') { try { execFileSync('taskkill', ['/PID', String(browser.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); } catch {} }
-  else browser?.kill();
+  await closeTestBrowser(browser, profile);
   server?.closeAllConnections(); server?.close();
   // Only our freshly generated, empty-credential test profile is eligible.
   if (profile && path.resolve(profile).startsWith(path.join(os.tmpdir(), 'izuki-browser-check-'))) {

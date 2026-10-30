@@ -7,7 +7,7 @@ android {
         applicationId "com.novaizuki.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 176
+        versionCode 177
         versionName "1.0.180"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

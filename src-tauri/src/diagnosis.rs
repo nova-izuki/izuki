@@ -89,7 +89,8 @@ fn report() -> String {
             if total == 1 { "is" } else { "are" }
         ));
     } else {
-        let list: Vec<String> = resting.iter().take(4).map(|(name, secs)| format!("{name} {}s", clock(*secs))).collect();
+        // clock() already says its own unit — adding "s" here read "Groq 15ss".
+        let list: Vec<String> = resting.iter().take(4).map(|(name, secs)| format!("{name} {}", clock(*secs))).collect();
         said.push(format!(
             "{} of my {total} AI brains {} benched right now: {}. While a free tier is benched I either wait for it or answer with a smaller, dumber one — that's the \"slow and stupid\" you're seeing.",
             resting.len(),
@@ -148,5 +149,15 @@ mod tests {
         assert_eq!(super::clock(100), "1m 40s");
         assert_eq!(super::clock(3600), "1h");
         assert_eq!(super::clock(5400), "1h 30m");
+        // Each one carries its own unit, so whoever writes it into a sentence
+        // must not add another — "Groq 15ss" is how that goes wrong.
+        for secs in [0, 14, 60, 100, 3600, 5400] {
+            let said = super::clock(secs);
+            assert!(!said.ends_with("ss"), "{secs}s came out as \"{said}\"");
+            assert!(
+                said.ends_with('s') || said.ends_with('m') || said.ends_with('h'),
+                "{secs}s came out as \"{said}\" with no unit"
+            );
+        }
     }
 }

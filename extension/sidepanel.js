@@ -2,7 +2,13 @@
 // along. It follows the tab in front, can take in other open tabs too, and
 // keeps the conversation going. Answers come from Izuki on this PC.
 
+import { setUpConnection } from "./connect.js";
+
 const BRIDGE = "http://127.0.0.1:47615/izuki";
+// Set once the connection controls are wired; until then every question goes
+// to Izuki on this PC, which is what the panel has always done.
+let handToProvider = null;
+let connected = null;
 const H = { "X-Izuki-Extension": "1", "Content-Type": "application/json" };
 const $ = (id) => document.getElementById(id);
 const log = $("log");
@@ -224,6 +230,22 @@ async function readLinked(link) {
 async function ask(question) {
   question = String(question || "").trim();
   if (!question || busy || !current) return;
+  // Another AI is answering: carry the question (and the page, if shared)
+  // over to its tab instead of asking Izuki's own brain.
+  const link = connected?.();
+  if (link && !link.provider.local) {
+    bubble("user", question);
+    const share = $("share").checked;
+    const page = share ? await readTab(current.id) : null;
+    const carried = page
+      ? `${question}\n\n--- the page I'm on: ${current.title} (${current.url}) ---\n${page.text.slice(0, 9000)}`
+      : question;
+    const problem = await handToProvider(carried);
+    if (problem) bubble("assistant", problem, true);
+    else divider(`Sent to ${link.provider.name}. The answer appears in that tab.`);
+    $("q").focus();
+    return;
+  }
   bubble("user", question);
   const wait = document.createElement("div");
   wait.className = "msg it";
@@ -317,6 +339,66 @@ async function pending() {
 }
 chrome.storage.onChanged.addListener((c, area) => { if (area === "session" && c.izkPending?.newValue) pending(); });
 
+// ---- a task for Izuki on this PC ------------------------------------------
+
+// An answer is never a command. A task runs only from this review box, with
+// the person pressing Run — so an AI tab saying "download the project and
+// edit it in Word" can't start doing that by itself.
+const review = $("task-review");
+export function reviewTask(text) {
+  if (!review) return;
+  $("task-text").value = String(text || "").trim();
+  review.showModal();
+}
+$("task-cancel")?.addEventListener("click", () => review?.close());
+
+const side = (route, body) =>
+  fetch(`${BRIDGE}/side/${route}`, { method: "POST", headers: H, body: JSON.stringify(body) })
+    .then((r) => r.json())
+    .catch(() => ({ ok: false, text: "Izuki isn't running on this PC — open the Izuki app and try again." }));
+
+$("task-run")?.addEventListener("click", async () => {
+  const task = $("task-text").value.trim();
+  review?.close();
+  if (!task) return;
+  bubble("user", task);
+  // Prepared first, so what runs is exactly the words shown — the desktop
+  // hands back a token and will not run anything without it.
+  const requestId = crypto.randomUUID();
+  if (!current?.id) return bubble("assistant", "Open the page you want Izuki to work from, then try again.", true);
+  // The tab is part of the review: the desktop checks the task still
+  // belongs to the page it was written about before it runs anything.
+  const source = { requestId, prompt: task, tabId: current.id, url: current.url || "", title: current.title || "" };
+  const ready = await side("prepare", source);
+  if (!ready.ok) return bubble("assistant", ready.text || "Izuki wouldn't take that task.", true);
+  const started = await side("run", { requestId, reviewToken: ready.reviewToken });
+  if (!started.ok) return bubble("assistant", started.text || "Izuki wouldn't start that task.", true);
+
+  divider("Izuki is doing that on your PC. Esc stops it, or press Stop here.");
+  const stop = $("stop");
+  if (stop) {
+    stop.hidden = false;
+    // Without the kind this cancels a chat and leaves the task running.
+    stop.onclick = () => void side("stop", { requestId, kind: "task" });
+  }
+  // Poll until it's finished, so the panel says how it went rather than
+  // leaving the person watching a page and guessing.
+  const until = Date.now() + 15 * 60 * 1000;
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const now = await side("status", { requestId });
+    if (!now.ok) break;
+    if (now.state && now.state !== "running" && now.state !== "prepared") {
+      bubble("assistant", now.text || "Done.", now.state === "cancelled");
+      break;
+    }
+  }
+  if (stop) {
+    stop.hidden = true;
+    stop.onclick = null;
+  }
+});
+
 (async () => {
   const saved = await store.get();
   if (saved?.history?.length) {
@@ -328,4 +410,18 @@ chrome.storage.onChanged.addListener((c, area) => { if (area === "session" && c.
   setInterval(ping, 15000);
   pending();
   q.focus();
+  // The connection controls (which AI, follow the page, the companion).
+  try {
+    const wired = await setUpConnection({
+      ask,
+      onFollowed: (question, where) => {
+        divider(`New question on ${where.title || "this page"}`);
+        ask(question);
+      },
+    });
+    handToProvider = wired.handToProvider;
+    connected = wired.connected;
+  } catch (e) {
+    console.warn("[panel] connection controls:", e?.message || e);
+  }
 })();

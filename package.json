@@ -1,7 +1,7 @@
 {
   "name": "izuki",
   "private": true,
-  "version": "1.0.184",
+  "version": "1.0.185",
   "type": "module",
   "description": "IZUKI — YO IZUKI, DO IT. Draw on your screen, Izuki does it.",
   "scripts": {
@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "icons": "node scripts/make-icons.mjs",
+    "extension": "node scripts/pack-extension.mjs",
     "test:phone": "node tools/phone-check/routing.test.cjs && node tools/phone-check/apps.test.cjs && node tools/phone-check/native.test.cjs && node tools/phone-check/audio.test.cjs && node tools/phone-check/drive.test.cjs",
     "test:conversation": "node tools/conversation-check.cjs",
     "test:speakers": "node tools/speaker-match-check.cjs",
@@ -19,6 +20,7 @@
     "test:island": "node tools/island-chat-check.cjs",
     "test:companion": "node tools/companion-check.mjs",
     "test:finder": "node tools/finder-check.mjs",
+    "test:panel": "node tools/panel-check.mjs",
     "test:hotkeys": "node tools/hotkey-check.mjs",
     "test:html": "node tools/encoding-check.cjs && node tools/html-check.cjs docs/index.html && node tools/html-check.cjs docs/screenshots/index.html && node tools/html-check.cjs docs/links/index.html && node tools/html-check.cjs docs/app/index.html && node tools/html-check.cjs src-tauri/src/call.html",
     "app:dev": "tauri dev",

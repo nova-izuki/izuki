@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
+const { closeTestBrowser } = require('./browser-cleanup.cjs');
 const root = path.resolve(__dirname, '..');
 let origin = process.env.IZUKI_TEST_ORIGIN;
 const edge = process.env.IZUKI_TEST_BROWSER || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
@@ -102,7 +103,8 @@ let browser, ws, profile, server, cacheDir;
   fs.writeFileSync(path.join(root,'.work','island-chat-check.png'),Buffer.from((await call('Page.captureScreenshot',{format:'png'})).data,'base64'));
   console.log('Browser checks passed: in-flight detachment without remount, docking, follow-ups, one history entry, bubble reopen, active-thread restore, transcript scrolling, clear history, no main-app navigation.');
 })().catch((error)=>{console.error(error);process.exitCode=1;}).finally(async()=>{
-  try{ws?.close();browser?.kill();}catch{}
+  try{ws?.close();}catch{}
+  await closeTestBrowser(browser, profile);
   if(server)await server.close();
   await pause(500);
   if(profile&&path.resolve(profile).startsWith(path.join(root,'.work')+path.sep))try{fs.rmSync(profile,{recursive:true,force:true});}catch{}
