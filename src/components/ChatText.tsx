@@ -91,10 +91,15 @@ function Prose({ text }: { text: string }) {
   return <>{out}</>;
 }
 
-/** **bold**, *italic*, `code` and links inside one line. */
+/** **bold**, *italic* or _italic_, `code` and links inside one line. */
 function inline(s: string): ReactNode[] {
   const out: ReactNode[] = [];
-  const re = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)\s]+\)|https?:\/\/[^\s)]+|\*[^*\s][^*]*\*)/g;
+  // _italic_ too: research's own footer is written that way, and so is half
+  // of what any AI writes — it used to show with the underscores. Only an
+  // underscore with no letter or digit outside it opens or closes one, so
+  // snake_case_names stay as they are, and links are matched before it so
+  // an underscore inside a URL is never touched.
+  const re = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)\s]+\)|https?:\/\/[^\s)]+|\*[^*\s][^*]*\*|(?<![A-Za-z0-9_])_[^_\s][^_]*_(?![A-Za-z0-9_]))/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(s))) {

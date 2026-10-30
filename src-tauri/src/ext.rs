@@ -39,7 +39,7 @@ static WAKE: Mutex<Option<Sender<()>>> = Mutex::new(None);
 
 /// The newest extension (extension/manifest.json). Older copies don't know
 /// every request Izuki makes (Blackboard, finding your school's tab).
-pub const LATEST: &str = "1.5.0";
+pub const LATEST: &str = "1.5.1";
 /// The connected extension's version; empty: one from before 1.4.1, which
 /// didn't say.
 static VERSION: Mutex<String> = Mutex::new(String::new());
@@ -527,11 +527,13 @@ pub fn spawn() {
                 // and the Focus guard. Answers take a few seconds, so each runs
                 // on its own thread and the bridge stays free.
                 if url.starts_with("/izuki/ask") || url.starts_with("/izuki/note") || url.starts_with("/izuki/later") || url.starts_with("/izuki/focus") {
-                    let mut body = String::new();
-                    let _ = req.as_reader().take(400_000).read_to_string(&mut body);
-                    let v: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+                    let origin = request_origin(&req);
+                    let body = read_json_body(&mut req, 400_000);
                     std::thread::spawn(move || {
-                        let out = page_helper(&url, &v);
+                        let out = match body {
+                            Ok(v) => page_helper(&url, &v, &origin),
+                            Err(error) => side_error(error),
+                        };
                         let _ = req.respond(json_response(out));
                     });
                     continue;
@@ -556,7 +558,7 @@ pub fn spawn() {
                                     "/izuki/side/run" => run_side_task(&origin, &v),
                                     "/izuki/side/status" => side_task_status(&origin, &v),
                                     "/izuki/side/stop" => cancel_side(&origin, &v),
-                                    _ => companion_preference(Some(&v)),
+                                    _ => companion_preference(if v["read"].as_bool() == Some(true) { None } else { Some(&v) }),
                                 };
                                 done.unwrap_or_else(side_error)
                             }
@@ -608,7 +610,7 @@ pub fn spawn() {
 
 /// What the extension asked for, done here on the PC with the user's own
 /// brains — the extension holds no keys.
-fn page_helper(url: &str, v: &Value) -> Value {
+fn page_helper(url: &str, v: &Value, origin: &str) -> Value {
     let s = |k: &str| v[k].as_str().unwrap_or("").trim().to_string();
     if url.starts_with("/izuki/focus") {
         return json!({ "ok": true, "left": crate::focus::left() });
@@ -656,10 +658,26 @@ fn page_helper(url: &str, v: &Value) -> Value {
             json!({ "role": "user", "content": format!("Page: {title}\n\n{text}") }),
         ]
     };
-    match crate::chat::complete(&msgs) {
-        Ok(t) => json!({ "ok": true, "text": t.trim() }),
-        Err(e) => json!({ "ok": false, "text": crate::brain::plain_error(&e.to_string()) }),
-    }
+    let (key, id, stop) = match begin_side_chat(origin, v) {
+        Ok(work) => work,
+        Err(error) => return side_error(error),
+    };
+    let cancelled = stop.clone();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<String> {
+        let contract = crate::execution::TaskContract::new(&job);
+        let _scope = crate::execution::Scope::enter(&contract, move || cancelled.load(Ordering::SeqCst)).map_err(|e| anyhow!(e))?;
+        crate::execution::check().map_err(|r| anyhow!(r.explanation()))?;
+        // The browser panel gets the same read-only backend tools as Island
+        // chat. Page text cannot run desktop actions in this lane.
+        crate::chat::complete_with_web(&msgs, id, false, &|_| {})
+    }));
+    let (ok, text) = match result {
+        Ok(Ok(text)) => (true, text.trim().to_string()),
+        Ok(Err(error)) => (false, crate::brain::plain_error(&error.to_string())),
+        Err(_) => (false, "That browser answer stopped unexpectedly. Please try again.".into()),
+    };
+    finish_side(&key, text.clone(), Some(if ok { "answered" } else { "failed" }.into()));
+    if stop.load(Ordering::SeqCst) { side_error("Stopped.") } else { json!({"ok":ok,"text":text}) }
 }
 
 /// The side panel's conversation about the page in front: the page (and any
@@ -903,6 +921,25 @@ pub fn type_into(dom_id: &str, text: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn browser_chat_cancel_is_scoped_and_covers_stop_before_start() {
+        let origin = "chrome-extension://test-panel";
+        let request = json!({"requestId":uuid::Uuid::new_v4().to_string(),"kind":"chat"});
+        cancel_side(origin, &request).unwrap();
+        assert!(begin_side_chat(origin, &request).is_err(), "Stop before worker start must suppress it");
+        let request = json!({"requestId":uuid::Uuid::new_v4().to_string(),"kind":"chat"});
+        let (key, _, stopped) = begin_side_chat(origin, &request).unwrap();
+        cancel_side("chrome-extension://other-panel", &request).unwrap();
+        assert!(!stopped.load(Ordering::SeqCst), "another extension cannot cancel this request");
+        cancel_side(origin, &request).unwrap();
+        assert!(stopped.load(Ordering::SeqCst));
+        finish_side(&key, "a late answer".into(), None);
+        let all = SIDE_WORK.lock();
+        let work = all.as_ref().unwrap().get(&key).unwrap();
+        assert_eq!(work.state, SideState::Cancelled);
+        assert_eq!(work.text, "Stopped.");
+    }
 
     #[test]
     fn compares_versions() {

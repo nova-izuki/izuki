@@ -206,6 +206,21 @@ export function naturalVoiceTooSlow(): boolean {
   return rtfSamples > 0 && rtf > 1.6;
 }
 
+/**
+ * A real-time factor in words that can't be read backwards.
+ *
+ * The factor is seconds of work per second of speech, so lower is faster —
+ * but "11.3× real time" reads as eleven times faster, and the log said that
+ * for a laptop that was eleven times too slow. Every log line goes through
+ * this so the direction is never left to the reader.
+ */
+export function describePace(factor: number): string {
+  if (!Number.isFinite(factor) || factor <= 0) return "speed unknown";
+  return factor <= 1
+    ? `${(1 / factor).toFixed(1)}× faster than real time`
+    : `${factor.toFixed(1)}× slower than real time`;
+}
+
 export function naturalVoiceSpeed(): number | null {
   return rtfSamples ? rtf : null;
 }
@@ -253,7 +268,7 @@ function runProbe(voice: string) {
       rtf = r;
       rtfSamples = Math.max(1, rtfSamples);
       saveSpeed();
-      void api.log(`voice: speed check ${r.toFixed(1)}× real time`);
+      void api.log(`voice: speed check — ${describePace(r)}`);
     })
     .catch(() => undefined);
 }
@@ -529,9 +544,14 @@ export async function prepareLines(lines: string[], voice: string) {
   }
   // Everything came from the disk cache: still learn how fast this PC is.
   if (!rtfSamples && ready) probeVoiceSpeed(voice);
-  void api.log(
-    `voice: ${ready_lines.size} short lines ready (${rendered} made now${rtfSamples ? `, speed ${rtf.toFixed(1)}× real time` : ""})`
-  );
+  // `rtf` is seconds of work per second of speech — lower is faster. This
+  // used to print "speed 11.3× real time", which reads as eleven times
+  // *faster* than needed when it meant eleven times too slow, and sent a
+  // diagnosis the wrong way. Say which side of real time it's on.
+  const pace = !rtfSamples
+    ? ""
+    : `, ${describePace(rtf)}${naturalVoiceTooSlow() ? " — too slow, the quick voice says these instead" : ""}`;
+  void api.log(`voice: ${ready_lines.size} short lines ready (${rendered} made now${pace})`);
 }
 
 /**
@@ -620,7 +640,7 @@ export async function speakNatural(
     clearTimeout(slow);
     play.done();
   }
-  if (rtfSamples) void api.log(`voice: speed ${rtf.toFixed(1)}× real time`);
+  if (rtfSamples) void api.log(`voice: ${describePace(rtf)}`);
   return true;
 }
 

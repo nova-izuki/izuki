@@ -324,6 +324,7 @@ pub fn run() {
             commands::open_wakewords_folder,
             commands::import_wakewords,
             commands::chat_stream,
+            commands::about_izuki,
             commands::chat_cancel,
             commands::android_connect,
             commands::android_do,

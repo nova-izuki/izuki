@@ -854,7 +854,10 @@ pub fn home_city() -> String {
         return set.trim().to_string();
     }
     for m in crate::memory::list() {
-        let l = m.text.to_lowercase();
+        // English phrases only need ASCII case folding. Preserve byte offsets
+        // so Unicode text before the phrase cannot make this slice panic.
+        let mut l = m.text.clone();
+        l.make_ascii_lowercase();
         for p in ["lives in ", "is based in ", "is from ", "lives at ", "located in "] {
             if let Some(i) = l.find(p) {
                 let rest = &m.text[i + p.len()..];
@@ -866,6 +869,213 @@ pub fn home_city() -> String {
         }
     }
     String::new()
+}
+
+/// A place the user just said they're in, as they wrote it — not yet checked
+/// against a map.
+///
+/// The chat once told the owner it was raining in London. Nothing in Izuki
+/// knew where they were, the model was told to "use their city from what you
+/// remember", there was nothing to remember, and London is what a model says
+/// when it has to say somewhere. Then "I'm not in London bro" went nowhere,
+/// because the chat lane can't save anything. So the plain ways people say
+/// where they are are caught here and kept, with no model involved.
+///
+/// `asked_where`: Izuki's previous message asked where they are, so a short
+/// bare reply ("dallas") is the answer.
+pub fn place_in(said: &str, asked_where: bool) -> Option<String> {
+    // Things people are "in" that aren't places.
+    const NOT_PLACES: &[&str] = &[
+        "the", "a", "an", "my", "your", "his", "her", "our", "their", "this", "that", "it", "here", "there",
+        "class", "school", "college", "uni", "work", "bed", "shower", "trouble", "love", "pain", "meeting",
+        "call", "line", "queue", "traffic", "hospital", "church", "lecture", "session", "chat", "town", "no",
+        "so", "too", "good", "bad", "now", "middle", "between", "front", "charge", "control", "mood", "rush",
+        "hurry", "danger", "debt", "luck", "time", "lab", "office", "car", "bus", "train", "game", "lobby",
+        "zoom", "teams", "discord", "bathroom", "kitchen", "room", "bedroom", "gym", "store", "mall",
+        // States, not places — and some of them are also somebody's village:
+        // a town called Shock exists, so the geocoder alone can't catch it.
+        "shock", "denial", "heaven", "hell", "awe", "tears", "disbelief", "detention", "agony", "panic",
+        "jail", "prison", "court", "therapy", "surgery", "labor", "labour", "doubt", "bits", "pieces",
+        "yes", "yeah", "yep", "yup", "ok", "okay", "sure", "fine", "great", "thanks", "thank", "nah",
+        "nope", "nothing", "nowhere", "somewhere", "anywhere", "everywhere", "idk", "maybe", "whatever",
+    ];
+    // Where a place stops and the rest of the sentence starts.
+    const ENDS: &[&str] = &[
+        "bro", "bruh", "lol", "now", "today", "rn", "atm", "right", "tho", "though", "and", "but", "so", "btw",
+        "fr", "man", "not", "actually", "anyway", "rather", "currently", "dude", "fam",
+    ];
+    // Everything below reads `lower` and slices `lower` — never `said`.
+    // Lowercasing and the apostrophe swap change byte lengths, so an offset
+    // found in one is not an offset in the other (and slicing on one that
+    // lands mid-character panics). The casing doesn't matter: the geocoder
+    // hands back the place's proper name.
+    let lower = said.to_lowercase().replace('\u{2019}', "'");
+    let take = |from: usize| -> Option<String> {
+        let rest = lower.get(from..)?;
+        let rest = rest.split(['.', ',', '!', '?', ';', ':', '\n', '(']).next()?.trim();
+        let mut words: Vec<&str> = Vec::new();
+        for w in rest.split_whitespace() {
+            if ENDS.contains(&w.to_lowercase().as_str()) {
+                break;
+            }
+            words.push(w);
+        }
+        let first = words.first()?.to_lowercase();
+        if NOT_PLACES.contains(&first.as_str()) || words.len() > 4 || words.iter().any(|w| w.chars().any(|c| c.is_ascii_digit())) {
+            return None;
+        }
+        Some(words.join(" "))
+    };
+    // The latest thing they said wins: "I'm not in London, I'm in Dallas".
+    const SAYS: &[&str] = &[
+        "i live in ", "i'm based in ", "im based in ", "i am based in ", "i'm located in ", "im located in ",
+        "i am located in ", "my city is ", "my location is ", "i'm in ", "im in ", "i am in ", "i stay in ",
+    ];
+    // Only where a phrase starts a word: "im in " is inside "h*im in*",
+    // "sw*im in*" and "sl*im in*", and "I met him in London" saved London.
+    // (`at` comes from searching `lower`, so slicing `lower` there is safe.)
+    let at_word_start = |at: usize| lower[..at].chars().next_back().is_none_or(|c| !c.is_alphanumeric() && c != '\'');
+    let stated = SAYS
+        .iter()
+        .filter_map(|s| lower.rmatch_indices(s).find(|(at, _)| at_word_start(*at)).map(|(at, _)| at + s.len()))
+        .max();
+    if let Some(from) = stated {
+        // A rejected statement ("I'm in class") is not a bare city reply.
+        return take(from);
+    }
+    if asked_where {
+        // A bare answer to "where are you?": "dallas", "in houston tx".
+        let trimmed = lower.trim_start();
+        let bare = trimmed.trim_start_matches("in ");
+        // Offsets into `lower` itself, so `take` slices the right string.
+        let from = (lower.len() - trimmed.len()) + (trimmed.len() - bare.len());
+        if bare.split_whitespace().count() <= 3 {
+            return take(from);
+        }
+    }
+    None
+}
+
+/// A name for comparing: lower case, the common Latin accents taken off, so
+/// "Zürich" and "zurich" are the same place. Not a transliterator — it only
+/// has to tell whether two spellings name one place.
+fn fold(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.trim().to_lowercase().chars() {
+        let plain = match c {
+            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' | 'ă' | 'ą' => "a",
+            'ç' | 'ć' | 'č' => "c",
+            'ď' | 'đ' => "d",
+            'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ė' | 'ę' | 'ě' => "e",
+            'ğ' => "g",
+            'ì' | 'í' | 'î' | 'ï' | 'ī' | 'į' | 'ı' => "i",
+            'ł' => "l",
+            'ñ' | 'ń' | 'ň' => "n",
+            'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'ō' | 'ő' => "o",
+            'ř' => "r",
+            'ś' | 'š' | 'ş' => "s",
+            'ß' => "ss",
+            'ť' | 'ţ' => "t",
+            'ù' | 'ú' | 'û' | 'ü' | 'ū' | 'ů' | 'ű' => "u",
+            'ý' | 'ÿ' => "y",
+            'ź' | 'ż' | 'ž' => "z",
+            // İ lowercases to "i" plus a combining dot.
+            '\u{307}' => "",
+            other => {
+                out.push(other);
+                continue;
+            }
+        };
+        out.push_str(plain);
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Whether the place the geocoder found is the place the user named.
+///
+/// It has to be checked, because the geocoder will match almost any word to
+/// *somewhere*: tried for real, "class" came back as Classe, "trouble" as
+/// Statenville, "pain" as Paine (pop. 72,759), "bed" as Bedok New Town. A
+/// population or place-type filter lets every one of those through. What
+/// doesn't is asking that the name be the same — or the start of what they
+/// said ("new york city" → New York), or the end of the name found ("vegas"
+/// → Las Vegas).
+pub fn same_place(said: &str, found: &str) -> bool {
+    let (a, b) = (fold(said), fold(found));
+    !a.is_empty() && !b.is_empty() && (a == b || a.starts_with(&format!("{b} ")) || b.ends_with(&format!(" {a}")))
+}
+
+/// The proper name of a real, lived-in place the user named, from
+/// Open-Meteo's geocoder — or `None` if what came back isn't that place.
+///
+/// "houston tx" finds nothing as written, so the last word is dropped and
+/// it's asked again (twice at most): Houston.
+pub fn real_place(name: &str) -> Option<String> {
+    let name = name.trim();
+    if name.chars().count() < 2 {
+        return None;
+    }
+    let words: Vec<&str> = name.split_whitespace().collect();
+    let shortest = words.len().saturating_sub(2).max(1);
+    // One budget for the whole lookup, including shorter-name retries. This
+    // optional memory step must never occupy the chat's normal 20s web lane.
+    let began = std::time::Instant::now();
+    for n in (shortest..=words.len()).rev() {
+        let ask = words[..n].join(" ");
+        let remaining = Duration::from_secs(4).checked_sub(began.elapsed()).filter(|d| !d.is_zero())?;
+        let geo: serde_json::Value = reqwest::blocking::Client::builder()
+            .timeout(remaining)
+            .connect_timeout(remaining.min(Duration::from_secs(2)))
+            .build()
+            .ok()?
+            .get(format!("https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&name={}", enc(&ask)))
+            .send()
+            .ok()?
+            .error_for_status()
+            .ok()?
+            .json()
+            .ok()?;
+        let Some(hit) = geo["results"].get(0) else { continue };
+        let kind = hit["feature_code"].as_str().unwrap_or("");
+        let lived_in = kind.starts_with("PPL") || kind.starts_with("ADM") || kind == "PCLI";
+        let too_small = hit["population"].as_u64().is_some_and(|p| p < 500);
+        let found = hit["name"].as_str().unwrap_or("");
+        // The first answer decides: a shorter ask that finds something else
+        // is a different place, not a better match.
+        return (lived_in && !too_small && same_place(name, found)).then(|| found.to_string());
+    }
+    None
+}
+
+/// If the user just said where they are, keep it as their home city and
+/// return it. Runs on the chat worker, only when enabled and the words
+/// matched, with a four-second budget for the entire map lookup.
+pub fn learn_city(said: &str, asked_where: bool) -> Option<String> {
+    let store = crate::state::try_store()?;
+    let before = store.settings();
+    if !before.learn_city { return None; }
+    let place = place_in(said, asked_where)?;
+    let city = real_place(&place)?;
+    // Re-read after the network call: turning this off, or editing the city
+    // while the lookup runs, takes precedence over the pending suggestion.
+    let mut next = store.settings();
+    if !next.learn_city || next.home_city != before.home_city { return None; }
+    if next.home_city.trim().eq_ignore_ascii_case(&city) {
+        return Some(city);
+    }
+    eprintln!("[web] remembered the city the user named");
+    next.home_city = city.clone();
+    store.set_settings(next);
+    crate::state::settings_changed_elsewhere();
+    Some(city)
+}
+
+/// Did this message ask where the user is?
+pub fn asks_where(said: &str) -> bool {
+    let l = said.to_lowercase();
+    ["where are you", "which city", "what city", "where you're at", "where you are", "your location", "where are you based", "where do you live", "where you at"]
+        .iter()
+        .any(|w| l.contains(w))
 }
 
 fn weather_text(name: &str, w: &serde_json::Value) -> String {
@@ -913,6 +1123,139 @@ fn sky(code: i64) -> &'static str {
         71..=77 | 85 | 86 => "snow",
         95..=99 => "thunderstorms",
         _ => "mixed weather",
+    }
+}
+
+#[cfg(test)]
+mod place_tests {
+    use super::{asks_where, place_in};
+
+    /// The owner was told it was raining in London. They aren't in London.
+    /// The ways people say where they are have to be heard, and the ways
+    /// they say they're "in" something that isn't a place must not be.
+    #[test]
+    fn hears_where_people_say_they_are() {
+        for (said, want) in [
+            ("i live in dallas", "dallas"),
+            ("I'm based in Houston, Texas", "houston"),
+            ("im not in london bro im in dallas", "dallas"),
+            ("I'm not in London, I'm in Lagos.", "lagos"),
+            ("my city is San Antonio", "san antonio"),
+            ("i stay in abuja now", "abuja"),
+            ("I am located in New York City", "new york city"),
+        ] {
+            assert_eq!(place_in(said, false).as_deref(), Some(want), "{said}");
+        }
+    }
+
+    #[test]
+    fn being_in_something_is_not_being_somewhere() {
+        for said in [
+            "im in class", "I'm in the shower", "i'm in a meeting", "im in trouble lol", "I'm in love",
+            "im in bed", "i'm in my room", "im in the car", "i'm in zoom rn", "I'm in pain",
+            "im in 3rd period", "im not in london bro",
+        ] {
+            assert_eq!(place_in(said, false), None, "\"{said}\" is not a place");
+        }
+    }
+
+    /// Izuki asked "where are you?" — a bare reply is the answer.
+    #[test]
+    fn a_bare_answer_to_where_are_you_is_the_place() {
+        assert_eq!(place_in("dallas", true).as_deref(), Some("dallas"));
+        assert_eq!(place_in("in houston tx", true).as_deref(), Some("houston tx"));
+        assert_eq!(place_in("Lagos", true).as_deref(), Some("lagos"));
+        // Not asked: a lone word is just a word.
+        assert_eq!(place_in("dallas", false), None);
+        // Asked, but they said something else entirely.
+        assert_eq!(place_in("can you open spotify for me first", true), None);
+        assert_eq!(place_in("the shower", true), None);
+        for reply in ["yes", "okay", "sure", "nowhere", "somewhere", "idk", "nope"] {
+            assert_eq!(place_in(reply, true), None, "{reply} must not be sent to the geocoder");
+        }
+        for reply in ["I'm in class", "I'm in bed", "im in trouble"] {
+            assert_eq!(place_in(reply, true), None, "a rejected statement must not fall back to a bare place");
+        }
+    }
+
+    /// Lowercasing and the apostrophe swap change byte lengths. An offset
+    /// found in one string and used on another slices mid-character and
+    /// panics — the trap chat.rs documents. None of these may panic.
+    #[test]
+    fn odd_text_never_panics() {
+        for said in [
+            "I\u{2019}m in Dallas", "I\u{2019}m based in Zürich", "ﬁrst I\u{2019}m in İstanbul", "İİİ im in x",
+            "im in", "i live in ", "", "   ", "in", "🙂 im in lagos 🙂", "\u{2019}\u{2019}\u{2019} i'm in tokyo",
+        ] {
+            let _ = place_in(said, false);
+            let _ = place_in(said, true);
+        }
+        assert_eq!(place_in("I\u{2019}m in Dallas", false).as_deref(), Some("dallas"), "curly apostrophe");
+    }
+
+    /// What Open-Meteo's geocoder really answered, tried live. It matches
+    /// nearly any word to a real populated place, so the only guard that
+    /// works is that the place found is the place named.
+    #[test]
+    fn a_place_found_must_be_the_place_named() {
+        use super::same_place;
+        for (said, found) in [
+            ("dallas", "Dallas"),
+            ("Lagos", "Lagos"),
+            ("new york city", "New York"),
+            ("houston tx", "Houston"),
+            ("vegas", "Las Vegas"),
+            ("zurich", "Zürich"),
+            ("Zürich", "Zurich"),
+            ("port harcourt", "Port Harcourt"),
+            ("istanbul", "İstanbul"),
+        ] {
+            assert!(same_place(said, found), "{said} is {found}");
+        }
+        // The real near-misses the geocoder returned for things that aren't places.
+        for (said, found) in [
+            ("class", "Classe"),
+            ("shower", "Shauwer"),
+            ("trouble", "Statenville"),
+            ("pain", "Paine"),
+            ("bed", "Bedok New Town"),
+            ("heaven", "Heavener"),
+            ("meeting", "Meetings"),
+            ("", "Dallas"),
+            ("dallas", ""),
+        ] {
+            assert!(!same_place(said, found), "\"{said}\" is not {found}");
+        }
+    }
+
+    /// "im in " is inside "him in", "swim in" and "slim in". Someone else's
+    /// location, or a sentence about swimming, must never become theirs.
+    #[test]
+    fn a_phrase_inside_another_word_is_not_a_statement() {
+        for said in [
+            "I met him in London",
+            "i saw him in lagos last week",
+            "we swim in dallas every summer",
+            "she looked slim in houston",
+        ] {
+            assert_eq!(place_in(said, false), None, "{said}");
+        }
+        // And the real statement still wins when both are there.
+        assert_eq!(place_in("I met him in London but I'm in Dallas", false).as_deref(), Some("dallas"));
+    }
+
+    #[test]
+    fn states_are_not_places_even_when_a_town_shares_the_name() {
+        for said in ["im in shock", "I'm in denial", "im in heaven rn", "i'm in detention", "im in tears"] {
+            assert_eq!(place_in(said, false), None, "{said}");
+        }
+    }
+
+    #[test]
+    fn knows_when_it_asked_where() {
+        assert!(asks_where("Where are you right now?"));
+        assert!(asks_where("Which city are you in? I'll check the weather."));
+        assert!(!asks_where("What's on your agenda today?"));
     }
 }
 

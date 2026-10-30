@@ -86,6 +86,7 @@ function fakePage({ kind = 'textarea', sendButton = true, disabled = false } = {
     clicks,
     install() {
       globalThis.document = { querySelectorAll: (s) => bySelector.get(s) || [] };
+      box.closest = () => globalThis.document;
       globalThis.getComputedStyle = () => ({ visibility: 'visible', display: 'block' });
       globalThis.HTMLTextAreaElement = { prototype: {} };
       globalThis.HTMLInputElement = { prototype: {} };
@@ -125,19 +126,28 @@ assert.equal(out.ok, true);
 assert(page.events.some((e) => e.type === 'paste'), 'a contenteditable editor is pasted into');
 assert.equal(page.box.textContent, 'explain this', 'and falls back to the text when the paste is ignored');
 
-// No send button at all: Enter, which every one of these sends on.
+// Missing and disabled Send controls leave a draft, never claim delivery.
 page = fakePage({ sendButton: false });
 page.install();
 out = typeIntoComposer('go', ['textarea'], ['button[type="submit"]'], true);
-assert.deepEqual(out, { ok: true, sent: true, by: 'enter' });
-assert.deepEqual(page.events.filter((e) => e.type.startsWith('key')).map((e) => e.type), ['keydown', 'keypress', 'keyup']);
+assert.deepEqual(out, { ok: false, why: 'no-send' });
+assert.equal(page.events.filter((e) => e.type.startsWith('key')).length, 0);
+assert.equal(page.box.value, 'go');
 
 // A disabled send button is not a send button.
 page = fakePage({ disabled: true });
 page.install();
 out = typeIntoComposer('go', ['textarea'], ['button[type="submit"]'], true);
-assert.equal(out.by, 'enter', 'a greyed-out button is skipped, not clicked');
+assert.deepEqual(out, { ok: false, why: 'no-send' });
 assert.equal(page.clicks.length, 0);
+
+page = fakePage(); page.install(); page.box.value = 'my unfinished message';
+out = typeIntoComposer('a new question', ['textarea'], ['button[type="submit"]'], true);
+assert.deepEqual(out, { ok: false, why: 'draft' });
+assert.equal(page.box.value, 'my unfinished message');
+assert.equal(page.clicks.length, 0);
+page = fakePage(); page.install(); page.box.disabled = true;
+assert.deepEqual(typeIntoComposer('question', ['textarea'], ['button[type="submit"]'], true), { ok:false, why:'busy' });
 
 // The site changed its markup: say so, rather than looking ignored.
 page = fakePage();
@@ -214,11 +224,11 @@ const rust = readFileSync(path.join(here, '..', 'src-tauri', 'src', 'ext.rs'), '
 
 // `task_review` needs the tab the task was written about; without it every
 // desktop task was refused with "Choose an open browser tab first."
-assert(/tabId:\s*current\.id/.test(panel), 'prepare must send the tab it is reading from, or no task can ever run');
+assert(/tabId:\s*source\.id/.test(panel), 'prepare must send the frozen source tab the reviewed task belongs to');
 assert(rust.includes('"tabId"'), 'ext.rs still expects a tabId — keep the panel sending it');
 
 // Stop without a kind cancels a chat and leaves the task running.
-assert(/side\("stop",\s*\{\s*requestId,\s*kind:\s*"task"\s*\}/.test(panel), 'Stop must say it is stopping a task');
+assert(/side\("stop",\s*\{\s*requestId:\s*job\.id,\s*kind:\s*"task"\s*\}/.test(panel), 'Stop must say it is stopping a task');
 
 // The connected tab can be navigated anywhere; typing into whatever is there
 // would hand the question and the page to a site nobody chose.

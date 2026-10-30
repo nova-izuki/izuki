@@ -287,13 +287,16 @@ export function TalkToIzuki() {
         >
           <Toggle checked={settings.screen_time_enabled} onChange={(v) => patch({ screen_time_enabled: v })} />
         </Row>
-        <Row label="Your town or city" hint="For the weather on the Island and the status screen. Leave empty and I'll use what I remember about where you live.">
+        <Row label="Your town or city" hint="For the weather and anything local. Until it knows, Izuki asks rather than guessing.">
           <input
             value={settings.home_city}
             onChange={(e) => patch({ home_city: e.target.value })}
             placeholder="e.g. Lagos"
             className="izk-field izk-no-drag w-[140px] py-1 text-[12px]"
           />
+        </Row>
+        <Row label="Learn my city from chat" hint="When you say where you are, check that place with Open-Meteo and remember it here. Only the place name is sent. Off until you turn it on.">
+          <Toggle checked={settings.learn_city} onChange={(v) => patch({ learn_city: v })} />
         </Row>
         <Row
           label="Recall (what was on my screen)"

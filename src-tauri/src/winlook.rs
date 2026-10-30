@@ -318,6 +318,61 @@ const PRESETS: &[Preset] = &[
             extras: &[Extra::Sun(0.72, 0.28, 0.05, 0xFFFBEB, 0xFDE68A, false), Extra::Waves(4, 0x9A3412)],
         },
     },
+    Preset {
+        id: "amber",
+        name: "Amber",
+        blurb: "Warm terminal light and a fine amber grid on charcoal.",
+        dark: true, accent: 0xEA580C, bars: false, titles: true, glass: false,
+        wall: Wall {
+            top: 0x0D0804, bottom: 0x211308,
+            glows: &[(0.64, 0.60, 0.46, 0xD97706, 0.23)],
+            extras: &[Extra::Rain(0.12, 0xD97706), Extra::Grid(0.72, 0xB45309)],
+        },
+    },
+    Preset {
+        id: "aurora",
+        name: "Aurora",
+        blurb: "Ribbons of green and turquoise across a clear polar night.",
+        dark: true, accent: 0x0D9488, bars: true, titles: true, glass: true,
+        wall: Wall {
+            top: 0x020B13, bottom: 0x061C24,
+            glows: &[(0.34, 0.38, 0.43, 0x10B981, 0.24), (0.80, 0.48, 0.31, 0x22D3EE, 0.16)],
+            extras: &[Extra::Stars(0.05, 0xD1FAE5), Extra::Aurora(0.47, 0x34D399), Extra::Aurora(0.61, 0x2DD4BF)],
+        },
+    },
+    Preset {
+        id: "deepsea",
+        name: "Deep Sea",
+        blurb: "Tiny blue lights floating above deep teal waves.",
+        dark: true, accent: 0x0EA5C6, bars: true, titles: true, glass: true,
+        wall: Wall {
+            top: 0x010B17, bottom: 0x042B37,
+            glows: &[(0.72, 0.30, 0.32, 0x0891B2, 0.27), (0.24, 0.74, 0.40, 0x14B8A6, 0.18)],
+            extras: &[Extra::Bokeh(18, 0x22D3EE), Extra::Waves(3, 0x011924)],
+        },
+    },
+    Preset {
+        id: "lavender",
+        name: "Lavender",
+        blurb: "A pale lilac canvas with soft flowing lines and pearl lights.",
+        dark: false, accent: 0x8B5CF6, bars: false, titles: true, glass: true,
+        wall: Wall {
+            top: 0xFAF7FF, bottom: 0xEDE9FE,
+            glows: &[(0.24, 0.28, 0.42, 0xDDD6FE, 0.50), (0.80, 0.72, 0.37, 0xFBCFE8, 0.35)],
+            extras: &[Extra::Lines(12, 0xC4B5FD), Extra::Bokeh(10, 0xFFFFFF)],
+        },
+    },
+    Preset {
+        id: "obsidian",
+        name: "Obsidian",
+        blurb: "Black glass, a thin gold halo, and a few warm sparks.",
+        dark: true, accent: 0xCA8A04, bars: false, titles: true, glass: false,
+        wall: Wall {
+            top: 0x050505, bottom: 0x100D08,
+            glows: &[(0.67, 0.48, 0.38, 0xA16207, 0.14)],
+            extras: &[Extra::Ring(0.67, 0.48, 0.17, 0xD4A64A), Extra::Sparks(0.025, 0xFDE68A)],
+        },
+    },
 ];
 
 /// Accent colours offered as swatches (and understood by name).
@@ -1832,15 +1887,16 @@ pub fn parse(said: &str) -> Option<Ask> {
     PRESETS
         .iter()
         .find(|p| {
+            let name = p.name.to_lowercase();
+            let name_words: Vec<&str> = name.split_whitespace().collect();
             words.iter().enumerate().any(|(i, w)| {
-                *w == p.id && (
+                let count = if *w == p.id { 1 } else if words[i..].starts_with(&name_words) { name_words.len() } else { return false };
                     // "the sakura look", "the nova theme on my laptop" (not "the paper look neater")
-                    is_look_word(words.get(i + 1)) && words.get(i + 2).is_none_or(|n| ["please", "on", "for", "now", "again", "today", "instead"].contains(n))
+                    is_look_word(words.get(i + count)) && words.get(i + count + 1).is_none_or(|n| ["please", "on", "for", "now", "again", "today", "instead"].contains(n))
                     // "look nova", "theme nova"
                     || is_look_word(at(i, 1))
                     // "look like nova", "the look to forest", "a theme called ember"
                     || at(i, 1).is_some_and(|w| ["like", "to", "called", "into"].contains(w)) && is_look_word(at(i, 2))
-                )
             })
         })
         .map(|p| Ask::Apply(p.id))
@@ -2327,6 +2383,20 @@ mod tests {
             assert!(!p.wall.glows.is_empty() && !p.blurb.is_empty());
             assert!(preview_css(&p.wall).ends_with("100%)"));
             assert!(COLOURS.iter().any(|(_, c)| *c == p.accent), "{}'s accent has a name to say", p.id);
+        }
+    }
+
+    #[test]
+    fn new_looks_render_in_portrait_and_wide_without_becoming_flat() {
+        for id in ["amber", "aurora", "deepsea", "lavender", "obsidian"] {
+            let p = PRESETS.iter().find(|p| p.id == id).unwrap();
+            assert!(matches!(parse(&format!("make my PC look {}", p.name)), Some(Ask::Apply(_))), "{} must be reachable by voice", p.name);
+            for (w, h) in [(90, 160), (256, 108)] {
+                let image = paint(&p.wall, p.dark, w, h);
+                assert_eq!(image.dimensions(), (w, h));
+                let pixels: std::collections::HashSet<_> = image.pixels().map(|p| p.0).collect();
+                assert!(pixels.len() > 30, "{id} at {w}x{h} lost its detail");
+            }
         }
     }
 

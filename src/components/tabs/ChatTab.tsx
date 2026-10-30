@@ -734,7 +734,15 @@ export function ChatTab() {
       }
       // Deep research (research.rs): many searches, many pages, an answer
       // with its sources — with the Deep switch on, or "research …".
-      const researchQ = !note && !here && !images.length ? (deep ? t : researchAsk(t, !!msgs[msgs.length - 1]?.research)) : null;
+      //
+      // Never for a question about Izuki itself. With Deep on, "what are
+      // Izuki's new features" ran ten web searches and read back GitHub pages
+      // for releases a hundred versions old. The chat carries this build's own
+      // release notes for exactly that question (selfknow.rs); the web can
+      // only get it wrong.
+      const aboutIzuki = !note && !here && !images.length ? await api.aboutIzuki(t) : false;
+      if (streamId.current !== id) return;
+      const researchQ = !note && !here && !images.length && !aboutIzuki ? (deep ? t : researchAsk(t, !!msgs[msgs.length - 1]?.research)) : null;
       if (researchQ) {
         setLast({ status: undefined, research: { question: researchQ, phase: "working", steps: [], sources: [] } });
         await runResearch(id, researchQ, history, setLast, finish);

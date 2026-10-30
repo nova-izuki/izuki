@@ -221,6 +221,7 @@ export const MOCK_SETTINGS: Settings = {
   recall_enabled: false,
   screen_time_enabled: true,
   home_city: "",
+  learn_city: false,
   app_theme: "nova",
   app_theme_color: "",
   flows_keep_days: 1,
@@ -1056,6 +1057,8 @@ export const api = {
   alarmSnooze: (text: string, minutes: number) => call<Reminder>("alarm_snooze", { text, minutes }, () => ({ id: "", at: 0, text })),
   chatCancel: (id: number) => call<void>("chat_cancel", { id }, () => undefined).catch(() => undefined),
   /** Deep research: updates arrive as EV.research tagged `id`; stop with chatCancel. */
+  /** A question about Izuki itself — answered from its own release notes, never researched on the web. */
+  aboutIzuki: (text: string) => call<boolean>("about_izuki", { text }, () => false).catch(() => false),
   researchStart: (id: number, question: string, history: Array<{ role: string; content: string }>) =>
     call<void>("research_start", { id, question, history }, () => undefined),
   /** Coding mode: updates arrive as EV.coding tagged `id`; stop with chatCancel. */

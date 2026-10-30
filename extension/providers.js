@@ -80,7 +80,7 @@ export const PROVIDERS = [
     hosts: ["chat.deepseek.com"],
     open: "https://chat.deepseek.com/",
     composer: ["#chat-input", ...COMMON_COMPOSER],
-    send: ['div[role="button"][aria-disabled="false"]', 'button[type="submit"]'],
+    send: ['button[aria-label*="Send" i]', 'button[type="submit"]'],
   },
   {
     id: "mistral",
@@ -132,15 +132,24 @@ export async function providerTabs(p) {
  * React and Lexical, and a plain `value =` assignment is thrown away on the
  * next render, which is the classic way this breaks.
  */
-export function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend) {
+export function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend, expectedOrigin = "") {
+  if (expectedOrigin && location.origin !== expectedOrigin) return { ok: false, why: "changed-page" };
   const visible = (el) => {
     if (!el) return false;
     const box = el.getBoundingClientRect();
     const style = getComputedStyle(el);
     return box.width > 1 && box.height > 1 && style.visibility !== "hidden" && style.display !== "none";
   };
-  const box = composerSelectors.flatMap((s) => [...document.querySelectorAll(s)]).find(visible);
+  let box;
+  for (const selector of composerSelectors) {
+    const matches = [...new Set([...document.querySelectorAll(selector)].filter(visible))];
+    if (matches.length > 1) return { ok: false, why: "ambiguous" };
+    if (matches.length === 1) { box = matches[0]; break; }
+  }
   if (!box) return { ok: false, why: "no-composer" };
+  if (box.disabled || box.readOnly || box.getAttribute("aria-disabled") === "true" || box.getAttribute("type") === "password") return { ok: false, why: "busy" };
+  if (String(box.value || box.textContent || "").trim()) return { ok: false, why: "draft" };
+  if ([...document.querySelectorAll('button[data-testid="stop-button"],button[aria-label*="Stop generating" i],button[aria-label*="Stop response" i]')].some(visible)) return { ok: false, why: "busy" };
 
   box.focus();
   const native = box.tagName === "TEXTAREA" || box.tagName === "INPUT";
@@ -168,20 +177,30 @@ export function typeIntoComposer(text, composerSelectors, sendSelectors, autoSen
 
   if (!autoSend) return { ok: true, sent: false };
   const ready = (el) => visible(el) && !el.disabled && el.getAttribute("aria-disabled") !== "true";
-  const button = sendSelectors.flatMap((s) => [...document.querySelectorAll(s)]).find(ready);
+  const form = box.closest?.("form");
+  let button;
+  for (const selector of sendSelectors) {
+    // A generic Submit belongs to this composer, never an unrelated form.
+    const scope = selector === 'button[type="submit"]' ? form : document;
+    if (!scope) continue;
+    const matches = [...new Set([...scope.querySelectorAll(selector)].filter(ready))];
+    if (matches.length === 1) { button = matches[0]; break; }
+    if (matches.length > 1) return { ok: false, why: "ambiguous-send" };
+  }
   if (button) {
     button.click();
     return { ok: true, sent: true };
   }
-  // No button to be found: Enter is how every one of these sends.
-  for (const type of ["keydown", "keypress", "keyup"]) {
-    box.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-  }
-  return { ok: true, sent: true, by: "enter" };
+  return { ok: false, why: "no-send" };
 }
 
 /** What to say when a handoff didn't land, in words that say what to do. */
 export function handoffProblem(why, name, id) {
+  if (why === "draft") return `Your ${name} tab already has a draft. Send or clear it there first; your words were left alone.`;
+  if (why === "busy") return `${name} is still answering or its message box isn't ready. Wait, then try again.`;
+  if (why === "changed-page") return "That tab moved to another site. Connect it again before sharing anything.";
+  if (why === "ambiguous" || why === "ambiguous-send") return `I found several possible chat controls in ${name}. Open the tab and choose the right one yourself.`;
+  if (why === "no-send") return `The question is drafted in ${name}, but I couldn't verify its Send button. Open that tab and press Send yourself. It hasn't been sent.`;
   if (why === "no-tab" && id === "any") {
     // "Any AI tab I pick" has no page of its own to open, so telling someone
     // to press Connect would be a false instruction (and reads as "No Any AI

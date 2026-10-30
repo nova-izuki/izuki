@@ -1,7 +1,7 @@
 {
   "name": "izuki",
   "private": true,
-  "version": "1.0.185",
+  "version": "1.0.186",
   "type": "module",
   "description": "IZUKI — YO IZUKI, DO IT. Draw on your screen, Izuki does it.",
   "scripts": {
@@ -21,6 +21,8 @@
     "test:companion": "node tools/companion-check.mjs",
     "test:finder": "node tools/finder-check.mjs",
     "test:panel": "node tools/panel-check.mjs",
+    "test:panel-browser": "node tools/panel-browser-check.cjs",
+    "test:chat-text": "node tools/chat-text-check.mjs",
     "test:hotkeys": "node tools/hotkey-check.mjs",
     "test:html": "node tools/encoding-check.cjs && node tools/html-check.cjs docs/index.html && node tools/html-check.cjs docs/screenshots/index.html && node tools/html-check.cjs docs/links/index.html && node tools/html-check.cjs docs/app/index.html && node tools/html-check.cjs src-tauri/src/call.html",
     "app:dev": "tauri dev",

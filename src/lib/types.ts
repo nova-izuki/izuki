@@ -330,6 +330,7 @@ export interface Settings {
   recall_enabled: boolean;
   screen_time_enabled: boolean;
   home_city: string;
+  learn_city: boolean;
   /** Saved flows clear after this many days unused (0 = keep). */
   flows_keep_days: number;
   /** How sure the wake-word detector must be before it wakes. */

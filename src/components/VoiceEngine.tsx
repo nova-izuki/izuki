@@ -18,6 +18,7 @@ import {
   onNaturalSpeaking,
   lineReady,
   naturalVoiceSpeed,
+  describePace,
   naturalVoiceTooSlow,
   preloadNaturalVoice,
   prepareLines,
@@ -308,7 +309,7 @@ async function speakLine(raw: string, settings: Settings, mood: string | null | 
       probeVoiceSpeed(settings.voice_name); // plugged back in? find out
       if (!slowTipShown) {
         slowTipShown = true;
-        void api.log(`voice: natural voice too slow on this PC right now (${naturalVoiceSpeed()?.toFixed(1)}× real time) — quick voice`);
+        void api.log(`voice: natural voice too slow on this PC right now (${describePace(naturalVoiceSpeed() ?? 0)}) — quick voice`);
         showCaption(
           "This PC is running slowly right now (on battery?), so I'm using the quick voice. Plug in the charger — or add a free Groq key under Voice → Human — for the natural voice with no wait.",
           false

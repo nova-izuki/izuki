@@ -2166,6 +2166,14 @@ pub fn import_wakewords() -> R<WakewordImport> {
 
 /// Stream a spoken-style reply to the conversation so far; words arrive as
 /// `izuki://chat-delta` events tagged `id`.
+/// Is this a question about Izuki itself (its features, version, what's
+/// new)? The Chat tab asks before sending a question to deep research,
+/// which can only answer it from stale web pages. One list, in Rust.
+#[tauri::command]
+pub fn about_izuki(text: String) -> bool {
+    crate::selfknow::about_izuki(&text)
+}
+
 #[tauri::command]
 pub fn chat_stream(
     app: AppHandle,

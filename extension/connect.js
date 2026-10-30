@@ -28,10 +28,13 @@ const state = {
   follow: false,
   companion: false,
   autoSend: true,
+  ready: false,
+  origin: "",
 };
 
 const gate = new QuestionGate();
 let watching = null;
+let watchGeneration = 0;
 
 // ---- remembering the choice ------------------------------------------------
 
@@ -43,6 +46,8 @@ async function load() {
   // Following the page is never restored as "on": it starts a conversation
   // with an outside AI by itself, so it is asked for each session.
   state.follow = false;
+  state.ready = false;
+  state.origin = "";
 }
 
 const remember = () => {
@@ -122,6 +127,7 @@ async function izukiIsUp() {
 
 async function connect() {
   const p = provider(state.providerId);
+  state.ready = false;
   const button = $("connect");
   if (button) button.disabled = true;
   try {
@@ -145,6 +151,10 @@ async function connect() {
       return false;
     }
     await fillTabs();
+    const selected = await chrome.tabs.get(state.tabId).catch(() => null);
+    if (!selected || (p.id !== "any" && !hostedBy(p, selected.url))) return false;
+    state.origin = new URL(selected.url).origin;
+    state.ready = true;
     say(`Connected to your ${p.name} tab. Questions you ask here go to it.`);
     return true;
   } finally {
@@ -155,14 +165,11 @@ async function connect() {
 // ---- handing a question to an AI tab ---------------------------------------
 
 /** Send `text` to the connected provider tab. Returns a plain problem or "". */
-export async function handToProvider(text) {
-  const p = provider(state.providerId);
+export async function handToProvider(text, connection = connected()) {
+  const p = connection.provider;
   if (p.local) return "";
-  if (state.tabId == null) {
-    await fillTabs();
-    if (state.tabId == null) return handoffProblem("no-tab", p.name, p.id);
-  }
-  const tab = await chrome.tabs.get(state.tabId).catch(() => null);
+  if (!connection.ready || connection.tabId == null) return "Choose the AI tab and press Connect before sharing a question.";
+  const tab = await chrome.tabs.get(connection.tabId).catch(() => null);
   // The tab we connected to may have been sent somewhere else since. Typing
   // into whatever is there now would hand the question — and the page it
   // came from — to a site nobody chose, and could submit its form.
@@ -171,13 +178,13 @@ export async function handToProvider(text) {
     await fillTabs();
     return handoffProblem("no-tab", p.name, p.id);
   }
+  if (new URL(tab.url).origin !== connection.origin) return handoffProblem("changed-page", p.name, p.id);
   let result;
   try {
     [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: typeIntoComposer,
-      args: [text, p.composer || [], p.send || [], state.autoSend],
-      world: "MAIN",
+      args: [text, p.composer || [], p.send || [], connection.autoSend, connection.origin],
     });
   } catch {
     return handoffProblem("blocked", p.name, p.id);
@@ -213,24 +220,45 @@ async function visibleQuestion(tabId) {
  * has to be the same for a moment and hasn't been sent before, so a page that
  * redraws itself doesn't start a new conversation every second.
  */
-function startFollowing(onQuestion) {
+async function startFollowing(onQuestion) {
   stopFollowing();
+  const generation = watchGeneration;
+  const [source] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
+  if (!state.follow || generation !== watchGeneration) return;
+  if (!source?.id || !/^https?:/.test(source.url || "") || source.id === state.tabId || PROVIDERS.some((p) => hostedBy(p, source.url))) {
+    state.follow = false; $("follow-questions").checked = false;
+    return followState("Open the page with questions before turning this on.");
+  }
+  let checking = false;
   watching = setInterval(async () => {
-    if (!state.follow) return;
-    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
-    if (!tab?.id || !/^https?:/.test(tab.url || "")) return;
-    // Never follow the AI's own tab: it would feed its answers back to it.
-    if (state.tabId != null && tab.id === state.tabId) return;
-    const found = await visibleQuestion(tab.id);
-    if (!found?.text) return;
-    const ready = gate.observe({ id: tab.id, url: found.url || tab.url }, found.text, Date.now());
-    if (!ready) return;
-    gate.accept(ready.key, Date.now());
-    onQuestion(ready.text, { title: found.title || tab.title || "", url: found.url || tab.url });
-  }, 1200);
+    if (!state.follow || generation !== watchGeneration || checking || document.hidden || !$("share").checked) return;
+    checking = true;
+    try {
+      const tab = await chrome.tabs.get(source.id).catch(() => null);
+      if (!tab?.id || tab.url !== source.url) {
+        state.follow = false; $("follow-questions").checked = false; stopFollowing();
+        return followState("Paused because the source page changed. Turn follow mode on again on the page you want.");
+      }
+      if (state.tabId != null && tab.id === state.tabId) return;
+      const found = await visibleQuestion(tab.id);
+      if (!state.follow || generation !== watchGeneration || !found?.text) return;
+      const ready = gate.observe({ id: tab.id, url: found.url || tab.url }, found.text, Date.now());
+      if (!ready) return;
+      const accepted = await onQuestion(ready.text, { id:tab.id, title:found.title || tab.title || "", url:found.url || tab.url });
+      if (accepted) gate.accept(ready.key, Date.now());
+      else {
+        state.follow = false; $("follow-questions").checked = false; stopFollowing();
+        followState("Paused. Finish the current answer or check the connection, then turn follow mode on again.");
+      }
+    } catch {
+      state.follow = false; $("follow-questions").checked = false; stopFollowing();
+      followState("Paused because this page couldn't be read. Turn follow mode on again to retry.");
+    } finally { checking = false; }
+  }, 2000);
 }
 
 function stopFollowing() {
+  watchGeneration++;
   if (watching) clearInterval(watching);
   watching = null;
 }
@@ -247,10 +275,19 @@ export async function setUpConnection({ ask, onFollowed }) {
   await fillTabs();
   const p = provider(state.providerId);
   say(p.note || `Questions go to your ${p.name} tab.`);
-  if ($("show-companion")) $("show-companion").checked = state.companion;
+  const companion = $("show-companion");
+  if (companion) {
+    companion.disabled = true;
+    fetch("http://127.0.0.1:47615/izuki/companion", { method:"POST", headers:{"X-Izuki-Extension":"1","Content-Type":"application/json"}, body:JSON.stringify({read:true}), signal:AbortSignal.timeout(3000) })
+      .then((r) => r.json()).then((r) => { if (r.ok) { state.companion = !!r.show; companion.checked = state.companion; } })
+      .catch(() => {}).finally(() => { companion.disabled = false; });
+  }
 
   $("provider")?.addEventListener("change", async (e) => {
     state.providerId = e.target.value;
+    state.ready = false;
+    state.follow = false; $("follow-questions").checked = false; stopFollowing();
+    window.dispatchEvent(new Event("izuki:panel-cancel"));
     state.tabId = null;
     gate.reset();
     remember();
@@ -261,6 +298,7 @@ export async function setUpConnection({ ask, onFollowed }) {
 
   $("provider-tabs")?.addEventListener("change", (e) => {
     state.tabId = e.target.value ? Number(e.target.value) : null;
+    state.ready = false;
     remember();
   });
 
@@ -271,7 +309,7 @@ export async function setUpConnection({ ask, onFollowed }) {
     state.follow = !!e.target.checked;
     gate.reset();
     if (state.follow) {
-      startFollowing(onFollowed);
+      void startFollowing(onFollowed);
       followState("On. A new question on the page you're reading is sent once, on its own. It never picks or submits an answer for you.");
     } else {
       stopFollowing();
@@ -279,17 +317,25 @@ export async function setUpConnection({ ask, onFollowed }) {
     }
   });
 
-  $("show-companion")?.addEventListener("change", (e) => {
-    state.companion = !!e.target.checked;
-    remember();
+  $("show-companion")?.addEventListener("change", async (e) => {
+    const toggle = e.target;
+    const wanted = !!toggle.checked;
+    toggle.disabled = true;
     // The desktop app owns the character; the panel only asks for it. This
     // is the same switch as "Only the glowing edges" in the app, so turning
     // it off here turns it off there.
-    fetch("http://127.0.0.1:47615/izuki/companion", {
+    try {
+    const response = await fetch("http://127.0.0.1:47615/izuki/companion", {
       method: "POST",
       headers: { "X-Izuki-Extension": "1", "Content-Type": "application/json" },
-      body: JSON.stringify({ show: state.companion }),
-    }).catch(() => {});
+      body: JSON.stringify({ show: wanted }),
+      signal: AbortSignal.timeout(3000),
+    });
+    const result = await response.json();
+    if (!result.ok) throw Error(result.text || "Izuki couldn't change the companion setting.");
+    state.companion = !!result.show; toggle.checked = state.companion; remember();
+    } catch { toggle.checked = state.companion; say("Open Izuki on this PC before changing the desktop companion."); }
+    finally { toggle.disabled = false; }
   });
 
   // A tab that closes shouldn't leave the panel pointing at nothing.

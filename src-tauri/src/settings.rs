@@ -630,6 +630,11 @@ pub struct Settings {
     /// The user's town or city, for the weather glance ("" = from memory).
     #[serde(default)]
     pub home_city: String,
+    /// Fill in `home_city` when the user says where they are in chat ("I'm in
+    /// Dallas"). Opt in before sending a place name to the map service;
+    /// off leaves the city to Settings alone.
+    #[serde(default)]
+    pub learn_city: bool,
     /// The user's own n8n workflows Izuki can start by name ("run my
     /// invoice flow"), each a webhook address.
     #[serde(default)]
@@ -1235,6 +1240,7 @@ impl Default for Settings {
             recall_enabled: false,
             screen_time_enabled: true,
             home_city: String::new(),
+            learn_city: false,
             n8n_hooks: Vec::new(),
             n8n_url: String::new(),
             n8n_api_key: String::new(),
@@ -1358,6 +1364,7 @@ mod tests {
             "backdrop": "acrylic", "start_with_windows": false, "trail_length": 12
         });
         let mut s: Settings = serde_json::from_value(old).expect("old file loads");
+        assert!(!s.learn_city, "old installs must opt in before sending a city to a map service");
         s.heal();
         assert!(s.show_captions && s.speak_responses);
         assert!(s.provider(ProviderId::NineRouter).is_some());
@@ -1378,5 +1385,14 @@ mod tests {
         assert_eq!(s.orb_response, 1.5);
         assert_eq!(s.control_style, "mouse");
         assert_eq!(s.orb_style, "liquid");
+    }
+
+    #[test]
+    fn learning_a_city_is_optional_and_round_trips() {
+        let mut settings = Settings::default();
+        assert!(!settings.learn_city);
+        settings.learn_city = true;
+        let restored: Settings = serde_json::from_value(serde_json::to_value(settings).unwrap()).unwrap();
+        assert!(restored.learn_city);
     }
 }
