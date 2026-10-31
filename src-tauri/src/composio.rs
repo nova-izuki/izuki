@@ -335,6 +335,24 @@ fn stopped(since: u64) -> bool {
     STOPS.load(std::sync::atomic::Ordering::SeqCst) != since
 }
 
+/// What Composio is told we're looking for. It validates this field: a whole
+/// assignment pasted into it came back "400 Validation error", and the owner
+/// was told their apps couldn't be reached. One short line is the ask.
+fn use_case(text: &str) -> String {
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with("📎") && !l.starts_with('['))
+        .unwrap_or("");
+    let cleaned: String = line.chars().filter(|c| !c.is_control()).collect();
+    let short: String = cleaned.chars().take(160).collect();
+    if short.trim().is_empty() {
+        "what the user asked for".into()
+    } else {
+        short
+    }
+}
+
 /// Handle a request that needs the user's apps. `history` ends with it.
 pub fn ask(history: &[Turn]) -> Result<Answer> {
     let asked = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.clone()).unwrap_or_default();
@@ -391,12 +409,27 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
     let unavailable = || Answer { text: "I couldn't verify a result from your apps. Open the Apps tab to check the connection, then try again.".into(), links: Vec::new() };
     // Search before the first model call: the model can select a real tool
     // immediately instead of spending a full round asking us to search.
-    match router(&key, "search", &json!({ "queries": [{ "use_case": latest }] })) {
+    match router(&key, "search", &json!({ "queries": [{ "use_case": use_case(&latest) }] })) {
         Ok(v) => {
             missing = unconnected(&v);
             messages.push(json!({ "role": "user", "content": format!("[tool discovery — not account contents]\n{}", describe_search(&v)) }));
         }
-        Err(e) => return Ok(Answer { text: format!("I couldn't reach your apps: {e}"), links: Vec::new() }),
+        Err(e) => {
+            // A pasted assignment used to be sent as the "use case", which
+            // Composio rejects (400 Validation error) — and the whole answer
+            // became that refusal, even when the app wasn't needed at all.
+            // Log the real reason, then still help from the conversation.
+            eprintln!("[apps] tool search failed: {e}");
+            let mut plain = vec![json!({ "role": "system", "content": format!("{PROMPT}\nNo app tool is reachable right now. Answer what you can from the conversation itself; if the answer truly needs their apps, say plainly that you couldn't check them this time.") })];
+            for t in history.iter().rev().take(10).rev() {
+                let role = if t.role == "assistant" { "assistant" } else { "user" };
+                plain.push(json!({ "role": role, "content": t.content }));
+            }
+            let text = crate::chat::complete(&plain).unwrap_or_else(|_| {
+                "I couldn't check your apps just now. Say what you need and I'll help with what you've pasted, or try the apps again in a moment.".into()
+            });
+            return Ok(Answer { text, links: Vec::new() });
+        }
     }
     for round in 0..MAX_ROUNDS {
         crate::execution::charge(crate::execution::Work::Round).map_err(|r| anyhow!(r.explanation()))?;
@@ -1254,5 +1287,19 @@ mod tests {
         SNAPSHOTS.lock().iter_mut().for_each(|(_, at, _)| *at = now_mins() - 60);
         assert!(snapshot_answer("what's new in my inbox").is_none());
         SNAPSHOTS.lock().clear();
+    }
+}
+
+#[cfg(test)]
+mod use_case_tests {
+    #[test]
+    fn a_pasted_assignment_is_not_sent_as_the_use_case() {
+        let pasted = "📎 Part 4 - Risk Assessment and Threat Model Template.docx\nOverview\n\nThis fourth part converts your findings into numbers and attack paths.".repeat(30);
+        let q = super::use_case(&pasted);
+        assert!(q.starts_with("Overview"), "sent: {q}");
+        assert!(q.chars().count() <= 160, "still {} chars", q.chars().count());
+        assert_eq!(super::use_case("check my inbox"), "check my inbox");
+        assert_eq!(super::use_case(""), "what the user asked for");
+        assert_eq!(super::use_case("📎 a.pdf"), "what the user asked for");
     }
 }

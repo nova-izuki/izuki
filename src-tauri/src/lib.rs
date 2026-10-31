@@ -409,6 +409,7 @@ pub fn run() {
             commands::notes_focus,
             commands::notes_answer,
             commands::notes_organize,
+            commands::notes_rename,
             commands::notes_links,
             commands::notes_link,
             commands::island_status,

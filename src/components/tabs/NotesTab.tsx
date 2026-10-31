@@ -3,7 +3,7 @@ import { BookOpen, Brain, Check, CheckSquare, ChevronDown, ChevronRight, Copy, F
 import { rank } from "../../lib/search";
 import { api, on } from "../../lib/ipc";
 import type { Note, NoteLink, NoteLinks } from "../../lib/types";
-import { noteStudyText } from "../../lib/notes";
+import { noteStudyText, renameRequest } from "../../lib/notes";
 import { sendChatCommand } from "../VoiceEngine";
 import { JumpBar } from "../JumpBar";
 import { CampusHub } from "../CampusHub";
@@ -696,8 +696,25 @@ function NoteView({ note, onBack, onChanged, onOpen, notes }: { note: Note; onBa
         className="izk-field mt-3 flex items-center gap-2 py-1.5"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!question.trim()) return;
-          void sendChatCommand(`Using only these notes, answer: ${question.trim()}\n\nNotes:\n${body}`);
+          const said = question.trim();
+          if (!said) return;
+          // A rename is the app's own job. Sent to a brain, it was answered
+          // "renamed to Lab 9.3.1" while the note kept its old name.
+          const to = renameRequest(said);
+          if (to !== null) {
+            if (!to) {
+              setError("What should I call it? Type: rename this note to Lab 9.3.1");
+              return;
+            }
+            setQuestion("");
+            setError(null);
+            void api
+              .notesRename(note.id, to)
+              .then(() => onChanged())
+              .catch((err) => setError(err instanceof Error ? err.message : String(err)));
+            return;
+          }
+          void sendChatCommand(`Using only these notes, answer: ${said}\n\nNotes:\n${body}`);
           setQuestion("");
         }}
       >

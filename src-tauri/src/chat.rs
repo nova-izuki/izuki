@@ -1289,6 +1289,8 @@ static DEEP: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 thread_local! {
     /// This brain's request is a deep one (set on each racing thread).
     static DEEP_HERE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// This request has already been cut down once after a 413.
+    static SHRUNK_HERE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 fn is_deep(id: u64) -> bool {
     DEEP.lock().contains(&id)
@@ -1458,6 +1460,49 @@ fn has_images(messages: &[Value]) -> bool {
     messages.iter().any(|m| m["content"].as_array().is_some_and(|parts| parts.iter().any(|p| p["type"] == "image_url")))
 }
 
+/// A smaller version of the conversation, for a model that answered 413.
+///
+/// Pasting a whole assignment can be more than a free model will take in one
+/// request; it then refuses the entire message ("Payload Too Large") and no
+/// answer happens at all. Keep the system prompt, the last few turns, and cut
+/// long text with a marker the model can see — enough to actually help, and
+/// small enough to go through.
+fn shrunk(messages: &[Value]) -> Vec<Value> {
+    let turns: Vec<usize> = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+        .map(|(i, _)| i)
+        .collect();
+    let keep_from = turns.len().saturating_sub(4);
+    let mut out = Vec::with_capacity(messages.len().min(6));
+    for (i, m) in messages.iter().enumerate() {
+        let system = m.get("role").and_then(|r| r.as_str()) == Some("system");
+        let Some(pos) = turns.iter().position(|&t| t == i) else {
+            if system {
+                out.push(m.clone());
+            }
+            continue;
+        };
+        if pos < keep_from {
+            continue;
+        }
+        let last = pos + 1 == turns.len();
+        let limit = if system { 6000 } else if last { 3000 } else { 1200 };
+        let mut m = m.clone();
+        if let Some(text) = m.get("content").and_then(|c| c.as_str()) {
+            if text.chars().count() > limit {
+                let cut: String = text.chars().take(limit).collect();
+                m["content"] = json!(format!(
+                    "{cut}\n\n[Cut here — the whole thing was too big for this model in one go. Ask about one section and I'll read that part.]"
+                ));
+            }
+        }
+        out.push(m);
+    }
+    out
+}
+
 /// One provider. `Ok(true)` = finished, `Ok(false)` = cancelled. Only fails
 /// over to the next provider if nothing was sent yet.
 pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn() -> bool, on_text: &dyn Fn(String)) -> anyhow::Result<bool> {
@@ -1540,6 +1585,17 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
         DEEP_HERE.with(|d| d.set(false));
         let r = stream_one(cfg, messages, stop, on_text);
         DEEP_HERE.with(|d| d.set(true));
+        return r;
+    }
+    // Too much text for this model's window: it refuses the whole request.
+    // Cut the conversation down and ask once more, instead of failing with a
+    // raw "HTTP 413 Payload Too Large" the owner can't do anything with.
+    if resp.status().as_u16() == 413 && !SHRUNK_HERE.with(|s| s.get()) {
+        eprintln!("[chat] {} refused the size (413) — asking again with a shorter history", cfg.label);
+        SHRUNK_HERE.with(|s| s.set(true));
+        let small = shrunk(messages);
+        let r = stream_one(cfg, &small, stop, on_text);
+        SHRUNK_HERE.with(|s| s.set(false));
         return r;
     }
     // This model takes a different "don't think" setting (or none): again without it.
@@ -1969,5 +2025,42 @@ mod tool_tests {
         let mut output: String = ["See [", "the source](https://example.com). ", "你好"].iter().map(|s| ordinary.push(s)).collect();
         output.push_str(&ordinary.pending);
         assert_eq!(output, "See [the source](https://example.com). 你好");
+    }
+}
+
+#[cfg(test)]
+mod shrink_tests {
+    use super::shrunk;
+    use serde_json::json;
+
+    #[test]
+    fn a_pasted_assignment_is_cut_down_instead_of_refused() {
+        // What really happens: a whole assignment pasted, then "help me".
+        let huge = "Overview\n".to_string() + &"Submission instructions and deliverables. ".repeat(600);
+        let mut messages = vec![json!({ "role": "system", "content": "You are Izuki." })];
+        for i in 0..12 {
+            messages.push(json!({ "role": if i % 2 == 0 { "user" } else { "assistant" }, "content": format!("old turn {i}") }));
+        }
+        messages.push(json!({ "role": "user", "content": huge }));
+
+        let small = shrunk(&messages);
+        // The system prompt and the last few turns survive; the old ones don't.
+        assert_eq!(small[0]["role"], "system");
+        assert!(small.len() <= 6, "kept {} messages", small.len());
+        assert_eq!(small.last().unwrap()["role"], "user");
+        let last = small.last().unwrap()["content"].as_str().unwrap();
+        assert!(last.chars().count() < 3200, "still {} chars", last.chars().count());
+        assert!(last.contains("Cut here"), "the model is told why it ends");
+        assert!(last.starts_with("Overview"), "the start of the paste is kept");
+        assert!(!small.iter().any(|m| m["content"] == "old turn 0"), "the oldest turn was dropped");
+    }
+
+    #[test]
+    fn a_short_conversation_is_left_alone() {
+        let messages = vec![
+            json!({ "role": "system", "content": "You are Izuki." }),
+            json!({ "role": "user", "content": "what time is it" }),
+        ];
+        assert_eq!(shrunk(&messages), messages);
     }
 }

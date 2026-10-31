@@ -817,6 +817,7 @@ export const api = {
   notesLinks: (id: string) => call<NoteLinks>("notes_links", { id }, () => ({ out: [], back: [], shelf: [] })),
   notesLink: (from: string, to: string) => call<Note>("notes_link", { from, to }, () => { throw new Error("Linking notes needs the desktop app."); }),
   notesOrganize: (id: string, subject: string, chapter: string, topic: string) => call<Note>("notes_organize", { id, subject, chapter, topic }, () => { throw new Error("Organizing notes works in the desktop app."); }),
+  notesRename: (id: string, title: string) => call<Note>("notes_rename", { id, title }, () => { throw new Error("Renaming notes works in the desktop app."); }),
   notesDelete: (id: string) => call<void>("notes_delete", { id }, () => undefined),
   notesJot: (text: string) => call<Note>("notes_jot", { text }, () => ({ id: "jot", title: `Quick note — ${text.slice(0, 48)}`, source: "Island", text, created_at: Date.now(), updated_at: Date.now(), cards: [], lesson: false })),
   notesCapture: () => call<Note>("notes_capture", undefined, () => { throw new Error("Notes work in the Izuki app on your PC."); }),

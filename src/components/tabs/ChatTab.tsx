@@ -1105,7 +1105,12 @@ export function ChatTab() {
                     : "✕ You said no"}
               </div>
             ) : (
-            <div key={i} className={cx("flex", m.role === "user" ? "justify-end" : "justify-start")}>
+            <div key={i} className={cx("group flex items-center gap-1", m.role === "user" ? "justify-end" : "justify-start")}>
+              {m.role === "user" && m.content && (
+                <span className="shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
+                  <CopyButton text={m.content} label="Copy prompt" />
+                </span>
+              )}
               <div
                 className={cx(
                   "max-w-[85%] whitespace-pre-wrap break-words rounded-[16px] px-3 py-2 text-[13px] leading-snug",

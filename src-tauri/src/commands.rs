@@ -1255,6 +1255,11 @@ pub async fn notes_organize(id: String, subject: String, chapter: String, topic:
     blocking(move || crate::notes::organize(&id, &subject, &chapter, &topic).map_err(err)).await?
 }
 
+#[tauri::command]
+pub async fn notes_rename(id: String, title: String) -> R<crate::notes::Note> {
+    blocking(move || crate::notes::rename(&id, &title).map_err(err)).await?
+}
+
 /// Textbooks (textbook.rs): the Windows "Open" box for a PDF.
 #[tauri::command]
 pub async fn textbook_pick() -> R<Option<String>> {

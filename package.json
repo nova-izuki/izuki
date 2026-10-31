@@ -24,6 +24,7 @@
     "test:panel-browser": "node tools/panel-browser-check.cjs",
     "test:chat-text": "node tools/chat-text-check.mjs",
     "test:hotkeys": "node tools/hotkey-check.mjs",
+    "test:notes": "node tools/notes-rename-check.cjs",
     "test:html": "node tools/encoding-check.cjs && node tools/html-check.cjs docs/index.html && node tools/html-check.cjs docs/screenshots/index.html && node tools/html-check.cjs docs/links/index.html && node tools/html-check.cjs docs/app/index.html && node tools/html-check.cjs src-tauri/src/call.html",
     "app:dev": "tauri dev",
     "app:build": "tauri build",

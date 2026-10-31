@@ -447,6 +447,40 @@ pub fn organize(id: &str, subject: &str, chapter: &str, topic: &str) -> Result<N
     Ok(result)
 }
 
+/// Give a note a new name.
+///
+/// The notes box asks a brain for answers, and a brain cannot touch notes —
+/// so "rename this to Lab 9.3.1" used to be answered "renamed", with the old
+/// title still on screen. The box now does the rename itself through here,
+/// and says what really happened.
+pub fn rename(id: &str, title: &str) -> Result<Note> {
+    let title: String = title
+        .trim()
+        .trim_matches(|c: char| c == '"' || c == '\u{201c}' || c == '\u{201d}' || c == '\'')
+        .trim()
+        .chars()
+        .take(160)
+        .collect();
+    if title.is_empty() {
+        bail!("A note needs a name — say what to call it, like “rename this note to Lab 9.3.1”.");
+    }
+    let result = {
+        let _g = LOCK.lock();
+        let mut all = read()?;
+        let note = all.iter_mut().find(|n| n.id == id).ok_or_else(|| anyhow::anyhow!("That note is no longer available"))?;
+        if note.title.trim() == title {
+            bail!("This note is already called “{title}”.");
+        }
+        note.title = title;
+        note.updated_at = crate::model::now_ms();
+        let result = note.clone();
+        write(&all)?;
+        result
+    };
+    remember(&result, false);
+    Ok(result)
+}
+
 /// Cheap, cached routing before a background write: no screen reading or AI call.
 pub fn target_for(question: &str, source: &str) -> Option<String> {
     let focus = FOCUS.lock().clone()?;
