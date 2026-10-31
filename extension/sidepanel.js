@@ -32,10 +32,16 @@ function cancelAsk() {
   if (stopButton?.dataset.owner === "chat") { stopButton.hidden = true; stopButton.onclick = null; }
   if (old) void fetch(`${BRIDGE}/side/stop`, { method: "POST", headers: H, body: JSON.stringify({ requestId: old.id, kind: "chat" }), signal: AbortSignal.timeout(3000) }).catch(() => {});
 }
-function cancelDesktopTask() {
+function cancelDesktopTask(why = "") {
   const task = desktopTask;
   desktopTask = null;
-  if (task) void side("stop", { requestId:task.id, kind:"task" });
+  if (stopButton) { stopButton.hidden = true; stopButton.onclick = null; stopButton.textContent = "Stop"; }
+  if (task) {
+    void side("stop", { requestId:task.id, kind:"task" });
+    // The panel tells you "press Esc or Stop to end it", so ending it has to
+    // say that it ended — a silent stop looks like a task still running.
+    if (why) divider(why);
+  }
 }
 
 const store = {
@@ -318,6 +324,12 @@ async function ask(question, sourceOverride = null) {
         copy.onclick = () => navigator.clipboard.writeText(request.carried).then(() => { copy.textContent = "Copied"; }).catch(() => { copy.textContent = "Copy failed — select the question above"; });
         message.appendChild(copy);
       }
+      // A failure that may have been a busy tab or a page that moved is worth
+      // one click, not retyping the question. It asks the same thing again.
+      const retry = document.createElement("button");
+      retry.type = "button"; retry.className = "icon"; retry.textContent = "Try again";
+      retry.onclick = () => { message.remove(); void ask(question, sourceOverride); };
+      message.appendChild(retry);
       window.dispatchEvent(new CustomEvent("izuki:panel-error"));
     }
     return false;
@@ -346,6 +358,14 @@ $("ask").onsubmit = (e) => {
 q.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("ask").requestSubmit(); }
   if (e.key === "Escape" && busy) cancelAsk();
+});
+// Esc from anywhere in the panel, not only from the question box: the panel
+// says "press Esc or Stop to end it" while a task runs on the PC, and that
+// has to be true wherever the cursor happens to be.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (desktopTask) { e.preventDefault(); cancelDesktopTask("Stopped. Izuki will stop working on that task."); }
+  else if (busy) cancelAsk();
 });
 q.addEventListener("input", () => { q.style.height = ""; q.style.height = Math.min(q.scrollHeight, 140) + "px"; });
 $("new").onclick = () => { cancelAsk(); cancelDesktopTask(); if (stopButton) stopButton.hidden = true; history = []; save(); log.textContent = ""; hello(); };

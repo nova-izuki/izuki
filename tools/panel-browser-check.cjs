@@ -67,6 +67,56 @@ let server,browser,profile,ws;
   assert.equal(await run('panelTest.tasks[1].body.reviewToken'),'fixture-review');
   assert.equal(await run('panelTest.tasks[0].body.requestId===panelTest.tasks[1].body.requestId'),true);
   await wait('document.getElementById("log").textContent.includes("reviewed fixture task finished")');
+  // Two ChatGPT tabs: connect to the second, close it, and the connection
+  // must not quietly move the next question into the first.
+  await run(`panelTest.pages.push({id:4,windowId:7,active:false,url:"https://chatgpt.com/c/first",title:"ChatGPT first"},{id:5,windowId:7,active:false,url:"https://chatgpt.com/c/second",title:"ChatGPT second"});`);
+  await run('(()=>{const pick=document.getElementById("provider");pick.value="chatgpt";pick.dispatchEvent(new Event("change"));})();');
+  await wait('document.querySelectorAll("#provider-tabs option").length===2');
+  await run('(()=>{const pick=document.getElementById("provider-tabs");pick.value="5";pick.dispatchEvent(new Event("change"));document.getElementById("connect").click();})();');
+  await wait('document.getElementById("connection-help").textContent.includes("Connected to your ChatGPT")');
+  await run('panelTest.pages=panelTest.pages.filter((t)=>t.id!==5);chrome.tabs.onRemoved.handlers.forEach((fn)=>fn(5));');
+  await wait('document.getElementById("connection-help").textContent.includes("Press Connect")');
+  // The page under the panel moved during the follow-mode check; let the
+  // panel see it before asking, so this tests the connection, not the page.
+  await run('panelTest.pages[0].title="Chapter 6";chrome.tabs.onUpdated.handlers.forEach((fn)=>fn(1,{title:"Chapter 6",status:"complete"}));');
+  await wait('document.getElementById("ptitle").textContent==="Chapter 6"');
+  const beforeClose = await run('panelTest.handed.length');
+  await ask('which chat is this');
+  await pause(800);
+  const logText = await run('document.getElementById("log").textContent');
+  assert(logText.includes('Connect before sharing'), 'the connection warning must be shown; got: ' + logText.slice(-300));
+  assert(logText.includes('Try again'), 'a failed handoff can be retried without retyping');
+  assert.equal(await run('panelTest.handed.length'), beforeClose, 'a closed tab must never hand the question to another conversation');
+  // The real typing function against an editor that drops what it is given:
+  // nothing typed can never be called sent, and Send is never pressed.
+  const typed = await run(`(async () => {
+    const { typeIntoComposer } = await import('/extension/providers.js');
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;top:0;left:0;width:300px;height:200px;z-index:9999';
+    const box = document.createElement('div');
+    box.setAttribute('contenteditable','true');
+    box.style.cssText = 'width:280px;height:40px;display:block';
+    const send = document.createElement('button');
+    send.setAttribute('aria-label','Send');
+    send.style.cssText = 'width:40px;height:20px;display:block';
+    let clicks = 0;
+    send.addEventListener('click', () => { clicks += 1; });
+    box.addEventListener('input', () => { box.textContent = ''; });
+    host.append(box, send);
+    document.body.appendChild(host);
+    const out = await typeIntoComposer('Explain the chapter for me', ['div[contenteditable="true"]'], ['button[aria-label="Send"]'], true, location.origin);
+    host.remove();
+    return { out, clicks };
+  })()`);
+  assert.deepEqual(typed.out, { ok: false, why: 'no-text' }, 'a message that never landed must not be reported as sent');
+  assert.equal(typed.clicks, 0, 'Send must not be pressed when the message box is empty');
+  // Esc has to end a desktop task from anywhere in the panel, as it promises.
+  await run('document.getElementById("q").value="Summarise the page into my notes";document.getElementById("task-open").click();document.getElementById("task-run").click();');
+  await wait('panelTest.tasks.filter((t)=>t.route==="run").length===2');
+  await run('document.getElementById("log").focus();document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true}));');
+  await wait('panelTest.stops.filter((s)=>s.kind==="task").length===1');
+  await wait('document.getElementById("stop").hidden===true');
+  await wait('document.getElementById("log").textContent.includes("Stopped")');
   for (const width of [360, 390]) {
     await call('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});
     assert.equal(await run('document.documentElement.scrollWidth<=innerWidth+1'),true,'the panel must fit a narrow sidebar');
@@ -74,7 +124,7 @@ let server,browser,profile,ws;
   }
   assert.deepEqual(errors,[]);
   fs.writeFileSync(path.join(root,'.work','panel-browser-check.png'),Buffer.from((await call('Page.captureScreenshot',{format:'png'})).data,'base64'));
-  console.log('Panel browser checks passed: scoped cancel, stale-answer rejection, one history pair, unshared page privacy, custom AI handoff, automatic question dedupe, navigation pause, visible task review and token handoff.');
+  console.log('Panel browser checks passed: scoped cancel, stale-answer rejection, one history pair, unshared page privacy, custom AI handoff, automatic question dedupe, navigation pause, visible task review and token handoff, no silent retarget after a tab closes, honest no-text handoff, Esc ending a desktop task.');
 })().catch((e)=>{console.error(e);process.exitCode=1;}).finally(async()=>{
   try{ws?.close();}catch{}await closeTestBrowser(browser,profile);server?.closeAllConnections();server?.close();
   if(profile&&path.resolve(profile).startsWith(path.join(root,'.work')+path.sep))try{fs.rmSync(profile,{recursive:true,force:true,maxRetries:3,retryDelay:200});}catch{}

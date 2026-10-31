@@ -25,6 +25,9 @@ const KEY = "izkConnect";
 const state = {
   providerId: "izuki",
   tabId: null,
+  // The tab the person actually connected. Kept apart from `tabId` (which a
+  // refresh may move) so a connection can never quietly follow it elsewhere.
+  connectedTab: null,
   follow: false,
   companion: false,
   autoSend: true,
@@ -48,6 +51,7 @@ async function load() {
   state.follow = false;
   state.ready = false;
   state.origin = "";
+  state.connectedTab = null;
 }
 
 const remember = () => {
@@ -99,6 +103,17 @@ async function fillTabs() {
   const keep = tabs.some((t) => t.id === state.tabId);
   select.value = String(keep ? state.tabId : tabs[0].id);
   state.tabId = Number(select.value);
+  // A refresh must never move a live connection to a different tab. Two
+  // ChatGPT tabs share an origin, so the origin check in the handoff can't
+  // tell them apart: with the connected tab closed, the next question would
+  // be typed into whichever tab happened to be first — a different
+  // conversation, chosen by nobody. Ask again instead of guessing.
+  if (state.ready && state.connectedTab != null && state.tabId !== state.connectedTab) {
+    state.ready = false;
+    state.origin = "";
+    state.connectedTab = null;
+    say("The tab you connected is gone or no longer first. Press Connect to choose which tab answers.");
+  }
 }
 
 function say(text) {
@@ -154,6 +169,7 @@ async function connect() {
     const selected = await chrome.tabs.get(state.tabId).catch(() => null);
     if (!selected || (p.id !== "any" && !hostedBy(p, selected.url))) return false;
     state.origin = new URL(selected.url).origin;
+    state.connectedTab = state.tabId;
     state.ready = true;
     say(`Connected to your ${p.name} tab. Questions you ask here go to it.`);
     return true;
@@ -175,6 +191,9 @@ export async function handToProvider(text, connection = connected()) {
   // came from — to a site nobody chose, and could submit its form.
   if (!tab || (p.id !== "any" && !hostedBy(p, tab.url))) {
     state.tabId = null;
+    state.ready = false;
+    state.origin = "";
+    state.connectedTab = null;
     await fillTabs();
     return handoffProblem("no-tab", p.name, p.id);
   }
@@ -286,6 +305,8 @@ export async function setUpConnection({ ask, onFollowed }) {
   $("provider")?.addEventListener("change", async (e) => {
     state.providerId = e.target.value;
     state.ready = false;
+    state.origin = "";
+    state.connectedTab = null;
     state.follow = false; $("follow-questions").checked = false; stopFollowing();
     window.dispatchEvent(new Event("izuki:panel-cancel"));
     state.tabId = null;

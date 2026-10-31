@@ -132,7 +132,7 @@ export async function providerTabs(p) {
  * React and Lexical, and a plain `value =` assignment is thrown away on the
  * next render, which is the classic way this breaks.
  */
-export function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend, expectedOrigin = "") {
+export async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend, expectedOrigin = "") {
   if (expectedOrigin && location.origin !== expectedOrigin) return { ok: false, why: "changed-page" };
   const visible = (el) => {
     if (!el) return false;
@@ -153,27 +153,51 @@ export function typeIntoComposer(text, composerSelectors, sendSelectors, autoSen
 
   box.focus();
   const native = box.tagName === "TEXTAREA" || box.tagName === "INPUT";
-  if (native) {
-    // React tracks the value on the element; set it through the prototype
-    // setter so its own onChange fires instead of being skipped.
-    const setter = Object.getOwnPropertyDescriptor(
-      box.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
-      "value"
-    )?.set;
-    if (setter) setter.call(box, text);
-    else box.value = text;
-  } else {
+  // React tracks the value on the element; set it through the prototype
+  // setter so its own onChange fires instead of being skipped.
+  const setValue = (value) => {
+    if (native) {
+      const setter = Object.getOwnPropertyDescriptor(
+        box.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
+        "value"
+      )?.set;
+      if (setter) setter.call(box, value);
+      else box.value = value;
+    } else {
+      box.textContent = value;
+    }
+    box.dispatchEvent(new InputEvent("input", { bubbles: true, data: value, inputType: "insertText" }));
+    box.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  if (!native) {
     // A contenteditable editor: paste, which Lexical and ProseMirror both
-    // understand, and fall back to typing it in as plain text.
+    // understand. Their handler is asynchronous, so the text is checked
+    // after it has had a moment before anything is typed over it.
     const data = new DataTransfer();
     data.setData("text/plain", text);
-    const pasted = box.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
-    if (pasted && !box.textContent.trim()) {
-      box.textContent = text;
-    }
+    box.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 120));
   }
-  box.dispatchEvent(new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" }));
-  box.dispatchEvent(new Event("change", { bubbles: true }));
+  // Did the words actually land? A paste event is a request, not a paste:
+  // an editor can cancel it and insert nothing, and synthetic input is
+  // frequently discarded on the next render. Pressing Send after that sends
+  // an empty message — the panel would say "handed over" while nothing was
+  // asked, which is the worst possible answer.
+  // Whichever the editor keeps its text in: a textarea's value, or the
+  // contenteditable's text. Some editors expose a stale `value` beside a
+  // filled editor, so an empty one is never taken over a full one.
+  const inBox = () =>
+    String(box.value ?? "").replace(/\s+/g, " ").trim() ||
+    String(box.textContent ?? "").replace(/\s+/g, " ").trim();
+  const probe = text.replace(/\s+/g, " ").trim().slice(0, 24);
+  const landed = () => Boolean(probe) && inBox().includes(probe);
+  if (!landed()) {
+    setValue(text);
+    // An editor that re-renders from its own state throws a plain text node
+    // away on the next frame. Give it that frame, then believe what's there.
+    if (!native) await new Promise((resolve) => setTimeout(resolve, 120));
+    if (!landed()) return { ok: false, why: "no-text" };
+  }
 
   if (!autoSend) return { ok: true, sent: false };
   const ready = (el) => visible(el) && !el.disabled && el.getAttribute("aria-disabled") !== "true";
@@ -201,6 +225,7 @@ export function handoffProblem(why, name, id) {
   if (why === "changed-page") return "That tab moved to another site. Connect it again before sharing anything.";
   if (why === "ambiguous" || why === "ambiguous-send") return `I found several possible chat controls in ${name}. Open the tab and choose the right one yourself.`;
   if (why === "no-send") return `The question is drafted in ${name}, but I couldn't verify its Send button. Open that tab and press Send yourself. It hasn't been sent.`;
+  if (why === "no-text") return `${name}'s message box wouldn't take the question — nothing was sent. Copy it and paste it there, or pick another assistant.`;
   if (why === "no-tab" && id === "any") {
     // "Any AI tab I pick" has no page of its own to open, so telling someone
     // to press Connect would be a false instruction (and reads as "No Any AI

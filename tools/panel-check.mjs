@@ -102,7 +102,7 @@ function fakePage({ kind = 'textarea', sendButton = true, disabled = false } = {
 // A plain textarea: filled, told about it, and sent with its own button.
 let page = fakePage();
 page.install();
-let out = typeIntoComposer('what is a subnet mask?', ['textarea'], ['button[type="submit"]'], true);
+let out = await typeIntoComposer('what is a subnet mask?', ['textarea'], ['button[type="submit"]'], true);
 assert.deepEqual(out, { ok: true, sent: true });
 assert.equal(page.box.value, 'what is a subnet mask?');
 assert(page.box.focused, 'the box has to take the keyboard first');
@@ -112,7 +112,7 @@ assert.equal(page.clicks.length, 1, 'its own send button is pressed');
 // Asked not to send: typed, left for the person to read and press Enter.
 page = fakePage();
 page.install();
-out = typeIntoComposer('hello', ['textarea'], ['button[type="submit"]'], false);
+out = await typeIntoComposer('hello', ['textarea'], ['button[type="submit"]'], false);
 assert.deepEqual(out, { ok: true, sent: false });
 assert.equal(page.box.value, 'hello');
 assert.equal(page.clicks.length, 0);
@@ -121,7 +121,7 @@ assert.equal(page.clicks.length, 0);
 // and ProseMirror understand.
 page = fakePage({ kind: 'contenteditable' });
 page.install();
-out = typeIntoComposer('explain this', ['div[contenteditable="true"]'], ['button[type="submit"]'], true);
+out = await typeIntoComposer('explain this', ['div[contenteditable="true"]'], ['button[type="submit"]'], true);
 assert.equal(out.ok, true);
 assert(page.events.some((e) => e.type === 'paste'), 'a contenteditable editor is pasted into');
 assert.equal(page.box.textContent, 'explain this', 'and falls back to the text when the paste is ignored');
@@ -129,7 +129,7 @@ assert.equal(page.box.textContent, 'explain this', 'and falls back to the text w
 // Missing and disabled Send controls leave a draft, never claim delivery.
 page = fakePage({ sendButton: false });
 page.install();
-out = typeIntoComposer('go', ['textarea'], ['button[type="submit"]'], true);
+out = await typeIntoComposer('go', ['textarea'], ['button[type="submit"]'], true);
 assert.deepEqual(out, { ok: false, why: 'no-send' });
 assert.equal(page.events.filter((e) => e.type.startsWith('key')).length, 0);
 assert.equal(page.box.value, 'go');
@@ -137,28 +137,28 @@ assert.equal(page.box.value, 'go');
 // A disabled send button is not a send button.
 page = fakePage({ disabled: true });
 page.install();
-out = typeIntoComposer('go', ['textarea'], ['button[type="submit"]'], true);
+out = await typeIntoComposer('go', ['textarea'], ['button[type="submit"]'], true);
 assert.deepEqual(out, { ok: false, why: 'no-send' });
 assert.equal(page.clicks.length, 0);
 
 page = fakePage(); page.install(); page.box.value = 'my unfinished message';
-out = typeIntoComposer('a new question', ['textarea'], ['button[type="submit"]'], true);
+out = await typeIntoComposer('a new question', ['textarea'], ['button[type="submit"]'], true);
 assert.deepEqual(out, { ok: false, why: 'draft' });
 assert.equal(page.box.value, 'my unfinished message');
 assert.equal(page.clicks.length, 0);
 page = fakePage(); page.install(); page.box.disabled = true;
-assert.deepEqual(typeIntoComposer('question', ['textarea'], ['button[type="submit"]'], true), { ok:false, why:'busy' });
+assert.deepEqual(await typeIntoComposer('question', ['textarea'], ['button[type="submit"]'], true), { ok:false, why:'busy' });
 
 // The site changed its markup: say so, rather than looking ignored.
 page = fakePage();
 page.install();
-out = typeIntoComposer('hi', ['#nothing-like-this'], [], true);
+out = await typeIntoComposer('hi', ['#nothing-like-this'], [], true);
 assert.deepEqual(out, { ok: false, why: 'no-composer' });
 
 // The first matching selector wins, so a provider's own box beats the generic one.
 page = fakePage();
 page.install();
-out = typeIntoComposer('hi', ['#nope', 'textarea'], ['button[type="submit"]'], false);
+out = await typeIntoComposer('hi', ['#nope', 'textarea'], ['button[type="submit"]'], false);
 assert.equal(out.ok, true);
 
 // ---- what it says when it can't -------------------------------------------

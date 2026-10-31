@@ -17,7 +17,8 @@ import { promisify } from 'node:util';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const from = path.join(root, 'extension');
-const to = path.join(root, 'docs', 'extension', 'izuki-extension.zip');
+const store = process.argv.includes('--store');
+const to = path.join(root, 'docs', 'extension', store ? 'izuki-extension-store.zip' : 'izuki-extension.zip');
 
 async function walk(dir, base = '') {
   const out = [];
@@ -56,12 +57,19 @@ const list = files.map((f) => `'${f.file.replace(/'/g, "''")}'`).join(',');
 await promisify(execFile)(
   'powershell.exe',
   ['-NoProfile', '-NonInteractive', '-Command',
-   `$ErrorActionPreference='Stop'; $staging=Join-Path $env:TEMP 'izuki-extension'; ` +
-   `if (Test-Path $staging) { Remove-Item -Recurse -Force -LiteralPath $staging }; ` +
+   `$ErrorActionPreference='Stop'; $work=[IO.Path]::GetFullPath('${path.join(root, '.work').replace(/'/g, "''")}'); ` +
+   `New-Item -ItemType Directory -Force -Path $work | Out-Null; $staging=Join-Path $work ('extension-pack-'+[guid]::NewGuid().ToString('N')); ` +
+   `if (-not [IO.Path]::GetFullPath($staging).StartsWith($work+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe extension staging path' }; ` +
    `New-Item -ItemType Directory -Path $staging | Out-Null; ` +
+   `try { ` +
    `Copy-Item -Recurse -Force -Path (Join-Path '${from.replace(/'/g, "''")}' '*') -Destination $staging; ` +
-   `Compress-Archive -Path $staging -DestinationPath '${to.replace(/'/g, "''")}' -Force; ` +
-   `Remove-Item -Recurse -Force -LiteralPath $staging`],
+   // Files at the root of the archive, never inside a wrapper folder. Windows'
+   // "Extract All" names the folder after the zip, so a wrapper made it
+   // `izuki-extension\izuki-extension\manifest.json` — one level too deep for
+   // Load unpacked, and the most common way to end up with the browser still
+   // running a copy from months ago. `extension_setup.rs` reads this layout.
+   `Compress-Archive -Path (Join-Path $staging '*') -DestinationPath '${to.replace(/'/g, "''")}' -Force; ` +
+   `} finally { Remove-Item -Recurse -Force -LiteralPath $staging }`],
   { windowsHide: true }
 );
 

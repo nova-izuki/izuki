@@ -5572,6 +5572,23 @@ mod honesty_tests {
         assert!(!super::worth_another_round(&broken, 0, std::time::Duration::from_secs(2)));
     }
 
+    /// The proof that can only happen on a real desktop: put a window that
+    /// keeps its words to itself in front (VS Code, Discord, an Electron app)
+    /// and run
+    /// `cargo test --lib screen_words_on_this_machine -- --ignored --nocapture`.
+    /// It prints a count only — never the words themselves.
+    #[test]
+    #[ignore]
+    fn screen_words_on_this_machine() {
+        let text = super::words_in_front();
+        println!(
+            "read {} characters ({} letters) from the window in front",
+            text.chars().count(),
+            super::letters(&text)
+        );
+        assert!(!text.trim().is_empty(), "the look would have had no words at all");
+    }
+
     #[test]
     fn reading_the_picture_never_replaces_a_real_page() {
         // A window that gave no words at all (VS Code, Discord, Electron): the
