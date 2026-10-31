@@ -2,7 +2,7 @@
  * Which part of the Style tab to show (Looks, Tweaks, Auto) when something
  * links there — the feature search, What's new, the Settings jump bar.
  */
-export type StyleSection = "looks" | "tweaks" | "auto";
+export type StyleSection = "looks" | "layouts" | "tweaks" | "auto";
 
 let pending: StyleSection | null = null;
 const EVENT = "izk-style-section";
@@ -10,7 +10,7 @@ const EVENT = "izk-style-section";
 /** Ask the Style tab to show a section (now if it's open, or when it opens). */
 export function requestStyleSection(id: string | undefined) {
   const section = id?.startsWith("style-") ? (id.slice(6) as StyleSection) : null;
-  if (!section || !["looks", "tweaks", "auto"].includes(section)) return;
+  if (!section || !["looks", "layouts", "tweaks", "auto"].includes(section)) return;
   pending = section;
   window.dispatchEvent(new CustomEvent(EVENT, { detail: section }));
 }

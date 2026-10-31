@@ -1,11 +1,13 @@
 import { matchScore, searchTerms } from "../lib/search";
 import { requestStyleSection } from "../lib/styleNav";
+import { revealSection } from "../lib/sections";
 import { useEffect, useRef, useState } from "react";
 import { Search, ArrowUpRight, X } from "lucide-react";
 import { useIzuki, type TabId } from "../lib/store";
 
 export type Feature = { label: string; hint: string; tab: TabId; id?: string };
 export const FEATURES: Feature[] = [
+  { label: "Windows layouts", hint: "desktop design layout studio classic workspace photo gallery room to breathe taskbar arrange keep daily wallpaper spotlight", tab: "style", id: "style-layouts" },
   { label: "2D characters", hint: "character, cartoon, comic, spider-verse, flat vector, full body, half body, voice character, dre, nia, avatar", tab: "settings", id: "settings-look" },
   { label: "Voice & accent", hint: "voice, accent, character voice, male, female, dre, nia, british, nigerian, speak responses", tab: "draw", id: "draw-voice" },
   { label: "Chat with Izuki", hint: "Conversation, files and voice", tab: "chat" },
@@ -107,7 +109,7 @@ export function openFeature(feature: Feature, setTab: (t: TabId) => void) {
   let tries = 0;
   const look = () => {
     const target = document.getElementById(feature.id!);
-    if (target) { target.scrollIntoView({ block: "start", behavior: "smooth" }); return; }
+    if (target) { revealSection(target); target.scrollIntoView({ block: "start", behavior: "smooth" }); return; }
     if (tries++ < 30) setTimeout(look, 60);
   };
   setTimeout(look, 30);
@@ -135,10 +137,12 @@ export function FeatureFinder() {
     dialog.current?.close();
     pending.current?.disconnect(); clearTimeout(timer.current);
     setTab(feature.tab);
+    requestStyleSection(feature.id);
     if (!feature.id) return;
     const focus = () => {
       const target = document.getElementById(feature.id!);
       if (!target) return false;
+      revealSection(target);
       target.scrollIntoView({ block: "start", behavior: "instant" });
       target.setAttribute("tabindex", "-1"); target.focus({ preventScroll: true });
       pending.current?.disconnect(); clearTimeout(timer.current);

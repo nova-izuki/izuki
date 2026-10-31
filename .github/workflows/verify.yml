@@ -29,6 +29,7 @@ jobs:
       - run: node tools/browser-check.cjs
         env:
           IZUKI_TEST_BROWSER: /usr/bin/google-chrome
+      - run: node tools/desktop-features-check.mjs
   windows:
     runs-on: windows-latest
     steps:

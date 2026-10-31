@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Izuki — AI on your screen",
-  "version": "1.5.2",
-  "description": "Izuki in your browser: a side panel that answers about the page you're on using whichever AI you already have open — ChatGPT, Gemini, Claude, Copilot, Perplexity or any tab you pick — or Izuki on your PC; follows the questions on a page for you; hands a reviewed job to your PC; plus explain, translate, sum up, read aloud or save anything, and a focus guard.",
+  "version": "1.5.3",
+  "description": "Ask about pages with Izuki or an AI tab you connect. Explain, summarise and read selections, with chat beside the page.",
   "permissions": [
     "scripting",
     "tabs",

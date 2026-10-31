@@ -4,6 +4,7 @@ import { api, emit, EV, ISLAND_CHATS_KEY, ISLAND_DEEP_KEY, on } from "../lib/ipc
 import { markHit } from "../lib/hitTest";
 import { AirToggle } from "./AirToggle";
 import { ChatText } from "./ChatText";
+import { CHAT_FILE_TYPES, readChatFile, type ChatAttachment } from "../lib/attachments";
 
 type PageTurn = { role: "user" | "assistant"; content: string };
 type PagePiece = { id: number; text: string; done: boolean; error?: string | null; page?: string | null };
@@ -24,11 +25,10 @@ function useTypewriter(text: string) {
 }
 
 /** Something added with + : a photo, a text file's words, or a fresh look at the screen. */
-type AskFile = { name: string; kind: "image" | "text" | "screen"; data: string };
+type AskFile = ChatAttachment;
 /** A saved Island conversation: its tab, and where it was asked. */
 type SavedAsk = { id: number; title: string; where: string; turns: PageTurn[]; at: number; pinned?: boolean };
 
-const ASK_FILE_TYPES = "image/*,.txt,.md,.csv,.json,.log,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.rs,.java,.c,.cpp,.cs,.go,.sql";
 /** The most unpinned chats kept (pinned ones are always kept). */
 const KEEP_ASKS = 12;
 const ACTIVE_ASK_KEY = "izuki.island-active-chat.v1";
@@ -74,32 +74,7 @@ function storeAsks(list: SavedAsk[]): SavedAsk[] {
 
 /** A file from the + menu, ready to send (photos made small, text files read). */
 async function askFile(f: File): Promise<AskFile | string> {
-  if (f.type.startsWith("image/")) {
-    const data = await new Promise<string>((resolve, reject) => {
-      const url = URL.createObjectURL(f);
-      const img = new Image();
-      img.onload = () => {
-        const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
-        const c = document.createElement("canvas");
-        c.width = Math.max(1, Math.round(img.width * scale));
-        c.height = Math.max(1, Math.round(img.height * scale));
-        c.getContext("2d")?.drawImage(img, 0, 0, c.width, c.height);
-        URL.revokeObjectURL(url);
-        resolve(c.toDataURL("image/jpeg", 0.85));
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("not a picture"));
-      };
-      img.src = url;
-    }).catch(() => "");
-    return data ? { name: f.name, kind: "image", data } : `I couldn't open “${f.name}”.`;
-  }
-  if (f.size > 400_000) return `“${f.name}” is too big — I can read text files up to 400 KB.`;
-  const words = await f.text().catch(() => "");
-  // A binary file read as text is mostly replacement characters.
-  if (!words.trim() || (words.match(/�/g)?.length ?? 0) > words.length / 50) return `I can't read “${f.name}” — try a photo or a text file.`;
-  return { name: f.name, kind: "text", data: words };
+  try { return await readChatFile(f); } catch (e) { return String(e).replace(/^Error:\s*/, ""); }
 }
 
 /** "Ask about this page" — like asking Gemini in Chrome, from the Island.
@@ -140,6 +115,10 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
   const asking = useRef("");
   const answer = useRef("");
   const picker = useRef<HTMLInputElement>(null);
+  const sessionFiles = useRef<AskFile[]>([]);
+  const fileGeneration = useRef(0);
+  const readingNow = useRef(false);
+  const [readingFiles, setReadingFiles] = useState(false);
   const shown = useTypewriter(full);
   const where = page || "your screen";
 
@@ -148,6 +127,8 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
     setTurns(next);
   };
   const reset = () => {
+    sessionFiles.current = [];
+    fileGeneration.current++; readingNow.current = false; setReadingFiles(false);
     if (current.current) void api.pageAskCancel(current.current);
     current.current = 0;
     chatId.current = null;
@@ -164,6 +145,7 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
 
   // Page changes keep this thread. "New chat" starts a fresh one explicitly.
   useEffect(() => () => {
+    fileGeneration.current++;
     if (current.current) void api.pageAskCancel(current.current);
   }, []);
   // Keep the Island open while typing, choosing, or while there's an answer to read.
@@ -210,8 +192,8 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
   }, [page]);
 
   const send = (text?: string) => {
-    const q = (text ?? draft).trim();
-    if (!q || working || current.current) return;
+    const q = (text ?? draft).trim() || (files.length ? "Explain these files." : "");
+    if (!q || working || current.current || readingNow.current) return;
     const id = Date.now();
     current.current = id;
     asking.current = q;
@@ -225,7 +207,8 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
     setAllChats(false);
     setNote(null);
     setWorking(true);
-    const sending = files;
+    const sending = files.length ? files : sessionFiles.current;
+    sessionFiles.current = sending;
     setFiles([]);
     setAskedDeep(deep);
     void api.pageAsk(id, q, turnsRef.current.slice(-8), sending, !page, deep).catch((e) => {
@@ -255,6 +238,8 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
     onClose();
   };
   const open = (c: SavedAsk) => {
+    sessionFiles.current = [];
+    fileGeneration.current++; readingNow.current = false; setReadingFiles(false); setFiles([]);
     stop();
     chatId.current = c.id;
     try { localStorage.setItem(ACTIVE_ASK_KEY, String(c.id)); } catch { /* optional persistence */ }
@@ -309,7 +294,15 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
   const addFiles = async (list: FileList | null) => {
     setMenu(false);
     if (!list?.length) return;
-    const ready = await Promise.all([...list].slice(0, 4).map(askFile));
+    if (working || readingNow.current) return;
+    const generation = ++fileGeneration.current;
+    readingNow.current = true; setReadingFiles(true);
+    const ready: Array<AskFile | string> = [];
+    try {
+      // Sequential reads bound image/PDF memory instead of decoding four at once.
+      for (const file of [...list].slice(0, 4)) ready.push(await askFile(file));
+    } finally { if (generation === fileGeneration.current) { readingNow.current = false; setReadingFiles(false); } }
+    if (generation !== fileGeneration.current) return;
     const ok = ready.filter((r): r is AskFile => typeof r !== "string");
     const problems = ready.filter((r): r is string => typeof r === "string");
     // Room is counted on what's attached now (another pick may have landed
@@ -426,7 +419,7 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
               </button>
             </div>
           )}
-          <input ref={picker} type="file" multiple accept={ASK_FILE_TYPES} className="hidden" onChange={(e) => { void addFiles(e.target.files); e.target.value = ""; }} />
+          <input ref={picker} type="file" multiple accept={CHAT_FILE_TYPES} className="hidden" onChange={(e) => { void addFiles(e.target.files); e.target.value = ""; }} />
         </div>
         <button
           type="button"
@@ -461,7 +454,7 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
             <Square size={11} fill="currentColor" />
           </button>
         ) : (
-          <button type="submit" disabled={!draft.trim()} aria-label="Ask" className="rounded-full bg-white px-2.5 py-1 text-[12px] font-semibold text-black transition hover:bg-white/90 disabled:opacity-35">
+          <button type="submit" disabled={readingFiles || (!draft.trim() && !files.length)} aria-label="Ask" className="rounded-full bg-white px-2.5 py-1 text-[12px] font-semibold text-black transition hover:bg-white/90 disabled:opacity-35">
             Ask
           </button>
         )}
@@ -484,6 +477,7 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
           ))}
         </div>
       )}
+      {readingFiles && <div role="status" className="text-[11px] text-white/60">Reading your files…</div>}
       {note && <div className="text-[11px] text-amber-200/90">{note}</div>}
       {!asked && (
         <div className="flex flex-wrap gap-1.5">

@@ -1,7 +1,37 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { foldSections } from "../lib/sections";
 
 export function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
+}
+
+const SectionContext = createContext<{
+  search: string;
+  setSearch: (value: string) => void;
+  root: RefObject<HTMLDivElement | null>;
+} | null>(null);
+
+/** A compact settings page; each card remembers whether it was open. */
+export function CollapsibleSections({ children }: { children: ReactNode }) {
+  const [search, setSearch] = useState("");
+  const root = useRef<HTMLDivElement>(null);
+  return (
+    <SectionContext.Provider value={{ search, setSearch, root }}>
+      <div ref={root} data-izk-section-scope="" className="contents">{children}</div>
+    </SectionContext.Provider>
+  );
+}
+
+export function SectionControls() {
+  const scope = useContext(SectionContext);
+  if (!scope) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[11px] text-izk-muted">
+      <span>Open a section to see its settings.</span>
+      <button type="button" disabled={!!scope.search.trim()} className="izk-pill izk-no-drag px-2.5 py-1 disabled:opacity-40" onClick={() => scope.root.current && foldSections(scope.root.current, false)}>Expand all</button>
+      <button type="button" disabled={!!scope.search.trim()} className="izk-pill izk-no-drag px-2.5 py-1 disabled:opacity-40" onClick={() => scope.root.current && foldSections(scope.root.current, true)}>Collapse all</button>
+    </div>
+  );
 }
 
 /** A titled glass card — the basic unit of the config panel. */
@@ -11,30 +41,38 @@ export function Section({
   right,
   children,
   className,
+  contentClassName,
   id,
   group,
-  foldable = false,
+  foldable,
 }: {
   title?: string;
   hint?: string;
   right?: ReactNode;
   children: ReactNode;
   className?: string;
+  contentClassName?: string;
   id?: string;
   /** Which part of Settings this belongs to ("Voice", "Island", …). */
   group?: string;
   /** Can be folded away, and remembers that you folded it. */
   foldable?: boolean;
 }) {
+  const scope = useContext(SectionContext);
+  const canFold = !!title && (foldable ?? true);
+  const contentId = useId();
   const key = `izk.fold.${id ?? title ?? ""}`;
   const [folded, setFolded] = useState(() => {
-    if (!foldable) return false;
+    if (!canFold) return false;
     try {
-      return localStorage.getItem(key) === "1";
+      const saved = localStorage.getItem(key);
+      return saved === null ? !!scope : saved === "1";
     } catch {
-      return false;
+      return !!scope;
     }
   });
+  // Searching temporarily reveals contents without overwriting saved choices.
+  const closed = canFold && folded && !scope?.search.trim();
   const fold = (on: boolean) => {
     setFolded(on);
     try {
@@ -49,31 +87,36 @@ export function Section({
       // The search box in Settings finds sections by this, and by their words.
       data-izk-section={title ?? ""}
       data-izk-group={group ?? ""}
+      data-izk-foldable={canFold ? "" : undefined}
       className={cx("izk-card izk-grain p-4", className)}
     >
       {(title || right) && (
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div className="min-w-0">
+        <div className={cx("flex items-start justify-between gap-3", !closed && "mb-3")}>
+          <div className="min-w-0 flex-1">
             {title &&
-              (foldable ? (
+              (canFold ? (
                 <button
                   type="button"
-                  onClick={() => fold(!folded)}
-                  aria-expanded={!folded}
-                  className="flex items-center gap-1.5 text-left text-[13px] font-semibold tracking-[-0.01em] text-izk-ink"
+                  onClick={() => fold(!closed)}
+                  aria-expanded={!closed}
+                  aria-controls={contentId}
+                  disabled={!!scope?.search.trim()}
+                  data-izk-section-toggle=""
+                  className="izk-no-drag flex min-h-8 w-full items-center gap-2 rounded-md text-left text-[13px] font-semibold tracking-[-0.01em] text-izk-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-izk-teal"
                 >
-                  <span className={cx("text-[10px] text-izk-muted transition-transform", folded ? "" : "rotate-90")}>▶</span>
+                  <span aria-hidden className={cx("text-[10px] text-izk-muted transition-transform", closed ? "" : "rotate-90")}>▶</span>
                   {title}
                 </button>
               ) : (
                 <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-izk-ink">{title}</h3>
               ))}
-            {hint && !folded && <p className="mt-0.5 text-[11.5px] leading-snug text-izk-muted">{hint}</p>}
+            {hint && !closed && <p className="mt-0.5 text-[11.5px] leading-snug text-izk-muted">{hint}</p>}
           </div>
-          {right}
+          {right && <div onClickCapture={() => { if (closed) fold(false); }}>{right}</div>}
         </div>
       )}
-      {!folded && children}
+      {/* Keep inputs and drafts alive; hidden controls cannot receive focus. */}
+      <div id={contentId} hidden={closed} style={closed ? { display: "none" } : undefined} className={contentClassName}>{children}</div>
     </div>
   );
 }
@@ -87,10 +130,14 @@ export function Section({
  * work — and nothing can fall out of the index by being forgotten.
  */
 export function SettingsSearch({ placeholder = "Search settings…" }: { placeholder?: string }) {
-  const [q, setQ] = useState("");
+  const scope = useContext(SectionContext);
+  const [localQuery, setLocalQuery] = useState("");
+  const q = scope?.search ?? localQuery;
+  const setQ = scope?.setSearch ?? setLocalQuery;
   useEffect(() => {
     const want = q.trim().toLowerCase();
-    const sections = Array.from(document.querySelectorAll<HTMLElement>("[data-izk-section]"));
+    const root = scope?.root.current ?? document;
+    const sections = Array.from(root.querySelectorAll<HTMLElement>("[data-izk-section]"));
     for (const el of sections) {
       const hit = !want || (el.textContent ?? "").toLowerCase().includes(want) || (el.dataset.izkGroup ?? "").toLowerCase().includes(want);
       el.style.display = hit ? "" : "none";
@@ -110,7 +157,7 @@ export function SettingsSearch({ placeholder = "Search settings…" }: { placeho
         className="izk-no-drag min-w-0 flex-1 bg-transparent text-[12.5px] text-izk-ink outline-none placeholder:text-izk-muted"
       />
       {q && (
-        <button type="button" onClick={() => setQ("")} aria-label="Clear the search" className="izk-pill px-2 py-0.5 text-[11px]">
+        <button type="button" onClick={() => setQ("")} data-izk-clear-search="" aria-label="Clear the search" className="izk-pill px-2 py-0.5 text-[11px]">
           Clear
         </button>
       )}

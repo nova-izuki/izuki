@@ -1,11 +1,13 @@
 import { requestStyleSection } from "../lib/styleNav";
 import { useEffect, useRef, useState } from "react";
 import { useIzuki, type TabId } from "../lib/store";
+import { revealSection } from "../lib/sections";
 
 /** Scroll a section to just below the sticky jump bar. */
 export function jumpTo(id: string) {
   const el = document.getElementById(id);
   if (!el) return;
+  revealSection(el);
   let box = el.parentElement;
   while (box && !(box.scrollHeight > box.clientHeight && /auto|scroll/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
   if (!box) return el.scrollIntoView({ behavior: "smooth", block: "start" });

@@ -200,7 +200,7 @@ const dead = [...lookedUp].filter((id) => !inHtml.has(id));
 assert.deepEqual(dead, [], `the code reaches for ids the page hasn't got: ${dead.join(', ')}`);
 
 // And every control the page offers has to be wired to something.
-const mustBeWired = ['provider', 'provider-tabs', 'refresh-tabs', 'connect', 'follow-questions', 'show-companion', 'task-run', 'task-cancel', 'task-text', 'stop'];
+const mustBeWired = ['provider', 'provider-tabs', 'refresh-tabs', 'connect', 'auto-connect', 'follow-questions', 'read-aloud', 'show-companion', 'task-run', 'task-cancel', 'task-text', 'stop', 'answer-who'];
 const unwired = mustBeWired.filter((id) => !lookedUp.has(id));
 assert.deepEqual(unwired, [], `these controls exist on the page but nothing uses them: ${unwired.join(', ')}`);
 
@@ -238,5 +238,10 @@ assert(/hostedBy\(p,\s*tab\.url\)/.test(wiring), 'the tab host must be checked a
 // worker's cache name changes.
 const sw = readFileSync(path.join(here, '..', 'docs', 'app', 'sw.js'), 'utf8');
 assert(/const CACHE = "izuki-phone-v(\d+)"/.test(sw), 'sw.js must name its cache');
+
+// Automatic connection may only ever be quiet: no tab opened, nothing typed.
+assert(/async function autoConnectNow/, 'the panel needs a quiet connect path');
+assert(!/automatic[\s\S]{0,400}tabs\.create/.test(wiring), 'an automatic connection must never open a tab');
+assert(/if \(!tabs\.length \|\| p\.id === "any"\) return false/.test(wiring), 'a catch-all tab is chosen by hand, never guessed');
 
 console.log(`panel: ok (${PROVIDERS.length} assistants, composer handoff on a stub DOM, every control wired, every route served)`);

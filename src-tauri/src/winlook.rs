@@ -1759,7 +1759,9 @@ fn status_now(m: Memory) -> Status {
     let bars = win::get_dword(THEME, "ColorPrevalence") == Some(1);
     let titles = win::get_dword(DWM, "ColorPrevalence") == Some(1);
     // "Current" only while Windows still matches that look.
-    let photo = m.photo.clone().filter(|_| m.current.as_deref() == Some("photo"));
+    // A colours-only theme keeps the daily picture. Match the real wallpaper,
+    // so its preview/story survives that change and disappears if it was replaced.
+    let photo = m.photo.clone().filter(|p| !p.file.is_empty() && p.file.replace('\\', "/").eq_ignore_ascii_case(&win::wallpaper().replace('\\', "/")));
     let current = m.current.filter(|id| {
         PRESETS.iter().any(|p| p.id == id && p.accent == accent && p.dark == dark) || (id == "photo" && photo.as_ref().is_some_and(|p| parse_hex(&p.accent) == Some(accent) && p.dark == dark))
     });

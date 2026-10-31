@@ -22,6 +22,21 @@ use crate::{automation, planner};
 
 type R<T> = Result<T, String>;
 
+#[tauri::command]
+pub async fn read_chat_attachment(name: String, data: String) -> R<crate::attachments::DocumentText> {
+    blocking(move || crate::attachments::read(&name, &data).map_err(err)).await?
+}
+
+#[tauri::command]
+pub async fn extension_browsers() -> R<Vec<crate::extension_setup::Browser>> {
+    blocking(crate::extension_setup::browsers).await
+}
+
+#[tauri::command]
+pub async fn prepare_browser_extension(browser: String) -> R<crate::extension_setup::Prepared> {
+    blocking(move || crate::extension_setup::prepare(&browser).map_err(err)).await?
+}
+
 fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }

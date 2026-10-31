@@ -731,6 +731,9 @@ export interface WindowsTweak {
 }
 
 export const api = {
+  extensionBrowsers: () => call<Array<{ id: string; name: string }>>("extension_browsers", undefined, () => []),
+  prepareBrowserExtension: (browser: string) => call<{ folder: string; version: string; opened: boolean }>("prepare_browser_extension", { browser }, () => { throw new Error("Open Izuki's Windows desktop app to prepare the extension."); }),
+  readChatAttachment: (name: string, data: string) => call<{ text: string; truncated: boolean }>("read_chat_attachment", { name, data }, () => { throw new Error("Reading PDF and Office files needs the Windows desktop app."); }),
   getSettings: () => call<Settings>("get_settings", undefined, () => MOCK_SETTINGS),
   saveSettings: (settings: Settings) =>
     call<Settings>("save_settings", { settings }, () => settings),

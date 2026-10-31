@@ -31,6 +31,7 @@ const state = {
   follow: false,
   companion: false,
   autoSend: true,
+  autoConnect: true,
   ready: false,
   origin: "",
 };
@@ -119,6 +120,7 @@ async function fillTabs() {
 function say(text) {
   const help = $("connection-help");
   if (help) help.textContent = text;
+  window.dispatchEvent(new Event("izuki:connected"));
 }
 
 function followState(text) {
@@ -140,7 +142,11 @@ async function izukiIsUp() {
   }
 }
 
-async function connect() {
+/**
+ * Connect to the AI tab that is already open. Nothing is typed into it here:
+ * this only decides which tab an answer comes from, and says whose it is.
+ */
+async function connect({ automatic = false } = {}) {
   const p = provider(state.providerId);
   state.ready = false;
   const button = $("connect");
@@ -151,31 +157,57 @@ async function connect() {
       say(up ? "Connected to Izuki on this PC." : "Izuki isn't running — open the Izuki app, then press Connect.");
       return up;
     }
-    let tabs = await providerTabs(p);
-    if (!tabs.length && p.open) {
-      // Beside the page being read, not on top of it.
-      const made = await chrome.tabs.create({ url: p.open, active: false }).catch(() => null);
-      if (made) {
-        say(`Opened ${p.name} in a tab. Sign in there if it asks, then press Connect again.`);
-        await fillTabs();
+    const tabs = await providerTabs(p);
+    if (automatic) {
+      // Never opens a tab and never asks: only a tab that is already there.
+      if (!tabs.length || p.id === "any") return false;
+      const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+      const chosen = tabs.find((t) => t.id === active?.id) ?? tabs[0];
+      state.tabId = chosen.id;
+      const select = $("provider-tabs");
+      if (select) select.value = String(chosen.id);
+    } else {
+      if (!tabs.length && p.open) {
+        // Beside the page being read, not on top of it.
+        const made = await chrome.tabs.create({ url: p.open, active: false }).catch(() => null);
+        if (made) {
+          say(`Opened ${p.name} in a tab. Sign in there if it asks, then press Connect again.`);
+          await fillTabs();
+          return false;
+        }
+      }
+      if (!tabs.length) {
+        say(handoffProblem("no-tab", p.name, p.id));
         return false;
       }
+      await fillTabs();
     }
-    if (!tabs.length) {
-      say(handoffProblem("no-tab", p.name, p.id));
-      return false;
-    }
-    await fillTabs();
     const selected = await chrome.tabs.get(state.tabId).catch(() => null);
     if (!selected || (p.id !== "any" && !hostedBy(p, selected.url))) return false;
     state.origin = new URL(selected.url).origin;
     state.connectedTab = state.tabId;
     state.ready = true;
-    say(`Connected to your ${p.name} tab. Questions you ask here go to it.`);
+    say(automatic
+      ? `Connected by itself to “${(selected.title || p.name).slice(0, 70)}”. Pick another tab above, or untick “Use the AI tab that's already open”.`
+      : `Connected to your ${p.name} tab. Questions you ask here go to it.`);
     return true;
   } finally {
     if (button) button.disabled = false;
   }
+}
+
+/** The quiet version: no tab is opened, and nothing is typed or sent. */
+async function autoConnectNow() {
+  if (!state.autoConnect || state.ready || provider(state.providerId).local) return false;
+  return connect({ automatic: true }).catch(() => false);
+}
+
+/** A tab opening later is the usual case: the Gemini icon, a new ChatGPT tab. */
+let autoSoon = null;
+function scheduleAutoConnect() {
+  if (!state.autoConnect || state.ready) return;
+  clearTimeout(autoSoon);
+  autoSoon = setTimeout(() => void autoConnectNow(), 700);
 }
 
 // ---- handing a question to an AI tab ---------------------------------------
@@ -315,6 +347,7 @@ export async function setUpConnection({ ask, onFollowed }) {
     await fillTabs();
     const now = provider(state.providerId);
     say(now.note || `Press Connect to use your ${now.name} tab.`);
+    if (state.autoConnect) void autoConnectNow();
   });
 
   $("provider-tabs")?.addEventListener("change", (e) => {
@@ -325,6 +358,23 @@ export async function setUpConnection({ ask, onFollowed }) {
 
   $("refresh-tabs")?.addEventListener("click", () => void fillTabs());
   $("connect")?.addEventListener("click", () => void connect());
+
+  const auto = $("auto-connect");
+  if (auto) {
+    auto.checked = state.autoConnect;
+    auto.addEventListener("change", (e) => {
+      state.autoConnect = !!e.target.checked;
+      remember();
+      if (state.autoConnect) void autoConnectNow();
+    });
+  }
+  // The AI tab is usually already open when the panel appears. Connecting to
+  // it sends nothing and types nothing — it only says which tab answers.
+  if (state.autoConnect) await autoConnectNow();
+  // ...and it is often opened *after* the panel: the Gemini icon, a new tab.
+  chrome.tabs.onUpdated.addListener((_id, change) => {
+    if (change.status === "complete" || change.url) scheduleAutoConnect();
+  });
 
   $("follow-questions")?.addEventListener("change", (e) => {
     state.follow = !!e.target.checked;

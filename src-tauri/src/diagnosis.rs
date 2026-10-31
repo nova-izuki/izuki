@@ -57,6 +57,36 @@ pub fn why(asked: &str) -> Option<String> {
     wants(asked).then(report)
 }
 
+/// The brains sentence, kept apart from the rest of the report so its numbers
+/// can be checked without a running app.
+fn brains_line(total: usize, resting: &[(String, u64)]) -> String {
+    if total == 0 {
+        return "No AI brain is set up at all, so anything needing one can't answer — add a free key in Settings → Izuki's brain.".into();
+    }
+    // A count larger than the number of brains reads as a bug, because it is
+    // one; the list is cut to match so the sentence can never contradict it.
+    let benched = resting.len().min(total);
+    if benched == 0 {
+        return format!(
+            "{total} AI brain{} set up, and none {} resting: the delay is the model itself thinking, not me waiting on a limit.",
+            if total == 1 { " is" } else { "s are" },
+            if total == 1 { "is" } else { "are" }
+        );
+    }
+    // clock() already says its own unit — adding "s" here read "Groq 15ss".
+    let list: Vec<String> = resting.iter().take(benched.min(4)).map(|(name, secs)| format!("{name} {}", clock(*secs))).collect();
+    let mut said = format!(
+        "{benched} of my {total} AI brain{} {} benched right now: {}. While a free tier is benched I either wait for it or answer with a smaller, dumber one — that's the \"slow and stupid\" you're seeing.",
+        if total == 1 { "" } else { "s" },
+        if benched == 1 { "is" } else { "are" },
+        list.join(", ")
+    );
+    if benched >= total {
+        said.push_str("\n\nAll of them at once means nothing can answer until one comes back — asking again in a moment genuinely helps, asking again instantly doesn't.");
+    }
+    said
+}
+
 /// What is actually true right now, in the order that explains the most.
 fn report() -> String {
     let mut said: Vec<String> = Vec::new();
@@ -74,33 +104,14 @@ fn report() -> String {
 
     // 2. Brains that are benched right now — the literal reason a task waits.
     let resting = crate::brain::resting_now();
-    let chain = crate::brain::brain_chain();
-    // Rests are per *provider*, while the chain is per model (one key can offer
-    // six). Counting models here said "2 of my 18 brains" and made "all of
-    // them are out" impossible to ever be true.
-    let brains: std::collections::BTreeSet<&str> = chain.iter().map(|c| c.id.as_str()).collect();
-    let total = brains.len();
-    if chain.is_empty() {
-        said.push("No AI brain is set up at all, so anything needing one can't answer — add a free key in Settings → Izuki's brain.".into());
-    } else if resting.is_empty() {
-        said.push(format!(
-            "{total} AI brain{} set up, and none {} resting: the delay is the model itself thinking, not me waiting on a limit.",
-            if total == 1 { " is" } else { "s are" },
-            if total == 1 { "is" } else { "are" }
-        ));
-    } else {
-        // clock() already says its own unit — adding "s" here read "Groq 15ss".
-        let list: Vec<String> = resting.iter().take(4).map(|(name, secs)| format!("{name} {}", clock(*secs))).collect();
-        said.push(format!(
-            "{} of my {total} AI brains {} benched right now: {}. While a free tier is benched I either wait for it or answer with a smaller, dumber one — that's the \"slow and stupid\" you're seeing.",
-            resting.len(),
-            if resting.len() == 1 { "is" } else { "are" },
-            list.join(", ")
-        ));
-        if resting.len() >= total {
-            said.push("All of them at once means nothing can answer until one comes back — asking again in a moment genuinely helps, asking again instantly doesn't.".into());
-        }
-    }
+    // The total is every brain that is *set up*, resting or not. It used to be
+    // `brain_chain`, which has the benched ones already taken out, so three
+    // benched brains out of two still available read "3 of my 2".
+    let configured = crate::brain::configured_brains();
+    let mut ids: Vec<&str> = configured.iter().map(|c| c.id.as_str()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    said.push(brains_line(ids.len(), &resting));
 
     // 3. The one thing that makes every brain free, and every brain slow.
     if let Some(wait) = crate::freebrains::soonest_wake() {
@@ -139,6 +150,34 @@ mod tests {
         ] {
             assert!(!super::wants(asked), "should not have answered: {asked}");
         }
+    }
+
+    #[test]
+    fn the_benched_count_never_exceeds_the_brains_that_exist() {
+        let resting = vec![
+            ("Groq".to_string(), 16),
+            ("Gemini".to_string(), 75),
+            ("Nvidia".to_string(), 75),
+        ];
+        // Two brains set up, three resting entries: the old wording said
+        // "3 of my 2", which is the sentence from the owner's screenshot.
+        let said = super::brains_line(2, &resting);
+        assert!(said.starts_with("2 of my 2"), "said: {said}");
+        assert!(!said.contains("of my 2 AI brains are benched right now: Groq, Gemini, Nvidia"), "a clamped count kept the whole list: {said}");
+        assert!(said.contains("All of them at once"), "everything is resting: {said}");
+
+        // Nothing benched: no count of zero, and no "all of them" tail.
+        let calm = super::brains_line(5, &[]);
+        assert!(calm.starts_with("5 AI brains are set up"), "said: {calm}");
+        assert!(!calm.contains("All of them at once"), "said: {calm}");
+
+        // One brain, resting: singular all the way through.
+        let one = super::brains_line(1, &[("Groq".to_string(), 16)]);
+        assert!(one.starts_with("1 of my 1 AI brain is benched"), "said: {one}");
+
+        // No brain at all is a setup problem, not a waiting problem.
+        let none = super::brains_line(0, &resting);
+        assert!(none.contains("No AI brain is set up"), "said: {none}");
     }
 
     #[test]

@@ -125,13 +125,16 @@ fn messages(read: Option<&Read>, screen: Option<&str>, files: &[Attachment], que
         ),
     };
     let mut room = 16_000usize;
-    for f in files.iter().filter(|f| f.kind == "text" && !f.data.trim().is_empty()) {
+    let documents: Vec<_> = files.iter().filter(|f| f.kind == "text" && !f.data.trim().is_empty()).take(4).collect();
+    for (index, f) in documents.iter().enumerate() {
         if room < 200 {
             break;
         }
-        let words = cut(&f.data, room.min(8000));
+        let allowance = room.min(8000).min(room / (documents.len() - index));
+        let words = cut(&f.data, allowance);
         room = room.saturating_sub(words.chars().count());
         context.push_str(&format!("\n\nThe file \"{}\" they added:\n{words}", cut(&f.name, 80)));
+        if f.data.chars().count() > allowance { context.push_str("\n[Excerpt only: the full file does not fit here. Ask for a shorter section if needed.]"); }
     }
     let seen = if read.is_some() { "I can see the page." } else { "I can see your screen." };
     let mut msgs = vec![

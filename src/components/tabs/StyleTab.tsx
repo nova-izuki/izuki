@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Clock, Gamepad2, Gem, Heart, Image as ImageIcon, Layers, MapPin, Moon, Palette, RefreshCw, RotateCcw, Shuffle, Sparkles, Sun, Undo2, Wand2, Wrench, Zap } from "lucide-react";
 import { api, type LookAuto, type LookPhoto, type LookPreset, type LooksStatus, type WindowsTweak } from "../../lib/ipc";
 import { onStyleSection, takeStyleSection, type StyleSection } from "../../lib/styleNav";
-import { cx } from "../ui";
+import { Section, cx } from "../ui";
+import { DesktopLayouts } from "../DesktopLayouts";
 
 /**
  * Style: how Windows looks, in one place — a big live preview of your
@@ -228,7 +229,7 @@ export function StyleTab() {
   const [done, setDone] = useState("");
   const [hover, setHover] = useState<string | null>(null);
   const [sweep, setSweep] = useState(0);
-  const [withWallpaper, setWithWallpaper] = useState(true);
+  const [withWallpaper, setWithWallpaper] = useState(false);
   const [group, setGroup] = useState("taskbar");
   const [needsRestart, setNeedsRestart] = useState(false);
   const pickTimer = useRef<number | undefined>(undefined);
@@ -241,6 +242,8 @@ export function StyleTab() {
   }, []);
 
   const run = <T,>(key: string, what: () => Promise<T>, then: (v: T) => void, said: string | ((v: T) => string), failed?: () => void) => {
+    if (busyRef.current) return;
+    busyRef.current = key;
     setBusy(key);
     setError("");
     setDone("");
@@ -253,7 +256,7 @@ export function StyleTab() {
         setError(friendly(e));
         failed?.();
       })
-      .finally(() => setBusy(null));
+      .finally(() => { busyRef.current = null; setBusy(null); });
   };
   const setLooks = (next: LooksStatus | null) => next && setS(next);
 
@@ -264,8 +267,8 @@ export function StyleTab() {
   const heroDark = hover && shown ? shown.dark : s?.dark ?? true;
   const heroBars = hover && shown ? shown.bars : s?.bars ?? false;
   const heroTitles = hover && shown ? shown.titles : s?.titles ?? false;
-  const photoNow = s?.current === "photo" && s.photo ? s.photo : null;
-  const heroPhoto = hover ? null : photoNow;
+  const photoNow = s?.photo ?? null;
+  const heroPhoto = hover && withWallpaper ? null : photoNow;
   const heroLabel = hover && shown ? `Preview: ${shown.name} — tap to use it` : current ? `Your look: ${current.name}` : photoNow ? `Your look: ${photoName(photoNow)}` : "Your own colours";
 
   const counts = useMemo(() => {
@@ -341,6 +344,7 @@ export function StyleTab() {
           {(
             [
               ["looks", "Looks", <Palette key="p" size={13} />],
+              ["layouts", "Layouts", <Layers key="l" size={13} />],
               ["tweaks", "Tweaks", <Wand2 key="w" size={13} />],
               ["auto", "Auto", <Clock key="c" size={13} />],
             ] as const
@@ -383,17 +387,24 @@ export function StyleTab() {
         </div>
       )}
 
+      {section === "layouts" && <>
+        <DesktopLayouts tweaks={tweaks} onChange={setTweaks} onRestart={() => setNeedsRestart(true)} disabled={busy !== null} onBusy={(key) => { busyRef.current = key; setBusy(key); }} picture={photoNow?.thumb} />
+        {needsRestart && <p className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 p-3 text-[11.5px] text-izk-muted">Some layout switches show after Explorer restarts. Your apps stay open.<button type="button" disabled={busy !== null} className="izk-pill izk-no-drag px-3 py-1" onClick={() => run("restart", () => api.restartExplorer(), () => setNeedsRestart(false), "Explorer restarted.")}>Restart Explorer</button></p>}
+      </>}
+
       {section === "looks" && (
-        <div id="style-looks" className="izk-card izk-grain izk-rise flex flex-col gap-3 p-3">
+        <Section id="style-looks" title="Colour themes" hint="Style Windows while keeping your current picture. Turn on Replace picture only if you want a painted wallpaper too." className="izk-rise !p-3" contentClassName="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[13px] font-semibold text-izk-ink">{presets.length} looks</span>
             <span className="text-[11px] text-izk-muted">Hover to preview · tap to use · or say “make my PC look Synthwave”</span>
             <button
               type="button"
               onClick={() => setWithWallpaper((w) => !w)}
+              role="switch"
+              aria-checked={withWallpaper}
               className={cx("izk-no-drag ml-auto flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]", withWallpaper ? "border-izk-teal/40 bg-izk-teal/10 text-izk-ink" : "border-white/10 text-izk-muted")}
             >
-              <MiniSwitch on={withWallpaper} /> Wallpaper too
+              <MiniSwitch on={withWallpaper} /> Replace picture
             </button>
             {s?.can_undo && (
               <button type="button" disabled={busy !== null} onClick={() => run("undo", () => api.lookUndo(), (n) => { setLooks(n); setSweep((x) => x + 1); }, "Your old look is back.")} className="izk-no-drag flex items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-izk-ink hover:bg-white/8">
@@ -483,11 +494,11 @@ export function StyleTab() {
               </div>
             </>
           )}
-        </div>
+        </Section>
       )}
 
       {section === "tweaks" && (
-        <div id="style-tweaks" className="izk-card izk-grain izk-rise flex flex-col gap-3 p-3">
+        <Section id="style-tweaks" title="Windows tweaks" className="izk-rise !p-3" contentClassName="flex flex-col gap-3">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {PACKS.map((p) => (
               <button
@@ -553,11 +564,11 @@ export function StyleTab() {
               </button>
             </div>
           )}
-        </div>
+        </Section>
       )}
 
       {section === "auto" && auto && (
-        <div id="style-auto" className="izk-card izk-grain izk-rise flex flex-col gap-3 p-3">
+        <Section id="style-auto" title="Automatic style" className="izk-rise !p-3" contentClassName="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {(
               [
@@ -811,7 +822,7 @@ export function StyleTab() {
               </span>
             </div>
           )}
-        </div>
+        </Section>
       )}
     </div>
   );

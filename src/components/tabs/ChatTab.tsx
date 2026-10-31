@@ -15,6 +15,7 @@ import type { Reminder } from "../../lib/types";
 import { useIzuki } from "../../lib/store";
 import { AirToggle } from "../AirToggle";
 import { brainReady } from "../../lib/setup";
+import { attachmentContext, CHAT_FILE_TYPES, keepDocumentText, readChatFile, type ChatAttachment } from "../../lib/attachments";
 import { looksLikeDirections, needsApps, opensAnApp, recentHistory, shareHistory } from "../../lib/conversation";
 
 /**
@@ -52,36 +53,13 @@ interface Msg {
   ran?: string;
   /** Pictures sent with it (data URLs) — shown, sent to the brain, not saved. */
   images?: string[];
+  documents?: ChatAttachment[];
   /** A deep research: its searches, the pages read, and its sources. */
   research?: ResearchState;
   /** A coding task: its steps, plan and change (Apply / Discard / Undo). */
   coding?: CodingState;
 }
 
-/**
- * A picture made small enough to send: at most 1280 px on its long side,
- * as a JPEG data URL (a phone photo is 4 MB; this is ~200 KB).
- */
-function shrinkPicture(file: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
-      const c = document.createElement("canvas");
-      c.width = Math.max(1, Math.round(img.width * scale));
-      c.height = Math.max(1, Math.round(img.height * scale));
-      c.getContext("2d")?.drawImage(img, 0, 0, c.width, c.height);
-      URL.revokeObjectURL(url);
-      resolve(c.toDataURL("image/jpeg", 0.85));
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("not a picture"));
-    };
-    img.src = url;
-  });
-}
 
 /** A failure that setting up a brain would fix. */
 const NEEDS_BRAIN = /no chat-capable brain|add an api key|key was rejected|rejected the key|unauthori[sz]ed|\b401\b|invalid api key|api key not valid/i;
@@ -140,6 +118,9 @@ function clean(v: unknown): Msg[] {
       content: text(m.content),
       images: Array.isArray(m.images)
         ? (m.images as unknown[]).filter((u): u is string => typeof u === "string" && u.startsWith("data:image/")).slice(0, 4)
+        : undefined,
+      documents: Array.isArray(m.documents)
+        ? m.documents.filter((f): f is ChatAttachment => !!f && typeof f === "object" && f.kind === "text" && typeof f.name === "string" && typeof f.data === "string" && f.data.length <= 65_536).slice(0, 4)
         : undefined,
       status: typeof m.status === "string" ? m.status : undefined,
       links: links.length ? links : undefined,
@@ -375,13 +356,22 @@ function load(): Msg[] {
   }
 }
 
+/** How much attached file text a reopened chat keeps, newest files first. */
+const STORED_DOCUMENTS = 60_000;
+
 function save(msgs: Msg[]) {
   try {
-    // Pictures are big: they're kept for this session only. So are a coding
-    // change's diff and its logs (Apply works without them).
-    const light = msgs.slice(-KEEP).map((m) => {
+    // Pictures are big: they're kept for this session only. So is a coding
+    // change's diff and its logs (Apply works without them). Attached files
+    // keep their text, newest first, so "and what does page 4 say?" still has
+    // the document it's about after a restart — within a fixed budget.
+    const kept = msgs.slice(-KEEP);
+    const stored = keepDocumentText(kept, STORED_DOCUMENTS);
+    const light = kept.map((m, index) => {
       const lean = m.coding ? { ...m, coding: { ...m.coding, diff: undefined, steps: m.coding.steps.map(({ kind, text, ok }) => ({ kind, text, ok })) } } : m;
-      return lean.images?.length ? { ...lean, images: undefined, content: `${lean.content} 🖼️`.trim() } : lean;
+      const { kept: files, lost } = stored[index];
+      // Name whatever didn't fit: a missing document is never a mystery.
+      return { ...lean, images: undefined, documents: files.length ? files : undefined, content: `${lean.content}${lean.images?.length ? " 🖼️" : ""}${lost.length ? ` 📎 ${lost.map((d) => d.name).join(", ")} (too long to keep after closing — attach again for more)` : ""}`.trim() };
     });
     localStorage.setItem(KEY, JSON.stringify(light));
   } catch {
@@ -444,18 +434,34 @@ export function ChatTab() {
   const [draft, setDraft] = useState("");
   /** Pictures waiting to go with the next message. */
   const [pics, setPics] = useState<string[]>([]);
+  const [documents, setDocuments] = useState<ChatAttachment[]>([]);
+  /** Typed while Izuki was working: it goes as soon as the work stops, so a
+   *  second thought during a lab isn't silently dropped. */
+  const [queued, setQueued] = useState<{ text: string; pics: string[]; docs: ChatAttachment[] } | null>(null);
+  const [fileError, setFileError] = useState("");
+  const [readingFiles, setReadingFiles] = useState(false);
+  const fileGeneration = useRef(0);
+  const readingNow = useRef(false);
+  useEffect(() => () => { fileGeneration.current++; }, []);
+  const clearAttachments = () => { fileGeneration.current++; readingNow.current = false; setReadingFiles(false); setPics([]); setDocuments([]); setFileError(""); };
   const picker = useRef<HTMLInputElement>(null);
   const addPictures = async (files: Iterable<Blob>) => {
-    const ready: string[] = [];
-    for (const f of files) {
-      if (!f.type.startsWith("image/")) continue;
-      try {
-        ready.push(await shrinkPicture(f));
-      } catch {
-        /* not a picture we can read */
+    if (busy || readingNow.current) return;
+    const generation = ++fileGeneration.current;
+    readingNow.current = true; setReadingFiles(true); setFileError("");
+    try {
+      const chosen = Array.from(files);
+      if (chosen.length > 4) setFileError("Choose up to 4 files at a time.");
+      for (const blob of chosen.slice(0, 4)) {
+        try {
+          const file = blob instanceof File ? blob : new File([blob], "Pasted picture", { type: blob.type });
+          const ready = await readChatFile(file);
+          if (generation !== fileGeneration.current) return;
+          if (ready.kind === "image") setPics((p) => [...p, ready.data].slice(0, 4));
+          else setDocuments((p) => [...p, ready].slice(0, 4));
+        } catch (e) { if (generation === fileGeneration.current) setFileError(String(e).replace(/^Error:\s*/, "")); }
       }
-    }
-    if (ready.length) setPics((p) => [...p, ...ready].slice(0, 4));
+    } finally { if (generation === fileGeneration.current) { readingNow.current = false; setReadingFiles(false); } }
   };
   // A still from the Island's camera ("Ask Izuki about this"): it waits in
   // shared storage too, so it arrives even when Chat opens after the event.
@@ -608,9 +614,9 @@ export function ChatTab() {
      * after Allow / No, the result and the answer land in the same message
      * as the card, the way Claude Code shows a job: steps, then the answer.
      */
-    async (text: string, note = false, here = false, images: string[] = []) => {
-      let t = text.trim() || (images.length ? "What's in this picture?" : "");
-      if (!t || busy) return;
+    async (text: string, note = false, here = false, images: string[] = [], attached: ChatAttachment[] = []) => {
+      let t = text.trim() || (attached.length ? "Explain these files." : images.length ? "What's in this picture?" : "");
+      if (!t || busy || readingNow.current) return;
       // "Continue" / "try again": the last thing asked, again — not a new
       // question for the AI to guess at (it once sent "continue" off to the
       // connected apps).
@@ -625,6 +631,7 @@ export function ChatTab() {
       if (!note && /^(clear|reset|wipe|empty|start over|new)( (the|this|our|my))? ?(chat|conversation|messages|history|it|over)?$/i.test(t)) {
         stop();
         setMsgs([]);
+        clearAttachments();
         setDraft("");
         return;
       }
@@ -651,7 +658,7 @@ export function ChatTab() {
       await useIzuki.getState().flushSettings().catch(() => undefined);
       // Directions pasted from another AI or a guide ("1. Open Settings
       // 2. Click…"): Izuki does them on the screen instead of explaining them.
-      if (!note && !here && !images.length && looksLikeDirections(t)) {
+      if (!note && !here && !images.length && !attached.length && looksLikeDirections(t)) {
         setMsgs((m) => [
           ...m,
           { role: "user", content: t },
@@ -661,14 +668,15 @@ export function ChatTab() {
         return;
       }
       if (images.length) setPics([]);
+      if (attached.length) setDocuments([]);
       // Earlier replies carry what really happened (the steps, an allowed
       // command's output), so "u done?" is answered from facts, not memory.
-      const history = [...msgs.filter((m) => !m.failed && !m.screen), { role: "user" as const, content: t, images }].map((m) => ({
+      const history = [...msgs.filter((m) => !m.failed && !m.screen), { role: "user" as const, content: t, images, documents: attached }].map((m) => ({
         role: m.role,
         content:
           m.role === "assistant" && ("steps" in m || "ran" in m) && (m.steps?.length || m.ran)
             ? `${m.content}\n[Done for real: ${[...(m.steps ?? []), ...(m.ran ? [`result: ${m.ran}`] : [])].join(" | ")}]`
-            : m.content,
+            : m.content + attachmentContext(m.documents ?? []),
         ...(m.images?.length ? { images: m.images } : {}),
       }));
       if (here) {
@@ -681,7 +689,7 @@ export function ChatTab() {
       } else {
         setMsgs((m) => [
           ...m,
-          { role: "user", content: t, note, images: images.length ? images : undefined },
+          { role: "user", content: t, note, images: images.length ? images : undefined, documents: attached.length ? attached : undefined },
           { role: "assistant", content: "", status: firstStatus(t) },
         ]);
       }
@@ -701,7 +709,7 @@ export function ChatTab() {
       // A short yes may answer something Izuki offered (offers.rs) — heard
       // before Code or Deep mode take the message.
       // (With a picture or a note, it's about those: the chat sees them.)
-      if (!images.length && !note && !here && YES_REPLY.test(t) && t.trim().split(/\s+/).length <= 6) {
+      if (!images.length && !attached.length && !note && !here && YES_REPLY.test(t) && t.trim().split(/\s+/).length <= 6) {
         const said = await api.instantCommand(t).catch(() => null);
         if (said) {
           setLast({ content: said, status: undefined });
@@ -740,7 +748,7 @@ export function ChatTab() {
       // for releases a hundred versions old. The chat carries this build's own
       // release notes for exactly that question (selfknow.rs); the web can
       // only get it wrong.
-      const aboutIzuki = !note && !here && !images.length ? await api.aboutIzuki(t) : false;
+      const aboutIzuki = !note && !here && !images.length && !attached.length ? await api.aboutIzuki(t) : false;
       if (streamId.current !== id) return;
       const researchQ = !note && !here && !images.length && !aboutIzuki ? (deep ? t : researchAsk(t, !!msgs[msgs.length - 1]?.research)) : null;
       if (researchQ) {
@@ -753,7 +761,7 @@ export function ChatTab() {
         return;
       }
       // The Later list ("remind me later I'm buying…", "what's on my list"): done at once.
-      if (LATER.test(t) || INSTANT_ASK.test(t) || STORAGE_ASK.test(t)) {
+      if (!attached.length && (LATER.test(t) || INSTANT_ASK.test(t) || STORAGE_ASK.test(t))) {
         const said = await api.instantCommand(t).catch(() => null);
         if (said) {
           setLast({ content: said, status: undefined });
@@ -761,7 +769,7 @@ export function ChatTab() {
           return;
         }
       }
-      if (wantsApps(t)) {
+      if (!attached.length && wantsApps(t)) {
         setLast({ content: "Checking your connected apps…" });
         try {
           const a = await api.appsAsk(history);
@@ -914,6 +922,16 @@ export function ChatTab() {
     setBusy(false);
   };
 
+  // Pressing Enter while it's working stops the work and sends what you typed
+  // (see the composer). Nothing you type during a lab is lost, and the app
+  // doesn't sit there deaf until the task ends on its own.
+  useEffect(() => {
+    if (busy || !queued) return;
+    const q = queued;
+    setQueued(null);
+    void send(q.text, false, false, q.pics, q.docs);
+  }, [busy, queued, send]);
+
   /** Allow / No on a change it asked to make; tell it what happened. */
   const answer = async (i: number, allow: boolean) => {
     const a = msgs[i]?.action;
@@ -941,12 +959,13 @@ export function ChatTab() {
 
   /** Ask the question before a failed reply again. */
   const retry = (i: number) => {
+    const previous = msgs[i - 1];
     const ask = msgs[i - 1]?.role === "user" ? msgs[i - 1].content : undefined;
     if (!ask || busy) return;
     const trimmed = msgs.filter((_, j) => j !== i && j !== i - 1);
     setMsgs(trimmed);
     // Next tick, so `send` sees the trimmed history.
-    setTimeout(() => void sendRef.current(ask), 40);
+    setTimeout(() => void sendRef.current(ask, false, false, previous?.images ?? [], previous?.documents ?? []), 40);
   };
 
   const answerRef = useRef(answer);
@@ -1028,6 +1047,7 @@ export function ChatTab() {
               onClick={() => {
                 stop();
                 setMsgs([]);
+                clearAttachments();
               }}
               className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
               title="Start a new chat"
@@ -1101,6 +1121,7 @@ export function ChatTab() {
                     ))}
                   </div>
                 ) : null}
+                {m.documents?.map((file, j) => <span key={j} className="mb-1 mr-1 inline-block rounded-lg bg-black/15 px-2 py-1 text-[11px]">📎 {file.name}</span>)}
                 {m.calls && m.calls.length > 0 && <ToolCards calls={m.calls} />}
                 {m.steps && m.steps.length > 0 && !m.calls?.length && <Steps steps={m.steps} />}
                 {m.action && <ActionCard action={m.action} busy={busy} onAnswer={(allow) => void answer(i, allow)} ran={m.ran} />}
@@ -1194,10 +1215,21 @@ export function ChatTab() {
               ))}
             </div>
           )}
+          {documents.length > 0 && <div className="mb-2 flex flex-wrap gap-2">{documents.map((file, i) => <span key={i} className="flex max-w-full items-center gap-2 rounded-lg border border-white/15 px-2 py-1 text-[11px]"><span className="truncate">📎 {file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setDocuments((all) => all.filter((_, j) => j !== i))}><X size={12} /></button></span>)}</div>}
+          {readingFiles && <p role="status" className="mb-2 text-[11px] text-izk-muted">Reading your files…</p>}
+          {fileError && <p role="alert" className="mb-2 text-[11px] text-izk-danger">{fileError}</p>}
+          {queued && (
+            <p role="status" className="mb-2 flex items-center gap-2 text-[11px] text-izk-muted">
+              <span className="min-w-0 truncate">Stopping, then sending: “{queued.text || "your files"}”</span>
+              <button type="button" onClick={() => setQueued(null)} className="shrink-0 underline">
+                Cancel
+              </button>
+            </p>
+          )}
           <input
             ref={picker}
             type="file"
-            accept="image/*"
+            accept={CHAT_FILE_TYPES}
             multiple
             hidden
             onChange={(e) => {
@@ -1209,9 +1241,9 @@ export function ChatTab() {
             <button
               type="button"
               onClick={() => picker.current?.click()}
-              disabled={busy}
-              aria-label="Add a picture"
-              title="Add a picture (or paste one with Ctrl+V)"
+              disabled={busy || readingFiles}
+              aria-label="Add a picture or file"
+              title="Pictures, PDF, Word, PowerPoint, text and code files"
               className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/6 hover:bg-white/10 disabled:opacity-40"
             >
               <Paperclip size={15} strokeWidth={2.3} className="text-izk-ink" />
@@ -1313,7 +1345,7 @@ export function ChatTab() {
               rows={1}
               onChange={(e) => setDraft(e.target.value)}
               onPaste={(e) => {
-                const files = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
+                const files = Array.from(e.clipboardData.files);
                 if (!files.length) return;
                 e.preventDefault();
                 void addPictures(files);
@@ -1321,7 +1353,17 @@ export function ChatTab() {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  void send(draft, false, false, pics);
+                  if (busy) {
+                    // Interrupt: keep the words, stop what's running, send
+                    // this as soon as the stop lands.
+                    if (!draft.trim() && !pics.length && !documents.length) return;
+                    setQueued({ text: draft, pics, docs: documents });
+                    setDraft("");
+                    clearAttachments();
+                    stop();
+                    return;
+                  }
+                  void send(draft, false, false, pics, documents);
                 }
               }}
               placeholder={dictation.listening ? "Listening…" : deep ? "What should I research?" : "Message Izuki"}
@@ -1339,8 +1381,8 @@ export function ChatTab() {
             ) : (
               <button
                 type="button"
-                onClick={() => void send(draft, false, false, pics)}
-                disabled={!draft.trim() && !pics.length}
+                onClick={() => void send(draft, false, false, pics, documents)}
+                disabled={readingFiles || (!draft.trim() && !pics.length && !documents.length)}
                 aria-label="Send"
                 className="izk-btn-primary flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full disabled:opacity-40"
               >

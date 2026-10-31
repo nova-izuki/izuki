@@ -32,7 +32,7 @@ import { TvCard } from "../TvCard";
 import { ThemePicker } from "../ThemePicker";
 import { ExtensionCard } from "../ExtensionCard";
 import { BugCard } from "../BugCard";
-import { Badge, Row, Section, Segmented, SettingsSearch, Slider, Toggle, cx } from "../ui";
+import { Badge, CollapsibleSections, Row, Section, SectionControls, Segmented, SettingsSearch, Slider, Toggle, cx } from "../ui";
 import { AutonomousCard } from "../AutonomousCard";
 import { useIzuki } from "../../lib/store";
 import { api } from "../../lib/ipc";
@@ -40,7 +40,7 @@ import { setChatLook } from "../../lib/tone";
 import { brainReady } from "../../lib/setup";
 import { rank } from "../../lib/search";
 import { canonicalShortcut, MODIFIER_KEYS, shortcutFromKey } from "../../lib/hotkeys";
-import { JumpBar } from "../JumpBar";
+import { JumpBar, jumpTo } from "../JumpBar";
 import type { BackdropMode, ProviderId } from "../../lib/types";
 
 const LOCAL_PROVIDERS: ProviderId[] = ["ollama"];
@@ -56,6 +56,7 @@ const JUMPS: { label: string; id: string; tab?: TabId }[] = [
   { label: "🪄 On its own", id: "settings-autonomous" },
   { label: "🛡️ PC Care", id: "settings-boost" },
   { label: "🎨 Looks & tweaks", id: "style-looks", tab: "style" },
+  { label: "▤ Windows layouts", id: "style-layouts", tab: "style" },
   { label: "🎹 FL Studio", id: "settings-flstudio" },
   { label: "📱 Phone", id: "settings-phone" },
   { label: "💬 Discord", id: "settings-discord" },
@@ -142,12 +143,12 @@ export function SettingsTab() {
   }
 
   return (
-    <>
+    <CollapsibleSections>
       <JumpBar jumps={JUMPS} topId="settings-top" />
       <div className="relative">
         <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-izk-muted" size={15} />
         <input aria-label="Find a setting" value={settingsSearch} onChange={(e) => setSettingsSearch(e.target.value)} placeholder="Find a setting — orb, Android, reminders…" className="izk-field izk-field-icon izk-no-drag w-full py-2 text-[12px]" />
-        {searchMatches.length > 0 && <div className="mt-1 flex flex-wrap gap-1.5">{searchMatches.map(({ label, id }) => <button key={id} type="button" className="izk-pill izk-no-drag px-2 py-1 text-[10.5px]" onClick={() => { document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" }); setSettingsSearch(""); }}>{label}</button>)}</div>}
+        {searchMatches.length > 0 && <div className="mt-1 flex flex-wrap gap-1.5">{searchMatches.map(({ label, id }) => <button key={id} type="button" className="izk-pill izk-no-drag px-2 py-1 text-[10.5px]" onClick={() => { jumpTo(id); setSettingsSearch(""); }}>{label}</button>)}</div>}
       </div>
       <button
         type="button"
@@ -165,6 +166,7 @@ export function SettingsTab() {
 
       {/* Settings has grown past what anyone can scan: find any one by name. */}
       <SettingsSearch />
+      <SectionControls />
 
       {/* ------------------------------------------------ brain */}
       <Section
@@ -651,7 +653,7 @@ export function SettingsTab() {
       <p className="pb-1 text-center text-[10px] text-izk-muted/60">
         IZUKI v{pkg.version} · Free forever · Made with ❤️ by Solomon Nwachukwu
       </p>
-    </>
+    </CollapsibleSections>
   );
 }
 
@@ -824,7 +826,7 @@ function FollowCard() {
 
 function SupportCard() {
   return (
-    <div className="izk-support mb-3 overflow-hidden rounded-[20px] p-4">
+    <Section id="settings-support" title="Support Izuki" className="izk-support mb-3 overflow-hidden rounded-[20px] p-4">
       <div className="flex items-start gap-3">
         <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[14px] bg-white/10 text-[22px]">
           ☕
@@ -854,6 +856,6 @@ function SupportCard() {
           <Mail size={13} strokeWidth={2.4} /> Say hi to Solomon
         </button>
       </div>
-    </div>
+    </Section>
   );
 }

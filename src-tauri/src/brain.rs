@@ -1006,16 +1006,29 @@ pub(crate) const NO_BRAIN: &str = "I haven't got an AI to think with yet. Add a 
 pub const OFFLINE: &str = "You're offline right now — check your Wi-Fi, then ask me again.";
 
 pub fn brain_chain() -> Vec<crate::settings::ProviderConfig> {
-    let mut chain = brain_chain_inner();
-    // Offline: only brains running on this PC can answer — don't wait on the rest.
-    // Offline, only what runs on this PC can answer (9Router included).
+    offline_only(brain_chain_inner())
+}
+
+/// Every brain that is set up at all, resting or not — the honest total for
+/// "3 of my 5 brains are benched". `brain_chain` has the resting ones taken
+/// out already, so using it as that total is how the app came to say "3 of my
+/// 2 AI brains are benched".
+pub fn configured_brains() -> Vec<crate::settings::ProviderConfig> {
+    offline_only(configured_chain())
+}
+
+/// Offline, only what runs on this PC can answer (9Router included) — don't
+/// wait on the rest.
+fn offline_only(mut chain: Vec<crate::settings::ProviderConfig>) -> Vec<crate::settings::ProviderConfig> {
     if chain.iter().any(|c| !on_this_pc(&c.base_url)) && !online() {
         chain.retain(|c| on_this_pc(&c.base_url));
     }
     chain
 }
 
-fn brain_chain_inner() -> Vec<crate::settings::ProviderConfig> {
+/// The brains that are set up, in preference order, before any is skipped for
+/// being broken, resting, or not running.
+fn configured_chain() -> Vec<crate::settings::ProviderConfig> {
     let settings = crate::state::store().settings();
     let Some(primary) = settings.provider(settings.active_provider).cloned() else {
         return Vec::new();
@@ -1031,6 +1044,11 @@ fn brain_chain_inner() -> Vec<crate::settings::ProviderConfig> {
             chain.push(p.clone());
         }
     }
+    chain
+}
+
+fn brain_chain_inner() -> Vec<crate::settings::ProviderConfig> {
+    let mut chain = configured_chain();
     skip_broken(&mut chain);
     skip_resting(&mut chain);
     skip_local_not_running(&mut chain);
@@ -1293,10 +1311,24 @@ fn note_failure(id: crate::settings::ProviderId, err: &str) {
 /// sentence can be checked against the screen.
 pub fn resting_now() -> Vec<(String, u64)> {
     let now = std::time::Instant::now();
+    let configured = configured_brains();
+    let ids: Vec<&str> = configured.iter().map(|c| c.id.as_str()).collect();
     let mut r = RESTING.lock();
     r.retain(|(_, until)| *until > now);
-    let mut out: Vec<(String, u64)> = r
+    benched_of(&r, &ids, now)
+}
+
+/// Resting brains that are also set up, soonest first. Kept pure so the count
+/// can be checked: a rest left over from a key that has since been removed is
+/// not a brain you have, and counting it is the other way to say "3 of my 2".
+fn benched_of(
+    resting: &[(crate::settings::ProviderId, std::time::Instant)],
+    configured: &[&str],
+    now: std::time::Instant,
+) -> Vec<(String, u64)> {
+    let mut out: Vec<(String, u64)> = resting
         .iter()
+        .filter(|(id, until)| *until > now && configured.contains(&id.as_str()))
         .map(|(id, until)| (pretty(*id), until.saturating_duration_since(now).as_secs()))
         .collect();
     out.sort_by_key(|(_, secs)| *secs);
@@ -5606,5 +5638,39 @@ mod honesty_tests {
         // Punctuation and whitespace don't make a window look talkative.
         assert_eq!(super::letters("  \n\t , . ; : — "), 0);
         assert_eq!(super::letters("Groq 15s"), 7);
+    }
+}
+
+#[cfg(test)]
+mod bench_count_tests {
+    use super::benched_of;
+    use crate::settings::ProviderId;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn a_rest_with_no_brain_behind_it_is_not_counted() {
+        let now = Instant::now();
+        let resting = vec![
+            (ProviderId::Groq, now + Duration::from_secs(16)),
+            (ProviderId::Nvidia, now + Duration::from_secs(75)),
+            // No key: an old rest window from a brain that isn't set up any
+            // more. Counting it made the benched list longer than the list of
+            // brains — "3 of my 2 AI brains are benched".
+            (ProviderId::Xai, now + Duration::from_secs(30)),
+        ];
+        let set_up = ["groq", "gemini", "nvidia", "openrouter", "openai"];
+        let out = benched_of(&resting, &set_up, now);
+        assert_eq!(out.len(), 2, "an unconfigured brain was counted: {out:?}");
+        // Soonest first, and each carries its own unit.
+        assert_eq!(out[0].0, "Groq");
+        assert!((15..=16).contains(&out[0].1), "{:?}", out[0]);
+        assert_eq!(out[1].0, "Nvidia");
+    }
+
+    #[test]
+    fn a_rest_that_already_ended_is_not_benched_right_now() {
+        let now = Instant::now();
+        let over = vec![(ProviderId::Groq, now - Duration::from_secs(1))];
+        assert!(benched_of(&over, &["groq"], now).is_empty());
     }
 }

@@ -1,0 +1,32 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Style and attachment fixture</title></head><body style="background:#121a2b"><div id="root"></div><script type="module">
+import React, {useState} from 'react';
+import {createRoot} from 'react-dom/client';
+import {StyleTab} from '/src/components/tabs/StyleTab.tsx';
+import {ChatTab} from '/src/components/tabs/ChatTab.tsx';
+import {ExtensionCard} from '/src/components/ExtensionCard.tsx';
+import {api,emit,EV} from '/src/lib/ipc.ts';
+import '/src/styles.css';
+window.fixtureCalls={switches:[],looks:[],auto:[],documents:[],chats:[],instant:[],setup:[]};
+const ids=['taskbar_left','taskbar_autohide','never_combine','no_search_box','no_task_view','compact_explorer','clean_desktop'];
+let tweaks=ids.map(id=>({id,label:id,hint:'Fixture switch',group:'taskbar',restart:id==='clean_desktop',on:false}));
+const picture='data:image/svg+xml;base64,'+btoa('<svg xmlns="http://www.w3.org/2000/svg" width="900" height="400"><defs><linearGradient id="sky" x2="1" y2="1"><stop stop-color="#19486b"/><stop offset="1" stop-color="#d89eb4"/></linearGradient></defs><path fill="url(#sky)" d="M0 0h900v400H0z"/><path fill="#203e4b" d="M0 400 270 100 450 310 640 180 900 400z"/></svg>');
+const photo={file:'fixture-picture',title:'Fixture coast',place:'Sample landscape',source:'Fixture',credit:'Generated test image',day:'2026-10-30',accent:'#79d4c5',dark:true,turn:1,thumb:picture};
+let status={presets:[{id:'nova',name:'Nova',accent:'#8d87ed',dark:true,bars:false,titles:false,preview:'linear-gradient(135deg,#173750,#7a3687)'},{id:'amber',name:'Amber',accent:'#e5b578',dark:true,bars:true,titles:true,preview:'linear-gradient(135deg,#372b21,#946b3b)'}],swatches:[['Teal','#79d4c5']],accent:'#79d4c5',dark:true,glass:true,bars:false,titles:false,current:'photo',can_undo:false,auto:{mode:'photo',source:'both',day:'nova',night:'nova',day_at:'08:00',night_at:'20:00',every_min:60,pool:[],wallpaper:true,last:0},photo,history:[photo],favourites:0};
+api.looksStatus=async()=>structuredClone(status);
+api.lookPreview=async()=>picture;api.lookPhotoPreview=async()=>picture;
+api.tweaksList=async()=>structuredClone(tweaks);
+api.tweakSet=async(id,on)=>{window.fixtureCalls.switches.push([id,on]);await new Promise(r=>setTimeout(r,10));tweaks=tweaks.map(t=>t.id===id?{...t,on}:t);return structuredClone(tweaks);};
+api.lookApply=async(id,wallpaper)=>{window.fixtureCalls.looks.push([id,wallpaper]);status={...status,current:id,photo:wallpaper?null:photo};return structuredClone(status);};
+api.lookAuto=async(next)=>{window.fixtureCalls.auto.push(next);return structuredClone(status);};
+api.readChatAttachment=async(name,data)=>{window.fixtureCalls.documents.push({name,data});if(window.holdDocument)await new Promise(resolve=>window.finishDocument=resolve);return{text:'Unique file words: '+name+' — chapter 5 reference',truncated:false};};
+api.aboutIzuki=async()=>false;
+api.instantCommand=async(text)=>{window.fixtureCalls.instant.push(text);return null;};
+api.chatStreamWritten=async(id,history)=>{window.fixtureCalls.chats.push(structuredClone(history));setTimeout(()=>void emit(EV.chatDelta,{id,text:'Fixture answer complete.',done:true,error:null}),20);};
+api.remindersList=async()=>[];
+api.extInfo=async()=>({connected:false,outdated:false,version:null,latest:'1.5.2'});
+api.extensionBrowsers=async()=>[{id:'chrome',name:'Chrome'},{id:'edge',name:'Microsoft Edge'}];
+api.prepareBrowserExtension=async(browser)=>{window.fixtureCalls.setup.push(browser);return{folder:'C:\\Izuki-Test\\BrowserExtension',version:'1.5.2',opened:true};};
+function Fixture(){const[tab,setTab]=useState('style');return React.createElement('div',{style:{maxWidth:850,margin:'auto',padding:20}},React.createElement('nav',{style:{display:'flex',gap:12,paddingBottom:16}},...['style','chat','extension'].map(name=>React.createElement('button',{key:name,'data-fixture-tab':name,onClick:()=>setTab(name)},name))),tab==='style'?React.createElement(StyleTab):tab==='chat'?React.createElement(ChatTab):React.createElement(ExtensionCard));}
+createRoot(document.getElementById('root')).render(React.createElement(Fixture));
+window.fixtureReady=true;
+</script></body></html>

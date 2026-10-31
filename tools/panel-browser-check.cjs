@@ -117,6 +117,36 @@ let server,browser,profile,ws;
   await wait('panelTest.stops.filter((s)=>s.kind==="task").length===1');
   await wait('document.getElementById("stop").hidden===true');
   await wait('document.getElementById("log").textContent.includes("Stopped")');
+  // Auto-connect: a Gemini tab opened while the panel is up is used without
+  // pressing Connect, and turning the switch off is remembered.
+  const readsBefore = await run('panelTest.reads.length');
+  await run(`panelTest.pages.push({id:6,windowId:7,active:false,url:"https://gemini.google.com/app",title:"Gemini"});(()=>{const pick=document.getElementById("provider");pick.value="gemini";pick.dispatchEvent(new Event("change"));})();`);
+  await wait('document.getElementById("connection-help").textContent.includes("Connected by itself")');
+  assert.equal(await run('document.getElementById("answer-who").textContent'),'Gemini tab','the folded line must name the tab that answers');
+  assert.equal(await run('panelTest.reads.length'), readsBefore, 'connecting must not read the page');
+  await run('const box=document.getElementById("auto-connect");box.checked=false;box.dispatchEvent(new Event("change"));');
+  await wait('Boolean(panelTest.stores.local.izkConnect) && panelTest.stores.local.izkConnect.autoConnect===false');
+  // A long answer is a card: it says who wrote it, starts folded, and opens whole.
+  await run('(()=>{const pick=document.getElementById("provider");pick.value="izuki";pick.dispatchEvent(new Event("change"));})();');
+  await wait('document.getElementById("answer-who").textContent==="Izuki on this PC"');
+  const asked = await run('panelTest.asks.length');
+  await ask('give me the whole chapter');
+  await wait(`panelTest.asks.length===${asked+1}`);
+  await run('panelTest.reply("A long sentence you actually want to read. ".repeat(120))');
+  await wait('document.querySelector(".msg.it.answer.clip .more")');
+  assert.equal(await run('[...document.querySelectorAll(".msg.it.answer")].at(-1).querySelector(".answer-head").textContent.includes("Izuki")'),true,'an answer must say who wrote it');
+  await run('[...document.querySelectorAll(".msg.it.answer")].at(-1).querySelector(".more").click()');
+  const opened = await run('(()=>{const card=[...document.querySelectorAll(".msg.it.answer")].at(-1);return {clip:card.classList.contains("clip"),wide:card.classList.contains("wide"),label:card.querySelector(".more").textContent};})()');
+  assert.deepEqual(opened,{clip:false,wide:true,label:"Fold it back up"},'the whole answer must open wide, with a way back');
+  // The case the owner actually described: the Gemini tab is already open
+  // when the panel starts. A fresh panel must use it with no Connect press.
+  await run('localStorage.setItem("panelTest:gemini","1");localStorage.setItem("panelTest:fresh","1");localStorage.setItem("panelTest:connect",JSON.stringify({providerId:"gemini",autoConnect:true}));');
+  await call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/extension/sidepanel.html`});
+  await wait('window.panelTest && window.panelTest.fresh');
+  await wait('document.getElementById("provider").value==="gemini"');
+  await wait('document.getElementById("connection-help").textContent.includes("Connected by itself")');
+  assert.equal(await run('document.getElementById("answer-who").textContent'),'Gemini tab','a fresh panel must name the tab it found');
+  assert.equal(await run('panelTest.handed.length'),0,'finding the tab must not send anything');
   for (const width of [360, 390]) {
     await call('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});
     assert.equal(await run('document.documentElement.scrollWidth<=innerWidth+1'),true,'the panel must fit a narrow sidebar');
@@ -124,7 +154,7 @@ let server,browser,profile,ws;
   }
   assert.deepEqual(errors,[]);
   fs.writeFileSync(path.join(root,'.work','panel-browser-check.png'),Buffer.from((await call('Page.captureScreenshot',{format:'png'})).data,'base64'));
-  console.log('Panel browser checks passed: scoped cancel, stale-answer rejection, one history pair, unshared page privacy, custom AI handoff, automatic question dedupe, navigation pause, visible task review and token handoff, no silent retarget after a tab closes, honest no-text handoff, Esc ending a desktop task.');
+  console.log('Panel browser checks passed: scoped cancel, stale-answer rejection, one history pair, unshared page privacy, custom AI handoff, automatic question dedupe, navigation pause, visible task review and token handoff, no silent retarget after a tab closes, honest no-text handoff, Esc ending a desktop task, quiet auto-connect to an open AI tab, and answers that open whole.');
 })().catch((e)=>{console.error(e);process.exitCode=1;}).finally(async()=>{
   try{ws?.close();}catch{}await closeTestBrowser(browser,profile);server?.closeAllConnections();server?.close();
   if(profile&&path.resolve(profile).startsWith(path.join(root,'.work')+path.sep))try{fs.rmSync(profile,{recursive:true,force:true,maxRetries:3,retryDelay:200});}catch{}

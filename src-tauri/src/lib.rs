@@ -2,6 +2,7 @@
 
 pub mod android;
 pub mod apps;
+pub mod attachments;
 pub mod briefing;
 pub mod browser;
 pub mod bugs;
@@ -19,6 +20,7 @@ pub mod composio;
 pub mod diagnosis;
 pub mod events;
 pub mod ext;
+pub mod extension_setup;
 pub mod files;
 pub mod follow;
 pub mod headsup;
@@ -324,6 +326,7 @@ pub fn run() {
             commands::open_wakewords_folder,
             commands::import_wakewords,
             commands::chat_stream,
+            commands::read_chat_attachment,
             commands::about_izuki,
             commands::chat_cancel,
             commands::android_connect,
@@ -449,6 +452,8 @@ pub fn run() {
             commands::missions_run,
             commands::mission_retry,
             commands::ext_info,
+            commands::extension_browsers,
+            commands::prepare_browser_extension,
             commands::mission_save_note,
             commands::mission_make_daily,
             commands::inbox_digest,

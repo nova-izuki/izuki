@@ -108,6 +108,9 @@ async function drawTabs() {
   const box = $("tabs");
   box.textContent = "";
   const tabs = (await chrome.tabs.query({ lastFocusedWindow: true })).filter((t) => current && t.id !== current.id && /^https?:/.test(t.url || ""));
+  const more = $("other-tabs"), label = $("tabs-summary"), chosen = extra.size;
+  if (more) more.hidden = !tabs.length;
+  if (label) label.textContent = chosen ? `Other tabs to compare (${chosen} shared)` : "Other tabs to compare";
   if (!tabs.length) return;
   for (const t of tabs.slice(0, 8)) {
     const b = document.createElement("button");
@@ -135,18 +138,68 @@ function render(text) {
       .replace(/\bhttps?:\/\/[^\s<)]+/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
   const out = [];
   let list = null;
+  // ``` fences keep their own line breaks and spacing: a code sample squashed
+  // into a paragraph is unreadable.
+  let code = null;
   for (const raw of String(text).split("\n")) {
+    if (/^\s*```/.test(raw)) {
+      if (code) { out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`); code = null; }
+      else { code = []; list = null; }
+      continue;
+    }
+    if (code) { code.push(raw); continue; }
     const line = raw.trim();
+    const heading = line.match(/^#{1,4}\s+(.*)/);
+    if (heading) { list = null; out.push(`<h3>${inline(heading[1])}</h3>`); continue; }
     const bullet = line.match(/^(?:[-*•]|\d+[.)])\s+(.*)/);
     if (bullet) {
       if (!list) { list = []; out.push(list); }
       list.push(`<li>${inline(bullet[1])}</li>`);
     } else {
       list = null;
-      if (line) out.push(`<p>${inline(line.replace(/^#+\s*/, ""))}</p>`);
+      if (line) out.push(`<p>${inline(line)}</p>`);
     }
   }
+  if (code) out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`);
   return out.map((x) => (Array.isArray(x) ? `<ul>${x.join("")}</ul>` : x)).join("");
+}
+
+/** Who wrote this answer, in the words the folded setup line uses. */
+function answeringName() {
+  const c = connected?.();
+  if (!c) return "Izuki on this PC";
+  return c.provider.local ? "Izuki on this PC" : c.ready ? `${c.provider.name} tab` : c.provider.name;
+}
+
+/** The folded "Answering with ..." line, so the panel never hides who replies. */
+function paintWho() {
+  const who = $("answer-who"), chip = $("answer-state"), c = connected?.();
+  if (!who) return;
+  const local = !c || !!c.provider.local;
+  who.textContent = local ? "Izuki on this PC" : `${c.provider.name} tab`;
+  if (chip) {
+    const ok = local || c.ready;
+    chip.textContent = ok ? "ready" : "not connected";
+    chip.className = "pill-state" + (ok ? " ok" : "");
+  }
+}
+
+const FOLD_AFTER = 1200;
+
+function actionsFor(content, el, wide) {
+  const acts = document.createElement("div");
+  acts.className = "acts";
+  const act = (label, fn, title) => { const b = document.createElement("button"); b.className = "icon"; b.type = "button"; b.textContent = label; if (title) b.title = title; b.onclick = fn; acts.appendChild(b); };
+  act("Copy", () => navigator.clipboard.writeText(content));
+  act("Read", () => chrome.runtime.sendMessage({ izukiSpeak: content }), "Read this answer aloud");
+  act("Notes", async () => {
+    try {
+      const n = await (await fetch(`${BRIDGE}/note`, { method: "POST", headers: H, body: JSON.stringify({ title: current?.title || "", url: current?.url || "", text: content, page: false }) })).json();
+      divider(n.text);
+    } catch { divider("Izuki isn't running on this PC."); }
+  }, "Save this answer to Izuki Notes");
+  if (wide) act("Wide", () => el.classList.toggle("wide"), "Open wide for comfortable reading");
+  return acts;
 }
 
 function bubble(role, content, bad = false) {
@@ -154,21 +207,36 @@ function bubble(role, content, bad = false) {
   const el = document.createElement("div");
   el.className = `msg ${role === "user" ? "me" : "it"}${bad ? " bad" : ""}`;
   if (role === "user") el.textContent = content;
-  else {
+  else if (bad) {
     el.innerHTML = render(content);
-    if (!bad) {
-      const acts = document.createElement("div");
-      acts.className = "acts";
-      const act = (label, fn) => { const b = document.createElement("button"); b.className = "icon"; b.type = "button"; b.textContent = label; b.onclick = fn; acts.appendChild(b); };
-      act("Copy", () => navigator.clipboard.writeText(content));
-      act("Read aloud", () => chrome.runtime.sendMessage({ izukiSpeak: content }));
-      act("Save to Notes", async () => {
-        try {
-          const n = await (await fetch(`${BRIDGE}/note`, { method: "POST", headers: H, body: JSON.stringify({ title: current?.title || "", url: current?.url || "", text: content, page: false }) })).json();
-          divider(n.text);
-        } catch { divider("Izuki isn't running on this PC."); }
-      });
-      el.appendChild(acts);
+    el.appendChild(actionsFor(content, el, false));
+  } else {
+    // A long answer starts folded, with a way to open it, instead of a wall of
+    // text you have to scroll past to find where it ends.
+    el.classList.add("answer");
+    const head = document.createElement("div");
+    head.className = "answer-head";
+    const who = document.createElement("span");
+    who.className = "who";
+    who.textContent = answeringName();
+    const body = document.createElement("div");
+    body.className = "answer-body";
+    body.innerHTML = render(content);
+    head.append(who, actionsFor(content, el, true));
+    el.append(head, body);
+    if (content.length > FOLD_AFTER) {
+      el.classList.add("clip");
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "more";
+      more.textContent = "Show the whole answer";
+      more.onclick = () => {
+        const folded = el.classList.toggle("clip");
+        el.classList.toggle("wide", !folded);
+        more.textContent = folded ? "Show the whole answer" : "Fold it back up";
+        if (!folded) el.scrollIntoView({ block: "start" });
+      };
+      el.appendChild(more);
     }
   }
   log.appendChild(el);
@@ -312,6 +380,7 @@ async function ask(question, sourceOverride = null) {
     if (share && !page) divider("This page couldn't be read. The answer was made without its contents.");
     if (linked.length) divider(`Also read: ${linked.map((l) => l.title).join(", ")}`);
     bubble("assistant", answer.text || "No answer came back.");
+    if ($("read-aloud")?.checked && answer.text) chrome.runtime.sendMessage({ izukiSpeak: answer.text });
     history = cleanHistory([...prior, { role: "user", content: question }, { role: "assistant", content: answer.text }]);
     save();
     return true;
@@ -479,8 +548,10 @@ $("task-run")?.addEventListener("click", async () => {
     });
     handToProvider = wired.handToProvider;
     connected = wired.connected;
+    paintWho();
   } catch (e) {
     console.warn("[panel] connection controls:", e?.message || e);
   }
 })();
 window.addEventListener("izuki:panel-cancel", cancelAsk);
+window.addEventListener("izuki:connected", paintWho);

@@ -71,6 +71,31 @@
     #log { min-height: 80px; overscroll-behavior: contain; }
     #context { max-height: 32vh; overflow-y: auto; }
     .acts { flex-wrap: wrap; }
+    /* One line says who is answering; the setup stays folded until you need it. */
+    #answer-with summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; font-size: 12px; color: var(--muted); }
+    #answer-with summary::-webkit-details-marker { display: none; }
+    #answer-with summary b { color: var(--ink); font-weight: 600; max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #answer-with summary::after { content: "set up"; margin-left: auto; font-size: 10.5px; border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; }
+    #answer-with[open] summary::after { content: "hide"; }
+    #answer-with[open] { margin: 6px 0; }
+    #other-tabs summary { cursor: pointer; font-size: 11.5px; color: var(--muted); }
+    #other-tabs .tabs { margin-top: 6px; }
+    .pill-state { font-size: 10.5px; border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; color: var(--muted); }
+    .pill-state.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+    /* An answer is a card you can read, fold and open wide — not a bubble. */
+    .msg.it.answer { padding: 0; overflow: hidden; }
+    .answer-head { display: flex; align-items: center; gap: 2px; padding: 6px 8px 0; font-size: 11px; color: var(--muted); }
+    .answer-head .who { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .answer-head .icon { padding: 2px 6px; font-size: 11px; }
+    .answer-body { padding: 4px 12px 10px; font-size: 13.5px; line-height: 1.55; }
+    .answer.clip .answer-body { max-height: 230px; overflow: hidden; -webkit-mask-image: linear-gradient(180deg, #000 68%, transparent); mask-image: linear-gradient(180deg, #000 68%, transparent); }
+    .answer.wide .answer-body { font-size: 14.5px; line-height: 1.62; }
+    .answer-body h3 { font-size: 13px; margin: 8px 0 4px; }
+    .answer-body pre { margin: 6px 0; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: rgba(0,0,0,.28); overflow-x: auto; }
+    .answer-body pre code { background: none; padding: 0; font-size: 12px; }
+    .answer-head .acts { margin-top: 0; }
+    #context { max-height: none; overflow: visible; }
+    .more { display: block; width: 100%; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--cyan); font: inherit; font-size: 11.5px; padding: 6px; cursor: pointer; }
     #task-review { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink); max-width: calc(100% - 24px); width: 420px; }
     #task-review textarea { display: block; width: 100%; margin: 10px 0; min-height: 100px; }
   </style>
@@ -86,19 +111,27 @@
   </header>
 
   <section id="connection" aria-label="Choose an assistant">
-    <div class="connect-row"><select id="provider" aria-label="Assistant"><option value="izuki">Izuki on this PC</option><option value="chatgpt">ChatGPT website</option><option value="gemini">Gemini website</option></select><button id="connect" class="chip" type="button">Connect</button></div>
-    <div class="connect-row" id="provider-tabs-row" hidden><select id="provider-tabs" aria-label="Assistant website tab"></select><button id="refresh-tabs" class="chip" type="button">Refresh tabs</button></div>
-    <p id="connection-help">Izuki uses the AI provider configured in the desktop app.</p>
+    <details id="answer-with">
+      <summary>Answering with <b id="answer-who">Izuki on this PC</b><span id="answer-state" class="pill-state">ready</span></summary>
+      <div class="connect-row"><select id="provider" aria-label="Assistant"><option value="izuki">Izuki on this PC</option><option value="chatgpt">ChatGPT website</option><option value="gemini">Gemini website</option></select><button id="connect" class="chip" type="button">Connect</button></div>
+      <div class="connect-row" id="provider-tabs-row" hidden><select id="provider-tabs" aria-label="Assistant website tab"></select><button id="refresh-tabs" class="chip" type="button">Refresh tabs</button></div>
+      <p id="connection-help">Izuki uses the AI provider configured in the desktop app.</p>
+      <label class="switch" title="Use the AI tab that is already open, without pressing Connect."><input type="checkbox" id="auto-connect" checked /> Use the AI tab that's already open</label>
+      <label class="switch"><input type="checkbox" id="show-companion" /> Show desktop companion</label>
+    </details>
     <label class="switch"><input type="checkbox" id="follow-questions" /> Follow questions on this tab</label>
     <p id="follow-state">Off. Enable to share each new visible question with the selected assistant.</p>
-    <label class="switch"><input type="checkbox" id="show-companion" /> Show desktop companion</label>
+    <label class="switch"><input type="checkbox" id="read-aloud" /> Read new answers aloud</label>
   </section>
 
   <section id="context" aria-label="What Izuki can see">
     <div class="page"><img id="fav" alt="" /><span id="ptitle">This page</span></div>
     <label class="switch"><input type="checkbox" id="share" checked /> Share this page with the selected assistant</label>
     <label class="switch" title="When the answer may be behind a link (a syllabus, assignment details), Izuki reads those linked pages too, quietly, with your sign-ins. It never opens links like Log out, Delete or Buy."><input type="checkbox" id="deep" checked /> Read linked pages too</label>
-    <div class="tabs" id="tabs" aria-label="Add other tabs"></div>
+    <details id="other-tabs">
+      <summary id="tabs-summary">Other tabs to compare</summary>
+      <div class="tabs" id="tabs" aria-label="Add other tabs"></div>
+    </details>
   </section>
 
   <main id="log" aria-live="polite"></main>

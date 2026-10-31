@@ -1,15 +1,23 @@
 // Disposable browser fixture. No real account, page, microphone or desktop API.
 const event = () => ({ handlers:[], addListener(fn) { this.handlers.push(fn); }, fire(...args) { this.handlers.forEach((fn) => fn(...args)); } });
+// Marks a genuinely new document, so a test can wait for the reload instead
+// of reading the page it is replacing.
+const freshLoad = localStorage.getItem('panelTest:fresh') === '1';
+localStorage.removeItem('panelTest:fresh');
 const stores = { session:{}, local:{} };
+try { Object.assign(stores.local, { izkConnect: JSON.parse(localStorage.getItem('panelTest:connect') || 'null') }); } catch {}
 const storage = (kind) => ({
   async get(key) { return { [key]:stores[kind][key] }; },
   async set(value) { Object.assign(stores[kind], value); },
   async remove(key) { delete stores[kind][key]; },
 });
 window.panelTest = {
-  active:1, reads:[], asks:[], stops:[], handed:[], tasks:[], stores,
+  active:1, fresh:freshLoad, reads:[], asks:[], stops:[], handed:[], tasks:[], stores,
   question:'Which option describes a network of infected devices?',
   pages:[{id:1,windowId:7,active:true,url:'https://course.example/chapter5',title:'Chapter 5'}, {id:2,windowId:7,active:false,url:'https://assistant.example/chat',title:'My custom AI'}],
+  // A reload can start with a tab already open, the way the real panel opens
+  // beside a Gemini tab that was there first.
+  ...(localStorage.getItem('panelTest:gemini') === '1' ? { pages:[{id:1,windowId:7,active:true,url:'https://course.example/chapter5',title:'Chapter 5'}, {id:6,windowId:7,active:false,url:'https://gemini.google.com/app',title:'Gemini'}] } : {}),
   reply(text='A botnet.') { this.asks.at(-1).resolve(new Response(JSON.stringify({ok:true,text}), {headers:{'Content-Type':'application/json'}})); },
 };
 const m = window.panelTest;

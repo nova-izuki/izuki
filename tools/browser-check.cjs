@@ -189,6 +189,44 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   let focused = '';
   for (let i = 0; i < 60 && focused !== 'settings-execution'; i++) { await pause(100); focused = await evaluate('document.activeElement.id'); }
   assert.equal(focused, 'settings-execution', 'feature finder must navigate and focus the section');
+  // Sections stay compact, but finding a setting must reveal its controls.
+  const sectionToggle = (id) => `document.querySelector('#${id} > div [data-izk-section-toggle]')`;
+  const expanded = async (id) => evaluate(`${sectionToggle(id)}?.getAttribute('aria-expanded')`);
+  assert.equal(await expanded('settings-execution'), 'true', 'finder left the destination closed');
+  assert.equal(await expanded('settings-brain'), 'false', 'new sections should start compact');
+  assert(await evaluate(`[...document.querySelectorAll('[data-izk-section-scope] [data-izk-section]')].every(el=>el.hasAttribute('data-izk-foldable'))`), 'every Settings card should fold');
+  await evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent==='Expand all').click()`);
+  assert(await evaluate(`[...document.querySelectorAll('[data-izk-section-toggle]')].every(b=>b.getAttribute('aria-expanded')==='true')`), 'Expand all missed a section');
+  await evaluate(`window.settingsDraft=document.querySelector('#settings-brain input');[...document.querySelectorAll('button')].find(b=>b.textContent==='Collapse all').click()`);
+  assert(await evaluate(`[...document.querySelectorAll('[data-izk-section-toggle]')].every(b=>b.getAttribute('aria-expanded')==='false')`), 'Collapse all missed a section');
+  const compactHeight = await evaluate('document.querySelector("main").scrollHeight');
+  await evaluate(`${sectionToggle('settings-brain')}.click()`);
+  assert(await evaluate(`window.settingsDraft===document.querySelector('#settings-brain input')`), 'folding replaced the form and lost its draft');
+  assert.equal(await evaluate(`localStorage.getItem('izk.fold.settings-brain')`), '0', 'open choice was not saved');
+  await evaluate(`${sectionToggle('settings-brain')}.focus()`);
+  await call('Input.dispatchKeyEvent', {type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,nativeVirtualKeyCode:13,text:'\r'});
+  await call('Input.dispatchKeyEvent', {type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,nativeVirtualKeyCode:13});
+  assert.equal(await expanded('settings-brain'), 'false', 'keyboard could not close a section');
+  assert.equal(await evaluate(`localStorage.getItem('izk.fold.settings-brain')`), '1', 'closed choice was not saved');
+  // Search finds words inside closed, nested sections and restores choices.
+  await evaluate(`(()=>{const input=document.querySelector('[aria-label="Search settings"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'liquid glass');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  await pause(150);
+  assert(await evaluate(`document.getElementById('settings-orbs').checkVisibility()`), 'closed orb settings disappeared from search');
+  assert.equal(await expanded('settings-look'), 'true', 'search did not open the matching parent');
+  assert.equal(await evaluate(`localStorage.getItem('izk.fold.settings-look')`), '1', 'search changed saved folding choices');
+  await evaluate(`document.querySelector('[aria-label="Clear the search"]').click()`);
+  await pause(100);
+  assert.equal(await expanded('settings-look'), 'false', 'clearing search did not restore folding');
+  await evaluate(`[...document.querySelectorAll('.izk-jumpbar button')].find(b=>b.textContent.trim().endsWith('Glow')).click()`);
+  assert.equal(await expanded('settings-glow'), 'true', 'jump did not open a nested section');
+  assert.equal(await expanded('settings-look'), 'true', 'jump did not open the parent');
+  await evaluate(`[...document.querySelectorAll('.izk-jumpbar button')].find(b=>b.textContent.trim().endsWith('Phone')).click()`);
+  assert.equal(await evaluate(`document.querySelector('#settings-phone [data-izk-section-toggle]').getAttribute('aria-expanded')`), 'true', 'wrapper jump did not open its card');
+  await evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent==='Expand all').click()`);
+  assert(await evaluate('document.querySelector("main").scrollHeight') > compactHeight * 2, 'folding did not reduce scrolling');
+  await evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent==='Collapse all').click()`);
+  assert.deepEqual(errors, [], 'settings JavaScript errors');
+  console.log('Settings: every card folds; keyboard, saved choices, draft identity, expand/collapse all, nested search and jumps pass.');
   await evaluate('window.dispatchEvent(new KeyboardEvent("keydown",{key:"k",ctrlKey:true,bubbles:true}))');
   assert(await evaluate('document.querySelector(".izk-finder").open'), 'Ctrl+K should open the finder');
   fs.writeFileSync(path.join(os.tmpdir(), 'izuki-desktop-glass-preview.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' })).data, 'base64'));

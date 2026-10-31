@@ -18,7 +18,7 @@ import {
   Volume2,
   PanelTop,
 } from "lucide-react";
-import { Row, Segmented, Slider, Toggle, cx } from "./ui";
+import { Row, Section, Segmented, Slider, Toggle, cx } from "./ui";
 import { useIzuki } from "../lib/store";
 import { api, EV, emit } from "../lib/ipc";
 import { sendChatCommand } from "./VoiceEngine";
@@ -76,7 +76,7 @@ export function TalkToIzuki() {
 
 
   return (
-    <div id="talk-card" className="izk-card izk-grain relative overflow-hidden p-[16px]">
+    <Section id="talk-card" title="Talk to Izuki" className="relative overflow-hidden p-[16px]">
       <div
         className="pointer-events-none absolute -left-10 -top-16 h-40 w-40 rounded-full blur-[46px]"
         style={{ background: "radial-gradient(circle,rgba(255,230,109,0.35),transparent 70%)" }}
@@ -103,7 +103,7 @@ export function TalkToIzuki() {
 
         <div className="min-w-0 flex-1">
           <h2 className="text-[14px] font-bold tracking-[-0.015em] text-izk-ink">
-            Talk to Izuki
+            Voice, character and hands-free controls
           </h2>
           <p className="mt-0.5 text-[11px] leading-snug text-izk-muted">
             {settings.voice_wake_enabled
@@ -542,7 +542,7 @@ export function TalkToIzuki() {
           </button>
         )}
       </div>
-    </div>
+    </Section>
   );
 }
 

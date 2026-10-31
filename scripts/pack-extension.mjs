@@ -18,7 +18,7 @@ import { promisify } from 'node:util';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const from = path.join(root, 'extension');
 const store = process.argv.includes('--store');
-const to = path.join(root, 'docs', 'extension', store ? 'izuki-extension-store.zip' : 'izuki-extension.zip');
+const to = store ? path.join(root, '.work', 'extension-store', 'izuki-extension-store.zip') : path.join(root, 'docs', 'extension', 'izuki-extension.zip');
 
 async function walk(dir, base = '') {
   const out = [];
@@ -43,6 +43,9 @@ for (const f of files.filter((f) => f.name.endsWith('.js'))) {
   for (const m of code.matchAll(/(?:from|import)\s*["']\.\/([\w./-]+)["']/g)) wanted.add(m[1]);
 }
 const manifest = JSON.parse(await readFile(path.join(from, 'manifest.json'), 'utf8'));
+if (typeof manifest.description !== 'string' || manifest.description.length > 132) {
+  throw new Error('The browser manifest description must be at most 132 characters. Put longer copy in the store listing.');
+}
 for (const m of JSON.stringify(manifest).matchAll(/"([\w./-]+\.(?:js|html|png))"/g)) wanted.add(m[1]);
 
 const missing = [...wanted].filter((w) => !names.has(w));
