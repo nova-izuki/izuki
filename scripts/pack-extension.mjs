@@ -41,6 +41,9 @@ for (const m of html.matchAll(/(?:src|href)="\.?\/?([\w./-]+\.(?:js|css|html))"/
 for (const f of files.filter((f) => f.name.endsWith('.js'))) {
   const code = await readFile(f.file, 'utf8');
   for (const m of code.matchAll(/(?:from|import)\s*["']\.\/([\w./-]+)["']/g)) wanted.add(m[1]);
+  for (const call of code.matchAll(/\bimportScripts\(([^)]+)\)/g)) {
+    for (const m of call[1].matchAll(/["']([\w./-]+)["']/g)) wanted.add(m[1]);
+  }
 }
 const manifest = JSON.parse(await readFile(path.join(from, 'manifest.json'), 'utf8'));
 if (typeof manifest.description !== 'string' || manifest.description.length > 132) {

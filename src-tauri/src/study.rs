@@ -24,6 +24,10 @@ pub struct Ask {
 static GUIDE: Mutex<Option<(Vec<String>, usize, std::time::Instant)>> = Mutex::new(None);
 
 const WORK: &[&str] = &["assignment", "lab", "homework", "worksheet", "quiz", "project", "essay", "discussion", "module", "exercise", "problem set", "task"];
+/// School work, for "finish my assignment" / "do my homework". Not task,
+/// project, module or exercise: "do this task for me" and "complete the
+/// project setup" are jobs for the desktop agent, not for a study guide.
+pub const SCHOOL_WORK: &[&str] = &["assignment", "assignments", "homework", "worksheet", "worksheets", "lab", "labs", "essay", "essays", "coursework"];
 const COACH: &[&str] = &["teach me", "help me with", "help me do", "walk me through", "explain", "go through", "do it with me", "do this with me", "guide me", "study", "save to my notes", "save it to my notes", "take notes", "notes"];
 
 /// Asks to be taught (not just to keep something in Notes).
@@ -39,22 +43,33 @@ pub fn parse(said: &str) -> Option<Ask> {
     if crate::notes::is_study_prompt(said) {
         return None;
     }
-    let s = format!(" {} ", said.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" "));
-    let walkthrough = ["walk me through", "go through", "guide me", "teach me", "do it with me", "do this with me", "help me do", "step by step"].iter().any(|w| s.contains(w));
-    if !walkthrough && !crate::notes::asks_to_save(said) {
+    // "Do / finish this quiz" is the quiz coach's job: it explains and waits
+    // for the student's pick, instead of turning a quiz into an assignment guide.
+    if crate::coach::parse(said).is_some() {
         return None;
     }
-    let work = WORK.iter().any(|w| s.contains(&format!(" {w}")));
-    let coach = COACH.iter().any(|w| s.contains(w));
-    if !(work && coach) {
+    let s = format!(" {} ", said.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" "));
+    let walkthrough = ["walk me through", "go through", "guide me", "teach me", "do it with me", "do this with me", "help me do", "step by step"].iter().any(|w| s.contains(w));
+    // "Finish the assignment", "do my homework": a doing-verb aimed at school
+    // work itself (coach::verb_on). The loose version matched " do this" and
+    // " complete the" anywhere, and took over "do this task for me".
+    let finish = crate::coach::verb_on(said, SCHOOL_WORK);
+    if !walkthrough && !finish && !crate::notes::asks_to_save(said) {
         return None;
+    }
+    if !finish {
+        let work = WORK.iter().any(|w| s.contains(&format!(" {w}")));
+        let coach = COACH.iter().any(|w| s.contains(w));
+        if !(work && coach) {
+            return None;
+        }
     }
     // "open / find / go to … assignment" first?
     let opens = [" open ", " find ", " go to ", " pull up ", " bring up ", " get to "].iter().any(|w| s.contains(w)) && !s.contains(" this ") && !s.contains(" the one on my screen");
     let open_first = opens.then(|| {
         // Keep the "open …" part only, up to the coaching words.
         let mut part = s.trim().to_string();
-        for cut in [" and teach", " and help", " and walk", " and explain", " and save", " then teach", " and do it", " and guide", " while teaching", " while you teach"] {
+        for cut in [" and teach", " and help", " and walk", " and explain", " and save", " then teach", " and do it", " and guide", " and finish", " then finish", " and complete", " while teaching", " while you teach"] {
             if let Some(i) = part.find(cut) {
                 part.truncate(i);
             }
@@ -301,11 +316,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn desktop_jobs_are_not_assignments() {
+        // "Do this", "complete the", "task", "project", "module" used to be
+        // enough to turn an ordinary job into a study guide.
+        for said in [
+            "do this task for me",
+            "complete the project setup",
+            "do the exercise in the app",
+            "finish the module install",
+            "do the projects folder cleanup",
+        ] {
+            assert!(parse(said).is_none(), "\"{said}\" is a job for the agent, not an assignment guide");
+        }
+        // The owner's own words, typos and all: "quriz" isn't a quiz word, but
+        // "finish the assignment" is plain enough to start the guide.
+        for said in ["finish the assignment", "do my homework", "complete this worksheet", "help me finish my lab", "do my essay", "lpme do a quriz for m and finish the assignment"] {
+            assert!(parse(said).is_some(), "{said}");
+        }
+    }
+
+    #[test]
     fn hears_assignment_coaching() {
         assert!(parse("explain the answer to this quiz question").is_none());
         assert!(parse("help me with the answer on this assignment").is_none());
         assert!(parse("Quiz me on these notes\n\nChapter 5 assignment: open terminal").is_none());
         assert_eq!(parse("teach me this assignment"), Some(Ask { open_first: None }));
+        assert_eq!(parse("finish the assignment"), Some(Ask { open_first: None }));
+        assert_eq!(parse("do my assignment"), Some(Ask { open_first: None }));
+        assert!(parse("help me do a quiz for me and finish the assignment").is_none());
         let a = parse("open my lab assignment on blackboard and teach me while I do it and save to my notes").unwrap();
         assert_eq!(a.open_first.as_deref(), Some("open my lab assignment on blackboard"));
         assert!(parse("open blackboard").is_none());

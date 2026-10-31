@@ -29,7 +29,9 @@ export class QuestionGate {
     if (normal.length < 16) { this.candidate = ''; return null; }
     const key = JSON.stringify([source.id, source.url, normal]);
     if (key !== this.candidate) { this.candidate = key; this.since = now; return null; }
-    if (now - this.since < 1400 || now - this.lastSent < 8000 || this.sent.has(key)) return null;
+    // A question only has to hold still for a moment. The sent set, not this
+    // cooldown, is what stops the same question being shared twice.
+    if (now - this.since < 900 || now - this.lastSent < 3000 || this.sent.has(key)) return null;
     return { key, text: String(text).trim().slice(0, 9000) };
   }
   accept(key, now) {

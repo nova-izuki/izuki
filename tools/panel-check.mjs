@@ -200,7 +200,7 @@ const dead = [...lookedUp].filter((id) => !inHtml.has(id));
 assert.deepEqual(dead, [], `the code reaches for ids the page hasn't got: ${dead.join(', ')}`);
 
 // And every control the page offers has to be wired to something.
-const mustBeWired = ['provider', 'provider-tabs', 'refresh-tabs', 'connect', 'auto-connect', 'follow-questions', 'read-aloud', 'show-companion', 'task-run', 'task-cancel', 'task-text', 'stop', 'answer-who'];
+const mustBeWired = ['provider', 'provider-tabs', 'refresh-tabs', 'connect', 'auto-connect', 'follow-questions', 'read-aloud', 'show-companion', 'task-run', 'task-cancel', 'task-text', 'stop', 'answer-who', 'web-search'];
 const unwired = mustBeWired.filter((id) => !lookedUp.has(id));
 assert.deepEqual(unwired, [], `these controls exist on the page but nothing uses them: ${unwired.join(', ')}`);
 
@@ -221,6 +221,10 @@ for (const route of [...code.matchAll(/\/side\/(\w+)/g)].map((m) => m[1])) {
 const panel = readFileSync(path.join(here, '..', 'extension', 'sidepanel.js'), 'utf8');
 const wiring = readFileSync(path.join(here, '..', 'extension', 'connect.js'), 'utf8');
 const rust = readFileSync(path.join(here, '..', 'src-tauri', 'src', 'ext.rs'), 'utf8');
+assert(/id="web-search"/.test(html), 'the panel needs a visible web-search switch');
+assert(panel.includes('web: searchWeb'), 'the panel must send the web-search choice with a question');
+assert(/Search the live web/.test(panel), 'a connected AI tab must be asked to search');
+assert(read('workspace-worker.js').includes('web:false'), 'quiz answers must not turn web search on');
 
 // `task_review` needs the tab the task was written about; without it every
 // desktop task was refused with "Choose an open browser tab first."

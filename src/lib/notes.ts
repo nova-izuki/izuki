@@ -24,29 +24,40 @@ export function noteStudyText(note: Note, max = 6000): string {
  * asked: "rename this note to Lab 9.3.1" → "Lab 9.3.1", "rename this note"
  * → "" (ask for the name), anything else → null (an ordinary question).
  */
-export function renameRequest(said: string): string | null {
-  const text = said.trim();
+export function renameRequest(said: string, currentTitle?: string): string | null {
+  const text = said.trim().replace(/^(?:(?:please|hey\s+izuki|izuki)[,\s]+|(?:can|could|would)\s+you\s+)+/i, "");
   // Renaming a file, a folder or an app is not this note; leave it alone.
-  if (/^(?:please\s+)?rename\s+(?:the\s+|my\s+|this\s+)?(?:file|folder|project|app|application)\b/i.test(text)) return null;
   const m = text.match(
-    /^(?:please\s+|hey izuki[,\s]+|izuki[,\s]+)?(?:(?:can|could|would)\s+you\s+)?(?:rename|retitle|re-title|change\s+the\s+(?:name|title)\s+of)\b([\s\S]*)$/i
+    /^(?:rename|retitle|re-title|change\s+the\s+(?:name|title)\s+of)\b([\s\S]*)$/i
   );
   if (!m) return null;
   const rest = m[1].trim();
-  const tidy = (s: string) =>
-    s
-      .trim()
-      // "Backups, please" → drop the please first, then the comma it left.
-      .replace(/\s*,?\s*please$/i, "")
-      .replace(/^["“”'`]+/, "")
-      .replace(/["“”'`.,;:!?]+$/, "")
-      .trim();
-  // A quoted name answers itself: rename this note to "Lab 9.3.1".
+  if (/^(?:(?:the|my|this|that|a|an|these|those)\s+)?(?:files?|folders?|projects?|apps?|applications?|attachments?)\b/i.test(rest)) return null;
+  const tidy = (s: string) => {
+    const title = s.trim().replace(/\s*,?\s*please[.!?]?$/i, "").trim();
+    const quoted = title.match(/^["“'`]([\s\S]*)["”'`][.!?]?$/);
+    return quoted ? quoted[1].trim() : title.replace(/[.,;:!?]+$/, "").trim();
+  };
+  // An existing title can contain "to" too. Prefer the note's actual name
+  // (or an explicitly quoted old name) over a delimiter inside that name.
+  if (currentTitle && rest.toLowerCase().startsWith(currentTitle.toLowerCase())) {
+    const after = rest.slice(currentTitle.length).match(/^\s+(?:to|as|into)\s+([\s\S]+)$/i);
+    if (after) return tidy(after[1]);
+  }
+  const quotedFrom = rest.match(/^(?:"([^"]+)"|“([^”]+)”|'([^']+)'|`([^`]+)`)\s+(?:to|as|into)\s+([\s\S]+)$/i);
+  if (quotedFrom) {
+    const from = quotedFrom[1] ?? quotedFrom[2] ?? quotedFrom[3] ?? quotedFrom[4];
+    if (currentTitle && from.trim().toLowerCase() !== currentTitle.trim().toLowerCase()) return null;
+    return tidy(quotedFrom[5]);
+  }
+  if (/^(?:(?:the|my|this|that|a|an|these|those)\s+)?(?:sections?|headings?|chapters?|topics?|subjects?|cards?|variables?|functions?|columns?|tabs?)\b/i.test(rest)) return null;
+  // Split at the first destination marker: "Intro to Biology" is one title.
+  // Quoted titles without a marker work too, but never rename other objects.
+  const lands = rest.match(/\b(?:to|as|into)\s+/i);
+  const currentSubject = (subject: string) => !currentTitle || /^(?:(?:this|that|the|my)\s+)?(?:note|notes|title|it|this|that)$/i.test(subject.trim()) || subject.trim().toLowerCase() === currentTitle.trim().toLowerCase();
+  if (lands) return currentSubject(rest.slice(0, lands.index)) ? tidy(rest.slice(lands.index! + lands[0].length)) : null;
   const quoted = rest.match(/["“'`]([^"”'`]+)["”'`]\s*$/);
-  if (quoted) return tidy(quoted[1]);
-  // The last "to"/"as"/"into" wins, so a title may contain the word itself.
-  const lands = [...rest.matchAll(/\b(?:to|as|into)\s+/gi)];
-  if (lands.length) return tidy(rest.slice(lands[lands.length - 1].index! + lands[lands.length - 1][0].length));
+  if (quoted) return currentSubject(rest.slice(0, quoted.index)) ? tidy(quoted[1]) : null;
   // "rename Lab 1 to Lab 9.3.1" with no "this note": the same rule finds it.
-  return "";
+  return currentSubject(rest) || !rest ? "" : null;
 }

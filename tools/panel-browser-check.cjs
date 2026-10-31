@@ -11,7 +11,7 @@ let server,browser,profile,ws;
     if(!file.startsWith(root+path.sep)){res.writeHead(403);return res.end();}
     try{
       let body=fs.readFileSync(file);
-      if(name==='/extension/sidepanel.html')body=body.toString().replace('<script type="module"','<script src="/tools/fixtures/panel-mock.js"></script><script type="module"');
+      if(name==='/extension/sidepanel.html')body=body.toString().replace('<script type="module"','<script src="/extension/workspace-state.js"></script><script src="/extension/question-page.js"></script><script src="/tools/fixtures/panel-mock.js"></script><script type="module"');
       res.setHeader('Content-Type',path.extname(file)==='.js'?'text/javascript':path.extname(file)==='.html'?'text/html':'application/octet-stream');res.end(body);
     }catch{res.writeHead(404);res.end();}
   });
@@ -138,6 +138,64 @@ let server,browser,profile,ws;
   await run('[...document.querySelectorAll(".msg.it.answer")].at(-1).querySelector(".more").click()');
   const opened = await run('(()=>{const card=[...document.querySelectorAll(".msg.it.answer")].at(-1);return {clip:card.classList.contains("clip"),wide:card.classList.contains("wide"),label:card.querySelector(".more").textContent};})()');
   assert.deepEqual(opened,{clip:false,wide:true,label:"Fold it back up"},'the whole answer must open wide, with a way back');
+  // Completed conversations appear once and can be reopened without the app.
+  await wait('document.querySelectorAll(".recent-chat").length>=1');
+  const histories=await run('document.querySelectorAll(".recent-chat").length');
+  await run('document.getElementById("new").click();');
+  await pause(100);assert.equal(await run('document.querySelectorAll(".recent-chat").length'),histories,'opening a new empty chat must not add history');
+  await run('document.querySelector(".recent-chat").click()');await wait('document.querySelector(".msg.it.answer")');
+  await run('document.getElementById("float-panel").click()');await wait('panelTest.workspaces.some(p=>p.op==="float")');
+  // A chat command is an explicit start; following page text remains read-only.
+  await ask('answer all these questions');await wait('panelTest.workspaces.some(p=>p.op==="quizStart")');
+  // There is no submission option any more: the request can't carry one.
+  assert.equal(await run('panelTest.workspaces.find(p=>p.op==="quizStart").submitAtEnd'),undefined,'a quiz run has no way to ask for submission');
+  assert.equal(await run('document.getElementById("pin-page").checked'),true);
+  const lab={title:'Fixture lab',requirements:['Save a report'],steps:[{title:'Save report',action:'Save report.docx in the lab folder.',check:'Reopen report.docx and check its title.',requirements:[1],final:false}],deliverables:[{name:'report.docx',step:1}]};
+  await run(`(()=>{const p=document.getElementById('provider');p.value='any';p.dispatchEvent(new Event('change'));})();`);
+  await wait('document.querySelectorAll("#provider-tabs option").length>=2');
+  await run(`document.getElementById('provider-tabs').value='2';document.getElementById('provider-tabs').dispatchEvent(new Event('change'));document.getElementById('connect').click();`);
+  await wait('document.getElementById("connection-help").textContent.includes("Connected to your")');
+  await run(`panelTest.providerReply=${JSON.stringify(JSON.stringify(lab))};document.getElementById('lab-tools').open=true;document.getElementById('lab-plan').click();`);
+  await wait('document.querySelectorAll("[data-lab-step]").length===1');
+  assert.equal(await run('panelTest.workspaces.filter(p=>p.op==="labStart").length'),0,'receiving an AI plan is not approval to act');
+  await run('document.getElementById("lab-start").click()');await wait('panelTest.workspaces.some(p=>p.op==="labStart")');
+  assert.equal(await run('panelTest.workspaces.find(p=>p.op==="labStart").plan.steps[0].instruction'),lab.steps[0].action+'\nVerify: '+lab.steps[0].check,'run exactly the visible reviewed instruction');
+  // There's no submission switch any more, so nothing asks for one.
+  assert.equal(await run('panelTest.workspaces.find(p=>p.op==="labStart").allowSubmit'),undefined);
+  assert.equal(await run('!!document.getElementById("lab-submit")||!!document.getElementById("quiz-submit")'),false,'no submission switches in the panel');
+  await wait('document.getElementById("lab-status").textContent.includes("needs review")');
+  assert.equal(await run('document.getElementById("lab-coverage").textContent.includes("0/1 deliverables verified")'),true);
+  // Real DOM: the page reader reads the question, and refuses to answer it.
+  // select and advance used to tick the radio and press Next; now both are
+  // refused before the page is touched, so the radio stays clear and Next is
+  // never pressed — checked here on a live page, not a stub.
+  const questionDOM=await run(`(async()=>{
+    const host=document.createElement('div');host.style.cssText='position:fixed;inset:0;background:white;z-index:99999';
+    host.innerHTML='<fieldset id="fixture-question"><legend>Which option describes infected devices controlled together?</legend><label><input type="radio" name="fixture-choice">Firewall</label><label><input type="radio" name="fixture-choice">Botnet</label></fieldset><button id="fixture-next">Next</button>';
+    document.body.append(host);let next=0;host.querySelector('button').onclick=()=>next++;
+    const page=globalThis.IzukiQuestionPage;await page('install',{runId:'dom-test'});
+    const first=await page('read',{runId:'dom-test'});
+    const stale=await page('select',{runId:'dom-test',question:{...first.question,stem:'A changed question'},choices:[2]});
+    const selected=await page('select',{runId:'dom-test',question:first.question,choices:[2]});
+    const after=await page('read',{runId:'dom-test'});
+    const moved=await page('advance',{runId:'dom-test',pageId:after.pageId,proof:after});
+    const written=document.createElement('textarea');host.querySelector('fieldset').append(written);
+    const blocked=await page('advance',{runId:'dom-test',pageId:after.pageId,proof:after});
+    await page('stop',{runId:'dom-test'});const stopped=await page('read',{runId:'dom-test'});
+    const ticked=[...host.querySelectorAll('input[type=radio]')].some(r=>r.checked);
+    host.remove();return {first:first.state,options:first.question.options,stale:stale.ok,selected:selected.ok,moved:moved.ok,blocked:blocked.ok,stopped:stopped.ok,next,ticked,refusal:selected.text};
+  })()`);
+  assert.match(questionDOM.refusal||'',/doesn't choose or submit/,'select is refused, not merely failing');
+  delete questionDOM.refusal;
+  assert.deepEqual(questionDOM,{first:'question',options:['Firewall','Botnet'],stale:false,selected:false,moved:false,blocked:false,stopped:false,next:0,ticked:false});
+  const readback=await run(`(async()=>{
+    await import('/extension/providers.js');
+    const host=document.createElement('div');host.style.cssText='position:fixed;inset:0;background:white;z-index:99999';
+    host.innerHTML='<div data-message-author-role="user">Do not read me as the answer</div><div data-message-author-role="assistant">The real assistant answer.</div><div data-message-author-role="assistant" hidden>Hidden stale answer</div>';
+    document.body.append(host);const result=globalThis.IzukiProviderDOM.readAssistant(['[data-message-author-role="assistant"]'],['[data-message-author-role="user"]'],location.origin);host.remove();return result;
+  })()`);
+  assert.equal(readback.text,'The real assistant answer.');assert.equal(readback.count,1);assert.equal(readback.user,'Do not read me as the answer');
+  await run('document.getElementById("clear-chats").click()');await wait('document.querySelectorAll(".recent-chat").length===0');
   // The case the owner actually described: the Gemini tab is already open
   // when the panel starts. A fresh panel must use it with no Connect press.
   await run('localStorage.setItem("panelTest:gemini","1");localStorage.setItem("panelTest:fresh","1");localStorage.setItem("panelTest:connect",JSON.stringify({providerId:"gemini",autoConnect:true}));');

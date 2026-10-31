@@ -39,7 +39,7 @@ static WAKE: Mutex<Option<Sender<()>>> = Mutex::new(None);
 
 /// The newest extension (extension/manifest.json). Older copies don't know
 /// every request Izuki makes (Blackboard, finding your school's tab).
-pub const LATEST: &str = "1.5.3";
+pub const LATEST: &str = "1.5.4";
 /// The connected extension's version; empty: one from before 1.4.1, which
 /// didn't say.
 static VERSION: Mutex<String> = Mutex::new(String::new());
@@ -628,6 +628,7 @@ fn page_helper(url: &str, v: &Value, origin: &str) -> Value {
     }
     // /izuki/ask
     let task = s("task");
+    let web = v["web"].as_bool().unwrap_or(true);
     let mut text = s("text");
     let title = s("title");
     if task == "link" {
@@ -646,8 +647,13 @@ fn page_helper(url: &str, v: &Value, origin: &str) -> Value {
         "summarise" | "link" => "Sum this up in 3–5 short bullet points, the way a friend would tell it. Plain words.".to_string(),
         "define" => "Define this word or phrase simply, with one example sentence.".to_string(),
         _ => format!(
-            "Answer the user's question about this web page: \"{}\". Use the page; if the answer isn't there, say so and answer from what you know, saying which is which. Be brief.",
-            s("question")
+            "Answer the user's question about this web page. Question: {}. Use the page first. {} Be brief.",
+            s("question"),
+            if web {
+                "If it needs current or outside information, search the live web and cite the pages you used; say what came from the page and what came from the web."
+            } else {
+                "If the answer isn't there, say so and answer from what you know, saying which is which."
+            }
         ),
     };
     let msgs = if task == "chat" {
@@ -669,7 +675,13 @@ fn page_helper(url: &str, v: &Value, origin: &str) -> Value {
         crate::execution::check().map_err(|r| anyhow!(r.explanation()))?;
         // The browser panel gets the same read-only backend tools as Island
         // chat. Page text cannot run desktop actions in this lane.
-        crate::chat::complete_with_web(&msgs, id, false, &|_| {})
+        // The switch is real: off means no web tools at all, not just a
+        // discouraged one. On gives the panel the same live search as chat.
+        if web {
+            crate::chat::complete_with_web(&msgs, id, false, &|_| {})
+        } else {
+            crate::chat::complete_streaming(&msgs, id, &|_| {})
+        }
     }));
     let (ok, text) = match result {
         Ok(Ok(text)) => (true, text.trim().to_string()),
@@ -703,8 +715,15 @@ fn chat_messages(v: &Value, title: &str, text: &str) -> Vec<Value> {
             context.push_str(&format!("\n\n--- Another open tab the user shared: {t} ---\n{body}"));
         }
     }
+    let web = v["web"].as_bool().unwrap_or(true);
+    let search_rule = if web {
+        " You can search the live web and read pages. For anything current, outside this page, or that you are not sure about, use [SEARCH: query] before answering, then cite the source links. If the answer is on the page, use the page first. Never claim to have searched when you did not."
+    } else {
+        " Do not use web search for this answer; use the page and what you already know. If the answer isn't on the page, say so and answer from what you know, saying which is which. Never claim to have searched."
+    };
+    let system = format!("You are Izuki, a warm, sharp assistant in a side panel next to the user's web page. Answer from the page (and any shared tabs) when you can.{search_rule} Be direct and brief: lead with the answer. Short bullet points with - and **bold** are fine; no headings. Never ask for or repeat passwords or card numbers.");
     let mut msgs = vec![
-        json!({ "role": "system", "content": "You are Izuki, a warm, sharp assistant in a side panel next to the user's web page. Answer from the page (and any shared tabs) when you can; if the answer isn't there, say so briefly and answer from what you know. Be direct and brief: lead with the answer. Short bullet points with - and **bold** are fine; no headings. Never ask for or repeat passwords or card numbers." }),
+        json!({ "role": "system", "content": system }),
         json!({ "role": "user", "content": context }),
         json!({ "role": "assistant", "content": "Got it — I can see the page. What would you like to know?" }),
     ];
@@ -910,7 +929,21 @@ pub fn dom_id_for(control: u32) -> Option<String> {
 
 /// Click an element inside the page — no mouse.
 pub fn click(dom_id: &str) -> Result<()> {
-    request("click", json!({ "id": dom_id }), Duration::from_secs(4)).map(|_| ())
+    let done = request("click", json!({ "id": dom_id }), Duration::from_secs(4))?;
+    // A click that leaves the page is reported a moment before it happens,
+    // so its reply gets out before the page goes. Wait for it to land before
+    // anyone looks at the page or tries again: a look inside that gap sees
+    // nothing changed, and a retry from there would click twice.
+    if let Some(ms) = deferred_ms(&done) {
+        std::thread::sleep(Duration::from_millis(ms));
+    }
+    Ok(())
+}
+
+/// How long to wait for a click the page has promised but not yet made, with
+/// a small margin; capped, so a strange reply can't stall a task.
+fn deferred_ms(reply: &Value) -> Option<u64> {
+    reply["deferred"].as_u64().map(|ms| ms.min(1000) + 60)
 }
 
 /// Type into an element inside the page — no keyboard.
@@ -921,6 +954,18 @@ pub fn type_into(dom_id: &str, text: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A click promised for later is waited out before anyone looks again,
+    /// so a look in the gap can't see nothing changed and click twice. A
+    /// click already made (plain `true`) isn't waited on at all.
+    #[test]
+    fn a_deferred_click_is_waited_out() {
+        assert_eq!(deferred_ms(&json!({ "deferred": 90 })), Some(150));
+        assert_eq!(deferred_ms(&json!(true)), None, "already clicked: no wait");
+        assert_eq!(deferred_ms(&json!({})), None);
+        assert_eq!(deferred_ms(&json!({ "deferred": 60_000 })), Some(1060), "a strange reply can't stall a task");
+        assert_eq!(deferred_ms(&json!({ "deferred": "soon" })), None);
+    }
 
     #[test]
     fn browser_chat_cancel_is_scoped_and_covers_stop_before_start() {
@@ -970,6 +1015,20 @@ mod tests {
     #[test]
     fn not_connected_means_no_requests() {
         assert!(request("snapshot", json!({}), Duration::from_millis(10)).is_err());
+    }
+
+    #[test]
+    fn browser_chat_web_search_follows_the_switch() {
+        let on = chat_messages(&json!({"web": true, "question": "what is the latest version?"}), "Page", "page text");
+        let system = on[0]["content"].as_str().unwrap_or_default();
+        assert!(system.contains("[SEARCH: query]"), "web on must offer search: {system}");
+        assert!(system.contains("cite"), "web on must ask for sources");
+        let off = chat_messages(&json!({"web": false, "question": "what is the latest version?"}), "Page", "page text");
+        let system = off[0]["content"].as_str().unwrap_or_default();
+        assert!(!system.contains("[SEARCH: query]"), "web off must not offer search: {system}");
+        assert!(system.contains("Do not use web search"), "web off must say so: {system}");
+        let dflt = chat_messages(&json!({"question": "latest?"}), "Page", "page text");
+        assert!(dflt[0]["content"].as_str().unwrap_or_default().contains("[SEARCH: query]"), "search is the default");
     }
 }
 

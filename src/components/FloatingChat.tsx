@@ -112,7 +112,7 @@ export function FloatingChat() {
   const submit = async (value?: string) => {
     const t = (value ?? text).trim();
     if (!t || busy) return;
-    rememberPrompt(t);
+    if (value === undefined) rememberPrompt(t);
     setText("");
     setStuck("");
     setBusy(true);
@@ -205,7 +205,7 @@ export function FloatingChat() {
               <ChatColorPicker />
               <RunMode />
               <AirToggle />
-              <RecentPrompts onPick={(p) => { setText(p); focusInput(); }} />
+              <RecentPrompts positionKey={`${pill.box.x}:${pill.box.y}:${pill.box.w}:${pill.box.h}`} onPick={(p) => { setText(p); focusInput(); }} />
               <textarea
                 ref={inputRef}
                 value={text}

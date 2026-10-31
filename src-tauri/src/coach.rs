@@ -46,16 +46,78 @@ pub enum Ask {
     Stop,
 }
 
+/// Quizzes, for the doing-verbs below. Not "questions": "do the questions in
+/// this email" isn't a quiz.
+pub const QUIZ_NOUNS: &[&str] = &["quiz", "quizzes", "test", "tests", "exam", "exams", "assessment", "assessments"];
+
+/// Is a doing-verb (do, take, finish, complete, start, answer) aimed at one
+/// of `nouns` — "finish my test", "do a practice quiz", "complete chapter 3
+/// assignment"?
+///
+/// The verb has to be *applied to* the noun: right after it, or with only a
+/// few words like my/this/the/practice/chapter 3 between. A verb anywhere and
+/// a noun anywhere was the earlier rule, and it sent "do a speed test",
+/// "finish the unit tests", "take the test drive booking" and "do this task
+/// for me" to the quiz coach or the assignment guide — ordinary requests,
+/// taken over by a study tool that reads the screen instead of doing them.
+pub fn verb_on(said: &str, nouns: &[&str]) -> bool {
+    const VERBS: &[&str] = &["do", "take", "finish", "complete", "start", "answer", "attempt"];
+    // Allowed between the verb and the noun.
+    const BETWEEN: &[&str] = &[
+        "my", "this", "the", "a", "an", "our", "that", "these", "those", "next", "practice", "final", "midterm",
+        "pop", "online", "graded", "chapter", "module", "week", "section", "lesson", "today's", "todays",
+    ];
+    // A noun followed by one of these is a different thing: a test drive, a
+    // test plan, an exam room.
+    const COMPOUND: &[&str] = &[
+        "plan", "plans", "drive", "run", "runs", "case", "cases", "room", "show", "match", "suite", "booking",
+        "series", "kit", "strip", "tube", "pilot", "flight", "server", "data", "file", "environment", "results",
+    ];
+    let words: Vec<String> = said
+        .to_lowercase()
+        .replace('\u{2019}', "'")
+        .split(|c: char| !c.is_alphanumeric() && c != '\'')
+        .filter(|w| !w.is_empty())
+        .map(str::to_string)
+        .collect();
+    for (i, w) in words.iter().enumerate() {
+        if !VERBS.contains(&w.as_str()) {
+            continue;
+        }
+        for (gap, next) in words.iter().enumerate().skip(i + 1).take(4) {
+            let next = next.as_str();
+            if nouns.contains(&next) {
+                let after = words.get(gap + 1).map(String::as_str).unwrap_or("");
+                if !COMPOUND.contains(&after) {
+                    return true;
+                }
+                break;
+            }
+            let numeric = next.chars().all(|c| c.is_ascii_digit());
+            if !BETWEEN.contains(&next) && !numeric {
+                break;
+            }
+        }
+    }
+    false
+}
+
 pub fn parse(said: &str) -> Option<Ask> {
     let s = format!(" {} ", said.to_lowercase().replace(['?', '!', ',', '.'], " ").split_whitespace().collect::<Vec<_>>().join(" "));
     if s.contains(" stop coaching") || s.contains(" quit coaching") || s.contains(" end coaching") || s.contains(" stop the coach") || s.contains(" stop quiz coach") {
         return Some(Ask::Stop);
     }
     let quiz = [" quiz", " test", " exam", " questions", " assessment"].iter().any(|w| s.contains(w));
+    // Asking to be coached, by name: these are specific enough to pair with a
+    // quiz word anywhere in the sentence ("walk me through this test").
     let coach = [" coach me", " quiz coach", " coach mode", " walk me through", " go through", " do this quiz with me", " do it with me", " help me with this", " help me through", " study along", " tutor me"]
         .iter()
         .any(|w| s.contains(w));
-    (quiz && coach || s.contains(" quiz coach") || s.contains(" coach mode")).then_some(Ask::Start)
+    // "Do my quiz", "finish this test", "help me do a quiz": a doing-verb
+    // aimed at the quiz itself (see verb_on — a loose version of this took
+    // over "do a speed test" and "finish the unit tests").
+    let doing = verb_on(said, QUIZ_NOUNS);
+    (quiz && coach || doing || s.contains(" quiz coach") || s.contains(" coach mode")).then_some(Ask::Start)
 }
 
 /// Answer choices on screen, grouped by question (the part of the page they
@@ -386,10 +448,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn ordinary_requests_are_not_quizzes() {
+        // A verb anywhere plus "test" anywhere used to start the coach.
+        for said in [
+            "do a speed test",
+            "finish the unit tests",
+            "take the test drive booking",
+            "do the questions in this email",
+            "complete the test plan document",
+            "finish the exam room booking",
+            "do this task for me",
+            "open spotify and play something",
+        ] {
+            assert_eq!(parse(said), None, "\"{said}\" is not a request to be coached through a quiz");
+        }
+        // Asking for help with a quiz still is.
+        assert_eq!(parse("help me do a quiz for me and finish the assignment"), Some(Ask::Start));
+        for said in ["do my quiz", "finish this test", "take the practice exam", "start chapter 3 quiz", "do a quiz"] {
+            assert_eq!(parse(said), Some(Ask::Start), "{said}");
+        }
+    }
+
+    #[test]
     fn hears_coach_asks() {
         assert_eq!(parse("coach me through this quiz"), Some(Ask::Start));
         assert_eq!(parse("help me with this test"), Some(Ask::Start));
         assert_eq!(parse("quiz coach"), Some(Ask::Start));
+        assert_eq!(parse("help me do a quiz for me and finish the assignment"), Some(Ask::Start));
+        assert_eq!(parse("finish my test"), Some(Ask::Start));
+        assert_eq!(parse("do my quiz"), Some(Ask::Start));
         assert_eq!(parse("stop coaching"), Some(Ask::Stop));
         assert_eq!(parse("help me with this email"), None);
     }

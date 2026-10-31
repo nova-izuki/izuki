@@ -7,6 +7,7 @@
 
 // The smart features (right-click menu, answer bubble, focus guard).
 importScripts("smart.js");
+importScripts("workspace-state.js", "provider-specs.js", "provider-dom.js", "provider-relay.js", "question-page.js", "question-runner.js", "lab-state.js", "workspace-worker.js");
 
 const BRIDGE = "http://127.0.0.1:47615/izuki";
 // The version tells Izuki when this copy is too old for what it asks of it.
@@ -103,9 +104,12 @@ async function run(op, args) {
   switch (op) {
     case "snapshot":
       return { ...(await inPage(tab.id, snapshot)), url: tab.url, title: tab.title };
-    case "click":
-      if (!(await inPage(tab.id, clickEl, [args.id]))) throw new Error("that element is gone");
-      return true;
+    case "click": {
+      const clicked = await inPage(tab.id, clickEl, [args.id]);
+      if (!clicked) throw new Error("that element is gone");
+      // A click still to come tells the app how long to wait before looking.
+      return clicked === true ? true : { deferred: clicked.deferred };
+    }
     case "type":
       if (!(await inPage(tab.id, typeEl, [args.id, String(args.text || "")]))) throw new Error("that box is gone");
       return true;
@@ -232,24 +236,38 @@ function clickEl(id) {
   if (!el) return false;
   el.scrollIntoView({ block: "center", inline: "center" });
   if (el.focus) el.focus({ preventScroll: true });
-  // Answers only once the click really happened (false: the element went
-  // away first). A button that opens a confirm() box holds the page until
-  // it's closed, so no answer comes back — Izuki then takes a fresh look
-  // instead of clicking a second time.
-  return new Promise((done) =>
+  // The answer card must not sit over the control being pressed.
+  try { globalThis.__izukiBubbleDodge?.(el.getBoundingClientRect()); } catch {}
+  if (!el.isConnected) return false;
+  // A click that leaves the page (a link, a submit) tears down this script
+  // before its reply can travel back, and Izuki then waited out its whole
+  // timeout to say "unconfirmed" about a click that had worked. So those are
+  // reported a moment *before* they happen — with how long until they do,
+  // so the app waits that long before it looks again. Without that, a look
+  // inside the gap saw nothing changed and could click a second time.
+  // Everything else is clicked first and reported after: no gap at all.
+  const leaves = !!el.closest('a[href]:not([href^="#"]):not([href^="javascript:"]), button[type="submit"], input[type="submit"], input[type="image"]')
+    || (el.tagName === "BUTTON" && !el.getAttribute("type") && !!el.form);
+  if (!leaves) {
+    el.click();
+    return true;
+  }
+  const deferred = 90;
+  return new Promise((done) => {
+    done({ deferred });
     setTimeout(() => {
-      if (!el.isConnected) return done(false);
-      el.click();
-      done(true);
-    }, 0)
-  );
+      // Re-checked at the last moment: a page that redrew in the gap is not
+      // clicked blindly. The next look sees whatever it became.
+      if (el.isConnected) el.click();
+    }, deferred);
+  });
 }
-
 function typeEl(id, text) {
   const el = document.querySelector(`[data-izuki-id="${CSS.escape(id)}"]`);
   if (!el) return false;
   el.scrollIntoView({ block: "center" });
   el.focus();
+  try { globalThis.__izukiBubbleDodge?.(el.getBoundingClientRect()); } catch {}
   if (el.isContentEditable) {
     document.execCommand("selectAll", false);
     document.execCommand("insertText", false, text);

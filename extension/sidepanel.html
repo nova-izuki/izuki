@@ -98,6 +98,28 @@
     .more { display: block; width: 100%; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--cyan); font: inherit; font-size: 11.5px; padding: 6px; cursor: pointer; }
     #task-review { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink); max-width: calc(100% - 24px); width: 420px; }
     #task-review textarea { display: block; width: 100%; margin: 10px 0; min-height: 100px; }
+    body { overflow: hidden; min-width: 240px; }
+    header, form, body > small { flex-shrink: 0; }
+    header { flex-wrap: wrap; gap: 3px; padding: 6px 8px; }
+    #state { flex-basis: 100%; order: 2; }
+    #workspace-controls { flex: 0 1 auto; min-height: 50px; max-height: 42vh; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+    #context { margin-bottom: 8px; }
+    #workspace-size { flex: 0 0 10px; cursor: ns-resize; border-top: 1px solid var(--line); background: var(--panel); touch-action: none; }
+    #workspace-size::after { content: ''; display: block; width: 48px; height: 3px; margin: 3px auto; border-radius: 3px; background: var(--muted); opacity: .5; }
+    #log { flex: 1 1 0; min-height: 35px; overflow: auto; }
+    #log > * { flex-shrink: 0; }
+    .workspace-tools { margin: 8px 12px; border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 8px 10px; }
+    .workspace-tools summary { cursor: pointer; font-weight: 600; }
+    .workspace-tools p { margin: 6px 0; font-size: 12px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .workspace-tools textarea { width: 100%; display: block; margin: 6px 0; resize: vertical; max-height: 240px; }
+    #lab-steps details { border-top: 1px solid var(--line); padding: 8px 0; }
+    #lab-steps summary { font-size: 12px; }
+    #recent-list { max-height: 240px; overflow: auto; font-size: 12px; color: var(--muted); }
+    .recent-chat { flex: 1; text-align: left; }
+    #task-review { max-height: 85vh; overflow: auto; }
+    button:disabled { opacity: .5; cursor: default; }
+    :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) { .dots span { animation: none; } }
   </style>
 </head>
 <body>
@@ -106,10 +128,13 @@
     <b>Izuki</b>
     <span id="state">· checking</span>
     <span class="grow"></span>
+    <button class="icon" id="float-panel" type="button" title="Open a movable, resizable window">Float ↗</button>
+    <button class="icon" id="dock-panel" type="button" hidden>Dock ↙</button>
     <button class="icon" id="task-open" type="button" title="Review a desktop task for Izuki">Run task</button>
     <button class="icon" id="new" title="Start a new chat">＋ New chat</button>
   </header>
 
+  <div id="workspace-controls">
   <section id="connection" aria-label="Choose an assistant">
     <details id="answer-with">
       <summary>Answering with <b id="answer-who">Izuki on this PC</b><span id="answer-state" class="pill-state">ready</span></summary>
@@ -126,13 +151,39 @@
 
   <section id="context" aria-label="What Izuki can see">
     <div class="page"><img id="fav" alt="" /><span id="ptitle">This page</span></div>
+    <div class="connect-row"><label class="switch"><input id="pin-page" type="checkbox" /> Keep this page selected</label><button id="choose-page" class="chip" type="button">Choose page</button><select id="source-tab" aria-label="Page to work on" hidden></select></div>
     <label class="switch"><input type="checkbox" id="share" checked /> Share this page with the selected assistant</label>
     <label class="switch" title="When the answer may be behind a link (a syllabus, assignment details), Izuki reads those linked pages too, quietly, with your sign-ins. It never opens links like Log out, Delete or Buy."><input type="checkbox" id="deep" checked /> Read linked pages too</label>
+    <label class="switch" title="Search the live web for current facts, news, prices and anything not on this page. Answers cite their sources."><input type="checkbox" id="web-search" checked /> Search the web too</label>
     <details id="other-tabs">
       <summary id="tabs-summary">Other tabs to compare</summary>
       <div class="tabs" id="tabs" aria-label="Add other tabs"></div>
     </details>
   </section>
+
+  <details class="workspace-tools" id="quiz-tools">
+    <summary>Explain each question</summary>
+    <p>Reads each multiple-choice question on your page, asks your connected assistant, and shows the answer it suggests and why. You choose your answer and move on; the next question is explained when it appears. Izuki never clicks an answer or submits. The assistant can make mistakes.</p>
+    <div class="connect-row"><button id="quiz-start" class="chip" type="button">Start on this page</button><button id="quiz-stop" class="chip" type="button" hidden>Stop</button></div>
+    <p id="quiz-status" role="status"></p><p id="quiz-answer"></p>
+  </details>
+  <details class="workspace-tools" id="lab-tools">
+    <summary>Lab workspace</summary>
+    <p>Turn the lab and rubric into a checked plan. Review the steps once; Izuki continues when each result is verified. Open Izuki on this PC to run desktop steps.</p>
+    <textarea id="lab-instructions" rows="3" maxlength="6000" aria-label="Extra lab requirements" placeholder="Add missing instructions, rubric details or required filenames…"></textarea>
+    <button id="lab-plan" class="chip" type="button">Plan this lab / revise remaining work</button>
+    <p id="lab-status" role="status">Read the requirements, review the plan, then run its steps.</p>
+    <div id="lab-board" hidden>
+      <b id="lab-title"></b><p id="lab-coverage"></p>
+      <details><summary>Requirements</summary><ol id="lab-requirements"></ol></details>
+      <details><summary>Required files and results</summary><ul id="lab-deliverables"></ul></details>
+      <div id="lab-steps"></div>
+      <div class="connect-row"><button id="lab-start" class="chip" type="button">Run / continue reviewed steps</button><button id="lab-stop" class="chip" type="button" hidden>Stop lab</button></div>
+    </div>
+  </details>
+  <details class="workspace-tools" id="recent-chats"><summary>Recent chats <span id="recent-count"></span></summary><div id="recent-list"></div><button id="clear-chats" class="icon" type="button">Clear all chats</button></details>
+  </div>
+  <div id="workspace-size" role="separator" aria-label="Resize setup and conversation areas" aria-orientation="horizontal" tabindex="0"></div>
 
   <main id="log" aria-live="polite"></main>
 
@@ -141,7 +192,7 @@
     <button id="send" type="submit" title="Ask (Enter)">➤</button>
     <button id="stop" type="button" hidden>Stop</button>
   </form>
-  <small id="privacy">Shared page text goes to your selected assistant. Follow mode stays off until you enable it.</small>
+  <small id="privacy">Shared page text goes to your selected assistant. Automation starts only when you ask. Stop: Alt+Shift+X. Connect a regular AI website tab; built-in browser assistants cannot be connected here.</small>
   <dialog id="task-review"><h3>Run a task with Izuki</h3><p>Review the task below. Izuki will use the desktop app's normal action checks. An answer alone never starts a task.</p><textarea id="task-text" aria-label="Task to run"></textarea><div class="connect-row"><button id="task-cancel" class="chip" type="button">Cancel</button><button id="task-run" class="chip" type="button">Run this task</button></div></dialog>
   <script type="module" src="sidepanel.js"></script>
 </body>

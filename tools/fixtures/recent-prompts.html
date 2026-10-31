@@ -1,0 +1,14 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Prompt shelf fixture</title></head>
+<body style="background:#121a2b"><div id="root"></div><script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {RecentPrompts} from '/src/components/RecentPrompts.tsx';
+import * as history from '/src/lib/recentPrompts.ts';
+import '/src/styles.css';
+history.clearPrompts();
+for(let i=0;i<8;i++) history.rememberPrompt(i===7?'Explain this:\n\nconst sum = 1;':'Sample question '+i);
+window.promptHistory=history;
+function Fixture(){const[place,setPlace]=React.useState(0);window.movePromptShelf=()=>setPlace(value=>value+1);return React.createElement('div',{id:'anchor',style:{position:'fixed',top:place?undefined:6,left:place?undefined:6,right:place?6:undefined,bottom:place?6:undefined}},React.createElement(RecentPrompts,{positionKey:String(place),onPick:text=>window.pickedPrompt=text}),React.createElement('input',{'aria-label':'Other field'}));}
+createRoot(document.getElementById('root')).render(React.createElement(Fixture));
+window.promptReady=true;
+</script></body></html>

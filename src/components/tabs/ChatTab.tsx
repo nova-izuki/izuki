@@ -86,6 +86,15 @@ const APPS = /^\s*\[?APPS\]?\s*$/i;
 const REMIND_TAG = /\s*\[(?:REMIND|ALARM)[^\]]*\]?\s*/gi;
 // Focus mode and Recall are answered on the PC itself, at once.
 const INSTANT_ASK = /\bcite (?:https?:\/\/|www\.|10\.)|\b(?:(?:izuki|nova)(?:'s)? (?:notes|settings|chat|style|apps)|my (?:study )?notes|take notes|make notes|save (?:this|it|the|my)\b[^.?!]{0,60}\bnotes|apa (?:reference|citation|format|style)|in apa|cite (?:this|the|my|isbn)|coach me|quiz coach|coach mode|stop coaching|(?:walk me|go|help me) through (?:this|the|my) (?:quiz|test|exam)|help me with (?:this|the|my) (?:quiz|test|exam)|do (?:this|the) (?:quiz|test) with me|how much did i (?:spend|make)|how much have i (?:spent|made)|(?:unusual|weird|suspicious) (?:spending|charges?)|double charge|subscriptions|monthly charges|watch ?list|my stocks|my portfolio|my sales|sales today|stripe (?:balance|payments|sales)|my stripe|shopify orders|new orders|any orders|low (?:on )?stock|out of stock|my revenue|keep getting wrong|i keep missing|what do i get wrong|my weak spots|what are my mistakes|(?:have|did) i stud(?:y|ied)|study (?:progress|stats)|quiz me on my mistakes|practi[cs]e my mistakes|my grades?\b|blackboard|course materials|syllabus|announcements? (?:in|for|on) my|(?:chapter|section|page|pages) \d|my (?:text)?book|study log|(?:save|keep|log|record|stop saving|don'?t save) (?:every|all|each|my)\b[^.?!]{0,30}\b(?:quest|questions?|answers?|q ?(?:and|&) ?a)|what needs my attention|business briefing|check my (?:website|site)|is my (?:website|site)|check (?:my )?(?:connected )?(?:accounts|apps|connections)|(?:which|what) (?:accounts|apps) are (?:connected|linked)|are my (?:apps|accounts) (?:connected|linked|working)|(?:connected|linked) accounts|account health)\b|^(?:hey nova,?\s*)?(?:focus\b|stop focus|end focus|pomodoro|help me focus|i need to focus)|\bwhat was (?:i doing|i looking at|i working on|i reading|i watching|that (?:site|page|website|video|document|file))|\bwhat did i have open|\bfind (?:the|that) (?:page|site) i/i;
+/** A doing-verb aimed at school work: "do my quiz", "finish the assignment",
+ *  "take the practice exam" — the same rule as `coach::verb_on` in the app.
+ *  The verb, at most a few words like my/this/the/practice/chapter 3, then the
+ *  quiz or assignment itself, and not a compound like "test drive". A verb
+ *  anywhere and "test" anywhere sent "do a speed test" and "complete the test
+ *  plan document" here, where they got a quiz reply instead of an answer.
+ *  Lookarounds rather than word boundaries: the boundaries in the first
+ *  version were saved as invisible backspace characters and never matched. */
+const STUDY_ASK = /(?<![a-z])(?:do|take|finish|complete|start|answer|attempt)\s+(?:(?:my|this|the|a|an|our|that|these|those|next|practice|final|midterm|pop|online|graded|chapter|module|week|section|lesson|today'?s|\d+)\s+){0,3}(?:quiz(?:zes)?|tests?|exams?|assessments?|assignments?|homework|worksheets?|labs?|essays?|coursework)(?![a-z])(?!\s+(?:plans?|drive|runs?|cases?|room|show|match|suite|booking|series|kit|strip|tube|pilot|flight|server|data|file|environment|results)(?![a-z]))/i;
 /** Anything about disk space — the core decides exactly, and answers with no AI. */
 const STORAGE_ASK = /spac|storag|disk|hard drive|\bssd\b|\bgb\b|\btb\b/i;
 /** A short yes ("yea bro", "bet, run it"): it may answer something Izuki
@@ -447,7 +456,7 @@ export function ChatTab() {
   const clearAttachments = () => { fileGeneration.current++; readingNow.current = false; setReadingFiles(false); setPics([]); setDocuments([]); setFileError(""); };
   const picker = useRef<HTMLInputElement>(null);
   const addPictures = async (files: Iterable<Blob>) => {
-    if (busy || readingNow.current) return;
+    if (readingNow.current) return;
     const generation = ++fileGeneration.current;
     readingNow.current = true; setReadingFiles(true); setFileError("");
     try {
@@ -615,9 +624,10 @@ export function ChatTab() {
      * after Allow / No, the result and the answer land in the same message
      * as the card, the way Claude Code shows a job: steps, then the answer.
      */
-    async (text: string, note = false, here = false, images: string[] = [], attached: ChatAttachment[] = []) => {
+    async (text: string, note = false, here = false, images: string[] = [], attached: ChatAttachment[] = [], recall = true) => {
       let t = text.trim() || (attached.length ? "Explain these files." : images.length ? "What's in this picture?" : "");
       if (!t || busy || readingNow.current) return;
+      const originalPrompt = text.trim();
       // "Continue" / "try again": the last thing asked, again — not a new
       // question for the AI to guess at (it once sent "continue" off to the
       // connected apps).
@@ -671,7 +681,7 @@ export function ChatTab() {
       // Worth keeping: the next time the floating chat is open, this prompt is
       // one click away instead of retyped. Internal notes ("allow" results,
       // carry-on text) are not what the owner typed, so they stay out.
-      if (!note) rememberPrompt(t);
+      if (!note && recall) rememberPrompt(originalPrompt);
       if (images.length) setPics([]);
       if (attached.length) setDocuments([]);
       // Earlier replies carry what really happened (the steps, an allowed
@@ -766,10 +776,15 @@ export function ChatTab() {
         return;
       }
       // The Later list ("remind me later I'm buying…", "what's on my list"): done at once.
-      if (!attached.length && (LATER.test(t) || INSTANT_ASK.test(t) || STORAGE_ASK.test(t))) {
+      if (!attached.length && (LATER.test(t) || INSTANT_ASK.test(t) || STORAGE_ASK.test(t) || STUDY_ASK.test(t))) {
         const said = await api.instantCommand(t).catch(() => null);
         if (said) {
           setLast({ content: said, status: undefined });
+          if (streamId.current === id) { streamId.current = null; setBusy(false); }
+          return;
+        }
+        if (STUDY_ASK.test(t)) {
+          setLast({ content: "Open the quiz or assignment in your browser, then ask again — I can walk you through it, but I won't answer or submit it for you.", status: undefined });
           if (streamId.current === id) { streamId.current = null; setBusy(false); }
           return;
         }
@@ -1086,7 +1101,7 @@ export function ChatTab() {
                   <button
                     key={idea.label}
                     type="button"
-                    onClick={() => void send(idea.ask)}
+                    onClick={() => void send(idea.ask, false, false, [], [], false)}
                     className="izk-pill izk-no-drag h-auto px-3 py-1.5 text-left text-[11.5px]"
                   >
                     {idea.label}
@@ -1150,10 +1165,10 @@ export function ChatTab() {
                   </span>
                 ) : null}
                 {m.research?.phase === "done" && m.content && (
-                  <ResearchPanel r={m.research} footer text={m.content} onContinue={i === msgs.length - 1 && !busy ? () => void send("continue the research") : undefined} />
+                  <ResearchPanel r={m.research} footer text={m.content} onContinue={i === msgs.length - 1 && !busy ? () => void send("continue the research", false, false, [], [], false) : undefined} />
                 )}
                 {m.role === "assistant" && m.content && !m.failed && !(busy && i === msgs.length - 1) && (
-                  <ReplyTools text={m.content} onRetry={i === msgs.length - 1 ? () => retry(i) : undefined} onAsk={i === msgs.length - 1 ? (ask) => void send(ask) : undefined} />
+                  <ReplyTools text={m.content} onRetry={i === msgs.length - 1 ? () => retry(i) : undefined} onAsk={i === msgs.length - 1 ? (ask) => void send(ask, false, false, [], [], false) : undefined} />
                 )}
                 {m.setup && i === msgs.length - 1 && (
                   <button
@@ -1251,7 +1266,7 @@ export function ChatTab() {
             <button
               type="button"
               onClick={() => picker.current?.click()}
-              disabled={busy || readingFiles}
+              disabled={readingFiles}
               aria-label="Add a picture or file"
               title="Pictures, PDF, Word, PowerPoint, text and code files"
               className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/6 hover:bg-white/10 disabled:opacity-40"
@@ -1363,6 +1378,7 @@ export function ChatTab() {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
+                  if (readingNow.current || readingFiles) return;
                   if (busy) {
                     // Interrupt: keep the words, stop what's running, send
                     // this as soon as the stop lands.

@@ -700,7 +700,7 @@ function NoteView({ note, onBack, onChanged, onOpen, notes }: { note: Note; onBa
           if (!said) return;
           // A rename is the app's own job. Sent to a brain, it was answered
           // "renamed to Lab 9.3.1" while the note kept its old name.
-          const to = renameRequest(said);
+          const to = renameRequest(said, note.title);
           if (to !== null) {
             if (!to) {
               setError("What should I call it? Type: rename this note to Lab 9.3.1");

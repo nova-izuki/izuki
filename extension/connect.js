@@ -305,7 +305,7 @@ async function startFollowing(onQuestion) {
       state.follow = false; $("follow-questions").checked = false; stopFollowing();
       followState("Paused because this page couldn't be read. Turn follow mode on again to retry.");
     } finally { checking = false; }
-  }, 2000);
+  }, 900);
 }
 
 function stopFollowing() {

@@ -26,11 +26,24 @@ jobs:
       - run: npm run test:html
       - run: npm run test:hotkeys
       - run: npm run test:notes
+      - run: npm run test:prompts
+      - run: npm run test:panel
+      - run: npm run test:workspace
       - run: npm run test:finder
       - run: node tools/browser-check.cjs
         env:
           IZUKI_TEST_BROWSER: /usr/bin/google-chrome
       - run: node tools/desktop-features-check.mjs
+      - run: npm run test:island
+        env:
+          IZUKI_TEST_BROWSER: /usr/bin/google-chrome
+      - run: npm run test:panel-browser
+        env:
+          IZUKI_TEST_BROWSER: /usr/bin/google-chrome
+      - run: npm run test:bubble
+        env:
+          IZUKI_TEST_BROWSER: /usr/bin/google-chrome
+      - run: npm run test:chat-text
   windows:
     runs-on: windows-latest
     steps:

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Izuki — AI on your screen",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "description": "Ask about pages with Izuki or an AI tab you connect. Explain, summarise and read selections, with chat beside the page.",
   "permissions": [
     "scripting",
@@ -28,6 +28,10 @@
     "128": "icons/icon-128.png"
   },
   "commands": {
+    "stop-workspace": {
+      "suggested_key": { "default": "Alt+Shift+X" },
+      "description": "Stop the question or lab workspace"
+    },
     "ask-page": {
       "suggested_key": {
         "default": "Alt+Shift+I"

@@ -54,4 +54,25 @@ assert(html('use my_var here').includes('my_var'), 'snake_case is left alone');
 assert(html('**bold** and `code_with_underscores`').includes('<b'), 'bold');
 assert(html('`code_with_underscores`').includes('code_with_underscores'), 'code keeps its underscores');
 
-console.log('chat text: ok (both kinds of italic; snake_case, URLs and __dunders__ untouched)');
+// "Do my quiz" / "finish the assignment" in the Chat tab start the coach or
+// guide — and nothing else does. Read straight from ChatTab.tsx: the first
+// version of this regex was saved with its word boundaries as invisible
+// backspace characters, matched nothing, and every test that copied the
+// pattern by hand would have missed that.
+{
+  const { readFileSync } = await import('node:fs');
+  const line = readFileSync('src/components/tabs/ChatTab.tsx', 'utf8').split('\n').find((l) => l.startsWith('const STUDY_ASK'));
+  assert(line, 'STUDY_ASK not found in ChatTab.tsx');
+  assert(![...line].some((c) => c.charCodeAt(0) < 32), 'STUDY_ASK contains a control character');
+  const study = new RegExp(line.slice(line.indexOf('/') + 1, line.lastIndexOf('/')), 'i');
+  for (const s of ['lpme do a quriz for m and finish the assignment', 'help me do this quiz', 'finish the assignment',
+    'do my homework', 'take the practice exam', 'start chapter 3 quiz', 'help me finish my lab']) {
+    assert(study.test(s), `should start the coach or guide: ${s}`);
+  }
+  for (const s of ['do a speed test', 'complete the test plan document', 'finish the exam room booking', 'finish the unit tests',
+    'take the test drive booking', 'do this task for me', 'complete the project setup', 'i finished watching the test match']) {
+    assert(!study.test(s), `an ordinary request, not a quiz: ${s}`);
+  }
+}
+
+console.log('chat text: ok (both kinds of italic; snake_case, URLs and __dunders__ untouched; quiz/assignment asks routed, ordinary requests not)');

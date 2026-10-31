@@ -7,12 +7,12 @@ localStorage.removeItem('panelTest:fresh');
 const stores = { session:{}, local:{} };
 try { Object.assign(stores.local, { izkConnect: JSON.parse(localStorage.getItem('panelTest:connect') || 'null') }); } catch {}
 const storage = (kind) => ({
-  async get(key) { return { [key]:stores[kind][key] }; },
+  async get(key) { return Array.isArray(key)?Object.fromEntries(key.map(k=>[k,stores[kind][k]])):{ [key]:stores[kind][key] }; },
   async set(value) { Object.assign(stores[kind], value); },
   async remove(key) { delete stores[kind][key]; },
 });
 window.panelTest = {
-  active:1, fresh:freshLoad, reads:[], asks:[], stops:[], handed:[], tasks:[], stores,
+  active:1, fresh:freshLoad, reads:[], asks:[], stops:[], handed:[], tasks:[], workspaces:[], stores,
   question:'Which option describes a network of infected devices?',
   pages:[{id:1,windowId:7,active:true,url:'https://course.example/chapter5',title:'Chapter 5'}, {id:2,windowId:7,active:false,url:'https://assistant.example/chat',title:'My custom AI'}],
   // A reload can start with a tab already open, the way the real panel opens
@@ -21,6 +21,7 @@ window.panelTest = {
   reply(text='A botnet.') { this.asks.at(-1).resolve(new Response(JSON.stringify({ok:true,text}), {headers:{'Content-Type':'application/json'}})); },
 };
 const m = window.panelTest;
+const historyStore=globalThis.IzukiWorkspaceState.createHistoryStore(storage('local'));
 window.chrome = {
   windows:{ getCurrent:async()=>({id:7}), onFocusChanged:event() },
   tabs:{
@@ -29,7 +30,19 @@ window.chrome = {
     onActivated:event(),onUpdated:event(),onRemoved:event(),
   },
   storage:{session:storage('session'),local:storage('local'),onChanged:event()},
-  runtime:{sendMessage:async()=>{}},
+  runtime:{sendMessage:async(message)=>{
+    const p=message.izukiWorkspace;if(!p)return;
+    if(p.op==='history')return historyStore[p.action||'load'](p.windowId,p.action==='commit'?p.entry:p.id);
+    m.workspaces.push(p);
+    if(p.op==='status')return {ok:true,quiz:{phase:'idle'},lab:{phase:'idle'}};
+    if(p.op==='relay'){
+      m.handed.push({id:p.connection.tabId,text:p.prompt});
+      return {ok:true,text:m.providerReply||'The connected assistant replied: a botnet.',provider:'Fixture AI'};
+    }
+    if(p.op==='quizStart')return {ok:true,state:{phase:'ready',text:'The answers are selected. Ready for final review.',source:p.source}};
+    if(p.op==='labStart')return {ok:true,state:{phase:'review',text:'Fixture step needs review.',plan:p.plan,source:p.source,steps:{'step-1':{phase:'review',text:'Saved file was not verified.'}}}};
+    return {ok:true};
+  }},
   scripting:{executeScript:async({target,func,args=[]})=>{
     const page=m.pages.find((t)=>t.id===target.tabId);
     if(!page)throw Error('closed');

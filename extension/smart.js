@@ -88,7 +88,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       const task = { "izk-explain": "explain", "izk-translate": "translate", "izk-summarise": "summarise" }[info.menuItemId];
       const heading = { explain: "Explained", translate: "Translation", summarise: "In short" }[task];
       await show(heading, "…", { loading: true });
-      const r = await izuki("ask", { ...base, task, text: sel });
+      const r = await izuki("ask", { ...base, task, text: sel, web: false });
       return show(heading, r.text, { ok: r.ok });
     }
     case "izk-read":
@@ -104,12 +104,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
     case "izk-link": {
       await show("That link, in short", "…", { loading: true });
-      const r = await izuki("ask", { ...base, task: "link", text: info.linkUrl || "" });
+      const r = await izuki("ask", { ...base, task: "link", text: info.linkUrl || "", web: false });
       return show("That link, in short", r.text, { ok: r.ok });
     }
     case "izk-page": {
       await show("This page, in short", "…", { loading: true });
-      const r = await izuki("ask", { ...base, task: "summarise", text: await pageText(tab.id) });
+      const r = await izuki("ask", { ...base, task: "summarise", text: await pageText(tab.id), web: false });
       return show("This page, in short", r.text, { ok: r.ok });
     }
     case "izk-page-note": {
@@ -136,34 +136,46 @@ async function bubble(tabId, heading, body, opts = {}) {
 // Runs inside the page.
 function drawBubble(heading, body, opts) {
   const ID = "izuki-bubble-host";
+  const pad = 12;
   let host = document.getElementById(ID);
   if (!host) {
     host = document.createElement("div");
     host.id = ID;
-    host.style.cssText = "position:fixed;z-index:2147483647;top:16px;right:16px;";
+    // Only the card catches a pointer; the empty space around it lets clicks
+    // reach the page. The card can also be dragged, and moves itself off a
+    // control the desktop task is about to press.
+    host.style.cssText = "position:fixed;z-index:2147483647;top:16px;right:16px;pointer-events:none;";
     document.documentElement.appendChild(host);
     host.attachShadow({ mode: "open" });
   }
+  // An older card may already be on the page without this rule.
+  host.style.pointerEvents = "none";
   const root = host.shadowRoot;
   root.innerHTML = `
     <style>
       .b{width:min(380px,90vw);max-height:60vh;overflow:auto;font:14px/1.5 "Segoe UI",system-ui,sans-serif;color:#f4f1fb;
          background:rgba(12,11,26,.96);border:1px solid rgba(167,139,250,.45);border-radius:16px;padding:14px 16px;
-         box-shadow:0 18px 50px rgba(0,0,0,.45);backdrop-filter:blur(10px);animation:in .18s ease-out}
+         box-shadow:0 18px 50px rgba(0,0,0,.45);backdrop-filter:blur(10px);animation:in .18s ease-out;
+         pointer-events:auto;touch-action:none}
       @keyframes in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
-      .h{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;letter-spacing:.02em;color:#c4b5fd;margin-bottom:6px}
-      .dot{width:9px;height:9px;border-radius:50%;background:linear-gradient(135deg,#7c5cff,#4ecdc4)}
-      .x{margin-left:auto;background:none;border:0;color:#aaa6bf;font-size:18px;cursor:pointer;line-height:1}
+      .h{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;letter-spacing:.02em;color:#c4b5fd;margin-bottom:6px;
+         cursor:grab;user-select:none;touch-action:none}
+      .h:active{cursor:grabbing}
+      .dot{width:9px;height:9px;border-radius:50%;background:linear-gradient(135deg,#7c5cff,#4ecdc4);flex:none}
+      .hd{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .x{margin-left:auto;background:none;border:0;color:#aaa6bf;font-size:18px;cursor:pointer;line-height:1;pointer-events:auto}
       .t{white-space:pre-wrap}
       .bad{color:#fca5a5}
       .row{display:flex;gap:6px;margin-top:10px}
       .row button{font:inherit;font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#f4f1fb;cursor:pointer}
       .row button:hover{background:rgba(255,255,255,.14)}
+      .b.mini .t,.b.mini .row{display:none}
+      .b.mini{width:auto;max-width:min(280px,86vw)}
       .spin{display:inline-block;width:12px;height:12px;border:2px solid #67e8f9;border-top-color:transparent;border-radius:50%;animation:s .8s linear infinite;vertical-align:-2px;margin-right:6px}
       @keyframes s{to{transform:rotate(360deg)}}
     </style>
     <div class="b" role="dialog" aria-label="Izuki">
-      <div class="h"><span class="dot"></span><span class="hd"></span><button class="x" title="Close">×</button></div>
+      <div class="h" title="Drag to move out of the way"><span class="dot"></span><span class="hd"></span><button class="x" title="Close">×</button></div>
       <div class="t"></div>
       <div class="row"></div>
     </div>`;
@@ -181,8 +193,65 @@ function drawBubble(heading, body, opts) {
   }
   if (opts.stopVoice) btn("Stop", () => { chrome.runtime.sendMessage({ izukiStop: true }); host.remove(); });
   if (opts.brief) setTimeout(() => host.remove(), 4000);
-}
 
+  const card = root.querySelector(".b");
+  const header = root.querySelector(".h");
+  const clamp = (value, lo, hi) => Math.max(lo, Math.min(value, hi));
+  const place = (left, top) => {
+    const box = card.getBoundingClientRect();
+    host.style.left = `${Math.round(clamp(left, pad, Math.max(pad, innerWidth - box.width - pad)))}px`;
+    host.style.top = `${Math.round(clamp(top, pad, Math.max(pad, innerHeight - box.height - pad)))}px`;
+    host.style.right = "auto";
+    host.style.bottom = "auto";
+  };
+  const overlap = (box, target) =>
+    box.left < target.right + pad && box.right + pad > target.left &&
+    box.top < target.bottom + pad && box.bottom + pad > target.top;
+  /** Called just before the page clicks or types: get off that control. */
+  globalThis.__izukiBubbleDodge = (target) => {
+    if (!host.isConnected || !target) return false;
+    const box = card.getBoundingClientRect();
+    if (!overlap(box, target)) return false;
+    const corners = [
+      { left: innerWidth - box.width - pad, top: pad },
+      { left: pad, top: pad },
+      { left: innerWidth - box.width - pad, top: innerHeight - box.height - pad },
+      { left: pad, top: innerHeight - box.height - pad },
+    ];
+    // Nearest free corner, so the answer stays where the eye last saw it.
+    const free = corners
+      .filter((corner) => !overlap({ left: corner.left, right: corner.left + box.width, top: corner.top, bottom: corner.top + box.height }, target))
+      .sort((a, b) => Math.hypot(a.left - box.left, a.top - box.top) - Math.hypot(b.left - box.left, b.top - box.top));
+    if (free.length) { place(free[0].left, free[0].top); return true; }
+    // A page too tight for any free corner: keep the title bar only, at the
+    // corner farthest from the control, so the page behind is still usable.
+    card.classList.add("mini");
+    const far = corners
+      .map((corner) => ({ ...corner, distance: Math.hypot(corner.left - target.left, corner.top - target.top) }))
+      .sort((a, b) => b.distance - a.distance)[0];
+    place(far.left, far.top);
+    return true;
+  };
+  let drag = null;
+  header.addEventListener("pointerdown", (event) => {
+    if (event.target.closest(".x")) return;
+    const box = card.getBoundingClientRect();
+    drag = { dx: event.clientX - box.left, dy: event.clientY - box.top };
+    try { header.setPointerCapture(event.pointerId); } catch {}
+    event.preventDefault();
+  });
+  header.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+    place(event.clientX - drag.dx, event.clientY - drag.dy);
+  });
+  const stopDrag = (event) => {
+    if (!drag) return;
+    drag = null;
+    try { header.releasePointerCapture(event.pointerId); } catch {}
+  };
+  header.addEventListener("pointerup", stopDrag);
+  header.addEventListener("pointercancel", stopDrag);
+}
 chrome.runtime.onMessage.addListener((m) => {
   if (m && m.izukiSpeak) speak(m.izukiSpeak);
   if (m && m.izukiStop) chrome.tts.stop();
@@ -192,7 +261,7 @@ chrome.runtime.onMessage.addListener((m) => {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
       if (!tab || !tab.id) return;
       await bubble(tab.id, "About this page", "…", { loading: true });
-      const r = await izuki("ask", { title: tab.title, url: tab.url, task: m.izukiAsk.task || "ask", question: m.izukiAsk.question || "", text: await pageText(tab.id) });
+      const r = await izuki("ask", { title: tab.title, url: tab.url, task: m.izukiAsk.task || "ask", question: m.izukiAsk.question || "", text: await pageText(tab.id), web: true });
       await bubble(tab.id, m.izukiAsk.task === "summarise" ? "This page, in short" : "About this page", r.text, { ok: r.ok });
     })();
   }
