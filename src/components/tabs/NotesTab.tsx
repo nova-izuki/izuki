@@ -528,8 +528,10 @@ function NoteView({ note, onBack, onChanged, onOpen, notes }: { note: Note; onBa
   const [flipped, setFlipped] = useState(false);
   /** Cards marked this time through: index → right. */
   const [marked, setMarked] = useState<Record<number, boolean>>({});
+  /** Closed from the card's X: the cards stay in the note, out of the way. */
+  const [cardsOpen, setCardsOpen] = useState(true);
   const cardsKey = useMemo(() => JSON.stringify(note.cards), [note.cards]);
-  useEffect(() => { setMarked({}); setCard(0); setFlipped(false); }, [note.id, cardsKey]);
+  useEffect(() => { setMarked({}); setCard(0); setFlipped(false); setCardsOpen(true); }, [note.id, cardsKey]);
   const mark = (right: boolean) => {
     if (card in marked || !note.cards[card]) return;
     const [q, a] = note.cards[card];
@@ -632,8 +634,29 @@ function NoteView({ note, onBack, onChanged, onOpen, notes }: { note: Note; onBa
       </div>
       {error && <p className="mt-2 text-[12px] text-izk-danger">{error}</p>}
 
-      {note.cards.length > 0 && (
+      {note.cards.length > 0 && !cardsOpen && (
+        <button
+          type="button"
+          onClick={() => setCardsOpen(true)}
+          className="izk-pill mt-3 px-3 py-1 text-[11.5px]"
+        >
+          🃏 Practice {note.cards.length} {note.cards.length === 1 ? "card" : "cards"}
+        </button>
+      )}
+
+      {note.cards.length > 0 && cardsOpen && (
         <div className="mt-3">
+          <div className="mb-1 flex items-center justify-end">
+            <button
+              type="button"
+              onClick={() => setCardsOpen(false)}
+              aria-label="Close flashcards"
+              title="Close the cards — they stay in this note"
+              className="flex h-[22px] w-[22px] items-center justify-center rounded-full text-izk-muted transition-colors hover:bg-white/10 hover:text-izk-ink"
+            >
+              <X size={13} strokeWidth={2.4} />
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => setFlipped((f) => !f)}

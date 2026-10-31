@@ -10,6 +10,8 @@ import { HandGlyph } from "./IzukiMark";
 import { cx } from "./ui";
 import { useBackdropTone } from "../lib/tone";
 import { ChatColorPicker } from "./ChatColorPicker";
+import { RecentPrompts } from "./RecentPrompts";
+import { rememberPrompt } from "../lib/recentPrompts";
 
 const BUBBLE = 46;
 const BUBBLE_LIMITS: Limits = { minW: BUBBLE, minH: BUBBLE, maxW: BUBBLE, maxH: BUBBLE };
@@ -110,6 +112,7 @@ export function FloatingChat() {
   const submit = async (value?: string) => {
     const t = (value ?? text).trim();
     if (!t || busy) return;
+    rememberPrompt(t);
     setText("");
     setStuck("");
     setBusy(true);
@@ -202,6 +205,7 @@ export function FloatingChat() {
               <ChatColorPicker />
               <RunMode />
               <AirToggle />
+              <RecentPrompts onPick={(p) => { setText(p); focusInput(); }} />
               <textarea
                 ref={inputRef}
                 value={text}

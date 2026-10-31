@@ -16,6 +16,7 @@ import { useIzuki } from "../../lib/store";
 import { AirToggle } from "../AirToggle";
 import { brainReady } from "../../lib/setup";
 import { attachmentContext, CHAT_FILE_TYPES, keepDocumentText, readChatFile, type ChatAttachment } from "../../lib/attachments";
+import { rememberPrompt } from "../../lib/recentPrompts";
 import { looksLikeDirections, needsApps, opensAnApp, recentHistory, shareHistory } from "../../lib/conversation";
 
 /**
@@ -667,6 +668,10 @@ export function ChatTab() {
         void sendChatCommand(t);
         return;
       }
+      // Worth keeping: the next time the floating chat is open, this prompt is
+      // one click away instead of retyped. Internal notes ("allow" results,
+      // carry-on text) are not what the owner typed, so they stay out.
+      if (!note) rememberPrompt(t);
       if (images.length) setPics([]);
       if (attached.length) setDocuments([]);
       // Earlier replies carry what really happened (the steps, an allowed
