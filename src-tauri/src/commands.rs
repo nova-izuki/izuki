@@ -490,6 +490,11 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     if let Some(ask) = crate::shop::parse_here(&said) {
         return blocking(move || crate::shop::handle(ask)).await.ok();
     }
+    // "Keep my PC awake (for 2 hours)", "let it sleep" (awake.rs) — so a long
+    // download, render or coding agent isn't cut off when the laptop sleeps.
+    if let Some(ask) = crate::awake::parse(&said) {
+        return Some(crate::awake::handle(ask));
+    }
     // "Save every question and answer to my notes" (studylog.rs).
     if let Some(on) = crate::studylog::parse(&said) {
         return Some(crate::studylog::handle(on));

@@ -128,8 +128,8 @@ resolveStop();await flush();assert.equal(stopped.status().phase,'review');
   const BETWEEN=eval(grab('BETWEEN')),NOT_COMPOUND=eval(grab('NOT_COMPOUND'));
   void BETWEEN;void NOT_COMPOUND;
   const QUIZ=eval(grab('QUIZ_RUN')),LAB=eval(grab('LAB_RUN'));
-  for(const s of ['answer all these questions','do this quiz','complete the practice test','answer these quiz questions'])assert(QUIZ.test(s),`starts a quiz run: ${s}`);
-  for(const s of ['do I need to complete all the test cases?','answer this test question about DNS'])assert(!QUIZ.test(s),`a question, not a quiz run: ${s}`);
+  for(const s of ['answer all these questions','do this quiz','complete the practice test','answer these quiz questions','ans all','answer all','ans all please','answer all?','Ans all of them.'])assert(QUIZ.test(s),`starts a quiz run: ${s}`);
+  for(const s of ['do I need to complete all the test cases?','answer this test question about DNS','answer all emails','answer these','answer them','answer those please'])assert(!QUIZ.test(s),`a question, not a quiz run: ${s}`);
   for(const s of ['plan this lab','do my lab','complete chapter 5 lab'])assert(LAB.test(s),`plans a lab: ${s}`);
   for(const s of ['help me understand this lab report','what does the lab safety section say, can you help'])assert(!LAB.test(s),`a question, not a lab plan: ${s}`);
 }

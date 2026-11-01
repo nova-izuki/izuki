@@ -37,7 +37,10 @@ const request=(body,sender=panel)=>new Promise((resolve,reject)=>{
   const listener=chrome.runtime.onMessage.listeners[0];assert.equal(listener({izukiWorkspace:{windowId:7,...body}},sender,resolve),true);
   setTimeout(()=>reject(Error('Worker response timed out')),2000).unref();
 });
-const until=async check=>{for(let n=0;n<100;n++){const value=await check();if(value)return value;await new Promise(r=>setTimeout(r,5));}throw Error('Worker did not reach expected state');};
+// By the clock, not a count: between questions the runner looks again every
+// 1.2 s, and 100 tries of 5 ms passed locally only because each status round
+// trip was slow enough to add up past it — on CI it ran out first.
+const until=async(check,ms=5000)=>{const end=Date.now()+ms;while(Date.now()<end){const value=await check();if(value)return value;await new Promise(r=>setTimeout(r,5));}throw Error('Worker did not reach expected state');};
 assert.equal((await request({op:'quizStart',source:tab},site)).ok,false,'webpage content cannot start actions');
 assert.equal((await request({op:'history'},site)).ok,false,'content scripts cannot read saved chats');
 assert.equal((await request({op:'history'},{...panel,url:panel.url+'.spoof'})).ok,false,'require the exact extension page path');

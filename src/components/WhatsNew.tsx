@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "☕", title: "Keep your PC awake", how: "Say “keep my PC awake for 3 hours” (or just “keep it awake”) before a long download, a render or a coding agent that runs while you’re away — a laptop that sleeps cuts them off. The screen still turns off on its usual timer (and locks, if Windows is set to), and closing the lid still puts a laptop to sleep. It stops on its own (12 hours at most), tells you if you’re on battery, and “let it sleep” ends it early." },
   { icon: "🌐", title: "The browser panel searches the web", how: "“Search the web too” is on by default: current facts, prices, releases and anything not on the page are looked up and answered with their sources. A connected ChatGPT, Gemini or Claude tab is asked to search too. Switch it off and it stays off." },
   { icon: "💡", title: "Explain each question", how: "In the browser panel, start it on a quiz or practice set: for each question your assistant’s suggested answer and the reason appear. You choose your answer and move on, and the next one is explained as it appears. Izuki never clicks an answer in or submits — the choosing stays yours." },
   { icon: "🧪", title: "A lab workspace", how: "Izuki turns a lab’s instructions into steps you review, then does the ones on your PC — opening the project, the document, the tools — checking each before the next. It always stops before the upload or submit step, so you check the work and hand it in." },

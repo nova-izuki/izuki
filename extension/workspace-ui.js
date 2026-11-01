@@ -30,7 +30,11 @@ export async function setUpWorkspace({windowId,getSource,getConnection,readTab,o
   // single "test question" is one question to explain, not a quiz to run.
   const BETWEEN="(?:(?:my|this|the|all|these|those|a|an|of|practice|next|chapter|module|quiz|test|\\d+)\\s+){0,3}";
   const NOT_COMPOUND="(?![a-z])(?!\\s+(?:cases?|plans?|drive|runs?|reports?|results|data|files?|safety|room|kit|coats?|partners?|manual|question)(?![a-z]))";
-  const QUIZ_RUN=new RegExp(`(?<![a-z])(?:answer|solve|complete|do|take)\\s+${BETWEEN}(?:questions|quiz(?:zes)?|tests?)${NOT_COMPOUND}`,"i");
+  // "ans all" is how people actually type and say it; matching only the full
+  // "answer all …" sent it to the native task handoff and its focus guard.
+  // Only "all": a bare "answer these" / "answer them" is as likely to be about
+  // questions just pasted into the chat, and starting a run would cancel it.
+  const QUIZ_RUN=new RegExp(`(?<![a-z])(?:answer|ans|solve|complete|do|take)\\s+${BETWEEN}(?:questions|quiz(?:zes)?|tests?)${NOT_COMPOUND}|^(?:ans|answer) +all(?: +of +them)?(?: +please)?[.!?]?$`,"i");
   const LAB_RUN=new RegExp(`(?<![a-z])(?:plan|do|complete|finish|start)\\s+${BETWEEN}(?:lab|labs|laboratory)${NOT_COMPOUND}`,"i");
   function showLab(state) {
     if(!state?.plan)return;

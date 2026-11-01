@@ -34,6 +34,7 @@ export const FEATURES: Feature[] = [
   { label: "Control my TV", hint: "Roku, Netflix, volume, the Izuki TV channel, Android TV", tab: "settings", id: "settings-tv" },
   { label: "Read it to me", hint: "Read aloud, read this page, read the selected text, keep reading", tab: "draw", id: "talk-card" },
   { label: "Talk to type (dictation)", hint: "Type what I say, dictate, voice typing, stop typing", tab: "draw", id: "talk-card" },
+  { label: "Keep my PC awake", hint: "stay awake, don't let my pc sleep, no sleep, caffeine, keep the laptop on, downloads, render, overnight, coding agent stopped, freebuff stopped, codex stopped, let it sleep, sleep mode, say: keep my pc awake for 2 hours", tab: "chat" },
   { label: "Screen time & weather", hint: "How long on YouTube, time spent, weather, your town or city, learn my city from chat, remember my city, my location, where I am, wrong city, it thinks I'm in london, change my city", tab: "draw", id: "talk-card" },
   { label: "Timers", hint: "Set a timer, pasta timer, countdown, cancel the timer, how long left", tab: "draw", id: "talk-card" },
   { label: "Focus mode", hint: "Focus for 25 minutes, pomodoro, countdown, do not disturb", tab: "draw", id: "talk-card" },
