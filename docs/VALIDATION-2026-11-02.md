@@ -96,3 +96,40 @@ files or another agent's work were touched.
    suite, tsc, every test:*, panel browser checks, CodeRabbit, secret scan).
 4. When the release candidate is verified, ask the owner, bump the version,
    and let the automatic release pipeline publish — that remains Claude's job.
+## Overnight (same machine, owner asleep): hardening, rollback, verified rows
+
+1. **Safe saves, deeper:** `a_failed_swap_never_takes_the_original_with_it`
+   (the final one-move swap itself failing — here a folder in the way —
+   leaves the folder byte-for-byte whole and removes its hidden temp file)
+   and `saves_sweep_the_leftovers_of_a_dead_save` (a crash mid-save leaves a
+   hidden `.name.izuki-tmpN`; the next save sweeps only hour-old ones for the
+   same stem, so a save in flight is never touched). Commit 292bd53.
+2. **"Go back to the previous version"** (milestone §3): the newest public
+   GitHub release below this build is picked (`previous_release`), its own
+   `latest.json` becomes the updater endpoint with a `version_comparator`
+   override that allows stepping down, and the installer is downloaded and
+   minisign-verified exactly like a forward update before it runs — behind
+   the main-window-only, not-while-busy, confirm-card guards the updater
+   already has. Updated `UpdateControls.tsx` with the label and button.
+   Every published release on GitHub does ship `latest.json`; verified
+   against 1.0.195/1.0.194/1.0.193 live data. Commit e70463e.
+3. **Milestone rows flipped on evidence, not hope:** §2 extension
+   classifier and §4 Think deeper switch were found fully implemented and
+   test-covered in the tree (assess.js + workspace checks; ext.rs mode
+   routing + panel/browser checks) and are now marked done with the
+   specifics. §3 rollback is `🧪 built, testing` (unit tests, tsc, build
+   pass; an actual older installer was not run on this PC).
+4. **Build failure chased and explained:** the test harness suddenly failed
+   to load (0xC0000139). Not disk corruption, not a broken system DLL: it
+   was the missing `IZUKI_TEST_MANIFEST=1` on my test runs — build.rs only
+   embeds the comctl32 v6 dependency into the lib-test harness with it, and
+   without it the harness binds System32's comctl32 v5, which has no
+   `TaskDialogIndirect`. Pe-level archaeology (import/export/manifest
+   parse) found the truth; test runs from now on always set the variable.
+5. **CodeRabbit:** still not present — no PR or issue on this repo has ever
+   had a CodeRabbit comment, so the app isn't installed on the repository.
+   Installing it is an owner action (GitHub Marketplace); until then the
+   "CodeRabbit review" line in §7 cannot proceed, honestly, by any route.
+6. Full `cargo test --lib` after everything: **577 passed, 0 failed, 45
+   ignored**. `tsc --noEmit` and `npm run build` clean. All commits pushed
+   to draft PR #16 (now 4 checkpoint commits on `milestone-196`).
