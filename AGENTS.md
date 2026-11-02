@@ -15,6 +15,14 @@ an AI looks at the screen, and Izuki drives the real mouse and keyboard.
 
 The repo is public: github.com/nova-izuki/izuki.
 
+**One product, a private companion for every user.** Izuki is downloaded by
+the public, and each person gets their own personal assistant, shaped by
+their preferences, routines, apps, devices and permissions. Their profile,
+memories and settings live in their own data folder, under their control:
+they can see them, export them and delete them. The owner's requests are
+examples of what a user needs. Never hardcode their name, paths, accounts,
+courses, devices or PC, and never put personal data in the repo.
+
 | Where | What |
 | --- | --- |
 | `src-tauri/src/` | Rust core (Tauri v2). `commands.rs` holds every command the UI can call; `lib.rs` registers them. |
@@ -30,18 +38,30 @@ The repo is public: github.com/nova-izuki/izuki.
    - Don't edit files another assistant owns, except a tiny, atomic fix.
      Say what you changed in COLLAB.md.
    - Never rewrite a whole file someone else is also changing.
-2. **Only Claude bumps the version and releases.** A push to `main` releases
-   only when `package.json`'s version changes. If two agents bump it, they
-   collide.
-   - Codex and Freebuff commit and push their tested work to `main`
-     **without** touching versions (`package.json`, `src-tauri/tauri.conf.json`,
-     `src-tauri/Cargo.toml`, `Cargo.lock`, `android/app/build.gradle`).
-   - Then add a line to `docs/NEXT-RELEASE.md` saying what changed, in plain
-     words. Claude folds it into the next release note and ships it.
+2. **Work on the milestone branch, never straight on `main`.** `main` is what
+   users get. A version bump that lands there is tagged and published by
+   itself (once the Verify workflow passes for that commit), and every push to
+   `main` also redeploys the website.
+   - The current milestone has its own branch and draft PR: `milestone-196`,
+     PR #16. Commit and push your tested work there. A bigger separate piece
+     may go on `claude/…`, `codex/…` or `freebuff/…` with a PR into the
+     milestone branch.
+   - Nothing is merged to `main`, tagged or published until the whole
+     milestone is finished and verified, and the owner has approved it.
+   - **Only Claude bumps the version and writes the release notes.** Never
+     touch the version files (`package.json`, `src-tauri/tauri.conf.json`,
+     `src-tauri/Cargo.toml`, `Cargo.lock`, `android/app/build.gradle`, the
+     iOS project). `node tools/check-versions.mjs` checks they agree.
+   - Codex and Freebuff add a line to `docs/NEXT-RELEASE.md` for each change,
+     in plain words. Claude folds it into the release note.
 3. **Pull first, small commits.**
-   - Run `git pull --rebase origin main` before you start and before you push.
+   - Run `git pull --rebase origin milestone-196` (the branch you're on)
+     before you start and before you push.
    - Commit only your own files: `git add <paths>`, never `git add -A`.
      Never commit `docs/app/surface.css` or `docs/app/surface.js`.
+   - The working folder can be shared by two assistants at once. Never
+     commit, stash, reset or check out files another assistant is changing.
+     `git status` shows them, and COLLAB.md says whose they are.
 4. **Test before you push**, and say honestly what you didn't verify:
    - `npx tsc --noEmit -p .`
    - `npm run -s build`
@@ -80,6 +100,42 @@ The repo is public: github.com/nova-izuki/izuki.
      "don't answer") still withholds.
 7. **Don't touch anything outside this `izuki/` folder.** The parent folder
    is the owner's separate robot project.
+
+## Code review (CodeRabbit)
+CodeRabbit reviews every push to a pull request by itself, drafts included
+(settings: `.coderabbit.yaml`), so no review command is needed. Its findings
+are leads to check, not orders. The shared log for the milestone is
+`docs/REVIEW-1.0.196.md`. All three assistants follow the same steps:
+
+1. **Read first.** Before changing code a review covers, read the open
+   CodeRabbit comments on the PR (`gh pr view 16 --comments`, plus the inline
+   threads) and the review log.
+2. **Claim it.** Put your name on the finding's row in the log before you
+   fix it. If someone else has claimed it, leave it alone. Two assistants
+   fixing the same comment collide.
+3. **Verify it** against the current code. Most important first:
+   - **Critical:** security hole, data loss, leaked credentials, an action
+     the user didn't authorize.
+   - **High:** crash, broken core feature, wrong automation, a corrupted
+     update.
+   - **Medium:** reliability, performance, maintainability.
+   - **Low:** readability, optional refactors.
+4. **Fix only what's confirmed**, with the smallest change. Add a regression
+   test where one fits, and run the affected tests.
+5. **Not a bug, or already outdated?** Write why in the log and reply on the
+   thread. Don't change code just to quiet a comment, and don't refactor
+   beyond the finding.
+6. **Push the verified fix** to the PR branch. CodeRabbit reviews the new
+   commits by itself. Never push empty or cosmetic commits to trigger a
+   review. A push can still go unreviewed (rate limits, service limits): the
+   log says so rather than assuming it was reviewed.
+7. **Record it.** Mark the row fixed (with the commit) or explained. Note
+   anything left unresolved.
+8. **A clean review proves nothing on its own.** Tests and the milestone
+   checklist decide whether something is ready.
+9. **Stop when it stops paying off.** If new comments are only rewordings or
+   preferences, say so in the log and stop.
+10. **Never overwrite another assistant's work.**
 
 ## Traps that already cost days
 - A plain `#[tauri::command] fn` runs on the UI thread, so a slow call

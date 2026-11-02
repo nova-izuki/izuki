@@ -21,6 +21,10 @@ jobs:
       - run: npm ci
       - name: Every version file agrees
         run: node tools/check-versions.mjs
+      # Pictures, sounds, models and packages: opened and checked the way
+      # their formats define them (code review can't read their bytes).
+      - name: Every binary asset is whole
+        run: npm run test:assets
       - run: npm run build
       - run: npm run test:phone
       - run: npm run test:conversation
