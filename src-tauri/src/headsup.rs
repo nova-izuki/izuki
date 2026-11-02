@@ -156,6 +156,16 @@ fn tick(app: &AppHandle) {
                 Err(e) => eprintln!("[headsup] school feed: {e}"),
             }
         }
+        // (Only when something here uses it: school heads-ups or the brief.)
+        if !all.is_empty() && (settings.heads_up_school || settings.morning_brief) {
+            // What's handed in, from Blackboard when it's readable too, so no
+            // reminder comes for work that's already in.
+            let wanted: Vec<(&str, chrono::DateTime<Local>)> = all.iter().map(|d: &Due| (d.title.as_str(), d.at)).collect();
+            let marks = crate::campus::handed_in_from_blackboard(&wanted, 0, 14);
+            for (d, mark) in all.iter_mut().zip(marks) {
+                d.done = d.done.or(mark);
+            }
+        }
         if !all.is_empty() {
             st.school = all;
         }
@@ -165,7 +175,7 @@ fn tick(app: &AppHandle) {
         st.school_at = Some(Instant::now());
         match crate::blackboard::due_items(0, 14) {
             Ok(items) => {
-                st.school = items.into_iter().map(|(uid, title, at)| Due { uid, title, at }).collect();
+                st.school = items.into_iter().map(|d| Due { uid: d.id, title: d.title, at: d.at, done: d.done }).collect();
                 eprintln!("[headsup] school: {} due date(s) read from Blackboard", st.school.len());
             }
             Err(e) => eprintln!("[headsup] Blackboard due dates: {e}"),
@@ -595,7 +605,8 @@ fn morning_brief(gmail: bool, calendar: bool, school: &[Due]) -> String {
     let now = Local::now();
     let soon: Vec<&Due> = school
         .iter()
-        .filter(|d| d.at > now && d.at.date_naive() <= now.date_naive() + chrono::Days::new(1))
+        // (Not what's already handed in.)
+        .filter(|d| d.at > now && d.at.date_naive() <= now.date_naive() + chrono::Days::new(1) && d.done != Some(true))
         .collect();
     if !soon.is_empty() {
         parts.push("📚 School work due today or tomorrow:".into());
@@ -628,6 +639,8 @@ pub struct Due {
     uid: String,
     title: String,
     at: chrono::DateTime<Local>,
+    /// Handed in (from Blackboard's grade records); None from a calendar feed.
+    done: Option<bool>,
 }
 
 /// A school calendar feed's items: (id, title, due), for Campus (campus.rs).
@@ -680,7 +693,7 @@ pub fn parse_ics(text: &str) -> Vec<Due> {
             if let Some(at) = end.or(start) {
                 if !title.is_empty() {
                     let id = if uid.is_empty() { format!("{title}@{at}") } else { uid.clone() };
-                    out.push(Due { uid: id, title: clip(&title, 90), at });
+                    out.push(Due { uid: id, title: clip(&title, 90), at, done: None });
                 }
             }
             continue;
@@ -733,6 +746,11 @@ fn school_due_soon(st: &mut State) -> Vec<String> {
     let now = Local::now();
     let mut lines = Vec::new();
     for d in &st.school {
+        // Already handed in: no "due today" for it (eight of those came at
+        // once, for work that was partly done).
+        if d.done == Some(true) {
+            continue;
+        }
         let left = d.at.signed_duration_since(now);
         if left <= chrono::Duration::zero() {
             continue;
@@ -1065,9 +1083,23 @@ mod tests {
     }
 
     #[test]
+    fn work_already_handed_in_gets_no_heads_up() {
+        let mut st = State::default();
+        let soon = Local::now() + chrono::Duration::hours(5);
+        st.school = vec![
+            Due { uid: "done".into(), title: "Journal".into(), at: soon, done: Some(true) },
+            Due { uid: "todo".into(), title: "Lab 9.2.1".into(), at: soon, done: Some(false) },
+            Due { uid: "feed".into(), title: "Quiz".into(), at: soon, done: None },
+        ];
+        let lines = school_due_soon(&mut st);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(!lines.iter().any(|l| l.contains("Journal")), "{lines:?}");
+    }
+
+    #[test]
     fn school_work_is_told_once_per_stage() {
         let mut st = State::default();
-        st.school = vec![Due { uid: "a".into(), title: "Quiz".into(), at: Local::now() + chrono::Duration::hours(5) }];
+        st.school = vec![Due { uid: "a".into(), title: "Quiz".into(), at: Local::now() + chrono::Duration::hours(5), done: None }];
         assert_eq!(school_due_soon(&mut st).len(), 1);
         assert_eq!(school_due_soon(&mut st).len(), 0);
         st.school[0].at = Local::now() + chrono::Duration::minutes(90);

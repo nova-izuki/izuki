@@ -236,6 +236,8 @@ pub fn local_skill(request: &str) -> Option<String> {
 enum Ability {
     Due(&'static str),
     Overdue,
+    /// What isn't handed in yet (Blackboard's grade records).
+    Left,
     First,
     Blackboard(crate::blackboard::Want, String),
     Textbook(String),
@@ -282,6 +284,7 @@ fn ability_of(arg: &str) -> Ability {
         "due" | "deadlines" | "deadline" | "assignments" | "homework" if arg.contains('|') || action.split_whitespace().count() == 1 => Ability::Due(range()),
         "overdue" | "missed" | "late" if action.split_whitespace().count() == 1 => Ability::Overdue,
         "first" | "priority" if action.split_whitespace().count() == 1 => Ability::First,
+        "left" | "todo" | "unfinished" | "missing" if action.split_whitespace().count() == 1 => Ability::Left,
         "grades" | "grade" => Ability::Blackboard(Want::Grades, course()),
         "announcements" | "announcement" => Ability::Blackboard(Want::Announcements, course()),
         "materials" | "material" | "slides" | "syllabus" => Ability::Blackboard(Want::Materials, course()),
@@ -331,6 +334,7 @@ pub fn izuki_tool(arg: &str) -> Option<String> {
     Some(match ability_of(arg) {
         Ability::Due(range) => crate::campus::handle(crate::campus::Ask::Due(range)),
         Ability::Overdue => crate::campus::handle(crate::campus::Ask::Overdue),
+        Ability::Left => crate::campus::handle(crate::campus::Ask::Left),
         Ability::First => crate::campus::handle(crate::campus::Ask::First),
         Ability::Blackboard(want, course) => crate::blackboard::handle(Bb { want, course }),
         Ability::Textbook(q) => return crate::textbook::parse(&format!("in my textbook, {q}"), true).map(crate::textbook::handle),
@@ -789,6 +793,8 @@ mod tests {
         assert_eq!(ability_of("due | before friday"), Ability::Due("week"));
         assert_eq!(ability_of("due | all"), Ability::Due("all"));
         assert_eq!(ability_of("overdue"), Ability::Overdue);
+        assert_eq!(ability_of("left"), Ability::Left);
+        assert_eq!(ability_of("unfinished"), Ability::Left);
         assert_eq!(ability_of("announcements | chemistry"), Ability::Blackboard(Want::Announcements, "chemistry".into()));
         assert_eq!(ability_of("money | food spending this month"), Ability::Money(crate::money::Ask::Month));
         assert_eq!(ability_of("money | any weird charges"), Ability::Money(crate::money::Ask::Unusual));

@@ -328,7 +328,7 @@ NotebookLM, Classroom, their accounts). Use it for anything behind a sign-in.\n\
 (end the text with ⏎ to press Enter).\n\
 [IZUKI: ability | details] — Izuki's own abilities, which read the user's real data. Name the ability and fill in \
 the details: due | today, tomorrow, week or all (what's due, from their Blackboard or school calendar) · overdue · \
-first (what to do first) · grades | a course, or empty for all · announcements | a course or empty · materials | a \
+left (what isn't handed in yet, and what is) · first (what to do first) · grades | a course, or empty for all · announcements | a course or empty · materials | a \
 course · textbook | their question about their textbook · cite | a link, DOI or ISBN (APA reference) · money | what \
 they asked (spending, unusual charges, subscriptions) · shop | orders, sales or stock · study | progress or mistakes · \
 screentime | their question · recall | their question about what was on their screen earlier · storage | \

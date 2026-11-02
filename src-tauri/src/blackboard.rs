@@ -125,10 +125,47 @@ pub fn can_read_due() -> bool {
     crate::ext::connected() && host().is_some()
 }
 
+/// One thing due, and whether Blackboard shows it handed in: Some(true) when
+/// it's graded, waiting to be graded or excused; Some(false) when nothing is
+/// handed in; None when Blackboard won't say (no gradebook entry to check).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DueItem {
+    pub id: String,
+    /// "title — course"
+    pub title: String,
+    pub at: chrono::DateTime<chrono::Local>,
+    pub done: Option<bool>,
+}
+
+/// A grade record that means the work is handed in: graded, submitted and
+/// waiting to be graded, or excused. Work done on another site (uCertify, a
+/// publisher's lab) only counts once that site has sent its result back.
+pub fn handed_in(r: &Value) -> bool {
+    let status = r["status"].as_str().unwrap_or("").to_lowercase().replace(['_', ' '], "");
+    matches!(status.as_str(), "graded" | "needsgrading" | "completed")
+        || r["exempt"].as_bool() == Some(true)
+        || r["score"].is_number()
+        || r["displayGrade"]["score"].is_number()
+}
+
+/// A course's grade records for this student, by gradebook column: handed
+/// in or not. None when Blackboard won't show them.
+fn handed_in_columns(base: &str, user: &str, course: &str) -> Option<std::collections::HashMap<String, bool>> {
+    let v = get(base, &format!("/learn/api/public/v2/courses/{course}/gradebook/users/{user}")).ok()?;
+    Some(results(&v).iter().filter_map(|r| Some((r["columnId"].as_str()?.to_string(), handed_in(r)))).collect())
+}
+
+/// Whether one item is handed in, from its course's records. None when
+/// there's no way to tell — including a column with no record at all (it may
+/// be hidden from students), which isn't proof that nothing was handed in.
+fn done_of(records: Option<&std::collections::HashMap<String, bool>>, column: Option<&str>) -> Option<bool> {
+    records?.get(column?).copied()
+}
+
 /// Everything due from `back` days ago to `ahead` days ahead, read from
-/// Blackboard itself: (id, "title — course", when). Blackboard's calendar
+/// Blackboard itself, with whether each is handed in. Blackboard's calendar
 /// first; if it won't say, each course's gradebook due dates.
-pub fn due_items(back: i64, ahead: i64) -> Result<Vec<(String, String, chrono::DateTime<chrono::Local>)>> {
+pub fn due_items(back: i64, ahead: i64) -> Result<Vec<DueItem>> {
     use chrono::{Local, Utc};
     let Some(base) = host() else {
         bail!("open your school's Blackboard in your browser (signed in), then ask again — I'll remember where it is");
@@ -138,9 +175,11 @@ pub fn due_items(back: i64, ahead: i64) -> Result<Vec<(String, String, chrono::D
     let iso = |t: chrono::DateTime<Utc>| t.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
     let when = |v: &Value| v.as_str().and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok()).map(|d| d.with_timezone(&Local));
     let in_range = |t: &chrono::DateTime<Local>| t.with_timezone(&Utc) >= since && t.with_timezone(&Utc) <= until;
-    *DEADLINE.lock() = Some(std::time::Instant::now() + Duration::from_secs(45));
-    let out = (|| -> Result<Vec<(String, String, chrono::DateTime<Local>)>> {
-        let mut out = Vec::new();
+    DEADLINE.with(|d| d.set(Some(std::time::Instant::now() + Duration::from_secs(45))));
+    // (id, title, when, course, gradebook column)
+    type Found = (String, String, chrono::DateTime<Local>, Option<String>, Option<String>);
+    let out = (|| -> Result<Vec<Found>> {
+        let mut out: Vec<Found> = Vec::new();
         if let Ok(v) = get(&base, &format!("/learn/api/public/v1/calendars/items?type=GradebookColumn&since={}&until={}&limit=200", iso(since), iso(until))) {
             for x in results(&v) {
                 let Some(at) = when(&x["end"]).or_else(|| when(&x["start"])) else { continue };
@@ -148,7 +187,11 @@ pub fn due_items(back: i64, ahead: i64) -> Result<Vec<(String, String, chrono::D
                 let course = course_name(x["calendarName"].as_str().unwrap_or(""));
                 let id = x["id"].as_str().unwrap_or(title).to_string();
                 if in_range(&at) {
-                    out.push((id, if course.is_empty() { title.to_string() } else { format!("{title} — {course}") }, at));
+                    // A gradebook item's own id is its column's (itemSourceId
+                    // when Blackboard gives it separately).
+                    let column = x["itemSourceId"].as_str().or(x["id"].as_str()).map(String::from);
+                    let course_id = x["calendarId"].as_str().map(String::from);
+                    out.push((id, if course.is_empty() { title.to_string() } else { format!("{title} — {course}") }, at, course_id, column));
                 }
             }
             if !out.is_empty() {
@@ -164,22 +207,48 @@ pub fn due_items(back: i64, ahead: i64) -> Result<Vec<(String, String, chrono::D
                 let title = col["name"].as_str().unwrap_or("Something").trim();
                 let id = col["id"].as_str().map(|i| format!("{}:{i}", c.id)).unwrap_or_else(|| title.to_string());
                 if in_range(&at) {
-                    out.push((id, format!("{title} — {}", c.name), at));
+                    out.push((id, format!("{title} — {}", c.name), at, Some(c.id.clone()), col["id"].as_str().map(String::from)));
                 }
             }
         }
         Ok(out)
     })();
-    *DEADLINE.lock() = None;
-    out
+    // Handed in or not: one look at each course's grade records (the same
+    // ones "what are my grades?" reads), within the same time budget.
+    let found = match out {
+        Ok(found) => found,
+        Err(e) => {
+            DEADLINE.with(|d| d.set(None));
+            return Err(e);
+        }
+    };
+    let user = if found.iter().any(|f| f.3.is_some()) { me(&base).ok() } else { None };
+    let mut records: std::collections::HashMap<String, Option<std::collections::HashMap<String, bool>>> = std::collections::HashMap::new();
+    if let Some(user) = &user {
+        for course in found.iter().filter_map(|f| f.3.clone()) {
+            records.entry(course.clone()).or_insert_with(|| handed_in_columns(&base, user, &course));
+        }
+    }
+    DEADLINE.with(|d| d.set(None));
+    Ok(found
+        .into_iter()
+        .map(|(id, title, at, course, column)| {
+            let done = done_of(course.as_ref().and_then(|c| records.get(c)).and_then(|r| r.as_ref()), column.as_deref());
+            DueItem { id, title, at, done }
+        })
+        .collect())
 }
 
-/// The whole answer's time budget: one slow course can't hold it up forever.
-static DEADLINE: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
+// Per thread: the heads-ups and a question asked meanwhile each keep their own
+// budget (one shared value let one clear the other's).
+thread_local! {
+    /// The whole answer's time budget: one slow course can't hold it up forever.
+    static DEADLINE: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
+}
 
 fn get(base: &str, path: &str) -> Result<Value> {
     let url = format!("{base}{path}");
-    let left = DEADLINE.lock().map(|d| d.saturating_duration_since(std::time::Instant::now())).unwrap_or(Duration::from_secs(20));
+    let left = DEADLINE.with(|d| d.get()).map(|d| d.saturating_duration_since(std::time::Instant::now())).unwrap_or(Duration::from_secs(20));
     if left < Duration::from_secs(1) {
         bail!("out of time");
     }
@@ -338,7 +407,7 @@ pub fn answer(ask: &Ask) -> Result<String> {
     let mut lines = Vec::new();
     let mut missed = Vec::new();
     let deadline = std::time::Instant::now() + Duration::from_secs(60);
-    *DEADLINE.lock() = Some(deadline);
+    DEADLINE.with(|d| d.set(Some(deadline)));
     for c in chosen.iter().take(12) {
         if std::time::Instant::now() >= deadline {
             missed.push(format!("{} (out of time)", c.name));
@@ -355,7 +424,7 @@ pub fn answer(ask: &Ask) -> Result<String> {
             Err(e) => missed.push(format!("{} ({e})", c.name)),
         }
     }
-    *DEADLINE.lock() = None;
+    DEADLINE.with(|d| d.set(None));
     let head = match ask.want {
         Want::Grades => "🎓 Your grades on Blackboard",
         Want::Announcements => "📣 Latest announcements",
@@ -435,6 +504,25 @@ pub fn handle(ask: Ask) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// "Which assignments are done and not done?" — from the grade records.
+    #[test]
+    fn knows_what_is_handed_in() {
+        assert!(handed_in(&json!({"columnId": "_1_1", "status": "Graded", "score": 18.0})));
+        assert!(handed_in(&json!({"columnId": "_2_1", "status": "NeedsGrading"})), "submitted, not graded yet: done");
+        assert!(handed_in(&json!({"columnId": "_3_1", "exempt": true})), "excused: nothing to do");
+        assert!(handed_in(&json!({"columnId": "_4_1", "displayGrade": {"score": 9.0}})));
+        assert!(!handed_in(&json!({"columnId": "_5_1"})), "a record with nothing in it");
+        assert!(!handed_in(&json!({"columnId": "_6_1", "status": ""})));
+        let mut records = std::collections::HashMap::new();
+        records.insert("_1_1".to_string(), true);
+        records.insert("_5_1".to_string(), false);
+        assert_eq!(done_of(Some(&records), Some("_1_1")), Some(true));
+        assert_eq!(done_of(Some(&records), Some("_5_1")), Some(false));
+        assert_eq!(done_of(Some(&records), Some("_9_1")), None, "no record at all: can't tell");
+        assert_eq!(done_of(None, Some("_1_1")), None, "Blackboard wouldn't show the records");
+        assert_eq!(done_of(Some(&records), None), None, "a calendar item with no gradebook column");
+    }
 
     /// From the user's log: eight heads-ups at once, each carrying the
     /// catalogue code twice.
