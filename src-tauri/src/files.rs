@@ -136,6 +136,23 @@ pub(crate) fn atomic_save(p: &Path, data: impl FnOnce() -> Result<Vec<u8>>) -> R
         .ok_or_else(|| anyhow!("{} has no folder to save into", p.display()))?;
     std::fs::create_dir_all(dir).map_err(|e| anyhow!("couldn't create {}: {e}", dir.display()))?;
     let stem = p.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    // A crash can leave a half-finished save behind. The pattern is only
+    // ever Izuki's own (a dot name here), and an hour-old one belongs to a
+    // dead process — sweep those so a badly crashed save never litters a
+    // folder with dozens of tombstones and then refuses to save again.
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        let an_hour_ago = SystemTime::now().checked_sub(Duration::from_secs(3600)).unwrap_or(
+            SystemTime::UNIX_EPOCH,
+        );
+        for e in entries.filter_map(|e| e.ok()) {
+            let name = e.file_name().to_string_lossy().to_string();
+            if name.starts_with(&format!(".{stem}.izuki-tmp"))
+                && e.metadata().ok().map(|m| m.modified().ok().map(|t| t < an_hour_ago)) == Some(Some(true))
+            {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
     // A hidden name: [FIND:] and [LIST:] skip them (name.startswith('.')).
     let tmp = (1..100)
         .map(|n| dir.join(format!(".{stem}.izuki-tmp{n}")))
@@ -632,6 +649,56 @@ mod tests {
         // A full disk is said plainly, not as "os error 112".
         let full = std::io::Error::from_raw_os_error(112);
         assert_eq!(what_io(&full), "the disk is full — free some space and try again");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_failed_swap_never_takes_the_original_with_it() {
+        // The last step of the save is one move that replaces the real
+        // file. If that move can't happen (here: a folder is sitting where
+        // the file would go), the folder must come out of it untouched and
+        // the half-saved file must not stay behind either.
+        let dir = std::env::temp_dir().join(format!("izuki-swap-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let where_the_file_would_go = dir.join("report.txt");
+        std::fs::create_dir(&where_the_file_would_go).unwrap();
+        std::fs::write(where_the_file_would_go.join("inside.txt"), "someone's folder").unwrap();
+        let err = atomic_save(&where_the_file_would_go, || Ok("new bytes".into()))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("old file is untouched"), "{err}");
+        assert!(where_the_file_would_go.is_dir(), "the folder was destroyed by the failed save");
+        assert_eq!(std::fs::read_to_string(where_the_file_would_go.join("inside.txt")).unwrap(), "someone's folder");
+        let junk: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.contains("izuki-tmp"))
+            .collect();
+        assert!(junk.is_empty(), "the swap left its half-save behind: {junk:?}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn saves_sweep_the_leftovers_of_a_dead_save() {
+        // A crash in the middle of a save leaves the hidden temp file
+        // behind. An hour later it can only be a dead process's litter:
+        // the next save sweeps it (but never touches a temp file of a save
+        // that is running right now).
+        let dir = std::env::temp_dir().join(format!("izuki-sweep-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("notes.txt");
+        let old = dir.join(".notes.txt.izuki-tmp1");
+        std::fs::write(&old, "half of something, from a crash").unwrap();
+        let two_hours_ago = SystemTime::now() - Duration::from_secs(2 * 3600);
+        std::fs::File::options().write(true).open(&old).unwrap().set_modified(two_hours_ago).unwrap();
+        // A temp file younger than an hour stays: a live save may own it.
+        let fresh = dir.join(".notes.txt.izuki-tmp2");
+        std::fs::write(&fresh, "a save in flight").unwrap();
+        atomic_save(&f, || Ok("today's note".into())).unwrap();
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "today's note");
+        assert!(!old.exists(), "the hour-old leftover was not swept");
+        assert!(fresh.exists(), "a fresh temp file was swept while its save may still run");
         let _ = std::fs::remove_dir_all(dir);
     }
 

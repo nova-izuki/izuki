@@ -26,7 +26,7 @@ Status: ✅ done and tested · 🧪 built, testing · 🔨 in progress · ⏳ pe
 | Shared page classifier (`assess.rs`, `tools/assessment-cases.json`) | 🧪 | Graded / practice / not a quiz, from the page's own evidence. Unclear means graded. |
 | Desktop agent: practice pages allow answers; only graded ones hold back | 🧪 | `brain::Look`; regression test that school pages keep downloads, uploads, Next and rubric clicks. |
 | "What I can do" instead of a bare refusal | 🧪 | `assess::what_i_can_do`. |
-| Extension: the same classifier; practice pages allow picking in the panel's runner | ⏳ | |
+| Extension: the same classifier; practice pages allow picking in the panel's runner | ✅ | Found in the tree and kept (Claude/Codex): `extension/assess.js` plus the question page's own decision, tested by `tools/workspace-check.mjs` against the case list and by the headless-Edge page check; never Submit or Finish. |
 | AGENTS.md rule 6 updated to the practice/graded distinction | ✅ | Already edited in the tree (in the same commit as `assess.rs`). |
 | Side by side, AI-tab draft fix, floating Run task | ✅ | Shipped in 1.0.193 and 1.0.194. |
 
@@ -41,7 +41,7 @@ Status: ✅ done and tested · 🧪 built, testing · 🔨 in progress · ⏳ pe
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Browser panel: Think deeper / Research switch, with progress shown | ⏳ | |
+| Browser panel: Think deeper / Research switch, with progress shown | ✅ | Already built and tested (found in the tree): the panel's Quick / Think deeper / Research radios reach `ext.rs` (`mode`), Think deeper asks for checked reasoning, Research runs the step-by-step research with progress lines ("Searching …", "Reading nist.gov…"), and the mode is remembered. Tests: `ext.rs` mode/progress tests, `tools/panel-check.mjs`, and `tools/panel-browser-check.cjs` (research click, progress text, saved mode). |
 
 ## 5. Smart Vision Developer Observer (owner-only)
 
