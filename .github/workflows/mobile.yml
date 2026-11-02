@@ -39,6 +39,31 @@ jobs:
       - run: npx cap sync android
       - run: chmod +x ./gradlew
         working-directory: android
+      # A private preview key, once the owner adds it as a secret
+      # (docs/ANDROID-SIGNING.md). Until then the public key in the repo signs,
+      # exactly as before. The secret is decoded outside the checkout.
+      - name: Preview signing key from secrets, if set
+        env:
+          KEY_B64: ${{ secrets.IZUKI_PREVIEW_KEYSTORE_B64 }}
+          KEY_PASSWORD: ${{ secrets.IZUKI_PREVIEW_KEYSTORE_PASSWORD }}
+          LINEAGE_B64: ${{ secrets.IZUKI_PREVIEW_LINEAGE_B64 }}
+          OUTRIGHT: ${{ vars.IZUKI_PREVIEW_NEW_KEY_OUTRIGHT }}
+        run: |
+          if [ -n "$KEY_B64" ]; then
+            # A new key alone would stop every installed phone from updating:
+            # only on purpose (path B), never by just adding the secret.
+            if [ -n "$LINEAGE_B64" ]; then
+              echo "A rotation lineage is set, but its re-signing step isn't in this workflow yet (docs/ANDROID-SIGNING.md, path A step 3)." >&2; exit 1
+            fi
+            if [ "$OUTRIGHT" != "yes" ]; then
+              echo "A new preview key without a rotation lineage stops installed phones from updating. Add the lineage (path A), or set the repository variable IZUKI_PREVIEW_NEW_KEY_OUTRIGHT=yes (path B: everyone reinstalls). See docs/ANDROID-SIGNING.md." >&2; exit 1
+            fi
+            printf '%s' "$KEY_B64" | base64 -d > "$RUNNER_TEMP/izuki-preview.p12"
+            { echo "IZUKI_PREVIEW_KEYSTORE=$RUNNER_TEMP/izuki-preview.p12"; echo "IZUKI_PREVIEW_KEYSTORE_PASSWORD=$KEY_PASSWORD"; } >> "$GITHUB_ENV"
+            echo "Signing with the private preview key."
+          else
+            echo "No private preview key yet: signing with the public preview key in the repo."
+          fi
       - run: ./gradlew assembleDebug
         working-directory: android
       - uses: actions/upload-artifact@v4

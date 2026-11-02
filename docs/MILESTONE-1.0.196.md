@@ -88,5 +88,5 @@ Status: ✅ done and tested · 🧪 built, testing · 🔨 in progress · ⏳ pe
 | Release pipeline hardening | 🧪 | Tags only commits whose Verify passed (push runs), never republishes, checks asset sizes, verifies every updater signature against the app's key (`tools/verify-updater.mjs`, proven on 1.0.195 and on 3 tampered cases), versions agree (`tools/check-versions.mjs`), actions pinned in auto-release. Needs a real release run to be ✅. |
 | Binary assets checked in CI (`tools/asset-check.mjs`) | ✅ | 521 assets and 38 character rigs. A corrupted PNG, a truncated WebP and a header-only icon are all caught by name. |
 | Secret scan, performance review | ⏳ | Release candidate. |
-| Android preview signing key in the repo | ⛔ | Owner decision: rotate to a key kept in GitHub secrets (Android 9+ users update in place with a signed lineage; older phones reinstall once). Not changed yet. |
+| Android preview signing key in the repo | ⛔ | Separation done: preview builds use a private key from GitHub secrets once one is added, and release builds use only an environment key, never the repo's. CI refuses a new key that would strand installed phones. **Owner decision:** path A (rotation, no reinstall on Android 9+) or path B (everyone reinstalls once), see `docs/ANDROID-SIGNING.md`. |
 | Release candidate → owner approval → one release | ⏳ | |
