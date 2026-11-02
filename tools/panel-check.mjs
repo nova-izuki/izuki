@@ -249,3 +249,25 @@ assert(!/automatic[\s\S]{0,400}tabs\.create/.test(wiring), 'an automatic connect
 assert(/if \(!tabs\.length \|\| p\.id === "any"\) return false/.test(wiring), 'a catch-all tab is chosen by hand, never guessed');
 
 console.log(`panel: ok (${PROVIDERS.length} assistants, composer handoff on a stub DOM, every control wired, every route served)`);
+
+// ---- side by side ------------------------------------------------------------
+// Two windows stand in for a split view: the page on the left, the AI on the
+// right, together exactly filling the screen the browser is on (a second
+// monitor too: its left edge isn't 0).
+{
+  globalThis.document ??= { getElementById: () => null };
+  const { halves } = await import('../extension/connect.js');
+  const one = halves({ left: 0, top: 0, width: 1920, height: 1040 });
+  assert.deepEqual(one.page, { left: 0, top: 0, width: 1114, height: 1040 });
+  assert.deepEqual(one.ai, { left: 1114, top: 0, width: 806, height: 1040 });
+  const second = halves({ left: 1920, top: 0, width: 1280, height: 984 });
+  assert.equal(second.page.left, 1920, 'on the monitor the browser is on');
+  assert.equal(second.ai.left + second.ai.width, 1920 + 1280, 'the two sides fill it exactly');
+  assert.equal(halves({ left: 0, top: 0, width: 600, height: 300 }), null, 'too small: no split, never windows past the screen');
+  assert.equal(halves({ left: 0, top: 0, width: 1100, height: 800 }), null, 'the AI side would be under the 500 px Chromium minimum');
+  for (const area of [{ left: 0, top: 0, width: 1366, height: 728 }, { left: -1280, top: 120, width: 1280, height: 984 }]) {
+    const s = halves(area);
+    assert(s.page.left >= area.left && s.ai.left + s.ai.width <= area.left + area.width && s.page.height <= area.height, 'inside the screen');
+  }
+}
+console.log('side by side: ok (fills the screen it is on, page left, AI right)');

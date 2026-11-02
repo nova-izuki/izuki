@@ -101,7 +101,18 @@ export function extractPage(mode = 'page') {
   return {
     text: document.body ? words(document.body, 14000) : '',
     selection: safeSelection ? String(selection).slice(0, 3000) : '',
-    links: [...document.links].filter((a) => visible(a)).slice(0, 400).map((a) => ({ name: (a.innerText || a.title || a.getAttribute('aria-label') || '').trim().slice(0, 80), href: a.href })).filter((a) => a.name && /^https?:/.test(a.href)),
+    // Stops at 400: checking every link's style first took seconds on pages
+    // with thousands of them (a course menu, a long inbox).
+    links: (() => {
+      const out = [];
+      for (const a of document.links) {
+        if (out.length >= 400) break;
+        if (!/^https?:/.test(a.href) || !visible(a)) continue;
+        const name = (a.innerText || a.title || a.getAttribute('aria-label') || '').trim().slice(0, 80);
+        if (name) out.push({ name, href: a.href });
+      }
+      return out;
+    })(),
     url: location.href,
   };
 }

@@ -64,6 +64,12 @@ pub fn task_running() -> bool {
     DOING.lock().is_some()
 }
 
+/// The running task's latest step, for the browser panel to show live.
+/// Empty when nothing is running.
+pub fn step_now() -> String {
+    DOING.lock().as_ref().map(|d| d.2.clone()).unwrap_or_default()
+}
+
 /// The current task's latest step ("Opening Blackboard…").
 pub fn task_step(step: &str) {
     if let Some(d) = DOING.lock().as_mut() {

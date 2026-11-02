@@ -9,19 +9,25 @@
     <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/panel-watchers.jpg</image:loc></image:image>
     <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/panel-settings.jpg</image:loc></image:image>
     <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/phone-call.jpg</image:loc></image:image>
-    <lastmod>2026-10-06</lastmod>
+    <lastmod>2026-11-01</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://nova-izuki.github.io/izuki/app/</loc>
-    <lastmod>2026-10-06</lastmod>
+    <lastmod>2026-11-01</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://nova-izuki.github.io/izuki/help/</loc>
+    <lastmod>2026-11-01</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
     <loc>https://nova-izuki.github.io/izuki/links/</loc>
-    <lastmod>2026-10-06</lastmod>
+    <lastmod>2026-11-01</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
@@ -34,6 +40,6 @@
     <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/phone-call.jpg</image:loc></image:image>
     <image:image><image:loc>https://nova-izuki.github.io/izuki/icon-512.png</image:loc></image:image>
     <image:image><image:loc>https://nova-izuki.github.io/izuki/og.png</image:loc></image:image>
-    <lastmod>2026-10-06</lastmod>
+    <lastmod>2026-11-01</lastmod>
   </url>
 </urlset>

@@ -88,6 +88,14 @@
       ],
       "operatingSystem": "Windows 10, Windows 11",
       "applicationCategory": "UtilitiesApplication",
+      "applicationSubCategory": "AI assistant",
+      "url": "https://nova-izuki.github.io/izuki/",
+      "downloadUrl": "https://github.com/nova-izuki/izuki/releases/latest",
+      "installUrl": "https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe",
+      "softwareHelp": { "@type": "CreativeWork", "url": "https://nova-izuki.github.io/izuki/help/" },
+      "license": "https://github.com/nova-izuki/izuki/blob/main/LICENSE",
+      "isAccessibleForFree": true,
+      "publisher": { "@id": "https://nova-izuki.github.io/izuki/#org" },
       "description": "A free AI assistant for Windows: say “Hey Nova”, and it sees your screen, answers out loud, and uses your mouse and keyboard to get things done — on your PC and from your phone.",
       "offers": {
         "@type": "Offer",
@@ -1059,6 +1067,7 @@
       .nw-log li { grid-template-columns: 1fr; gap: 4px; }
     }
     @media (prefers-reduced-motion: reduce) { .nw-rings, .nw-face b, .nw-eq i { animation: none; } }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
   </style>
 </head>
 <body>
@@ -1082,6 +1091,7 @@
         <a href="#phone">Phone</a>
         <a href="#how">Get started</a>
         <a href="#support">Support</a>
+        <a href="help/">Help</a>
         <a href="https://github.com/nova-izuki/izuki">GitHub</a>
       </div>
       <a class="btn primary small dl" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">Download</a>
@@ -1139,7 +1149,7 @@
       </div>
       <div class="hero-copy">
         <span class="eyebrow rv"><b></b>Izuki · Free · Windows 10 &amp; 11</span>
-        <h1 id="hero-h1" aria-label="The AI that lives on your screen.">The AI that lives on <span class="shine">your screen.</span></h1>
+        <h1 id="hero-h1" aria-label="Izuki: the AI that lives on your screen."><span class="sr-only">Izuki: </span>The AI that lives on <span class="shine">your screen.</span></h1>
         <p class="lede rv" style="--d:.16s">Say <b>“Hey Nova”</b> and just talk. Izuki sees your screen, answers you out loud, and uses your mouse and keyboard to get things done — it can even grab a pen and draw on your screen to teach you. Like a friend who's brilliant with computers, living right inside your PC.</p>
         <div class="ctas rv" style="--d:.24s" id="download">
           <a class="btn primary dl" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">⬇ Download for Windows — free</a>
@@ -1463,6 +1473,7 @@
         </article>
 
         <!-- what's new, in a few words -->
+        <article class="nw-card nw-feat rv"><div class="glyph">🔎</div><h3>A browser panel that shows its work</h3><p>While it answers, the side panel says what it's doing: reading the page, a linked page, <b>searching the web</b>, putting it together. Clear with one tap, follow up with Shorter, Simpler, Example or Quiz me, and keep typing: your next question waits its turn. Only real facts and sources, named so you can check them.</p></article>
         <article class="nw-card nw-feat rv"><div class="glyph">📬</div><h3>Nothing lost when the laptop wakes</h3><p>Heads-ups and reminders for your phone that come before the Wi-Fi is back now <b>wait and go once it is</b>, in order, marked with the time they were from, and never twice. Things due at the same time arrive as one heads-up, with course names you'd actually say.</p></article>
         <article class="nw-card nw-feat rv"><div class="glyph">☕</div><h3>Keeps your PC awake while something runs</h3><p>Say <b>“keep my PC awake for 3 hours”</b> before a long download, a render or a coding agent you leave running — a laptop that sleeps cuts them off. The screen still turns off on its usual timer (and locks, if Windows is set to); closing the lid still puts a laptop to sleep. It lets go on its own (12 hours at most), mentions it when you're on battery, and “let it sleep” ends it early.</p></article>
         <article class="nw-card nw-feat rv"><div class="glyph">👓</div><h3>It reads apps that keep their words to themselves</h3><p>Some apps — VS Code, Discord, Slack, anything built like them — hand Windows a window with no readable text at all. One look against one of them found <b>17 buttons and zero words</b>, so the honest answer was “I can't see anything on screen”. Windows' own OCR now reads the picture the AI was already being shown, on your PC, with nothing extra uploaded. A window that does share its page keeps its own words — the picture is only used when it says more.</p></article>
@@ -1665,7 +1676,7 @@
   </main>
 
   <footer>
-    <p><a href="screenshots/">Izuki screenshots &amp; brand images</a></p>
+    <p><a href="help/">Izuki help: install, extension, AI keys, troubleshooting</a> · <a href="screenshots/">Izuki screenshots &amp; brand images</a></p>
     <div class="socials" aria-label="Izuki on social media">
       <a href="https://x.com/izukiapp" aria-label="Izuki on X" rel="me noopener" target="_blank"><svg viewBox="0 0 24 24"><path d="M17.8 3h3.1l-6.8 7.7 8 10.3h-6.3l-4.9-6.4L5.3 21H2.2l7.2-8.3L1.8 3h6.4l4.4 5.8L17.8 3zm-1.1 16.2h1.7L7.4 4.7H5.6l11.1 14.5z"/></svg></a>
       <a href="https://www.instagram.com/izukiapp" aria-label="Izuki on Instagram" rel="me noopener" target="_blank"><svg viewBox="0 0 24 24"><path d="M12 7.3A4.7 4.7 0 1 0 16.7 12 4.7 4.7 0 0 0 12 7.3zm0 7.8A3.1 3.1 0 1 1 15.1 12 3.1 3.1 0 0 1 12 15.1zm6-8a1.1 1.1 0 1 1-1.1-1.1A1.1 1.1 0 0 1 18 7.1zM21.9 8.2a5.4 5.4 0 0 0-1.5-3.9 5.5 5.5 0 0 0-3.9-1.5C15 2.7 9 2.7 7.5 2.8a5.5 5.5 0 0 0-3.9 1.5 5.4 5.4 0 0 0-1.5 3.9c-.1 1.6-.1 6.1 0 7.7a5.4 5.4 0 0 0 1.5 3.9 5.5 5.5 0 0 0 3.9 1.5c1.6.1 7.5.1 9 0a5.4 5.4 0 0 0 3.9-1.5 5.4 5.4 0 0 0 1.5-3.9c.1-1.6.1-6.1 0-7.7zm-2.1 9.4a3.2 3.2 0 0 1-1.8 1.8c-1.2.5-4.2.4-5.6.4s-4.4.1-5.6-.4a3.2 3.2 0 0 1-1.8-1.8c-.5-1.2-.4-4.2-.4-5.6s-.1-4.4.4-5.6a3.2 3.2 0 0 1 1.8-1.8c1.2-.5 4.2-.4 5.6-.4s4.4-.1 5.6.4a3.2 3.2 0 0 1 1.8 1.8c.5 1.2.4 4.2.4 5.6s.1 4.4-.4 5.6z"/></svg></a>

@@ -32,9 +32,16 @@ const state = {
   companion: false,
   autoSend: true,
   autoConnect: true,
+  // An AI tab Connect opens goes beside the page, not behind it.
+  sideBySide: true,
   ready: false,
   origin: "",
 };
+/** The browser window the panel belongs to (set by setUpConnection). */
+let pageWindow = null;
+/** How both windows were before Side by side, to put them back:
+ *  { page: {state, box}, ai: {tabId, made, windowId, state, box} }. */
+let beforeSplit = null;
 
 const gate = new QuestionGate();
 let watching = null;
@@ -128,6 +135,132 @@ function followState(text) {
   if (el) el.textContent = text;
 }
 
+// ---- side by side -------------------------------------------------------------
+
+// Extensions can't open the browser's own split view, so two windows stand in
+// for it: the page on the left, the AI on the right, filling the screen the
+// browser is on. Gemini's built-in panel does this inside Chrome; this does it
+// for any AI website, in Chrome, Edge, Brave or any browser this runs in.
+
+/** The page side and the AI side of the screen the panel is on, or null on
+ *  a screen too small for two usable windows (never sized past its edges:
+ *  Chromium won't make a window narrower than 500 px, so each side needs it). */
+export function halves(area, share = 0.58) {
+  const MIN = 500;
+  const split = Math.round(area.width * share);
+  if (!(area.height >= MIN && split >= MIN && area.width - split >= MIN)) return null;
+  return {
+    page: { left: area.left, top: area.top, width: split, height: area.height },
+    ai: { left: area.left + split, top: area.top, width: area.width - split, height: area.height },
+  };
+}
+
+const screenArea = () => ({ left: screen.availLeft ?? 0, top: screen.availTop ?? 0, width: screen.availWidth, height: screen.availHeight });
+
+/** A window can only be placed when it isn't maximised or full screen. */
+async function place(windowId, box) {
+  await chrome.windows.update(windowId, { state: "normal" });
+  await chrome.windows.update(windowId, { ...box });
+}
+
+/** Put the AI beside the page: an open AI tab moves into its own window on the
+ *  right, or `url` opens there. Returns the AI tab's id. */
+const shape = (w) => ({ state: w.state, box: { left: w.left, top: w.top, width: w.width, height: w.height } });
+
+/** A window back the way it was. */
+async function restore(windowId, was) {
+  if (!was) return;
+  if (was.state === "normal") await chrome.windows.update(windowId, { state: "normal", ...was.box }).catch(() => {});
+  else await chrome.windows.update(windowId, { state: was.state }).catch(() => {});
+}
+
+let splitting = false;
+
+async function sideBySide({ tabId = null, url = null } = {}) {
+  if (pageWindow == null) throw Error("Open the panel from a browser window first.");
+  // One arrangement at a time, and never on top of one: the first one's
+  // "how it was" is what Back to one window puts back.
+  if (beforeSplit || splitting) throw Error("Already side by side. Press “Back to one window” first.");
+  splitting = true;
+  try { return await arrange({ tabId, url }); } finally { splitting = false; }
+}
+
+async function arrange({ tabId, url }) {
+  const sides = halves(screenArea());
+  if (!sides) throw Error("This screen is too small for two windows side by side.");
+  const page = shape(await chrome.windows.get(pageWindow));
+  let ai = null;
+  try {
+    await place(pageWindow, sides.page);
+    if (tabId != null) {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.windowId === pageWindow) {
+        await chrome.windows.create({ tabId, ...sides.ai, focused: false });
+        ai = { tabId, made: true };
+      } else {
+        // Already in a window of its own: placed with the AI tab in front,
+        // and put back as it was later (the tab that was in front too).
+        const [front] = await chrome.tabs.query({ active: true, windowId: tab.windowId }).catch(() => []);
+        ai = { tabId, made: false, windowId: tab.windowId, front: front?.id ?? null, ...shape(await chrome.windows.get(tab.windowId)) };
+        await place(tab.windowId, sides.ai);
+        if (!tab.active) await chrome.tabs.update(tabId, { active: true });
+      }
+    } else {
+      const made = await chrome.windows.create({ url, ...sides.ai, focused: true });
+      ai = { tabId: made.tabs?.[0]?.id ?? null, made: true };
+    }
+  } catch (error) {
+    // Half done is worse than not done: both windows go back to how they were.
+    await restore(pageWindow, page);
+    if (ai && !ai.made) await restore(ai.windowId, ai);
+    throw error;
+  }
+  beforeSplit = { page, ai };
+  keepSplit();
+  return ai.tabId;
+}
+
+/** Back to one window: an AI tab that had moved out returns to the page's
+ *  window; one that had its own window keeps it, as it was. */
+async function together() {
+  if (!beforeSplit || pageWindow == null) { beforeSplit = null; return; }
+  const { page, ai } = beforeSplit;
+  if (ai?.tabId != null) {
+    const tab = await chrome.tabs.get(ai.tabId).catch(() => null);
+    if (tab && ai.made && tab.windowId !== pageWindow) await chrome.tabs.move(ai.tabId, { windowId: pageWindow, index: -1 }).catch(() => {});
+    // (Its window is put back even if that tab has since closed.)
+    if (!ai.made) {
+      await restore(ai.windowId, ai);
+      if (ai.front != null && ai.front !== ai.tabId) await chrome.tabs.update(ai.front, { active: true }).catch(() => {});
+    }
+  }
+  await restore(pageWindow, page);
+  beforeSplit = null;
+  keepSplit();
+}
+
+// The split outlives the panel: closing and reopening it keeps "Back to one
+// window" (this browser session only).
+const splitKey = () => `izkSplit:${pageWindow}`;
+function keepSplit() {
+  if (pageWindow == null) return;
+  const key = splitKey();
+  (beforeSplit ? chrome.storage.session.set({ [key]: beforeSplit }) : chrome.storage.session.remove(key)).catch(() => {});
+}
+async function recallSplit() {
+  if (pageWindow == null) return;
+  try { beforeSplit = (await chrome.storage.session.get(splitKey()))?.[splitKey()] || null; } catch { beforeSplit = null; }
+}
+
+function paintSplit() {
+  const b = $("side-by-side");
+  if (!b) return;
+  const p = provider(state.providerId);
+  b.hidden = !!p.local;
+  b.textContent = beforeSplit ? "Back to one window" : "Side by side";
+  b.title = beforeSplit ? "Put the AI tab back in this window" : `Put your ${p.name} tab beside this page`;
+}
+
 // ---- connecting ------------------------------------------------------------
 
 async function izukiIsUp() {
@@ -168,10 +301,15 @@ async function connect({ automatic = false } = {}) {
       if (select) select.value = String(chosen.id);
     } else {
       if (!tabs.length && p.open) {
-        // Beside the page being read, not on top of it.
-        const made = await chrome.tabs.create({ url: p.open, active: false }).catch(() => null);
-        if (made) {
-          say(`Opened ${p.name} in a tab. Sign in there if it asks, then press Connect again.`);
+        // Beside the page being read, not on top of it: side by side when
+        // there's room for it, else a tab in the background.
+        // Whether it went beside the page is what the call did, not what it returned.
+        let beside = false, opened = false;
+        if (state.sideBySide) beside = opened = await sideBySide({ url: p.open }).then(() => true, () => false);
+        if (!opened) opened = !!(await chrome.tabs.create({ url: p.open, active: false }).catch(() => null));
+        paintSplit();
+        if (opened) {
+          say(`Opened ${p.name}${beside ? " beside this page" : " in a tab"}. Sign in there if it asks, then press Connect again.`);
           await fillTabs();
           return false;
         }
@@ -320,7 +458,8 @@ function stopFollowing() {
  * `ask` is the panel's own question path (Izuki on this PC). `onFollowed` is
  * called with a question the page offered by itself.
  */
-export async function setUpConnection({ ask, onFollowed }) {
+export async function setUpConnection({ ask, onFollowed, windowId = null }) {
+  pageWindow = windowId;
   await load();
   fillProviders();
   await fillTabs();
@@ -347,6 +486,7 @@ export async function setUpConnection({ ask, onFollowed }) {
     await fillTabs();
     const now = provider(state.providerId);
     say(now.note || `Press Connect to use your ${now.name} tab.`);
+    paintSplit();
     if (state.autoConnect) void autoConnectNow();
   });
 
@@ -357,6 +497,21 @@ export async function setUpConnection({ ask, onFollowed }) {
   });
 
   $("refresh-tabs")?.addEventListener("click", () => void fillTabs());
+  await recallSplit();
+  paintSplit();
+  $("side-by-side")?.addEventListener("click", async () => {
+    try {
+      if (beforeSplit) { await together(); say("Back in one window."); }
+      else {
+        const id = state.connectedTab ?? state.tabId;
+        if (id == null) { say("Open or choose the AI tab first (Connect), then put it side by side."); return; }
+        await sideBySide({ tabId: id });
+        say("Side by side: your page on the left, the AI on the right. “Back to one window” undoes it.");
+      }
+    } catch (error) {
+      say(`Couldn't arrange the windows: ${error?.message || error}`);
+    } finally { paintSplit(); }
+  });
   $("connect")?.addEventListener("click", () => void connect());
 
   const auto = $("auto-connect");

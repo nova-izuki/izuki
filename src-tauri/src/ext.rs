@@ -39,7 +39,7 @@ static WAKE: Mutex<Option<Sender<()>>> = Mutex::new(None);
 
 /// The newest extension (extension/manifest.json). Older copies don't know
 /// every request Izuki makes (Blackboard, finding your school's tab).
-pub const LATEST: &str = "1.5.5";
+pub const LATEST: &str = "1.5.6";
 /// The connected extension's version; empty: one from before 1.4.1, which
 /// didn't say.
 static VERSION: Mutex<String> = Mutex::new(String::new());
@@ -459,7 +459,21 @@ fn side_task_status(origin: &str, v: &Value) -> Result<Value> {
     let mut all = SIDE_WORK.lock();
     let map = all.get_or_insert_with(HashMap::new);
     tidy_side(map);
-    map.get(&key).map(SideWork::json).ok_or_else(|| anyhow!("This task is no longer available. Review a new request."))
+    let mut out = map.get(&key).map(SideWork::json).ok_or_else(|| anyhow!("This task is no longer available. Review a new request."))?;
+    // What it's on right now ("Opening the discussion"), so the panel shows
+    // the work as it happens instead of one line for the whole task.
+    if out["state"] == "running" {
+        out["step"] = json!(crate::state::step_now());
+    }
+    Ok(out)
+}
+
+/// What a panel question is doing while it's answered: "Searching the web
+/// for …", "Reading …". Empty when there's nothing to say yet.
+fn side_progress(origin: &str, v: &Value) -> Result<Value> {
+    let key = side_key(origin, v, "chat")?;
+    let id = SIDE_WORK.lock().as_ref().and_then(|m| m.get(&key)).filter(|w| w.state == SideState::Running).map(|w| w.id);
+    Ok(json!({"ok": true, "text": id.and_then(crate::chat::progress).unwrap_or_default()}))
 }
 
 fn companion_preference(v: Option<&Value>) -> Result<Value> {
@@ -543,7 +557,7 @@ pub fn spawn() {
                 // back a token, run needs that token back, status says how it
                 // went, and stop ends it. Only the reviewed prompt carries any
                 // authority — never the page, never an AI tab's answer.
-                let side = ["/izuki/side/prepare", "/izuki/side/run", "/izuki/side/status", "/izuki/side/stop", "/izuki/companion"]
+                let side = ["/izuki/side/prepare", "/izuki/side/run", "/izuki/side/status", "/izuki/side/stop", "/izuki/side/progress", "/izuki/companion"]
                     .into_iter()
                     .find(|route| url.starts_with(route));
                 if let Some(route) = side {
@@ -558,6 +572,7 @@ pub fn spawn() {
                                     "/izuki/side/run" => run_side_task(&origin, &v),
                                     "/izuki/side/status" => side_task_status(&origin, &v),
                                     "/izuki/side/stop" => cancel_side(&origin, &v),
+                                    "/izuki/side/progress" => side_progress(&origin, &v),
                                     _ => companion_preference(if v["read"].as_bool() == Some(true) { None } else { Some(&v) }),
                                 };
                                 done.unwrap_or_else(side_error)
@@ -660,7 +675,7 @@ fn page_helper(url: &str, v: &Value, origin: &str) -> Value {
         chat_messages(&v, &title, &text)
     } else {
         vec![
-            json!({ "role": "system", "content": format!("You are Izuki, a warm, sharp helper inside the user's web browser. {job} Plain text only, no markdown headings.") }),
+            json!({ "role": "system", "content": format!("You are Izuki, a warm, sharp helper inside the user's web browser. {job} Plain text only, no markdown headings.\n{}", crate::chat::HONEST_RULE) }),
             json!({ "role": "user", "content": format!("Page: {title}\n\n{text}") }),
         ]
     };
@@ -721,7 +736,7 @@ fn chat_messages(v: &Value, title: &str, text: &str) -> Vec<Value> {
     } else {
         " Do not use web search for this answer; use the page and what you already know. If the answer isn't on the page, say so and answer from what you know, saying which is which. Never claim to have searched."
     };
-    let system = format!("You are Izuki, a warm, sharp assistant in a side panel next to the user's web page. Answer from the page (and any shared tabs) when you can.{search_rule} Be direct and brief: lead with the answer. Short bullet points with - and **bold** are fine; no headings. Never ask for or repeat passwords or card numbers.");
+    let system = format!("You are Izuki, a warm, sharp assistant in a side panel next to the user's web page. Answer from the page (and any shared tabs) when you can.{search_rule} Be direct and brief: lead with the answer. Short bullet points with - and **bold** are fine; no headings. Never ask for or repeat passwords or card numbers.\n{}", crate::chat::HONEST_RULE);
     let mut msgs = vec![
         json!({ "role": "system", "content": system }),
         json!({ "role": "user", "content": context }),
@@ -1029,6 +1044,28 @@ mod tests {
         assert!(system.contains("Do not use web search"), "web off must say so: {system}");
         let dflt = chat_messages(&json!({"question": "latest?"}), "Page", "page text");
         assert!(dflt[0]["content"].as_str().unwrap_or_default().contains("[SEARCH: query]"), "search is the default");
+    }
+
+    /// The panel wrote a graded journal around an incident that never
+    /// happened, stated as fact. Its rules are now the app's own.
+    #[test]
+    fn the_panel_never_invents_facts_and_doesnt_write_graded_work() {
+        for web in [true, false] {
+            let msgs = chat_messages(&json!({"web": web, "question": "do it for me"}), "Journal: Data Retention", "Write a 250-word journal");
+            let system = msgs[0]["content"].as_str().unwrap_or_default();
+            assert!(system.contains(crate::chat::HONEST_RULE), "web {web}: {system}");
+        }
+        assert!(crate::chat::HONEST_RULE.contains("never invent a real-world event"));
+        assert!(crate::chat::HONEST_RULE.contains("ONE short sentence"), "a refusal is one line, not a lecture");
+    }
+
+    /// What a panel question is doing, by its request: nothing for a request
+    /// that isn't running.
+    #[test]
+    fn progress_is_only_for_a_running_question() {
+        let none = side_progress("chrome-extension://abc", &json!({"requestId": "no-such-request"})).unwrap();
+        assert_eq!(none["text"], "");
+        assert!(side_progress("chrome-extension://abc", &json!({})).is_err(), "a request id is needed");
     }
 }
 

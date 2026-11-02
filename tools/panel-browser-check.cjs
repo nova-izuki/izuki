@@ -46,6 +46,52 @@ let server,browser,profile,ws;
   await ask('hello without my page');await wait('panelTest.asks.length===3');
   assert.equal(await run('panelTest.reads.length'),readCount,'unshared page must not be read');
   assert.equal(await run('panelTest.asks[2].body.text'),'');await run('panelTest.reply("Hello.")');await wait('!document.getElementById("send").disabled');
+  // A question typed while an answer is still coming goes next. It used to
+  // vanish: the box was emptied and nothing was asked.
+  await run('document.getElementById("share").checked=true');
+  await ask('first of two');await wait('panelTest.asks.length===4');
+  await ask('second of two');
+  assert.equal(await run('document.getElementById("q").value'),'','a waiting question leaves the box');
+  assert.equal(await run('document.getElementById("log").textContent.includes("Next up")'),true,'and says it is next');
+  await run('panelTest.reply("First answer. See https://example.com/a.")');
+  await wait('panelTest.asks.length===5');
+  assert.equal(await run('panelTest.asks[4].body.question'),'second of two','the waiting question is asked when the answer is in');
+  assert.equal(await run('[...document.querySelectorAll(".answer-body a")].at(-1).getAttribute("href")'),'https://example.com/a','a full stop after a link is not part of the link');
+  // Switching tabs while waiting used to throw the answer away silently.
+  await run('panelTest.active=2;chrome.tabs.onActivated.handlers.forEach((fn)=>fn({tabId:2}))');
+  await wait('document.getElementById("ptitle").textContent==="My custom AI"');
+  await run('panelTest.reply("Second answer survived the tab switch.")');
+  await wait('document.getElementById("log").textContent.includes("survived the tab switch")');
+  await run('panelTest.active=1;chrome.tabs.onActivated.handlers.forEach((fn)=>fn({tabId:1}))');
+  await wait('document.getElementById("ptitle").textContent==="Chapter 5"');
+  assert.equal(await run('document.querySelectorAll(".follow-ups").length'),1,'follow-ups sit under the newest answer only');
+  // A page that changed its own address (a quiz moving to #q2) is answered,
+  // not refused with "the page changed" every time.
+  await run('panelTest.pages[0].url="https://course.example/chapter5#q2"');
+  await ask('what about this part');await wait('panelTest.asks.length===6');
+  await run('panelTest.reply("About this part.")');
+  await wait('document.getElementById("log").textContent.includes("About this part")');
+  assert.equal(await run('document.getElementById("log").textContent.includes("page changed")'),false,'no "the page changed" refusal');
+  // A different page under the same tab: its words don't go out for a
+  // question about the old one, and asking again works (it used to fail
+  // the same way every time).
+  await run('panelTest.pages[0].url="https://course.example/grades"');
+  const sentBefore=await run('panelTest.asks.length');
+  await ask('and this one');
+  await wait('document.getElementById("log").textContent.includes("moved to another page")');
+  assert.equal(await run('panelTest.asks.length'),sentBefore,'the other page was not sent');
+  await ask('and this one');await wait(`panelTest.asks.length===${sentBefore+1}`);
+  await run('panelTest.reply("About the grades page.")');await wait('document.getElementById("log").textContent.includes("grades page")');
+  // A follow-up chip asks its follow-up.
+  await run('document.querySelector(".follow-ups button").click()');await wait('panelTest.asks.length===8');
+  assert.match(await run('panelTest.asks[7].body.question'),/shorter/i);
+  await run('panelTest.reply("Short.")');await wait('!document.getElementById("send").disabled');
+  // ↑ brings the last question back; "clear" clears and isn't asked.
+  await run('document.getElementById("q").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowUp",bubbles:true,cancelable:true}))');
+  assert.match(await run('document.getElementById("q").value'),/shorter/i,'↑ recalls the last question');
+  await ask('clear');await wait('document.querySelector(".hello")');
+  assert.equal(await run('panelTest.asks.length'),8,'"clear" is a command, not a question');
+  assert.equal(await run('document.querySelectorAll(".msg").length'),0,'the chat is cleared');
   await run('const p=document.getElementById("provider");p.value="any";p.dispatchEvent(new Event("change"));');
   await wait('document.querySelectorAll("#provider-tabs option").length===2');
   await run('const t=document.getElementById("provider-tabs");t.value="2";t.dispatchEvent(new Event("change"));document.getElementById("connect").click();');
@@ -212,7 +258,7 @@ let server,browser,profile,ws;
   }
   assert.deepEqual(errors,[]);
   fs.writeFileSync(path.join(root,'.work','panel-browser-check.png'),Buffer.from((await call('Page.captureScreenshot',{format:'png'})).data,'base64'));
-  console.log('Panel browser checks passed: scoped cancel, stale-answer rejection, one history pair, unshared page privacy, custom AI handoff, automatic question dedupe, navigation pause, visible task review and token handoff, no silent retarget after a tab closes, honest no-text handoff, Esc ending a desktop task, quiet auto-connect to an open AI tab, and answers that open whole.');
+  console.log('Panel browser checks passed: scoped cancel, stale-answer rejection, one history pair, unshared page privacy, custom AI handoff, automatic question dedupe, navigation pause, visible task review and token handoff, no silent retarget after a tab closes, honest no-text handoff, Esc ending a desktop task, quiet auto-connect to an open AI tab, answers that open whole, questions typed while answering asked next, answers surviving a tab switch and a page changing its own address, follow-up chips, ↑ recall and "clear".');
 })().catch((e)=>{console.error(e);process.exitCode=1;}).finally(async()=>{
   try{ws?.close();}catch{}await closeTestBrowser(browser,profile);server?.closeAllConnections();server?.close();
   if(profile&&path.resolve(profile).startsWith(path.join(root,'.work')+path.sep))try{fs.rmSync(profile,{recursive:true,force:true,maxRetries:3,retryDelay:200});}catch{}

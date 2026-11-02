@@ -136,7 +136,13 @@ async fn check(app: &AppHandle) -> Result<UpdateStatus,String> {
 }
 async fn refresh(app: &AppHandle, package: &mut Option<Package>) -> Result<UpdateStatus,String> {
     publish(app, |s| { s.phase="checking".into(); s.error=None; });
-    let updater=app.updater_builder().timeout(Duration::from_secs(30)).build().map_err(|e| failed(app,e))?;
+    // The installer starts, then Izuki ends at once (process::exit). Put the
+    // volume back and hang up a call first, the way a normal quit does, so
+    // nothing is left half-done; the installer then waits for izuki.exe to
+    // be free before copying (windows/hooks.nsh).
+    let updater=app.updater_builder().timeout(Duration::from_secs(30))
+        .on_before_exit(|| { eprintln!("[update] closing for the installer"); crate::duck::restore_now(); crate::call::stop(); })
+        .build().map_err(|e| failed(app,e))?;
     let update=updater.check().await.map_err(|e| failed(app,format!("Couldn't check for updates: {e}")))?;
     let version=update.as_ref().map(|u|u.version.clone()).unwrap_or_default();
     let held=package.as_ref().filter(|p| p.bytes.is_some() && p.update.version==version).is_some();

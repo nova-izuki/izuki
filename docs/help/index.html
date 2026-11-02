@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Izuki Help: Install, Browser Extension, AI Keys and Troubleshooting</title>
+  <meta name="description" content="How to install Izuki (Nova Izuki), the free AI assistant for Windows: set up the browser extension, add a free AI key, keep it updated, and fix common problems." />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <meta name="theme-color" content="#04050c" />
+  <link rel="canonical" href="https://nova-izuki.github.io/izuki/help/" />
+  <link rel="icon" type="image/png" sizes="96x96" href="../icon-96.png" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Izuki" />
+  <meta property="og:title" content="Izuki help: install, extension, AI keys, troubleshooting" />
+  <meta property="og:description" content="Everything to get Izuki, the free Windows AI assistant, set up and working." />
+  <meta property="og:url" content="https://nova-izuki.github.io/izuki/help/" />
+  <meta property="og:image" content="https://nova-izuki.github.io/izuki/og.png" />
+  <meta property="og:image:alt" content="Izuki, the AI that lives on your screen" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "@id": "https://nova-izuki.github.io/izuki/help/#article",
+      "headline": "Izuki help: install, browser extension, AI keys and troubleshooting",
+      "description": "How to install Izuki, the free AI assistant for Windows, set up its browser extension and AI keys, keep it updated, and fix common problems.",
+      "url": "https://nova-izuki.github.io/izuki/help/",
+      "inLanguage": "en",
+      "about": { "@id": "https://nova-izuki.github.io/izuki/#app" },
+      "isPartOf": { "@id": "https://nova-izuki.github.io/#website" },
+      "publisher": { "@id": "https://nova-izuki.github.io/izuki/#org" }
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://nova-izuki.github.io/izuki/help/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Is Izuki free?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Izuki is free and open source, with no account or subscription. It works with free AI keys such as Google Gemini's and Groq's." }
+        },
+        {
+          "@type": "Question",
+          "name": "Windows says \"Windows protected your PC\". Is Izuki safe to install?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Izuki is new and not code-signed yet, so Windows SmartScreen shows this for it. Click More info, then Run anyway. The source code is public on GitHub." }
+        },
+        {
+          "@type": "Question",
+          "name": "An update showed \"Error opening file for writing\". What do I do?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Press Retry, not Abort. The box means Izuki was still closing when the installer started copying; a moment later the copy goes through. From version 1.0.193 the installer waits for Izuki to close before copying." }
+        },
+        {
+          "@type": "Question",
+          "name": "The browser panel says \"Izuki isn't running\".",
+          "acceptedAnswer": { "@type": "Answer", "text": "The panel's answers come from the Izuki app on your PC. Open Izuki (it can sit in the tray), and the panel connects within a few seconds." }
+        }
+      ]
+    }
+  ]
+}</script>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; color: #eef0ff; background: #04050c; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: radial-gradient(ellipse at top left, #22173d, transparent 65%); }
+    a { color: #91e5f5; text-underline-offset: 4px; }
+    a:focus-visible { outline: 3px solid #91e5f5; outline-offset: 5px; }
+    nav, main, footer { width: min(860px, calc(100% - 40px)); margin: auto; }
+    nav { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 0; }
+    .brand { display: flex; align-items: center; gap: 12px; color: #eef0ff; font-weight: 800; letter-spacing: .2em; text-decoration: none; }
+    .brand img { border-radius: 50%; }
+    header { padding: 40px 0 20px; }
+    .eyebrow { color: #bda6fc; font-size: 13px; letter-spacing: .15em; text-transform: uppercase; }
+    h1 { font-size: clamp(32px, 5.5vw, 54px); line-height: 1.08; letter-spacing: -.035em; margin: 14px 0 18px; }
+    header p, section p, li, footer { color: #c3c7e0; line-height: 1.7; font-size: 16px; }
+    .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 8px; padding: 0; list-style: none; }
+    .toc a { display: inline-block; padding: 7px 14px; border: 1px solid #ffffff24; border-radius: 999px; color: #eef0ff; text-decoration: none; font-size: 14px; }
+    .toc a:hover { border-color: #91e5f5; }
+    section { padding: 34px 0; border-top: 1px solid #ffffff14; scroll-margin-top: 16px; }
+    h2 { margin: 0 0 14px; font-size: 26px; letter-spacing: -.02em; }
+    h3 { margin: 22px 0 6px; font-size: 17px; color: #eef0ff; }
+    ol, ul { padding-left: 22px; }
+    li { margin: 6px 0; }
+    b, strong { color: #eef0ff; }
+    code, kbd { font-family: ui-monospace, Consolas, monospace; font-size: .92em; background: #ffffff12; border: 1px solid #ffffff1c; border-radius: 6px; padding: 1px 6px; color: #eef0ff; }
+    .note { border-left: 3px solid #bda6fc; padding: 4px 0 4px 16px; }
+    .btn { display: inline-block; margin-top: 6px; padding: 11px 20px; border-radius: 12px; background: linear-gradient(135deg, #7c5cff, #4ecdc4); color: #fff; font-weight: 700; text-decoration: none; }
+    footer { padding: 44px 0; font-size: 14px; border-top: 1px solid #ffffff14; }
+    @media (max-width: 560px) { header { padding-top: 16px; } nav { font-size: 14px; } h2 { font-size: 22px; } }
+  </style>
+</head>
+<body>
+  <nav aria-label="Main navigation"><a class="brand" href="../"><img src="../icon-96.png" width="36" height="36" alt="" /> IZUKI</a><a href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">Download</a></nav>
+  <main>
+    <header>
+      <div class="eyebrow">Help</div>
+      <h1>Getting Izuki set up and working</h1>
+      <p>Izuki (also called Nova Izuki) is a free AI assistant for Windows 10 and 11. Say “Hey Nova” and talk, and it sees your screen, answers out loud, and uses your mouse and keyboard to do things. Here's how to install it, connect it to an AI, add the browser panel, keep it updated, and fix the usual problems.</p>
+      <ul class="toc" aria-label="On this page">
+        <li><a href="#install">Install</a></li>
+        <li><a href="#ai">Free AI keys</a></li>
+        <li><a href="#extension">Browser extension</a></li>
+        <li><a href="#features">What it can do</a></li>
+        <li><a href="#updates">Updates</a></li>
+        <li><a href="#troubleshooting">Troubleshooting</a></li>
+      </ul>
+    </header>
+
+    <section id="install" aria-labelledby="install-h">
+      <h2 id="install-h">Install Izuki on Windows</h2>
+      <ol>
+        <li>Download <b>Izuki-Setup.exe</b> from the <a href="https://github.com/nova-izuki/izuki/releases/latest">latest release</a>.</li>
+        <li>Run it. If Windows says <b>“Windows protected your PC”</b>, click <b>More info</b>, then <b>Run anyway</b>. Izuki isn't code-signed yet, so SmartScreen shows this for it; the <a href="https://github.com/nova-izuki/izuki">source code is public</a>.</li>
+        <li>Izuki opens and walks you through setup. It can start with Windows and wait in the tray.</li>
+      </ol>
+      <p>There's also a portable version, <b>Izuki-portable.exe</b>, on the same release page, if you'd rather not install anything.</p>
+      <a class="btn" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">Download Izuki for Windows</a>
+    </section>
+
+    <section id="ai" aria-labelledby="ai-h">
+      <h2 id="ai-h">Connect a free AI</h2>
+      <p>Izuki doesn't charge for anything. Its thinking comes from an AI service you choose, and several have free keys:</p>
+      <ul>
+        <li><b>Google Gemini</b>: free key at <a href="https://aistudio.google.com/apikey">aistudio.google.com/apikey</a>. It can also be Izuki's voice.</li>
+        <li><b>Groq</b>: free key at <a href="https://console.groq.com/keys">console.groq.com/keys</a>. Very fast.</li>
+        <li>Also supported: OpenRouter, Mistral, Meta Llama, NVIDIA, OpenAI, Anthropic, Grok, and any OpenAI-compatible service you run yourself.</li>
+      </ul>
+      <p>In Izuki: <b>Settings → Izuki's brain</b>, pick the service, paste the key. With more than one key, Izuki uses the fastest one that's working and moves on if one is busy.</p>
+    </section>
+
+    <section id="extension" aria-labelledby="ext-h">
+      <h2 id="ext-h">Add the browser extension (Chrome, Edge, Brave)</h2>
+      <p>The extension gives you Izuki's side panel next to any web page, and lets Izuki click links and buttons on pages exactly.</p>
+      <ol>
+        <li>In Izuki, open <b>Settings → Browser extension</b> and press <b>Download</b> (or get <a href="../extension/izuki-extension.zip">izuki-extension.zip</a>). Right-click the file and choose <b>Extract All</b>.</li>
+        <li>Open <code>chrome://extensions</code> (in Edge, <code>edge://extensions</code>) and turn on <b>Developer mode</b>.</li>
+        <li>Click <b>Load unpacked</b> and choose the <b>izuki-extension</b> folder. The card in Izuki turns green.</li>
+        <li>Click the Izuki icon in the toolbar, or press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd>, to open the panel.</li>
+      </ol>
+      <h3>Using another AI in the panel</h3>
+      <p>The panel answers with Izuki on your PC by default. Under <b>Answering with</b> you can choose an AI website you're signed in to, such as Gemini or ChatGPT, and press <b>Connect</b>. <b>Side by side</b> puts that AI's window next to your page. The browser's own built-in assistants (like the one in Chrome's toolbar) can't be connected; use their website tab instead.</p>
+      <h3>Updating the extension</h3>
+      <p>When Izuki says the extension is out of date, download the zip again, extract it over the old folder, and press the reload button on Izuki in <code>chrome://extensions</code>.</p>
+    </section>
+
+    <section id="features" aria-labelledby="features-h">
+      <h2 id="features-h">What Izuki can do</h2>
+      <ul>
+        <li><b>Talk hands-free:</b> say “Hey Nova”, or hold the talk key, and just speak.</li>
+        <li><b>Use your PC:</b> open apps, click, type, fill in forms, and stop before anything final (Send, Submit, Pay) unless you say so.</li>
+        <li><b>Draw on your screen:</b> circle something and ask about it, or have Izuki point and explain.</li>
+        <li><b>Answer from the web:</b> it searches and reads pages, and names its sources.</li>
+        <li><b>Your phone:</b> chat, call, and get reminders on your phone.</li>
+        <li><b>Study help:</b> explains questions and ideas, makes practice questions, and gives feedback on your drafts. It doesn't do graded work for you.</li>
+        <li><b>Keep the PC awake</b> while something runs (“keep my PC awake for 3 hours”).</li>
+      </ul>
+      <p>See the <a href="../#features">full feature list</a> and <a href="../screenshots/">screenshots</a>.</p>
+    </section>
+
+    <section id="updates" aria-labelledby="updates-h">
+      <h2 id="updates-h">Updates</h2>
+      <p>Izuki checks for new versions by itself and tells you when one is ready. Install it from the Island at the top of your screen, or from <b>Settings → Updates</b>. Every update is signature-checked before it installs, and Izuki opens again afterwards. What changed is shown once, after the update.</p>
+    </section>
+
+    <section id="troubleshooting" aria-labelledby="trouble-h">
+      <h2 id="trouble-h">Troubleshooting</h2>
+      <h3>An update shows “Error opening file for writing”</h3>
+      <p>Press <b>Retry</b>, not Abort. Izuki was still closing when the installer started copying, and a moment later the copy goes through. From version 1.0.193 the installer waits until Izuki has closed and its file is free; if something else is holding the file, it asks you to retry or keep the version you have.</p>
+      <h3>The browser panel says “Izuki isn't running”</h3>
+      <p>Open the Izuki app. The panel's answers come from Izuki on your PC; it connects again within a few seconds.</p>
+      <h3>Izuki is slow to answer</h3>
+      <p>Free AI keys get busy at times. Adding a second free key (Gemini and Groq together) lets Izuki switch to whichever is answering. A laptop on battery can also be several times slower, especially for the on-device voice.</p>
+      <h3>The PC feels slow</h3>
+      <p>The usual causes are a nearly full drive and many browser tabs. Ask Izuki “why is my PC slow?” or “free up space”, and turn on your browser's Memory Saver (Chrome: Settings → Performance).</p>
+      <h3>Something else went wrong</h3>
+      <p>In Izuki, use <b>Report a problem</b>: it sends what you write and the recent log, with keys, emails and personal details taken out. The log itself is at <code>%APPDATA%\Izuki\logs\izuki.log</code>. You can also <a href="https://github.com/nova-izuki/izuki/issues">open an issue on GitHub</a>.</p>
+    </section>
+  </main>
+  <footer><a href="../">Discover Izuki</a> · <a href="../screenshots/">Screenshots</a> · <a href="../app/">Phone app</a> · <a href="https://github.com/nova-izuki/izuki">Source on GitHub</a></footer>
+</body>
+</html>
