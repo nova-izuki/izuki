@@ -71,6 +71,7 @@ pub mod remote;
 pub mod rtools;
 pub mod offline;
 pub mod outbox;
+pub mod smartcare;
 pub mod mail;
 pub mod tutor;
 pub mod missions;
@@ -505,6 +506,8 @@ pub fn run() {
             commands::reminder_remove,
             commands::alarm_snooze,
             commands::boost_health,
+            commands::smartcare_now,
+            commands::smartcare_fix,
             commands::voice_for_face,
             commands::boost_now,
             commands::boost_power_plan,

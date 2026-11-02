@@ -644,6 +644,11 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         .await
         .ok();
     }
+    // "Why is my PC slow?": what's actually behind it (Smart Care), before
+    // anything is cleaned. It used to run the cleanup instead of answering.
+    if crate::smartcare::is_question(&said) {
+        return blocking(|| crate::smartcare::explain(&crate::smartcare::now().causes)).await.ok();
+    }
     // "Speed up my PC", "my laptop is lagging": PC Boost, at once.
     if crate::boost::is_request(&said) {
         return blocking(|| crate::boost::run(false)).await.ok();
@@ -1978,6 +1983,18 @@ pub fn voice_for_face(male: bool) -> Option<serde_json::Value> {
 #[tauri::command]
 pub async fn boost_health() -> R<crate::boost::Health> {
     blocking(crate::boost::health).await
+}
+
+/// Smart Care: what's slowing the PC, with why and the fix (Settings → PC Care).
+#[tauri::command]
+pub async fn smartcare_now() -> R<crate::smartcare::Report> {
+    blocking(crate::smartcare::now).await
+}
+
+/// A Smart Care fix the person pressed.
+#[tauri::command]
+pub async fn smartcare_fix(op: String) -> R<String> {
+    blocking(move || crate::smartcare::fix(&op)).await
 }
 
 /// "Speed it up": clear old temp files, close hogging background helpers.

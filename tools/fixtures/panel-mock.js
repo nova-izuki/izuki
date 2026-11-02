@@ -23,10 +23,11 @@ window.panelTest = {
 const m = window.panelTest;
 const historyStore=globalThis.IzukiWorkspaceState.createHistoryStore(storage('local'));
 window.chrome = {
-  windows:{ getCurrent:async()=>({id:7}), onFocusChanged:event() },
+  windows:{ getCurrent:async()=>({id:7}), onFocusChanged:event(), update:async(id,props)=>{ (m.focused ||= []).push({id,...props}); return {id}; } },
   tabs:{
     query:async(q)=> (q.active ? m.pages.filter((t)=>t.id===m.active) : m.pages).map((t)=>({...t})),
     get:async(id)=> { const page=m.pages.find((t)=>t.id===id); if(!page)throw Error('closed'); return {...page}; },
+    update:async(id,props)=> { const page=m.pages.find((t)=>t.id===id); if(!page)throw Error('closed'); if(props.active)m.active=id; return {...page}; },
     onActivated:event(),onUpdated:event(),onRemoved:event(),
   },
   storage:{session:storage('session'),local:storage('local'),onChanged:event()},

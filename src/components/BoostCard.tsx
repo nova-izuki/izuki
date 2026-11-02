@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { BellRing, Copy, Gauge, Loader2, RefreshCw, Rocket, ShieldCheck, Trash2, Undo2, Wand2, Zap } from "lucide-react";
+import { BellRing, Copy, Gauge, Loader2, RefreshCw, Rocket, ShieldCheck, Stethoscope, Trash2, Undo2, Wand2, Zap } from "lucide-react";
 import { Row, Section, Toggle } from "./ui";
 import { useIzuki } from "../lib/store";
-import { api, emit, EV, IS_TAURI, type BackgroundService, type BoostHealth, type CareCheck, type DeepReport } from "../lib/ipc";
+import { api, emit, EV, IS_TAURI, type BackgroundService, type BoostHealth, type CareCheck, type CareReport, type DeepReport } from "../lib/ipc";
 
 /**
  * PC Care: the health check (pccare.rs — antivirus, firewall, drive health,
@@ -34,6 +34,34 @@ export function BoostCard() {
     if (!window.confirm(`Empty the Recycle Bin for good? ${items} item${items === 1 ? "" : "s"} (${size}) — they can't be restored after this.`)) return;
     setResult(await api.recycleBinEmpty().catch((e) => String(e)));
     readBin();
+  };
+  /** Smart Care's diagnosis (null until asked), and the fix being run. */
+  const [diag, setDiag] = useState<CareReport | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [fixing, setFixing] = useState("");
+  const [fixSaid, setFixSaid] = useState("");
+  const diagnose = async () => {
+    setDiagnosing(true);
+    setFixSaid("");
+    try {
+      const r = await api.smartcareNow();
+      if (mounted.current) setDiag(r);
+    } catch (e) {
+      if (mounted.current) setFixSaid(String(e));
+    } finally {
+      if (mounted.current) setDiagnosing(false);
+    }
+  };
+  const runFix = async (op: string) => {
+    setFixing(op);
+    try {
+      const said = await api.smartcareFix(op);
+      if (mounted.current) setFixSaid(said);
+    } catch (e) {
+      if (mounted.current) setFixSaid(String(e));
+    } finally {
+      if (mounted.current) setFixing("");
+    }
   };
   /** The health check (null until read). */
   const [care, setCare] = useState<CareCheck[] | null>(null);
@@ -317,6 +345,39 @@ export function BoostCard() {
         <Toggle checked={settings.pc_care_alerts} onChange={(v) => patch({ pc_care_alerts: v })} />
       </Row>
       <div className="izk-divider" />
+      <div className="izk-inset mb-2 rounded-[14px] p-2.5">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1.5 text-[12px] font-semibold">
+            <Stethoscope size={14} strokeWidth={2.3} className="text-izk-teal" /> What's slowing my PC?
+          </span>
+          <button type="button" onClick={() => void diagnose()} disabled={diagnosing} className="izk-pill izk-no-drag flex h-[26px] items-center gap-1 px-2.5 text-[11px] disabled:opacity-60">
+            {diagnosing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} {diagnosing ? "Looking…" : diag ? "Look again" : "Find out"}
+          </button>
+        </div>
+        {!diag && !diagnosing && (
+          <p className="text-[10.5px] leading-snug text-izk-muted">
+            Looks at the disk, memory, the processor over the last minute, which apps are behind each, and Izuki's own share, then says what would actually help. It changes nothing.
+          </p>
+        )}
+        {diag?.causes.map((c, i) => (
+          <div key={`${c.key}-${i}`} className="flex items-start gap-2 border-t border-white/5 py-1.5 first:border-t-0">
+            <span className="mt-[1px] text-[12px]" aria-hidden>{c.level === "bad" ? "🔴" : c.level === "warn" ? "🟡" : c.key === "fine" ? "✅" : "ℹ️"}</span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[11.5px] font-medium">{c.title}</div>
+              <div className="text-[10.5px] leading-snug text-izk-muted">{c.why}</div>
+            </div>
+            {c.fix && (
+              <button type="button" onClick={() => void runFix(c.fix!.op)} disabled={!!fixing} title={c.fix.risk === "look" ? "Only looks or opens a settings page" : c.fix.risk === "safe" ? "Undoes itself" : "Asks first"} className="izk-pill izk-no-drag h-[24px] shrink-0 px-2 text-[10.5px] font-semibold disabled:opacity-50">
+                {fixing === c.fix.op ? <Loader2 size={11} className="animate-spin" /> : c.fix.label}
+              </button>
+            )}
+          </div>
+        ))}
+        {diag && diag.readings.looks < 6 && (
+          <p className="mt-1 text-[10.5px] leading-snug text-izk-muted">Smart Care hasn't watched for a minute yet, so the processor reading is a single look: turn on Smart Care below for a steadier one.</p>
+        )}
+        {fixSaid && <p className="mt-1.5 whitespace-pre-line text-[11px] leading-snug text-izk-ink">{fixSaid}</p>}
+      </div>
       {health && (
         <div className="mb-2 flex gap-3">
           {meter("Processor", health.cpu)}
@@ -333,13 +394,13 @@ export function BoostCard() {
           ))}
         </div>
       )}
-      <Row label="Watch for lag" hint="When the PC stays maxed out, the Island offers to speed it up." icon={<Gauge size={14} strokeWidth={2.3} />}>
+      <Row label="Smart Care: watch and explain" hint="A few cheap readings every 5 seconds, nothing more. When the PC stays slow, the Island says what's behind it (a full drive, memory, a busy app) and what would help. A build or test run isn't flagged: that's work. Changes nothing by itself." icon={<Gauge size={14} strokeWidth={2.3} />}>
         <Toggle checked={settings.pc_boost} onChange={(v) => patch({ pc_boost: v })} />
       </Row>
       <div className="izk-divider" />
       <Row
-        label="Keep my PC fast 24/7"
-        hint="Works on its own. When your PC slows down, Izuki clears junk and old browser files, frees memory and closes background update tools — plus a quiet tidy once a day. Apps are only removed when you tap."
+        label="Auto Care: fix the safe things by itself"
+        hint="When your PC stays slow, Izuki fixes only the safe causes it finds: closes a background updater that's hogging it (they restart when needed) and frees memory from idle apps when memory is short. A minute later it checks whether that helped, and stops doing what doesn't. It never deletes your files, stops a build or closes a window. Plus a quiet tidy of old temp files once a day."
         icon={<Wand2 size={14} strokeWidth={2.3} />}
       >
         <Toggle checked={settings.pc_boost_auto} onChange={(v) => patch({ pc_boost_auto: v })} />

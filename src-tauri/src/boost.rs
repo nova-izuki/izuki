@@ -65,8 +65,25 @@ fn safe_helper(name: &str) -> bool {
             .any(|w| n.contains(w))
 }
 
+/// A background helper Smart Care may offer to close (they restart when needed).
+pub fn safe_helper_name(name: &str) -> bool {
+    safe_helper(name)
+}
+
 /// How the last few looks went: (cpu, ram) samples, newest last.
 static SAMPLES: Mutex<Vec<(u8, u8)>> = Mutex::new(Vec::new());
+
+/// The last minute of looks (empty while watching is off), for Smart Care:
+/// a minute tells a slowdown from a spike.
+pub fn recent_samples() -> Vec<(u8, u8)> {
+    SAMPLES.lock().clone()
+}
+
+/// Izuki's own share: (processor %, memory MB) for itself and its WebView2
+/// windows, which the heavy-app list never shows (they're on NEVER).
+pub fn own_usage() -> (f32, u64) {
+    sys::own_usage()
+}
 /// When the Island last offered help, and when it last ran by itself.
 static OFFERED: Mutex<Option<Instant>> = Mutex::new(None);
 static AUTO_RAN: Mutex<Option<Instant>> = Mutex::new(None);
@@ -112,8 +129,7 @@ pub fn is_request(said: &str) -> bool {
         "speed up my pc", "speed up my computer", "speed up my laptop", "speed my pc up", "make my pc faster",
         "make my computer faster", "my pc is slow", "my pc is lagging", "my computer is slow", "my computer is lagging",
         "my laptop is slow", "my laptop is lagging", "pc is lagging", "computer is lagging", "free up memory",
-        "free up some memory", "free up ram", "boost my pc", "pc boost", "unlag", "clean up my pc", "why is my pc slow",
-        "why is my computer slow", "why is my laptop slow",
+        "free up some memory", "free up ram", "boost my pc", "pc boost", "unlag", "clean up my pc",
     ]
     .iter()
     .any(|p| t.contains(p))
@@ -224,6 +240,18 @@ pub fn close_helpers() -> Vec<String> {
     closed
 }
 
+/// The background helper Smart Care named, closed by name: every copy that
+/// has no window. (Re-measuring right after the diagnosis gave nearly-zero
+/// readings, so `close_helpers` closed nothing while Auto Care said it had.)
+pub fn close_named(name: &str) -> Vec<String> {
+    if !safe_helper(name) {
+        return vec![];
+    }
+    let windows = sys::windowed();
+    let closed = sys::pids_named(name).into_iter().filter(|p| !windows.contains(p)).filter(|p| sys::close(*p)).count();
+    if closed == 0 { vec![] } else { vec![pretty(name)] }
+}
+
 /// Processes with a window on screen (never trimmed or closed).
 pub fn windowed_pids() -> std::collections::HashSet<u32> {
     sys::windowed()
@@ -277,6 +305,104 @@ fn dupes_line((moved, mb): (usize, u64)) -> String {
     }
 }
 
+/// Smart Care, when the PC has stayed slow: say what's behind it. A build or
+/// a test run isn't offered a "speed up" — that's the work.
+fn offer(causes: &[crate::smartcare::Cause], cpu: u8, ram: u8) {
+    use crate::smartcare::Level;
+    let Some(main) = causes.iter().find(|c| c.level >= Level::Warn) else {
+        eprintln!("[care] slow, but it's real work or a spike: nothing offered ({cpu}% / {ram}%)");
+        return;
+    };
+    crate::activity::show_boost(&format!("{}. {}", main.title, main.why), true);
+}
+
+/// What Auto Care did, waiting to be checked a minute later:
+/// (when, processor and memory before, the fixes, what was said).
+static PENDING: Mutex<Option<(Instant, u8, u8, Vec<String>, String)>> = Mutex::new(None);
+/// Fixes that didn't help on this PC, resting until then.
+static RESTING: Mutex<Vec<(String, Instant)>> = Mutex::new(Vec::new());
+
+fn resting(op: &str) -> bool {
+    let mut r = RESTING.lock();
+    r.retain(|(_, until)| Instant::now() < *until);
+    r.iter().any(|(o, _)| o == op)
+}
+
+/// The safe fixes for the causes found, done; None when there's nothing
+/// safe to do (the disk, a browser, a build: Smart Care explains those).
+fn auto_care(causes: &[crate::smartcare::Cause], cpu: u8, ram: u8) -> Option<String> {
+    use crate::smartcare::{Level, Risk};
+    let mut done = Vec::new();
+    let mut said = Vec::new();
+    for c in causes {
+        if let Some(f) = &c.fix {
+            if f.risk == Risk::Safe && !resting(&f.op) && !done.contains(&f.op) {
+                // Only what really changed something is said and checked.
+                if let Some(line) = crate::smartcare::fix_done(&f.op) {
+                    said.push(line);
+                    done.push(f.op.clone());
+                }
+            }
+        }
+    }
+    // Memory really short: idle background apps give some back (deepclean
+    // only trims at 75%+, and never a busy or windowed app).
+    if causes.iter().any(|c| c.key == "memory" && c.level == Level::Bad) && !resting("trim") {
+        let mb = crate::deepclean::trim();
+        if mb >= 50 {
+            said.push(format!("freed {} of memory from idle background apps", if mb >= 1024 { format!("{:.1} GB", mb as f64 / 1024.0) } else { format!("{mb} MB") }));
+            done.push("trim".into());
+        }
+    }
+    if done.is_empty() {
+        return None;
+    }
+    let line = said.join(" ");
+    eprintln!("[care] auto: {line}");
+    // The baseline is read the way the verdict will be: the last few looks.
+    let (cpu, ram) = recent_load(cpu, ram);
+    *PENDING.lock() = Some((Instant::now(), cpu, ram, done, line.clone()));
+    *LAST_DONE.lock() = Some((Instant::now(), line.clone()));
+    Some(line)
+}
+
+/// The last few looks averaged, not one: a single reading is too jumpy to
+/// judge by. (cpu, ram) when there are none.
+fn recent_load(cpu: u8, ram: u8) -> (u8, u8) {
+    let s = SAMPLES.lock();
+    let recent: Vec<&(u8, u8)> = s.iter().rev().take(3).collect();
+    if recent.is_empty() {
+        return (cpu, ram);
+    }
+    let n = recent.len() as u32;
+    ((recent.iter().map(|(c, _)| *c as u32).sum::<u32>() / n) as u8, (recent.iter().map(|(_, r)| *r as u32).sum::<u32>() / n) as u8)
+}
+
+/// A minute on: better (processor down 10 points or memory down 5), or not —
+/// in which case those fixes rest here for six hours.
+fn check_auto_care(cpu: u8, ram: u8) -> Option<String> {
+    let mut p = PENDING.lock();
+    let (at, cpu_before, ram_before, done, line) = p.as_ref()?.clone();
+    if at.elapsed() < Duration::from_secs(60) {
+        return None;
+    }
+    p.take();
+    // Watching stopped and came back much later: too stale to judge, so no
+    // verdict and nothing rested.
+    if at.elapsed() > Duration::from_secs(5 * 60) {
+        return None;
+    }
+    let (cpu, ram) = recent_load(cpu, ram);
+    let helped = cpu + 10 <= cpu_before || ram + 5 <= ram_before;
+    if helped {
+        Some(format!("{line} It helped: processor {cpu_before}% → {cpu}%, memory {ram_before}% → {ram}%."))
+    } else {
+        let until = Instant::now() + Duration::from_secs(6 * 3600);
+        RESTING.lock().extend(done.into_iter().map(|o| (o, until)));
+        Some(format!("{line} It didn't make a difference here (processor {cpu_before}% → {cpu}%), so I won't do that again for a few hours."))
+    }
+}
+
 /// Watch quietly while Izuki runs; offer (or do) the boost when it's slow.
 pub fn spawn(app: tauri::AppHandle) {
     std::thread::Builder::new()
@@ -316,17 +442,34 @@ pub fn spawn(app: tauri::AppHandle) {
                     crate::activity::show_boost(dupes.trim(), false);
                 }
             }
+            // A minute after Auto Care acted: did it help? (Said either way;
+            // what didn't help rests for six hours.)
+            if let Some(verdict) = check_auto_care(cpu, ram) {
+                eprintln!("[care] {verdict}");
+                crate::activity::show_boost(&format!("Auto Care: {verdict}"), false);
+                *LAST_DONE.lock() = Some((Instant::now(), verdict));
+            }
             if !lagging {
                 continue;
             }
             if s.pc_boost_auto && AUTO_RAN.lock().is_none_or(|t| t.elapsed() > Duration::from_secs(30 * 60)) {
                 *AUTO_RAN.lock() = Some(Instant::now());
-                let line = run(true);
-                crate::activity::show_boost(&format!("Sped up your PC — {line}"), false);
-                SAMPLES.lock().clear();
+                // Only the safe fix for the cause that's there — never a
+                // cleanup on a lag spike (it adds disk work while the PC is
+                // already struggling).
+                let report = crate::smartcare::now();
+                match auto_care(&report.causes, cpu, ram) {
+                    Some(line) => crate::activity::show_boost(&format!("Auto Care: {line}"), false),
+                    None if s.pc_boost => {
+                        // (Counted as offered, so the watcher below doesn't say it again.)
+                        *OFFERED.lock() = Some(Instant::now());
+                        offer(&report.causes, cpu, ram)
+                    }
+                    None => {}
+                }
             } else if s.pc_boost && OFFERED.lock().is_none_or(|t| t.elapsed() > Duration::from_secs(20 * 60)) {
                 *OFFERED.lock() = Some(Instant::now());
-                crate::activity::show_boost(&format!("Your PC is working hard (processor {cpu}%, memory {ram}%)."), true);
+                offer(&crate::smartcare::now().causes, cpu, ram);
             }
             let _ = &app;
         })
@@ -472,6 +615,28 @@ mod sys {
         with_windows()
     }
 
+    /// Every running copy of a program, by name.
+    pub fn pids_named(name: &str) -> Vec<u32> {
+        let mut pids = vec![0u32; 4096];
+        let mut got = 0u32;
+        if !unsafe { K32EnumProcesses(pids.as_mut_ptr(), (pids.len() * 4) as u32, &mut got) }.as_bool() {
+            return vec![];
+        }
+        pids.truncate(got as usize / 4);
+        let want = name.trim_end_matches(".exe");
+        pids.into_iter()
+            .filter(|p| *p > 4)
+            .filter(|pid| {
+                let Ok(h) = (unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, *pid) }) else { return false };
+                let n = name_of(h);
+                unsafe {
+                    let _ = CloseHandle(h);
+                }
+                n.eq_ignore_ascii_case(want)
+            })
+            .collect()
+    }
+
     /// Every running program's name (lower case).
     pub fn health_all_names() -> Vec<String> {
         let mut pids = vec![0u32; 4096];
@@ -593,6 +758,66 @@ mod sys {
         Health { cpu, ram, ram_free_gb: free_gb(), lagging: super::is_lagging(&super::SAMPLES.lock()), hogs: list }
     }
 
+    static LAST_OWN: Mutex<Option<(Instant, u64)>> = Mutex::new(None);
+
+    /// Izuki and everything it started (WebView2's browser and renderers):
+    /// (processor % since the last call, memory MB now).
+    pub fn own_usage() -> (f32, u64) {
+        use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
+        let me = std::process::id();
+        let mut parents: Vec<(u32, u32)> = Vec::new();
+        if let Ok(snap) = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) } {
+            let mut e = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+            if unsafe { Process32FirstW(snap, &mut e) }.is_ok() {
+                loop {
+                    parents.push((e.th32ProcessID, e.th32ParentProcessID));
+                    if unsafe { Process32NextW(snap, &mut e) }.is_err() {
+                        break;
+                    }
+                }
+            }
+            unsafe {
+                let _ = CloseHandle(snap);
+            }
+        }
+        // Children and grandchildren (WebView2's renderers hang off its browser process).
+        let mut family = vec![me];
+        for _ in 0..3 {
+            let more: Vec<u32> = parents.iter().filter(|(p, parent)| family.contains(parent) && !family.contains(p)).map(|(p, _)| *p).collect();
+            if more.is_empty() {
+                break;
+            }
+            family.extend(more);
+        }
+        let (mut used, mut mem) = (0u64, 0u64);
+        for pid in family {
+            let Ok(h) = (unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }) else { continue };
+            let (mut c, mut e, mut k, mut u) = (FILETIME::default(), FILETIME::default(), FILETIME::default(), FILETIME::default());
+            if unsafe { GetProcessTimes(h, &mut c, &mut e, &mut k, &mut u) }.is_ok() {
+                used += ticks(k) + ticks(u);
+            }
+            let mut pmc = PROCESS_MEMORY_COUNTERS { cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32, ..Default::default() };
+            if unsafe { K32GetProcessMemoryInfo(h, &mut pmc, pmc.cb) }.as_bool() {
+                mem += pmc.WorkingSetSize as u64 / (1024 * 1024);
+            }
+            unsafe {
+                let _ = CloseHandle(h);
+            }
+        }
+        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) as f64;
+        let now = Instant::now();
+        let mut last = LAST_OWN.lock();
+        let cpu = match *last {
+            Some((at, before)) if used >= before => {
+                let secs = now.duration_since(at).as_secs_f64().max(0.1);
+                ((used - before) as f64 / 1e7 / secs / cores * 100.0) as f32
+            }
+            _ => 0.0,
+        };
+        *last = Some((now, used));
+        (cpu.min(100.0), mem)
+    }
+
     /// End one background helper.
     pub fn close(pid: u32) -> bool {
         let Ok(h) = (unsafe { OpenProcess(PROCESS_TERMINATE, false, pid) }) else { return false };
@@ -622,6 +847,12 @@ mod sys {
     pub fn health_all_names() -> Vec<String> {
         vec![]
     }
+    pub fn own_usage() -> (f32, u64) {
+        (0.0, 0)
+    }
+    pub fn pids_named(_name: &str) -> Vec<u32> {
+        vec![]
+    }
 }
 
 #[cfg(test)]
@@ -639,9 +870,11 @@ mod tests {
 
     #[test]
     fn hears_the_request_and_never_closes_the_wrong_thing() {
-        for s in ["Hey Nova, speed up my PC", "my laptop is lagging!", "why is my computer slow", "free up some memory"] {
+        for s in ["Hey Nova, speed up my PC", "my laptop is lagging!", "free up some memory"] {
             assert!(is_request(s), "{s}");
         }
+        // A question gets an answer (smartcare), not a cleanup.
+        assert!(!is_request("why is my computer slow") && crate::smartcare::is_question("why is my computer slow"));
         assert!(!is_request("open chrome"));
         assert!(safe_helper("GoogleUpdate"));
         assert!(safe_helper("AdobeARM"));
@@ -664,6 +897,48 @@ mod tests {
             eprintln!("  {:<28} {:>6.1}% {:>6} MB window={}", x.name, x.cpu, x.mem_mb, x.window);
         }
         assert!(h.ram > 0);
+    }
+
+    /// The Auto Care tests share its pending check.
+    static CARE_TESTS: Mutex<()> = Mutex::new(());
+
+    /// Auto Care checks a minute later; what didn't help rests for hours.
+    #[test]
+    fn auto_care_checks_it_helped_and_rests_what_didnt() {
+        let _one = CARE_TESTS.lock();
+        let ago = Instant::now().checked_sub(Duration::from_secs(61)).expect("the PC has been up a minute");
+        *PENDING.lock() = Some((ago, 92, 60, vec!["close_helpers".into()], "Closed GoogleUpdate.".into()));
+        let v = check_auto_care(58, 60).unwrap();
+        assert!(v.contains("It helped: processor 92% → 58%"), "{v}");
+        assert!(!resting("close_helpers"));
+        *PENDING.lock() = Some((ago, 92, 60, vec!["close_helpers".into()], "Closed GoogleUpdate.".into()));
+        let v = check_auto_care(90, 59).unwrap();
+        assert!(v.contains("didn't make a difference") && v.contains("92% → 90%"), "{v}");
+        assert!(resting("close_helpers"), "a fix that didn't help isn't repeated");
+        *PENDING.lock() = Some((Instant::now(), 92, 60, vec![], "x".into()));
+        assert!(check_auto_care(10, 10).is_none(), "too soon to tell");
+        let long_ago = Instant::now().checked_sub(Duration::from_secs(6 * 60)).expect("the PC has been up six minutes");
+        *PENDING.lock() = Some((long_ago, 92, 60, vec!["close_helper:GoogleUpdate".into()], "x".into()));
+        assert!(check_auto_care(90, 60).is_none(), "too stale to judge");
+        assert!(PENDING.lock().is_none() && !resting("close_helper:GoogleUpdate"), "dropped, nothing rested");
+        RESTING.lock().clear();
+        PENDING.lock().take();
+    }
+
+    /// The user's laptop: a full disk, Chrome, a build. None has a safe
+    /// automatic fix, so Auto Care does nothing — no cleanup on a lag spike.
+    #[test]
+    fn auto_care_leaves_what_it_cant_safely_fix() {
+        let _one = CARE_TESTS.lock();
+        use crate::smartcare::{Cause, Fix, Level, Risk};
+        let look = |op: &str| Some(Fix { label: "x".into(), op: op.into(), risk: Risk::Look });
+        let causes = vec![
+            Cause { key: "disk".into(), level: Level::Bad, title: "C: is 96% full".into(), why: String::new(), fix: look("storage_report") },
+            Cause { key: "cpu".into(), level: Level::Bad, title: "Chrome's tabs".into(), why: String::new(), fix: look("memory_saver:chrome") },
+            Cause { key: "work".into(), level: Level::Info, title: "the Rust compiler".into(), why: String::new(), fix: None },
+        ];
+        assert_eq!(auto_care(&causes, 82, 63), None);
+        assert!(PENDING.lock().is_none(), "nothing done, nothing to check");
     }
 
     #[test]

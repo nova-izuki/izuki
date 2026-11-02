@@ -168,7 +168,9 @@ fn space_checks() -> Vec<Check> {
                 label: format!("Space on {d}"),
                 ok: !low,
                 detail: if low { format!("Only {free:.1} GB free of {total:.0} GB — the PC slows down and updates fail when a drive is this full.") } else { format!("{free:.0} GB free of {total:.0} GB.") },
-                fix: low.then(|| ("Free up space".into(), "ask:make my PC fast".into())),
+                // What's using it first: a temp-file clean ("make my PC
+                // fast") barely dents a drive this full.
+                fix: low.then(|| ("See what's using it".into(), "ask:what's using my disk space".into())),
             }
         })
         .collect()

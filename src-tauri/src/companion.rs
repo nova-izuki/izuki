@@ -532,6 +532,13 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         push("assistant", &text);
         return Reply::text(text);
     }
+    // "Why is my PC slow?", from the phone too: the diagnosis, not a cleanup.
+    if crate::smartcare::is_question(said) {
+        push("user", said);
+        let text = crate::smartcare::explain(&crate::smartcare::now().causes);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // "My PC is lagging", from the phone too: PC Boost on the PC.
     if crate::boost::is_request(said) {
         push("user", said);

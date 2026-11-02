@@ -354,6 +354,14 @@ export interface BoostHealth {
   hogs: Array<{ pid: number; name: string; cpu: number; mem_mb: number; window: boolean }>;
 }
 
+/** Smart Care (smartcare.rs): what's slowing the PC, worst first. */
+export interface CareFix { label: string; op: string; risk: "look" | "safe" | "ask" }
+export interface CareCause { key: string; level: "info" | "warn" | "bad"; title: string; why: string; fix: CareFix | null }
+export interface CareReport {
+  readings: { cpu_now: number; cpu_minute: number; looks: number; ram: number; ram_free_gb: number; drive: string; disk_free_gb: number; disk_total_gb: number; izuki_cpu: number; izuki_mem_mb: number };
+  causes: CareCause[];
+}
+
 /** One line of PC Care's health check; `fix` is [button, Island op]. */
 export interface CareCheck {
   key: string;
@@ -1050,6 +1058,11 @@ export const api = {
   mediaControl: (action: "play" | "pause" | "next" | "previous") => call<boolean>("media_control", { action }, () => false),
   reminderRemove: (id: string) => call<void>("reminder_remove", { id }, () => undefined),
   boostHealth: () => call<BoostHealth>("boost_health", undefined, () => ({ cpu: 0, ram: 0, ram_free_gb: 0, lagging: false, hogs: [] })),
+  smartcareNow: () => call<CareReport>("smartcare_now", undefined, () => ({
+    readings: { cpu_now: 0, cpu_minute: 0, looks: 0, ram: 0, ram_free_gb: 0, drive: "C:", disk_free_gb: 0, disk_total_gb: 0, izuki_cpu: 0, izuki_mem_mb: 0 },
+    causes: [{ key: "fine", level: "info", title: "Smart Care runs in the Izuki app on your PC", why: "Open Izuki to see what's slowing your PC down.", fix: null }],
+  })),
+  smartcareFix: (op: string) => call<string>("smartcare_fix", { op }, () => "Smart Care runs in the Izuki app on your PC."),
   voiceForFace: (male: boolean) => call<{ id: string; name: string; kokoro: string } | null>("voice_for_face", { male }, () => null),
   boostNow: () => call<string>("boost_now", undefined, () => "PC Boost only works inside the Izuki app."),
   boostDeep: () => call<DeepReport>("boost_deep", undefined, () => ({ said: "PC Boost only works inside the Izuki app.", freed_mb: 0, ram_freed_mb: 0, closed: [], bloat: [], startup: [], skipped: [] })),

@@ -133,15 +133,14 @@ fn cache_dirs() -> Vec<(PathBuf, Duration)> {
     let mut v = Vec::new();
     let day = Duration::from_secs(24 * 3600);
     if let Some(local) = dirs::data_local_dir() {
+        // Not the graphics shader caches (D3DSCache, NVIDIA/AMD DX and GL):
+        // Chrome, WebView2 and games keep ready-built drawing code there, and
+        // deleting it on every lag clean made them stutter while they built
+        // it all again, for very little space (smartcare.rs).
         for (p, age) in [
             ("CrashDumps", Duration::ZERO),
             ("Microsoft\\Windows\\WER\\ReportArchive", Duration::ZERO),
             ("Microsoft\\Windows\\WER\\ReportQueue", Duration::ZERO),
-            ("D3DSCache", day),
-            ("NVIDIA\\DXCache", day),
-            ("NVIDIA\\GLCache", day),
-            ("AMD\\DxCache", day),
-            ("AMD\\GLCache", day),
             ("Microsoft\\Windows\\INetCache\\IE", day),
         ] {
             v.push((local.join(p), age));

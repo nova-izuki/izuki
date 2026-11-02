@@ -672,6 +672,15 @@ $("task-run")?.addEventListener("click", async () => {
   }
   bubble("user", task);
   try {
+    // The desktop app only works on the page in front. From the floating
+    // panel, the panel's own window is in front, so every task failed with
+    // "its window is no longer in front": bring the page forward first.
+    try {
+      if (source.windowId != null) await chrome.windows.update(source.windowId, { focused: true });
+      await chrome.tabs.update(source.id, { active: true });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    } catch { /* the check below says plainly if it's still not in front */ }
+    if (desktopTask !== job) return;
     const ready = await side("prepare", { requestId:job.id, prompt:task, tabId:source.id, url:source.url || "", title:source.title || "" });
     if (desktopTask !== job) return;
     if (!ready.ok) throw Error(ready.text || "Izuki wouldn't take that task.");

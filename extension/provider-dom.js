@@ -15,7 +15,14 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
   }
   if (!box) return { ok: false, why: "no-composer" };
   if (box.disabled || box.readOnly || box.getAttribute("aria-disabled") === "true" || box.getAttribute("type") === "password") return { ok: false, why: "busy" };
-  if (String(box.value || box.textContent || "").trim()) return { ok: false, why: "draft" };
+  // A draft the person typed is left alone. Text Izuki typed itself on an
+  // earlier try (its Send failed or was swallowed) is Izuki's: it's replaced,
+  // instead of every later question failing on "your tab has a draft".
+  const squash = (s) => String(s || "").replace(/\s+/g, " ").trim();
+  const draft = squash(box.value || box.textContent);
+  const mine = squash(globalThis.__izukiTyped);
+  // (Exactly Izuki's text: anything the person added or changed is theirs.)
+  if (draft && !(mine && draft === mine)) return { ok: false, why: "draft" };
   if ([...document.querySelectorAll('button[data-testid="stop-button"],button[aria-label*="Stop generating" i],button[aria-label*="Stop response" i]')].some(visible)) return { ok: false, why: "busy" };
 
   box.focus();
@@ -36,6 +43,21 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
     box.dispatchEvent(new InputEvent("input", { bubbles: true, data: value, inputType: "insertText" }));
     box.dispatchEvent(new Event("change", { bubbles: true }));
   };
+  if (draft) {
+    // Izuki's own leftover: cleared the way a person would (select it all,
+    // delete), then checked, before anything new goes in.
+    if (native) setValue("");
+    else {
+      const range = document.createRange();
+      range.selectNodeContents(box);
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.execCommand("delete");
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+    if (squash(box.value || box.textContent)) return { ok: false, why: "draft" };
+  }
   if (!native) {
     // A contenteditable editor: paste, which Lexical and ProseMirror both
     // understand. Their handler is asynchronous, so the text is checked
@@ -66,6 +88,8 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
     if (!landed()) return { ok: false, why: "no-text" };
   }
 
+  // Remembered as Izuki's, so a failed Send doesn't block the next question.
+  globalThis.__izukiTyped = text;
   if (!autoSend) return { ok: true, sent: false };
   const ready = (el) => visible(el) && !el.disabled && el.getAttribute("aria-disabled") !== "true";
   const form = box.closest?.("form");
@@ -81,6 +105,8 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
   if (button) {
     if (requestId && globalThis.__izukiStoppedRelay?.has(requestId)) return {ok:false,why:"stopped"};
     button.click();
+    // Sent: whatever is in the box from now on is the person's.
+    globalThis.__izukiTyped = "";
     return { ok: true, sent: true };
   }
   return { ok: false, why: "no-send" };

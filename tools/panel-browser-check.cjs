@@ -113,6 +113,9 @@ let server,browser,profile,ws;
   assert.equal(await run('panelTest.tasks[1].body.reviewToken'),'fixture-review');
   assert.equal(await run('panelTest.tasks[0].body.requestId===panelTest.tasks[1].body.requestId'),true);
   await wait('document.getElementById("log").textContent.includes("reviewed fixture task finished")');
+  // From the floating panel the page's window isn't in front: it's brought
+  // forward before the desktop check (every task failed there before).
+  assert.equal(await run('(panelTest.focused||[]).some((f)=>f.id===7&&f.focused===true)'),true,'the page window is brought to the front first');
   // Two ChatGPT tabs: connect to the second, close it, and the connection
   // must not quietly move the next question into the first.
   await run(`panelTest.pages.push({id:4,windowId:7,active:false,url:"https://chatgpt.com/c/first",title:"ChatGPT first"},{id:5,windowId:7,active:false,url:"https://chatgpt.com/c/second",title:"ChatGPT second"});`);
@@ -156,6 +159,32 @@ let server,browser,profile,ws;
   })()`);
   assert.deepEqual(typed.out, { ok: false, why: 'no-text' }, 'a message that never landed must not be reported as sent');
   assert.equal(typed.clicks, 0, 'Send must not be pressed when the message box is empty');
+  // A draft the person typed is left alone; Izuki's own leftover from a
+  // failed Send is replaced (it used to block every later question).
+  const drafts = await run(`(async () => {
+    const { typeIntoComposer } = await import('/extension/providers.js');
+    const make = (text) => {
+      const box = document.createElement('div');
+      box.setAttribute('contenteditable','true');
+      box.style.cssText = 'position:fixed;top:0;left:0;width:280px;height:40px;display:block;z-index:9999';
+      box.textContent = text;
+      box.addEventListener('paste', (e) => { e.preventDefault(); box.textContent = e.clipboardData.getData('text/plain'); box.dispatchEvent(new InputEvent('input',{bubbles:true})); });
+      document.body.appendChild(box);
+      return box;
+    };
+    globalThis.__izukiTyped = 'Explain the chapter for me';
+    const own = make('Explain the chapter for me');
+    const replaced = await typeIntoComposer('A new question', ['div[contenteditable="true"]'], [], false, location.origin);
+    const afterOwn = own.textContent; own.remove();
+    const theirs = make('my own words, not sent yet');
+    const kept = await typeIntoComposer('A new question', ['div[contenteditable="true"]'], [], false, location.origin);
+    const afterTheirs = theirs.textContent; theirs.remove();
+    return { replaced, afterOwn, kept, afterTheirs };
+  })()`);
+  assert.deepEqual(drafts.replaced, { ok: true, sent: false }, 'Izuki replaces its own leftover');
+  assert.equal(drafts.afterOwn, 'A new question');
+  assert.deepEqual(drafts.kept, { ok: false, why: 'draft' }, "the person's own draft is left alone");
+  assert.equal(drafts.afterTheirs, 'my own words, not sent yet');
   // Esc has to end a desktop task from anywhere in the panel, as it promises.
   await run('document.getElementById("q").value="Summarise the page into my notes";document.getElementById("task-open").click();document.getElementById("task-run").click();');
   await wait('panelTest.tasks.filter((t)=>t.route==="run").length===2');

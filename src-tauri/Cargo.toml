@@ -1,6 +1,6 @@
 [package]
 name = "izuki"
-version = "1.0.193"
+version = "1.0.194"
 description = "IZUKI — draw on your screen, Izuki does it."
 authors = ["Izuki"]
 edition = "2021"
@@ -101,6 +101,7 @@ features = [
   "Win32_System_Power",
   "Win32_System_Registry",
   "Win32_System_ProcessStatus",
+  "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",
   "Win32_UI_HiDpi",
