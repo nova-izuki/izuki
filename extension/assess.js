@@ -10,7 +10,7 @@
   // - Not quiz-like: nothing here applies.
   //
   // What the page says decides it, never what someone says about it.
-  const GRADED=["points possible"," pts"," points)","(1 point","(2 points","attempt 1 of","attempt 2 of","attempts remaining","attempts allowed",
+  const GRADED=["points possible"," pts"," points)","(1 point","(2 points","attempts remaining","attempts allowed",
     "attempts left","attempt due","time remaining","time left","time limit","timer","submit quiz","submit test","submit exam",
     "submit assessment","finish attempt","submit for grading","save and submit","submit all and finish","proctor","lockdown browser",
     "honorlock","respondus","proctorio","counts toward","count toward","graded quiz","graded test","graded assessment",
@@ -32,16 +32,19 @@
   const QUIZ_LIKE=["quiz"," test"," exam","assessment","midterm","knowledge check"];
   // Grading signs no ordinary page has: alone they make a page an assessment
   // ("Homework 2 · Attempts remaining"). A due date or a timer doesn't.
-  const ASSESSMENT_ONLY=["points possible","(1 point","(2 points"," points)","attempt 1 of","attempt 2 of","attempts remaining","attempts allowed",
+  const ASSESSMENT_ONLY=["points possible","(1 point","(2 points"," points)","attempts remaining","attempts allowed",
     "attempts left","attempt due","submit quiz","submit test","submit exam","submit assessment","finish attempt",
     "submit for grading","submit all and finish","proctor","lockdown browser","honorlock","respondus","proctorio",
     "graded quiz","graded test","graded assessment","final exam","% of your grade","of your final grade","marked out of"];
-  // School-work words: with a score ("1 point") the page is an assessment;
-  // without them, points are a shop's ("Redeem 500 points").
+  // School-work words: in the page's own title or address, with a score
+  // ("1 point"), the page is an assessment. Elsewhere they prove nothing
+  // ("Have a question?" at a checkout); points are then a shop's.
   const SCHOOL=["exercise","homework","assignment","worksheet","problem set","lesson","chapter","module","question","course"];
   // "1 point", "(2 points)", "10 pts", "0.5 pt": a score on the page.
   // (The same whitespace as Rust's is_ascii_whitespace.)
   const POINTS=/[0-9][ \t\n\r\f]*(?:point|pt)s?(?![a-z])/;
+  // "Attempt 3 of 3" (any number), and a numbered question ("question 1").
+  const ATTEMPT=/attempt[ \t\n\r\f]*[0-9]+[ \t\n\r\f]*of/,NUMBERED_QUESTION=/question[ \t\n\r\f]*[0-9]/;
 
   function kind(title,url,text) {
     // The page itself: title (plus its main heading, in the extension) and
@@ -52,12 +55,13 @@
     const has=w=>words.includes(w);
     const named=PRACTICE_NAMES.some(w=>page.includes(w)),says=PRACTICE_SAYS.some(has);
     const saidUngraded=NOT_GRADED.reduce((w,n)=>w.split(n).join(" "),words);
-    const points=POINTS.test(saidUngraded);
+    const points=POINTS.test(saidUngraded),attempt=ATTEMPT.test(saidUngraded);
+    const school=SCHOOL.some(w=>page.includes(w))||NUMBERED_QUESTION.test(words);
     // Grading evidence before "no quiz at all": "Exercise 4" + "1 point" is graded.
     const quizLike=QUIZ_LIKE.some(has)||(has("question ")&&has(" of "))||named||says
-      ||ASSESSMENT_ONLY.some(w=>saidUngraded.includes(w))||(points&&SCHOOL.some(has));
+      ||ASSESSMENT_ONLY.some(w=>saidUngraded.includes(w))||attempt||(points&&school);
     if(!quizLike)return "none";
-    if(GRADED.some(w=>saidUngraded.includes(w))||points)return "graded";
+    if(GRADED.some(w=>saidUngraded.includes(w))||points||attempt)return "graded";
     if(named||says)return "practice";
     return "graded";
   }

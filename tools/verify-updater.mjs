@@ -7,7 +7,8 @@
 // - the signature in latest.json is the one in the asset's .sig file;
 // - that signature is a valid minisign (Ed25519) signature of the very file,
 //   made by the key built into the app (tauri.conf.json), trusted comment
-//   included.
+//   included, and the trusted comment records this version (the app checks
+//   it: requireSignedVersion).
 // A release that fails any of these must stay a draft.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -39,6 +40,12 @@ function verify(file, signatureB64) {
   if (!trusted?.startsWith('trusted comment: ')) return 'the trusted comment is missing';
   const global = Buffer.from(globalLine || '', 'base64');
   if (!crypto.verify(null, Buffer.concat([sig.subarray(10), Buffer.from(trusted.slice('trusted comment: '.length))]), publicKey, global)) return 'the trusted comment was altered';
+  // The app requires the signed version (tauri.conf.json requireSignedVersion):
+  // without it, or with another one, every user's updater would refuse this
+  // release, so it must never be published.
+  const signed = trusted.slice('trusted comment: '.length).split('\t').find((f) => f.startsWith('version:'))?.slice('version:'.length);
+  if (!signed) return 'the signature records no version (the app refuses such updates)';
+  if (signed.replace(/^v/, '') !== version) return `the signature is for version ${signed}, not ${version}`;
   return '';
 }
 

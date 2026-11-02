@@ -72,10 +72,22 @@ Status: open · claimed · fixed (commit) · dismissed (why).
 | 7 | High | `src/components/UpdateControls.tsx` + `updates.rs` | Rollback looks the release up again and could install a different version than the one confirmed | Claude | fixed (commit “CodeRabbit review 3 fixes”): `rollback_previous` takes the confirmed version and refuses if the lookup or the installer's manifest names another |
 | 8 | High | `src/components/UpdateControls.tsx` | Rollback is hidden whenever an update is offered | Claude | fixed (commit “CodeRabbit review 3 fixes”): shown whenever there's a version to go back to, disabled only while an operation runs |
 
+## CodeRabbit review 4: commits `d99e3c9`…`5e882b1`, 2026-11-02 21:36 UTC
+
+4 findings, all on Claude's commits, so Claude claims them.
+
+| # | Sev. | Where | Finding | Claimed by | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | High | `src-tauri/src/updates.rs` (+ `tauri.conf.json`) | The rollback version check reads the *unsigned* manifest. An altered manifest could pair it with another installer signed by the same key | Claude | fixed (commit “CodeRabbit review 4 fixes”): `requireSignedVersion: true`, so the updater compares the version written in the signature (which the signature covers) with the announced one, for updates and rollback alike. Checked in the plugin's source first, and 1.0.195's signatures carry `version:1.0.195`. `verify-updater.mjs` now refuses to publish a release whose signature lacks the version or names another; a faked 1.0.194 with real 1.0.195 signatures is refused on all 3 entries |
+| 2 | High | `src-tauri/src/assess.rs` (+ `assess.js`) | “Attempt 3 of 3” wasn't a grading sign (only 1 and 2 were listed) | Claude | fixed (commit “CodeRabbit review 4 fixes”): any “attempt N of”; `shows_attempt` tests; case added |
+| 3 | Low | `src-tauri/src/assess.rs` (+ `assess.js`) | A checkout with “Have a question?” and “Use 500 points” counted as graded | Claude | fixed (commit “CodeRabbit review 4 fixes”): a school word counts only in the page's own title or address, or as a numbered question (“Question 2”). Cases: the checkout is not a quiz; “Week 5 / Question 2 — 1 point” is graded |
+| 4 | Low | `docs/ANDROID-SIGNING.md` | The rotation step needs `--rotation-min-sdk-version 28`, or apksigner uses the new key only on Android 13+ | Claude | fixed (commit “CodeRabbit review 4 fixes”) |
+
 ## Found outside CodeRabbit
 
 | Sev. | Where | Finding | Claimed by | Status |
 | --- | --- | --- | --- | --- |
+| **High** (reproduced) | `extension/background.js` ↔ `src-tauri/src/ext.rs` (bridge on 127.0.0.1:47615) | The extension runs jobs from whatever answers on the bridge port, and nothing on either side proves who it is. While Izuki isn't running, any program can hold the port, including another user's on a shared PC. `readlinks` then fetches **any URL with the user's sign-ins** and returns its text (not only links on the page), and `snapshot`/`click`/`type`/`open` work on the tab in front. **Reproduced** with the real `background.js` in a sandbox: a stand-in server holding no secret got a private page's text back. Fix planned: a per-user pairing key from Izuki with every job signed (the extension refuses unsigned jobs), and `readlinks` limited to links on the page. | Claude | claimed, in progress |
 | ~~Medium (to verify)~~ | `src-tauri/src/updates.rs` normal update | ~~The 30 s timeout would cut off a slow download.~~ | Claude | dismissed: wrong. The 30 s is for the check; `fetch` sets 10 minutes before downloading (`updates.rs:305`). Pointed out by CodeRabbit review 3. |
 | Low → High | `scripts/pack-extension.mjs`, `docs/extension/izuki-extension.zip` | The zip stored `icons\icon-16.png` with backslashes. **Repacking it showed the website's zip was stale:** no `assess.js` (which the quiz runner injects, so a run on a quiz page would fail) and 6 older files, all this milestone's extension changes. | Claude | fixed (commit “CodeRabbit review 3 fixes”): the packer names entries with `/` itself (.NET ZipFile) and refuses a missing `files:[…]` injection; `asset-check` now compares the zip with `extension/` file by file and fails on backslashes. The old zip fails by name (7 files), the new one passes |
 

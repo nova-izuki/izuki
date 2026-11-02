@@ -204,5 +204,29 @@
   "url": "",
   "text": "Due date: Friday. Pay in full or pay the minimum",
   "kind": "none"
+ },
+ {
+  "title": "Homework 2",
+  "url": "",
+  "text": "Attempt 3 of 3. Which port does HTTPS use? 443 80",
+  "kind": "graded"
+ },
+ {
+  "title": "Week 5",
+  "url": "",
+  "text": "Question 2 — 1 point. Which port does HTTPS use?",
+  "kind": "graded"
+ },
+ {
+  "title": "Checkout",
+  "url": "",
+  "text": "Have a question? Use 500 points for $5 off. Standard or Express",
+  "kind": "none"
+ },
+ {
+  "title": "Sign in",
+  "url": "",
+  "text": "Too many attempts. Attempt to sign in again later.",
+  "kind": "none"
  }
 ]

@@ -37,7 +37,7 @@ pub enum Kind {
 
 /// Signs a page is marked. Any one makes it graded.
 const GRADED: &[&str] = &[
-    "points possible", " pts", " points)", "(1 point", "(2 points", "attempt 1 of", "attempt 2 of", "attempts remaining", "attempts allowed",
+    "points possible", " pts", " points)", "(1 point", "(2 points", "attempts remaining", "attempts allowed",
     "attempts left", "attempt due", "time remaining", "time left", "time limit", "timer", "submit quiz", "submit test", "submit exam",
     "submit assessment", "finish attempt", "submit for grading", "save and submit", "submit all and finish", "proctor", "lockdown browser",
     "honorlock", "respondus", "proctorio", "counts toward", "count toward", "graded quiz", "graded test", "graded assessment",
@@ -79,16 +79,31 @@ const QUIZ_LIKE: &[&str] = &["quiz", " test", " exam", "assessment", "midterm", 
 /// Attempts remaining: 2"). (The generic ones, a due date or a timer, don't:
 /// a bill has a due date.)
 const ASSESSMENT_ONLY: &[&str] = &[
-    "points possible", "(1 point", "(2 points", " points)", "attempt 1 of", "attempt 2 of", "attempts remaining", "attempts allowed",
+    "points possible", "(1 point", "(2 points", " points)", "attempts remaining", "attempts allowed",
     "attempts left", "attempt due", "submit quiz", "submit test", "submit exam", "submit assessment", "finish attempt",
     "submit for grading", "submit all and finish", "proctor", "lockdown browser", "honorlock", "respondus", "proctorio",
     "graded quiz", "graded test", "graded assessment", "final exam", "% of your grade", "of your final grade", "marked out of",
 ];
 
-/// School-work words. With a score on the page ("1 point") they make it an
-/// assessment ("Exercise 4"); without them, points are a shop's or a game's
-/// ("Redeem 500 points"), and clicking those stays allowed.
+/// School-work words. In the page's own title or address, with a score on
+/// the page ("1 point"), they make it an assessment ("Exercise 4"). Anywhere
+/// else they prove nothing ("Have a question?" on a shop's checkout), and
+/// points are a shop's or a game's ("Redeem 500 points"): clicking stays allowed.
 const SCHOOL: &[&str] = &["exercise", "homework", "assignment", "worksheet", "problem set", "lesson", "chapter", "module", "question", "course"];
+
+/// The word, then (after spaces) a digit: "attempt 3", "question 1".
+fn numbered(words: &str, word: &str) -> bool {
+    words.match_indices(word).any(|(i, _)| words[i + word.len()..].trim_start_matches(|c: char| c.is_ascii_whitespace()).starts_with(|c: char| c.is_ascii_digit()))
+}
+
+/// "Attempt 3 of 3" (any number): an assessment's attempt counter.
+fn shows_attempt(words: &str) -> bool {
+    words.match_indices("attempt").any(|(i, _)| {
+        let rest = words[i + "attempt".len()..].trim_start_matches(|c: char| c.is_ascii_whitespace());
+        let after = rest.trim_start_matches(|c: char| c.is_ascii_digit());
+        after.len() < rest.len() && after.trim_start_matches(|c: char| c.is_ascii_whitespace()).starts_with("of")
+    })
+}
 
 /// "1 point", "(2 points)", "10 pts", "0.5 pt": a score on the page.
 fn shows_points(words: &str) -> bool {
@@ -118,6 +133,8 @@ pub fn kind(title: &str, url: &str, text: &str) -> Kind {
     let says = PRACTICE_SAYS.iter().any(|w| words.contains(w));
     let said_ungraded = NOT_GRADED.iter().fold(words.clone(), |w, n| w.replace(n, " "));
     let points = shows_points(&said_ungraded);
+    let attempt = shows_attempt(&said_ungraded);
+    let school = SCHOOL.iter().any(|w| page.contains(w)) || numbered(&words, "question");
     // Grading evidence is looked at before deciding it's no quiz at all: an
     // "Exercise 4" worth "1 point" is graded though it never says quiz.
     let quiz_like = QUIZ_LIKE.iter().any(|w| words.contains(w))
@@ -125,11 +142,12 @@ pub fn kind(title: &str, url: &str, text: &str) -> Kind {
         || named
         || says
         || ASSESSMENT_ONLY.iter().any(|w| said_ungraded.contains(w))
-        || (points && SCHOOL.iter().any(|w| words.contains(w)));
+        || attempt
+        || (points && school);
     if !quiz_like {
         return Kind::NotAQuiz;
     }
-    if GRADED.iter().any(|w| said_ungraded.contains(w)) || points {
+    if GRADED.iter().any(|w| said_ungraded.contains(w)) || points || attempt {
         return Kind::Graded;
     }
     if named || says {
@@ -177,6 +195,13 @@ mod tests {
         for no in [" checkpoint 2", "1 pointer", "point of view", "a script", "chapter 4 key points"] {
             assert!(!shows_points(no), "{no}");
         }
+        for yes in ["attempt 3 of 3", "attempt 12of 12", "attempt\n2 of 5"] {
+            assert!(shows_attempt(yes), "{yes}");
+        }
+        for no in ["attempt to log in", "attempts of 3", "an attempt of"] {
+            assert!(!shows_attempt(no), "{no}");
+        }
+        assert!(numbered("see question 4 below", "question") && !numbered("have a question? call us", "question"));
     }
 
     #[test]
