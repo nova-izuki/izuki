@@ -10,6 +10,13 @@ on:
 
 permissions:
   contents: write
+  actions: read
+
+# One build per version at a time: a tag push and a hand-started run for the
+# same tag used to build side by side and race to publish.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   windows:
@@ -25,8 +32,16 @@ jobs:
           IZUKI_RELEASE_TAG: ${{ github.ref_name }}
         run: |
           if ($env:IZUKI_RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') { throw "Select a version tag, not a branch, when releasing" }
-          gh release view $env:IZUKI_RELEASE_TAG --json tagName 2>$null
-          if ($LASTEXITCODE -ne 0) {
+          # Only a commit whose tests passed (auto-release checks this too;
+          # this covers a tag pushed by hand).
+          $sha = git rev-parse HEAD
+          $passed = gh api "repos/$env:GITHUB_REPOSITORY/actions/workflows/verify.yml/runs?head_sha=$sha&status=success" --jq '.total_count'
+          if ($LASTEXITCODE -ne 0 -or [int]$passed -lt 1) { throw "Verify has not passed for $sha; not building a release from it" }
+          # A published release is never rebuilt or re-uploaded by a re-run.
+          $draft = gh release view $env:IZUKI_RELEASE_TAG --json isDraft --jq '.isDraft' 2>$null
+          $exists = $LASTEXITCODE -eq 0
+          if ($exists -and $draft -eq 'false') { throw "$env:IZUKI_RELEASE_TAG is already published; a re-run never changes it" }
+          if (-not $exists) {
             gh release create $env:IZUKI_RELEASE_TAG --verify-tag --draft --title "Izuki $env:IZUKI_RELEASE_TAG" --notes "Builds are being verified."
             if ($LASTEXITCODE -ne 0) { throw "could not prepare shared release" }
           }
@@ -120,39 +135,46 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IZUKI_RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          # Do not move /latest downloads to a release missing either phone
-          # build. A failed iPhone/Android build leaves this release a draft.
+          # Do not move /latest downloads to a release missing any build. A
+          # failed iPhone/Android build leaves this release a draft, and the
+          # last good release stays the one users get.
+          $tag = $env:IZUKI_RELEASE_TAG
+          $version = $tag -replace '^v', ''
+          # Smallest believable size for each (a failed upload or an empty
+          # build is a few bytes, not a missing name).
+          $need = @{ 'Izuki-Companion-Android-preview.apk' = 1MB; 'Izuki-Companion-iPhone-sideload.ipa' = 1MB; 'Izuki-Setup.exe' = 10MB; 'Izuki-portable.exe' = 10MB }
           $ready = $false
-          for ($attempt = 0; $attempt -lt 80; $attempt++) {
-            $assets = gh release view $env:IZUKI_RELEASE_TAG --json assets --jq '.assets[].name'
-            if ($LASTEXITCODE -eq 0 -and $assets -contains 'Izuki-Companion-Android-preview.apk' -and $assets -contains 'Izuki-Companion-iPhone-sideload.ipa' -and $assets -contains 'Izuki-Setup.exe') { $ready = $true; break }
+          for ($attempt = 0; $attempt -lt 180; $attempt++) {
+            $sizes = @{}
+            foreach ($line in (gh release view $tag --json assets --jq '.assets[] | [.name, (.size|tostring)] | join(" ")')) { $name, $size = $line -split ' ', 2; $sizes[$name] = [long]$size }
+            $missing = @($need.Keys | Where-Object { -not $sizes.ContainsKey($_) -or $sizes[$_] -lt $need[$_] })
+            if ($LASTEXITCODE -eq 0 -and $missing.Count -eq 0) { $ready = $true; break }
+            if ($attempt % 8 -eq 0) { Write-Host "Waiting for: $($missing -join ', ')" }
             Start-Sleep -Seconds 15
           }
-          if (-not $ready) { throw "Phone builds are not ready; keeping this release a draft" }
-          $version = $env:IZUKI_RELEASE_TAG -replace '^v', ''
-          # A working installer alone is not a working automatic update.
-          gh release download $env:IZUKI_RELEASE_TAG --pattern latest.json --output updater-manifest.json
-          if ($LASTEXITCODE -ne 0) { throw "Updater metadata is missing; keeping this release a draft" }
-          $manifest = Get-Content updater-manifest.json -Raw | ConvertFrom-Json
-          if ($manifest.version -ne $version) { throw "Updater metadata version does not match the release" }
-          foreach ($target in @('windows-x86_64', 'windows-x86_64-msi', 'windows-x86_64-nsis')) {
-            $entry = $manifest.platforms.$target
-            if (-not $entry.signature -or -not $entry.url.StartsWith("https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:IZUKI_RELEASE_TAG/")) {
-              throw "Missing signature or incorrect URL for $target"
-            }
-            $filename = [Uri]::UnescapeDataString(([Uri]$entry.url).Segments[-1])
-            if ($assets -notcontains $filename -or $assets -notcontains "$filename.sig") {
-              throw "Missing updater artifact or signature file for $target"
-            }
-          }
+          if (-not $ready) { throw "Not every build is ready ($($missing -join ', ')); keeping this release a draft" }
+          # A working installer alone is not a working automatic update: check
+          # latest.json and every signature the way the app will.
+          New-Item -ItemType Directory -Force updater-check | Out-Null
+          gh release download $tag --dir updater-check --pattern latest.json --pattern '*.sig' --pattern '*_x64-setup.exe' --pattern '*_x64_en-US.msi' --pattern 'Izuki-Setup.exe'
+          if ($LASTEXITCODE -ne 0) { throw "Could not download the updater files to check them; keeping this release a draft" }
+          node tools/verify-updater.mjs updater-check $version
+          if ($LASTEXITCODE -ne 0) { throw "The updater files did not verify; keeping this release a draft" }
+          # The website's download must be this release's own installer.
+          $setup = Get-ChildItem updater-check -Filter "*_x64-setup.exe" | Select-Object -First 1
+          if (-not $setup -or (Get-FileHash $setup.FullName).Hash -ne (Get-FileHash updater-check/Izuki-Setup.exe).Hash) { throw "Izuki-Setup.exe is not this release's installer" }
+          # Never publish behind a newer release (it would move the website's
+          # download backwards).
+          $current = gh release view --json tagName --jq '.tagName' 2>$null
+          if ($LASTEXITCODE -eq 0 -and $current -and [version]($current -replace '^v', '') -ge [version]$version) { throw "$current is already out; not publishing the older $tag" }
           $notes = "docs/RELEASE-$version.md"
           if (Test-Path $notes) {
             # Every release page leads to the website first — so search
             # engines see the site as Izuki's home, not 40 GitHub pages.
             $page = "🌐 **Izuki's website — download, phone app and TV app: [nova-izuki.github.io/izuki](https://nova-izuki.github.io/izuki/)**`n`n" + (Get-Content $notes -Raw)
             $page | Set-Content -Encoding utf8 release-notes.md
-            gh release edit $env:IZUKI_RELEASE_TAG --notes-file release-notes.md
+            gh release edit $tag --notes-file release-notes.md
             if ($LASTEXITCODE -ne 0) { throw "could not attach release notes" }
           }
-          gh release edit $env:IZUKI_RELEASE_TAG --draft=false --latest
+          gh release edit $tag --draft=false --latest
           if ($LASTEXITCODE -ne 0) { throw "could not publish complete release" }

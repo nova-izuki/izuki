@@ -25,6 +25,10 @@
   async function page(run,op,args={}) {
     await sourceTab(run.source);
     if(run.controller.signal.aborted && op!=="stop")throw new DOMException("Stopped","AbortError");
+    // The page decides practice or graded with the shared classifier, so it
+    // goes in first. (Fresh before every pick: a reload loses it, and the
+    // page then refuses.)
+    if(op==="install"||op==="select"||op==="advance")await chrome.scripting.executeScript({target:{tabId:run.source.id},files:["assess.js"]});
     const [result]=await chrome.scripting.executeScript({target:{tabId:run.source.id},func:root.IzukiQuestionPage,args:[op,{...args,runId:run.id,hadQuestion:run.hadQuestion}]});
     return result?.result;
   }
@@ -41,7 +45,7 @@
   }
   function changed(kind,state) {
     void chrome.storage.session.set({[`izkRun:${kind}`]:state}).catch(()=>{});
-    void chrome.action?.setBadgeText({text:["starting","reading","answering","suggested","running","stopping","stop-failed"].includes(state.phase)?"RUN":""}).catch(()=>{});
+    void chrome.action?.setBadgeText({text:["starting","reading","answering","suggested","picked","running","stopping","stop-failed"].includes(state.phase)?"RUN":""}).catch(()=>{});
   }
   const quiz=new root.IzukiQuestionRunner.QuestionRunner({
     changed:state=>changed("quiz",state),
@@ -65,6 +69,9 @@
       return out;
     },
     answer:async(run,q,prompt)=>{run.requestId=crypto.randomUUID();return answer(run.connection,prompt,run.requestId,run.controller.signal);},
+    // Practice pages only; the page itself refuses anything else.
+    select:(run,q,choices,pageId)=>page(run,"select",{questionId:q.id,choices,pageId}),
+    advance:(run,pageId)=>page(run,"advance",{pageId}),
     record:(run,q,selection)=>histories.commit(run.windowId,{id:run.chat.id,epoch:run.chat.epoch,requestId:run.requestId,
       question:q.stem,answer:`Suggested: ${selection.choices.map(i=>q.options[i-1]).join("; ")}\n${selection.reason}`,provider:run.connection?.providerId||"Izuki"}),
     stop:async run=>{

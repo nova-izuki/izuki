@@ -30,6 +30,11 @@ jobs:
           distribution: temurin
           java-version: '21'
       - run: npm ci
+      - name: The tag and every version file agree
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          node tools/check-versions.mjs
+          test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME" || { echo "The tag $GITHUB_REF_NAME doesn't match package.json." >&2; exit 1; }
       - run: npm run icons
       - run: npx cap sync android
       - run: chmod +x ./gradlew
@@ -51,7 +56,9 @@ jobs:
           # the Windows workflow to create the shared GitHub Release instead
           # of failing a healthy APK build because it won the race.
           cp android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/Izuki-Companion-Android-preview.apk
-          for attempt in {1..80}; do
+          for attempt in {1..180}; do
+            state=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null || echo missing)
+            if [ "$state" = "false" ]; then echo "$GITHUB_REF_NAME is already published; a late build never changes it." >&2; exit 1; fi
             if gh release upload "$GITHUB_REF_NAME" "android/app/build/outputs/apk/debug/Izuki-Companion-Android-preview.apk" --clobber; then exit 0; fi
             sleep 15
           done
@@ -93,7 +100,9 @@ jobs:
           # The signed Windows release creates the shared GitHub Release.
           # This is intentionally an unsigned test IPA; AltStore/Sideloadly
           # signs it with the tester's own Apple ID.
-          for attempt in {1..80}; do
+          for attempt in {1..180}; do
+            state=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null || echo missing)
+            if [ "$state" = "false" ]; then echo "$GITHUB_REF_NAME is already published; a late build never changes it." >&2; exit 1; fi
             if gh release upload "$GITHUB_REF_NAME" "build/Izuki-Companion-iPhone-sideload.ipa" --clobber; then exit 0; fi
             sleep 15
           done

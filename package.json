@@ -22,6 +22,7 @@
     "test:finder": "node tools/finder-check.mjs",
     "test:panel": "node tools/panel-check.mjs",
     "test:panel-browser": "node tools/panel-browser-check.cjs",
+    "test:question-page": "node tools/question-page-browser-check.cjs",
     "test:workspace": "node tools/workspace-check.mjs && node tools/workspace-worker-check.mjs",
     "test:chat-text": "node tools/chat-text-check.mjs",
     "test:bubble": "node tools/bubble-check.cjs",

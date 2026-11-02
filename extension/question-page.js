@@ -1,12 +1,15 @@
 (function(root) {
   // Serialized into the chosen tab. All actions re-read and compare the page.
   async function questionPage(op="read",args={}) {
-    // This reads the page; it never answers it. It used to click answers
-    // ("select") and Next/Submit ("advance") for an automatic run through a
-    // quiz. Those are gone — refused here, before the page is even read, so
-    // nothing in the extension can put an answer in or move a test along.
-    // The student chooses, and the student moves on.
-    if(op==="select"||op==="advance")return {ok:false,text:"Izuki doesn't choose or submit answers. Pick yours on the page."};
+    // Picking an answer ("select") and pressing Next ("advance") happen only on
+    // a page that says it's practice and shows no grading sign. That is decided
+    // here, inside the page, from the page's own words at the moment of the
+    // click (assess.js, injected first). Nothing the panel or the AI passes in
+    // can change it. Without the classifier, or on a graded or unclear page,
+    // both are refused. Submit and Finish are never pressed, practice or not.
+    const answering=op==="select"||op==="advance";
+    const refuse={ok:false,text:"Izuki doesn't choose or submit answers on a graded or unclear quiz. Pick yours on the page."};
+    if(answering&&typeof globalThis.IzukiAssess?.kind!=="function")return refuse;
     const control=globalThis.__izukiQuestionRun ||= {id:"",stopped:false,listener:null};
     if(op==="install") {
       if(control.listener)removeEventListener("keydown",control.listener,true);
@@ -62,11 +65,43 @@
     const choices=controls.filter(el=>next.test(named(el))||finish.test(named(el)));
     const proof=JSON.stringify([location.href,unsupported,candidates.map(q=>[q.id,q.stem,q.options,q.multiple,q.selected]),choices.map(el=>[named(el),el.href||"",el.formAction||""])]);
     const pageId=hash(proof);
+    // The page's own evidence, strongest first: assess.js reads the first
+    // 6000 characters, and a "Submit quiz" button or a timer at the bottom of
+    // a long page must still count. Hidden ones count too.
+    const evidence=()=>{
+      const words=sel=>[...document.querySelectorAll(sel)].map(el=>normal(el.value||el.getAttribute("aria-label")||el.textContent)).filter(Boolean).join(" | ").slice(0,2000);
+      return [words('h1,h2,h3,legend,[role="heading"]'),words('button,input[type="submit"],input[type="button"],a[role="button"]'),
+        words('.timer,[role="timer"],.points,.question_points,.question_points_holder,.grade,.info'),normal(document.body?.innerText)].join("\n");
+    };
+    const which=globalThis.IzukiAssess?.kind?globalThis.IzukiAssess.kind(document.title,location.href,evidence()):"graded";
+    if(answering) {
+      if(which!=="practice")return refuse;
+      if(args.pageId!==pageId)return {ok:false,changed:true,text:"The page changed before I could answer. Reading it again."};
+      const settle=()=>new Promise(resolve=>setTimeout(resolve,200));
+      if(op==="select") {
+        const want=Array.isArray(args.choices)?[...new Set(args.choices)]:[];
+        if(!top||top.id!==args.questionId)return {ok:false,changed:true,text:"That question isn't the one on the page any more."};
+        if(!want.length||(!top.multiple&&want.length!==1)||want.some(i=>!Number.isInteger(i)||i<1||i>top.nodes.length))return {ok:false,text:"That answer doesn't match the options on the page."};
+        for(const [i,node] of top.nodes.entries()) {
+          const on=want.includes(i+1);
+          if(on!==checked(node)&&(on||top.multiple))node.click();
+        }
+        await settle();
+        const chosen=top.nodes.map((node,i)=>checked(node)?i+1:0).filter(Boolean);
+        if(chosen.length!==want.length||want.some(i=>!chosen.includes(i)))return {ok:false,text:"I clicked it, but the page doesn't show it as chosen. Pick it on the page."};
+        return {ok:true,state:"selected",choices:chosen,kind:which};
+      }
+      // Next only once every question here has an answer. Never Submit/Finish.
+      const go=top?null:choices.find(el=>next.test(named(el))&&!finish.test(named(el)));
+      if(!candidates.length||!go)return {ok:false,text:"There's no Next to press here. Submitting is yours."};
+      go.click();
+      return {ok:true,state:"advanced",kind:which};
+    }
     const exportQuestion=q=>({id:q.id,stem:q.stem,options:q.options,multiple:q.multiple,missingImage:q.missingImage,url:location.href,title:document.title});
-    if(top)return {ok:true,state:"question",question:exportQuestion(top),pageId};
+    if(top)return {ok:true,state:"question",question:exportQuestion(top),pageId,kind:which};
     if(unsupported)return {ok:true,state:"unsupported",pageId,url:location.href,text:"This page has a written or unavailable question. It needs a separate review before Next."};
-    if(candidates.length && choices.some(el=>next.test(named(el))))return {ok:true,state:"next",pageId,proof,url:location.href};
-    if(choices.some(el=>finish.test(named(el)))&&(candidates.length||args.hadQuestion||document.querySelector('.quizattemptsummary,.assessment-review,[data-testid="quiz-review"]')))return {ok:true,state:"final",pageId,proof,url:location.href};
+    if(candidates.length && choices.some(el=>next.test(named(el))))return {ok:true,state:"next",pageId,proof,url:location.href,kind:which};
+    if(choices.some(el=>finish.test(named(el)))&&(candidates.length||args.hadQuestion||document.querySelector('.quizattemptsummary,.assessment-review,[data-testid="quiz-review"]')))return {ok:true,state:"final",pageId,proof,url:location.href,kind:which};
     const completed=[...document.querySelectorAll('.quizreviewsummary,.quizattemptsummary,.assessment-complete,.test-submitted,[data-testid="quiz-complete"]')].some(shown);
     return {ok:true,state:completed?"complete":"unsupported",pageId,url:location.href,text:completed?"The page shows the attempt summary.":"I couldn't identify an unanswered multiple-choice question and its options on this page."};
   }

@@ -23,7 +23,7 @@ export async function setUpWorkspace({windowId,getSource,getConnection,readTab,o
     if(!snapshot.chats.length)text("recent-list","Your completed conversations will appear here. Reopening this panel keeps the same chat.");
   }
   function connection() {const c=getConnection();return c?{...c,providerId:c.provider.id,name:c.provider.name}:{providerId:"izuki",name:"Izuki"};}
-  const active=state=>["starting","reading","answering","suggested","running","stopping","stop-failed"].includes(state?.phase);
+  const active=state=>["starting","reading","answering","suggested","picked","running","stopping","stop-failed"].includes(state?.phase);
   // A doing-verb, at most three small words, then the thing itself as a whole
   // word, and not the first half of a compound ("test cases", "lab report").
   // "quiz"/"test" can also sit in front ("answer these quiz questions"); a
@@ -86,7 +86,7 @@ export async function setUpWorkspace({windowId,getSource,getConnection,readTab,o
     const result=await request("quizStart",{source,connection:connection()});
     paintQuiz(result.state);
   }
-  function paintQuiz(state){text("quiz-status",state?.text||"Choose your question page, then start. You pick the answers; Izuki explains each one. Stop with Esc on that page or Alt+Shift+X.");$("quiz-start").disabled=active(state);$("quiz-stop").hidden=!active(state);text("quiz-answer",state?.answer||"");}
+  function paintQuiz(state){text("quiz-status",state?.text||"Choose your question page, then start. On a page that says it's practice, Izuki picks each answer and presses Next. On a graded or unclear quiz it explains each one and you choose. You press Submit. Stop with Esc on that page or Alt+Shift+X.");$("quiz-start").disabled=active(state);$("quiz-stop").hidden=!active(state);text("quiz-answer",state?.answer||"");}
   async function planLab() {
     if(planning)return;
     const source=getSource();if(!source||!$("share").checked)throw Error("Choose and share the page containing your lab first.");

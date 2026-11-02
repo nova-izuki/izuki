@@ -7,16 +7,17 @@ const storage=area=>({get:async key=>Object.fromEntries((Array.isArray(key)?key:
 const tab={id:1,windowId:7,url:'https://course.example/lab',title:'Lab',active:true};
 const question={id:'fixture-q',stem:'Which option describes a network of infected devices?',options:['Firewall','Botnet'],multiple:false,url:tab.url};
 const question2={...question,id:'fixture-q2',stem:'Which option blocks unwanted traffic?'};
-let studentDone=false,onPage2=false,lateAnswer=null,holdAnswer=false,nativeOutcome='verified',appClosed=false,closeAfterFirstStep=false;
+let pageKind,studentDone=false,onPage2=false,lateAnswer=null,holdAnswer=false,nativeOutcome='verified',appClosed=false,closeAfterFirstStep=false;
 const chrome={runtime:{id:'test-extension',getURL:path=>'chrome-extension://test-extension/'+path,onMessage:event()},
   storage:{local:storage('local'),session:storage('session')},action:{setBadgeText:async()=>{}},commands:{onCommand:event()},
   windows:{onRemoved:event(),get:async()=>({id:7,type:'normal'}),create:async args=>{calls.push(['popup',args]);return {id:77};},update:async()=>({id:77}),remove:async id=>calls.push(['close',id])},
   tabs:{get:async id=>{if(id!==1)throw Error('closed');return {...tab};},update:async(id,args)=>{calls.push(['activate',id,args]);return {...tab};}},
-  scripting:{executeScript:async({func,args})=>{
+  scripting:{executeScript:async({func,args,files})=>{
+    if(files){calls.push(['inject',files]);return [{}];}
     assert.equal(func.name,'questionPage');const [op,options]=args;calls.push(['page',op,options]);
     if(op==='install'||op==='stop')return [{result:{ok:true}}];
     // The student answering and finishing is what moves this page on now.
-    if(op==='read')return [{result:studentDone?{ok:true,state:'complete'}:{ok:true,state:'question',question:onPage2?question2:question}}];
+    if(op==='read')return [{result:studentDone?{ok:true,state:'complete'}:{ok:true,state:'question',question:onPage2?question2:question,pageId:'page-1',kind:pageKind}}];
     return [{result:{ok:true}}];
   }},
 };
@@ -67,6 +68,21 @@ assert.equal((await request({op:'stop',runId:id},site)).ok,true);
 lateAnswer({text:JSON.stringify({questionId:question.id,choices:[2]})});await new Promise(r=>setTimeout(r,10));
 assert.equal(calls.filter(c=>c[0]==='page'&&(c[1]==='select'||c[1]==='advance')).length,0,'a late reply after Escape clicks nothing');
 assert.equal((await request({op:'history'})).chats.length,1,'a late reply after Escape records nothing');
+// A page that says it's practice: the classifier goes into the page right
+// before each pick, and the pick names the question, the choice and the page
+// it was read from.
+{
+  pageKind='practice';holdAnswer=false;
+  const before=calls.length;
+  result=await request({op:'quizStart',source:tab,connection:{providerId:'any',ready:true,tabId:2}});assert.equal(result.ok,true);
+  await until(async()=>((await request({op:'status'})).quiz.phase==='picked'));
+  const mine=calls.slice(before),pick=mine.findIndex(c=>c[0]==='page'&&c[1]==='select');
+  assert(pick>0,'practice pages are picked');
+  assert.equal(JSON.stringify(mine[pick-1]),'["inject",["assess.js"]]','the classifier is injected right before the pick');
+  assert.equal(mine[pick][2].questionId,question.id);assert.equal(JSON.stringify(mine[pick][2].choices),'[2]');assert.equal(mine[pick][2].pageId,'page-1');
+  assert.match((await request({op:'status'})).quiz.answer,/^Picked: Botnet/);
+  await request({op:'stop',kind:'quiz'});pageKind=undefined;
+}
 const plan={title:'Lab',requirements:['Inspect the report'],steps:[{id:'step-1',title:'Inspect',instruction:'Open report.docx.\nVerify: The required headings exist.',requirements:[1],final:false}],deliverables:[{name:'report.docx',step:1}]};
 const count=calls.filter(c=>c[0]==='native'&&c[1].endsWith('/side/run')).length;
 result=await request({op:'labStart',source:tab,plan});assert.equal(result.ok,true);

@@ -270,6 +270,30 @@ let server,browser,profile,ws;
     document.body.append(host);const result=globalThis.IzukiProviderDOM.readAssistant(['[data-message-author-role="assistant"]'],['[data-message-author-role="user"]'],location.origin);host.remove();return result;
   })()`);
   assert.equal(readback.text,'The real assistant answer.');assert.equal(readback.count,1);assert.equal(readback.user,'Do not read me as the answer');
+  // Quick / Think deeper / Research. An AI tab gets the mode as a request in
+  // the prompt; Izuki on this PC gets it as the mode, says what it's doing,
+  // and the choice is kept for next time.
+  await run('panelTest.providerReply="";');
+  await wait('!document.getElementById("send").disabled');
+  await run(`document.querySelector('#modes input[value="research"]').click()`);
+  const relays = await run('panelTest.workspaces.filter(p=>p.op==="relay").length');
+  await ask('the retention rules');await wait(`panelTest.workspaces.filter(p=>p.op==="relay").length===${relays + 1}`);
+  assert.equal(await run('panelTest.workspaces.filter(p=>p.op==="relay").at(-1).prompt.includes("[Research this properly")'), true, 'an AI tab is asked to research');
+  await run('(()=>{const pick=document.getElementById("provider");pick.value="izuki";pick.dispatchEvent(new Event("change"));})();');
+  await wait('document.getElementById("answer-who").textContent==="Izuki on this PC"');
+  for (const [mode, line] of [['research', 'Planning the research'], ['deep', 'Thinking it through']]) {
+    await wait('!document.getElementById("send").disabled');
+    const before = await run('panelTest.asks.length');
+    await run(`document.querySelector('#modes input[value="${mode}"]').click()`);
+    assert.equal(await run('panelTest.stores.local.izkMode'), mode, 'the mode is remembered');
+    await ask(`${mode} the retention rules`);await wait(`panelTest.asks.length===${before + 1}`);
+    assert.equal(await run(`panelTest.asks[${before}].body.mode`), mode, 'the mode goes to Izuki with the question');
+    assert.equal(await run(`document.getElementById("log").textContent.includes(${JSON.stringify(line)})`), true, `${mode} says what it's doing`);
+    await run('panelTest.reply("Done.")');
+  }
+  await wait('!document.getElementById("send").disabled');
+  await run(`document.querySelector('#modes input[value="quick"]').click()`);
+  assert.equal(await run('panelTest.stores.local.izkMode'), 'quick');
   await run('document.getElementById("clear-chats").click()');await wait('document.querySelectorAll(".recent-chat").length===0');
   // The case the owner actually described: the Gemini tab is already open
   // when the panel starts. A fresh panel must use it with no Connect press.

@@ -1,7 +1,8 @@
 name: Verify companion changes
 on:
   push:
-    branches: [main, 'codex/**']
+    # main, and the branches work happens on before it reaches main.
+    branches: [main, 'milestone-*', 'codex/**', 'claude/**', 'freebuff/**']
   pull_request:
 permissions:
   contents: read
@@ -18,6 +19,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Every version file agrees
+        run: node tools/check-versions.mjs
       - run: npm run build
       - run: npm run test:phone
       - run: npm run test:conversation
@@ -30,6 +33,9 @@ jobs:
       - run: npm run test:panel
       - run: npm run test:workspace
       - run: npm run test:finder
+      - run: npm run test:air
+      - run: npm run test:speakers
+      - run: npm run test:voice-notes
       - run: node tools/browser-check.cjs
         env:
           IZUKI_TEST_BROWSER: /usr/bin/google-chrome
@@ -38,6 +44,9 @@ jobs:
         env:
           IZUKI_TEST_BROWSER: /usr/bin/google-chrome
       - run: npm run test:panel-browser
+        env:
+          IZUKI_TEST_BROWSER: /usr/bin/google-chrome
+      - run: npm run test:question-page
         env:
           IZUKI_TEST_BROWSER: /usr/bin/google-chrome
       - run: npm run test:bubble
