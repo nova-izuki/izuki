@@ -27,8 +27,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
+// (fileURLToPath: a folder like "Jane Doe" arrives as "Jane%20Doe" in the URL.)
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean);
 const problems = [];
 const counts = {};
@@ -244,7 +246,10 @@ for (const file of files) {
   let buf;
   try { buf = read(file); } catch { continue; } // deleted in the working tree
   if (!buf.length) { fail(file, 'empty file'); continue; }
-  const why = check(buf, file);
+  // A file cut short makes the format readers run off its end: that's the
+  // finding, not a crash (and the files after it still get checked).
+  let why;
+  try { why = check(buf, file); } catch (e) { why = `cut short or malformed (${e.message})`; }
   if (why) fail(file, why);
   counts[ext(file)] = (counts[ext(file)] || 0) + 1;
 }
@@ -274,7 +279,7 @@ for (const file of files) {
 const inside = (r, [w, h]) => r.x >= 0 && r.y >= 0 && r.x + r.w <= w && r.y + r.h <= h;
 const pt = ([x, y], [w, h]) => x >= 0 && y >= 0 && x <= w && y <= h;
 let characters = 0;
-for (const rig of files.filter((f) => /^docs\/app\/painted\/[^/]+\/rig\.json$/.test(f))) {
+for (const rig of files.filter((f) => /^docs\/app\/painted\/[^/]+\/rig\.json$/.test(f))) try {
   const dir = path.posix.dirname(rig);
   const r = JSON.parse(read(rig));
   const base = sizes.get(`${dir}/base.webp`);
@@ -294,8 +299,8 @@ for (const rig of files.filter((f) => /^docs\/app\/painted\/[^/]+\/rig\.json$/.t
     }
   }
   characters++;
-}
-for (const moves of files.filter((f) => /^docs\/app\/painted\/[^/]+\/moves\.json$/.test(f))) {
+} catch (e) { fail(rig, `can't be checked (${e.message})`); }
+for (const moves of files.filter((f) => /^docs\/app\/painted\/[^/]+\/moves\.json$/.test(f))) try {
   const dir = path.posix.dirname(moves);
   const m = JSON.parse(read(moves));
   const sheet = sizes.get(`${dir}/moves.webp`);
@@ -313,7 +318,7 @@ for (const moves of files.filter((f) => /^docs\/app\/painted\/[^/]+\/moves\.json
       if (tsheet) frames.forEach((f, i) => { if (!inside(f, tsheet)) fail(`${dir}/tweens.json`, `${key} frame ${i} lies outside tweens.webp`); });
     }
   }
-}
+} catch (e) { fail(moves, `can't be checked (${e.message})`); }
 
 if (problems.length) { for (const p of problems) console.error(`FAIL ${p}`); process.exit(1); }
 console.log(`assets: ok (${Object.entries(counts).map(([e, n]) => `${n} ${e}`).join(', ')}; ${characters} character rigs cross-checked, packed extension current)`);

@@ -694,15 +694,15 @@ fn page_helper(url: &str, v: &Value, origin: &str) -> Value {
         // chat. Page text cannot run desktop actions in this lane.
         // The switch is real: off means no web tools at all, not just a
         // discouraged one. On gives the panel the same live search as chat.
-        let deep = mode == "deep";
-        if mode == "research" {
-            research_for_panel(id, v, &title)
-        } else if web {
-            crate::chat::complete_with_web(&msgs, id, deep, &|_| {})
-        } else if deep {
-            crate::chat::complete_streaming_deep(&msgs, id, &|_| {})
-        } else {
-            crate::chat::complete_streaming(&msgs, id, &|_| {})
+        match panel_route(&mode, web) {
+            PanelRoute::Research => research_for_panel(id, v, &title),
+            PanelRoute::ResearchOffline => {
+                let answer = crate::chat::complete_streaming_deep(&msgs, id, &|_| {})?;
+                Ok(format!("Web search is switched off, so I didn't research online. This answer comes from the page and what I already know.\n\n{answer}"))
+            }
+            PanelRoute::Web { deep } => crate::chat::complete_with_web(&msgs, id, deep, &|_| {}),
+            PanelRoute::Deep => crate::chat::complete_streaming_deep(&msgs, id, &|_| {}),
+            PanelRoute::Quick => crate::chat::complete_streaming(&msgs, id, &|_| {}),
         }
     }));
     let (ok, text) = match result {
@@ -712,6 +712,31 @@ fn page_helper(url: &str, v: &Value, origin: &str) -> Value {
     };
     finish_side(&key, text.clone(), Some(if ok { "answered" } else { "failed" }.into()));
     if stop.load(Ordering::SeqCst) { side_error("Stopped.") } else { json!({"ok":ok,"text":text}) }
+}
+
+/// Which way a panel question goes.
+#[derive(Debug, PartialEq)]
+enum PanelRoute {
+    /// Planned searches, pages read, a cited write-up.
+    Research,
+    /// Research asked for with the web switch off. Nothing derived from the
+    /// question leaves the PC: it's thought through from the page and what
+    /// the brain knows, and the answer says so.
+    ResearchOffline,
+    Web { deep: bool },
+    Deep,
+    Quick,
+}
+
+/// The web switch decides first: off means no searches, whatever the mode.
+fn panel_route(mode: &str, web: bool) -> PanelRoute {
+    match (mode, web) {
+        ("research", true) => PanelRoute::Research,
+        ("research", false) => PanelRoute::ResearchOffline,
+        (mode, true) => PanelRoute::Web { deep: mode == "deep" },
+        ("deep", false) => PanelRoute::Deep,
+        _ => PanelRoute::Quick,
+    }
 }
 
 /// The panel's Research mode: the same research as chat's "research …"
@@ -730,8 +755,11 @@ fn research_for_panel(id: u64, v: &Value, title: &str) -> Result<String> {
         history.push(crate::chat::Turn { role: "user".into(), content: format!("I'm reading this page: {title} ({url})"), ..Default::default() });
     }
     history.push(crate::chat::Turn { role: "user".into(), content: question.clone(), ..Default::default() });
+    // The page the user shared, so "research this" is about it. (Not shared:
+    // the panel sends no text, and Research works from the question alone.)
+    let page = if url.is_empty() { "" } else { v["text"].as_str().unwrap_or_default() };
     let report = Mutex::new(String::new());
-    crate::research::run(id, &question, &history, &|u| {
+    crate::research::run_about(id, &question, &history, page, &|u| {
         if let Some(line) = research_step(&u) {
             crate::chat::set_progress(id, line);
         }
@@ -1121,6 +1149,19 @@ mod tests {
         assert_eq!(step("plan", "Planning the searches…", None).as_deref(), Some("Planning the searches…"));
         assert!(step("text", "The report…", None).is_none() && step("done", "", None).is_none() && step("skip", "x", None).is_none());
         assert!(step("search", &"long ".repeat(30), None).unwrap().chars().count() < 75, "long searches are clipped");
+    }
+
+    /// Research used to search the web even with the web switch off: a
+    /// private question left the PC as search queries. Off now means offline,
+    /// whatever the mode.
+    #[test]
+    fn the_web_switch_decides_before_the_mode() {
+        assert_eq!(panel_route("research", true), PanelRoute::Research);
+        assert_eq!(panel_route("research", false), PanelRoute::ResearchOffline);
+        assert_eq!(panel_route("deep", true), PanelRoute::Web { deep: true });
+        assert_eq!(panel_route("quick", true), PanelRoute::Web { deep: false });
+        assert_eq!(panel_route("deep", false), PanelRoute::Deep);
+        assert_eq!(panel_route("", false), PanelRoute::Quick);
     }
 
     /// Research needs something to research.

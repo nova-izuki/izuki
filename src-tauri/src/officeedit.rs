@@ -105,8 +105,12 @@ pub fn validate(ext: &str, bytes: &[u8]) -> Result<()> {
         match f.name() {
             "[Content_Types].xml" => types = true,
             n if n == main => {
-                let mut first = [0u8; 1];
-                if f.read_exact(&mut first).is_ok() && first[0] != b'<' {
+                // (A byte-order mark or spaces may come first: .NET's
+                // XmlWriter writes "\u{feff}<?xml …".)
+                let mut head = [0u8; 64];
+                let n = f.read(&mut head).unwrap_or(0);
+                let head = head[..n].strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&head[..n]);
+                if head.iter().find(|b| !b.is_ascii_whitespace()).is_some_and(|b| *b != b'<') {
                     // The part is there but isn't XML text: damaged inside.
                     anyhow::bail!("the {ext}'s document part isn't readable");
                 }
@@ -468,6 +472,52 @@ fn rewrite(par: &str, k: Ooxml, new: &str, word: bool) -> String {
     out
 }
 
+/// The first `<name …>…</name>` or `<name …/>` element in `xml`.
+fn element<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
+    let open = format!("<{name}");
+    let mut from = 0;
+    while let Some(i) = xml[from..].find(&open).map(|i| i + from) {
+        if tag_at(xml, i, name) {
+            let gt = i + xml[i..].find('>')?;
+            if xml.as_bytes()[gt - 1] == b'/' {
+                return Some(&xml[i..=gt]);
+            }
+            let close = format!("</{name}>");
+            let end = gt + xml[gt..].find(&close)? + close.len();
+            return Some(&xml[i..end]);
+        }
+        from = i + open.len();
+    }
+    None
+}
+
+/// `xml` without any `name` elements.
+fn without(xml: &str, names: &[&str]) -> String {
+    let mut out = xml.to_string();
+    for name in names {
+        while let Some(e) = element(&out, name).map(str::to_string) {
+            out = out.replacen(&e, "", 1);
+        }
+    }
+    out
+}
+
+/// A new paragraph that looks like `par`, holding only `text`: the paragraph's
+/// properties and its first run's formatting. It used to be a copy of `par`
+/// with the words swapped, and a copy repeats everything else in it: a
+/// picture (two drawings with one id), bookmarks, comment anchors, footnote
+/// marks, paragraph ids, tracked changes, and the section break a Word
+/// paragraph can carry. Word reports those as unreadable content.
+fn fresh_paragraph(par: &str, k: Ooxml, text: &str, word: bool) -> String {
+    let (ppr, rpr) = if word { ("w:pPr", "w:rPr") } else { ("a:pPr", "a:rPr") };
+    // Revisions (tracked changes) carry ids that must stay unique.
+    let drop: &[&str] = if word { &["w:sectPr", "w:pPrChange", "w:rPrChange"] } else { &[] };
+    let props = element(par, ppr).map(|e| without(e, drop)).unwrap_or_default();
+    let look = element(par, k.r).and_then(|r| element(r, rpr)).map(|e| without(e, drop)).unwrap_or_default();
+    let t = if word { format!("<w:t xml:space=\"preserve\">{}</w:t>", escape(text)) } else { format!("<a:t>{}</a:t>", escape(text)) };
+    format!("<{p}>{props}<{r}>{look}{t}</{r}></{p}>", p = k.p, r = k.r)
+}
+
 fn edit_paragraphs(xml: &str, k: Ooxml, edits: &[Edit], word: bool) -> Result<(String, Vec<String>)> {
     let mut xml = xml.to_string();
     let mut report = Vec::new();
@@ -501,7 +551,7 @@ fn edit_paragraphs(xml: &str, k: Ooxml, edits: &[Edit], word: bool) -> Result<(S
                 };
                 match target {
                     Some((s, t)) => {
-                        let new = rewrite(&xml[s..t], k, text, word);
+                        let new = fresh_paragraph(&xml[s..t], k, text, word);
                         xml.insert_str(t, &new);
                         report.push(match after {
                             Some(a) => format!("Added a paragraph after “{}”", clip(a)),
@@ -923,6 +973,52 @@ mod tests {
             Edit::Add { after: None, text: "The end.".into() },
             Edit::Cell { cell: "Sheet2!B3".into(), value: "=SUM(A1:A3)".into() },
         ]);
+    }
+
+    #[test]
+    fn an_added_paragraph_copies_the_look_not_the_contents() {
+        // A heading carrying everything a copy would repeat: a paragraph id, a
+        // picture, a bookmark, a footnote mark, a tracked change and a
+        // section break.
+        let par = concat!(
+            r#"<w:p w14:paraId="1A2B3C4D" w14:textId="77777777"><w:pPr><w:pStyle w:val="Heading1"/>"#,
+            r#"<w:pPrChange w:id="9" w:author="A"><w:pPr/></w:pPrChange><w:sectPr><w:pgSz w:w="12240"/></w:sectPr></w:pPr>"#,
+            r#"<w:bookmarkStart w:id="0" w:name="_Toc1"/><w:r><w:rPr><w:b/></w:rPr><w:t>Risk Report</w:t></w:r>"#,
+            r#"<w:r><w:drawing><wp:docPr id="5" name="Picture 5"/></w:drawing></w:r>"#,
+            r#"<w:r><w:footnoteReference w:id="2"/></w:r><w:bookmarkEnd w:id="0"/></w:p>"#,
+        );
+        let new = fresh_paragraph(par, Ooxml::WORD, "By A & B", true);
+        assert_eq!(new, r#"<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">By A &amp; B</w:t></w:r></w:p>"#);
+        // The whole document still has one of each.
+        let xml = format!("<w:document><w:body>{par}</w:body></w:document>");
+        let (out, _) = edit_paragraphs(&xml, Ooxml::WORD, &parse_edits("ADD AFTER: Risk Report\nTEXT: By A & B"), true).unwrap();
+        // (Opening tags: "w:sectPr" alone would also count "</w:sectPr>".)
+        for once in ["docPr id=\"5\"", "w14:paraId", "_Toc1", "<w:footnoteReference", "<w:sectPr", "<w:pPrChange", "<w:bookmarkStart", "<w:drawing"] {
+            assert_eq!(out.matches(once).count(), 1, "{once} appears once: {out}");
+        }
+        // A slide paragraph keeps its alignment and its run's look.
+        let slide = r#"<a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="en-US" b="1"/><a:t>Thank you</a:t></a:r><a:endParaRPr lang="en-US"/></a:p>"#;
+        assert_eq!(fresh_paragraph(slide, Ooxml::SLIDE, "Questions?", false), r#"<a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="en-US" b="1"/><a:t>Questions?</a:t></a:r></a:p>"#);
+    }
+
+    #[test]
+    fn a_byte_order_mark_is_still_xml() {
+        // .NET's XmlWriter puts a BOM before "<?xml": such a file is fine.
+        let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let o = zip::write::SimpleFileOptions::default();
+        z.start_file("[Content_Types].xml", o).unwrap();
+        z.write_all(b"<Types/>").unwrap();
+        z.start_file("word/document.xml", o).unwrap();
+        z.write_all(b"\xEF\xBB\xBF\r\n<w:document><w:body><w:p><w:r><w:t>Hi</w:t></w:r></w:p></w:body></w:document>").unwrap();
+        let bytes = z.finish().unwrap().into_inner();
+        assert!(validate("docx", &bytes).is_ok(), "{:?}", validate("docx", &bytes));
+        // Not XML at all is still refused.
+        let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        z.start_file("[Content_Types].xml", o).unwrap();
+        z.write_all(b"<Types/>").unwrap();
+        z.start_file("word/document.xml", o).unwrap();
+        z.write_all(b"PK garbage").unwrap();
+        assert!(validate("docx", &z.finish().unwrap().into_inner()).is_err());
     }
 
     #[test]

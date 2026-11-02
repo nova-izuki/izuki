@@ -96,6 +96,7 @@ files or another agent's work were touched.
    suite, tsc, every test:*, panel browser checks, CodeRabbit, secret scan).
 4. When the release candidate is verified, ask the owner, bump the version,
    and let the automatic release pipeline publish — that remains Claude's job.
+
 ## Overnight (same machine, owner asleep): hardening, rollback, verified rows
 
 1. **Safe saves, deeper:** `a_failed_swap_never_takes_the_original_with_it`

@@ -19,23 +19,34 @@
   // "count toward"; "ungraded quiz" holds "graded quiz").
   const NOT_GRADED=["does not count toward","doesn't count toward","won't count toward","will not count toward","not count toward",
     "not part of your grade","won't be graded","will not be graded","not graded","ungraded"];
-  const PRACTICE=["practice quiz","practice test","practice exam","practice question","practice set","practice mode","practice problems",
-    "self-check","self check","selfcheck","ungraded","not graded","won't be graded","will not be graded","does not count",
-    "doesn't count","won't count","will not count","no grade","for practice","study mode","flashcard","learn mode",
-    "test yourself","quiz yourself","check your understanding","try it yourself","sample question","example question",
-    "demo quiz","demonstration"];
+  // A practice NAME counts only in the page's own title, address or main
+  // heading (a sidebar "Practice quiz" link names a different quiz)...
+  const PRACTICE_NAMES=["practice quiz","practice test","practice exam","practice question","practice set","practice mode","practice problems",
+    "self-check","self check","selfcheck","ungraded","study mode","flashcard","learn mode","sample question",
+    "example question","demo quiz","demonstration"];
+  // ...a SENTENCE saying the activity isn't graded counts anywhere.
+  const PRACTICE_SAYS=["not graded","won't be graded","will not be graded","does not count","doesn't count","won't count","will not count",
+    "not part of your grade","is ungraded","an ungraded","is a practice","is for practice","for practice only",
+    "test yourself","quiz yourself","check your understanding","try it yourself"];
   // (" exam", not "exam": "example" isn't one.)
   const QUIZ_LIKE=["quiz"," test"," exam","assessment","midterm","knowledge check"];
+  // "1 point", "(2 points)", "10 pts", "0.5 pt": a score on the page.
+  // (The same whitespace as Rust's is_ascii_whitespace.)
+  const POINTS=/[0-9][ \t\n\r\f]*(?:point|pt)s?(?![a-z])/;
 
   function kind(title,url,text) {
-    // (A space in front: "Test 3 …" at the very start is " test".)
-    const words=` ${String(title||"").toLowerCase()} ${String(url||"").toLowerCase()} ${Array.from(String(text||"")).slice(0,6000).join("").toLowerCase()}`;
+    // The page itself: title (plus its main heading, in the extension) and
+    // address ("practice-quiz" reads as "practice quiz").
+    const page=` ${String(title||"").toLowerCase()} ${String(url||"").toLowerCase().replace(/[-_]/g," ")} `;
+    // Grading signs anywhere count, however long the page (bounded).
+    const words=`${page}${Array.from(String(text||"")).slice(0,200000).join("").toLowerCase()}`;
     const has=w=>words.includes(w);
-    const quizLike=QUIZ_LIKE.some(has)||(has("question ")&&has(" of "))||PRACTICE.some(has);
+    const named=PRACTICE_NAMES.some(w=>page.includes(w)),says=PRACTICE_SAYS.some(has);
+    const quizLike=QUIZ_LIKE.some(has)||(has("question ")&&has(" of "))||named||says;
     if(!quizLike)return "none";
     const saidUngraded=NOT_GRADED.reduce((w,n)=>w.split(n).join(" "),words);
-    if(GRADED.some(w=>saidUngraded.includes(w)))return "graded";
-    if(PRACTICE.some(has))return "practice";
+    if(GRADED.some(w=>saidUngraded.includes(w))||POINTS.test(saidUngraded))return "graded";
+    if(named||says)return "practice";
     return "graded";
   }
   function canDo(which) {
@@ -43,5 +54,5 @@
     if(which==="graded")return "This looks like a graded quiz or test, so I explain each question and suggest an answer with the reason. You choose it on the page.";
     return "";
   }
-  root.IzukiAssess={kind,canDo};
+  root.IzukiAssess={kind,canDo,points:t=>POINTS.test(String(t).toLowerCase())};
 })(globalThis);

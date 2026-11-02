@@ -448,7 +448,12 @@ pub fn write(path: &str, content: &str) -> Result<String> {
     }
     let mut note = String::new();
     if p.exists() {
-        let old = std::fs::read(&p).map_err(|e| anyhow!("couldn't open {}: {e}", p.display()))?;
+        // Only the start: looks_binary reads no further, and the file could be
+        // a video of several gigabytes.
+        let mut old = Vec::with_capacity(8192);
+        std::fs::File::open(&p)
+            .and_then(|f| std::io::Read::read_to_end(&mut std::io::Read::take(f, 8192), &mut old))
+            .map_err(|e| anyhow!("couldn't open {}: {e}", p.display()))?;
         if looks_binary(&old) {
             return Err(anyhow!("{} isn't a text file (a picture, archive or a program), and plain words written over it would ruin it. I left it alone — save the words under a new name", p.display()));
         }

@@ -130,5 +130,49 @@
   "url": "https://canvas.example.edu/courses/1/quizzes/2/take",
   "text": "This is an ungraded practice quiz. Question 1 Which port does HTTPS use?",
   "kind": "practice"
+ },
+ {
+  "title": "Practice Quiz",
+  "url": "",
+  "text": "Question 1 — 1 point. Which port does HTTPS use?",
+  "kind": "graded"
+ },
+ {
+  "title": "Self-check: Chapter 6",
+  "url": "",
+  "text": "Question 3 0.5 points Which layer handles routing?",
+  "kind": "graded"
+ },
+ {
+  "title": "Practice quiz: Chapter 4",
+  "url": "",
+  "padBefore": 300,
+  "text": "Due date: Friday 11:59 PM",
+  "kind": "graded"
+ },
+ {
+  "title": "Week 3 Quiz",
+  "url": "https://lms.example.edu/course/7/quiz/3",
+  "text": "Course menu Home Modules Practice quiz Grades. Week 3 Quiz. Question 1 of 10 Which layer handles routing?",
+  "kind": "graded"
+ },
+ {
+  "title": "Week 3 Quiz",
+  "url": "",
+  "text": "Menu: Flashcards | Self-check | Sample questions. Question 1 of 10 Which layer handles routing?",
+  "kind": "graded"
+ },
+ {
+  "title": "Chapter 5",
+  "url": "https://lms.example.edu/practice-quiz/5",
+  "text": "Question 1 of 5 Which layer handles routing?",
+  "kind": "practice"
+ },
+ {
+  "title": "Chapter 7 review",
+  "url": "",
+  "padBefore": 300,
+  "text": "This quiz does not count toward your grade. Question 1 of 5",
+  "kind": "practice"
  }
 ]

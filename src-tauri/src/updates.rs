@@ -184,6 +184,18 @@ async fn previous_release() -> Result<Option<(String, String)>, String> {
     Ok(Some((version, manifest.to_string())))
 }
 
+/// Put the volume back and hang up a call before the installer ends Izuki,
+/// the way a normal quit does. (Rollback skipped this: the older installer
+/// could leave other apps ducked.)
+fn closing_for_installer() {
+    eprintln!("[update] closing for the installer");
+    crate::duck::restore_now();
+    crate::call::stop();
+}
+
+/// The longest a rollback's manifest check plus download may take.
+const ROLLBACK_TIMEOUT: Duration = Duration::from_secs(600);
+
 /// The version Settings → Updates will offer to go back to, after this lookup.
 #[tauri::command]
 pub async fn check_rollback(app: AppHandle, window: WebviewWindow) -> Result<UpdateStatus, String> {
@@ -192,7 +204,9 @@ pub async fn check_rollback(app: AppHandle, window: WebviewWindow) -> Result<Upd
     let status = publish(&app, |s| match looked.as_ref() {
         Ok(Some((version, _))) => { s.rollback = Some(version.clone()); s.error = None; }
         Ok(None) => { s.rollback = None; }
-        Err(e) => { s.rollback = None; s.error = Some(format!("I couldn't look up the previous release: {e}")); }
+        // Going back is optional: a failed lookup (offline, GitHub busy) hides
+        // the button instead of putting an error at the top of Settings.
+        Err(e) => { eprintln!("[update] couldn't look up the previous release: {e}"); s.rollback = None; }
     });
     Ok(status)
 }
@@ -206,6 +220,10 @@ pub async fn check_rollback(app: AppHandle, window: WebviewWindow) -> Result<Upd
 pub async fn rollback_previous(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
     main_only(&window)?;
     if crate::hotkey::is_busy() { return Err("I'm in the middle of something — I can go back when it's done.".into()); }
+    // The same lock every update operation takes, held to the end: a second
+    // rollback or a normal update can't start beside this one. (Checking the
+    // status alone left a gap between the check and the start.)
+    let _operation = PACKAGE.try_lock().map_err(|_| "An update operation is already running.".to_string())?;
     let (previous, manifest) = previous_release().await?.ok_or("There's no older published version to go back to.")?;
     {
         let s = STATUS.lock();
@@ -218,6 +236,10 @@ pub async fn rollback_previous(app: AppHandle, window: WebviewWindow) -> Result<
         let url = reqwest::Url::parse(&manifest).map_err(|e| e.to_string())?;
         let updater = app
             .updater_builder()
+            // A stalled server can't leave this "downloading" forever. (The
+            // limit covers the whole download, so it's generous.)
+            .timeout(ROLLBACK_TIMEOUT)
+            .on_before_exit(closing_for_installer)
             .endpoints(vec![url])
             .map_err(|e| e.to_string())?
             .version_comparator(|_current, remote| remote.version < _current)
@@ -261,7 +283,7 @@ async fn refresh(app: &AppHandle, package: &mut Option<Package>) -> Result<Updat
     // nothing is left half-done; the installer then waits for izuki.exe to
     // be free before copying (windows/hooks.nsh).
     let updater=app.updater_builder().timeout(Duration::from_secs(30))
-        .on_before_exit(|| { eprintln!("[update] closing for the installer"); crate::duck::restore_now(); crate::call::stop(); })
+        .on_before_exit(closing_for_installer)
         .build().map_err(|e| failed(app,e))?;
     let update=updater.check().await.map_err(|e| failed(app,format!("Couldn't check for updates: {e}")))?;
     let version=update.as_ref().map(|u|u.version.clone()).unwrap_or_default();

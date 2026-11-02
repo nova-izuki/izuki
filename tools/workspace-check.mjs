@@ -124,7 +124,10 @@ assert.equal(typeof readPage,'function','the page reader must load, or this chec
 // (assess.rs reads the same file).
 await import('../extension/assess.js');
 for(const c of JSON.parse(fs.readFileSync(new URL('./assessment-cases.json',import.meta.url),'utf8')))
-  assert.equal(globalThis.IzukiAssess.kind(c.title,c.url,c.text),c.kind,`${c.title} | ${c.text}`);
+  assert.equal(globalThis.IzukiAssess.kind(c.title,c.url,'Read the passage carefully. '.repeat(c.padBefore||0)+c.text),c.kind,`${c.title} | ${c.text}`);
+// Points read as a score the same way as assess.rs's shows_points.
+for(const yes of [' question 1 — 1 point','(2 points)','10 pts','0.5 pt.','worth 3\npoints'])assert(globalThis.IzukiAssess.points(yes),yes);
+for(const no of [' checkpoint 2','1 pointer','point of view','a script','chapter 4 key points'])assert(!globalThis.IzukiAssess.points(no),no);
 
 const {parseLabPlan,coverage,LabRunner,labPrompt}=globalThis.IzukiLabState;
 const raw={title:'Network lab',requirements:['Create the report','Verify its saved contents'],steps:[

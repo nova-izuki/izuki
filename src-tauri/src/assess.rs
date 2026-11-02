@@ -9,10 +9,14 @@
 //!   proctoring tool, "counts toward", a due date, a midterm or final): graded,
 //!   even if the page also says "practice" — a practice test worth points is
 //!   graded.
-//! - Practice signs, and none of those (practice quiz or test, self-check,
-//!   ungraded, does not count, test yourself, flashcards, sample or example
-//!   questions, a demo): practice. Izuki may answer, pick and check, like any
-//!   other page.
+//! - Practice signs, and none of those: practice. Izuki may answer, pick and
+//!   check, like any other page. A practice NAME (practice quiz, self-check,
+//!   ungraded, flashcards, sample questions) counts only in the page's own
+//!   title, address or main heading, since a sidebar link names another quiz.
+//!   A SENTENCE saying so ("does not count toward your grade", "this quiz is
+//!   ungraded", "test yourself") counts anywhere.
+//! - Points ("1 point", "10 pts") are a grading sign, and grading signs count
+//!   anywhere on the page, however long it is.
 //! - Quiz-like with no evidence either way: treated as graded, and helped
 //!   with explanations, suggested answers in the panel and feedback.
 //! - Not quiz-like at all: nothing here applies, and nothing is held back.
@@ -48,34 +52,63 @@ const NOT_GRADED: &[&str] = &[
     "not part of your grade", "won't be graded", "will not be graded", "not graded", "ungraded",
 ];
 
-/// Signs a page is for practice (only when there's no graded sign).
-const PRACTICE: &[&str] = &[
+/// Phrases that NAME a practice activity. They count only in the page's own
+/// title, address or main heading: the same words in a sidebar link name a
+/// different quiz ("Week 3 Quiz" with a "Practice quiz" link in the menu is
+/// not practice).
+const PRACTICE_NAMES: &[&str] = &[
     "practice quiz", "practice test", "practice exam", "practice question", "practice set", "practice mode", "practice problems",
-    "self-check", "self check", "selfcheck", "ungraded", "not graded", "won't be graded", "will not be graded", "does not count",
-    "doesn't count", "won't count", "will not count", "no grade", "for practice", "study mode", "flashcard", "learn mode",
-    "test yourself", "quiz yourself", "check your understanding", "try it yourself", "sample question", "example question",
-    "demo quiz", "demonstration",
+    "self-check", "self check", "selfcheck", "ungraded", "study mode", "flashcard", "learn mode", "sample question",
+    "example question", "demo quiz", "demonstration",
+];
+
+/// Sentences that SAY this activity isn't graded, or invite the user to try
+/// it. They count anywhere on the page.
+const PRACTICE_SAYS: &[&str] = &[
+    "not graded", "won't be graded", "will not be graded", "does not count", "doesn't count", "won't count", "will not count",
+    "not part of your grade", "is ungraded", "an ungraded", "is a practice", "is for practice", "for practice only",
+    "test yourself", "quiz yourself", "check your understanding", "try it yourself",
 ];
 
 /// Signs the page is a quiz or test at all.
 // (" exam", not "exam": "example" isn't one.)
 const QUIZ_LIKE: &[&str] = &["quiz", " test", " exam", "assessment", "midterm", "knowledge check"];
 
-/// What this page is, from its title, address and words.
+/// "1 point", "(2 points)", "10 pts", "0.5 pt": a score on the page.
+fn shows_points(words: &str) -> bool {
+    let b = words.as_bytes();
+    ["point", "pt"].iter().any(|unit| {
+        words.match_indices(unit).any(|(i, _)| {
+            let mut j = i;
+            while j > 0 && b[j - 1].is_ascii_whitespace() {
+                j -= 1;
+            }
+            let after = words[i + unit.len()..].strip_prefix('s').unwrap_or(&words[i + unit.len()..]);
+            j > 0 && b[j - 1].is_ascii_digit() && !after.starts_with(|c: char| c.is_ascii_alphabetic())
+        })
+    })
+}
+
+/// What this page is, from its title (in a browser, plus its main heading),
+/// address and words.
 pub fn kind(title: &str, url: &str, text: &str) -> Kind {
-    // (A space in front: "Test 3 …" at the very start is " test".)
-    let words = format!(" {} {} {}", title.to_lowercase(), url.to_lowercase(), text.chars().take(6000).collect::<String>().to_lowercase());
-    let quiz_like = QUIZ_LIKE.iter().any(|w| words.contains(w))
-        || (words.contains("question ") && words.contains(" of "))
-        || PRACTICE.iter().any(|w| words.contains(w));
+    // The page itself. (A space in front: "Test 3 …" at the very start is
+    // " test"; "practice-quiz" in an address reads as "practice quiz".)
+    let page = format!(" {} {} ", title.to_lowercase(), url.to_lowercase().replace(['-', '_'], " "));
+    // Everything on it. Grading signs anywhere count: a due date under a long
+    // question list still makes the page graded. (Bounded: no page is this long.)
+    let words = format!("{page}{}", text.chars().take(200_000).collect::<String>().to_lowercase());
+    let named = PRACTICE_NAMES.iter().any(|w| page.contains(w));
+    let says = PRACTICE_SAYS.iter().any(|w| words.contains(w));
+    let quiz_like = QUIZ_LIKE.iter().any(|w| words.contains(w)) || (words.contains("question ") && words.contains(" of ")) || named || says;
     if !quiz_like {
         return Kind::NotAQuiz;
     }
     let said_ungraded = NOT_GRADED.iter().fold(words.clone(), |w, n| w.replace(n, " "));
-    if GRADED.iter().any(|w| said_ungraded.contains(w)) {
+    if GRADED.iter().any(|w| said_ungraded.contains(w)) || shows_points(&said_ungraded) {
         return Kind::Graded;
     }
-    if PRACTICE.iter().any(|w| words.contains(w)) {
+    if named || says {
         return Kind::Practice;
     }
     Kind::Graded
@@ -100,13 +133,25 @@ mod tests {
     fn tells_graded_from_practice_from_neither() {
         let cases: serde_json::Value = serde_json::from_str(include_str!("../../tools/assessment-cases.json")).unwrap();
         for c in cases.as_array().unwrap() {
-            let (title, url, text, want) = (c["title"].as_str().unwrap(), c["url"].as_str().unwrap(), c["text"].as_str().unwrap(), c["kind"].as_str().unwrap());
-            let got = match kind(title, url, text) {
+            let (title, url, want) = (c["title"].as_str().unwrap(), c["url"].as_str().unwrap(), c["kind"].as_str().unwrap());
+            // "padBefore": that many filler sentences first (a long page).
+            let text = format!("{}{}", "Read the passage carefully. ".repeat(c["padBefore"].as_u64().unwrap_or(0) as usize), c["text"].as_str().unwrap());
+            let got = match kind(title, url, &text) {
                 Kind::Graded => "graded",
                 Kind::Practice => "practice",
                 Kind::NotAQuiz => "none",
             };
-            assert_eq!(got, want, "{title} | {text}");
+            assert_eq!(got, want, "{title} | {}", text.chars().rev().take(160).collect::<String>().chars().rev().collect::<String>());
+        }
+    }
+
+    #[test]
+    fn reads_points_as_a_score() {
+        for yes in [" question 1 — 1 point", "(2 points)", "10 pts", "0.5 pt.", "worth 3\npoints"] {
+            assert!(shows_points(yes), "{yes}");
+        }
+        for no in [" checkpoint 2", "1 pointer", "point of view", "a script", "chapter 4 key points"] {
+            assert!(!shows_points(no), "{no}");
         }
     }
 

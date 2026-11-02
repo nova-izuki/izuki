@@ -800,7 +800,7 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
 
 const TOOL_ROUNDS: usize = 7;
 const NO_MORE_TOOLS: &str = "[No more tools now — answer with what you have.]";
-const TOOL_WORDS: &[&str] = &["SEARCH", "READ", "BROWSE", "CLICK", "TYPE", "FIND", "FILES", "OPEN", "WRITE", "RUN", "WEATHER", "FLOW", "IZUKI"];
+const TOOL_WORDS: &[&str] = &["SEARCH", "READ", "BROWSE", "CLICK", "TYPE", "FIND", "FILES", "OPEN", "WRITE", "EDIT", "RUN", "WEATHER", "FLOW", "IZUKI"];
 const MOODS: &[&str] = &["cheerful", "excited", "calm", "serious", "sympathetic", "playful", "curious"];
 
 #[derive(Debug, PartialEq)]
@@ -984,8 +984,11 @@ fn find_tool(reply: &str) -> Option<(String, Tool)> {
     // never be used to slice the original answer.
     for (at, _) in reply.match_indices('[') {
         let tail = &reply[at..];
-        // WRITE carries a body to the end; other tags stop at their first ].
-        let slice = if tail.get(..7).is_some_and(|s| s.eq_ignore_ascii_case("[WRITE:")) {
+        // WRITE and EDIT carry a body to the end; other tags stop at their
+        // first ]. (EDIT used to stop there too: its change lines were cut
+        // off, so the Chat tab never offered the edit.)
+        let carries_body = |tag: &str| tail.get(..tag.len()).is_some_and(|s| s.eq_ignore_ascii_case(tag));
+        let slice = if carries_body("[WRITE:") || carries_body("[EDIT:") {
             tail
         } else if let Some(end) = tail.find(']') {
             &tail[..=end]
@@ -2132,6 +2135,22 @@ mod tool_tests {
         );
         assert_eq!(parse_tool("[EDIT: report.docx]"), None, "an edit with nothing to change");
         assert!(Tool::Edit("a.docx".into(), "ADD: x".into()).needs_ok().is_some(), "an edit asks first, like a save");
+    }
+
+    /// The Chat tab streams the reply through classify and find_tool, not
+    /// parse_tool alone. [EDIT:] wasn't in TOOL_WORDS and find_tool cut it at
+    /// its first "]", so the tab showed the raw tag (or told the model the
+    /// tool didn't exist) and never offered the edit.
+    #[test]
+    fn the_chat_stream_runs_an_edit() {
+        assert_eq!(classify("[ED"), None, "a tag still arriving: wait");
+        assert_eq!(classify("[EDIT: report.docx]"), Some(true), "EDIT is a tool");
+        let reply = "Fixing the typo now.\n[EDIT: Documents/report.docx]\nREPLACE: alot\nWITH: a lot";
+        assert_eq!(
+            find_tool(reply),
+            Some(("Fixing the typo now.".into(), Tool::Edit("Documents/report.docx".into(), "REPLACE: alot\nWITH: a lot".into())))
+        );
+        assert!(needs_correction("[EDIT: report.docx]\nADD: The end.", &[]).is_none(), "EDIT is never called a fake tool");
     }
 
     #[test]

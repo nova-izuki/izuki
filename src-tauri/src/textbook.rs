@@ -213,6 +213,12 @@ fn read_book(id: &str, title: &str, path: &Path) -> Result<()> {
 /// A PDF's words for the chat's [OPEN:], page by page, up to `max`
 /// characters (no OCR here: that's the textbook shelf's slower job).
 pub fn pdf_text(path: &Path, max: usize) -> Result<String> {
+    // lopdf can panic on a damaged PDF (read_book guards it the same way);
+    // unguarded, that ended the chat's stream with no reply at all.
+    std::panic::catch_unwind(|| pdf_pages(path, max)).unwrap_or_else(|_| Err(anyhow!("reading the PDF crashed (it may be damaged)")))
+}
+
+fn pdf_pages(path: &Path, max: usize) -> Result<String> {
     let doc = lopdf::Document::load(path).map_err(|e| anyhow!("couldn't open the PDF ({e})"))?;
     let numbers: Vec<u32> = doc.get_pages().keys().copied().collect();
     if numbers.is_empty() {

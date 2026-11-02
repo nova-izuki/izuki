@@ -55,6 +55,13 @@ Status: ✅ done and tested · 🧪 built, testing · 🔨 in progress · ⏳ pe
 | Dashboard | 🧪 | Served by the same loopback server at `/`: status line, full timeline (HTML-escaped) and a frame gallery. Not yet opened in a real browser against a running app. |
 | Throttling under load; benchmarks on the owner's laptop | ⏳ | The pacing rule (max one grab per 700 ms, duplicate views skipped) is unit-tested; actual capture-cost numbers on this 16 GB laptop are still to be measured in a real run. |
 
+### 5b. Developer Control and the live test loop
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Smart Developer Mode: Smart Vision, Claude Live Auto-Review and Smart Real Testing switches, all off by default; Capture Bug; Stop All | 🔨 | Freebuff (claimed in COLLAB.md): `devmode.rs`, `DeveloperMode.tsx`, built on `observer.rs` and the `devvision` feature. Dev builds only. |
+| One real observe → diagnose → fix → retest cycle, recorded | ⏳ | Needs a `devvision` dev build running on a development machine. Before and after recorded in the review log; never "fixed" on a compile alone. |
+
 ## 6. Eye control (Air control)
 
 | Item | Status | Notes |
@@ -66,5 +73,9 @@ Status: ✅ done and tested · 🧪 built, testing · 🔨 in progress · ⏳ pe
 | Item | Status | Notes |
 | --- | --- | --- |
 | Full Rust suite, tsc, every test:* script, panel browser checks | ⏳ | Run on the release candidate. |
-| CodeRabbit, secret scan, performance review | ⏳ | |
+| CodeRabbit on every push to PR #16 | ✅ | Automatic, drafts included, incremental, never auto-paused; all 121 default skips off. Validated against the official schema with a strict key check. Review 1 (18 findings): all fixed. Review 2 (15): Claude's 4 fixed, Freebuff's 11 open. See `docs/REVIEW-1.0.196.md`. |
+| Release pipeline hardening | 🧪 | Tags only commits whose Verify passed (push runs), never republishes, checks asset sizes, verifies every updater signature against the app's key (`tools/verify-updater.mjs`, proven on 1.0.195 and on 3 tampered cases), versions agree (`tools/check-versions.mjs`), actions pinned in auto-release. Needs a real release run to be ✅. |
+| Binary assets checked in CI (`tools/asset-check.mjs`) | ✅ | 521 assets and 38 character rigs. A corrupted PNG, a truncated WebP and a header-only icon are all caught by name. |
+| Secret scan, performance review | ⏳ | Release candidate. |
+| Android preview signing key in the repo | ⛔ | Owner decision: rotate to a key kept in GitHub secrets (Android 9+ users update in place with a signed lineage; older phones reinstall once). Not changed yet. |
 | Release candidate → owner approval → one release | ⏳ | |

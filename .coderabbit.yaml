@@ -144,6 +144,31 @@ reviews:
     # Terraform
     - "**/*.tfstate"
     - "**/*.tfstate.backup"
+    # Xcode and Swift
+    - "**/*.xcworkspace/contents.xcworkspacedata"
+    - "**/Package.resolved"
+    # Minified CSS and hashed bundles
+    - "**/*.min.css"
+    - "**/*.[0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-].chunk.js"
+    - "**/*.[0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-].chunk.css"
+    - "**/assets/index-[0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-].js"
+    - "**/assets/index-[0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-].css"
+    # Development and system files
+    - "**/tags"
+    - "**/.tags"
+    - "**/TAGS"
+    - "**/.TAGS"
+    - "**/.DS_Store"
+    - "**/.cscope.files"
+    - "**/.cscope.out"
+    - "**/.cscope.in.out"
+    - "**/.cscope.po.out"
+    - "**/*.log"
+    - "**/*.map"
+    - "**/*.out"
+    - "**/*.sum"
+    - "**/*.work"
+    - "**/*.md5sum"
   path_instructions:
     - path: "src-tauri/src/{automation,uia,vision,planner,brain,patience,instant,easy,overlay}.rs"
       instructions: |

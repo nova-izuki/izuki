@@ -73,7 +73,10 @@
       return [words('h1,h2,h3,legend,[role="heading"]'),words('button,input[type="submit"],input[type="button"],a[role="button"]'),
         words('.timer,[role="timer"],.points,.question_points,.question_points_holder,.grade,.info'),normal(document.body?.innerText)].join("\n");
     };
-    const which=globalThis.IzukiAssess?.kind?globalThis.IzukiAssess.kind(document.title,location.href,evidence()):"graded";
+    // The page's own name: its title and main heading (where "Practice quiz"
+    // names this quiz, not a link in the menu).
+    const pageName=`${document.title} ${[...document.querySelectorAll('h1')].map(el=>normal(el.textContent)).join(" ").slice(0,300)}`;
+    const which=globalThis.IzukiAssess?.kind?globalThis.IzukiAssess.kind(pageName,location.href,evidence()):"graded";
     if(answering) {
       if(which!=="practice")return refuse;
       if(args.pageId!==pageId)return {ok:false,changed:true,text:"The page changed before I could answer. Reading it again."};
