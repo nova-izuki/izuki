@@ -170,6 +170,13 @@ pub(crate) fn atomic_save(p: &Path, data: impl FnOnce() -> Result<Vec<u8>>) -> R
     if run.is_err() {
         let _ = std::fs::remove_file(&tmp);
     }
+    // The owner-only observer likes knowing when a save finished (dev builds
+    // only: the `devvision` feature), so the timeline can show the frame of
+    // the app right after a save landed.
+    #[cfg(feature = "devvision")]
+    if run.is_ok() {
+        crate::observer::record("action", format!("atomic save finished: {}", p.display()));
+    }
     run
 }
 

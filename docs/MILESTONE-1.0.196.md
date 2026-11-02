@@ -47,13 +47,13 @@ Status: ✅ done and tested · 🧪 built, testing · 🔨 in progress · ⏳ pe
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Compile-time dev feature; absent from public builds | ⏳ | |
-| Event-driven capture of Izuki's window, deduplicated, bounded | ⏳ | |
-| Action/verification timeline correlated with screenshots | ⏳ | |
-| Capture Bug (shortcut and button) producing a structured report | ⏳ | |
-| Authenticated local connection for Claude Code | ⏳ | |
-| Dashboard | ⏳ | |
-| Throttling under load; benchmarks on the owner's laptop | ⏳ | |
+| Compile-time dev feature; absent from public builds | ✅ | Freebuff, 2026-11-03: cargo feature `devvision`; `observer` module is `#[cfg]`-gated, and the timeline hooks (files::atomic_save, bugs::report) and the setup hook compile out with it. Proof: the default `cargo test --lib` — the release shape — still passes 577/0/45 with the feature off, and passes with it on. The release pipelines never enable the feature, and even a dev build only observes when the owner sets `IZUKI_VISION=1`. |
+| Event-driven capture of Izuki's window, deduplicated, bounded | 🧪 | The watcher grabs Izuki's own window rect (GetWindowRect) through the public region capture every 700 ms at most, hashes the downscaled pixels (FNV-1a) and keeps the frame only when the view is new, in a 40-frame JPEG ring. Dedupe, hashing and ring bound are unit-tested (5 tests). Not yet exercised end-to-end against a live window overnight — first real run is for the owner. |
+| Action/verification timeline correlated with screenshots | 🧪 | `observer::record` writes bounded (500) timeline events; a finished atomic save records an "action", a bug report records a "verification", and each entry can name the frame at or just before its moment (`frame_at_or_before`). The hooks are in and compile-gated; live correlation still needs a real session to point at. |
+| Capture Bug (shortcut and button) producing a structured report | ⏳ | Backend exists: `observer::capture_bug` folds frames, `timeline.json`, a `summary.json` and the log tail into one dated folder. The shortcut/button wiring (hotkey + Settings card) is the remaining half. |
+| Authenticated local connection for Claude Code | 🧪 | A loopback-only HTTP server (random port, one request at a time) serves `/api/status`, `/api/events`, `/api/frames/<n newest>` and a dashboard, every request checked against a Bearer token from `%APPDATA%\Izukiision	oken`. Wrong and missing tokens are refused (unit-tested); the end-to-end curl against a running app still needs one live session. Read-only by design. |
+| Dashboard | 🧪 | Served by the same loopback server at `/`: status line, full timeline (HTML-escaped) and a frame gallery. Not yet opened in a real browser against a running app. |
+| Throttling under load; benchmarks on the owner's laptop | ⏳ | The pacing rule (max one grab per 700 ms, duplicate views skipped) is unit-tested; actual capture-cost numbers on this 16 GB laptop are still to be measured in a real run. |
 
 ## 6. Eye control (Air control)
 

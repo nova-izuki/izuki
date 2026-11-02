@@ -116,6 +116,11 @@ tauri-plugin-single-instance = "=2.4.5"
 # clipboard before borrowing it (automation::clipboard_is_plain_text).
 clipboard-win = "5.4"
 
+[features]
+# Owner-only developer tools, compiled out of public/release builds entirely:
+# cargo build --features devvision. The release pipeline never enables it.
+devvision = []
+
 [profile.release]
 opt-level = 3
 lto = true

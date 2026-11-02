@@ -6,6 +6,10 @@ pub mod attachments;
 pub mod briefing;
 pub mod browser;
 pub mod bugs;
+/// The Smart Vision Developer Observer — owner-only, compiled in only via
+/// `--features devvision` so release builds never carry it (milestone §5).
+#[cfg(feature = "devvision")]
+pub mod observer;
 pub mod automation;
 pub mod call;
 pub mod brain;
@@ -542,6 +546,25 @@ pub fn run() {
             let store = state::init();
             bugs::set_enabled(store.settings().send_bug_reports);
             ext::spawn();
+            // The Smart Vision Developer Observer (milestone §5): compiled in
+            // only with `--features devvision`, and even then it only watches
+            // when the owner asked (IZUKI_VISION=1). A release build carries
+            // none of this code, so public users never gain an observer.
+            #[cfg(feature = "devvision")]
+            if std::env::var("IZUKI_VISION").as_deref() == Ok("1") {
+                let win = app.get_webview_window("main").or_else(|| app.webview_windows().values().next().cloned());
+                match win.map(|w| w.hwnd()).transpose() {
+                    Ok(Some(h)) => {
+                        observer::ENABLED.store(true, std::sync::atomic::Ordering::SeqCst);
+                        match observer::start(h.0 as isize) {
+                            Ok(port) => eprintln!("[izuki] smart vision watching on 127.0.0.1:{port} (token-file auth)"),
+                            Err(e) => eprintln!("[izuki] smart vision did not start: {e}"),
+                        }
+                    }
+                    Ok(None) => eprintln!("[izuki] smart vision found no window to watch"),
+                    Err(e) => eprintln!("[izuki] smart vision: no window handle: {e}"),
+                }
+            }
             {
                 let store = store.clone();
                 std::thread::Builder::new().name("izuki-flow-tidy".into()).spawn(move || loop {

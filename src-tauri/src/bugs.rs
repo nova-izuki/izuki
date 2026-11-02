@@ -288,6 +288,10 @@ pub fn report(kind: &str, message: &str, level: &str) {
         return;
     }
     let r = Report::new(kind, message, level);
+    // Owner-only observer (dev builds, `devvision` feature): what went wrong,
+    // for the timeline next to the frames showing it.
+    #[cfg(feature = "devvision")]
+    crate::observer::record("verification", format!("[bug] {kind}: {message}"));
     {
         let mut sent = SENT.lock();
         sent.retain(|(_, at)| at.elapsed() < Duration::from_secs(3600));
