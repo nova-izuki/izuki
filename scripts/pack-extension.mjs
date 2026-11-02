@@ -44,6 +44,11 @@ for (const f of files.filter((f) => f.name.endsWith('.js'))) {
   for (const call of code.matchAll(/\bimportScripts\(([^)]+)\)/g)) {
     for (const m of call[1].matchAll(/["']([\w./-]+)["']/g)) wanted.add(m[1]);
   }
+  // Scripts injected into pages: chrome.scripting.executeScript({files:[…]}).
+  // (assess.js was injected this way and missing from the packed zip.)
+  for (const call of code.matchAll(/\bfiles\s*:\s*\[([^\]]+)\]/g)) {
+    for (const m of call[1].matchAll(/["']([\w./-]+\.js)["']/g)) wanted.add(m[1]);
+  }
 }
 const manifest = JSON.parse(await readFile(path.join(from, 'manifest.json'), 'utf8'));
 if (typeof manifest.description !== 'string' || manifest.description.length > 132) {
@@ -74,7 +79,16 @@ await promisify(execFile)(
    // `izuki-extension\izuki-extension\manifest.json` — one level too deep for
    // Load unpacked, and the most common way to end up with the browser still
    // running a copy from months ago. `extension_setup.rs` reads this layout.
-   `Compress-Archive -Path (Join-Path $staging '*') -DestinationPath '${to.replace(/'/g, "''")}' -Force; ` +
+   // Entries are named with "/" as the zip format requires. (PowerShell 5.1's
+   // Compress-Archive wrote "icons\\icon-16.png": Windows extracts that, but
+   // other unzip tools made one file with a backslash in its name and no
+   // icons folder.)
+   `Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem; ` +
+   `$to='${to.replace(/'/g, "''")}'; if (Test-Path -LiteralPath $to) { Remove-Item -Force -LiteralPath $to }; ` +
+   `$zip=[IO.Compression.ZipFile]::Open($to, 'Create'); ` +
+   `try { Get-ChildItem -LiteralPath $staging -Recurse -File | ForEach-Object { ` +
+   `$name=$_.FullName.Substring($staging.Length + 1).Replace([string][char]92, '/'); ` +
+   `[void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $name, 'Optimal') } } finally { $zip.Dispose() }; ` +
    `} finally { Remove-Item -Recurse -Force -LiteralPath $staging }`],
   { windowsHide: true }
 );

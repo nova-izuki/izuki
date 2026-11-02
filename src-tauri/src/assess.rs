@@ -74,6 +74,22 @@ const PRACTICE_SAYS: &[&str] = &[
 // (" exam", not "exam": "example" isn't one.)
 const QUIZ_LIKE: &[&str] = &["quiz", " test", " exam", "assessment", "midterm", "knowledge check"];
 
+/// Grading signs no ordinary page has: on their own they make a page an
+/// assessment, even one that never says quiz or test ("Homework 2 ·
+/// Attempts remaining: 2"). (The generic ones, a due date or a timer, don't:
+/// a bill has a due date.)
+const ASSESSMENT_ONLY: &[&str] = &[
+    "points possible", "(1 point", "(2 points", " points)", "attempt 1 of", "attempt 2 of", "attempts remaining", "attempts allowed",
+    "attempts left", "attempt due", "submit quiz", "submit test", "submit exam", "submit assessment", "finish attempt",
+    "submit for grading", "submit all and finish", "proctor", "lockdown browser", "honorlock", "respondus", "proctorio",
+    "graded quiz", "graded test", "graded assessment", "final exam", "% of your grade", "of your final grade", "marked out of",
+];
+
+/// School-work words. With a score on the page ("1 point") they make it an
+/// assessment ("Exercise 4"); without them, points are a shop's or a game's
+/// ("Redeem 500 points"), and clicking those stays allowed.
+const SCHOOL: &[&str] = &["exercise", "homework", "assignment", "worksheet", "problem set", "lesson", "chapter", "module", "question", "course"];
+
 /// "1 point", "(2 points)", "10 pts", "0.5 pt": a score on the page.
 fn shows_points(words: &str) -> bool {
     let b = words.as_bytes();
@@ -100,12 +116,20 @@ pub fn kind(title: &str, url: &str, text: &str) -> Kind {
     let words = format!("{page}{}", text.chars().take(200_000).collect::<String>().to_lowercase());
     let named = PRACTICE_NAMES.iter().any(|w| page.contains(w));
     let says = PRACTICE_SAYS.iter().any(|w| words.contains(w));
-    let quiz_like = QUIZ_LIKE.iter().any(|w| words.contains(w)) || (words.contains("question ") && words.contains(" of ")) || named || says;
+    let said_ungraded = NOT_GRADED.iter().fold(words.clone(), |w, n| w.replace(n, " "));
+    let points = shows_points(&said_ungraded);
+    // Grading evidence is looked at before deciding it's no quiz at all: an
+    // "Exercise 4" worth "1 point" is graded though it never says quiz.
+    let quiz_like = QUIZ_LIKE.iter().any(|w| words.contains(w))
+        || (words.contains("question ") && words.contains(" of "))
+        || named
+        || says
+        || ASSESSMENT_ONLY.iter().any(|w| said_ungraded.contains(w))
+        || (points && SCHOOL.iter().any(|w| words.contains(w)));
     if !quiz_like {
         return Kind::NotAQuiz;
     }
-    let said_ungraded = NOT_GRADED.iter().fold(words.clone(), |w, n| w.replace(n, " "));
-    if GRADED.iter().any(|w| said_ungraded.contains(w)) || shows_points(&said_ungraded) {
+    if GRADED.iter().any(|w| said_ungraded.contains(w)) || points {
         return Kind::Graded;
     }
     if named || says {

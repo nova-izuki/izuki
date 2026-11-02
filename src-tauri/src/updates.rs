@@ -202,7 +202,8 @@ pub async fn check_rollback(app: AppHandle, window: WebviewWindow) -> Result<Upd
     main_only(&window)?;
     let looked = previous_release().await;
     let status = publish(&app, |s| match looked.as_ref() {
-        Ok(Some((version, _))) => { s.rollback = Some(version.clone()); s.error = None; }
+        // (An update error already showing stays: this lookup isn't about it.)
+        Ok(Some((version, _))) => { s.rollback = Some(version.clone()); }
         Ok(None) => { s.rollback = None; }
         // Going back is optional: a failed lookup (offline, GitHub busy) hides
         // the button instead of putting an error at the top of Settings.
@@ -217,7 +218,7 @@ pub async fn check_rollback(app: AppHandle, window: WebviewWindow) -> Result<Upd
 /// the same three steps, and the same signature, as a normal update. The
 /// updater itself refuses to go down; here going down is the point.
 #[tauri::command]
-pub async fn rollback_previous(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+pub async fn rollback_previous(app: AppHandle, window: WebviewWindow, version: String) -> Result<(), String> {
     main_only(&window)?;
     if crate::hotkey::is_busy() { return Err("I'm in the middle of something — I can go back when it's done.".into()); }
     // The same lock every update operation takes, held to the end: a second
@@ -225,6 +226,11 @@ pub async fn rollback_previous(app: AppHandle, window: WebviewWindow) -> Result<
     // status alone left a gap between the check and the start.)
     let _operation = PACKAGE.try_lock().map_err(|_| "An update operation is already running.".to_string())?;
     let (previous, manifest) = previous_release().await?.ok_or("There's no older published version to go back to.")?;
+    // Only the version the user confirmed: the lookup is done again here, and
+    // a release published or pulled in between would change what "previous" is.
+    if previous != version {
+        return Err(format!("The previous version is now {previous}, not {version}. Check again before going back."));
+    }
     {
         let s = STATUS.lock();
         if matches!(s.phase.as_str(), "downloading" | "rollback-downloading" | "installing") {
@@ -251,6 +257,9 @@ pub async fn rollback_previous(app: AppHandle, window: WebviewWindow) -> Result<
             .await
             .map_err(|e| format!("I couldn't read the previous release's manifest: {e}"))?
             .ok_or("That release has no signed installer for this PC (it may predate the signature key).")?;
+        if update.version != version {
+            return Err(format!("That release's installer is {}, not the {version} you chose. Nothing was installed.", update.version));
+        }
         let bytes = update
             .download(
                 move |chunk, total| {

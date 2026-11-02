@@ -472,23 +472,47 @@ fn rewrite(par: &str, k: Ooxml, new: &str, word: bool) -> String {
     out
 }
 
-/// The first `<name …>…</name>` or `<name …/>` element in `xml`.
-fn element<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
+/// Where the next `<name` tag (exactly that name) starts, from `from`.
+fn next_tag(xml: &str, from: usize, name: &str) -> Option<usize> {
     let open = format!("<{name}");
-    let mut from = 0;
-    while let Some(i) = xml[from..].find(&open).map(|i| i + from) {
+    let mut at = from;
+    while let Some(i) = xml[at..].find(&open).map(|i| i + at) {
         if tag_at(xml, i, name) {
-            let gt = i + xml[i..].find('>')?;
-            if xml.as_bytes()[gt - 1] == b'/' {
-                return Some(&xml[i..=gt]);
-            }
-            let close = format!("</{name}>");
-            let end = gt + xml[gt..].find(&close)? + close.len();
-            return Some(&xml[i..end]);
+            return Some(i);
         }
-        from = i + open.len();
+        at = i + open.len();
     }
     None
+}
+
+/// The first `<name …>…</name>` or `<name …/>` element in `xml`, nesting
+/// counted: a tracked change holds a whole `w:pPr` inside the `w:pPr` it
+/// changes, and stopping at the first `</w:pPr>` cut the element in half.
+fn element<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
+    let close = format!("</{name}>");
+    let i = next_tag(xml, 0, name)?;
+    let gt = i + xml[i..].find('>')?;
+    if xml.as_bytes()[gt - 1] == b'/' {
+        return Some(&xml[i..=gt]);
+    }
+    let (mut depth, mut at) = (1, gt + 1);
+    while depth > 0 {
+        let shut = at + xml[at..].find(&close)?;
+        match next_tag(xml, at, name).filter(|o| *o < shut) {
+            Some(o) => {
+                let g = o + xml[o..].find('>')?;
+                if xml.as_bytes()[g - 1] != b'/' {
+                    depth += 1;
+                }
+                at = g + 1;
+            }
+            None => {
+                depth -= 1;
+                at = shut + close.len();
+            }
+        }
+    }
+    Some(&xml[i..at])
 }
 
 /// `xml` without any `name` elements.
@@ -999,6 +1023,24 @@ mod tests {
         // A slide paragraph keeps its alignment and its run's look.
         let slide = r#"<a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="en-US" b="1"/><a:t>Thank you</a:t></a:r><a:endParaRPr lang="en-US"/></a:p>"#;
         assert_eq!(fresh_paragraph(slide, Ooxml::SLIDE, "Questions?", false), r#"<a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="en-US" b="1"/><a:t>Questions?</a:t></a:r></a:p>"#);
+    }
+
+    /// Tracked formatting changes nest a full w:pPr / w:rPr inside the one
+    /// they change. The new paragraph must keep the outer element whole and
+    /// drop the change record.
+    #[test]
+    fn nested_tracked_changes_stay_whole() {
+        let par = concat!(
+            r#"<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:pPrChange w:id="9"><w:pPr><w:jc w:val="left"/></w:pPr></w:pPrChange><w:spacing w:after="120"/></w:pPr>"#,
+            r#"<w:r><w:rPr><w:b/><w:rPrChange w:id="10"><w:rPr><w:i/></w:rPr></w:rPrChange><w:sz w:val="28"/></w:rPr><w:t>Risk</w:t></w:r></w:p>"#,
+        );
+        assert_eq!(
+            fresh_paragraph(par, Ooxml::WORD, "Next", true),
+            r#"<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:spacing w:after="120"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">Next</w:t></w:r></w:p>"#
+        );
+        assert_eq!(element("<a><a>x</a><a/></a>tail", "a"), Some("<a><a>x</a><a/></a>"));
+        assert_eq!(element("<ab>no</ab><a/>", "a"), Some("<a/>"), "a longer name isn't it");
+        assert_eq!(element("<a><a>cut short", "a"), None);
     }
 
     #[test]

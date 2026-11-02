@@ -30,6 +30,15 @@
     "test yourself","quiz yourself","check your understanding","try it yourself"];
   // (" exam", not "exam": "example" isn't one.)
   const QUIZ_LIKE=["quiz"," test"," exam","assessment","midterm","knowledge check"];
+  // Grading signs no ordinary page has: alone they make a page an assessment
+  // ("Homework 2 · Attempts remaining"). A due date or a timer doesn't.
+  const ASSESSMENT_ONLY=["points possible","(1 point","(2 points"," points)","attempt 1 of","attempt 2 of","attempts remaining","attempts allowed",
+    "attempts left","attempt due","submit quiz","submit test","submit exam","submit assessment","finish attempt",
+    "submit for grading","submit all and finish","proctor","lockdown browser","honorlock","respondus","proctorio",
+    "graded quiz","graded test","graded assessment","final exam","% of your grade","of your final grade","marked out of"];
+  // School-work words: with a score ("1 point") the page is an assessment;
+  // without them, points are a shop's ("Redeem 500 points").
+  const SCHOOL=["exercise","homework","assignment","worksheet","problem set","lesson","chapter","module","question","course"];
   // "1 point", "(2 points)", "10 pts", "0.5 pt": a score on the page.
   // (The same whitespace as Rust's is_ascii_whitespace.)
   const POINTS=/[0-9][ \t\n\r\f]*(?:point|pt)s?(?![a-z])/;
@@ -42,10 +51,13 @@
     const words=`${page}${Array.from(String(text||"")).slice(0,200000).join("").toLowerCase()}`;
     const has=w=>words.includes(w);
     const named=PRACTICE_NAMES.some(w=>page.includes(w)),says=PRACTICE_SAYS.some(has);
-    const quizLike=QUIZ_LIKE.some(has)||(has("question ")&&has(" of "))||named||says;
-    if(!quizLike)return "none";
     const saidUngraded=NOT_GRADED.reduce((w,n)=>w.split(n).join(" "),words);
-    if(GRADED.some(w=>saidUngraded.includes(w))||POINTS.test(saidUngraded))return "graded";
+    const points=POINTS.test(saidUngraded);
+    // Grading evidence before "no quiz at all": "Exercise 4" + "1 point" is graded.
+    const quizLike=QUIZ_LIKE.some(has)||(has("question ")&&has(" of "))||named||says
+      ||ASSESSMENT_ONLY.some(w=>saidUngraded.includes(w))||(points&&SCHOOL.some(has));
+    if(!quizLike)return "none";
+    if(GRADED.some(w=>saidUngraded.includes(w))||points)return "graded";
     if(named||says)return "practice";
     return "graded";
   }

@@ -57,12 +57,27 @@ Status: open · claimed · fixed (commit) · dismissed (why).
 | 14 | Low | `docs/MILESTONE-1.0.196.md` | A validation record dated in the future | — (Freebuff's) | open |
 | 15 | Low | `docs/MILESTONE-1.0.196.md` | Observer token path written with control characters | — (Freebuff's) | open |
 
+## CodeRabbit review 3: commit `b55f0ed`, 2026-11-02 15:38 UTC
+
+8 findings, all on Claude's commit, so Claude claims them. (Reviews of `a476b18` and `09b705e` are on Freebuff's work: Freebuff's to claim.)
+
+| # | Sev. | Where | Finding | Claimed by | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | High | `.github/workflows/release.yml` | A hand-pushed tag on a verified, unmerged milestone commit could be released (Verify now runs on milestone branches) | Claude | fixed (commit “CodeRabbit review 3 fixes”): the release refuses a commit that isn't on main (full-history checkout, `merge-base --is-ancestor`), like auto-release |
+| 2 | Low | `docs/REVIEW-1.0.196.md` | The "normal update 30 s" item is wrong: the download already gets 10 minutes | Claude | fixed (commit “CodeRabbit review 3 fixes”): confirmed (`updates.rs` sets 10 minutes before downloading). The item below is dismissed |
+| 3 | High | `src-tauri/src/assess.rs` (+ `assess.js`) | "Exercise 4" with "1 point" isn't quiz-like, so the graded guard is off | Claude | fixed (commit “CodeRabbit review 3 fixes”): assessment-only signs (attempts, submit quiz, marked out of…), or a score plus a school word, make a page an assessment. Points alone don't (a shop's “Redeem 500 points” stays clickable). 5 new shared cases |
+| 4 | Medium | `src-tauri/src/officeedit.rs` | `element` stops at the first closing tag: nested `w:pPr`/`w:rPr` in tracked changes give broken XML | Claude | fixed (commit “CodeRabbit review 3 fixes”): `element` counts nesting; `nested_tracked_changes_stay_whole` |
+| 5 | Low | `src-tauri/src/research.rs` | Numbers from the shared page are flagged as unsupported | Claude | fixed (commit “CodeRabbit review 3 fixes”): the shared page is part of the number check |
+| 6 | Low | `src-tauri/src/updates.rs` | A successful rollback lookup clears a real update error | Claude | fixed (commit “CodeRabbit review 3 fixes”): the lookup no longer clears an update error |
+| 7 | High | `src/components/UpdateControls.tsx` + `updates.rs` | Rollback looks the release up again and could install a different version than the one confirmed | Claude | fixed (commit “CodeRabbit review 3 fixes”): `rollback_previous` takes the confirmed version and refuses if the lookup or the installer's manifest names another |
+| 8 | High | `src/components/UpdateControls.tsx` | Rollback is hidden whenever an update is offered | Claude | fixed (commit “CodeRabbit review 3 fixes”): shown whenever there's a version to go back to, disabled only while an operation runs |
+
 ## Found outside CodeRabbit
 
 | Sev. | Where | Finding | Claimed by | Status |
 | --- | --- | --- | --- | --- |
-| Medium (to verify) | `src-tauri/src/updates.rs` normal update | The updater plugin's timeout covers the whole request, download included. With the normal path's 30 s, a 70 MB installer would fail below about 2.4 MB/s. The owner's update worked (a fast connection), so this is unverified on slow links. Next: time a throttled download before changing the working path. | — | open |
-| Low | `scripts/pack-extension.mjs` | The packed extension zip stores `icons\icon-16.png` with backslashes (PowerShell 5.1 `Compress-Archive`). Windows extracts it fine; other unzip tools make a file with a backslash in its name. Found by `tools/asset-check.mjs`, which warns. | — | open |
+| ~~Medium (to verify)~~ | `src-tauri/src/updates.rs` normal update | ~~The 30 s timeout would cut off a slow download.~~ | Claude | dismissed: wrong. The 30 s is for the check; `fetch` sets 10 minutes before downloading (`updates.rs:305`). Pointed out by CodeRabbit review 3. |
+| Low → High | `scripts/pack-extension.mjs`, `docs/extension/izuki-extension.zip` | The zip stored `icons\icon-16.png` with backslashes. **Repacking it showed the website's zip was stale:** no `assess.js` (which the quiz runner injects, so a run on a quiz page would fail) and 6 older files, all this milestone's extension changes. | Claude | fixed (commit “CodeRabbit review 3 fixes”): the packer names entries with `/` itself (.NET ZipFile) and refuses a missing `files:[…]` injection; `asset-check` now compares the zip with `extension/` file by file and fails on backslashes. The old zip fails by name (7 files), the new one passes |
 
 ## Limits of the review
 

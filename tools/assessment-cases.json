@@ -174,5 +174,35 @@
   "padBefore": 300,
   "text": "This quiz does not count toward your grade. Question 1 of 5",
   "kind": "practice"
+ },
+ {
+  "title": "Exercise 4",
+  "url": "",
+  "text": "1 point Which port does HTTPS use? 443 80",
+  "kind": "graded"
+ },
+ {
+  "title": "Homework 2",
+  "url": "",
+  "text": "Attempts remaining: 2. Which port does HTTPS use?",
+  "kind": "graded"
+ },
+ {
+  "title": "Checkout",
+  "url": "",
+  "text": "Use 500 points for $5 off? Yes No",
+  "kind": "none"
+ },
+ {
+  "title": "Rewards",
+  "url": "",
+  "text": "You have 1,200 points. Redeem 500 points or 1000 points",
+  "kind": "none"
+ },
+ {
+  "title": "Electric bill",
+  "url": "",
+  "text": "Due date: Friday. Pay in full or pay the minimum",
+  "kind": "none"
  }
 ]

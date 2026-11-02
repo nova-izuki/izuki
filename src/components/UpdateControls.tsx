@@ -22,7 +22,9 @@ export function UpdateControls({compact=false}:{compact?:boolean}) {
     if(cmd==='install_update'&&!window.confirm(`Install Izuki ${status.version} now? Save your work first. Izuki will close while the installer runs.`))return;
     if(cmd==='rollback_previous'&&!window.confirm(`Go back to Izuki ${status.rollback} now? Save your work first. Izuki will close, then the older version installs.`))return;
     setPending(true);setError('');
-    try { const value=await call<State|undefined>(cmd,cmd==='install_update'?{version:status.version}:undefined,()=>{throw new Error('Updates install only in the desktop app.');});if(value)setStatus(value); }
+    // Each install names the exact version the user just confirmed.
+    const args=cmd==='install_update'?{version:status.version}:cmd==='rollback_previous'?{version:status.rollback}:undefined;
+    try { const value=await call<State|undefined>(cmd,args,()=>{throw new Error('Updates install only in the desktop app.');});if(value)setStatus(value); }
     catch(e){setError(String(e));}finally{setPending(false);}
   };
   if(compact&&(!status.version||dismissed===status.version))return null;
@@ -36,7 +38,8 @@ export function UpdateControls({compact=false}:{compact?:boolean}) {
       {!compact&&<button type="button" className="izk-pill px-3 py-2" disabled={busy||!IS_TAURI} onClick={()=>void run('check_updates')}>Check now</button>}
       {status.version&&status.phase!=='ready'&&<button type="button" className="izk-btn-primary px-3 py-2" disabled={busy||!IS_TAURI} onClick={()=>void run('download_update')}>Download update</button>}
       {status.phase==='ready'&&<button type="button" className="izk-btn-primary px-3 py-2" disabled={busy||!IS_TAURI} onClick={()=>void run('install_update')}>Install &amp; close Izuki</button>}
-      {!compact&&status.rollback&&status.phase!=='installing'&&!['available','ready','downloading','rollback-downloading'].includes(status.phase)&&<button type="button" className="izk-pill px-3 py-2" disabled={busy||!IS_TAURI} onClick={()=>void run('rollback_previous')} title="Installs the previous version, checked the same way as an update">Go back to {status.rollback}</button>}
+      {/* Also while a newer update is offered: going back is a choice of its own. */}
+      {!compact&&status.rollback&&<button type="button" className="izk-pill px-3 py-2" disabled={busy||!IS_TAURI} onClick={()=>void run('rollback_previous')} title="Installs the previous version, checked the same way as an update">Go back to {status.rollback}</button>}
       <button type="button" className="izk-pill px-3 py-2" onClick={()=>void api.openUrl('https://nova-izuki.github.io/izuki/#download')}>Website</button>
       {compact&&!busy&&<button type="button" className="izk-pill px-3 py-2" onClick={()=>setDismissed(status.version)}>Later</button>}
     </div>

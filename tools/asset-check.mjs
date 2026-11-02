@@ -260,16 +260,26 @@ for (const file of files) {
   if (packed) {
     const entries = zip(read(packed));
     if (typeof entries !== 'string') {
-      // Files sit at the root, no wrapper folder (scripts/pack-extension.mjs).
-      const inside = entries.get('manifest.json');
-      const want = JSON.parse(read('extension/manifest.json')).version;
-      if (!inside) fail(packed, 'has no manifest.json at its root');
-      else if (JSON.parse(inside).version !== want) fail(packed, `holds extension ${JSON.parse(inside).version}, extension/ is ${want}: run npm run extension`);
-      // Known, low severity (docs/REVIEW-1.0.196.md): PowerShell 5.1's
-      // Compress-Archive stores "icons\icon-16.png". Windows extracts that
-      // fine; other unzip tools make a file with a backslash in its name.
+      // Files sit at the root, no wrapper folder (scripts/pack-extension.mjs),
+      // and they are exactly extension/'s files. A version check alone missed
+      // a zip without assess.js, which the quiz runner injects.
+      if (!entries.get('manifest.json')) fail(packed, 'has no manifest.json at its root');
+      const source = files.filter((f) => f.startsWith('extension/')).map((f) => f.slice('extension/'.length));
+      // Text compared without line endings (Windows checkouts have CRLF, CI
+      // has LF); everything else byte for byte.
+      const unix = (b) => b.toString('utf8').replace(/\r\n/g, '\n');
+      const same = (name, a, b) => a.equals(b) || (/\.(js|json|html|css|md|txt)$/.test(name) && unix(a) === unix(b));
+      for (const name of source) {
+        const inZip = entries.get(name) ?? entries.get(name.replaceAll('/', String.fromCharCode(92)));
+        if (!inZip) fail(packed, `is missing ${name}: run npm run extension`);
+        else if (!same(name, inZip, read(`extension/${name}`))) fail(packed, `has an old ${name}: run npm run extension`);
+      }
+      for (const extra of entries.keys()) if (!source.includes(extra.replaceAll(String.fromCharCode(92), '/'))) fail(packed, `holds ${extra}, which extension/ no longer has: run npm run extension`);
+      // Names use "/" (the packer writes them itself since PowerShell 5.1's
+      // Compress-Archive stored "icons\icon-16.png": other unzip tools then
+      // made a file with a backslash in its name and no icons folder).
       const slashed = [...entries.keys()].filter((n) => n.includes(String.fromCharCode(92)));
-      if (slashed.length) console.warn(`warn ${packed}: ${slashed.length} entries use backslashes (e.g. ${slashed[0]}); the zip format wants "/"`);
+      if (slashed.length) fail(packed, `${slashed.length} entries use backslashes (e.g. ${slashed[0]}); the zip format wants "/": run npm run extension`);
     }
   }
 }

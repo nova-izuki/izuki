@@ -407,7 +407,8 @@ pub(crate) fn run_about(id: u64, question: &str, history: &[crate::chat::Turn], 
     }
     // Numbers the pages don't contain: a free AI sometimes invents them.
     let all_text: String = pages.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join(" ");
-    let doubtful = unsupported_numbers(&answer, &format!("{question} {all_text}"));
+    // (The shared page's numbers count as found: the user supplied them.)
+    let doubtful = unsupported_numbers(&answer, &format!("{question} {page} {all_text}"));
     if !doubtful.is_empty() {
         send(Update {
             kind: "text",
