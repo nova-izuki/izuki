@@ -55,9 +55,17 @@ fn client(timeout: Duration) -> Result<reqwest::blocking::Client> {
         .build()?)
 }
 
+/// Telegram's addresses carry the bot's token ("…/bot<token>/sendMessage"),
+/// and reqwest's errors quote the address — so it comes off every error
+/// before anything can log it. (It's still a connection error underneath:
+/// outbox::never_left sees that.)
+fn no_url(e: reqwest::Error) -> reqwest::Error {
+    e.without_url()
+}
+
 fn call(token: &str, method: &str, body: &Value, timeout: Duration) -> Result<Value> {
-    let res = client(timeout)?.post(format!("{API}/bot{token}/{method}")).json(body).send()?;
-    let v: Value = res.json()?;
+    let res = client(timeout)?.post(format!("{API}/bot{token}/{method}")).json(body).send().map_err(no_url)?;
+    let v: Value = res.json().map_err(no_url)?;
     if v["ok"].as_bool() != Some(true) {
         return Err(anyhow!("{}", v["description"].as_str().unwrap_or("Telegram said no")));
     }
@@ -86,15 +94,33 @@ fn typing(token: &str, chat: i64) {
 }
 
 /// Text the paired phone (reminders, "done" for a long PC task). Returns at
-/// once; a no-op when no phone is paired.
+/// once; a no-op when no phone is paired. Offline (the laptop just woke), it
+/// waits and goes when the internet is back (outbox.rs).
 pub fn notify(text: &str) {
+    let s = crate::state::store().settings();
+    if s.telegram_token.trim().is_empty() || s.telegram_chat_id == 0 {
+        return;
+    }
+    let text = text.to_string();
+    std::thread::spawn(move || crate::outbox::send_or_keep("Telegram", deliver, &text));
+}
+
+/// One message to the paired phone, now, read from the settings afresh (a
+/// message that waited goes to whoever is paired when it leaves). On a
+/// failure, what's left says which pieces didn't go.
+fn deliver(text: &str) -> std::result::Result<(), crate::outbox::Unsent> {
     let s = crate::state::store().settings();
     let token = s.telegram_token.trim().to_string();
     if token.is_empty() || s.telegram_chat_id == 0 {
-        return;
+        return Ok(());
     }
-    let (chat, text) = (s.telegram_chat_id, text.to_string());
-    std::thread::spawn(move || send_text(&token, chat, &text));
+    let parts = split(text, 3900);
+    for (i, part) in parts.iter().enumerate() {
+        if let Err(error) = call(&token, "sendMessage", &json!({ "chat_id": s.telegram_chat_id, "text": part }), Duration::from_secs(15)) {
+            return Err(crate::outbox::Unsent { rest: parts[i..].concat(), error });
+        }
+    }
+    Ok(())
 }
 
 /// Start answering the bot (once, at startup). Picks up a new or changed
@@ -286,8 +312,10 @@ fn download(token: &str, file_id: &str) -> Result<Vec<u8>> {
     let path = f["file_path"].as_str().ok_or_else(|| anyhow!("no file path"))?;
     let bytes = client(Duration::from_secs(30))?
         .get(format!("{API}/file/bot{token}/{path}"))
-        .send()?
-        .bytes()?;
+        .send()
+        .map_err(no_url)?
+        .bytes()
+        .map_err(no_url)?;
     Ok(bytes.to_vec())
 }
 
@@ -303,7 +331,7 @@ fn send_screen(token: &str, chat: i64) -> Result<()> {
     let form = Form::new()
         .text("chat_id", chat.to_string())
         .part("photo", Part::bytes(jpeg).file_name("screen.jpg").mime_str("image/jpeg")?);
-    let res = client(Duration::from_secs(40))?.post(format!("{API}/bot{token}/sendPhoto")).multipart(form).send()?;
+    let res = client(Duration::from_secs(40))?.post(format!("{API}/bot{token}/sendPhoto")).multipart(form).send().map_err(no_url)?;
     if !res.status().is_success() {
         send_text(token, chat, "Couldn't send the screenshot, sorry.");
     }
@@ -324,6 +352,18 @@ pub fn unpair() {
 #[cfg(test)]
 mod tests {
     use super::split;
+
+    /// A failed send quoted the whole address, bot token and all, into the log.
+    #[test]
+    fn an_error_never_carries_the_bot_token() {
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let url = format!("http://127.0.0.1:{port}/bot123456:SECRET-token/sendMessage");
+        let raw = reqwest::blocking::Client::new().post(&url).send().unwrap_err();
+        assert!(raw.to_string().contains("SECRET-token"), "the test needs reqwest to quote the address: {raw}");
+        let e = anyhow::Error::from(super::no_url(raw));
+        assert!(!format!("{e:#}").contains("SECRET-token"), "{e:#}");
+        assert!(crate::outbox::never_left(&e), "still known as offline, so it waits instead of being lost");
+    }
 
     #[test]
     fn long_messages_are_split() {

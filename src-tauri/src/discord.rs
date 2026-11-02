@@ -147,11 +147,19 @@ fn send_text(token: &str, channel: &str, text: &str) {
 }
 
 fn send_text_checked(token: &str, channel: &str, text: &str) -> Result<()> {
-    // Discord caps a message at 2000 characters.
+    send_parts(token, channel, text).map_err(|u| u.error)
+}
+
+/// In pieces of 1900 (Discord caps a message at 2000 characters). On a
+/// failure, what's left says which pieces didn't go.
+fn send_parts(token: &str, channel: &str, text: &str) -> std::result::Result<(), crate::outbox::Unsent> {
+    const PIECE: usize = 1900;
     let chars: Vec<char> = text.chars().collect();
-    for part in chars.chunks(1900) {
+    for (i, part) in chars.chunks(PIECE).enumerate() {
         let content: String = part.iter().collect();
-        rest(token, reqwest::Method::POST, &format!("/channels/{channel}/messages"), Some(&json!({ "content": content, "allowed_mentions": { "parse": [] } })))?;
+        if let Err(error) = rest(token, reqwest::Method::POST, &format!("/channels/{channel}/messages"), Some(&json!({ "content": content, "allowed_mentions": { "parse": [] } }))) {
+            return Err(crate::outbox::Unsent { rest: chars[i * PIECE..].iter().collect(), error });
+        }
     }
     Ok(())
 }
@@ -195,39 +203,46 @@ fn send_screen(token: &str, channel: &str) -> Result<()> {
 }
 
 /// Message the paired Discord user (reminders, the call link). Returns at
-/// once; a no-op when nobody is paired.
+/// once; a no-op when nobody is paired. Offline (the laptop just woke), it
+/// waits and goes when the internet is back (outbox.rs).
 pub fn notify(text: &str) {
+    let s = crate::state::store().settings();
+    if s.discord_token.trim().is_empty() || s.discord_user_id.is_empty() {
+        return;
+    }
+    let text = text.to_string();
+    std::thread::spawn(move || crate::outbox::send_or_keep("Discord", deliver, &text));
+}
+
+/// One message to the paired user, now. Reads the pairing afresh each time,
+/// so a message that waited goes to whoever is paired when it leaves (and
+/// nowhere, if nobody is).
+fn deliver(text: &str) -> std::result::Result<(), crate::outbox::Unsent> {
+    use crate::outbox::Unsent;
     let s = crate::state::store().settings();
     let token = s.discord_token.trim().to_string();
     let user = s.discord_user_id.clone();
     if token.is_empty() || user.is_empty() {
-        return;
+        return Ok(());
     }
-    let text = text.to_string();
-    std::thread::spawn(move || {
-        let _one_at_a_time = SENDING.lock();
-        match dm_channel(&token, &user) {
-            Ok(ch) => {
-                match send_text_checked(&token, &ch, &text) {
-                    Ok(()) => {}
-                    // The conversation is gone (the bot was re-made): open it afresh once.
-                    Err(e) if e.to_string().contains("404") => {
-                        DM.lock().take();
-                        match dm_channel(&token, &user) {
-                            Ok(ch) => send_text(&token, &ch, &text),
-                            Err(e) => eprintln!("[discord] couldn't open the DM: {e}"),
-                        }
-                    }
-                    // Anything else: part may have gone out, so never send it all again.
-                    Err(e) => {
-                        eprintln!("[discord] couldn't send: {e}");
-                        STATUS.lock().error = Some("A Discord message could not be delivered. Check your internet and that DMs from the bot are allowed.".into());
-                    }
-                }
-            }
-            Err(e) => eprintln!("[discord] couldn't open the DM: {e}"),
+    let _one_at_a_time = SENDING.lock();
+    let ch = dm_channel(&token, &user).map_err(|e| Unsent::all(text, e))?;
+    let sent = match send_parts(&token, &ch, text) {
+        // The conversation is gone (the bot was re-made): open it afresh once.
+        Err(u) if u.rest == text && u.error.to_string().contains("404") => {
+            DM.lock().take();
+            let ch = dm_channel(&token, &user).map_err(|e| Unsent::all(text, e))?;
+            send_parts(&token, &ch, text)
         }
-    });
+        other => other,
+    };
+    // Offline isn't the bot's fault: that one waits and goes by itself.
+    if let Err(u) = &sent {
+        if !crate::outbox::never_left(&u.error) {
+            STATUS.lock().error = Some("A Discord message could not be delivered. Check your internet and that DMs from the bot are allowed.".into());
+        }
+    }
+    sent
 }
 
 /// Forget the paired Discord user (a fresh code is made).

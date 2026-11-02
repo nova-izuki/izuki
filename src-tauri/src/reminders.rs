@@ -40,6 +40,16 @@ pub struct Reminder {
     /// "" (once), "daily", "weekdays", "weekends", or days like "mon,wed,fri".
     #[serde(default)]
     pub repeat: String,
+    /// A repeating one's time on the clock ("02:30:00"), so the night 2:30
+    /// doesn't exist (it rings at 3:30) doesn't move it to 3:30 for good.
+    /// Empty on older reminders: their own time is read the first time.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub clock: String,
+}
+
+/// The time on the clock a timestamp falls at, as kept in `clock`.
+fn clock_of(at: i64) -> String {
+    Local.timestamp_millis_opt(at).single().map(|t| t.format("%H:%M:%S").to_string()).unwrap_or_default()
 }
 
 pub const ALARM: &str = "izuki://alarm";
@@ -86,12 +96,14 @@ pub fn add(at: i64, text: &str) -> Reminder {
 
 pub fn add_full(at: i64, text: &str, alarm: bool, repeat: &str) -> Reminder {
     let _g = LOCK.lock();
+    let repeat = normalise_repeat(repeat);
     let r = Reminder {
         id: uuid::Uuid::new_v4().to_string(),
         at,
         text: text.trim().chars().take(300).collect(),
         alarm,
-        repeat: normalise_repeat(repeat),
+        clock: if repeat.is_empty() { String::new() } else { clock_of(at) },
+        repeat,
     };
     let mut all = read();
     all.push(r.clone());
@@ -440,13 +452,19 @@ fn normalise_repeat(repeat: &str) -> String {
     }
 }
 
-/// When a repeating alarm rings next, after `at` (same clock time).
-pub fn next_time(at: i64, repeat: &str) -> Option<i64> {
+/// When a repeating alarm rings next, after `at`, at its time on the clock
+/// (`clock`; `at`'s own when that's empty).
+pub fn next_time(at: i64, repeat: &str, clock: &str) -> Option<i64> {
+    next_time_in(&Local, at, repeat, clock)
+}
+
+fn next_time_in<Tz: TimeZone>(tz: &Tz, at: i64, repeat: &str, clock: &str) -> Option<i64> {
     use chrono::Datelike;
     if repeat.is_empty() {
         return None;
     }
-    let t = Local.timestamp_millis_opt(at).single()?;
+    let t = tz.timestamp_millis_opt(at).single()?;
+    let time = chrono::NaiveTime::parse_from_str(clock, "%H:%M:%S").unwrap_or(t.time());
     let ok = |w: chrono::Weekday| -> bool {
         let n = w.num_days_from_monday();
         match repeat {
@@ -458,7 +476,7 @@ pub fn next_time(at: i64, repeat: &str) -> Option<i64> {
     };
     (1..=7).find_map(|k| {
         let day = t.date_naive() + chrono::Duration::days(k);
-        ok(day.weekday()).then(|| Local.from_local_datetime(&day.and_time(t.time())).earliest())?
+        ok(day.weekday()).then(|| wall_clock(tz, day.and_time(time)))?
     }).map(|d| d.timestamp_millis())
 }
 
@@ -526,7 +544,7 @@ fn parse_tag(tag: &str) -> Option<(i64, String)> {
         .or_else(|_| NaiveDateTime::parse_from_str(when, "%Y-%m-%dT%H:%M"))
         .or_else(|_| NaiveDateTime::parse_from_str(when, "%Y-%m-%d %H:%M:%S"))
         .ok()?;
-    let at = Local.from_local_datetime(&naive).earliest()?.timestamp_millis();
+    let at = wall_clock(&Local, naive)?.timestamp_millis();
     let what = what.trim();
     (!what.is_empty()).then(|| (at, what.to_string()))
 }
@@ -545,8 +563,11 @@ pub fn spawn(app: AppHandle) {
                 let (due, mut keep): (Vec<_>, Vec<_>) = all.into_iter().partition(|r| r.at <= now);
                 // A repeating alarm is set again for its next day.
                 for r in &due {
-                    if let Some(next) = next_time(r.at, &r.repeat) {
-                        keep.push(Reminder { id: uuid::Uuid::new_v4().to_string(), at: next, ..r.clone() });
+                    // (An older one learns its time on the clock now, before
+                    // any night of changing clocks can shift it.)
+                    let clock = if r.clock.is_empty() { clock_of(r.at) } else { r.clock.clone() };
+                    if let Some(next) = next_time(r.at, &r.repeat, &clock) {
+                        keep.push(Reminder { id: uuid::Uuid::new_v4().to_string(), at: next, clock, ..r.clone() });
                     }
                 }
                 if !due.is_empty() {
@@ -583,9 +604,88 @@ pub fn spawn(app: AppHandle) {
         .ok();
 }
 
+/// A time on the clock as a real moment, any night of the year. When the
+/// clocks go back, 1:30 comes twice (the first one counts); when they go
+/// forward, 2:30 never comes (an hour on is the time that hour was meant to
+/// be). Asking for the one exact match said "no such time" to both, so a
+/// routine set inside that hour was skipped that day and a reminder for it
+/// was dropped.
+pub fn wall_clock<Tz: TimeZone>(tz: &Tz, at: NaiveDateTime) -> Option<chrono::DateTime<Tz>> {
+    tz.from_local_datetime(&at).earliest().or_else(|| tz.from_local_datetime(&(at + chrono::Duration::hours(1))).earliest())
+}
+
+/// US Central for 2026, the way Windows has it here: summer time from 2 am
+/// on 8 March to 2 am on 1 November. (Tests run in any time zone, and on CI
+/// that's UTC, which never changes its clocks.)
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Central2026;
+
+#[cfg(test)]
+impl TimeZone for Central2026 {
+    type Offset = chrono::FixedOffset;
+    fn from_offset(_: &chrono::FixedOffset) -> Self {
+        Central2026
+    }
+    fn offset_from_local_date(&self, d: &chrono::NaiveDate) -> chrono::LocalResult<chrono::FixedOffset> {
+        self.offset_from_local_datetime(&d.and_hms_opt(12, 0, 0).unwrap())
+    }
+    fn offset_from_local_datetime(&self, t: &NaiveDateTime) -> chrono::LocalResult<chrono::FixedOffset> {
+        let (cst, cdt) = (chrono::FixedOffset::west_opt(6 * 3600).unwrap(), chrono::FixedOffset::west_opt(5 * 3600).unwrap());
+        let at = |m, d, h| chrono::NaiveDate::from_ymd_opt(2026, m, d).unwrap().and_hms_opt(h, 0, 0).unwrap();
+        if *t >= at(3, 8, 2) && *t < at(3, 8, 3) {
+            return chrono::LocalResult::None;
+        }
+        if *t >= at(11, 1, 1) && *t < at(11, 1, 2) {
+            return chrono::LocalResult::Ambiguous(cdt, cst);
+        }
+        chrono::LocalResult::Single(if *t >= at(3, 8, 3) && *t < at(11, 1, 2) { cdt } else { cst })
+    }
+    fn offset_from_utc_date(&self, d: &chrono::NaiveDate) -> chrono::FixedOffset {
+        self.offset_from_utc_datetime(&d.and_hms_opt(12, 0, 0).unwrap())
+    }
+    fn offset_from_utc_datetime(&self, t: &NaiveDateTime) -> chrono::FixedOffset {
+        // 2 am CST on 8 March is 08:00 UTC; 2 am CDT on 1 November is 07:00 UTC.
+        let at = |m, d, h| chrono::NaiveDate::from_ymd_opt(2026, m, d).unwrap().and_hms_opt(h, 0, 0).unwrap();
+        let summer = *t >= at(3, 8, 8) && *t < at(11, 1, 7);
+        chrono::FixedOffset::west_opt(if summer { 5 * 3600 } else { 6 * 3600 }).unwrap()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_time_inside_the_hour_the_clocks_change_still_happens_once() {
+        let tz = Central2026;
+        let t = |m, d, h, mi| chrono::NaiveDate::from_ymd_opt(2026, m, d).unwrap().and_hms_opt(h, mi, 0).unwrap();
+        // The plain lookup has no single answer for either night.
+        assert!(tz.from_local_datetime(&t(11, 1, 1, 30)).single().is_none());
+        assert!(tz.from_local_datetime(&t(3, 8, 2, 30)).single().is_none());
+        // Back: 1:30 comes twice — the first, still summer time (06:30 UTC).
+        assert_eq!(wall_clock(&tz, t(11, 1, 1, 30)).unwrap().naive_utc(), t(11, 1, 6, 30));
+        // Forward: 2:30 never comes — 3:30 summer time (08:30 UTC).
+        assert_eq!(wall_clock(&tz, t(3, 8, 2, 30)).unwrap().naive_utc(), t(3, 8, 8, 30));
+        // Any other night: just as said.
+        assert_eq!(wall_clock(&tz, t(6, 1, 9, 0)).unwrap().naive_utc(), t(6, 1, 14, 0));
+        assert_eq!(wall_clock(&tz, t(12, 1, 9, 0)).unwrap().naive_utc(), t(12, 1, 15, 0));
+    }
+
+    /// A daily 2:30 alarm rings at 3:30 the night 2:30 doesn't exist — and
+    /// then has to go back to 2:30, not stay an hour late every day after.
+    #[test]
+    fn a_daily_alarm_goes_back_to_its_time_after_the_clocks_change() {
+        let tz = Central2026;
+        let utc = |m, d, h, mi| chrono::NaiveDate::from_ymd_opt(2026, m, d).unwrap().and_hms_opt(h, mi, 0).unwrap().and_utc().timestamp_millis();
+        let sat = utc(3, 7, 8, 30); // 2:30 am CST, Saturday 7 March
+        let sun = next_time_in(&tz, sat, "daily", "02:30:00").unwrap();
+        assert_eq!(sun, utc(3, 8, 8, 30), "3:30 am CDT: the 2:30 that never came");
+        let mon = next_time_in(&tz, sun, "daily", "02:30:00").unwrap();
+        assert_eq!(mon, utc(3, 9, 7, 30), "back to 2:30 am (CDT)");
+        // An older reminder with no clock time drifts — why `clock` is kept.
+        assert_eq!(next_time_in(&tz, sun, "daily", "").unwrap(), utc(3, 9, 8, 30));
+    }
 
     #[test]
     fn alarms_are_read_and_repeat() {
@@ -598,18 +698,18 @@ mod tests {
         assert_eq!(normalise_repeat("once"), "");
         // 2030-01-04 is a Friday: the next weekday alarm is Monday the 7th, same time.
         let fri = Local.from_local_datetime(&NaiveDateTime::parse_from_str("2030-01-04 07:00", "%Y-%m-%d %H:%M").unwrap()).earliest().unwrap();
-        let next = Local.timestamp_millis_opt(next_time(fri.timestamp_millis(), "weekdays").unwrap()).unwrap();
+        let next = Local.timestamp_millis_opt(next_time(fri.timestamp_millis(), "weekdays", "").unwrap()).unwrap();
         assert_eq!(next.format("%Y-%m-%d %H:%M").to_string(), "2030-01-07 07:00");
-        let next = Local.timestamp_millis_opt(next_time(fri.timestamp_millis(), "sat,sun").unwrap()).unwrap();
+        let next = Local.timestamp_millis_opt(next_time(fri.timestamp_millis(), "sat,sun", "").unwrap()).unwrap();
         assert_eq!(next.weekday(), chrono::Weekday::Sat);
-        assert!(next_time(fri.timestamp_millis(), "").is_none());
+        assert!(next_time(fri.timestamp_millis(), "", "").is_none());
         let _ = at;
     }
 
     fn r(id: &str, text: &str, hour: u32, alarm: bool) -> Reminder {
         let day = Local::now().date_naive() + chrono::Duration::days(1);
         let at = Local.from_local_datetime(&day.and_hms_opt(hour, 0, 0).unwrap()).earliest().unwrap().timestamp_millis();
-        Reminder { id: id.into(), at, text: text.into(), alarm, repeat: String::new() }
+        Reminder { id: id.into(), at, text: text.into(), alarm, repeat: String::new(), clock: String::new() }
     }
 
     fn ids(said: &str, all: &[Reminder]) -> Option<Vec<String>> {

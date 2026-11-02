@@ -3654,6 +3654,7 @@ fn submit_task(
             }
             None => false,
         };
+        let held_why = if held { held_back.clone() } else { None };
 
         // An action being planned is not evidence that it succeeded. Check
         // a fresh screen before accepting "done" for an autonomous task —
@@ -3918,9 +3919,10 @@ fn submit_task(
         // thing again, or just "Got it!".
         // Not every step out loud: something new, no filler, and not more
         // than about every 12 seconds ("Bet, hold up, I'ma…" every step).
-        let progress = strip_filler(&plan.summary);
-        // (Teaching: the explanation is the point — it's never held back.)
-        let spaced = explaining || last_said_at.elapsed() >= Duration::from_secs(12);
+        let progress = progress_line(&plan.summary, held_why.as_deref());
+        // (Teaching: the explanation is the point — it's never held back.
+        // Nor is saying that something was held back.)
+        let spaced = explaining || held_why.is_some() || last_said_at.elapsed() >= Duration::from_secs(12);
         if !steps.is_empty() && !done && !plan.done && spaced && worth_saying(&progress, &last_said) {
             last_said = progress.clone();
             last_said_at = std::time::Instant::now();
@@ -3930,7 +3932,7 @@ fn submit_task(
             );
             // An explanation (teaching as it works) is heard before the click
             // it explains: give it about as long as it takes to say.
-            let chars = plan.summary.chars().count();
+            let chars = progress.chars().count();
             if chars > 90 {
                 let until = std::time::Instant::now() + Duration::from_secs_f64((chars as f64 / 14.0).min(25.0));
                 while std::time::Instant::now() < until && alive() {
@@ -4542,6 +4544,19 @@ pub fn strip_filler(line: &str) -> String {
     match c.next() {
         Some(f) => f.to_uppercase().chain(c).collect(),
         None => String::new(),
+    }
+}
+
+/// What to say while the other steps run. When the guard held a step back,
+/// the model's own line still describes it — "Answering all the quiz
+/// questions for you." was said out loud on a quiz page while only a scroll
+/// ran — so the person hears what really happened instead.
+/// (Only a dropped on-screen note — the reasons come in order, so that's when
+/// it's the first — is no news: the line is still true of the rest.)
+fn progress_line(summary: &str, held_why: Option<&str>) -> String {
+    match held_why {
+        Some(why) if !why.starts_with("Notes written on the screen") => plainly(why),
+        _ => strip_filler(summary),
     }
 }
 
@@ -5422,7 +5437,7 @@ mod failure_tests {
 
 #[cfg(test)]
 mod honesty_tests {
-    use super::{action_progress, after_input_wait, can_resume_after_input, new_among, only_repeats, plainly, promises_action, ActionStep, Duration, Intent, Yielded};
+    use super::{action_progress, after_input_wait, can_resume_after_input, new_among, only_repeats, plainly, progress_line, promises_action, strip_filler, ActionStep, Duration, Intent, Yielded};
 
     #[test]
     fn human_input_timeout_never_resumes_a_step() {
@@ -5536,6 +5551,23 @@ mod honesty_tests {
         let said = plainly("Typing a command into a terminal wasn't done: commands are only run when the user spells out the exact command.");
         assert!(said.starts_with("I didn't type that command") && !said.contains("finna"));
         assert!(plainly("Pressing “Submit” wasn't done: it's final.").contains("“Submit”"));
+    }
+
+    /// From the user's log: the quiz guard held the answer back, a scroll
+    /// still ran, and the line said out loud meanwhile was the model's own —
+    /// "Answering all the quiz questions for you."
+    #[test]
+    fn a_held_back_step_is_never_narrated_as_happening() {
+        let quiz = "This is a quiz or test, so the answer wasn't picked: the student chooses.";
+        let said = progress_line("Answering all the quiz questions for you.", Some(quiz));
+        assert!(said.starts_with("On a quiz or test I don't pick the answers"), "{said}");
+        assert!(!said.to_lowercase().contains("answering all"), "{said}");
+        // Nothing held back, or only a note on the screen: the model's line.
+        assert_eq!(progress_line("Opening Blackboard", None), strip_filler("Opening Blackboard"));
+        let notes = "Notes written on the screen weren't shown: the user didn't ask to be taught or shown anything, so just do the task.";
+        assert_eq!(progress_line("Opening Blackboard", Some(notes)), strip_filler("Opening Blackboard"));
+        // The real thing comes first when both were held back.
+        assert!(progress_line("Picking B", Some(&format!("{quiz} {notes}"))).starts_with("On a quiz or test"));
     }
 
     #[test]

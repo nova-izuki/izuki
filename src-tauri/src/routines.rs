@@ -101,15 +101,19 @@ fn now_ms() -> i64 {
 }
 
 /// The next time `r` is due after `after` (local time), in ms.
-pub fn next_after(r: &Routine, after: chrono::DateTime<Local>) -> i64 {
+pub fn next_after<Tz: TimeZone>(r: &Routine, after: chrono::DateTime<Tz>) -> i64 {
     if r.every == "hourly" {
-        let next = (after + Duration::hours(1)).with_minute(0).and_then(|t| t.with_second(0)).unwrap_or(after + Duration::hours(1));
+        let hour_on = after.clone() + Duration::hours(1);
+        let next = hour_on.with_minute(0).and_then(|t| t.with_second(0)).unwrap_or(hour_on);
         return next.timestamp_millis();
     }
     let t = NaiveTime::parse_from_str(&r.at, "%H:%M").unwrap_or(NaiveTime::from_hms_opt(8, 0, 0).unwrap());
+    let tz = after.timezone();
     for add in 0..8 {
         let day = after.date_naive() + Duration::days(add);
-        let Some(when) = Local.from_local_datetime(&day.and_time(t)).single() else { continue };
+        // (The night the clocks change, 1:30 comes twice or 2:30 never: it
+        // still runs, once — it used to be skipped that day.)
+        let Some(when) = crate::reminders::wall_clock(&tz, day.and_time(t)) else { continue };
         if when <= after {
             continue;
         }
@@ -579,6 +583,21 @@ mod tests {
         let tue = Local.with_ymd_and_hms(2026, 10, 13, 7, 30, 0).single().unwrap();
         let next = chrono::DateTime::from_timestamp_millis(next_after(&r, tue)).unwrap().with_timezone(&Local);
         assert_eq!((next.weekday(), next.hour()), (Weekday::Tue, 8));
+    }
+
+    /// 1 November 2026, the night the clocks went back: a daily routine at
+    /// 1:30 am was skipped (no single 1:30 that night) and ran the next day.
+    #[test]
+    fn a_routine_in_the_hour_the_clocks_change_still_runs_that_day() {
+        use crate::reminders::Central2026;
+        let mut r = Routine { id: "x".into(), task: "t".into(), every: "daily".into(), at: "01:30".into(), phone: false, active: true, next: 0, last_run: 0, last_result: String::new(), last_outcome: String::new(), made: 0, run_once: false };
+        let utc = |m, d, h, mi| chrono::NaiveDate::from_ymd_opt(2026, m, d).unwrap().and_hms_opt(h, mi, 0).unwrap().and_utc().timestamp_millis();
+        let midnight = Central2026.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).single().unwrap();
+        assert_eq!(next_after(&r, midnight), utc(11, 1, 6, 30), "1:30 am summer time, that same night");
+        // Spring: 2:30 doesn't exist on 8 March — 3:30 instead, not the 9th.
+        r.at = "02:30".into();
+        let midnight = Central2026.with_ymd_and_hms(2026, 3, 8, 0, 0, 0).single().unwrap();
+        assert_eq!(next_after(&r, midnight), utc(3, 8, 8, 30));
     }
 
     #[test]

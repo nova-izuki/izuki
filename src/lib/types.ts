@@ -100,6 +100,8 @@ export interface Reminder {
   alarm?: boolean;
   /** "" once, "daily", "weekdays", "weekends" or "mon,wed,fri". */
   repeat?: string;
+  /** A repeating one's time on the clock ("02:30:00"); kept by the PC. */
+  clock?: string;
 }
 
 export interface AppsAnswer {

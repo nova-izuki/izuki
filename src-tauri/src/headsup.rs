@@ -172,8 +172,8 @@ fn tick(app: &AppHandle) {
         }
     }
     if settings.heads_up_school {
-        for line in school_due_soon(st) {
-            deliver(app, "School", &format!("📚 {line}"));
+        if let Some(body) = school_heads_up(&school_due_soon(st)) {
+            deliver(app, "School", &body);
         }
     }
 
@@ -556,7 +556,7 @@ fn brief_due(at: &str) -> bool {
     };
     let now = Local::now();
     let Some(when) = now.date_naive().and_hms_opt(h.min(23), m.min(59), 0) else { return false };
-    let Some(when) = Local.from_local_datetime(&when).single() else { return false };
+    let Some(when) = crate::reminders::wall_clock(&Local, when) else { return false };
     let late = now.signed_duration_since(when);
     if late < chrono::Duration::zero() || late > chrono::Duration::hours(3) {
         return false;
@@ -713,7 +713,7 @@ fn ics_time(key: &str, value: &str) -> Option<chrono::DateTime<Local>> {
         return Some(chrono::Utc.from_utc_datetime(&t).with_timezone(&Local));
     }
     let t = chrono::NaiveDateTime::parse_from_str(v, "%Y%m%dT%H%M%S").ok()?;
-    Local.from_local_datetime(&t).earliest()
+    crate::reminders::wall_clock(&Local, t)
 }
 
 fn when(at: chrono::DateTime<Local>) -> String {
@@ -757,6 +757,25 @@ fn school_due_soon(st: &mut State) -> Vec<String> {
 // ---------------------------------------------------------------------------
 // Delivery
 // ---------------------------------------------------------------------------
+
+/// School work coming due, as ONE heads-up. Each item used to be its own:
+/// waking the laptop at 1:51 am sent eight notifications (and eight phone
+/// messages) inside a second, one per thing due that day.
+fn school_heads_up(lines: &[String]) -> Option<String> {
+    const SHOWN: usize = 6;
+    match lines {
+        [] => None,
+        [one] => Some(format!("📚 {one}")),
+        _ => {
+            let mut out = vec![format!("📚 {} things due soon:", lines.len())];
+            out.extend(lines.iter().take(SHOWN).map(|l| format!("• {l}")));
+            if lines.len() > SHOWN {
+                out.push(format!("…and {} more — ask me “what's due this week?” for the rest.", lines.len() - SHOWN));
+            }
+            Some(out.join("\n"))
+        }
+    }
+}
 
 fn deliver_many(app: &AppHandle, icon: &str, lines: &[String], plural: &str) {
     match lines.len() {
@@ -851,12 +870,24 @@ pub fn deliver(app: &AppHandle, title: &str, body: &str) {
         with_held(|held| {
             held.count += 1;
             if held.items.len() < 50 {
-                held.items.push((title.to_string(), body.lines().next().unwrap_or("").chars().take(120).collect()));
+                held.items.push((title.to_string(), held_line(body)));
             }
         });
         return;
     }
     deliver_now(app, title, body);
+}
+
+/// A heads-up kept for the quiet-hours summary, on one line. Only the first
+/// line was kept, so "📚 8 things due soon:" came back without one of the
+/// eight.
+fn held_line(body: &str) -> String {
+    let mut lines = body.lines().map(str::trim).filter(|l| !l.is_empty());
+    let first = lines.next().unwrap_or("").to_string();
+    let rest: Vec<&str> = lines.map(|l| l.trim_start_matches("• ")).collect();
+    let line = if rest.is_empty() { first } else { format!("{} {}", first, rest.join("; ")) };
+    // Room for the whole list: six items and "…and N more".
+    clip(&line, 1200)
 }
 
 /// Straight away, quiet hours or not: an answer to something you just did
@@ -1007,6 +1038,30 @@ mod tests {
         assert_eq!(items[0].title, "Essay 2 , English 101");
         assert_eq!(items[0].at.format("%H:%M").to_string(), "23:59");
         assert!(items[1].title.ends_with("continues here"), "{}", items[1].title);
+    }
+
+    #[test]
+    fn school_work_due_together_is_one_heads_up() {
+        assert_eq!(school_heads_up(&[]), None);
+        assert_eq!(school_heads_up(&["Due today 11:59 PM: Quiz".into()]).as_deref(), Some("📚 Due today 11:59 PM: Quiz"));
+        let eight: Vec<String> = (1..=8).map(|i| format!("Due today 11:59 PM: Lab {i}")).collect();
+        let body = school_heads_up(&eight).unwrap();
+        assert!(body.starts_with("📚 8 things due soon:"), "{body}");
+        assert_eq!(body.lines().filter(|l| l.starts_with("• ")).count(), 6, "{body}");
+        assert!(body.contains("Lab 6") && !body.contains("Lab 7"), "{body}");
+        assert!(body.ends_with("…and 2 more — ask me “what's due this week?” for the rest."), "{body}");
+        assert!(crate::campus::parse("what's due this week?").is_some());
+    }
+
+    #[test]
+    fn a_grouped_heads_up_keeps_its_items_through_quiet_hours() {
+        let body = school_heads_up(&["Due today 11:59 PM: Quiz 9".into(), "Due today 11:59 PM: Lab 9.2.1".into()]).unwrap();
+        assert_eq!(held_line(&body), "📚 2 things due soon: Due today 11:59 PM: Quiz 9; Due today 11:59 PM: Lab 9.2.1");
+        assert_eq!(held_line("📧 Ana: lunch?"), "📧 Ana: lunch?");
+        let eight: Vec<String> = (1..=8).map(|i| format!("Due today 11:59 PM: Lab 9.{i}.1 Conducting Vulnerability Scanning Using Nessus — Incident Response and Handling (ITSY-2342)")).collect();
+        let kept = held_line(&school_heads_up(&eight).unwrap());
+        assert!(kept.contains("Lab 9.6.1") && kept.ends_with("for the rest."), "the whole list survives: {kept}");
+        assert!(held_line(&"x".repeat(5000)).chars().count() <= 1201);
     }
 
     #[test]

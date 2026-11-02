@@ -70,6 +70,7 @@ pub mod picker;
 pub mod remote;
 pub mod rtools;
 pub mod offline;
+pub mod outbox;
 pub mod mail;
 pub mod tutor;
 pub mod missions;

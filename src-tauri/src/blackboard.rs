@@ -145,7 +145,7 @@ pub fn due_items(back: i64, ahead: i64) -> Result<Vec<(String, String, chrono::D
             for x in results(&v) {
                 let Some(at) = when(&x["end"]).or_else(|| when(&x["start"])) else { continue };
                 let title = x["title"].as_str().unwrap_or("Something").trim();
-                let course = x["calendarName"].as_str().unwrap_or("").trim();
+                let course = course_name(x["calendarName"].as_str().unwrap_or(""));
                 let id = x["id"].as_str().unwrap_or(title).to_string();
                 if in_range(&at) {
                     out.push((id, if course.is_empty() { title.to_string() } else { format!("{title} — {course}") }, at));
@@ -206,7 +206,48 @@ fn results(v: &Value) -> Vec<Value> {
 
 struct Course {
     id: String,
+    /// As people say it: "Security Management Practices (ITSY-2341)".
     name: String,
+    /// As Blackboard has it, codes and all, so "section 372" still finds it.
+    raw: String,
+}
+
+/// A course name a person would say. Blackboard's carry the whole catalogue
+/// code twice — "ITSY-2341-372-202710-14278: 202710:14278 Security Management
+/// Practices (ITSY-2341-372)" — and that went into every heads-up and answer.
+/// Names without codes are left as they are.
+pub fn course_name(raw: &str) -> String {
+    let raw = raw.trim();
+    let code_like = |t: &str| t.chars().any(|c| c.is_ascii_digit()) && !t.chars().any(|c| c.is_lowercase());
+    let mut rest = raw;
+    let mut coded = false;
+    // "ITSY-2341-372-202710-14278: …" — a code with no spaces, then the name
+    // ("CS50: Introduction…" has no dashes: that's part of the name).
+    if let Some((head, tail)) = rest.split_once(": ") {
+        if !head.contains(' ') && head.contains('-') && code_like(head) {
+            rest = tail;
+            coded = true;
+        }
+    }
+    // Term and section numbers after the code: "202710:14278". (Only
+    // there, or with a colon — "2020 Vision Seminar" keeps its year.)
+    let mut words: Vec<&str> = rest.split_whitespace().collect();
+    while words.first().is_some_and(|w| !w.chars().any(char::is_alphabetic) && (coded || w.contains(':'))) {
+        words.remove(0);
+    }
+    // "(ITSY-2341-372)" → "(ITSY-2341)": subject and number, no section.
+    if let Some(last) = words.last_mut() {
+        if let Some(code) = last.strip_prefix('(').and_then(|w| w.strip_suffix(')')) {
+            let parts: Vec<&str> = code.split('-').collect();
+            if parts.len() > 2 && code_like(code) && !code.contains(' ') {
+                let short = format!("({}-{})", parts[0], parts[1]);
+                let name = words[..words.len() - 1].join(" ");
+                return if name.is_empty() { raw.to_string() } else { format!("{name} {short}") };
+            }
+        }
+    }
+    let name = words.join(" ");
+    if name.is_empty() { raw.to_string() } else { name }
 }
 
 fn me(base: &str) -> Result<String> {
@@ -222,7 +263,7 @@ fn courses(base: &str, user: &str) -> Result<Vec<Course>> {
         let open = c["availability"]["available"].as_str().is_none_or(|a| a != "No") && m["availability"]["available"].as_str().is_none_or(|a| a != "No");
         let (Some(id), Some(name)) = (c["id"].as_str().or(m["courseId"].as_str()), c["name"].as_str()) else { continue };
         if open {
-            out.push(Course { id: id.to_string(), name: name.trim().to_string() });
+            out.push(Course { id: id.to_string(), name: course_name(name), raw: name.trim().to_string() });
         }
     }
     Ok(out)
@@ -264,8 +305,17 @@ fn pick<'a>(all: &'a [Course], named: &str) -> Vec<&'a Course> {
     if named.is_empty() {
         return all.iter().collect();
     }
-    let words: Vec<&str> = named.split_whitespace().filter(|w| w.len() > 2).collect();
-    all.iter().filter(|c| { let n = c.name.to_lowercase(); words.iter().all(|w| n.contains(w)) }).collect()
+    // ("section 372" names it by the number; "section" is in no course name.)
+    let named = named.to_lowercase();
+    let words: Vec<&str> = named.split_whitespace().filter(|w| w.len() > 2 && !["section", "sec"].contains(w)).collect();
+    all.iter()
+        .filter(|c| {
+            let n = format!("{} {}", c.name, c.raw).to_lowercase();
+            // Nothing left to search by ("section", "cs"): the whole phrase,
+            // never every course.
+            if words.is_empty() { n.contains(named.trim()) } else { words.iter().all(|w| n.contains(w)) }
+        })
+        .collect()
 }
 
 pub fn answer(ask: &Ask) -> Result<String> {
@@ -385,6 +435,36 @@ pub fn handle(ask: Ask) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// From the user's log: eight heads-ups at once, each carrying the
+    /// catalogue code twice.
+    #[test]
+    fn course_names_read_like_people_say_them() {
+        let cases = [
+            ("ITSY-2341-372-202710-14278: 202710:14278 Security Management Practices (ITSY-2341-372)", "Security Management Practices (ITSY-2341)"),
+            ("ITSY-2342-371-202710-14280: 202710:14280 Incident Response and Handling (ITSY-2342-371)", "Incident Response and Handling (ITSY-2342)"),
+            ("Biology 101", "Biology 101"),
+            ("CS50: Introduction to Computer Science", "CS50: Introduction to Computer Science"),
+            ("Intro to Psychology (PSYC-2301-001)", "Intro to Psychology (PSYC-2301)"),
+            ("Calculus (MATH-2413)", "Calculus (MATH-2413)"),
+            ("202710:14278", "202710:14278"),
+            ("  English Composition I  ", "English Composition I"),
+            ("2020 Vision Seminar", "2020 Vision Seminar"),
+            ("101 Ways to Write", "101 Ways to Write"),
+            ("", ""),
+        ];
+        for (raw, want) in cases {
+            assert_eq!(course_name(raw), want, "{raw}");
+        }
+        // A section number the user says still finds the course.
+        let all = [Course { id: "1".into(), name: course_name(cases[0].0), raw: cases[0].0.into() }];
+        assert_eq!(pick(&all, "372").len(), 1);
+        assert_eq!(pick(&all, "section 372").len(), 1);
+        assert_eq!(pick(&all, "Security").len(), 1);
+        assert_eq!(pick(&all, "section").len(), 0, "a filler word alone isn't every course");
+        assert_eq!(pick(&all, "cs").len(), 0);
+        assert_eq!(pick(&all, "security").len(), 1);
+    }
 
     #[test]
     fn hears_school_asks() {
