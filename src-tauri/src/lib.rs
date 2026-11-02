@@ -10,6 +10,12 @@ pub mod bugs;
 /// `--features devvision` so release builds never carry it (milestone §5).
 #[cfg(feature = "devvision")]
 pub mod observer;
+/// The private Developer Control system: three independent dev-only switches
+/// (Smart Vision, Claude Live Auto-Review, Smart Real Testing) with Stop All
+/// and Capture Bug. The module itself is always compiled — the panel needs
+/// the command names — but every dev-only internal lives behind the
+/// `devvision` feature, and outside a dev build the commands only refuse.
+pub mod devmode;
 pub mod automation;
 pub mod call;
 pub mod brain;
@@ -301,6 +307,11 @@ pub fn run() {
             updates::install_update,
             updates::check_rollback,
             updates::rollback_previous,
+            devmode::dev_status,
+            devmode::dev_set_toggle,
+            devmode::dev_run_scenario,
+            devmode::dev_capture_bug,
+            devmode::dev_stop_all,
             commands::get_settings,
             commands::save_settings,
             commands::list_flows,

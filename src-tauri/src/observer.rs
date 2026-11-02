@@ -263,6 +263,21 @@ pub fn stop() {
     RUNNING.store(false, Ordering::SeqCst);
 }
 
+/// OFF for real: the ring buffers are dropped, not hidden — capture stops
+/// and the bounded memory it used is released.
+pub fn clear_frames() {
+    FRAMES.lock().clear();
+    *SEEN.lock() = None;
+}
+
+/// Frames as (index-from-newest-1, wall-clock ms) for the review digest —
+/// bytes stay servable through /api/frames without copying them anywhere.
+pub fn frames_index() -> Vec<(u64, u64)> {
+    let frames = FRAMES.lock();
+    let n = frames.len() as u64;
+    frames.iter().rev().enumerate().map(|(i, f)| (n - i as u64, f.at)).collect()
+}
+
 pub fn server_port() -> Option<u16> {
     *SERVER_PORT.lock()
 }
