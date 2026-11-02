@@ -1,0 +1,134 @@
+[
+ {
+  "title": "Quiz: Module 11",
+  "url": "https://blackboard.sanjac.edu/ultra/courses/_331/outline/assessment/_9/overview",
+  "text": "Question 1 of 10 (2 points) Which policy governs data retention?",
+  "kind": "graded"
+ },
+ {
+  "title": "Item 1, Interactive Quiz: 9. Eradication, Recovery, and Post-Incident Activity",
+  "url": "https://www.ucertify.com/app/",
+  "text": "Question 3 of 20 Which phase restores systems?",
+  "kind": "graded"
+ },
+ {
+  "title": "Practice Test 1",
+  "url": "https://school.instructure.com/courses/1/quizzes/7/take",
+  "text": "Attempts remaining: 2. Question 4",
+  "kind": "graded"
+ },
+ {
+  "title": "Practice Quiz (10 points)",
+  "url": "",
+  "text": "Question 1",
+  "kind": "graded"
+ },
+ {
+  "title": "Week 3 Quiz",
+  "url": "https://school.instructure.com/courses/1/quizzes/9/take",
+  "text": "Time Remaining: 14:32 Question 2 of 15",
+  "kind": "graded"
+ },
+ {
+  "title": "Midterm Exam",
+  "url": "",
+  "text": "Question 1 of 40",
+  "kind": "graded"
+ },
+ {
+  "title": "Chapter 4 Test",
+  "url": "",
+  "text": "Lockdown Browser is required. Question 1",
+  "kind": "graded"
+ },
+ {
+  "title": "Module Quiz",
+  "url": "",
+  "text": "This quiz counts toward 10% of your grade. Question 1 of 5",
+  "kind": "graded"
+ },
+ {
+  "title": "Knowledge Check",
+  "url": "",
+  "text": "Question 2 of 4 Which port does HTTPS use?",
+  "kind": "graded"
+ },
+ {
+  "title": "Practice Quiz: Networking Basics",
+  "url": "",
+  "text": "Check your answers as you go. This quiz does not count toward your grade. Question 1 of 8",
+  "kind": "practice"
+ },
+ {
+  "title": "Self-Check: Chapter 3",
+  "url": "",
+  "text": "Question 2 of 5 Which layer handles routing?",
+  "kind": "practice"
+ },
+ {
+  "title": "Practice Exam 1",
+  "url": "",
+  "text": "Question 1 of 50",
+  "kind": "practice"
+ },
+ {
+  "title": "Ungraded Quiz: Week 1",
+  "url": "",
+  "text": "Question 1 of 3",
+  "kind": "practice"
+ },
+ {
+  "title": "Security+ terms | Flashcards",
+  "url": "https://quizlet.com/123/flashcards",
+  "text": "Test yourself on these terms",
+  "kind": "practice"
+ },
+ {
+  "title": "Chapter 2 sample questions",
+  "url": "",
+  "text": "Sample question 1: Which of these is a botnet?",
+  "kind": "practice"
+ },
+ {
+  "title": "Checkout",
+  "url": "https://shop.example.com/checkout",
+  "text": "Choose your shipping speed. Standard or Express",
+  "kind": "none"
+ },
+ {
+  "title": "Module 11: Managing Data Sensitivity, Handling, and Risk",
+  "url": "https://blackboard.sanjac.edu/ultra/courses/_331/outline",
+  "text": "Readings and videos for this week. Download the slides.",
+  "kind": "none"
+ },
+ {
+  "title": "Settings",
+  "url": "",
+  "text": "Choose a theme: Light or Dark",
+  "kind": "none"
+ },
+ {
+  "title": "Inbox (3) - Gmail",
+  "url": "https://mail.google.com/mail/u/0/",
+  "text": "The latest update to your account",
+  "kind": "none"
+ },
+ {
+  "title": "Practice quiz: Chapter 2",
+  "url": "https://moodle.example.edu/mod/quiz/attempt.php?attempt=7",
+  "text": "Question 1 Not yet answered Marked out of 1.00 Flag question Which port does HTTPS use?",
+  "kind": "graded"
+ },
+ {
+  "title": "Chapter 2 self-check",
+  "url": "https://moodle.example.edu/mod/quiz/attempt.php?attempt=8",
+  "text": "Self-check. Question 1 Not yet answered Which port does HTTPS use? Next page",
+  "kind": "practice"
+ },
+ {
+  "title": "Quiz 2",
+  "url": "https://canvas.example.edu/courses/1/quizzes/2/take",
+  "text": "This is an ungraded practice quiz. Question 1 Which port does HTTPS use?",
+  "kind": "practice"
+ }
+]

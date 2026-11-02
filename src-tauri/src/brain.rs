@@ -375,6 +375,8 @@ pub fn safe_terminal_line(text: &str) -> bool {
 #[derive(Debug, Clone, Default)]
 pub struct Look {
     pub options: Vec<String>,
+    /// A GRADED quiz or test with answer choices on screen (assess.rs): the
+    /// student picks. A practice page the page itself calls practice isn't.
     pub test_page: bool,
     /// Where each answer choice is on screen (a mark there marks the choice).
     pub choice_rects: Vec<Rect>,
@@ -394,10 +396,10 @@ fn this_look() -> Look {
 
 impl Look {
     pub fn of(controls: &[uia::Control], page_text: &str, title: &str) -> Look {
-        // (A space in front, so "Test 3 …" at the very start counts as " test".)
-        let words = format!(" {} {}", title.to_lowercase(), page_text.chars().take(4000).collect::<String>().to_lowercase());
-        let testy = ["quiz", " test", "exam", "assessment", "practice test", "midterm", "final exam"].iter().any(|w| words.contains(w))
-            || (words.contains("question ") && words.contains(" of "));
+        // Graded, practice or neither, from the page's own evidence (assess.rs):
+        // "practice test" used to be on the graded list.
+        let kind = crate::assess::kind(title, "", page_text);
+        let testy = kind != crate::assess::Kind::NotAQuiz;
         // Choices: radio buttons and tick boxes — and, on a quiz, buttons that
         // read as choices ("A. Phishing", "(b) …", "True", "False").
         let chosen: Vec<&uia::Control> = controls
@@ -407,7 +409,7 @@ impl Look {
             .collect();
         let options: Vec<String> = chosen.iter().map(|c| c.name.trim().to_lowercase()).collect();
         let choice_rects = chosen.iter().map(|c| c.rect).collect();
-        Look { test_page: testy && options.len() >= 2, options, choice_rects }
+        Look { test_page: kind == crate::assess::Kind::Graded && options.len() >= 2, options, choice_rects }
     }
 }
 
@@ -592,7 +594,7 @@ fn plainly(why: &str) -> String {
     if why.contains("Typing a command into a terminal") {
         "I didn't type that command into your terminal — I only run commands you spell out exactly. Tell me the exact command, or say what you want done (like “clear the safe stuff” to free up space) and I'll do it my own way.".into()
     } else if why.contains("This is a quiz or test") {
-        "On a quiz or test I don't pick the answers — I can explain the question and the idea behind it, and you choose.".into()
+        crate::assess::what_i_can_do(crate::assess::Kind::Graded).into()
     } else if let Some(rest) = why.strip_prefix("Pressing “") {
         let name = rest.split('”').next().unwrap_or("that");
         format!("I stopped before pressing “{name}” — it's a final button, so I only press it when you tell me to exactly.")
@@ -5076,6 +5078,44 @@ mod speed_tests {
         assert_eq!(steps.len(), 1);
     }
 
+    /// Practice, graded, or an ordinary school page: only a graded quiz holds
+    /// back answer clicks, and nothing else is ever caught by it.
+    #[test]
+    fn school_pages_keep_everything_but_a_graded_answer() {
+        let click = |name: &str| {
+            let mut s = step(serde_json::json!({ "action": "click" }));
+            s.snapped_to = Some(name.into());
+            s
+        };
+        let button = |id: u32, name: &str| uia::Control { kind: "Button".into(), ..radio(id, name) };
+        let controls = vec![radio(1, "A. Phishing"), radio(2, "B. PII")];
+        // The page says practice: Izuki can pick, like on any page.
+        let practice = Look::of(&controls, "Self-check: question 2 of 5", "Practice Quiz: Chapter 3");
+        assert!(!practice.test_page, "a practice page isn't a test");
+        let mut steps = vec![click("B. PII"), click("Check answer"), click("Next")];
+        assert!(guard_steps_with(&mut steps, "answer these practice questions", false, "chrome", &practice).is_none());
+        assert_eq!(steps.len(), 3, "every step stays on practice");
+        // Practice worth points, or with attempts: graded after all.
+        assert!(Look::of(&controls, "Practice Test (10 points) Question 1", "Practice Test").test_page);
+        // Graded: the answer stays the student's, everything else still works.
+        let quiz = Look::of(&controls, "Question 3 of 20", "Quiz: Module 11");
+        assert!(quiz.test_page);
+        let mut steps = vec![click("B. PII"), click("Next"), click("Download slides"), click("Open the rubric")];
+        assert!(guard_steps_with(&mut steps, "go to the next one", false, "chrome", &quiz).is_some());
+        assert_eq!(steps.len(), 3, "only the answer click is held back: {steps:?}");
+        // An ordinary course page with "Risk Assessment" in its name and real
+        // buttons (download, upload, open): not a quiz, nothing held back.
+        let page = vec![button(1, "Download template"), button(2, "Upload file"), button(3, "Open rubric")];
+        let course = Look::of(&page, "Upload your risk assessment as a Word file. Download the template first.", "Capstone Project Part 4 Risk Assessment");
+        assert!(!course.test_page, "no answer choices: not a test");
+        let mut steps = vec![click("Download template"), click("Upload file"), click("Open rubric")];
+        assert!(guard_steps_with(&mut steps, "download the template and open the rubric", false, "chrome", &course).is_none());
+        assert_eq!(steps.len(), 3);
+        // The held-back line says what Izuki CAN do.
+        let said = plainly("This is a quiz or test, so the answer wasn't picked: the student chooses.");
+        assert!(said.contains("explain each question") && said.contains("practice"), "{said}");
+    }
+
     use super::*;
 
     #[test]
@@ -5560,14 +5600,14 @@ mod honesty_tests {
     fn a_held_back_step_is_never_narrated_as_happening() {
         let quiz = "This is a quiz or test, so the answer wasn't picked: the student chooses.";
         let said = progress_line("Answering all the quiz questions for you.", Some(quiz));
-        assert!(said.starts_with("On a quiz or test I don't pick the answers"), "{said}");
+        assert!(said.starts_with("This looks like a graded quiz or test, so I won't pick"), "{said}");
         assert!(!said.to_lowercase().contains("answering all"), "{said}");
         // Nothing held back, or only a note on the screen: the model's line.
         assert_eq!(progress_line("Opening Blackboard", None), strip_filler("Opening Blackboard"));
         let notes = "Notes written on the screen weren't shown: the user didn't ask to be taught or shown anything, so just do the task.";
         assert_eq!(progress_line("Opening Blackboard", Some(notes)), strip_filler("Opening Blackboard"));
         // The real thing comes first when both were held back.
-        assert!(progress_line("Picking B", Some(&format!("{quiz} {notes}"))).starts_with("On a quiz or test"));
+        assert!(progress_line("Picking B", Some(&format!("{quiz} {notes}"))).starts_with("This looks like a graded quiz"));
     }
 
     #[test]

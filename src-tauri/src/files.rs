@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use anyhow::{anyhow, Result};
+use std::io::Write;
 
 const READ_CHARS: usize = 20_000;
 const LIST_MAX: usize = 80;
@@ -82,6 +83,128 @@ fn size(n: u64) -> String {
         n if n >= 1 << 10 => format!("{} KB", n >> 10),
         n => format!("{n} B"),
     }
+}
+
+/// An IO error said in plain words: "the disk is full" beats "os error 112".
+fn what_io(e: &std::io::Error) -> String {
+    match e.raw_os_error() {
+        Some(112) => "the disk is full — free some space and try again".into(),
+        Some(5) => "Windows said no (the file may be open, or the folder is write-protected)".into(),
+        Some(32) => "the file is open in another program — close it and try again".into(),
+        _ => e.to_string(),
+    }
+}
+
+/// Put `bytes` in place of `tmp`'s target as one move — no moment where the
+/// file exists only half-written. The temp file (`tmp`) must be on the same
+/// drive as the target.
+#[cfg(windows)]
+fn replace(tmp: &Path, target: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH};
+    // PCWSTR needs the string to outlive the call, so the Vecs live here.
+    let a: Vec<u16> = tmp.as_os_str().encode_wide().chain([0]).collect();
+    let b: Vec<u16> = target.as_os_str().encode_wide().chain([0]).collect();
+    let ok = unsafe {
+        MoveFileExW(PCWSTR(a.as_ptr()), PCWSTR(b.as_ptr()), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
+    };
+    ok.map_err(|e| {
+        // HRESULT 0x8007xxxx = a Windows error: keep its number so `what_io`
+        // can still say it plainly (0x0070 = disk full).
+        let code = e.code().0 & 0xFFFF;
+        if code > 0 { std::io::Error::from_raw_os_error(code) } else { std::io::Error::other(e.to_string()) }
+    })
+}
+
+#[cfg(not(windows))]
+fn replace(tmp: &Path, target: &Path) -> std::io::Result<()> {
+    std::fs::rename(tmp, target) // on POSIX this already replaces the target
+}
+
+/// Save `data`'s bytes to `p` so a crash or a full disk can't leave half a
+/// file behind: everything is written to a hidden temp file beside it, that
+/// is flushed to the drive, and only then does it replace the real file in
+/// one move. If anything fails on the way, the temp file is removed and the
+/// file that was there before is still exactly as it was. `data` runs only
+/// after the temp file exists, so a failure before any byte is spent costs
+/// nothing (it's how Office files tailor themselves to the save).
+pub(crate) fn atomic_save(p: &Path, data: impl FnOnce() -> Result<Vec<u8>>) -> Result<()> {
+    let dir = p
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .ok_or_else(|| anyhow!("{} has no folder to save into", p.display()))?;
+    std::fs::create_dir_all(dir).map_err(|e| anyhow!("couldn't create {}: {e}", dir.display()))?;
+    let stem = p.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    // A hidden name: [FIND:] and [LIST:] skip them (name.startswith('.')).
+    let tmp = (1..100)
+        .map(|n| dir.join(format!(".{stem}.izuki-tmp{n}")))
+        .find(|c| !c.exists())
+        .ok_or_else(|| anyhow!("{} has dozens of half-finished saves already", dir.display()))?;
+    let run = (|| -> Result<()> {
+        let bytes = data()?;
+        let mut f = std::fs::File::create(&tmp).map_err(|e| anyhow!("couldn't start saving {}: {}", p.display(), what_io(&e)))?;
+        if let Err(e) = f.write_all(&bytes).and_then(|_| f.sync_all()) {
+            return Err(anyhow!("couldn't save {}: {}. The old file is untouched.", p.display(), what_io(&e)));
+        }
+        // From here on the drive has the whole file; the swap itself is one move.
+        replace(&tmp, p).map_err(|e| anyhow!("couldn't put the new {} in place: {}. The old file is untouched.", p.display(), what_io(&e)))
+    })();
+    if run.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    run
+}
+
+/// Where an overwritten file's old copy goes: "report (before Izuki).txt",
+/// then "(before Izuki 2)" and on — a second save never steals the first
+/// backup, so the version from two saves ago still exists.
+fn backup_path(p: &Path) -> PathBuf {
+    let stem = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "file".into());
+    let ext = p.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    let mut n = 1;
+    loop {
+        let name = if n == 1 { format!("{stem} (before Izuki){ext}") } else { format!("{stem} (before Izuki {n}){ext}") };
+        let b = p.with_file_name(name);
+        if !b.exists() {
+            return b;
+        }
+        n += 1;
+    }
+}
+
+/// Files where plain text would be damage, not words: pictures, music,
+/// video, archives, installers, old Word/Excel (they're all true binary
+/// containers), and anything whose bytes say so. FL Studio's .flp is text
+/// at heart and has no signature here — it stays writable. The signatures
+/// are built from their numbers so no escape sequence can be mistyped.
+fn looks_binary(b: &[u8]) -> bool {
+    if b.iter().take(4000).filter(|x| **x == 0).count() > 4 {
+        return true; // binary data has zero bytes; text does not
+    }
+    // zip ("PK"): any docx/xlsx/pptx too; then 7z, gz, bz2, PNG, JPEG,
+    // GIF, MP3, WAV/AVI/WebP (RIFF), Ogg, PDF, Windows programs, the old
+    // Word/Excel format (0xD0 0xCF 11 E0), SMB, and the MP3 sync word
+    let sigs: [&[u8]; 15] = [
+        &[0x50u8, 0x4B, 0x03, 0x04],
+        &[0x50u8, 0x4B, 0x05, 0x06],
+        &[0x37u8, 0x7A, 0xBC, 0xAF, 0x27, 0x1C],
+        &[0x1Fu8, 0x8B],
+        &[0x42u8, 0x5A, 0x68],
+        &[0x89u8, 0x50, 0x4E, 0x47],
+        &[0xFFu8, 0xD8, 0xFF],
+        b"GIF8",
+        b"ID3",
+        b"RIFF",
+        b"OggS",
+        b"%PDF",
+        b"MZ",
+        &[0xD0u8, 0xCF, 0x11, 0xE0],
+        &[0xFFu8, 0x53, 0x4D, 0x42],
+    ];
+    sigs.iter().any(|s| b.starts_with(s))
+        // an MP3 (or any MPEG audio) begins with a sync word: eleven 1s, then two more
+        || (b.len() >= 2 && b[0] == 0xFF && (b[1] & 0xE0) == 0xE0)
 }
 
 /// What's in a folder: folders first, then files, newest first.
@@ -195,7 +318,12 @@ pub fn read(path: &str) -> Result<String> {
     let text = match ext.as_str() {
         "docx" => office_text(&p, |n| n == "word/document.xml")?,
         "pptx" => office_text(&p, |n| n.starts_with("ppt/slides/slide") && n.ends_with(".xml"))?,
-        "pdf" => return Err(anyhow!("PDFs can't be read as text here — open it on screen and ask me there")),
+        // Each cell with its address ("B3: 42"), so an edit can name it.
+        "xlsx" => crate::officeedit::read_xlsx(&p)?,
+        // A PDF's words, page by page. To change one: [WRITE:] its text as a .docx.
+        "pdf" => crate::textbook::pdf_text(&p, READ_CHARS + 2_000)?,
+        // LibreOffice / OpenDocument: zipped XML too.
+        "odt" | "ods" | "odp" => office_text(&p, |n| n == "content.xml")?,
         "exe" | "dll" | "zip" | "png" | "jpg" | "jpeg" | "gif" | "mp3" | "mp4" | "mov" | "iso" => {
             let m = std::fs::metadata(&p)?;
             return Ok(format!("{} is a {} file ({}), not text.", p.display(), ext, size(m.len())));
@@ -237,7 +365,15 @@ fn office_text(p: &Path, part: impl Fn(&str) -> bool) -> Result<String> {
 
 /// Text runs out of Office XML, a new line per paragraph.
 fn xml_words(xml: &str) -> String {
-    let xml = xml.replace("</w:p>", "\n").replace("</a:p>", "\n").replace("<w:tab/>", "\t");
+    let xml = xml
+        .replace("</w:p>", "\n")
+        .replace("</a:p>", "\n")
+        .replace("<w:tab/>", "\t")
+        .replace("</text:p>", "\n")
+        .replace("</text:h>", "\n")
+        .replace("<text:tab/>", "\t")
+        .replace("</table:table-cell>", " | ")
+        .replace("</table:table-row>", "\n");
     let mut out = String::new();
     let mut in_tag = false;
     for c in xml.chars() {
@@ -258,19 +394,61 @@ pub fn write(path: &str, content: &str) -> Result<String> {
     if off_limits(&p) {
         return Err(anyhow!("that place is private to Izuki"));
     }
-    if let Some(dir) = p.parent() {
-        std::fs::create_dir_all(dir)?;
+    // Plain text saved as report.docx made a file Word couldn't open.
+    if crate::officeedit::is_office(&p) && p.exists() {
+        return Err(anyhow!("{} is an Office file: plain text would break it. Change it with [EDIT: path] (REPLACE/WITH, ADD AFTER/TEXT, ADD, CELL lines) — the changes go into a copy beside it", p.display()));
+    }
+    // A new Word or Excel file from text: built as a real one.
+    let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let office = match ext.as_str() {
+        "docx" => Some(("Word", crate::officeedit::new_docx(content)?)),
+        "xlsx" => Some(("Excel", crate::officeedit::new_xlsx(content)?)),
+        "pptx" => return Err(anyhow!("making a new slide deck isn't something I can do yet — I can edit an existing .pptx with [EDIT:]")),
+        "pdf" | "doc" | "xls" | "ppt" => return Err(anyhow!("I can't make a .{ext} — save it as .docx or .xlsx (Word and Excel open those)")),
+        _ => None,
+    };
+    if let Some((kind, bytes)) = office {
+        // A brand-new Office file is checked before any of it lands: the
+        // zip opens and the parts it declares are really there. If not,
+        // it's torn up and that is said — never saved as a broken file.
+        crate::officeedit::validate_new(ext.as_str(), &bytes)
+            .map_err(|e| anyhow!("the new {ext} didn't pass its own integrity check, so I threw it away: {e}"))?;
+        let mut note = String::new();
+        if p.exists() {
+            let backup = backup_path(&p);
+            std::fs::copy(&p, &backup)?;
+            note = format!(" (the old version is kept as {})", backup.display());
+        }
+        atomic_save(&p, || Ok(bytes))?;
+        return Ok(format!("Made {} (a real {kind} file).{note}", p.display()));
     }
     let mut note = String::new();
     if p.exists() {
-        let stem = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-        let ext = p.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
-        let backup = p.with_file_name(format!("{stem} (before Izuki){ext}"));
+        let old = std::fs::read(&p).map_err(|e| anyhow!("couldn't open {}: {e}", p.display()))?;
+        if looks_binary(&old) {
+            return Err(anyhow!("{} isn't a text file (a picture, archive or a program), and plain words written over it would ruin it. I left it alone — save the words under a new name", p.display()));
+        }
+        let backup = backup_path(&p);
         std::fs::copy(&p, &backup)?;
         note = format!(" (the old version is kept as {})", backup.display());
     }
-    std::fs::write(&p, content)?;
+    atomic_save(&p, || Ok(content.to_owned().into_bytes()))?;
     Ok(format!("Saved {}{note}.", p.display()))
+}
+
+/// Edit a file into a copy beside it (only ever after the user clicked
+/// Allow): Word, PowerPoint and Excel keep their structure (officeedit.rs).
+pub fn edit(path: &str, body: &str) -> Result<String> {
+    let p = resolve(path);
+    if off_limits(&p) {
+        return Err(anyhow!("that file is private"));
+    }
+    if !p.is_file() {
+        return Err(anyhow!("{} isn't there — find it first with [FIND:]", p.display()));
+    }
+    let edits = crate::officeedit::parse_edits(body);
+    let (copy, report) = crate::officeedit::apply(&p, &edits)?;
+    Ok(format!("Saved the changes as a copy: {} (the original is untouched).\n{}", copy.display(), report.iter().map(|l| format!("• {l}")).collect::<Vec<_>>().join("\n")))
 }
 
 /// Run a PowerShell command (only ever after the user clicked Allow) and
@@ -414,6 +592,89 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&f).unwrap(), "two");
         assert_eq!(std::fs::read_to_string(dir.join("a (before Izuki).txt")).unwrap(), "one");
         assert!(read(&path).unwrap().contains("two"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn repeat_saves_keep_every_backup() {
+        // The old code wrote every save over the same "(before Izuki)"
+        // backup, so three saves left only the second-newest version.
+        let dir = std::env::temp_dir().join(format!("izuki-backups-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("notes.md").to_string_lossy().to_string();
+        write(&path, "v1").unwrap();
+        write(&path, "v2").unwrap();
+        write(&path, "v3").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "v3");
+        // The backups stack up in save order: the first ever save's old
+        // content keeps the plain name, each later save its own number —
+        // nothing is overwritten, so nothing is lost.
+        assert_eq!(std::fs::read_to_string(dir.join("notes (before Izuki).md")).unwrap(), "v1");
+        assert_eq!(std::fs::read_to_string(dir.join("notes (before Izuki 2).md")).unwrap(), "v2");
+        let msg = write(&path, "v4").unwrap();
+        assert!(msg.contains("(before Izuki 3)"), "{msg}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_failed_save_leaves_the_file_whole() {
+        // Halfway through a save (a full disk, a crash): what was there
+        // must still be exactly what was there, and no half-file may stay.
+        let dir = std::env::temp_dir().join(format!("izuki-half-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("essay.txt");
+        std::fs::write(&f, "the good version").unwrap();
+        let err = atomic_save(&f, || Err(anyhow!("the simulated disk is full"))).unwrap_err().to_string();
+        assert!(err.contains("simulated disk"), "{err}");
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "the good version");
+        let junk: Vec<String> = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).filter(|n| n.contains("izuki-tmp")).collect();
+        assert!(junk.is_empty(), "a half-save was left behind: {junk:?}");
+        // A full disk is said plainly, not as "os error 112".
+        let full = std::io::Error::from_raw_os_error(112);
+        assert_eq!(what_io(&full), "the disk is full — free some space and try again");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn text_never_overwrites_a_binary_file() {
+        // A photo, a zip or a song mistaken for notes must not
+        // be hollowed out into text.
+        let dir = std::env::temp_dir().join(format!("izuki-bin-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, magic) in [
+            ("photo.png", vec![0x89u8, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+            ("archive.zip", vec![0x50u8, 0x4B, 0x03, 0x04, 0x14, 0x00]),
+            ("song.mp3", vec![0xFFu8, 0xFB, 0x90, 0x44]),
+        ] {
+            let p = dir.join(name);
+            let whole: Vec<u8> = magic.iter().copied().chain(std::iter::repeat(0xABu8).take(20)).collect();
+            std::fs::write(&p, &whole).unwrap();
+            let err = write(&p.to_string_lossy(), "these looked like notes").unwrap_err();
+            assert!(err.to_string().contains("isn't a text file"), "{err}");
+            assert_eq!(std::fs::read(&p).unwrap(), whole, "{name} was changed");
+        }
+        // Text files without a signature stay writable (an .flp is text):
+        assert!(!looks_binary(b"FLStudio = {data = []}"));
+        // and the MP3 sync word is still caught:
+        assert!(looks_binary(&[0xFFu8, 0xFB, 0x90, 0x00]));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn office_files_are_made_whole_and_checked() {
+        let dir = std::env::temp_dir().join(format!("izuki-doc-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("todo.docx").to_string_lossy().to_string();
+        let lines = char::from(10u8).to_string();
+        let msg = write(&path, &format!("# Done today{}nothing, twice", lines)).unwrap();
+        assert!(msg.contains("real Word file"), "{msg}");
+        // What landed opens like a document: the validator agrees.
+        let bytes = std::fs::read(&path).unwrap();
+        crate::officeedit::validate_new("docx", &bytes).unwrap();
+        crate::officeedit::validate("docx", &bytes).unwrap();
+        // An Office file that already exists is never overwritten with text.
+        let err = write(&path, "start over").unwrap_err();
+        assert!(err.to_string().contains("[EDIT:"), "{err}");
         let _ = std::fs::remove_dir_all(dir);
     }
 }

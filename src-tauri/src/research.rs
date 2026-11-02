@@ -273,7 +273,7 @@ pub fn start(app: AppHandle, id: u64, question: String, history: Vec<crate::chat
     });
 }
 
-fn run(id: u64, question: &str, history: &[crate::chat::Turn], send: &dyn Fn(Update)) -> anyhow::Result<()> {
+pub(crate) fn run(id: u64, question: &str, history: &[crate::chat::Turn], send: &dyn Fn(Update)) -> anyhow::Result<()> {
     let stop = || -> anyhow::Result<()> {
         if cancelled(id) {
             anyhow::bail!("Stopped.");

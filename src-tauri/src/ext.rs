@@ -322,7 +322,7 @@ fn cancel_side(origin: &str, v: &Value) -> Result<Value> {
     let work = map.entry(key).or_insert_with(|| SideWork::new(SideState::Cancelled));
     if work.state != SideState::Finished {
         work.stop.store(true, Ordering::SeqCst);
-        if kind == "chat" { crate::chat::cancel(work.id); }
+        if kind == "chat" { crate::chat::cancel(work.id); crate::research::cancel(work.id); }
         // A running task stays Running until its worker observes cancellation;
         // the UI must not treat a request to stop as proof a click has ended.
         if work.state != SideState::Running { work.state = SideState::Cancelled; }
@@ -644,6 +644,8 @@ fn page_helper(url: &str, v: &Value, origin: &str) -> Value {
     // /izuki/ask
     let task = s("task");
     let web = v["web"].as_bool().unwrap_or(true);
+    // The panel's Quick / Think deeper / Research switch (chat only).
+    let mode = if task == "chat" { s("mode") } else { String::new() };
     let mut text = s("text");
     let title = s("title");
     if task == "link" {
@@ -692,8 +694,13 @@ fn page_helper(url: &str, v: &Value, origin: &str) -> Value {
         // chat. Page text cannot run desktop actions in this lane.
         // The switch is real: off means no web tools at all, not just a
         // discouraged one. On gives the panel the same live search as chat.
-        if web {
-            crate::chat::complete_with_web(&msgs, id, false, &|_| {})
+        let deep = mode == "deep";
+        if mode == "research" {
+            research_for_panel(id, v, &title)
+        } else if web {
+            crate::chat::complete_with_web(&msgs, id, deep, &|_| {})
+        } else if deep {
+            crate::chat::complete_streaming_deep(&msgs, id, &|_| {})
         } else {
             crate::chat::complete_streaming(&msgs, id, &|_| {})
         }
@@ -705,6 +712,45 @@ fn page_helper(url: &str, v: &Value, origin: &str) -> Value {
     };
     finish_side(&key, text.clone(), Some(if ok { "answered" } else { "failed" }.into()));
     if stop.load(Ordering::SeqCst) { side_error("Stopped.") } else { json!({"ok":ok,"text":text}) }
+}
+
+/// The panel's Research mode: the same research as chat's "research …"
+/// (planned searches, the pages read, a cited write-up), with each step shown
+/// in the panel as it happens. The page being read gives "research this" its
+/// subject.
+fn research_for_panel(id: u64, v: &Value, title: &str) -> Result<String> {
+    let question = v["question"].as_str().unwrap_or_default().trim().to_string();
+    if question.is_empty() {
+        return Err(anyhow!("Say what to research."));
+    }
+    let _done = crate::chat::ProgressDone(id);
+    let mut history = Vec::new();
+    let url = v["url"].as_str().unwrap_or_default();
+    if !url.is_empty() {
+        history.push(crate::chat::Turn { role: "user".into(), content: format!("I'm reading this page: {title} ({url})"), ..Default::default() });
+    }
+    history.push(crate::chat::Turn { role: "user".into(), content: question.clone(), ..Default::default() });
+    let report = Mutex::new(String::new());
+    crate::research::run(id, &question, &history, &|u| {
+        if let Some(line) = research_step(&u) {
+            crate::chat::set_progress(id, line);
+        }
+        if u.kind == "text" {
+            report.lock().push_str(&u.text);
+        }
+    })?;
+    Ok(report.into_inner())
+}
+
+/// One research step, as the panel's progress line.
+fn research_step(u: &crate::research::Update) -> Option<String> {
+    let clip = |s: &str| if s.chars().count() > 60 { format!("{}…", s.chars().take(57).collect::<String>()) } else { s.to_string() };
+    match u.kind {
+        "plan" | "think" | "write" => Some(u.text.clone()),
+        "search" => Some(format!("Searching “{}”…", clip(&u.text))),
+        "read" => Some(format!("Reading {}…", u.site.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| clip(&u.text)))),
+        _ => None,
+    }
 }
 
 /// The side panel's conversation about the page in front: the page (and any
@@ -736,7 +782,12 @@ fn chat_messages(v: &Value, title: &str, text: &str) -> Vec<Value> {
     } else {
         " Do not use web search for this answer; use the page and what you already know. If the answer isn't on the page, say so and answer from what you know, saying which is which. Never claim to have searched."
     };
-    let system = format!("You are Izuki, a warm, sharp assistant in a side panel next to the user's web page. Answer from the page (and any shared tabs) when you can.{search_rule} Be direct and brief: lead with the answer. Short bullet points with - and **bold** are fine; no headings. Never ask for or repeat passwords or card numbers.\n{}", crate::chat::HONEST_RULE);
+    let manner = if v["mode"].as_str() == Some("deep") {
+        "Think it through carefully and check your result before you answer. Then lead with the answer and give the key reasoning: complete, not padded."
+    } else {
+        "Be direct and brief: lead with the answer."
+    };
+    let system = format!("You are Izuki, a warm, sharp assistant in a side panel next to the user's web page. Answer from the page (and any shared tabs) when you can.{search_rule} {manner} Short bullet points with - and **bold** are fine; no headings. Never ask for or repeat passwords or card numbers.\n{}", crate::chat::HONEST_RULE);
     let mut msgs = vec![
         json!({ "role": "system", "content": system }),
         json!({ "role": "user", "content": context }),
@@ -1044,6 +1095,38 @@ mod tests {
         assert!(system.contains("Do not use web search"), "web off must say so: {system}");
         let dflt = chat_messages(&json!({"question": "latest?"}), "Page", "page text");
         assert!(dflt[0]["content"].as_str().unwrap_or_default().contains("[SEARCH: query]"), "search is the default");
+    }
+
+    /// Think deeper changes what the brain is asked for, not only how long it
+    /// gets; Quick stays brief.
+    #[test]
+    fn think_deeper_asks_for_checked_reasoning() {
+        let deep = chat_messages(&json!({"mode": "deep", "question": "why?"}), "Page", "page text");
+        let system = deep[0]["content"].as_str().unwrap_or_default();
+        assert!(system.contains("check your result") && !system.contains("Be direct and brief"), "{system}");
+        for quick in [json!({"mode": "quick", "question": "why?"}), json!({"question": "why?"})] {
+            let msgs = chat_messages(&quick, "Page", "page text");
+            assert!(msgs[0]["content"].as_str().unwrap_or_default().contains("Be direct and brief"));
+        }
+    }
+
+    /// Research shows each step in the panel; the report's own text isn't a step.
+    #[test]
+    fn research_steps_read_as_progress() {
+        use crate::research::Update;
+        let step = |kind: &'static str, text: &str, site: Option<&str>| research_step(&Update { kind, text: text.into(), site: site.map(String::from), ..Default::default() });
+        assert_eq!(step("search", "data retention policy examples", None).as_deref(), Some("Searching “data retention policy examples”…"));
+        assert_eq!(step("read", "NIST SP 800-88", Some("nist.gov")).as_deref(), Some("Reading nist.gov…"));
+        assert_eq!(step("read", "A page", Some("")).as_deref(), Some("Reading A page…"));
+        assert_eq!(step("plan", "Planning the searches…", None).as_deref(), Some("Planning the searches…"));
+        assert!(step("text", "The report…", None).is_none() && step("done", "", None).is_none() && step("skip", "x", None).is_none());
+        assert!(step("search", &"long ".repeat(30), None).unwrap().chars().count() < 75, "long searches are clipped");
+    }
+
+    /// Research needs something to research.
+    #[test]
+    fn research_needs_a_question() {
+        assert!(research_for_panel(1, &json!({"question": "  "}), "Page").is_err());
     }
 
     /// The panel wrote a graded journal around an incident that never

@@ -61,8 +61,16 @@ The repo is public: github.com/nova-izuki/izuki.
    - Nothing is sent, posted, bought or deleted without the user's explicit yes.
    - No unauthenticated remote control.
    - Never inject into Explorer.
-   - For school work: **never click, type or submit an answer** into a quiz,
-     test or graded form, and never write the essay or code they hand in.
+   - School pages are sorted by the page's own evidence (`assess.rs`, cases in
+     `tools/assessment-cases.json`, which every surface must pass):
+     - **Graded** (points, attempts, a timer, a proctor, "submit quiz", a due
+       date) or **unclear**: never click, type or submit an answer.
+     - **Practice**: the page itself says practice, self-check or ungraded, and
+       shows no grading sign. Izuki may pick answers when asked. The user saying
+       "it's practice" never unlocks a graded page.
+     - **Not a quiz** (course pages, downloads, uploads, Next, rubrics): normal
+       automation. Don't block it because the page is about school.
+   - Never write the essay or code they hand in.
      Izuki *may* say a factual answer when the owner explicitly asks for one
      ("what's the answer", "which option is correct") and then explain it —
      that is tutoring, and the owner asked for it repeatedly. Saying something
