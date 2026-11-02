@@ -10,6 +10,9 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 pub struct UpdateStatus {
     pub phase: String, pub version: String, pub downloaded: u64,
     pub total: Option<u64>, pub checked_at: i64, pub error: Option<String>,
+    /// The newest published release below this one, once looked up: the
+    /// version Settings → Updates offers "go back" to.
+    pub rollback: Option<String>,
 }
 static STATUS: std::sync::LazyLock<Mutex<UpdateStatus>> = std::sync::LazyLock::new(|| Mutex::new(UpdateStatus::default()));
 struct Package { update: Update, bytes: Option<Vec<u8>> }
@@ -128,6 +131,123 @@ pub async fn install_now(app: AppHandle) -> Result<(), String> {
     p.update.install(bytes).map_err(|e| failed(&app, e))
 }
 
+/// A version tag or number ("v1.0.195", "1.0.195") as numbers, for ordering
+/// releases. Malformed tags read as (0,0,0), which can never be newest.
+fn parts(v: &str) -> (u64, u64, u64) {
+    let digits: Vec<u64> = v
+        .trim()
+        .strip_prefix('v')
+        .unwrap_or(v)
+        .split('.')
+        .map(|p| p.chars().take_while(|c| c.is_ascii_digit()).collect::<String>())
+        .filter_map(|p| p.parse().ok())
+        .collect();
+    (digits.first().copied().unwrap_or(0), digits.get(1).copied().unwrap_or(0), digits.get(2).copied().unwrap_or(0))
+}
+
+/// The previous published release: its version and the URL of its signed
+/// updater manifest. Releases are taken newest first from GitHub (public
+/// releases only), and the first one strictly older than this build wins —
+/// that is exactly where "go back to the previous version" should land.
+async fn previous_release() -> Result<Option<(String, String)>, String> {
+    let current = parts(env!("CARGO_PKG_VERSION"));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .user_agent("izuki")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let text = client
+        .get("https://api.github.com/repos/nova-izuki/izuki/releases?per_page=30")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+    let list: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("the release list wasn't JSON: {e}"))?;
+    let releases = list.as_array().ok_or("the release list wasn't a list")?;
+    let mut best: Option<&serde_json::Value> = None;
+    for r in releases {
+        if r["draft"].as_bool().unwrap_or(false) || r["prerelease"].as_bool().unwrap_or(false) { continue; }
+        let tag = r["tag_name"].as_str().unwrap_or_default();
+        if parts(tag) < current && best.as_ref().map(|b| parts(tag) > parts(b["tag_name"].as_str().unwrap_or_default())).unwrap_or(true) {
+            best = Some(r);
+        }
+    }
+    let chosen = match best { Some(r) => r, None => return Ok(None) };
+    let version = chosen["tag_name"].as_str().unwrap_or_default().trim_start_matches('v').to_string();
+    let manifest = chosen["assets"].as_array().ok_or("the release has no assets")?
+        .iter()
+        .find(|a| a["name"].as_str().is_some_and(|n| n.eq_ignore_ascii_case("latest.json")))
+        .and_then(|a| a["browser_download_url"].as_str())
+        .ok_or("the previous release has no signed updater manifest to reinstall from")?;
+    Ok(Some((version, manifest.to_string())))
+}
+
+/// The version Settings → Updates will offer to go back to, after this lookup.
+#[tauri::command]
+pub async fn check_rollback(app: AppHandle, window: WebviewWindow) -> Result<UpdateStatus, String> {
+    main_only(&window)?;
+    let looked = previous_release().await;
+    let status = publish(&app, |s| match looked.as_ref() {
+        Ok(Some((version, _))) => { s.rollback = Some(version.clone()); s.error = None; }
+        Ok(None) => { s.rollback = None; }
+        Err(e) => { s.rollback = None; s.error = Some(format!("I couldn't look up the previous release: {e}")); }
+    });
+    Ok(status)
+}
+
+/// "Go back to the previous version": the previous release's own signed
+/// updater manifest is fetched from GitHub, the installer is downloaded and
+/// checked against the same key this build was born with, and only then run —
+/// the same three steps, and the same signature, as a normal update. The
+/// updater itself refuses to go down; here going down is the point.
+#[tauri::command]
+pub async fn rollback_previous(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+    main_only(&window)?;
+    if crate::hotkey::is_busy() { return Err("I'm in the middle of something — I can go back when it's done.".into()); }
+    let (previous, manifest) = previous_release().await?.ok_or("There's no older published version to go back to.")?;
+    {
+        let s = STATUS.lock();
+        if matches!(s.phase.as_str(), "downloading" | "rollback-downloading" | "installing") {
+            return Err("An update operation is already running.".into());
+        }
+    }
+    publish(&app, |s| { s.phase = "rollback-downloading".into(); s.version = previous.clone(); s.downloaded = 0; s.total = None; s.error = None; });
+    let run = async {
+        let url = reqwest::Url::parse(&manifest).map_err(|e| e.to_string())?;
+        let updater = app
+            .updater_builder()
+            .endpoints(vec![url])
+            .map_err(|e| e.to_string())?
+            .version_comparator(|_current, remote| remote.version < _current)
+            .build()
+            .map_err(|e| e.to_string())?;
+        let progress = app.clone();
+        let update = updater
+            .check()
+            .await
+            .map_err(|e| format!("I couldn't read the previous release's manifest: {e}"))?
+            .ok_or("That release has no signed installer for this PC (it may predate the signature key).")?;
+        let bytes = update
+            .download(
+                move |chunk, total| {
+                    publish(&progress, |s| { s.downloaded = s.downloaded.wrapping_add(chunk as u64); s.total = total; });
+                },
+                || {},
+            )
+            .await
+            .map_err(|e| format!("The installer didn't finish downloading: {e}"))?;
+        // A task may have started while the download was in progress.
+        if crate::hotkey::is_busy() { return Err("I'm in the middle of something — the installer wasn't run. Try again when I'm idle.".to_string()); }
+        publish(&app, |s| { s.phase = "installing".into(); s.total = None; });
+        update.install(bytes).map_err(|e| failed(&app, e))
+    }
+    .await;
+    if let Err(e) = run { let msg: String = e.into(); publish(&app, |s| { s.phase = "error".into(); s.error = Some(msg.clone()); }); return Err(msg); }
+    Ok(())
+}
+
 /// Ask for the newest version. A download already held for an older one is
 /// dropped — there's no point installing a version that's already been replaced.
 async fn check(app: &AppHandle) -> Result<UpdateStatus,String> {
@@ -196,6 +316,19 @@ pub async fn install_update(app: AppHandle, window: WebviewWindow, version: Stri
 }
 #[cfg(test)] mod tests {
     use super::*;
+    #[test] fn the_previous_release_is_the_newest_one_below_this_build() {
+        assert_eq!(parts("1.0.195"), (1, 0, 195));
+        assert_eq!(parts("v1.0.195"), (1, 0, 195));
+        assert_eq!(parts("1.0.196-rc1"), (1, 0, 196), "build junk after the patch number is ignored");
+        assert_eq!(parts("nope"), (0, 0, 0));
+        // The picker itself is index logic over sorted results; this is its rule.
+        let mut older: Vec<&str> = vec!["v1.0.172", "v1.0.193", "v1.0.159", "v1.0.195"];
+        older.sort_by_key(|t| std::cmp::Reverse(parts(t)));
+        assert_eq!(older[0], "v1.0.195", "newest below 1.0.196 wins");
+        assert_eq!(parts("just breaking"), (0, 0, 0), "a broken tag is never the newest");
+        assert!(parts("just breaking") < parts("1.0.159"), "and loses to every real release");
+    }
+
     #[test] fn a_failed_check_tries_again_soon() {
         assert_eq!(retry_minutes(0), 60);
         assert_eq!(retry_minutes(1), 2);

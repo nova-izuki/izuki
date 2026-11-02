@@ -34,7 +34,7 @@ Status: ✅ done and tested · 🧪 built, testing · 🔨 in progress · ⏳ pe
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| "Go back to the previous version" (signed installer from the previous release) | ⏳ | |
+| "Go back to the previous version" (signed installer from the previous release) | 🧪 | Freebuff, 2026-11-02: Settings → Updates gains "Go back to 1.0.195" when the machine's current depth of check is understood — the previous release is picked from GitHub (public releases only), its own `latest.json` becomes the updater endpoint (a `version_comparator` override is what allows going down), and the installer is downloaded and signature-checked with the same key as a normal update, then run with a confirm card. Tested: the release picker (`updates::tests`, 3 passing, malformed and prerelease tags included), `tsc`, `npm run build`. Not exercised here: actually running an older installer on this PC — that is for the owner or a rollback drill. |
 | Installer waits for Izuki to close (hooks.nsh) | ✅ | Shipped in 1.0.193; verified on the owner's PC (about 1 minute vs 13). |
 
 ## 4. Think deeper

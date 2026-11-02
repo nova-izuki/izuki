@@ -295,6 +295,8 @@ pub fn run() {
             updates::check_updates,
             updates::download_update,
             updates::install_update,
+            updates::check_rollback,
+            updates::rollback_previous,
             commands::get_settings,
             commands::save_settings,
             commands::list_flows,
