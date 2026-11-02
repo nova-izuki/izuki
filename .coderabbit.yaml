@@ -10,7 +10,10 @@ reviews:
   review_status: true
   auto_review:
     enabled: true
-    drafts: false
+    # Draft PRs get automatic reviews too: PR #16 has been a draft since the
+    # milestone work started on it, and reviews before it leaves draft are
+    # exactly the useful ones.
+    drafts: true
   path_filters:
     - "!**/node_modules/**"
     - "!**/target/**"
