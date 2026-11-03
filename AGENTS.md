@@ -180,5 +180,7 @@ dependencies and next steps for each workstream live in `docs/WORKSTREAMS.md`
 — update your lane's section there when its state changes, and read it before
 starting work so you build on the other assistant's pieces instead of
 repeating or overwriting them. Never overwrite the other assistant's files
-(claim in `docs/COLLAB.md` first), and never merge or publish anything on
-your own: the owner merges and publishes.
+(claim in `docs/COLLAB.md` first). Merging and publishing follow rule 2:
+only Claude merges to `main` and cuts releases, only after every required
+check passes, under the owner's 2026-11-03 authorization. Codex and
+Freebuff push verified work to the branch and never merge or publish.

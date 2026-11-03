@@ -4,7 +4,8 @@ Set by the owner on 2026-11-03. Freebuff keeps **Smart Eye / Air Control,
 Smart Vision and Developer Mode**; Claude Code keeps **Smart Screen Actions,
 speed optimization and security fixes**. Both finish existing critical work
 first, claim in `docs/COLLAB.md` before editing, never overwrite the other's
-files, and never merge or publish without the owner.
+files. Only Claude merges and publishes, after every required check
+passes, under the owner's 2026-11-03 authorization (AGENTS.md rule 2).
 
 These are **user-facing features for everyone who downloads Izuki** — unlike
 the owner-only Smart Developer Mode, which is compiled out of public builds.

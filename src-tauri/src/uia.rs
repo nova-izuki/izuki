@@ -1837,3 +1837,55 @@ pub fn foreground_hwnd() -> Option<isize> {
 pub fn foreground_hwnd() -> Option<isize> {
     None
 }
+
+#[cfg(all(test, windows))]
+mod look_timing {
+    /// How long a look takes on a real, busy page (the Fast Action Engine
+    /// baseline). Read-only: it opens its own Edge window on the website's
+    /// home page, never clicks or types, prints counts and times only, and
+    /// closes the window. `cargo test --lib look_timing -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn look_timing() {
+        crate::automation::make_dpi_aware();
+        let page = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/index.html").canonicalize().unwrap();
+        let profile = std::env::temp_dir().join(format!("izuki-look-timing-{}", std::process::id()));
+        let edge = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
+        let mut browser = std::process::Command::new(edge)
+            .args(["--no-first-run", "--no-default-browser-check", "--new-window", "--window-size=1280,900"])
+            .arg(format!("--user-data-dir={}", profile.display()))
+            .arg(format!("file:///{}", page.display().to_string().replace('\\', "/").trim_start_matches("//?/")))
+            .spawn()
+            .expect("edge");
+        std::thread::sleep(std::time::Duration::from_secs(6));
+        // Look at Edge's own window, whatever is in front (held, as during a task).
+        let automation = uiautomation::UIAutomation::new().unwrap();
+        let cond = automation.create_property_condition(uiautomation::types::UIProperty::ProcessId, (browser.id() as i32).into(), None).unwrap();
+        let window = automation.get_root_element().unwrap().find_first(uiautomation::types::TreeScope::Children, &cond).expect("the test's Edge window");
+        let raw: isize = window.get_native_window_handle().unwrap().into();
+        super::hold_window(Some(raw));
+        let front = Some(raw);
+        let mut times = Vec::new();
+        let mut count = 0;
+        for _ in 0..4 {
+            super::invalidate_controls();
+            let t = std::time::Instant::now();
+            count = super::list_controls(200).len();
+            times.push(t.elapsed().as_millis());
+        }
+        let t = std::time::Instant::now();
+        for _ in 0..5 {
+            let _ = uiautomation::UIAutomation::new();
+        }
+        let new_ms = t.elapsed().as_millis() / 5;
+        println!("look timing: front window {front:?}, {count} controls listed, looks took {times:?} ms (first, then warm); making a UIAutomation costs {new_ms} ms");
+        let _ = browser.kill();
+        super::hold_window(None);
+        let _ = std::process::Command::new("taskkill").args(["/F", "/T", "/PID", &browser.id().to_string()]).output();
+        // Edge can relaunch itself: close anything still on the test's profile.
+        let name = profile.file_name().unwrap().to_string_lossy().to_string();
+        let _ = std::process::Command::new("powershell").args(["-NoProfile", "-Command", &format!("Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object {{ $_.CommandLine -like '*{name}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}")]).output();
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let _ = std::fs::remove_dir_all(&profile);
+    }
+}

@@ -478,6 +478,10 @@ mod imp {
             bgra: vec![0; (region.w.max(1) * region.h.max(1) * 4) as usize],
         })
     }
+
+    pub fn capture_window(_hwnd: isize) -> Result<(Rect, Frame)> {
+        Err(anyhow!("window capture is only available on Windows"))
+    }
 }
 
 pub use imp::{capture, capture_thumb, capture_window, cursor_pos, virtual_bounds};

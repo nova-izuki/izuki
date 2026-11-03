@@ -149,6 +149,16 @@ Status: open · claimed · fixed (commit) · dismissed (why).
 | --- | --- | --- | --- | --- | --- |
 | 1 | High | `tools/android-rotation-check.sh` | `adb shell` joins its words into one command line on the phone, so the quotes around `sh -c '…'` were lost: the data-writing step ran outside `run-as` and the check would have failed even with a good rotation | Claude | fixed: the whole `run-as` command goes as one string. (Reviews of `e23141b`, `2b6c9cc` and `46ed21b` are on Freebuff's Smart Vision commits: Freebuff's to triage.) |
 
+## CodeRabbit review 12: release commit `9bfafba`, 2026-11-03 07:12 UTC
+
+Reviewed before the merge. None of the three touches the Windows release, so 1.0.196 shipped from `9bfafba` and these were fixed right after.
+
+| # | Sev. | Where | Finding | Claimed by | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Medium | `AGENTS.md`, `docs/WORKSTREAMS.md` | The closing sections still said "the owner merges and publishes", against rule 2's new authorization | Claude | fixed: one rule everywhere. Only Claude merges and publishes, after every required check, under the 2026-11-03 authorization; Codex and Freebuff push verified work and never merge |
+| 2 | High | `docs/COLLAB.md` | The ground rules and the milestone row still required owner approval | Claude | fixed: the same rule; the milestone row marked as history |
+| 3 | High | `src-tauri/src/capture.rs` (Freebuff's) | `capture_window` is re-exported on every platform but only defined for Windows: any non-Windows build fails | Claude (tiny fix, noted in COLLAB.md) | fixed: a non-Windows stub that says window capture is Windows-only. Windows builds were never affected |
+
 ## Found outside CodeRabbit
 
 | Sev. | Where | Finding | Claimed by | Status |
