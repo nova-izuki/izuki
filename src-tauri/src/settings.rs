@@ -205,11 +205,12 @@ pub struct Settings {
     #[serde(default = "default_execution_mode")]
     pub execution_mode: ExecutionMode,
 
-    /// Keep the glowing hand on screen at all times, tracking the real
-    /// cursor, whether or not the config panel is open. This is what turns
-    /// Izuki from "an app you open" into "a companion that's just there."
+    /// Keep the floating chat available. Legacy serialized name retained.
     #[serde(default)]
     pub follow_mode_enabled: bool,
+    /// Optional visual for active on-screen actions, never an idle follower.
+    #[serde(default)]
+    pub action_hand_enabled: bool,
     /// Saved flows clear themselves after this many days without being run
     /// (0 = keep them). Flows with a shortcut key are always kept.
     #[serde(default = "default_flows_keep_days")]
@@ -1123,6 +1124,7 @@ impl Default for Settings {
             chat_mode: false,
             execution_mode: ExecutionMode::Focus,
             follow_mode_enabled: false,
+            action_hand_enabled: false,
             island_enabled: true,
             music_visuals: false,
             tv_host: String::new(),
@@ -1394,5 +1396,27 @@ mod tests {
         settings.learn_city = true;
         let restored: Settings = serde_json::from_value(serde_json::to_value(settings).unwrap()).unwrap();
         assert!(restored.learn_city);
+    }
+
+    #[test]
+    fn old_follow_preference_does_not_enable_the_action_hand() {
+        let mut old = serde_json::to_value(Settings::default()).unwrap();
+        old.as_object_mut().unwrap().remove("action_hand_enabled");
+        old["follow_mode_enabled"] = serde_json::json!(true);
+        let restored: Settings = serde_json::from_value(old).unwrap();
+        assert!(restored.follow_mode_enabled, "keep the useful floating chat");
+        assert!(!restored.action_hand_enabled, "never opt an existing user into the visual");
+    }
+
+    #[test]
+    fn action_hand_preference_is_independent_of_air_and_automation() {
+        let mut settings = Settings::default();
+        settings.air_enabled = true;
+        settings.action_hand_enabled = true;
+        let mut restored: Settings = serde_json::from_value(serde_json::to_value(settings).unwrap()).unwrap();
+        assert!(restored.action_hand_enabled);
+        restored.action_hand_enabled = false;
+        assert!(restored.air_enabled);
+        assert!(!restored.action_hand_enabled);
     }
 }

@@ -5,6 +5,12 @@ JSONL completion foundation in `tools/codex-fallback/`. Automatic dispatch is
 disabled; Claude retains `tools/agents/`, PR #24 and scheduler task #25. See
 `HANDOFF-CODEX-2026-11-03.md` for the live-state audit and remaining integration.
 
+Codex hand-visibility follow-up (2026-11-03, issue #27): remove the decorative
+idle robot hand; retain the floating chat and Freebuff's independent Air/Eye
+tracking. Optional action hand defaults off and is bounded by action/session
+and foreground-window lifecycle. Scoped changes are on
+`codex/hand-overlay-lifecycle`, with dedicated desktop/native regression tests.
+
 Set by the owner on 2026-11-03. Freebuff keeps **Smart Eye / Air Control,
 Smart Vision and Developer Mode**; Claude Code keeps **Smart Screen Actions,
 speed optimization and security fixes**. Both finish existing critical work

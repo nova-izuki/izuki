@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Izuki canvas hand regression</title></head>
+<body><div id="root"></div><script type="module">
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { OverlayCanvas } from '/src/components/OverlayCanvas.tsx';
+import { api, emit, EV, IS_TAURI, MOCK_SETTINGS } from '/src/lib/ipc.ts';
+import '/src/styles.css';
+// Never mount the full canvas fixture against native commands/user state.
+if(IS_TAURI) throw Error('Browser-only mock canvas fixture');
+let settings={...MOCK_SETTINGS,island_enabled:false,follow_mode_enabled:true,action_hand_enabled:false,air_enabled:false,music_visuals:false,edge_glow:false};
+api.getSettings=async()=>settings;
+api.overlayState=async()=>null;
+api.ghostPredict=async()=>null;
+const root=createRoot(document.getElementById('root'));
+root.render(React.createElement(OverlayCanvas));
+window.canvasTest={
+  async open(mode){await emit(EV.overlayOpen,{mode,freeze:false,desktop:{x:0,y:0,w:innerWidth,h:innerHeight,scale:1}})},
+  async point(){await emit(EV.hand,{x:150,y:140,action:'click',duration_ms:90})},
+  async preference(on){settings={...settings,action_hand_enabled:on};await emit(EV.settingsChanged)},
+  count(){return document.querySelectorAll('[data-izk-hand-cursor]').length},
+  unmount(){root.unmount()}
+};
+</script></body></html>

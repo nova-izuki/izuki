@@ -313,8 +313,8 @@ export function TalkToIzuki() {
         )}
         <Group>The hand</Group>
         <Row
-          label="Always show the hand"
-          hint="Keeps the glowing hand on your screen, tracking your cursor — close this window and it keeps going."
+          label="Floating chat bubble"
+          hint="Keep the chat button available on the desktop. It does not add a hand to your pointer."
           icon={<Hand size={14} strokeWidth={2.3} />}
         >
           <Toggle
@@ -323,8 +323,12 @@ export function TalkToIzuki() {
           />
         </Row>
 
+        <Row label="Show hand during screen actions" hint="An optional pointer while Izuki points or acts on screen. Hidden when idle, stopped or you switch windows. Air gestures and automation work with this off.">
+          <Toggle checked={settings.action_hand_enabled} onChange={(v) => patch({ action_hand_enabled: v })} />
+        </Row>
+
         <AnimatePresence initial={false}>
-          {settings.follow_mode_enabled && (
+          {(settings.action_hand_enabled || settings.follow_mode_enabled) && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
@@ -332,7 +336,7 @@ export function TalkToIzuki() {
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
               className="overflow-hidden"
             >
-              <Row label="Hand size" hint="How big the hand riding your cursor is.">
+              {settings.action_hand_enabled && <Row label="Hand size" hint="The optional pointer during a screen action.">
                 <Slider
                   value={settings.follow_hand_size}
                   min={10}
@@ -340,8 +344,8 @@ export function TalkToIzuki() {
                   suffix="px"
                   onChange={(v) => patch({ follow_hand_size: v })}
                 />
-              </Row>
-              <Row
+              </Row>}
+              {settings.follow_mode_enabled && <Row
                 label="Lost the chat bubble?"
                 hint='Puts it back in the corner — or just say "bring back the chat".'
               >
@@ -353,7 +357,7 @@ export function TalkToIzuki() {
                   <RotateCcw size={12} strokeWidth={2.4} />
                   Reset
                 </button>
-              </Row>
+              </Row>}
             </motion.div>
           )}
         </AnimatePresence>
@@ -374,7 +378,7 @@ export function TalkToIzuki() {
           icon={<MousePointer2 size={14} strokeWidth={2.3} />}
           hint={
             settings.execution_mode === "focus"
-              ? "Focus — the hand points at each step on your live screen. Your mouse stays yours while it thinks."
+              ? "Focus — watch each step on your live screen. Your mouse stays yours while it thinks."
               : "Background — no freeze, Izuki only takes the cursor for the instant it needs it."
           }
         >

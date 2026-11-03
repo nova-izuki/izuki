@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { CaptionBox } from "./CaptionBox";
 import { FloatingChat } from "./FloatingChat";
-import { HandCursor, type HandCursorHandle } from "./HandCursor";
+import { ActionHand } from "./ActionHand";
 import { Island, islandPointer } from "./Island";
 import { IslandChatWorkspace } from "./IslandChatWorkspace";
 import { Hud } from "./Hud";
@@ -61,7 +61,6 @@ const TOOLS: Array<{ kind: ShapeKind; label: string; hint: string; icon: React.R
 export function OverlayCanvas() {
   const stageHost = useRef<HTMLDivElement>(null);
   const surface = useRef<DrawSurface | null>(null);
-  const handRef = useRef<HandCursorHandle>(null);
   const promptRef = useRef<HTMLInputElement>(null);
 
   const [open, setOpen] = useState(false);
@@ -69,9 +68,8 @@ export function OverlayCanvas() {
   const [callouts, setCallouts] = useState<Callout[]>([]);
   /**
    * "preview" is a voice/chat command watching itself run, no drawing UI.
-   * "follow" is the always-on hand with nothing else — no toolbar, no
-   * frozen screen, no Konva stage, just the glowing hand tracking the real
-   * cursor while the config panel stays closed. "quickdraw" is a single
+   * "follow" hosts desktop widgets with no toolbar, frozen screen or
+   * Konva stage while the config panel stays closed. "quickdraw" is a single
    * hold-the-hotkey-and-drag mark, also with no toolbar — see the
    * `hotkey_quickdraw` handling further down.
    */
@@ -131,11 +129,12 @@ export function OverlayCanvas() {
   const [pastReplies, setPastReplies] = useState<string[]>([]);
   const captionText = useRef("");
   /**
-   * Whether "Always show the hand" is on. The overlay can be up in follow
+   * Whether the floating chat is on. The overlay can be up in follow
    * mode without it — push-to-talk and captions borrow the window — and
-   * then there should be no hand and no chat bubble, just what was asked for.
+   * then there should be no chat bubble, just what was asked for.
    */
-  const [handOn, setHandOn] = useState(false);
+  const [chatOn, setChatOn] = useState(false);
+  const [actionHandOn, setActionHandOn] = useState(false);
   // The Island at the top of the screen (on unless switched off in Talk).
   const [islandOn, setIslandOn] = useState(true);
   /** The Island always showing, like an iPhone's (not only on hover). */
@@ -485,7 +484,7 @@ export function OverlayCanvas() {
         setActing(false);
         void api.getSettings().then((s) => {
           precision.current = s.control_style === "precision";
-          if (p.mode === "follow") setHandOn(s.follow_mode_enabled);
+          if (p.mode === "follow") setChatOn(s.follow_mode_enabled);
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
           setIslandWave(s.island_wave || "auto");
@@ -499,6 +498,7 @@ export function OverlayCanvas() {
           setGlowOnly(s.edge_glow && s.glow_only);
           setMusicAuto(s.music_visuals);
           setHandSize(s.follow_hand_size);
+          setActionHandOn(!!s.action_hand_enabled);
           setInk(s.ink_color);
         });
         // Focus the prompt without stealing the pointer from the canvas —
@@ -529,7 +529,7 @@ export function OverlayCanvas() {
       on<string>(EV.frozenFrame, (url) => setFrozen(url)),
       on<ListeningPayload>(EV.listening, (p) => {
         setListening(p.active);
-        setHandOn(p.follow);
+        setChatOn(p.follow);
       }),
       on<CaptionPayload>(EV.caption, (p) => {
         const before = captionText.current.trim();
@@ -556,7 +556,7 @@ export function OverlayCanvas() {
       on<void>(EV.settingsChanged, () => {
         void api.getSettings().then((s) => {
           precision.current = s.control_style === "precision";
-          setHandOn(s.follow_mode_enabled);
+          setChatOn(s.follow_mode_enabled);
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
           setIslandWave(s.island_wave || "auto");
@@ -570,6 +570,7 @@ export function OverlayCanvas() {
           setGlowOnly(s.edge_glow && s.glow_only);
           setMusicAuto(s.music_visuals);
           setHandSize(s.follow_hand_size);
+          setActionHandOn(!!s.action_hand_enabled);
           setInk(s.ink_color);
         });
       }),
@@ -641,16 +642,10 @@ export function OverlayCanvas() {
         const showing = cmd.action === "point";
         setTimeout(() => setPointOuts((prev) => prev.filter((p) => p.id !== id)), showing ? 5000 : 1100);
 
-        if (!precision.current || showing) void handRef.current?.animateTo(cx2, cy2, cmd.duration_ms).then(() => {
-          handRef.current?.pulse(cmd.action === "hover" || showing ? "none" : (cmd.action as never));
-        });
       }),
       // In the click-through modes the window gets no mouse events at all —
-      // Rust polls the real cursor instead. The hand is repainted from it
-      // (in preview it only drifts there between scripted moves, so the
-      // first move starts from your actual cursor rather than off-screen),
-      // and it's hit-tested against the floating widgets so those stay
-      // clickable.
+      // Rust polls the real cursor instead, only while the overlay is up,
+      // to hit-test floating widgets. No decorative hand follows it.
       on<CursorPosition>(EV.cursor, ({ x, y }) => {
         const sx = Math.max(1, window.innerWidth) / Math.max(1, desktop.w || window.innerWidth);
         const sy = Math.max(1, window.innerHeight) / Math.max(1, desktop.h || window.innerHeight);
@@ -662,7 +657,6 @@ export function OverlayCanvas() {
         if (waveRef.current) waveRef.current.style.transform = `translate(${cx + 14}px, ${cy + 22}px)`;
         const m = modeRef.current;
         if (m !== "follow" && m !== "preview") return;
-        handRef.current?.setPointer(cx, cy);
         islandPointer(cx, cy);
         hitTest(cx, cy);
       }),
@@ -825,7 +819,7 @@ export function OverlayCanvas() {
     window.addEventListener("izuki:island-chat-visible", changed);
     return () => window.removeEventListener("izuki:island-chat-visible", changed);
   }, []);
-  const idle = open && mode === "follow" && !handOn && !islandOn && !islandChatVisible && !talkWave && !air && !listening && !caption && orb === "hidden" && !transcript;
+  const idle = open && mode === "follow" && !chatOn && !islandOn && !islandChatVisible && !talkWave && !air && !listening && !caption && orb === "hidden" && !transcript;
   useEffect(() => {
     if (!idle) return;
     const t = setTimeout(() => void api.closeOverlay(), 1500);
@@ -919,34 +913,18 @@ export function OverlayCanvas() {
             }}
           />
         )}
-        {handOn && <FloatingChat />}
+        {chatOn && <FloatingChat />}
+        <ActionHand enabled={actionHandOn} size={handSize} desktop={desktop} />
       </>
     ) : null;
 
   // Follow mode is the whole point of "you don't need the app open" — just
-  // the hand, tracking the real cursor, with nothing else on screen.
+  // desktop widgets, without a decorative hand following the mouse.
   if (mode === "follow") {
     return (
       <>
         <div key="follow" className="pointer-events-none fixed inset-0">
-          {/* follow=1: no chase lag — this is standing in for your actual
-              cursor, so it needs to read as exactly where your hand is, the
-              way a real cursor does, not a beat behind it. "trail" parks it
-              just off the real arrow so you can still see your own mouse. */}
-          {handOn && (
-            <HandCursor
-              ref={handRef}
-              bindPointer={false}
-              hideUntilMove={false}
-              trail={4}
-              size={handSize}
-              follow={1}
-              anchor="trail"
-              listening={listening}
-              thinking={thinking && !listening}
-            />
-          )}
-          {!handOn && !glowOnly && <ListeningBadge active={listening} />}
+          {!glowOnly && <ListeningBadge active={listening} />}
         </div>
         {floatingSlot}
       </>
@@ -1095,9 +1073,6 @@ export function OverlayCanvas() {
         </motion.div>
       )}
 
-      {/* Preview is click-through — no DOM pointer events will ever arrive
-          to reveal the hand, so it shows straight away there. */}
-      <HandCursor ref={handRef} trail={12} size={22} hideUntilMove={mode !== "preview"} />
 
       {/* preview mode: a voice/chat command watching itself run. The pill is
           honest about the wait — "thinking" while the model looks at the

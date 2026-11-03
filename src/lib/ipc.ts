@@ -207,6 +207,7 @@ export const MOCK_SETTINGS: Settings = {
   chat_mode: false,
   execution_mode: "focus",
   follow_mode_enabled: false,
+  action_hand_enabled: false,
   island_enabled: true,
   music_visuals: false,
   tv_host: "",
