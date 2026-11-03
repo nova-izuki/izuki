@@ -223,6 +223,8 @@ const wiring = readFileSync(path.join(here, '..', 'extension', 'connect.js'), 'u
 const rust = readFileSync(path.join(here, '..', 'src-tauri', 'src', 'ext.rs'), 'utf8');
 assert(/id="web-search"/.test(html), 'the panel needs a visible web-search switch');
 assert(panel.includes('web: searchWeb'), 'the panel must send the web-search choice with a question');
+assert(/id="modes"[^>]*role="radiogroup"/.test(html) && ['quick', 'deep', 'research'].every((m) => html.includes(`value="${m}"`)), 'the panel needs the Quick / Think deeper / Research choice');
+assert(panel.includes('web: searchWeb, mode,'), 'the panel must send the mode with a question');
 assert(/Search the live web/.test(panel), 'a connected AI tab must be asked to search');
 assert(read('workspace-worker.js').includes('web:false'), 'quiz answers must not turn web search on');
 

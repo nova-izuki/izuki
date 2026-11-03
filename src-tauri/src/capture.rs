@@ -480,7 +480,7 @@ mod imp {
     }
 }
 
-pub use imp::{capture, capture_thumb, cursor_pos, virtual_bounds};
+pub use imp::{capture, capture_thumb, capture_window, cursor_pos, virtual_bounds};
 
 /// Grab the whole virtual desktop. While Izuki works in a window behind the
 /// one you're using, that window is drawn back in where it sits — so Izuki

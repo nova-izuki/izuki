@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Izuki — AI on your screen",
-  "version": "1.5.7",
+  "version": "1.6.0",
   "description": "Ask about pages with Izuki or an AI tab you connect. Explain, summarise and read selections, with chat beside the page.",
   "permissions": [
     "scripting",

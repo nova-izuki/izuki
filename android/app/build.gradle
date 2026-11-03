@@ -7,8 +7,8 @@ android {
         applicationId "com.novaizuki.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 195
-        versionName "1.0.195"
+        versionCode 196
+        versionName "1.0.196"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,16 +16,33 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    // One fixed key for the preview builds, so a new version installs over
-    // the old one (a fresh key per build made Android refuse every update).
-    // A preview key, not a store-release key — kept with the code on purpose.
+    // Signing: docs/ANDROID-SIGNING.md.
+    // - preview (the debug APK on the website): one fixed key, so a new
+    //   version installs over the old one (a fresh key per build made Android
+    //   refuse every update). The key in the repo is public, so anyone can
+    //   sign as it. When IZUKI_PREVIEW_KEYSTORE is set (from a GitHub secret)
+    //   that private key is used instead. Changing keys needs the rotation
+    //   steps in the doc, or installed phones can't update.
+    // - release (a store build): only ever a key from the environment, never
+    //   anything in the repo. Without one, the release build stays unsigned.
+    def env = { String name -> System.getenv(name) }
     signingConfigs {
         preview {
-            storeFile file('izuki-preview.p12')
+            def own = env('IZUKI_PREVIEW_KEYSTORE')
+            storeFile(own ? file(own) : file('izuki-preview.p12'))
             storeType 'pkcs12'
-            storePassword 'izuki-companion'
-            keyAlias 'izuki'
-            keyPassword 'izuki-companion'
+            storePassword(own ? env('IZUKI_PREVIEW_KEYSTORE_PASSWORD') : 'izuki-companion')
+            keyAlias(own ? (env('IZUKI_PREVIEW_KEY_ALIAS') ?: 'izuki') : 'izuki')
+            keyPassword(own ? (env('IZUKI_PREVIEW_KEY_PASSWORD') ?: env('IZUKI_PREVIEW_KEYSTORE_PASSWORD')) : 'izuki-companion')
+        }
+        release {
+            def store = env('IZUKI_RELEASE_KEYSTORE')
+            if (store) {
+                storeFile file(store)
+                storePassword env('IZUKI_RELEASE_KEYSTORE_PASSWORD')
+                keyAlias env('IZUKI_RELEASE_KEY_ALIAS')
+                keyPassword env('IZUKI_RELEASE_KEY_PASSWORD')
+            }
         }
     }
     buildTypes {
@@ -35,6 +52,9 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (env('IZUKI_RELEASE_KEYSTORE')) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

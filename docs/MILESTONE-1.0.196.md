@@ -1,0 +1,97 @@
+# Milestone 1.0.196: one coordinated release
+
+The owner's rule (2026-11-02): every requested feature and fix in this cycle goes into ONE public release.
+
+- The work lives on the `milestone-196` branch.
+- No version tag, push to `main` (which also deploys the website), or auto-update until the release candidate is verified. Since 2026-11-03 the owner has authorized automatic merging and releasing once it is (no separate approval).
+
+Status: ✅ done and tested · 🧪 built, testing · 🔨 in progress · ⏳ pending · ⛔ blocked (needs a decision or hardware)
+
+## 1. Office files: create and edit
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Edit .docx / .pptx / .xlsx into a copy (`officeedit.rs`) | 🧪 | Replace, add a paragraph after one, set an Excel cell. The original is never touched. Unit-tested on real file structures. |
+| `[EDIT: path]` in the chat, with Allow first | 🧪 | Parse test; same Allow card as saving. |
+| New .docx / .xlsx from text (`[WRITE:]`) | 🧪 | Before this, text saved as .docx made a broken file. |
+| Read .xlsx (cell addresses), PDF text, .odt/.ods/.odp | 🧪 | |
+| Safe saves (Freebuff, 2026-11-02, finishing Claude's task) | 🧪 | Every save is now atomic (hidden temp file in the same folder, flushed, then one `MoveFileEx` replace): a crash or a full disk leaves no half-file, and the old version stays until the swap. Each save backs up into its own `(before Izuki)`, `(before Izuki 2)` file, so repeated saves don't overwrite the backup. Text writes refuse to overwrite binary files (PNG/JPEG/GIF/MP3/RIFF/Ogg/PDF/zip/7z/gz/old Office/programs, or anything with zero bytes) — a photo, archive or FL-style file can't be hollowed out with plain words. |
+| Generated Office files checked whole (Freebuff, 2026-11-02) | 🧪 | `officeedit::validate`/`validate_new`: the zip opens, the content-type list and the document part are there, and a generated file declares its type and relationship properly; a broken or mislabelled file is torn up, never saved. Applies to `[WRITE:]` .docx/.xlsx and to every `[EDIT:]` copy. |
+| Files open in real Word/Excel | ⏳ | Office isn't installed on this PC; checked with independent readers instead. Final check by the owner. |
+
+## 2. Browser automation, AI tabs, practice vs graded
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Shared page classifier (`assess.rs`, `tools/assessment-cases.json`) | 🧪 | Graded / practice / not a quiz, from the page's own evidence. Unclear means graded. |
+| Desktop agent: practice pages allow answers; only graded ones hold back | 🧪 | `brain::Look`; regression test that school pages keep downloads, uploads, Next and rubric clicks. |
+| "What I can do" instead of a bare refusal | 🧪 | `assess::what_i_can_do`. |
+| Extension: the same classifier; practice pages allow picking in the panel's runner | ✅ | Found in the tree and kept (Claude/Codex): `extension/assess.js` plus the question page's own decision, tested by `tools/workspace-check.mjs` against the case list and by the headless-Edge page check; never Submit or Finish. |
+| AGENTS.md rule 6 updated to the practice/graded distinction | ✅ | Already edited in the tree (in the same commit as `assess.rs`). |
+| Side by side, AI-tab draft fix, floating Run task | ✅ | Shipped in 1.0.193 and 1.0.194. |
+
+## 3. Rollback and recovery
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| "Go back to the previous version" (signed installer from the previous release) | 🧪 | Freebuff, 2026-11-02: Settings → Updates gains "Go back to 1.0.195" when the machine's current depth of check is understood — the previous release is picked from GitHub (public releases only), its own `latest.json` becomes the updater endpoint (a `version_comparator` override is what allows going down), and the installer is downloaded and signature-checked with the same key as a normal update, then run with a confirm card. Tested: the release picker (`updates::tests`, 3 passing, malformed and prerelease tags included), `tsc`, `npm run build`. Not exercised here: actually running an older installer on this PC — that is for the owner or a rollback drill. |
+| Installer waits for Izuki to close (hooks.nsh) | ✅ | Shipped in 1.0.193; verified on the owner's PC (about 1 minute vs 13). |
+
+## 4. Think deeper
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Browser panel: Think deeper / Research switch, with progress shown | ✅ | Already built and tested (found in the tree): the panel's Quick / Think deeper / Research radios reach `ext.rs` (`mode`), Think deeper asks for checked reasoning, Research runs the step-by-step research with progress lines ("Searching …", "Reading nist.gov…"), and the mode is remembered. Tests: `ext.rs` mode/progress tests, `tools/panel-check.mjs`, and `tools/panel-browser-check.cjs` (research click, progress text, saved mode). |
+
+## 5. Smart Vision Developer Observer (owner-only)
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Compile-time dev feature; absent from public builds | ✅ | Freebuff, 2026-11-03: cargo feature `devvision`; `observer` module is `#[cfg]`-gated, and the timeline hooks (files::atomic_save, bugs::report) and the setup hook compile out with it. Proof: the default `cargo test --lib` — the release shape — still passes 586/0/46 with the feature off, and 598/0/45 with it on (both 2026-11-03, after the 45f7446 fixes). The release pipelines never enable the feature, and even a dev build only observes when the owner sets `IZUKI_VISION=1`. |
+| Event-driven capture of Izuki's window, deduplicated, bounded | 🧪 | The watcher grabs Izuki's own window rect (GetWindowRect) through the public region capture every 700 ms at most, hashes the downscaled pixels (FNV-1a) and keeps the frame only when the view is new, in a 40-frame JPEG ring. Dedupe, hashing and ring bound are unit-tested (5 tests). Not yet exercised end-to-end against a live window overnight — first real run is for the owner. |
+| Action/verification timeline correlated with screenshots | 🧪 | `observer::record` writes bounded (500) timeline events; a finished atomic save records an "action", a bug report records a "verification", and each entry can name the frame at or just before its moment (`frame_at_or_before`). The hooks are in and compile-gated; live correlation still needs a real session to point at. |
+| Capture Bug (shortcut and button) producing a structured report | 🧪 | Backend exists and is now reachable: `observer::capture_bug` folds frames, `timeline.json`, a `summary.json` and the log tail into one dated folder, and the Developer panel's Capture Bug button (new `src/components/DeveloperMode.tsx`, dev builds only) calls it. The global shortcut is still open — the button covers the same need in the same build. |
+| Authenticated local connection for Claude Code | ✅ | A loopback-only HTTP server (random port, one request at a time) serves `/api/status`, `/api/events`, `/api/frames/<n newest>` and a dashboard, every request checked against a Bearer token from `%APPDATA%\Izuki\vision\token`. Wrong and missing tokens are refused (unit-tested); the live curl happened 2026-11-03 against the devvision dev build — status, events and a real frame answered with the token (`tools/repros/2026-11-03-smart-vision-live-cycle/`). Read-only by design. |
+| Dashboard | 🧪 | Served by the same loopback server at `/`: status line, full timeline (HTML-escaped) and a frame gallery. It answered through the 2026-11-03 live curl; opening it in a real browser against a running app is the last check, together with the Capture Bug button (needs hands at the dev panel). |
+| Throttling under load; benchmarks on the owner's laptop | ⏳ | The pacing rule (max one grab per 700 ms, duplicate views skipped) is unit-tested; actual capture-cost numbers on a 16 GB dev laptop are still to be measured in a real run. Not ThinkPad-specific: the discovery is path-free, so the numbers transfer to any dev machine. |
+
+## 5b. Smart Developer Mode (owner-only control panel)
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| ON/OFF control of Smart Vision, Claude Live Auto-Review, Smart Real Testing | 🧪 | Freebuff, 2026-11-03: `src-tauri/src/devmode.rs` inside the same `devvision` feature — three independent switches, everything OFF whenever the app starts (no state is persisted), each off OFF truly stops its work (capture released, buffers dropped, a running scenario killed), not just hidden UI. |
+| Developer panel in the dev build only | 🧪 | New Settings card (`DeveloperMode.tsx`) mounted next to Bug/Updates cards; in public builds it renders nothing (the `dev_*` commands exist everywhere but refuse outside dev builds — the same refusal is what keeps the panel invisible). |
+| Claude Live Auto-Review | 🧪 | Arms the diagnostic-analysis channel: while on, the review digest (events since the last review, frame indexes) may be assembled and read through the observer's token-guarded loopback endpoints — the reviewer is external; the toggle only arms the pipeline and drops gathered data on OFF. |
+| Smart Real Testing with an approved fixed allowlist | 🧪 | Three scenarios fixed in code (`rust-core`, `workspace`, `panel`) — running anything outside the list is refused, one scenario at a time, results kept in a bounded ring with output tails. The scenarios are plain package.json/cargo commands, so the set is portable to any dev machine; nothing can merge, publish, deploy or release from this panel (there is no such code path). |
+| Emergency Stop All + Capture Bug | 🧪 | Both buttons in the panel; Stop All flips all three off for real, cancels a running scenario, and reports what it did; Unit tests cover the refusals, OFF-by-default, workspace-root discovery (no hardcoded laptop paths) and the digest bounds. |
+| Public builds carry none of this | 🧪 | Default-feature suite passes identically (profile unchanged); the `dev_*` commands compile everywhere but their dev internals live behind `devvision`. |
+
+### 5b. Developer Control and the live test loop
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Smart Developer Mode: Smart Vision, Claude Live Auto-Review and Smart Real Testing switches, all off by default; Capture Bug; Stop All | 🔨 | Freebuff (claimed in COLLAB.md): `devmode.rs`, `DeveloperMode.tsx`, built on `observer.rs` and the `devvision` feature. Dev builds only. |
+| One real observe → diagnose → fix → retest cycle, recorded | ✅ | Freebuff, 2026-11-03, on this dev machine: a `devvision` debug build with `IZUKI_VISION=1` ran against the real main window (`tools/repros/2026-11-03-smart-vision-live-cycle/`, evidence in its README, statuses and the frame sample). Observe: status/events/frames answered authed on the loopback, one real 747×960 JPEG of Izuki's window. Diagnose: window minimized live — captures frozen 22→22 while ticks rose 114→128 — the review 7 #1 fix proven live (before it, the desktop behind the hidden window was being recorded). Retest: restored-window behavior honest (a restored view matches the two-minute map and earns no new frame). No NEW defect surfaced; the fix under test was already in 45f7446 — this run is the live half the earlier cycle could not do. The installed app was closed for the run and relaunched right after. Not exercised live: a Capture Bug button press and the dashboard in a browser (need hands at the panel); the endpoints they wrap were probed above. |
+
+## 6. Eye control (Air control)
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Face/iris tracking, look-then-snap, blink/pinch press, hands-free reading | ⏳ | Needs the owner's real camera for the final check. |
+
+## 7. Integration, regressions, performance
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Full Rust suite, tsc, every test:* script, panel browser checks | ⏳ | Run on the release candidate. |
+| CodeRabbit on every push to PR #16 | ✅ | Automatic, drafts included, incremental, never auto-paused; all 121 default skips off. Validated against the official schema with a strict key check. Review 1 (18 findings): all fixed. Review 2 (15): Claude's 4 fixed, Freebuff's 11 open. See `docs/REVIEW-1.0.196.md`. |
+| Release pipeline hardening | 🧪 | Tags only commits whose Verify passed (push runs), never republishes, checks asset sizes, verifies every updater signature against the app's key (`tools/verify-updater.mjs`, proven on 1.0.195 and on 3 tampered cases), versions agree (`tools/check-versions.mjs`), actions pinned in auto-release. Needs a real release run to be ✅. |
+| Binary assets checked in CI (`tools/asset-check.mjs`) | ✅ | 521 assets and 38 character rigs. A corrupted PNG, a truncated WebP and a header-only icon are all caught by name. |
+| Extension ↔ app bridge authentication (High, reproduced) | ✅ | Both parts in place, checked by `tools/bridge-auth-check.mjs` (fails on the old code). Part 1 (02a3521): background jobs must be signed with this user's pairing key for the extension's own challenge, and `readlinks` reads only links on the page. Part 2 (343986d): the side panel, workspace and smart actions check Izuki's signed ping before sending anything private. Users who loaded the extension by hand set it up again from Izuki. |
+| Secret scan | ⏳ | Current tree ✅, release candidate ⏳. 2026-11-02: every tracked file and every line in git history checked for Google/OpenAI/Anthropic/GitHub/Slack/Groq/NVIDIA/AWS/Telegram/Discord keys and private-key blocks. Only hits: deliberate fake values in the scrubber's tests (`bugs.rs`, `memory.rs`). CodeRabbit also runs gitleaks on each review. Redo on the release candidate. |
+| Performance review | ⏳ | **Baseline, installed 1.0.195 at idle** (2026-11-02, 15 s sample, 8-core i5): 15.7% of one core in all (about 2% of the whole CPU), 882 MB. **Re-measured 2026-11-03** (overlay visible, main window hidden): 26%, 12% and 14% of one core in three samples, so idle use swings a lot and one sample proves little. Per thread, averaged: the always-open microphone's echo and noise processing 4.2% (audio service, `AudioProcessingThread`: the wake word keeps the mic open with echo cancellation on, `speechInput.ts`); the overlay redrawing 4.7% (its compositor and main thread, though nothing on screen changes; which element needs DevTools in the real app, since outside the app the overlay is empty); Izuki's `izuki-autonomous` loop about 1% (with auto-skip-ads on and YouTube in front it walks up to 160 page controls every 5 s). The main window rests completely when hidden: `tools/idle-check.cjs` measures 0 animation frames, no endless animation and under 1 ms of work a second. **Release candidate not measured yet:** it has to replace the installed app to be measured the same way. |
+| Android preview signing key in the repo | ⏳ | Owner chose path A (rotation), 2026-11-03. Built: a new private key (kept in git-ignored `.private/android/`), `mobile.yml` re-signs so the public key vouches for it, and an emulator check (`tools/android-rotation-check.sh`) proves the update installs over today's app, keeps its data, and that a public-key-only APK is refused afterwards; a rotated APK joins a release only after that check. Once a published APK is rotated, every later release must be rotated too: the release build reads the latest published APK's signer and stops if it can't rotate. Until then, a build without the key signs with the public key, as today. **Waiting on the owner:** adding the key to GitHub's secrets (`.private/android/add-key-to-github.ps1`), then the first rotated build and its check. |
+| Release candidate → one release | 🧪 | 2026-11-03, cut by Claude under the owner's automation authorization. Release candidate verified: all 21 `npm run test:*` scripts pass (the island browser check timed out once under load, then passed alone and in CI); `cargo test --lib` 586 passed, 0 failed; tsc and build clean; CI green on Windows, web, Android and iPhone; secret scan of the tree and all 384 commits clean (only the scrubber tests' fake key); every Claude CodeRabbit finding fixed. Freebuff's uncommitted Smart Vision work goes into the next release. Ships as 1.0.196; ✅ once the published installers, updater manifest and website are checked. |
+| Smart Vision §5 observer timeline redaction (High, reproduced) | 🧪 | Fixed by a verified detect-fix-retest loop: the failing regression test (raw user name stored into the timeline) is recorded failing in tools/repros/2026-11-02-observer-timeline-username-leak/detect-before.log, then green after the fix in retest-after.log. Fix: observer::record redacts at the boundary (every note, any caller), so user name, API keys and paths never reach /api/events or timeline.json. Suites rerun after the 45f7446 fixes (2026-11-03): 598 passed (devvision) and 586 passed (default), 0 failed. |
+| Smart Vision §5 observer startup order (High) | 🧪 | Fixed: the devvision startup block in lib.rs moved to run after the main window exists (it looked the main window up before any window was created, so with the manifest windows populated the opt-in block never started). Verified by inspection and by the same suites; the reproduced-leak row above carries the runtime evidence. |
+| Rest of the 2026-11-02 15:01Z CodeRabbit round | ✅ | All 11 findings closed (fe01c94: start-up order and redaction; 45f7446: `[bug]` events recorded even with sending unconfigured, the two-minute duplicate rule wired into capture, a load back-off, stop/start generation change, FRAMES held short; docs commit: devvision tests in tools/test-windows.ps1, the verified accidental-enablement check, the token path without control characters). The “remaining Security finding near line 840” was the same loopback-serves-frames exposure this batch closed by keeping locks short and serving read-only; minors (setup-node pinning etc.) were Claude's and fixed in review 1/2 rounds. |

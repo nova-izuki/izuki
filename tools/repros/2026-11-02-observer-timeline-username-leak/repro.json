@@ -1,0 +1,12 @@
+{
+  "finding": "The observer timeline stored the raw bug/file message, so secrets (the Windows user name in a file path, keys in a bug message) flowed into /api/events and timeline.json",
+  "opened_by": "CodeRabbit on PR #16, round of 2026-11-02T15:01:23Z",
+  "reproduced_in_test": "src-tauri/src/observer.rs :: record_scrub_tests::a_recorded_event_is_scrubbed_before_it_is_stored",
+  "first_detect_run": {
+    "result": "FAILED - the timeline stored 'factory stopped: C:/Users/<username>/Downloads/trace.log' verbatim",
+    "log": "detect-before.log",
+    "note": "An earlier draft of this test PASSED and that pass was false: record() early-returns while the observer is disarmed, so nothing was stored. The test was hardened (arm ENABLED, demand a non-empty timeline) and only then demonstrated the leak. The vacuous pass was rejected, not reported as a fix."
+  },
+  "fix": "scrub() at the record() boundary so every observer caller is redacted, not just the bugs.rs call site",
+  "retest": "retest-after.log in this folder"
+}

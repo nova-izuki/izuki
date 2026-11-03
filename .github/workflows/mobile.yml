@@ -30,29 +30,221 @@ jobs:
           distribution: temurin
           java-version: '21'
       - run: npm ci
+      - name: The tag and every version file agree
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          node tools/check-versions.mjs
+          test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME" || { echo "The tag $GITHUB_REF_NAME doesn't match package.json." >&2; exit 1; }
       - run: npm run icons
       - run: npx cap sync android
       - run: chmod +x ./gradlew
         working-directory: android
+      # Preview signing (docs/ANDROID-SIGNING.md). Path A, key rotation:
+      # Gradle signs with the old public key as before, then apksigner
+      # re-signs so that key vouches for the private new one (a lineage):
+      # phones on Android 9+ move to the new key on their next update. Path B:
+      # the new key signs outright (everyone reinstalls). A new key with
+      # neither chosen is refused: it would stop every installed phone from
+      # updating. The secret is decoded outside the checkout.
+      - name: Preview signing key from secrets, if set
+        id: signing
+        env:
+          KEY_B64: ${{ secrets.IZUKI_PREVIEW_KEYSTORE_B64 }}
+          KEY_PASSWORD: ${{ secrets.IZUKI_PREVIEW_KEYSTORE_PASSWORD }}
+          ROTATION: ${{ vars.IZUKI_PREVIEW_ROTATION }}
+          OUTRIGHT: ${{ vars.IZUKI_PREVIEW_NEW_KEY_OUTRIGHT }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # Once a published APK carries the new key, phones on Android 9+
+          # refuse one signed only with the public key. So a release looks at
+          # the latest published APK, and if it was signed with another key
+          # (rotated), this one must be rotated too: no key, no release.
+          # (Checked on every build so the check itself stays proven; enforced
+          # on releases.)
+          must_rotate=""; rotated_to=""; lookup_failed=""
+          tools=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          public=$(keytool -list -v -keystore android/app/izuki-preview.p12 -storetype PKCS12 -storepass izuki-companion -alias izuki | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')
+          test -n "$public" || { echo "Couldn't read the public preview key's fingerprint." >&2; exit 1; }
+          # What the latest published release holds, retried: a network hiccup
+          # must never read as "no release yet". Only GitHub saying there's no
+          # release, or no APK in it, means there's nothing to follow.
+          assets=""
+          for attempt in 1 2 3; do
+            if assets=$(gh release view --json assets --jq '[.assets[].name] | join(",")' 2>"$RUNNER_TEMP/release-view.err"); then break; fi
+            if grep -qi "release not found" "$RUNNER_TEMP/release-view.err"; then assets="(none)"; break; fi
+            assets=""; sleep 10
+          done
+          published="$RUNNER_TEMP/last-release/Izuki-Companion-Android-preview.apk"
+          if [ -z "$assets" ]; then
+            lookup_failed="couldn't ask GitHub for the latest release"
+          elif [[ ",$assets," != *",Izuki-Companion-Android-preview.apk,"* ]]; then
+            echo "No published APK yet: nothing to follow."
+          else
+            for attempt in 1 2 3; do
+              gh release download --pattern Izuki-Companion-Android-preview.apk --dir "$RUNNER_TEMP/last-release" --clobber && break
+              sleep 10
+            done
+            if [ ! -s "$published" ]; then
+              lookup_failed="couldn't download the latest published APK"
+            else
+              # The signer Android 9+ phones see (the rotated one, once rotated).
+              seen=$("$tools/apksigner" verify --print-certs --min-sdk-version 28 "$published" | sed -n 's/.*certificate SHA-256 digest: //p' | tr 'A-F' 'a-f' | sort -u)
+              test -n "$seen" || { echo "Couldn't read the latest published APK's signer." >&2; exit 1; }
+              echo "published=yes" >> "$GITHUB_OUTPUT"
+              if [ "$seen" != "$public" ]; then
+                must_rotate=yes; rotated_to="$seen"
+                echo "The latest published APK is signed with the rotated key ($rotated_to): releases must be rotated to that same key."
+              else
+                echo "The latest published APK is signed with the public key only (no rotation yet)."
+              fi
+            fi
+          fi
+          if [ -n "$lookup_failed" ]; then
+            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then echo "A release can't go out unchecked: $lookup_failed." >&2; exit 1; fi
+            echo "::warning::$lookup_failed (not a release, so the build goes on)."
+          fi
+          if [ -n "$must_rotate" ] && [[ "$GITHUB_REF" == refs/tags/v* ]] && { [ -z "$KEY_B64" ] || [ "$ROTATION" != "yes" ]; }; then
+            echo "Phones already have the rotated key, but this build can't rotate (the IZUKI_PREVIEW_KEYSTORE_B64 secret or IZUKI_PREVIEW_ROTATION=yes is missing). An APK signed only with the public key would not install as their update. See docs/ANDROID-SIGNING.md." >&2
+            exit 1
+          fi
+          if [ -z "$KEY_B64" ]; then
+            echo "No private preview key yet: signing with the public preview key in the repo."
+            exit 0
+          fi
+          printf '%s' "$KEY_B64" | base64 -d > "$RUNNER_TEMP/izuki-preview-2.p12"
+          mine=$(keytool -list -v -keystore "$RUNNER_TEMP/izuki-preview-2.p12" -storetype PKCS12 -storepass:env KEY_PASSWORD -alias izuki | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')
+          test -n "$mine" || { echo "Couldn't open the private preview key (secret or password wrong)." >&2; exit 1; }
+          # Phones that took the rotated key accept updates only from it (or a
+          # lineage from it). Another key here would strand them.
+          if [ -n "$must_rotate" ] && [ "$mine" != "$rotated_to" ]; then
+            echo "The key in IZUKI_PREVIEW_KEYSTORE_B64 ($mine) isn't the one phones already have ($rotated_to). Moving on from that key needs a lineage from it. See docs/ANDROID-SIGNING.md." >&2
+            exit 1
+          fi
+          echo "IZUKI_ROTATED_SHA=$mine" >> "$GITHUB_ENV"
+          if [ "$ROTATION" = "yes" ]; then
+            { echo "IZUKI_ROTATE_TO=$RUNNER_TEMP/izuki-preview-2.p12"; echo "IZUKI_ROTATE_PASSWORD=$KEY_PASSWORD"; } >> "$GITHUB_ENV"
+            echo "Path A: signing with the public key, then rotating to the private preview key."
+          elif [ "$OUTRIGHT" = "yes" ]; then
+            { echo "IZUKI_PREVIEW_KEYSTORE=$RUNNER_TEMP/izuki-preview-2.p12"; echo "IZUKI_PREVIEW_KEYSTORE_PASSWORD=$KEY_PASSWORD"; } >> "$GITHUB_ENV"
+            echo "Path B: signing with the private preview key."
+          else
+            echo "A new preview key alone stops installed phones from updating. Set the repository variable IZUKI_PREVIEW_ROTATION=yes (path A) or IZUKI_PREVIEW_NEW_KEY_OUTRIGHT=yes (path B). See docs/ANDROID-SIGNING.md." >&2
+            exit 1
+          fi
       - run: ./gradlew assembleDebug
         working-directory: android
+      - name: Rotate the preview signature to the private key (path A)
+        id: rotate
+        if: env.IZUKI_ROTATE_TO != ''
+        run: |
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          tools=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          echo "apksigner from $tools"
+          old=(--ks android/app/izuki-preview.p12 --ks-type PKCS12 --ks-pass pass:izuki-companion --ks-key-alias izuki)
+          new=(--ks "$IZUKI_ROTATE_TO" --ks-type PKCS12 --ks-pass env:IZUKI_ROTATE_PASSWORD --ks-key-alias izuki)
+          mkdir -p "$RUNNER_TEMP/public-key-only"
+          cp "$apk" "$RUNNER_TEMP/public-key-only/app-debug.apk"
+          "$tools/apksigner" rotate --out "$RUNNER_TEMP/izuki-lineage" --old-signer "${old[@]}" --new-signer "${new[@]}"
+          "$tools/apksigner" sign "${old[@]}" --next-signer "${new[@]}" --lineage "$RUNNER_TEMP/izuki-lineage" --rotation-min-sdk-version 28 "$apk"
+          "$tools/apksigner" verify --verbose --print-certs "$apk" | tee "$RUNNER_TEMP/verify.txt"
+          grep -q "Verified using v3 scheme (APK Signature Scheme v3): true" "$RUNNER_TEMP/verify.txt" || { echo "The rotated APK has no v3 signature." >&2; exit 1; }
+          public=$(keytool -list -v -keystore android/app/izuki-preview.p12 -storetype PKCS12 -storepass izuki-companion -alias izuki | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')
+          old_phones=$("$tools/apksigner" verify --print-certs --max-sdk-version 27 "$apk" | sed -n 's/.*certificate SHA-256 digest: //p' | tr 'A-F' 'a-f' | sort -u)
+          new_phones=$("$tools/apksigner" verify --print-certs --min-sdk-version 28 "$apk" | sed -n 's/.*certificate SHA-256 digest: //p' | tr 'A-F' 'a-f' | sort -u)
+          [ "$old_phones" = "$public" ] || { echo "Android 7-8 would see $old_phones, not the public key $public." >&2; exit 1; }
+          [ "$new_phones" = "$IZUKI_ROTATED_SHA" ] || { echo "Android 9+ would see $new_phones, not the private key $IZUKI_ROTATED_SHA." >&2; exit 1; }
+          echo "Android 7-8 see the public key, Android 9+ the private one ($new_phones)."
+          "$tools/apksigner" lineage --in "$apk" --print-certs -v
+          echo "rotated=yes" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: Izuki-Companion-Android-preview
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Keep today's public-key build for the rotation check
+        if: steps.rotate.outputs.rotated == 'yes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Izuki-Companion-Android-public-key-only
+          path: ${{ runner.temp }}/public-key-only/app-debug.apk
+          if-no-files-found: error
+          retention-days: 3
+      - name: Keep the published APK for the rotation check
+        if: steps.rotate.outputs.rotated == 'yes' && steps.signing.outputs.published == 'yes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Izuki-Companion-Android-published
+          path: ${{ runner.temp }}/last-release/Izuki-Companion-Android-preview.apk
+          if-no-files-found: error
+          retention-days: 3
+    outputs:
+      rotated: ${{ steps.rotate.outputs.rotated }}
+      published: ${{ steps.signing.outputs.published }}
+
+  # The rotation, proven on a real Android system image before any phone gets
+  # it: the update installs over today's app and keeps its data, and then an
+  # APK signed only with the public key is refused (tools/android-rotation-check.sh).
+  android-rotation-check:
+    name: Android key rotation on an emulator
+    needs: android
+    if: needs.android.outputs.rotated == 'yes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Izuki-Companion-Android-preview
+          path: apk/rotated
+      - uses: actions/download-artifact@v4
+        with:
+          name: Izuki-Companion-Android-public-key-only
+          path: apk/old
+      - uses: actions/download-artifact@v4
+        if: needs.android.outputs.published == 'yes'
+        with:
+          name: Izuki-Companion-Android-published
+          path: apk/published
+      - name: Let the emulator use hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 30
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: bash tools/android-rotation-check.sh apk/old/app-debug.apk apk/rotated/app-debug.apk ${{ needs.android.outputs.published == 'yes' && 'apk/published/Izuki-Companion-Android-preview.apk' || '' }}
+
+  # The APK joins the release only once it's built and, when rotated, proven.
+  # Publishing waits for it (release.yml), so a failed check leaves a draft.
+  android-release-asset:
+    name: Attach the Android APK to the release
+    needs: [android, android-rotation-check]
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.android.result == 'success' && (needs.android-rotation-check.result == 'success' || needs.android-rotation-check.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Izuki-Companion-Android-preview
+          path: apk
       - name: Attach Android preview APK to this release
-        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           # The Windows release and this Android build start together. Wait for
           # the Windows workflow to create the shared GitHub Release instead
           # of failing a healthy APK build because it won the race.
-          cp android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/Izuki-Companion-Android-preview.apk
-          for attempt in {1..80}; do
-            if gh release upload "$GITHUB_REF_NAME" "android/app/build/outputs/apk/debug/Izuki-Companion-Android-preview.apk" --clobber; then exit 0; fi
+          cp apk/app-debug.apk apk/Izuki-Companion-Android-preview.apk
+          for attempt in {1..180}; do
+            state=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null || echo missing)
+            if [ "$state" = "false" ]; then echo "$GITHUB_REF_NAME is already published; a late build never changes it." >&2; exit 1; fi
+            if gh release upload "$GITHUB_REF_NAME" "apk/Izuki-Companion-Android-preview.apk" --clobber; then exit 0; fi
             sleep 15
           done
           echo "The APK built, but the matching GitHub Release did not appear in time." >&2
@@ -93,7 +285,9 @@ jobs:
           # The signed Windows release creates the shared GitHub Release.
           # This is intentionally an unsigned test IPA; AltStore/Sideloadly
           # signs it with the tester's own Apple ID.
-          for attempt in {1..80}; do
+          for attempt in {1..180}; do
+            state=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null || echo missing)
+            if [ "$state" = "false" ]; then echo "$GITHUB_REF_NAME is already published; a late build never changes it." >&2; exit 1; fi
             if gh release upload "$GITHUB_REF_NAME" "build/Izuki-Companion-iPhone-sideload.ipa" --clobber; then exit 0; fi
             sleep 15
           done

@@ -32,6 +32,7 @@ import { TvCard } from "../TvCard";
 import { ThemePicker } from "../ThemePicker";
 import { ExtensionCard } from "../ExtensionCard";
 import { BugCard } from "../BugCard";
+import { DeveloperMode } from "../DeveloperMode";
 import { Badge, CollapsibleSections, Row, Section, SectionControls, Segmented, SettingsSearch, Slider, Toggle, cx } from "../ui";
 import { AutonomousCard } from "../AutonomousCard";
 import { useIzuki } from "../../lib/store";
@@ -642,6 +643,8 @@ export function SettingsTab() {
       </Section>
 
       <BugCard />
+      {/* Owner-only dev tools: renders nothing in public builds (the command refuses). */}
+      <DeveloperMode />
       <Section id="settings-updates" title="Updates" hint={`You have v${pkg.version}. Automatic checks, signed downloads, installation when you choose.`}>
         <UpdateControls />
       </Section>

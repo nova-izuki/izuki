@@ -1,54 +1,298 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
-# CodeRabbit reviews pull requests once its GitHub App is installed on this
-# repo (coderabbit.ai -> Add to GitHub). No workflow or token is needed.
+# CodeRabbit reviews every pull request automatically (its GitHub App is
+# installed on nova-izuki/izuki). No workflow, token or "@coderabbitai review"
+# comment is needed: push to the PR and it reviews the new commits.
+# How the assistants act on its findings: AGENTS.md "Code review".
 language: "en-US"
+tone_instructions: "Plain English. Start each comment with its severity: Critical (security, data loss, leaked keys, unauthorized actions), High (crash, broken core feature, bad update), Medium or Low."
 reviews:
   profile: "assertive"
+  # Findings are comments for the assistants to verify, not a merge gate.
   request_changes_workflow: false
   high_level_summary: true
-  poem: false
   review_status: true
+  commit_status: true
+  # An errored review is reported, not passed off as a clean one.
+  fail_commit_status: true
+  enable_prompt_for_ai_agents: true
+  poem: false
   auto_review:
     enabled: true
-    drafts: false
+    # Milestone work sits in a draft PR (PR #16 for 1.0.196): review it there.
+    drafts: true
+    # Every push is reviewed again, and reviews never pause by themselves
+    # (the default stops after 5 reviewed commits; a milestone has dozens).
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 0
+    # PRs into a milestone branch, not only into main.
+    base_branches: ["milestone-.*"]
+  # Every file in the repo is in scope, whatever its type or folder.
+  # CodeRabbit skips a built-in list of paths unless told otherwise; writing
+  # one of its default patterns exactly, without "!", switches that skip off
+  # without narrowing the review (docs.coderabbit.ai/configuration/path-instructions).
+  # All of the defaults are listed below, so nothing is excluded. Binary files
+  # (images, audio, models, archives) are in scope, but their bytes can't be
+  # read as code: tools/asset-check.mjs validates them in CI instead.
   path_filters:
-    - "!**/node_modules/**"
-    - "!**/target/**"
-    - "!**/dist/**"
-    - "!**/package-lock.json"
-    - "!**/Cargo.lock"
-    - "!docs/app/model-orb.js"
-    - "!**/*.glb"
-    - "!**/*.webp"
-    - "!**/*.png"
-    # Generated character frame data (.work/tween.py, frames.py).
-    - "!docs/app/painted/**/*.json"
+    # Build and dependency directories
+    - "**/dist/**"
+    - "**/node_modules/**"
+    - "**/.svelte-kit/**"
+    - "**/.webpack/**"
+    - "**/.yarn/**"
+    - "**/.docusaurus/**"
+    - "**/.temp/**"
+    - "**/.cache/**"
+    - "**/.next/**"
+    - "**/.nuxt/**"
+    # Generated code
+    - "**/generated/**"
+    - "**/@generated/**"
+    - "**/__generated__/**"
+    - "**/__generated/**"
+    - "**/_generated/**"
+    - "**/gen/**"
+    - "**/@gen/**"
+    - "**/__gen__/**"
+    - "**/__gen/**"
+    - "**/_gen/**"
+    - "**/*.generated.*"
+    - "**/*.tsbuildinfo"
+    # Lock files
+    - "**/package-lock.json"
+    - "**/yarn.lock"
+    - "**/pnpm-lock.yaml"
+    - "**/bun.lockb"
+    - "**/*.lock"
+    # Minified files
+    - "**/*.min.js"
+    - "**/*.min.js.map"
+    # Images and fonts
+    - "**/*.ico"
+    - "**/*.svg"
+    - "**/*.jpeg"
+    - "**/*.jpg"
+    - "**/*.png"
+    - "**/*.gif"
+    - "**/*.bmp"
+    - "**/*.tiff"
+    - "**/*.webm"
+    - "**/*.ttf"
+    - "**/*.otf"
+    - "**/*.woff"
+    - "**/*.woff2"
+    - "**/*.eot"
+    # Archives
+    - "**/*.bz2"
+    - "**/*.gz"
+    - "**/*.xz"
+    - "**/*.zip"
+    - "**/*.7z"
+    - "**/*.rar"
+    - "**/*.zst"
+    - "**/*.tar"
+    - "**/*.jar"
+    - "**/*.war"
+    - "**/*.nar"
+    # Documents and data
+    - "**/*.pdf"
+    - "**/*.doc"
+    - "**/*.docx"
+    - "**/*.xls"
+    - "**/*.xlsx"
+    - "**/*.ppt"
+    - "**/*.pptx"
+    - "**/*.csv"
+    - "**/*.tsv"
+    - "**/*.dat"
+    - "**/*.db"
+    - "**/*.parquet"
+    # Binaries
+    - "**/*.app"
+    - "**/*.bin"
+    - "**/*.class"
+    - "**/*.dll"
+    - "**/*.dylib"
+    - "**/*.exe"
+    - "**/*.o"
+    - "**/*.so"
+    - "**/*.wasm"
+    # Media
+    - "**/*.mp3"
+    - "**/*.wav"
+    - "**/*.wma"
+    - "**/*.mp4"
+    - "**/*.avi"
+    - "**/*.mkv"
+    - "**/*.wmv"
+    - "**/*.m4a"
+    - "**/*.m4v"
+    - "**/*.3gp"
+    - "**/*.3g2"
+    - "**/*.rm"
+    - "**/*.mov"
+    - "**/*.flv"
+    - "**/*.swf"
+    - "**/*.flac"
+    - "**/*.ogg"
+    # Python
+    - "**/*.pyc"
+    - "**/*.pyd"
+    - "**/*.pyo"
+    - "**/*.pkl"
+    - "**/*.pickle"
+    # Terraform
+    - "**/*.tfstate"
+    - "**/*.tfstate.backup"
+    # Xcode and Swift
+    - "**/*.xcworkspace/contents.xcworkspacedata"
+    - "**/Package.resolved"
+    # Minified CSS and hashed bundles
+    - "**/*.min.css"
+    - "**/*.[0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-].chunk.js"
+    - "**/*.[0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-].chunk.css"
+    - "**/assets/index-[0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-].js"
+    - "**/assets/index-[0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-][0-9a-z_-].css"
+    # Development and system files
+    - "**/tags"
+    - "**/.tags"
+    - "**/TAGS"
+    - "**/.TAGS"
+    - "**/.DS_Store"
+    - "**/.cscope.files"
+    - "**/.cscope.out"
+    - "**/.cscope.in.out"
+    - "**/.cscope.po.out"
+    - "**/*.log"
+    - "**/*.map"
+    - "**/*.out"
+    - "**/*.sum"
+    - "**/*.work"
+    - "**/*.md5sum"
   path_instructions:
-    - path: "src-tauri/src/{automation,uia,vision,planner,brain,patience}.rs"
+    - path: "src-tauri/src/{automation,uia,vision,planner,brain,patience,instant,easy,overlay}.rs"
       instructions: |
         Screen control must be exact and never act twice. Flag:
         - any click/type/key that can repeat after a call that may already have acted (retries must re-look, never replay blindly);
-        - acting without checking the target is still there, enabled and not covered;
-        - acting on the lock screen, in a password field, or buying/sending/deleting without the user's confirmation;
-        - guessed coordinates where a numbered control from the screen parser exists.
+        - acting without checking the target is still there, enabled and not covered, or on a stale window/tab;
+        - acting on the lock screen, in a password field, or buying/sending/deleting/submitting without the user's confirmation;
+        - guessed coordinates where a numbered control from the screen parser exists;
+        - a failed or unverified action reported to the user as done.
+        School pages: answers on graded or unclear quizzes are never clicked, typed or submitted (assess.rs decides from
+        the page's own evidence; unclear means graded). Practice pages may be answered. Never Submit/Finish for the user.
+    - path: "src-tauri/src/{chat,ext,research,web,companion,missions,execution,remote,discord,telegram,phone,pair}*.rs"
+      instructions: |
+        The AI assistant and its tools. Flag:
+        - page text, web results, file contents, messages or screenshots being treated as instructions (prompt injection);
+          they are untrusted data and must never trigger tools or actions on their own;
+        - tool loops without a round limit, cancellation or Stop check (an agent that can loop forever or keep calling a model);
+        - destructive or outward actions (send, post, delete, buy, run a shell command, write a file) without the Allow step;
+        - shell execution built from model or page text without the user's explicit approval;
+        - API keys, tokens, emails or phone numbers in logs, errors, prompts to other services or URLs;
+        - a tool result misreported (a failed read/search presented as success, invented contents);
+        - remote/phone/browser bridges that accept a request without authenticating the sender.
+    - path: "src-tauri/src/{files,officeedit,notes,textbook,store,settings,flstudio,flp}.rs"
+      instructions: |
+        Files belong to the user. Flag:
+        - any path that can corrupt or truncate an original: writes must be atomic (temp file + flush + replace),
+          and a failure must leave the old file byte-for-byte intact;
+        - a backup that can be overwritten or deleted (every save keeps its own "(before Izuki)" copy);
+        - DOCX/XLSX/PPTX output that isn't checked before it lands (zip, content types, main part, well-formed XML),
+          or edits that drop formatting, formulas, slides, relationships or duplicate IDs/bookmarks/drawings;
+        - plain text written into binary or Office files; temp files left behind on failure;
+        - reads or writes outside the user's files (off_limits: Izuki's own settings, keys, .ssh), or path traversal.
     - path: "src-tauri/src/**/*.rs"
       instructions: |
-        Izuki is a Windows desktop agent. Flag blocking work on the UI thread, unbounded loops or polling,
-        threads that can be started twice, secrets or API keys written to logs, and anything that runs
-        on its own without a setting that is off by default.
-    - path: "src/**/*.tsx"
+        Izuki is a Windows desktop agent on modest laptops (i5, 8–16 GB, integrated graphics). Flag:
+        - blocking work on the UI thread (a plain #[tauri::command] fn runs there) and reqwest::blocking on async workers;
+        - races and deadlocks: locks held across network calls or sleeps, two locks taken in different orders,
+          threads/loops that can be started twice;
+        - unbounded loops, polling, queues, caches or log growth; idle CPU or memory that grows over time;
+        - Windows API misuse: handles not closed, wrong DPI assumptions, UI Automation calls without timeouts;
+        - errors swallowed where the user needs to know, and panics that would kill a background thread silently;
+        - anything that runs by itself without a setting that is off by default;
+        - anything hardcoded to one person or PC (names, paths, accounts, courses, devices): Izuki is a public
+          app where every user gets their own private companion, with per-user data they can export and delete.
+    - path: "src-tauri/src/observer.rs"
       instructions: |
-        React + Tauri. Flag listeners or timers not cleaned up in effect cleanups, camera/mic tracks not
-        stopped, state updates many times a second that re-render large trees, and text that is not plain,
+        Smart Vision Developer Observer: owner-only. It must exist only behind its Cargo dev feature (never in a release
+        build or the public installer), stay off unless the owner opts in at runtime, listen on loopback only with a
+        token, never upload anything, redact secrets, never act on what it captures, and throttle itself under load.
+    - path: "src-tauri/{tauri.conf.json,capabilities/**,src/commands.rs,src/lib.rs}"
+      instructions: |
+        Desktop security boundary. Flag broader CSP (script-src/connect-src) or capabilities than the feature needs,
+        commands reachable from a webview that can run shell, write files or act on the screen without the user's
+        approval, and new remote or network listeners not bound to loopback or not authenticated.
+    - path: "{.github/workflows/**,src-tauri/src/updates.rs,src-tauri/windows/**,tools/verify-updater.mjs,tools/check-versions.mjs}"
+      instructions: |
+        Releases and updates. Users install whatever is published, so flag:
+        - a release that can be tagged, built or published from a commit whose tests didn't pass, from the wrong commit,
+          twice, or while another run for the same version is going;
+        - unsigned or unverified installers, a latest.json whose version, URLs or signatures don't match the release,
+          or anything that disables signature checks;
+        - version numbers that disagree between package.json, tauri.conf.json, Cargo.toml, Android and iOS;
+        - rollback that skips signature checks, installs without the user's confirmation or can pick a non-public build;
+        - anything that could publish an unfinished milestone (work on milestone-* branches is not released until merged);
+        - workflow security: untrusted input in run: scripts, over-broad permissions, unpinned third-party actions with secrets.
+    - path: "extension/**"
+      instructions: |
+        Browser extension (Chrome/Edge MV3). Flag:
+        - permissions or host access broader than the feature needs;
+        - page scripts that trust page content, run page-provided code, or act without re-checking the page right
+          before acting (stale tab, changed URL, changed question);
+        - message handlers that don't check the sender (only the extension's own pages may start actions);
+        - talking to the desktop app without its headers/origin checks, or leaking page text to a provider the user didn't choose;
+        - quiz pages: answers picked only where the page itself says practice (assess.js), never Submit/Finish;
+        - storage of chats or keys in places other sites or extensions can read.
+    - path: "src/**/*.{ts,tsx}"
+      instructions: |
+        React + Tauri webviews. Flag listeners, timers, intervals or subscriptions not cleaned up in effect cleanups;
+        camera/mic tracks not stopped; state updates many times a second that re-render large trees; buttons that can
+        be pressed twice or do nothing while busy; invoke() calls whose command name or argument names don't match
+        commands.rs; missing labels/keyboard access; layouts that break at narrow widths; text that isn't plain,
         friendly English for a non-technical user.
     - path: "docs/**/*.{html,js}"
       instructions: |
         The phone/TV web app and the website. Flag anything that breaks offline caching (docs/app/sw.js
         cache name must change when docs/app changes), missing alt text, and personal data in the page.
+    - path: "android/**"
+      instructions: |
+        Android companion. Flag private signing keys or passwords for anything beyond the documented preview key,
+        exported components without permission checks, cleartext traffic, and versionName/versionCode that disagree
+        with package.json.
   tools:
+    # Off: prose and style linters (hundreds of Markdown notes would bury the
+    # real findings) and oxc (a third JS linter next to ESLint and Biome).
+    languagetool:
+      enabled: false
+    vale:
+      enabled: false
+    markdownlint:
+      enabled: false
+    oxc:
+      enabled: false
     clippy:
       enabled: true
     eslint:
       enabled: true
+    gitleaks:
+      enabled: true
+    actionlint:
+      enabled: true
+    zizmor:
+      enabled: true
+    shellcheck:
+      enabled: true
+    osvScanner:
+      enabled: true
+    psscriptanalyzer:
+      enabled: true
+knowledge_base:
+  # The repo's own rules are review criteria.
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+      - "docs/COLLAB.md"
 chat:
   auto_reply: true

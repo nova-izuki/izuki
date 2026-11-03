@@ -6,6 +6,16 @@ pub mod attachments;
 pub mod briefing;
 pub mod browser;
 pub mod bugs;
+/// The Smart Vision Developer Observer — owner-only, compiled in only via
+/// `--features devvision` so release builds never carry it (milestone §5).
+#[cfg(feature = "devvision")]
+pub mod observer;
+/// The private Developer Control system: three independent dev-only switches
+/// (Smart Vision, Claude Live Auto-Review, Smart Real Testing) with Stop All
+/// and Capture Bug. The module itself is always compiled — the panel needs
+/// the command names — but every dev-only internal lives behind the
+/// `devvision` feature, and outside a dev build the commands only refuse.
+pub mod devmode;
 pub mod automation;
 pub mod call;
 pub mod brain;
@@ -70,7 +80,9 @@ pub mod picker;
 pub mod remote;
 pub mod rtools;
 pub mod offline;
+pub mod officeedit;
 pub mod outbox;
+pub mod assess;
 pub mod smartcare;
 pub mod mail;
 pub mod tutor;
@@ -293,6 +305,13 @@ pub fn run() {
             updates::check_updates,
             updates::download_update,
             updates::install_update,
+            updates::check_rollback,
+            updates::rollback_previous,
+            devmode::dev_status,
+            devmode::dev_set_toggle,
+            devmode::dev_run_scenario,
+            devmode::dev_capture_bug,
+            devmode::dev_stop_all,
             commands::get_settings,
             commands::save_settings,
             commands::list_flows,
@@ -538,6 +557,10 @@ pub fn run() {
             let store = state::init();
             bugs::set_enabled(store.settings().send_bug_reports);
             ext::spawn();
+            // The Smart Vision Developer Observer (milestone §5): compiled in
+            // only with `--features devvision`, and even then it only watches
+            // when the owner asked (IZUKI_VISION=1). A release build carries
+            // none of this code, so public users never gain an observer.
             {
                 let store = store.clone();
                 std::thread::Builder::new().name("izuki-flow-tidy".into()).spawn(move || loop {
@@ -553,6 +576,26 @@ pub fn run() {
             let config = overlay::ensure_config(&handle)?;
             overlay::apply_backdrop(&config, settings.backdrop);
             overlay::normalise_config_size(&config);
+            // (moved below ensure_config, CodeRabbit finding 2026-11-02: the
+            // lookup above ran before any window existed, so with no windows in
+            // tauri.conf.json the observer never started even when the owner
+            // asked. "main" exists from here on, so the same opt-in block now
+            // finds it.)
+            #[cfg(feature = "devvision")]
+            if std::env::var("IZUKI_VISION").as_deref() == Ok("1") {
+                let win = app.get_webview_window("main").or_else(|| app.webview_windows().values().next().cloned());
+                match win.map(|w| w.hwnd()).transpose() {
+                    Ok(Some(h)) => {
+                        observer::ENABLED.store(true, std::sync::atomic::Ordering::SeqCst);
+                        match observer::start(h.0 as isize) {
+                            Ok(port) => eprintln!("[izuki] smart vision watching on 127.0.0.1:{port} (token-file auth)"),
+                            Err(e) => eprintln!("[izuki] smart vision did not start: {e}"),
+                        }
+                    }
+                    Ok(None) => eprintln!("[izuki] smart vision found no window to watch"),
+                    Err(e) => eprintln!("[izuki] smart vision: no window handle: {e}"),
+                }
+            }
 
             // Built eagerly so the overlay is warm the first time it is needed.
             overlay::ensure_overlay(&handle).ok();

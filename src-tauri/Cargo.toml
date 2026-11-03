@@ -1,6 +1,6 @@
 [package]
 name = "izuki"
-version = "1.0.195"
+version = "1.0.196"
 description = "IZUKI — draw on your screen, Izuki does it."
 authors = ["Izuki"]
 edition = "2021"
@@ -115,6 +115,11 @@ tauri-plugin-single-instance = "=2.4.5"
 # Already in the build through arboard; used directly to see what's on the
 # clipboard before borrowing it (automation::clipboard_is_plain_text).
 clipboard-win = "5.4"
+
+[features]
+# Owner-only developer tools, compiled out of public/release builds entirely:
+# cargo build --features devvision. The release pipeline never enables it.
+devvision = []
 
 [profile.release]
 opt-level = 3

@@ -147,6 +147,7 @@ fn look_only(tool: &Tool) -> String {
 fn do_change(tool: &Tool) -> anyhow::Result<String> {
     match tool {
         Tool::Write(path, content) => crate::files::write(path, content),
+        Tool::Edit(path, body) => crate::files::edit(path, body),
         Tool::Run(cmd) => {
             let out = crate::files::run(cmd)?;
             // Proof check: a change is looked at again before anyone says
@@ -263,7 +264,7 @@ pub fn progress(id: u64) -> Option<String> {
     PROGRESS.lock().iter().find(|(i, _)| *i == id).map(|(_, p)| p.clone())
 }
 
-fn set_progress(id: u64, what: String) {
+pub(crate) fn set_progress(id: u64, what: String) {
     let mut p = PROGRESS.lock();
     p.retain(|(i, _)| *i != id);
     p.push((id, what));
@@ -273,7 +274,7 @@ fn set_progress(id: u64, what: String) {
 }
 
 /// Clears an answer's progress line when it ends, however it ends.
-struct ProgressDone(u64);
+pub(crate) struct ProgressDone(pub(crate) u64);
 impl Drop for ProgressDone {
     fn drop(&mut self) {
         PROGRESS.lock().retain(|(i, _)| *i != self.0);
@@ -366,13 +367,21 @@ const FILES_RULE: &str = "In this chat you can also work with the files on their
 assistant at their desk. Same rule — reply with only the tag:\n\
 [FIND: words] — find files or folders by name (Desktop, Documents, Downloads, Pictures, OneDrive…).\n\
 [FILES: folder] — see what's in a folder (\"Downloads\", \"Desktop/School\", or a full path).\n\
-[OPEN: path] — read a file (text, notes, code, CSV, Word .docx, PowerPoint .pptx).\n\
-[WRITE: path] then, on the next lines, the whole content — save a file (a new one, or a fixed version).\n\
+[OPEN: path] — read a file (text, notes, code, CSV, PDF, Word .docx, Excel .xlsx with cell addresses, PowerPoint \
+.pptx, OpenDocument .odt/.ods/.odp).\n\
+[WRITE: path] then, on the next lines, the whole content — save a text file (a new one, or a fixed version). \
+A NEW .docx is made from the text as a real Word document (# heading, ## subheading, - bullet); a NEW .xlsx \
+from comma- or tab-separated rows (=formulas work). To change a PDF, [OPEN:] it and [WRITE:] its fixed text as \
+a .docx. Never [WRITE:] over an existing Word, Excel or PowerPoint file: use [EDIT:].\n\
+[EDIT: path] then, on the next lines, the changes — edit any file, Word .docx, Excel .xlsx and PowerPoint .pptx \
+included, into a copy beside it (the original stays): REPLACE: exact words / WITH: new words · ADD AFTER: words \
+in the paragraph before / TEXT: the new paragraph · ADD: a paragraph at the end · CELL B3: value (or \
+CELL Sheet2!B3: =SUM(A1:A3)). [OPEN:] the file first so the words you replace are exact.\n\
 [RUN: command] — run one real PowerShell command (a true terminal): manage files, make a zip, check \
 disk space or the system, run a script, install something they asked for, even call python or node \
 (e.g. python -c \"...\"). Chain several [RUN:] across turns to do a multi-step job — run one, read the \
 real output, then the next, like a person at a terminal.\n\
-WRITE and RUN show the user an Allow / No button first and only happen if they allow it, so just use \
+WRITE, EDIT and RUN show the user an Allow / No button first and only happen if they allow it, so just use \
 them when it's what they asked for — you'll be told the result. Prefer the smallest, safest command; \
 never delete anything they didn't clearly ask to delete.\n\
 CRITICAL: to use a tool, reply with the tag and NOTHING ELSE — no words before it, no results after \
@@ -380,7 +389,7 @@ it. NEVER write file names, folder contents, file text or command output yoursel
 until the real tool runs and hands you the result. Making up a listing or output is a serious mistake. \
 So for \"what's in my Downloads?\" reply exactly [FILES: Downloads] and stop — then use the real result \
 you're given.\n\
-The ONLY tags are SEARCH, READ, WEATHER, BROWSE, CLICK, TYPE, FIND, FILES, OPEN, WRITE, RUN and FLOW. There is \
+The ONLY tags are SEARCH, READ, WEATHER, BROWSE, CLICK, TYPE, FIND, FILES, OPEN, WRITE, EDIT, RUN and FLOW. There is \
 no UNINSTALL, DELETE, INSTALL or CLEAN tag — those do nothing; use [RUN: …] (e.g. winget uninstall --name \"App\"). \
 Never say something is done, removed or freed unless a real result in this chat shows it; never guess sizes — \
 measure them with [RUN:] first.\n";
@@ -791,7 +800,7 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
 
 const TOOL_ROUNDS: usize = 7;
 const NO_MORE_TOOLS: &str = "[No more tools now — answer with what you have.]";
-const TOOL_WORDS: &[&str] = &["SEARCH", "READ", "BROWSE", "CLICK", "TYPE", "FIND", "FILES", "OPEN", "WRITE", "RUN", "WEATHER", "FLOW", "IZUKI"];
+const TOOL_WORDS: &[&str] = &["SEARCH", "READ", "BROWSE", "CLICK", "TYPE", "FIND", "FILES", "OPEN", "WRITE", "EDIT", "RUN", "WEATHER", "FLOW", "IZUKI"];
 const MOODS: &[&str] = &["cheerful", "excited", "calm", "serious", "sympathetic", "playful", "curious"];
 
 #[derive(Debug, PartialEq)]
@@ -805,6 +814,8 @@ enum Tool {
     Files(String),
     Open(String),
     Write(String, String),
+    /// A file and the changes to make, into a copy beside it (officeedit.rs).
+    Edit(String, String),
     Run(String),
     Weather(String),
     /// One of the user's n8n workflows: (name, what to hand it).
@@ -826,6 +837,7 @@ impl Tool {
             Tool::Files(a) => format!("[FILES: {a}]"),
             Tool::Open(a) => format!("[OPEN: {a}]"),
             Tool::Write(p, _) => format!("[WRITE: {p}]"),
+            Tool::Edit(p, _) => format!("[EDIT: {p}]"),
             Tool::Run(c) => format!("[RUN: {c}]"),
             Tool::Weather(a) => format!("[WEATHER: {a}]"),
             Tool::Flow(n, w) => format!("[FLOW: {n} | {w}]"),
@@ -845,12 +857,12 @@ impl Tool {
             Tool::Weather(_) => "🌤️ Checking the weather…",
             Tool::Flow(..) => "⚡ Running your workflow…",
             Tool::Izuki(_) => "🧩 Checking with Izuki's own tools…",
-            Tool::Write(..) | Tool::Run(_) => "…",
+            Tool::Write(..) | Tool::Edit(..) | Tool::Run(_) => "…",
         }
     }
 
     fn is_files(&self) -> bool {
-        matches!(self, Tool::Find(_) | Tool::Files(_) | Tool::Open(_) | Tool::Write(..) | Tool::Run(_))
+        matches!(self, Tool::Find(_) | Tool::Files(_) | Tool::Open(_) | Tool::Write(..) | Tool::Edit(..) | Tool::Run(_))
     }
 
     /// The Allow / No card for a change, if this is one.
@@ -869,6 +881,7 @@ impl Tool {
             Tool::Flow(n, what) => ("Workflow", format!("{n}: {what}")),
             Tool::Izuki(a) => ("Izuki", a.clone()),
             Tool::Write(p, body) => ("Save file", format!("{p}\n{}", crate::web::clip(body, 600))),
+            Tool::Edit(p, body) => ("Edit file", format!("{p}\n{}", crate::web::clip(body, 600))),
             Tool::Run(c) => ("PowerShell", c.clone()),
         };
         let title = match self {
@@ -896,6 +909,7 @@ impl Tool {
             Tool::Flow(name, _) => format!("⚡ Ran your workflow: {}", clip(name)),
             Tool::Izuki(a) => format!("🧩 Asked Izuki's own tools: {}", clip(a)),
             Tool::Write(p, _) => format!("📄 Saved {}", clip(p)),
+            Tool::Edit(p, _) => format!("✏️ Edited a copy of {}", clip(p)),
             Tool::Run(c) => format!("▶ {} · {}", in_plain_words(c), clip(c)),
         }
     }
@@ -907,6 +921,12 @@ impl Tool {
                 kind: "save",
                 title: format!("Save {}", crate::files::resolve(path).display()),
                 detail: crate::web::clip(content, 1500),
+            }),
+            Tool::Edit(path, body) => Some(ActionAsk {
+                id: 0,
+                kind: "save",
+                title: format!("Edit a copy of {}", crate::files::resolve(path).display()),
+                detail: crate::web::clip(body, 1500),
             }),
             Tool::Run(cmd) => Some(ActionAsk { id: 0, kind: "run", title: "Run this command".into(), detail: cmd.clone() }),
             _ => None,
@@ -964,8 +984,11 @@ fn find_tool(reply: &str) -> Option<(String, Tool)> {
     // never be used to slice the original answer.
     for (at, _) in reply.match_indices('[') {
         let tail = &reply[at..];
-        // WRITE carries a body to the end; other tags stop at their first ].
-        let slice = if tail.get(..7).is_some_and(|s| s.eq_ignore_ascii_case("[WRITE:")) {
+        // WRITE and EDIT carry a body to the end; other tags stop at their
+        // first ]. (EDIT used to stop there too: its change lines were cut
+        // off, so the Chat tab never offered the edit.)
+        let carries_body = |tag: &str| tail.get(..tag.len()).is_some_and(|s| s.eq_ignore_ascii_case(tag));
+        let slice = if carries_body("[WRITE:") || carries_body("[EDIT:") {
             tail
         } else if let Some(end) = tail.find(']') {
             &tail[..=end]
@@ -991,6 +1014,14 @@ fn parse_tool(reply: &str) -> Option<Tool> {
             None => body,
         };
         return (!path.is_empty()).then(|| Tool::Write(path, format!("{body}\n")));
+    }
+    // [EDIT: path] and then the changes, one per line.
+    if rest.get(..6).is_some_and(|s| s.eq_ignore_ascii_case("[EDIT:")) {
+        let close = rest.find(']')?;
+        let path = rest[6..close].trim().to_string();
+        let body = rest[close + 1..].trim();
+        let body = body.strip_prefix("```").map(|b| b.split_once('\n').map(|(_, r)| r).unwrap_or("").trim_end_matches("```").trim()).unwrap_or(body);
+        return (!path.is_empty() && !body.is_empty()).then(|| Tool::Edit(path, body.to_string()));
     }
     let inner = rest.strip_prefix('[')?;
     let end = inner.rfind(']')?;
@@ -1046,7 +1077,7 @@ fn run_tool(tool: &Tool) -> String {
             "Izuki has no built-in ability for that request. Try another way (search, browse, hand over to the screen or the apps), or tell the user plainly.".into()
         })),
         // Never straight from here — only through the Allow card.
-        Tool::Write(..) | Tool::Run(_) => Err(anyhow::anyhow!("that needs the user's OK in the Chat tab")),
+        Tool::Write(..) | Tool::Edit(..) | Tool::Run(_) => Err(anyhow::anyhow!("that needs the user's OK in the Chat tab")),
     };
     r.unwrap_or_else(|e| format!("That didn't work: {e}"))
 }
@@ -2097,6 +2128,29 @@ mod tool_tests {
         assert_eq!(parse_tool("你好世界你好"), None);
         assert_eq!(find_tool("[ordinary] [SEARCH: café]"), Some(("[ordinary]".into(), Tool::Search("café".into()))));
         assert_eq!(parse_tool("[WRITE:]"), None);
+        // An edit: the path, then its change lines (a fence around them is just formatting).
+        assert_eq!(
+            parse_tool("[EDIT: Documents/report.docx]\n```\nREPLACE: alot\nWITH: a lot\n```"),
+            Some(Tool::Edit("Documents/report.docx".into(), "REPLACE: alot\nWITH: a lot".into()))
+        );
+        assert_eq!(parse_tool("[EDIT: report.docx]"), None, "an edit with nothing to change");
+        assert!(Tool::Edit("a.docx".into(), "ADD: x".into()).needs_ok().is_some(), "an edit asks first, like a save");
+    }
+
+    /// The Chat tab streams the reply through classify and find_tool, not
+    /// parse_tool alone. [EDIT:] wasn't in TOOL_WORDS and find_tool cut it at
+    /// its first "]", so the tab showed the raw tag (or told the model the
+    /// tool didn't exist) and never offered the edit.
+    #[test]
+    fn the_chat_stream_runs_an_edit() {
+        assert_eq!(classify("[ED"), None, "a tag still arriving: wait");
+        assert_eq!(classify("[EDIT: report.docx]"), Some(true), "EDIT is a tool");
+        let reply = "Fixing the typo now.\n[EDIT: Documents/report.docx]\nREPLACE: alot\nWITH: a lot";
+        assert_eq!(
+            find_tool(reply),
+            Some(("Fixing the typo now.".into(), Tool::Edit("Documents/report.docx".into(), "REPLACE: alot\nWITH: a lot".into())))
+        );
+        assert!(needs_correction("[EDIT: report.docx]\nADD: The end.", &[]).is_none(), "EDIT is never called a fake tool");
     }
 
     #[test]

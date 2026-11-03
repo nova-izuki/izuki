@@ -21,3 +21,6 @@ debug/
 
 # Local assistant notes
 .claude/
+
+# Private signing keys and passwords: never in the repo (docs/ANDROID-SIGNING.md)
+/.private/

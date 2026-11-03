@@ -1,0 +1,1 @@
+{"captures":22,"events":0,"frames":22,"running":true,"ticks":114}

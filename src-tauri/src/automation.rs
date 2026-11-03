@@ -1200,3 +1200,265 @@ mod placing_tests {
         assert_eq!(got, (x0 + 5, y0 + 5), "the cursor didn't land where it was put");
     }
 }
+
+#[cfg(all(test, windows))]
+mod action_bench {
+    //! Smart Screen Actions, timed on a real window: act → check → recover,
+    //! through the same `execute` an AI plan's steps go through (default
+    //! 320 ms hand travel, magnetic hand on). It moves the real mouse and
+    //! types, so it runs only by hand, and only when nobody has touched the
+    //! PC for two minutes:
+    //!   cargo test --lib action_bench -- --ignored --nocapture --test-threads=1
+    //! The window is a throwaway PowerShell form in a process of its own
+    //! (Izuki never acts on its own windows). It writes every click and the
+    //! name box's text to a temp file, and that's what each result is checked
+    //! against, never Izuki's own report. Nothing else is clicked or typed
+    //! into: the mouse moves only where that form is really on top, and
+    //! typing happens only while it's the window in front.
+    use crate::model::ActionStep;
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, Instant};
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{HWND, POINT, RECT};
+    use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, GetAncestor, GetForegroundWindow, GetWindowRect, IsWindowVisible, WindowFromPoint, GA_ROOT};
+
+    const FORM: &str = r#"param([string]$Log, [string]$Mode = 'fixture', [int]$X = 0, [int]$Y = 0, [int]$W = 0, [int]$H = 0)
+Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class Dpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }'
+[Dpi]::SetProcessDPIAware() | Out-Null
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+$say = { param($what) Add-Content -LiteralPath $Log -Value $what }
+$f = New-Object System.Windows.Forms.Form
+$f.StartPosition = 'Manual'
+if ($Mode -eq 'cover') {
+  $f.Text = 'Izuki bench cover'; $f.FormBorderStyle = 'None'; $f.TopMost = $true; $f.ShowInTaskbar = $false
+  $f.Location = New-Object System.Drawing.Point($X, $Y); $f.Size = New-Object System.Drawing.Size($W, $H); $f.BackColor = 'DarkSlateBlue'
+  $f.Add_Click({ & $say 'cover' })
+} else {
+  $f.Text = 'Izuki action bench'; $f.TopMost = $true
+  $f.Location = New-Object System.Drawing.Point(160, 160); $f.Size = New-Object System.Drawing.Size(700, 420)
+  $f.Font = New-Object System.Drawing.Font('Segoe UI', 12)
+  function Add-Button($text, $x, $y) { $b = New-Object System.Windows.Forms.Button; $b.Text = $text; $b.Location = New-Object System.Drawing.Point($x, $y); $b.Size = New-Object System.Drawing.Size(220, 56); $f.Controls.Add($b); $b }
+  $save = Add-Button 'Save bench' 30 30; $save.Add_Click({ & $say 'save' })
+  $moving = Add-Button 'Moving bench' 30 110; $moving.Add_Click({ & $say 'moving' })
+  $locked = Add-Button 'Locked bench' 30 190; $locked.Enabled = $false; $locked.Add_Click({ & $say 'locked' })
+  $label = New-Object System.Windows.Forms.Label; $label.Text = 'Bench name'; $label.AutoSize = $true; $label.Location = New-Object System.Drawing.Point(300, 30); $f.Controls.Add($label)
+  $box = New-Object System.Windows.Forms.TextBox; $box.AccessibleName = 'Bench name'; $box.Location = New-Object System.Drawing.Point(300, 70); $box.Size = New-Object System.Drawing.Size(340, 40); $f.Controls.Add($box)
+  $box.Add_TextChanged({ Set-Content -LiteralPath "$Log.text" -Value $box.Text -NoNewline })
+  # The test's commands: "move" shifts a button, "untop" lets the cover sit above.
+  $timer = New-Object System.Windows.Forms.Timer; $timer.Interval = 100
+  $timer.Add_Tick({
+    if (Test-Path -LiteralPath "$Log.cmd") {
+      $c = (Get-Content -LiteralPath "$Log.cmd" -Raw).Trim(); Remove-Item -LiteralPath "$Log.cmd"
+      if ($c -eq 'move') { $moving.Top += 140 }
+      if ($c -eq 'untop') { $f.TopMost = $false }
+      & $say "did $c"
+    }
+  })
+  $timer.Start()
+}
+[System.Windows.Forms.Application]::Run($f)
+"#;
+
+    /// A form in its own PowerShell process, closed when dropped.
+    struct Form(std::process::Child);
+    impl Drop for Form {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    fn open(dir: &Path, log: &Path, args: &[String]) -> Form {
+        let script = dir.join("bench.ps1");
+        std::fs::write(&script, FORM).unwrap();
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]).arg(&script).arg("-Log").arg(log).args(args);
+        // No console window: one would open on top of the form.
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        Form(cmd.spawn().expect("powershell"))
+    }
+
+    fn window(title: &str) -> Option<isize> {
+        let wide: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+        // Found and shown: a window can exist a moment before it's on screen.
+        unsafe { FindWindowW(PCWSTR::null(), PCWSTR(wide.as_ptr())) }.ok().filter(|h| !h.is_invalid() && unsafe { IsWindowVisible(*h) }.as_bool()).map(|h| h.0 as isize)
+    }
+
+    fn wait_for<T>(limit: Duration, mut f: impl FnMut() -> Option<T>) -> Option<T> {
+        let until = Instant::now() + limit;
+        loop {
+            if let Some(v) = f() {
+                return Some(v);
+            }
+            if Instant::now() > until {
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(40));
+        }
+    }
+
+    fn hwnd(raw: isize) -> HWND {
+        HWND(raw as *mut core::ffi::c_void)
+    }
+
+    /// Which top-level window is really under this point.
+    fn on_top_at(x: i32, y: i32) -> isize {
+        unsafe { GetAncestor(WindowFromPoint(POINT { x, y }), GA_ROOT).0 as isize }
+    }
+
+    /// A window's title, to say what was in the way.
+    fn title(raw: isize) -> String {
+        let mut buf = [0u16; 256];
+        let n = unsafe { windows::Win32::UI::WindowsAndMessaging::GetWindowTextW(hwnd(raw), &mut buf) };
+        String::from_utf16_lossy(&buf[..n.max(0) as usize])
+    }
+
+    fn in_front() -> isize {
+        unsafe { GetForegroundWindow().0 as isize }
+    }
+
+    fn lines(log: &Path) -> Vec<String> {
+        std::fs::read_to_string(log).unwrap_or_default().lines().map(str::to_string).collect()
+    }
+
+    fn count(log: &Path, what: &str) -> usize {
+        lines(log).iter().filter(|l| l.as_str() == what).count()
+    }
+
+    fn step(v: serde_json::Value) -> ActionStep {
+        serde_json::from_value(v).unwrap()
+    }
+
+    fn control(name: &str) -> Option<crate::model::Rect> {
+        crate::uia::invalidate_controls();
+        crate::uia::list_controls(200).into_iter().find(|c| c.name == name && !c.hidden).map(|c| c.rect)
+    }
+
+    struct Row {
+        what: &'static str,
+        ok: bool,
+        ms: u128,
+        note: String,
+    }
+
+    #[test]
+    #[ignore]
+    fn action_bench() {
+        let idle = crate::buddy::idle_duration();
+        assert!(idle >= Duration::from_secs(120), "NOT RUN: the keyboard or mouse was used {} s ago; this test moves the real mouse, so it waits for nobody to be using the PC", idle.as_secs());
+        assert!(!crate::uia::screen_locked(), "NOT RUN: the PC is locked");
+        super::make_dpi_aware();
+        super::clear_abort();
+        let dir: PathBuf = std::env::temp_dir().join(format!("izuki-action-bench-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("events.log");
+        let text = dir.join("events.log.text");
+        let say = |c: &str| std::fs::write(dir.join("events.log.cmd"), c).unwrap();
+        let mut rows: Vec<Row> = Vec::new();
+
+        // The test window, topmost so its title bar is surely what's clicked first.
+        let _form = open(&dir, &log, &[]);
+        let fixture = wait_for(Duration::from_secs(20), || window("Izuki action bench")).expect("the test window never opened");
+        std::thread::sleep(Duration::from_millis(700));
+        let mut r = RECT::default();
+        unsafe { GetWindowRect(hwnd(fixture), &mut r) }.unwrap();
+        let caption = (r.left + 140, r.top + 14);
+        { let top = on_top_at(caption.0, caption.1); assert_eq!(top, fixture, "the test window isn't on top (\"{}\" is); nothing was clicked", title(top)); }
+        super::click_at(caption.0, caption.1, super::Button::Left, 1, 320).unwrap();
+        assert!(wait_for(Duration::from_secs(3), || (in_front() == fixture).then_some(())).is_some(), "the test window didn't come to the front; nothing else was done");
+
+        // 1. Read the window's controls (what a look lists for the AI). The
+        //    first look at a window that just opened can come back short
+        //    (Windows is still loading its accessibility support), so: how
+        //    long until all four are there, then one ordinary look.
+        let names = ["Save bench", "Moving bench", "Locked bench", "Bench name"];
+        let t = Instant::now();
+        let mut looks = 0;
+        let mut seen: Vec<String> = Vec::new();
+        let first = wait_for(Duration::from_secs(8), || {
+            looks += 1;
+            crate::uia::invalidate_controls();
+            let listed = crate::uia::list_controls(200);
+            seen = listed.iter().map(|c| format!("{} \"{}\"", c.kind, c.name)).collect();
+            let rect = |n: &str| listed.iter().find(|c| c.name == n && !c.hidden).map(|c| c.rect);
+            Some([rect(names[0])?, rect(names[1])?, rect(names[2])?, rect(names[3])?])
+        });
+        rows.push(Row { what: "controls readable in a new window", ok: first.is_some(), ms: t.elapsed().as_millis(), note: format!("{looks} look(s)") });
+        let Some([save, moving, locked, name_box]) = first else {
+            panic!("Izuki never listed the test window's controls. Last look: {seen:?}");
+        };
+        let t = Instant::now();
+        let again = names.iter().all(|n| control(n).is_some());
+        rows.push(Row { what: "one ordinary look (list controls)", ok: again, ms: t.elapsed().as_millis(), note: String::new() });
+
+        // 2. Click a button, checked by the window's own log.
+        let (sx, sy) = save.center();
+        let t = Instant::now();
+        let said = super::execute(&step(serde_json::json!({"action":"click","x":sx,"y":sy,"snapped_to":"Save bench"})), 320, true, false);
+        let landed = wait_for(Duration::from_secs(3), || (count(&log, "save") == 1).then_some(()));
+        rows.push(Row { what: "click a button", ok: said.is_ok() && landed.is_some(), ms: t.elapsed().as_millis(), note: format!("{said:?}") });
+
+        // 3. Click into a box and type, read back by Izuki and by the window.
+        let (bx, by) = name_box.center();
+        let t = Instant::now();
+        let clicked = super::execute(&step(serde_json::json!({"action":"click","x":bx,"y":by,"snapped_to":"Bench name"})), 320, true, false);
+        let typed = if in_front() == fixture {
+            super::execute(&step(serde_json::json!({"action":"type","text_to_type":"izuki bench 42"})), 320, true, false)
+        } else {
+            Err(anyhow::anyhow!("not typed: the test window wasn't in front"))
+        };
+        let shown = wait_for(Duration::from_secs(3), || (std::fs::read_to_string(&text).unwrap_or_default() == "izuki bench 42").then_some(()));
+        rows.push(Row { what: "click a box and type", ok: clicked.is_ok() && typed.is_ok() && shown.is_some(), ms: t.elapsed().as_millis(), note: format!("{typed:?}") });
+
+        // 4. Recover: the button moved after the look.
+        let (mx, my) = moving.center();
+        say("move");
+        assert!(wait_for(Duration::from_secs(3), || lines(&log).iter().any(|l| l == "did move").then_some(())).is_some(), "the button never moved");
+        let t = Instant::now();
+        let said = super::execute(&step(serde_json::json!({"action":"click","x":mx,"y":my,"snapped_to":"Moving bench"})), 320, true, false);
+        let landed = wait_for(Duration::from_secs(3), || (count(&log, "moving") == 1).then_some(()));
+        rows.push(Row { what: "recover: button moved after the look", ok: said.is_ok() && landed.is_some(), ms: t.elapsed().as_millis(), note: format!("{said:?}") });
+
+        // 5. Recover: a greyed-out button is refused, not clicked.
+        let (lx, ly) = locked.center();
+        let t = Instant::now();
+        let said = super::execute(&step(serde_json::json!({"action":"click","x":lx,"y":ly,"snapped_to":"Locked bench"})), 320, true, false);
+        std::thread::sleep(Duration::from_millis(300));
+        let refused = said.as_ref().err().is_some_and(|e| e.to_string().starts_with("disabled:"));
+        rows.push(Row { what: "recover: greyed-out button refused", ok: refused && count(&log, "locked") == 0, ms: t.elapsed().as_millis(), note: format!("{said:?}") });
+
+        // 6. Recover: another app's window lies on top of the button
+        //    (a notification, a chat head). It's pressed directly, and the
+        //    window on top gets nothing.
+        say("untop");
+        assert!(wait_for(Duration::from_secs(3), || lines(&log).iter().any(|l| l == "did untop").then_some(())).is_some(), "the test window stayed topmost");
+        let pad = 8;
+        let _cover = open(&dir, &log, &["-Mode".into(), "cover".into(), "-X".into(), (save.x - pad).to_string(), "-Y".into(), (save.y - pad).to_string(), "-W".into(), (save.w + 2 * pad).to_string(), "-H".into(), (save.h + 2 * pad).to_string()]);
+        let cover = wait_for(Duration::from_secs(20), || window("Izuki bench cover")).expect("the covering window never opened");
+        std::thread::sleep(Duration::from_millis(700));
+        if in_front() != fixture {
+            // The cover took the focus: give it back to the test window
+            // (its title bar is clear of the cover), as a person working there would.
+            { let top = on_top_at(caption.0, caption.1); assert_eq!(top, fixture, "the test window's title bar is covered by \"{}\"; nothing was clicked", title(top)); }
+            super::click_at(caption.0, caption.1, super::Button::Left, 1, 320).unwrap();
+            std::thread::sleep(Duration::from_millis(300));
+        }
+        let covered = on_top_at(sx, sy) == cover && in_front() == fixture;
+        let t = Instant::now();
+        let said = if covered {
+            super::execute(&step(serde_json::json!({"action":"click","x":sx,"y":sy,"snapped_to":"Save bench"})), 320, true, false)
+        } else {
+            Err(anyhow::anyhow!("not run: the cover wasn't on top of the button with the test window in front"))
+        };
+        let landed = wait_for(Duration::from_secs(3), || (count(&log, "save") == 2).then_some(()));
+        rows.push(Row { what: "recover: window on top of the button", ok: covered && said.is_ok() && landed.is_some() && count(&log, "cover") == 0, ms: t.elapsed().as_millis(), note: format!("{said:?}") });
+
+        println!("\nSmart Screen Actions bench (real window, real mouse, default 320 ms hand travel)");
+        for r in &rows {
+            println!("  {} {:<40} {:>6} ms   {}", if r.ok { "PASS" } else { "FAIL" }, r.what, r.ms, r.note.chars().take(110).collect::<String>());
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(rows.iter().all(|r| r.ok), "a screen action failed (see above)");
+    }
+}

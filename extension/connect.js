@@ -263,16 +263,9 @@ function paintSplit() {
 
 // ---- connecting ------------------------------------------------------------
 
+// "Izuki on this PC" is up only when it proves it's Izuki (bridge-proof.js).
 async function izukiIsUp() {
-  try {
-    const r = await fetch("http://127.0.0.1:47615/izuki/ping", {
-      headers: { "X-Izuki-Extension": "1" },
-      signal: AbortSignal.timeout(2500),
-    });
-    return r.ok;
-  } catch {
-    return false;
-  }
+  return (await globalThis.IzukiBridgeProof.check()).ok;
 }
 
 /**
@@ -468,7 +461,7 @@ export async function setUpConnection({ ask, onFollowed, windowId = null }) {
   const companion = $("show-companion");
   if (companion) {
     companion.disabled = true;
-    fetch("http://127.0.0.1:47615/izuki/companion", { method:"POST", headers:{"X-Izuki-Extension":"1","Content-Type":"application/json"}, body:JSON.stringify({read:true}), signal:AbortSignal.timeout(3000) })
+    globalThis.IzukiBridgeProof.fetch("http://127.0.0.1:47615/izuki/companion", { method:"POST", headers:{"X-Izuki-Extension":"1","Content-Type":"application/json"}, body:JSON.stringify({read:true}), signal:AbortSignal.timeout(3000) })
       .then((r) => r.json()).then((r) => { if (r.ok) { state.companion = !!r.show; companion.checked = state.companion; } })
       .catch(() => {}).finally(() => { companion.disabled = false; });
   }
@@ -551,7 +544,7 @@ export async function setUpConnection({ ask, onFollowed, windowId = null }) {
     // is the same switch as "Only the glowing edges" in the app, so turning
     // it off here turns it off there.
     try {
-    const response = await fetch("http://127.0.0.1:47615/izuki/companion", {
+    const response = await globalThis.IzukiBridgeProof.fetch("http://127.0.0.1:47615/izuki/companion", {
       method: "POST",
       headers: { "X-Izuki-Extension": "1", "Content-Type": "application/json" },
       body: JSON.stringify({ show: wanted }),

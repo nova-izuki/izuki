@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import '../extension/workspace-state.js';
 import '../extension/question-runner.js';
 import '../extension/lab-state.js';
@@ -34,9 +35,9 @@ assert.deepEqual(parseAnswer('```json\n{"questionId":"q1","choices":[2],"reason"
 for(const text of ['B','{"questionId":"old","choices":[2]}','{"questionId":"q1","choices":[0]}','{"questionId":"q1","choices":[]}','{"questionId":"q1","choices":[1,2]}'])assert.throws(()=>parseAnswer(text,q));
 assert(questionPrompt(q).includes('questionId'));
 const flush=()=>new Promise(resolve=>setTimeout(resolve,0));
-// Explain each question; never answer the page. The fixture still offers
-// select/advance so that if the runner ever asks for them again, the test
-// sees it rather than the call silently doing nothing.
+// Graded or unclear pages (no kind, or kind 'graded'): explain each question
+// and never answer the page. The fixture still offers select/advance so that
+// if the runner ever asks for them there, the test sees it.
 const q2={...q,id:'q2',stem:'Which blocks unwanted traffic?'};
 const onPage=question=>({ok:true,state:'question',question}),complete={ok:true,state:'complete'};
 function quizFixture(pages,extra={}) {
@@ -45,11 +46,11 @@ function quizFixture(pages,extra={}) {
     read:async()=>pages[Math.min(i++,pages.length-1)],
     answer:async(run,question)=>{calls.push(['answer',question.id]);return {text:JSON.stringify({questionId:question.id,choices:[2],reason:'Bots'})};},
     record:async()=>calls.push('record'),
-    select:async()=>{calls.push('select');return {ok:true};},advance:async()=>{calls.push('advance');return {ok:true};},...extra};
+    select:async(run,question,choices,pageId)=>{calls.push(['select',question.id,choices,pageId]);return {ok:true};},advance:async(run,pageId)=>{calls.push(['advance',pageId]);return {ok:true};},...extra};
   const runner=new QuestionRunner(adapter);return {runner,calls,start:()=>{runner.start({source,windowId:7});return runner.current?.done;}};
 }
 const asked=f=>f.calls.filter(c=>Array.isArray(c)&&c[0]==='answer').map(c=>c[1]);
-const clicked=f=>f.calls.filter(c=>c==='select'||c==='advance');
+const clicked=f=>f.calls.filter(c=>Array.isArray(c)&&(c[0]==='select'||c[0]==='advance'));
 
 // Two questions, the student moving between them, then the summary page.
 let f=quizFixture([onPage(q),onPage(q2),complete]);await f.start();
@@ -77,6 +78,33 @@ assert.equal(f.runner.status().phase,'stopped');assert(!f.calls.includes('record
 f=quizFixture([onPage({...q,missingImage:true}),complete]);await f.start();
 assert.deepEqual(asked(f),[],'a picture-only question is not sent to the assistant');
 
+// A page that says it's practice (the page decides: page.kind): the answer is
+// picked, Next pressed once Izuki has answered, and Submit never pressed.
+{
+  const practice=(question,pageId)=>({ok:true,state:'question',question,pageId,kind:'practice'});
+  const next={ok:true,state:'next',pageId:'p2',kind:'practice'},last={ok:true,state:'final',pageId:'p5',kind:'practice'};
+  f=quizFixture([practice(q,'p1'),next,practice(q2,'p3'),last,complete]);await f.start();
+  assert.deepEqual(clicked(f),[['select','q1',[2],'p1'],['advance','p2'],['select','q2',[2],'p3']],'practice: pick, Next, pick, and no Submit');
+  assert.equal(f.runner.status().phase,'complete');assert.match(f.runner.status().text,/2 questions were answered/);
+  // The same pages marked graded: nothing is clicked.
+  f=quizFixture([{...practice(q,'p1'),kind:'graded'},{...next,kind:'graded'},complete]);await f.start();
+  assert.deepEqual(clicked(f),[],'graded: nothing picked, nothing advanced');
+  assert.match(f.runner.status().text,/explained/);
+  // The page refuses the pick (it isn't practice after all): shown as a
+  // suggestion, and Next is not pressed.
+  f=quizFixture([practice(q,'p1'),next,complete],{select:async(run,question,choices,pageId)=>{f.calls.push(['select',question.id,choices,pageId]);return {ok:false,text:'Refused by the page.'};}});await f.start();
+  assert.deepEqual(clicked(f),[['select','q1',[2],'p1']],'a refused pick is not followed by Next');
+  assert(f.calls.filter(c=>Array.isArray(c)&&c[0]==='answer').length===1);
+  // The page moved between reading and the click: read again, try once more.
+  let tries=0;
+  f=quizFixture([practice(q,'p1'),practice(q,'p1b'),complete],{select:async(run,question,choices,pageId)=>{f.calls.push(['select',question.id,choices,pageId]);return ++tries===1?{ok:false,changed:true}:{ok:true};}});await f.start();
+  assert.deepEqual(clicked(f),[['select','q1',[2],'p1'],['select','q1',[2],'p1b']],'one retry on the fresh page');
+  assert.deepEqual(asked(f),['q1'],'without asking the assistant again');
+  // The student answered on their own: Izuki doesn't press Next for them.
+  f=quizFixture([next,complete]);await f.start();
+  assert.deepEqual(clicked(f),[],'no Next for answers Izuki did not give');
+}
+
 // The page reader itself refuses to click, whoever asks.
 await import('../extension/question-page.js');
 const readPage=globalThis.IzukiQuestionPage;
@@ -91,6 +119,15 @@ assert.equal(typeof readPage,'function','the page reader must load, or this chec
     assert.match(out.text,/never|doesn't choose or submit/i,`"${op}" must be refused, not merely fail`);
   }
 }
+
+// The extension's classifier gives the same answers as the desktop's
+// (assess.rs reads the same file).
+await import('../extension/assess.js');
+for(const c of JSON.parse(fs.readFileSync(new URL('./assessment-cases.json',import.meta.url),'utf8')))
+  assert.equal(globalThis.IzukiAssess.kind(c.title,c.url,'Read the passage carefully. '.repeat(c.padBefore||0)+c.text),c.kind,`${c.title} | ${c.text}`);
+// Points read as a score the same way as assess.rs's shows_points.
+for(const yes of [' question 1 — 1 point','(2 points)','10 pts','0.5 pt.','worth 3\npoints'])assert(globalThis.IzukiAssess.points(yes),yes);
+for(const no of [' checkpoint 2','1 pointer','point of view','a script','chapter 4 key points'])assert(!globalThis.IzukiAssess.points(no),no);
 
 const {parseLabPlan,coverage,LabRunner,labPrompt}=globalThis.IzukiLabState;
 const raw={title:'Network lab',requirements:['Create the report','Verify its saved contents'],steps:[
