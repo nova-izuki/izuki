@@ -20,8 +20,13 @@ export function readState(body = '') {
   try { return JSON.parse(m[1]); } catch { return {}; }
 }
 
-/** The body with its state block replaced (or added at the end). */
-export function writeState(body = '', state) {
+/**
+ * The body with its state block replaced (or added at the end). Refuses a
+ * body with no task text: saving state onto one would erase the task's
+ * description (it happened once, through a task record without its body).
+ */
+export function writeState(body, state) {
+  if (typeof body !== 'string' || !body.replace(STATE, '').trim()) throw new Error('refusing to save task state over an empty description');
   const block = `<!-- bridge ${JSON.stringify(state)} -->`;
   return STATE.test(body) ? body.replace(STATE, block) : `${body.trimEnd()}\n\n${block}\n`;
 }
@@ -38,6 +43,7 @@ export function describe(issue) {
   return {
     number: issue.number,
     title: issue.title,
+    body,
     author: issue.author?.login || issue.author || '',
     open: (issue.state || 'OPEN').toUpperCase() === 'OPEN',
     status: label(t, 'status:') || 'queued',

@@ -12,6 +12,12 @@ assert.deepEqual(readState(body), { agent: 'claude', attempts: 1 });
 assert.deepEqual(readState(writeState(body, { agent: 'freebuff' })), { agent: 'freebuff' }, 'replaced, not added twice');
 assert.equal((writeState(body, {}).match(/<!-- bridge/g) || []).length, 1);
 assert.deepEqual(readState('<!-- bridge {not json} -->'), {});
+// Saving state never erases a task's description (a record without its
+// body once wiped one): no text, no write.
+assert.throws(() => writeState(undefined, {}), /empty description/);
+assert.throws(() => writeState('', {}), /empty description/);
+assert.throws(() => writeState('\n<!-- bridge {"a":1} -->\n', {}), /empty description/);
+assert.equal(describe({ number: 1, title: 't', labels: [], body: 'text\nFiles: a' }).body, 'text\nFiles: a', 'the record keeps the text');
 
 // A task describes itself from labels and body lines.
 const t = describe(issue(7, ['agent-task', 'status:queued', 'agent:any', 'priority:urgent', 'kind:security'], 'Fix it.\nFiles: src-tauri/src/ext.rs, extension/\nDepends on: #3, #5'));

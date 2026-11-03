@@ -28,6 +28,11 @@ OBSERVE → UNDERSTAND → PRIORITIZE → ASSIGN → EXECUTE → VERIFY → RECO
 
 **Freebuff's shared-task workflow (its limit, stated plainly):** tasks for Freebuff wait in the queue with `agent:freebuff`. Nothing is pushed into its session, so it's never flooded or interrupted. AGENTS.md tells it to look at the queue when it finishes something and take the top task. The bridge can't make Freebuff start sooner than that.
 
+Two more limits, found in the first live run:
+- **"Assigned to Freebuff" means "next in line".** The coordinator labels the task; nothing reaches Freebuff until it looks.
+- **Its "busy" signal only covers recent commits.** The coordinator runs on GitHub and can't see the PC, so Freebuff editing for 40 minutes without committing reads as idle. That's harmless, since an assignment sends it nothing, but its queue position may lag what it's actually doing.
+- **The 20-minute schedule needs the workflow on `main`.** GitHub runs scheduled workflows from the default branch only. Until then, the coordinator runs on events from the open pull request (it already has) and by hand.
+
 ## Scheduling rules
 
 - **Never flood a busy agent.** One task at a time per agent. A busy agent is never given a second task, and nothing is re-sent to it.

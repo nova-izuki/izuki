@@ -79,7 +79,9 @@ async function run(t) {
   const started = iso();
   setTask(t, 'in-progress', { startedAt: started, heartbeat: started, branch, attempt });
 
-  const task = `${t.title}\n\n${t.body.replace(/<!-- bridge [\s\S]*?-->/, '').trim()}${t.state.strategy ? `\n\nNote from the coordinator (an earlier attempt failed): ${t.state.strategy}` : ''}`;
+  // Updates posted while the task waited go in with it; later ones arrive at checkpoints.
+  const early = updates(t, t.state.assignedAt || t.createdAt || '');
+  const task = `${t.title}\n\n${t.body.replace(/<!-- bridge [\s\S]*?-->/, '').trim()}${t.state.strategy ? `\n\nNote from the coordinator (an earlier attempt failed): ${t.state.strategy}` : ''}${early.map((u) => `\n\nUpdate from the coordinator: ${u.text}`).join('')}`;
   // Started directly, never through a shell: the tool lists hold spaces and
   // brackets that a shell would split or mangle (claude is a real .exe).
   const child = spawn(process.env.BRIDGE_CLAUDE || 'claude', ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--allowedTools', ALLOWED.join(','), '--disallowedTools', DENIED.join(','), '--append-system-prompt', RULES(t.number, branch)], { cwd: tree, env: { ...process.env, CARGO_TARGET_DIR: path.join(ROOT, 'src-tauri', 'target') }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
