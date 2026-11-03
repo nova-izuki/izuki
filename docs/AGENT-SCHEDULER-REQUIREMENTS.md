@@ -118,3 +118,58 @@ With both-agent features enabled:
   signal, and reassignment of my unstarted queued tasks after two
   reconciliation passes without pickup. My side contract stays: pick up the
   top assigned issue, push verified work, comment the SHA, label for review.
+
+## Addendum — per-agent scheduling differences (owner, 2026-11-03, same night)
+
+The owner has observed the asymmetry itself: Freebuff usually finishes its
+current task before it processes newly submitted instructions, while Claude
+Code can absorb new instructions mid-run. The bridge must accommodate that,
+not fight it. Where a rule here repeats the main section, the main section
+stands; these are the deltas and clarifications:
+
+1. **Task-state taxonomy, per agent:** idle, busy, blocked, failed,
+   disconnected, and ready-for-instructions, derived from real signals (queue
+   labels, last push, heartbeat age) — never an assumption.
+2. **Flood prevention holds absolutely:** a busy agent is never sent a
+   repeated prompt; everything lands in the queue.
+3. **The queue is persistent and prioritized, outside every chat context**
+   (GitHub Issues already provides both).
+4. **Freebuff:** follow-ups queue until its current task finishes, then the
+   next assigned task dispatches. It has no safe reprioritization interface —
+   its contract is pickup-at-checkout, and urgency therefore has to live in
+   the queue's priority labels, not in interruptions.
+5. **Claude Code:** checkpoint-based updates and reprioritization where its
+   interface permits; new priorities apply at a declared safe checkpoint,
+   never mid-edit.
+6. **Event-driven completion beats the 20-minute poll:** completion events
+   dispatch the next assignment immediately; the cron remains reconciliation
+   for missed events and stale states.
+7. **Metrics stay honest:** task completion time, queue wait time, failed
+   attempts and verified output quality (checks, review rounds) — the inputs
+   §2 already weighs, now including failed-attempt counts per task.
+8. **Assignment is dynamic** — capability, current availability and history
+   together; nothing assumes one agent is inherently faster.
+9. **No waste:** no needless context resets, no repeated instructions, no
+   duplicated work, no conflicting file edits (COLLAB.md claims remain the
+   source of truth for who owns a file).
+10. **Urgency lane:** security and release-blocking issues jump the queue;
+    but a running unsafe or non-recoverable operation is never interrupted
+    mid-flight — urgent work waits for a safe point.
+11. **Timeouts, heartbeats, cancellation and recovery exist only where the
+    agent's interface actually supports them** — for Freebuff that is
+    queue-side staleness detection and reassignment, never a mid-task kill.
+12. **On availability, the next verified, dependency-ready assignment goes
+    out automatically** — an agent that has just pushed verified work gets
+    its next task without waiting for the next cron tick.
+
+**Demonstration obligations** (bridge lane, when the features land):
+- A busy Freebuff session survives without flooding: while it is mid-task,
+  the queue accumulates; on finishing, the next assigned task is picked up
+  from the queue — *this behavior was already demonstrated live on the first
+  night*: task #21 was assigned at 14:05Z while this lane was busy finishing
+  the staging and scheduler commits; nothing was pushed into its chat, and
+  the task was picked up, done, verified (599 passed, exit=0; cargo check
+  exit=0) and pushed as 556ba4f at its next queue check.
+- Claude Code receives a new task at a declared checkpoint (mid-run
+  reprioritization) — to be demonstrated by the bridge lane with a real
+  checkpoint handoff, not asserted.
