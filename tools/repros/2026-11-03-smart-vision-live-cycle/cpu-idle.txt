@@ -1,0 +1,1 @@
+izuki.exe cpu usage over 15s idle: 8.8% of one core

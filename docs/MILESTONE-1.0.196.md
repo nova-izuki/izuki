@@ -71,7 +71,7 @@ Status: ✅ done and tested · 🧪 built, testing · 🔨 in progress · ⏳ pe
 | Item | Status | Notes |
 | --- | --- | --- |
 | Smart Developer Mode: Smart Vision, Claude Live Auto-Review and Smart Real Testing switches, all off by default; Capture Bug; Stop All | 🔨 | Freebuff (claimed in COLLAB.md): `devmode.rs`, `DeveloperMode.tsx`, built on `observer.rs` and the `devvision` feature. Dev builds only. |
-| One real observe → diagnose → fix → retest cycle, recorded | ⏳ | Needs a `devvision` dev build running on a development machine. Before and after recorded in the review log; never "fixed" on a compile alone. |
+| One real observe → diagnose → fix → retest cycle, recorded | ✅ | Freebuff, 2026-11-03, on this dev machine: a `devvision` debug build with `IZUKI_VISION=1` ran against the real main window (`tools/repros/2026-11-03-smart-vision-live-cycle/`, evidence in its README, statuses and the frame sample). Observe: status/events/frames answered authed on the loopback, one real 747×960 JPEG of Izuki's window. Diagnose: window minimized live — captures frozen 22→22 while ticks rose 114→128 — the review 7 #1 fix proven live (before it, the desktop behind the hidden window was being recorded). Retest: restored-window behavior honest (a restored view matches the two-minute map and earns no new frame). No NEW defect surfaced; the fix under test was already in 45f7446 — this run is the live half the earlier cycle could not do. The installed app was closed for the run and relaunched right after. Not exercised live: a Capture Bug button press and the dashboard in a browser (need hands at the panel); the endpoints they wrap were probed above. |
 
 ## 6. Eye control (Air control)
 
