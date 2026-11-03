@@ -172,14 +172,23 @@ pub fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64
 }
 
-/// Izuki's own window as a frame, only when it is actually on screen: the
-/// window's rect from the OS, then the screen region capture the app already
-/// trusts. (PrintWindow-based behind-work capture is `mod imp`-private in
-/// capture.rs; this route keeps the observer independent of capture.rs's
-/// internals.)
+/// Izuki's own window as a frame, drawn by the window itself (PrintWindow,
+/// CodeRabbit 05:11Z round): a screen-region grab would keep whatever other
+/// windows happen to cover Izuki at that moment — IsWindowVisible cannot see
+/// occlusion. capture_window is public and shared with the app's own
+/// behind-others capture.
 pub fn window_snapshot(hwnd: isize) -> Result<crate::capture::Frame, String> {
-    let rect = window_rect(hwnd)?;
-    crate::capture::capture(rect).map_err(|e| e.to_string())
+    #[cfg(windows)]
+    {
+        crate::capture::capture_window(hwnd)
+            .map(|(_, frame)| frame)
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = hwnd;
+        Err("Smart Vision window capture is desktop-windows only in this build (the feature is for the owner's dev machine).".into())
+    }
 }
 
 /// Whether Izuki's window can be seen on screen at all: a hidden or
@@ -197,33 +206,14 @@ fn window_visible(_hwnd: isize) -> bool {
     true
 }
 
-#[cfg(windows)]
-fn window_rect(hwnd: isize) -> Result<crate::model::Rect, String> {
-        use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
-    let h = windows::Win32::Foundation::HWND(hwnd as *mut core::ffi::c_void);
-    let mut r = windows::Win32::Foundation::RECT::default();
-    unsafe { GetWindowRect(h, &mut r) }
-        .map_err(|e| format!("no window rect: {e}"))?;
-    Ok(crate::model::Rect {
-        x: r.left,
-        y: r.top,
-        w: (r.right - r.left).max(1),
-        h: (r.bottom - r.top).max(1),
-    })
-}
-
-#[cfg(not(windows))]
-fn window_rect(hwnd: isize) -> Result<crate::model::Rect, String> {
-    Err("Smart Vision window capture is desktop-windows only in this build (the feature is for the owner's dev machine).".into())
-}
-
 /// One watcher tick: grab Izuki's own window, drop it if the pixels are the
 /// same as the last grab, encode and push if not. Returns whether a frame
 /// was kept.
 pub fn capture_once(hwnd: isize, last_hash: &mut Option<u64>) -> Result<bool, String> {
-    // Review 7 #1: with the window hidden or minimized the rect is still
-    // screen coordinates, so the capture would quietly record whatever the
-    // desktop shows behind it. Nothing of Izuki is visible — nothing to keep.
+    // Review 7 #1: with the window hidden or minimized the owner is not
+    // looking at Izuki, yet PrintWindow would still draw the window's own
+    // content for us — so the gate stays as a deliberate skip: no frames
+    // of windows nobody can see.
     if !window_visible(hwnd) {
         return Ok(false);
     }
@@ -236,7 +226,9 @@ pub fn capture_once(hwnd: isize, last_hash: &mut Option<u64>) -> Result<bool, St
     // hash: a caret blinking between two states defeats a consecutive check
     // and would fill the ring in seconds (review 2 #9).
     let fresh = {
-        let cutoff = Instant::now() - SEEN_WINDOW;
+        // checked_sub: a start inside the window of a just-booted clock must
+        // never panic the watcher thread (CodeRabbit 05:11Z round).
+        let cutoff = Instant::now().checked_sub(SEEN_WINDOW).unwrap_or_else(Instant::now);
         let mut guard = SEEN.lock();
         is_new_content(hash, guard.get_or_insert_with(HashMap::new), cutoff)
     };
@@ -282,7 +274,10 @@ fn next_floor(last_cost: Duration) -> Duration {
 /// it never keeps the same view twice inside the two-minute window. A
 /// thread of an old generation leaves on its next look (review 2 #11).
 fn watch_until_stopped(gen: u64, hwnd: isize) {
-    let mut clock = WatcherClock { last_capture: Instant::now() - CAPTURE_FLOOR, floor: CAPTURE_FLOOR };
+    let mut clock = WatcherClock {
+        last_capture: Instant::now().checked_sub(CAPTURE_FLOOR).unwrap_or_else(Instant::now),
+        floor: CAPTURE_FLOOR,
+    };
     let mut last_hash: Option<u64> = None;
     loop {
         if !RUNNING.load(Ordering::SeqCst) || GEN.load(Ordering::SeqCst) != gen {
@@ -379,6 +374,11 @@ fn serve_forever(listener: TcpListener, gen: u64) {
                 continue;
             }
         };
+        // Only the listener is non-blocking; the accepted socket returns to
+        // blocking with a timeout, so a slow client cannot busy-loop it and
+        // a fast one cannot be dropped on an empty WouldBlock (CodeRabbit
+        // 05:11Z round).
+        let _ = stream.set_nonblocking(false);
         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
         let mut buffer = [0u8; 4096];
         let n = stream.read(&mut buffer).unwrap_or(0);
