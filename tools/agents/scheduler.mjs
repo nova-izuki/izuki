@@ -172,6 +172,6 @@ export function recover(task, category) {
     conflict: 'Another change touched the same files. Rebase on the latest branch and re-check the overlap first.',
   }[category] || 'Investigate why the previous attempt failed before trying again.';
   const other = task.state.agent === 'claude' ? 'freebuff' : 'claude';
-  if (mine >= 2 && task.agent === 'any') return { action: 'reassign', to: other, note: `Reassigned to ${other} after ${mine} failed attempts by ${task.state.agent}. ${strategy}` };
+  if (mine >= 2 && (task.agent === 'any' || task.state.flexible)) return { action: 'reassign', to: other, note: `Reassigned to ${other} after ${mine} failed attempts by ${task.state.agent}. ${strategy}` };
   return { action: 'retry', note: `Attempt ${attempts + 1}: ${strategy}` };
 }

@@ -53,13 +53,20 @@ Two more limits, found in the first live run:
 
 - **Only people with write access can give work.** A task or `/update` comment from anyone else is labelled `untrusted` and ignored. Issue text is instructions for an agent, never run as a command by the bridge.
 - **No new secrets.** The coordinator uses the workflow's own token. The dispatcher uses the GitHub CLI and Claude Code already signed in on the owner's PC.
-- **The coordinator's merges are limited.** Only agent pull requests into `milestone-196` whose checks all passed.
+- **Only trusted code gets the write token.** Pull-request events use `pull_request_target`, which runs the base branch's coordinator, never a pull request's own copy. An agent's PR that edited the coordinator could otherwise run its edit with write access. Permissions are granted to the one job, not the whole workflow.
+- **The coordinator's merges are limited.** Only agent pull requests into `milestone-196` whose checks all passed, and never one that changes the bridge itself (`tools/agents/`, `docs/agents/roadmap.json`) or any workflow (`.github/`). Those are marked blocked for Claude's main session to review.
+- **Commander tasks: autonomy or an approval gate, the owner's choice.** With the commander using the owner's token (below), its tasks are trusted at once. If that token leaked, someone could queue work that agents carry out and that merges into the development branch once checks pass. Releases still go through Claude's main session, and changes to the bridge and workflows are never auto-merged. For a gate instead, give the commander its own GitHub account with only the *Triage* role. Its tasks then arrive `untrusted` and wait until the owner, or Claude's main session, re-files them.
 
 ## Running it
 
 - **Coordinator:** nothing to do. The workflow runs once it's on `main`. By hand: `node tools/agents/coordinator.mjs --dry-run` shows what it would do.
 - **Dispatcher (owner's PC):** `node tools/agents/dispatcher.mjs` supervises until stopped (`--once` takes one task). Pause it by creating `.work/agents/paused`. Each run's full transcript is kept in `.work/agents/task-<n>-<attempt>.jsonl`.
 - **Give Claude an update mid-task:** comment `/update <what changed>` on its task. It's delivered at the next safe point.
+- **Who starts the dispatcher:** the owner. Claude's own session isn't permitted to run it continuously or install its scheduled task. Both were refused by Claude Code's permission checks (as "auto-mode bypass" and "unauthorized persistence"), and that's the owner's decision, not something to work around. Three ways:
+  - run `node tools/agents/dispatcher.mjs` in a terminal and leave it open;
+  - run `tools\agents\install-dispatcher.ps1` once, which starts it at sign-in and every 30 minutes;
+  - add a permission rule in Claude Code's settings that allows Claude to start it.
+  Until one of these happens, Claude's assigned tasks wait in the queue (#18 is waiting now).
 
 ## Connecting an outside commander (ChatGPT)
 

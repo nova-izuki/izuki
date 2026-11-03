@@ -14,6 +14,12 @@ const now = Date.now();
 const iso = (t = now) => new Date(t).toISOString();
 const log = [];
 const act = (what, fn) => { log.push(what); if (!DRY) fn(); };
+// One task's trouble (an API error, a deleted PR) never stops the pass for the rest.
+const each = (label, items, fn) => {
+  for (const item of items) {
+    try { fn(item); } catch (e) { log.push(`${label}${item?.number ? ` #${item.number}` : ''}: skipped (${String(e.message).split('\n')[0].slice(0, 120)})`); }
+  }
+};
 
 if (!DRY) gh.ensureLabels();
 let tasks = gh.listTasks().map(describe);
@@ -32,12 +38,12 @@ try {
 } catch (e) { log.push(`couldn't read recent commits: ${e.message}`); }
 
 // Untrusted tasks are labelled once and never acted on.
-for (const t of tasks.filter((t) => t.open && !gh.trusted(t.author) && !t.labels.includes('untrusted'))) {
+each('untrusted', tasks.filter((t) => t.open && !gh.trusted(t.author) && !t.labels.includes('untrusted')), (t) => {
   act(`#${t.number}: from ${t.author}, who can't give the agents work — ignored`, () => {
     gh.setLabels(t.number, ['untrusted']);
     gh.comment(t.number, 'The agent bridge only takes tasks from accounts with write access to this repository. This one is ignored.');
   });
-}
+});
 
 function update(t, status, statePatch, note) {
   const state = { ...t.state, ...statePatch };
@@ -55,20 +61,18 @@ function fail(t, category, detail) {
   const history = [...(t.state.history || []), { agent: t.state.agent, result: 'failed', category, at: iso() }];
   const next = recover({ ...t, state: { ...t.state, history } }, category);
   const text = `${detail ? `${detail}\n\n` : ''}${next.note}`;
-  if (next.action === 'block') return update(t, 'blocked', { history }, text);
-  update(t, 'queued', { history, agent: next.action === 'reassign' ? undefined : t.state.agent, strategy: next.note }, text);
+  if (next.action === 'block') return update(t, 'blocked', { history, pr: undefined, commit: undefined }, text);
+  update(t, 'queued', { history, agent: next.action === 'reassign' ? undefined : t.state.agent, strategy: next.note, pr: undefined, commit: undefined, reviewSince: undefined }, text);
   if (next.action === 'reassign') act(`#${t.number}: to ${next.to}`, () => gh.setLabels(t.number, [`agent:${next.to}`], [`agent:${t.agent}`]));
 }
 
 // RECOVER: runs that stopped reporting.
 const states0 = agentStates(tasks, now, facts);
-for (const agent of AGENTS) {
-  if (states0[agent].state !== 'disconnected') continue;
-  const t = byNumber().get(states0[agent].running);
-  fail(t, 'disconnected', `${agent}'s run on this task stopped reporting (last heartbeat ${t.state.heartbeat}).`);
-}
+each('recover', AGENTS.filter((a) => states0[a].state === 'disconnected').map((a) => byNumber().get(states0[a].running)), (t) => {
+  fail(t, 'disconnected', `${t.state.agent}'s run on this task stopped reporting (last heartbeat ${t.state.heartbeat}).`);
+});
 // RECOVER: runs that reported a failure.
-for (const t of tasks.filter((t) => t.open && t.status === 'failed')) fail(t, t.state.lastFailure || 'unknown', null);
+each('recover', tasks.filter((t) => t.open && t.status === 'failed'), (t) => fail(t, t.state.lastFailure || 'unknown', null));
 
 // VERIFY: finished work is done only when its checks pass. A PR into the
 // development branch is merged then (standing authorization, AGENTS.md
@@ -86,9 +90,17 @@ for (const t of tasks.filter((t) => t.open && t.status === 'review')) {
       }
       if (!t.state.agent) t.state.agent = t.agent === 'any' ? 'freebuff' : t.agent;
     }
+    if (!t.state.reviewSince) { t.state.reviewSince = iso(); act(`#${t.number}: review started`, () => gh.editIssue(t.number, { body: writeState(t.body, t.state) })); }
+    // In review a day with no verdict (no checks ran, a PR left open): say so.
+    if (now - Date.parse(t.state.reviewSince) > 24 * 3600 * 1000) { update(t, 'blocked', {}, `In review for over a day with no verdict${t.state.pr ? ` on PR #${t.state.pr}` : t.state.commit ? ` on ${t.state.commit.slice(0, 7)}` : ' (no PR or commit was reported)'}. Needs a look.`); continue; }
     if (t.state.pr) {
       const s = gh.pullStatus(t.state.pr);
       if (s.base !== gh.DEV_BRANCH) { fail(t, 'conflict', `PR #${t.state.pr} targets ${s.base}; agent work goes to ${gh.DEV_BRANCH} only.`); continue; }
+      // Changes to the bridge itself or to the workflows are never merged by
+      // the bridge: Claude's main session reviews them.
+      const touched = (gh.api(`repos/${gh.REPO}/pulls/${t.state.pr}/files?per_page=100`, { paginate: true }) || []).map((f) => f.filename);
+      const guarded = touched.filter((f) => f.startsWith('.github/') || f.startsWith('tools/agents/') || f === 'docs/agents/roadmap.json');
+      if (guarded.length && s.open) { update(t, 'blocked', {}, `PR #${t.state.pr} changes ${guarded.join(', ')}: the bridge never merges changes to itself or to the workflows. Claude's main session reviews it.`); continue; }
       if (s.merged) { update(t, 'done', { doneAt: iso(), history: [...(t.state.history || []), { agent: t.state.agent, result: 'done', at: iso() }] }, `Verified and merged: PR #${t.state.pr}.`); continue; }
       if (s.failed.length) { fail(t, 'ci-failed', `Checks failed on PR #${t.state.pr}: ${s.failed.join(', ')}.`); continue; }
       if (!s.pending && s.runs > 0 && s.open) {
@@ -107,30 +119,30 @@ for (const t of tasks.filter((t) => t.open && t.status === 'review')) {
 const roadmap = JSON.parse(fs.readFileSync(new URL('../../docs/agents/roadmap.json', import.meta.url), 'utf8')).items;
 let states = agentStates(tasks, now, facts);
 const usedKeys = new Map(tasks.filter((t) => t.state.key).map((t) => [t.state.key, t]));
-for (const agent of AGENTS) {
+each('roadmap', AGENTS, (agent) => {
   const waiting = tasks.some((t) => t.open && ['queued', 'assigned'].includes(t.status) && (t.agent === agent || t.agent === 'any'));
-  if (states[agent].state !== 'idle' || waiting) continue;
+  if (states[agent].state !== 'idle' || waiting) return;
   const item = roadmap.find((i) => i.agent === agent && !usedKeys.has(i.key) && (i.after || []).every((k) => usedKeys.get(k)?.status === 'done'));
-  if (!item) continue;
+  if (!item) return;
   act(`new roadmap task for ${agent}: ${item.title}`, () => {
     const body = writeState(`${item.body}\n\nFiles: ${item.files.join(', ')}\n\n_From docs/agents/roadmap.json (${item.key})._`, { key: item.key });
     const created = gh.createIssue({ title: item.title, body, labels: ['agent-task', 'status:queued', `agent:${agent}`, `kind:${item.kind}`, `priority:${item.priority}`] });
     tasks.push(describe({ ...created, labels: created.labels.map((l) => l.name), author: { login: created.user.login }, state: 'OPEN', createdAt: created.created_at }));
   });
   usedKeys.set(item.key, { status: 'queued' });
-}
+});
 
 // ASSIGN: dependency-ready work to free agents, by measured performance.
 const stats = performance(tasks);
 states = agentStates(tasks, now, facts);
-for (const pick of plan(tasks, states, stats, gh.trusted)) {
+each('assign', plan(tasks, states, stats, gh.trusted), (pick) => {
   const t = byNumber().get(pick.task);
-  update(t, 'assigned', { agent: pick.agent, assignedAt: iso() }, null);
+  update(t, 'assigned', { agent: pick.agent, assignedAt: iso(), ...(t.agent === 'any' || t.state.flexible ? { flexible: true } : {}) }, null);
   act(`#${t.number}: assigned to ${pick.agent} (${pick.why})`, () => {
     if (t.agent === 'any') gh.setLabels(t.number, [`agent:${pick.agent}`], ['agent:any']);
     gh.comment(t.number, `Assigned to **${pick.agent}**: ${pick.why}.${pick.agent === 'freebuff' ? ' Freebuff has no programmatic interface, so this waits until it finishes its current work and takes it from the queue (nothing is sent to its session).' : ' The dispatcher on the owner\'s PC starts it when Claude is free.'}`);
   });
-}
+});
 
 // The dashboard: one issue, rewritten each pass.
 states = agentStates(tasks, now, facts);

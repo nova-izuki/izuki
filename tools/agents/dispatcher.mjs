@@ -28,13 +28,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const say = (...a) => console.log(`[${iso().slice(11, 19)}]`, ...a);
 fs.mkdirSync(WORK, { recursive: true });
 
-// One dispatcher at a time.
+// One dispatcher at a time: the lock file is created exclusively, so two
+// starting together can't both take it. A lock left by a dead dispatcher is
+// replaced once.
 const LOCK = path.join(WORK, 'dispatcher.lock');
-try {
-  const other = Number(fs.readFileSync(LOCK, 'utf8'));
-  if (other && other !== process.pid) { process.kill(other, 0); say(`another dispatcher (pid ${other}) is running; nothing to do`); process.exit(0); }
-} catch { /* no lock, or its process is gone */ }
-fs.writeFileSync(LOCK, String(process.pid));
+for (let tries = 0; ; tries++) {
+  try { fs.writeFileSync(LOCK, String(process.pid), { flag: 'wx' }); break; } catch (e) {
+    if (e.code !== 'EEXIST' || tries) { say(`another dispatcher holds the lock; nothing to do`); process.exit(0); }
+    const other = Number(fs.readFileSync(LOCK, 'utf8'));
+    let alive = false;
+    try { process.kill(other, 0); alive = true; } catch { /* gone */ }
+    if (alive) { say(`another dispatcher (pid ${other}) is running; nothing to do`); process.exit(0); }
+    fs.unlinkSync(LOCK);
+  }
+}
 process.on('exit', () => { try { if (fs.readFileSync(LOCK, 'utf8') === String(process.pid)) fs.unlinkSync(LOCK); } catch {} });
 
 const RULES = (n, branch) => `You are a headless Claude Code agent started by Izuki's agent bridge for task #${n}.
@@ -67,6 +74,23 @@ function updates(t, since) {
  */
 function clearTree(tree) {
   if (!fs.existsSync(tree)) return;
+  // Work left in it (an interrupted attempt) is committed and pushed to its
+  // own branch first, never thrown away.
+  try {
+    const branch = execFileSync('git', ['-C', tree, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).trim();
+    if (branch.startsWith('agent/')) {
+      if (execFileSync('git', ['-C', tree, 'status', '--porcelain'], { encoding: 'utf8' }).trim()) {
+        execFileSync('git', ['-C', tree, 'add', '-A'], { stdio: 'ignore' });
+        execFileSync('git', ['-C', tree, 'commit', '-m', 'WIP: work left by an interrupted attempt (saved by the dispatcher)'], { stdio: 'ignore' });
+      }
+      // Only real work is pushed: commits beyond the development branch.
+      const ahead = Number(execFileSync('git', ['-C', tree, 'rev-list', '--count', `origin/${gh.DEV_BRANCH}..HEAD`], { encoding: 'utf8' }).trim());
+      if (ahead > 0) {
+        execFileSync('git', ['-C', tree, 'push', 'origin', branch], { stdio: 'ignore' });
+        say(`saved what was in ${path.basename(tree)} to ${branch} (${ahead} commit(s))`);
+      }
+    }
+  } catch { /* not a worktree any more, or nothing to save */ }
   const link = path.join(tree, 'node_modules');
   try { fs.lstatSync(link); execFileSync('cmd', ['/c', 'rmdir', link], { stdio: 'ignore' }); } catch { /* no link */ }
   if (fs.existsSync(link)) throw new Error(`couldn't remove the package link in ${tree} safely`);
@@ -85,14 +109,20 @@ function nextTask() {
 }
 
 async function run(t) {
-  const attempt = (t.state.history || []).length + 1;
-  const branch = `agent/claude-${t.number}-${attempt}`;
+  const history = t.state.history || [];
+  const resuming = history.at(-1)?.result === 'paused' && t.state.branch;
+  const attempt = history.filter((h) => h.result !== 'paused').length + 1;
+  const branch = resuming ? t.state.branch : `agent/claude-${t.number}-${attempt}`;
   const tree = path.join(WORK, `task-${t.number}`);
-  say(`#${t.number} (${t.title}): starting attempt ${attempt} on ${branch}`);
+  say(`#${t.number} (${t.title}): ${resuming ? 'resuming' : 'starting'} attempt ${attempt} on ${branch}`);
   try {
     execFileSync('git', ['-C', ROOT, 'fetch', 'origin', gh.DEV_BRANCH], { stdio: 'ignore' });
     clearTree(tree);
-    execFileSync('git', ['-C', ROOT, 'worktree', 'add', '-B', branch, tree, `origin/${gh.DEV_BRANCH}`], { stdio: 'ignore' });
+    let base = `origin/${gh.DEV_BRANCH}`;
+    if (resuming) {
+      try { execFileSync('git', ['-C', ROOT, 'fetch', 'origin', branch], { stdio: 'ignore' }); base = `origin/${branch}`; } catch { say(`#${t.number}: ${branch} isn't on GitHub; starting from ${gh.DEV_BRANCH}`); }
+    }
+    execFileSync('git', ['-C', ROOT, 'worktree', 'add', '-B', branch, tree, base], { stdio: 'ignore' });
     // Shared, not copied: the app's packages and the Rust build cache.
     if (fs.existsSync(path.join(ROOT, 'node_modules'))) execFileSync('cmd', ['/c', 'mklink', '/J', path.join(tree, 'node_modules'), path.join(ROOT, 'node_modules')], { stdio: 'ignore' });
   } catch (e) {
@@ -108,7 +138,14 @@ async function run(t) {
   // Started directly, never through a shell: the tool lists hold spaces and
   // brackets that a shell would split or mangle (claude is a real .exe).
   const child = spawn(process.env.BRIDGE_CLAUDE || 'claude', ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--allowedTools', ALLOWED.join(','), '--disallowedTools', DENIED.join(','), '--append-system-prompt', RULES(t.number, branch)], { cwd: tree, env: { ...process.env, CARGO_TARGET_DIR: path.join(ROOT, 'src-tauri', 'target') }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-  const send = (text) => child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } }) + '\n');
+  // Ends once its output is closed (so nothing is still in flight), with the
+  // exit code or the signal. A launch that fails is the dispatcher's problem.
+  const ended = new Promise((resolve) => {
+    child.on('close', (code, signal) => resolve({ code, signal }));
+    child.on('error', (error) => resolve({ code: null, signal: null, error }));
+  });
+  const send = (text) => { if (!child.stdin.destroyed) child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } }) + '\n'); };
+  child.stdin.on('error', () => { /* the run ended; nothing more to send */ });
   send(task);
 
   // The run is finished only when the agent says so (its RESULT line). A turn
@@ -138,16 +175,20 @@ async function run(t) {
   child.stderr.on('data', (d) => transcript.write(`[stderr] ${d}`));
 
   let since = started, beat = Date.now(), deadline = Date.now() + LIMIT_MS, warned = false;
-  const exited = new Promise((resolve) => child.on('exit', resolve));
-  let code = null;
-  while (code === null) {
-    code = await Promise.race([exited, sleep(CHECK_MS).then(() => null)]);
-    if (code !== null) break;
+  let exit = null;
+  while (!exit) {
+    exit = await Promise.race([ended, sleep(CHECK_MS).then(() => null)]);
+    if (exit) break;
     try {
       if (Date.now() - beat >= HEARTBEAT_MS) { setTask(t, null, { heartbeat: iso() }); beat = Date.now(); }
       for (const u of updates(t, since)) { since = u.at; pending.push(`Update from the coordinator for task #${t.number}: ${u.text}`); say(`#${t.number}: update queued for the next checkpoint`); }
-      // An urgent task waiting for Claude: pause this one at a safe point, never mid-operation.
-      const urgent = !paused && gh.listTasks().map(describe).find((x) => x.open && x.number !== t.number && x.status === 'assigned' && x.state.agent === 'claude' && x.priority === 'urgent' && t.priority !== 'urgent');
+      // An urgent task waiting for Claude (queued for Claude or either agent,
+      // or already assigned, its dependencies done): pause this one at a safe
+      // point, never mid-operation.
+      const all = paused || t.priority === 'urgent' ? [] : gh.listTasks().map(describe);
+      const done = new Set(all.filter((x) => x.status === 'done').map((x) => x.number));
+      const urgent = all.find((x) => x.open && x.number !== t.number && x.priority === 'urgent' && gh.trusted(x.author) && x.deps.every((d) => done.has(d))
+        && ((x.status === 'assigned' && x.state.agent === 'claude') || (x.status === 'queued' && ['claude', 'any'].includes(x.agent))));
       if (urgent) { paused = true; pending.push(`Urgent task #${urgent.number} is waiting. At your next safe point: commit and push what's verified to ${branch}, then end with "RESULT: paused — <where you stopped>". Don't start anything new.`); say(`#${t.number}: urgent #${urgent.number} waiting, pause requested`); }
     } catch (e) { say(`#${t.number}: GitHub check failed (${e.message}); carrying on`); }
     // Quiet for 10 minutes with no RESULT and nothing to deliver: one nudge,
@@ -160,6 +201,8 @@ async function run(t) {
     else if (warned && Date.now() > deadline) { say(`#${t.number}: past its time limit; stopping it`); child.kill(); }
   }
   transcript.end();
+  if (exit.error) { clearTree(tree); throw new SetupError(`Claude Code didn't start: ${exit.error.message}`); }
+  const code = exit.code ?? (exit.signal ? `signal ${exit.signal}` : 'unknown');
   // Anything the run left going in its folder (a background build) is stopped
   // before the folder goes, so nothing is orphaned or holds files open.
   try {
@@ -175,11 +218,11 @@ async function run(t) {
   try { clearTree(tree); } catch (e) { say(`#${t.number}: ${e.message}`); }
 
   if (result?.[1]?.toLowerCase() === 'paused') {
-    setTask(t, 'assigned', { history: [...(t.state.history || []), { ...entry, result: 'paused' }] }, `Paused at a safe point for an urgent task (after ${minutes} min): ${summary}\nIt resumes from branch \`${branch}\` when Claude is free.`);
+    setTask(t, 'assigned', { branch, history: [...(t.state.history || []), { ...entry, result: 'paused' }] }, `Paused at a safe point for an urgent task (after ${minutes} min): ${summary}\nIt resumes from branch \`${branch}\` when Claude is free.`);
   } else if (result?.[1]?.toLowerCase() === 'done' && prNumber) {
     setTask(t, 'review', { pr: prNumber, history: [...(t.state.history || []), { ...entry, result: 'review' }] }, `Claude finished in ${minutes} min: ${summary}\nPR #${prNumber}. The coordinator merges it once every check passes.`);
   } else {
-    const category = (result?.[1]?.toLowerCase() === 'failed' && result[2]) || (!finished && nudged ? 'stalled' : code !== 0 ? 'disconnected' : prNumber ? 'unknown' : 'no-change');
+    const category = (result?.[1]?.toLowerCase() === 'failed' && result[2]) || (!finished && nudged ? 'stalled' : exit.code !== 0 ? 'disconnected' : prNumber ? 'unknown' : 'no-change');
     setTask(t, 'failed', { lastFailure: category, history: [...(t.state.history || []), { ...entry, result: 'failed', category }] }, `Claude's attempt ${attempt} didn't finish (${category}, ${minutes} min): ${summary}`);
   }
   say(`#${t.number}: ${t.status} after ${minutes} min`);
