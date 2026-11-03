@@ -1,0 +1,56 @@
+name: Agent coordinator
+
+# The agent bridge's coordinator (docs/AGENTS-BRIDGE.md): reconciles the
+# task queue (issues labelled agent-task), verifies finished work against
+# its CI results, merges verified agent PRs into the development branch,
+# assigns the next tasks and rewrites the dashboard issue. Every 20 minutes,
+# and right away on task, PR and CI events. It reads issue text as data
+# only: nothing from an issue is ever run, and tasks from accounts without
+# write access are ignored.
+on:
+  schedule:
+    - cron: '7,27,47 * * * *'
+  issues:
+    types: [opened, edited, labeled, closed, reopened]
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [opened, closed, synchronize]
+  workflow_run:
+    workflows: ['Verify companion changes']
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  checks: read
+  actions: read
+
+concurrency:
+  group: agent-coordinator
+  cancel-in-progress: false
+
+jobs:
+  coordinate:
+    # Only events that can change the queue: task and dashboard issues, and
+    # everything that isn't an issue event.
+    if: >-
+      github.event_name != 'issues' && github.event_name != 'issue_comment' ||
+      contains(join(github.event.issue.labels.*.name, ','), 'agent-task')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Scheduler checks
+        run: node tools/agents/scheduler-check.mjs
+      - name: One coordinator pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/agents/coordinator.mjs

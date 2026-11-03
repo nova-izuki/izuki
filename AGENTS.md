@@ -119,6 +119,19 @@ courses, devices or PC, and never put personal data in the repo.
 7. **Don't touch anything outside this `izuki/` folder.** The parent folder
    is the owner's separate robot project.
 
+## The task queue (agent bridge)
+Work can also arrive as GitHub issues labelled `agent-task`
+([docs/AGENTS-BRIDGE.md](docs/AGENTS-BRIDGE.md)). Claude's are dispatched
+automatically. **Freebuff:** when you finish a piece of work, look at the
+queue before choosing the next thing:
+`gh issue list --label agent-task --label agent:freebuff --label status:assigned`.
+Take the top one (most urgent first):
+- label it `status:in-progress` (remove `status:assigned`), claim its files in COLLAB.md, and do it;
+- when it's pushed, label it `status:review` and comment with the commit SHA (or open a PR into `milestone-196` and comment its number).
+
+The coordinator marks it done once that commit's checks pass. Never take a
+task labelled for the other agent, and never close a task yourself.
+
 ## Code review (CodeRabbit)
 CodeRabbit reviews every push to a pull request by itself, drafts included
 (settings: `.coderabbit.yaml`). If a push still goes unreviewed (paused, rate
