@@ -60,6 +60,11 @@ Two more limits, found in the first live run:
 - **Coordinator:** nothing to do. The workflow runs once it's on `main`. By hand: `node tools/agents/coordinator.mjs --dry-run` shows what it would do.
 - **Dispatcher (owner's PC):** `node tools/agents/dispatcher.mjs` supervises until stopped (`--once` takes one task). Pause it by creating `.work/agents/paused`. Each run's full transcript is kept in `.work/agents/task-<n>-<attempt>.jsonl`.
 - **Give Claude an update mid-task:** comment `/update <what changed>` on its task. It's delivered at the next safe point.
+- **Who starts the dispatcher:** the owner. Claude's own session isn't permitted to run it continuously or install its scheduled task. Both were refused by Claude Code's permission checks (as "auto-mode bypass" and "unauthorized persistence"), and that's the owner's decision, not something to work around. Three ways:
+  - run `node tools/agents/dispatcher.mjs` in a terminal and leave it open;
+  - run `tools\agents\install-dispatcher.ps1` once, which starts it at sign-in and every 30 minutes;
+  - add a permission rule in Claude Code's settings that allows Claude to start it.
+  Until one of these happens, Claude's assigned tasks wait in the queue (#18 is waiting now).
 
 ## Connecting an outside commander (ChatGPT)
 
