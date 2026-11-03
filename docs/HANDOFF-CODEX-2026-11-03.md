@@ -196,3 +196,12 @@ or rewrite #18's history. The diagnostic was handed to scheduler task #25.
 PR #28 now has all audited GitHub checks green (both Windows, both web and
 CodeRabbit), in addition to the local results above. The PR remains open for
 Claude; Codex did not merge it.
+
+The branch was subsequently rebased onto Freebuff's pushed `556ba4f` (task #21
+now `status:review`). All upstream coordination claims were retained when the
+COLLAB append conflicted; no product-code conflict occurred. Equivalent current
+implementation commit: **`a45a9ee`**; baseline/review record: **`777f624`**.
+Earlier hashes above identify the original audit/review. The 10 protocol/probe
+tests passed again after this rebase. The only upstream source differences are
+the non-Windows dead stub and unused attachment import already owned/verified
+by Freebuff; no Windows behavior was changed by that rebase.
