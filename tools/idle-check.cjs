@@ -55,11 +55,13 @@ const RUNNING = `document.getAnimations().filter((a) => a.playState === 'running
   const report = [];
   let failed = false;
   try {
-    // Edge may still be writing the file when it appears (EBUSY): retry.
+    // Edge may still be writing the file when it appears (EBUSY, or empty):
+    // wait and read again until it holds a port.
     const portFile = path.join(profile, 'DevToolsActivePort');
     let port = '';
     for (let i = 0; i < 240 && !/^\d+$/.test(port); i++) {
-      try { port = fs.readFileSync(portFile, 'utf8').split('\n')[0].trim(); } catch { await pause(250); }
+      try { port = fs.readFileSync(portFile, 'utf8').split('\n')[0].trim(); } catch {}
+      if (!/^\d+$/.test(port)) await pause(250);
     }
     if (!/^\d+$/.test(port)) throw new Error('the browser did not start within 60 s');
     for (const pageName of ['overlay.html', 'index.html']) {
@@ -87,8 +89,14 @@ const RUNNING = `document.getAnimations().filter((a) => a.playState === 'running
       // A page that failed to load would look perfectly idle: prove it rendered.
       const elements = await run("document.querySelectorAll('#root *, body > *').length");
       // (The overlay draws only from the app's live events — hand, island,
-      // captions — so outside the desktop app it's empty: reported, not passed.)
-      if (elements < 15) { report.push(`${pageName}: only ${elements} element(s) rendered outside the desktop app, so its idle cost can't be measured here`); continue; }
+      // captions — so outside the desktop app it's empty: reported, not
+      // passed. The main window always renders: blank there is a failure.)
+      if (elements < 15) {
+        if (pageName === 'overlay.html') report.push(`${pageName}: only ${elements} element(s) rendered outside the desktop app, so its idle cost can't be measured here`);
+        else { report.push(`${pageName}: only ${elements} element(s) rendered: the page is broken, nothing was measured`); failed = true; }
+        ws.close();
+        continue;
+      }
       const frames = (c1.frames - c0.frames) / secs, timers = (c1.timers - c0.timers) / secs;
       report.push(`${pageName} (${elements} elements): script ${(per('ScriptDuration') * 1000).toFixed(1)} ms/s, style+layout ${((per('RecalcStyleDuration') + per('LayoutDuration')) * 1000).toFixed(1)} ms/s, all tasks ${(per('TaskDuration') * 1000).toFixed(1)} ms/s, ${frames.toFixed(1)} animation frames/s, ${timers.toFixed(1)} timer calls/s`);
       report.push(running.length ? '  endless animations running:\n    ' + running.join('\n    ') : '  no endless animation running');
@@ -111,5 +119,5 @@ const RUNNING = `document.getAnimations().filter((a) => a.playState === 'running
     try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); } catch {}
   }
   console.log(report.join('\n'));
-  if (failed) { console.error('An idle page keeps animating (see above).'); process.exitCode = 1; }
+  if (failed) { console.error('Idle check failed: see the page above that keeps animating or did not render.'); process.exitCode = 1; }
 })().catch((e) => { console.error(e); process.exitCode = 1; });

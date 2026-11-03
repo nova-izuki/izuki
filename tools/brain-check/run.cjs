@@ -164,7 +164,10 @@ async function ask(scene, image) {
     const v = await r.json().catch(() => ({}));
     // Rate-limited, or the model "over capacity" (503): wait and ask again,
     // as Izuki itself rests a busy brain. It says nothing about the decision.
-    if (r.status === 429 || r.status >= 500) { await new Promise((ok) => setTimeout(ok, 20000 * (attempt + 1))); continue; }
+    if (r.status === 429 || r.status >= 500) {
+      if (attempt < 3) await new Promise((ok) => setTimeout(ok, 20000 * (attempt + 1))); // (no wait after the last try)
+      continue;
+    }
     return { status: r.status, ms: Date.now() - t, reply: (v.choices?.[0]?.message?.content || v.error?.message || "").trim() };
   }
   return { status: 503, ms: 0, reply: "(Groq stayed busy or rate-limited after 4 tries)" };

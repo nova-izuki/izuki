@@ -131,6 +131,18 @@ Status: open · claimed · fixed (commit) · dismissed (why).
 | 5 | Medium | `src-tauri/src/assess.rs` | `numbered` copied the rest of the page text for every "question" | Claude | fixed: borrowed slice, no copy |
 | 6 | Medium | `src-tauri/src/ext.rs` | `from_hex` took "+8" for "08", so a copied request could pass `first_use` under another spelling | Claude | fixed: exactly 64 plain hex digits, and `from_hex` takes hex digits only. Test respells a real byte (`08` → `+8`) of the shared vector |
 
+## CodeRabbit review 10: commit `9eabe38`, 2026-11-03 04:22 UTC
+
+5 findings, all on Claude's commit.
+
+| # | Sev. | Where | Finding | Claimed by | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | High | `.github/workflows/mobile.yml` | After a rotated release, a different key in the secret would still pass, and the emulator only tested updating from a public-key build | Claude | fixed: the published APK's signer is read as Android 9+ sees it (`--min-sdk-version 28`), and the build stops unless the secret's certificate is that exact key. After signing, Android 7–8 must see the public key and Android 9+ the private one. The emulator also updates from the app actually published |
+| 2 | High | `.github/workflows/mobile.yml` | A failed download of the last APK read as "no release yet" | Claude | fixed: GitHub is asked what the latest release holds, with retries. Only "no release" or "no APK in it" means nothing to follow; a lookup or download that fails stops a release build (a warning on other builds) |
+| 3 | Low | `tools/brain-check/run.cjs` | Waited 80 s after the last failed try | Claude | fixed |
+| 4 | Low | `tools/idle-check.cjs` | Spun without pausing while the port file was empty | Claude | fixed: waits whenever there's no port yet |
+| 5 | Low | `tools/idle-check.cjs` | A blank main window passed without being measured | Claude | fixed: blank main window fails (checked with a blank page: exit 1); the overlay stays report-only |
+
 ## Found outside CodeRabbit
 
 | Sev. | Where | Finding | Claimed by | Status |
