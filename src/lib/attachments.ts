@@ -52,7 +52,7 @@ export async function readChatFile(file: File): Promise<ChatAttachment> {
     const result = await api.readChatAttachment(file.name, await base64(file));
     return { name: file.name, kind: "text", data: `${result.text}${result.truncated ? "\n[This file is longer; only the first 32,000 characters were read.]" : ""}` };
   }
-  if (!file.type.startsWith("text/") && !TEXT.test(file.name)) throw new Error(`I can't read “${file.name}”. Choose a picture, PDF, DOCX, PPTX, text or code file. Export spreadsheets as CSV.`);
+  if (!file.type.startsWith("text/") && !TEXT.test(file.name)) throw new Error(`I can't read “${file.name}”. Choose a picture, PDF, DOCX, PPTX, XLSX, text or code file.`);
   if (file.size > 400_000) throw new Error(`“${file.name}” is too big for a text attachment. Choose up to 400 KB.`);
   const text = await file.text();
   if (!text.trim()) throw new Error(`“${file.name}” is empty.`);
