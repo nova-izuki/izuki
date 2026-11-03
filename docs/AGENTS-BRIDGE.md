@@ -53,7 +53,9 @@ Two more limits, found in the first live run:
 
 - **Only people with write access can give work.** A task or `/update` comment from anyone else is labelled `untrusted` and ignored. Issue text is instructions for an agent, never run as a command by the bridge.
 - **No new secrets.** The coordinator uses the workflow's own token. The dispatcher uses the GitHub CLI and Claude Code already signed in on the owner's PC.
-- **The coordinator's merges are limited.** Only agent pull requests into `milestone-196` whose checks all passed.
+- **Only trusted code gets the write token.** Pull-request events use `pull_request_target`, which runs the base branch's coordinator, never a pull request's own copy. An agent's PR that edited the coordinator could otherwise run its edit with write access. Permissions are granted to the one job, not the whole workflow.
+- **The coordinator's merges are limited.** Only agent pull requests into `milestone-196` whose checks all passed, and never one that changes the bridge itself (`tools/agents/`, `docs/agents/roadmap.json`) or any workflow (`.github/`). Those are marked blocked for Claude's main session to review.
+- **Commander tasks: autonomy or an approval gate, the owner's choice.** With the commander using the owner's token (below), its tasks are trusted at once. If that token leaked, someone could queue work that agents carry out and that merges into the development branch once checks pass. Releases still go through Claude's main session, and changes to the bridge and workflows are never auto-merged. For a gate instead, give the commander its own GitHub account with only the *Triage* role. Its tasks then arrive `untrusted` and wait until the owner, or Claude's main session, re-files them.
 
 ## Running it
 

@@ -98,6 +98,9 @@ r = recover(failing('claude', ['failed', 'failed']), 'timeout');
 assert.equal(r.action, 'reassign');
 assert.equal(r.to, 'freebuff');
 assert.equal(recover(failing('claude', ['failed', 'failed'], false), 'timeout').action, 'retry', 'a task meant for one agent stays with it');
+// An "any agent" task keeps that after assignment relabels it (state.flexible).
+const flexible = describe(issue(41, ['agent-task', 'status:failed', 'agent:claude'], writeState('f', { agent: 'claude', flexible: true, history: [{ agent: 'claude', result: 'failed' }, { agent: 'claude', result: 'failed' }] })));
+assert.equal(recover(flexible, 'timeout').action, 'reassign');
 assert.equal(recover(failing('claude', ['failed', 'failed', 'failed']), 'ci-failed').action, 'block');
 
 console.log('agent scheduler: state blocks, task parsing, file overlap, agent states (busy, disconnected, working on its own), evidence-based scores, planning (priority, dependencies, no second task, no shared files, untrusted ignored) and recovery (new strategy, reassign, block) pass.');

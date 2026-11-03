@@ -23,7 +23,7 @@ Izuki makes real Word and Excel files and edits copies instead of your originals
 ## 🧩 Browser extension 1.6.0
 
 - **Quick, Think deeper and Research** in the side panel. Research searches the web (and the page, if you share it) and writes an answer with its sources, showing each step.
-- **Izuki and the extension now prove themselves to each other** with a private key made just for you. No other program on your PC, even one under another Windows account, can pose as either to read your pages, click in your browser or start a task on your PC.
+- **Izuki and the extension now prove themselves to each other** with a private key made just for you and kept in your own Windows account's folders. A program under another Windows account on the same PC can no longer pose as either to read your pages, click in your browser or start a task on your PC. (Programs you run in your own account can read your files anyway, this key included.)
 - **If you added the extension by hand** (from the website's zip), set it up once from Izuki: **Settings → Browser extension → Set up in this browser**. Added by hand, it still works with AI websites, but not with Izuki on your PC.
 
 ## ⬆️ Updates
