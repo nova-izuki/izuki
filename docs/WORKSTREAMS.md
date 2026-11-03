@@ -126,10 +126,13 @@ calls only when needed, no fixed wait where a condition can be checked.**
   angular data anywhere (`tools/eye-gate-check.cjs`, `npm run test:eye`);
   provisional EAR blink detection and an iris-offset→direction helper ride the
   same file, their values marked for tuning on the owner's own camera. Then:
-  MediaPipe iris landmarks behind this gate, one-gesture calibration,
-  look-to-scroll as the first eye-only money feature, accessibility summary in
-  Settings. Real-webcam testing on this PC before any "it works" — the
-  final check stays with the owner.
+  MediaPipe iris landmarks behind this gate — the landmarker now exists on its
+  own thread (`src/lib/eyeWorker.ts`, `face_landmarker.task` in `public/air/`)
+  with a main-thread adapter (`src/lib/eyeTrack.ts`) that refuses while the
+  gate is closed — verified by compile+build only until a camera ran; then
+  one-gesture calibration, look-to-scroll as the first eye-only money feature,
+  accessibility summary in Settings. Real-webcam testing on this PC before any
+  "it works" — the final check stays with the owner.
 
 ## 4. Keep the other planned capabilities alive — both
 

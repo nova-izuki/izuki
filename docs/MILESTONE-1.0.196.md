@@ -86,6 +86,7 @@ Status: ✅ done and tested · 🧪 built, testing · 🔨 in progress · ⏳ pe
 | --- | --- | --- |
 | Face/iris tracking, look-then-snap, blink/pinch press, hands-free reading | ⏳ | Needs the owner's real camera for the final check. |
 | Eye-gesture gate groundwork (always-off by default, dev hold, per-session opt-in, no storage, no logged angles) | 🧪 | `src/lib/eyeGate.ts` + `tools/eye-gate-check.cjs` (`npm run test:eye`, all green 2026-11-03) per the workstream plan's "gate first"; provisional EAR blink detection and an iris-offset→direction helper in the same file, marked for tuning on the owner's real camera. Nothing initializes a camera yet — FaceLandmarker wiring behind this gate is the next step. |
+| Iris behind the gate (FaceLandmarker on its own thread + main-thread adapter) | 🧪 | `src/lib/eyeWorker.ts` (airWorker's engine-wrapper pattern, graphics-chip→processor fallback, `face_landmarker.task` now in `public/air/`) and `src/lib/eyeTrack.ts` (refuses while the gate is closed; frames pumped as transferred ImageBitmaps; ear/gaze/blink via callbacks only). Verified by `tsc` + `vite build` + the gate's npm checks only — **no camera has ever driven it; the live run stays with the owner's real-camera check.** |
 
 ## 7. Integration, regressions, performance
 
