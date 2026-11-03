@@ -60,6 +60,24 @@ function updates(t, since) {
   return (gh.comments(t.number) || []).filter((c) => c.created_at > since && /^\/update\b/i.test(c.body.trim()) && gh.trusted(c.user.login)).map((c) => ({ at: c.created_at, text: c.body.trim().replace(/^\/update\s*/i, '') }));
 }
 
+/**
+ * Remove a task's worktree. Its node_modules is a link to the real one: the
+ * link goes first, on its own (`rmdir` without /s never follows it), and
+ * nothing is deleted recursively while it's still there.
+ */
+function clearTree(tree) {
+  if (!fs.existsSync(tree)) return;
+  const link = path.join(tree, 'node_modules');
+  try { fs.lstatSync(link); execFileSync('cmd', ['/c', 'rmdir', link], { stdio: 'ignore' }); } catch { /* no link */ }
+  if (fs.existsSync(link)) throw new Error(`couldn't remove the package link in ${tree} safely`);
+  try { execFileSync('git', ['-C', ROOT, 'worktree', 'remove', '--force', tree], { stdio: 'ignore' }); } catch { /* not registered */ }
+  try { execFileSync('git', ['-C', ROOT, 'worktree', 'prune'], { stdio: 'ignore' }); } catch {}
+  if (fs.existsSync(tree)) fs.rmSync(tree, { recursive: true, force: true });
+}
+
+/** A failure of the dispatcher itself (before the agent ran): never counted as the agent's. */
+class SetupError extends Error {}
+
 function nextTask() {
   return gh.listTasks().map(describe)
     .filter((t) => t.open && t.status === 'assigned' && t.state.agent === 'claude' && gh.trusted(t.author))
@@ -71,11 +89,16 @@ async function run(t) {
   const branch = `agent/claude-${t.number}-${attempt}`;
   const tree = path.join(WORK, `task-${t.number}`);
   say(`#${t.number} (${t.title}): starting attempt ${attempt} on ${branch}`);
-  execFileSync('git', ['-C', ROOT, 'fetch', 'origin', gh.DEV_BRANCH], { stdio: 'ignore' });
-  if (fs.existsSync(tree)) execFileSync('git', ['-C', ROOT, 'worktree', 'remove', '--force', tree], { stdio: 'ignore' });
-  execFileSync('git', ['-C', ROOT, 'worktree', 'add', '-B', branch, tree, `origin/${gh.DEV_BRANCH}`], { stdio: 'ignore' });
-  // Shared, not copied: the app's packages and the Rust build cache.
-  if (fs.existsSync(path.join(ROOT, 'node_modules'))) execFileSync('cmd', ['/c', 'mklink', '/J', path.join(tree, 'node_modules'), path.join(ROOT, 'node_modules')], { stdio: 'ignore' });
+  try {
+    execFileSync('git', ['-C', ROOT, 'fetch', 'origin', gh.DEV_BRANCH], { stdio: 'ignore' });
+    clearTree(tree);
+    execFileSync('git', ['-C', ROOT, 'worktree', 'add', '-B', branch, tree, `origin/${gh.DEV_BRANCH}`], { stdio: 'ignore' });
+    // Shared, not copied: the app's packages and the Rust build cache.
+    if (fs.existsSync(path.join(ROOT, 'node_modules'))) execFileSync('cmd', ['/c', 'mklink', '/J', path.join(tree, 'node_modules'), path.join(ROOT, 'node_modules')], { stdio: 'ignore' });
+  } catch (e) {
+    try { clearTree(tree); } catch {}
+    throw new SetupError(`couldn't prepare the worktree: ${e.message.split('\n')[0]}`);
+  }
   const started = iso();
   setTask(t, 'in-progress', { startedAt: started, heartbeat: started, branch, attempt });
 
@@ -133,7 +156,7 @@ async function run(t) {
   const entry = { agent: 'claude', attempt, at: iso(), minutes, turns };
   let prNumber = null;
   try { prNumber = JSON.parse(execFileSync('gh', ['pr', 'list', '--repo', gh.REPO, '--head', branch, '--state', 'all', '--json', 'number'], { encoding: 'utf8' }))[0]?.number ?? null; } catch {}
-  try { execFileSync('git', ['-C', ROOT, 'worktree', 'remove', '--force', tree], { stdio: 'ignore' }); } catch {}
+  try { clearTree(tree); } catch (e) { say(`#${t.number}: ${e.message}`); }
 
   if (result?.[1]?.toLowerCase() === 'paused') {
     setTask(t, 'assigned', { history: [...(t.state.history || []), { ...entry, result: 'paused' }] }, `Paused at a safe point for an urgent task (after ${minutes} min): ${summary}\nIt resumes from branch \`${branch}\` when Claude is free.`);
@@ -151,5 +174,11 @@ do {
   let t;
   try { t = nextTask(); } catch (e) { say(`couldn't read the queue: ${e.message}`); if (ONCE) break; await sleep(CHECK_MS); continue; }
   if (!t) { if (ONCE) { say('nothing assigned to Claude'); break; } await sleep(CHECK_MS); continue; }
-  try { await run(t); } catch (e) { say(`#${t.number}: dispatch failed: ${e.message}`); try { setTask(t, 'failed', { lastFailure: 'blocked' }, `The dispatcher couldn't start this task: ${e.message}`); } catch {} }
+  try { await run(t); } catch (e) {
+    // The dispatcher's own failure: the task goes back as it was (not an
+    // attempt by the agent), and the dispatcher stops rather than churn.
+    say(`#${t.number}: dispatcher failure: ${e.message}`);
+    try { setTask(t, 'assigned', {}, `The dispatcher on the owner's PC hit its own problem before or around this run (${e.message.slice(0, 200)}). Not counted as an attempt; the task is waiting again.`); } catch {}
+    break;
+  }
 } while (!ONCE);
