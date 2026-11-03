@@ -112,6 +112,9 @@ pub fn prepare(id: &str) -> Result<Prepared> {
         Ok(version) => version,
         Err(error) => { cleanup_generated(&parent, &stage); return Err(error); }
     };
+    // This user's key, so the extension can tell Izuki's jobs from anyone
+    // else's on the bridge port (ext::write_pairing).
+    if let Err(error) = crate::ext::write_pairing(&stage) { cleanup_generated(&parent, &stage); return Err(error.into()); }
     let backup = parent.join(format!("BrowserExtension.previous-{token}"));
     if target.exists() {
         if let Err(error) = std::fs::rename(&target, &backup) { cleanup_generated(&parent, &stage); return Err(error.into()); }

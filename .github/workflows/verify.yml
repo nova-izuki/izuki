@@ -36,6 +36,8 @@ jobs:
       - run: npm run test:prompts
       - run: npm run test:panel
       - run: npm run test:workspace
+      # The extension takes jobs only when Izuki signed them.
+      - run: npm run test:bridge
       - run: npm run test:finder
       - run: npm run test:air
       - run: npm run test:speakers

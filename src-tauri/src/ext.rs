@@ -39,7 +39,7 @@ static WAKE: Mutex<Option<Sender<()>>> = Mutex::new(None);
 
 /// The newest extension (extension/manifest.json). Older copies don't know
 /// every request Izuki makes (Blackboard, finding your school's tab).
-pub const LATEST: &str = "1.5.7";
+pub const LATEST: &str = "1.6.0";
 /// The connected extension's version; empty: one from before 1.4.1, which
 /// didn't say.
 static VERSION: Mutex<String> = Mutex::new(String::new());
@@ -496,10 +496,98 @@ fn read_json_body(req: &mut tiny_http::Request, limit: u64) -> Result<Value> {
 }
 
 /// Start the bridge (once, at launch). Quietly does nothing if the port is taken.
+// ---- Proving to the extension that this is Izuki ----------------------------
+//
+// The extension polls 127.0.0.1:PORT for work. While Izuki isn't running, any
+// program can hold that port (another user's, on a shared PC), and the
+// extension used to do whatever it was sent: read any page with the user's
+// sign-ins, click and type in the tab in front. Now a job comes signed with a
+// key only Izuki and this user's extension folder know. It's random, made once
+// per user, kept in Izuki's data folder and written into the extension folder
+// Izuki sets up (pairing.json). The extension refuses anything unsigned.
+
+/// This user's bridge key (made once, then kept).
+fn bridge_key() -> &'static [u8] {
+    static KEY: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    KEY.get_or_init(|| load_or_make_key(&crate::store::data_dir().join("bridge-key")))
+}
+
+fn load_or_make_key(path: &std::path::Path) -> Vec<u8> {
+    if let Some(key) = std::fs::read_to_string(path).ok().and_then(|t| from_hex(t.trim())).filter(|k| k.len() == 32) {
+        return key;
+    }
+    let mut key = vec![0u8; 32];
+    ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut key).expect("the system's random source");
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Err(e) = std::fs::write(path, to_hex(&key)) {
+        eprintln!("[ext] couldn't keep the bridge key ({e}); the extension pairs again next time");
+    }
+    key
+}
+
+/// HMAC-SHA256 of "challenge\nbody" with the key, as hex.
+fn bridge_sign(key: &[u8], challenge: &str, body: &str) -> String {
+    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, key);
+    to_hex(ring::hmac::sign(&key, format!("{challenge}\n{body}").as_bytes()).as_ref())
+}
+
+/// The extension's challenge, if it sent a sane one (an older extension sends none).
+fn challenge_of(header: Option<String>) -> Option<String> {
+    header.filter(|c| (16..=128).contains(&c.len()) && c.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// A job (or "nothing to do") as sent: signed for an extension that asked
+/// with a challenge, plain for an older one, which has no check either way.
+fn bridge_reply(job: Value, challenge: Option<&str>, key: &[u8]) -> Value {
+    match challenge {
+        Some(c) => {
+            let body = job.to_string();
+            json!({ "mac": bridge_sign(key, c, &body), "signed": body })
+        }
+        None => job,
+    }
+}
+
+/// pairing.json for an extension folder Izuki sets up. (Not web-accessible:
+/// pages can't fetch it; only the extension and this user can read it.)
+pub fn write_pairing(folder: &std::path::Path) -> std::io::Result<()> {
+    let body = json!({ "key": to_hex(bridge_key()), "about": "Lets this browser extension check that it's talking to Izuki on this PC. Private to you: never share it." });
+    std::fs::write(folder.join("pairing.json"), body.to_string())
+}
+
+/// The extension folder an earlier Izuki set up has no key (or another one):
+/// give it this user's, so the updated extension in it pairs by itself.
+fn pair_installed() {
+    let Some(dir) = dirs::data_local_dir().map(|d| d.join("Izuki").join("BrowserExtension")) else { return };
+    if !dir.join("manifest.json").is_file() {
+        return;
+    }
+    let current = std::fs::read_to_string(dir.join("pairing.json")).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok());
+    if current.as_ref().and_then(|v| v["key"].as_str()) != Some(to_hex(bridge_key()).as_str()) {
+        if let Err(e) = write_pairing(&dir) {
+            eprintln!("[ext] couldn't pair the installed extension: {e}");
+        }
+    }
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn from_hex(s: &str) -> Option<Vec<u8>> {
+    if s.len() % 2 != 0 {
+        return None;
+    }
+    (0..s.len()).step_by(2).map(|i| s.get(i..i + 2).and_then(|h| u8::from_str_radix(h, 16).ok())).collect()
+}
+
 pub fn spawn() {
     std::thread::Builder::new()
         .name("izuki-ext-bridge".into())
         .spawn(|| {
+            pair_installed();
             // Right after an update the old Izuki can still hold the port for
             // a few seconds — wait for it rather than going without the
             // extension for the whole session.
@@ -582,8 +670,14 @@ pub fn spawn() {
                     });
                     continue;
                 }
+                let challenge = challenge_of(req.headers().iter().find(|h| h.field.to_string().eq_ignore_ascii_case("X-Izuki-Nonce")).map(|h| h.value.to_string()));
                 if url.starts_with("/izuki/ping") {
-                    let _ = req.respond(json_response(json!({ "ok": true, "name": "Izuki" })));
+                    // With a challenge, the answer proves it's Izuki on this PC.
+                    let mut pong = json!({ "ok": true, "name": "Izuki" });
+                    if let Some(c) = &challenge {
+                        pong["proof"] = json!(bridge_sign(bridge_key(), c, "ping"));
+                    }
+                    let _ = req.respond(json_response(pong));
                 } else if url.starts_with("/izuki/next") {
                     // Long-poll in its own thread so results can still come in.
                     let wake_rx = wake_rx.clone();
@@ -595,11 +689,11 @@ pub fn spawn() {
                                 (!q.is_empty()).then(|| q.remove(0))
                             };
                             if let Some(job) = next {
-                                let _ = req.respond(json_response(json!({ "id": job.id, "op": job.op, "args": job.args })));
+                                let _ = req.respond(json_response(bridge_reply(json!({ "id": job.id, "op": job.op, "args": job.args }), challenge.as_deref(), bridge_key())));
                                 return;
                             }
                             if started.elapsed() > POLL_WAIT {
-                                let _ = req.respond(json_response(json!({ "id": 0, "op": "none" })));
+                                let _ = req.respond(json_response(bridge_reply(json!({ "id": 0, "op": "none" }), challenge.as_deref(), bridge_key())));
                                 return;
                             }
                             let _ = wake_rx.lock().recv_timeout(Duration::from_millis(250));
@@ -1104,6 +1198,41 @@ mod tests {
         assert_eq!(e.rect.x, ((8.0 + 100.0) * 1.5) as i32);
         assert_eq!(e.rect.y, ((112.0 + 50.0) * 1.5) as i32);
         assert_eq!(e.rect.w, 120);
+    }
+
+    /// The extension can only trust what Izuki signed: the reply depends on
+    /// the key and on this very challenge, and an older extension (no
+    /// challenge) still gets the plain job it understands.
+    #[test]
+    fn jobs_are_signed_for_the_challenge() {
+        let key = [7u8; 32];
+        let job = json!({ "id": 3, "op": "snapshot", "args": {} });
+        let signed = bridge_reply(job.clone(), Some("00112233445566778899aabbccddeeff"), &key);
+        let body = signed["signed"].as_str().unwrap();
+        assert_eq!(serde_json::from_str::<Value>(body).unwrap(), job);
+        assert_eq!(signed["mac"].as_str().unwrap(), bridge_sign(&key, "00112233445566778899aabbccddeeff", body));
+        assert_ne!(bridge_sign(&key, "00112233445566778899aabbccddeef0", body), signed["mac"].as_str().unwrap(), "another challenge, another signature");
+        assert_ne!(bridge_sign(&[8u8; 32], "00112233445566778899aabbccddeeff", body), signed["mac"].as_str().unwrap(), "another key, another signature");
+        // A known HMAC-SHA256 answer (RFC 4231 test case 2), so the extension's WebCrypto and this agree.
+        let rfc = ring::hmac::sign(&ring::hmac::Key::new(ring::hmac::HMAC_SHA256, b"Jefe"), b"what do ya want for nothing?");
+        assert_eq!(to_hex(rfc.as_ref()), "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
+        assert_eq!(bridge_reply(job.clone(), None, &key), job, "older extensions get the plain job");
+        assert_eq!(challenge_of(Some("00112233445566778899aabbccddeeff".into())).as_deref(), Some("00112233445566778899aabbccddeeff"));
+        assert_eq!(challenge_of(Some("short".into())), None);
+        assert_eq!(challenge_of(Some("zz112233445566778899aabbccddeeff".into())), None);
+    }
+
+    #[test]
+    fn the_bridge_key_is_made_once_and_kept() {
+        let dir = std::env::temp_dir().join(format!("izuki-bridge-key-{}", std::process::id()));
+        let path = dir.join("bridge-key");
+        let first = load_or_make_key(&path);
+        assert_eq!(first.len(), 32);
+        assert_eq!(load_or_make_key(&path), first, "the same key next time");
+        std::fs::write(&path, "not hex").unwrap();
+        assert_ne!(load_or_make_key(&path), first, "a damaged key is replaced");
+        assert_eq!(from_hex(&to_hex(&first)).unwrap(), first);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

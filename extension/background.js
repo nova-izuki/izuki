@@ -14,20 +14,58 @@ const BRIDGE = "http://127.0.0.1:47615/izuki";
 const HEADERS = { "X-Izuki-Extension": "1", "X-Izuki-Extension-Version": chrome.runtime.getManifest().version, "Content-Type": "application/json" };
 let running = false;
 
+// Is it really Izuki asking? While Izuki isn't running, any program can hold
+// the bridge port, and this worker used to do whatever it was sent: read any
+// page with your sign-ins, click and type in your tab. Now each job must be
+// signed with the key Izuki wrote into this folder when it set the extension
+// up (pairing.json, never readable by web pages), for a challenge this
+// worker just made. Unsigned or wrongly signed: ignored.
+let pairingKey = null;
+const hexBytes = (h) => new Uint8Array(h.match(/../g).map((b) => parseInt(b, 16)));
+async function bridgeKey() {
+  if (pairingKey) return pairingKey;
+  try {
+    const { key } = await (await fetch(chrome.runtime.getURL("pairing.json"))).json();
+    if (!/^[0-9a-f]{64}$/.test(key || "")) return null;
+    pairingKey = await crypto.subtle.importKey("raw", hexBytes(key), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+    return pairingKey;
+  } catch {
+    return null; // set up by hand, not by Izuki: no key, so no jobs
+  }
+}
+const challenge = () => [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+async function fromIzuki(reply, nonce, key) {
+  if (typeof reply?.signed !== "string" || !/^[0-9a-f]{64}$/.test(reply.mac || "")) return null;
+  const ok = await crypto.subtle.verify("HMAC", key, hexBytes(reply.mac), new TextEncoder().encode(`${nonce}\n${reply.signed}`));
+  return ok ? JSON.parse(reply.signed) : null;
+}
+
 async function loop() {
   if (running) return;
   running = true;
   try {
+    const key = await bridgeKey();
+    if (!key) {
+      console.warn("Izuki: this extension wasn't set up by Izuki on this PC (no pairing key), so it takes no jobs. Set it up from Izuki: Settings, Browser extension.");
+      return;
+    }
     for (;;) {
       let job;
       try {
-        const r = await fetch(`${BRIDGE}/next`, { headers: HEADERS });
-        job = await r.json();
+        const nonce = challenge();
+        const r = await fetch(`${BRIDGE}/next`, { headers: { ...HEADERS, "X-Izuki-Nonce": nonce } });
+        job = await fromIzuki(await r.json(), nonce, key);
       } catch {
         // Izuki isn't running: try again later (the alarm restarts us).
         return;
       }
-      if (!job || !job.id || job.op === "none") continue;
+      // Not signed by Izuki: whatever is on the port isn't Izuki. Stop (no
+      // job, no answer, no busy loop) and try again later.
+      if (!job) {
+        console.warn("Izuki: an unsigned reply on the bridge port was ignored.");
+        return;
+      }
+      if (!job.id || job.op === "none") continue;
       let result;
       try {
         result = { id: job.id, ok: true, data: await run(job.op, job.args || {}) };
@@ -119,10 +157,13 @@ async function run(op, args) {
     case "open":
       await chrome.tabs.update(tab.id, { url: String(args.url) });
       return true;
-    case "readlinks":
+    case "readlinks": {
       // Look-ahead: pages linked from this one, read quietly with your own
-      // sign-ins so the answer can come from behind the link.
-      return await Promise.all((args.urls || []).slice(0, 4).map((u) => readLinked(String(u))));
+      // sign-ins so the answer can come from behind the link. Only links that
+      // are really on this page: never any address a request names.
+      const links = new Set((await inPage(tab.id, () => [...document.links].map((a) => a.href))) || []);
+      return await Promise.all((args.urls || []).slice(0, 4).map((u) => (links.has(String(u)) ? readLinked(String(u)) : { url: String(u), text: "", refused: "not a link on this page" })));
+    }
     default:
       throw new Error(`unknown request: ${op}`);
   }
