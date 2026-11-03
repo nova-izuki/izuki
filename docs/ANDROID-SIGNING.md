@@ -32,7 +32,7 @@ APK Signature Scheme v3 lets the old key vouch for a new one (a "lineage").
 2. Make the lineage, with the old key signing for the new one:
    `apksigner rotate --out izuki-lineage --old-signer --ks izuki-preview.p12 --new-signer --ks izuki-preview-2.p12`
    Remove the old key's rollback rights, so updates signed only by the old (public) key are refused: `--set-rollback false` on the old signer.
-3. **CI needs one more step** (Claude adds it once you choose A): after `assembleDebug`, re-sign with `apksigner sign --lineage izuki-lineage --rotation-min-sdk-version 28 --signer` (old key) `--next-signer` (new key). Without `--rotation-min-sdk-version 28`, apksigner uses the new key only on Android 13+.
+3. **CI needs one more step** (Claude adds it once you choose A): after `assembleDebug`, re-sign with `apksigner sign --ks izuki-preview.p12 --next-signer --ks izuki-preview-2.p12 --lineage izuki-lineage --rotation-min-sdk-version 28 app-debug.apk`. The old key comes first, then `--next-signer` and the new key. Without `--rotation-min-sdk-version 28`, apksigner uses the new key only on Android 13+.
    - Android 9+ phones move to the new key on their next update, and from then on refuse APKs signed only with the public key.
    - Android 7–8 phones keep validating the old signature: they still update, but stay exposed until they reinstall.
 4. Add the secrets in GitHub → Settings → Secrets and variables → Actions:

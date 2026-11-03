@@ -43,8 +43,9 @@
   // "1 point", "(2 points)", "10 pts", "0.5 pt": a score on the page.
   // (The same whitespace as Rust's is_ascii_whitespace.)
   const POINTS=/[0-9][ \t\n\r\f]*(?:point|pt)s?(?![a-z])/;
-  // "Attempt 3 of 3" (any number), and a numbered question ("question 1").
-  const ATTEMPT=/attempt[ \t\n\r\f]*[0-9]+[ \t\n\r\f]*of/,NUMBERED_QUESTION=/question[ \t\n\r\f]*[0-9]/;
+  // "Attempt 3 of 3" (any number), and a numbered question ("question 1",
+  // "question #1", "question no. 1", "question number 1", "question nº 1").
+  const ATTEMPT=/attempt[ \t\n\r\f]*[0-9]+[ \t\n\r\f]*of/,NUMBERED_QUESTION=/question[ \t\n\r\f]*(?:number|no\.|nº|no|#)?[ \t\n\r\f]*[0-9]/;
 
   function kind(title,url,text) {
     // The page itself: title (plus its main heading, in the extension) and

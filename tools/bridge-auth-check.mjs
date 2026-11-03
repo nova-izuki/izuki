@@ -19,6 +19,15 @@ const subtleKey = await crypto.webcrypto.subtle.importKey('raw', Buffer.from('Je
 assert.equal(Buffer.from(await crypto.webcrypto.subtle.sign('HMAC', subtleKey, Buffer.from('what do ya want for nothing?'))).toString('hex'),
   '5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843');
 
+// Every request the extension sends Izuki is signed (ext.rs request_signed):
+// HMAC of "time\npath\nsha256(body)" with the pairing key.
+const sha = (text) => crypto.createHash('sha256').update(text).digest('hex');
+function signedBy(key, headers, url, body = '') {
+  const { pathname, search } = new URL(url), time = headers['X-Izuki-Time'] || '';
+  return /^[0-9]+$/.test(time) && Math.abs(Date.now() - Number(time)) < 120000
+    && headers['X-Izuki-Signature'] === crypto.createHmac('sha256', Buffer.from(key, 'hex')).update(`${time}\n${pathname}${search}\n${sha(body)}`).digest('hex');
+}
+
 async function session({ server, paired = true }) {
   const seen = [];
   let served = false;
@@ -36,7 +45,7 @@ async function session({ server, paired = true }) {
   };
   const fetch = async (url, opts = {}) => {
     const u = String(url);
-    seen.push({ url: u, credentials: opts.credentials || 'omit', body: opts.body });
+    seen.push({ url: u, credentials: opts.credentials || 'omit', body: opts.body, headers: opts.headers || {} });
     if (u === 'chrome-extension://x/pairing.json') {
       if (!paired) throw new TypeError('Failed to fetch');
       return { ok: true, json: async () => ({ key: KEY }) };
@@ -58,9 +67,10 @@ async function session({ server, paired = true }) {
   };
   const ctx = vm.createContext({ chrome, fetch, console: { ...console, warn() {} }, URL, AbortController, setTimeout, clearTimeout, setInterval, clearInterval,
     // (One realm, as in the browser: Node's WebCrypto rejects a sandbox's own Uint8Array.)
-    crypto: crypto.webcrypto, TextEncoder, Uint8Array, structuredClone, importScripts() {}, self: {} });
+    crypto: crypto.webcrypto, TextEncoder, Uint8Array, AbortSignal, Date, structuredClone, importScripts() {}, self: {} });
   ctx.globalThis = ctx;
   vm.runInContext('var IzukiWorkspaceState={createHistoryStore(){return {}}};', ctx);
+  vm.runInContext(fs.readFileSync(new URL('../extension/bridge-proof.js', import.meta.url), 'utf8'), ctx, { filename: 'bridge-proof.js' });
   // The worker starts its loop when it loads; this check starts it instead
   // (that one call removed) and waits for that very run to end, so a pass
   // can't come from a loop that never ran.
@@ -103,6 +113,9 @@ assert.equal(mail(s), false, 'an address that is not a link on the page is never
 const [inbox, story] = s.result.data;
 assert.equal(inbox.refused, 'not a link on this page');
 assert.match(story.text, /PRIVATE https:\/\/news\.example\.org\/story/, 'a real link on the page is read, with sign-ins');
+const toIzuki = s.seen.filter((x) => x.url.startsWith('http://127.0.0.1:47615/'));
+assert.deepEqual([...new Set(toIzuki.map((x) => new URL(x.url).pathname))], ['/izuki/next', '/izuki/result']);
+for (const x of toIzuki) assert(signedBy(KEY, x.headers, x.url, x.body), `the worker signs ${x.url}`);
 
 // 5. Set up by hand (no pairing.json): no jobs taken at all.
 s = await session({ server: (job) => job, paired: false });
@@ -113,21 +126,22 @@ console.log('bridge auth: unsigned, wrong-key and replayed jobs ignored (nothing
 // ---- Part 2: nothing private goes to the port unless Izuki proves itself ----
 // bridge-proof.js, used before questions, page text, selections and tasks.
 async function proofIn({ paired = true, ping }) {
-  let pings = 0;
+  let pings = 0, unsignedPings = 0;
   const ctx = vm.createContext({
     chrome: { runtime: { getURL: (p) => 'chrome-extension://x/' + p } },
-    crypto: crypto.webcrypto, TextEncoder, Uint8Array, AbortSignal, Date,
+    crypto: crypto.webcrypto, TextEncoder, Uint8Array, AbortSignal, Date, URL,
     fetch: async (url, opts = {}) => {
       if (url === 'chrome-extension://x/pairing.json') {
         if (!paired) throw new TypeError('Failed to fetch');
         return { json: async () => ({ key: KEY }) };
       }
       pings++;
+      if (!signedBy(KEY, opts.headers, url)) unsignedPings++;
       return ping(opts.headers['X-Izuki-Nonce']);
     },
   });
   vm.runInContext(fs.readFileSync(new URL('../extension/bridge-proof.js', import.meta.url), 'utf8'), ctx);
-  return { proof: ctx.IzukiBridgeProof, pings: () => pings };
+  return { proof: ctx.IzukiBridgeProof, pings: () => pings, unsignedPings: () => unsignedPings };
 }
 const signedPing = (key) => async (nonce) => ({ json: async () => ({ ok: true, proof: sign(key, nonce, 'ping') }) });
 
@@ -150,5 +164,37 @@ p = await proofIn({ ping: signedPing(KEY) });
 assert.equal((await p.proof.check()).ok, true, 'Izuki proves itself');
 await p.proof.require();
 assert.equal(p.pings(), 1, 'a good proof is trusted for a minute, not asked again each time');
+assert.equal(p.unsignedPings(), 0, 'the ping itself is signed');
 
 console.log('bridge auth part 2: the panel, worker and selection helpers send only after Izuki proves itself (unpaired, impostor, wrong key and offline refused; a good proof trusted for a minute).');
+
+// ---- Part 3: every request is signed, the same way Izuki checks it ----------
+// Another program can copy the extension's headers, but not this signature.
+async function sentBy({ key, now }) {
+  const sent = [];
+  const ctx = vm.createContext({
+    chrome: { runtime: { getURL: (p) => 'chrome-extension://x/' + p } },
+    crypto: crypto.webcrypto, TextEncoder, Uint8Array, AbortSignal, URL, Date: { now: () => now },
+    fetch: async (url, opts = {}) => {
+      if (url === 'chrome-extension://x/pairing.json') {
+        if (!key) throw new TypeError('Failed to fetch');
+        return { json: async () => ({ key }) };
+      }
+      sent.push(opts.headers);
+      return { json: async () => ({ ok: true }) };
+    },
+  });
+  vm.runInContext(fs.readFileSync(new URL('../extension/bridge-proof.js', import.meta.url), 'utf8'), ctx);
+  await ctx.IzukiBridgeProof.fetch('http://127.0.0.1:47615/izuki/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"question":"hi"}' });
+  return sent[0];
+}
+// The vector ext.rs's requests_must_be_signed_by_this_users_extension checks.
+let h = await sentBy({ key: 'a5'.repeat(32), now: 1700000000000 });
+assert.equal(h['X-Izuki-Time'], '1700000000000');
+assert.equal(h['X-Izuki-Signature'], 'e8554f4e158b63b9ecc7c4c8a5853878c6852384a69d47d694d97b8e085febe3', 'the extension and Izuki sign alike');
+assert.equal(h['X-Izuki-Extension'], '1');
+assert.equal(h['Content-Type'], 'application/json', "the caller's headers are kept");
+h = await sentBy({ key: null, now: 1700000000000 });
+assert.equal(h['X-Izuki-Signature'], undefined, 'unpaired: unsigned, so Izuki refuses it and says to set the extension up');
+
+console.log('bridge auth part 3: every request to Izuki is signed (the worker\'s next and result, the ping, the panel helpers), byte for byte as ext.rs checks it.');

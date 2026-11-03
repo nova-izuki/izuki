@@ -5,19 +5,41 @@
   // wrote it into this folder as pairing.json; src-tauri/src/ext.rs). A program
   // holding Izuki's port while Izuki isn't running can't sign, so nothing is
   // sent to it. A good answer is trusted for a minute.
+  //
+  // It works the other way too: every request this extension sends is signed
+  // with the same key (signedFetch), so another program on this PC (another
+  // Windows user's, say) can't pose as the extension to take Izuki's jobs, use
+  // this user's AI or start a desktop task. Izuki refuses unsigned requests.
   const PING = "http://127.0.0.1:47615/izuki/ping";
   const hexBytes = (h) => new Uint8Array(h.match(/../g).map((b) => parseInt(b, 16)));
+  const hex = (buffer) => [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
   let key = null, provenUntil = 0;
   async function pairingKey() {
     if (key) return key;
     try {
       const { key: k } = await (await fetch(chrome.runtime.getURL("pairing.json"))).json();
       if (!/^[0-9a-f]{64}$/.test(k || "")) return null;
-      key = await crypto.subtle.importKey("raw", hexBytes(k), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+      key = await crypto.subtle.importKey("raw", hexBytes(k), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
       return key;
     } catch {
       return null;
     }
+  }
+  /** fetch() to Izuki's bridge, signed: HMAC of "time\npath\nsha256(body)"
+   *  (ext.rs request_signed). Unpaired, it goes unsigned and Izuki says to set
+   *  the extension up from Izuki. */
+  async function signedFetch(url, options = {}) {
+    const body = options.body ?? "";
+    if (typeof body !== "string") throw new TypeError("Izuki bridge requests send text.");
+    const headers = { "X-Izuki-Extension": "1", ...(options.headers || {}) };
+    const k = await pairingKey();
+    if (k) {
+      const time = String(Date.now()), { pathname, search } = new URL(url);
+      const digest = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)));
+      headers["X-Izuki-Time"] = time;
+      headers["X-Izuki-Signature"] = hex(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(`${time}\n${pathname}${search}\n${digest}`)));
+    }
+    return fetch(url, { ...options, headers });
   }
   /** {ok} if Izuki on this PC proved itself; otherwise {ok:false, why}. */
   async function check() {
@@ -27,7 +49,7 @@
     const nonce = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
     let reply;
     try {
-      reply = await (await fetch(PING, { headers: { "X-Izuki-Extension": "1", "X-Izuki-Nonce": nonce }, signal: AbortSignal.timeout(2500) })).json();
+      reply = await (await signedFetch(PING, { headers: { "X-Izuki-Nonce": nonce }, signal: AbortSignal.timeout(2500) })).json();
     } catch {
       return { ok: false, why: "offline" };
     }
@@ -47,5 +69,5 @@
     const r = await check();
     if (!r.ok) throw new Error(message[r.why]);
   }
-  root.IzukiBridgeProof = { check, require, message };
+  root.IzukiBridgeProof = { check, require, message, fetch: signedFetch };
 })(globalThis);

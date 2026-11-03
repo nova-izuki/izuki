@@ -18,7 +18,7 @@ async function izuki(path, body) {
   const proof = await globalThis.IzukiBridgeProof.check();
   if (!proof.ok) return { ok: false, text: globalThis.IzukiBridgeProof.message[proof.why] };
   try {
-    const r = await fetch(`${BRIDGE_URL}/${path}`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body || {}) });
+    const r = await globalThis.IzukiBridgeProof.fetch(`${BRIDGE_URL}/${path}`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body || {}) });
     // An older Izuki on the PC doesn't know these yet.
     if (r.status === 404) return { ok: false, text: "Update Izuki on your PC (it updates itself — or restart it) to use this." };
     return await r.json();

@@ -26,8 +26,14 @@ const ctx=vm.createContext({chrome,console,crypto:webcrypto,TextEncoder,Uint8Arr
   fetch:async(url,options)=>{
     // The extension folder's pairing key, and Izuki's /ping signed with it.
     if(url==='chrome-extension://test-extension/pairing.json')return {ok:true,json:async()=>({key:'a5'.repeat(32)})};
+    // Like Izuki (ext.rs), answer only the extension, and only signed with the
+    // pairing key: HMAC of "time\npath\nsha256(body)".
+    const nodeCrypto=await import('node:crypto'),pairing=Buffer.from('a5'.repeat(32),'hex'),h=options.headers||{};
+    assert.equal(h['X-Izuki-Extension'],'1',`the extension header on ${url}`);
+    const digest=nodeCrypto.createHash('sha256').update(options.body??'').digest('hex');
+    assert.equal(h['X-Izuki-Signature'],nodeCrypto.createHmac('sha256',pairing).update(`${h['X-Izuki-Time']}\n${new URL(url).pathname}\n${digest}`).digest('hex'),`a signed request to ${url}`);
     if(url.endsWith('/izuki/ping')){
-      const proof=(await import('node:crypto')).createHmac('sha256',Buffer.from('a5'.repeat(32),'hex')).update(`${options.headers['X-Izuki-Nonce']}\nping`).digest('hex');
+      const proof=nodeCrypto.createHmac('sha256',pairing).update(`${h['X-Izuki-Nonce']}\nping`).digest('hex');
       return {ok:true,json:async()=>({ok:true,name:'Izuki',proof})};
     }
     const body=JSON.parse(options.body);calls.push(['native',new URL(url).pathname,body]);

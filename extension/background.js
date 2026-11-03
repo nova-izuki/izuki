@@ -53,7 +53,7 @@ async function loop() {
       let job;
       try {
         const nonce = challenge();
-        const r = await fetch(`${BRIDGE}/next`, { headers: { ...HEADERS, "X-Izuki-Nonce": nonce } });
+        const r = await IzukiBridgeProof.fetch(`${BRIDGE}/next`, { headers: { ...HEADERS, "X-Izuki-Nonce": nonce } });
         job = await fromIzuki(await r.json(), nonce, key);
       } catch {
         // Izuki isn't running: try again later (the alarm restarts us).
@@ -73,7 +73,7 @@ async function loop() {
         result = { id: job.id, ok: false, error: String(e && e.message ? e.message : e) };
       }
       try {
-        await fetch(`${BRIDGE}/result`, { method: "POST", headers: HEADERS, body: JSON.stringify(result) });
+        await IzukiBridgeProof.fetch(`${BRIDGE}/result`, { method: "POST", headers: HEADERS, body: JSON.stringify(result) });
       } catch {
         return;
       }

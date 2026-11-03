@@ -60,6 +60,19 @@ const originalFetch=window.fetch.bind(window);
 const PAIRING='a5'.repeat(32);
 window.fetch=async(url,options={})=>{
   if(String(url)==='chrome-extension://test-extension/pairing.json')return new Response(JSON.stringify({key:PAIRING}));
+  if(String(url).startsWith('http://127.0.0.1:47615/')){
+    // Like Izuki (ext.rs request_signed): only a request signed with the
+    // pairing key is answered. An unsigned one fails the whole check.
+    const h=options.headers||{},{pathname,search}=new URL(url);
+    const hex=(b)=>[...new Uint8Array(b)].map((x)=>x.toString(16).padStart(2,'0')).join('');
+    const key=await crypto.subtle.importKey('raw',new Uint8Array(PAIRING.match(/../g).map((b)=>parseInt(b,16))),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+    const digest=hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(options.body??'')));
+    const want=hex(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(`${h['X-Izuki-Time']}\n${pathname}${search}\n${digest}`)));
+    if(h['X-Izuki-Extension']!=='1'||h['X-Izuki-Signature']!==want){
+      setTimeout(()=>{throw Error(`unsigned bridge request: ${pathname}`);});
+      return new Response(JSON.stringify({ok:false,text:'unsigned'}),{status:403});
+    }
+  }
   if(String(url).endsWith('/izuki/ping')){
     const nonce=options.headers?.['X-Izuki-Nonce']||'';
     const key=await crypto.subtle.importKey('raw',new Uint8Array(PAIRING.match(/../g).map((b)=>parseInt(b,16))),{name:'HMAC',hash:'SHA-256'},false,['sign']);

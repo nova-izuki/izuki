@@ -44,7 +44,7 @@ function cancelAsk() {
   busy = null;
   $("send").disabled = false;
   if (stopButton?.dataset.owner === "chat") { stopButton.hidden = true; stopButton.onclick = null; }
-  if (old) void fetch(`${BRIDGE}/side/stop`, { method: "POST", headers: H, body: JSON.stringify({ requestId: old.id, kind: "chat" }), signal: AbortSignal.timeout(3000) }).catch(() => {});
+  if (old) void globalThis.IzukiBridgeProof.fetch(`${BRIDGE}/side/stop`, { method: "POST", headers: H, body: JSON.stringify({ requestId: old.id, kind: "chat" }), signal: AbortSignal.timeout(3000) }).catch(() => {});
 }
 function cancelDesktopTask(why = "") {
   const task = desktopTask;
@@ -80,7 +80,7 @@ async function ping() {
     st.className = "on";
     st.innerHTML = "<i></i>Connected";
     try {
-      const f = await (await fetch(`${BRIDGE}/focus`, { method: "POST", headers: H, body: "{}" })).json();
+      const f = await (await globalThis.IzukiBridgeProof.fetch(`${BRIDGE}/focus`, { method: "POST", headers: H, body: "{}" })).json();
       if (f.left) st.innerHTML += ` · 🎯 Focus ${Math.ceil(f.left / 60)} min`;
     } catch {}
     return true;
@@ -228,7 +228,7 @@ function actionsFor(content, el, wide) {
   act("Notes", async () => {
     try {
       await globalThis.IzukiBridgeProof.require();
-      const n = await (await fetch(`${BRIDGE}/note`, { method: "POST", headers: H, body: JSON.stringify({ title: current?.title || "", url: current?.url || "", text: content, page: false }) })).json();
+      const n = await (await globalThis.IzukiBridgeProof.fetch(`${BRIDGE}/note`, { method: "POST", headers: H, body: JSON.stringify({ title: current?.title || "", url: current?.url || "", text: content, page: false }) })).json();
       divider(n.text);
     } catch (error) { divider(error?.message && !/fetch/i.test(error.message) ? error.message : "Izuki isn't running on this PC."); }
   }, "Save this answer to Izuki Notes");
@@ -478,7 +478,7 @@ ${page.text.slice(0, 9000)}` : ""}`;
     }, 800);
     let r;
     // The page text goes only to Izuki itself (bridge-proof.js).
-    try { await globalThis.IzukiBridgeProof.require(); r = await fetch(`${BRIDGE}/ask`, { method: "POST", headers: H, body: JSON.stringify(body), signal: request.controller.signal }); }
+    try { await globalThis.IzukiBridgeProof.require(); r = await globalThis.IzukiBridgeProof.fetch(`${BRIDGE}/ask`, { method: "POST", headers: H, body: JSON.stringify(body), signal: request.controller.signal }); }
     finally { clearInterval(watch); }
     if (!requests.active(request)) return false;
     if (!r.ok) throw Error(r.status === 404 ? "Update Izuki on this PC to use this feature." : "Izuki couldn't answer that request. Try again.");
@@ -679,7 +679,7 @@ const side = async (route, body) => {
     const proof = await globalThis.IzukiBridgeProof.check();
     if (!proof.ok) return { ok: false, text: globalThis.IzukiBridgeProof.message[proof.why] };
   }
-  return fetch(`${BRIDGE}/side/${route}`, { method: "POST", headers: H, body: JSON.stringify(body), signal:AbortSignal.timeout(10000) })
+  return globalThis.IzukiBridgeProof.fetch(`${BRIDGE}/side/${route}`, { method: "POST", headers: H, body: JSON.stringify(body), signal:AbortSignal.timeout(10000) })
     .then((r) => r.json())
     .catch(() => ({ ok: false, text: "Izuki isn't running on this PC — open the Izuki app and try again." }));
 };

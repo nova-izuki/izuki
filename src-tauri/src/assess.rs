@@ -91,9 +91,17 @@ const ASSESSMENT_ONLY: &[&str] = &[
 /// points are a shop's or a game's ("Redeem 500 points"): clicking stays allowed.
 const SCHOOL: &[&str] = &["exercise", "homework", "assignment", "worksheet", "problem set", "lesson", "chapter", "module", "question", "course"];
 
-/// The word, then (after spaces) a digit: "attempt 3", "question 1".
+/// How a number is labelled: "question 1", "question #1", "question no. 1",
+/// "question number 1", "question nº 1".
+const NUMBER_MARKS: &[&str] = &["number", "no.", "nº", "no", "#", ""];
+
+/// The word, then (after spaces and a label mark) a digit.
 fn numbered(words: &str, word: &str) -> bool {
-    words.match_indices(word).any(|(i, _)| words[i + word.len()..].trim_start_matches(|c: char| c.is_ascii_whitespace()).starts_with(|c: char| c.is_ascii_digit()))
+    let spaces = |s: &str| s.trim_start_matches(|c: char| c.is_ascii_whitespace()).to_owned();
+    words.match_indices(word).any(|(i, _)| {
+        let rest = spaces(&words[i + word.len()..]);
+        NUMBER_MARKS.iter().any(|m| rest.strip_prefix(m).is_some_and(|r| spaces(r).starts_with(|c: char| c.is_ascii_digit())))
+    })
 }
 
 /// "Attempt 3 of 3" (any number): an assessment's attempt counter.

@@ -9,7 +9,7 @@
     // Questions and tasks go only to Izuki itself; Stop always goes through.
     if(path!=="side/stop")await root.IzukiBridgeProof.require();
     let response;
-    try{response=await fetch(`${bridge}/${path}`,{method:"POST",headers,body:JSON.stringify(body),signal:signal||AbortSignal.timeout(12000)});}
+    try{response=await root.IzukiBridgeProof.fetch(`${bridge}/${path}`,{method:"POST",headers,body:JSON.stringify(body),signal:signal||AbortSignal.timeout(12000)});}
     catch(error){
       // A wait that ran out is a slow answer, not a broken app: say which.
       if(error?.name==="TimeoutError")throw Error("Izuki on this PC took too long to answer. Try again, or choose a faster AI in Izuki's settings.");

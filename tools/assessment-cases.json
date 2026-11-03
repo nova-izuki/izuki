@@ -90,6 +90,42 @@
   "kind": "practice"
  },
  {
+  "title": "Week 5",
+  "url": "",
+  "text": "Question #1 — 1 point. Which port does HTTPS use?",
+  "kind": "graded"
+ },
+ {
+  "title": "Week 6",
+  "url": "",
+  "text": "Question No. 3 — 2 points. Which layer handles routing?",
+  "kind": "graded"
+ },
+ {
+  "title": "Week 7",
+  "url": "",
+  "text": "QUESTION NUMBER 4: 1 pt. Which protocol resolves names?",
+  "kind": "graded"
+ },
+ {
+  "title": "Week 8",
+  "url": "",
+  "text": "Question nº 2 — 1 point. Which port does SSH use?",
+  "kind": "graded"
+ },
+ {
+  "title": "Help center",
+  "url": "",
+  "text": "Question #5 from our FAQ: how do I return an item?",
+  "kind": "none"
+ },
+ {
+  "title": "Checkout",
+  "url": "",
+  "text": "Question number? Call us. Use 500 points for $5 off.",
+  "kind": "none"
+ },
+ {
   "title": "Checkout",
   "url": "https://shop.example.com/checkout",
   "text": "Choose your shipping speed. Standard or Express",
