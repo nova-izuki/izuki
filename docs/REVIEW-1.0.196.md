@@ -143,6 +143,12 @@ Status: open · claimed · fixed (commit) · dismissed (why).
 | 4 | Low | `tools/idle-check.cjs` | Spun without pausing while the port file was empty | Claude | fixed: waits whenever there's no port yet |
 | 5 | Low | `tools/idle-check.cjs` | A blank main window passed without being measured | Claude | fixed: blank main window fails (checked with a blank page: exit 1); the overlay stays report-only |
 
+## CodeRabbit review 11: commit `ca497c9`, 2026-11-03 04:43 UTC
+
+| # | Sev. | Where | Finding | Claimed by | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | High | `tools/android-rotation-check.sh` | `adb shell` joins its words into one command line on the phone, so the quotes around `sh -c '…'` were lost: the data-writing step ran outside `run-as` and the check would have failed even with a good rotation | Claude | fixed: the whole `run-as` command goes as one string. (Reviews of `e23141b`, `2b6c9cc` and `46ed21b` are on Freebuff's Smart Vision commits: Freebuff's to triage.) |
+
 ## Found outside CodeRabbit
 
 | Sev. | Where | Finding | Claimed by | Status |

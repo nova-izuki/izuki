@@ -43,8 +43,16 @@ check the result, recover when it didn't work.**
     decision only: real screens, Easy Mode's prompt, Groq
     `qwen/qwen3.8-27b`) got 11 of 11 right, in 0.5–4.0 s per decision
     (median 0.8 s). A busy Groq now counts as "not run", never as a pass or
-    a fail. It doesn't yet cover acting, checking or recovering: that's the
-    scenario set below.
+    a fail. **Acting, checking and recovering, 2026-11-03:**
+    `automation::action_bench` (hand-run: real window, real mouse, the same
+    `execute` a plan uses, 320 ms hand travel; it runs only after 2 minutes
+    with nobody at the PC) passed all 7: a new window's controls readable on
+    the first look (0.55 s), an ordinary look (0.57 s), click (0.62 s),
+    click a box and type, read back (0.94 s), a button that moved after the
+    look (0.71 s), a greyed-out button refused (0.36 s), another app's
+    window on top pressed through directly (0.36 s). Each checked against
+    the window's own log. Speed lead: a look at a six-control window costs
+    over half a second.
 - Dependencies: UI Automation and OCR quality per app, the extension, the
   model brains. Freebuff's eye control will snap to targets through `uia.rs`:
   agree changes to its interface in `docs/COLLAB.md` first.

@@ -16,11 +16,13 @@ rotated="$2"
 published="${3:-}"
 package=com.novaizuki.mobile
 fail() { echo "ROTATION CHECK FAILED: $*" >&2; exit 1; }
+# (adb shell joins its words into one command line on the phone, so the
+# whole run-as command goes as one string, inner quotes and all.)
 
 if [ -n "$published" ]; then
   adb uninstall "$package" >/dev/null 2>&1 || true
   adb install "$published" || fail "the published app did not install"
-  adb shell run-as "$package" sh -c 'mkdir -p files && echo kept > files/izuki-rotation-marker' || fail "could not write the published app's data"
+  adb shell "run-as $package sh -c 'mkdir -p files && echo kept > files/izuki-rotation-marker'" || fail "could not write the published app's data"
   # -d: a test build may carry the same or a lower version than the release.
   adb install -r -d "$rotated" || fail "the new build did not install over the published app"
   kept=$(adb shell run-as "$package" cat files/izuki-rotation-marker | tr -d '\r')
@@ -31,7 +33,7 @@ fi
 adb uninstall "$package" >/dev/null 2>&1 || true
 adb install "$old" || fail "today's app (public key only) did not install"
 # The preview APK is a debug build, so run-as can write into its data.
-adb shell run-as "$package" sh -c 'mkdir -p files && echo kept > files/izuki-rotation-marker' || fail "could not write the app's data"
+adb shell "run-as $package sh -c 'mkdir -p files && echo kept > files/izuki-rotation-marker'" || fail "could not write the app's data"
 
 adb install -r "$rotated" || fail "the rotated update did not install over today's app"
 kept=$(adb shell run-as "$package" cat files/izuki-rotation-marker | tr -d '\r')
