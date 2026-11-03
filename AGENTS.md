@@ -47,13 +47,24 @@ courses, devices or PC, and never put personal data in the repo.
      PR #16. Commit and push your tested work there. A bigger separate piece
      may go on `claude/…`, `codex/…` or `freebuff/…` with a PR into the
      milestone branch.
-   - Nothing is merged to `main`, tagged or published until it's finished
-     and verified: every required check green, CodeRabbit's actionable
-     findings handled, tests run for real. Since 2026-11-03 the owner has
-     authorized automatic merging and releasing of verified work (no
-     per-release approval). Claude cuts the release: it bumps the version,
-     merges and lets the pipeline publish, then checks the published files,
-     the updater manifest and the website. Only committed, verified work
+   - **Standing release authorization (owner, 2026-11-03, restated):**
+     completed, tested work is committed and pushed, merged when every
+     required check passes, built and published as a new version, with the
+     website, download links, docs and release notes updated and the update
+     delivered through the auto-updater. Nobody asks the owner for routine
+     approval to push, merge, release, deploy or update. Every earlier rule
+     requiring the owner's approval for a merge or a release is superseded.
+   - Still required every time: every required check green, CodeRabbit's
+     actionable findings handled, test failures, security findings and
+     regressions fixed first, tests run for real, user data preserved and
+     the previous release kept for rollback. A release that needs missing
+     credentials, a platform's own approval (an app store) or a failed
+     security check is reported, never forced; other safe work continues.
+   - **Claude coordinates merges and releases** so nothing is published
+     twice: it bumps the version, merges, lets the pipeline publish, then
+     checks the published files, the updater manifest and the website, and
+     reports. Freebuff and Codex commit and push verified work and mark it
+     ready in COLLAB.md; Claude merges it. Only committed, verified work
      ships; another assistant's work in progress waits for the next release.
    - **Only Claude bumps the version and writes the release notes.** Never
      touch the version files (`package.json`, `src-tauri/tauri.conf.json`,
@@ -181,6 +192,8 @@ dependencies and next steps for each workstream live in `docs/WORKSTREAMS.md`
 starting work so you build on the other assistant's pieces instead of
 repeating or overwriting them. Never overwrite the other assistant's files
 (claim in `docs/COLLAB.md` first). Merging and publishing follow rule 2:
-only Claude merges to `main` and cuts releases, only after every required
-check passes, under the owner's 2026-11-03 authorization. Codex and
-Freebuff push verified work to the branch and never merge or publish.
+the owner's standing authorization covers pushing, merging, releasing,
+deploying and updating without asking each time; Claude coordinates the
+merges and releases (one coordinator, nothing published twice), only after
+every required check passes. Codex and Freebuff push verified work and mark
+it ready in COLLAB.md.
