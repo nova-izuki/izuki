@@ -151,3 +151,27 @@ and full Rust verification remain pending. Do not call this shipped or complete.
 5. Let Freebuff finish document and capture work. Never stage its dirty files.
 6. Release only through Claude's established verified workflow; keep updater
    signature checks, original files and rollback intact.
+
+## Follow-up snapshot and verified delivery
+
+- At 16:14 UTC, dispatcher-owned task #18 changed to `status:failed`, category
+  `stalled`, after 23 minutes / two turns. Its final message explicitly reports
+  a session limit resetting at **12:20 pm America/Chicago**. The dispatcher
+  performed its own shutdown; Codex did not interrupt it or recover the task.
+  No Smart Screen Actions implementation exists on the clean task worktree.
+- Freebuff committed `556ba4f` locally: removes #21's dead capture stub and an
+  unused attachment import. This commit also carries the shared coordination
+  claims added by Codex. At the subsequent remote check, `milestone-196` was
+  still `8002c4a`, and #21 was still in progress: do not call it verified/done
+  until Freebuff reports its push/checks. No dirty attachment/capture edits
+  remained at that snapshot. Dirty coordinator/dispatcher fixes still remained.
+- Codex fallback implementation commit: **`e026b1c`**. Full local Rust suite
+  completed: **599 passed, 0 failed, 48 ignored**, 23.59 s execution after the
+  build-lock wait/compilation. Ignored/manual hardware tests were not forced.
+  Frontend/build/conversation/Air results above apply to the same base/code.
+- CodeRabbit CLI completed analysis of all eight committed fallback files:
+  **`review_completed`, zero findings**. This was an actual completed review,
+  not a heartbeat, skipped review or missing service response.
+- The implementation never invoked a model turn. CLI authentication/readiness
+  and deterministic protocol tests are the proven boundary; automatic backup
+  scheduling remains unimplemented and disabled.
