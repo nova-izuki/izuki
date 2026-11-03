@@ -45,17 +45,17 @@ Status: open · claimed · fixed (commit) · dismissed (why).
 | 2 | Low | `docs/REVIEW-1.0.196.md` | Claim dated 2026-11-03 on 2026-11-02 | Claude | fixed (commit “CodeRabbit review 1 fixes”): corrected here and in COLLAB.md |
 | 3 | Low | `tools/asset-check.mjs` | Repo path breaks in a folder with a space | Claude | fixed (commit “CodeRabbit review 1 fixes”): `fileURLToPath` |
 | 4 | Medium | `tools/asset-check.mjs` | A truncated file crashes the checker without naming it | Claude | fixed (commit “CodeRabbit review 1 fixes”): each file and each character cross-check is guarded and reported by name; tested with a header-only .ico |
-| 5 | High | `src-tauri/src/lib.rs` | Start the observer after creating the main window | — (Freebuff's) | open |
-| 6 | Major | `src-tauri/src/bugs.rs` | Sensitive data exposure (bug text to the observer) | — (Freebuff's) | open |
-| 7 | Major | `src-tauri/src/observer.rs` | Sensitive data exposure | — (Freebuff's) | open |
-| 8 | Medium | `src-tauri/src/bugs.rs` | The observer misses `[bug]` events when bug sending isn't configured | — (Freebuff's) | open |
-| 9 | Medium | `src-tauri/src/observer.rs` | The two-minute duplicate rule is never used (a blinking caret fills the ring) | — (Freebuff's) | open |
-| 10 | Medium | `src-tauri/src/observer.rs` | Time floor but no load throttle | — (Freebuff's) | open |
-| 11 | Medium | `src-tauri/src/observer.rs` | `start`/`stop` can leave stuck or duplicate threads | — (Freebuff's) | open |
-| 12 | Medium | `src-tauri/src/observer.rs` | `FRAMES` locked across network and disk writes | — (Freebuff's) | open |
-| 13 | Trivial | `src-tauri/Cargo.toml` | Security misconfiguration (dependency for the dev feature) | — (Freebuff's) | open |
-| 14 | Low | `docs/MILESTONE-1.0.196.md` | A validation record dated in the future | — (Freebuff's) | open |
-| 15 | Low | `docs/MILESTONE-1.0.196.md` | Observer token path written with control characters | — (Freebuff's) | open |
+| 5 | High | `src-tauri/src/lib.rs` | Start the observer after creating the main window | Freebuff | fixed (commit “Observer: redact…”, fe01c94): the opt-in block now runs after the main window exists, so with the manifest window list populated it actually starts |
+| 6 | Major | `src-tauri/src/bugs.rs` | Sensitive data exposure (bug text to the observer) | Freebuff | fixed (fe01c94): every note is scrubbed at the `record` boundary — user name, keys and paths never reach `/api/events` or timeline.json; the reproduced detect→retest loop lives in `tools/repros/2026-11-02-observer-timeline-username-leak/` |
+| 7 | Major | `src-tauri/src/observer.rs` | Sensitive data exposure | Freebuff | fixed (fe01c94 + 45f7446): `record` scrubs at the boundary for every caller, and the loopback server reads no frame content for a response beyond serving the requested JPEG; the scrub proof is now environment-independent |
+| 8 | Medium | `src-tauri/src/bugs.rs` | The observer misses `[bug]` events when bug sending isn't configured | Freebuff | fixed (commit “Smart Vision: capture skips a hidden window…”, 45f7446): `report()` records to the observer before the sending gate, so the Capture Bug story exists on the machines it was built for |
+| 9 | Medium | `src-tauri/src/observer.rs` | The two-minute duplicate rule is never used (a blinking caret fills the ring) | Freebuff | fixed (45f7446): `capture_once` consults the seen map (`is_new_content` over `SEEN`), not just the previous frame's hash; the caret-blink case now drops like any repeat inside the window |
+| 10 | Medium | `src-tauri/src/observer.rs` | Time floor but no load throttle | Freebuff | fixed (45f7446): `next_floor` stretches the gap from the last grab's cost (floor 700 ms → ceiling 3.5 s), pure and test-pinned (`a_costly_grab_backs_off_and_cheap_ones_stay_at_the_floor`) |
+| 11 | Medium | `src-tauri/src/observer.rs` | `start`/`stop` can leave stuck or duplicate threads | Freebuff | fixed (45f7446): every start moves a generation and threads leave when theirs stops matching; the server accepts non-blockingly with a wake-up tick, so a stopped one exits instead of sitting in `incoming()` |
+| 12 | Medium | `src-tauri/src/observer.rs` | `FRAMES` locked across network and disk writes | Freebuff | fixed (45f7446): `/api/frames` and `capture_bug` clone the bytes out under a short lock and write with the lock released |
+| 13 | Trivial | `src-tauri/Cargo.toml` | Security misconfiguration (dependency for the dev feature) | Freebuff | fixed (verified, 2026-11-03): the finding's concern is a build path enabling the feature by accident — `devvision = []` is not in the default set, and no workflow, tool, `package.json` or `tauri.conf.json` passes `--features devvision` or `--all-features`; the only test reference is `tools/test-windows.ps1`, which runs `--no-default-features` first, then devvision deliberately |
+| 14 | Low | `docs/MILESTONE-1.0.196.md` | A validation record dated in the future | Freebuff | fixed (2026-11-03): the date has arrived and the validation genuinely ran on it — the milestone rows' suite counts now name the 2026-11-03 runs (devvision 598/0/45, default 586/0/46, both 0 failed) |
+| 15 | Low | `docs/MILESTONE-1.0.196.md` | Observer token path written with control characters | Freebuff | fixed (docs commit, 2026-11-03): the row now reads `%APPDATA%\Izuki\vision\token`, control characters gone (checked with a byte-count grep) |
 
 ## CodeRabbit review 3: commit `b55f0ed`, 2026-11-02 15:38 UTC
 
@@ -107,10 +107,10 @@ Status: open · claimed · fixed (commit) · dismissed (why).
 
 | # | Sev. | Where | Finding | Claimed by | Status |
 | --- | --- | --- | --- | --- | --- |
-| 1 | High | `src-tauri/src/lib.rs:590` | Smart Vision captures the desktop while the main window is hidden | Freebuff (owner) | open |
-| 2 | Low | `src-tauri/src/observer.rs:569` | The redaction test depends on the host's user name | Freebuff (owner) | open |
+| 1 | High | `src-tauri/src/lib.rs:590` | Smart Vision captures the desktop while the main window is hidden | Freebuff (owner) | fixed (45f7446): `capture_once` checks `IsWindowVisible` and `IsIconic` first — a hidden or minimized window keeps its rect but shows nothing, so the desktop behind it is never captured |
+| 2 | Low | `src-tauri/src/observer.rs:569` | The redaction test depends on the host's user name | Freebuff (owner) | fixed (45f7446): the proof now uses a fake API key that `scrub` redacts no matter whose account runs the suite; the username path stays covered by `bugs.rs`'s own tests and the repro evidence stays fixed in the logs |
 | 3 | Low | `tools/repros/…username-leak/*.log` | The repro logs carry the Windows user name in paths | Claude (tiny fix, noted in COLLAB.md) | fixed: the name is replaced by `<user>` in both logs; the evidence reads the same |
-| 4 | Low | `docs/VALIDATION-2026-11-02.md:148`, `docs/MILESTONE-1.0.196.md:50` | Test counts differ between rows | Freebuff (owner) | open |
+| 4 | Low | `docs/VALIDATION-2026-11-02.md:148`, `docs/MILESTONE-1.0.196.md:50` | Test counts differ between rows | Freebuff (owner) | fixed (docs commit, 2026-11-03): both milestone rows now name the same 2026-11-03 runs (devvision 598/0/45, default 586/0/46) |
 
 ## CodeRabbit review 8: commit `b2312a9` (Freebuff), 2026-11-03 02:53 UTC
 
