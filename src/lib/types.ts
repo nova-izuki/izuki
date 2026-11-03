@@ -305,12 +305,10 @@ export interface Settings {
    */
   execution_mode: "background" | "focus";
 
-  /**
-   * Keep the glowing hand on screen at all times, tracking the real cursor,
-   * whether or not the config panel is open — the "don't need the app open"
-   * mode.
-   */
+  /** Floating chat availability; legacy setting name retained. */
   follow_mode_enabled: boolean;
+  /** Optional hand during active screen actions, off by default. */
+  action_hand_enabled: boolean;
   /** The Island at the top of the screen (live activities). On by default. */
   island_enabled: boolean;
   /** When music plays, the orb comes up and flows with it. */

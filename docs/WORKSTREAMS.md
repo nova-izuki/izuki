@@ -1,5 +1,11 @@
 # Workstreams, ownership and status
 
+Codex hand-visibility follow-up (2026-11-03, issue #27): remove the decorative
+idle robot hand; retain the floating chat and Freebuff's independent Air/Eye
+tracking. Optional action hand defaults off and is bounded by action/session
+and foreground-window lifecycle. Scoped changes are on
+`codex/hand-overlay-lifecycle`, with dedicated desktop/native regression tests.
+
 Set by the owner on 2026-11-03. Freebuff keeps **Smart Eye / Air Control,
 Smart Vision and Developer Mode**; Claude Code keeps **Smart Screen Actions,
 speed optimization and security fixes**. Both finish existing critical work

@@ -112,3 +112,7 @@ assistant is also changing.
   orchestration beyond retry-after/backoff; Touch Grass phone dashboard.
 - Either: any new helper thread inside a mission must carry the execution
   context (`execution::current()` then `execution::attach(..)` in the thread).
+
+## Codex hand-overlay claim (2026-11-03)
+
+Issue #27, codex/hand-overlay-lifecycle: hand lifecycle only (follow.rs, overlay stays_up, tray/settings wording, HandCursor and atomic hand rendering in OverlayCanvas). Freebuff retains AirControl, eye tracking/camera and CalloutChips/shared pointing slot. Claude retains bridge/dispatcher and action task #18. No existing uncommitted file is taken over; no duplicate app/dispatcher is started.
