@@ -18,8 +18,9 @@ The repo is public: github.com/nova-izuki/izuki.
 **One product, a private companion for every user.** Izuki is downloaded by
 the public, and each person gets their own personal assistant, shaped by
 their preferences, routines, apps, devices and permissions. Their profile,
-memories and settings live in their own data folder, under their control:
-they can see them, export them and delete them. The owner's requests are
+memories and settings live in their own data folder, under their control.
+Today they can see their memories and delete them one by one; export and
+erase-all are planned, not built (`docs/PRODUCT-PRINCIPLE.md`). The owner's requests are
 examples of what a user needs. Never hardcode their name, paths, accounts,
 courses, devices or PC, and never put personal data in the repo.
 
@@ -101,18 +102,13 @@ courses, devices or PC, and never put personal data in the repo.
 7. **Don't touch anything outside this `izuki/` folder.** The parent folder
    is the owner's separate robot project.
 
-## Who owns which workstream (owner, 2026-11-02)
-Status, gaps, dependencies and next steps are in [docs/ROADMAP.md](docs/ROADMAP.md).
-- **Claude Code:** security fixes, Smart Screen Actions, the Fast Action Engine (speed), and the release and version files.
-- **Freebuff:** Smart Eye / Air Control, Smart Vision, Smart Developer Mode.
-- **Codex, or anyone else:** claim a row in COLLAB.md first. The other capabilities in the roadmap are unassigned.
-
-Finish security-critical fixes and the milestone verification before starting new features. When work needs another owner's files (eye control snapping to `uia.rs`, say), coordinate in COLLAB.md first. Never overwrite another assistant's work.
-
 ## Code review (CodeRabbit)
 CodeRabbit reviews every push to a pull request by itself, drafts included
-(settings: `.coderabbit.yaml`), so no review command is needed. Its findings
-are leads to check, not orders. The shared log for the milestone is
+(settings: `.coderabbit.yaml`). If a push still goes unreviewed (paused, rate
+limit, service limit), comment `@coderabbitai review` on the PR once (or
+`@coderabbitai full review` to redo the whole PR) and note it in the log. A
+checklist row that needs a review stays pending until that review lands. Its
+findings are leads to check, not orders. The shared log for the milestone is
 `docs/REVIEW-1.0.196.md`. All three assistants follow the same steps:
 
 1. **Read first.** Before changing code a review covers, read the open
@@ -169,8 +165,11 @@ English: short sentences, no jargon, and say what the user will notice.
 ## Who works on what (owner, 2026-11-03)
 
 Freebuff keeps Smart Eye / Air Control, Smart Vision and Developer Mode.
-Claude Code keeps Smart Screen Actions, speed optimization and security fixes.
-Both finish existing critical work first. Status, missing pieces, ownership,
+Claude Code keeps Smart Screen Actions, speed optimization and security fixes
+(plus the release and version files, rule 2). Codex or anyone else claims a
+row in COLLAB.md first. Both finish existing critical work first: the
+security-critical fixes and the milestone verification come before new
+features. Status, missing pieces, ownership,
 dependencies and next steps for each workstream live in `docs/WORKSTREAMS.md`
 — update your lane's section there when its state changes, and read it before
 starting work so you build on the other assistant's pieces instead of

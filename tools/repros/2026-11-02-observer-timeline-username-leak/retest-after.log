@@ -1,4 +1,4 @@
-   Compiling izuki v1.0.195 (C:\Users\nwach\Downloads\Nova_Izuki\izuki\src-tauri)
+   Compiling izuki v1.0.195 (C:\Users\<user>\Downloads\Nova_Izuki\izuki\src-tauri)
 warning: unused imports: `Duration` and `Instant`
   --> src\devmode.rs:30:17
    |

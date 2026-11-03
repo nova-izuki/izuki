@@ -11,43 +11,65 @@ the owner-only Smart Developer Mode, which is compiled out of public builds.
 
 ## 1. Smart Screen Actions — Claude Code
 
-**Izuki looks at the screen, does what its owner meant, and checks it
-actually happened.**
+**Understand the screen, pick the right target, act only when authorized,
+check the result, recover when it didn't work.**
 
-- In place: `assess.rs` decides what kind of page is on screen from the page's own
-  evidence (graded test vs practice vs neither, so self-checks scroll freely and
-  real exams stay hands-off); `uia.rs` is the magnetic hand — before any click,
-  Windows UI Automation names the real control under the point, so a rough mark
-  still lands on the button; `automation.rs` moves the real mouse with a
-  hand-like path; the overlay can watch and act.
-- Missing for the whole loop: a working cycle of understand → pick an
-  authorized target → act → verify the result → recover when a step fails
-  (retry a safe way, or stop and say so). Per-action safety needs an approval
-  ladder (what may run unasked, what waits until you tap Yes).
-- Dependencies: `uia.rs` and `automation.rs` (shared with the Fast Action
-  Engine, work 2); the overlay hit-test rules in `AGENTS.md` (click-through
-  overlay, `data-izk-hit`).
-- Next steps for Claude Code: define the action grammar and the approval
-  ladder, wire verification (read back the control state after each action),
-  add failure recovery, and add screen-action regression tests on recorded
-  pages. No rewrite of the classifier or magnetic hand — build on them.
+- In place:
+  - **The look → plan → act loop** (`brain.rs`), with numbered real controls
+    from UI Automation (`uia.rs`): the model picks "control 7", not pixels
+    (`vision::resolve_targets`).
+  - **Safe Hands** (`automation.rs`): before a click the target is checked as
+    present, enabled and not covered (`check_target`, `covered_at`); a covered
+    one is pressed through accessibility instead; typed text is read back
+    (`check_typed`); a snag continues the task with a note.
+  - **Browser pages through the extension**: DOM snapshot, click, type, links
+    on the page. Since 1.0.196 every message either way is signed with the
+    user's pairing key (`ext.rs`, `extension/bridge-proof.js`).
+  - **Authorization and limits**: confirmation for send, post, buy and delete;
+    no passwords, no lock screen; graded-quiz answers held back, practice pages
+    allowed (`assess.rs`, shared cases in `tools/assessment-cases.json`).
+  - **Records**: task verdicts and contracts (`execution.rs`), missions with an
+    evidence journal.
+- Missing:
+  - One "did it work?" check after every action type. Today it covers clicks
+    and typing; scrolling, opening and shortcuts mostly aren't verified.
+  - Re-planning from the new screen after any failed step, not just the snag
+    note.
+  - A measured success rate on a fixed scenario set. Nothing claims "better"
+    without numbers.
+- Dependencies: UI Automation and OCR quality per app, the extension, the
+  model brains. Freebuff's eye control will snap to targets through `uia.rs`:
+  agree changes to its interface in `docs/COLLAB.md` first.
+- Next steps for Claude Code: a scenario set with pass/fail and timing
+  (extend `tools/brain-check`), then per-action-type result checks, then
+  re-plan on failure. Build on the classifier and the magnetic hand; no
+  rewrite.
 
 ## 2. Fast Action Engine — Claude Code
 
-**Do the same thing, faster, without wasting the owner's time.**
+**The same work, faster: accessibility and DOM first, screenshots and model
+calls only when needed, no fixed wait where a condition can be checked.**
 
-- In place: UI Automation snapping instead of pixel guessing (`uia.rs`),
-  eased pointer travel instead of instant teleport (`automation.rs`), the
-  request pipeline has its own caching rules (`docs/HOW-IZUKI-WORKS.md`).
-- Missing: fewer screenshots and repeated model calls per action (re-look only
-  when the screen changed); no fixed sleeps between steps (wait on UIA events);
-  a speed and reliability benchmark so any improvement claim is a measurement,
-  not a feeling.
-- Dependencies: same actuator path as work 1; `assess.rs` stays the only
-  page-minded classifier so both lanes read the same truth.
-- Next steps for Claude Code: build the benchmark (recorded tasks → seconds and
-  success rate, before/after), then drive act-on-UIA-event and screenshot
-  dedupe. Public performance numbers only after the benchmark agrees.
+- In place: plain commands with no AI (`instant.rs`) and named clicks with no
+  AI when exactly one control matches (`run_named_click`); a backup brain
+  raced in when the first is slow (`ask_racing`) and the fastest recent brain
+  first (`order_by_speed`); broken brains rested (`skip_broken`); a short
+  menu for small models (`easy.rs`); the screen read while the user is still
+  talking (`prefetch_screen`) and connections warmed up.
+- Missing:
+  - A benchmark: time to first action, time to finish, screenshots and model
+    calls per task, before and after each change.
+  - Fixed waits: 33 in `automation.rs`, 17 in `brain.rs`, 6 in `patience.rs`.
+    Some deliberately let slow PCs settle, so each is measured before it's
+    replaced with a check for the condition it waits on, never removed blindly.
+  - Fewer repeated screenshots and model calls within one task.
+- Dependencies: the Smart Screen Actions scenario set (the same tasks are
+  timed); `assess.rs` stays the only page classifier, so both lanes read the
+  same truth.
+- Next steps for Claude Code: the timing benchmark on the owner's laptop and
+  one other machine, then replace the waits it shows matter, one at a time,
+  with before and after numbers. Public speed claims only after the benchmark
+  agrees.
 
 ## 3. Smart Eye / Air Control — Freebuff
 
@@ -85,6 +107,16 @@ with your name, per change you push) and the release notes. Anything currently
 shipped or half-shipped that wasn't on the two priority lists stays on its own
 planned track; when prioritizing, this document defers it, it does not delete
 it.
+
+Preserved today: the voice conversation (wake word, barge-in, natural voice);
+chat and its tools, deep research, Campus and Blackboard, notes, PC Care and
+Smart Care; the phone and TV companion, Discord and Telegram, routines and
+reminders, FL Studio help, Office editing, characters. Planned and not
+started: Linux support; "Jarvis" wake, sleep and shutdown; fuller remote
+control after the real PC setup; the per-user gaps in
+`docs/PRODUCT-PRINCIPLE.md` (data export, erase-all, cross-device accounts,
+one permissions register, privacy-preserving learning). Unassigned work is
+claimed in `docs/COLLAB.md` before it starts.
 
 ## 5. Public-product compatibility — both
 

@@ -83,6 +83,41 @@ Status: open · claimed · fixed (commit) · dismissed (why).
 | 3 | Low | `src-tauri/src/assess.rs` (+ `assess.js`) | A checkout with “Have a question?” and “Use 500 points” counted as graded | Claude | fixed (commit “CodeRabbit review 4 fixes”): a school word counts only in the page's own title or address, or as a numbered question (“Question 2”). Cases: the checkout is not a quiz; “Week 5 / Question 2 — 1 point” is graded |
 | 4 | Low | `docs/ANDROID-SIGNING.md` | The rotation step needs `--rotation-min-sdk-version 28`, or apksigner uses the new key only on Android 13+ | Claude | fixed (commit “CodeRabbit review 4 fixes”) |
 
+## CodeRabbit review 5: commit `53d705d`, 2026-11-02 23:07 UTC
+
+4 findings, all on Claude's commit.
+
+| # | Sev. | Where | Finding | Claimed by | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | High | `src-tauri/src/assess.rs` (+ `assess.js`) | “Week 5” + “Question #1 — 1 point” read as no quiz, so the graded guard was off | Claude | fixed (commit “Review 5–6 fixes”): a numbered question may carry a label mark (“#1”, “No. 3”, “number 4”, “nº 2”), in both classifiers. 6 shared cases (4 graded, 2 still not quizzes); the 4 graded ones fail on the old code |
+| 2 | Low | `docs/ANDROID-SIGNING.md` | `apksigner sign` has no `--signer`: the old key is `--ks`, then `--next-signer --ks` the new one | Claude | fixed (same commit) |
+| 3 | Low | `docs/MILESTONE-1.0.196.md` | Mark the bridge fix as planned | Claude | outdated: both parts were committed by then (02a3521, 343986d). The row did still say “Part 2 open”, which was stale: reworded to name the commits |
+| 4 | Low | `docs/MILESTONE-1.0.196.md` | The secret-scan row was ✅ though the release-candidate scan is still to come | Claude | fixed: ⏳, with the current tree ✅ and the release candidate ⏳ |
+
+## CodeRabbit review 6: commit `343986d`, 2026-11-03 02:18 UTC
+
+| # | Sev. | Where | Finding | Claimed by | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | **High** (confirmed) | `src-tauri/src/ext.rs` bridge | Izuki trusted any request with the extension's header. Any program on the PC (another Windows user's included) could take jobs, send fake results, ask with this user's AI, or **prepare and run a desktop task**: `/side/prepare` handed the review token straight back to whoever asked | Claude | fixed (commit “Review 5–6 fixes”): every request is signed by the extension with the pairing key, HMAC of “time\npath\nsha256(body)”, good for 2 minutes and only once (`request_signed`, `first_use`). Unsigned requests get a 403 and a set-up-again message. `/ping` still answers, so the extension can tell it's Izuki. Plain jobs are gone. Tests: `requests_must_be_signed_by_this_users_extension` (key, route, body, time, age, replay), a vector shared with `bridge-auth-check.mjs` part 3, and the worker and panel stand-ins now refuse unsigned requests (the worker check fails with a non-signing extension). **User impact:** an extension from before 1.6.0, or one added by hand, is ignored until set up from Izuki. The settings card says so (“set up again”), as do the help and download pages |
+| 2 | Low | `tools/workspace-worker-check.mjs` | The ping stand-in didn't check the extension header | Claude | fixed: it checks the header and the signature on every request |
+| 3 | Low | `AGENTS.md` | “No review command is needed” isn't always true | Claude | fixed: what to do when a push goes unreviewed. (The “paused” reply on the PR was CodeRabbit answering a manual review command on a commit it had already reviewed; automatic review is on.) |
+| 4 | Medium | `src-tauri/src/ext.rs` Research | A page's own title and address went into the research prompt as if the user said them | Claude | fixed: labelled as reference, never instructions, and length-capped |
+
+## CodeRabbit review 7: commit `fe01c94` (Freebuff), 2026-11-03 02:36 UTC
+
+| # | Sev. | Where | Finding | Claimed by | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | High | `src-tauri/src/lib.rs:590` | Smart Vision captures the desktop while the main window is hidden | Freebuff (owner) | open |
+| 2 | Low | `src-tauri/src/observer.rs:569` | The redaction test depends on the host's user name | Freebuff (owner) | open |
+| 3 | Low | `tools/repros/…username-leak/*.log` | The repro logs carry the Windows user name in paths | Claude (tiny fix, noted in COLLAB.md) | fixed: the name is replaced by `<user>` in both logs; the evidence reads the same |
+| 4 | Low | `docs/VALIDATION-2026-11-02.md:148`, `docs/MILESTONE-1.0.196.md:50` | Test counts differ between rows | Freebuff (owner) | open |
+
+## CodeRabbit review 8: commit `b2312a9` (Freebuff), 2026-11-03 02:53 UTC
+
+| # | Sev. | Where | Finding | Claimed by | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Low | `AGENTS.md:18-24` | Export and erase-all were described as working; they're planned | Claude (my sentence) | fixed: says what works today and points to `docs/PRODUCT-PRINCIPLE.md` |
+
 ## Found outside CodeRabbit
 
 | Sev. | Where | Finding | Claimed by | Status |

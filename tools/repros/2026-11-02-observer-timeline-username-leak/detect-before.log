@@ -1,4 +1,4 @@
-   Compiling izuki v1.0.195 (C:\Users\nwach\Downloads\Nova_Izuki\izuki\src-tauri)
+   Compiling izuki v1.0.195 (C:\Users\<user>\Downloads\Nova_Izuki\izuki\src-tauri)
 warning: unused imports: `Duration` and `Instant`
   --> src\devmode.rs:30:17
    |
@@ -56,7 +56,7 @@ failures:
 ---- observer::record_scrub_tests::a_recorded_event_is_scrubbed_before_it_is_stored stdout ----
 
 thread 'observer::record_scrub_tests::a_recorded_event_is_scrubbed_before_it_is_stored' (27188) panicked at src\observer.rs:579:9:
-the timeline stored the raw user name: Some("factory stopped: C:\\Users\\nwach\\Downloads\\trace.log")
+the timeline stored the raw user name: Some("factory stopped: C:\\Users\\<user>\\Downloads\\trace.log")
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
 
