@@ -47,8 +47,14 @@ courses, devices or PC, and never put personal data in the repo.
      PR #16. Commit and push your tested work there. A bigger separate piece
      may go on `claude/…`, `codex/…` or `freebuff/…` with a PR into the
      milestone branch.
-   - Nothing is merged to `main`, tagged or published until the whole
-     milestone is finished and verified, and the owner has approved it.
+   - Nothing is merged to `main`, tagged or published until it's finished
+     and verified: every required check green, CodeRabbit's actionable
+     findings handled, tests run for real. Since 2026-11-03 the owner has
+     authorized automatic merging and releasing of verified work (no
+     per-release approval). Claude cuts the release: it bumps the version,
+     merges and lets the pipeline publish, then checks the published files,
+     the updater manifest and the website. Only committed, verified work
+     ships; another assistant's work in progress waits for the next release.
    - **Only Claude bumps the version and writes the release notes.** Never
      touch the version files (`package.json`, `src-tauri/tauri.conf.json`,
      `src-tauri/Cargo.toml`, `Cargo.lock`, `android/app/build.gradle`, the
