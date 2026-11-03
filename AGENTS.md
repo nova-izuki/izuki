@@ -132,6 +132,13 @@ Take the top one (most urgent first):
 The coordinator marks it done once that commit's checks pass. Never take a
 task labelled for the other agent, and never close a task yourself.
 
+The bridge's intelligent scheduling and performance-optimization requirements
+(owner, 2026-11-03) are recorded in
+[docs/AGENT-SCHEDULER-REQUIREMENTS.md](docs/AGENT-SCHEDULER-REQUIREMENTS.md);
+implementing them belongs to the bridge lane (`tools/agents/`, the
+coordinator workflow) — read that file before changing how tasks are
+assigned or measured.
+
 ## Code review (CodeRabbit)
 CodeRabbit reviews every push to a pull request by itself, drafts included
 (settings: `.coderabbit.yaml`). If a push still goes unreviewed (paused, rate
