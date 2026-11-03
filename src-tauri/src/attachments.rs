@@ -3,6 +3,7 @@ use anyhow::{anyhow, Result};
 use base64::Engine;
 use serde::Serialize;
 use std::io::{Cursor, Read};
+use std::path::PathBuf;
 
 const MAX_BYTES: usize = 15 * 1024 * 1024;
 const MAX_TEXT: usize = 32_000;
@@ -12,6 +13,10 @@ const MAX_XML: usize = 8 * 1024 * 1024;
 pub struct DocumentText {
     pub text: String,
     pub truncated: bool,
+    /// Where a real copy of the attached bytes now lives (None for plain
+    /// text files), so a following [EDIT:] saves an edit of the actual
+    /// document instead of advice about one.
+    pub staged: Option<String>,
 }
 
 /// The words the person typed, for intent checks. Attached file text is
@@ -30,7 +35,21 @@ pub fn typed_only(content: &str) -> &str {
     }
 }
 
+/// Reads the document's text, without writing anything — the pure form the
+/// unit tests use.
 pub fn read(name: &str, encoded: &str) -> Result<DocumentText> {
+    read_for(None, name, encoded)
+}
+
+/// The same read, with one honest side effect: Office and PDF bytes are
+/// staged as a real copy under `attachments_dir` so a following [EDIT:] has
+/// an actual document to change. Called only by the command layer, where
+/// the person's data folder already exists.
+pub fn read_with_copy(attachments_dir: &std::path::Path, name: &str, encoded: &str) -> Result<DocumentText> {
+    read_for(Some(attachments_dir), name, encoded)
+}
+
+fn read_for(base: Option<&std::path::Path>, name: &str, encoded: &str) -> Result<DocumentText> {
     if encoded.len() > MAX_BYTES.div_ceil(3) * 4 { return Err(anyhow!("Choose a file under 15 MB.")); }
     let bytes = base64::engine::general_purpose::STANDARD.decode(encoded).map_err(|_| anyhow!("The file couldn't be read. Choose it again."))?;
     if bytes.len() > MAX_BYTES { return Err(anyhow!("Choose a file under 15 MB.")); }
@@ -44,7 +63,49 @@ pub fn read(name: &str, encoded: &str) -> Result<DocumentText> {
     };
     if text.trim().is_empty() { return Err(anyhow!("No readable text was found. For a scanned document, attach pictures of its pages instead.")); }
     let truncated = text.chars().count() > MAX_TEXT;
-    Ok(DocumentText { text: text.chars().take(MAX_TEXT).collect(), truncated })
+    // A real copy of the attached Office/PDF bytes staged under the person's
+    // data folder (see stage_in), so a following edit reaches an actual
+    // document. Text files don't stage — a following edit can just [WRITE:]]
+    // a new plain-text file.
+    let staged = match base {
+        Some(dir) if ext == "pdf" || ext == "docx" || ext == "pptx" || ext == "xlsx" => {
+            stage_in(dir, name, &bytes).ok()
+        }
+        _ => None,
+    };
+    Ok(DocumentText { text: text.chars().take(MAX_TEXT).collect(), truncated, staged })
+}
+
+/// The staged copy: `<clean stem>-<content fingerprint>.<ext>`, so the same
+/// content always stages to the same file and different files never
+/// overwrite each other. 64-bit FNV-1a over the bytes is enough to tell
+/// apart what a person attaches, and stable across restarts the way a
+/// random hasher isn't. Nothing staged is deleted by reads.
+pub fn stage_in(base: &std::path::Path, name: &str, bytes: &[u8]) -> Result<String> {
+    let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    if !ext.chars().all(|c| c.is_ascii_alphanumeric()) || ext.len() > 8 {
+        return Err(anyhow!("The file's kind isn't a storable one."));
+    }
+    let mut stem: String = name
+        .strip_suffix(&format!(".{ext}"))
+        .unwrap_or(name)
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .take(60)
+        .collect();
+    if stem.is_empty() {
+        stem = "attached".into();
+    }
+    let mut fingerprint: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in bytes {
+        fingerprint ^= b as u64;
+        fingerprint = fingerprint.wrapping_mul(0x0100_0000_01b3);
+    }
+    let target = base.join(format!("{stem}-{fingerprint:016x}.{ext}"));
+    if !target.exists() {
+        crate::files::atomic_save(&target, || Ok(bytes.to_vec()))?;
+    }
+    Ok(target.to_string_lossy().to_string())
 }
 
 fn pdf(bytes: &[u8]) -> Result<String> {
@@ -222,6 +283,22 @@ mod tests {
         let no_rows = document("xlsx", &[("xl/worksheets/sheet1.xml", "<worksheet><sheetData/></worksheet>")]).unwrap_err();
         assert!(no_rows.to_string().contains("No readable cells"), "got: {no_rows}");
         assert!(document("xlsx", &[("readme.txt", "not a workbook")]).is_err());
+    }
+
+    #[test]
+    fn staging_gives_a_real_stable_copy_and_never_overwrites_a_different_file() {
+        let base = std::env::temp_dir().join(format!("izuki-stage-{}", std::process::id()));
+        let clean_up = || { let _ = std::fs::remove_dir_all(&base); };
+        clean_up();
+        let first = stage_in(&base, "Part_4_Filled_Original_Template.pdf", b"body v1").unwrap();
+        assert!(first.replace('\\', "/").contains("/attachments\\") || first.contains("izuki-stage"), "staged under the given folder: {first}");
+        let same = stage_in(&base, "Part_4_Filled_Original_Template.pdf", b"body v1").unwrap();
+        assert_eq!(first, same, "the same content reuses one file");
+        let different = stage_in(&base, "Part_4_Filled_Original_Template.pdf", b"body v2").unwrap();
+        assert_ne!(first, different, "different content is a different file");
+        assert!(std::path::Path::new(&first).exists());
+        assert_eq!(std::fs::read(&first).unwrap(), b"body v1", "the staged copy holds the real bytes");
+        clean_up();
     }
 
     #[test]

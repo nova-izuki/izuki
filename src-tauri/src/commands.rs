@@ -24,7 +24,12 @@ type R<T> = Result<T, String>;
 
 #[tauri::command]
 pub async fn read_chat_attachment(name: String, data: String) -> R<crate::attachments::DocumentText> {
-    blocking(move || crate::attachments::read(&name, &data).map_err(err)).await?
+    blocking(move || {
+        // Only here, where the person's data folder exists, does an attached
+        // Office/PDF file get its staged copy for a following [EDIT:].
+        let dir = crate::store::data_dir().join("attachments");
+        crate::attachments::read_with_copy(&dir, &name, &data).map_err(err)
+    }).await?
 }
 
 #[tauri::command]
