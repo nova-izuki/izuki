@@ -1228,6 +1228,8 @@ export const EV = {
   islandPlace: "izuki://island-place",
   overlayOpen: "izuki://overlay-open",
   overlayClose: "izuki://overlay-close",
+  /** Gemini-style pointing: normalised regions a reply explains (brain.rs). */
+  callouts: "izuki://callouts",
   /** A new task: clear what Izuki drew while explaining the last one. */
   penClear: "izuki://pen-clear",
   /** The running task's to-do list (brain.rs): [{ text, done }]. */

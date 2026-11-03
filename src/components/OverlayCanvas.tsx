@@ -47,7 +47,9 @@ import type {
   Mark,
   OverlayOpenPayload,
   ShapeKind,
+  Callout,
 } from "../lib/types";
+import { CalloutLayer } from "./CalloutChips";
 
 const TOOLS: Array<{ kind: ShapeKind; label: string; hint: string; icon: React.ReactNode; key: string }> = [
   { kind: "circle", label: "Circle", hint: "click here", icon: <Circle size={16} strokeWidth={2.3} />, key: "1" },
@@ -63,6 +65,8 @@ export function OverlayCanvas() {
   const promptRef = useRef<HTMLInputElement>(null);
 
   const [open, setOpen] = useState(false);
+  /** Gemini-style pointing chips: the regions the reply explains. */
+  const [callouts, setCallouts] = useState<Callout[]>([]);
   /**
    * "preview" is a voice/chat command watching itself run, no drawing UI.
    * "follow" is the always-on hand with nothing else — no toolbar, no
@@ -279,6 +283,7 @@ export function OverlayCanvas() {
 
   const close = useCallback(() => {
     setOpen(false);
+    setCallouts([]);
     setMarks([]);
     setPrompt("");
     setMenu(null);
@@ -458,12 +463,16 @@ export function OverlayCanvas() {
   useEffect(() => {
     const offs: Array<Promise<() => void>> = [
       on<OverlayOpenPayload>(EV.overlayOpen, (p) => openWith(p)),
+      // Gemini-style pointing: fresh chips per look, empty to take them down
+      // (the task's last look, its end). Nothing here is clickable.
+      on<Callout[]>(EV.callouts, (list) => setCallouts(Array.isArray(list) ? list.slice(0, 12) : [])),
     ];
     openWithRef.current = openWith;
     function openWith(p: OverlayOpenPayload) {
         setAsk(null);
         releasedRef.current = false;
         setDesktop(p.desktop);
+        setCallouts([]);
         setMarks([]);
         setPrompt("");
         setFrozen(null);
@@ -895,6 +904,7 @@ export function OverlayCanvas() {
           />}
         {edgeGlow && <EdgeGlow state={orb} />}
         {!(glowOnly && !musicShowing) && <VoiceSphere state={musicShowing ? "speaking" : orb} transcript={transcript} doing={doing} music={musicShowing} />}
+        {callouts.length > 0 && <CalloutLayer callouts={callouts} />}
         {orb === "hidden" && <TranscriptBar text={transcript?.text ?? null} final={!!transcript?.final} />}
         {caption && (
           <CaptionBox

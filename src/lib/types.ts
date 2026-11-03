@@ -565,6 +565,18 @@ export interface OverlayOpenPayload {
   shape?: ShapeKind | null;
 }
 
+/** Gemini-style pointing: one region a reply explains, 0–1000 across the
+ *  screenshot, so the same numbers chip correctly on any screen size. */
+export interface Callout {
+  /** One short spoken label — “Save button”, “Step 2”. */
+  label: string;
+  /** Left/top edge and size, 0–1000 across the whole screenshot. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 /** Push-to-talk state, sent from the config panel's mic to the overlay. */
 export interface ListeningPayload {
   active: boolean;
