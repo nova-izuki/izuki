@@ -119,12 +119,17 @@ calls only when needed, no fixed wait where a condition can be checked.**
 - Dependencies: the same overlay and camera-selection stack the hand lane
   built on (reuse, don't fork); the overlay is OS-level click-through — eye
   gestures need the panel surface, not raw screen clicks.
-- Next steps for Freebuff: eye-gesture gate first (!) — the developer-mode
-  lesson from milestone §5 is that always-on camera sensing must be off by
-  default, dev-only or an explicit per-session opt-in, no angular data logged;
-  then MediaPipe iris landmarks behind the same gates, one-gesture calibration,
+- Next steps for Freebuff: eye-gesture gate first (!) — DONE as groundwork
+  (2026-11-03): `src/lib/eyeGate.ts` is the lane's gate, off everywhere by
+  default, a dev hold only inside dev builds, a session opt-in that never
+  persists and dies with the process, nothing written to storage, and no
+  angular data anywhere (`tools/eye-gate-check.cjs`, `npm run test:eye`);
+  provisional EAR blink detection and an iris-offset→direction helper ride the
+  same file, their values marked for tuning on the owner's own camera. Then:
+  MediaPipe iris landmarks behind this gate, one-gesture calibration,
   look-to-scroll as the first eye-only money feature, accessibility summary in
-  Settings. Real-webcam testing on this PC before any "it works".
+  Settings. Real-webcam testing on this PC before any "it works" — the
+  final check stays with the owner.
 
 ## 4. Keep the other planned capabilities alive — both
 

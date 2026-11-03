@@ -85,6 +85,7 @@ Status: ✅ done and tested · 🧪 built, testing · 🔨 in progress · ⏳ pe
 | Item | Status | Notes |
 | --- | --- | --- |
 | Face/iris tracking, look-then-snap, blink/pinch press, hands-free reading | ⏳ | Needs the owner's real camera for the final check. |
+| Eye-gesture gate groundwork (always-off by default, dev hold, per-session opt-in, no storage, no logged angles) | 🧪 | `src/lib/eyeGate.ts` + `tools/eye-gate-check.cjs` (`npm run test:eye`, all green 2026-11-03) per the workstream plan's "gate first"; provisional EAR blink detection and an iris-offset→direction helper in the same file, marked for tuning on the owner's real camera. Nothing initializes a camera yet — FaceLandmarker wiring behind this gate is the next step. |
 
 ## 7. Integration, regressions, performance
 
