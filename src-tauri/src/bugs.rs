@@ -284,14 +284,17 @@ pub fn user_report(what: &str) -> bool {
 /// Quietly does nothing when reports are off or not set up, or when the same
 /// thing was just reported. Never blocks: sending happens on its own thread.
 pub fn report(kind: &str, message: &str, level: &str) {
+    // Owner-only observer (dev builds, `devvision` feature): what went wrong,
+    // for the timeline next to the frames showing it. This runs before the
+    // sending gate: with bug-sending off or misconfigured the timeline
+    // would otherwise never see a single `[bug]` event, and the observer
+    // exists for the machine where sending is not set up (review 2 #8).
+    #[cfg(feature = "devvision")]
+    crate::observer::record("verification", format!("[bug] {kind}: {message}"));
     if !ENABLED.load(Ordering::SeqCst) || !can_send() {
         return;
     }
     let r = Report::new(kind, message, level);
-    // Owner-only observer (dev builds, `devvision` feature): what went wrong,
-    // for the timeline next to the frames showing it.
-    #[cfg(feature = "devvision")]
-    crate::observer::record("verification", format!("[bug] {kind}: {message}"));
     {
         let mut sent = SENT.lock();
         sent.retain(|(_, at)| at.elapsed() < Duration::from_secs(3600));

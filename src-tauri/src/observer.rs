@@ -36,6 +36,10 @@ const MAX_EVENTS: usize = 500;
 const MAX_FRAMES: usize = 40;
 /// The smallest gap between grabs, so the watcher never storms a busy app.
 const CAPTURE_FLOOR: Duration = Duration::from_millis(700);
+/// The longest a backed-off watcher waits between grabs (see `next_floor`).
+const BACKOFF_CEIL: Duration = Duration::from_millis(3_500);
+/// How long the same view counts as "unchanged" and earns no new frame.
+const SEEN_WINDOW: Duration = Duration::from_secs(120);
 
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct Event {
@@ -58,6 +62,12 @@ pub static ENABLED: AtomicBool = AtomicBool::new(false);
 pub static RUNNING: AtomicBool = AtomicBool::new(false);
 pub static TICKS: AtomicU64 = AtomicU64::new(0);
 pub static CAPTURES: AtomicU64 = AtomicU64::new(0);
+
+/// Which generation of watcher/server threads is current. Every start moves
+/// it and a thread leaves only its own generation running, so a quick stop
+/// and start never leaves two watchers grabbing the same window (review 2
+/// #11).
+static GEN: AtomicU64 = AtomicU64::new(0);
 
 static EVENTS: Mutex<VecDeque<Event>> = Mutex::new(VecDeque::new());
 static FRAMES: Mutex<VecDeque<FrameEntry>> = Mutex::new(VecDeque::new());
@@ -162,13 +172,29 @@ pub fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64
 }
 
-/// Izuki's own window as a frame: the window's rect from the OS, then the
-/// screen region capture the app already trusts. (PrintWindow-based
-/// behind-work capture is `mod imp`-private in capture.rs; this route keeps
-/// the observer independent of capture.rs's internals.)
+/// Izuki's own window as a frame, only when it is actually on screen: the
+/// window's rect from the OS, then the screen region capture the app already
+/// trusts. (PrintWindow-based behind-work capture is `mod imp`-private in
+/// capture.rs; this route keeps the observer independent of capture.rs's
+/// internals.)
 pub fn window_snapshot(hwnd: isize) -> Result<crate::capture::Frame, String> {
     let rect = window_rect(hwnd)?;
     crate::capture::capture(rect).map_err(|e| e.to_string())
+}
+
+/// Whether Izuki's window can be seen on screen at all: a hidden or
+/// minimized window has a rect but shows nothing, so there is nothing to
+/// keep (review 7 #1).
+#[cfg(windows)]
+fn window_visible(hwnd: isize) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible};
+    let h = windows::Win32::Foundation::HWND(hwnd as *mut core::ffi::c_void);
+    unsafe { IsWindowVisible(h).as_bool() && !IsIconic(h).as_bool() }
+}
+
+#[cfg(not(windows))]
+fn window_visible(_hwnd: isize) -> bool {
+    true
 }
 
 #[cfg(windows)]
@@ -195,9 +221,26 @@ fn window_rect(hwnd: isize) -> Result<crate::model::Rect, String> {
 /// same as the last grab, encode and push if not. Returns whether a frame
 /// was kept.
 pub fn capture_once(hwnd: isize, last_hash: &mut Option<u64>) -> Result<bool, String> {
+    // Review 7 #1: with the window hidden or minimized the rect is still
+    // screen coordinates, so the capture would quietly record whatever the
+    // desktop shows behind it. Nothing of Izuki is visible — nothing to keep.
+    if !window_visible(hwnd) {
+        return Ok(false);
+    }
     let frame = window_snapshot(hwnd)?;
     let hash = hash_frame(&frame);
     if Some(hash) == *last_hash {
+        return Ok(false);
+    }
+    // The two-minute rule over the whole seen map, not just the previous
+    // hash: a caret blinking between two states defeats a consecutive check
+    // and would fill the ring in seconds (review 2 #9).
+    let fresh = {
+        let cutoff = Instant::now() - SEEN_WINDOW;
+        let mut guard = SEEN.lock();
+        is_new_content(hash, guard.get_or_insert_with(HashMap::new), cutoff)
+    };
+    if !fresh {
         return Ok(false);
     }
     let entry = match jpeg_of(&frame) {
@@ -210,7 +253,6 @@ pub fn capture_once(hwnd: isize, last_hash: &mut Option<u64>) -> Result<bool, St
     }
     frames.push_back(entry);
     drop(frames);
-    mark_seen(hash);
     *last_hash = Some(hash);
     CAPTURES.fetch_add(1, Ordering::SeqCst);
     Ok(true)
@@ -219,18 +261,39 @@ pub fn capture_once(hwnd: isize, last_hash: &mut Option<u64>) -> Result<bool, St
 #[derive(Clone, Copy)]
 struct WatcherClock {
     last_capture: Instant,
+    /// The gap this watcher waits between grabs: the floor, stretched while
+    /// grabs come back expensive, receding after cheap ones.
+    floor: Duration,
 }
 
-/// Watch Izuki's window until told to stop: at most one grab per
-/// `CAPTURE_FLOOR`, and it never sees the same pixels twice in a row.
-fn watch_until_stopped(hwnd: isize) {
-    let mut clock = WatcherClock { last_capture: Instant::now() - CAPTURE_FLOOR };
+/// The next gap between grabs, from how long the last one took. A grab that
+/// came back slowly means the machine is busy; backing off keeps observing
+/// from becoming part of the slowdown (review 2 #10). Pure, so tests pin
+/// the shape.
+fn next_floor(last_cost: Duration) -> Duration {
+    if last_cost < Duration::from_millis(100) {
+        return CAPTURE_FLOOR;
+    }
+    let steps = (last_cost.as_millis() / 200).min(5) as u32;
+    (CAPTURE_FLOOR * (1 + steps)).min(BACKOFF_CEIL)
+}
+
+/// Watch Izuki's window until told to stop: at most one grab per gap, and
+/// it never keeps the same view twice inside the two-minute window. A
+/// thread of an old generation leaves on its next look (review 2 #11).
+fn watch_until_stopped(gen: u64, hwnd: isize) {
+    let mut clock = WatcherClock { last_capture: Instant::now() - CAPTURE_FLOOR, floor: CAPTURE_FLOOR };
     let mut last_hash: Option<u64> = None;
-    while RUNNING.load(Ordering::SeqCst) {
-        if clock.last_capture.elapsed() >= CAPTURE_FLOOR {
+    loop {
+        if !RUNNING.load(Ordering::SeqCst) || GEN.load(Ordering::SeqCst) != gen {
+            return;
+        }
+        if clock.last_capture.elapsed() >= clock.floor {
+            let began = Instant::now();
             let _ = capture_once(hwnd, &mut last_hash);
             TICKS.fetch_add(1, Ordering::SeqCst);
             clock.last_capture = Instant::now();
+            clock.floor = next_floor(began.elapsed());
         }
         std::thread::sleep(Duration::from_millis(120));
     }
@@ -249,9 +312,14 @@ pub fn start(hwnd: isize) -> Result<u16, String> {
     }
     ensure_token()?;
 
+    // A new generation: any thread from a previous run leaves on its next
+    // look, instead of a stop/start cycle leaving two watchers on one window
+    // or two servers on one port.
+    let gen = GEN.fetch_add(1, Ordering::SeqCst) + 1;
+
     std::thread::Builder::new()
         .name("izuki-vision-watch".into())
-        .spawn(move || watch_until_stopped(hwnd))
+        .spawn(move || watch_until_stopped(gen, hwnd))
         .map_err(|e| format!("the vision watcher thread never started: {e}"))?;
 
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -260,13 +328,18 @@ pub fn start(hwnd: isize) -> Result<u16, String> {
     *SERVER_PORT.lock() = Some(port);
     std::thread::Builder::new()
         .name("izuki-vision-serve".into())
-        .spawn(move || serve_forever(listener))
+        .spawn(move || serve_forever(listener, gen))
         .map_err(|e| format!("the vision server thread never started: {e}"))?;
     Ok(port)
 }
 
 pub fn stop() {
+    // The generation moves first: a thread mid-loop of the old generation
+    // still exits, even if a start immediately flips RUNNING back on.
+    // The recorded port dies with this run; a stale one must not look live.
+    GEN.fetch_add(1, Ordering::SeqCst);
     RUNNING.store(false, Ordering::SeqCst);
+    *SERVER_PORT.lock() = None;
 }
 
 /// OFF for real: the ring buffers are dropped, not hidden — capture stops
@@ -289,15 +362,22 @@ pub fn server_port() -> Option<u16> {
 }
 
 /// The loopback server: one request at a time, token-checked, read-only.
-fn serve_forever(listener: TcpListener) {
+fn serve_forever(listener: TcpListener, gen: u64) {
     let token_file = token_path();
-    for stream in listener.incoming() {
-        if !RUNNING.load(Ordering::SeqCst) {
+    // Non-blocking accept with a wake-up tick: a stopped server is not left
+    // stuck inside `incoming()` forever, holding the port open (review 2
+    // #11). The tick is the same 120 ms the watcher sleeps.
+    let _ = listener.set_nonblocking(true);
+    loop {
+        if !RUNNING.load(Ordering::SeqCst) || GEN.load(Ordering::SeqCst) != gen {
             break;
         }
-        let mut stream = match stream {
-            Ok(s) => s,
-            Err(_) => continue,
+        let mut stream = match listener.accept() {
+            Ok((s, _)) => s,
+            Err(_) => {
+                std::thread::sleep(Duration::from_millis(120));
+                continue;
+            }
         };
         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
         let mut buffer = [0u8; 4096];
@@ -329,14 +409,23 @@ fn serve_forever(listener: TcpListener) {
             "/api/events" => write_json(&mut stream, &serde_json::json!({ "events": snapshot_events() })),
             p if p.starts_with("/api/frames/") => {
                 let idx: i64 = p.trim_start_matches("/api/frames/").parse().unwrap_or(-1);
-                let frames = FRAMES.lock();
-                let count = frames.len() as i64;
-                if idx < 1 || idx > count {
-                    write_json_line(&mut stream, 404, "no such frame");
-                } else {
-                    // Human numbering: newest frame is the highest number.
-                    let entry = frames.get((count - idx) as usize).unwrap();
-                    write_jpeg(&mut stream, &entry.jpeg);
+                // The lock is held only to look the frame up; the bytes are
+                // cloned out and the socket is written with the lock
+                // released, so a slow client can't freeze capture (review 2
+                // #12).
+                let wanted = {
+                    let frames = FRAMES.lock();
+                    let count = frames.len() as i64;
+                    if idx < 1 || idx > count {
+                        None
+                    } else {
+                        // Human numbering: newest frame is the highest number.
+                        frames.get((count - idx) as usize).cloned()
+                    }
+                };
+                match wanted {
+                    Some(entry) => write_jpeg(&mut stream, &entry.jpeg),
+                    None => write_json_line(&mut stream, 404, "no such frame"),
                 }
             }
             _ => write_json_line(&mut stream, 404, "unknown route"),
@@ -424,14 +513,19 @@ for (let i = 1; i <= 40; i++) {{
 pub fn capture_bug() -> Result<PathBuf, String> {
     let root = data_dir().join(format!("bug-{}", stamp()));
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
-    let frames = FRAMES.lock();
-    let mut names = Vec::new();
-    for (i, f) in frames.iter().enumerate() {
-        let name = format!("frame-{:03}.jpg", i);
-        std::fs::write(root.join(&name), &f.jpeg).map_err(|e| e.to_string())?;
-        names.push(name);
+    // Bytes are copied out under a short lock; the disk writes happen with
+    // the lock released, so a full disk or a cold folder can't stall capture
+    // and the API (review 2 #12).
+    let shots: Vec<(String, Vec<u8>)> = FRAMES
+        .lock()
+        .iter()
+        .enumerate()
+        .map(|(i, f)| (format!("frame-{:03}.jpg", i), f.jpeg.clone()))
+        .collect();
+    for (name, bytes) in &shots {
+        std::fs::write(root.join(name), bytes).map_err(|e| e.to_string())?;
     }
-    drop(frames);
+    let names: Vec<String> = shots.into_iter().map(|(n, _)| n).collect();
     let timeline: Vec<serde_json::Value> = snapshot_events()
         .iter()
         .map(|e| serde_json::json!({
@@ -552,6 +646,16 @@ mod tests {
         assert!(!authorized("GET /api/status HTTP/1.1\r\n", &file), "missing header refused");
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    #[test]
+    fn a_costly_grab_backs_off_and_cheap_ones_stay_at_the_floor() {
+        assert_eq!(next_floor(Duration::from_millis(20)), CAPTURE_FLOOR, "cheap grab, normal pace");
+        assert_eq!(next_floor(Duration::from_millis(90)), CAPTURE_FLOOR, "just under the threshold");
+        assert_eq!(next_floor(Duration::from_millis(300)), CAPTURE_FLOOR * 2, "backing off");
+        assert_eq!(next_floor(Duration::from_millis(400)), CAPTURE_FLOOR * 3);
+        assert_eq!(next_floor(Duration::from_millis(1_200)), BACKOFF_CEIL, "grounded at the ceiling");
+        assert_eq!(next_floor(Duration::from_secs(30)), BACKOFF_CEIL, "a badly busy machine gets the worst gap, never worse");
+    }
 }
 #[cfg(all(test, feature = "devvision"))]
 mod record_scrub_tests {
@@ -559,19 +663,14 @@ mod record_scrub_tests {
 
     /// Detect step of the verified loop (CodeRabbit finding, 2026-11-02):
     /// whatever callers pass to `record` lands verbatim in the timeline that
-    /// /api/events serves and that timeline.json writes ready to send, and
-    /// those notes can carry the Windows user name or other secrets. The
-    /// timeline must store the scrubbed text, never raw input.
+    /// /api/events serves and that timeline.json writes ready to send. This
+    /// proof is environment-independent (review 7 #2): a fake API key is
+    /// something `scrub` takes out no matter whose account runs the suite,
+    /// so the stored text must carry `[key]`, never the raw secret.
     #[test]
     fn a_recorded_event_is_scrubbed_before_it_is_stored() {
-        let bs = char::from_u32(92).unwrap(); // the path separator, unescaped
-        let user = std::env::var("USERNAME").unwrap_or_else(|_| "longusername".into());
-        assert!(user.chars().count() >= 3, "test needs a meaningful user name to redact");
-        let raw = format!(
-            "factory stopped: C:{0}Users{0}{1}{0}Downloads{0}trace.log",
-            bs, user
-        );
-        let was_running = RUNNING.load(Ordering::SeqCst);
+        let raw = "factory stopped with key AIzaSyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUvW loaded";
+        let was_enabled = ENABLED.load(Ordering::SeqCst);
         ENABLED.store(true, std::sync::atomic::Ordering::SeqCst);
         record("verification", raw);
         let stored = snapshot_events()
@@ -583,11 +682,16 @@ mod record_scrub_tests {
             "the timeline stayed empty: the detect run proves nothing"
         );
         assert!(
-            !stored.iter().any(|t| t.contains(&user)),
-            "the timeline stored the raw user name: {:?}",
+            stored.iter().any(|t| t.contains("[key]")),
+            "the timeline stored the text unscrubbed: {:?}",
             stored.last()
         );
-        if !was_running {
+        assert!(
+            stored.iter().all(|t| !t.contains("AIzaSyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUvW")),
+            "the timeline kept the raw key: {:?}",
+            stored.last()
+        );
+        if !was_enabled {
             ENABLED.store(false, std::sync::atomic::Ordering::SeqCst);
         }
     }
