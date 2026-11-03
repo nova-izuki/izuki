@@ -91,8 +91,10 @@ for (const t of tasks.filter((t) => t.open && t.status === 'review')) {
       if (!t.state.agent) t.state.agent = t.agent === 'any' ? 'freebuff' : t.agent;
     }
     if (!t.state.reviewSince) { t.state.reviewSince = iso(); act(`#${t.number}: review started`, () => gh.editIssue(t.number, { body: writeState(t.body, t.state) })); }
-    // In review a day with no verdict (no checks ran, a PR left open): say so.
-    if (now - Date.parse(t.state.reviewSince) > 24 * 3600 * 1000) { update(t, 'blocked', {}, `In review for over a day with no verdict${t.state.pr ? ` on PR #${t.state.pr}` : t.state.commit ? ` on ${t.state.commit.slice(0, 7)}` : ' (no PR or commit was reported)'}. Needs a look.`); continue; }
+    // In review a day with no verdict (no checks ran, a PR left open): say so
+    // (checked after the verdict below, so a merged PR or green commit wins).
+    const stale = () => now - Date.parse(t.state.reviewSince) > 24 * 3600 * 1000;
+    const flag = () => update(t, 'blocked', {}, `In review for over a day with no verdict${t.state.pr ? ` on PR #${t.state.pr}` : t.state.commit ? ` on ${t.state.commit.slice(0, 7)}` : ' (no PR or commit was reported)'}. Needs a look.`);
     if (t.state.pr) {
       const s = gh.pullStatus(t.state.pr);
       if (s.base !== gh.DEV_BRANCH) { fail(t, 'conflict', `PR #${t.state.pr} targets ${s.base}; agent work goes to ${gh.DEV_BRANCH} only.`); continue; }
@@ -106,12 +108,13 @@ for (const t of tasks.filter((t) => t.open && t.status === 'review')) {
       if (!s.pending && s.runs > 0 && s.open) {
         act(`#${t.number}: merge PR #${t.state.pr} (${s.runs} checks green)`, () => gh.api(`repos/${gh.REPO}/pulls/${t.state.pr}/merge`, { method: 'PUT', body: { merge_method: 'squash', sha: s.pr.head.sha } }));
         update(t, 'done', { doneAt: iso(), history: [...(t.state.history || []), { agent: t.state.agent, result: 'done', at: iso() }] }, `Verified: all ${s.runs} checks passed on PR #${t.state.pr}; merged into ${gh.DEV_BRANCH}.`);
-      }
+      } else if (stale()) flag();
     } else if (t.state.commit) {
       const c = gh.commitChecks(t.state.commit);
       if (c.failed.length) fail(t, 'ci-failed', `Checks failed on ${t.state.commit.slice(0, 7)}: ${c.failed.join(', ')}.`);
       else if (!c.pending && c.runs > 0) update(t, 'done', { doneAt: iso(), history: [...(t.state.history || []), { agent: t.state.agent, result: 'done', at: iso() }] }, `Verified: all ${c.runs} checks passed on ${t.state.commit.slice(0, 7)}.`);
-    }
+      else if (stale()) flag();
+    } else if (stale()) flag();
   } catch (e) { log.push(`#${t.number}: couldn't verify (${e.message})`); }
 }
 
