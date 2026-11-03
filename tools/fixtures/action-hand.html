@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Izuki hand lifecycle test</title></head>
+<body style="margin:0;background:#263442;color:white"><button id="under" style="position:absolute;left:100px;top:100px;width:180px;height:80px">Input under hand</button><input id="typing" style="position:absolute;left:100px;top:210px" aria-label="Typing test"><div id="root"></div>
+<script type="module">
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
+import { ActionHand } from '/src/components/ActionHand.tsx';
+import { emit, EV } from '/src/lib/ipc.ts';
+import '/src/styles.css';
+let frames=0, cameras=0, inputs=0;
+const request=window.requestAnimationFrame.bind(window);
+window.requestAnimationFrame=cb=>request(t=>{frames++;cb(t)});
+navigator.mediaDevices.getUserMedia=async()=>{cameras++;throw Error('Camera must not start')};
+document.getElementById('under').onclick=()=>inputs++;
+const root=createRoot(document.getElementById('root'));
+window.handTest={
+  enable(value){flushSync(()=>root.render(React.createElement(ActionHand,{enabled:value,size:22,desktop:{x:0,y:0,w:innerWidth,h:innerHeight,scale:1}})))},
+  async point(extra={}){await emit(EV.hand,{x:150,y:140,action:'click',duration_ms:90,...extra})},
+  async stop(){await emit(EV.stopSpeaking)},
+  async switched(){await emit('izuki://foreground-changed')},
+  async ended(){await emit(EV.orb,'hidden')},
+  async finished(){await emit(EV.thinking,false)},
+  async closed(){await emit(EV.overlayClose)},
+  async reopened(){await emit(EV.overlayOpen,{mode:'follow'})},
+  stats(){return {frames,cameras,inputs,visible:!!document.querySelector('[data-izk-action-hand]'),text:document.getElementById('typing').value}},
+  unmount(){root.unmount()}
+};
+handTest.enable(false);
+window.testReady=true;
+</script></body></html>

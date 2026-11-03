@@ -606,7 +606,7 @@ pub fn run() {
             wheel::install(&handle);
             updates::check_later(&handle);
             watcher::spawn(handle.clone(), store.clone());
-            follow::spawn(handle.clone(), store.clone());
+            follow::spawn(handle.clone());
             reminders::spawn(handle.clone());
             telegram::spawn(handle.clone());
             discord::spawn(handle.clone());

@@ -126,3 +126,6 @@ Owner requests removal of random desktop robot hand. Codex claims follow.rs, han
 
 Hand task #27 scope detail: Codex adds only action_hand_enabled in settings/types/ipc and changes the single follow::spawn call to drop its unused Store argument. New isolated native test host uses no Store, camera, hotkeys or agents. No Freebuff registrations/callout hooks are modified.
 
+## Codex hand-overlay claim (2026-11-03)
+
+Issue #27, codex/hand-overlay-lifecycle: hand lifecycle only (follow.rs, overlay stays_up, tray/settings wording, HandCursor and atomic hand rendering in OverlayCanvas). Freebuff retains AirControl, eye tracking/camera and CalloutChips/shared pointing slot. Claude retains bridge/dispatcher and action task #18. No existing uncommitted file is taken over; no duplicate app/dispatcher is started.
