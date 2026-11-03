@@ -78,6 +78,10 @@ each('recover', tasks.filter((t) => t.open && t.status === 'failed'), (t) => fai
 // development branch is merged then (standing authorization, AGENTS.md
 // rule 2); a pushed commit just needs its checks green. Never main.
 for (const t of tasks.filter((t) => t.open && t.status === 'review')) {
+  // In review a day with no verdict (no checks ran, a PR left open, a PR that
+  // doesn't exist): say so. Checked after any verdict, and after an error too.
+  const stale = () => now - Date.parse(t.state.reviewSince || iso()) > 24 * 3600 * 1000;
+  const flag = () => update(t, 'blocked', {}, `In review for over a day with no verdict${t.state.pr ? ` on PR #${t.state.pr}` : t.state.commit ? ` on ${t.state.commit.slice(0, 7)}` : ' (no PR or commit was reported)'}. Needs a look.`);
   try {
     // Freebuff reports by comment ("pushed 1a2b3c4", "PR #45"): read it from there.
     if (!t.state.pr && !t.state.commit) {
@@ -91,10 +95,6 @@ for (const t of tasks.filter((t) => t.open && t.status === 'review')) {
       if (!t.state.agent) t.state.agent = t.agent === 'any' ? 'freebuff' : t.agent;
     }
     if (!t.state.reviewSince) { t.state.reviewSince = iso(); act(`#${t.number}: review started`, () => gh.editIssue(t.number, { body: writeState(t.body, t.state) })); }
-    // In review a day with no verdict (no checks ran, a PR left open): say so
-    // (checked after the verdict below, so a merged PR or green commit wins).
-    const stale = () => now - Date.parse(t.state.reviewSince) > 24 * 3600 * 1000;
-    const flag = () => update(t, 'blocked', {}, `In review for over a day with no verdict${t.state.pr ? ` on PR #${t.state.pr}` : t.state.commit ? ` on ${t.state.commit.slice(0, 7)}` : ' (no PR or commit was reported)'}. Needs a look.`);
     if (t.state.pr) {
       const s = gh.pullStatus(t.state.pr);
       if (s.base !== gh.DEV_BRANCH) { fail(t, 'conflict', `PR #${t.state.pr} targets ${s.base}; agent work goes to ${gh.DEV_BRANCH} only.`); continue; }
@@ -115,7 +115,10 @@ for (const t of tasks.filter((t) => t.open && t.status === 'review')) {
       else if (!c.pending && c.runs > 0) update(t, 'done', { doneAt: iso(), history: [...(t.state.history || []), { agent: t.state.agent, result: 'done', at: iso() }] }, `Verified: all ${c.runs} checks passed on ${t.state.commit.slice(0, 7)}.`);
       else if (stale()) flag();
     } else if (stale()) flag();
-  } catch (e) { log.push(`#${t.number}: couldn't verify (${e.message})`); }
+  } catch (e) {
+    log.push(`#${t.number}: couldn't verify (${String(e.message).split('\n')[0].slice(0, 120)})`);
+    try { if (stale()) flag(); } catch (e2) { log.push(`#${t.number}: couldn't flag (${String(e2.message).slice(0, 80)})`); }
+  }
 }
 
 // PRIORITIZE: the next approved roadmap item for an agent with nothing to do.

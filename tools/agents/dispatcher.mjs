@@ -101,6 +101,25 @@ function clearTree(tree) {
   if (fs.existsSync(tree)) fs.rmSync(tree, { recursive: true, force: true });
 }
 
+/**
+ * The processes under `root` right now, with their start times (so a
+ * process number reused later is never mistaken for one of them).
+ */
+function descendants(root) {
+  const out = execFileSync('powershell', ['-NoProfile', '-Command', `$all = Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, @{n='Start';e={$_.CreationDate.ToString('o')}}; $kids = @(${root}); $found = @(); do { $next = @($all | Where-Object { $kids -contains $_.ParentProcessId }); $found += $next; $kids = @($next | ForEach-Object { $_.ProcessId }) } while ($kids.Count -gt 0); $found | ConvertTo-Json -Compress`], { encoding: 'utf8', windowsHide: true, timeout: 30000 }).trim();
+  if (!out) return [];
+  const list = JSON.parse(out);
+  return (Array.isArray(list) ? list : [list]).map((p) => ({ pid: p.ProcessId, start: p.Start }));
+}
+
+/** Stop the recorded processes that are still the same processes (same start time). */
+function stopRecorded(recorded) {
+  if (!recorded.size) return 0;
+  const want = [...recorded.values()];
+  const script = `$want = '${JSON.stringify(want).replace(/'/g, "''")}' | ConvertFrom-Json; $n = 0; foreach ($w in $want) { $p = Get-CimInstance Win32_Process -Filter "ProcessId=$($w.pid)" -ErrorAction SilentlyContinue; if ($p -and $p.CreationDate.ToString('o') -eq $w.start) { Stop-Process -Id $w.pid -Force -ErrorAction SilentlyContinue; $n++ } }; $n`;
+  return Number(execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', windowsHide: true, timeout: 30000 }).trim()) || 0;
+}
+
 /** A failure of the dispatcher itself (before the agent ran): never counted as the agent's. */
 class SetupError extends Error {}
 
@@ -185,10 +204,14 @@ async function run(t) {
   child.stderr.on('data', (d) => transcript.write(`[stderr] ${d}`));
 
   let since = started, beat = Date.now(), deadline = Date.now() + LIMIT_MS, warned = false;
+  // Its process tree, recorded each minute while Claude is alive.
+  const recorded = new Map();
+  const record = () => { try { for (const p of descendants(child.pid)) recorded.set(`${p.pid}@${p.start}`, p); } catch (e) { say(`#${t.number}: couldn't list its processes (${String(e.message).split('\n')[0]})`); } };
   let exit = null;
   while (!exit) {
     exit = await Promise.race([ended, sleep(CHECK_MS).then(() => null)]);
     if (exit) break;
+    record();
     try {
       if (Date.now() - beat >= HEARTBEAT_MS) { setTask(t, null, { heartbeat: iso() }); beat = Date.now(); }
       for (const u of updates(t, since)) { since = u.at; pending.push(`Update from the coordinator for task #${t.number}: ${u.text}`); say(`#${t.number}: update queued for the next checkpoint`); }
@@ -213,11 +236,17 @@ async function run(t) {
   transcript.end();
   if (exit.error) { clearTree(tree); throw new SetupError(`Claude Code didn't start: ${exit.error.message}`); }
   const code = exit.code ?? (exit.signal ? `signal ${exit.signal}` : 'unknown');
-  // Anything the run left going in its folder (a background build) is stopped
-  // before the folder goes, so nothing is orphaned or holds files open.
+  // Anything the run left going (a background build) is stopped before its
+  // folder goes, so nothing is orphaned or holds files open: the processes
+  // recorded under Claude while it ran, plus anything whose command line
+  // names the task's folder (started in the last minute, say).
+  try {
+    const stopped = stopRecorded(recorded);
+    if (stopped) say(`#${t.number}: stopped ${stopped} process(es) the run left going`);
+  } catch (e) { say(`#${t.number}: couldn't stop its leftover processes (${String(e.message).split('\n')[0]})`); }
   try {
     execFileSync('powershell', ['-NoProfile', '-Command', `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${path.basename(WORK)}*${path.basename(tree)}*' -and $_.ProcessId -ne ${process.pid} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`], { stdio: 'ignore', windowsHide: true, timeout: 30000 });
-  } catch {}
+  } catch (e) { say(`#${t.number}: couldn't search for processes in its folder (${String(e.message).split('\n')[0]})`); }
 
   const result = /RESULT:\s*(done|failed|paused)\b\s*(\S+)?[^\n]*/i.exec(lastResult.split('\n').filter(Boolean).pop() || '') || /RESULT:\s*(done|failed|paused)\b\s*(\S+)?[^\n]*/i.exec(lastResult);
   const summary = (result?.[0] || lastResult.slice(-300) || `the run exited with code ${code}`).trim();
