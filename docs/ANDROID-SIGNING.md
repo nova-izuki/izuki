@@ -35,6 +35,7 @@ APK Signature Scheme v3 lets the old key vouch for a new one (a "lineage").
    - `apksigner sign --ks izuki-preview.p12 … --next-signer --ks izuki-preview-2.p12 … --lineage izuki-lineage --rotation-min-sdk-version 28 app-debug.apk`. The old key comes first. Without `--rotation-min-sdk-version 28`, apksigner would use the new key only on Android 13+.
    - The old key keeps no rollback right (apksigner's default), so once a phone has the new key it refuses updates signed only with the public one.
 4. **Proven before any phone gets it:** the job `android-rotation-check` runs `tools/android-rotation-check.sh` on an Android 11 emulator. Today's app installs and holds data, the rotated update installs over it and keeps that data, and then an APK signed only with the public key is refused (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). The APK is attached to a release only after that check passes, so a failure leaves the release a draft.
+5. **No going back by accident:** every build reads the signer of the latest published APK. Once that one is rotated, a release that can't rotate (secret or variable missing) stops, because Android 9+ phones would refuse an APK signed only with the public key.
 
 **What phones see:**
 - Android 9+ phones move to the new key on their next update, and from then on refuse APKs signed only with the public key.

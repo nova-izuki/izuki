@@ -118,6 +118,19 @@ Status: open · claimed · fixed (commit) · dismissed (why).
 | --- | --- | --- | --- | --- | --- |
 | 1 | Low | `AGENTS.md:18-24` | Export and erase-all were described as working; they're planned | Claude (my sentence) | fixed: says what works today and points to `docs/PRODUCT-PRINCIPLE.md` |
 
+## CodeRabbit review 9: commits `a078c58`…`080cdf7`, 2026-11-03 03:58 UTC
+
+6 findings, all on Claude's commits.
+
+| # | Sev. | Where | Finding | Claimed by | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | High | `.github/workflows/mobile.yml` | After the first rotated release, a release built without the key would carry a public-key-only APK that Android 9+ phones refuse as an update | Claude | fixed: every build reads the signer of the latest published APK (reported in the log, so the check stays proven); once that one is rotated, a release that can't rotate stops |
+| 2 | High | `docs/help/index.html` (+ settings card) | Someone who loaded the zip by hand runs it from their own folder: Reload doesn't pick up the paired one | Claude | fixed: remove the old one and Load unpacked the folder Izuki shows (Reload only when it's already that folder), in the help page and both card messages |
+| 3 | Low | `docs/MILESTONE-1.0.196.md` | The Android row overstated the release gate | Claude | fixed with #1, wording corrected |
+| 4 | Low | `docs/WORKSTREAMS.md` | "Every message either way is signed" isn't true: Izuki's answers are plain | Claude | fixed: says which messages are signed and why the rest is safe to send |
+| 5 | Medium | `src-tauri/src/assess.rs` | `numbered` copied the rest of the page text for every "question" | Claude | fixed: borrowed slice, no copy |
+| 6 | Medium | `src-tauri/src/ext.rs` | `from_hex` took "+8" for "08", so a copied request could pass `first_use` under another spelling | Claude | fixed: exactly 64 plain hex digits, and `from_hex` takes hex digits only. Test respells a real byte (`08` → `+8`) of the shared vector |
+
 ## Found outside CodeRabbit
 
 | Sev. | Where | Finding | Claimed by | Status |

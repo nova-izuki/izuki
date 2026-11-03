@@ -52,7 +52,7 @@ export function ExtensionCard() {
     >
       <div className="mb-3 space-y-2 text-[12px]">
         <p>{on && !old ? "Connected. Click Izuki's extension icon to open its chat panel." : "Izuki can unpack the extension and open your browser's extension page. Finish adding it in the browser."}</p>
-        {!on && old && <p role="status">⚠️ Your browser has an Izuki extension that isn't set up with this Izuki (an older one, or one added by hand), so Izuki ignores it. Choose your browser and press <b>Set up in this browser</b>, then press ↻ Reload on Izuki in the browser's extensions page.</p>}
+        {!on && old && <p role="status">⚠️ Your browser has an Izuki extension that isn't set up with this Izuki (an older one, or one added by hand), so Izuki ignores it. Choose your browser and press <b>Set up in this browser</b>. On the extensions page, remove the old Izuki and choose <b>Load unpacked</b> with the folder shown here (if it's already loaded from that folder, press ↻ Reload instead).</p>}
         {browsers.length > 0 && <div className="flex flex-wrap items-center gap-2">
           <select aria-label="Browser for the extension" value={browser} disabled={preparing} onChange={(e) => { setBrowser(e.target.value); setPrepared(null); }} className="izk-field izk-no-drag max-w-full py-1 text-[12px]">{browsers.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
           <button type="button" disabled={preparing || !browser} onClick={() => void prepare()} className="izk-btn-primary izk-no-drag px-3 py-2 text-[12px]">{preparing ? "Preparing…" : "Set up in this browser"}</button>
@@ -78,7 +78,7 @@ export function ExtensionCard() {
             <p>✅ Connected. Try it: select some text on any page, right-click → <b>Izuki</b>.</p>
           )}
           <p className="text-[11.5px] text-izk-muted">
-            To update: press <b>Set up in this browser</b> above, then press the ↻ reload button on Izuki in <b>chrome://extensions</b> (or edge://extensions).
+            To update: press <b>Set up in this browser</b> above, then press the ↻ reload button on Izuki in <b>chrome://extensions</b> (or edge://extensions). If it was loaded from a folder you downloaded yourself, remove it there and load the folder shown above instead.
           </p>
         </div>
       ) : (

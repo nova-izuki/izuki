@@ -583,7 +583,12 @@ fn request_signed(key: &[u8], time: &str, signature: &str, path: &str, body: &[u
         return false;
     }
     let Ok(at) = time.parse::<u64>() else { return false };
-    let Some(signature) = from_hex(signature).filter(|s| s.len() == 32) else { return false };
+    // Exactly 64 hex digits: one spelling per signature, so a copy can't pass
+    // as new (`first_use` keys on the text).
+    if signature.len() != 64 {
+        return false;
+    }
+    let Some(signature) = from_hex(signature) else { return false };
     if now_ms.abs_diff(at) > SIGNED_FOR_MS {
         return false;
     }
@@ -648,7 +653,8 @@ fn to_hex(bytes: &[u8]) -> String {
 }
 
 fn from_hex(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    // Hex digits only (from_str_radix alone takes "+f" for "0f").
+    if s.len() % 2 != 0 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
     (0..s.len()).step_by(2).map(|i| s.get(i..i + 2).and_then(|h| u8::from_str_radix(h, 16).ok())).collect()
@@ -1331,6 +1337,13 @@ mod tests {
         assert!(!request_signed(&key, "+1700000000000", good, path, body, now), "digits only");
         assert!(!request_signed(&key, time, "", path, body, now), "no signature");
         assert!(!request_signed(&key, time, &good[..62], path, body, now), "short signature");
+        // Another spelling of the same bytes would dodge first_use: "+8" reads
+        // as 0x08 to from_str_radix (CodeRabbit review 9).
+        assert_eq!(&good[56..58], "08", "the vector's 29th byte is below 0x10");
+        let respelled = format!("{}+8{}", &good[..56], &good[58..]);
+        assert!(!request_signed(&key, time, &respelled, path, body, now), "only plain hex digits");
+        assert_eq!(from_hex("+f"), None);
+        assert_eq!(from_hex("0f"), Some(vec![15]));
         // Each signature works once.
         let fresh = format!("{:064x}", rand::random::<u128>());
         assert!(first_use(&fresh));

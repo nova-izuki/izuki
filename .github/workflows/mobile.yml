@@ -52,7 +52,35 @@ jobs:
           KEY_PASSWORD: ${{ secrets.IZUKI_PREVIEW_KEYSTORE_PASSWORD }}
           ROTATION: ${{ vars.IZUKI_PREVIEW_ROTATION }}
           OUTRIGHT: ${{ vars.IZUKI_PREVIEW_NEW_KEY_OUTRIGHT }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
+          # Once a published APK carries the new key, phones on Android 9+
+          # refuse one signed only with the public key. So a release looks at
+          # the latest published APK, and if it was signed with another key
+          # (rotated), this one must be rotated too: no key, no release.
+          # (Checked on every build so the check itself stays proven; enforced
+          # on releases.)
+          must_rotate=""
+          tools=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          public=$(keytool -list -v -keystore android/app/izuki-preview.p12 -storetype PKCS12 -storepass izuki-companion -alias izuki | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')
+          test -n "$public" || { echo "Couldn't read the public preview key's fingerprint." >&2; exit 1; }
+          if gh release download --pattern Izuki-Companion-Android-preview.apk --dir "$RUNNER_TEMP/last-release" 2>/dev/null; then
+            signers=$("$tools/apksigner" verify --print-certs "$RUNNER_TEMP/last-release/Izuki-Companion-Android-preview.apk" | grep -i "certificate SHA-256 digest")
+            test -n "$signers" || { echo "Couldn't read the latest published APK's signers." >&2; exit 1; }
+            if echo "$signers" | grep -viq "$public"; then
+              must_rotate=yes
+              echo "The latest published APK is signed with the rotated key: releases must be rotated too."
+            else
+              echo "The latest published APK is signed with the public key only (no rotation yet)."
+            fi
+          else
+            echo "No published APK found: nothing to follow."
+          fi
+          if [ -n "$must_rotate" ] && [[ "$GITHUB_REF" == refs/tags/v* ]] && { [ -z "$KEY_B64" ] || [ "$ROTATION" != "yes" ]; }; then
+            echo "Phones already have the rotated key, but this build can't rotate (the IZUKI_PREVIEW_KEYSTORE_B64 secret or IZUKI_PREVIEW_ROTATION=yes is missing). An APK signed only with the public key would not install as their update. See docs/ANDROID-SIGNING.md." >&2
+            exit 1
+          fi
           if [ -z "$KEY_B64" ]; then
             echo "No private preview key yet: signing with the public preview key in the repo."
             exit 0

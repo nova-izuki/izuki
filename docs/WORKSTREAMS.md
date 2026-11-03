@@ -23,8 +23,11 @@ check the result, recover when it didn't work.**
     one is pressed through accessibility instead; typed text is read back
     (`check_typed`); a snag continues the task with a note.
   - **Browser pages through the extension**: DOM snapshot, click, type, links
-    on the page. Since 1.0.196 every message either way is signed with the
-    user's pairing key (`ext.rs`, `extension/bridge-proof.js`).
+    on the page. Since 1.0.196, with the user's pairing key: every request
+    the extension sends is signed, and Izuki signs its jobs and its ping
+    answer. Izuki's other replies (answers, statuses) are plain; the
+    extension sends anything private only after a signed ping proved it's
+    Izuki (`ext.rs`, `extension/bridge-proof.js`).
   - **Authorization and limits**: confirmation for send, post, buy and delete;
     no passwords, no lock screen; graded-quiz answers held back, practice pages
     allowed (`assess.rs`, shared cases in `tools/assessment-cases.json`).
@@ -36,7 +39,12 @@ check the result, recover when it didn't work.**
   - Re-planning from the new screen after any failed step, not just the snag
     note.
   - A measured success rate on a fixed scenario set. Nothing claims "better"
-    without numbers.
+    without numbers. **Baseline, 2026-11-03:** `tools/brain-check` (the
+    decision only: real screens, Easy Mode's prompt, Groq
+    `qwen/qwen3.8-27b`) got 11 of 11 right, in 0.5–4.0 s per decision
+    (median 0.8 s). A busy Groq now counts as "not run", never as a pass or
+    a fail. It doesn't yet cover acting, checking or recovering: that's the
+    scenario set below.
 - Dependencies: UI Automation and OCR quality per app, the extension, the
   model brains. Freebuff's eye control will snap to targets through `uia.rs`:
   agree changes to its interface in `docs/COLLAB.md` first.
@@ -66,6 +74,17 @@ calls only when needed, no fixed wait where a condition can be checked.**
 - Dependencies: the Smart Screen Actions scenario set (the same tasks are
   timed); `assess.rs` stays the only page classifier, so both lanes read the
   same truth.
+- Measured 2026-11-03 (installed 1.0.195, idle): 12–26% of one core across
+  three samples. Where it goes, per thread: the always-open mic's echo and
+  noise processing about 4%, the overlay redrawing about 5% with nothing
+  changing on screen, the auto-skip-ads/cookie loop about 1% (a 160-control
+  page walk every 5 s on YouTube). `tools/idle-check.cjs` shows the main
+  window resting completely; the overlay can only be measured inside the
+  app. Leads, each to be measured before and after: find the overlay
+  element with DevTools in a dev build; read YouTube's skip button through
+  the extension instead of walking the page; open the wake-word mic without
+  echo processing while Izuki is silent (needs a real voice and Bluetooth
+  test, see the mic notes in the izuki-dev skill).
 - Next steps for Claude Code: the timing benchmark on the owner's laptop and
   one other machine, then replace the waits it shows matter, one at a time,
   with before and after numbers. Public speed claims only after the benchmark

@@ -97,7 +97,10 @@ const NUMBER_MARKS: &[&str] = &["number", "no.", "nº", "no", "#", ""];
 
 /// The word, then (after spaces and a label mark) a digit.
 fn numbered(words: &str, word: &str) -> bool {
-    let spaces = |s: &str| s.trim_start_matches(|c: char| c.is_ascii_whitespace()).to_owned();
+    // Borrowed, never copied: a long page says "question" many times.
+    fn spaces(s: &str) -> &str {
+        s.trim_start_matches(|c: char| c.is_ascii_whitespace())
+    }
     words.match_indices(word).any(|(i, _)| {
         let rest = spaces(&words[i + word.len()..]);
         NUMBER_MARKS.iter().any(|m| rest.strip_prefix(m).is_some_and(|r| spaces(r).starts_with(|c: char| c.is_ascii_digit())))

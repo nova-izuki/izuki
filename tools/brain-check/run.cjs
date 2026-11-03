@@ -162,27 +162,35 @@ async function ask(scene, image) {
       ] }),
     });
     const v = await r.json().catch(() => ({}));
-    if (r.status === 429) { await new Promise((ok) => setTimeout(ok, 20000)); continue; }
+    // Rate-limited, or the model "over capacity" (503): wait and ask again,
+    // as Izuki itself rests a busy brain. It says nothing about the decision.
+    if (r.status === 429 || r.status >= 500) { await new Promise((ok) => setTimeout(ok, 20000 * (attempt + 1))); continue; }
     return { status: r.status, ms: Date.now() - t, reply: (v.choices?.[0]?.message?.content || v.error?.message || "").trim() };
   }
-  return { status: 429, ms: 0, reply: "(rate-limited)" };
+  return { status: 503, ms: 0, reply: "(Groq stayed busy or rate-limited after 4 tries)" };
 }
 
 (async () => {
   const only = process.argv[2];
-  let pass = 0, fail = 0;
+  let pass = 0, fail = 0, notRun = 0;
   console.log(`Brain check — ${groq.model} (Groq) with Easy Mode\n`);
   for (let i = 0; i < SCENES.length; i++) {
     const s = SCENES[i];
     if (only && !s.name.includes(only)) continue;
     const image = shot(s, i);
     const { status, ms, reply } = await ask(s, image);
-    const ok = status === 200 && (!s.must || s.must.test(reply)) && (!s.mustNot || !s.mustNot.test(reply));
-    ok ? pass++ : fail++;
-    console.log(`${ok ? "PASS" : "FAIL"}  ${s.name}  (${ms} ms) — should ${s.why}`);
-    console.log("      " + reply.replace(/\n/g, "\n      "));
+    // The service never answered: no verdict either way, and said so.
+    if (status === 429 || status >= 500) {
+      notRun++;
+      console.log(`NOT RUN  ${s.name} — Groq didn't answer (${status}): ${reply}`);
+    } else {
+      const ok = status === 200 && (!s.must || s.must.test(reply)) && (!s.mustNot || !s.mustNot.test(reply));
+      ok ? pass++ : fail++;
+      console.log(`${ok ? "PASS" : "FAIL"}  ${s.name}  (${ms} ms) — should ${s.why}`);
+      console.log("      " + reply.replace(/\n/g, "\n      "));
+    }
     await new Promise((ok) => setTimeout(ok, 32000)); // Groq free tier: ~2 screen looks a minute
   }
-  console.log(`\n${pass} passed, ${fail} failed`);
-  process.exit(fail ? 1 : 0);
+  console.log(`\n${pass} passed, ${fail} failed${notRun ? `, ${notRun} not run (Groq unavailable)` : ""}`);
+  process.exit(fail || notRun ? 1 : 0);
 })();
