@@ -78,6 +78,28 @@ The commander talks to GitHub, never to the PC or the agents directly. Everythin
 
 If the token is ever exposed, revoke it on the same GitHub page. The bridge keeps running without a commander.
 
-## End-to-end demonstration
+## End-to-end demonstration (2026-11-03, real repository, real agents)
 
-Recorded below once run: a task created and dispatched, a busy Freebuff left alone, an update delivered to Claude at a checkpoint, the result verified by its checks, the next task chosen, and recovery from a disconnected run.
+Three tasks:
+- **#20**, real work for Claude: remove a compiler warning in `roomrec.rs`.
+- **#21**, real work for Freebuff: retire a redundant `capture_window` stub.
+- **#22**, a recovery test: a run whose heartbeat stopped two hours earlier.
+
+The roadmap had already produced **#18** for Claude (result checks), made to depend on #20.
+
+| Step | What happened (evidence on the issues) |
+| --- | --- |
+| Recovery | The first coordinator pass found #22's heartbeat 2 hours old, recorded it as disconnected and requeued it with a different strategy ("check the branch for partial work before starting again"). #22 was then closed as a demo, with its simulated failure removed from Claude's record. |
+| One task per agent | #18 was assigned to Claude first, so #20 correctly waited (the scheduler never gives a busy agent a second task). With #18 made to depend on #20, the next pass assigned #20. |
+| Freebuff not flooded | #21 was labelled for Freebuff. Nothing was sent to its session; it takes the task from the queue when it finishes its own work. |
+| Dispatch | The dispatcher started headless Claude Code on #20 in its own worktree and branch (`agent/claude-20-1`). |
+| Checkpoint update | A `/update` posted mid-run was queued at 14:13:08 and delivered at the next safe point at 14:13:38, and Claude acknowledged it. In the final run, both updates were followed: the PR quotes the clean `cargo check` and its post-commit final line. |
+| Result | Claude finished in 10 minutes: one line changed, `cargo check --lib` clean, committed, pushed, **PR #23** into `milestone-196`, "RESULT: done". |
+| Event-driven pass | Opening PR #23 started a coordinator pass on GitHub by itself. It saw Claude free and gave it the next ready task, without waiting for the 20-minute schedule. |
+
+**What the live runs caught, all fixed before the run that succeeded:**
+1. The task record lacked the issue text, so saving state erased #20's description (restored). State is now never saved over an empty description, with a test.
+2. A leftover folder from a failed try blocked the next one. The cleanup now removes the package link first (never deleting through it), then the folder.
+3. Claude ended a turn to wait for its own background build, and the dispatcher took that as the task's end, stranding the build. A run now ends only on the agent's `RESULT:` line, with one nudge after 10 quiet minutes, and leftover processes are stopped.
+
+None of these were counted against the agent: each was reset as the bridge's own fault.
