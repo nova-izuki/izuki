@@ -165,3 +165,15 @@ are leads to check, not orders. The shared log for the milestone is
 ## How to write for the owner
 The owner isn't a programmer. Release notes, UI text and messages are plain
 English: short sentences, no jargon, and say what the user will notice.
+
+## Who works on what (owner, 2026-11-03)
+
+Freebuff keeps Smart Eye / Air Control, Smart Vision and Developer Mode.
+Claude Code keeps Smart Screen Actions, speed optimization and security fixes.
+Both finish existing critical work first. Status, missing pieces, ownership,
+dependencies and next steps for each workstream live in `docs/WORKSTREAMS.md`
+— update your lane's section there when its state changes, and read it before
+starting work so you build on the other assistant's pieces instead of
+repeating or overwriting them. Never overwrite the other assistant's files
+(claim in `docs/COLLAB.md` first), and never merge or publish anything on
+your own: the owner merges and publishes.
