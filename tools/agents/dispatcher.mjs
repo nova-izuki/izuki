@@ -111,10 +111,17 @@ async function run(t) {
   const send = (text) => child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } }) + '\n');
   send(task);
 
-  let pending = [], lastResult = '', turns = 0, buffer = '', closed = false, paused = false;
+  // The run is finished only when the agent says so (its RESULT line). A turn
+  // that ends without one is a checkpoint: the agent may be waiting for its
+  // own background work (a build), whose notices start its next turn.
+  let pending = [], lastResult = '', turns = 0, buffer = '', closed = false, paused = false, finished = false;
+  let lastEvent = Date.now(), nudged = false;
+  const RESULT_LINE = /RESULT:\s*(done|failed|paused)\b/i;
   const transcript = fs.createWriteStream(path.join(WORK, `task-${t.number}-${attempt}.jsonl`));
+  const finish = () => { if (!closed) { closed = true; child.stdin.end(); } };
   child.stdout.on('data', (chunk) => {
     buffer += chunk;
+    lastEvent = Date.now();
     let i;
     while ((i = buffer.indexOf('\n')) >= 0) {
       const line = buffer.slice(0, i); buffer = buffer.slice(i + 1);
@@ -123,9 +130,8 @@ async function run(t) {
       if (event.type === 'result') {
         turns++;
         lastResult = String(event.result || '');
-        // A turn ended: a safe checkpoint. Deliver what's waiting, or finish.
         if (pending.length) { const u = pending.shift(); say(`#${t.number}: checkpoint, delivering an update`); send(u); }
-        else if (!closed) { closed = true; child.stdin.end(); }
+        else if (RESULT_LINE.test(lastResult)) { finished = true; finish(); }
       }
     }
   });
@@ -144,11 +150,21 @@ async function run(t) {
       const urgent = !paused && gh.listTasks().map(describe).find((x) => x.open && x.number !== t.number && x.status === 'assigned' && x.state.agent === 'claude' && x.priority === 'urgent' && t.priority !== 'urgent');
       if (urgent) { paused = true; pending.push(`Urgent task #${urgent.number} is waiting. At your next safe point: commit and push what's verified to ${branch}, then end with "RESULT: paused — <where you stopped>". Don't start anything new.`); say(`#${t.number}: urgent #${urgent.number} waiting, pause requested`); }
     } catch (e) { say(`#${t.number}: GitHub check failed (${e.message}); carrying on`); }
-    if (pending.length && closed) { /* the run already ended its last turn */ }
+    // Quiet for 10 minutes with no RESULT and nothing to deliver: one nudge,
+    // then, still silent 10 minutes later, end it as stalled.
+    if (!finished && !closed && !pending.length && Date.now() - lastEvent > 10 * 60 * 1000) {
+      if (!nudged) { nudged = true; lastEvent = Date.now(); say(`#${t.number}: quiet for 10 min, nudging`); send(`Task #${t.number}: if your background work is finished, complete the task (commit, push, open the pull request) and end with the RESULT line. If something is still running, say what and keep going.`); }
+      else { say(`#${t.number}: still silent after a nudge; ending the run as stalled`); lastResult = lastResult || ''; finish(); }
+    }
     if (!warned && Date.now() > deadline) { warned = true; pending.push(`Time limit reached for task #${t.number}. Commit and push what's verified, then end with a RESULT line.`); deadline = Date.now() + 10 * 60 * 1000; }
     else if (warned && Date.now() > deadline) { say(`#${t.number}: past its time limit; stopping it`); child.kill(); }
   }
   transcript.end();
+  // Anything the run left going in its folder (a background build) is stopped
+  // before the folder goes, so nothing is orphaned or holds files open.
+  try {
+    execFileSync('powershell', ['-NoProfile', '-Command', `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${path.basename(WORK)}*${path.basename(tree)}*' -and $_.ProcessId -ne ${process.pid} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`], { stdio: 'ignore', windowsHide: true, timeout: 30000 });
+  } catch {}
 
   const result = /RESULT:\s*(done|failed|paused)\b\s*(\S+)?[^\n]*/i.exec(lastResult.split('\n').filter(Boolean).pop() || '') || /RESULT:\s*(done|failed|paused)\b\s*(\S+)?[^\n]*/i.exec(lastResult);
   const summary = (result?.[0] || lastResult.slice(-300) || `the run exited with code ${code}`).trim();
@@ -163,7 +179,7 @@ async function run(t) {
   } else if (result?.[1]?.toLowerCase() === 'done' && prNumber) {
     setTask(t, 'review', { pr: prNumber, history: [...(t.state.history || []), { ...entry, result: 'review' }] }, `Claude finished in ${minutes} min: ${summary}\nPR #${prNumber}. The coordinator merges it once every check passes.`);
   } else {
-    const category = (result?.[1]?.toLowerCase() === 'failed' && result[2]) || (code !== 0 ? 'disconnected' : prNumber ? 'unknown' : 'no-change');
+    const category = (result?.[1]?.toLowerCase() === 'failed' && result[2]) || (!finished && nudged ? 'stalled' : code !== 0 ? 'disconnected' : prNumber ? 'unknown' : 'no-change');
     setTask(t, 'failed', { lastFailure: category, history: [...(t.state.history || []), { ...entry, result: 'failed', category }] }, `Claude's attempt ${attempt} didn't finish (${category}, ${minutes} min): ${summary}`);
   }
   say(`#${t.number}: ${t.status} after ${minutes} min`);
