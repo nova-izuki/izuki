@@ -62,6 +62,7 @@ export function ensureLabels() {
     'status:queued': 'fbca04', 'status:assigned': 'f9d0c4', 'status:in-progress': '1d76db', 'status:review': '0052cc',
     'status:done': '0e8a16', 'status:failed': 'd93f0b', 'status:blocked': 'b60205',
     'priority:urgent': 'b60205', 'priority:high': 'd93f0b', 'priority:normal': 'fef2c0', 'priority:low': 'c5def5',
+    'kind:feature': 'bfd4f2', 'kind:bug': 'ee0701', 'kind:perf': 'f9d0c4', 'kind:security': 'b60205', 'kind:docs': 'c5def5', 'kind:test': 'bfdadc', 'kind:ui': 'd4c5f9',
   };
   for (const [name, color] of Object.entries(want)) {
     if (!have.has(name)) api(`repos/${REPO}/labels`, { method: 'POST', body: { name, color } });

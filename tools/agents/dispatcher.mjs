@@ -80,7 +80,9 @@ async function run(t) {
   setTask(t, 'in-progress', { startedAt: started, heartbeat: started, branch, attempt });
 
   const task = `${t.title}\n\n${t.body.replace(/<!-- bridge [\s\S]*?-->/, '').trim()}${t.state.strategy ? `\n\nNote from the coordinator (an earlier attempt failed): ${t.state.strategy}` : ''}`;
-  const child = spawn('claude', ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--allowedTools', ALLOWED.join(','), '--disallowedTools', DENIED.join(','), '--append-system-prompt', RULES(t.number, branch)], { cwd: tree, env: { ...process.env, CARGO_TARGET_DIR: path.join(ROOT, 'src-tauri', 'target') }, stdio: ['pipe', 'pipe', 'pipe'], shell: process.platform === 'win32', windowsHide: true });
+  // Started directly, never through a shell: the tool lists hold spaces and
+  // brackets that a shell would split or mangle (claude is a real .exe).
+  const child = spawn(process.env.BRIDGE_CLAUDE || 'claude', ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--allowedTools', ALLOWED.join(','), '--disallowedTools', DENIED.join(','), '--append-system-prompt', RULES(t.number, branch)], { cwd: tree, env: { ...process.env, CARGO_TARGET_DIR: path.join(ROOT, 'src-tauri', 'target') }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
   const send = (text) => child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } }) + '\n');
   send(task);
 
