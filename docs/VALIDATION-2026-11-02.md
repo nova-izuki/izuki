@@ -134,3 +134,19 @@ files or another agent's work were touched.
 6. Full `cargo test --lib` after everything: **577 passed, 0 failed, 45
    ignored**. `tsc --noEmit` and `npm run build` clean. All commits pushed
    to draft PR #16 (now 4 checkpoint commits on `milestone-196`).
+7. **Verified loop, round 3 (2026-11-02 evening):** two High findings in the
+   Smart Vision developer observer were reproduced before any fix. (a) the
+   timeline stored the raw user name: a regression test that records a bug
+   message containing the path C:\Users\<user>\Downloads\trace.log FAILED, with the
+   untouched path in the stored timeline (detect-before.log; repro data in
+   tools/repros/2026-11-02-observer-timeline-username-leak/). Fix: redact at
+   the observer::record boundary, so every caller text is scrubbed once.
+   The same test then passes (retest-after.log), and both suites rerun green
+   (596 and 585 passed, 45 skipped, 0 failed). (b) the devvision startup
+   lookup ran before the main window existed: the block moved to run inside
+   setup after the window is accessible; verified by inspection and suites
+   (a full IZUKI_VISION runtime check needs a dev build on this PC).
+8. Still not done from round 3: the CI test run for devvision
+   (tools/test-windows.ps1), the unconfigured-bug-marking event, the
+   duplicate-note rule online state, the locks and start/stop races, and
+   the remaining Security finding near line 840. Minors stay on the list.

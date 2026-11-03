@@ -561,21 +561,6 @@ pub fn run() {
             // only with `--features devvision`, and even then it only watches
             // when the owner asked (IZUKI_VISION=1). A release build carries
             // none of this code, so public users never gain an observer.
-            #[cfg(feature = "devvision")]
-            if std::env::var("IZUKI_VISION").as_deref() == Ok("1") {
-                let win = app.get_webview_window("main").or_else(|| app.webview_windows().values().next().cloned());
-                match win.map(|w| w.hwnd()).transpose() {
-                    Ok(Some(h)) => {
-                        observer::ENABLED.store(true, std::sync::atomic::Ordering::SeqCst);
-                        match observer::start(h.0 as isize) {
-                            Ok(port) => eprintln!("[izuki] smart vision watching on 127.0.0.1:{port} (token-file auth)"),
-                            Err(e) => eprintln!("[izuki] smart vision did not start: {e}"),
-                        }
-                    }
-                    Ok(None) => eprintln!("[izuki] smart vision found no window to watch"),
-                    Err(e) => eprintln!("[izuki] smart vision: no window handle: {e}"),
-                }
-            }
             {
                 let store = store.clone();
                 std::thread::Builder::new().name("izuki-flow-tidy".into()).spawn(move || loop {
@@ -591,6 +576,26 @@ pub fn run() {
             let config = overlay::ensure_config(&handle)?;
             overlay::apply_backdrop(&config, settings.backdrop);
             overlay::normalise_config_size(&config);
+            // (moved below ensure_config, CodeRabbit finding 2026-11-02: the
+            // lookup above ran before any window existed, so with no windows in
+            // tauri.conf.json the observer never started even when the owner
+            // asked. "main" exists from here on, so the same opt-in block now
+            // finds it.)
+            #[cfg(feature = "devvision")]
+            if std::env::var("IZUKI_VISION").as_deref() == Ok("1") {
+                let win = app.get_webview_window("main").or_else(|| app.webview_windows().values().next().cloned());
+                match win.map(|w| w.hwnd()).transpose() {
+                    Ok(Some(h)) => {
+                        observer::ENABLED.store(true, std::sync::atomic::Ordering::SeqCst);
+                        match observer::start(h.0 as isize) {
+                            Ok(port) => eprintln!("[izuki] smart vision watching on 127.0.0.1:{port} (token-file auth)"),
+                            Err(e) => eprintln!("[izuki] smart vision did not start: {e}"),
+                        }
+                    }
+                    Ok(None) => eprintln!("[izuki] smart vision found no window to watch"),
+                    Err(e) => eprintln!("[izuki] smart vision: no window handle: {e}"),
+                }
+            }
 
             // Built eagerly so the overlay is warm the first time it is needed.
             overlay::ensure_overlay(&handle).ok();

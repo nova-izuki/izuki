@@ -107,6 +107,12 @@ pub fn record(kind: &str, text: impl Into<String>) {
     if !ENABLED.load(Ordering::SeqCst) {
         return;
     }
+    // Redact at the boundary, not per caller: every note reaching the
+    // timeline (bug messages, file paths, future callers) is scrubbed here,
+    // because /api/events serves this text and timeline.json writes it to
+    // disk ready to send (CodeRabbit finding, 2026-11-02).
+    let owned: String = text.into();
+    let text = crate::bugs::scrub(owned.as_str());
     let mut events = EVENTS.lock();
     if events.len() >= MAX_EVENTS {
         events.pop_front();
@@ -545,5 +551,44 @@ mod tests {
         assert!(!authorized("GET /api/status HTTP/1.1\r\nAuthorization: Bearer wrong\r\n", &file));
         assert!(!authorized("GET /api/status HTTP/1.1\r\n", &file), "missing header refused");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
+#[cfg(all(test, feature = "devvision"))]
+mod record_scrub_tests {
+    use super::*;
+
+    /// Detect step of the verified loop (CodeRabbit finding, 2026-11-02):
+    /// whatever callers pass to `record` lands verbatim in the timeline that
+    /// /api/events serves and that timeline.json writes ready to send, and
+    /// those notes can carry the Windows user name or other secrets. The
+    /// timeline must store the scrubbed text, never raw input.
+    #[test]
+    fn a_recorded_event_is_scrubbed_before_it_is_stored() {
+        let bs = char::from_u32(92).unwrap(); // the path separator, unescaped
+        let user = std::env::var("USERNAME").unwrap_or_else(|_| "longusername".into());
+        assert!(user.chars().count() >= 3, "test needs a meaningful user name to redact");
+        let raw = format!(
+            "factory stopped: C:{0}Users{0}{1}{0}Downloads{0}trace.log",
+            bs, user
+        );
+        let was_running = RUNNING.load(Ordering::SeqCst);
+        ENABLED.store(true, std::sync::atomic::Ordering::SeqCst);
+        record("verification", raw);
+        let stored = snapshot_events()
+            .into_iter()
+            .map(|e| e.text)
+            .collect::<Vec<_>>();
+        assert!(
+            !stored.is_empty(),
+            "the timeline stayed empty: the detect run proves nothing"
+        );
+        assert!(
+            !stored.iter().any(|t| t.contains(&user)),
+            "the timeline stored the raw user name: {:?}",
+            stored.last()
+        );
+        if !was_running {
+            ENABLED.store(false, std::sync::atomic::Ordering::SeqCst);
+        }
     }
 }
