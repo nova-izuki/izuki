@@ -3,7 +3,6 @@ use anyhow::{anyhow, Result};
 use base64::Engine;
 use serde::Serialize;
 use std::io::{Cursor, Read};
-use std::path::PathBuf;
 
 const MAX_BYTES: usize = 15 * 1024 * 1024;
 const MAX_TEXT: usize = 32_000;
