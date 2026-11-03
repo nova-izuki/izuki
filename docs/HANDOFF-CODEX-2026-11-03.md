@@ -175,3 +175,24 @@ and full Rust verification remain pending. Do not call this shipped or complete.
 - The implementation never invoked a model turn. CLI authentication/readiness
   and deterministic protocol tests are the proven boundary; automatic backup
   scheduling remains unimplemented and disabled.
+
+### Additional confirmed bridge finding (Major): resource limits corrupt metrics
+
+The live #18 result at 16:03 UTC says “You've hit your session limit” and has
+`is_error: true`. In `dispatcher.mjs`'s `event.type === 'result'` handler,
+`is_error` is ignored: only a textual RESULT line ends the task. The dispatcher
+later nudges the limited session and records `stalled` / `result: failed` in
+#18's history. That is an availability failure, not evidence that an agent
+implemented the task badly. The recorded 23-minute failed attempt is therefore
+unsuitable for quality/productivity comparisons without classification.
+
+Claude's bridge lane should distinguish quota/auth/service-unavailable results
+from task/test failures, stop unnecessary nudges, preserve partial work, back
+off until availability returns and exclude these events from agent-quality
+failure metrics. Add a fixture for this observed result and verify recovery
+without relaunching an in-flight runtime. Codex did not edit the owned dispatcher
+or rewrite #18's history. The diagnostic was handed to scheduler task #25.
+
+PR #28 now has all audited GitHub checks green (both Windows, both web and
+CodeRabbit), in addition to the local results above. The PR remains open for
+Claude; Codex did not merge it.
