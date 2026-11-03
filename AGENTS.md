@@ -101,6 +101,14 @@ courses, devices or PC, and never put personal data in the repo.
 7. **Don't touch anything outside this `izuki/` folder.** The parent folder
    is the owner's separate robot project.
 
+## Who owns which workstream (owner, 2026-11-02)
+Status, gaps, dependencies and next steps are in [docs/ROADMAP.md](docs/ROADMAP.md).
+- **Claude Code:** security fixes, Smart Screen Actions, the Fast Action Engine (speed), and the release and version files.
+- **Freebuff:** Smart Eye / Air Control, Smart Vision, Smart Developer Mode.
+- **Codex, or anyone else:** claim a row in COLLAB.md first. The other capabilities in the roadmap are unassigned.
+
+Finish security-critical fixes and the milestone verification before starting new features. When work needs another owner's files (eye control snapping to `uia.rs`, say), coordinate in COLLAB.md first. Never overwrite another assistant's work.
+
 ## Code review (CodeRabbit)
 CodeRabbit reviews every push to a pull request by itself, drafts included
 (settings: `.coderabbit.yaml`), so no review command is needed. Its findings
