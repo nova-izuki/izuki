@@ -1,5 +1,7 @@
 # Izuki 1.0.196: real Office files, safer saves, and a browser link only Izuki can use
 
+Izuki makes real Word and Excel files and edits copies instead of your originals, saves can never leave half a file, practice quizzes can be done together, and the browser extension and Izuki now prove themselves to each other.
+
 ## 📄 Word, Excel and PowerPoint
 
 - Ask for a report as a **Word file** or a table as an **Excel file**, and Izuki makes a real .docx or .xlsx. Before, text saved under those names made a file Office couldn't open.
