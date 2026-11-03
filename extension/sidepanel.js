@@ -2,6 +2,8 @@
 // along. It follows the tab in front, can take in other open tabs too, and
 // keeps the conversation going. Answers come from Izuki on this PC.
 
+// First: the check that Izuki on this PC is really Izuki (bridge-proof.js).
+import "./bridge-proof.js";
 import { setUpConnection } from "./connect.js";
 import { RequestGuard, cleanHistory, extractPage } from "./sidepanel-state.js";
 import { setUpWorkspace } from "./workspace-ui.js";
@@ -69,8 +71,12 @@ const save = () => store.set({ history });
 async function ping() {
   const st = $("state");
   try {
-    const r = await fetch(`${BRIDGE}/ping`, { headers: H });
-    if (!r.ok) throw 0;
+    const proof = await globalThis.IzukiBridgeProof.check();
+    if (!proof.ok) {
+      if (proof.why !== "offline") { st.className = ""; st.innerHTML = `<i></i>${proof.why === "unpaired" ? "Set up from Izuki" : "Not Izuki"}`; st.title = globalThis.IzukiBridgeProof.message[proof.why]; return false; }
+      throw 0;
+    }
+    st.title = "";
     st.className = "on";
     st.innerHTML = "<i></i>Connected";
     try {
@@ -221,9 +227,10 @@ function actionsFor(content, el, wide) {
   act("Read", () => chrome.runtime.sendMessage({ izukiSpeak: content }), "Read this answer aloud");
   act("Notes", async () => {
     try {
+      await globalThis.IzukiBridgeProof.require();
       const n = await (await fetch(`${BRIDGE}/note`, { method: "POST", headers: H, body: JSON.stringify({ title: current?.title || "", url: current?.url || "", text: content, page: false }) })).json();
       divider(n.text);
-    } catch { divider("Izuki isn't running on this PC."); }
+    } catch (error) { divider(error?.message && !/fetch/i.test(error.message) ? error.message : "Izuki isn't running on this PC."); }
   }, "Save this answer to Izuki Notes");
   if (wide) act("Wide", () => el.classList.toggle("wide"), "Open wide for comfortable reading");
   return acts;
@@ -470,7 +477,8 @@ ${page.text.slice(0, 9000)}` : ""}`;
       void side("progress", { requestId: request.id }).then((p) => { if (p?.ok && p.text && requests.active(request)) doing(wait, p.text); });
     }, 800);
     let r;
-    try { r = await fetch(`${BRIDGE}/ask`, { method: "POST", headers: H, body: JSON.stringify(body), signal: request.controller.signal }); }
+    // The page text goes only to Izuki itself (bridge-proof.js).
+    try { await globalThis.IzukiBridgeProof.require(); r = await fetch(`${BRIDGE}/ask`, { method: "POST", headers: H, body: JSON.stringify(body), signal: request.controller.signal }); }
     finally { clearInterval(watch); }
     if (!requests.active(request)) return false;
     if (!r.ok) throw Error(r.status === 404 ? "Update Izuki on this PC to use this feature." : "Izuki couldn't answer that request. Try again.");
@@ -664,10 +672,17 @@ export function reviewTask(text) {
 $("task-open")?.addEventListener("click", () => reviewTask($("q").value));
 $("task-cancel")?.addEventListener("click", () => review?.close());
 
-const side = (route, body) =>
-  fetch(`${BRIDGE}/side/${route}`, { method: "POST", headers: H, body: JSON.stringify(body), signal:AbortSignal.timeout(10000) })
+// Stop always goes through (it carries only an id). Everything else first
+// checks it's really Izuki (bridge-proof.js).
+const side = async (route, body) => {
+  if (route !== "stop") {
+    const proof = await globalThis.IzukiBridgeProof.check();
+    if (!proof.ok) return { ok: false, text: globalThis.IzukiBridgeProof.message[proof.why] };
+  }
+  return fetch(`${BRIDGE}/side/${route}`, { method: "POST", headers: H, body: JSON.stringify(body), signal:AbortSignal.timeout(10000) })
     .then((r) => r.json())
     .catch(() => ({ ok: false, text: "Izuki isn't running on this PC — open the Izuki app and try again." }));
+};
 
 $("task-run")?.addEventListener("click", async () => {
   const task = $("task-text").value.trim();

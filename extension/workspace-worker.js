@@ -6,6 +6,8 @@
   const popups=new Map();
   const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   const post=async(path,body,signal)=>{
+    // Questions and tasks go only to Izuki itself; Stop always goes through.
+    if(path!=="side/stop")await root.IzukiBridgeProof.require();
     let response;
     try{response=await fetch(`${bridge}/${path}`,{method:"POST",headers,body:JSON.stringify(body),signal:signal||AbortSignal.timeout(12000)});}
     catch(error){

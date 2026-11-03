@@ -6,7 +6,7 @@
 // Izuki asks.
 
 // The smart features (right-click menu, answer bubble, focus guard).
-importScripts("smart.js");
+importScripts("bridge-proof.js", "smart.js");
 importScripts("workspace-state.js", "provider-specs.js", "provider-dom.js", "provider-relay.js", "question-page.js", "question-runner.js", "lab-state.js", "workspace-worker.js");
 
 const BRIDGE = "http://127.0.0.1:47615/izuki";

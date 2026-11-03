@@ -14,6 +14,9 @@ const BRIDGE_URL = "http://127.0.0.1:47615/izuki";
 const JSON_HEADERS = { "X-Izuki-Extension": "1", "Content-Type": "application/json" };
 
 async function izuki(path, body) {
+  // The selection goes only to Izuki itself (bridge-proof.js).
+  const proof = await globalThis.IzukiBridgeProof.check();
+  if (!proof.ok) return { ok: false, text: globalThis.IzukiBridgeProof.message[proof.why] };
   try {
     const r = await fetch(`${BRIDGE_URL}/${path}`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body || {}) });
     // An older Izuki on the PC doesn't know these yet.

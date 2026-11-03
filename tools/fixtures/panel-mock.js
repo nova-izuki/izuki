@@ -31,7 +31,7 @@ window.chrome = {
     onActivated:event(),onUpdated:event(),onRemoved:event(),
   },
   storage:{session:storage('session'),local:storage('local'),onChanged:event()},
-  runtime:{sendMessage:async(message)=>{
+  runtime:{getURL:(path)=>'chrome-extension://test-extension/'+path,sendMessage:async(message)=>{
     const p=message.izukiWorkspace;if(!p)return;
     if(p.op==='history')return historyStore[p.action||'load'](p.windowId,p.action==='commit'?p.entry:p.id);
     m.workspaces.push(p);
@@ -55,7 +55,17 @@ window.chrome = {
   }},
 };
 const originalFetch=window.fetch.bind(window);
+// The pairing key Izuki wrote into the extension folder, and Izuki's /ping
+// signed with it (bridge-proof.js checks it before anything is sent).
+const PAIRING='a5'.repeat(32);
 window.fetch=async(url,options={})=>{
+  if(String(url)==='chrome-extension://test-extension/pairing.json')return new Response(JSON.stringify({key:PAIRING}));
+  if(String(url).endsWith('/izuki/ping')){
+    const nonce=options.headers?.['X-Izuki-Nonce']||'';
+    const key=await crypto.subtle.importKey('raw',new Uint8Array(PAIRING.match(/../g).map((b)=>parseInt(b,16))),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+    const proof=[...new Uint8Array(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(`${nonce}\nping`)))].map((b)=>b.toString(16).padStart(2,'0')).join('');
+    return new Response(JSON.stringify({ok:true,name:'Izuki',proof}),{headers:{'Content-Type':'application/json'}});
+  }
   if(!String(url).startsWith('http://127.0.0.1:47615/'))return originalFetch(url,options);
   const body=JSON.parse(options.body||'{}');
   if(String(url).endsWith('/ask'))return new Promise((resolve,reject)=>{

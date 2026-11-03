@@ -109,3 +109,46 @@ s = await session({ server: (job) => job, paired: false });
 assert.equal(s.polled, false, 'an unpaired extension does not take jobs');
 
 console.log('bridge auth: unsigned, wrong-key and replayed jobs ignored (nothing read, nothing answered); Izuki\'s signed job runs and reads only links on the page; an unpaired extension takes no jobs; HMAC agrees with ring (RFC 4231).');
+
+// ---- Part 2: nothing private goes to the port unless Izuki proves itself ----
+// bridge-proof.js, used before questions, page text, selections and tasks.
+async function proofIn({ paired = true, ping }) {
+  let pings = 0;
+  const ctx = vm.createContext({
+    chrome: { runtime: { getURL: (p) => 'chrome-extension://x/' + p } },
+    crypto: crypto.webcrypto, TextEncoder, Uint8Array, AbortSignal, Date,
+    fetch: async (url, opts = {}) => {
+      if (url === 'chrome-extension://x/pairing.json') {
+        if (!paired) throw new TypeError('Failed to fetch');
+        return { json: async () => ({ key: KEY }) };
+      }
+      pings++;
+      return ping(opts.headers['X-Izuki-Nonce']);
+    },
+  });
+  vm.runInContext(fs.readFileSync(new URL('../extension/bridge-proof.js', import.meta.url), 'utf8'), ctx);
+  return { proof: ctx.IzukiBridgeProof, pings: () => pings };
+}
+const signedPing = (key) => async (nonce) => ({ json: async () => ({ ok: true, proof: sign(key, nonce, 'ping') }) });
+
+let p = await proofIn({ paired: false, ping: signedPing(KEY) });
+assert.equal((await p.proof.check()).why, 'unpaired');
+await assert.rejects(p.proof.require(), /Set this extension up from Izuki/);
+assert.equal(p.pings(), 0, 'an unpaired extension asks nothing');
+
+p = await proofIn({ ping: async () => ({ json: async () => ({ ok: true, name: 'Izuki' }) }) });
+assert.equal((await p.proof.check()).why, 'unproven', 'an impostor that only says "Izuki" is refused');
+await assert.rejects(p.proof.require(), /Something other than Izuki/);
+
+p = await proofIn({ ping: signedPing(crypto.randomBytes(32).toString('hex')) });
+assert.equal((await p.proof.check()).why, 'unproven', 'a proof signed with another key is refused');
+
+p = await proofIn({ ping: async () => { throw new TypeError('Failed to fetch'); } });
+assert.equal((await p.proof.check()).why, 'offline');
+
+p = await proofIn({ ping: signedPing(KEY) });
+assert.equal((await p.proof.check()).ok, true, 'Izuki proves itself');
+await p.proof.require();
+assert.equal(p.pings(), 1, 'a good proof is trusted for a minute, not asked again each time');
+
+console.log('bridge auth part 2: the panel, worker and selection helpers send only after Izuki proves itself (unpaired, impostor, wrong key and offline refused; a good proof trusted for a minute).');

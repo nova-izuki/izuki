@@ -263,16 +263,9 @@ function paintSplit() {
 
 // ---- connecting ------------------------------------------------------------
 
+// "Izuki on this PC" is up only when it proves it's Izuki (bridge-proof.js).
 async function izukiIsUp() {
-  try {
-    const r = await fetch("http://127.0.0.1:47615/izuki/ping", {
-      headers: { "X-Izuki-Extension": "1" },
-      signal: AbortSignal.timeout(2500),
-    });
-    return r.ok;
-  } catch {
-    return false;
-  }
+  return (await globalThis.IzukiBridgeProof.check()).ok;
 }
 
 /**

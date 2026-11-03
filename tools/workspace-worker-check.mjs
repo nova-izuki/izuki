@@ -21,9 +21,15 @@ const chrome={runtime:{id:'test-extension',getURL:path=>'chrome-extension://test
     return [{result:{ok:true}}];
   }},
 };
-const ctx=vm.createContext({chrome,console,crypto:webcrypto,structuredClone,AbortController,AbortSignal,DOMException,URL,setTimeout,clearTimeout,
+const ctx=vm.createContext({chrome,console,crypto:webcrypto,TextEncoder,Uint8Array,Buffer,structuredClone,AbortController,AbortSignal,DOMException,URL,setTimeout,clearTimeout,
   IzukiProviderRelay:{ask:async(connection,prompt,id)=>{calls.push(['relay',connection,id]);if(holdAnswer)return new Promise(resolve=>lateAnswer=resolve);return {text:JSON.stringify({questionId:question.id,choices:[2],reason:'Bots'})};},cancel:id=>calls.push(['cancelRelay',id])},
   fetch:async(url,options)=>{
+    // The extension folder's pairing key, and Izuki's /ping signed with it.
+    if(url==='chrome-extension://test-extension/pairing.json')return {ok:true,json:async()=>({key:'a5'.repeat(32)})};
+    if(url.endsWith('/izuki/ping')){
+      const proof=(await import('node:crypto')).createHmac('sha256',Buffer.from('a5'.repeat(32),'hex')).update(`${options.headers['X-Izuki-Nonce']}\nping`).digest('hex');
+      return {ok:true,json:async()=>({ok:true,name:'Izuki',proof})};
+    }
     const body=JSON.parse(options.body);calls.push(['native',new URL(url).pathname,body]);
     if(appClosed&&url.includes('/side/'))throw new TypeError('Failed to fetch');
     let value={ok:true};
@@ -32,7 +38,7 @@ const ctx=vm.createContext({chrome,console,crypto:webcrypto,structuredClone,Abor
     if(url.endsWith('/ask'))value.text=JSON.stringify({questionId:question.id,choices:[2],reason:'Bots'});
     return {ok:true,json:async()=>value};
   }});
-for(const name of ['workspace-state','question-page','question-runner','lab-state','workspace-worker'])vm.runInContext(fs.readFileSync(new URL(`../extension/${name}.js`,import.meta.url),'utf8'),ctx,{filename:name});
+for(const name of ['bridge-proof','workspace-state','question-page','question-runner','lab-state','workspace-worker'])vm.runInContext(fs.readFileSync(new URL(`../extension/${name}.js`,import.meta.url),'utf8'),ctx,{filename:name});
 const panel={id:'test-extension',url:'chrome-extension://test-extension/sidepanel.html',tab:{id:33}},site={id:'test-extension',url:tab.url,tab};
 const request=(body,sender=panel)=>new Promise((resolve,reject)=>{
   const listener=chrome.runtime.onMessage.listeners[0];assert.equal(listener({izukiWorkspace:{windowId:7,...body}},sender,resolve),true);
