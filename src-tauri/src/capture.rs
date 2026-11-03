@@ -484,7 +484,12 @@ mod imp {
     }
 }
 
-pub use imp::{capture, capture_thumb, capture_window, cursor_pos, virtual_bounds};
+pub use imp::{capture, capture_thumb, cursor_pos, virtual_bounds};
+// Window-only capture exists only in the Windows implementation (the
+// non-Windows `mod imp` keeps the file compiling with no such function),
+// so this one is re-exported for that platform alone.
+#[cfg(windows)]
+pub use imp::capture_window;
 
 /// Grab the whole virtual desktop. While Izuki works in a window behind the
 /// one you're using, that window is drawn back in where it sits — so Izuki

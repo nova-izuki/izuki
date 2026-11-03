@@ -8,10 +8,10 @@ proved the fixes live, on a window, not only in unit tests.
 ## What ran
 
 - `cargo build --features devvision` (debug, not the release pipelines);
-  the app was launched with `IZUKI_VISION=1` in `dev-run.log`.
-- The installed app (`C:\Users\nwach\Downloads\Izuki\izuki.exe`) was closed
-  for the run (single-instance rule would otherwise bounce the dev build to
-  the installed app); it was relaunched right after.
+  the app was launched with `IZUKI_VISION=1` in `dev-run.log`.- The installed app (`Downloads\Izuki\izuki.exe` under the owner's own
+  profile; the account name is deliberately not written here) was closed for
+  the run (single-instance rule would otherwise bounce the dev build to the
+  installed app); it was relaunched right after.
 - The observer came up: `[izuki] smart vision watching on 127.0.0.1:9092`.
 
 ## Observe
@@ -20,6 +20,9 @@ proved the fixes live, on a window, not only in unit tests.
 - `/api/events` answered (`{"events":[]}` — nothing happened, honest).
 - `/api/frames/1` served a real JPEG of Izuki's own window (747×960,
   24 945 bytes; `frame-sample.jpg`).
+  **The JPEG itself is deliberately not committed** — it shows the owner's
+  own screen, and AGENTS.md forbids personal content in tracked files; a
+  live rerun regenerates one (same command line in this README).
 
 ## Diagnose (the review 7 #1 probe, live)
 
@@ -28,6 +31,13 @@ proved the fixes live, on a window, not only in unit tests.
   `ticks` kept growing (114→128). Watch loop alive, nothing captured: the
   hidden window keeps its screen rect, and the old code would have quietly
   recorded the desktop behind it. That behaviour is what `45f7446` closed.
+- Honest reading of the counters: they show no retained frames during the
+  minimized interval, but the counter alone cannot separate the
+  hidden-window gate from the existing dedupe (a repeated grab of the same
+  pixels is dropped either way). A unit test of the gate would need a real
+  window handle, so there is none — the gate is reviewed code
+  (`window_visible` inside `capture_once`), and this live run is its
+  evidence, consistent with it rather than an isolation of it.
 - After restore, `captures` stays 22 until the window's pixels change —
   the restored view matches one inside the two-minute dedupe window, so
   the map drops it. Exactly the designed rule.
