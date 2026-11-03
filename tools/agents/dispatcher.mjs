@@ -75,9 +75,11 @@ function updates(t, since) {
 function clearTree(tree) {
   if (!fs.existsSync(tree)) return;
   // Work left in it (an interrupted attempt) is committed and pushed to its
-  // own branch first, never thrown away.
-  try {
-    const branch = execFileSync('git', ['-C', tree, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).trim();
+  // own branch first, never thrown away: if saving fails, this throws and the
+  // folder stays for the next try.
+  let branch = '';
+  try { branch = execFileSync('git', ['-C', tree, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* not a worktree any more */ }
+  {
     if (branch.startsWith('agent/')) {
       if (execFileSync('git', ['-C', tree, 'status', '--porcelain'], { encoding: 'utf8' }).trim()) {
         execFileSync('git', ['-C', tree, 'add', '-A'], { stdio: 'ignore' });
@@ -90,7 +92,7 @@ function clearTree(tree) {
         say(`saved what was in ${path.basename(tree)} to ${branch} (${ahead} commit(s))`);
       }
     }
-  } catch { /* not a worktree any more, or nothing to save */ }
+  }
   const link = path.join(tree, 'node_modules');
   try { fs.lstatSync(link); execFileSync('cmd', ['/c', 'rmdir', link], { stdio: 'ignore' }); } catch { /* no link */ }
   if (fs.existsSync(link)) throw new Error(`couldn't remove the package link in ${tree} safely`);
@@ -140,9 +142,17 @@ async function run(t) {
   const child = spawn(process.env.BRIDGE_CLAUDE || 'claude', ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--allowedTools', ALLOWED.join(','), '--disallowedTools', DENIED.join(','), '--append-system-prompt', RULES(t.number, branch)], { cwd: tree, env: { ...process.env, CARGO_TARGET_DIR: path.join(ROOT, 'src-tauri', 'target') }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
   // Ends once its output is closed (so nothing is still in flight), with the
   // exit code or the signal. A launch that fails is the dispatcher's problem.
+  // If a leftover background process keeps the pipes open after Claude
+  // itself exits, 'close' would never come: 5 s after 'exit', the pipes are
+  // let go and the run counts as ended.
   const ended = new Promise((resolve) => {
-    child.on('close', (code, signal) => resolve({ code, signal }));
-    child.on('error', (error) => resolve({ code: null, signal: null, error }));
+    let grace = null;
+    const done = (value) => { clearTimeout(grace); resolve(value); };
+    child.on('close', (code, signal) => done({ code, signal }));
+    child.on('error', (error) => done({ code: null, signal: null, error }));
+    child.on('exit', (code, signal) => {
+      grace = setTimeout(() => { child.stdout.destroy(); child.stderr.destroy(); done({ code, signal }); }, 5000);
+    });
   });
   const send = (text) => { if (!child.stdin.destroyed) child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } }) + '\n'); };
   child.stdin.on('error', () => { /* the run ended; nothing more to send */ });

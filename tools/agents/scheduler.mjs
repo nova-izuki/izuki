@@ -7,6 +7,9 @@
 // that holds it, its last heartbeat.
 
 export const AGENTS = ['claude', 'freebuff'];
+/** Agents whose runs send heartbeats (the dispatcher's). Freebuff's don't: a
+ *  missing heartbeat says nothing about whether it's still working. */
+export const HEARTBEATS = ['claude'];
 export const PRIORITY = { urgent: 0, high: 1, normal: 2, low: 3 };
 export const STALE_MS = 20 * 60 * 1000; // no heartbeat for this long: the run is gone
 export const MAX_ATTEMPTS = 3; // then the task is blocked and escalated
@@ -79,7 +82,7 @@ export function agentStates(tasks, now, facts = {}) {
     const running = held.find((t) => t.status === 'in-progress');
     const beat = running?.state.heartbeat ? Date.parse(running.state.heartbeat) : 0;
     let state = 'idle';
-    if (running && now - beat > STALE_MS) state = 'disconnected';
+    if (running && HEARTBEATS.includes(agent) && now - beat > STALE_MS) state = 'disconnected';
     else if (running) state = 'busy';
     else if (facts[agent]?.activeSince && now - facts[agent].activeSince < 30 * 60 * 1000) state = 'busy'; // working on its own
     else if (held.length) state = 'assigned';

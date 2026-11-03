@@ -35,12 +35,14 @@ assert(!overlaps([], ['anything']));
 const fresh = new Date(now - 60_000).toISOString(), stale = new Date(now - STALE_MS - 1).toISOString();
 let tasks = [
   describe(issue(1, ['agent-task', 'status:in-progress', 'agent:claude'], writeState('x\nFiles: src/a.ts', { agent: 'claude', heartbeat: fresh }))),
-  describe(issue(2, ['agent-task', 'status:in-progress', 'agent:freebuff'], writeState('y', { agent: 'freebuff', heartbeat: stale }))),
+  describe(issue(2, ['agent-task', 'status:in-progress', 'agent:freebuff'], writeState('y', { agent: 'freebuff' }))),
 ];
 let states = agentStates(tasks, now);
 assert.equal(states.claude.state, 'busy');
-assert.equal(states.freebuff.state, 'disconnected');
+assert.equal(states.freebuff.state, 'busy', "Freebuff sends no heartbeats: its work in progress is never taken for a lost run");
 assert.deepEqual(states.claude.files, ['src/a.ts']);
+// Claude's dispatched run that stopped reporting is.
+assert.equal(agentStates([describe(issue(3, ['agent-task', 'status:in-progress', 'agent:claude'], writeState('z', { agent: 'claude', heartbeat: stale })))], now).claude.state, 'disconnected');
 // An agent known to be working on its own (Freebuff, seen in recent commits) is busy, not idle.
 states = agentStates([], now, { freebuff: { activeSince: now - 5 * 60_000 } });
 assert.equal(states.freebuff.state, 'busy');
