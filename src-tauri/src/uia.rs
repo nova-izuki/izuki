@@ -618,7 +618,7 @@ pub fn list_controls(max: usize) -> Vec<Control> {
     // The app you're working in gets most of the budget…
     if let Some(hwnd) = target_window() {
         if let Ok(root) = automation.element_from_handle(hwnd.into()) {
-            collect(&walker, root, hwnd, 2500, started + Duration::from_millis(900), max * 2, &mut found);
+            collect(&automation, &walker, root, hwnd, 2500, started + Duration::from_millis(900), max * 2, &mut found);
         }
     }
     // …and the taskbar always gets a look too: Start, search, pinned and
@@ -634,7 +634,7 @@ pub fn list_controls(max: usize) -> Vec<Control> {
             if let Some(taskbar) = taskbar_window() {
                 if let Ok(root) = automation.element_from_handle(taskbar.into()) {
                     let mut bar = Vec::new();
-                    collect(&walker, root, taskbar, 600, Instant::now() + Duration::from_millis(350), 40, &mut bar);
+                    collect(&automation, &walker, root, taskbar, 600, Instant::now() + Duration::from_millis(350), 40, &mut bar);
                     *TASKBAR.lock() = Some((Instant::now(), bar.clone()));
                     found.extend(bar);
                 }
@@ -684,11 +684,195 @@ fn taskbar_window() -> Option<isize> {
     unsafe { FindWindowW(w!("Shell_TrayWnd"), None).ok().map(|h| h.0 as isize) }
 }
 
+/// What a look needs to know about one element.
+#[cfg(windows)]
+struct Seen {
+    ct: Option<uiautomation::types::ControlType>,
+    offscreen: bool,
+    rect: Option<Rect>,
+    /// The name as the app gives it.
+    name: String,
+    /// A box's text (never a password box's), or "selected" for a chosen
+    /// radio button, tick box or list item.
+    value: String,
+    focused: bool,
+    runtime_id: Option<Vec<i32>>,
+}
+
+/// A box's text and whether it has the keyboard, or whether a choice is
+/// picked. Read only for those kinds, on screen.
+#[cfg(windows)]
+fn kind_value(
+    ct: Option<uiautomation::types::ControlType>,
+    offscreen: bool,
+    password: impl FnOnce() -> bool,
+    text: impl FnOnce() -> Option<String>,
+    focused: impl FnOnce() -> bool,
+    selected: impl FnOnce() -> bool,
+) -> (String, bool) {
+    use uiautomation::types::ControlType as C;
+    match ct {
+        Some(C::Edit | C::ComboBox) if !offscreen => {
+            let value = if password() {
+                String::new()
+            } else {
+                text().map(|v| v.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect()).unwrap_or_default()
+            };
+            (value, focused())
+        }
+        // Chosen or not (Quiz coach waits for the student's pick).
+        Some(C::RadioButton | C::CheckBox | C::ListItem) if !offscreen => (if selected() { "selected".to_string() } else { String::new() }, false),
+        _ => (String::new(), false),
+    }
+}
+
+/// An element of a look's walk, read one of two ways (`LiveNode`, `CachedNode`).
+#[cfg(windows)]
+trait LookNode: Sized {
+    fn seen(&self) -> &Seen;
+    fn children(&self) -> Vec<Self>;
+}
+
+/// Read live: every question is its own trip into the app. The fallback
+/// when the app won't fill UI Automation's cache.
+#[cfg(windows)]
+struct LiveNode<'a> {
+    el: uiautomation::UIElement,
+    walker: &'a uiautomation::UITreeWalker,
+    seen: Seen,
+}
+
+#[cfg(windows)]
+impl<'a> LiveNode<'a> {
+    fn new(el: uiautomation::UIElement, walker: &'a uiautomation::UITreeWalker) -> Self {
+        let ct = el.get_control_type().ok();
+        let offscreen = el.is_offscreen().unwrap_or(true);
+        let (value, focused) = kind_value(
+            ct,
+            offscreen,
+            || el.is_password().unwrap_or(true),
+            || el.get_property_value(uiautomation::types::UIProperty::ValueValue).and_then(|v| v.get_string()).ok(),
+            || el.has_keyboard_focus().unwrap_or(false),
+            || {
+                use uiautomation::patterns::{UISelectionItemPattern, UITogglePattern};
+                el.get_pattern::<UISelectionItemPattern>().ok().and_then(|p| p.is_selected().ok()).unwrap_or(false)
+                    || el.get_pattern::<UITogglePattern>().ok().and_then(|p| p.get_toggle_state().ok()).is_some_and(|s| s == uiautomation::types::ToggleState::On)
+            },
+        );
+        let seen = Seen {
+            ct,
+            offscreen,
+            rect: el.get_bounding_rectangle().ok().map(|r| to_rect(&r)),
+            name: el.get_name().unwrap_or_default(),
+            value,
+            focused,
+            runtime_id: el.get_runtime_id().ok(),
+        };
+        Self { el, walker, seen }
+    }
+}
+
+#[cfg(windows)]
+impl LookNode for LiveNode<'_> {
+    fn seen(&self) -> &Seen {
+        &self.seen
+    }
+    fn children(&self) -> Vec<Self> {
+        let Ok(first) = self.walker.get_first_child(&self.el) else { return Vec::new() };
+        let mut kids = vec![first];
+        while kids.len() < 400 {
+            match self.walker.get_next_sibling(kids.last().expect("non-empty")) {
+                Ok(next) => kids.push(next),
+                Err(_) => break,
+            }
+        }
+        kids.into_iter().map(|k| LiveNode::new(k, self.walker)).collect()
+    }
+}
+
+/// Read from UI Automation's cache: one trip brings an element's children
+/// with everything a look asks about them, instead of a trip per question
+/// (several per element), so a busy page is read in a fraction of the time.
+#[cfg(windows)]
+struct CachedNode<'a> {
+    el: uiautomation::UIElement,
+    request: &'a uiautomation::core::UICacheRequest,
+    seen: Seen,
+}
+
+#[cfg(windows)]
+impl<'a> CachedNode<'a> {
+    /// The properties a look reads, fetched with each element's children.
+    fn request(automation: &uiautomation::UIAutomation) -> uiautomation::Result<uiautomation::core::UICacheRequest> {
+        use uiautomation::types::{TreeScope, UIProperty as P};
+        let request = automation.create_cache_request()?;
+        for p in [P::ControlType, P::IsOffscreen, P::BoundingRectangle, P::Name, P::RuntimeId, P::IsPassword, P::ValueValue, P::HasKeyboardFocus, P::SelectionItemIsSelected, P::ToggleToggleState] {
+            request.add_property(p)?;
+        }
+        // The same tree a look walks: the control view.
+        request.set_tree_filter(automation.get_control_view_condition()?)?;
+        request.set_tree_scope(TreeScope::Children)?;
+        Ok(request)
+    }
+
+    /// A child that arrived in its parent's trip, read from the cache.
+    fn cached(el: uiautomation::UIElement, request: &'a uiautomation::core::UICacheRequest) -> Self {
+        use uiautomation::types::UIProperty as P;
+        let flag = |p: P, unknown: bool| el.get_cached_property_value(p).ok().and_then(|v| TryInto::<bool>::try_into(&v).ok()).unwrap_or(unknown);
+        let ct = el.get_cached_control_type().ok();
+        let offscreen = flag(P::IsOffscreen, true);
+        let (value, focused) = kind_value(
+            ct,
+            offscreen,
+            || flag(P::IsPassword, true),
+            || el.get_cached_property_value(P::ValueValue).ok().and_then(|v| v.get_string().ok()),
+            || flag(P::HasKeyboardFocus, false),
+            || {
+                flag(P::SelectionItemIsSelected, false)
+                    || el.get_cached_property_value(P::ToggleToggleState).ok().and_then(|v| TryInto::<i32>::try_into(&v).ok()) == Some(uiautomation::types::ToggleState::On as i32)
+            },
+        );
+        let runtime_id = match el.get_cached_property_value(P::RuntimeId).ok().map(|v| TryInto::<uiautomation::variants::Value>::try_into(&v)) {
+            Some(Ok(uiautomation::variants::Value::ArrayI4(ids))) => Some(ids),
+            _ => None,
+        };
+        let seen = Seen {
+            ct,
+            offscreen,
+            rect: el.get_cached_bounding_rectangle().ok().map(|r| to_rect(&r)),
+            name: el.get_cached_name().unwrap_or_default(),
+            value,
+            focused,
+            runtime_id,
+        };
+        Self { el, request, seen }
+    }
+}
+
+#[cfg(windows)]
+impl LookNode for CachedNode<'_> {
+    fn seen(&self) -> &Seen {
+        &self.seen
+    }
+    fn children(&self) -> Vec<Self> {
+        self.el
+            .build_updated_cache(self.request)
+            .and_then(|e| e.get_cached_children())
+            .unwrap_or_default()
+            .into_iter()
+            .take(400)
+            .map(|k| CachedNode::cached(k, self.request))
+            .collect()
+    }
+}
+
 /// Depth-first walk under `root`, pushing every visible, actionable control
 /// inside `root`'s own bounds into `out`. Stops at the node budget, the
-/// deadline, or `cap` finds.
+/// deadline, or `cap` finds. Read through UI Automation's cache; live, one
+/// question at a time, only if the app won't fill the cache.
 #[cfg(windows)]
 fn collect(
+    automation: &uiautomation::UIAutomation,
     walker: &uiautomation::UITreeWalker,
     root: uiautomation::UIElement,
     window_id: isize,
@@ -698,6 +882,21 @@ fn collect(
     out: &mut Vec<Control>,
 ) {
     let window = root.get_bounding_rectangle().ok().map(|r| to_rect(&r));
+    // The window itself is read live (a cache trip brings children, not the
+    // element asked about); everything under it from the cache.
+    let live_root = LiveNode::new(root, walker);
+    if let Ok(request) = CachedNode::request(automation) {
+        if live_root.el.build_updated_cache(&request).and_then(|e| e.get_cached_children()).is_ok() {
+            let LiveNode { el, seen, .. } = live_root;
+            walk(CachedNode { el, request: &request, seen }, window, window_id, node_budget, deadline, cap, out);
+            return;
+        }
+    }
+    walk(live_root, window, window_id, node_budget, deadline, cap, out);
+}
+
+#[cfg(windows)]
+fn walk<N: LookNode>(root: N, window: Option<Rect>, window_id: isize, node_budget: usize, deadline: std::time::Instant, cap: usize, out: &mut Vec<Control>) {
     let start_len = out.len();
     let mut hidden_found = 0usize;
     let mut below_found = 0usize;
@@ -708,9 +907,9 @@ fn collect(
     // middle of its *whole* box — on the address bar or a tab. Now its box
     // is cut to the visible part, and that's where the click goes.
     // Each element also carries the named section it's in (its "root").
-    let mut stack: Vec<(uiautomation::UIElement, Option<Rect>, std::rc::Rc<str>)> = vec![(root, window, std::rc::Rc::from(""))];
+    let mut stack: Vec<(N, Option<Rect>, std::rc::Rc<str>)> = vec![(root, window, std::rc::Rc::from(""))];
 
-    while let Some((el, view, section)) = stack.pop() {
+    while let Some((node, view, section)) = stack.pop() {
         visited += 1;
         if visited > node_budget
             || std::time::Instant::now() > deadline
@@ -718,10 +917,11 @@ fn collect(
         {
             break;
         }
+        let seen = node.seen();
 
-        if let Ok(ct) = el.get_control_type() {
+        if let Some(ct) = seen.ct {
             let score = interactive_score(ct).unwrap_or(0);
-            let offscreen = el.is_offscreen().unwrap_or(true);
+            let offscreen = seen.offscreen;
             // Hidden-until-hover buttons report "offscreen" while sitting
             // inside the window. (Ones scrolled out of view sit outside it
             // and are dropped by the bounds check below.) Only the kinds
@@ -732,17 +932,12 @@ fn collect(
             // "open Blackboard" can find the link further down the page.
             let maybe_below = offscreen && score >= 88 && below_found < 25;
             if score >= 70 && (!offscreen || hover_only || maybe_below) {
-                if let Ok(r) = el.get_bounding_rectangle() {
-                    let rect = to_rect(&r);
+                if let Some(rect) = seen.rect {
                     let inside = window.as_ref().map_or(true, |w| {
                         let (cx, cy) = rect.center();
                         w.contains(cx, cy)
                     });
-                    let name = el
-                        .get_name()
-                        .ok()
-                        .map(|n| n.split_whitespace().collect::<Vec<_>>().join(" "))
-                        .unwrap_or_default();
+                    let name = seen.name.split_whitespace().collect::<Vec<_>>().join(" ");
                     let hidden_ok = !offscreen || (!name.is_empty() && rect.w < 400 && rect.h < 200);
                     let below = maybe_below
                         && !inside
@@ -751,6 +946,7 @@ fn collect(
                             let (cx, cy) = rect.center();
                             cx >= w.x && cx <= w.x + w.w && cy > w.y + w.h && cy < w.y + w.h * 5
                         });
+                    let identity = |rect: Rect| seen.runtime_id.clone().map(|runtime_id| ControlIdentity { runtime_id, window: window_id, rect, kind: format!("{ct:?}"), name: seen.name.clone() });
                     if below && rect.w > 2 && rect.h > 2 {
                         below_found += 1;
                         out.push(Control {
@@ -763,7 +959,7 @@ fn collect(
                             focused: false,
                             below: true,
                             section: section.to_string(),
-                            identity: el.get_runtime_id().ok().map(|runtime_id| ControlIdentity { runtime_id, window: window_id, rect, kind: format!("{ct:?}"), name: el.get_name().unwrap_or_default() }),
+                            identity: identity(rect),
                         });
                     } else if let Some(rect) = rect
                         .intersect(view.as_ref().unwrap_or(&rect))
@@ -772,37 +968,17 @@ fn collect(
                         if offscreen {
                             hidden_found += 1;
                         }
-                        use uiautomation::types::ControlType as C;
-                        let (value, focused) = if matches!(ct, C::Edit | C::ComboBox) && !offscreen {
-                            let value = if el.is_password().unwrap_or(true) {
-                                String::new()
-                            } else {
-                                el.get_property_value(uiautomation::types::UIProperty::ValueValue)
-                                    .and_then(|v| v.get_string())
-                                    .map(|v| v.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect())
-                                    .unwrap_or_default()
-                            };
-                            (value, el.has_keyboard_focus().unwrap_or(false))
-                        } else if matches!(ct, C::RadioButton | C::CheckBox | C::ListItem) && !offscreen {
-                            // Chosen or not (Quiz coach waits for the student's pick).
-                            use uiautomation::patterns::{UISelectionItemPattern, UITogglePattern};
-                            let selected = el.get_pattern::<UISelectionItemPattern>().ok().and_then(|p| p.is_selected().ok()).unwrap_or(false)
-                                || el.get_pattern::<UITogglePattern>().ok().and_then(|p| p.get_toggle_state().ok()).is_some_and(|s| s == uiautomation::types::ToggleState::On);
-                            (if selected { "selected".to_string() } else { String::new() }, false)
-                        } else {
-                            (String::new(), false)
-                        };
                         out.push(Control {
                             id: 0,
                             kind: format!("{ct:?}"),
                             name: name.chars().take(60).collect(),
                             rect,
                             hidden: offscreen,
-                            value,
-                            focused,
+                            value: seen.value.clone(),
+                            focused: seen.focused,
                             below: false,
                             section: section.to_string(),
-                            identity: el.get_runtime_id().ok().map(|runtime_id| ControlIdentity { runtime_id, window: window_id, rect, kind: format!("{ct:?}"), name: el.get_name().unwrap_or_default() }),
+                            identity: identity(rect),
                         });
                     }
                 }
@@ -810,11 +986,9 @@ fn collect(
         }
 
         // Inside a web page (or any document), only its own area shows its content.
-        let child_view = match el.get_control_type() {
-            Ok(uiautomation::types::ControlType::Document) => el
-                .get_bounding_rectangle()
-                .ok()
-                .map(|r| to_rect(&r))
+        let child_view = match seen.ct {
+            Some(uiautomation::types::ControlType::Document) => seen
+                .rect
                 .and_then(|doc| match &view {
                     Some(v) => doc.intersect(v),
                     None => Some(doc),
@@ -826,24 +1000,15 @@ fn collect(
         let child_section = {
             use uiautomation::types::ControlType as C;
             let region = matches!(
-                el.get_control_type(),
-                Ok(C::Group | C::List | C::Tree | C::ToolBar | C::MenuBar | C::Menu | C::Tab | C::Table | C::DataGrid | C::StatusBar | C::Header | C::Pane | C::Window)
+                seen.ct,
+                Some(C::Group | C::List | C::Tree | C::ToolBar | C::MenuBar | C::Menu | C::Tab | C::Table | C::DataGrid | C::StatusBar | C::Header | C::Pane | C::Window)
             );
-            let name = if region { el.get_name().unwrap_or_default() } else { String::new() };
-            let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+            let name = if region { seen.name.split_whitespace().collect::<Vec<_>>().join(" ") } else { String::new() };
             if region && !name.is_empty() && name.chars().count() <= 40 { std::rc::Rc::from(name.as_str()) } else { section.clone() }
         };
         // Depth-first, children pushed in reverse so they pop in order.
-        if let Ok(first) = walker.get_first_child(&el) {
-            let mut kids = vec![first];
-            while kids.len() < 400 {
-                match walker.get_next_sibling(kids.last().expect("non-empty")) {
-                    Ok(next) => kids.push(next),
-                    Err(_) => break,
-                }
-            }
-            stack.extend(kids.into_iter().rev().map(|k| (k, child_view, child_section.clone())));
-        }
+        let kids = node.children();
+        stack.extend(kids.into_iter().rev().map(|k| (k, child_view, child_section.clone())));
     }
 }
 
@@ -1879,6 +2044,37 @@ mod look_timing {
         }
         let new_ms = t.elapsed().as_millis() / 5;
         println!("look timing: front window {front:?}, {count} controls listed, looks took {times:?} ms (first, then warm); making a UIAutomation costs {new_ms} ms");
+
+        // The two ways of reading the same window, back to back: with a
+        // look's real limits, and with no time limit (the whole page), so
+        // the speed and the list itself can be compared.
+        let walker = automation.get_control_view_walker().unwrap();
+        let request = super::CachedNode::request(&automation).unwrap();
+        let window_rect = window.get_bounding_rectangle().ok().map(|r| super::to_rect(&r));
+        let read = |cached: bool, limit_ms: u64| {
+            let root = automation.element_from_handle(raw.into()).unwrap();
+            let mut out = Vec::new();
+            let t = std::time::Instant::now();
+            let deadline = t + std::time::Duration::from_millis(limit_ms);
+            let live = super::LiveNode::new(root, &walker);
+            if cached {
+                let super::LiveNode { el, seen, .. } = live;
+                super::walk(super::CachedNode { el, request: &request, seen }, window_rect, raw, 100_000, deadline, 100_000, &mut out);
+            } else {
+                super::walk(live, window_rect, raw, 100_000, deadline, 100_000, &mut out);
+            }
+            let names: std::collections::BTreeSet<String> = out.iter().map(|c| format!("{} {}", c.kind, c.name)).collect();
+            (t.elapsed().as_millis(), out.len(), names)
+        };
+        for (label, limit) in [("in a look's 900 ms", 900u64), ("whole page, no limit", 60_000)] {
+            let (live_ms, live_n, live_names) = read(false, limit);
+            let (cached_ms, cached_n, cached_names) = read(true, limit);
+            let (live_ms2, _, _) = read(false, limit);
+            let (cached_ms2, _, _) = read(true, limit);
+            let only_live = live_names.difference(&cached_names).count();
+            let only_cached = cached_names.difference(&live_names).count();
+            println!("  {label}: live {live_n} controls in {live_ms}/{live_ms2} ms; cached {cached_n} controls in {cached_ms}/{cached_ms2} ms; only live {only_live}, only cached {only_cached}");
+        }
         let _ = browser.kill();
         super::hold_window(None);
         let _ = std::process::Command::new("taskkill").args(["/F", "/T", "/PID", &browser.id().to_string()]).output();
