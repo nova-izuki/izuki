@@ -1,5 +1,10 @@
 # Workstreams, ownership and status
 
+Codex backup lane (2026-11-03, issue #26): isolated CLI compatibility probe and
+JSONL completion foundation in `tools/codex-fallback/`. Automatic dispatch is
+disabled; Claude retains `tools/agents/`, PR #24 and scheduler task #25. See
+`HANDOFF-CODEX-2026-11-03.md` for the live-state audit and remaining integration.
+
 Set by the owner on 2026-11-03. Freebuff keeps **Smart Eye / Air Control,
 Smart Vision and Developer Mode**; Claude Code keeps **Smart Screen Actions,
 speed optimization and security fixes**. Both finish existing critical work
