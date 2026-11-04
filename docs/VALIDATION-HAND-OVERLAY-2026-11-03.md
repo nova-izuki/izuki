@@ -62,9 +62,14 @@ marker. Those features, their gates and their camera lifecycles are preserved.
   reset, foreground reset event, input underneath, typing, no camera requests
   and no remaining animation frames after expiry/unmount passed.
 - The harness initially found a Windows profile-cleanup race after successful
-  assertions. Cleanup now retries only its verified fresh `.work` directories
-  while Edge releases file locks; a complete rerun exited successfully. No
-  owner browser or agent is terminated by the harness.
+  assertions. Later Windows cleanup was denied even after retries, and automatic
+  approval review rejected a manual profile deletion (“blocked by policy”).
+  No alternate deletion method was used. Local reruns use the explicit
+  `--retain-artifacts` option; a read-only process check still requires that
+  **all test browser processes exit**, including Edge relaunches. Nonprivate
+  fixture profiles/caches remain ignored in `.work`; they are not desktop
+  overlays or background workers. CI keeps normal profile cleanup. No owner
+  browser or agent is terminated by the harness.
 - Two native settings regressions cover old saved profiles and independence
   from enabled Air control; their full Rust outcome is recorded below when done.
 
@@ -81,7 +86,7 @@ After building the example, run:
 
 ```powershell
 $env:IZUKI_HAND_TEST_HOST = '<compiled hand_overlay_probe.exe>'
-node tools/hand-overlay-check.cjs --native
+node tools/hand-overlay-check.cjs --native --retain-artifacts
 ```
 
 The host asserts native mouse transparency and unchanged foreground on overlay

@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-const { spawn } = require('node:child_process');
+const { spawn, execFileSync } = require('node:child_process');
 const { closeTestBrowser } = require('./browser-cleanup.cjs');
 const root = path.resolve(__dirname, '..');
 const edge = process.env.IZUKI_TEST_BROWSER || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
@@ -48,37 +48,40 @@ let server, browser, ws, profile, cache;
   let sequence=0; const pending=new Map();
   ws.onmessage=e=>{const message=JSON.parse(String(e.data));if(pending.has(message.id)){pending.get(message.id)(message);pending.delete(message.id)}};
   const call=(method,params={})=>new Promise((resolve,reject)=>{const id=++sequence;const timer=setTimeout(()=>{pending.delete(id);reject(Error(method+' timed out'))},30000);pending.set(id,m=>{clearTimeout(timer);m.error?reject(Error(m.error.message)):resolve(m.result)});ws.send(JSON.stringify({id,method,params}))});
-  const run=async expression=>{const r=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description||r.exceptionDetails.text);return r.result.value};
+  const run=async expression=>{let r;try{r=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true})}catch(e){throw Error(expression.slice(0,160)+': '+e.message)}if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description||r.exceptionDetails.text);return r.result.value};
   const stats=()=>run('handTest.stats()');
-  const wait=async(expected)=>{for(let i=0;i<100;i++){if((await stats()).visible===expected)return;await pause(50)}assert.fail('Hand visibility did not become '+expected)};
+  const wait=async(expected,timeout=5000)=>{const deadline=Date.now()+timeout;while(Date.now()<deadline){if((await stats()).visible===expected)return;await pause(25)}assert.fail('Hand visibility did not become '+expected+' within '+timeout+' ms')};
   if(!native)await call('Page.navigate',{url:origin+'tools/fixtures/action-hand.html'});
   for(let i=0;i<160;i++){if(await run('!!window.testReady'))break;await pause(250)}
   assert.equal(await run('!!window.testReady'),true,'Fixture failed to mount');
   await run('handTest.point()'); await pause(100); assert.equal((await stats()).visible,false,'Disabled must ignore actions');
   await run('handTest.enable(true)'); await pause(100); assert.equal((await stats()).visible,false,'Enabling must not replay an old action');
-  await run('handTest.point()'); await wait(true);
+  await run('handTest.point({duration_ms:3000})'); await wait(true);
   assert.equal(await run("getComputedStyle(document.querySelector('[data-izk-action-hand]')).pointerEvents"),'none');
   await call('Input.dispatchMouseEvent',{type:'mousePressed',x:150,y:140,button:'left',clickCount:1});
   await call('Input.dispatchMouseEvent',{type:'mouseReleased',x:150,y:140,button:'left',clickCount:1});
   assert.equal((await stats()).inputs,1,'Action visual must not intercept a click');
   await run("document.getElementById('typing').focus()"); await call('Input.insertText',{text:'still typing'});
   assert.equal((await stats()).text,'still typing');
-  await wait(false);
+  await run('handTest.stop()'); await wait(false,1000);
+  // Expiry has its own test. Clear-event tests below must finish well before
+  // their 3500 ms expiry, otherwise a broken handler could falsely pass.
+  await run('handTest.point()');await wait(true);await wait(false,1200);
   const before=(await stats()).frames; await pause(250); assert.equal((await stats()).frames,before,'Idle must stop animation frames');
   for(const stop of ['stop','switched','ended','finished','closed','reopened']){
-    await run('handTest.point()');await wait(true);await run(`handTest.${stop}()`);await wait(false);
+    await run('handTest.point({duration_ms:3000})');await wait(true);await run(`handTest.${stop}()`);await wait(false,1000);
   }
   if(native){
     await run('handTest.point({duration_ms:3000})');await wait(true);
     assert.equal(await run("import('/node_modules/@tauri-apps/api/core.js').then(m=>m.invoke('probe_switch_window'))"),true,'A real native foreground switch must occur');
-    await wait(false);
+    await wait(false,1000);
   }
-  await run('handTest.point()');await wait(true);await run('handTest.enable(false)');await wait(false);
+  await run('handTest.point({duration_ms:3000})');await wait(true);await run('handTest.enable(false)');await wait(false,1000);
   await run('handTest.enable(true)');await pause(100);assert.equal((await stats()).visible,false);
   await run('handTest.point({x:NaN})');await pause(100);assert.equal((await stats()).visible,false);
   await run('handTest.point({duration_ms:999999})');await wait(true);await pause(3700);await wait(false);
   assert.equal((await stats()).cameras,0,'Hand visual must never acquire a camera');
-  await run('handTest.point()');await wait(true);await run('handTest.unmount()');await wait(false);
+  await run('handTest.point({duration_ms:3000})');await wait(true);await run('handTest.unmount()');await wait(false,1000);
   const idle=(await stats()).frames;await pause(250);assert.equal((await stats()).frames,idle,'Unmount must cancel animations');
   if(!native){
     await call('Page.navigate',{url:origin+'tools/fixtures/hand-canvas.html'});
@@ -101,6 +104,25 @@ let server, browser, ws, profile, cache;
   if(native)await run("setTimeout(()=>import('/node_modules/@tauri-apps/api/core.js').then(m=>m.invoke('probe_finish')),50);true");
 })().catch(e=>{console.error(e);process.exitCode=1}).finally(async()=>{
   try{ws?.close()}catch{}await closeTestBrowser(browser,profile);await server?.close();
+  for(let i=0;browser?.pid&&browser.exitCode===null&&browser.signalCode===null&&i<100;i++)await pause(50);
+  if(browser?.pid&&browser.exitCode===null&&browser.signalCode===null){
+    // On Windows taskkill may time out under build load. ChildProcess.kill
+    // targets the process we launched through its retained process handle.
+    browser.kill();
+    for(let i=0;browser.exitCode===null&&browser.signalCode===null&&i<100;i++)await pause(50);
+  }
+  if(browser?.pid)assert.ok(browser.exitCode!==null||browser.signalCode!==null,'Disposable host must exit');
+  if(process.platform==='win32'&&profile){
+    // Read-only check also catches Edge relaunches whose original parent exited.
+    // Output is a count, never another process's command line or user data.
+    const script=`$fixturePath = '${profile.replace(/'/g,"''")}'; @(Get-CimInstance Win32_Process | Where-Object { $_.Name -in @('msedge.exe','msedgewebview2.exe') -and $_.CommandLine -and $_.CommandLine.IndexOf($fixturePath, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count`;
+    const count=execFileSync('powershell.exe',['-NoProfile','-Command',script],{encoding:'utf8',windowsHide:true,timeout:30000}).trim();
+    assert.equal(count,'0','No browser process may remain for the disposable profile');
+  }
+  if(process.argv.includes('--retain-artifacts')){
+    console.log('Retained disposable test profile/cache in .work as requested; test browser processes have exited.');
+    return;
+  }
   for(const folder of [profile,cache])if(folder){
     // WebView2/Edge exits asynchronously and Defender may briefly hold a cache
     // file after Browser.close. Only remove our fresh directories in .work.
