@@ -6,6 +6,7 @@ import {
   Captions,
   Ear,
   Hand,
+  MessageCircle,
   Keyboard,
   Mic,
   MicOff,
@@ -311,11 +312,11 @@ export function TalkToIzuki() {
             </button>
           </div>
         )}
-        <Group>The hand</Group>
+        <Group>Desktop chat and action hand</Group>
         <Row
           label="Floating chat bubble"
           hint="Keep the chat button available on the desktop. It does not add a hand to your pointer."
-          icon={<Hand size={14} strokeWidth={2.3} />}
+          icon={<MessageCircle size={14} strokeWidth={2.3} />}
         >
           <Toggle
             checked={settings.follow_mode_enabled}

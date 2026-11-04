@@ -15,7 +15,7 @@ const root=createRoot(document.getElementById('root'));
 root.render(React.createElement(OverlayCanvas));
 window.canvasTest={
   async open(mode){await emit(EV.overlayOpen,{mode,freeze:false,desktop:{x:0,y:0,w:innerWidth,h:innerHeight,scale:1}})},
-  async point(){await emit(EV.hand,{x:150,y:140,action:'click',duration_ms:90})},
+  async point(){await emit(EV.hand,{x:150,y:140,action:'click',duration_ms:3000})},
   async preference(on){settings={...settings,action_hand_enabled:on};await emit(EV.settingsChanged)},
   count(){return document.querySelectorAll('[data-izk-hand-cursor]').length},
   unmount(){root.unmount()}

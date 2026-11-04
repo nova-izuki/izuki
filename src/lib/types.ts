@@ -578,7 +578,7 @@ export interface Callout {
 /** Push-to-talk state, sent from the config panel's mic to the overlay. */
 export interface ListeningPayload {
   active: boolean;
-  /** Whether "Always show the hand" is on — decides hand-orb vs. mic badge. */
+  /** Legacy follow preference: keeps the floating chat available. */
   follow: boolean;
 }
 

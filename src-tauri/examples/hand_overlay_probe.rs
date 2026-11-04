@@ -21,9 +21,10 @@ fn main() {
         .invoke_handler(tauri::generate_handler![probe_finish, probe_switch_window])
         .setup(|app| {
             // The real overlay builder and native click-through behavior.
+            let foreground = unsafe { GetForegroundWindow() };
+            assert!(!foreground.is_invalid(), "requires an interactive Windows desktop");
             let w = izuki_lib::overlay::ensure_overlay(app.handle())?;
             let hwnd = windows::Win32::Foundation::HWND(w.hwnd()?.0);
-            let foreground = unsafe { GetForegroundWindow() };
             let w = izuki_lib::overlay::show_overlay(app.handle(), false)?;
             // Keep the disposable test view small; don't cover the desktop.
             w.set_size(PhysicalSize::new(720u32, 480u32))?;
