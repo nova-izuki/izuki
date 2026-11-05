@@ -26,13 +26,15 @@ let tasks = gh.listTasks().map(describe);
 const byNumber = () => new Map(tasks.map((t) => [t.number, t]));
 
 // OBSERVE: Freebuff has no interface to ask, so its own recent commits on the
-// branch (no Claude co-author line) say it's at work. Claude's state comes
-// from its dispatched runs' heartbeats instead; the owner's interactive
-// Claude session committing doesn't make the dispatched one busy.
+// branch say it's at work: they're all signed "Generated with Codebuff" (41
+// of 41 checked). Anyone else's commit (Claude's, or Codex's, which once made
+// Freebuff look busy) doesn't count. Claude's state comes from its dispatched
+// runs' heartbeats instead; the owner's interactive Claude session committing
+// doesn't make the dispatched one busy.
 const facts = { claude: {}, freebuff: {} };
 try {
   for (const c of gh.recentCommits(iso(now - 30 * 60 * 1000))) {
-    if (/Co-Authored-By: Claude/i.test(c.commit.message)) continue;
+    if (!/Generated with Codebuff/i.test(c.commit.message)) continue;
     facts.freebuff.activeSince = Math.max(facts.freebuff.activeSince || 0, Date.parse(c.commit.committer.date));
   }
 } catch (e) { log.push(`couldn't read recent commits: ${e.message}`); }
