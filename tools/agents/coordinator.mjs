@@ -139,6 +139,12 @@ for (const t of tasks.filter((t) => t.open && t.status === 'review')) {
     }
     if (t.state.pr) {
       const s = gh.pullStatus(t.state.pr);
+      // The PR must be this task's before anything follows from it: the
+      // dispatched run's own branch, or a PR whose title or description names
+      // the task. A PR number read from a comment ("see PR #29") could be
+      // someone else's work, which the bridge must never merge or count.
+      const own = t.state.branch && s.pr.head.ref === t.state.branch;
+      if (!own && !new RegExp(`#${t.number}(?!\\d)`).test(`${s.pr.title}\n${s.pr.body || ''}`)) { update(t, 'blocked', {}, `PR #${t.state.pr} isn't this task's branch and doesn't mention #${t.number}, so the bridge won't merge it or count it. If it is this task's work, mention #${t.number} in the PR and set the task back to review; otherwise report the right PR or commit.`); continue; }
       // A known verdict first: merged is done, whatever else.
       if (s.merged) { update(t, 'done', { doneAt: iso(), history: [...(t.state.history || []), { agent: t.state.agent, result: 'done', at: iso() }] }, `Verified and merged: PR #${t.state.pr}.`); continue; }
       if (s.base !== gh.DEV_BRANCH) { fail(t, 'conflict', `PR #${t.state.pr} targets ${s.base}; agent work goes to ${gh.DEV_BRANCH} only.`); continue; }

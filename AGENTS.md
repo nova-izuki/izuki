@@ -127,7 +127,7 @@ queue before choosing the next thing:
 `gh issue list --label agent-task --label agent:freebuff --label status:assigned`.
 Take the top one (most urgent first):
 - label it `status:in-progress` (remove `status:assigned`), claim its files in COLLAB.md, and do it;
-- when it's pushed, label it `status:review` and comment with the commit SHA (or open a PR into `milestone-196` and comment its number).
+- when it's pushed, label it `status:review` and comment with the commit SHA (or open a PR into `milestone-196` that mentions the task, e.g. "Task #21: …", and comment its number: the bridge only merges a PR that names its task).
 
 The coordinator marks it done once that commit's checks pass. Never take a
 task labelled for the other agent, and never close a task yourself.
