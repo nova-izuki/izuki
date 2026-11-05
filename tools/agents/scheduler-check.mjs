@@ -1,6 +1,6 @@
 // The bridge scheduler's decisions, checked without GitHub or agents.
 import assert from 'node:assert/strict';
-import { readState, writeState, describe, overlaps, agentStates, performance, score, plan, recover, STALE_MS } from './scheduler.mjs';
+import { readState, writeState, describe, overlaps, agentStates, performance, score, plan, recover, unavailable, counts, redistribute, STALE_MS } from './scheduler.mjs';
 
 const issue = (number, labels, body = '', extra = {}) => ({ number, title: `Task ${number}`, labels, body, author: { login: 'owner' }, state: 'OPEN', createdAt: '2026-11-03T08:00:00Z', ...extra });
 const trusted = (login) => login === 'owner';
@@ -105,4 +105,48 @@ const flexible = describe(issue(41, ['agent-task', 'status:failed', 'agent:claud
 assert.equal(recover(flexible, 'timeout').action, 'reassign');
 assert.equal(recover(failing('claude', ['failed', 'failed', 'failed']), 'ci-failed').action, 'block');
 
-console.log('agent scheduler: state blocks, task parsing, file overlap, agent states (busy, disconnected, working on its own), evidence-based scores, planning (priority, dependencies, no second task, no shared files, untrusted ignored) and recovery (new strategy, reassign, block) pass.');
+// An agent that can't work (a usage limit) isn't a failed task. The result
+// event is the real one from task #18's run, which was wrongly called stalled.
+const limitHit = { type: 'result', subtype: 'success', is_error: true, api_error_status: 429, num_turns: 8, result: "You've hit your session limit · resets 12:20pm (America/Chicago)" };
+const resetsAt = 1793730000 * 1000; // from the run's rejected rate_limit_event
+let out = unavailable(limitHit, resetsAt - 3600_000, resetsAt);
+assert.equal(out.reason, 'usage-limit');
+assert.equal(out.until, resetsAt, 'waits for the reset the service gave');
+assert.equal(unavailable({ ...limitHit, api_error_status: undefined }, now).reason, 'usage-limit', 'the words alone are enough');
+assert.equal(unavailable(limitHit, now, now - 1).until, now + 3600_000, 'a reset already past (or none): an hour');
+assert.equal(unavailable({ is_error: true, api_error_status: 401, result: 'Invalid API key · Please run /login' }, now).reason, 'signed-out');
+assert.equal(unavailable({ is_error: true, api_error_status: 529, result: 'API Error: 529 Overloaded' }, now).reason, 'service');
+assert.equal(unavailable({ is_error: false, result: 'RESULT: failed tests-failed — the rate limit test fails' }, now), null, 'a normal answer that mentions a limit is not an outage');
+assert.equal(unavailable({ is_error: true, subtype: 'error_max_turns', result: '' }, now), null, "the run's own error stays a run failure");
+// Neither a pause nor an outage counts as an attempt or a failure.
+assert(!counts({ result: 'unavailable' }) && !counts({ result: 'paused' }) && counts({ result: 'failed' }));
+const outages = [{ agent: 'claude', result: 'unavailable', reason: 'usage-limit' }, { agent: 'claude', result: 'unavailable', reason: 'usage-limit' }, { agent: 'claude', result: 'failed' }];
+assert.equal(recover(failing('claude', outages.map((h) => h.result)), 'tests-failed').action, 'retry', 'two outages and one failure: one attempt, not three');
+const afterOutage = performance([done(50, 'claude', 'feature', [{ agent: 'claude', result: 'unavailable', reason: 'usage-limit' }, { agent: 'claude', result: 'done' }])]);
+assert.equal(afterOutage.claude.failed, 0, 'an outage never lowers the measured score');
+assert.equal(afterOutage.claude.firstTry, 1);
+// Its state: unavailable until the reset, then waiting on its task again.
+const outRecord = (ms) => [{ agent: 'claude', result: 'unavailable', reason: 'usage-limit', until: new Date(now + ms).toISOString() }];
+const outTask = (n, extra = {}) => describe(issue(n, ['agent-task', 'status:assigned', 'agent:claude'], writeState('o\nFiles: src-tauri/src/automation.rs', { agent: 'claude', history: outRecord(2 * 3600_000), ...extra })));
+states = agentStates([outTask(60)], now);
+assert.equal(states.claude.state, 'unavailable');
+assert.equal(states.claude.until, new Date(now + 2 * 3600_000).toISOString());
+assert.equal(agentStates([outTask(60)], now + 3 * 3600_000).claude.state, 'assigned', 'after the reset it takes its task again');
+assert(!plan([describe(issue(61, ['agent-task', 'status:queued', 'agent:claude'], 'q'))], states, {}, trusted).length, 'nothing new for an unavailable agent');
+// A long outage hands a flexible, unstarted task to the idle other agent;
+// a short one, a task meant for that agent only, or a busy other agent: nothing moves.
+assert.deepEqual(redistribute([outTask(62, { flexible: true })], agentStates([outTask(62, { flexible: true })], now), now).map((p) => [p.task, p.to]), [[62, 'freebuff']]);
+assert.equal(redistribute([outTask(63)], agentStates([outTask(63)], now), now).length, 0, 'not flexible: it waits for its agent');
+const soon = outTask(64, { flexible: true, history: outRecord(30 * 60_000) });
+assert.equal(redistribute([soon], agentStates([soon], now), now).length, 0, 'back within the hour: it waits');
+const busyOther = [outTask(65, { flexible: true }), describe(issue(66, ['agent-task', 'status:in-progress', 'agent:freebuff'], writeState('b', { agent: 'freebuff' })))];
+assert.equal(redistribute(busyOther, agentStates(busyOther, now), now).length, 0, 'the other agent is busy');
+// Handed over, the outage stays Claude's: it still gets nothing new, and
+// Freebuff, now holding the task, doesn't inherit it.
+const handed = describe(issue(67, ['agent-task', 'status:assigned', 'agent:freebuff'], writeState('h', { agent: 'freebuff', flexible: true, history: outRecord(2 * 3600_000) })));
+states = agentStates([handed], now);
+assert.equal(states.claude.state, 'unavailable', 'handing its task over does not make it available');
+assert.equal(states.freebuff.state, 'assigned');
+assert(!plan([handed, describe(issue(68, ['agent-task', 'status:queued', 'agent:claude'], 'q'))], states, {}, trusted).length, 'still nothing new for Claude until the reset');
+
+console.log('agent scheduler: state blocks, task parsing, file overlap, agent states (busy, disconnected, working on its own, unavailable), evidence-based scores, planning (priority, dependencies, no second task, no shared files, untrusted ignored), recovery (new strategy, reassign, block) and outages (usage limit, signed out, service down: never an attempt or a failure; long ones redistribute flexible work) pass.');

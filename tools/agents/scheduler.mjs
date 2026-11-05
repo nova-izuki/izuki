@@ -13,6 +13,40 @@ export const HEARTBEATS = ['claude'];
 export const PRIORITY = { urgent: 0, high: 1, normal: 2, low: 3 };
 export const STALE_MS = 20 * 60 * 1000; // no heartbeat for this long: the run is gone
 export const MAX_ATTEMPTS = 3; // then the task is blocked and escalated
+/** Hand a flexible task to the other agent when its own is out this much longer. */
+export const REDISTRIBUTE_MS = 60 * 60 * 1000;
+
+/**
+ * Whether a history entry was a real attempt at the task. A pause for an
+ * urgent task, or a run cut short because the agent couldn't work at all (a
+ * usage limit, signed out, the service down), says nothing about the task or
+ * the agent's skill: neither counts as an attempt or a failure.
+ */
+export const counts = (h) => !['paused', 'unavailable'].includes(h.result);
+
+/**
+ * Whether a run ended because the agent couldn't work rather than because of
+ * the task: `{ reason, until, detail }` or null. `event` is Claude Code's
+ * stream-json result event; `resetsAt` (ms) is the reset time from a
+ * rejected rate-limit event in the same run, when there was one.
+ * Seen for real (task #18): is_error, api_error_status 429, "You've hit your
+ * session limit · resets 12:20pm (America/Chicago)".
+ */
+export function unavailable(event, now, resetsAt = 0) {
+  if (!event?.is_error) return null;
+  const status = Number(event.api_error_status) || 0;
+  const detail = String(event.result || '').slice(0, 200);
+  if (status === 429 || /\b(session|usage|weekly|rate) limit\b|limit reached|out of (credits|extra usage)/i.test(detail)) {
+    return { reason: 'usage-limit', until: resetsAt > now ? resetsAt : now + 60 * 60 * 1000, detail };
+  }
+  if (status === 401 || status === 403 || /not logged in|please (run )?\/login|log ?in again|invalid api key|oauth token/i.test(detail)) {
+    return { reason: 'signed-out', until: now + 30 * 60 * 1000, detail };
+  }
+  if (status >= 500 || /overloaded|service unavailable|API Error: 5\d\d|ECONNRESET|ENOTFOUND|ETIMEDOUT/i.test(detail)) {
+    return { reason: 'service', until: now + 10 * 60 * 1000, detail };
+  }
+  return null;
+}
 
 const STATE = /<!-- bridge (\{[\s\S]*?\}) -->/;
 
@@ -81,13 +115,18 @@ export function agentStates(tasks, now, facts = {}) {
     const held = tasks.filter((t) => t.open && t.state.agent === agent && ['assigned', 'in-progress'].includes(t.status));
     const running = held.find((t) => t.status === 'in-progress');
     const beat = running?.state.heartbeat ? Date.parse(running.state.heartbeat) : 0;
+    // Out until a known time (a usage limit): the agent's own record in the
+    // history of the task it was on. It stays there when that task is handed
+    // to the other agent, who doesn't inherit it.
+    const outUntil = Math.max(0, ...tasks.flatMap((t) => (t.state.history || []).filter((h) => h.agent === agent && h.result === 'unavailable').map((h) => Date.parse(h.until || '') || 0)));
     let state = 'idle';
     if (running && HEARTBEATS.includes(agent) && now - beat > STALE_MS) state = 'disconnected';
     else if (running) state = 'busy';
+    else if (outUntil > now) state = 'unavailable';
     else if (facts[agent]?.activeSince && now - facts[agent].activeSince < 30 * 60 * 1000) state = 'busy'; // working on its own
     else if (held.length) state = 'assigned';
     if (facts[agent]?.reachable === false && state === 'idle') state = 'unreachable';
-    out[agent] = { state, held: held.map((t) => t.number), running: running?.number ?? null, files: held.flatMap((t) => t.files) };
+    out[agent] = { state, until: state === 'unavailable' ? new Date(outUntil).toISOString() : null, held: held.map((t) => t.number), running: running?.number ?? null, files: held.flatMap((t) => t.files) };
   }
   return out;
 }
@@ -104,6 +143,7 @@ export function performance(tasks) {
     if (!agent || !t.state.history?.length) continue;
     const s = (stats[agent] ??= { done: 0, failed: 0, firstTry: 0, minutes: [], waits: [], byKind: {} });
     const k = (s.byKind[t.kind] ??= { done: 0, failed: 0 });
+    // Only real failures: a pause or an unavailable agent isn't one (`counts`).
     const failures = t.state.history.filter((h) => h.result === 'failed').length;
     s.failed += failures;
     k.failed += failures;
@@ -158,13 +198,34 @@ export function plan(tasks, states, stats, trusted) {
 }
 
 /**
+ * Tasks to hand over because their agent is out (a usage limit) for over
+ * REDISTRIBUTE_MS more: only ones that could go to either agent (flexible),
+ * not started, to the other agent only if it's idle and holds none of their
+ * files. Nothing moves for a short outage: the agent resumes them itself.
+ */
+export function redistribute(tasks, states, now) {
+  const out = [];
+  for (const agent of AGENTS) {
+    const s = states[agent];
+    if (s.state !== 'unavailable' || Date.parse(s.until) - now <= REDISTRIBUTE_MS) continue;
+    const other = AGENTS.find((a) => a !== agent);
+    if (states[other].state !== 'idle') continue;
+    const task = tasks
+      .filter((t) => t.open && t.status === 'assigned' && t.state.agent === agent && t.state.flexible && !overlaps(t.files, states[other].files))
+      .sort((a, b) => PRIORITY[a.priority] - PRIORITY[b.priority] || a.number - b.number)[0];
+    if (task) out.push({ task: task.number, from: agent, to: other, why: `${agent} is unavailable until ${s.until}` });
+  }
+  return out;
+}
+
+/**
  * What to do with a task whose run failed: try again with a different
  * approach, hand it to the other agent, or stop and escalate. Never the same
  * prompt again.
  */
 export function recover(task, category) {
   const history = task.state.history || [];
-  const attempts = history.length;
+  const attempts = history.filter(counts).length;
   const mine = history.filter((h) => h.agent === task.state.agent && h.result === 'failed').length;
   if (attempts >= MAX_ATTEMPTS) return { action: 'block', note: `Blocked after ${attempts} attempts (last: ${category}). Needs a person or a new plan.` };
   const strategy = {

@@ -69,19 +69,38 @@ export function ensureLabels() {
   }
 }
 
-/** A pull request's state and whether every check on its head passed. */
+/**
+ * A commit's check runs: how many, still running, failed, and cancelled. A
+ * cancelled (or stale) run was cut off, usually by a newer push: it says
+ * nothing either way, so it's neither a pass nor a failure.
+ */
+function tally(runs) {
+  const done = runs.filter((r) => r.status === 'completed');
+  const cut = (r) => ['cancelled', 'stale'].includes(r.conclusion);
+  return {
+    runs: runs.length,
+    pending: runs.length - done.length,
+    failed: done.filter((r) => !cut(r) && !['success', 'skipped', 'neutral'].includes(r.conclusion)).map((r) => r.name),
+    cancelled: done.filter(cut).map((r) => r.name),
+  };
+}
+
+/** A pull request's state and its head's checks. */
 export function pullStatus(number) {
   const pr = api(`repos/${REPO}/pulls/${number}`);
   const runs = api(`repos/${REPO}/commits/${pr.head.sha}/check-runs?per_page=100`).check_runs || [];
-  const pending = runs.filter((r) => r.status !== 'completed');
-  const failed = runs.filter((r) => r.status === 'completed' && !['success', 'skipped', 'neutral'].includes(r.conclusion));
-  return { pr, runs: runs.length, pending: pending.length, failed: failed.map((r) => r.name), base: pr.base.ref, merged: pr.merged, open: pr.state === 'open' };
+  return { pr, ...tally(runs), base: pr.base.ref, merged: pr.merged, open: pr.state === 'open' };
 }
 
 /** Every check on one commit (Freebuff pushes to the branch, not through PRs). */
 export function commitChecks(sha) {
-  const runs = api(`repos/${REPO}/commits/${sha}/check-runs?per_page=100`).check_runs || [];
-  return { runs: runs.length, pending: runs.filter((r) => r.status !== 'completed').length, failed: runs.filter((r) => r.status === 'completed' && !['success', 'skipped', 'neutral'].includes(r.conclusion)).map((r) => r.name) };
+  return tally(api(`repos/${REPO}/commits/${sha}/check-runs?per_page=100`).check_runs || []);
+}
+
+/** Whether `head` includes commit `sha` (is it, or comes after it). */
+export function contains(head, sha) {
+  const c = api(`repos/${REPO}/compare/${sha}...${head}?per_page=1`);
+  return c.status === 'identical' || c.status === 'ahead';
 }
 
 /** Recent commits on the development branch (for an agent working on its own, like Freebuff). */

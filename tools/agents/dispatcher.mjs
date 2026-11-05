@@ -8,13 +8,17 @@
 //   node tools/agents/dispatcher.mjs          supervise until stopped
 //   node tools/agents/dispatcher.mjs --once   take one task (if any), then exit
 // Pause it: create .work/agents/paused (delete it to carry on).
+// When Claude can't work (a usage limit, signed out, the service down), the
+// task goes back unchanged and the dispatcher waits until the reset
+// (.work/agents/unavailable.json). Its log: .work/agents/dispatcher.log.
 //
 // Freebuff isn't dispatched here: it has no programmatic interface (see
 // docs/AGENTS-BRIDGE.md). Its tasks wait in the queue until it takes them.
 import { spawn, execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, writeState, PRIORITY } from './scheduler.mjs';
+import { describe, writeState, unavailable, counts, PRIORITY } from './scheduler.mjs';
 import * as gh from './github.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..');
@@ -25,24 +29,54 @@ const CHECK_MS = 60 * 1000;
 const LIMIT_MS = Number(process.env.BRIDGE_TASK_LIMIT_MIN || 120) * 60 * 1000;
 const iso = () => new Date().toISOString();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const say = (...a) => console.log(`[${iso().slice(11, 19)}]`, ...a);
+const LOG = path.join(WORK, 'dispatcher.log');
+const OUT = path.join(WORK, 'unavailable.json');
+const PAUSE = path.join(WORK, 'paused');
 fs.mkdirSync(WORK, { recursive: true });
+/** Said on screen and in its own log, which stays small (over 1 MB it becomes dispatcher.log.1). */
+const say = (...a) => {
+  console.log(`[${iso().slice(11, 19)}]`, ...a);
+  try { if (fs.statSync(LOG).size > 1024 * 1024) fs.renameSync(LOG, `${LOG}.1`); } catch { /* no log yet */ }
+  try { fs.appendFileSync(LOG, `${iso()} ${a.join(' ')}\n`); } catch { /* the log is optional */ }
+};
+process.on('uncaughtException', (e) => { say(`dispatcher crashed: ${e?.stack || e}`); process.exit(1); });
+process.on('unhandledRejection', (e) => { say(`dispatcher crashed: ${e?.stack || e}`); process.exit(1); });
 
 // One dispatcher at a time: the lock file is created exclusively, so two
 // starting together can't both take it. A lock left by a dead dispatcher is
-// replaced once.
+// replaced once. After a restart its process number may belong to something
+// else, so a live process holds the lock only if it's running this script.
 const LOCK = path.join(WORK, 'dispatcher.lock');
+function isDispatcher(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); } catch { return false; }
+  try {
+    const cmd = execFileSync('powershell', ['-NoProfile', '-Command', `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: 'utf8', windowsHide: true, timeout: 30000 });
+    return /dispatcher\.mjs/i.test(cmd);
+  } catch { return true; } // can't tell: assume it is, so two never run at once
+}
 for (let tries = 0; ; tries++) {
   try { fs.writeFileSync(LOCK, String(process.pid), { flag: 'wx' }); break; } catch (e) {
     if (e.code !== 'EEXIST' || tries) { say(`another dispatcher holds the lock; nothing to do`); process.exit(0); }
-    const other = Number(fs.readFileSync(LOCK, 'utf8'));
-    let alive = false;
-    try { process.kill(other, 0); alive = true; } catch { /* gone */ }
-    if (alive) { say(`another dispatcher (pid ${other}) is running; nothing to do`); process.exit(0); }
-    fs.unlinkSync(LOCK);
+    const held = fs.readFileSync(LOCK, 'utf8');
+    const other = Number(held);
+    if (isDispatcher(other)) { say(`another dispatcher (pid ${other}) is running; nothing to do`); process.exit(0); }
+    // Checking takes a moment: another starter may have replaced the stale
+    // lock meanwhile. Only the same stale lock is removed, never a fresh one.
+    let now = null;
+    try { now = fs.readFileSync(LOCK, 'utf8'); } catch { /* gone: try to take it */ }
+    if (now !== null && now !== held) { say('another dispatcher just took the lock; nothing to do'); process.exit(0); }
+    if (now !== null) fs.unlinkSync(LOCK);
   }
 }
 process.on('exit', () => { try { if (fs.readFileSync(LOCK, 'utf8') === String(process.pid)) fs.unlinkSync(LOCK); } catch {} });
+// A pause that only waited for new dispatcher code ends when one starts.
+try { if (/restart-to-resume/.test(fs.readFileSync(PAUSE, 'utf8'))) { fs.unlinkSync(PAUSE); say('removed the pause that was waiting for this restart'); } } catch { /* no pause */ }
+// The code it started with: when the bridge's files change on disk (an
+// update), it stops between tasks, so a task never runs on outdated logic.
+const SOURCES = ['dispatcher.mjs', 'scheduler.mjs', 'github.mjs'].map((f) => path.join(ROOT, 'tools', 'agents', f));
+const codeStamp = () => createHash('sha256').update(SOURCES.map((f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return ''; } }).join('\0')).digest('hex');
+const STAMP = codeStamp();
 
 const RULES = (n, branch) => `You are a headless Claude Code agent started by Izuki's agent bridge for task #${n}.
 - You work in a git worktree on branch ${branch}. Read AGENTS.md first and follow it.
@@ -106,7 +140,7 @@ function clearTree(tree) {
  * process number reused later is never mistaken for one of them).
  */
 function descendants(root) {
-  const out = execFileSync('powershell', ['-NoProfile', '-Command', `$all = Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, @{n='Start';e={$_.CreationDate.ToString('o')}}; $kids = @(${root}); $found = @(); do { $next = @($all | Where-Object { $kids -contains $_.ParentProcessId }); $found += $next; $kids = @($next | ForEach-Object { $_.ProcessId }) } while ($kids.Count -gt 0); $found | ConvertTo-Json -Compress`], { encoding: 'utf8', windowsHide: true, timeout: 30000 }).trim();
+  const out = execFileSync('powershell', ['-NoProfile', '-Command', `$all = Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, CreationDate; $byId = @{}; foreach ($p in $all) { $byId[[int]$p.ProcessId] = $p }; $parents = @(${root}); $found = @(); do { $next = @($all | Where-Object { $parents -contains $_.ParentProcessId -and $byId.ContainsKey([int]$_.ParentProcessId) -and $_.CreationDate -ge $byId[[int]$_.ParentProcessId].CreationDate }); $found += $next; $parents = @($next | ForEach-Object { $_.ProcessId }) } while ($parents.Count -gt 0); $found | Select-Object ProcessId, @{n='Start';e={$_.CreationDate.ToString('o')}} | ConvertTo-Json -Compress`], { encoding: 'utf8', windowsHide: true, timeout: 30000 }).trim();
   if (!out) return [];
   const list = JSON.parse(out);
   return (Array.isArray(list) ? list : [list]).map((p) => ({ pid: p.ProcessId, start: p.Start }));
@@ -131,8 +165,10 @@ function nextTask() {
 
 async function run(t) {
   const history = t.state.history || [];
-  const resuming = history.at(-1)?.result === 'paused' && t.state.branch;
-  const attempt = history.filter((h) => h.result !== 'paused').length + 1;
+  // A run cut short (paused for an urgent task, or Claude out of usage) picks
+  // up from its branch; neither counts as an attempt.
+  const resuming = ['paused', 'unavailable'].includes(history.at(-1)?.result) && t.state.branch;
+  const attempt = history.filter(counts).length + 1;
   const branch = resuming ? t.state.branch : `agent/claude-${t.number}-${attempt}`;
   const tree = path.join(WORK, `task-${t.number}`);
   say(`#${t.number} (${t.title}): ${resuming ? 'resuming' : 'starting'} attempt ${attempt} on ${branch}`);
@@ -181,9 +217,10 @@ async function run(t) {
   // that ends without one is a checkpoint: the agent may be waiting for its
   // own background work (a build), whose notices start its next turn.
   let pending = [], lastResult = '', turns = 0, buffer = '', closed = false, paused = false, finished = false;
-  let lastEvent = Date.now(), nudged = false;
+  let lastEvent = Date.now(), nudged = false, resetsAt = 0, outage = null;
   const RESULT_LINE = /RESULT:\s*(done|failed|paused)\b/i;
-  const transcript = fs.createWriteStream(path.join(WORK, `task-${t.number}-${attempt}.jsonl`));
+  // Appended: a resumed run keeps the same attempt number and its transcript.
+  const transcript = fs.createWriteStream(path.join(WORK, `task-${t.number}-${attempt}.jsonl`), { flags: 'a' });
   const finish = () => { if (!closed) { closed = true; child.stdin.end(); } };
   child.stdout.on('data', (chunk) => {
     buffer += chunk;
@@ -193,10 +230,16 @@ async function run(t) {
       const line = buffer.slice(0, i); buffer = buffer.slice(i + 1);
       transcript.write(line + '\n');
       let event; try { event = JSON.parse(line); } catch { continue; }
+      // The service turned it away (a usage limit): when that resets.
+      if (event.type === 'rate_limit_event' && event.rate_limit_info?.status === 'rejected') resetsAt = Number(event.rate_limit_info.resetsAt) * 1000 || 0;
       if (event.type === 'result') {
         turns++;
         lastResult = String(event.result || '');
-        if (pending.length) { const u = pending.shift(); say(`#${t.number}: checkpoint, delivering an update`); send(u); }
+        // Claude couldn't work at all (a usage limit, signed out, the service
+        // down): end the run now, no nudge. It isn't the task's failure.
+        outage = outage || unavailable(event, Date.now(), resetsAt);
+        if (outage) finish();
+        else if (pending.length) { const u = pending.shift(); say(`#${t.number}: checkpoint, delivering an update`); send(u); }
         else if (RESULT_LINE.test(lastResult)) { finished = true; finish(); }
       }
     }
@@ -256,7 +299,14 @@ async function run(t) {
   try { prNumber = JSON.parse(execFileSync('gh', ['pr', 'list', '--repo', gh.REPO, '--head', branch, '--state', 'all', '--json', 'number'], { encoding: 'utf8' }))[0]?.number ?? null; } catch {}
   try { clearTree(tree); } catch (e) { say(`#${t.number}: ${e.message}`); }
 
-  if (result?.[1]?.toLowerCase() === 'paused') {
+  if (outage) {
+    // Back to waiting, as it was: no attempt, no failure, and nothing more
+    // for Claude until the reset (the file keeps that across a restart).
+    const until = new Date(outage.until).toISOString();
+    try { fs.writeFileSync(OUT, JSON.stringify({ reason: outage.reason, until, task: t.number, detail: outage.detail, at: iso() }, null, 2)); } catch (e) { say(`couldn't record the outage (${e.message})`); }
+    const why = { 'usage-limit': 'its usage limit was reached', 'signed-out': 'Claude Code is signed out', service: "Claude's service was down" }[outage.reason];
+    setTask(t, 'assigned', { branch, history: [...(t.state.history || []), { ...entry, result: 'unavailable', reason: outage.reason, until }] }, `Claude couldn't work on this after ${minutes} min: ${why} ("${outage.detail}"). Not counted as an attempt. It continues from \`${branch}\` after ${until.slice(0, 16).replace('T', ' ')} UTC.`);
+  } else if (result?.[1]?.toLowerCase() === 'paused') {
     setTask(t, 'assigned', { branch, history: [...(t.state.history || []), { ...entry, result: 'paused' }] }, `Paused at a safe point for an urgent task (after ${minutes} min): ${summary}\nIt resumes from branch \`${branch}\` when Claude is free.`);
   } else if (result?.[1]?.toLowerCase() === 'done' && prNumber) {
     setTask(t, 'review', { pr: prNumber, history: [...(t.state.history || []), { ...entry, result: 'review' }] }, `Claude finished in ${minutes} min: ${summary}\nPR #${prNumber}. The coordinator merges it once every check passes.`);
@@ -267,11 +317,29 @@ async function run(t) {
   say(`#${t.number}: ${t.status} after ${minutes} min`);
 }
 
+/** Keeps the newest 20 run transcripts; older ones go. */
+function prune() {
+  try {
+    const files = fs.readdirSync(WORK).filter((f) => /^task-\d+-\d+\.jsonl$/.test(f)).map((f) => ({ f, at: fs.statSync(path.join(WORK, f)).mtimeMs })).sort((a, b) => b.at - a.at);
+    for (const { f } of files.slice(20)) fs.unlinkSync(path.join(WORK, f));
+  } catch (e) { say(`couldn't prune old transcripts (${e.message})`); }
+}
+
+// A waiting state is said once, not every minute.
+let said = '';
+const once = (key, text) => { if (said !== key) { said = key; say(text); } };
+prune();
 do {
-  if (fs.existsSync(path.join(WORK, 'paused'))) { say('paused (.work/agents/paused)'); if (ONCE) break; await sleep(CHECK_MS); continue; }
+  if (codeStamp() !== STAMP) { say('the bridge code changed on disk; stopping so the new code is used. Start it again (the scheduled task does that by itself).'); break; }
+  if (fs.existsSync(PAUSE)) { once('paused', 'paused (.work/agents/paused)'); if (ONCE) break; await sleep(CHECK_MS); continue; }
+  let out = null;
+  try { out = JSON.parse(fs.readFileSync(OUT, 'utf8')); } catch { /* none */ }
+  if (out && Date.parse(out.until) > Date.now()) { once(`out ${out.until}`, `Claude is unavailable (${out.reason}) until ${out.until}; waiting`); if (ONCE) break; await sleep(CHECK_MS); continue; }
+  if (out) { try { fs.unlinkSync(OUT); } catch {} say(`Claude should be available again (${out.reason} ended ${out.until})`); }
   let t;
   try { t = nextTask(); } catch (e) { say(`couldn't read the queue: ${e.message}`); if (ONCE) break; await sleep(CHECK_MS); continue; }
-  if (!t) { if (ONCE) { say('nothing assigned to Claude'); break; } await sleep(CHECK_MS); continue; }
+  if (!t) { once('empty', 'nothing assigned to Claude'); if (ONCE) break; await sleep(CHECK_MS); continue; }
+  said = '';
   try { await run(t); } catch (e) {
     // The dispatcher's own failure: the task goes back as it was (not an
     // attempt by the agent), and the dispatcher stops rather than churn.
@@ -279,4 +347,5 @@ do {
     try { setTask(t, 'assigned', {}, `The dispatcher on the owner's PC hit its own problem before or around this run (${e.message.slice(0, 200)}). Not counted as an attempt; the task is waiting again.`); } catch {}
     break;
   }
+  prune();
 } while (!ONCE);
