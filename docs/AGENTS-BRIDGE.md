@@ -24,7 +24,7 @@ OBSERVE → UNDERSTAND → PRIORITIZE → ASSIGN → EXECUTE → VERIFY → RECO
 | Programmatic tasks | **Yes, verified.** `claude -p` (CLI 2.1.191) took a task and answered `BRIDGE-OK` (2.6 s of model time, 21 s with start-up). | **No.** Freebuff is a desktop app (`Freebuff.exe`, Electron). Its `freebuff://` link handler only opens the app (used for sign-in), and its bundled orchestrator is internal. There's no documented way to hand it a task. |
 | New instructions mid-task | **Yes, at safe points**: stream-json input stays open, and a message sent while it works is handled when its current turn ends. | No interface, so nothing is sent while it works. |
 | Own copy of the code | Yes: each task runs in its own git worktree and branch, so it never edits files another session is changing. | Works in the shared folder (claims files in `docs/COLLAB.md`). |
-| State detection | The dispatcher's heartbeat on the task (every 2 minutes). | Its own commits on the branch (no Claude co-author line) in the last 30 minutes mean "busy"; a task it marked `status:in-progress` too. |
+| State detection | The dispatcher's heartbeat on the task (every 2 minutes). | Its own commits on the branch (signed "Generated with Codebuff") in the last 30 minutes mean "busy"; a task it marked `status:in-progress` too. |
 
 **Freebuff's shared-task workflow (its limit, stated plainly):** tasks for Freebuff wait in the queue with `agent:freebuff`. Nothing is pushed into its session, so it's never flooded or interrupted. AGENTS.md tells it to look at the queue when it finishes something and take the top task. The bridge can't make Freebuff start sooner than that.
 
