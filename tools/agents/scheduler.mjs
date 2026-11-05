@@ -36,13 +36,17 @@ export function unavailable(event, now, resetsAt = 0) {
   if (!event?.is_error) return null;
   const status = Number(event.api_error_status) || 0;
   const detail = String(event.result || '').slice(0, 200);
-  if (status === 429 || /\b(session|usage|weekly|rate) limit\b|limit reached|out of (credits|extra usage)/i.test(detail)) {
+  // A status code decides when there is one; the words count only without
+  // it. A 400 whose message mentions a rate limit is the run's own error,
+  // and an outage never counts as an attempt, so it would retry forever.
+  const says = (re) => !status && re.test(detail);
+  if (status === 429 || says(/\b(session|usage|weekly|rate) limit\b|limit reached|out of (credits|extra usage)/i)) {
     return { reason: 'usage-limit', until: resetsAt > now ? resetsAt : now + 60 * 60 * 1000, detail };
   }
-  if (status === 401 || status === 403 || /not logged in|please (run )?\/login|log ?in again|invalid api key|oauth token/i.test(detail)) {
+  if (status === 401 || status === 403 || says(/not logged in|please (run )?\/login|log ?in again|invalid api key|oauth token/i)) {
     return { reason: 'signed-out', until: now + 30 * 60 * 1000, detail };
   }
-  if (status >= 500 || /overloaded|service unavailable|API Error: 5\d\d|ECONNRESET|ENOTFOUND|ETIMEDOUT/i.test(detail)) {
+  if (status >= 500 || says(/overloaded|service unavailable|API Error: 5\d\d|ECONNRESET|ENOTFOUND|ETIMEDOUT/i)) {
     return { reason: 'service', until: now + 10 * 60 * 1000, detail };
   }
   return null;

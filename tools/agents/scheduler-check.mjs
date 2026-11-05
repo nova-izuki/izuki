@@ -118,6 +118,8 @@ assert.equal(unavailable({ is_error: true, api_error_status: 401, result: 'Inval
 assert.equal(unavailable({ is_error: true, api_error_status: 529, result: 'API Error: 529 Overloaded' }, now).reason, 'service');
 assert.equal(unavailable({ is_error: false, result: 'RESULT: failed tests-failed — the rate limit test fails' }, now), null, 'a normal answer that mentions a limit is not an outage');
 assert.equal(unavailable({ is_error: true, subtype: 'error_max_turns', result: '' }, now), null, "the run's own error stays a run failure");
+assert.equal(unavailable({ is_error: true, api_error_status: 400, result: 'invalid request: the rate limit header is malformed' }, now), null, 'a status code decides over the words: a 400 is no outage, so it counts toward the attempt limit');
+assert.equal(unavailable({ is_error: true, api_error_status: 404, result: 'Service unavailable for this model' }, now), null);
 // Neither a pause nor an outage counts as an attempt or a failure.
 assert(!counts({ result: 'unavailable' }) && !counts({ result: 'paused' }) && counts({ result: 'failed' }));
 const outages = [{ agent: 'claude', result: 'unavailable', reason: 'usage-limit' }, { agent: 'claude', result: 'unavailable', reason: 'usage-limit' }, { agent: 'claude', result: 'failed' }];
