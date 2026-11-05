@@ -1,6 +1,6 @@
 // The bridge scheduler's decisions, checked without GitHub or agents.
 import assert from 'node:assert/strict';
-import { readState, writeState, describe, overlaps, agentStates, performance, score, plan, recover, unavailable, counts, redistribute, STALE_MS } from './scheduler.mjs';
+import { readState, writeState, describe, overlaps, agentStates, performance, score, plan, recover, unavailable, counts, redistribute, classifyFailure, STALE_MS } from './scheduler.mjs';
 
 const issue = (number, labels, body = '', extra = {}) => ({ number, title: `Task ${number}`, labels, body, author: { login: 'owner' }, state: 'OPEN', createdAt: '2026-11-03T08:00:00Z', ...extra });
 const trusted = (login) => login === 'owner';
@@ -151,4 +151,48 @@ assert.equal(states.claude.state, 'unavailable', 'handing its task over does not
 assert.equal(states.freebuff.state, 'assigned');
 assert(!plan([handed, describe(issue(68, ['agent-task', 'status:queued', 'agent:claude'], 'q'))], states, {}, trusted).length, 'still nothing new for Claude until the reset');
 
-console.log('agent scheduler: state blocks, task parsing, file overlap, agent states (busy, disconnected, working on its own, unavailable), evidence-based scores, planning (priority, dependencies, no second task, no shared files, untrusted ignored), recovery (new strategy, reassign, block) and outages (usage limit, signed out, service down: never an attempt or a failure; long ones redistribute flexible work) pass.');
+// Failed checks are classified from their logs, with the lines quoted. The
+// first two are excerpts of real logs: Freebuff's 556ba4f (Android, a Maven
+// download failed) and 53d705d (web, an asset check failed).
+const ansi = '\x1b[36;1m';
+const androidInfra = `2026-11-03T16:35:49.4911186Z FAILURE: Build failed with an exception.
+2026-11-03T16:35:49.5035068Z * What went wrong:
+2026-11-03T16:35:49.5141801Z > Could not resolve all artifacts for configuration 'classpath'.
+2026-11-03T16:35:49.5191690Z    > Could not find org.jetbrains.kotlin:kotlin-stdlib:2.2.0.
+2026-11-03T16:35:49.5270059Z    > Could not resolve org.apache.httpcomponents:httpmime:4.5.6.
+2026-11-03T16:35:49.5277135Z          > Could not parse POM https://repo.maven.apache.org/maven2/org/apache/httpcomponents/httpmime/4.5.6/httpmime-4.5.6.pom
+2026-11-03T16:35:49.5497524Z BUILD FAILED in 20s
+2026-11-03T16:35:50.0098765Z ##[error]Process completed with exit code 1.`;
+let c = classifyFailure(androidInfra);
+assert.equal(c.category, 'infra', 'a dependency download that failed is not the change');
+assert.equal(c.evidence[0], '> Could not parse POM https://repo.maven.apache.org/maven2/org/apache/httpcomponents/httpmime/4.5.6/httpmime-4.5.6.pom', 'quoted without the timestamp');
+// A mistyped version prints "could not resolve" too: without a transient
+// sign that's the change's fault, so it stays actionable.
+const typo = "* What went wrong:\n> Could not resolve all artifacts for configuration 'classpath'.\n   > Could not find com.android.tools.build:gradle:8.99.0.\nBUILD FAILED in 9s\n##[error]Process completed with exit code 1.";
+assert.equal(classifyFailure(typo).category, 'ci-failed', 'one dependency not found is not an outage');
+// Many dependencies missing at once is no proof either (a change that
+// dropped a package repository does that): only a transient sign counts.
+const many = ['kotlin-stdlib:2.2.0', 'asm:9.8', 'asm-util:9.8', 'jopt-simple:4.9', 'grpc-core:1.69.1'].map((a, i) => `   > Could not find org.dep${i}:${a}.`).join('\n');
+assert.equal(classifyFailure(`> Could not resolve all artifacts for configuration 'classpath'.\n${many}\nBUILD FAILED`).category, 'ci-failed');
+// A URL or host that's simply wrong is the change's fault; a 5xx or a
+// temporary DNS failure isn't.
+assert.equal(classifyFailure("> Could not GET 'https://repo.example.invalid/a/b.pom'. Received status code 404 from server: Not Found").category, 'ci-failed');
+assert.equal(classifyFailure('npm ERR! getaddrinfo ENOTFOUND registry.npmjs.og').category, 'ci-failed');
+assert.equal(classifyFailure("> Could not GET 'https://repo.maven.apache.org/x.pom'. Received status code 503 from server: Service Unavailable").category, 'infra');
+assert.equal(classifyFailure('npm ERR! request to https://registry.npmjs.org/vite failed, reason: getaddrinfo EAI_AGAIN registry.npmjs.org').category, 'infra');
+c = classifyFailure(`2026-11-02T22:53:21.0000000Z ${ansi}> node tools/asset-check.mjs\n2026-11-02T22:53:21.1000000Z FAIL docs/extension/izuki-extension.zip: has an old assess.js: run npm run extension\n2026-11-02T22:53:21.3325011Z ##[error]Process completed with exit code 1.`);
+assert.deepEqual([c.category, c.evidence[0]], ['tests-failed', 'FAIL docs/extension/izuki-extension.zip: has an old assess.js: run npm run extension']);
+assert.equal(classifyFailure('error[E0425]: cannot find value `x` in this scope\nerror: could not compile `izuki` (lib) due to 1 previous error').category, 'compile-failed');
+assert.equal(classifyFailure('src/lib/ipc.ts(12,3): error TS2304: Cannot find name \'foo\'.').category, 'compile-failed');
+assert.equal(classifyFailure('test result: FAILED. 600 passed; 1 failed; 48 ignored').category, 'tests-failed');
+assert.equal(classifyFailure('ℹ tests 10\nℹ pass 9\nℹ fail 1').category, 'tests-failed');
+assert.equal(classifyFailure('ℹ fail 0\n##[error]Process completed with exit code 1.').category, 'ci-failed', 'no failing count, no claim');
+// A real failure wins over network noise in the same log.
+assert.equal(classifyFailure('retrying after ECONNRESET\ntest result: FAILED. 1 failed').category, 'tests-failed');
+assert.equal(classifyFailure('npm ERR! code ECONNRESET\nnpm ERR! network request failed').category, 'infra');
+c = classifyFailure('Run npm ci\n##[error]Process completed with exit code 1.');
+assert.deepEqual([c.category, c.evidence], ['ci-failed', ['##[error]Process completed with exit code 1.']], "unknown: says so, with the error line");
+assert.match(recover(failing('claude', ['failed']), 'compile-failed').note, /first compiler error/);
+assert.match(recover(failing('claude', ['failed']), 'review').note, /CodeRabbit/);
+
+console.log('agent scheduler: state blocks, task parsing, file overlap, agent states (busy, disconnected, working on its own, unavailable), evidence-based scores, planning (priority, dependencies, no second task, no shared files, untrusted ignored), recovery (new strategy, reassign, block), outages (usage limit, signed out, service down: never an attempt or a failure; long ones redistribute flexible work) and failed checks classified from their logs (infra, compile, tests, unknown; quoted) pass.');

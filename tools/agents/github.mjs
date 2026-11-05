@@ -82,7 +82,15 @@ function tally(runs) {
     pending: runs.length - done.length,
     failed: done.filter((r) => !cut(r) && !['success', 'skipped', 'neutral'].includes(r.conclusion)).map((r) => r.name),
     cancelled: done.filter(cut).map((r) => r.name),
+    failedRuns: done.filter((r) => !cut(r) && !['success', 'skipped', 'neutral'].includes(r.conclusion)).map((r) => ({ name: r.name, id: r.id, app: r.app?.slug })),
   };
+}
+
+/** The end of a GitHub Actions job's log (a check run's id is its job's id). */
+export function jobLog(id) {
+  // The log holds terminal colour codes, which gh only prints when allowed.
+  const out = execFileSync('gh', ['api', '--allow-escape-sequences', `repos/${REPO}/actions/jobs/${id}/logs`], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  return out.slice(-400 * 1024);
 }
 
 /** A pull request's state and its head's checks. */

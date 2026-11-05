@@ -6,7 +6,7 @@
 // It never runs anything from an issue's text: tasks are instructions for an
 // agent, and only accounts with write access may give them.
 import fs from 'node:fs';
-import { describe, writeState, agentStates, performance, plan, recover, redistribute, AGENTS } from './scheduler.mjs';
+import { describe, writeState, agentStates, performance, plan, recover, redistribute, classifyFailure, AGENTS } from './scheduler.mjs';
 import * as gh from './github.mjs';
 
 const DRY = process.argv.includes('--dry-run');
@@ -70,6 +70,30 @@ function fail(t, category, detail, recorded = false) {
   if (next.action === 'reassign') act(`#${t.number}: to ${next.to}`, () => gh.setLabels(t.number, [`agent:${next.to}`], [`agent:${t.agent}`]));
 }
 
+// Why checks failed, from their logs (a CodeRabbit failure is a review
+// finding). One that can't be read counts as an unexplained CI failure.
+function diagnose(runs) {
+  return runs.map((r) => {
+    if (r.app === 'coderabbitai') return { name: r.name, category: 'review', evidence: [] };
+    try { return { name: r.name, ...(r.app === 'github-actions' ? classifyFailure(gh.jobLog(r.id)) : { category: 'ci-failed', evidence: [] }) }; } catch { return { name: r.name, category: 'ci-failed', evidence: [] }; }
+  });
+}
+const cite = (why) => why.map((w) => `${w.name} (${w.category}${w.evidence.length ? `: "${w.evidence[0]}"` : ''})`).join('; ');
+/**
+ * Checks that failed (diagnosed): the task's failure, with the evidence
+ * quoted, unless every failure was the infrastructure's (a download or the
+ * runner). Then the task stays in review, said once per commit, until a
+ * re-run or a newer push gives a verdict; true means it's waiting so.
+ */
+function failedChecks(t, why, where, sha) {
+  if (why.every((w) => w.category === 'infra')) {
+    if (t.state.infraNoted !== sha) update(t, 'review', { infraNoted: sha }, `Checks on ${where} failed for an infrastructure reason, not because of the change: ${cite(why)}. Not counted against the task; it stays in review until the checks are re-run (Actions → Re-run failed jobs) or a newer push passes.`);
+    return true;
+  }
+  const first = why.find((w) => w.category !== 'infra');
+  fail(t, first.category, `Checks failed on ${where}: ${cite(why)}.`);
+}
+
 // RECOVER: runs that stopped reporting.
 const states0 = agentStates(tasks, now, facts);
 each('recover', AGENTS.filter((a) => states0[a].state === 'disconnected').map((a) => byNumber().get(states0[a].running)), (t) => {
@@ -115,6 +139,12 @@ for (const t of tasks.filter((t) => t.open && t.status === 'review')) {
     }
     if (t.state.pr) {
       const s = gh.pullStatus(t.state.pr);
+      // The PR must be this task's before anything follows from it: the
+      // dispatched run's own branch, or a PR whose title or description names
+      // the task. A PR number read from a comment ("see PR #29") could be
+      // someone else's work, which the bridge must never merge or count.
+      const own = t.state.branch && s.pr.head.ref === t.state.branch;
+      if (!own && !new RegExp(`#${t.number}(?!\\d)`).test(`${s.pr.title}\n${s.pr.body || ''}`)) { update(t, 'blocked', {}, `PR #${t.state.pr} isn't this task's branch and doesn't mention #${t.number}, so the bridge won't merge it or count it. If it is this task's work, mention #${t.number} in the PR and set the task back to review; otherwise report the right PR or commit.`); continue; }
       // A known verdict first: merged is done, whatever else.
       if (s.merged) { update(t, 'done', { doneAt: iso(), history: [...(t.state.history || []), { agent: t.state.agent, result: 'done', at: iso() }] }, `Verified and merged: PR #${t.state.pr}.`); continue; }
       if (s.base !== gh.DEV_BRANCH) { fail(t, 'conflict', `PR #${t.state.pr} targets ${s.base}; agent work goes to ${gh.DEV_BRANCH} only.`); continue; }
@@ -123,7 +153,10 @@ for (const t of tasks.filter((t) => t.open && t.status === 'review')) {
       const touched = (gh.api(`repos/${gh.REPO}/pulls/${t.state.pr}/files?per_page=100`, { paginate: true }) || []).map((f) => f.filename);
       const guarded = touched.filter((f) => f.startsWith('.github/') || f.startsWith('tools/agents/') || f === 'docs/agents/roadmap.json');
       if (guarded.length && s.open) { update(t, 'blocked', {}, `PR #${t.state.pr} changes ${guarded.join(', ')}: the bridge never merges changes to itself or to the workflows. Claude's main session reviews it.`); continue; }
-      if (s.failed.length) { fail(t, 'ci-failed', `Checks failed on PR #${t.state.pr}: ${s.failed.join(', ')}.`); continue; }
+      // Closed without merging: a person stopped it, so a person decides.
+      if (!s.open) { update(t, 'blocked', {}, `PR #${t.state.pr} was closed without being merged. Needs a look: reopen it, or re-plan the task.`); continue; }
+      // Waiting on a re-run of infrastructure failures still ends after the day.
+      if (s.failed.length) { if (failedChecks(t, diagnose(s.failedRuns), `PR #${t.state.pr}`, s.pr.head.sha) && stale()) flag(); continue; }
       if (!s.pending && !s.cancelled.length && s.runs > 0 && s.open) {
         act(`#${t.number}: merge PR #${t.state.pr} (${s.runs} checks green)`, () => gh.api(`repos/${gh.REPO}/pulls/${t.state.pr}/merge`, { method: 'PUT', body: { merge_method: 'squash', sha: s.pr.head.sha } }));
         update(t, 'done', { doneAt: iso(), history: [...(t.state.history || []), { agent: t.state.agent, result: 'done', at: iso() }] }, `Verified: all ${s.runs} checks passed on PR #${t.state.pr}; merged into ${gh.DEV_BRANCH}.`);
@@ -141,7 +174,17 @@ for (const t of tasks.filter((t) => t.open && t.status === 'review')) {
         const head = gh.api(`repos/${gh.REPO}/commits/${gh.DEV_BRANCH}`).sha;
         const h = head !== sha && gh.contains(head, sha) ? gh.commitChecks(head) : null;
         if (h && green(h)) done(`Verified: ${short}'s own checks ${c.failed.length ? `failed (${c.failed.join(', ')})` : 'were cancelled by a newer push'}, and all ${h.runs} checks passed on ${head.slice(0, 7)}, the ${gh.DEV_BRANCH} head that includes it.`);
-        else if (c.failed.length && (!h || h.failed.some((n) => c.failed.includes(n)))) fail(t, 'ci-failed', `Checks failed on ${short}: ${c.failed.join(', ')}${h ? ` (still failing on ${head.slice(0, 7)})` : ''}.`);
+        else if (c.failed.length && (!h || h.failed.some((n) => c.failed.includes(n)))) {
+          // Its own failure first: a code failure there is the task's,
+          // whatever the head shows. Only when its own runs failed for an
+          // infrastructure reason does the newer head's evidence for those
+          // same checks decide (and that note is once per head).
+          const own = diagnose(c.failedRuns);
+          const waiting = !h || own.some((w) => w.category !== 'infra')
+            ? failedChecks(t, own, h ? `${short} (still failing on ${head.slice(0, 7)})` : short, sha)
+            : failedChecks(t, diagnose(h.failedRuns.filter((r) => c.failed.includes(r.name))), `${head.slice(0, 7)}, the ${gh.DEV_BRANCH} head that includes ${short}`, head);
+          if (waiting && stale()) flag();
+        }
         else if (stale()) flag();
       } else if (stale()) flag();
     } else if (stale()) flag();

@@ -201,6 +201,35 @@ export function plan(tasks, states, stats, trusted) {
   return out;
 }
 
+// What a CI log says went wrong. A code failure the log shows wins over
+// network noise in the same log (a test of retries, say): infrastructure
+// is the verdict only when no compile or test failure appears.
+const FAILURES = [
+  ['compile-failed', /error\[E\d{4}\]|could not compile `|error TS\d{4}:|SyntaxError:|Module not found|Cannot find module/i],
+  ['tests-failed', /test result: FAILED|^FAIL\b|AssertionError|^not ok \d+|^ℹ fail [1-9]|\b[1-9]\d* (tests? )?(failed|failing)\b/i],
+  // Only a sign of a transient fault: a download that came back garbled, a
+  // 5xx or 429, a timeout, a dropped connection, a temporary DNS failure, the
+  // runner itself. "Could not resolve", "Could not GET" or ENOTFOUND alone are
+  // also what a mistyped version, URL or host prints: the change's fault.
+  ['infra', /Could not parse POM |Received status code (5\d\d|429)|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|Read timed out|Connect(ion)? timed out|Connection reset|Remote host terminated the handshake|\b50[234] (Bad Gateway|Service Unavailable|Gateway Time-?out)|API rate limit exceeded|runner has received a shutdown signal|lost communication with the server|No space left on device/i],
+];
+
+/**
+ * Why a CI job failed, from its log: 'infra' (a download service or the
+ * runner failed, not the agent's change), 'compile-failed', 'tests-failed',
+ * or 'ci-failed' when the log doesn't say. With up to three lines that show
+ * it, so the next attempt starts from the evidence, never the same prompt.
+ */
+export function classifyFailure(log = '') {
+  const lines = String(log).replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/)
+    .map((l) => l.replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z ?/, '').trim()).filter(Boolean);
+  for (const [category, re] of FAILURES) {
+    const hits = lines.filter((l) => re.test(l));
+    if (hits.length) return { category, evidence: hits.slice(0, 3).map((l) => l.slice(0, 200)) };
+  }
+  return { category: 'ci-failed', evidence: lines.filter((l) => l.includes('##[error]')).slice(0, 2).map((l) => l.slice(0, 200)) };
+}
+
 /**
  * Tasks to hand over because their agent is out (a usage limit) for over
  * REDISTRIBUTE_MS more: only ones that could go to either agent (flexible),
@@ -235,6 +264,8 @@ export function recover(task, category) {
   const strategy = {
     'tests-failed': 'Start by reading the failing tests and their output; find the root cause before changing code.',
     'ci-failed': 'Read the CI log of the failed run first; reproduce the failure locally before fixing.',
+    'compile-failed': 'It failed to compile: start from the first compiler error quoted above, fix it, and build locally before pushing.',
+    review: "CodeRabbit's review failed the check: read its findings on the pull request first and fix what's confirmed.",
     timeout: 'Split the task: do the smallest verifiable part first, commit it, then continue.',
     disconnected: 'The previous run stopped reporting. Check the branch for partial work before starting again.',
     conflict: 'Another change touched the same files. Rebase on the latest branch and re-check the overlap first.',
