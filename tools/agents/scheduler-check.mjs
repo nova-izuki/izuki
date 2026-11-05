@@ -180,6 +180,9 @@ assert.equal(classifyFailure("> Could not GET 'https://repo.example.invalid/a/b.
 assert.equal(classifyFailure('npm ERR! getaddrinfo ENOTFOUND registry.npmjs.og').category, 'ci-failed');
 assert.equal(classifyFailure("> Could not GET 'https://repo.maven.apache.org/x.pom'. Received status code 503 from server: Service Unavailable").category, 'infra');
 assert.equal(classifyFailure('npm ERR! request to https://registry.npmjs.org/vite failed, reason: getaddrinfo EAI_AGAIN registry.npmjs.org').category, 'infra');
+assert.equal(classifyFailure('npm ERR! 500 Internal Server Error - GET https://registry.npmjs.org/vite').category, 'infra', 'a registry answering 500 is an outage');
+assert.equal(classifyFailure('npm ERR! 429 Too Many Requests - GET https://registry.npmjs.org/vite').category, 'infra');
+assert.equal(classifyFailure('expected 200, got 500 Internal Server Error\ntest result: FAILED. 1 failed').category, 'tests-failed', "a test that hits a 500 is still the test's failure");
 c = classifyFailure(`2026-11-02T22:53:21.0000000Z ${ansi}> node tools/asset-check.mjs\n2026-11-02T22:53:21.1000000Z FAIL docs/extension/izuki-extension.zip: has an old assess.js: run npm run extension\n2026-11-02T22:53:21.3325011Z ##[error]Process completed with exit code 1.`);
 assert.deepEqual([c.category, c.evidence[0]], ['tests-failed', 'FAIL docs/extension/izuki-extension.zip: has an old assess.js: run npm run extension']);
 assert.equal(classifyFailure('error[E0425]: cannot find value `x` in this scope\nerror: could not compile `izuki` (lib) due to 1 previous error').category, 'compile-failed');

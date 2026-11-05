@@ -211,7 +211,7 @@ const FAILURES = [
   // 5xx or 429, a timeout, a dropped connection, a temporary DNS failure, the
   // runner itself. "Could not resolve", "Could not GET" or ENOTFOUND alone are
   // also what a mistyped version, URL or host prints: the change's fault.
-  ['infra', /Could not parse POM |Received status code (5\d\d|429)|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|Read timed out|Connect(ion)? timed out|Connection reset|Remote host terminated the handshake|\b50[234] (Bad Gateway|Service Unavailable|Gateway Time-?out)|API rate limit exceeded|runner has received a shutdown signal|lost communication with the server|No space left on device/i],
+  ['infra', /Could not parse POM |Received status code (5\d\d|429)|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|Read timed out|Connect(ion)? timed out|Connection reset|Remote host terminated the handshake|\b50[0234] (Internal Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out)|\b429 Too Many Requests|API rate limit exceeded|runner has received a shutdown signal|lost communication with the server|No space left on device/i],
 ];
 
 /**
