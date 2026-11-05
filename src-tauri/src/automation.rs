@@ -841,15 +841,18 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         // and in the browser tab it's already using (patience.rs).
         Intent::OpenApp => {
             let what = step.text_to_type.as_deref().unwrap_or_default();
-            return crate::patience::open_app(what);
+            let before = crate::uia::foreground_title();
+            let said = crate::patience::open_app(what)?;
+            return Ok(check_opened(said, &before, what));
         }
         Intent::OpenUrl => {
             let url = step.text_to_type.as_deref().unwrap_or_default();
+            let before = crate::uia::foreground_title();
             let said = crate::patience::open_url(url)?;
             if url.contains("youtube.com") || url.contains("youtu.be") {
                 crate::youtube::watch_ads(crate::youtube::AD_WATCH);
             }
-            return Ok(said);
+            return Ok(check_opened(said, &before, url));
         }
         Intent::PlayYoutube => {
             let what = step.text_to_type.as_deref().unwrap_or_default();
@@ -901,7 +904,14 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         }
         Intent::Key => {
             if let Some(k) = &step.key {
+                // Look at the app in front before the keys, so the shortcut's
+                // effect can be told from nothing happening.
+                let before = front_look();
+                let before_windows = crate::uia::open_windows(40);
                 press_key(k)?;
+                if let Some(snag) = check_shortcut(k, before, &before_windows)? {
+                    return Ok(format!("pressed {k}, but {snag}"));
+                }
             }
         }
         Intent::Scroll => {
@@ -909,7 +919,12 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
             // than dragging it to the top-left corner of the screen.
             let (sx, sy) = if x <= 0 && y <= 0 { crate::capture::cursor_pos() } else { (x, y) };
             let (amount, axis) = scroll_direction(step.key.as_deref(), step.scroll_amount.unwrap_or(3));
-            scroll_axis(sx, sy, amount, axis, move_ms)?
+            // Remember the spot, then check it really moved afterwards.
+            let before = crate::capture::capture(watch_region(sx, sy)).ok();
+            scroll_axis(sx, sy, amount, axis, move_ms)?;
+            if let Some(snag) = check_scrolled(before, sx, sy)? {
+                return Ok(format!("scrolled at {label}, but {snag}"));
+            }
         }
         Intent::Copy => {
             click_at(x, y, Button::Left, 3, move_ms)?;
@@ -1052,6 +1067,167 @@ fn check_typed(typed: &str) -> Result<Option<String>> {
     Ok(uia::focused_value().filter(|again| !has_typed(again, typed)).map(|s| s.chars().take(80).collect()))
 }
 
+// --- Result checks: act, then look that it did what it should -------------
+//
+// `check_typed` reads a box back after typing. These do the same for the
+// other screen actions: decide what should have changed, look, and return a
+// note when it didn't. A note is a snag to report, never a hard error — the
+// action may still have half-happened, and a fresh look decides what's next.
+
+/// A region's mean per-channel change (0–100, from `Frame::difference`) that
+/// counts as the pane really having scrolled. A still picture drifts by well
+/// under this; a page that moved changes far more.
+const SCROLL_MOVED: f32 = 2.0;
+/// A smaller change in the whole window in front still means a shortcut did
+/// something (a word turned bold, a line was undone): only part of it moved,
+/// so the average is small even when it's real.
+const WINDOW_CHANGED: f32 = 0.5;
+
+/// A small box around a point, clamped to the screen, to watch for movement
+/// after a scroll.
+fn watch_region(x: i32, y: i32) -> crate::model::Rect {
+    let r = crate::model::Rect { x: x - 90, y: y - 70, w: 180, h: 140 };
+    r.clip_to(&crate::capture::virtual_bounds()).unwrap_or(r)
+}
+
+/// Nothing under the pointer moved: the list is at the end already, or that
+/// spot doesn't scroll.
+fn scrolled_snag(diff: f32) -> Option<String> {
+    (diff < SCROLL_MOVED)
+        .then(|| "nothing under the pointer moved — it may be at the end already, or that spot doesn't scroll".to_string())
+}
+
+/// After a scroll: did the box around the point move? `before` is a snapshot
+/// of it taken just before the wheel turned (the mouse cursor isn't in a
+/// screen grab, so it doesn't count as movement). `Some(note)` when nothing
+/// did. A still picture is left alone — only a frozen region is a snag.
+fn check_scrolled(before: Option<crate::capture::Frame>, x: i32, y: i32) -> Result<Option<String>> {
+    let Some(before) = before else { return Ok(None) };
+    std::thread::sleep(Duration::from_millis(140));
+    let Ok(after) = crate::capture::capture(watch_region(x, y)) else { return Ok(None) };
+    Ok(scrolled_snag(before.difference(&after)))
+}
+
+/// patience's own message already names a snag (it didn't open, it was already
+/// up, it's slow, or it stayed in the same tab where a look can't tell): then
+/// the result check leaves it alone rather than piling a second note on.
+fn open_already_flagged(message: &str) -> bool {
+    let m = message.to_lowercase();
+    m.contains("same tab")
+        || m.contains("taking a while")
+        || m.contains("was already")
+        || m.contains("already opened")
+        || m.contains("already searched")
+        || m.contains("set \"wait\"")
+}
+
+/// After opening an app or page: did a new window come to the front, or one
+/// named like what we asked for appear? `None` when something did; a note to
+/// add when nothing seems to have.
+fn opened_snag(before_front: &str, after_front: &str, windows: &[String], target: &str) -> Option<String> {
+    // The window in front changed — something came up.
+    if !after_front.trim().is_empty() && !after_front.eq_ignore_ascii_case(before_front) {
+        return None;
+    }
+    // Or a window named like what we asked for is open now.
+    let needle = target.trim().to_lowercase();
+    if !needle.is_empty() && windows.iter().any(|w| w.to_lowercase().contains(&needle)) {
+        return None;
+    }
+    Some("nothing new came to the front — it may still be loading, or it didn't open; set \"wait\" and look again".to_string())
+}
+
+/// The result check for OpenApp/OpenUrl: patience opens the thing and waits;
+/// this takes one more look and adds a snag to its message when nothing really
+/// came up.
+fn check_opened(message: String, before_front: &str, target: &str) -> String {
+    if open_already_flagged(&message) {
+        return message;
+    }
+    match opened_snag(before_front, &crate::uia::foreground_title(), &crate::uia::open_windows(40), target) {
+        Some(snag) => format!("{message}, but {snag}"),
+        None => message,
+    }
+}
+
+/// Keys and combinations that act off-screen — the volume, the media keys, a
+/// copy or a cut — so "nothing changed on screen" is no sign they failed. The
+/// shortcut check skips these rather than cry wolf.
+fn shortcut_acts_offscreen(combo: &str) -> bool {
+    let c = combo.trim().to_lowercase();
+    let last = c.rsplit('+').next().unwrap_or("");
+    const SILENT: &[&str] = &[
+        "volumeup", "volume_up", "volumedown", "volume_down", "volumemute", "volume_mute", "mute",
+        "playpause", "play_pause", "mediaplaypause", "nexttrack", "next_track", "medianexttrack",
+        "prevtrack", "prev_track", "previoustrack", "mediaprevtrack",
+        "capslock", "caps", "numlock", "scrolllock", "printscreen", "prtsc", "print",
+    ];
+    SILENT.contains(&last) || matches!(c.as_str(), "ctrl+c" | "ctrl+x" | "ctrl+insert")
+}
+
+/// Only modifier combinations are judged by the screen. A lone Tab, arrow or
+/// Enter moves too little to tell "it did nothing" from "it worked", and the
+/// off-screen keys can't be judged by the screen at all.
+fn shortcut_worth_checking(combo: &str) -> bool {
+    combo.contains('+') && !shortcut_acts_offscreen(combo)
+}
+
+/// Any sign a shortcut did something: the window in front changed, a new one
+/// (a dialog, a menu) appeared, or the app in front redrew.
+fn shortcut_changed(
+    before_title: &str,
+    after_title: &str,
+    window_diff: Option<f32>,
+    before_windows: &[String],
+    after_windows: &[String],
+) -> bool {
+    if !after_title.eq_ignore_ascii_case(before_title) {
+        return true;
+    }
+    if after_windows.iter().any(|w| !before_windows.contains(w)) {
+        return true;
+    }
+    window_diff.is_some_and(|d| d >= WINDOW_CHANGED)
+}
+
+/// Nothing changed after a shortcut.
+fn shortcut_snag(changed: bool) -> Option<String> {
+    (!changed)
+        .then(|| "it doesn't look like anything changed — the shortcut may not do anything here, or the wrong window had focus".to_string())
+}
+
+/// A look at the app in front: its title and a picture of it, so a shortcut's
+/// before and after can be compared.
+fn front_look() -> (String, Option<crate::capture::Frame>) {
+    let title = crate::uia::foreground_title();
+    #[cfg(windows)]
+    let shot = crate::uia::foreground_hwnd().and_then(|h| crate::capture::capture_window(h).ok().map(|(_, f)| f));
+    #[cfg(not(windows))]
+    let shot = None;
+    (title, shot)
+}
+
+/// After a keyboard shortcut: did anything happen? `before` is a `front_look`
+/// and `before_windows` the open windows, both from just before the keys.
+/// `Some(note)` when nothing seems to have — skipped for keys that act
+/// off-screen (volume, media, copy), where the screen is no evidence.
+fn check_shortcut(combo: &str, before: (String, Option<crate::capture::Frame>), before_windows: &[String]) -> Result<Option<String>> {
+    if !shortcut_worth_checking(combo) {
+        return Ok(None);
+    }
+    std::thread::sleep(Duration::from_millis(140));
+    let (after_title, after_shot) = front_look();
+    let after_windows = crate::uia::open_windows(40);
+    // Same window, same size: how much of it redrew. A different window or
+    // size reads as fully changed, but the title check has already caught that.
+    let window_diff = match (&before.1, &after_shot) {
+        (Some(a), Some(b)) => Some(a.difference(b)),
+        _ => None,
+    };
+    let changed = shortcut_changed(&before.0, &after_title, window_diff, before_windows, &after_windows);
+    Ok(shortcut_snag(changed))
+}
+
 /// Ctrl+C, then read what landed on the clipboard.
 pub fn copy_selection() -> Result<String> {
     {
@@ -1149,6 +1325,60 @@ mod tests {
         assert_eq!(parse_key("l"), Some(Key::Unicode('l')));
         assert_eq!(parse_key("notakey"), None);
     }
+
+    #[test]
+    fn a_scroll_that_moved_nothing_is_a_snag() {
+        // A still region barely drifts; a pane that scrolled changes a lot.
+        assert!(scrolled_snag(0.1).is_some());
+        assert!(scrolled_snag(SCROLL_MOVED - 0.01).is_some());
+        assert!(scrolled_snag(SCROLL_MOVED).is_none());
+        assert!(scrolled_snag(14.0).is_none());
+        // The box around a point stays on the screen.
+        let b = crate::capture::virtual_bounds();
+        let w = watch_region(b.x + b.w / 2, b.y + b.h / 2);
+        assert!(w.w > 0 && w.h > 0 && b.intersect(&w).is_some());
+    }
+
+    #[test]
+    fn an_opened_window_is_seen_and_nothing_is_a_snag() {
+        let wins = vec!["Untitled - Notepad".to_string(), "Izuki".to_string()];
+        // The front changed — it opened.
+        assert!(opened_snag("Desktop", "Untitled - Notepad", &wins, "notepad").is_none());
+        // A window named like it is open, even if the front didn't change.
+        assert!(opened_snag("Desktop", "Desktop", &wins, "notepad").is_none());
+        // Nothing new, nothing named like it: a snag.
+        assert!(opened_snag("Desktop", "Desktop", &wins, "calculator").is_some());
+        // An empty front doesn't count as a change.
+        assert!(opened_snag("Desktop", "", &wins, "calculator").is_some());
+        // patience already flagged it, or it stayed in one tab: left alone.
+        assert!(open_already_flagged("Spotify was already started 5s ago — didn't open another copy."));
+        assert!(open_already_flagged("started X, but it's taking a while to open on this PC"));
+        assert!(open_already_flagged("went to example.com in the same tab"));
+        assert!(!open_already_flagged("opened Notepad"));
+        // The message is passed through untouched when patience flagged it.
+        assert_eq!(check_opened("went to x.com in the same tab".into(), "before", "x.com"), "went to x.com in the same tab");
+    }
+
+    #[test]
+    fn a_shortcut_that_changed_nothing_is_a_snag_unless_it_acts_offscreen() {
+        // Keys that act off-screen are never judged by the screen.
+        assert!(shortcut_acts_offscreen("volumeup"));
+        assert!(shortcut_acts_offscreen("ctrl+c"));
+        assert!(shortcut_acts_offscreen("CapsLock"));
+        assert!(shortcut_acts_offscreen("medianexttrack"));
+        assert!(!shortcut_acts_offscreen("ctrl+s"));
+        assert!(!shortcut_acts_offscreen("alt+tab"));
+        // A new window, a new title, or a redrawn window all count as "it did something".
+        let none: Vec<String> = vec![];
+        let one = vec!["Save As".to_string()];
+        assert!(shortcut_changed("Doc", "Doc", None, &none, &one)); // a dialog appeared
+        assert!(shortcut_changed("Doc", "Doc *", None, &none, &none)); // the title changed
+        assert!(shortcut_changed("Doc", "Doc", Some(3.0), &none, &none)); // the window redrew
+        assert!(!shortcut_changed("Doc", "Doc", Some(0.0), &none, &none)); // nothing at all
+        assert!(!shortcut_changed("Doc", "doc", Some(WINDOW_CHANGED - 0.01), &none, &none)); // case-only, too small
+        assert_eq!(shortcut_snag(true), None);
+        assert!(shortcut_snag(false).is_some());
+    }
 }
 
 #[cfg(all(test, windows))]
@@ -1222,7 +1452,7 @@ mod action_bench {
     use windows::Win32::Foundation::{HWND, POINT, RECT};
     use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, GetAncestor, GetForegroundWindow, GetWindowRect, IsWindowVisible, WindowFromPoint, GA_ROOT};
 
-    const FORM: &str = r#"param([string]$Log, [string]$Mode = 'fixture', [int]$X = 0, [int]$Y = 0, [int]$W = 0, [int]$H = 0)
+    const FORM: &str = r#"param([string]$Log, [string]$Mode = 'fixture', [int]$X = 0, [int]$Y = 0, [int]$W = 0, [int]$H = 0, [string]$Title = '')
 Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class Dpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }'
 [Dpi]::SetProcessDPIAware() | Out-Null
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
@@ -1230,7 +1460,8 @@ $say = { param($what) Add-Content -LiteralPath $Log -Value $what }
 $f = New-Object System.Windows.Forms.Form
 $f.StartPosition = 'Manual'
 if ($Mode -eq 'cover') {
-  $f.Text = 'Izuki bench cover'; $f.FormBorderStyle = 'None'; $f.TopMost = $true; $f.ShowInTaskbar = $false
+  $f.Text = if ($Title) { $Title } else { 'Izuki bench cover' }
+  $f.FormBorderStyle = 'None'; $f.TopMost = $true; $f.ShowInTaskbar = $false
   $f.Location = New-Object System.Drawing.Point($X, $Y); $f.Size = New-Object System.Drawing.Size($W, $H); $f.BackColor = 'DarkSlateBlue'
   $f.Add_Click({ & $say 'cover' })
 } else {
@@ -1244,9 +1475,20 @@ if ($Mode -eq 'cover') {
   $label = New-Object System.Windows.Forms.Label; $label.Text = 'Bench name'; $label.AutoSize = $true; $label.Location = New-Object System.Drawing.Point(300, 30); $f.Controls.Add($label)
   $box = New-Object System.Windows.Forms.TextBox; $box.AccessibleName = 'Bench name'; $box.Location = New-Object System.Drawing.Point(300, 70); $box.Size = New-Object System.Drawing.Size(340, 40); $f.Controls.Add($box)
   $box.Add_TextChanged({ Set-Content -LiteralPath "$Log.text" -Value $box.Text -NoNewline })
+  # A long list to scroll: its top line, written out whenever it changes, is
+  # the ground truth for whether a scroll really moved it.
+  $list = New-Object System.Windows.Forms.ListBox; $list.AccessibleName = 'Bench list'
+  $list.Location = New-Object System.Drawing.Point(300, 130); $list.Size = New-Object System.Drawing.Size(340, 230)
+  1..60 | ForEach-Object { [void]$list.Items.Add(("Line {0:D2}" -f $_)) }
+  $f.Controls.Add($list)
+  $script:topWas = -1
+  # A shortcut that renames the window, so a result check can see the change.
+  $f.KeyPreview = $true
+  $f.Add_KeyDown({ param($s, $e) if ($e.Control -and $e.Shift -and $e.KeyCode -eq [System.Windows.Forms.Keys]::B) { $f.Text = 'Izuki action bench OK'; & $say 'shortcut'; $e.Handled = $true } })
   # The test's commands: "move" shifts a button, "untop" lets the cover sit above.
   $timer = New-Object System.Windows.Forms.Timer; $timer.Interval = 100
   $timer.Add_Tick({
+    if ($list.TopIndex -ne $script:topWas) { $script:topWas = $list.TopIndex; Set-Content -LiteralPath "$Log.scroll" -Value $list.TopIndex -NoNewline }
     if (Test-Path -LiteralPath "$Log.cmd") {
       $c = (Get-Content -LiteralPath "$Log.cmd" -Raw).Trim(); Remove-Item -LiteralPath "$Log.cmd"
       if ($c -eq 'move') { $moving.Top += 140 }
@@ -1428,7 +1670,70 @@ if ($Mode -eq 'cover') {
         let refused = said.as_ref().err().is_some_and(|e| e.to_string().starts_with("disabled:"));
         rows.push(Row { what: "recover: greyed-out button refused", ok: refused && count(&log, "locked") == 0, ms: t.elapsed().as_millis(), note: format!("{said:?}") });
 
-        // 6. Recover: another app's window lies on top of the button
+        // 6. Scroll a list: Izuki must see it move, and must call the end a snag.
+        //    The window writes its top line out, which is the ground truth —
+        //    never Izuki's own report.
+        let scroll_file = dir.join("events.log.scroll");
+        let top_index = || std::fs::read_to_string(&scroll_file).ok().and_then(|s| s.trim().parse::<i32>().ok());
+        let t = Instant::now();
+        let (scroll_ok, scroll_note) = if let Some(list) = control("Bench list") {
+            let (lx, ly) = list.center();
+            // Down the list: the lines move, and the check must not cry "nothing".
+            let down = super::execute(&step(serde_json::json!({"action":"scroll","x":lx,"y":ly,"scroll_amount":4})), 320, true, false);
+            let moved = wait_for(Duration::from_secs(3), || top_index().filter(|&v| v > 0).map(|_| ()));
+            let down_ok = down.as_ref().map(|s| !s.contains("nothing")).unwrap_or(false) && moved.is_some();
+            // Back to the top, then one more nudge up: now nothing moves, and
+            // the check has to say so.
+            let _ = super::execute(&step(serde_json::json!({"action":"scroll","x":lx,"y":ly,"key":"up","scroll_amount":30})), 320, true, false);
+            wait_for(Duration::from_secs(3), || top_index().filter(|&v| v == 0).map(|_| ()));
+            let at_end = super::execute(&step(serde_json::json!({"action":"scroll","x":lx,"y":ly,"key":"up","scroll_amount":4})), 320, true, false);
+            let end_ok = at_end.as_ref().map(|s| s.contains("nothing")).unwrap_or(false) && top_index() == Some(0);
+            (down_ok && end_ok, format!("down={down:?} end={at_end:?}"))
+        } else {
+            (false, "no list control".into())
+        };
+        rows.push(Row { what: "scroll: it moved, and the end is a snag", ok: scroll_ok, ms: t.elapsed().as_millis(), note: scroll_note });
+
+        // 7. A keyboard shortcut (Ctrl+Shift+B) renames the window: the check
+        //    sees the change. The window logs "shortcut" as the ground truth.
+        if in_front() != fixture {
+            let top = on_top_at(caption.0, caption.1);
+            if top == fixture {
+                super::click_at(caption.0, caption.1, super::Button::Left, 1, 320).ok();
+                std::thread::sleep(Duration::from_millis(250));
+            }
+        }
+        let before_title = crate::uia::foreground_title();
+        let t = Instant::now();
+        let said = super::execute(&step(serde_json::json!({"action":"key","key":"ctrl+shift+b"})), 320, true, false);
+        let fired = wait_for(Duration::from_secs(3), || (count(&log, "shortcut") >= 1).then_some(()));
+        let saw_change = said.as_ref().map(|s| !s.contains("doesn't look like anything changed")).unwrap_or(false);
+        let title_changed = crate::uia::foreground_title() != before_title;
+        rows.push(Row { what: "shortcut: the change is seen", ok: fired.is_some() && saw_change && title_changed, ms: t.elapsed().as_millis(), note: format!("{said:?}") });
+
+        // 8. Opening: a new window coming to the front is seen; nothing new is
+        //    a snag. Exercised against a real window transition (not a launched
+        //    app, to keep the test from leaving anything open).
+        let before_front = crate::uia::foreground_title();
+        let flags_nothing = super::check_opened("opened a thing".into(), &before_front, "a thing that is not open").contains("nothing new");
+        let t = Instant::now();
+        let sees_it = {
+            let _opened = open(&dir, &log, &["-Mode".into(), "cover".into(), "-Title".into(), "Izuki bench opened".into(), "-X".into(), (r.left + 520).to_string(), "-Y".into(), (r.top + 30).to_string(), "-W".into(), "160".into(), "-H".into(), "110".into()]);
+            let up = wait_for(Duration::from_secs(20), || window("Izuki bench opened"));
+            std::thread::sleep(Duration::from_millis(500));
+            up.is_some() && !super::check_opened("opened Izuki bench opened".into(), &before_front, "Izuki bench opened").contains("nothing new")
+        };
+        rows.push(Row { what: "open: a new window is seen, nothing is a snag", ok: flags_nothing && sees_it, ms: t.elapsed().as_millis(), note: format!("flagged={flags_nothing} seen={sees_it}") });
+        // Focus back to the test window for the steps that follow.
+        if in_front() != fixture {
+            let top = on_top_at(caption.0, caption.1);
+            if top == fixture {
+                super::click_at(caption.0, caption.1, super::Button::Left, 1, 320).ok();
+                std::thread::sleep(Duration::from_millis(250));
+            }
+        }
+
+        // 9. Recover: another app's window lies on top of the button
         //    (a notification, a chat head). It's pressed directly, and the
         //    window on top gets nothing.
         say("untop");
