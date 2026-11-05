@@ -45,6 +45,9 @@ Two more limits, found in the first live run:
 ## Verification and recovery
 
 - A task is **done** only when its pull request's checks all pass (then it's merged into `milestone-196`), or its pushed commit's checks pass. An agent saying "done" moves it to `review`, not `done`.
+- **A cancelled check is no verdict.** A newer push cancels the older runs, so a cancelled run counts as neither a pass nor a failure. When a pushed commit's own runs were cancelled or failed, the `milestone-196` head that includes it decides. If every check passes there, the task is done; a failure that's still there counts against it. Real case: Freebuff's `556ba4f` had its runs cancelled and one Android build failed on a dependency download, but every check passed on the next commit.
+- **An agent that can't work hasn't failed.** When Claude stops because its usage limit was reached, it's signed out, or the service is down, the dispatcher puts the task back as it was. It records the stop as `unavailable`, not as an attempt or a failure, and starts nothing for Claude until the reset time the service gave. This waiting survives a restart (`.work/agents/unavailable.json`). The dashboard shows "unavailable until …". If the outage has over an hour left, a task that either agent may take goes to the other agent, if it's free. Real case: task #18's run ended on "You've hit your session limit" and was wrongly marked stalled, then corrected.
+- A failure is counted once. The dispatcher records it, and the coordinator doesn't record it again when it plans the next attempt.
 - A run that stops reporting for 20 minutes is **disconnected**: the task goes back to the queue with a note to check the branch for partial work.
 - After a failure the next attempt carries a **different strategy** for that failure kind (read the failing tests first, read the CI log first, split the task, rebase first). After two failures by the same agent, a task either agent may take moves to the other. After three attempts it's **blocked** and shows on the dashboard for a person. The same prompt is never simply repeated.
 - Releases stay with **one coordinator: Claude's main session** (AGENTS.md rule 2). Agents never merge to `main`, tag or release. The dispatcher's Claude can't run `gh pr merge`, `gh release` or push to `main` or `milestone-196`.
@@ -60,11 +63,15 @@ Two more limits, found in the first live run:
 ## Running it
 
 - **Coordinator:** nothing to do. The workflow runs once it's on `main`. By hand: `node tools/agents/coordinator.mjs --dry-run` shows what it would do.
-- **Dispatcher (owner's PC):** `node tools/agents/dispatcher.mjs` supervises until stopped (`--once` takes one task). Pause it by creating `.work/agents/paused`. Each run's full transcript is kept in `.work/agents/task-<n>-<attempt>.jsonl`.
+- **Dispatcher (owner's PC):** `node tools/agents/dispatcher.mjs` supervises until stopped (`--once` takes one task). Pause it by creating `.work/agents/paused`.
+  - **Records:** its log is `.work/agents/dispatcher.log`, kept under 1 MB with one older copy. Each run's full transcript is in `.work/agents/task-<n>-<attempt>.jsonl`, and only the newest 20 are kept.
+  - **Only one runs at a time.** After a restart, a lock whose process number now belongs to another program is replaced.
+  - **Updates:** when the bridge's own files change on disk, it stops between tasks so no task runs on outdated logic. Start it again; the scheduled task restarts it by itself.
+  - **Shared usage:** it uses the same Claude account as the owner's own sessions, so the two share one usage limit.
 - **Give Claude an update mid-task:** comment `/update <what changed>` on its task. It's delivered at the next safe point.
 - **Who starts the dispatcher:** the owner. Claude's own session isn't permitted to run it continuously or install its scheduled task. Both were refused by Claude Code's permission checks (as "auto-mode bypass" and "unauthorized persistence"), and that's the owner's decision, not something to work around. Three ways:
   - run `node tools/agents/dispatcher.mjs` in a terminal and leave it open;
-  - run `tools\agents\install-dispatcher.ps1` once, which starts it at sign-in and every 30 minutes;
+  - run `tools\agents\install-dispatcher.ps1` once, which starts it at sign-in and every 30 minutes (running it again replaces the task: do that after an update to the installer);
   - add a permission rule in Claude Code's settings that allows Claude to start it.
   Until one of these happens, Claude's assigned tasks wait in the queue (#18 is waiting now).
 

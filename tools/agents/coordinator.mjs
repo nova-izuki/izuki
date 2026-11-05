@@ -6,7 +6,7 @@
 // It never runs anything from an issue's text: tasks are instructions for an
 // agent, and only accounts with write access may give them.
 import fs from 'node:fs';
-import { describe, writeState, agentStates, performance, plan, recover, AGENTS } from './scheduler.mjs';
+import { describe, writeState, agentStates, performance, plan, recover, redistribute, AGENTS } from './scheduler.mjs';
 import * as gh from './github.mjs';
 
 const DRY = process.argv.includes('--dry-run');
@@ -49,7 +49,7 @@ function update(t, status, statePatch, note) {
   const state = { ...t.state, ...statePatch };
   act(`#${t.number}: ${t.status} → ${status}${note ? ` (${note.slice(0, 80)})` : ''}`, () => {
     gh.editIssue(t.number, { body: writeState(t.body || gh.api(`repos/${gh.REPO}/issues/${t.number}`).body, state) });
-    gh.setLabels(t.number, [`status:${status}`], [`status:${t.status}`]);
+    if (status !== t.status) gh.setLabels(t.number, [`status:${status}`], [`status:${t.status}`]);
     if (note) gh.comment(t.number, note);
     if (status === 'done') gh.editIssue(t.number, { state: 'closed', state_reason: 'completed' });
   });
@@ -57,8 +57,10 @@ function update(t, status, statePatch, note) {
   t.state = state;
 }
 
-function fail(t, category, detail) {
-  const history = [...(t.state.history || []), { agent: t.state.agent, result: 'failed', category, at: iso() }];
+// `recorded`: the run already wrote this failure into the history (the
+// dispatcher does), so it's counted once, not twice.
+function fail(t, category, detail, recorded = false) {
+  const history = [...(t.state.history || []), ...(recorded ? [] : [{ agent: t.state.agent, result: 'failed', category, at: iso() }])];
   const next = recover({ ...t, state: { ...t.state, history } }, category);
   const text = `${detail ? `${detail}\n\n` : ''}${next.note}`;
   if (next.action === 'block') return update(t, 'blocked', { history, pr: undefined, commit: undefined }, text);
@@ -72,7 +74,15 @@ each('recover', AGENTS.filter((a) => states0[a].state === 'disconnected').map((a
   fail(t, 'disconnected', `${t.state.agent}'s run on this task stopped reporting (last heartbeat ${t.state.heartbeat}).`);
 });
 // RECOVER: runs that reported a failure.
-each('recover', tasks.filter((t) => t.open && t.status === 'failed'), (t) => fail(t, t.state.lastFailure || 'unknown', null));
+each('recover', tasks.filter((t) => t.open && t.status === 'failed'), (t) => fail(t, t.state.lastFailure || 'unknown', null, t.state.history?.at(-1)?.result === 'failed'));
+// REDISTRIBUTE: an agent that can't work for a while (a usage limit) hands
+// its unstarted tasks that could go to either agent to the other, if free.
+// An outage is never a failure: nothing here counts against anyone.
+each('redistribute', redistribute(tasks, agentStates(tasks, now, facts), now), (pick) => {
+  const t = byNumber().get(pick.task);
+  update(t, 'assigned', { agent: pick.to, assignedAt: iso() }, `Handed to **${pick.to}**: ${pick.why}, and this task can go to either agent.${t.state.branch ? ` Earlier work on it is on \`${t.state.branch}\`.` : ''}${pick.to === 'freebuff' ? ' Freebuff takes it from the queue when it finishes its current work.' : ''}`);
+  act(`#${t.number}: ${pick.from} → ${pick.to}`, () => gh.setLabels(t.number, [`agent:${pick.to}`], [`agent:${pick.from}`]));
+});
 
 // VERIFY: finished work is done only when its checks pass. A PR into the
 // development branch is merged then (standing authorization, AGENTS.md
@@ -82,6 +92,13 @@ for (const t of tasks.filter((t) => t.open && t.status === 'review')) {
   // doesn't exist): say so. Checked after any verdict, and after an error too.
   const stale = () => now - Date.parse(t.state.reviewSince || iso()) > 24 * 3600 * 1000;
   const flag = () => update(t, 'blocked', {}, `In review for over a day with no verdict${t.state.pr ? ` on PR #${t.state.pr}` : t.state.commit ? ` on ${t.state.commit.slice(0, 7)}` : ' (no PR or commit was reported)'}. Needs a look.`);
+  try {
+    if (!t.state.reviewSince) { t.state.reviewSince = iso(); act(`#${t.number}: review started`, () => gh.editIssue(t.number, { body: writeState(t.body, t.state) })); }
+  } catch (e) { log.push(`#${t.number}: couldn't save the review start (${String(e.message).slice(0, 80)})`); }
+  // "That PR or commit doesn't exist" is a verdict; any other API error isn't.
+  // Read from gh's own error text (stderr), never the command line, which
+  // names the PR or commit asked about (PR #404 isn't a missing one).
+  const missing = (e) => /\(HTTP 404\)|\bNot Found\b/i.test(String(e?.stderr ?? ''));
   try {
     // Freebuff reports by comment ("pushed 1a2b3c4", "PR #45"): read it from there.
     if (!t.state.pr && !t.state.commit) {
@@ -94,30 +111,43 @@ for (const t of tasks.filter((t) => t.open && t.status === 'review')) {
       }
       if (!t.state.agent) t.state.agent = t.agent === 'any' ? 'freebuff' : t.agent;
     }
-    if (!t.state.reviewSince) { t.state.reviewSince = iso(); act(`#${t.number}: review started`, () => gh.editIssue(t.number, { body: writeState(t.body, t.state) })); }
     if (t.state.pr) {
       const s = gh.pullStatus(t.state.pr);
+      // A known verdict first: merged is done, whatever else.
+      if (s.merged) { update(t, 'done', { doneAt: iso(), history: [...(t.state.history || []), { agent: t.state.agent, result: 'done', at: iso() }] }, `Verified and merged: PR #${t.state.pr}.`); continue; }
       if (s.base !== gh.DEV_BRANCH) { fail(t, 'conflict', `PR #${t.state.pr} targets ${s.base}; agent work goes to ${gh.DEV_BRANCH} only.`); continue; }
       // Changes to the bridge itself or to the workflows are never merged by
       // the bridge: Claude's main session reviews them.
       const touched = (gh.api(`repos/${gh.REPO}/pulls/${t.state.pr}/files?per_page=100`, { paginate: true }) || []).map((f) => f.filename);
       const guarded = touched.filter((f) => f.startsWith('.github/') || f.startsWith('tools/agents/') || f === 'docs/agents/roadmap.json');
       if (guarded.length && s.open) { update(t, 'blocked', {}, `PR #${t.state.pr} changes ${guarded.join(', ')}: the bridge never merges changes to itself or to the workflows. Claude's main session reviews it.`); continue; }
-      if (s.merged) { update(t, 'done', { doneAt: iso(), history: [...(t.state.history || []), { agent: t.state.agent, result: 'done', at: iso() }] }, `Verified and merged: PR #${t.state.pr}.`); continue; }
       if (s.failed.length) { fail(t, 'ci-failed', `Checks failed on PR #${t.state.pr}: ${s.failed.join(', ')}.`); continue; }
-      if (!s.pending && s.runs > 0 && s.open) {
+      if (!s.pending && !s.cancelled.length && s.runs > 0 && s.open) {
         act(`#${t.number}: merge PR #${t.state.pr} (${s.runs} checks green)`, () => gh.api(`repos/${gh.REPO}/pulls/${t.state.pr}/merge`, { method: 'PUT', body: { merge_method: 'squash', sha: s.pr.head.sha } }));
         update(t, 'done', { doneAt: iso(), history: [...(t.state.history || []), { agent: t.state.agent, result: 'done', at: iso() }] }, `Verified: all ${s.runs} checks passed on PR #${t.state.pr}; merged into ${gh.DEV_BRANCH}.`);
       } else if (stale()) flag();
     } else if (t.state.commit) {
-      const c = gh.commitChecks(t.state.commit);
-      if (c.failed.length) fail(t, 'ci-failed', `Checks failed on ${t.state.commit.slice(0, 7)}: ${c.failed.join(', ')}.`);
-      else if (!c.pending && c.runs > 0) update(t, 'done', { doneAt: iso(), history: [...(t.state.history || []), { agent: t.state.agent, result: 'done', at: iso() }] }, `Verified: all ${c.runs} checks passed on ${t.state.commit.slice(0, 7)}.`);
-      else if (stale()) flag();
+      const sha = t.state.commit, short = sha.slice(0, 7);
+      const green = (x) => !x.pending && !x.failed.length && !x.cancelled.length && x.runs > 0;
+      const done = (note) => update(t, 'done', { doneAt: iso(), history: [...(t.state.history || []), { agent: t.state.agent, result: 'done', at: iso() }] }, note);
+      const c = gh.commitChecks(sha);
+      if (green(c)) done(`Verified: all ${c.runs} checks passed on ${short}.`);
+      else if (!c.pending) {
+        // Its own runs were cut off by a newer push, or failed: the branch
+        // head that includes it decides. A superseded run or a flaky download
+        // isn't the agent's failure; a failure that's still there is.
+        const head = gh.api(`repos/${gh.REPO}/commits/${gh.DEV_BRANCH}`).sha;
+        const h = head !== sha && gh.contains(head, sha) ? gh.commitChecks(head) : null;
+        if (h && green(h)) done(`Verified: ${short}'s own checks ${c.failed.length ? `failed (${c.failed.join(', ')})` : 'were cancelled by a newer push'}, and all ${h.runs} checks passed on ${head.slice(0, 7)}, the ${gh.DEV_BRANCH} head that includes it.`);
+        else if (c.failed.length && (!h || h.failed.some((n) => c.failed.includes(n)))) fail(t, 'ci-failed', `Checks failed on ${short}: ${c.failed.join(', ')}${h ? ` (still failing on ${head.slice(0, 7)})` : ''}.`);
+        else if (stale()) flag();
+      } else if (stale()) flag();
     } else if (stale()) flag();
   } catch (e) {
     log.push(`#${t.number}: couldn't verify (${String(e.message).split('\n')[0].slice(0, 120)})`);
-    try { if (stale()) flag(); } catch (e2) { log.push(`#${t.number}: couldn't flag (${String(e2.message).slice(0, 80)})`); }
+    // Only a reported PR or commit that doesn't exist counts against the
+    // task (after the day); a passing API error leaves it in review.
+    try { if (missing(e) && stale()) flag(); } catch (e2) { log.push(`#${t.number}: couldn't flag (${String(e2.message).slice(0, 80)})`); }
   }
 }
 
@@ -156,7 +186,7 @@ const fmt = (xs) => (xs.length ? `${(xs.reduce((a, b) => a + b, 0) / xs.length).
 const rows = AGENTS.map((a) => {
   const s = stats[a] || { done: 0, failed: 0, firstTry: 0, minutes: [], waits: [] };
   const cur = states[a].running || states[a].held[0];
-  return `| ${a} | ${states[a].state} | ${cur ? `#${cur}` : '—'} | ${s.done} | ${s.done ? Math.round((100 * s.firstTry) / s.done) + '%' : '—'} | ${s.failed} | ${fmt(s.minutes)} | ${fmt(s.waits)} |`;
+  return `| ${a} | ${states[a].state}${states[a].until ? ` until ${states[a].until.slice(11, 16)} UTC` : ''} | ${cur ? `#${cur}` : '—'} | ${s.done} | ${s.done ? Math.round((100 * s.firstTry) / s.done) + '%' : '—'} | ${s.failed} | ${fmt(s.minutes)} | ${fmt(s.waits)} |`;
 });
 const open = tasks.filter((t) => t.open);
 const list = (st) => open.filter((t) => t.status === st).map((t) => `#${t.number}`).join(' ') || '—';

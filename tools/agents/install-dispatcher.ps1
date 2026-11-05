@@ -16,12 +16,15 @@ if ($Remove) {
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $node = (Get-Command node -ErrorAction Stop).Source
 $log = Join-Path $repo '.work\agents\dispatcher.log'
+$errors = Join-Path $repo '.work\agents\dispatcher-errors.log'
 New-Item -ItemType Directory -Force -Path (Split-Path $log) | Out-Null
-# cmd keeps a log of what the dispatcher did; the dispatcher itself decides
-# whether there's work (and exits at once if another copy is running).
-$action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c `"`"$node`" tools\agents\dispatcher.mjs >> `"$log`" 2>&1`"" -WorkingDirectory $repo
+# The dispatcher keeps its own log (dispatcher.log, kept under 1 MB) and
+# decides whether there's work (it exits at once if another copy is running).
+# cmd only keeps the last start's errors, for a failure before it can log.
+$action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c `"`"$node`" tools\agents\dispatcher.mjs >nul 2>`"$errors`"`"" -WorkingDirectory $repo
 $atLogon = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
-$every = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 30)
+# Repeats for ten years (stated: some Windows versions refuse an open-ended repeat).
+$every = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration (New-TimeSpan -Days 3650)
 $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -DontStopIfGoingOnBatteries -AllowStartIfOnBatteries
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 Register-ScheduledTask -TaskName $name -Action $action -Trigger @($atLogon, $every) -Settings $settings -Principal $principal -Description 'Izuki agent bridge: hands Claude Code its queued tasks (docs/AGENTS-BRIDGE.md). Pause: create .work\agents\paused.' -Force | Out-Null
