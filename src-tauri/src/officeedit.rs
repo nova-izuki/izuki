@@ -12,6 +12,11 @@
 //! keeps its style and its first run's formatting; bold or colour on part of
 //! it can be lost, and the report says which paragraphs changed. Plain text
 //! files (txt, md, csv, json, code) take the same Replace and Add edits.
+//!
+//! PDFs take Replace only, and only where the words sit in the page's own
+//! text strings: the edited copy is reopened and checked before it is kept,
+//! and a PDF whose font stores glyph codes instead of letters (Type0/CID)
+//! is refused with a plain explanation rather than rewritten into gibberish.
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -20,7 +25,8 @@ use anyhow::{anyhow, bail, Result};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Edit {
-    /// Every paragraph containing `find` gets it replaced with `with`.
+    /// Every paragraph containing `find` gets it replaced with `with`
+    /// (PDFs: every page text string that contains it).
     Replace { find: String, with: String },
     /// A new paragraph after the one containing `after` (the end when None).
     Add { after: Option<String>, text: String },
@@ -192,7 +198,8 @@ pub fn apply(original: &Path, edits: &[Edit]) -> Result<(PathBuf, Vec<String>)> 
     let bytes = std::fs::read(original).map_err(|e| anyhow!("can't open {}: {e}", original.display()))?;
     let (out, report) = match ext.as_str() {
         "docx" | "pptx" | "xlsx" => edit_office(&bytes, &ext, edits)?,
-        "pdf" | "doc" | "xls" | "ppt" | "odt" | "rtf" => bail!("{} files can't be edited here; save it as .docx/.xlsx/.pptx first", ext),
+        "pdf" => edit_pdf(&bytes, edits)?,
+        "doc" | "xls" | "ppt" | "odt" | "rtf" => bail!("{} files can't be edited here; save it as .docx/.xlsx/.pptx/PDF first", ext),
         _ => {
             if bytes.iter().take(4000).filter(|b| **b == 0).count() > 4 {
                 bail!("{} isn't a text file", original.display());
@@ -214,6 +221,238 @@ pub fn apply(original: &Path, edits: &[Edit]) -> Result<(PathBuf, Vec<String>)> 
     let copy = copy_path(original);
     crate::files::atomic_save(&copy, move || Ok(out))?;
     Ok((copy, report))
+}
+
+// ---- PDF text ----------------------------------------------------------------
+
+/// Whether any font in the document stores glyph codes rather than letters.
+/// Those PDFs (Type0/CID, common for embedded non-English fonts) would take
+/// our new letters as raw glyph numbers and show gibberish, so they are
+/// refused instead of quietly ruined.
+fn pdf_has_type0_font(doc: &lopdf::Document) -> bool {
+    doc.objects.values().any(|o| {
+        let d = match o {
+            lopdf::Object::Dictionary(d) => d,
+            _ => return false,
+        };
+        d.get(b"Subtype").and_then(|v| v.as_name()).is_ok_and(|n| n == b"Type0")
+    })
+}
+
+/// An edit of a PDF's own text strings, into a fresh copy. Returns the new
+/// bytes and one plain line per edit; `apply` decides whether any of them
+/// changed something before the copy is written.
+fn edit_pdf(bytes: &[u8], edits: &[Edit]) -> Result<(Vec<u8>, Vec<String>)> {
+    let mut doc = lopdf::Document::load_mem(bytes)
+        .map_err(|_| anyhow!("This PDF is damaged or password-protected. Attach an unlocked copy."))?;
+    if pdf_has_type0_font(&doc) {
+        bail!("This PDF stores its letters as font codes, so its words can't be safely rewritten. Save it as a .docx (or a new PDF) first");
+    }
+    let mut report = Vec::new();
+    let mut changed = false;
+    for edit in edits {
+        match edit {
+            Edit::Replace { find, with } => {
+                if find.is_empty() {
+                    report.push("Couldn't replace an empty bit of text".to_string());
+                    continue;
+                }
+                if !find.is_ascii() || !with.is_ascii() {
+                    report.push("Couldn't change non-English text in a PDF — save it as .docx first".to_string());
+                    continue;
+                }
+                let mut hits = 0usize;
+                let pages: Vec<lopdf::ObjectId> = doc.get_pages().into_values().collect();
+                for page in pages {
+                    for id in doc.get_page_contents(page) {
+                        let plain = match doc.objects.get(&id) {
+                            Some(lopdf::Object::Stream(s)) => match s.get_plain_content() {
+                                Ok(v) => v,
+                                Err(_) => continue,
+                            },
+                            _ => continue,
+                        };
+                        let (replaced, n) = replace_pdf_text(&plain, find.as_bytes(), with.as_bytes());
+                        if n == 0 {
+                            continue;
+                        }
+                        hits += n;
+                        if let Some(lopdf::Object::Stream(s)) = doc.objects.get_mut(&id) {
+                            s.set_plain_content(replaced);
+                        }
+                    }
+                }
+                if hits == 0 {
+                    report.push(format!("Couldn't find “{}” in the PDF's text", clip(find)));
+                } else {
+                    changed = true;
+                    let places = if hits == 1 { "1 place".to_string() } else { format!("{hits} places") };
+                    report.push(format!("Replaced “{}” with “{}” ({places})", clip(find), clip(with)));
+                }
+            }
+            Edit::Add { .. } => report.push("Couldn't add a paragraph to a PDF — save it as .docx and edit that".to_string()),
+            Edit::Cell { .. } => report.push("Couldn't set cells: a PDF has no cells".to_string()),
+        }
+    }
+    if !changed {
+        return Ok((Vec::new(), report));
+    }
+    let mut out = Vec::new();
+    doc.save_to(&mut out)?;
+    // The copy is reopened and checked: the new words are really in the page
+    // text of the saved file, or no copy is made at all.
+    let reread = lopdf::Document::load_mem(&out)
+        .map_err(|_| anyhow!("the edited PDF didn't reopen, so I threw the copy away"))?;
+    let mut page_text = Vec::new();
+    for page in reread.get_pages().into_values() {
+        for id in reread.get_page_contents(page) {
+            if let Some(lopdf::Object::Stream(s)) = reread.objects.get(&id) {
+                if let Ok(v) = s.get_plain_content() {
+                    page_text.extend_from_slice(&v);
+                }
+            }
+        }
+    }
+    for edit in edits {
+        if let Edit::Replace { with, .. } = edit {
+            if !with.is_empty() && !contains_bytes(&page_text, &escape_literal(with.as_bytes())) {
+                bail!("the edited PDF didn't keep the new words, so I threw the copy away");
+            }
+        }
+    }
+    Ok((out, report))
+}
+
+fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+    needle.is_empty() || haystack.windows(needle.len()).any(|w| w == needle)
+}
+
+/// Replace `find` inside the literal strings `( … )` of one content stream,
+/// leaving every other byte alone. Returns the stream and how many places
+/// changed. Escapes are honoured both ways, so a phrase holding brackets is
+/// still found and a replacement holding brackets stays readable.
+fn replace_pdf_text(content: &[u8], find: &[u8], with: &[u8]) -> (Vec<u8>, usize) {
+    let mut out = Vec::with_capacity(content.len());
+    let mut hits = 0usize;
+    let mut i = 0;
+    while i < content.len() {
+        if content[i] != b'(' {
+            out.push(content[i]);
+            i += 1;
+            continue;
+        }
+        // Find the matching close bracket: escapes skip the next byte and
+        // nested brackets belong to the same string.
+        let start = i + 1;
+        let mut j = start;
+        let mut depth = 1usize;
+        while j < content.len() && depth > 0 {
+            match content[j] {
+                b'\\' => j += 2,
+                b'(' => {
+                    depth += 1;
+                    j += 1;
+                }
+                b')' => {
+                    depth -= 1;
+                    j += 1;
+                }
+                _ => j += 1,
+            }
+        }
+        if depth > 0 {
+            // An unterminated string: copy the rest exactly as it came.
+            out.extend_from_slice(&content[i..]);
+            break;
+        }
+        let raw = &content[start..j - 1];
+        let text = unescape_literal(raw);
+        if contains_bytes(&text, find) {
+            let mut replaced = Vec::with_capacity(text.len());
+            let mut k = 0;
+            while k + find.len() <= text.len() {
+                if &text[k..k + find.len()] == find {
+                    replaced.extend_from_slice(with);
+                    hits += 1;
+                    k += find.len();
+                } else {
+                    replaced.push(text[k]);
+                    k += 1;
+                }
+            }
+            replaced.extend_from_slice(&text[k..]);
+            out.push(b'(');
+            out.extend_from_slice(&escape_literal(&replaced));
+            out.push(b')');
+        } else {
+            out.extend_from_slice(&content[i..j]);
+        }
+        i = j;
+    }
+    (out, hits)
+}
+
+/// A PDF literal string's bytes with its escapes resolved.
+fn unescape_literal(raw: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(raw.len());
+    let mut i = 0;
+    while i < raw.len() {
+        if raw[i] != b'\\' || i + 1 >= raw.len() {
+            out.push(raw[i]);
+            i += 1;
+            continue;
+        }
+        let c = raw[i + 1];
+        let simple = match c {
+            b'n' => Some(b'\n'),
+            b'r' => Some(b'\r'),
+            b't' => Some(b'\t'),
+            b'b' => Some(8u8),
+            b'f' => Some(12u8),
+            b'(' => Some(b'('),
+            b')' => Some(b')'),
+            b'\\' => Some(b'\\'),
+            _ => None,
+        };
+        if let Some(byte) = simple {
+            out.push(byte);
+            i += 2;
+        } else if (b'0'..=b'7').contains(&c) {
+            let mut value = 0u32;
+            let mut digits = 0;
+            while digits < 3
+                && i + 1 + digits < raw.len()
+                && (b'0'..=b'7').contains(&raw[i + 1 + digits])
+            {
+                value = value * 8 + (raw[i + 1 + digits] - b'0') as u32;
+                digits += 1;
+            }
+            out.push((value & 0xFF) as u8);
+            i += 1 + digits;
+        } else {
+            out.push(c);
+            i += 2;
+        }
+    }
+    out
+}
+
+/// Bytes back into a PDF literal string, brackets and backslashes escaped.
+fn escape_literal(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    for &b in bytes {
+        match b {
+            b'\\' | b'(' | b')' => {
+                out.push(b'\\');
+                out.push(b);
+            }
+            0..=0x1F if b != b'\n' && b != b'\r' => {
+                out.extend_from_slice(format!("\\{b:03o}").as_bytes());
+            }
+            _ => out.push(b),
+        }
+    }
+    out
 }
 
 // ---- plain text ----------------------------------------------------------------
@@ -1208,6 +1447,12 @@ mod tests {
         run("real.docx", "REPLACE: retention matter alot\nWITH: retention matters a lot\nADD AFTER: Risk Report\nTEXT: Prepared by Izuki & co.\nADD: The end.");
         run("real.xlsx", "CELL B2: 950\nCELL Notes!A1: checked\nCELL C5: =SUM(B2:B3)\nCELL B9: new row");
         run("real.pptx", "REPLACE: Agenda\nWITH: Today's agenda\nADD AFTER: Thank you\nTEXT: Questions?");
+        if dir.join("real.pdf").exists() {
+            // A real PDF copied here: only runs when it really has the word.
+            if let Ok((copy, report)) = apply(&dir.join("real.pdf"), &parse_edits("REPLACE: the\nWITH: THE")) {
+                eprintln!("real.pdf -> {}: {report:?}", copy.display());
+            }
+        }
         std::fs::write(dir.join("made.docx"), new_docx("# Made by Izuki\nA paragraph & more.\n- a bullet").unwrap()).unwrap();
         std::fs::write(dir.join("made.xlsx"), new_xlsx("Item,Cost\nRent,900\nTotal,=SUM(B2:B2)").unwrap()).unwrap();
     }
@@ -1263,5 +1508,169 @@ Rent,900").unwrap();
         // …but the strong check needs the real declarations, which the bare
         // test fixture deliberately doesn't have:
         validate_new("docx", &docx(DOC)).unwrap_err();
+    }
+
+    // ---- PDF editing -------------------------------------------------------
+
+    /// A small but real PDF: catalog → pages → one page → one text string.
+    /// lopdf writes it out, so every test below works on an actual PDF file.
+    fn pdf_with(text: &str, type0: bool) -> Vec<u8> {
+        fn next(doc: &mut lopdf::Document) -> lopdf::ObjectId {
+            doc.max_id += 1;
+            (doc.max_id, 0)
+        }
+        fn dict(pairs: &[(&str, lopdf::Object)]) -> lopdf::Dictionary {
+            let mut d = lopdf::Dictionary::new();
+            for (k, v) in pairs {
+                d.set(*k, v.clone());
+            }
+            d
+        }
+        let mut doc = lopdf::Document::with_version("1.5");
+        let pages_id = next(&mut doc);
+        let font_id = next(&mut doc);
+        let content_id = next(&mut doc);
+        let page_id = next(&mut doc);
+        let catalog_id = next(&mut doc);
+        let font = dict(&[
+            ("Type", "Font".into()),
+            ("Subtype", if type0 { "Type0" } else { "Type1" }.into()),
+            ("BaseFont", if type0 { "Identity-H" } else { "Helvetica" }.into()),
+        ]);
+        doc.objects.insert(font_id, lopdf::Object::Dictionary(font));
+        let body = format!(
+            "BT /F1 12 Tf 72 720 Td ({}) Tj ET",
+            String::from_utf8_lossy(&escape_literal(text.as_bytes()))
+        );
+        doc.objects.insert(
+            content_id,
+            lopdf::Object::Stream(lopdf::Stream::new(dict(&[]), body.into_bytes())),
+        );
+        let page = dict(&[
+            ("Type", "Page".into()),
+            ("Parent", lopdf::Object::Reference(pages_id)),
+            (
+                "MediaBox",
+                vec![
+                    lopdf::Object::Integer(0),
+                    lopdf::Object::Integer(0),
+                    lopdf::Object::Integer(612),
+                    lopdf::Object::Integer(792),
+                ]
+                .into(),
+            ),
+            ("Contents", lopdf::Object::Reference(content_id)),
+            (
+                "Resources",
+                lopdf::Object::Dictionary(dict(&[(
+                    "Font",
+                    lopdf::Object::Dictionary(dict(&[(
+                        "F1",
+                        lopdf::Object::Reference(font_id),
+                    )])),
+                )])),
+            ),
+        ]);
+        doc.objects.insert(page_id, lopdf::Object::Dictionary(page));
+        doc.objects.insert(
+            pages_id,
+            lopdf::Object::Dictionary(dict(&[
+                ("Type", "Pages".into()),
+                ("Kids", vec![lopdf::Object::Reference(page_id)].into()),
+                ("Count", lopdf::Object::Integer(1)),
+            ])),
+        );
+        doc.objects.insert(
+            catalog_id,
+            lopdf::Object::Dictionary(dict(&[
+                ("Type", "Catalog".into()),
+                ("Pages", lopdf::Object::Reference(pages_id)),
+            ])),
+        );
+        doc.trailer.set("Root", catalog_id);
+        let mut out = Vec::new();
+        doc.save_to(&mut out).unwrap();
+        out
+    }
+
+    /// The page text strings of a PDF, as stored.
+    fn pdf_text(bytes: &[u8]) -> String {
+        let doc = lopdf::Document::load_mem(bytes).expect("the PDF reopens");
+        let mut out = Vec::new();
+        for page in doc.get_pages().into_values() {
+            for id in doc.get_page_contents(page) {
+                if let Some(lopdf::Object::Stream(s)) = doc.objects.get(&id) {
+                    if let Ok(v) = s.get_plain_content() {
+                        out.extend_from_slice(&v);
+                    }
+                }
+            }
+        }
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    #[test]
+    fn edits_words_in_a_real_pdf_copy_and_the_original_stays_untouched() {
+        let dir = std::env::temp_dir().join(format!("izk-pdf-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let original = dir.join("sample.pdf");
+        std::fs::write(&original, pdf_with("Hello world", false)).unwrap();
+        let (copy, report) = apply(&original, &parse_edits("REPLACE: Hello\nWITH: Goodbye")).unwrap();
+        assert_eq!(copy.file_name().unwrap(), "sample (Izuki edit).pdf");
+        let saved = std::fs::read(&copy).unwrap();
+        assert!(pdf_text(&saved).contains("Goodbye"), "the copy's own text changed: {report:?}");
+        assert!(!pdf_text(&saved).contains("Hello"));
+        assert_eq!(std::fs::read(&original).unwrap(), pdf_with("Hello world", false), "the original is never touched");
+        assert!(report[0].starts_with("Replaced “Hello” with “Goodbye”"), "{report:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn brackets_in_pdf_text_survive_finding_and_writing() {
+        let dir = std::env::temp_dir().join(format!("izk-pdf-paren-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let original = dir.join("invoice.pdf");
+        std::fs::write(&original, pdf_with("Total (net) due", false)).unwrap();
+        let (copy, _) = apply(&original, &parse_edits("REPLACE: Total (net)\nWITH: Grand total (net)")).unwrap();
+        let saved = std::fs::read(&copy).unwrap();
+        let text = pdf_text(&saved);
+        assert!(text.contains("Grand total \\(net\\) due"), "brackets are escaped in the file: {text}");
+        assert!(lopdf::Document::load_mem(&saved).is_ok(), "the edited copy is still a valid PDF");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_pdf_without_the_words_makes_no_copy_and_says_so() {
+        let dir = std::env::temp_dir().join(format!("izk-pdf-miss-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let original = dir.join("notes.pdf");
+        std::fs::write(&original, pdf_with("Nothing to see", false)).unwrap();
+        let err = apply(&original, &parse_edits("REPLACE: absent words\nWITH: x")).unwrap_err();
+        assert!(err.to_string().contains("Couldn't find"), "{err}");
+        assert!(!dir.join("notes (Izuki edit).pdf").exists(), "no copy is made from an edit that changed nothing");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_type0_font_pdf_is_refused_instead_of_garbled() {
+        let dir = std::env::temp_dir().join(format!("izk-pdf-type0-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let original = dir.join("cid.pdf");
+        std::fs::write(&original, pdf_with("Hello world", true)).unwrap();
+        let err = apply(&original, &parse_edits("REPLACE: Hello\nWITH: Goodbye")).unwrap_err();
+        assert!(err.to_string().contains("font codes"), "{err}");
+        assert!(!dir.join("cid (Izuki edit).pdf").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_pdf_paragraph_or_cell_edit_is_refused_plainly() {
+        let dir = std::env::temp_dir().join(format!("izk-pdf-add-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let original = dir.join("brief.pdf");
+        std::fs::write(&original, pdf_with("One line", false)).unwrap();
+        let err = apply(&original, &parse_edits("ADD: another line")).unwrap_err();
+        assert!(err.to_string().contains("Couldn't add a paragraph to a PDF"), "{err}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -62,6 +62,13 @@ pub fn resolve(p: &str) -> PathBuf {
 }
 
 /// Izuki's own settings hold the user's keys — never read out to an AI.
+/// The one place inside Izuki's own folder an edit may reach: the staged
+/// copies of files the person attached. Everything else there (settings,
+/// memories, logs) stays private; writes never use this exception.
+pub fn is_staged_attachment(p: &Path) -> bool {
+    p.starts_with(crate::store::data_dir().join("attachments"))
+}
+
 fn off_limits(p: &Path) -> bool {
     let s = p.to_string_lossy().to_lowercase();
     let own = crate::store::data_dir().to_string_lossy().to_lowercase();
@@ -466,10 +473,12 @@ pub fn write(path: &str, content: &str) -> Result<String> {
 }
 
 /// Edit a file into a copy beside it (only ever after the user clicked
-/// Allow): Word, PowerPoint and Excel keep their structure (officeedit.rs).
+/// Allow): Word, PowerPoint, Excel and PDFs keep their structure
+/// (officeedit.rs). Staged attachment copies are editable here even though
+/// they live inside Izuki's own folder; nothing else in there is.
 pub fn edit(path: &str, body: &str) -> Result<String> {
     let p = resolve(path);
-    if off_limits(&p) {
+    if off_limits(&p) && !is_staged_attachment(&p) {
         return Err(anyhow!("that file is private"));
     }
     if !p.is_file() {
@@ -565,6 +574,15 @@ pub fn run_ok(command: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_staged_attachments_are_editable_inside_izukis_own_folder() {
+        let root = crate::store::data_dir();
+        assert!(is_staged_attachment(&root.join("attachments").join("report-abc123.pdf")));
+        assert!(!is_staged_attachment(&root.join("settings.json")), "settings stay private");
+        assert!(!is_staged_attachment(&root.join("memories").join("note.json")), "memories stay private");
+        assert!(!is_staged_attachment(&root.join("attachments-old.pdf")), "a lookalike sibling isn't inside the folder");
+    }
 
     #[test]
     #[cfg(windows)]

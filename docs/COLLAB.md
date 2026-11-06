@@ -134,3 +134,7 @@ Issue #27, codex/hand-overlay-lifecycle: hand lifecycle only (follow.rs, overlay
 ## Freebuff — eye lane task #30, one-gesture calibration (2026-11-06, claimed via the agent bridge)
 
 Issue #30: the calibration from WORKSTREAMS.md §3, behind the eye gate and off by default — look at a centre marker and blink once, the committed anchor re-centres later looks, a shaky hold or a wild anchor fails instead of skewing them, and gate close ends it. Files: `src/lib/eyeGate.ts` (pure state machine), `src/lib/eyeTrack.ts` (applies a ready anchor to reported looks), `tools/eye-gate-check.cjs` (new cases). Real-camera test stays with the owner.
+
+## Freebuff — document lane: PDF editing lands, staged paths unblocked (2026-11-06)
+
+`[EDIT:]` now edits PDFs too, not just Word/PowerPoint/Excel and text: REPLACE into the page text strings, a copy beside the original, the copy reopened and checked before it is kept, Type0/CID fonts refused with a plain reason (their letters are glyph codes and would turn to gibberish). Found and fixed a real blocker on the way: `files::off_limits` refused *everything* under Izuki's data folder, so `[EDIT: <staged attachment path>]` could never have worked — the edit path now admits the staged `attachments/` folder alone, while writes and everything else in there stay locked. Files: `src-tauri/src/officeedit.rs`, `src-tauri/src/files.rs`, `src-tauri/src/chat.rs` (prompt wording), tests in both files.

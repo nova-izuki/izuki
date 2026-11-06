@@ -370,13 +370,12 @@ assistant at their desk. Same rule — reply with only the tag:\n\
 [OPEN: path] — read a file (text, notes, code, CSV, PDF, Word .docx, Excel .xlsx with cell addresses, PowerPoint \
 .pptx, OpenDocument .odt/.ods/.odp).\n\
 [WRITE: path] then, on the next lines, the whole content — save a text file (a new one, or a fixed version). \
-A NEW .docx is made from the text as a real Word document (# heading, ## subheading, - bullet); a NEW .xlsx \
-from comma- or tab-separated rows (=formulas work). To change a PDF, [OPEN:] it and [WRITE:] its fixed text as \
-a .docx. Never [WRITE:] over an existing Word, Excel or PowerPoint file: use [EDIT:].\n\
-[EDIT: path] then, on the next lines, the changes — edit any file, Word .docx, Excel .xlsx and PowerPoint .pptx \
-included, into a copy beside it (the original stays): REPLACE: exact words / WITH: new words · ADD AFTER: words \
+A NEW .docx is made from the text as a real Word document (# heading, ## subheading, - bullet); a NEW .xlsx from comma- or tab-separated rows (=formulas work). Never [WRITE:] over an existing Word, Excel, PowerPoint or PDF file: use [EDIT:].\n\
+[EDIT: path] then, on the next lines, the changes — edit any file, Word .docx, Excel .xlsx, PowerPoint .pptx \
+and PDFs included, into a copy beside it (the original stays): REPLACE: exact words / WITH: new words · ADD AFTER: words \
 in the paragraph before / TEXT: the new paragraph · ADD: a paragraph at the end · CELL B3: value (or \
-CELL Sheet2!B3: =SUM(A1:A3)). [OPEN:] the file first so the words you replace are exact.\n\
+CELL Sheet2!B3: =SUM(A1:A3)). A PDF takes REPLACE/WITH only, and only when its text is plain letters. [OPEN:] the file \
+first so the words you replace are exact.\n\
 [RUN: command] — run one real PowerShell command (a true terminal): manage files, make a zip, check \
 disk space or the system, run a script, install something they asked for, even call python or node \
 (e.g. python -c \"...\"). Chain several [RUN:] across turns to do a multi-step job — run one, read the \
