@@ -1,0 +1,62 @@
+{
+  "about": "The approved next steps (docs/WORKSTREAMS.md), in order, for the agent bridge to turn into tasks when an agent runs out of work. Each becomes one GitHub issue (agent-task) at most once; 'after' lists keys that must be done first. Edit this file to change what comes next; the coordinator never invents work.",
+  "items": [
+    {
+      "key": "claude-result-checks",
+      "agent": "claude",
+      "kind": "feature",
+      "priority": "high",
+      "title": "Smart Screen Actions: check the result of scrolling, opening and shortcuts",
+      "files": ["src-tauri/src/automation.rs"],
+      "body": "Today Izuki checks clicks (Safe Hands) and typing (read back), but not scrolling, opening an app or URL, or keyboard shortcuts. Add a result check for each, the way check_typed works: decide what should have changed, look, and report a snag when it didn't. Extend automation::action_bench with one row per new check, run it (it waits for an idle PC), and the unit tests."
+    },
+    {
+      "key": "claude-replan",
+      "agent": "claude",
+      "kind": "feature",
+      "priority": "normal",
+      "title": "Smart Screen Actions: re-plan from a fresh look after any failed step",
+      "files": ["src-tauri/src/brain.rs"],
+      "after": ["claude-result-checks"],
+      "body": "When a step's result check fails, take a fresh look and re-plan the rest of the task from the new screen, for every step type, not only the snag note. Bounded (no loops), and never repeats a final action (send, pay, delete). Tests for the loop's limits."
+    },
+    {
+      "key": "claude-fixed-waits",
+      "agent": "claude",
+      "kind": "perf",
+      "priority": "normal",
+      "title": "Fast Action Engine: replace the fixed waits the bench shows matter",
+      "files": ["src-tauri/src/automation.rs", "src-tauri/src/patience.rs"],
+      "after": ["claude-result-checks"],
+      "body": "Measure with automation::action_bench and uia::look_timing first. Replace fixed sleeps that cost time with a check for the condition they wait on, one at a time, with before/after numbers in the commit. Keep the ones that let slow PCs settle (izuki-patient-not-spammy)."
+    },
+    {
+      "key": "claude-youtube-skip",
+      "agent": "claude",
+      "kind": "perf",
+      "priority": "low",
+      "title": "Skip YouTube ads through the extension instead of walking the page",
+      "files": ["src-tauri/src/autonomous.rs", "src-tauri/src/ext.rs", "extension/background.js"],
+      "body": "With auto-skip on and YouTube in front, autonomous.rs walks up to 160 page controls every 5 s (about 1% of a core). When the extension is connected, find the skip button in the page instead (one DOM query), and fall back to the walk otherwise. Measure the idle CPU before and after."
+    },
+    {
+      "key": "freebuff-eye-calibration",
+      "agent": "freebuff",
+      "kind": "feature",
+      "priority": "normal",
+      "title": "Eye lane: one-gesture calibration behind the eye gate",
+      "files": ["src/lib/eyeGate.ts", "src/lib/eyeTrack.ts"],
+      "body": "From docs/WORKSTREAMS.md §3: after the gate and the iris tracker, a one-gesture calibration, off by default, with the owner's real-camera test before it's called done."
+    },
+    {
+      "key": "freebuff-look-to-scroll",
+      "agent": "freebuff",
+      "kind": "feature",
+      "priority": "low",
+      "title": "Eye lane: look-to-scroll as the first eye-only feature",
+      "files": ["src/lib/eyeTrack.ts"],
+      "after": ["freebuff-eye-calibration"],
+      "body": "From docs/WORKSTREAMS.md §3. Behind the same gate; an accessibility summary in Settings."
+    }
+  ]
+}

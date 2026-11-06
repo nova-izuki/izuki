@@ -1,0 +1,63 @@
+name: Agent coordinator
+
+# The agent bridge's coordinator (docs/AGENTS-BRIDGE.md): reconciles the
+# task queue (issues labelled agent-task), verifies finished work against
+# its CI results, merges verified agent PRs into the development branch,
+# assigns the next tasks and rewrites the dashboard issue. Every 20 minutes,
+# and right away on task, PR and CI events.
+#
+# It only ever runs trusted code with its write token: pull-request events
+# use pull_request_target, which runs the BASE branch's workflow and code,
+# never the pull request's (an agent's PR could otherwise change the
+# coordinator and run it with write access). Issue text is read as data,
+# never run, and tasks from accounts without write access are ignored.
+on:
+  schedule:
+    - cron: '7,27,47 * * * *'
+  issues:
+    types: [opened, edited, labeled, closed, reopened]
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, closed, synchronize]
+  workflow_run:
+    workflows: ['Verify companion changes']
+    types: [completed]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: agent-coordinator
+  cancel-in-progress: false
+
+jobs:
+  coordinate:
+    # Only events that can change the queue: task issues, and everything
+    # that isn't an issue event.
+    if: >-
+      github.event_name != 'issues' && github.event_name != 'issue_comment' ||
+      contains(join(github.event.issue.labels.*.name, ','), 'agent-task')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      checks: read
+      actions: read
+    steps:
+      # The base branch for pull-request events, the default branch otherwise:
+      # never the pull request's own code.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Scheduler checks
+        run: node tools/agents/scheduler-check.mjs
+      - name: One coordinator pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/agents/coordinator.mjs
