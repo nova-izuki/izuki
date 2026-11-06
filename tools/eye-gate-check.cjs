@@ -11,7 +11,11 @@ const src = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "eyeGate.ts
 const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
 const mod = { exports: {} };
 new Function("exports", "require", "module", js)(mod.exports, require, mod);
-const { newEyeGate, requestGate, endGate, gateOpen, newBlink, blinkStep, gazeOffset } = mod.exports;
+const {
+  newEyeGate, requestGate, endGate, gateOpen, newBlink, blinkStep, gazeOffset,
+  newCalibration, startCalibration, calibrationStep, applyCalibration, calibrationReady,
+  CALIBRATION_TIMEOUT_MS,
+} = mod.exports;
 
 let failed = 0;
 function check(what, cond) {
@@ -110,6 +114,98 @@ check("a collapsed box is null, not infinity",
 
 check("missing landmarks are null",
   gazeOffset(null, null, null, null, null) === null);
+
+// ---------------------------------------------------------------- calibration
+
+{
+  const c = newCalibration();
+  check("a fresh calibration is OFF, idle and anchorless",
+    !c.enabled && c.state === "idle" && c.anchor === null && !calibrationReady(c));
+  const raw = { x: 0.4, y: -0.2 };
+  const same = applyCalibration(c, raw);
+  check("with no calibration the gaze passes through unchanged",
+    same === raw && applyCalibration(null, raw) === raw);
+}
+
+{
+  const c = newCalibration();
+  const g = newEyeGate();
+  check("the gesture cannot start while the eye gate is closed",
+    startCalibration(c, g, 0) === false && c.state === "idle" && !c.enabled);
+}
+
+{
+  const c = newCalibration();
+  const g = newEyeGate();
+  requestGate(g, "session", false);
+  check("with the gate open the one gesture starts collecting",
+    startCalibration(c, g, 0) === true && c.state === "collecting" && c.enabled);
+  // Ten steady looks at a camera that sits high and to the left, then one blink.
+  let state = c.state;
+  for (let i = 0; i < 10; i++) {
+    state = calibrationStep(c, g, { x: 0.18 + (i % 3) * 0.01, y: -0.07 }, false, i * 50);
+  }
+  check("steady looks keep collecting without committing", state === "collecting");
+  state = calibrationStep(c, g, { x: 0.19, y: -0.07 }, true, 600);
+  check("the blink commits: ready with the measured neutral point",
+    state === "ready" && calibrationReady(c)
+      && Math.abs(c.anchor.x - 0.19) < 0.02 && Math.abs(c.anchor.y + 0.07) < 0.01);
+  const centred = applyCalibration(c, { x: 0.19, y: -0.07 });
+  check("the neutral point now reads as centre",
+    centred && Math.abs(centred.x) < 0.02 && Math.abs(centred.y) < 0.01);
+  const clamped = applyCalibration(c, { x: 0.95, y: 0.99 });
+  check("corrected looks stay inside -1..1",
+    clamped && clamped.x <= 1 && clamped.y <= 1 && clamped.x >= -1 && clamped.y >= -1);
+}
+
+{
+  const c = newCalibration();
+  const g = newEyeGate();
+  requestGate(g, "session", false);
+  startCalibration(c, g, 0);
+  // A shaky hold: the user moved their eyes around the marker.
+  for (let i = 0; i < 10; i++) {
+    calibrationStep(c, g, { x: -0.4 + i * 0.08, y: 0 }, false, i * 50);
+  }
+  check("a shaky hold fails at the blink and leaves no anchor",
+    calibrationStep(c, g, { x: 0, y: 0 }, true, 600) === "failed"
+      && c.anchor === null && !calibrationReady(c));
+  const raw = { x: 0.3, y: 0.1 };
+  check("a failed calibration never touches later looks", applyCalibration(c, raw) === raw);
+}
+
+{
+  const c = newCalibration();
+  const g = newEyeGate();
+  requestGate(g, "session", false);
+  startCalibration(c, g, 0);
+  check("a held gesture that runs out of time fails",
+    calibrationStep(c, g, { x: 0, y: 0 }, false, CALIBRATION_TIMEOUT_MS + 1) === "failed");
+}
+
+{
+  const c = newCalibration();
+  const g = newEyeGate();
+  requestGate(g, "session", false);
+  startCalibration(c, g, 0);
+  calibrationStep(c, g, { x: 0.1, y: 0.1 }, false, 50);
+  endGate(g, "session");
+  check("closing the gate ends the gesture with it",
+    calibrationStep(c, g, { x: 0.1, y: 0.1 }, false, 100) === "idle"
+      && !c.enabled && c.samples.length === 0 && c.anchor === null);
+}
+
+{
+  const c = newCalibration();
+  const g = newEyeGate();
+  requestGate(g, "session", false);
+  startCalibration(c, g, 0);
+  for (let i = 0; i < 10; i++) {
+    calibrationStep(c, g, { x: 0.75, y: 0.1 }, false, i * 50);
+  }
+  check("a wildly off-centre anchor is refused rather than applied",
+    calibrationStep(c, g, { x: 0.75, y: 0.1 }, true, 600) === "failed" && c.anchor === null);
+}
 
 if (failed) {
   console.error(`\n${failed} eye-gate check(s) failed`);

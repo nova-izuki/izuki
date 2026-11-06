@@ -129,3 +129,8 @@ Hand task #27 scope detail: Codex adds only action_hand_enabled in settings/type
 ## Codex hand-overlay claim (2026-11-03)
 
 Issue #27, codex/hand-overlay-lifecycle: hand lifecycle only (follow.rs, overlay stays_up, tray/settings wording, HandCursor and atomic hand rendering in OverlayCanvas). Freebuff retains AirControl, eye tracking/camera and CalloutChips/shared pointing slot. Claude retains bridge/dispatcher and action task #18. No existing uncommitted file is taken over; no duplicate app/dispatcher is started.
+
+
+## Freebuff — eye lane task #30, one-gesture calibration (2026-11-06, claimed via the agent bridge)
+
+Issue #30: the calibration from WORKSTREAMS.md §3, behind the eye gate and off by default — look at a centre marker and blink once, the committed anchor re-centres later looks, a shaky hold or a wild anchor fails instead of skewing them, and gate close ends it. Files: `src/lib/eyeGate.ts` (pure state machine), `src/lib/eyeTrack.ts` (applies a ready anchor to reported looks), `tools/eye-gate-check.cjs` (new cases). Real-camera test stays with the owner.

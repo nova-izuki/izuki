@@ -9,7 +9,7 @@
  * Nothing here writes to storage or logs angles: blink/gaze numbers go
  * only to the callbacks the caller registers, in its own memory.
  */
-import { gateOpen, type EyeGate } from "./eyeGate";
+import { applyCalibration, gateOpen, type EyeCalibration, type EyeGate } from "./eyeGate";
 
 export interface EyeFrame {
   /** Blink EAR for the look (provisional thresholds — see eyeGate.ts). */
@@ -43,6 +43,12 @@ export interface EyeTrackerOptions {
   gate: EyeGate;
   stream: MediaStream;
   video?: HTMLVideoElement;
+  /**
+   * The lane's calibration, when the caller runs the one gesture. While it
+   * is ready its anchor re-centres every reported look; unset or not ready
+   * leaves the gaze raw. The tracker only reads it, never starts it.
+   */
+  calibration?: EyeCalibration;
 }
 
 export function createEyeTracker(opts: EyeTrackerOptions): EyeTracker | null {
@@ -72,7 +78,8 @@ export function createEyeTracker(opts: EyeTrackerOptions): EyeTracker | null {
       return;
     }
     if (m.type === "face") {
-      frames.forEach((cb) => cb({ ear: m.ear, gaze: m.gaze, blink: m.blink, t: m.t }));
+      const gaze = applyCalibration(opts.calibration, m.gaze);
+      frames.forEach((cb) => cb({ ear: m.ear, gaze, blink: m.blink, t: m.t }));
       return;
     }
     if (m.type === "none") {

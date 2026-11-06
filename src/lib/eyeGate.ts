@@ -156,3 +156,122 @@ export function gazeOffset(
   y = Math.min(1, Math.max(-1, y));
   return { x, y };
 }
+
+// ---------------------------------------------------------------------------
+// Calibration — one gesture, off by default
+// ---------------------------------------------------------------------------
+
+/**
+ * The one-gesture calibration: the user looks at the centre marker and blinks
+ * once. The looks collected before that blink become the neutral point every
+ * later look is measured against, so a camera that sits high or low stops
+ * pulling the gaze off-centre. Nothing runs until the caller starts it, it
+ * dies with the gate, and nothing is ever written to storage.
+ *
+ * Provisional numbers, like the blink thresholds: on the owner's own camera
+ * the hold that feels natural decides them.
+ */
+export const CALIBRATION_MIN_SAMPLES = 8;
+export const CALIBRATION_STEADY_SPREAD = 0.12;
+export const CALIBRATION_MAX_ANCHOR = 0.6;
+export const CALIBRATION_TIMEOUT_MS = 8000;
+
+export interface EyeCalibration {
+  /** Off until the user starts the one gesture. */
+  enabled: boolean;
+  state: "idle" | "collecting" | "ready" | "failed";
+  samples: { x: number; y: number }[];
+  /** The neutral point subtracted from later looks; null until ready. */
+  anchor: { x: number; y: number } | null;
+  startedAt: number;
+}
+
+export function newCalibration(): EyeCalibration {
+  return { enabled: false, state: "idle", samples: [], anchor: null, startedAt: 0 };
+}
+
+function resetCalibration(cal: EyeCalibration) {
+  cal.enabled = false;
+  cal.state = "idle";
+  cal.samples = [];
+  cal.anchor = null;
+  cal.startedAt = 0;
+}
+
+/**
+ * Begin the gesture. Refused while the eye gate is closed — the calibration
+ * can never be a way around the gate — and always from a clean slate.
+ */
+export function startCalibration(cal: EyeCalibration, gate: EyeGate, now: number): boolean {
+  resetCalibration(cal);
+  if (!gateOpen(gate)) return false;
+  cal.enabled = true;
+  cal.state = "collecting";
+  cal.startedAt = now;
+  return true;
+}
+
+/** One look into the gesture; returns the calibration's state afterwards. */
+export function calibrationStep(
+  cal: EyeCalibration,
+  gate: EyeGate,
+  gaze: { x: number; y: number } | null,
+  blink: boolean,
+  now: number,
+): EyeCalibration["state"] {
+  if (cal.state !== "collecting") return cal.state;
+  if (!gateOpen(gate)) {
+    // The gate closing ends the gesture with it: nothing outlives the gate.
+    resetCalibration(cal);
+    return cal.state;
+  }
+  if (gaze) cal.samples.push({ x: gaze.x, y: gaze.y });
+  if (!blink) {
+    if (now - cal.startedAt > CALIBRATION_TIMEOUT_MS) {
+      resetCalibration(cal);
+      cal.state = "failed";
+    }
+    return cal.state; // still collecting
+  }
+  // The blink commits. A steady hold of enough looks is a real calibration;
+  // a shaky or wildly off-centre one fails instead of skewing later looks.
+  const xs = cal.samples.map((s) => s.x);
+  const ys = cal.samples.map((s) => s.y);
+  const span = (v: number[]) => (v.length ? Math.max(...v) - Math.min(...v) : Infinity);
+  const avg = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
+  const steady = xs.length >= CALIBRATION_MIN_SAMPLES
+    && span(xs) <= CALIBRATION_STEADY_SPREAD
+    && span(ys) <= CALIBRATION_STEADY_SPREAD;
+  if (!steady) {
+    resetCalibration(cal);
+    cal.state = "failed";
+    return cal.state;
+  }
+  const anchor = { x: avg(xs), y: avg(ys) };
+  if (Math.abs(anchor.x) > CALIBRATION_MAX_ANCHOR || Math.abs(anchor.y) > CALIBRATION_MAX_ANCHOR) {
+    resetCalibration(cal);
+    cal.state = "failed";
+    return cal.state;
+  }
+  cal.anchor = anchor;
+  cal.state = "ready";
+  return cal.state;
+}
+
+/**
+ * Later looks through the committed anchor: the neutral point reads as
+ * centre. No calibration, or one that isn't ready, leaves the gaze exactly
+ * as it came in.
+ */
+export function applyCalibration(
+  cal: EyeCalibration | null | undefined,
+  gaze: { x: number; y: number } | null,
+): { x: number; y: number } | null {
+  if (!gaze || !cal || cal.state !== "ready" || !cal.anchor) return gaze;
+  const clamp = (n: number) => Math.min(1, Math.max(-1, n));
+  return { x: clamp(gaze.x - cal.anchor.x), y: clamp(gaze.y - cal.anchor.y) };
+}
+
+/** True when a calibration is committed and usable. */
+export const calibrationReady = (cal: EyeCalibration) =>
+  cal.state === "ready" && cal.anchor !== null;

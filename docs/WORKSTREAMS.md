@@ -141,9 +141,14 @@ calls only when needed, no fixed wait where a condition can be checked.**
   own thread (`src/lib/eyeWorker.ts`, `face_landmarker.task` in `public/air/`)
   with a main-thread adapter (`src/lib/eyeTrack.ts`) that refuses while the
   gate is closed — verified by compile+build only until a camera ran; then
-  one-gesture calibration, look-to-scroll as the first eye-only money feature,
-  accessibility summary in Settings. Real-webcam testing on this PC before any
-  "it works" — the final check stays with the owner.
+  one-gesture calibration — built 2026-11-06 (task #30): look at a marker and
+  blink once; the committed anchor re-centres every later look, it is off
+  until started, dies with the gate, fails on a shaky hold and never touches
+  storage (`tools/eye-gate-check.cjs` cases) — pending the owner's
+  real-camera test before it's called done; look-to-scroll as the first
+  eye-only money feature, accessibility summary in Settings. Real-webcam
+  testing on this PC before any "it works" — the final check stays with the
+  owner.
 
 ## 4. Keep the other planned capabilities alive — both
 
