@@ -283,7 +283,10 @@ fn edit_pdf(bytes: &[u8], edits: &[Edit]) -> Result<(Vec<u8>, Vec<String>)> {
                     }
                 }
                 if hits == 0 {
-                    report.push(format!("Couldn't find “{}” in the PDF's text", clip(find)));
+                    report.push(format!(
+                        "Couldn't find “{}” in the PDF's text (a page that splits its words into pieces can't be changed here — save it as .docx and edit that)",
+                        clip(find)
+                    ));
                 } else {
                     changed = true;
                     let places = if hits == 1 { "1 place".to_string() } else { format!("{hits} places") };
@@ -1455,6 +1458,97 @@ mod tests {
         }
         std::fs::write(dir.join("made.docx"), new_docx("# Made by Izuki\nA paragraph & more.\n- a bullet").unwrap()).unwrap();
         std::fs::write(dir.join("made.xlsx"), new_xlsx("Item,Cost\nRent,900\nTotal,=SUM(B2:B2)").unwrap()).unwrap();
+    }
+
+    /// The owner's own filled PDF, edited through the real path:
+    /// IZUKI_PDF=<path> cargo test --lib officeedit::tests::real_pdf -- --ignored
+    /// It picks a real word from page 1, appends an exclamation mark, and
+    /// checks the copy reopens — changing nothing in the original.
+    #[test]
+    #[ignore]
+    fn real_pdf() {
+        let original = PathBuf::from(std::env::var("IZUKI_PDF").expect("set IZUKI_PDF"));
+        let bytes = std::fs::read(&original).unwrap();
+        // A word the page really stores in one text string: replacing one
+        // that the page splits across operators is out of scope (and the
+        // engine says so instead of inventing a match).
+        match first_stored_word(&bytes) {
+            Some(word) => {
+                let (copy, report) = apply(
+                    &original,
+                    &parse_edits(&format!("REPLACE: {word}\nWITH: {word}!")),
+                )
+                .unwrap();
+                let saved = std::fs::read(&copy).unwrap();
+                assert!(
+                    lopdf::Document::load_mem(&saved).is_ok(),
+                    "the edited copy is a readable PDF"
+                );
+                assert!(report[0].starts_with("Replaced"), "{report:?}");
+                eprintln!("real PDF: “{word}” -> “{word}!” in {} ({report:?})", copy.display());
+            }
+            None => {
+                // A page that keeps its words in pieces can't be edited here:
+                // the engine has to say so and leave no copy behind.
+                let err = apply(&original, &parse_edits("REPLACE: the\nWITH: THE")).unwrap_err();
+                assert!(
+                    err.to_string().contains("splits its words"),
+                    "a split-word PDF is refused with the reason: {err}"
+                );
+                eprintln!("real PDF: words are split in this page; refused as designed: {err}");
+            }
+        }
+    }
+
+    /// The first plain word that sits inside one page literal string, if any.
+    fn first_stored_word(bytes: &[u8]) -> Option<String> {
+        let doc = lopdf::Document::load_mem(bytes).unwrap();
+        let page = *doc.get_pages().values().next().expect("a page");
+        for id in doc.get_page_contents(page) {
+            let content = match doc.objects.get(&id) {
+                Some(lopdf::Object::Stream(s)) => match s.get_plain_content() {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                },
+                _ => continue,
+            };
+            let mut i = 0;
+            while i < content.len() {
+                if content[i] != b'(' {
+                    i += 1;
+                    continue;
+                }
+                let start = i + 1;
+                let mut j = start;
+                let mut depth = 1usize;
+                while j < content.len() && depth > 0 {
+                    match content[j] {
+                        b'\\' => j += 2,
+                        b'(' => {
+                            depth += 1;
+                            j += 1;
+                        }
+                        b')' => {
+                            depth -= 1;
+                            j += 1;
+                        }
+                        _ => j += 1,
+                    }
+                }
+                if depth > 0 {
+                    break;
+                }
+                let text = String::from_utf8_lossy(&unescape_literal(&content[start..j - 1])).into_owned();
+                if let Some(word) = text
+                    .split(|c: char| !c.is_alphabetic())
+                    .find(|w| w.chars().count() > 3)
+                {
+                    return Some(word.to_string());
+                }
+                i = j;
+            }
+        }
+        None
     }
 
     #[test]
