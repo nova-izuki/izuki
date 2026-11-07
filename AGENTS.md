@@ -47,13 +47,24 @@ courses, devices or PC, and never put personal data in the repo.
      PR #16. Commit and push your tested work there. A bigger separate piece
      may go on `claude/…`, `codex/…` or `freebuff/…` with a PR into the
      milestone branch.
-   - Nothing is merged to `main`, tagged or published until it's finished
-     and verified: every required check green, CodeRabbit's actionable
-     findings handled, tests run for real. Since 2026-11-03 the owner has
-     authorized automatic merging and releasing of verified work (no
-     per-release approval). Claude cuts the release: it bumps the version,
-     merges and lets the pipeline publish, then checks the published files,
-     the updater manifest and the website. Only committed, verified work
+   - **Standing release authorization (owner, 2026-11-03, restated):**
+     completed, tested work is committed and pushed, merged when every
+     required check passes, built and published as a new version, with the
+     website, download links, docs and release notes updated and the update
+     delivered through the auto-updater. Nobody asks the owner for routine
+     approval to push, merge, release, deploy or update. Every earlier rule
+     requiring the owner's approval for a merge or a release is superseded.
+   - Still required every time: every required check green, CodeRabbit's
+     actionable findings handled, test failures, security findings and
+     regressions fixed first, tests run for real, user data preserved and
+     the previous release kept for rollback. A release that needs missing
+     credentials, a platform's own approval (an app store) or a failed
+     security check is reported, never forced; other safe work continues.
+   - **Claude coordinates merges and releases** so nothing is published
+     twice: it bumps the version, merges, lets the pipeline publish, then
+     checks the published files, the updater manifest and the website, and
+     reports. Freebuff and Codex commit and push verified work and mark it
+     ready in COLLAB.md; Claude merges it. Only committed, verified work
      ships; another assistant's work in progress waits for the next release.
    - **Only Claude bumps the version and writes the release notes.** Never
      touch the version files (`package.json`, `src-tauri/tauri.conf.json`,
@@ -107,6 +118,26 @@ courses, devices or PC, and never put personal data in the repo.
      "don't answer") still withholds.
 7. **Don't touch anything outside this `izuki/` folder.** The parent folder
    is the owner's separate robot project.
+
+## The task queue (agent bridge)
+Work can also arrive as GitHub issues labelled `agent-task`
+([docs/AGENTS-BRIDGE.md](docs/AGENTS-BRIDGE.md)). Claude's are dispatched
+automatically. **Freebuff:** when you finish a piece of work, look at the
+queue before choosing the next thing:
+`gh issue list --label agent-task --label agent:freebuff --label status:assigned`.
+Take the top one (most urgent first):
+- label it `status:in-progress` (remove `status:assigned`), claim its files in COLLAB.md, and do it;
+- when it's pushed, label it `status:review` and comment with the commit SHA (or open a PR into `milestone-196` that mentions the task, e.g. "Task #21: …", and comment its number: the bridge only merges a PR that names its task).
+
+The coordinator marks it done once that commit's checks pass. Never take a
+task labelled for the other agent, and never close a task yourself.
+
+The bridge's intelligent scheduling and performance-optimization requirements
+(owner, 2026-11-03) are recorded in
+[docs/AGENT-SCHEDULER-REQUIREMENTS.md](docs/AGENT-SCHEDULER-REQUIREMENTS.md);
+implementing them belongs to the bridge lane (`tools/agents/`, the
+coordinator workflow) — read that file before changing how tasks are
+assigned or measured.
 
 ## Code review (CodeRabbit)
 CodeRabbit reviews every push to a pull request by itself, drafts included
@@ -180,5 +211,9 @@ dependencies and next steps for each workstream live in `docs/WORKSTREAMS.md`
 — update your lane's section there when its state changes, and read it before
 starting work so you build on the other assistant's pieces instead of
 repeating or overwriting them. Never overwrite the other assistant's files
-(claim in `docs/COLLAB.md` first), and never merge or publish anything on
-your own: the owner merges and publishes.
+(claim in `docs/COLLAB.md` first). Merging and publishing follow rule 2:
+the owner's standing authorization covers pushing, merging, releasing,
+deploying and updating without asking each time; Claude coordinates the
+merges and releases (one coordinator, nothing published twice), only after
+every required check passes. Codex and Freebuff push verified work and mark
+it ready in COLLAB.md.

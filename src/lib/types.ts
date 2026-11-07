@@ -305,12 +305,10 @@ export interface Settings {
    */
   execution_mode: "background" | "focus";
 
-  /**
-   * Keep the glowing hand on screen at all times, tracking the real cursor,
-   * whether or not the config panel is open — the "don't need the app open"
-   * mode.
-   */
+  /** Floating chat availability; legacy setting name retained. */
   follow_mode_enabled: boolean;
+  /** Optional hand during active screen actions, off by default. */
+  action_hand_enabled: boolean;
   /** The Island at the top of the screen (live activities). On by default. */
   island_enabled: boolean;
   /** When music plays, the orb comes up and flows with it. */
@@ -565,10 +563,22 @@ export interface OverlayOpenPayload {
   shape?: ShapeKind | null;
 }
 
+/** Gemini-style pointing: one region a reply explains, 0–1000 across the
+ *  screenshot, so the same numbers chip correctly on any screen size. */
+export interface Callout {
+  /** One short spoken label — “Save button”, “Step 2”. */
+  label: string;
+  /** Left/top edge and size, 0–1000 across the whole screenshot. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 /** Push-to-talk state, sent from the config panel's mic to the overlay. */
 export interface ListeningPayload {
   active: boolean;
-  /** Whether "Always show the hand" is on — decides hand-orb vs. mic badge. */
+  /** Legacy follow preference: keeps the floating chat available. */
   follow: boolean;
 }
 

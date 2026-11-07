@@ -5,8 +5,10 @@
 // editing, and ends as a pull request into the development branch, which the
 // coordinator merges once its checks pass. Never main, never a release.
 //
-//   node tools/agents/dispatcher.mjs          supervise until stopped
+//   node tools/agents/dispatcher.mjs          supervise until stopped (Ctrl+C)
 //   node tools/agents/dispatcher.mjs --once   take one task (if any), then exit
+// It restarts itself after an update to its own code, and a minute after a
+// crash. While Claude works it prints its progress every minute.
 // Pause it: create .work/agents/paused (delete it to carry on).
 // When Claude can't work (a usage limit, signed out, the service down), the
 // task goes back unchanged and the dispatcher waits until the reset
@@ -18,7 +20,8 @@ import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, writeState, unavailable, counts, PRIORITY } from './scheduler.mjs';
+import { fileURLToPath } from 'node:url';
+import { describe, writeState, unavailable, counts, orphans, PRIORITY } from './scheduler.mjs';
 import * as gh from './github.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..');
@@ -39,6 +42,44 @@ const say = (...a) => {
   try { if (fs.statSync(LOG).size > 1024 * 1024) fs.renameSync(LOG, `${LOG}.1`); } catch { /* no log yet */ }
   try { fs.appendFileSync(LOG, `${iso()} ${a.join(' ')}\n`); } catch { /* the log is optional */ }
 };
+
+// What a person (or the scheduled task) starts only supervises: the
+// dispatcher runs as its child, and is started again with the code on disk
+// when it stops for an update (exit 75), or a minute after a crash (at most
+// 5 times an hour). While another dispatcher holds the lock (exit 76: an
+// older one still finishing its task, say) it waits on standby and takes
+// over when that one stops. --once, a normal end and Ctrl+C end both. Only
+// the child takes the lock.
+const UPDATED = 75, LOCKED = 76;
+const STANDBY_MS = Number(process.env.BRIDGE_STANDBY_SEC || 120) * 1000;
+if (!process.argv.includes('--child')) {
+  const me = fileURLToPath(import.meta.url);
+  const crashes = [];
+  let waiting = false;
+  for (;;) {
+    const end = await new Promise((resolve) => {
+      const child = spawn(process.execPath, [me, '--child', ...(waiting ? ['--standby'] : []), ...process.argv.slice(2)], { stdio: 'inherit' });
+      child.on('error', (error) => resolve({ code: 1, error }));
+      child.on('exit', (code, signal) => resolve({ code, signal }));
+    });
+    if (end.code === UPDATED) { say('restarting with the updated code'); continue; }
+    if (end.code === LOCKED && !ONCE) {
+      if (!waiting) say(`on standby: another dispatcher is running; this one takes over when it stops (checked every ${STANDBY_MS / 1000} s)`);
+      waiting = true;
+      await sleep(STANDBY_MS);
+      continue;
+    }
+    waiting = false;
+    if (end.code === LOCKED) process.exit(0);
+    if (end.code === 0 || end.signal || ONCE) process.exit(end.code ?? 1);
+    crashes.push(Date.now());
+    while (crashes[0] < Date.now() - 3600_000) crashes.shift();
+    if (crashes.length >= 5) { say('the dispatcher stopped 5 times in an hour; not restarting it (see .work/agents/dispatcher.log)'); process.exit(1); }
+    say(`the dispatcher stopped (exit ${end.code}${end.error ? `: ${end.error.message}` : ''}); starting it again in a minute`);
+    await sleep(60_000);
+  }
+}
+
 process.on('uncaughtException', (e) => { say(`dispatcher crashed: ${e?.stack || e}`); process.exit(1); });
 process.on('unhandledRejection', (e) => { say(`dispatcher crashed: ${e?.stack || e}`); process.exit(1); });
 
@@ -55,21 +96,25 @@ function isDispatcher(pid) {
     return /dispatcher\.mjs/i.test(cmd);
   } catch { return true; } // can't tell: assume it is, so two never run at once
 }
+// Another dispatcher has it: exit 76, so the supervisor waits on standby
+// (said once by the supervisor, not on every check).
+const locked = (text) => { if (!process.argv.includes('--standby')) say(text); process.exit(LOCKED); };
 for (let tries = 0; ; tries++) {
   try { fs.writeFileSync(LOCK, String(process.pid), { flag: 'wx' }); break; } catch (e) {
-    if (e.code !== 'EEXIST' || tries) { say(`another dispatcher holds the lock; nothing to do`); process.exit(0); }
+    if (e.code !== 'EEXIST' || tries) locked('another dispatcher holds the lock');
     const held = fs.readFileSync(LOCK, 'utf8');
     const other = Number(held);
-    if (isDispatcher(other)) { say(`another dispatcher (pid ${other}) is running; nothing to do`); process.exit(0); }
+    if (isDispatcher(other)) locked(`another dispatcher (pid ${other}) is running`);
     // Checking takes a moment: another starter may have replaced the stale
     // lock meanwhile. Only the same stale lock is removed, never a fresh one.
     let now = null;
     try { now = fs.readFileSync(LOCK, 'utf8'); } catch { /* gone: try to take it */ }
-    if (now !== null && now !== held) { say('another dispatcher just took the lock; nothing to do'); process.exit(0); }
+    if (now !== null && now !== held) locked('another dispatcher just took the lock');
     if (now !== null) fs.unlinkSync(LOCK);
   }
 }
 process.on('exit', () => { try { if (fs.readFileSync(LOCK, 'utf8') === String(process.pid)) fs.unlinkSync(LOCK); } catch {} });
+if (process.argv.includes('--standby')) say('taking over: the dispatcher that held the lock has stopped');
 // A pause that only waited for new dispatcher code ends when one starts.
 try { if (/restart-to-resume/.test(fs.readFileSync(PAUSE, 'utf8'))) { fs.unlinkSync(PAUSE); say('removed the pause that was waiting for this restart'); } } catch { /* no pause */ }
 // The code it started with: when the bridge's files change on disk (an
@@ -157,8 +202,57 @@ function stopRecorded(recorded) {
 /** A failure of the dispatcher itself (before the agent ran): never counted as the agent's. */
 class SetupError extends Error {}
 
-function nextTask() {
-  return gh.listTasks().map(describe)
+/** Whether an error is this PC's connection (GitHub or the network unreachable), not the work. */
+const offlineError = (e) => /error connecting to|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|Could not resolve host|unable to access 'https:/i.test(`${e?.message ?? e}\n${e?.stderr ?? ''}`);
+
+/**
+ * `fn`, tried again every minute while the connection is down (up to 15
+ * minutes), so a run's result isn't lost to an outage. Other errors aren't
+ * retried.
+ */
+async function whenOnline(fn, what) {
+  for (let i = 0; ; i++) {
+    try { return await fn(); } catch (e) {
+      if (!offlineError(e) || i >= 15) throw e;
+      if (!i) say(`${what}: GitHub is unreachable; trying again every minute`);
+      await sleep(60 * 1000);
+    }
+  }
+}
+
+/**
+ * Claude Code processes running bridge tasks now (found by the task number in
+ * their instructions), each `owned` when the dispatcher that started it is
+ * still alive: a live parent running dispatcher.mjs, started before it.
+ */
+function liveRuns() {
+  const script = `$all = Get-CimInstance Win32_Process; $byId = @{}; foreach ($p in $all) { $byId[[int]$p.ProcessId] = $p }; $runs = @(foreach ($p in $all) { if ($p.Name -like 'claude*' -and $p.CommandLine -match 'agent bridge for task #(\\d+)\\.') { $parent = $byId[[int]$p.ParentProcessId]; [pscustomobject]@{ pid = [int]$p.ProcessId; task = [int]$Matches[1]; owned = [bool]($parent -and $parent.CommandLine -match 'dispatcher\\.mjs' -and $parent.CreationDate -le $p.CreationDate) } } }); ConvertTo-Json -Compress -InputObject $runs`;
+  const out = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', windowsHide: true, timeout: 30000 }).trim();
+  return out ? JSON.parse(out) : [];
+}
+
+/**
+ * Runs that ended with a dispatcher that stopped mid-run (restarted, or its
+ * window closed) left their task marked in progress with nobody on it. Back
+ * to waiting, recorded as interrupted (never an attempt), resuming from its
+ * branch; a Claude process the dead dispatcher left going is stopped first.
+ */
+function recoverOrphans(tasks) {
+  if (!tasks.some((t) => t.open && t.status === 'in-progress' && t.state.agent === 'claude')) return;
+  for (const o of orphans(tasks.filter((t) => gh.trusted(t.author)), liveRuns(), Date.now(), HEARTBEAT_MS)) {
+    const t = tasks.find((x) => x.number === o.task);
+    let stopped = 0;
+    for (const pid of o.stop) {
+      try { stopped += stopRecorded(new Map(descendants(pid).map((p) => [`${p.pid}@${p.start}`, p]))); } catch { /* none */ }
+      try { process.kill(pid); stopped++; } catch { /* already gone */ }
+    }
+    setTask(t, 'assigned', { heartbeat: undefined, progress: undefined, history: [...(t.state.history || []), { agent: 'claude', attempt: t.state.attempt, at: iso(), result: 'interrupted' }] }, `The dispatcher running this task stopped mid-run (restarted, or its window closed), and the run ended with it${stopped ? '; the Claude process it left going was stopped' : ''}. Not counted as an attempt. The task is waiting for Claude again and continues from \`${t.state.branch}\` (anything the run left in its folder is saved there first).`);
+    say(`#${t.number}: its run ended with a dispatcher that stopped; waiting again (not an attempt)`);
+  }
+}
+
+function nextTask(tasks) {
+  return tasks
     .filter((t) => t.open && t.status === 'assigned' && t.state.agent === 'claude' && gh.trusted(t.author))
     .sort((a, b) => PRIORITY[a.priority] - PRIORITY[b.priority] || a.number - b.number)[0];
 }
@@ -167,7 +261,7 @@ async function run(t) {
   const history = t.state.history || [];
   // A run cut short (paused for an urgent task, or Claude out of usage) picks
   // up from its branch; neither counts as an attempt.
-  const resuming = ['paused', 'unavailable'].includes(history.at(-1)?.result) && t.state.branch;
+  const resuming = ['paused', 'unavailable', 'interrupted'].includes(history.at(-1)?.result) && t.state.branch;
   const attempt = history.filter(counts).length + 1;
   const branch = resuming ? t.state.branch : `agent/claude-${t.number}-${attempt}`;
   const tree = path.join(WORK, `task-${t.number}`);
@@ -218,6 +312,10 @@ async function run(t) {
   // own background work (a build), whose notices start its next turn.
   let pending = [], lastResult = '', turns = 0, buffer = '', closed = false, paused = false, finished = false;
   let lastEvent = Date.now(), nudged = false, resetsAt = 0, outage = null;
+  // Progress, said every minute while it works (a quiet window looked frozen).
+  let actions = 0, lastAction = '', reported = 0, quietSaid = 0, offline = false;
+  const shortPath = (p) => String(p).split(tree).join('').replace(/^[\\/]+/, '');
+  const action = (c) => { const i = c.input || {}; const what = i.file_path || i.path || i.pattern || i.command || i.description || ''; return `${c.name}${what ? ` ${shortPath(what).replace(/\s+/g, ' ').slice(0, 70)}` : ''}`; };
   const RESULT_LINE = /RESULT:\s*(done|failed|paused)\b/i;
   // Appended: a resumed run keeps the same attempt number and its transcript.
   const transcript = fs.createWriteStream(path.join(WORK, `task-${t.number}-${attempt}.jsonl`), { flags: 'a' });
@@ -230,6 +328,7 @@ async function run(t) {
       const line = buffer.slice(0, i); buffer = buffer.slice(i + 1);
       transcript.write(line + '\n');
       let event; try { event = JSON.parse(line); } catch { continue; }
+      if (event.type === 'assistant') for (const c of event.message?.content || []) if (c.type === 'tool_use') { actions++; lastAction = action(c); }
       // The service turned it away (a usage limit): when that resets.
       if (event.type === 'rate_limit_event' && event.rate_limit_info?.status === 'rejected') resetsAt = Number(event.rate_limit_info.resetsAt) * 1000 || 0;
       if (event.type === 'result') {
@@ -246,6 +345,7 @@ async function run(t) {
   });
   child.stderr.on('data', (d) => transcript.write(`[stderr] ${d}`));
 
+  say(`#${t.number}: Claude is working on it (pid ${child.pid}); progress every minute`);
   let since = started, beat = Date.now(), deadline = Date.now() + LIMIT_MS, warned = false;
   // Its process tree, recorded each minute while Claude is alive.
   const recorded = new Map();
@@ -255,8 +355,12 @@ async function run(t) {
     exit = await Promise.race([ended, sleep(CHECK_MS).then(() => null)]);
     if (exit) break;
     record();
+    const mins = Math.round((Date.now() - Date.parse(started)) / 60000);
+    const progress = `${mins} min, ${actions} actions${lastAction ? `; last: ${lastAction}` : ''}`;
+    if (actions !== reported) { reported = actions; quietSaid = 0; say(`#${t.number}: working, ${progress}`); }
+    else if (Date.now() - lastEvent >= (quietSaid + 1) * 5 * 60 * 1000) { quietSaid++; say(`#${t.number}: still running, nothing new for ${Math.round((Date.now() - lastEvent) / 60000)} min (a build or tests, probably)`); }
     try {
-      if (Date.now() - beat >= HEARTBEAT_MS) { setTask(t, null, { heartbeat: iso() }); beat = Date.now(); }
+      if (Date.now() - beat >= HEARTBEAT_MS) { setTask(t, null, { heartbeat: iso(), progress }); beat = Date.now(); }
       for (const u of updates(t, since)) { since = u.at; pending.push(`Update from the coordinator for task #${t.number}: ${u.text}`); say(`#${t.number}: update queued for the next checkpoint`); }
       // An urgent task waiting for Claude (queued for Claude or either agent,
       // or already assigned, its dependencies done): pause this one at a safe
@@ -266,7 +370,14 @@ async function run(t) {
       const urgent = all.find((x) => x.open && x.number !== t.number && x.priority === 'urgent' && gh.trusted(x.author) && x.deps.every((d) => done.has(d))
         && ((x.status === 'assigned' && x.state.agent === 'claude') || (x.status === 'queued' && ['claude', 'any'].includes(x.agent))));
       if (urgent) { paused = true; pending.push(`Urgent task #${urgent.number} is waiting. At your next safe point: commit and push what's verified to ${branch}, then end with "RESULT: paused — <where you stopped>". Don't start anything new.`); say(`#${t.number}: urgent #${urgent.number} waiting, pause requested`); }
-    } catch (e) { say(`#${t.number}: GitHub check failed (${e.message}); carrying on`); }
+      if (offline) { offline = false; say(`#${t.number}: GitHub is reachable again`); }
+    } catch (e) {
+      // This PC offline: Claude can't make progress either (on 2026-11-05 an
+      // outage got #18's run ended as stalled), so a quiet run isn't ended
+      // while the connection is down. Said once, not every minute.
+      if (offlineError(e)) { if (!offline) say(`#${t.number}: GitHub is unreachable (no connection?); a quiet run isn't ended while it's offline`); offline = true; lastEvent = Date.now(); }
+      else say(`#${t.number}: GitHub check failed (${String(e.message).split('\n')[0]}); carrying on`);
+    }
     // Quiet for 10 minutes with no RESULT and nothing to deliver: one nudge,
     // then, still silent 10 minutes later, end it as stalled.
     if (!finished && !closed && !pending.length && Date.now() - lastEvent > 10 * 60 * 1000) {
@@ -296,7 +407,7 @@ async function run(t) {
   const minutes = Math.round((Date.now() - Date.parse(started)) / 60000);
   const entry = { agent: 'claude', attempt, at: iso(), minutes, turns };
   let prNumber = null;
-  try { prNumber = JSON.parse(execFileSync('gh', ['pr', 'list', '--repo', gh.REPO, '--head', branch, '--state', 'all', '--json', 'number'], { encoding: 'utf8' }))[0]?.number ?? null; } catch {}
+  try { prNumber = await whenOnline(() => JSON.parse(execFileSync('gh', ['pr', 'list', '--repo', gh.REPO, '--head', branch, '--state', 'all', '--json', 'number'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))[0]?.number ?? null, `#${t.number}`); } catch {}
   try { clearTree(tree); } catch (e) { say(`#${t.number}: ${e.message}`); }
 
   if (outage) {
@@ -305,14 +416,18 @@ async function run(t) {
     const until = new Date(outage.until).toISOString();
     try { fs.writeFileSync(OUT, JSON.stringify({ reason: outage.reason, until, task: t.number, detail: outage.detail, at: iso() }, null, 2)); } catch (e) { say(`couldn't record the outage (${e.message})`); }
     const why = { 'usage-limit': 'its usage limit was reached', 'signed-out': 'Claude Code is signed out', service: "Claude's service was down" }[outage.reason];
-    setTask(t, 'assigned', { branch, history: [...(t.state.history || []), { ...entry, result: 'unavailable', reason: outage.reason, until }] }, `Claude couldn't work on this after ${minutes} min: ${why} ("${outage.detail}"). Not counted as an attempt. It continues from \`${branch}\` after ${until.slice(0, 16).replace('T', ' ')} UTC.`);
+    const patch = { branch, history: [...(t.state.history || []), { ...entry, result: 'unavailable', reason: outage.reason, until }] };
+    await whenOnline(() => setTask(t, 'assigned', patch, `Claude couldn't work on this after ${minutes} min: ${why} ("${outage.detail}"). Not counted as an attempt. It continues from \`${branch}\` after ${until.slice(0, 16).replace('T', ' ')} UTC.`), `#${t.number}`);
   } else if (result?.[1]?.toLowerCase() === 'paused') {
-    setTask(t, 'assigned', { branch, history: [...(t.state.history || []), { ...entry, result: 'paused' }] }, `Paused at a safe point for an urgent task (after ${minutes} min): ${summary}\nIt resumes from branch \`${branch}\` when Claude is free.`);
+    const patch = { branch, history: [...(t.state.history || []), { ...entry, result: 'paused' }] };
+    await whenOnline(() => setTask(t, 'assigned', patch, `Paused at a safe point for an urgent task (after ${minutes} min): ${summary}\nIt resumes from branch \`${branch}\` when Claude is free.`), `#${t.number}`);
   } else if (result?.[1]?.toLowerCase() === 'done' && prNumber) {
-    setTask(t, 'review', { pr: prNumber, history: [...(t.state.history || []), { ...entry, result: 'review' }] }, `Claude finished in ${minutes} min: ${summary}\nPR #${prNumber}. The coordinator merges it once every check passes.`);
+    const patch = { pr: prNumber, history: [...(t.state.history || []), { ...entry, result: 'review' }] };
+    await whenOnline(() => setTask(t, 'review', patch, `Claude finished in ${minutes} min: ${summary}\nPR #${prNumber}. The coordinator merges it once every check passes.`), `#${t.number}`);
   } else {
     const category = (result?.[1]?.toLowerCase() === 'failed' && result[2]) || (!finished && nudged ? 'stalled' : exit.code !== 0 ? 'disconnected' : prNumber ? 'unknown' : 'no-change');
-    setTask(t, 'failed', { lastFailure: category, history: [...(t.state.history || []), { ...entry, result: 'failed', category }] }, `Claude's attempt ${attempt} didn't finish (${category}, ${minutes} min): ${summary}`);
+    const patch = { lastFailure: category, history: [...(t.state.history || []), { ...entry, result: 'failed', category }] };
+    await whenOnline(() => setTask(t, 'failed', patch, `Claude's attempt ${attempt} didn't finish (${category}, ${minutes} min): ${summary}`), `#${t.number}`);
   }
   say(`#${t.number}: ${t.status} after ${minutes} min`);
 }
@@ -330,21 +445,30 @@ let said = '';
 const once = (key, text) => { if (said !== key) { said = key; say(text); } };
 prune();
 do {
-  if (codeStamp() !== STAMP) { say('the bridge code changed on disk; stopping so the new code is used. Start it again (the scheduled task does that by itself).'); break; }
+  if (codeStamp() !== STAMP) { say('the bridge code changed on disk; restarting so the new code is used'); process.exitCode = UPDATED; break; }
   if (fs.existsSync(PAUSE)) { once('paused', 'paused (.work/agents/paused)'); if (ONCE) break; await sleep(CHECK_MS); continue; }
   let out = null;
   try { out = JSON.parse(fs.readFileSync(OUT, 'utf8')); } catch { /* none */ }
   if (out && Date.parse(out.until) > Date.now()) { once(`out ${out.until}`, `Claude is unavailable (${out.reason}) until ${out.until}; waiting`); if (ONCE) break; await sleep(CHECK_MS); continue; }
   if (out) { try { fs.unlinkSync(OUT); } catch {} say(`Claude should be available again (${out.reason} ended ${out.until})`); }
   let t;
-  try { t = nextTask(); } catch (e) { say(`couldn't read the queue: ${e.message}`); if (ONCE) break; await sleep(CHECK_MS); continue; }
+  try {
+    const tasks = gh.listTasks().map(describe);
+    try { recoverOrphans(tasks); } catch (e) { say(`couldn't check for interrupted runs (${String(e.message).split('\n')[0]})`); }
+    t = nextTask(tasks);
+  } catch (e) { once(`queue ${e.message}`, `couldn't read the queue: ${e.message}`); if (ONCE) break; await sleep(CHECK_MS); continue; }
   if (!t) { once('empty', 'nothing assigned to Claude'); if (ONCE) break; await sleep(CHECK_MS); continue; }
   said = '';
   try { await run(t); } catch (e) {
     // The dispatcher's own failure: the task goes back as it was (not an
-    // attempt by the agent), and the dispatcher stops rather than churn.
+    // attempt by the agent), and the dispatcher stops rather than churn; its
+    // supervisor tries again in a minute (at most 5 times an hour).
     say(`#${t.number}: dispatcher failure: ${e.message}`);
-    try { setTask(t, 'assigned', {}, `The dispatcher on the owner's PC hit its own problem before or around this run (${e.message.slice(0, 200)}). Not counted as an attempt; the task is waiting again.`); } catch {}
+    // Said on the task once per distinct problem: the supervisor may restart
+    // into the same one a few times.
+    const problem = e.message.slice(0, 200);
+    try { setTask(t, 'assigned', { dispatcherProblem: problem }, t.state.dispatcherProblem === problem ? null : `The dispatcher on the owner's PC hit its own problem before or around this run (${problem}). Not counted as an attempt; the task is waiting again.`); } catch {}
+    process.exitCode = 1;
     break;
   }
   prune();

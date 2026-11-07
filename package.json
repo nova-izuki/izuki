@@ -1,7 +1,7 @@
 {
   "name": "izuki",
   "private": true,
-  "version": "1.0.196",
+  "version": "1.0.197",
   "type": "module",
   "description": "IZUKI — YO IZUKI, DO IT. Draw on your screen, Izuki does it.",
   "scripts": {
@@ -15,6 +15,7 @@
     "test:conversation": "node tools/conversation-check.cjs",
     "test:speakers": "node tools/speaker-match-check.cjs",
     "test:air": "node tools/air-voice-check.cjs && node tools/air-scroll-check.cjs",
+    "test:eye": "node tools/eye-gate-check.cjs",
     "test:voice": "node tools/voice-check.cjs",
     "test:voice-notes": "node tools/voice-notes-check.cjs",
     "test:island": "node tools/island-chat-check.cjs",

@@ -1,0 +1,37 @@
+name: Hand overlay regression
+
+on:
+  pull_request:
+    paths:
+      - 'src/components/ActionHand.tsx'
+      - 'src/components/HandCursor.tsx'
+      - 'src/components/OverlayCanvas.tsx'
+      - 'src/components/TalkToIzuki.tsx'
+      - 'src/lib/hand.ts'
+      - 'src/lib/ipc.ts'
+      - 'src/styles.css'
+      - 'tools/hand-overlay-check.cjs'
+      - 'tools/fixtures/action-hand.html'
+      - 'tools/fixtures/hand-canvas.html'
+      - '.github/workflows/hand-overlay-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hand-overlay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node tools/hand-overlay-check.cjs
+        env:
+          IZUKI_TEST_BROWSER: /usr/bin/google-chrome

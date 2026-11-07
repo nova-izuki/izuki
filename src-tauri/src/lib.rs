@@ -345,6 +345,7 @@ pub fn run() {
             commands::save_clip,
             commands::list_wakewords,
             commands::open_wakewords_folder,
+            commands::open_path,
             commands::import_wakewords,
             commands::chat_stream,
             commands::read_chat_attachment,
@@ -606,7 +607,7 @@ pub fn run() {
             wheel::install(&handle);
             updates::check_later(&handle);
             watcher::spawn(handle.clone(), store.clone());
-            follow::spawn(handle.clone(), store.clone());
+            follow::spawn(handle.clone());
             reminders::spawn(handle.clone());
             telegram::spawn(handle.clone());
             discord::spawn(handle.clone());

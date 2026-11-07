@@ -2,6 +2,10 @@
 
 pub const OVERLAY_OPEN: &str = "izuki://overlay-open";
 pub const OVERLAY_CLOSE: &str = "izuki://overlay-close";
+/// Gemini-style pointing: regions a reply explains, normalised 0–1000
+/// (brain.rs `extract_callouts`), drawn as chips by the overlay until the
+/// next look or the task's end.
+pub const CALLOUTS: &str = "izuki://callouts";
 pub const FROZEN_FRAME: &str = "izuki://frozen-frame";
 pub const HAND: &str = "izuki://hand";
 pub const STATUS: &str = "izuki://status";

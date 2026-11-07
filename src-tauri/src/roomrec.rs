@@ -106,7 +106,7 @@ pub fn start(title: &str) -> Result<String> {
             let mut held_secs = 0.0f32;
             let mut began = 0.0f32;
             // Send what's been gathered, if anyone was talking in it.
-            let mut send = |samples: &mut Vec<f32>, rate: u32, at: f32, index: &mut u32| {
+            let send = |samples: &mut Vec<f32>, rate: u32, at: f32, index: &mut u32| {
                 let gathered = std::mem::take(samples);
                 if !has_sound(&gathered) {
                     return true;

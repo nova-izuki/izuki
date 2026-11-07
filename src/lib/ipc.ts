@@ -207,6 +207,7 @@ export const MOCK_SETTINGS: Settings = {
   chat_mode: false,
   execution_mode: "focus",
   follow_mode_enabled: false,
+  action_hand_enabled: false,
   island_enabled: true,
   music_visuals: false,
   tv_host: "",
@@ -741,7 +742,7 @@ export interface WindowsTweak {
 export const api = {
   extensionBrowsers: () => call<Array<{ id: string; name: string }>>("extension_browsers", undefined, () => []),
   prepareBrowserExtension: (browser: string) => call<{ folder: string; version: string; opened: boolean }>("prepare_browser_extension", { browser }, () => { throw new Error("Open Izuki's Windows desktop app to prepare the extension."); }),
-  readChatAttachment: (name: string, data: string) => call<{ text: string; truncated: boolean }>("read_chat_attachment", { name, data }, () => { throw new Error("Reading PDF and Office files needs the Windows desktop app."); }),
+  readChatAttachment: (name: string, data: string) => call<{ text: string; truncated: boolean; staged?: string | null }>("read_chat_attachment", { name, data }, () => { throw new Error("Reading PDF and Office files needs the Windows desktop app."); }),
   getSettings: () => call<Settings>("get_settings", undefined, () => MOCK_SETTINGS),
   saveSettings: (settings: Settings) =>
     call<Settings>("save_settings", { settings }, () => settings),
@@ -1206,6 +1207,8 @@ export const api = {
   cancelTask: () => call<void>("cancel_task", undefined, () => undefined),
   /** Developer self-test mode (IZUKI_SELFTEST=1). */
   selftestEnabled: () => call<string>("selftest_enabled", undefined, () => ""),
+  /** Open a file Izuki made (the "Open" button on a result card). */
+  openPath: (path: string) => call<void>("open_path", { path }, () => undefined),
   /** Instant skill: open an installed app by name (rejects if none matches). */
   openApp: (name: string) =>
     call<string>("open_app", { name }, () => {
@@ -1228,6 +1231,8 @@ export const EV = {
   islandPlace: "izuki://island-place",
   overlayOpen: "izuki://overlay-open",
   overlayClose: "izuki://overlay-close",
+  /** Gemini-style pointing: normalised regions a reply explains (brain.rs). */
+  callouts: "izuki://callouts",
   /** A new task: clear what Izuki drew while explaining the last one. */
   penClear: "izuki://pen-clear",
   /** The running task's to-do list (brain.rs): [{ text, done }]. */

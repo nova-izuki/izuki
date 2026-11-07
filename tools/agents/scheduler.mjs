@@ -18,11 +18,27 @@ export const REDISTRIBUTE_MS = 60 * 60 * 1000;
 
 /**
  * Whether a history entry was a real attempt at the task. A pause for an
- * urgent task, or a run cut short because the agent couldn't work at all (a
- * usage limit, signed out, the service down), says nothing about the task or
- * the agent's skill: neither counts as an attempt or a failure.
+ * urgent task, a run cut short because the agent couldn't work at all (a
+ * usage limit, signed out, the service down), or a run that ended with the
+ * dispatcher running it (restarted, or its window closed) says nothing about
+ * the task or the agent's skill: none counts as an attempt or a failure.
  */
-export const counts = (h) => !['paused', 'unavailable'].includes(h.result);
+export const counts = (h) => !['paused', 'unavailable', 'interrupted'].includes(h.result);
+
+/**
+ * Claude tasks marked in progress whose run is gone: no live dispatcher is
+ * running them and they haven't reported for two heartbeats. `runs` are the
+ * Claude processes running bridge tasks now, each `owned` when the
+ * dispatcher that started it is still alive; one left behind by a dead
+ * dispatcher is listed to stop. A run a live dispatcher owns is never touched.
+ */
+export function orphans(tasks, runs, now, beatMs) {
+  return tasks
+    .filter((t) => t.open && t.status === 'in-progress' && t.state.agent === 'claude')
+    .filter((t) => !runs.some((r) => r.task === t.number && r.owned))
+    .filter((t) => now - (Date.parse(t.state.heartbeat || '') || 0) > 2 * beatMs)
+    .map((t) => ({ task: t.number, stop: runs.filter((r) => r.task === t.number).map((r) => r.pid) }));
+}
 
 /**
  * Whether a run ended because the agent couldn't work rather than because of
@@ -46,7 +62,10 @@ export function unavailable(event, now, resetsAt = 0) {
   if (status === 401 || status === 403 || says(/not logged in|please (run )?\/login|log ?in again|invalid api key|oauth token/i)) {
     return { reason: 'signed-out', until: now + 30 * 60 * 1000, detail };
   }
-  if (status >= 500 || says(/overloaded|service unavailable|API Error: 5\d\d|ECONNRESET|ENOTFOUND|ETIMEDOUT/i)) {
+  // Claude Code's own words only: "Unable to connect to API (ConnectionRefused)"
+  // is the PC offline (task #18, 2026-11-05). A bare ECONNRESET in a final
+  // message could be a test's output, which is the run's own failure.
+  if (status >= 500 || says(/overloaded|service unavailable|API Error: 5\d\d|Unable to connect to API/i)) {
     return { reason: 'service', until: now + 10 * 60 * 1000, detail };
   }
   return null;

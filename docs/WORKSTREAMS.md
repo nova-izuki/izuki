@@ -1,10 +1,22 @@
 # Workstreams, ownership and status
 
+Codex backup lane (2026-11-03, issue #26): isolated CLI compatibility probe and
+JSONL completion foundation in `tools/codex-fallback/`. Automatic dispatch is
+disabled; Claude retains `tools/agents/`, PR #24 and scheduler task #25. See
+`HANDOFF-CODEX-2026-11-03.md` for the live-state audit and remaining integration.
+
+Codex hand-visibility follow-up (2026-11-03, issue #27): remove the decorative
+idle robot hand; retain the floating chat and Freebuff's independent Air/Eye
+tracking. Optional action hand defaults off and is bounded by action/session
+and foreground-window lifecycle. Scoped changes are on
+`codex/hand-overlay-lifecycle`, with dedicated desktop/native regression tests.
+
 Set by the owner on 2026-11-03. Freebuff keeps **Smart Eye / Air Control,
 Smart Vision and Developer Mode**; Claude Code keeps **Smart Screen Actions,
 speed optimization and security fixes**. Both finish existing critical work
 first, claim in `docs/COLLAB.md` before editing, never overwrite the other's
-files, and never merge or publish without the owner.
+files. Only Claude merges and publishes, after every required check
+passes, under the owner's 2026-11-03 authorization (AGENTS.md rule 2).
 
 These are **user-facing features for everyone who downloads Izuki** — unlike
 the owner-only Smart Developer Mode, which is compiled out of public builds.
@@ -118,12 +130,25 @@ calls only when needed, no fixed wait where a condition can be checked.**
 - Dependencies: the same overlay and camera-selection stack the hand lane
   built on (reuse, don't fork); the overlay is OS-level click-through — eye
   gestures need the panel surface, not raw screen clicks.
-- Next steps for Freebuff: eye-gesture gate first (!) — the developer-mode
-  lesson from milestone §5 is that always-on camera sensing must be off by
-  default, dev-only or an explicit per-session opt-in, no angular data logged;
-  then MediaPipe iris landmarks behind the same gates, one-gesture calibration,
-  look-to-scroll as the first eye-only money feature, accessibility summary in
-  Settings. Real-webcam testing on this PC before any "it works".
+- Next steps for Freebuff: eye-gesture gate first (!) — DONE as groundwork
+  (2026-11-03): `src/lib/eyeGate.ts` is the lane's gate, off everywhere by
+  default, a dev hold only inside dev builds, a session opt-in that never
+  persists and dies with the process, nothing written to storage, and no
+  angular data anywhere (`tools/eye-gate-check.cjs`, `npm run test:eye`);
+  provisional EAR blink detection and an iris-offset→direction helper ride the
+  same file, their values marked for tuning on the owner's own camera. Then:
+  MediaPipe iris landmarks behind this gate — the landmarker now exists on its
+  own thread (`src/lib/eyeWorker.ts`, `face_landmarker.task` in `public/air/`)
+  with a main-thread adapter (`src/lib/eyeTrack.ts`) that refuses while the
+  gate is closed — verified by compile+build only until a camera ran; then
+  one-gesture calibration — built 2026-11-06 (task #30): look at a marker and
+  blink once; the committed anchor re-centres every later look, it is off
+  until started, dies with the gate, fails on a shaky hold and never touches
+  storage (`tools/eye-gate-check.cjs` cases) — pending the owner's
+  real-camera test before it's called done; look-to-scroll as the first
+  eye-only money feature, accessibility summary in Settings. Real-webcam
+  testing on this PC before any "it works" — the final check stays with the
+  owner.
 
 ## 4. Keep the other planned capabilities alive — both
 

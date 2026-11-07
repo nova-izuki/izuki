@@ -24,7 +24,12 @@ type R<T> = Result<T, String>;
 
 #[tauri::command]
 pub async fn read_chat_attachment(name: String, data: String) -> R<crate::attachments::DocumentText> {
-    blocking(move || crate::attachments::read(&name, &data).map_err(err)).await?
+    blocking(move || {
+        // Only here, where the person's data folder exists, does an attached
+        // Office/PDF file get its staged copy for a following [EDIT:].
+        let dir = crate::store::data_dir().join("attachments");
+        crate::attachments::read_with_copy(&dir, &name, &data).map_err(err)
+    }).await?
 }
 
 #[tauri::command]
@@ -2118,6 +2123,19 @@ pub fn open_wakewords_folder(app: AppHandle) -> R<()> {
     let dir = crate::models::wakewords_dir();
     std::fs::create_dir_all(&dir).map_err(err)?;
     app.opener().open_path(dir.to_string_lossy(), None::<&str>).map_err(err)
+}
+
+/// Open a file Izuki made (the "Open" button on a result card): the copy an
+/// edit wrote, or a file it saved. Only opens something that's really there —
+/// never a path guessed from words.
+#[tauri::command]
+pub fn open_path(app: AppHandle, path: String) -> R<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let p = std::path::PathBuf::from(&path);
+    if !p.exists() {
+        return Err(err("that file isn't there any more"));
+    }
+    app.opener().open_path(path, None::<&str>).map_err(err)
 }
 
 /// What "Add it" found in Downloads.

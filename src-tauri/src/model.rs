@@ -411,6 +411,21 @@ pub struct OverlayOpenPayload {
     pub shape: Option<String>,
 }
 
+/// Gemini-style pointing: one region of the screenshot a reply explains,
+/// on a 0–1000 scale, so the overlay can chip it at any screen size (the
+/// desktop preview and the phone's own view without new maths).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Callout {
+    /// One short spoken label — “Save button”, “Step 2”. Read aloud by the
+    /// caption, pointed at by the chip.
+    pub label: String,
+    /// Left/top edge and size, 0–1000 across the whole screenshot.
+    pub x: u16,
+    pub y: u16,
+    pub w: u16,
+    pub h: u16,
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct CursorPosition {
     pub x: i32,

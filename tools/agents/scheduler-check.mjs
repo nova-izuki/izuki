@@ -1,6 +1,6 @@
 // The bridge scheduler's decisions, checked without GitHub or agents.
 import assert from 'node:assert/strict';
-import { readState, writeState, describe, overlaps, agentStates, performance, score, plan, recover, unavailable, counts, redistribute, classifyFailure, STALE_MS } from './scheduler.mjs';
+import { readState, writeState, describe, overlaps, agentStates, performance, score, plan, recover, unavailable, counts, redistribute, classifyFailure, orphans, STALE_MS } from './scheduler.mjs';
 
 const issue = (number, labels, body = '', extra = {}) => ({ number, title: `Task ${number}`, labels, body, author: { login: 'owner' }, state: 'OPEN', createdAt: '2026-11-03T08:00:00Z', ...extra });
 const trusted = (login) => login === 'owner';
@@ -116,6 +116,8 @@ assert.equal(unavailable({ ...limitHit, api_error_status: undefined }, now).reas
 assert.equal(unavailable(limitHit, now, now - 1).until, now + 3600_000, 'a reset already past (or none): an hour');
 assert.equal(unavailable({ is_error: true, api_error_status: 401, result: 'Invalid API key · Please run /login' }, now).reason, 'signed-out');
 assert.equal(unavailable({ is_error: true, api_error_status: 529, result: 'API Error: 529 Overloaded' }, now).reason, 'service');
+assert.equal(unavailable({ type: 'result', is_error: true, result: 'API Error: Unable to connect to API (ConnectionRefused)' }, now).reason, 'service', "the PC offline (task #18's real result in a network outage)");
+assert.equal(unavailable({ type: 'result', is_error: true, result: 'the retry test failed: ECONNRESET from the mock server' }, now), null, "a network code in the run's own output isn't an outage");
 assert.equal(unavailable({ is_error: false, result: 'RESULT: failed tests-failed — the rate limit test fails' }, now), null, 'a normal answer that mentions a limit is not an outage');
 assert.equal(unavailable({ is_error: true, subtype: 'error_max_turns', result: '' }, now), null, "the run's own error stays a run failure");
 assert.equal(unavailable({ is_error: true, api_error_status: 400, result: 'invalid request: the rate limit header is malformed' }, now), null, 'a status code decides over the words: a 400 is no outage, so it counts toward the attempt limit');
@@ -198,4 +200,17 @@ assert.deepEqual([c.category, c.evidence], ['ci-failed', ['##[error]Process comp
 assert.match(recover(failing('claude', ['failed']), 'compile-failed').note, /first compiler error/);
 assert.match(recover(failing('claude', ['failed']), 'review').note, /CodeRabbit/);
 
-console.log('agent scheduler: state blocks, task parsing, file overlap, agent states (busy, disconnected, working on its own, unavailable), evidence-based scores, planning (priority, dependencies, no second task, no shared files, untrusted ignored), recovery (new strategy, reassign, block), outages (usage limit, signed out, service down: never an attempt or a failure; long ones redistribute flexible work) and failed checks classified from their logs (infra, compile, tests, unknown; quoted) pass.');
+// A run that ended with its dispatcher (restarted, window closed): found once
+// it's missed two heartbeats and no live dispatcher runs it; never counted.
+const beat = 2 * 60_000;
+const running = (n, ago) => describe(issue(n, ['agent-task', 'status:in-progress', 'agent:claude'], writeState('r', { agent: 'claude', branch: `agent/claude-${n}-1`, heartbeat: new Date(now - ago).toISOString() })));
+assert.deepEqual(orphans([running(70, 5 * 60_000)], [], now, beat), [{ task: 70, stop: [] }], 'no process, no heartbeat for 5 min: interrupted');
+assert.deepEqual(orphans([running(71, 60_000)], [], now, beat), [], 'a heartbeat a minute ago: maybe just starting, leave it');
+assert.deepEqual(orphans([running(72, 9 * 60_000)], [{ pid: 501, task: 72, owned: true }], now, beat), [], 'a live dispatcher owns the run: never touched');
+assert.deepEqual(orphans([running(73, 9 * 60_000)], [{ pid: 502, task: 73, owned: false }], now, beat), [{ task: 73, stop: [502] }], "a Claude process whose dispatcher died is stopped first");
+assert.deepEqual(orphans([running(74, 9 * 60_000)], [{ pid: 503, task: 7, owned: true }], now, beat).map((o) => o.task), [74], "another task's run doesn't count");
+assert.deepEqual(orphans([describe(issue(75, ['agent-task', 'status:in-progress', 'agent:freebuff'], writeState('f', { agent: 'freebuff' })))], [], now, beat), [], "Freebuff's work in progress is never taken for a lost run");
+assert(!counts({ result: 'interrupted' }), 'an interrupted run is not an attempt');
+assert.equal(recover(failing('claude', ['interrupted', 'interrupted', 'failed']), 'tests-failed').action, 'retry', 'interruptions never push a task toward the attempt limit');
+
+console.log('agent scheduler: state blocks, task parsing, file overlap, agent states (busy, disconnected, working on its own, unavailable), evidence-based scores, planning (priority, dependencies, no second task, no shared files, untrusted ignored), recovery (new strategy, reassign, block), outages (usage limit, signed out, service down: never an attempt or a failure; long ones redistribute flexible work) and failed checks classified from their logs (infra, compile, tests, unknown; quoted) and interrupted runs (found, never counted, owned runs untouched) pass.');

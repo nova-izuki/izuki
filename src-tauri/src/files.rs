@@ -62,6 +62,13 @@ pub fn resolve(p: &str) -> PathBuf {
 }
 
 /// Izuki's own settings hold the user's keys — never read out to an AI.
+/// The one place inside Izuki's own folder an edit may reach: the staged
+/// copies of files the person attached. Everything else there (settings,
+/// memories, logs) stays private; writes never use this exception.
+pub fn is_staged_attachment(p: &Path) -> bool {
+    p.starts_with(crate::store::data_dir().join("attachments"))
+}
+
 fn off_limits(p: &Path) -> bool {
     let s = p.to_string_lossy().to_lowercase();
     let own = crate::store::data_dir().to_string_lossy().to_lowercase();
@@ -466,10 +473,14 @@ pub fn write(path: &str, content: &str) -> Result<String> {
 }
 
 /// Edit a file into a copy beside it (only ever after the user clicked
-/// Allow): Word, PowerPoint and Excel keep their structure (officeedit.rs).
-pub fn edit(path: &str, body: &str) -> Result<String> {
+/// Allow): Word, PowerPoint, Excel and PDFs keep their structure
+/// (officeedit.rs). Staged attachment copies are editable here even though
+/// they live inside Izuki's own folder; nothing else in there is.
+/// Returns the words for the reply and the copy it wrote, so the chat can
+/// open exactly that file.
+pub fn edit(path: &str, body: &str) -> Result<(String, PathBuf)> {
     let p = resolve(path);
-    if off_limits(&p) {
+    if off_limits(&p) && !is_staged_attachment(&p) {
         return Err(anyhow!("that file is private"));
     }
     if !p.is_file() {
@@ -477,7 +488,8 @@ pub fn edit(path: &str, body: &str) -> Result<String> {
     }
     let edits = crate::officeedit::parse_edits(body);
     let (copy, report) = crate::officeedit::apply(&p, &edits)?;
-    Ok(format!("Saved the changes as a copy: {} (the original is untouched).\n{}", copy.display(), report.iter().map(|l| format!("• {l}")).collect::<Vec<_>>().join("\n")))
+    let said = format!("Saved the changes as a copy: {} (the original is untouched).\n{}", copy.display(), report.iter().map(|l| format!("• {l}")).collect::<Vec<_>>().join("\n"));
+    Ok((said, copy))
 }
 
 /// Run a PowerShell command (only ever after the user clicked Allow) and
@@ -565,6 +577,29 @@ pub fn run_ok(command: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_staged_attachments_are_editable_inside_izukis_own_folder() {
+        let root = crate::store::data_dir();
+        assert!(is_staged_attachment(&root.join("attachments").join("report-abc123.pdf")));
+        assert!(!is_staged_attachment(&root.join("settings.json")), "settings stay private");
+        assert!(!is_staged_attachment(&root.join("memories").join("note.json")), "memories stay private");
+        assert!(!is_staged_attachment(&root.join("attachments-old.pdf")), "a lookalike sibling isn't inside the folder");
+    }
+
+    #[test]
+    fn an_edit_returns_the_copy_it_wrote() {
+        let dir = std::env::temp_dir().join(format!("izuki-edit-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("notes.txt");
+        std::fs::write(&src, "line one\nline two\n").unwrap();
+        let (said, copy) = edit(&src.to_string_lossy(), "REPLACE: two\nWITH: 2").unwrap();
+        assert!(copy.exists(), "the copy is really there: {}", copy.display());
+        assert_eq!(std::fs::read_to_string(&copy).unwrap(), "line one\nline 2\n");
+        assert_eq!(std::fs::read_to_string(&src).unwrap(), "line one\nline two\n", "the original is untouched");
+        assert!(said.contains("copy"), "{said}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     #[cfg(windows)]

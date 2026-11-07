@@ -331,6 +331,87 @@ fn keep_clicks_off_taskbar(steps: &mut Vec<ActionStep>, marks: &[crate::model::M
 const TERMINALS: &[&str] = &["cmd", "powershell", "pwsh", "windowsterminal", "wt", "openconsole", "conhost", "wsl", "bash", "mintty", "alacritty", "wezterm-gui", "terminal"];
 
 /// A typed line that reads like a shell command ("git status", "rm -rf …").
+// ---------------------------------------------------------------------------
+// Gemini-style pointing (fenced `points` blocks in explain replies)
+// ---------------------------------------------------------------------------
+
+/// The instruction riding in the memory block when the ask is an explain-ish
+/// one: the model may end its summary with a fenced `points` block of regions
+/// to chip on screen. The block is never spoken — `extract_callouts` takes it
+/// off and the overlay draws the chips.
+const POINTING_PROMPT: &str = "\nPOINTING: if your summary explains or names something visible on screen (a button, heading, step, word), you may end the summary with a fenced block:\n```points\n[{\"label\":\"Save button\",\"x\":812,\"y\":56,\"w\":60,\"h\":28}]\n```\nx/y/w/h are 0–1000 across the whole screenshot. 1–6 regions, short real labels, only regions actually on screen. Never mention the block itself in the summary.\n";
+
+/// Which asks want a pointing explanation at all (the block is opt-in, so
+/// task answers and one-word “Done” looks never grow one).
+fn wants_pointing(prompt: &str) -> bool {
+    let s = prompt.to_lowercase();
+    ["explain", "teach", "show me", "show where", "point ", "where is", "what is", "highlight", "circle", "walk me", "guide me", "how do i", "how does it work", "that button", "this button"]
+        .iter()
+        .any(|p| s.contains(p))
+}
+
+/// One parse: read the fenced `points` block out of the summary as `Callout`s
+/// in 0–1000 screenshot space and take the block off the spoken text (words
+/// before and after it are speech and stay). A reply without a block is
+/// untouched; a malformed or unterminated block still comes off — it was
+/// never meant to be read aloud — and yields nothing. Entries need a real
+/// label and an origin that sits on the screenshot (0–1000 both axes);
+/// sizes clamp to the scale and the chips cap at 12 so one look can't
+/// blanket the screen.
+pub fn extract_callouts(summary: &mut String) -> Vec<crate::model::Callout> {
+    const FENCE: &str = "```points";
+    let Some(open) = summary.find(FENCE) else { return Vec::new(); };
+    let body = open + FENCE.len();
+    let close = summary[body..].find("```").map(|c| body + c);
+    let entries: Vec<serde_json::Value> = if let Some(c) = close {
+        serde_json::from_str(summary[body..c].trim()).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let callouts: Vec<crate::model::Callout> = entries
+        .into_iter()
+        .filter_map(|v| {
+            let label = v.get("label")?.as_str()?.trim().to_string();
+            if label.is_empty() {
+                return None;
+            }
+            // Origins must sit on the screenshot — a chip for a region that
+            // starts off it would only lie (5000 is not 1000's edge). Sizes
+            // just clamp: a hair-off size still points at the right spot.
+            let origin = |key: &str| -> Option<u16> {
+                let n = v.get(key)?.as_f64()?;
+                if !(0.0..=1000.0).contains(&n) { return None; }
+                Some(n.round() as u16)
+            };
+            let size = |key: &str| -> Option<u16> {
+                v.get(key)?.as_f64().map(|n| n.clamp(2.0, 1000.0).round() as u16)
+            };
+            Some(crate::model::Callout {
+                label,
+                x: origin("x")?,
+                y: origin("y")?,
+                w: size("w")?,
+                h: size("h")?,
+            })
+        })
+        .take(12)
+        .collect();
+    // The block comes off the spoken words either way.
+    match close {
+        Some(c) => {
+            let lead = summary[..open].trim_end();
+            let tail = summary[c + 3..].trim();
+            *summary = match (lead.is_empty(), tail.is_empty()) {
+                (true, _) => tail.to_string(),
+                (false, true) => lead.to_string(),
+                _ => format!("{lead}\n{tail}"),
+            };
+        }
+        None => *summary = summary[..open].trim_end().to_string(),
+    }
+    callouts
+}
+
 fn looks_like_command(text: &str) -> bool {
     const STARTS: &[&str] = &[
         "git ", "npm ", "npx ", "yarn ", "pnpm ", "cargo ", "rustc ", "python", "py ", "pip ", "node ", "cd ", "dir", "ls", "rm ", "del ",
@@ -918,7 +999,8 @@ fn ask_model(
             + &crate::voices::prompt_block()
             + &crate::lessons::prompt_block(&uia::foreground_app(), crate::ext::snapshot_url_cached().as_deref())
             + crate::selfknow::PROMPT
-            + if direct_answer_requested(&session.prompt) { DIRECT_ANSWER_PROMPT } else if on_a_test { QUIZ_PROMPT } else { "" },
+            + if direct_answer_requested(&session.prompt) { DIRECT_ANSWER_PROMPT } else if on_a_test { QUIZ_PROMPT } else { "" }
+            + if wants_pointing(&session.prompt) { POINTING_PROMPT } else { "" },
         windows: uia::open_windows(14),
         page_text,
         think,
@@ -3594,6 +3676,12 @@ fn submit_task(
                 };
             }
         };
+        // Gemini-style pointing: a fenced `points` block at the end of the
+        // reply becomes on-screen chips instead of spoken text.
+        let callouts = extract_callouts(&mut plan.summary);
+        if !callouts.is_empty() {
+            let _ = app.emit(events::CALLOUTS, &callouts);
+        }
         set_frozen(None);
 
         let lesson = prompt.starts_with("Explain this video frame on my screen.");
@@ -4215,6 +4303,9 @@ fn submit_task(
         plan.summary = format!("{base} Still open on my list: {}.", open.join("; "));
     }
     if !alive() { plan.outcome = crate::model::TaskOutcome::Cancelled; }
+    // The task is over: the chips its last look pointed at come down, so a
+    // stale “Save button” never outlives the conversation.
+    let _ = app.emit(events::CALLOUTS, serde_json::json!([]));
     plan
 }
 
@@ -4780,6 +4871,87 @@ pub fn ask_yes_no(frame: &Frame, question: &str) -> Result<bool> {
         // A model that returns no steps still gives us its summary.
         Ok(plan) => Ok(plan.summary.to_lowercase().contains("yes")),
         Err(e) => Err(e),
+    }
+}
+
+#[cfg(test)]
+mod callout_tests {
+    use super::{extract_callouts, wants_pointing};
+
+    /// A parse that keeps the spoken part and returns the chips.
+    fn point(summary: &str) -> (String, Vec<crate::model::Callout>) {
+        let mut s = summary.to_string();
+        let chips = extract_callouts(&mut s);
+        (s, chips)
+    }
+
+    #[test]
+    fn a_points_block_is_read_and_never_spoken() {
+        let (spoken, chips) = point(concat!(
+            "The Save button is up right.\n",
+            "```points\n",
+            "[{\"label\":\"Save button\",\"x\":812,\"y\":56,\"w\":60,\"h\":28}]\n",
+            "```\n"
+        ));
+        assert_eq!(spoken, "The Save button is up right.");
+        assert_eq!(chips.len(), 1);
+        assert_eq!((chips[0].x, chips[0].y, chips[0].w, chips[0].h), (812, 56, 60, 28));
+        assert_eq!(chips[0].label, "Save button");
+    }
+
+    #[test]
+    fn a_reply_without_a_block_is_untouched() {
+        let (spoken, chips) = point("It's the third icon on the left.");
+        assert_eq!(spoken, "It's the third icon on the left.");
+        assert!(chips.is_empty());
+    }
+
+    #[test]
+    fn a_malformed_block_still_comes_off() {
+        let (spoken, chips) = point("Look here.\n```points\nnot json at all\n```\n");
+        assert_eq!(spoken, "Look here.");
+        assert!(chips.is_empty());
+    }
+
+    #[test]
+    fn an_unterminated_fence_is_dropped() {
+        let (spoken, chips) = point("Look here.\n```points\n[{\"label\":\"x\",\"x\":1,\"y\":2,\"w\":3,\"h\":4}]");
+        assert_eq!(spoken, "Look here.");
+        assert!(chips.is_empty());
+    }
+
+    #[test]
+    fn values_clamp_and_duds_are_dropped() {
+        let (spoken, chips) = point(concat!(
+            "\n```points\n",
+            "[{\"label\":\"\",\"x\":1,\"y\":2,\"w\":3,\"h\":4},",
+            " {\"label\":\"Off\",\"x\":5000,\"y\":-9,\"w\":0,\"h\":0},",
+            " {\"label\":\"Good\",\"x\":10.6,\"y\":20,\"w\":8,\"h\":9},",
+            " {\"label\":\"NoOrigin\"}]",
+            "\n```\n"
+        ));
+        assert_eq!(spoken, "");
+        assert_eq!(chips.len(), 1);
+        assert_eq!(chips[0].label, "Good");
+        assert_eq!((chips[0].x, chips[0].y, chips[0].w, chips[0].h), (11, 20, 8, 9));
+    }
+
+    #[test]
+    fn words_after_the_block_stay() {
+        let (spoken, chips) = point(concat!(
+            "The Save button is up right.\n```points\n",
+            "[{\"label\":\"Save\",\"x\":1,\"y\":2,\"w\":3,\"h\":4}]\n",
+            "```\nWant it clicked? Ask for it.\n"
+        ));
+        assert_eq!(spoken, "The Save button is up right.\nWant it clicked? Ask for it.");
+        assert_eq!(chips.len(), 1);
+    }
+
+    #[test]
+    fn only_pointing_asks_get_the_block() {
+        assert!(wants_pointing("Explain this video frame on my screen."));
+        assert!(wants_pointing("Where is the save button?"));
+        assert!(!wants_pointing("open chrome and search for cats"));
     }
 }
 

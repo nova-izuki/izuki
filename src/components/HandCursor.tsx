@@ -150,6 +150,7 @@ export const HandCursor = forwardRef<
   return (
     <div
       ref={hostRef}
+      data-izk-hand-cursor
       className={`pointer-events-none absolute inset-0 overflow-hidden ${className}`}
     >
       <div ref={trailRef} className="absolute inset-0 transition-opacity duration-200" />

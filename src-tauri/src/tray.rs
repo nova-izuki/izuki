@@ -39,9 +39,9 @@ fn build_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<tauri:
         None::<&str>,
     )?;
     let follow_label = if settings.follow_mode_enabled {
-        "Always show the hand   ✓"
+        "Floating chat bubble   ✓"
     } else {
-        "Always show the hand"
+        "Floating chat bubble"
     };
     let follow = MenuItem::with_id(app, "follow", follow_label, true, None::<&str>)?;
     let air = MenuItem::with_id(app, "air", if settings.air_enabled { "Air control (hand gestures)   ✓" } else { "Air control (hand gestures)" }, true, None::<&str>)?;
@@ -106,9 +106,9 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
             let _ = app.emit(
                 events::STATUS,
                 crate::model::StatusEvent::info(if saved.follow_mode_enabled {
-                    "The hand will stay on screen from now on."
+                    "Floating chat bubble on."
                 } else {
-                    "Follow mode off."
+                    "Floating chat bubble off."
                 }),
             );
         }
