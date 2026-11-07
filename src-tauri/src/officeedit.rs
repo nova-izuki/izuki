@@ -248,6 +248,17 @@ fn edit_pdf(bytes: &[u8], edits: &[Edit]) -> Result<(Vec<u8>, Vec<String>)> {
     if pdf_has_type0_font(&doc) {
         bail!("This PDF stores its letters as font codes, so its words can't be safely rewritten. Save it as a .docx (or a new PDF) first");
     }
+    // Hex strings and no literals: the page keeps text as a font's own codes
+    // (the owner's filled template is one), so writing ASCII into it would be
+    // gibberish — say that, instead of blaming split words.
+    let coded = doc.get_pages().into_values().any(|page| {
+        doc.get_page_contents(page).iter().any(|id| {
+            matches!(
+                doc.objects.get(id),
+                Some(lopdf::Object::Stream(s)) if s.get_plain_content().is_ok_and(|v| page_stores_codes(&v))
+            )
+        })
+    });
     let mut report = Vec::new();
     let mut changed = false;
     for edit in edits {
@@ -283,10 +294,12 @@ fn edit_pdf(bytes: &[u8], edits: &[Edit]) -> Result<(Vec<u8>, Vec<String>)> {
                     }
                 }
                 if hits == 0 {
-                    report.push(format!(
-                        "Couldn't find “{}” in the PDF's text (a page that splits its words into pieces can't be changed here — save it as .docx and edit that)",
-                        clip(find)
-                    ));
+                    let why = if coded {
+                        "this page keeps its text as a font's own letter codes, so it can't be rewritten here — save it as .docx and edit that"
+                    } else {
+                        "a page that splits its words into pieces can't be changed here — save it as .docx and edit that"
+                    };
+                    report.push(format!("Couldn't find “{}” in the PDF's text ({why})", clip(find)));
                 } else {
                     changed = true;
                     let places = if hits == 1 { "1 place".to_string() } else { format!("{hits} places") };
@@ -324,6 +337,23 @@ fn edit_pdf(bytes: &[u8], edits: &[Edit]) -> Result<(Vec<u8>, Vec<String>)> {
         }
     }
     Ok((out, report))
+}
+
+/// Is this page's text a font's own codes (hex strings) rather than readable
+/// literal strings? `<01>` is then "glyph 1", not control-A.
+fn page_stores_codes(content: &[u8]) -> bool {
+    let mut hex = false;
+    let mut literal = false;
+    let mut i = 0;
+    while i < content.len() {
+        match content[i] {
+            b'(' => literal = true,
+            b'<' if content.get(i + 1).is_some_and(|c| *c != b'<') => hex = true,
+            _ => {}
+        }
+        i += 1;
+    }
+    hex && !literal
 }
 
 fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
@@ -1492,8 +1522,8 @@ mod tests {
                 // the engine has to say so and leave no copy behind.
                 let err = apply(&original, &parse_edits("REPLACE: the\nWITH: THE")).unwrap_err();
                 assert!(
-                    err.to_string().contains("splits its words"),
-                    "a split-word PDF is refused with the reason: {err}"
+                    err.to_string().contains("font's own letter codes"),
+                    "a coded-text PDF is refused with the reason: {err}"
                 );
                 eprintln!("real PDF: words are split in this page; refused as designed: {err}");
             }
@@ -1609,6 +1639,15 @@ Rent,900").unwrap();
     /// A small but real PDF: catalog → pages → one page → one text string.
     /// lopdf writes it out, so every test below works on an actual PDF file.
     fn pdf_with(text: &str, type0: bool) -> Vec<u8> {
+        let body = format!(
+            "BT /F1 12 Tf 72 720 Td ({}) Tj ET",
+            String::from_utf8_lossy(&escape_literal(text.as_bytes()))
+        );
+        pdf_with_body(body, type0)
+    }
+
+    /// The same PDF with the page's content stream given verbatim.
+    fn pdf_with_body(body: String, type0: bool) -> Vec<u8> {
         fn next(doc: &mut lopdf::Document) -> lopdf::ObjectId {
             doc.max_id += 1;
             (doc.max_id, 0)
@@ -1632,10 +1671,6 @@ Rent,900").unwrap();
             ("BaseFont", if type0 { "Identity-H" } else { "Helvetica" }.into()),
         ]);
         doc.objects.insert(font_id, lopdf::Object::Dictionary(font));
-        let body = format!(
-            "BT /F1 12 Tf 72 720 Td ({}) Tj ET",
-            String::from_utf8_lossy(&escape_literal(text.as_bytes()))
-        );
         doc.objects.insert(
             content_id,
             lopdf::Object::Stream(lopdf::Stream::new(dict(&[]), body.into_bytes())),
@@ -1742,6 +1777,18 @@ Rent,900").unwrap();
         let err = apply(&original, &parse_edits("REPLACE: absent words\nWITH: x")).unwrap_err();
         assert!(err.to_string().contains("Couldn't find"), "{err}");
         assert!(!dir.join("notes (Izuki edit).pdf").exists(), "no copy is made from an edit that changed nothing");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_pdf_that_stores_letters_as_codes_says_so() {
+        let dir = std::env::temp_dir().join(format!("izk-pdf-codes-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let original = dir.join("coded.pdf");
+        std::fs::write(&original, pdf_with_body("BT /F1 12 Tf 72 720 Td <0102030405> Tj ET".into(), false)).unwrap();
+        let err = apply(&original, &parse_edits("REPLACE: abcde\nWITH: x")).unwrap_err();
+        assert!(err.to_string().contains("font's own letter codes"), "{err}");
+        assert!(!dir.join("coded (Izuki edit).pdf").exists(), "no copy is made");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
