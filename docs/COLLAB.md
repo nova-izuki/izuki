@@ -128,6 +128,12 @@ Owner requests removal of random desktop robot hand. Codex claims follow.rs, han
 
 Hand task #27 scope detail: Codex adds only action_hand_enabled in settings/types/ipc and changes the single follow::spawn call to drop its unused Store argument. New isolated native test host uses no Store, camera, hotkeys or agents. No Freebuff registrations/callout hooks are modified.
 
+
+Hand task #27 CI: Codex owns a new read-only hand-overlay-check.yml regression workflow only; no existing release, coordinator or verification workflow is changed. Native test host/fixture use a disposable profile and never load owner settings.
+
+
+Codex continuity pointer: verified fallback foundation is PR #28 (commits e026b1c, 4337646). Detailed handoff is readable now at .work/codex-fallback/docs/HANDOFF-CODEX-2026-11-03.md, and permanently on codex/fallback-contract. It records PR #24 findings and task #18's session-limit failure. Hand fix #27 is isolated on codex/hand-overlay-lifecycle; full Rust 601/0/48 ignored passed, native desktop verification is still pending. Neither PR #24 nor active bridge files were changed by Codex.
+
 ## Codex hand-overlay claim (2026-11-03)
 
 Issue #27, codex/hand-overlay-lifecycle: hand lifecycle only (follow.rs, overlay stays_up, tray/settings wording, HandCursor and atomic hand rendering in OverlayCanvas). Freebuff retains AirControl, eye tracking/camera and CalloutChips/shared pointing slot. Claude retains bridge/dispatcher and action task #18. No existing uncommitted file is taken over; no duplicate app/dispatcher is started.
@@ -144,3 +150,7 @@ Issue #30: the calibration from WORKSTREAMS.md §3, behind the eye gate and off 
 ## Temporary ownership transfer: Freebuff leads integration and release (owner, 2026-11-07)
 
 Claude Code is unavailable (weekly usage limit), so the owner explicitly transferred the remaining `milestone-196` integration and release work to Freebuff until Claude returns: resolving PR #17's four bridge-file conflicts, running the full gate, bumping the version, merging, publishing the Windows installer and GitHub release, and verifying the updater manifest. Claude is not active in any worktree: no bridge-file edits since `198bf89` (2026-11-05), and its dispatcher was left idle waiting on a usage-limit outage, so Freebuff paused it (`.work/agents/paused`) for the takeover and did not stop or overwrite any run. No existing uncommitted work was taken: Codex's uncommitted COLLAB.md lines and the untracked `tools/repros/2026-11-03-smart-vision-live-cycle/` files are preserved. Files claimed for this takeover: `docs/AGENTS-BRIDGE.md`, `tools/agents/dispatcher.mjs`, `tools/agents/scheduler.mjs`, `tools/agents/scheduler-check.mjs`, and the version and release files for 1.0.197. The bridge lane returns to Claude when it is available; #18 (Smart Screen Actions) and #25 (intelligent scheduling) stay open and are not part of this release.
+
+## Release 1.0.197 prepared from milestone-196 (Freebuff, temporary lead, 2026-11-07)
+
+Integrated the verified work of all three lanes as 1.0.197 (build 197): Freebuff's PDF editing, coded-font refusal and Open-result card (`58875e1`, `0b00912`, `350aedf`, `b343491`); Freebuff's optional eye calibration (`de18ee2`); Claude's agent-bridge recovery commits (`0363389`…`198bf89`, merged with `main`'s #24 after a line-by-line comparison that kept the newer branch implementation); and Codex's robot-hand fix (PR #29), fallback foundation (PR #28) and capture-stub cleanup (`556ba4f`). PR #17 carries the release to `main`; `docs/RELEASE-1.0.197.md` has the plain-English notes. Not included: Claude's unfinished Smart Screen Actions attempt on `agent/claude-18-1` (WIP, never verified) and #25 scheduling; Codex's older hand branch was superseded by PR #29 and was not merged again.
