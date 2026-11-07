@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, RotateCcw, Send, Sparkles, Square, Volume2, X } from "lucide-react";
+import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, FolderOpen, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, RotateCcw, Send, Sparkles, Square, Volume2, X } from "lucide-react";
 import { api, CAMERA_PICTURE_KEY, emit, EV, ISLAND_TO_CHAT_KEY, on, type CodingUpdate, type ResearchUpdate } from "../../lib/ipc";
 import { ResearchPanel, researchAsk, type ResearchState } from "../ResearchPanel";
 import { CodingPanel, type CodingState } from "../CodingPanel";
@@ -1477,6 +1477,8 @@ interface ToolCall {
   ok: boolean;
   /** "✓ Checked: …" — a look afterwards that it really happened. */
   proof?: string;
+  /** The file this produced (an edit's copy) — the "Open" button opens it. */
+  result?: string;
 }
 
 type Verdict = { v: "ok" | "warn" | "error"; note?: string };
@@ -1567,6 +1569,17 @@ function ToolCard({ call }: { call: ToolCall }) {
         <span className={`font-bold ${look.tone}`} title={look.label}>{look.icon}</span>
         <span className="font-semibold text-izk-ink">{call.name}</span>
         <span className="min-w-0 flex-1 truncate text-[11.5px] text-izk-muted" title={call.title}>{call.title}</span>
+        {call.result && (
+          <button
+            type="button"
+            title={`Open ${call.result}`}
+            aria-label="Open the result"
+            onClick={(e) => { e.stopPropagation(); void api.openPath(call.result as string); }}
+            className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 font-sans text-[10.5px] text-izk-teal hover:bg-white/10"
+          >
+            <FolderOpen size={11} /> Open
+          </button>
+        )}
         <CopyButton text={everything} label="Copy all" />
         <button type="button" title="Expand" aria-label="Expand" onClick={(e) => { e.stopPropagation(); setBig(true); }} className="rounded p-1 text-izk-muted hover:bg-white/10 hover:text-izk-ink">
           <Maximize2 size={11} />

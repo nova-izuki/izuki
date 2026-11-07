@@ -1207,6 +1207,8 @@ export const api = {
   cancelTask: () => call<void>("cancel_task", undefined, () => undefined),
   /** Developer self-test mode (IZUKI_SELFTEST=1). */
   selftestEnabled: () => call<string>("selftest_enabled", undefined, () => ""),
+  /** Open a file Izuki made (the "Open" button on a result card). */
+  openPath: (path: string) => call<void>("open_path", { path }, () => undefined),
   /** Instant skill: open an installed app by name (rejects if none matches). */
   openApp: (name: string) =>
     call<string>("open_app", { name }, () => {

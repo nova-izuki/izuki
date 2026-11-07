@@ -345,6 +345,7 @@ pub fn run() {
             commands::save_clip,
             commands::list_wakewords,
             commands::open_wakewords_folder,
+            commands::open_path,
             commands::import_wakewords,
             commands::chat_stream,
             commands::read_chat_attachment,
