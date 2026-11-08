@@ -360,14 +360,14 @@ export function AirCard() {
             )}
             {eyeStatus?.quality !== undefined && eyeStatus.calibrated && (
               <p className="mt-1 text-[10px] text-izk-muted">
-                Map fit: about {Math.max(0.1, Math.round(eyeStatus.quality * 1000) / 10)}
+                Map fit: about {Math.max(0.1, Math.round(eyeStatus.quality * 1000) / 10)}% average screen error. Recalibrate if the cursor drifts.
+              </p>
+            )}
             {eyeStatus?.accuracy !== undefined && (
               <p className={`mt-1 text-[10.5px] leading-snug ${eyeStatus.mode === "pointer" ? "text-emerald-300" : "text-amber-300"}`}>
                 Accuracy check: about {Math.round(eyeStatus.accuracy * 1000) / 10}% average error
                 {eyeStatus.jitter !== undefined ? `, wobble ${Math.round(eyeStatus.jitter * 1000) / 10}%` : ""} ·{" "}
                 {eyeStatus.mode === "pointer" ? "the mouse follows steady looks" : "preview only: the mouse doesn't move"}
-              </p>
-            )}% average screen error. Recalibrate if the cursor drifts.
               </p>
             )}
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
