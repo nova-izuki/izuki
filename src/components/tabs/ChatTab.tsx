@@ -1048,11 +1048,11 @@ export function ChatTab() {
     setRecentsOpen(true);
   };
 
-  /** Save the current thread before leaving it, then start clean. */
-  const startNewChat = () => {
+  /** Leave the current thread, keeping it first unless it is being deleted. */
+  const beginChat = (keepCurrent: boolean) => {
     stop();
     clearAttachments();
-    if (msgs.length) {
+    if (keepCurrent && msgs.length) {
       commitRecent(rememberSession(recentRef.current, chatSessionId, chatTitle(msgs), storedMessages(msgs)));
     }
     const id = newChatId();
@@ -1062,6 +1062,8 @@ export function ChatTab() {
     setRecentsOpen(false);
     setRecentQuery("");
   };
+
+  const startNewChat = () => beginChat(true);
 
   const openChat = (chat: RecentChat) => {
     if (chat.id !== chatSessionId) {
@@ -1077,7 +1079,8 @@ export function ChatTab() {
 
   const deleteChat = (chat: RecentChat) => {
     commitRecent(removeSession(recentRef.current, chat.id));
-    if (chat.id === chatSessionId) startNewChat();
+    // Do not re-save the conversation we just deleted on the way out.
+    if (chat.id === chatSessionId) beginChat(false);
   };
 
   const shownRecent = searchSessions(recent, recentQuery);
