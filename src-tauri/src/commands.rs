@@ -117,6 +117,15 @@ pub fn save_settings(app: AppHandle, settings: Settings) -> Settings {
     } else if saved.air_enabled != previous.air_enabled {
         crate::tray::refresh(&app);
     }
+    if saved.air_enabled && !previous.air_enabled {
+        crate::airsafe::arm();
+    }
+    if saved.air_control_mode != previous.air_control_mode {
+        crate::airsafe::resume();
+    }
+    if saved.eye_stop_hotkey != previous.eye_stop_hotkey {
+        crate::airsafe::set_stop_key(&saved.eye_stop_hotkey);
+    }
 
     saved
 }
@@ -375,6 +384,10 @@ pub fn open_log_folder() -> R<()> {
 /// everyday commands (instant.rs).
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
+    // Eye control's voice stop, pause and resume come first (airsafe.rs).
+    if let Some(reply) = crate::airsafe::voice(&said) {
+        return Some(reply);
+    }
     if crate::notes::is_study_prompt(&said) { return None; }
     if crate::brain::direct_answer_requested(&said) {
         crate::coach::stop();
@@ -1772,22 +1785,43 @@ pub fn boost_live() -> crate::boost::Live {
     crate::boost::live()
 }
 
-/// Air control: move the real pointer to a normalized spot (0..1 over every monitor).
+/// Air or Eye control may act (nothing stopped or paused, airsafe.rs).
+fn air_gate() -> R<()> {
+    crate::airsafe::touch();
+    if crate::airsafe::allowed() {
+        Ok(())
+    } else {
+        Err("Air control is stopped or paused".into())
+    }
+}
+
+/// Air control: move the real pointer to a normalized spot (0..1 over every
+/// monitor). `eye`: the gaze pointer, which passes the eye safety checks
+/// (the person taking over, erratic tracking, the emergency stop running).
 #[tauri::command]
-pub fn air_pointer(nx: f64, ny: f64) {
+pub fn air_pointer(nx: f64, ny: f64, eye: Option<bool>) {
     let (x, y) = crate::air::to_screen(nx, ny);
-    crate::air::pointer(x, y);
+    if eye.unwrap_or(false) {
+        crate::airsafe::eye_pointer(x, y, nx, ny);
+    } else if air_gate().is_ok() {
+        crate::air::pointer(x, y);
+    }
 }
 
 /// Air control: press or let go of a mouse button where the pointer is.
+/// Letting go always passes, even when stopped.
 #[tauri::command]
 pub fn air_button(right: bool, down: bool) -> R<()> {
+    if !crate::airsafe::button_allowed(right, down) {
+        return Err("Air control is stopped or paused".into());
+    }
     crate::air::button(right, down).map_err(err)
 }
 
 /// Air control: two pinches in a row — a real double-click where the pointer is.
 #[tauri::command]
 pub async fn air_double_click(since_first_ms: u64) -> R<()> {
+    air_gate()?;
     // Off the main thread: its short pause between clicks must never hold the windows up.
     blocking(move || crate::air::double_click(since_first_ms).map_err(err)).await?
 }
@@ -1795,7 +1829,27 @@ pub async fn air_double_click(since_first_ms: u64) -> R<()> {
 /// Air control: scroll notches where the pointer is (down when positive).
 #[tauri::command]
 pub fn air_scroll(amount: i32) -> R<()> {
+    air_gate()?;
     crate::air::scroll(amount.clamp(-20, 20)).map_err(err)
+}
+
+/// Air and Eye control's emergency stop (the Stop button): everything Air
+/// holds is let go and Air control is saved as off until turned on again.
+#[tauri::command]
+pub fn air_stop() {
+    crate::airsafe::stop("Stop button");
+}
+
+/// Resume the eye pointer after a pause (never undoes an emergency stop).
+#[tauri::command]
+pub fn air_resume() -> bool {
+    crate::airsafe::resume()
+}
+
+/// Air and Eye control's safety state: stopped, paused (and why), ready.
+#[tauri::command]
+pub fn air_safety() -> crate::airsafe::Status {
+    crate::airsafe::status()
 }
 
 /// Air control: the 3D app in front (Blender, Unity…), if Air's 3D
@@ -1814,12 +1868,16 @@ pub async fn air_front() -> R<crate::air::Front> {
 /// Air control: start or end turning the model in the 3D app in front.
 #[tauri::command]
 pub async fn air_grip_3d(down: bool) -> R<bool> {
+    if down {
+        air_gate()?;
+    }
     blocking(move || crate::air::grip_3d(down).map_err(err)).await?
 }
 
 /// Air control: scroll sideways (peace sign moved left or right).
 #[tauri::command]
 pub fn air_scroll_side(amount: i32) -> R<()> {
+    air_gate()?;
     crate::air::scroll_sideways(amount.clamp(-20, 20)).map_err(err)
 }
 
@@ -1828,6 +1886,7 @@ pub fn air_scroll_side(amount: i32) -> R<()> {
 /// move, press, move, let go — or a drag drops in the wrong place.)
 #[tauri::command]
 pub async fn air_keys(combo: String) -> R<()> {
+    air_gate()?;
     blocking(move || crate::air::keys(&combo).map_err(err)).await?
 }
 
@@ -1837,6 +1896,9 @@ pub fn air_hold(key: String, down: bool) -> R<()> {
     if crate::uia::screen_locked() {
         return Err("the PC is locked".into());
     }
+    if down {
+        air_gate()?;
+    }
     crate::automation::key_hold(&key, down).map_err(err)
 }
 
@@ -1844,6 +1906,7 @@ pub fn air_hold(key: String, down: bool) -> R<()> {
 /// you were typing in — the keyboard itself never keeps the focus.
 #[tauri::command]
 pub async fn air_key(key: String) -> R<()> {
+    air_gate()?;
     blocking(move || {
         crate::uia::focus_target_window();
         std::thread::sleep(std::time::Duration::from_millis(30));

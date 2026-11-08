@@ -3,9 +3,10 @@ import { Eye, Hand, Trash2 } from "lucide-react";
 import { Row, Section, Toggle } from "./ui";
 import { AIR_ACTIONS, AIR_SLOTS, airBindings } from "../lib/airActions";
 import { useIzuki } from "../lib/store";
-import { emit, EV, on } from "../lib/ipc";
+import { api, emit, EV, on } from "../lib/ipc";
 import { listCameras, rankCameras, saveCamera, savedCamera } from "../lib/camera";
 import { EYE_SENSITIVITIES, type EyeStatusPayload } from "../lib/eyeControl";
+import type { AirSafety } from "../lib/types";
 
 const MOVES: Array<[string, string]> = [
   ["✋ Move your hand", "moves the pointer"],
@@ -26,6 +27,56 @@ const EYE_MOVES: Array<[string, string]> = [
   ["👁️ Look at an edge", "keeps going to that screen edge"],
   ["⏹ Air button", "turns the camera and Eye Control off immediately"],
 ];
+
+/**
+ * Eye Control's emergency stop, in Settings: the keys, a Stop button, and
+ * the pause state from Rust (airsafe.rs), with Resume.
+ */
+function EyeStopPanel({ stopKey }: { stopKey: string }) {
+  const [safety, setSafety] = useState<AirSafety | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void api.airSafety().then((s) => alive && setSafety(s)).catch(() => undefined);
+    const off = on<AirSafety>(EV.airSafety, (s) => {
+      if (alive) setSafety(s);
+    });
+    return () => {
+      alive = false;
+      void off.then((f) => f()).catch(() => undefined);
+    };
+  }, []);
+  return (
+    <div className="mt-2 rounded-xl border border-rose-400/40 bg-rose-500/10 px-2.5 py-2 text-[10.5px] leading-snug text-rose-50">
+      <div className="flex items-center justify-between gap-2">
+        <span>
+          <b>Emergency stop:</b> {stopKey} · the Stop button on screen · say “stop eye control”. Moving the mouse or typing pauses the eye
+          pointer.
+        </span>
+        <button
+          type="button"
+          onClick={() => void api.airStop().catch(() => undefined)}
+          className="shrink-0 rounded-full bg-rose-600 px-2.5 py-1 text-[10.5px] font-bold text-white hover:bg-rose-500"
+        >
+          ■ Stop
+        </button>
+      </div>
+      {safety?.paused && !safety.stopped && (
+        <div className="mt-1.5 flex items-center justify-between gap-2 text-amber-200">
+          <span>Paused: {safety.paused}.</span>
+          <button
+            type="button"
+            onClick={() => void api.airResume().catch(() => undefined)}
+            className="shrink-0 rounded-full bg-white/15 px-2.5 py-0.5 font-semibold text-white hover:bg-white/25"
+          >
+            Resume
+          </button>
+        </div>
+      )}
+      {safety?.stopped && <div className="mt-1.5 text-amber-200">Stopped. Turn Air control on again when you're ready.</div>}
+      {safety && !safety.ready && <div className="mt-1.5 text-amber-200">The emergency stop isn't running, so the eye pointer won't move.</div>}
+    </div>
+  );
+}
 
 /** Air control (AirControl.tsx / EyeControl.tsx / air.rs): one lane at a time. */
 export function AirCard() {
@@ -149,6 +200,7 @@ export function AirCard() {
             ? "Hand Control uses the existing hand tracker. All gestures, game controls and taught poses below are unchanged."
             : "Eye Control looks where you look. Calibrate first; single blinks never click. Both is deliberately unavailable until Hand and Eye have each passed on this camera."}
         </p>
+        {mode === "eye" && <EyeStopPanel stopKey={settings.eye_stop_hotkey} />}
         {mode === "eye" && (
           <div className="mt-2 flex items-start gap-2 rounded-xl bg-sky-400/10 px-2.5 py-2 text-[10.5px] leading-snug text-sky-100">
             <span aria-hidden className="mt-0.5">🔒</span>
@@ -308,7 +360,14 @@ export function AirCard() {
             )}
             {eyeStatus?.quality !== undefined && eyeStatus.calibrated && (
               <p className="mt-1 text-[10px] text-izk-muted">
-                Map fit: about {Math.max(0.1, Math.round(eyeStatus.quality * 1000) / 10)}% average screen error. Recalibrate if the cursor drifts.
+                Map fit: about {Math.max(0.1, Math.round(eyeStatus.quality * 1000) / 10)}
+            {eyeStatus?.accuracy !== undefined && (
+              <p className={`mt-1 text-[10.5px] leading-snug ${eyeStatus.mode === "pointer" ? "text-emerald-300" : "text-amber-300"}`}>
+                Accuracy check: about {Math.round(eyeStatus.accuracy * 1000) / 10}% average error
+                {eyeStatus.jitter !== undefined ? `, wobble ${Math.round(eyeStatus.jitter * 1000) / 10}%` : ""} ·{" "}
+                {eyeStatus.mode === "pointer" ? "the mouse follows steady looks" : "preview only: the mouse doesn't move"}
+              </p>
+            )}% average screen error. Recalibrate if the cursor drifts.
               </p>
             )}
             <div className="mt-2 flex flex-wrap items-center gap-1.5">

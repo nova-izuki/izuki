@@ -23,8 +23,7 @@ import type {
   NoteLinks,
   VoiceCatalog,
   FoundKey,
-  N8nImport,
-} from "./types";
+  N8nImport, AirSafety} from "./types";
 
 export const IS_TAURI =
   typeof window !== "undefined" &&
@@ -259,6 +258,7 @@ export const MOCK_SETTINGS: Settings = {
   air_control_mode: "hand",
   air_eye_sensitivity: "standard",
   air_eye_clicks: false,
+  eye_stop_hotkey: "Ctrl+Alt+Shift+X",
   phone_remote: false,
   phone_terminal: false,
   air_bindings: {},
@@ -924,7 +924,15 @@ export const api = {
   /** The on-device voice to stand in for a cloud voice (same gender). */
   voiceFallback: () => call<string>("voice_fallback", undefined, () => "af_heart"),
   /** Air control: the real pointer to a normalized spot (0..1 over every monitor). */
-  airPointer: (nx: number, ny: number) => call<void>("air_pointer", { nx, ny }, () => undefined),
+  /** `eye`: the gaze pointer, which passes Rust's eye safety checks (airsafe.rs). */
+  airPointer: (nx: number, ny: number, eye = false) => call<void>("air_pointer", { nx, ny, eye }, () => undefined),
+  /** Air and Eye control's emergency stop: held input let go, Air saved as off. */
+  airStop: () => call<void>("air_stop", undefined, () => undefined),
+  /** Resume the eye pointer after a pause (never undoes an emergency stop). */
+  airResume: () => call<boolean>("air_resume", undefined, () => false),
+  /** Air and Eye control's safety state: stopped, paused (and why), ready. */
+  airSafety: () =>
+    call<AirSafety>("air_safety", undefined, () => ({ stopped: false, paused: null, ready: false, stop_key: "Ctrl+Alt+Shift+X" })),
   /** Air control: press / let go of a mouse button. */
   airButton: (right: boolean, down: boolean) => call<void>("air_button", { right, down }, () => undefined),
   /** Two pinches in a row: a real double-click (opens desktop icons and files). */
@@ -1317,6 +1325,8 @@ export const EV = {
   airEyeRetry: "izuki://air-eye-retry",
   /** Frontend-only, overlay → Settings: live eye-control status. */
   airEyeStatus: "izuki://air-eye-status",
+  /** Rust-emitted: Air/Eye control's safety state changed (stopped, paused, resumed). */
+  airSafety: "izuki://air-safety",
   /** Frontend-only: another camera was picked for Air control — reopen it. */
   airCamera: "izuki://air-camera",
   /** Frontend-only: the moving character walks to a spot (0..1 over every monitor) and points. */

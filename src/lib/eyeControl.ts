@@ -182,4 +182,137 @@ export interface EyeStatusPayload {
   /** Held-out fit error, normalised screen units. */
   quality?: number;
   engine?: string;
+  /** The accuracy check after calibration: average error on fresh dots (screen units). */
+  accuracy?: number;
+  /** The accuracy check: how much the estimate wobbles while the eyes hold still. */
+  jitter?: number;
+  /** "checking": the accuracy check runs; "pointer": it passed, the real mouse
+   *  follows steady looks; "preview": it didn't, so the eye cursor is only drawn. */
+  mode?: "checking" | "pointer" | "preview";
+}
+
+// ---------------------------------------------------------------------------
+// The accuracy check. A calibration that "succeeds" only says the map fits its
+// own nine dots; the owner's first real test passed calibration and then the
+// cursor wandered. So after calibrating, five fresh dots the map never saw
+// measure the real error and wobble, and the real mouse moves only if they're
+// good enough. Otherwise the eye cursor is drawn on screen and nothing moves.
+// ---------------------------------------------------------------------------
+
+export interface ScreenPoint {
+  x: number;
+  y: number;
+}
+
+/** Five dots between the calibration ones: never used to fit the map. */
+export const VALIDATION_TARGETS: ScreenPoint[] = [
+  { x: 0.32, y: 0.32 },
+  { x: 0.68, y: 0.32 },
+  { x: 0.5, y: 0.42 },
+  { x: 0.32, y: 0.6 },
+  { x: 0.68, y: 0.6 },
+];
+/** Time to settle on each dot before measuring (the eyes land, then hold). */
+export const VALIDATION_SETTLE_MS = 700;
+/** Time measuring each dot. */
+export const VALIDATION_COLLECT_MS = 1200;
+/** Fewer readings than this on a dot: it can't be judged. */
+export const VALIDATION_MIN_SAMPLES = 8;
+/** The real mouse follows the eyes only with at most this average error… */
+export const POINTER_MAX_ERROR = 0.08;
+/** …and at most this much wobble while the eyes hold still (screen units). */
+export const POINTER_MAX_JITTER = 0.035;
+/** The real mouse moves only once the eye cursor has held still this long. */
+export const FIXATION_MS = 250;
+
+export interface ValidationDot {
+  target: ScreenPoint;
+  /** Distance from the dot to the average estimate. */
+  error: number;
+  /** Typical distance of each estimate from that average. */
+  jitter: number;
+  samples: number;
+}
+
+export interface ValidationState {
+  index: number;
+  dotStart: number;
+  samples: ScreenPoint[];
+  dots: ValidationDot[];
+  done: boolean;
+}
+
+export interface ValidationSummary {
+  /** Average error over the dots (screen units; 0.05 = 5% of the screen). */
+  accuracy: number;
+  /** Average wobble while the eyes held still. */
+  jitter: number;
+  /** The worst single dot's error. */
+  worst: number;
+  /** Good enough to move the real mouse. */
+  pass: boolean;
+  /** Why, in plain words. */
+  reason: string;
+}
+
+export function newValidation(now: number): ValidationState {
+  return { index: 0, dotStart: now, samples: [], dots: [], done: false };
+}
+
+/** Where the check is: the dot to look at, its number, and how far along. */
+export function validationView(v: ValidationState, now: number): { target: ScreenPoint; point: number; total: number; progress: number } | null {
+  if (v.done) return null;
+  const target = VALIDATION_TARGETS[v.index];
+  const progress = Math.min(1, Math.max(0, (now - v.dotStart) / (VALIDATION_SETTLE_MS + VALIDATION_COLLECT_MS)));
+  return { target, point: v.index + 1, total: VALIDATION_TARGETS.length, progress };
+}
+
+/**
+ * One frame of the check: the map's raw estimate (not the smoothed cursor),
+ * or null when the eyes weren't read. Moves to the next dot after its time;
+ * `true` once every dot is measured.
+ */
+export function validationStep(v: ValidationState, estimate: ScreenPoint | null, now: number): boolean {
+  if (v.done) return true;
+  const elapsed = now - v.dotStart;
+  if (estimate && Number.isFinite(estimate.x) && Number.isFinite(estimate.y) && elapsed >= VALIDATION_SETTLE_MS) {
+    v.samples.push({ x: estimate.x, y: estimate.y });
+  }
+  if (elapsed < VALIDATION_SETTLE_MS + VALIDATION_COLLECT_MS) return false;
+  const target = VALIDATION_TARGETS[v.index];
+  const n = v.samples.length;
+  const mean = n ? { x: v.samples.reduce((a, s) => a + s.x, 0) / n, y: v.samples.reduce((a, s) => a + s.y, 0) / n } : { x: NaN, y: NaN };
+  const jitter = n ? Math.sqrt(v.samples.reduce((a, s) => a + (s.x - mean.x) ** 2 + (s.y - mean.y) ** 2, 0) / n) : Infinity;
+  v.dots.push({ target, error: n ? Math.hypot(mean.x - target.x, mean.y - target.y) : Infinity, jitter, samples: n });
+  v.index += 1;
+  v.samples = [];
+  v.dotStart = now;
+  if (v.index >= VALIDATION_TARGETS.length) v.done = true;
+  return v.done;
+}
+
+const pct = (n: number) => `${Math.round(n * 100)}%`;
+
+/** The check's verdict: whether the real mouse may follow the eyes, and why. */
+export function summarizeValidation(dots: ValidationDot[]): ValidationSummary {
+  const thin = dots.filter((d) => d.samples < VALIDATION_MIN_SAMPLES);
+  if (!dots.length || thin.length) {
+    return {
+      accuracy: Infinity,
+      jitter: Infinity,
+      worst: Infinity,
+      pass: false,
+      reason: `The eyes weren't read well enough on ${thin.length || dots.length} of the check dots. Try more light on your face, then recalibrate.`,
+    };
+  }
+  const accuracy = dots.reduce((a, d) => a + d.error, 0) / dots.length;
+  const jitter = dots.reduce((a, d) => a + d.jitter, 0) / dots.length;
+  const worst = Math.max(...dots.map((d) => d.error));
+  if (accuracy > POINTER_MAX_ERROR) {
+    return { accuracy, jitter, worst, pass: false, reason: `Average error ${pct(accuracy)} of the screen (needs ${pct(POINTER_MAX_ERROR)} or less to move the mouse). The eye cursor is shown, but the mouse stays where it is.` };
+  }
+  if (jitter > POINTER_MAX_JITTER) {
+    return { accuracy, jitter, worst, pass: false, reason: `The estimate wobbles ${pct(jitter)} of the screen while your eyes hold still (needs ${pct(POINTER_MAX_JITTER)} or less). The eye cursor is shown, but the mouse stays where it is.` };
+  }
+  return { accuracy, jitter, worst, pass: true, reason: `Accuracy check passed: average error ${pct(accuracy)}, wobble ${pct(jitter)}. The mouse follows steady looks.` };
 }

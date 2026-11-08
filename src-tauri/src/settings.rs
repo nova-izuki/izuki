@@ -495,6 +495,10 @@ pub struct Settings {
     /// Opt-in: two deliberate blinks click while the gaze is settled.
     #[serde(default)]
     pub air_eye_clicks: bool,
+    /// The emergency stop for Air and Eye control (caught by Izuki's own key
+    /// watchers, so it works whatever else is going on).
+    #[serde(default = "default_eye_stop_hotkey")]
+    pub eye_stop_hotkey: String,
     /// Last confirmed High Performance state. UI refreshes from Windows;
     /// never automatically applies a plan from this stored preference.
     #[serde(default = "default_false")]
@@ -733,6 +737,10 @@ fn default_air_eye_sensitivity() -> String {
     "standard".into()
 }
 
+fn default_eye_stop_hotkey() -> String {
+    "Ctrl+Alt+Shift+X".into()
+}
+
 fn default_buddy_motion() -> String {
     "smooth".into()
 }
@@ -865,6 +873,8 @@ impl Settings {
         if !["fast", "balanced", "precision"].contains(&self.air_mode.as_str()) { self.air_mode = default_air_mode(); }
         if !["hand", "eye"].contains(&self.air_control_mode.as_str()) { self.air_control_mode = default_air_control_mode(); }
         if !["calm", "standard", "quick"].contains(&self.air_eye_sensitivity.as_str()) { self.air_eye_sensitivity = default_air_eye_sensitivity(); }
+        // The emergency stop must always be a combination Izuki can catch.
+        if crate::hotkey::native_combo(&self.eye_stop_hotkey).is_none() { self.eye_stop_hotkey = default_eye_stop_hotkey(); }
         if !["arrows", "wasd"].contains(&self.air_game_keys.as_str()) { self.air_game_keys = default_air_game_keys(); }
         self.air_bindings.retain(|slot, action| {
             ["middle", "ring", "pinky", "flick_left", "flick_right"].contains(&slot.as_str())
@@ -1221,6 +1231,7 @@ impl Default for Settings {
             air_control_mode: default_air_control_mode(),
             air_eye_sensitivity: default_air_eye_sensitivity(),
             air_eye_clicks: false,
+            eye_stop_hotkey: default_eye_stop_hotkey(),
             air_bindings: Default::default(),
             air_game: false,
             air_game_keys: default_air_game_keys(),

@@ -137,6 +137,34 @@ check("there are exactly three eye sensitivities",
   check("an ordinary small move passes immediately", near !== null && near.x === 0.6);
 }
 
+// The accuracy check: the real mouse follows only a validated map.
+{
+  const { newValidation, validationStep, summarizeValidation, VALIDATION_TARGETS, VALIDATION_SETTLE_MS, VALIDATION_COLLECT_MS } = mod.exports;
+  const run = (estimateFor) => {
+    const v = newValidation(0);
+    let t = 0;
+    while (!validationStep(v, estimateFor(VALIDATION_TARGETS[v.index] || VALIDATION_TARGETS[0], t), t)) t += 33;
+    return summarizeValidation(v.dots);
+  };
+  const good = run((d, t) => ({ x: d.x + 0.02 + Math.sin(t) * 0.005, y: d.y - 0.015 + Math.cos(t) * 0.005 }));
+  check("an accurate, steady map passes and may move the mouse", good.pass === true && good.accuracy < 0.05);
+  const offset = run((d) => ({ x: d.x + 0.15, y: d.y }));
+  check("a map off by 15% of the screen fails (the owner's wandering cursor): drawn only", offset.pass === false && /Average error 15%/.test(offset.reason));
+  const shaky = run((d, t) => ({ x: d.x + (Math.floor(t / 33) % 2 ? 0.07 : -0.07), y: d.y }));
+  check("an estimate that jumps around fails on wobble even when its average is right", shaky.pass === false && /wobbles/.test(shaky.reason));
+  const blind = run(() => null);
+  check("eyes not read on the check dots: no verdict, no mouse", blind.pass === false && /weren't read well enough/.test(blind.reason));
+  const settleOnly = newValidation(0);
+  validationStep(settleOnly, { x: 9, y: 9 }, VALIDATION_SETTLE_MS - 1);
+  check("readings while the eyes are still landing are ignored", settleOnly.samples.length === 0);
+  validationStep(settleOnly, { x: 0.3, y: 0.3 }, VALIDATION_SETTLE_MS + 1);
+  check("readings after the settle time are measured", settleOnly.samples.length === 1);
+  const mapSrc = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "eyeMap.ts"), "utf8");
+  const calDots = [...mapSrc.slice(mapSrc.indexOf("CALIBRATION_TARGETS"), mapSrc.indexOf("];", mapSrc.indexOf("CALIBRATION_TARGETS"))).matchAll(/x:\s*([\d.]+),\s*y:\s*([\d.]+)/g)].map((m) => ({ x: +m[1], y: +m[2] }));
+  check("the check dots are new: none is one of the nine calibration dots", calDots.length === 9 && VALIDATION_TARGETS.every((v) => calDots.every((c) => Math.hypot(c.x - v.x, c.y - v.y) > 0.05)));
+  check("each dot takes under two seconds", VALIDATION_SETTLE_MS + VALIDATION_COLLECT_MS <= 2000);
+}
+
 if (failed) {
   console.error(`\n${failed} eye-control check(s) failed`);
   process.exit(1);

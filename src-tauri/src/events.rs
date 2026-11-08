@@ -30,3 +30,5 @@ pub const HELP_ASK: &str = "izuki://help-ask";
 pub const HELP_DONE: &str = "izuki://help-done";
 /// A new email in the primary inbox, for the Island's 📧 tile: `{ from, subject }`.
 pub const ISLAND_MAIL: &str = "izuki://island-mail";
+/// Air/Eye control's safety state changed (airsafe.rs): stopped, paused, ready.
+pub const AIR_SAFETY: &str = "izuki://air-safety";
