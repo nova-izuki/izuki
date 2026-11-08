@@ -103,3 +103,18 @@ on PRs; it does not alter release/coordinator workflows or grant write tokens.
 
 Native execution, full Rust results, review and commit/PR references will be
 appended after verification. Until then this is not a shipped or complete fix.
+
+## Native run, 2026-11-08 (Claude, current `milestone-196`, owner away from the PC)
+
+Host built from `milestone-196` (`1f28bfc`) with `IZUKI_TEST_MANIFEST=1 cargo build --example hand_overlay_probe`. Without the manifest switch, any example that links today's library fails to start (Windows: `TaskDialogIndirect` missing from the default Common Controls).
+
+- **Passed natively:** the host's own assertions ("NATIVE: real overlay click-through and no-focus assertions passed"). The overlay passes native mouse input through and never takes focus when shown.
+- **Passed natively** (browser-driven, against the real overlay):
+  - a disabled hand ignores actions;
+  - enabling never replays an old action;
+  - the hand is `pointer-events: none`, and a real click passes through it;
+  - typing is unaffected;
+  - stop, switched, ended, finished, closed and reopened each hide it;
+  - idle stops animation frames.
+- **Not completed:** the real foreground switch (`probe_switch_window`). Windows refuses to bring a window forward for a process started from a background terminal (foreground lock), so the precondition "a real native foreground switch must occur" failed. That isn't a hand failure. To finish it, run `node tools/hand-overlay-check.cjs --native` from your own terminal with `IZUKI_HAND_TEST_HOST` set to the built host.
+- **Fixed:** a timing race in the check. The page could load before the host printed its verdict; it now waits up to 30 s for the verdict line, or for a panic.
