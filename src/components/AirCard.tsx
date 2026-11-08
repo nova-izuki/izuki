@@ -34,6 +34,7 @@ const EYE_MOVES: Array<[string, string]> = [
  */
 function EyeStopPanel({ stopKey }: { stopKey: string }) {
   const [safety, setSafety] = useState<AirSafety | null>(null);
+  const [stopFailed, setStopFailed] = useState(false);
   useEffect(() => {
     let alive = true;
     void api.airSafety().then((s) => alive && setSafety(s)).catch(() => undefined);
@@ -54,12 +55,19 @@ function EyeStopPanel({ stopKey }: { stopKey: string }) {
         </span>
         <button
           type="button"
-          onClick={() => void api.airStop().catch(() => undefined)}
+          onClick={() => {
+            setStopFailed(false);
+            // A Stop that didn't get through must say so, with the keyboard fallback.
+            void api.airStop().catch(() => setStopFailed(true));
+          }}
           className="shrink-0 rounded-full bg-rose-600 px-2.5 py-1 text-[10.5px] font-bold text-white hover:bg-rose-500"
         >
           ■ Stop
         </button>
       </div>
+      {stopFailed && (
+        <div className="mt-1.5 font-bold text-rose-200">The Stop button didn't get through. Press {stopKey} or Ctrl+Shift+Q now.</div>
+      )}
       {safety?.paused && !safety.stopped && (
         <div className="mt-1.5 flex items-center justify-between gap-2 text-amber-200">
           <span>Paused: {safety.paused}.</span>
