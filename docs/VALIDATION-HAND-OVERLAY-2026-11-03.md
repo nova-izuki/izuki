@@ -109,12 +109,13 @@ appended after verification. Until then this is not a shipped or complete fix.
 Host built from `milestone-196` (`1f28bfc`) with `IZUKI_TEST_MANIFEST=1 cargo build --example hand_overlay_probe`. Without the manifest switch, any example that links today's library fails to start (Windows: `TaskDialogIndirect` missing from the default Common Controls).
 
 - **Passed natively:** the host's own assertions ("NATIVE: real overlay click-through and no-focus assertions passed"). The overlay passes native mouse input through and never takes focus when shown.
-- **Passed natively** (browser-driven, against the real overlay):
+- **Passed in the native host's webview** (driven over DevTools, with simulated input and events inside the fixture page, not physical input or full native workflows):
   - a disabled hand ignores actions;
   - enabling never replays an old action;
-  - the hand is `pointer-events: none`, and a real click passes through it;
-  - typing is unaffected;
-  - stop, switched, ended, finished, closed and reopened each hide it;
+  - the hand is `pointer-events: none`, and a simulated click on the fixture passes through it to the element underneath;
+  - simulated typing into a fixture field is unaffected;
+  - the stop, switched, ended, finished, closed and reopened *event handlers* each hide it (the events are emitted directly; the native overlay isn't actually closed or reopened);
   - idle stops animation frames.
+- What the host's own native assertions cover: the overlay window passes real mouse input through (`WS_EX_TRANSPARENT`) and doesn't take the foreground when shown.
 - **Not completed:** the real foreground switch (`probe_switch_window`). Windows refuses to bring a window forward for a process started from a background terminal (foreground lock), so the precondition "a real native foreground switch must occur" failed. That isn't a hand failure. To finish it, run `node tools/hand-overlay-check.cjs --native` from your own terminal with `IZUKI_HAND_TEST_HOST` set to the built host.
 - **Fixed:** a timing race in the check. The page could load before the host printed its verdict; it now waits up to 30 s for the verdict line, or for a panic.
