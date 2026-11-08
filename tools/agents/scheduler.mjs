@@ -190,6 +190,10 @@ export function performance(tasks) {
       const own = t.state.history.filter((h) => h.result === 'failed' && (h.agent || agent) === agent).length;
       if (own === 0) { s.firstTry++; k.firstTry++; }
       else { s.rework++; k.rework++; }
+      // Timing belongs to whoever made it: a task handed over keeps the first
+      // agent's start and the first assignment's wait, so neither is the
+      // finisher's to be measured by. Left unrecorded rather than misattributed.
+      if (t.state.history.some((h) => h.agent && h.agent !== agent)) continue;
       const started = Date.parse(t.state.startedAt || ''), ended = Date.parse(t.state.doneAt || '');
       if (started && ended > started) { const min = (ended - started) / 60000; s.minutes.push(min); k.minutes.push(min); }
       const created = Date.parse(t.createdAt || ''), assigned = Date.parse(t.state.assignedAt || '');

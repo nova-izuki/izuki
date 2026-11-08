@@ -118,6 +118,7 @@ assert.equal(handedOver.claude.reviewFixes, 1);
 assert.equal(handedOver.freebuff.failed, 0, 'the finisher is not charged for them');
 assert.equal(handedOver.freebuff.firstTry, 1);
 assert.equal(handedOver.freebuff.rework, 0);
+assert.deepEqual([handedOver.freebuff.minutes, handedOver.freebuff.waits], [[], []], "the first agent's start and the first wait aren't the finisher's time");
 
 // Planning: urgent first; dependencies wait; a busy agent gets nothing more;
 // another agent's files are never handed out; untrusted tasks are ignored;
