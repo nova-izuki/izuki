@@ -384,6 +384,8 @@ export interface Settings {
   air_eye_sensitivity: "calm" | "standard" | "quick";
   /** Opt-in: two deliberate blinks click. A single blink never clicks. */
   air_eye_clicks: boolean;
+  /** The emergency stop for Air and Eye control (default Ctrl+Alt+Shift+X). */
+  eye_stop_hotkey: string;
   /** The linked phone may work this PC (trackpad, typing, keys, a look at the screen). */
   phone_remote: boolean;
   /** The paired phone may run PowerShell here (changes only after it confirms the exact command). */
@@ -776,4 +778,16 @@ export interface Suggestion {
   icon: string;
   /** Worth a gentle peek without being asked (an error, a question, a video). */
   strong: boolean;
+}
+
+/** Air and Eye control's safety state, from Rust (airsafe.rs). */
+export interface AirSafety {
+  /** The emergency stop latched: Air control is off until turned on again. */
+  stopped: boolean;
+  /** The eye pointer is paused, and why, in plain words. */
+  paused: string | null;
+  /** The emergency stop's watchers are running (the eye pointer needs this). */
+  ready: boolean;
+  /** The emergency key combination, as shown ("Ctrl+Alt+Shift+X"). */
+  stop_key: string;
 }

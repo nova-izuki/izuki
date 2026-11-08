@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, emit, EV, on } from "../lib/ipc";
+import type { AirSafety } from "../lib/types";
 import {
   boostCameraForLowLight,
   cameraBrightness,
@@ -22,6 +23,7 @@ import {
   type EyeCalibration,
 } from "../lib/eyeGate";
 import { createEyeTracker, type EyeFrame, type EyeGuide, type EyeTracker } from "../lib/eyeTrack";
+import { FIXATION_MS, newValidation, summarizeValidation, validationStep, validationView, type ValidationState, type ValidationSummary } from "../lib/eyeControl";
 import { CALIBRATION_MAX_RMS, CALIBRATION_TARGETS } from "../lib/eyeMap";
 import {
   acceptGazeJump,
@@ -82,7 +84,61 @@ interface CalView {
  * settled gaze, calibration ready, and a cooldown. The camera and worker stop
  * with this component.
  */
+/**
+ * Always on screen while Eye Control runs: a Stop button the physical mouse
+ * can reach (the native emergency stop, airsafe.rs), and why the eye pointer
+ * is paused, with Resume. Driven by Rust's safety state, not by the tracker.
+ */
+function EyeSafetyBar() {
+  const [safety, setSafety] = useState<AirSafety | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void api.airSafety().then((s) => alive && setSafety(s)).catch(() => undefined);
+    const off = on<AirSafety>(EV.airSafety, (s) => {
+      if (alive) setSafety(s);
+    });
+    return () => {
+      alive = false;
+      void off.then((f) => f()).catch(() => undefined);
+    };
+  }, []);
+  const key = safety?.stop_key ?? "Ctrl+Alt+Shift+X";
+  return (
+    <div className="pointer-events-none fixed right-4 top-4 z-[80] flex max-w-[340px] flex-col items-end gap-1.5">
+      <button
+        type="button"
+        data-izk-hit
+        onClick={() => void api.airStop().catch(() => undefined)}
+        className="pointer-events-auto rounded-full bg-rose-600 px-4 py-2 text-[12px] font-bold text-white shadow-xl ring-2 ring-white/70 hover:bg-rose-500"
+        title={`Stops Eye Control at once and turns Air control off. Keyboard: ${key}. Voice: "stop eye control".`}
+      >
+        ■ Stop eye control <span className="font-normal opacity-85">({key})</span>
+      </button>
+      {safety?.paused && !safety.stopped && (
+        <div className="pointer-events-auto rounded-2xl bg-amber-400 px-3 py-2 text-right text-[11px] font-semibold leading-snug text-black shadow-xl">
+          Eye pointer paused: {safety.paused}.
+          <button
+            type="button"
+            data-izk-hit
+            onClick={() => void api.airResume().catch(() => undefined)}
+            className="ml-2 rounded-full bg-black/85 px-2.5 py-0.5 text-[10.5px] text-white hover:bg-black"
+          >
+            Resume
+          </button>
+        </div>
+      )}
+      {safety && !safety.ready && !safety.stopped && (
+        <div className="rounded-2xl bg-rose-100 px-3 py-1.5 text-right text-[10.5px] font-semibold text-rose-900 shadow-xl">
+          The emergency stop isn't running, so the eye pointer won't move.
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivity; clicks: boolean }) {
+  /** The accuracy check's dot on screen (null when no check is running). */
+  const [checkView, setCheckView] = useState<{ target: { x: number; y: number }; point: number; total: number; progress: number } | null>(null);
   const sensitivityRef = useRef(sensitivity);
   sensitivityRef.current = sensitivity;
   const clicksRef = useRef(clicks);
@@ -145,6 +201,11 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
     let latestEyes = { left: false, right: false };
     let latestGaze = false;
     let latestFrame: EyeFrame | null = null;
+    // The accuracy check after calibration, and its verdict: only a passed
+    // check lets the real mouse follow the eyes.
+    let check: ValidationState | null = null;
+    let verdict: ValidationSummary | null = null;
+    let checkShown = -1;
     const markSight = (face: boolean, eyes: boolean) => {
       setSight((prev) => (prev.face === face && prev.eyes === eyes ? prev : { face, eyes }));
     };
@@ -479,6 +540,9 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
       }
       if (!gateOpen(gate)) return;
       if (!startCalibration(cal, gate, performance.now())) return;
+      check = null;
+      verdict = null;
+      setCheckView(null);
       calHadGaze = false;
       jumpState = newGazeJumpState();
       calAt = performance.now();
@@ -518,6 +582,9 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
     const retryCal = (index: number) => {
       if (!readyForCalibration || runtimeStopped || !Number.isInteger(index)) return;
       if (!retryCalibrationTarget(cal, gate, index, performance.now())) return;
+      check = null;
+      verdict = null;
+      setCheckView(null);
       calHadGaze = false;
       autoFaceStatus = false;
       jumpState = newGazeJumpState();
@@ -598,18 +665,22 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
           lastFrameAt = now;
           steadySince = now;
           const quality = cal.rms;
-          const qualityText = quality === null ? "" : ` Fit error about ${Math.round(quality * 100)}% of the screen.`;
-          setStatus(`Calibration ready.${qualityText} Look to steer.`);
+          // Fitted — but fitting its own dots isn't accuracy. Check it on five
+          // fresh dots before the real mouse may follow the eyes.
+          check = newValidation(now);
+          verdict = null;
+          checkShown = -1;
+          const message = "Calibration fitted. Now an accuracy check: look at each new dot. The mouse doesn't move during the check.";
+          setStatus(message);
           tell({
-            state: "ready",
-            message: `Calibration ready.${qualityText} Look to steer.`,
+            state: "calibrating",
+            message,
             face: true,
             calibrated: true,
             clicks: clicksRef.current,
             samples: cal.points.length,
-            step: cal.targets.length,
-            total: cal.targets.length,
             quality: quality ?? undefined,
+            mode: "checking",
           });
           draw(true);
           return;
@@ -691,6 +762,39 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
         draw(true);
         return;
       }
+      if (check && !check.done) {
+        // The raw estimate, not the smoothed cursor: what's measured is the map.
+        const finished = validationStep(check, target, now);
+        const view = validationView(check, now);
+        const shown = view ? view.point * 10 + Math.floor(view.progress * 10) : -2;
+        if (shown !== checkShown) {
+          checkShown = shown;
+          setCheckView(view);
+        }
+        pointer.x = target.x;
+        pointer.y = target.y;
+        draw(true);
+        if (finished) {
+          verdict = summarizeValidation(check.dots);
+          setCheckView(null);
+          calAt = now + 850;
+          steadySince = now;
+          setStatus(verdict.reason);
+          tell({
+            state: "ready",
+            message: verdict.reason,
+            face: true,
+            calibrated: true,
+            clicks: clicksRef.current && verdict.pass,
+            samples: cal.points.length,
+            quality: cal.rms ?? undefined,
+            accuracy: Number.isFinite(verdict.accuracy) ? verdict.accuracy : undefined,
+            jitter: Number.isFinite(verdict.jitter) ? verdict.jitter : undefined,
+            mode: verdict.pass ? "pointer" : "preview",
+          });
+        }
+        return;
+      }
       const accepted = acceptGazeJump(jumpState, target);
       if (!accepted) {
         draw(true);
@@ -707,11 +811,17 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
       // smoothed cursor, not the raw prediction: one noisy mapped frame
       // should not make a settled gaze look like it is still moving.
       if (Math.hypot(pointer.x - previousX, pointer.y - previousY) > 0.006) steadySince = now;
-      if (now > calAt) void api.airPointer(pointer.x, pointer.y).catch(() => undefined);
+      // `true`: the gaze pointer. Rust checks it every move (airsafe.rs): the
+      // person moving the mouse or typing pauses it, erratic tracking pauses
+      // it, and nothing moves while the emergency stop isn't running.
+      // Only a passed accuracy check moves the real mouse, and only to a
+      // steady look (not every flicker); otherwise the cursor is just drawn.
+      const pointerMode = !!verdict?.pass;
+      if (pointerMode && now > calAt && now - steadySince >= FIXATION_MS) void api.airPointer(pointer.x, pointer.y, true).catch(() => undefined);
       draw(true);
 
       const steady = now - steadySince >= 500;
-      if (eyeClickStep(clickState, {
+      if (pointerMode && eyeClickStep(clickState, {
         blink: f.blink,
         now,
         enabled: clicksRef.current,
@@ -737,13 +847,21 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
 
       if (!autoFaceStatus) {
         autoFaceStatus = true;
-        setStatus(clicksRef.current ? "Eye control on — look to steer, double blink to click." : "Eye control on — look to steer.");
+        const message = !pointerMode
+          ? verdict?.reason ?? "Preview only: the mouse doesn't move."
+          : clicksRef.current
+            ? "Eye control on — look and hold to steer, double blink to click."
+            : "Eye control on — look and hold to steer.";
+        setStatus(message);
         tell({
           state: "ready",
-          message: clicksRef.current ? "Tracking. Double blink to click." : "Tracking. Look around to steer.",
+          message,
           face: true,
           calibrated: true,
-          clicks: clicksRef.current,
+          clicks: clicksRef.current && pointerMode,
+          mode: pointerMode ? "pointer" : "preview",
+          accuracy: verdict && Number.isFinite(verdict.accuracy) ? verdict.accuracy : undefined,
+          jitter: verdict && Number.isFinite(verdict.jitter) ? verdict.jitter : undefined,
         });
       }
     };
@@ -987,6 +1105,23 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
         <div className="border-t border-white/10 px-2.5 py-1.5 text-[9.5px] leading-snug text-white/65">{calView.reason}</div>
       </div>
       <canvas ref={canvas} className="pointer-events-none fixed inset-0 z-[70]" />
+      {checkView && (
+        <div className="pointer-events-none fixed inset-0 z-[74]">
+          <div className="fixed left-1/2 top-6 -translate-x-1/2 rounded-full bg-black/80 px-4 py-1.5 text-center text-[12px] font-semibold text-white shadow-xl">
+            Accuracy check · look at the dot · {checkView.point} of {checkView.total} · the mouse doesn't move during the check
+          </div>
+          <div className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${checkView.target.x * 100}%`, top: `${checkView.target.y * 100}%` }}>
+            <div className="relative h-14 w-14">
+              <div
+                className="absolute inset-0 rounded-full"
+                style={{ background: `conic-gradient(rgba(52,211,153,0.96) ${checkView.progress * 360}deg, rgba(255,255,255,0.18) 0deg)` }}
+              />
+              <div className="absolute inset-[6px] rounded-full border border-emerald-200/80 bg-black/90" />
+              <div className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-200" />
+            </div>
+          </div>
+        </div>
+      )}
       {calView.state === "collecting" && calView.target && (
         <div className="pointer-events-none fixed inset-0 z-[74]">
           <div className="fixed left-1/2 top-6 -translate-x-1/2 rounded-full bg-black/80 px-4 py-1.5 text-center text-[12px] font-semibold text-white shadow-xl">
@@ -1065,6 +1200,7 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
       <div className="pointer-events-none fixed bottom-3 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-black/65 px-3 py-1 text-[11.5px] text-white/90 shadow-lg">
         👁️ {status}
       </div>
+      <EyeSafetyBar />
     </>
   );
 }
