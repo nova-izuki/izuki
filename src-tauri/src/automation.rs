@@ -426,6 +426,11 @@ pub fn key_hold(name: &str, down: bool) -> Result<()> {
         .map_err(|err| anyhow!("key {} failed: {err:?}", if down { "down" } else { "up" }))
 }
 
+/// Whether [`key_hold`] is holding any key (never waits on the lock).
+pub fn keys_held() -> bool {
+    HELD.try_lock().is_some_and(|h| !h.1.is_empty())
+}
+
 /// Let go of every key [`key_hold`] is holding (Air's emergency stop). A key
 /// is forgotten only once its release was sent; the lock is never waited on
 /// for long (this also runs from the crash handler).

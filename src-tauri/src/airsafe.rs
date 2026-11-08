@@ -59,6 +59,8 @@ const TAKEOVER_PX: i32 = 16;
 const ERRATIC_PATH: f64 = 3.0;
 /// Eye control counts as "in use" this long after its last move.
 const EYE_ACTIVE_MS: u64 = 3_000;
+/// The watchdog's checks failing this many times in a row pauses the gaze pointer.
+const WATCHDOG_FAILURES: u32 = 5;
 
 /// Why the gaze pointer is paused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -224,6 +226,8 @@ pub fn touch() {
 /// bookkeeping is cleared by [`arm`] and [`resume`].
 pub fn stop(why: &str) {
     if STOPPED.swap(true, Ordering::SeqCst) {
+        // Pressed again: one more try at letting go of anything still held.
+        std::thread::spawn(release_now);
         return;
     }
     PAUSED.store(0, Ordering::SeqCst);
@@ -412,17 +416,30 @@ pub(crate) fn erratic(trail: &[(u64, f64, f64)], now: u64) -> bool {
 /// Every 200 ms: a held button with no word from Air is let go, and a real
 /// mouse move while eye control is in use pauses it, even between gaze moves.
 fn watchdog() {
+    let mut failures = 0u32;
     loop {
         std::thread::sleep(std::time::Duration::from_millis(200));
         DOG_BEAT.store(now_ms().max(1), Ordering::SeqCst);
-        // One failed check (a panic letting a button go) never ends the watchdog.
+        // One failed check (a panic letting a button go) never ends the
+        // watchdog; several in a row mean it can't be trusted to protect the
+        // person, so the gaze pointer pauses.
         if std::panic::catch_unwind(watchdog_tick).is_err() {
-            eprintln!("[air] watchdog: a check failed; carrying on");
+            failures += 1;
+            eprintln!("[air] watchdog: a check failed ({failures} in a row); carrying on");
+            if failures >= WATCHDOG_FAILURES {
+                pause(Pause::NoSafety);
+            }
+        } else {
+            failures = 0;
         }
     }
 }
 
 fn watchdog_tick() {
+    // Stopped, with a key whose release didn't go through: keep trying.
+    if STOPPED.load(Ordering::SeqCst) && crate::automation::keys_held() {
+        crate::automation::release_held_keys();
+    }
     {
         let now = now_ms();
         if BUTTONS.load(Ordering::SeqCst) != 0 && now.saturating_sub(LAST_CALL.load(Ordering::SeqCst)) > SILENT_RELEASE_MS {
@@ -540,7 +557,7 @@ mod tests {
     }
 
     #[test]
-    fn a_second_stop_does_nothing_more_and_the_eye_lane_is_remembered() {
+    fn a_second_stop_only_retries_letting_go_and_the_eye_lane_is_remembered() {
         let _g = SERIAL.lock();
         fresh();
         stop("first");
