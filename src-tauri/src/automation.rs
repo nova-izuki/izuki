@@ -426,6 +426,43 @@ pub fn key_hold(name: &str, down: bool) -> Result<()> {
         .map_err(|err| anyhow!("key {} failed: {err:?}", if down { "down" } else { "up" }))
 }
 
+/// Whether [`key_hold`] is holding any key (never waits on the lock).
+pub fn keys_held() -> bool {
+    HELD.try_lock().is_some_and(|h| !h.1.is_empty())
+}
+
+/// Let go of every key [`key_hold`] is holding (Air's emergency stop). A key
+/// is forgotten only once its release was sent; the lock is never waited on
+/// for long (this also runs from the crash handler).
+pub fn release_held_keys() {
+    use std::io::Write;
+    // Never panics on a failed log line: this also runs from the crash handler.
+    let log = |line: String| {
+        let _ = writeln!(std::io::stderr(), "{line}");
+    };
+    let Some(mut held) = HELD.try_lock_for(std::time::Duration::from_millis(200)) else {
+        log("[air] couldn't let go of held keys: busy".into());
+        return;
+    };
+    if held.1.is_empty() {
+        return;
+    }
+    let mut e = match enigo() {
+        Ok(e) => e,
+        Err(err) => {
+            log(format!("[air] couldn't let go of held keys: {err}"));
+            return;
+        }
+    };
+    held.1.retain(|(k, name)| match e.key(*k, Direction::Release) {
+        Ok(()) => false,
+        Err(err) => {
+            log(format!("[air] couldn't let go of {name}: {err:?}"));
+            true
+        }
+    });
+}
+
 /// Keys held by [`key_hold`], and the window they were held for.
 static HELD: parking_lot::Mutex<(Option<isize>, Vec<(Key, String)>)> = parking_lot::Mutex::new((None, Vec::new()));
 

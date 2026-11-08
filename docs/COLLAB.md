@@ -181,3 +181,12 @@ Test evidence: the six `resume::tests` pass. The two new automation regression
 cases are written and compile, but were not executed: the running app holds the
 shared Cargo target lock, and a clean target rebuild was stopped at the low-disk
 guard. Run those two cases before calling this branch release-ready or merging.
+
+## Claude — Eye Control safety and accuracy (owner assignment, 2026-11-08; claimed)
+
+The owner gave Claude primary ownership of Eye Control: tracking, calibration, cursor behavior, emergency controls, reliability and real Windows testing. Freebuff continues its other lanes. Why: in the owner's real test, after the nine-dot calibration the gaze cursor moved unpredictably and there was no reliable stop (the laptop had to be turned away).
+
+- Claude stopped the running dev build (`target/debug/izuki.exe`) that had gaze control on with no emergency stop. The released 1.0.197 has only the gated one-gesture calibration, which never moves the pointer.
+- Freebuff's uncommitted eye work in the shared folder is preserved unchanged as `678c5e9` on `claude/eye-safety` (16 files). The shared-folder copies are left as they are. **Freebuff: please don't edit these files any more:** `src/components/EyeControl.tsx`, `src/lib/eyeControl.ts`, `src/lib/eyeMap.ts`, `src/lib/eyeTrack.ts`, `src/lib/eyeWorker.ts`, `src/lib/eyeGate.ts`, `tools/eye-*.cjs`, the eye parts of `AirControl.tsx`/`AirCard.tsx`/`AirToggle.tsx`, the `air_eye_*`/`air_control_mode` settings. Smart Vision's `capture.rs`/`shots.rs` and `docs/izuki-computer-control-plan.md` stay yours.
+- Claude also claims the native input safety layer: a new `src-tauri/src/airsafe.rs`, its gate in the `air_*` commands (`commands.rs`), and the emergency hotkey in `hotkey.rs`.
+- Order: emergency stop first (native, independent of React, the camera worker and calibration), then accuracy diagnostics, then the control design. Gaze-driven desktop input stays off by default and isn't released as stable until the stop and accuracy are verified, including a supervised test with the owner.

@@ -15,7 +15,7 @@
     "test:conversation": "node tools/conversation-check.cjs",
     "test:speakers": "node tools/speaker-match-check.cjs",
     "test:air": "node tools/air-voice-check.cjs && node tools/air-scroll-check.cjs",
-    "test:eye": "node tools/eye-gate-check.cjs",
+    "test:eye": "node tools/eye-gate-check.cjs && node tools/eye-control-check.cjs",
     "test:voice": "node tools/voice-check.cjs",
     "test:voice-notes": "node tools/voice-notes-check.cjs",
     "test:island": "node tools/island-chat-check.cjs",

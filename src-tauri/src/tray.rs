@@ -117,6 +117,10 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
             let mut settings = store.settings();
             settings.air_enabled = !settings.air_enabled;
             let saved = store.set_settings(settings);
+            if saved.air_enabled {
+                // The person turned Air on: an earlier emergency stop is re-armed.
+                crate::airsafe::arm();
+            }
             // The camera and gestures live in the overlay: up while Air is on.
             let _ = if overlay::stays_up(&saved) { overlay::show_follow(app) } else { overlay::hide_overlay(app) };
             crate::state::settings_changed_elsewhere();
