@@ -380,12 +380,12 @@ pub fn eye_pointer(x: i32, y: i32, nx: f64, ny: f64) -> bool {
 }
 
 /// A mouse button from Air or Eye. Letting go always passes; pressing only
-/// when nothing is stopped or paused. Held buttons are tracked for release.
+/// when nothing is stopped or paused. Held buttons are tracked for release:
+/// a button counts as let go only once its release went through ([`released`]).
 pub fn button_allowed(right: bool, down: bool) -> bool {
     touch();
     let bit = if right { 2 } else { 1 };
     if !down {
-        BUTTONS.fetch_and(!bit, Ordering::SeqCst);
         return true;
     }
     if !allowed() {
@@ -396,23 +396,36 @@ pub fn button_allowed(right: bool, down: bool) -> bool {
     true
 }
 
+/// A release went through: the button is no longer held.
+pub fn released(right: bool) {
+    BUTTONS.fetch_and(!(if right { 2 } else { 1 }), Ordering::SeqCst);
+}
+
+/// Let go of one button; it stays recorded as held (for the watchdog to try
+/// again) unless the release went through.
+fn let_go(right: bool) {
+    match crate::automation::mouse_button(right, false) {
+        Ok(()) => released(right),
+        Err(e) => log(&format!("[air] couldn't let go of the {} button: {e}", if right { "right" } else { "left" })),
+    }
+}
+
 /// After a press was sent: if a stop or pause landed meanwhile, let it go at
 /// once (the stop's own release may have run before the press reached Windows).
 pub fn after_press(right: bool) {
     if !allowed() {
-        let _ = crate::automation::mouse_button(right, false);
-        BUTTONS.fetch_and(!(if right { 2 } else { 1 }), Ordering::SeqCst);
+        let_go(right);
     }
 }
 
 /// Let go of everything Air holds: mouse buttons, a 3D grip, held keys.
 pub fn release_now() {
-    let held = BUTTONS.swap(0, Ordering::SeqCst);
+    let held = BUTTONS.load(Ordering::SeqCst);
     if held & 1 != 0 {
-        let _ = crate::automation::mouse_button(false, false);
+        let_go(false);
     }
     if held & 2 != 0 {
-        let _ = crate::automation::mouse_button(true, false);
+        let_go(true);
     }
     let _ = crate::air::grip_3d(false);
     crate::automation::release_held_keys();
@@ -582,7 +595,9 @@ mod tests {
         assert!(button_allowed(false, true));
         assert!(button_allowed(true, true));
         assert_eq!(BUTTONS.load(Ordering::SeqCst), 3);
-        assert!(button_allowed(false, false));
+        assert!(button_allowed(false, false), "letting go is always allowed");
+        assert_eq!(BUTTONS.load(Ordering::SeqCst), 3, "a button counts as let go only once its release went through");
+        released(false);
         assert_eq!(BUTTONS.load(Ordering::SeqCst), 2, "left let go, right still held");
         BUTTONS.store(0, Ordering::SeqCst);
     }

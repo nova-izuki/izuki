@@ -1825,6 +1825,9 @@ pub fn air_button(right: bool, down: bool) -> R<()> {
     let result = crate::air::button(right, down).map_err(err);
     if down {
         crate::airsafe::after_press(right);
+    } else if result.is_ok() {
+        // Only a release that went through clears it; otherwise the watchdog retries.
+        crate::airsafe::released(right);
     }
     result
 }
