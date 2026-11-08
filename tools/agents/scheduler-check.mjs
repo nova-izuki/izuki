@@ -105,6 +105,19 @@ assert.deepEqual(plan(anyPerf, agentStates([], now), prodStats, trusted, rank).m
 // Different kind, no evidence: the weighted rank ties, so the plan still produces one pick (order stable).
 const anyUi = [describe(issue(84, ['agent-task', 'status:queued', 'agent:any', 'kind:docs'], 'd\nFiles: src/w.ts'))];
 assert.equal(plan(anyUi, agentStates([], now), prodStats, trusted, rank).length, 1);
+// Evidence for one agent only: the weighted rank ties, and the tie goes to
+// the agent with a verified record on that kind, never to list order.
+const oneSided = performance([done(85, 'freebuff', 'docs', [{ agent: 'freebuff', result: 'done' }])]);
+const oneRank = (agent, kind) => productivity(oneSided, kind)[agent];
+assert.deepEqual(plan(anyUi, agentStates([], now), oneSided, trusted, oneRank).map((p) => p.agent), ['freebuff'], 'the agent with evidence wins the tie');
+// A task handed over: the first agent's failures stay with it; the finisher's
+// clean first attempt is first-try, not re-work.
+const handedOver = performance([done(86, 'freebuff', 'perf', [{ agent: 'claude', result: 'failed' }, { agent: 'claude', result: 'failed', category: 'review' }, { agent: 'freebuff', result: 'done' }])]);
+assert.equal(handedOver.claude.failed, 2, "claude's failures are counted against claude");
+assert.equal(handedOver.claude.reviewFixes, 1);
+assert.equal(handedOver.freebuff.failed, 0, 'the finisher is not charged for them');
+assert.equal(handedOver.freebuff.firstTry, 1);
+assert.equal(handedOver.freebuff.rework, 0);
 
 // Planning: urgent first; dependencies wait; a busy agent gets nothing more;
 // another agent's files are never handed out; untrusted tasks are ignored;

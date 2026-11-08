@@ -165,21 +165,30 @@ export function agentStates(tasks, now, facts = {}) {
 export function performance(tasks) {
   const stats = {};
   const blank = () => ({ done: 0, failed: 0, firstTry: 0, rework: 0, reviewFixes: 0, regressions: 0, minutes: [], waits: [] });
+  const bins = (agent, kind) => {
+    const s = (stats[agent] ??= { ...blank(), byKind: {} });
+    return [s, (s.byKind[kind] ??= blank())];
+  };
   for (const t of tasks) {
     const agent = t.state.agent;
     if (!agent || !t.state.history?.length) continue;
-    const s = (stats[agent] ??= { ...blank(), byKind: {} });
-    const k = (s.byKind[t.kind] ??= blank());
-    // Only real failures: a pause or an unavailable agent isn't one (`counts`).
-    const failures = t.state.history.filter((h) => h.result === 'failed').length;
-    // Review rounds that failed a check are the §2 "quality" cost: fixes required.
-    const reviewFixes = t.state.history.filter((h) => h.result === 'failed' && h.category === 'review').length;
-    s.failed += failures; k.failed += failures;
-    s.reviewFixes += reviewFixes; k.reviewFixes += reviewFixes;
+    // Each failure counts against the agent that made it: a task handed to
+    // the other agent keeps its history, and the newcomer isn't charged for
+    // the first one's attempts. Only real failures: a pause or an outage
+    // isn't one (`counts`). Old entries without an agent are the task's.
+    for (const h of t.state.history) {
+      if (h.result !== 'failed') continue;
+      const [fs, fk] = bins(h.agent || agent, t.kind);
+      fs.failed++; fk.failed++;
+      // Review rounds that failed a check are the §2 "quality" cost: fixes required.
+      if (h.category === 'review') { fs.reviewFixes++; fk.reviewFixes++; }
+    }
+    const [s, k] = bins(agent, t.kind);
     if (t.status === 'done') {
       s.done++; k.done++;
-      // First try vs re-work: a verified task that needed a retry is re-work (§2).
-      if (failures === 0) { s.firstTry++; k.firstTry++; }
+      // First try vs re-work, by the finishing agent's own attempts (§2).
+      const own = t.state.history.filter((h) => h.result === 'failed' && (h.agent || agent) === agent).length;
+      if (own === 0) { s.firstTry++; k.firstTry++; }
       else { s.rework++; k.rework++; }
       const started = Date.parse(t.state.startedAt || ''), ended = Date.parse(t.state.doneAt || '');
       if (started && ended > started) { const min = (ended - started) / 60000; s.minutes.push(min); k.minutes.push(min); }
@@ -294,7 +303,9 @@ export function plan(tasks, states, stats, trusted, rank) {
     const candidates = (task.agent === 'any' ? AGENTS : [task.agent]).filter((a) => free.has(a))
       .filter((a) => !AGENTS.some((other) => other !== a && overlaps(task.files, held[other])));
     if (!candidates.length) continue;
-    candidates.sort((a, b) => rankFn(b, task.kind) - rankFn(a, task.kind));
+    // A tie on the rank (the weighted score sees one-sided evidence as
+    // neutral) goes to the better smoothed record, never to list order.
+    candidates.sort((a, b) => rankFn(b, task.kind) - rankFn(a, task.kind) || score(stats, b, task.kind) - score(stats, a, task.kind));
     const agent = candidates[0];
     out.push({ task: task.number, agent, why: task.agent === 'any' ? `best measured on ${task.kind} (${rankFn(agent, task.kind).toFixed(2)}) among free agents` : `assigned to ${agent}` });
     free.delete(agent);
