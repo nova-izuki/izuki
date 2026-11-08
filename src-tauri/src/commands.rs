@@ -78,8 +78,14 @@ pub fn get_settings() -> Settings {
 }
 
 #[tauri::command]
-pub fn save_settings(app: AppHandle, settings: Settings) -> Settings {
+pub fn save_settings(app: AppHandle, mut settings: Settings) -> Settings {
     let previous = state::store().settings();
+    // After an emergency stop, Air comes back only by an explicit enable
+    // (air_arm first), never by a settings save queued before the stop.
+    // The save's other changes still go through.
+    if settings.air_enabled && !previous.air_enabled && crate::airsafe::stopped() {
+        settings.air_enabled = false;
+    }
     let saved = state::store().set_settings(settings);
     crate::bugs::set_enabled(saved.send_bug_reports);
     if saved.mate_enabled != previous.mate_enabled {
@@ -1816,7 +1822,11 @@ pub fn air_button(right: bool, down: bool) -> R<()> {
     if !crate::airsafe::button_allowed(right, down) {
         return Err("Air control is stopped or paused".into());
     }
-    crate::air::button(right, down).map_err(err)
+    let result = crate::air::button(right, down).map_err(err);
+    if down {
+        crate::airsafe::after_press(right);
+    }
+    result
 }
 
 /// Air control: two pinches in a row — a real double-click where the pointer is.
@@ -1839,6 +1849,13 @@ pub fn air_scroll(amount: i32) -> R<()> {
 #[tauri::command]
 pub fn air_stop() {
     crate::airsafe::stop("Stop button");
+}
+
+/// The person is turning Air control on (a toggle, the Air button, their
+/// voice): an earlier emergency stop is re-armed. Settings saves can't do it.
+#[tauri::command]
+pub fn air_arm() {
+    crate::airsafe::arm();
 }
 
 /// Resume the eye pointer after a pause (never undoes an emergency stop).

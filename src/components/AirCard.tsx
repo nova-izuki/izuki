@@ -182,7 +182,14 @@ export function AirCard() {
       hint="One home for Hand Control and Eye Control. Pick one lane; the camera runs only while Air control is on, and the Air button in the floating chat, Island and Chat tab turns the same switch on and off. Full hand gestures are unchanged; Eye Control uses the existing face/eye model."
     >
       <Row label="Air control" hint="Your camera turns on only while this is on. Hand Control is selected by default." icon={mode === "eye" ? <Eye size={14} strokeWidth={2.3} /> : <Hand size={14} strokeWidth={2.3} />}>
-        <Toggle checked={settings.air_enabled} onChange={(v) => patch({ air_enabled: v })} />
+        <Toggle
+          checked={settings.air_enabled}
+          onChange={(v) => {
+            // Turning it on is the explicit re-arm after an emergency stop.
+            if (v) void api.airArm().catch(() => undefined).finally(() => patch({ air_enabled: true }));
+            else patch({ air_enabled: false });
+          }}
+        />
       </Row>
 
       <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.035] p-2.5">
@@ -287,7 +294,7 @@ export function AirCard() {
                   void emit(EV.airTour);
                 } else {
                   try { localStorage.setItem("izuki.air.tour", "1"); } catch { /* tour opens from the button next time */ }
-                  patch({ air_enabled: true });
+                  void api.airArm().catch(() => undefined).finally(() => patch({ air_enabled: true }));
                 }
               }}
             >

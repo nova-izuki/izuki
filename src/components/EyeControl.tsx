@@ -105,6 +105,7 @@ function CancelButton({ label, onCancel }: { label: string; onCancel: () => void
  */
 function EyeSafetyBar() {
   const [safety, setSafety] = useState<AirSafety | null>(null);
+  const [stopFailed, setStopFailed] = useState(false);
   useEffect(() => {
     let alive = true;
     void api.airSafety().then((s) => alive && setSafety(s)).catch(() => undefined);
@@ -122,12 +123,21 @@ function EyeSafetyBar() {
       <button
         type="button"
         data-izk-hit
-        onClick={() => void api.airStop().catch(() => undefined)}
+        onClick={() => {
+          setStopFailed(false);
+          // A Stop that didn't get through must say so, with the keyboard fallback.
+          void api.airStop().catch(() => setStopFailed(true));
+        }}
         className="pointer-events-auto rounded-full bg-rose-600 px-4 py-2 text-[12px] font-bold text-white shadow-xl ring-2 ring-white/70 hover:bg-rose-500"
         title={`Stops Eye Control at once and turns Air control off. Keyboard: ${key}. Voice: "stop eye control".`}
       >
         ■ Stop eye control <span className="font-normal opacity-85">({key})</span>
       </button>
+      {stopFailed && (
+        <div className="rounded-2xl bg-rose-100 px-3 py-1.5 text-right text-[11px] font-bold text-rose-900 shadow-xl">
+          The Stop button didn't get through. Press {key} or Ctrl+Shift+Q now.
+        </div>
+      )}
       {safety?.paused && !safety.stopped && (
         <div className="pointer-events-auto rounded-2xl bg-amber-400 px-3 py-2 text-right text-[11px] font-semibold leading-snug text-black shadow-xl">
           Eye pointer paused: {safety.paused}.
@@ -861,10 +871,14 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
         if (now - clickAt > 900) {
           clickAt = now;
           setStatus("Clicked — eyes steady.");
+          // Always let go, whatever the press did; say so if that fails
+          // (the native watchdog also lets go of an eye-held button after 1.5 s).
           void api
             .airButton(false, true)
-            .then(() => api.airButton(false, false))
-            .catch(() => undefined);
+            .catch(() => undefined)
+            .finally(() => {
+              void api.airButton(false, false).catch(() => setStatus("Couldn't let go of the mouse button — click once with the real mouse."));
+            });
           tell({
             state: "ready",
             message: "Clicked. Keep looking to steer.",
@@ -951,18 +965,19 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
         setStatus("Opening the camera…");
         tell({ state: "starting", message: "Opening the camera…", face: false, calibrated: false, clicks: clicksRef.current });
         const opening = openCamera(null, { width: 640, height: 480 });
+        // Given up on (it failed, timed out, or Eye Control closed meanwhile):
+        // a camera that answers late is turned straight off, never left on.
         let gaveUp = false;
         void opening.then((c) => {
-          if (gaveUp) c.stream.getTracks().forEach((track) => track.stop());
+          if (gaveUp || !alive) c.stream.getTracks().forEach((track) => track.stop());
         }).catch(() => undefined);
-        const cam = await within(
-          opening.catch((e) => {
-            gaveUp = true;
-            throw e;
-          }),
-          12_000,
-          "the camera didn't answer",
-        );
+        let cam: Awaited<typeof opening>;
+        try {
+          cam = await within(opening, 12_000, "the camera didn't answer");
+        } catch (e) {
+          gaveUp = true;
+          throw e;
+        }
         if (!alive) {
           cam.stream.getTracks().forEach((track) => track.stop());
           return;
