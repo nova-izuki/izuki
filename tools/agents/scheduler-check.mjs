@@ -119,6 +119,8 @@ assert.equal(handedOver.freebuff.failed, 0, 'the finisher is not charged for the
 assert.equal(handedOver.freebuff.firstTry, 1);
 assert.equal(handedOver.freebuff.rework, 0);
 assert.deepEqual([handedOver.freebuff.minutes, handedOver.freebuff.waits], [[], []], "the first agent's start and the first wait aren't the finisher's time");
+// One timed 30-minute completion and one untimed (handed-over) one: 2 an hour, not 4.
+assert.equal(metrics({ done: 2, failed: 0, firstTry: 2, rework: 0, reviewFixes: 0, regressions: 0, minutes: [30], waits: [] }).rate, 2, 'untimed completions never inflate the rate');
 
 // Planning: urgent first; dependencies wait; a busy agent gets nothing more;
 // another agent's files are never handed out; untrusted tasks are ignored;

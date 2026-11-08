@@ -231,7 +231,9 @@ export function metrics(bin) {
   const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
   const hours = bin.minutes.reduce((a, b) => a + b, 0) / 60;
   return {
-    rate: hours > 0 ? bin.done / hours : null, // verified tasks per hour
+    // Verified tasks per hour, over the completions whose time is known (a
+    // handed-over task has none): untimed ones never inflate the rate.
+    rate: hours > 0 ? bin.minutes.length / hours : null,
     firstTry: bin.firstTry / bin.done,          // first-attempt pass rate
     time: mean(bin.minutes),                    // average completion time (min)
     quality: bin.reviewFixes / bin.done,        // review fixes required per task
