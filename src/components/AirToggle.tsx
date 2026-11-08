@@ -9,12 +9,21 @@ import { cx } from "./ui";
  */
 export function AirToggle({ variant = "chip", className }: { variant?: "chip" | "mini"; className?: string }) {
   const [onNow, setOn] = useState<boolean | null>(null);
+  const [eye, setEye] = useState(false);
   /** The latest value, so quick double taps flip from where the last tap left it. */
   const current = useRef<boolean | null>(null);
   current.current = onNow;
   useEffect(() => {
     let alive = true;
-    const read = () => void api.getSettings().then((s) => alive && setOn(!!s.air_enabled)).catch(() => undefined);
+    const read = () =>
+      void api
+        .getSettings()
+        .then((s) => {
+          if (!alive) return;
+          setOn(!!s.air_enabled);
+          setEye(s.air_control_mode === "eye");
+        })
+        .catch(() => undefined);
     read();
     const off = on<void>(EV.settingsChanged, read);
     return () => {
@@ -29,14 +38,18 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
     setOn(next);
     void emit(EV.patchSettings, { air_enabled: next });
   };
-  const title = onNow ? "Air control is on: your hand drives the PC. Tap to turn it off." : "Air control: control the PC with your hand in front of the camera. Tap to turn it on.";
+  const lane = eye ? "Eye" : "Hand";
+  const icon = eye ? "👁️" : "🖐️";
+  const title = onNow
+    ? `${lane} control is on. Tap to turn Air control off.`
+    : `Air control: ${lane.toLowerCase()} control is selected. Tap to turn it on.`;
   if (variant === "mini") {
     return (
       <button
         type="button"
         data-izk-hit
         aria-pressed={onNow}
-        aria-label={onNow ? "Turn Air control off" : "Turn Air control on"}
+        aria-label={onNow ? `Turn ${lane} control off` : `Turn ${lane} control on`}
         title={title}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={flip}
@@ -46,7 +59,7 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
           className
         )}
       >
-        🖐️
+        {icon}
       </button>
     );
   }
@@ -63,7 +76,7 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
         className
       )}
     >
-      🖐️ {onNow ? "Air on" : "Air"}
+      {icon} {onNow ? `${lane} on` : "Air"}
     </button>
   );
 }

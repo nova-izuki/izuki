@@ -256,6 +256,9 @@ export const MOCK_SETTINGS: Settings = {
   air_mirror: false,
   air_gestures: [],
   air_mode: "balanced",
+  air_control_mode: "hand",
+  air_eye_sensitivity: "standard",
+  air_eye_clicks: false,
   phone_remote: false,
   phone_terminal: false,
   air_bindings: {},
@@ -1306,6 +1309,14 @@ export const EV = {
   airRecord: "izuki://air-record",
   /** Frontend-only, config panel → overlay: open Air control's guided test. */
   airTour: "izuki://air-tour",
+  /** Frontend-only, config panel → overlay: start the nine-target eye calibration. */
+  airEyeCalibrate: "izuki://air-eye-calibrate",
+  /** Frontend-only, config panel → overlay: stop an unfinished calibration. */
+  airEyeCancel: "izuki://air-eye-cancel",
+  /** Frontend-only, config panel → overlay: re-collect one inconsistent target. */
+  airEyeRetry: "izuki://air-eye-retry",
+  /** Frontend-only, overlay → Settings: live eye-control status. */
+  airEyeStatus: "izuki://air-eye-status",
   /** Frontend-only: another camera was picked for Air control — reopen it. */
   airCamera: "izuki://air-camera",
   /** Frontend-only: the moving character walks to a spot (0..1 over every monitor) and points. */
