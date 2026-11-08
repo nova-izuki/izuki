@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
 import { api, emit, EV, on } from "../lib/ipc";
-import { listCameras, openCamera, rankCameras, saveCamera, savedCamera } from "../lib/camera";
+import { boostCameraForLowLight, cameraBrightness, listCameras, openCamera, rankCameras, saveCamera, savedCamera } from "../lib/camera";
+import { EyeControl } from "./EyeControl";
 import { AIR_KEYBOARD_OPEN, AirKeyboard } from "./AirKeyboard";
 import { AirMirror, HAND_BONES } from "./AirMirror";
 import { actionLabel, airBindings, type AirSlot } from "../lib/airActions";
 import { newScroll, scrollStep, type ScrollState } from "../lib/airScroll";
+import { normalizeEyeSensitivity, type EyeSensitivity } from "../lib/eyeControl";
 import type { Settings } from "../lib/types";
 
 /**
@@ -123,6 +125,9 @@ export function AirHost() {
   const [bindings, setBindings] = useState<Record<AirSlot, string>>(() => airBindings(undefined));
   const [game, setGame] = useState<{ on: boolean; keys: "arrows" | "wasd" }>({ on: false, keys: "arrows" });
   const [mirror, setMirror] = useState(false);
+  const [control, setControl] = useState<"hand" | "eye">("hand");
+  const [eyeSensitivity, setEyeSensitivity] = useState<EyeSensitivity>("standard");
+  const [eyeClicks, setEyeClicks] = useState(false);
   const last = useRef("");
   useEffect(() => {
     let alive = true;
@@ -135,12 +140,16 @@ export function AirHost() {
           setBindings(airBindings(s.air_bindings));
           setGame({ on: !!s.air_game, keys: s.air_game_keys === "wasd" ? "wasd" : "arrows" });
           setMirror(!!s.air_mirror);
-          const next = s.air_enabled ? s.air_gestures ?? [] : null;
-          const key = JSON.stringify(next);
+          const nextControl = s.air_control_mode === "eye" ? "eye" : "hand";
+          setControl(nextControl);
+          setEyeSensitivity(normalizeEyeSensitivity(s.air_eye_sensitivity));
+          setEyeClicks(!!s.air_eye_clicks);
+          const next = s.air_enabled ? (nextControl === "eye" ? [] : s.air_gestures ?? []) : null;
+          const key = `${nextControl}:${JSON.stringify(next)}`;
           if (key === last.current) return; // same as before: don't restart the camera
           const wasOn = last.current !== "" && last.current !== "null";
           last.current = key;
-          if (next && !wasOn) void api.log("[air] on — starting").catch(() => undefined);
+          if (next && !wasOn) void api.log(`[air] on — ${nextControl} control starting`).catch(() => undefined);
           setGestures(next);
         })
         .catch(() => undefined);
@@ -151,7 +160,9 @@ export function AirHost() {
       offs.forEach((off) => void off.then((f) => f()).catch(() => undefined));
     };
   }, []);
-  return gestures ? <AirControl gestures={gestures} mode={mode} bindings={bindings} game={game} mirror={mirror} /> : null;
+  if (!gestures) return null;
+  if (control === "eye") return <EyeControl sensitivity={eyeSensitivity} clicks={eyeClicks} />;
+  return <AirControl gestures={gestures} mode={mode} bindings={bindings} game={game} mirror={mirror} />;
 }
 
 export function AirControl({
@@ -206,7 +217,12 @@ export function AirControl({
         void listCameras()
           .then((c) => {
             const now = c.map((d) => d.deviceId).join("|");
-            if (now !== seen) {
+            // Plugging in a webcam should not tear down a working camera and
+            // reload the hand model. Only reopen when a camera we knew about
+            // disappeared; a new one can be picked in Settings.
+            const next = now ? now.split("|") : [];
+            const gone = seen.split("|").some((id) => id && !next.includes(id));
+            if (gone) {
               seen = now;
               reopen();
             }
@@ -275,6 +291,7 @@ export function AirControl({
     let camFrames = 0;
     let camAt = performance.now();
     let timer: ReturnType<typeof setInterval> | undefined;
+    let lowHintAt = 0;
     let frontTimer: ReturnType<typeof setInterval> | undefined;
     let frontApp = "";
     let frontBlocked = false;
@@ -612,6 +629,18 @@ export function AirControl({
           grabbing = false;
           fake("pointerup", pointer);
         }
+        // Low-light guidance, sparingly: no hand for a while is often just a
+        // lamp that is off. The camera exposure boost is automatic; this tells
+        // the user when the picture itself is too dark for the model.
+        if (now - lastHand > 12_000 && now - lowHintAt > 60_000) {
+          lowHintAt = now;
+          const level = cameraBrightness(video.current);
+          setStatus(
+            level !== null && level < 46
+              ? "Too dark for hand tracking — turn on a light or face a window."
+              : "Looking for your hand — hold it up in good light.",
+          );
+        }
         // Hand gone: the 🤙 call is ready again.
         callAt = 0;
         if (callCool === Infinity) callCool = now + 1200;
@@ -661,7 +690,10 @@ export function AirControl({
         if (!downSince) downSince = now;
         upSince = 0;
       }
-      if (!engaged && raised && now - upSince > 120) engaged = true;
+      if (!engaged && raised && now - upSince > 120) {
+        engaged = true;
+        setStatus("Air control on — move your hand to steer.");
+      }
       if (engaged && !raised && now - downSince > 600) engaged = false;
       if (engaged) why.used++;
       if (!engaged) {
@@ -1151,6 +1183,14 @@ export function AirControl({
         // Every stage gets a time limit and a log line: on a slow PC the hand
         // model sometimes never finished loading, with nothing to say why.
         await within(v.play(), 8000, "the camera picture didn't start");
+        // Best-effort exposure/focus for dim rooms. The live picture decides
+        // whether extra exposure is needed, so a bright room is left alone.
+        // This does not change the hand model or its gesture thresholds.
+        void boostCameraForLowLight(stream, v)
+          .then((boosted) => {
+            if (boosted) void api.log("[air] low-light camera settings applied").catch(() => undefined);
+          })
+          .catch(() => undefined);
         setStatus("Getting hand tracking ready…");
         void api.log("[air] loading hand tracking…").catch(() => undefined);
         const base = new URL("/air", window.location.href).href;

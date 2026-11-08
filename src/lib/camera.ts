@@ -52,6 +52,84 @@ export function rankCameras(cams: MediaDeviceInfo[], saved: string | null): Medi
 }
 
 /**
+ * Ask the camera for its continuous exposure/focus modes and, only when the
+ * picture is actually dark, a little extra exposure. Webcams expose different
+ * controls (and some expose none), so each request is best-effort; a refusal
+ * leaves the camera exactly as it was. This genuinely helps a dim room, but no
+ * RGB webcam can see a hand or eyes in complete darkness — the UI says that
+ * plainly instead of pretending.
+ *
+ * Positive exposure compensation is deliberately conditional: applying it in
+ * a bright room washes out the picture and can hurt the working hand tracker.
+ * Pass the live video after it has started so the picture can be measured.
+ */
+export async function boostCameraForLowLight(
+  stream: MediaStream,
+  video?: HTMLVideoElement | null,
+): Promise<boolean> {
+  const track = stream.getVideoTracks()[0];
+  if (!track) return false;
+  let caps: { exposureMode?: string[]; exposureCompensation?: { max?: number }; focusMode?: string[] } = {};
+  try {
+    caps = (track.getCapabilities?.() ?? {}) as typeof caps;
+  } catch {
+    return false;
+  }
+  let changed = false;
+  const apply = async (constraint: Record<string, unknown>) => {
+    try {
+      await track.applyConstraints({ advanced: [constraint] } as unknown as MediaTrackConstraints);
+      changed = true;
+    } catch {
+      /* this camera/driver doesn't support that control */
+    }
+  };
+  if (Array.isArray(caps.exposureMode) && caps.exposureMode.includes("continuous")) {
+    await apply({ exposureMode: "continuous" });
+  }
+  if (Array.isArray(caps.focusMode) && caps.focusMode.includes("continuous")) {
+    await apply({ focusMode: "continuous" });
+  }
+  const max = caps.exposureCompensation?.max;
+  if (video && typeof max === "number" && Number.isFinite(max) && max > 0) {
+    // Sample a few frames while auto-exposure settles, and use the brightest
+    // one: a single dark first frame must not look like a dark room. A camera
+    // that never sends a picture gets no blind exposure boost here.
+    const readings: number[] = [];
+    const until = performance.now() + 900;
+    while (readings.length < 4 && performance.now() < until) {
+      const level = cameraBrightness(video);
+      if (level !== null) readings.push(level);
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+    if (readings.length && Math.max(...readings) < 58) {
+      await apply({ exposureCompensation: Math.min(2, max) });
+    }
+  }
+  return changed;
+}
+
+/** Mean luma (0–255) of the current camera picture, or null when there is none. */
+let brightnessCanvas: HTMLCanvasElement | null = null;
+export function cameraBrightness(video: HTMLVideoElement | null | undefined): number | null {
+  if (!video || video.readyState < 2 || !video.videoWidth) return null;
+  const c = (brightnessCanvas ??= document.createElement("canvas"));
+  c.width = 32;
+  c.height = 24;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  if (!g) return null;
+  try {
+    g.drawImage(video, 0, 0, c.width, c.height);
+    const data = g.getImageData(0, 0, c.width, c.height).data;
+    let sum = 0;
+    for (let i = 0; i < data.length; i += 4) sum += data[i] * 0.2126 + data[i + 1] * 0.7152 + data[i + 2] * 0.0722;
+    return sum / (data.length / 4);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Open the best camera (or `wanted`). Asks permission first if names aren't
  * visible yet, then tries cameras in order until one starts.
  */

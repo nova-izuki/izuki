@@ -10,14 +10,40 @@
  * only to the callbacks the caller registers, in its own memory.
  */
 import { applyCalibration, gateOpen, type EyeCalibration, type EyeGate } from "./eyeGate";
+import type { HeadPose } from "./eyeMap";
+
+export interface GuidePoint {
+  x: number;
+  y: number;
+}
+
+/** Compact face/eye landmarks from the worker's existing face model. */
+export interface EyeGuide {
+  face: GuidePoint[];
+  rightEye: GuidePoint[];
+  leftEye: GuidePoint[];
+  rightIris: GuidePoint[];
+  leftIris: GuidePoint[];
+  rightBrow: GuidePoint[];
+  leftBrow: GuidePoint[];
+  lips: GuidePoint[];
+}
 
 export interface EyeFrame {
   /** Blink EAR for the look (provisional thresholds — see eyeGate.ts). */
   ear: number | null;
+  /** Which irises were readable in this look. */
+  eyes: { left: boolean; right: boolean };
+  /** Landmarks for the optional preview guide. */
+  guide: EyeGuide | null;
   /** Gaze direction -1..1, or null when the iris wasn't readable. */
   gaze: { x: number; y: number } | null;
   /** True once per blink: a quick close *and* reopen, not a shut-hold. */
   blink: boolean;
+  /** Face-pose readings from the same landmark set. */
+  head: HeadPose | null;
+  /** Calibrated screen position (0..1), or null until calibration is ready. */
+  screen: { x: number; y: number } | null;
   /** Look timestamp (ms), monotonic. */
   t: number;
 }
@@ -28,13 +54,25 @@ export interface EyeTracker {
   onFrames(cb: (f: EyeFrame) => void): void;
   /** No face seen at a timestamp — mainly reconnect/diagnostics. */
   onMissing(cb: (t: number) => void): void;
+  /** A worker/model failure after startup. The caller should stop the camera. */
+  onError(cb: (message: string) => void): void;
   stop(): void;
 }
 
 type WireEvents = {
   ready: { type: "ready"; engine: "graphics chip" | "processor" };
-  face: { type: "face"; ear: number | null; gaze: { x: number; y: number } | null; blink: boolean; t: number };
+  face: {
+    type: "face";
+    ear: number | null;
+    gaze: { x: number; y: number } | null;
+    head: HeadPose | null;
+    eyes: { left: boolean; right: boolean };
+    guide: EyeGuide | null;
+    blink: boolean;
+    t: number;
+  };
   none: { type: "none"; t: number };
+  done: { type: "done"; t: number };
   error: { type: "error"; message: string };
   stopped: { type: "stopped" };
 };
@@ -44,9 +82,10 @@ export interface EyeTrackerOptions {
   stream: MediaStream;
   video?: HTMLVideoElement;
   /**
-   * The lane's calibration, when the caller runs the one gesture. While it
-   * is ready its anchor re-centres every reported look; unset or not ready
-   * leaves the gaze raw. The tracker only reads it, never starts it.
+   * The lane's calibration, when the caller runs the nine-target fit. While
+   * it is ready its map turns every reported look into a screen point; unset
+   * or not ready leaves `screen` null. The tracker only reads it, never
+   * starts it.
    */
   calibration?: EyeCalibration;
 }
@@ -66,41 +105,70 @@ export function createEyeTracker(opts: EyeTrackerOptions): EyeTracker | null {
   const worker = new Worker(new URL("./eyeWorker.ts", import.meta.url), { type: "module" });
   const base = new URL("/air", window.location.href).href;
   const waiting: ((e: "graphics chip" | "processor" | Error) => void)[] = [];
+  const frames: ((f: EyeFrame) => void)[] = [];
+  const missing: ((t: number) => void)[] = [];
+  const errors: ((message: string) => void)[] = [];
+
+  let raf = 0;
+  let stopped = false;
+  let busy = false;
+  let failed = false;
+  /** Eye inference is much heavier than the camera; 15 looks/s is plenty for a smoothed gaze and keeps the UI responsive. */
+  const LOOK_INTERVAL_MS = 66;
+  let lastLookAt = 0;
+
+  const fail = (message: string) => {
+    if (failed || stopped) return;
+    failed = true;
+    busy = false;
+    for (const waiter of waiting.splice(0)) waiter(new Error(message));
+    for (const cb of errors) cb(message);
+  };
 
   worker.onmessage = (e: MessageEvent<WireEvents[keyof WireEvents]>) => {
+    if (stopped) return;
     const m = e.data;
     if (m.type === "ready") {
-      for (const w of waiting.splice(0)) w(m.engine);
+      for (const waiter of waiting.splice(0)) waiter(m.engine);
       return;
     }
     if (m.type === "error") {
-      for (const w of waiting.splice(0)) w(new Error(m.message));
+      fail(m.message);
       return;
     }
     if (m.type === "face") {
-      const gaze = applyCalibration(opts.calibration, m.gaze);
-      frames.forEach((cb) => cb({ ear: m.ear, gaze, blink: m.blink, t: m.t }));
+      const screen = applyCalibration(opts.calibration, m.gaze, m.head);
+      frames.forEach((cb) => cb({
+        ear: m.ear,
+        gaze: m.gaze,
+        blink: m.blink,
+        head: m.head ?? null,
+        eyes: m.eyes,
+        guide: m.guide ?? null,
+        screen,
+        t: m.t,
+      }));
       return;
     }
     if (m.type === "none") {
       missing.forEach((cb) => cb(m.t));
+      return;
     }
+    if (m.type === "done") busy = false;
   };
   worker.onerror = (e) => {
-    for (const w of waiting.splice(0)) w(new Error(e.message || "the eye tracker's thread died"));
+    fail(e.message || "the eye tracker's thread died");
   };
-
-  const frames: ((f: EyeFrame) => void)[] = [];
-  const missing: ((t: number) => void)[] = [];
 
   worker.postMessage({ type: "start", base });
 
-  let raf = 0;
-  let stopped = false;
-
-  /** One camera picture onto the tracker's thread, transferring it. */
+  /**
+   * One camera picture onto the tracker's thread, transferring it. One picture
+   * is in flight at a time: a backlog would make the cursor trail behind the
+   * eyes after a slow inference frame.
+   */
   function pump() {
-    if (stopped) return;
+    if (stopped || failed) return;
     // Prefer the frame callback (new picture only) and fall back to rAF.
     const anyVideo = video as HTMLVideoElement & {
       requestVideoFrameCallback?: (cb: () => void) => number;
@@ -110,16 +178,20 @@ export function createEyeTracker(opts: EyeTrackerOptions): EyeTracker | null {
     } else {
       raf = requestAnimationFrame(pump);
     }
-    if (!video.videoWidth) return;
-    const bitmap = createImageBitmap(video);
-    bitmap
-      .then((bm) => worker.postMessage({ type: "look", frame: bm, t: performance.now() }, [bm]))
-      .catch(() => {}); // video torn down mid-frame — the next look retries
+    if (busy || !video.videoWidth) return;
+    const now = performance.now();
+    if (now - lastLookAt < LOOK_INTERVAL_MS) return;
+    lastLookAt = now;
+    busy = true;
+    createImageBitmap(video)
+      .then((bm) => worker.postMessage({ type: "look", frame: bm, t: now }, [bm]))
+      .catch(() => { busy = false; }); // video torn down mid-frame — the next look retries
   }
   pump();
 
   return {
     ready() {
+      if (failed) return Promise.reject(new Error("the eye tracker stopped before it was ready"));
       return new Promise((resolve, reject) => waiting.push((e) => (e instanceof Error ? reject(e) : resolve(e))));
     },
     onFrames(cb) {
@@ -128,9 +200,13 @@ export function createEyeTracker(opts: EyeTrackerOptions): EyeTracker | null {
     onMissing(cb) {
       missing.push(cb);
     },
+    onError(cb) {
+      errors.push(cb);
+    },
     stop() {
       if (stopped) return;
       stopped = true;
+      busy = false;
       cancelAnimationFrame(raf);
       worker.postMessage({ type: "stop" });
       // Give the thread a beat to stop the model, then close.

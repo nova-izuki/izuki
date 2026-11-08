@@ -486,6 +486,15 @@ pub struct Settings {
     /// How the Air pointer follows your hand: "fast", "balanced" or "precision".
     #[serde(default = "default_air_mode")]
     pub air_mode: String,
+    /// Air's single active lane: "hand" (default) or "eye". Never both.
+    #[serde(default = "default_air_control_mode")]
+    pub air_control_mode: String,
+    /// How quickly an eye look crosses the screen: "calm", "standard" or "quick".
+    #[serde(default = "default_air_eye_sensitivity")]
+    pub air_eye_sensitivity: String,
+    /// Opt-in: two deliberate blinks click while the gaze is settled.
+    #[serde(default)]
+    pub air_eye_clicks: bool,
     /// Last confirmed High Performance state. UI refreshes from Windows;
     /// never automatically applies a plan from this stored preference.
     #[serde(default = "default_false")]
@@ -716,6 +725,14 @@ fn default_air_mode() -> String {
     "balanced".into()
 }
 
+fn default_air_control_mode() -> String {
+    "hand".into()
+}
+
+fn default_air_eye_sensitivity() -> String {
+    "standard".into()
+}
+
 fn default_buddy_motion() -> String {
     "smooth".into()
 }
@@ -846,6 +863,8 @@ impl Settings {
         if !["none", "cat", "dog"].contains(&self.buddy_pet.as_str()) { self.buddy_pet = "none".into(); }
         if !["smooth", "retro"].contains(&self.buddy_motion.as_str()) { self.buddy_motion = default_buddy_motion(); }
         if !["fast", "balanced", "precision"].contains(&self.air_mode.as_str()) { self.air_mode = default_air_mode(); }
+        if !["hand", "eye"].contains(&self.air_control_mode.as_str()) { self.air_control_mode = default_air_control_mode(); }
+        if !["calm", "standard", "quick"].contains(&self.air_eye_sensitivity.as_str()) { self.air_eye_sensitivity = default_air_eye_sensitivity(); }
         if !["arrows", "wasd"].contains(&self.air_game_keys.as_str()) { self.air_game_keys = default_air_game_keys(); }
         self.air_bindings.retain(|slot, action| {
             ["middle", "ring", "pinky", "flick_left", "flick_right"].contains(&slot.as_str())
@@ -1199,6 +1218,9 @@ impl Default for Settings {
             air_mirror: false,
             air_gestures: Vec::new(),
             air_mode: default_air_mode(),
+            air_control_mode: default_air_control_mode(),
+            air_eye_sensitivity: default_air_eye_sensitivity(),
+            air_eye_clicks: false,
             air_bindings: Default::default(),
             air_game: false,
             air_game_keys: default_air_game_keys(),
@@ -1406,6 +1428,26 @@ mod tests {
         let restored: Settings = serde_json::from_value(old).unwrap();
         assert!(restored.follow_mode_enabled, "keep the useful floating chat");
         assert!(!restored.action_hand_enabled, "never opt an existing user into the visual");
+    }
+
+    #[test]
+    fn air_control_mode_defaults_to_hand_and_rejects_both() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.air_control_mode, "hand");
+        assert!(!settings.air_eye_clicks);
+        assert_eq!(settings.air_eye_sensitivity, "standard");
+        settings.air_control_mode = "both".into();
+        settings.air_eye_sensitivity = "wild".into();
+        settings.heal();
+        assert_eq!(settings.air_control_mode, "hand", "two lanes are never enabled by accident");
+        assert_eq!(settings.air_eye_sensitivity, "standard");
+        settings.air_control_mode = "eye".into();
+        settings.air_eye_sensitivity = "calm".into();
+        settings.air_eye_clicks = true;
+        let restored: Settings = serde_json::from_value(serde_json::to_value(settings).unwrap()).unwrap();
+        assert_eq!(restored.air_control_mode, "eye");
+        assert_eq!(restored.air_eye_sensitivity, "calm");
+        assert!(restored.air_eye_clicks);
     }
 
     #[test]

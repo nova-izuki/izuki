@@ -378,6 +378,12 @@ export interface Settings {
   air_gestures: Array<{ name: string; pose: number[]; action: string }>;
   /** How the Air pointer follows your hand. */
   air_mode: "fast" | "balanced" | "precision";
+  /** Air's single active lane: hand tracking (default) or eye tracking. */
+  air_control_mode: "hand" | "eye";
+  /** How quickly an eye look crosses the screen. */
+  air_eye_sensitivity: "calm" | "standard" | "quick";
+  /** Opt-in: two deliberate blinks click. A single blink never clicks. */
+  air_eye_clicks: boolean;
   /** The linked phone may work this PC (trackpad, typing, keys, a look at the screen). */
   phone_remote: boolean;
   /** The paired phone may run PowerShell here (changes only after it confirms the exact command). */
