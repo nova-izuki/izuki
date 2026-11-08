@@ -3,7 +3,10 @@
 //! pointer and presses Ctrl+Alt+Shift+X, so run it only while nobody is using
 //! the PC:
 //!
-//!   cargo run --example eye_stop_probe
+//!   IZUKI_TEST_MANIFEST=1 cargo run --example eye_stop_probe
+//!
+//! (The manifest switch gives it the Common Controls v6 that Izuki itself
+//! has; without it Windows refuses to start it: TaskDialogIndirect missing.)
 //!
 //! It never clicks, never opens a window and never opens Izuki's settings
 //! store (so it can't change anyone's settings); the pointer is put back

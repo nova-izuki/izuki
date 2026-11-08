@@ -41,6 +41,9 @@ let server, browser, ws, profile, cache;
       if(!page)await pause(250);
     }
     assert.ok(page,'Native WebView2 did not start: '+nativeOutput.slice(-1200));
+    // The page can load before the host has printed its own verdict: wait for
+    // the verdict (or its panic) rather than reading the output once.
+    for(let i=0;i<120&&!nativeOutput.includes('NATIVE: real overlay click-through and no-focus assertions passed')&&!/panicked/.test(nativeOutput);i++)await pause(250);
     assert.ok(nativeOutput.includes('NATIVE: real overlay click-through and no-focus assertions passed'),nativeOutput);
   }else page=await(await fetch(`http://127.0.0.1:${port}/json/new?about:blank`,{method:'PUT'})).json();
   ws=new WebSocket(page.webSocketDebuggerUrl);
