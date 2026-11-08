@@ -84,6 +84,20 @@ interface CalView {
  * settled gaze, calibration ready, and a cooldown. The camera and worker stop
  * with this component.
  */
+/** The calibration's and the accuracy check's Cancel, bottom right (clickable in the overlay). */
+function CancelButton({ label, onCancel }: { label: string; onCancel: () => void }) {
+  return (
+    <button
+      type="button"
+      data-izk-hit
+      onClick={onCancel}
+      className="pointer-events-auto fixed bottom-3 right-4 z-[75] rounded-full border border-white/20 bg-black/80 px-3 py-1.5 text-[10.5px] font-semibold text-white/90 shadow-lg hover:bg-black"
+    >
+      {label}
+    </button>
+  );
+}
+
 /**
  * Always on screen while Eye Control runs: a Stop button the physical mouse
  * can reach (the native emergency stop, airsafe.rs), and why the eye pointer
@@ -1126,14 +1140,7 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
           <div className="fixed left-1/2 top-6 -translate-x-1/2 rounded-full bg-black/80 px-4 py-1.5 text-center text-[12px] font-semibold text-white shadow-xl">
             Accuracy check · look at the dot · {checkView.point} of {checkView.total} · the mouse doesn't move during the check
           </div>
-          <button
-            type="button"
-            data-izk-hit
-            onClick={() => cancelAction.current?.()}
-            className="pointer-events-auto fixed bottom-3 right-4 z-[75] rounded-full border border-white/20 bg-black/80 px-3 py-1.5 text-[10.5px] font-semibold text-white/90 shadow-lg hover:bg-black"
-          >
-            Cancel check
-          </button>
+          <CancelButton label="Cancel check" onCancel={() => cancelAction.current?.()} />
           <div className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${checkView.target.x * 100}%`, top: `${checkView.target.y * 100}%` }}>
             <div className="relative h-14 w-14">
               <div
@@ -1180,14 +1187,7 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
               Samples {calView.recent}/{calView.needed} · Gaze {calView.confidence}% · Head {calView.headStable ? "steady" : "moving"} · Iris {calView.eyes.left ? "L ✓" : "L –"} {calView.eyes.right ? "R ✓" : "R –"} · no blink needed
             </div>
           </div>
-          <button
-            type="button"
-            data-izk-hit
-            onClick={() => cancelAction.current?.()}
-            className="pointer-events-auto fixed bottom-3 right-4 z-[75] rounded-full border border-white/20 bg-black/80 px-3 py-1.5 text-[10.5px] font-semibold text-white/90 shadow-lg hover:bg-black"
-          >
-            Cancel calibration
-          </button>
+          <CancelButton label="Cancel calibration" onCancel={() => cancelAction.current?.()} />
         </div>
       )}
       {calView.state === "failed" && (
