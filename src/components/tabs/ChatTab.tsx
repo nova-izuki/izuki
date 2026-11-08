@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, FolderOpen, History, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, RotateCcw, Send, Sparkles, Square, Trash2, Volume2, X } from "lucide-react";
+import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, FolderOpen, History, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, Pin, RotateCcw, Send, Sparkles, Square, Trash2, Volume2, X } from "lucide-react";
 import { api, CAMERA_PICTURE_KEY, emit, EV, ISLAND_TO_CHAT_KEY, on, type CodingUpdate, type ResearchUpdate } from "../../lib/ipc";
 import { ResearchPanel, researchAsk, type ResearchState } from "../ResearchPanel";
 import { CodingPanel, type CodingState } from "../CodingPanel";
@@ -18,7 +18,7 @@ import { AirToggle } from "../AirToggle";
 import { brainReady } from "../../lib/setup";
 import { attachmentContext, CHAT_FILE_TYPES, keepDocumentText, readChatFile, type ChatAttachment } from "../../lib/attachments";
 import { rememberPrompt } from "../../lib/recentPrompts";
-import { chatTitle, rememberSession, removeSession, searchSessions, timeAgo, type ChatSession } from "../../lib/chatHistory";
+import { chatTitle, orderSessions, pinSession, rememberSession, removeSession, searchSessions, timeAgo, type ChatSession } from "../../lib/chatHistory";
 import { looksLikeDirections, needsApps, opensAnApp, recentHistory, shareHistory } from "../../lib/conversation";
 
 /**
@@ -451,9 +451,9 @@ function readRecent(): RecentChat[] {
       if (!messages.some((m) => m.role === "user" && m.content.trim())) continue;
       const at = typeof saved.at === "number" && Number.isFinite(saved.at) ? saved.at : Date.now();
       const title = typeof saved.title === "string" && saved.title.trim() ? saved.title : chatTitle(messages);
-      out.push({ id: saved.id, title, at, messages });
+      out.push({ id: saved.id, title, at, messages, pinned: saved.pinned === true });
     }
-    return out.sort((a, b) => b.at - a.at).slice(0, 10);
+    return orderSessions(out);
   } catch {
     return [];
   }
@@ -1083,6 +1083,11 @@ export function ChatTab() {
     if (chat.id === chatSessionId) beginChat(false);
   };
 
+  /** Keep a chat at the top; pins survive updates and the recent cap. */
+  const togglePin = (chat: RecentChat) => {
+    commitRecent(pinSession(recentRef.current, chat.id, !chat.pinned));
+  };
+
   const shownRecent = searchSessions(recent, recentQuery);
 
   // Pressing Enter while it's working stops the work and sends what you typed
@@ -1259,6 +1264,19 @@ export function ChatTab() {
                           <span className="mt-0.5 block truncate text-[10.5px] text-izk-muted">
                             {timeAgo(chat.at)} · {chat.messages.length} {chat.messages.length === 1 ? "message" : "messages"}
                           </span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`${chat.pinned ? "Unpin" : "Pin"} ${chat.title}`}
+                          aria-pressed={!!chat.pinned}
+                          title={chat.pinned ? "Unpin chat" : "Pin to top"}
+                          onClick={() => togglePin(chat)}
+                          className={cx(
+                            "flex w-[26px] shrink-0 items-center justify-center transition",
+                            chat.pinned ? "text-amber-300/90 hover:text-amber-200" : "text-izk-muted/60 hover:text-izk-ink"
+                          )}
+                        >
+                          <Pin size={12} strokeWidth={2.2} fill={chat.pinned ? "currentColor" : "none"} />
                         </button>
                         <button
                           type="button"

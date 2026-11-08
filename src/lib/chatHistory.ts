@@ -4,9 +4,11 @@ export interface ChatSession<T> {
   title: string;
   at: number;
   messages: T[];
+  /** Kept at the top of Recent chats and never dropped by the recent cap. */
+  pinned?: boolean;
 }
 
-/** Keep the list short enough to stay fast and easy to scan. */
+/** Keep the unpinned list short enough to stay fast and easy to scan. */
 export const RECENT_CHAT_LIMIT = 10;
 
 /** A short title from the first thing the person asked. */
@@ -34,6 +36,16 @@ export function timeAgo(at: number, now = Date.now()): string {
   return new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/** Pinned chats first, then the newest unpinned ones (pins are extra, never dropped). */
+export function orderSessions<T>(sessions: readonly ChatSession<T>[]): ChatSession<T>[] {
+  const pinned = sessions.filter((s) => s.pinned).sort((a, b) => b.at - a.at);
+  const recent = sessions
+    .filter((s) => !s.pinned)
+    .sort((a, b) => b.at - a.at)
+    .slice(0, RECENT_CHAT_LIMIT);
+  return [...pinned, ...recent];
+}
+
 /** Put a conversation first, replacing the same one instead of duplicating it. */
 export function rememberSession<T>(
   sessions: readonly ChatSession<T>[],
@@ -42,16 +54,23 @@ export function rememberSession<T>(
   messages: T[],
   at = Date.now()
 ): ChatSession<T>[] {
-  if (!messages.length) return sessions.slice(0, RECENT_CHAT_LIMIT);
+  if (!messages.length) return orderSessions(sessions);
+  const existing = sessions.find((s) => s.id === id);
   const entry: ChatSession<T> = {
     id,
     title: title.trim() || "New chat",
     at,
     messages,
+    pinned: existing?.pinned,
   };
-  return [entry, ...sessions.filter((s) => s.id !== id)]
-    .sort((a, b) => b.at - a.at)
-    .slice(0, RECENT_CHAT_LIMIT);
+  return orderSessions([entry, ...sessions.filter((s) => s.id !== id)]);
+}
+
+/** Keep a conversation at the top (or put it back in age order). */
+export function pinSession<T>(sessions: readonly ChatSession<T>[], id: string, pinned = true): ChatSession<T>[] {
+  return orderSessions(
+    sessions.map((s) => (s.id === id ? { ...s, pinned: pinned || undefined } : s))
+  );
 }
 
 export function removeSession<T>(sessions: readonly ChatSession<T>[], id: string): ChatSession<T>[] {

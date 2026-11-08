@@ -14,7 +14,7 @@ const { outputFiles } = await build({
 });
 const mod = { exports: {} };
 new Function('require', 'module', 'exports', outputFiles[0].text)(require, mod, mod.exports);
-const { chatTitle, timeAgo, rememberSession, removeSession, searchSessions, RECENT_CHAT_LIMIT } = mod.exports;
+const { chatTitle, timeAgo, orderSessions, pinSession, rememberSession, removeSession, searchSessions, RECENT_CHAT_LIMIT } = mod.exports;
 
 const msg = (role, content) => ({ role, content });
 
@@ -47,4 +47,23 @@ assert.deepEqual(searchSessions(list, 'OLD 1').map((s) => s.title).slice(0, 2), 
 assert.deepEqual(searchSessions(list, '  ').length, list.length);
 assert.deepEqual(removeSession(list, 'active').map((s) => s.id).includes('active'), false);
 
-console.log('chat history: ok (titles, relative times, ordering, cap, search and removal)');
+// Pinned chats stay first and survive both updates and the recent cap.
+const withPin = pinSession(list, 'old-9', true);
+assert.equal(withPin[0].id, 'old-9', 'a pinned chat goes to the top');
+assert.equal(withPin[0].pinned, true);
+const afterPin = rememberSession(withPin, 'after-pin', 'After pin', [msg('user', 'After pin')], 40_000);
+assert.equal(afterPin[0].id, 'old-9', 'a pinned chat stays first when another chat is saved');
+assert.equal(afterPin.find((s) => s.id === 'old-9')?.pinned, true, 'the pin survives an update');
+assert.equal(afterPin.filter((s) => s.id === 'old-9').length, 1, 'pinning does not duplicate the chat');
+assert.equal(pinSession(afterPin, 'old-9', false)[0].id, 'after-pin', 'unpinning restores newest-first order');
+assert.deepEqual(
+  orderSessions([
+    { id: 'a', title: 'A', at: 1, messages: [], pinned: true },
+    { id: 'b', title: 'B', at: 3, messages: [] },
+    { id: 'c', title: 'C', at: 2, messages: [] },
+  ]).map((s) => s.id),
+  ['a', 'b', 'c'],
+  'orderSessions puts pinned chats first, then newest first'
+);
+
+console.log('chat history: ok (titles, relative times, ordering, cap, pin, search and removal)');
