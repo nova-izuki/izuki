@@ -121,6 +121,7 @@ pub fn save_settings(app: AppHandle, settings: Settings) -> Settings {
         crate::airsafe::arm();
     }
     if saved.air_control_mode != previous.air_control_mode {
+        crate::airsafe::set_eye_lane(saved.air_control_mode == "eye");
         crate::airsafe::resume();
     }
     if saved.eye_stop_hotkey != previous.eye_stop_hotkey {
@@ -1801,7 +1802,7 @@ fn air_gate() -> R<()> {
 #[tauri::command]
 pub fn air_pointer(nx: f64, ny: f64, eye: Option<bool>) {
     let (x, y) = crate::air::to_screen(nx, ny);
-    if eye.unwrap_or(false) {
+    if eye.unwrap_or(false) || crate::airsafe::eye_lane() {
         crate::airsafe::eye_pointer(x, y, nx, ny);
     } else if air_gate().is_ok() {
         crate::air::pointer(x, y);

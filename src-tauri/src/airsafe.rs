@@ -39,6 +39,8 @@ static BUTTONS: AtomicU8 = AtomicU8::new(0);
 /// Heartbeats of the key watcher (hotkey.rs) and of the watchdog below.
 static KEY_BEAT: AtomicU64 = AtomicU64::new(0);
 static DOG_BEAT: AtomicU64 = AtomicU64::new(0);
+/// Settings say the eye lane is selected: every pointer move is the gaze's.
+static EYE_LANE: AtomicBool = AtomicBool::new(false);
 /// The emergency key combination: modifier bits (hotkey.rs's M_*) and key code.
 static STOP_MODS: AtomicU8 = AtomicU8::new(1 | 2 | 4);
 static STOP_VK: AtomicU32 = AtomicU32::new(0x58);
@@ -112,9 +114,10 @@ fn now_ms() -> u64 {
 
 /// Start the watchdog and remember the app (once, at startup). Also let go of
 /// held buttons if Izuki crashes.
-pub fn install(app: &AppHandle, stop_key: &str) {
+pub fn install(app: &AppHandle, stop_key: &str, eye_lane: bool) {
     START.get_or_init(std::time::Instant::now);
     set_stop_key(stop_key);
+    set_eye_lane(eye_lane);
     if APP.set(app.clone()).is_err() {
         return;
     }
@@ -133,6 +136,17 @@ pub fn set_stop_key(combo: &str) {
         STOP_MODS.store(mods, Ordering::SeqCst);
         STOP_VK.store(vk, Ordering::SeqCst);
     }
+}
+
+/// Settings changed which lane Air uses (hand or eye).
+pub fn set_eye_lane(on: bool) {
+    EYE_LANE.store(on, Ordering::SeqCst);
+}
+
+/// The eye lane is selected: a pointer move takes the gaze's checks even if
+/// its caller didn't say it was the gaze.
+pub fn eye_lane() -> bool {
+    EYE_LANE.load(Ordering::SeqCst)
 }
 
 /// The emergency combination, for the key watchers: modifier bits and key code.
@@ -204,20 +218,20 @@ pub fn touch() {
     LAST_CALL.store(now_ms().max(1), Ordering::SeqCst);
 }
 
-/// THE EMERGENCY STOP. Safe to call from a keyboard hook: it only flips flags
-/// here; letting go of buttons and saving Air as off happen on their own thread.
+/// THE EMERGENCY STOP. Safe to call from a keyboard hook: only atomics here
+/// (no lock a hook could wait on, or Windows drops the hook); letting go of
+/// buttons and saving Air as off happen on their own thread, once. The gaze
+/// bookkeeping is cleared by [`arm`] and [`resume`].
 pub fn stop(why: &str) {
-    let first = !STOPPED.swap(true, Ordering::SeqCst);
+    if STOPPED.swap(true, Ordering::SeqCst) {
+        return;
+    }
     PAUSED.store(0, Ordering::SeqCst);
-    *LAST_SET.lock() = None;
-    TRAIL.lock().clear();
     let why = why.to_string();
     std::thread::spawn(move || {
         release_now();
-        if first {
-            eprintln!("[air] EMERGENCY STOP ({why}): pointer input blocked, held buttons and keys let go, Air control saved as off");
-            turn_air_off();
-        }
+        eprintln!("[air] EMERGENCY STOP ({why}): pointer input blocked, held buttons and keys let go, Air control saved as off");
+        turn_air_off();
         announce();
     });
 }
@@ -401,6 +415,15 @@ fn watchdog() {
     loop {
         std::thread::sleep(std::time::Duration::from_millis(200));
         DOG_BEAT.store(now_ms().max(1), Ordering::SeqCst);
+        // One failed check (a panic letting a button go) never ends the watchdog.
+        if std::panic::catch_unwind(watchdog_tick).is_err() {
+            eprintln!("[air] watchdog: a check failed; carrying on");
+        }
+    }
+}
+
+fn watchdog_tick() {
+    {
         let now = now_ms();
         if BUTTONS.load(Ordering::SeqCst) != 0 && now.saturating_sub(LAST_CALL.load(Ordering::SeqCst)) > SILENT_RELEASE_MS {
             eprintln!("[air] watchdog: let go of a held button (no word from Air for {} s)", SILENT_RELEASE_MS / 1000);
@@ -514,6 +537,21 @@ mod tests {
         assert!(erratic(&wander, 950));
         // Too few looks to judge: not erratic.
         assert!(!erratic(&wander[..5], 250));
+    }
+
+    #[test]
+    fn a_second_stop_does_nothing_more_and_the_eye_lane_is_remembered() {
+        let _g = SERIAL.lock();
+        fresh();
+        stop("first");
+        stop("second");
+        assert!(!allowed(), "still stopped");
+        arm();
+        assert!(allowed(), "one arm undoes the one stop");
+        set_eye_lane(true);
+        assert!(eye_lane(), "with the eye lane selected every pointer move takes the gaze's checks");
+        set_eye_lane(false);
+        assert!(!eye_lane());
     }
 
     #[test]

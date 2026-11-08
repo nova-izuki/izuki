@@ -609,7 +609,7 @@ pub fn run() {
             hotkey::rebind(&handle, &settings);
             hotkey::install_escape_watch(&handle);
             // Air and Eye control's emergency stop and watchdog (airsafe.rs).
-            airsafe::install(&handle, &settings.eye_stop_hotkey);
+            airsafe::install(&handle, &settings.eye_stop_hotkey, settings.air_control_mode == "eye");
             wheel::install(&handle);
             updates::check_later(&handle);
             watcher::spawn(handle.clone(), store.clone());

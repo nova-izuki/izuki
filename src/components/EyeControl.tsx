@@ -220,6 +220,7 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
     // A camera switch restarts this effect. Clear the previous session's
     // calibration marker and cursor so a half-finished calibration cannot
     // stay on screen after the camera changes.
+    setCheckView(null);
     setCalView({
       state: "idle",
       point: 0,
@@ -479,6 +480,10 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
       faceNow = false;
       lastFace = 0;
       autoFaceStatus = false;
+      // An error ends any accuracy check: no dot left on screen, no verdict kept.
+      check = null;
+      verdict = null;
+      setCheckView(null);
       clearInterval(lowTimer);
       clearInterval(calTimer);
       lowTimer = undefined;
@@ -623,7 +628,18 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
     };
 
     const cancelCal = () => {
-      if (runtimeStopped || cal.state !== "collecting") return;
+      if (runtimeStopped) return;
+      if (check && !check.done) {
+        check = null;
+        verdict = null;
+        setCheckView(null);
+        autoFaceStatus = false;
+        const message = "Accuracy check cancelled. Preview only: the mouse doesn't move. Press Calibrate eyes to try again.";
+        setStatus(message);
+        tell({ state: "ready", message, face: faceNow, calibrated: true, clicks: false, mode: "preview" });
+        return;
+      }
+      if (cal.state !== "collecting") return;
       cancelCalibration(cal);
       calHadGaze = false;
       autoFaceStatus = false;
@@ -1110,6 +1126,14 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
           <div className="fixed left-1/2 top-6 -translate-x-1/2 rounded-full bg-black/80 px-4 py-1.5 text-center text-[12px] font-semibold text-white shadow-xl">
             Accuracy check · look at the dot · {checkView.point} of {checkView.total} · the mouse doesn't move during the check
           </div>
+          <button
+            type="button"
+            data-izk-hit
+            onClick={() => cancelAction.current?.()}
+            className="pointer-events-auto fixed bottom-3 right-4 z-[75] rounded-full border border-white/20 bg-black/80 px-3 py-1.5 text-[10.5px] font-semibold text-white/90 shadow-lg hover:bg-black"
+          >
+            Cancel check
+          </button>
           <div className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${checkView.target.x * 100}%`, top: `${checkView.target.y * 100}%` }}>
             <div className="relative h-14 w-14">
               <div

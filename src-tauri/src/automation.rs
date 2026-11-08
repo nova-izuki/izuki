@@ -426,17 +426,31 @@ pub fn key_hold(name: &str, down: bool) -> Result<()> {
         .map_err(|err| anyhow!("key {} failed: {err:?}", if down { "down" } else { "up" }))
 }
 
-/// Let go of every key [`key_hold`] is holding (Air's emergency stop).
+/// Let go of every key [`key_hold`] is holding (Air's emergency stop). A key
+/// is forgotten only once its release was sent; the lock is never waited on
+/// for long (this also runs from the crash handler).
 pub fn release_held_keys() {
-    let keys: Vec<(Key, String)> = HELD.lock().1.drain(..).collect();
-    if keys.is_empty() {
+    let Some(mut held) = HELD.try_lock_for(std::time::Duration::from_millis(200)) else {
+        eprintln!("[air] couldn't let go of held keys: busy");
+        return;
+    };
+    if held.1.is_empty() {
         return;
     }
-    if let Ok(mut e) = enigo() {
-        for (k, _) in keys {
-            let _ = e.key(k, Direction::Release);
+    let mut e = match enigo() {
+        Ok(e) => e,
+        Err(err) => {
+            eprintln!("[air] couldn't let go of held keys: {err}");
+            return;
         }
-    }
+    };
+    held.1.retain(|(k, name)| match e.key(*k, Direction::Release) {
+        Ok(()) => false,
+        Err(err) => {
+            eprintln!("[air] couldn't let go of {name}: {err:?}");
+            true
+        }
+    });
 }
 
 /// Keys held by [`key_hold`], and the window they were held for.
