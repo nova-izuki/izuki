@@ -28,6 +28,7 @@
     "test:bridge": "node tools/bridge-auth-check.mjs",
     "test:workspace": "node tools/workspace-check.mjs && node tools/workspace-worker-check.mjs",
     "test:chat-text": "node tools/chat-text-check.mjs",
+    "test:chat-history": "node tools/chat-history-check.mjs",
     "test:bubble": "node tools/bubble-check.cjs",
     "test:hotkeys": "node tools/hotkey-check.mjs",
     "test:notes": "node tools/notes-rename-check.cjs",

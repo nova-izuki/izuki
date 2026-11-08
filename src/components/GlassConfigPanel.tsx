@@ -253,27 +253,26 @@ export function GlassConfigPanel() {
         {/* ---------------- content ---------------- */}
         <UpdateNotice />
         <main className="izk-content relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-[18px] py-[16px]">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={tab}
-              initial={{ opacity: 0, y: 10, scale: 0.992 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.996 }}
-              transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-col gap-3"
-            >
-              <Recover name={`tab:${tab}`} onReset={tab === "chat" ? resetChat : undefined}>
-                {tab === "draw" && <DrawTab />}
-                {tab === "chat" && <ChatTab />}
-                {tab === "apps" && <AppsTab />}
-                {tab === "notes" && <NotesTab />}
-                {tab === "flows" && <FlowLibrary />}
-                {tab === "watchers" && <WatcherManager />}
-                {tab === "style" && <StyleTab />}
-                {tab === "settings" && <SettingsTab />}
-              </Recover>
-            </motion.div>
-          </AnimatePresence>
+          {/* No exit pass here: the old Draw page must not hold the selected
+              tab hostage while an exit animation finishes. */}
+          <motion.div
+            key={tab}
+            initial={{ opacity: 0, y: 10, scale: 0.992 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+            className="flex flex-col gap-3"
+          >
+            <Recover name={`tab:${tab}`} onReset={tab === "chat" ? resetChat : undefined}>
+              {tab === "draw" && <DrawTab />}
+              {tab === "chat" && <ChatTab />}
+              {tab === "apps" && <AppsTab />}
+              {tab === "notes" && <NotesTab />}
+              {tab === "flows" && <FlowLibrary />}
+              {tab === "watchers" && <WatcherManager />}
+              {tab === "style" && <StyleTab />}
+              {tab === "settings" && <SettingsTab />}
+            </Recover>
+          </motion.div>
           <ScrollButtons tab={tab} />
         </main>
 

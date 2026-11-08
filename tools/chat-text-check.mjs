@@ -61,7 +61,9 @@ assert(html('`code_with_underscores`').includes('code_with_underscores'), 'code 
 // pattern by hand would have missed that.
 {
   const { readFileSync } = await import('node:fs');
-  const line = readFileSync('src/components/tabs/ChatTab.tsx', 'utf8').split('\n').find((l) => l.startsWith('const STUDY_ASK'));
+  // Split on both line endings: this repo is checked out with CRLF on Windows,
+  // and a trailing \r is not part of the pattern.
+  const line = readFileSync('src/components/tabs/ChatTab.tsx', 'utf8').split(/\r?\n/).find((l) => l.startsWith('const STUDY_ASK'));
   assert(line, 'STUDY_ASK not found in ChatTab.tsx');
   assert(![...line].some((c) => c.charCodeAt(0) < 32), 'STUDY_ASK contains a control character');
   const study = new RegExp(line.slice(line.indexOf('/') + 1, line.lastIndexOf('/')), 'i');

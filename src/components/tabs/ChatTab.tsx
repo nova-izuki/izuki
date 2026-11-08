@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, FolderOpen, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, RotateCcw, Send, Sparkles, Square, Volume2, X } from "lucide-react";
+import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, FolderOpen, History, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, RotateCcw, Send, Sparkles, Square, Trash2, Volume2, X } from "lucide-react";
 import { api, CAMERA_PICTURE_KEY, emit, EV, ISLAND_TO_CHAT_KEY, on, type CodingUpdate, type ResearchUpdate } from "../../lib/ipc";
 import { ResearchPanel, researchAsk, type ResearchState } from "../ResearchPanel";
 import { CodingPanel, type CodingState } from "../CodingPanel";
@@ -18,6 +18,7 @@ import { AirToggle } from "../AirToggle";
 import { brainReady } from "../../lib/setup";
 import { attachmentContext, CHAT_FILE_TYPES, keepDocumentText, readChatFile, type ChatAttachment } from "../../lib/attachments";
 import { rememberPrompt } from "../../lib/recentPrompts";
+import { chatTitle, rememberSession, removeSession, searchSessions, timeAgo, type ChatSession } from "../../lib/chatHistory";
 import { looksLikeDirections, needsApps, opensAnApp, recentHistory, shareHistory } from "../../lib/conversation";
 
 /**
@@ -60,6 +61,46 @@ interface Msg {
   research?: ResearchState;
   /** A coding task: its steps, plan and change (Apply / Discard / Undo). */
   coding?: CodingState;
+}
+
+type RecentChat = ChatSession<Msg>;
+
+const RECENT_KEY = "izuki.chat.recent.v1";
+const ACTIVE_KEY = "izuki.chat.active.v1";
+
+function newChatId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `chat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+}
+
+function readActiveChatId(): string {
+  try {
+    const saved = localStorage.getItem(ACTIVE_KEY);
+    if (saved) return saved;
+  } catch {
+    /* storage is optional */
+  }
+  const id = newChatId();
+  try {
+    localStorage.setItem(ACTIVE_KEY, id);
+  } catch {
+    /* storage is optional */
+  }
+  return id;
+}
+
+let chatSessionId = readActiveChatId();
+
+function setChatSessionId(id: string) {
+  chatSessionId = id;
+  try {
+    localStorage.setItem(ACTIVE_KEY, id);
+  } catch {
+    /* storage is optional */
+  }
 }
 
 
@@ -344,24 +385,28 @@ function runResearch(
   });
 }
 
+function tidy(msgs: Msg[]): Msg[] {
+  // A reply still empty from last time (the app closed or the tab changed
+  // mid-answer) would spin forever — say so and offer to ask again.
+  return msgs
+    .slice(-KEEP)
+    .map((m) => ({
+      ...m,
+      // Still working when the app closed: it was cut short.
+      research: m.research?.phase === "working" ? { ...m.research, phase: "error" as const } : m.research,
+      coding: m.coding?.phase === "working" ? { ...m.coding, phase: "error" as const } : m.coding,
+    }))
+    .map((m) =>
+      m.role === "assistant" && !m.content.trim() && !m.action && !m.coding
+        ? { ...m, content: "That reply didn't come through.", failed: true, retry: true }
+        : m
+    );
+}
+
 function load(): Msg[] {
   try {
     const raw = localStorage.getItem(KEY);
-    // A reply still empty from last time (the app closed or the tab changed
-    // mid-answer) would spin forever — say so and offer to ask again.
-    return clean(raw ? JSON.parse(raw) : [])
-      .slice(-KEEP)
-      .map((m) => ({
-        ...m,
-        // Still working when the app closed: it was cut short.
-        research: m.research?.phase === "working" ? { ...m.research, phase: "error" as const } : m.research,
-        coding: m.coding?.phase === "working" ? { ...m.coding, phase: "error" as const } : m.coding,
-      }))
-      .map((m) =>
-        m.role === "assistant" && !m.content.trim() && !m.action && !m.coding
-          ? { ...m, content: "That reply didn't come through.", failed: true, retry: true }
-          : m
-      );
+    return tidy(clean(raw ? JSON.parse(raw) : []));
   } catch {
     return [];
   }
@@ -370,23 +415,55 @@ function load(): Msg[] {
 /** How much attached file text a reopened chat keeps, newest files first. */
 const STORED_DOCUMENTS = 60_000;
 
+function storedMessages(msgs: Msg[]): Msg[] {
+  // Pictures are big: they're kept for this session only. So is a coding
+  // change's diff and its logs (Apply works without them). Attached files
+  // keep their text, newest first, so "and what does page 4 say?" still has
+  // the document it's about after a restart — within a fixed budget.
+  const kept = msgs.slice(-KEEP);
+  const stored = keepDocumentText(kept, STORED_DOCUMENTS);
+  return kept.map((m, index) => {
+    const lean = m.coding ? { ...m, coding: { ...m.coding, diff: undefined, steps: m.coding.steps.map(({ kind, text, ok }) => ({ kind, text, ok })) } } : m;
+    const { kept: files, lost } = stored[index];
+    // Name whatever didn't fit: a missing document is never a mystery.
+    return { ...lean, images: undefined, documents: files.length ? files : undefined, content: `${lean.content}${lean.images?.length ? " 🖼️" : ""}${lost.length ? ` 📎 ${lost.map((d) => d.name).join(", ")} (too long to keep after closing — attach again for more)` : ""}`.trim() };
+  });
+}
+
 function save(msgs: Msg[]) {
   try {
-    // Pictures are big: they're kept for this session only. So is a coding
-    // change's diff and its logs (Apply works without them). Attached files
-    // keep their text, newest first, so "and what does page 4 say?" still has
-    // the document it's about after a restart — within a fixed budget.
-    const kept = msgs.slice(-KEEP);
-    const stored = keepDocumentText(kept, STORED_DOCUMENTS);
-    const light = kept.map((m, index) => {
-      const lean = m.coding ? { ...m, coding: { ...m.coding, diff: undefined, steps: m.coding.steps.map(({ kind, text, ok }) => ({ kind, text, ok })) } } : m;
-      const { kept: files, lost } = stored[index];
-      // Name whatever didn't fit: a missing document is never a mystery.
-      return { ...lean, images: undefined, documents: files.length ? files : undefined, content: `${lean.content}${lean.images?.length ? " 🖼️" : ""}${lost.length ? ` 📎 ${lost.map((d) => d.name).join(", ")} (too long to keep after closing — attach again for more)` : ""}`.trim() };
-    });
-    localStorage.setItem(KEY, JSON.stringify(light));
+    localStorage.setItem(KEY, JSON.stringify(storedMessages(msgs)));
   } catch {
     /* private mode / full — the chat still works, it just isn't kept */
+  }
+}
+
+function readRecent(): RecentChat[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+    if (!Array.isArray(raw)) return [];
+    const out: RecentChat[] = [];
+    for (const row of raw) {
+      if (!row || typeof row !== "object") continue;
+      const saved = row as Record<string, unknown>;
+      if (typeof saved.id !== "string" || !Array.isArray(saved.messages)) continue;
+      const messages = tidy(clean(saved.messages));
+      if (!messages.some((m) => m.role === "user" && m.content.trim())) continue;
+      const at = typeof saved.at === "number" && Number.isFinite(saved.at) ? saved.at : Date.now();
+      const title = typeof saved.title === "string" && saved.title.trim() ? saved.title : chatTitle(messages);
+      out.push({ id: saved.id, title, at, messages });
+    }
+    return out.sort((a, b) => b.at - a.at).slice(0, 10);
+  } catch {
+    return [];
+  }
+}
+
+function saveRecent(list: RecentChat[]) {
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(list));
+  } catch {
+    /* recent history is optional, like the live conversation */
   }
 }
 
@@ -412,6 +489,7 @@ function setChatMsgs(next: Msg[] | ((m: Msg[]) => Msg[])) {
 export function resetChat() {
   chatStream.current = null;
   chatFinish.current = null;
+  setChatSessionId(newChatId());
   chatMsgs = [];
   chatBusy = false;
   save(chatMsgs);
@@ -442,6 +520,28 @@ export function ChatTab() {
   const ideas = useSmartIdeas(4);
   const setMsgs = setChatMsgs;
   const setBusy = setChatBusy;
+  const [recent, setRecent] = useState<RecentChat[]>(() => readRecent());
+  const recentRef = useRef<RecentChat[]>(recent);
+  const [activeChat, setActiveChat] = useState(chatSessionId);
+  const [recentsOpen, setRecentsOpen] = useState(false);
+  const [recentQuery, setRecentQuery] = useState("");
+  const commitRecent = useCallback((next: RecentChat[]) => {
+    recentRef.current = next;
+    setRecent(next);
+    saveRecent(next);
+  }, []);
+  useEffect(() => {
+    if (!msgs.length) return;
+    commitRecent(rememberSession(recentRef.current, chatSessionId, chatTitle(msgs), storedMessages(msgs)));
+  }, [msgs, commitRecent]);
+  useEffect(() => {
+    if (!recentsOpen) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setRecentsOpen(false);
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [recentsOpen]);
   const [draft, setDraft] = useState("");
   /** Pictures waiting to go with the next message. */
   const [pics, setPics] = useState<string[]>([]);
@@ -943,6 +1043,45 @@ export function ChatTab() {
     setBusy(false);
   };
 
+  const openRecents = () => {
+    setRecentQuery("");
+    setRecentsOpen(true);
+  };
+
+  /** Save the current thread before leaving it, then start clean. */
+  const startNewChat = () => {
+    stop();
+    clearAttachments();
+    if (msgs.length) {
+      commitRecent(rememberSession(recentRef.current, chatSessionId, chatTitle(msgs), storedMessages(msgs)));
+    }
+    const id = newChatId();
+    setChatSessionId(id);
+    setActiveChat(id);
+    setMsgs([]);
+    setRecentsOpen(false);
+    setRecentQuery("");
+  };
+
+  const openChat = (chat: RecentChat) => {
+    if (chat.id !== chatSessionId) {
+      stop();
+      clearAttachments();
+      setChatSessionId(chat.id);
+      setActiveChat(chat.id);
+      setMsgs(chat.messages);
+    }
+    setRecentsOpen(false);
+    setRecentQuery("");
+  };
+
+  const deleteChat = (chat: RecentChat) => {
+    commitRecent(removeSession(recentRef.current, chat.id));
+    if (chat.id === chatSessionId) startNewChat();
+  };
+
+  const shownRecent = searchSessions(recent, recentQuery);
+
   // Pressing Enter while it's working stops the work and sends what you typed
   // (see the composer). Nothing you type during a lab is lost, and the app
   // doesn't sit there deaf until the task ends on its own.
@@ -1048,34 +1187,143 @@ export function ChatTab() {
       </AnimatePresence>
 
       {/* ------------------------------------------------ the chat */}
-      <div className="izk-card izk-chat-card flex min-h-[420px] flex-col p-0">
-        <div className="izk-chat-toolbar flex items-center justify-between px-[14px] pt-[12px]">
+      <div className="izk-card izk-chat-card relative flex min-h-[420px] flex-col p-0">
+        {recentsOpen && (
+          <motion.div
+            key="recent-chats"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="izk-chat-recents-layer absolute inset-0 z-30"
+          >
+              <button
+                type="button"
+                aria-label="Close recent chats"
+                onClick={() => setRecentsOpen(false)}
+                className="absolute inset-0 h-full w-full bg-black/45"
+              />
+              <motion.aside
+                id="izuki-recent-chats"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Recent chats"
+                initial={{ x: -18, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                className="izk-chat-recents absolute inset-y-0 left-0 flex w-[86%] max-w-[316px] flex-col"
+              >
+                <div className="flex items-start justify-between border-b border-white/8 px-3.5 py-3">
+                  <div className="min-w-0">
+                    <div className="text-[12.5px] font-semibold text-izk-ink">Recent chats</div>
+                    <div className="mt-0.5 text-[10.5px] text-izk-muted">Saved on this PC</div>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Close recent chats"
+                    onClick={() => setRecentsOpen(false)}
+                    className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-izk-muted transition hover:bg-white/10 hover:text-izk-ink"
+                  >
+                    <X size={14} strokeWidth={2.4} />
+                  </button>
+                </div>
+                {recent.length > 0 && (
+                  <div className="px-2 pt-2">
+                    <input
+                      value={recentQuery}
+                      onChange={(event) => setRecentQuery(event.target.value)}
+                      placeholder="Search chats"
+                      aria-label="Search recent chats"
+                      className="izk-field h-[30px] w-full px-2.5 text-[11.5px]"
+                    />
+                  </div>
+                )}
+                <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+                  {shownRecent.length > 0 ? (
+                    shownRecent.map((chat) => (
+                      <div
+                        key={chat.id}
+                        className={cx(
+                          "group flex items-stretch rounded-[10px] transition-colors",
+                          chat.id === activeChat ? "bg-white/[0.065]" : "hover:bg-white/[0.04]"
+                        )}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => openChat(chat)}
+                          aria-current={chat.id === activeChat ? "true" : undefined}
+                          className="min-w-0 flex-1 px-2.5 py-2 text-left"
+                        >
+                          <span className="block truncate text-[12px] font-medium text-izk-ink">{chat.title}</span>
+                          <span className="mt-0.5 block truncate text-[10.5px] text-izk-muted">
+                            {timeAgo(chat.at)} · {chat.messages.length} {chat.messages.length === 1 ? "message" : "messages"}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Delete ${chat.title}`}
+                          title="Delete chat"
+                          onClick={() => deleteChat(chat)}
+                          className="flex w-[28px] shrink-0 items-center justify-center text-izk-muted/60 transition hover:text-izk-danger"
+                        >
+                          <Trash2 size={12} strokeWidth={2.2} />
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-3 py-8 text-center text-[11.5px] leading-relaxed text-izk-muted">
+                      {recent.length ? "No chats match that search." : "Your chats will show up here."}
+                    </div>
+                  )}
+                </div>
+                <div className="border-t border-white/8 p-2">
+                  <button
+                    type="button"
+                    onClick={startNewChat}
+                    className="flex h-[34px] w-full items-center justify-center gap-1.5 rounded-[9px] border border-white/10 bg-white/[0.045] text-[11.5px] font-semibold text-izk-ink transition hover:bg-white/[0.085]"
+                  >
+                    <RotateCcw size={12} strokeWidth={2.4} /> New chat
+                  </button>
+                </div>
+              </motion.aside>
+          </motion.div>
+        )}
+        <div className="izk-chat-toolbar flex items-center justify-between gap-2 px-[14px] pt-[12px]">
           <button
             type="button"
             onClick={() => patch({ control_style: settings.control_style === "precision" ? "mouse" : "precision" })}
-            className="izk-no-drag text-[10.5px] text-izk-muted transition-colors hover:text-izk-ink"
+            className="izk-no-drag min-w-0 truncate text-left text-[10.5px] text-izk-muted transition-colors hover:text-izk-ink"
             title="Tap to switch: Jarvis mode works without moving the mouse; Mouse mode moves a visible hand."
           >
             {/* What this button switches, and nothing else ("· Save credits"
                 beside it read like a second switch that wasn't there). */}
             {settings.control_style === "precision" ? "⚡ Jarvis mode — no mouse" : "↗ Mouse mode — moves the pointer"}
           </button>
-          {/* (Ask first ↔ Auto lives once, beside the message box.) */}
-          <AirToggle className="h-[26px]" />
-          {msgs.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                stop();
-                setMsgs([]);
-                clearAttachments();
-              }}
-              className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
-              title="Start a new chat"
-            >
-              <RotateCcw size={11} strokeWidth={2.4} /> New chat
-            </button>
-          )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {recent.length > 0 && (
+              <button
+                type="button"
+                onClick={openRecents}
+                aria-label="Recent chats"
+                aria-expanded={recentsOpen}
+                aria-controls="izuki-recent-chats"
+                title="Recent chats"
+                className="izk-pill izk-no-drag flex h-[26px] w-[26px] items-center justify-center px-0"
+              >
+                <History size={13} strokeWidth={2.2} />
+              </button>
+            )}
+            {/* (Ask first ↔ Auto lives once, beside the message box.) */}
+            <AirToggle className="h-[26px]" />
+            {msgs.length > 0 && (
+              <button
+                type="button"
+                onClick={startNewChat}
+                className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
+                title="Start a new chat"
+              >
+                <RotateCcw size={11} strokeWidth={2.4} /> New chat
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-1 flex-col gap-2 px-[14px] py-[12px]">
@@ -1095,15 +1343,16 @@ export function ChatTab() {
             </button>
           )}
           {msgs.length === 0 && (
-            <div className="izk-chat-welcome flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
-              <div className="izk-chat-presence" aria-hidden="true">
-                <span className="izk-chat-presence-halo" />
-                <NovaOrb size={58} />
-                <span className="izk-chat-presence-ring" />
+            <div className="izk-chat-welcome flex flex-1 flex-col items-center justify-center gap-3 py-6">
+              <div className="izk-chat-intro">
+                <span className="izk-chat-avatar" aria-hidden="true">
+                  <NovaOrb size={36} />
+                </span>
+                <div className="min-w-0 text-left">
+                  <div className="text-[15px] font-semibold text-izk-ink">Chat with Izuki</div>
+                  <p className="izk-chat-sub">Ask a question, or point at something on your screen.</p>
+                </div>
               </div>
-              <div className="izk-chat-signal"><i /> IZUKI · HERE</div>
-              <div className="text-[15px] font-semibold text-izk-ink">Hey! What's on your mind?</div>
-              <p className="izk-chat-sub">Ask, talk, or point at what you're looking at.</p>
               <div className="izk-chat-ideas flex flex-wrap justify-center gap-1.5">
                 {ideas.map((idea) => (
                   <button
@@ -1112,11 +1361,16 @@ export function ChatTab() {
                     onClick={() => void send(idea.ask, false, false, [], [], false)}
                     className="izk-pill izk-chat-idea izk-no-drag h-auto px-3 py-1.5 text-left text-[11.5px]"
                   >
-                    <Sparkles size={11} strokeWidth={2.4} />
                     {idea.label}
                   </button>
                 ))}
               </div>
+              {recent.length > 0 && (
+                <button type="button" onClick={openRecents} className="izk-chat-history-link">
+                  <History size={12} strokeWidth={2.2} /> Recent chats
+                  <ChevronRight size={12} strokeWidth={2.2} />
+                </button>
+              )}
             </div>
           )}
           {msgs.map((m, i) =>

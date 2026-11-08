@@ -1219,53 +1219,7 @@ html.izuki-config[data-backdrop="tabbed"] body {
 }
 
 .izk-chat-welcome {
-  position: relative;
-  isolation: isolate;
   padding-top: 2px;
-}
-
-.izk-chat-welcome::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: -18px;
-  z-index: -1;
-  width: 250px;
-  height: 190px;
-  transform: translateX(-50%);
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(124, 92, 255, 0.17) 0%, rgba(103, 232, 249, 0.045) 44%, transparent 70%);
-  filter: blur(14px);
-  pointer-events: none;
-}
-
-.izk-chat-presence {
-  position: relative;
-  display: grid;
-  width: 84px;
-  height: 84px;
-  flex: none;
-  place-items: center;
-  margin-bottom: 2px;
-}
-
-.izk-chat-presence-halo {
-  position: absolute;
-  inset: -15%;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, rgba(34, 211, 238, 0.12) 38%, transparent 70%);
-  filter: blur(11px);
-  animation: izk-nova-breathe 5.8s ease-in-out infinite;
-  pointer-events: none;
-}
-
-.izk-chat-presence-ring {
-  position: absolute;
-  inset: -7px;
-  border: 1px dashed rgba(103, 232, 249, 0.24);
-  border-radius: 50%;
-  animation: izk-spin 24s linear infinite;
-  pointer-events: none;
 }
 
 .izk-nova-orb {
@@ -1342,26 +1296,6 @@ html.izuki-config[data-backdrop="tabbed"] body {
   background: #ffffff;
   box-shadow: 0 0 8px 2px rgba(255, 255, 255, 0.8), 0 0 16px 5px rgba(103, 232, 249, 0.38);
   pointer-events: none;
-}
-
-.izk-chat-signal {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: rgba(165, 243, 252, 0.76);
-  font-family: var(--font-mono);
-  font-size: 8px;
-  font-weight: 600;
-  letter-spacing: 0.2em;
-  line-height: 1;
-}
-
-.izk-chat-signal i {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: #58e6a8;
-  box-shadow: 0 0 8px rgba(88, 230, 168, 0.75);
 }
 
 .izk-chat-sub {
@@ -1528,15 +1462,11 @@ html.izuki-config[data-backdrop="tabbed"] body {
 }
 
 /* No idle work when the app is in the background. */
-html.izk-away .izk-chat-presence-halo,
-html.izk-away .izk-chat-presence-ring,
 html.izk-away .izk-nova-orb-spin {
   animation-play-state: paused;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .izk-chat-presence-halo,
-  .izk-chat-presence-ring,
   .izk-nova-orb-spin {
     animation: none !important;
   }
@@ -1659,4 +1589,114 @@ html.izk-away .izk-nova-orb-spin {
 .izk-tour-dot[data-active="true"] {
   background: linear-gradient(90deg, #8b5cf6, #22d3ee);
   box-shadow: 0 0 10px rgba(103, 232, 249, 0.36);
+}
+
+/* The Chat welcome is a conversation header, not a showcase. The orb is the
+   small avatar beside the greeting; no stage, no status copy, no floating UI. */
+.izk-chat-intro {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 460px;
+  text-align: left;
+}
+
+.izk-chat-avatar {
+  display: grid;
+  flex: none;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.025));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.17),
+    0 5px 16px rgba(0, 0, 0, 0.18);
+}
+
+.izk-chat-avatar .izk-nova-orb {
+  filter: none;
+}
+
+.izk-chat-avatar .izk-nova-orb-halo,
+.izk-chat-avatar .izk-nova-orb-spark {
+  display: none;
+}
+
+.izk-chat-avatar .izk-nova-orb-spin {
+  background: radial-gradient(circle at 36% 26%, #c7d2fe 0%, #818cf8 18%, #4f46e5 48%, #312e81 78%, #171533 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.3),
+    inset 0 -6px 14px rgba(3, 5, 14, 0.34);
+  animation: none;
+}
+
+.izk-chat-avatar .izk-nova-orb-spin::after {
+  background:
+    radial-gradient(circle at 38% 24%, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.16) 13%, transparent 31%),
+    linear-gradient(155deg, rgba(255, 255, 255, 0.05), rgba(4, 6, 15, 0.3));
+  box-shadow: inset 0 0 10px rgba(5, 8, 20, 0.24);
+}
+
+.izk-chat-avatar .izk-nova-orb-sheen {
+  left: 23%;
+  top: 14%;
+  opacity: 0.52;
+}
+
+.izk-chat-intro .izk-chat-sub {
+  max-width: 340px;
+  margin: 3px 0 0;
+  font-size: 11px;
+}
+
+.izk-chat-history-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 1px;
+  padding: 3px 5px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(158, 160, 173, 0.92);
+  font-size: 10.5px;
+  line-height: 1;
+  transition: color 160ms var(--ease-glass), background 160ms var(--ease-glass);
+}
+
+.izk-chat-history-link:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.izk-chat-recents-layer {
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.izk-chat-recents {
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(15, 19, 31, 0.985), rgba(9, 12, 21, 0.995)),
+    #0b0e17;
+  box-shadow: 18px 0 40px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.izk-chat-recents input {
+  font-size: 11.5px;
+}
+
+@media (max-width: 430px) {
+  .izk-chat-avatar {
+    width: 42px;
+    height: 42px;
+  }
+  .izk-chat-intro {
+    gap: 10px;
+  }
 }
