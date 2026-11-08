@@ -1,6 +1,6 @@
 // The bridge scheduler's decisions, checked without GitHub or agents.
 import assert from 'node:assert/strict';
-import { readState, writeState, describe, overlaps, agentStates, performance, score, plan, recover, unavailable, counts, redistribute, classifyFailure, orphans, STALE_MS } from './scheduler.mjs';
+import { readState, writeState, describe, overlaps, agentStates, performance, score, plan, recover, unavailable, counts, redistribute, classifyFailure, orphans, metrics, compose, productivity, WEIGHTS, STALE_MS } from './scheduler.mjs';
 
 const issue = (number, labels, body = '', extra = {}) => ({ number, title: `Task ${number}`, labels, body, author: { login: 'owner' }, state: 'OPEN', createdAt: '2026-11-03T08:00:00Z', ...extra });
 const trusted = (login) => login === 'owner';
@@ -65,6 +65,46 @@ assert.deepEqual(stats.claude.waits, [5, 5]);
 assert.equal(score({}, 'claude', 'anything'), 0.5, 'no evidence: no assumption');
 assert(score(stats, 'claude', 'perf') > score(stats, 'freebuff', 'perf'));
 assert(score(stats, 'freebuff', 'ui') > score(stats, 'claude', 'ui'));
+
+// §2 weighted productivity: the owner's weights sum to 1, tasks/hour capped at 0.30.
+assert.equal(Object.values(WEIGHTS).reduce((a, b) => a + b, 0).toFixed(2), '1.00');
+assert.equal(WEIGHTS.rate, 0.30);
+// Raw metrics read from a bin; no verified work means nothing to measure.
+assert.equal(metrics(null), null);
+assert.equal(metrics({ done: 0 }), null);
+const bin = { done: 2, firstTry: 2, rework: 0, reviewFixes: 0, regressions: 0, minutes: [30, 30], waits: [5, 5] };
+const mx = metrics(bin);
+assert.equal(mx.rate, 2); // 2 tasks in 1.0 hour
+assert.equal(mx.firstTry, 1);
+assert.equal(mx.time, 30);
+assert.equal(mx.quality, 0);
+assert.equal(mx.regressions, null, "a metric the bridge doesn't record is null, not a fabricated 0");
+assert.equal(mx.cost, null);
+// No evidence for either agent: a neutral 0.5 each, so neither is assumed better.
+assert.deepEqual(compose({ claude: null, freebuff: null }), { claude: 0.5, freebuff: 0.5 });
+// A clearly stronger record wins head-to-head, and the weaker score never
+// collapses to zero (there's always a top agent, §2).
+const mk = (n, agent, kind, h, mins, wait) => describe(issue(n, ['agent-task', 'status:done', `agent:${agent}`, `kind:${kind}`],
+  writeState('z', { agent, history: h, startedAt: '2026-11-03T08:10:00Z', doneAt: new Date(Date.parse('2026-11-03T08:10:00Z') + mins * 60000).toISOString(), assignedAt: new Date(Date.parse('2026-11-03T08:00:00Z') + wait * 60000).toISOString() }), { state: 'CLOSED', createdAt: '2026-11-03T08:00:00Z' }));
+const prodStats = performance([
+  mk(80, 'claude', 'perf', [{ agent: 'claude', result: 'done' }], 30, 5),
+  mk(81, 'claude', 'perf', [{ agent: 'claude', result: 'done' }], 30, 5),
+  mk(82, 'freebuff', 'perf', [{ agent: 'freebuff', result: 'failed', category: 'review' }, { agent: 'freebuff', result: 'done' }], 50, 10),
+]);
+assert.equal(prodStats.freebuff.byKind.perf.reviewFixes, 1);
+assert.equal(prodStats.freebuff.byKind.perf.rework, 1, 'a verified task that needed a retry is re-work');
+assert.equal(prodStats.claude.byKind.perf.firstTry, 2);
+const pp = productivity(prodStats, 'perf');
+assert(pp.claude > pp.freebuff, 'the faster, first-try, review-clean agent scores higher on this kind');
+assert(pp.freebuff > 0, 'the weaker agent still scores above zero: the model never zeroes everyone');
+assert(pp.claude <= 1 && pp.freebuff >= 0);
+// Weighted assignment picks the more productive agent for an "any" task on that kind.
+const rank = (agent, kind) => productivity(prodStats, kind)[agent];
+const anyPerf = [describe(issue(83, ['agent-task', 'status:queued', 'agent:any', 'kind:perf'], 'p\nFiles: src/z.ts'))];
+assert.deepEqual(plan(anyPerf, agentStates([], now), prodStats, trusted, rank).map((p) => p.agent), ['claude']);
+// Different kind, no evidence: the weighted rank ties, so the plan still produces one pick (order stable).
+const anyUi = [describe(issue(84, ['agent-task', 'status:queued', 'agent:any', 'kind:docs'], 'd\nFiles: src/w.ts'))];
+assert.equal(plan(anyUi, agentStates([], now), prodStats, trusted, rank).length, 1);
 
 // Planning: urgent first; dependencies wait; a busy agent gets nothing more;
 // another agent's files are never handed out; untrusted tasks are ignored;
@@ -213,4 +253,4 @@ assert.deepEqual(orphans([describe(issue(75, ['agent-task', 'status:in-progress'
 assert(!counts({ result: 'interrupted' }), 'an interrupted run is not an attempt');
 assert.equal(recover(failing('claude', ['interrupted', 'interrupted', 'failed']), 'tests-failed').action, 'retry', 'interruptions never push a task toward the attempt limit');
 
-console.log('agent scheduler: state blocks, task parsing, file overlap, agent states (busy, disconnected, working on its own, unavailable), evidence-based scores, planning (priority, dependencies, no second task, no shared files, untrusted ignored), recovery (new strategy, reassign, block), outages (usage limit, signed out, service down: never an attempt or a failure; long ones redistribute flexible work) and failed checks classified from their logs (infra, compile, tests, unknown; quoted) and interrupted runs (found, never counted, owned runs untouched) pass.');
+console.log('agent scheduler: state blocks, task parsing, file overlap, agent states (busy, disconnected, working on its own, unavailable), evidence-based scores, the §2 weighted productivity model (per-kind metrics, head-to-head, neutral without evidence, never zeroes everyone) and weighted assignment, planning (priority, dependencies, no second task, no shared files, untrusted ignored), recovery (new strategy, reassign, block), outages (usage limit, signed out, service down: never an attempt or a failure; long ones redistribute flexible work) and failed checks classified from their logs (infra, compile, tests, unknown; quoted) and interrupted runs (found, never counted, owned runs untouched) pass.');
