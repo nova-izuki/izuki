@@ -78,6 +78,7 @@ pub mod selfknow;
 pub mod shop;
 pub mod picker;
 pub mod remote;
+pub mod resume;
 pub mod rtools;
 pub mod offline;
 pub mod officeedit;
