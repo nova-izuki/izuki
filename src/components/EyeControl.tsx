@@ -229,6 +229,10 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
     // check lets the real mouse follow the eyes.
     let check: ValidationState | null = null;
     let verdict: ValidationSummary | null = null;
+    // Whether this build lets the eye lane move the real mouse (Rust decides,
+    // airsafe::EYE_MOUSE_RELEASED; until it's verified the cursor is drawn only).
+    let eyeMouse = false;
+    void api.airSafety().then((s) => { eyeMouse = !!s.eye_mouse; }).catch(() => undefined);
     let checkShown = -1;
     const markSight = (face: boolean, eyes: boolean) => {
       setSight((prev) => (prev.face === face && prev.eyes === eyes ? prev : { face, eyes }));
@@ -816,6 +820,13 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
         draw(true);
         if (finished) {
           verdict = summarizeValidation(check.dots);
+          if (verdict.pass && !eyeMouse) {
+            verdict = {
+              ...verdict,
+              pass: false,
+              reason: `Accuracy check passed (average error ${Math.round(verdict.accuracy * 100)}%, wobble ${Math.round(verdict.jitter * 100)}%). This version shows the eye cursor only: moving the mouse with your eyes comes after a supervised test.`,
+            };
+          }
           setCheckView(null);
           calAt = now + 850;
           steadySince = now;
@@ -856,7 +867,7 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
       // it, and nothing moves while the emergency stop isn't running.
       // Only a passed accuracy check moves the real mouse, and only to a
       // steady look (not every flicker); otherwise the cursor is just drawn.
-      const pointerMode = !!verdict?.pass;
+      const pointerMode = !!verdict?.pass && eyeMouse;
       if (pointerMode && now > calAt && now - steadySince >= FIXATION_MS) void api.airPointer(pointer.x, pointer.y, true).catch(() => undefined);
       draw(true);
 
