@@ -1046,6 +1046,8 @@ export function VoiceEngine() {
     if (airSwitch) {
       const word = (airSwitch[2] || airSwitch[3] || airSwitch[4] || airSwitch[1] || "").toLowerCase();
       const onNow = word !== "off" && word !== "stop";
+      // Asking for it is the explicit re-arm after an emergency stop.
+      if (onNow) await api.airArm().catch(() => undefined);
       useIzuki.getState().patchSettings({ air_enabled: onNow });
       startSession(from === "voice", "speaking");
       await respond(onNow ? "Air control's on — wave your hand at the camera." : "Air control's off.", "cheerful");
@@ -1105,6 +1107,7 @@ export function VoiceEngine() {
         st.patchSettings({ air_mode: airVoice.mode });
         line = `Air control's on ${airVoice.mode} now.`;
       } else if (airVoice.kind === "game") {
+        if (airVoice.on) await api.airArm().catch(() => undefined);
         st.patchSettings({ air_game: airVoice.on, ...(airVoice.on ? { air_enabled: true } : {}) });
         line = airVoice.on ? "Game controls on — lean your hand to move, pinch to jump. Make a fist to pause." : "Game controls off — your hand moves the pointer again.";
       } else if (airVoice.kind === "reset") {

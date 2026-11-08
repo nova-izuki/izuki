@@ -928,6 +928,8 @@ export const api = {
   airPointer: (nx: number, ny: number, eye = false) => call<void>("air_pointer", { nx, ny, eye }, () => undefined),
   /** Air and Eye control's emergency stop: held input let go, Air saved as off. */
   airStop: () => call<void>("air_stop", undefined, () => undefined),
+  /** The person is turning Air on: re-arm after an emergency stop. Call before the setting. */
+  airArm: () => call<void>("air_arm", undefined, () => undefined),
   /** Resume the eye pointer after a pause (never undoes an emergency stop). */
   airResume: () => call<boolean>("air_resume", undefined, () => false),
   /** Air and Eye control's safety state: stopped, paused (and why), ready. */

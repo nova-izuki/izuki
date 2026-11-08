@@ -39,6 +39,10 @@ static BUTTONS: AtomicU8 = AtomicU8::new(0);
 /// Heartbeats of the key watcher (hotkey.rs) and of the watchdog below.
 static KEY_BEAT: AtomicU64 = AtomicU64::new(0);
 static DOG_BEAT: AtomicU64 = AtomicU64::new(0);
+/// The crash handler's release is running (never twice, never inside itself).
+static RELEASING: AtomicBool = AtomicBool::new(false);
+/// When Air last pressed a mouse button down (ms), for the eye lane's limit.
+static PRESSED_AT: AtomicU64 = AtomicU64::new(0);
 /// Settings say the eye lane is selected: every pointer move is the gaze's.
 static EYE_LANE: AtomicBool = AtomicBool::new(false);
 /// The emergency key combination: modifier bits (hotkey.rs's M_*) and key code.
@@ -57,6 +61,8 @@ const SILENT_RELEASE_MS: u64 = 3_000;
 const TAKEOVER_PX: i32 = 16;
 /// Gaze pointer travel within one second that counts as erratic (screen widths).
 const ERRATIC_PATH: f64 = 3.0;
+/// The eye lane never drags: a button it holds this long is let go.
+const EYE_HOLD_MS: u64 = 1_500;
 /// Eye control counts as "in use" this long after its last move.
 const EYE_ACTIVE_MS: u64 = 3_000;
 /// The watchdog's checks failing this many times in a row pauses the gaze pointer.
@@ -110,6 +116,12 @@ pub struct Status {
     pub stop_key: String,
 }
 
+/// A line in the log that can never panic (stderr failing must not stop a stop).
+fn log(line: &str) {
+    use std::io::Write;
+    let _ = writeln!(std::io::stderr(), "{line}");
+}
+
 fn now_ms() -> u64 {
     START.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64
 }
@@ -125,7 +137,11 @@ pub fn install(app: &AppHandle, stop_key: &str, eye_lane: bool) {
     }
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        release_now();
+        // Once, and never from inside itself: a second panic in a hook aborts.
+        if !RELEASING.swap(true, Ordering::SeqCst) {
+            let _ = std::panic::catch_unwind(release_now);
+            RELEASING.store(false, Ordering::SeqCst);
+        }
         previous(info);
     }));
     std::thread::Builder::new().name("izuki-air-watchdog".into()).spawn(watchdog).ok();
@@ -233,11 +249,20 @@ pub fn stop(why: &str) {
     PAUSED.store(0, Ordering::SeqCst);
     let why = why.to_string();
     std::thread::spawn(move || {
-        release_now();
-        eprintln!("[air] EMERGENCY STOP ({why}): pointer input blocked, held buttons and keys let go, Air control saved as off");
-        turn_air_off();
+        // Air is saved as off even if letting go of something fails.
+        let released = std::panic::catch_unwind(release_now).is_ok();
+        log(&format!(
+            "[air] EMERGENCY STOP ({why}): pointer input blocked, {}, Air control saved as off",
+            if released { "held buttons and keys let go" } else { "letting go of held input failed (the watchdog keeps trying)" }
+        ));
+        let _ = std::panic::catch_unwind(turn_air_off);
         announce();
     });
+}
+
+/// The emergency stop has latched (Air comes back only by an explicit enable).
+pub fn stopped() -> bool {
+    STOPPED.load(Ordering::SeqCst)
 }
 
 /// Ctrl+Shift+Q and the tray's Stop: a full emergency stop while eye control
@@ -275,7 +300,7 @@ pub fn arm() {
     *LAST_SET.lock() = None;
     TRAIL.lock().clear();
     if was {
-        eprintln!("[air] re-armed: Air control turned on by the person");
+        log("[air] re-armed: Air control turned on by the person");
         announce();
     }
 }
@@ -286,7 +311,7 @@ pub fn pause(why: Pause) {
         return;
     }
     if PAUSED.compare_exchange(0, why as u8, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
-        eprintln!("[air] eye pointer paused: {}", why.words());
+        log(&format!("[air] eye pointer paused: {}", why.words()));
         std::thread::spawn(|| {
             release_now();
             announce();
@@ -302,7 +327,7 @@ pub fn resume() -> bool {
     if PAUSED.swap(0, Ordering::SeqCst) != 0 {
         *LAST_SET.lock() = None;
         TRAIL.lock().clear();
-        eprintln!("[air] eye pointer resumed by the person");
+        log("[air] eye pointer resumed by the person");
         announce();
     }
     true
@@ -367,7 +392,17 @@ pub fn button_allowed(right: bool, down: bool) -> bool {
         return false;
     }
     BUTTONS.fetch_or(bit, Ordering::SeqCst);
+    PRESSED_AT.store(now_ms().max(1), Ordering::SeqCst);
     true
+}
+
+/// After a press was sent: if a stop or pause landed meanwhile, let it go at
+/// once (the stop's own release may have run before the press reached Windows).
+pub fn after_press(right: bool) {
+    if !allowed() {
+        let _ = crate::automation::mouse_button(right, false);
+        BUTTONS.fetch_and(!(if right { 2 } else { 1 }), Ordering::SeqCst);
+    }
 }
 
 /// Let go of everything Air holds: mouse buttons, a 3D grip, held keys.
@@ -425,7 +460,7 @@ fn watchdog() {
         // person, so the gaze pointer pauses.
         if std::panic::catch_unwind(watchdog_tick).is_err() {
             failures += 1;
-            eprintln!("[air] watchdog: a check failed ({failures} in a row); carrying on");
+            log(&format!("[air] watchdog: a check failed ({failures} in a row); carrying on"));
             if failures >= WATCHDOG_FAILURES {
                 pause(Pause::NoSafety);
             }
@@ -442,8 +477,16 @@ fn watchdog_tick() {
     }
     {
         let now = now_ms();
-        if BUTTONS.load(Ordering::SeqCst) != 0 && now.saturating_sub(LAST_CALL.load(Ordering::SeqCst)) > SILENT_RELEASE_MS {
-            eprintln!("[air] watchdog: let go of a held button (no word from Air for {} s)", SILENT_RELEASE_MS / 1000);
+        let held = BUTTONS.load(Ordering::SeqCst) != 0;
+        if held && now.saturating_sub(LAST_CALL.load(Ordering::SeqCst)) > SILENT_RELEASE_MS {
+            log(&format!("[air] watchdog: let go of a held button (no word from Air for {} s)", SILENT_RELEASE_MS / 1000));
+            release_now();
+        } else if held && !allowed() {
+            log("[air] watchdog: let go of a button held after a stop or pause");
+            release_now();
+        } else if held && eye_lane() && now.saturating_sub(PRESSED_AT.load(Ordering::SeqCst)) > EYE_HOLD_MS {
+            // The eye lane only clicks; a button down this long was never let go.
+            log("[air] watchdog: let go of a button the eye lane held too long");
             release_now();
         }
         if eye_active() && allowed() {

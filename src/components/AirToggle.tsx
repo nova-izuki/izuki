@@ -36,7 +36,9 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
     const next = !current.current;
     current.current = next;
     setOn(next);
-    void emit(EV.patchSettings, { air_enabled: next });
+    // Turning it on is the explicit re-arm after an emergency stop.
+    if (next) void api.airArm().catch(() => undefined).finally(() => void emit(EV.patchSettings, { air_enabled: true }));
+    else void emit(EV.patchSettings, { air_enabled: false });
   };
   const lane = eye ? "Eye" : "Hand";
   const icon = eye ? "👁️" : "🖐️";

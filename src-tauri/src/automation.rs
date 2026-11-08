@@ -435,8 +435,13 @@ pub fn keys_held() -> bool {
 /// is forgotten only once its release was sent; the lock is never waited on
 /// for long (this also runs from the crash handler).
 pub fn release_held_keys() {
+    use std::io::Write;
+    // Never panics on a failed log line: this also runs from the crash handler.
+    let log = |line: String| {
+        let _ = writeln!(std::io::stderr(), "{line}");
+    };
     let Some(mut held) = HELD.try_lock_for(std::time::Duration::from_millis(200)) else {
-        eprintln!("[air] couldn't let go of held keys: busy");
+        log("[air] couldn't let go of held keys: busy".into());
         return;
     };
     if held.1.is_empty() {
@@ -445,14 +450,14 @@ pub fn release_held_keys() {
     let mut e = match enigo() {
         Ok(e) => e,
         Err(err) => {
-            eprintln!("[air] couldn't let go of held keys: {err}");
+            log(format!("[air] couldn't let go of held keys: {err}"));
             return;
         }
     };
     held.1.retain(|(k, name)| match e.key(*k, Direction::Release) {
         Ok(()) => false,
         Err(err) => {
-            eprintln!("[air] couldn't let go of {name}: {err:?}");
+            log(format!("[air] couldn't let go of {name}: {err:?}"));
             true
         }
     });
