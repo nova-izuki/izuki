@@ -278,7 +278,8 @@ pub fn stop_if_eye(why: &str) {
 /// Air control saved as off, the overlay and tray told — the tray's own path.
 fn turn_air_off() {
     let Some(app) = APP.get() else { return };
-    let store = crate::state::store();
+    // Not opened yet (early in startup, or a test host): nothing saved to change.
+    let Some(store) = crate::state::try_store() else { return };
     let mut settings = store.settings();
     if !settings.air_enabled {
         return;
