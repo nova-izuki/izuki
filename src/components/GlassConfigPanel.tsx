@@ -86,6 +86,30 @@ export function GlassConfigPanel() {
   }, []);
   const setTourOpen = useIzuki((s) => s.setTourOpen);
 
+  // A single pointer-reactive light, updated on a frame and never looped.
+  // It gives the glass a sense of place without repainting while idle.
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const lightFrame = useRef(0);
+  const lightAt = useRef({ x: "20%", y: "0%" });
+  const trackLight = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    lightAt.current = {
+      x: `${Math.round(((event.clientX - rect.left) / rect.width) * 100)}%`,
+      y: `${Math.round(((event.clientY - rect.top) / rect.height) * 100)}%`,
+    };
+    if (lightFrame.current) return;
+    lightFrame.current = requestAnimationFrame(() => {
+      lightFrame.current = 0;
+      const el = sheetRef.current;
+      if (!el) return;
+      el.style.setProperty("--izk-mx", lightAt.current.x);
+      el.style.setProperty("--izk-my", lightAt.current.y);
+    });
+  };
+  useEffect(() => () => { if (lightFrame.current) cancelAnimationFrame(lightFrame.current); }, []);
+
   // The page lays itself out differently depending on whether Windows is
   // painting a Mica/Acrylic backdrop behind the window. See styles.css.
   useEffect(() => {
@@ -155,16 +179,20 @@ export function GlassConfigPanel() {
         <VoiceEngine />
       </Recover>
       <div
-        className="izk-sheet izk-grain flex h-full flex-col"
+        ref={sheetRef}
+        className="izk-sheet izk-grain izk-nova-surface flex h-full flex-col"
+        onPointerMove={trackLight}
         // Belt and braces with overflow: clip — the frame itself never stays scrolled.
         onScroll={(e) => { if (e.currentTarget.scrollTop) e.currentTarget.scrollTop = 0; }}
       >
-        {/* the slow-drifting colour under the glass — always there, never distracting */}
+        {/* the colour under the glass — static, never distracting */}
         <div className="izk-aurora" aria-hidden="true">
           <span />
           <span />
           <span />
         </div>
+        <div className="izk-cosmic" aria-hidden="true" />
+        <div className="izk-pointer-light" aria-hidden="true" />
 
         {/* ---------------- title bar ---------------- */}
         {/* Tauri's own drag handling looks for `data-tauri-drag-region` on
@@ -175,12 +203,15 @@ export function GlassConfigPanel() {
             button cluster is untouched and stays clickable. */}
         <header
           data-tauri-drag-region
-          className="izk-drag relative flex items-center justify-between px-[18px] pt-[16px] pb-[12px]"
+          className="izk-drag izk-titlebar relative flex items-center justify-between px-[18px] pt-[16px] pb-[12px]"
         >
           <div className="pointer-events-none flex items-center gap-[11px]">
-            <IzukiMark size={38} className="rounded-[11px] shadow-[0_6px_16px_rgba(76,84,220,0.35)]" />
+            <span className="izk-brand-mark">
+              <span className="izk-brand-halo" aria-hidden="true" />
+              <IzukiMark size={38} className="relative z-10 rounded-[11px] shadow-[0_6px_16px_rgba(76,84,220,0.35)]" />
+            </span>
             <div className="leading-none">
-              <span className="text-[17px] font-bold tracking-[0.14em] izk-accent-text">
+              <span className="block text-[17px] font-bold tracking-[0.14em] izk-accent-text">
                 IZUKI
               </span>
               <div className="mt-[5px] text-[10px] font-semibold tracking-[0.13em] text-izk-muted">
@@ -210,7 +241,7 @@ export function GlassConfigPanel() {
         <div className="izk-no-drag relative px-[18px] pb-3"><FeatureFinder /></div>
         {/* Scrolls sideways rather than cutting the last tab off in a
             narrow window. */}
-        <div className="izk-no-drag overflow-x-auto px-[18px] pb-[12px] [scrollbar-width:none]">
+        <div className="izk-no-drag izk-tab-rail overflow-x-auto px-[18px] pb-[12px] [scrollbar-width:none]">
           <Segmented value={tab} options={TABS} onChange={setTab} size="sm" compact={narrow} />
         </div>
 
@@ -221,14 +252,14 @@ export function GlassConfigPanel() {
 
         {/* ---------------- content ---------------- */}
         <UpdateNotice />
-        <main className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-[18px] py-[16px]">
+        <main className="izk-content relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-[18px] py-[16px]">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={tab}
-              initial={{ opacity: 0, y: 8, filter: "blur(6px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              exit={{ opacity: 0, y: -6, filter: "blur(6px)" }}
-              transition={{ duration: 0.26, ease: [0.32, 0.72, 0, 1] }}
+              initial={{ opacity: 0, y: 10, scale: 0.992 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.996 }}
+              transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
               className="flex flex-col gap-3"
             >
               <Recover name={`tab:${tab}`} onReset={tab === "chat" ? resetChat : undefined}>

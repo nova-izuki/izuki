@@ -10,6 +10,7 @@ import { useDictation } from "../../hooks/useDictation";
 import { useSmartIdeas } from "../../lib/smartIdeas";
 import { sendChatCommand } from "../VoiceEngine";
 import { VoiceOrb } from "../VoiceOrb";
+import { NovaOrb } from "../NovaOrb";
 import { cx } from "../ui";
 import type { Reminder } from "../../lib/types";
 import { useIzuki } from "../../lib/store";
@@ -1047,8 +1048,8 @@ export function ChatTab() {
       </AnimatePresence>
 
       {/* ------------------------------------------------ the chat */}
-      <div className="izk-card flex min-h-[420px] flex-col p-0">
-        <div className="flex items-center justify-between px-[14px] pt-[12px]">
+      <div className="izk-card izk-chat-card flex min-h-[420px] flex-col p-0">
+        <div className="izk-chat-toolbar flex items-center justify-between px-[14px] pt-[12px]">
           <button
             type="button"
             onClick={() => patch({ control_style: settings.control_style === "precision" ? "mouse" : "precision" })}
@@ -1094,16 +1095,24 @@ export function ChatTab() {
             </button>
           )}
           {msgs.length === 0 && (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 py-6 text-center">
+            <div className="izk-chat-welcome flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
+              <div className="izk-chat-presence" aria-hidden="true">
+                <span className="izk-chat-presence-halo" />
+                <NovaOrb size={58} />
+                <span className="izk-chat-presence-ring" />
+              </div>
+              <div className="izk-chat-signal"><i /> IZUKI · HERE</div>
               <div className="text-[15px] font-semibold text-izk-ink">Hey! What's on your mind?</div>
-              <div className="flex flex-wrap justify-center gap-1.5">
+              <p className="izk-chat-sub">Ask, talk, or point at what you're looking at.</p>
+              <div className="izk-chat-ideas flex flex-wrap justify-center gap-1.5">
                 {ideas.map((idea) => (
                   <button
                     key={idea.label}
                     type="button"
                     onClick={() => void send(idea.ask, false, false, [], [], false)}
-                    className="izk-pill izk-no-drag h-auto px-3 py-1.5 text-left text-[11.5px]"
+                    className="izk-pill izk-chat-idea izk-no-drag h-auto px-3 py-1.5 text-left text-[11.5px]"
                   >
+                    <Sparkles size={11} strokeWidth={2.4} />
                     {idea.label}
                   </button>
                 ))}
@@ -1215,7 +1224,7 @@ export function ChatTab() {
         </div>
 
         <div
-          className="border-t border-white/8 p-[10px]"
+          className="izk-chat-composer border-t border-white/8 p-[10px]"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             if (!e.dataTransfer.files.length) return;
