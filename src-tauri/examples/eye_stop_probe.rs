@@ -1,7 +1,8 @@
 //! A real-Windows check of Eye Control's emergency stop (airsafe.rs), with no
 //! camera: Izuki's own two key watchers and the real pointer. It moves the
 //! pointer and presses Ctrl+Alt+Shift+X, so run it only while nobody is using
-//! the PC:
+//! the PC (anyone touching the mouse or keyboard pauses the eye pointer, which
+//! is the point, and fails the run):
 //!
 //!   IZUKI_TEST_MANIFEST=1 cargo run --example eye_stop_probe
 //!
@@ -45,7 +46,16 @@ fn main() {
         }
         panic!("{what} didn't happen within {ms} ms");
     };
+    /// Puts the pointer back however the probe ends (a failed check panics,
+    /// and panics unwind in this crate, so this runs).
+    struct PutBack((i32, i32));
+    impl Drop for PutBack {
+        fn drop(&mut self) {
+            let _ = unsafe { SetCursorPos(self.0 .0, self.0 .1) };
+        }
+    }
     let start = cursor();
+    let put_back = PutBack(start);
     let (cx, cy) = izuki_lib::air::to_screen(0.5, 0.5);
     let mut passed: Vec<String> = Vec::new();
 
@@ -57,7 +67,7 @@ fn main() {
     let mut last = (cx, cy);
     for i in 0..5 {
         last = (cx + i * 4, cy);
-        assert!(airsafe::eye_pointer(last.0, last.1, 0.5, 0.5), "a steady gaze move was refused");
+        assert!(airsafe::eye_pointer(last.0, last.1, 0.5, 0.5), "a steady gaze move was refused ({:?}); if paused because the mouse moved or a key was pressed, someone used the PC during the probe", airsafe::status());
         std::thread::sleep(Duration::from_millis(120));
     }
     assert!(near(cursor(), last), "the real pointer is at {:?}, not {:?}", cursor(), last);
@@ -96,6 +106,20 @@ fn main() {
     std::thread::sleep(Duration::from_millis(150));
     let before = cursor();
     let x_key = 0x58u8;
+    /// Lets go of the emergency keys however the wait below ends, so a
+    /// failed check never leaves Ctrl, Alt, Shift or X held on the PC.
+    struct LetGo(u8);
+    impl Drop for LetGo {
+        fn drop(&mut self) {
+            unsafe {
+                keybd_event(self.0, 0, KEYEVENTF_KEYUP, 0);
+                keybd_event(VK_SHIFT.0 as u8, 0, KEYEVENTF_KEYUP, 0);
+                keybd_event(VK_MENU.0 as u8, 0, KEYEVENTF_KEYUP, 0);
+                keybd_event(VK_CONTROL.0 as u8, 0, KEYEVENTF_KEYUP, 0);
+            }
+        }
+    }
+    let held = LetGo(x_key);
     unsafe {
         keybd_event(VK_CONTROL.0 as u8, 0, KEYBD_EVENT_FLAGS(0), 0);
         keybd_event(VK_MENU.0 as u8, 0, KEYBD_EVENT_FLAGS(0), 0);
@@ -103,12 +127,7 @@ fn main() {
         keybd_event(x_key, 0, KEYBD_EVENT_FLAGS(0), 0);
     }
     let caught = wait_for("Ctrl+Alt+Shift+X stopping Eye Control", 1_000, &|| airsafe::stopped());
-    unsafe {
-        keybd_event(x_key, 0, KEYEVENTF_KEYUP, 0);
-        keybd_event(VK_SHIFT.0 as u8, 0, KEYEVENTF_KEYUP, 0);
-        keybd_event(VK_MENU.0 as u8, 0, KEYEVENTF_KEYUP, 0);
-        keybd_event(VK_CONTROL.0 as u8, 0, KEYEVENTF_KEYUP, 0);
-    }
+    drop(held);
     assert!(!airsafe::eye_pointer(cx + 200, cy + 100, 0.6, 0.6), "the gaze pointer moved after the emergency stop");
     assert!(!airsafe::resume(), "resume undid an emergency stop");
     assert!(!airsafe::button_allowed(false, true), "a click passed after the emergency stop");
@@ -122,7 +141,8 @@ fn main() {
     assert!(airsafe::eye_pointer(cx, cy, 0.5, 0.5), "arming didn't bring the gaze pointer back");
     passed.push("turning Air on again re-arms it".into());
 
-    unsafe { SetCursorPos(start.0, start.1) }.ok();
+    // process::exit skips destructors: put the pointer back here.
+    drop(put_back);
     for line in &passed {
         println!("  ok  {line}");
     }
