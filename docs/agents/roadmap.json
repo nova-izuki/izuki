@@ -3,7 +3,7 @@
   "items": [
     {
       "key": "claude-result-checks",
-      "agent": "claude",
+      "agent": "freebuff",
       "kind": "feature",
       "priority": "high",
       "title": "Smart Screen Actions: check the result of scrolling, opening and shortcuts",
@@ -12,7 +12,7 @@
     },
     {
       "key": "claude-replan",
-      "agent": "claude",
+      "agent": "freebuff",
       "kind": "feature",
       "priority": "normal",
       "title": "Smart Screen Actions: re-plan from a fresh look after any failed step",
@@ -22,7 +22,7 @@
     },
     {
       "key": "claude-fixed-waits",
-      "agent": "claude",
+      "agent": "freebuff",
       "kind": "perf",
       "priority": "normal",
       "title": "Fast Action Engine: replace the fixed waits the bench shows matter",
@@ -32,7 +32,7 @@
     },
     {
       "key": "claude-youtube-skip",
-      "agent": "claude",
+      "agent": "freebuff",
       "kind": "perf",
       "priority": "low",
       "title": "Skip YouTube ads through the extension instead of walking the page",
@@ -41,7 +41,7 @@
     },
     {
       "key": "freebuff-eye-calibration",
-      "agent": "freebuff",
+      "agent": "claude",
       "kind": "feature",
       "priority": "normal",
       "title": "Eye lane: one-gesture calibration behind the eye gate",
@@ -50,7 +50,7 @@
     },
     {
       "key": "freebuff-look-to-scroll",
-      "agent": "freebuff",
+      "agent": "claude",
       "kind": "feature",
       "priority": "low",
       "title": "Eye lane: look-to-scroll as the first eye-only feature",
