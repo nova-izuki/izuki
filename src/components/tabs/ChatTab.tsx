@@ -430,11 +430,21 @@ function storedMessages(msgs: Msg[]): Msg[] {
   });
 }
 
-function save(msgs: Msg[]) {
+/** Why a write didn't go through: storage is full, or blocked altogether. */
+type Unsaved = "full" | "blocked";
+
+function failure(e: unknown): Unsaved {
+  const name = e instanceof DOMException ? e.name : "";
+  return name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED" ? "full" : "blocked";
+}
+
+/** The live chat; null when kept. (Private mode or full: the chat still works, it just isn't kept.) */
+function save(msgs: Msg[]): Unsaved | null {
   try {
     localStorage.setItem(KEY, JSON.stringify(storedMessages(msgs)));
-  } catch {
-    /* private mode / full — the chat still works, it just isn't kept */
+    return null;
+  } catch (e) {
+    return failure(e);
   }
 }
 
@@ -459,11 +469,13 @@ function readRecent(): RecentChat[] {
   }
 }
 
-function saveRecent(list: RecentChat[]) {
+/** The Recent chats list; null when kept. */
+function saveRecent(list: RecentChat[]): Unsaved | null {
   try {
     localStorage.setItem(RECENT_KEY, JSON.stringify(list));
-  } catch {
-    /* recent history is optional, like the live conversation */
+    return null;
+  } catch (e) {
+    return failure(e);
   }
 }
 
@@ -525,10 +537,20 @@ export function ChatTab() {
   const recentRef = useRef<RecentChat[]>(recent);
   const [recentsOpen, setRecentsOpen] = useState(false);
   const [recentQuery, setRecentQuery] = useState("");
+  // A write that failed is said plainly and tried again on the next save,
+  // instead of the list looking saved and being gone after a restart.
+  const [recentUnsaved, setRecentUnsaved] = useState<Unsaved | null>(null);
+  const unsaved = useRef(false);
   const commitRecent = useCallback((next: RecentChat[]) => {
     recentRef.current = next;
     setRecent(next);
-    saveRecent(next);
+    let why = saveRecent(next);
+    // Recovering from a failed write: the live chat may not have been kept
+    // either. Write it too, or its older copy would come back after a
+    // restart and overwrite this newer one in Recent chats.
+    if (!why && unsaved.current) why = save(chatMsgs);
+    unsaved.current = why !== null;
+    setRecentUnsaved(why);
   }, []);
   // Each save rewrites the whole list, so while a reply streams it's saved
   // at most every 1.5 s, and once more the moment it settles.
@@ -543,7 +565,7 @@ export function ChatTab() {
     if (!chatMsgs.length) return;
     const stored = storedMessages(chatMsgs);
     const existing = recentRef.current.find((s) => s.id === chatSessionId);
-    if (existing && JSON.stringify(existing.messages) === JSON.stringify(stored)) return;
+    if (!unsaved.current && existing && JSON.stringify(existing.messages) === JSON.stringify(stored)) return;
     commitRecent(rememberSession(recentRef.current, chatSessionId, chatTitle(chatMsgs), stored));
   }, [commitRecent]);
   useEffect(() => {
@@ -1582,6 +1604,13 @@ export function ChatTab() {
           {documents.length > 0 && <div className="mb-2 flex flex-wrap gap-2">{documents.map((file, i) => <span key={i} className="flex max-w-full items-center gap-2 rounded-lg border border-white/15 px-2 py-1 text-[11px]"><span className="truncate">📎 {file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setDocuments((all) => all.filter((_, j) => j !== i))}><X size={12} /></button></span>)}</div>}
           {readingFiles && <p role="status" className="mb-2 text-[11px] text-izk-muted">Reading your files…</p>}
           {fileError && <p role="alert" className="mb-2 text-[11px] text-izk-danger">{fileError}</p>}
+          {recentUnsaved && (
+            <p role="alert" className="mb-2 text-[11px] text-izk-danger">
+              {recentUnsaved === "full"
+                ? "This chat couldn't be kept in Recent chats: Izuki's storage on this PC is full. Delete an old chat to make room."
+                : "This chat couldn't be kept in Recent chats: this PC is blocking Izuki's storage. It stays here until Izuki closes."}
+            </p>
+          )}
           {queued && (
             <p role="status" className="mb-2 flex items-center gap-2 text-[11px] text-izk-muted">
               <span className="min-w-0 truncate">Stopping, then sending: “{queued.text || "your files"}”</span>
