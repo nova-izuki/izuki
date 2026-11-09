@@ -19,3 +19,6 @@ into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
 - The hand chip now shows whether AIR is on, opens a compact hand-gesture
   guide, can stop AIR immediately, and jumps straight to its settings.
   [Freebuff]
+- Izuki now looks after scrolling, opening an app or page, and pressing a
+  shortcut: it says when the screen didn't change, while keeping quiet for
+  volume/media keys and pages that stayed in the same tab. [Freebuff]
