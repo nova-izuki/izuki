@@ -248,7 +248,7 @@ pub fn restart_explorer() -> Result<()> {
 }
 
 #[cfg(windows)]
-mod reg {
+pub(crate) mod reg {
     use anyhow::{anyhow, Result};
     use windows::core::{HSTRING, PCWSTR};
     use windows::Win32::System::Registry::{
@@ -338,7 +338,7 @@ mod reg {
 }
 
 #[cfg(not(windows))]
-mod reg {
+pub(crate) mod reg {
     use anyhow::{anyhow, Result};
     pub fn get_dword(_: &str, _: &str) -> Option<u32> { None }
     pub fn set_dword(_: &str, _: &str, _: u32) -> Result<()> { Err(anyhow!("only on Windows")) }

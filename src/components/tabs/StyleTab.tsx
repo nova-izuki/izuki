@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Clock, Gamepad2, Gem, Heart, Image as ImageIcon, Layers, MapPin, Moon, Palette, RefreshCw, RotateCcw, Shuffle, Sparkles, Sun, Undo2, Wand2, Wrench, Zap } from "lucide-react";
-import { api, type LookAuto, type LookPhoto, type LookPreset, type LooksStatus, type WindowsTweak } from "../../lib/ipc";
+import { api, type LookAuto, type LookPhoto, type LookPreset, type LooksStatus, type LookVibe, type WindowsTweak } from "../../lib/ipc";
 import { onStyleSection, takeStyleSection, type StyleSection } from "../../lib/styleNav";
 import { Section, cx } from "../ui";
 import { DesktopLayouts } from "../DesktopLayouts";
+import { WindowArrange } from "../WindowArrange";
+import { WindhawkCard } from "../WindhawkCard";
 
 /**
  * Style: how Windows looks, in one place — a big live preview of your
@@ -217,6 +219,75 @@ function Tile({ on, title, hint, onClick, disabled, badge }: { on: boolean; titl
   );
 }
 
+/** Moods to try, one tap each. */
+const VIBE_IDEAS = ["cozy autumn", "cyberpunk", "calm ocean", "black and gold", "minimal and clean", "RGB gaming", "northern lights", "study focus"];
+const PACK_NAMES: Record<string, string> = { gamer: "Gamer", clean: "Clean", power: "Power user", premium: "Premium" };
+
+/**
+ * "Describe a vibe": a mood in plain words → the closest look, and a pack of
+ * tweaks that suits it (winlook::vibe). Previewed first, applied on a tap;
+ * the look's Undo puts the old colours back. Same words work by voice.
+ */
+function VibeBox({ disabled, onApply }: { disabled: boolean; onApply: (vibe: LookVibe, withPack: boolean) => void }) {
+  const [text, setText] = useState("");
+  const [vibe, setVibe] = useState<LookVibe | null>(null);
+  const [tried, setTried] = useState("");
+  const [withPack, setWithPack] = useState(true);
+  const look = (words: string) => {
+    const t = words.trim();
+    if (!t) return;
+    setText(t);
+    setTried(t);
+    void api.lookVibe(t).then(setVibe).catch(() => setVibe(null));
+  };
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    look(text);
+  };
+  return (
+    <div className="rounded-[14px] border border-white/10 p-3" style={{ background: "linear-gradient(120deg, rgba(124,92,255,0.13), rgba(78,205,196,0.08) 60%, rgba(255,255,255,0.02))" }}>
+      <form onSubmit={submit} className="flex flex-wrap items-center gap-2">
+        <label htmlFor="vibe-text" className="flex items-center gap-1.5 text-[12.5px] font-semibold text-izk-ink">
+          <Sparkles size={13} /> Describe a vibe
+        </label>
+        <input
+          id="vibe-text"
+          value={text}
+          maxLength={80}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="cozy autumn, cyberpunk, black and gold…"
+          className="izk-field izk-no-drag h-[30px] min-w-[160px] flex-1 px-3 text-[12px]"
+        />
+        <button type="submit" disabled={!text.trim()} className="izk-pill izk-no-drag h-[30px] px-3 text-[11.5px] disabled:opacity-50">Find my look</button>
+      </form>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {VIBE_IDEAS.map((idea) => (
+          <button key={idea} type="button" onClick={() => look(idea)} className="izk-no-drag rounded-full border border-white/10 px-2.5 py-0.5 text-[10.5px] text-izk-muted transition-colors hover:border-white/25 hover:text-izk-ink">
+            {idea}
+          </button>
+        ))}
+      </div>
+      {tried && !vibe && <p className="mt-2 text-[11px] text-izk-muted">No look fits “{tried}” yet. Try a mood, a season, a colour or a place: “sunset”, “winter”, “forest”.</p>}
+      {vibe && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-[11px] border border-white/10 bg-black/20 px-3 py-2">
+          <span className="min-w-0 flex-1 text-[11.5px] leading-snug text-izk-muted">
+            “{vibe.word}” → <b className="text-izk-ink">{vibe.name}</b>
+            {vibe.pack ? <> with the <b className="text-izk-ink">{PACK_NAMES[vibe.pack] ?? vibe.pack}</b> tweaks</> : null}
+          </span>
+          {vibe.pack && (
+            <button type="button" role="switch" aria-checked={withPack} onClick={() => setWithPack((v) => !v)} className="izk-no-drag flex items-center gap-1.5 text-[10.5px] text-izk-muted">
+              <MiniSwitch on={withPack} /> Tweaks too
+            </button>
+          )}
+          <button type="button" disabled={disabled} onClick={() => onApply(vibe, withPack)} className="izk-btn-primary izk-no-drag h-[28px] px-3 text-[11.5px] disabled:opacity-60">
+            Use it
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function StyleTab() {
   const [section, setSection] = useState<StyleSection>(() => takeStyleSection() ?? "looks");
   useEffect(() => onStyleSection(setSection), []);
@@ -292,6 +363,27 @@ export function StyleTab() {
         setHover(null);
       },
       `${p.name} is on.`
+    );
+
+  const applyVibe = (v: LookVibe, withPack: boolean) =>
+    run(
+      "vibe",
+      async () => {
+        const looks = await api.lookApply(v.preset, withWallpaper);
+        // The tweaks are a bonus: the look counts even if a tweak doesn't.
+        const tidy = withPack && v.pack ? await api.tweakPack(v.pack).catch(() => null) : null;
+        return { looks, tidy };
+      },
+      ({ looks, tidy }) => {
+        setLooks(looks);
+        if (tidy?.length) {
+          setTweaks(tidy);
+          if (tidy.some((t) => t.on && t.restart)) setNeedsRestart(true);
+        }
+        setSweep((n) => n + 1);
+        setHover(null);
+      },
+      ({ tidy }) => `${v.name} is on${tidy?.length && v.pack ? `, with the ${PACK_NAMES[v.pack] ?? v.pack} tweaks` : ""}.`
     );
 
   const auto = s?.auto;
@@ -388,6 +480,7 @@ export function StyleTab() {
       )}
 
       {section === "layouts" && <>
+        <WindowArrange disabled={busy !== null} onBusy={(key) => { busyRef.current = key; setBusy(key); }} />
         <DesktopLayouts tweaks={tweaks} onChange={setTweaks} onRestart={() => setNeedsRestart(true)} disabled={busy !== null} onBusy={(key) => { busyRef.current = key; setBusy(key); }} picture={photoNow?.thumb} />
         {needsRestart && <p className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 p-3 text-[11.5px] text-izk-muted">Some layout switches show after Explorer restarts. Your apps stay open.<button type="button" disabled={busy !== null} className="izk-pill izk-no-drag px-3 py-1" onClick={() => run("restart", () => api.restartExplorer(), () => setNeedsRestart(false), "Explorer restarted.")}>Restart Explorer</button></p>}
       </>}
@@ -412,6 +505,7 @@ export function StyleTab() {
               </button>
             )}
           </div>
+          <VibeBox disabled={busy !== null || !s} onApply={applyVibe} />
           {!s && <p className="text-[11.5px] text-izk-muted">{error || "Reading your Windows colours…"}</p>}
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
             {presets.map((p) => {
@@ -566,6 +660,8 @@ export function StyleTab() {
           )}
         </Section>
       )}
+
+      {section === "tweaks" && <WindhawkCard />}
 
       {section === "auto" && auto && (
         <Section id="style-auto" title="Automatic style" className="izk-rise !p-3" contentClassName="flex flex-col gap-3">

@@ -28,3 +28,6 @@ Izuki is free to use. It runs on free AI keys from Google Gemini, Groq (includin
 - Download for Windows (free): https://github.com/nova-izuki/izuki/releases/latest
 - Phone web app: https://nova-izuki.github.io/izuki/app/
 - Source code: https://github.com/nova-izuki/izuki
+- Is it safe? Verify your download, signed updates, safety rules: https://nova-izuki.github.io/izuki/security/
+- Privacy policy: https://nova-izuki.github.io/izuki/privacy/
+- Terms of use: https://nova-izuki.github.io/izuki/terms/

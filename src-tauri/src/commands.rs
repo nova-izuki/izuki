@@ -539,7 +539,11 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         .await
         .ok();
     }
-    // Windows looks: "make my PC look Nova", "undo the look", "accent colour red" (winlook.rs).
+    // Window layouts: "put my windows side by side", "undo the layout" (arrange.rs).
+    if let Some(ask) = crate::arrange::parse(&said) {
+        return blocking(move || crate::arrange::handle(ask)).await.ok();
+    }
+    // Windows looks: "make my PC look Nova", "make it cozy", "undo the look", "accent colour red" (winlook.rs).
     if let Some(ask) = crate::winlook::parse(&said) {
         return blocking(move || crate::winlook::handle(ask)).await.ok();
     }
@@ -1792,6 +1796,57 @@ pub async fn looks_status() -> R<crate::winlook::Status> {
 #[tauri::command]
 pub async fn look_apply(id: String, wallpaper: bool) -> R<crate::winlook::Status> {
     blocking(move || crate::winlook::apply(&id, wallpaper).map_err(|e| e.to_string())).await?
+}
+
+/// The look for a mood in plain words ("cozy", "cyberpunk"), to preview
+/// before applying it. `None` when no mood word is in the text.
+#[tauri::command]
+pub fn look_vibe(text: String) -> Option<crate::winlook::Vibe> {
+    crate::winlook::vibe(&text)
+}
+
+/// Arrange the windows on this screen: "side", "focus", "columns" or "grid"
+/// (arrange.rs). Says what moved.
+#[tauri::command]
+pub async fn window_layout(kind: String) -> R<String> {
+    let kind = crate::arrange::Kind::from_id(&kind).ok_or("unknown layout")?;
+    blocking(move || crate::arrange::apply(kind).map_err(|e| e.to_string())).await?
+}
+
+/// Is there a window arrangement to put back (by button or by voice)?
+#[tauri::command]
+pub fn window_layout_can_undo() -> bool {
+    crate::arrange::can_undo()
+}
+
+/// Put the last arranged windows back.
+#[tauri::command]
+pub async fn window_layout_undo() -> R<String> {
+    blocking(|| crate::arrange::undo().map_err(|e| e.to_string())).await?
+}
+
+/// Is Windhawk installed, can it be, and the mods worth starting with.
+#[tauri::command]
+pub async fn windhawk_status() -> R<crate::windhawk::Status> {
+    blocking(crate::windhawk::status).await
+}
+
+/// Install Windhawk with winget (the person pressed Install; Windows asks too).
+#[tauri::command]
+pub async fn windhawk_install() -> R<crate::windhawk::Status> {
+    blocking(|| crate::windhawk::install().map_err(|e| e.to_string())).await?
+}
+
+#[tauri::command]
+pub async fn windhawk_open() -> R<()> {
+    blocking(|| crate::windhawk::open().map_err(|e| e.to_string())).await?
+}
+
+/// A listed mod's page on windhawk.net, in the browser.
+#[tauri::command]
+pub async fn windhawk_mod(id: String) -> R<()> {
+    let url = crate::windhawk::mod_page(&id).map_err(|e| e.to_string())?;
+    blocking(move || crate::apps::open_url(&url).map_err(|e| e.to_string())).await?
 }
 
 /// Just the accent colour ("#rrggbb").
