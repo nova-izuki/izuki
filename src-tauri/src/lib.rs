@@ -124,6 +124,7 @@ pub mod suggest;
 pub mod stt;
 pub mod tags;
 pub mod telegram;
+pub mod transport;
 pub mod tray;
 pub mod tv;
 pub mod tvlink;
@@ -263,6 +264,8 @@ pub fn tls_ready() {
 }
 
 pub fn run() {
+    // Before any web client exists: requests to this PC never use a proxy.
+    transport::keep_local_off_proxies();
     tls_ready();
     // Physical pixels everywhere, so a point drawn on the overlay is the same
     // point the mouse is later moved to.
