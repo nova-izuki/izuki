@@ -23,8 +23,37 @@ pub enum Ask {
 /// "What's taking up space?" → Report; "free up some space", "clear the safe
 /// stuff" → ClearSafe; "empty the recycle bin" → EmptyBin. Other wordings
 /// reach [`handle`] through the chat's [IZUKI: storage | …] tool.
+/// A cloud drive ("my Google Drive", "OneDrive storage", "box.com") with
+/// nothing saying this PC: never a scan or a clean-up of this PC's disk.
+fn cloud_only(s: &str) -> bool {
+    // Google Drive by name ("Google Chrome" is an app on this PC).
+    let cloud = ["google drive", "drive on google", "google one", "gdrive", "onedrive", "one drive", "dropbox", "icloud", "mega.nz", "mega nz", "box.com", "box com"]
+        .iter()
+        .any(|w| s.contains(w));
+    let local = drive_letter(s) || ["my pc", "my laptop", "my computer", "this pc", "hard drive", "ssd", "local"].iter().any(|w| s.contains(w));
+    cloud && !local
+}
+
+/// A drive letter: "my D drive", "the E: drive", "R:". Letters that are
+/// usually words or texting ("a drive", "did u drive") count only with a colon.
+fn drive_letter(s: &str) -> bool {
+    let words: Vec<&str> = s.split_whitespace().collect();
+    words.iter().enumerate().any(|(i, w)| {
+        let letter = w.trim_end_matches(':');
+        let colon = w.len() == 2 && w.ends_with(':');
+        let single = letter.len() == 1 && letter.chars().all(|c| c.is_ascii_alphabetic());
+        let named = words.get(i + 1).is_some_and(|n| *n == "drive" || *n == "drives");
+        single && (colon || (named && !matches!(letter, "a" | "i" | "u" | "r" | "y")))
+    })
+}
+
 pub fn parse(said: &str) -> Option<Ask> {
-    let s = format!(" {} ", said.to_lowercase().replace(['’', '\'', '?', '!', ',', '.'], " ").split_whitespace().collect::<Vec<_>>().join(" "));
+    // Apostrophes are dropped, not spaced: "friend's drive" must not leave an
+    // "s drive" that reads as a drive letter.
+    let s = format!(" {} ", said.to_lowercase().replace(['’', '\''], "").replace(['?', '!', ',', '.'], " ").split_whitespace().collect::<Vec<_>>().join(" "));
+    if cloud_only(&s) {
+        return None;
+    }
     if [" recycle bin", " recycling bin"].iter().any(|w| s.contains(w)) {
         return [" empty", " clear", " clean"].iter().any(|w| s.contains(w)).then_some(Ask::EmptyBin);
     }
@@ -55,7 +84,17 @@ pub fn is_storage_question(said: &str) -> bool {
     if ["free up", "clean", "clear ", "delete", "uninstall", "remove "].iter().any(|w| s.contains(w)) {
         return false;
     }
-    let disk = ["storage", "storag", "storaege", "disk", "drive space", "hard drive", "ssd", " gb", " tb", "gigs"].iter().any(|w| s.contains(w));
+    // A cloud drive ("my Google Drive", "OneDrive storage") isn't this PC's
+    // disk, unless the PC is named too ("how much space is OneDrive taking
+    // on my C drive").
+    if cloud_only(s) {
+        return false;
+    }
+    // "My drive" / "C drive" / "the D: drive" are the PC's own.
+    let disk = drive_letter(s)
+        || ["storage", "storag", "storaege", "disk", "drive space", "hard drive", "my drive", "c drive", "my drives", "ssd", " gb", " tb", "gigs"]
+        .iter()
+        .any(|w| s.contains(w));
     let space = ["spac"].iter().any(|w| s.contains(w))
         && !["space bar", "spacebar", "outer space", "spaces between", "spacing", "workspace", "namespace", "my space)"].iter().any(|w| s.contains(w));
     // Asking how it's used or how much is left — not just mentioning a disk.
@@ -427,6 +466,26 @@ mod tests {
         assert_eq!(parse("open the recycle bin"), None);
         assert_eq!(parse("free up some memory"), None, "memory is PC Boost");
         assert_eq!(parse("press the space bar"), None);
+        // The website's own wording, and the Chat tab's PC checkup button.
+        assert_eq!(parse("What's filling my drive?"), Some(Ask::Report));
+        assert_eq!(parse("What's taking up space on my PC?"), Some(Ask::Report));
+        assert_eq!(parse("how full is my C drive"), Some(Ask::Report));
+        assert_eq!(parse("what's in my google drive"), None);
+        assert_eq!(parse("how full is my drive on google"), None, "a cloud drive");
+        assert_eq!(parse("how much space is left in my google drive"), None);
+        assert_eq!(parse("how much space is OneDrive taking on my PC"), Some(Ask::Report), "the PC's disk, named");
+        assert_eq!(parse("how much space is left in my box.com drive"), None, "a cloud drive, dots and all");
+        assert_eq!(parse("how full is my D drive"), Some(Ask::Report), "any drive letter");
+        assert_eq!(parse("how much is left on the E: drive"), Some(Ask::Report));
+        assert_eq!(parse("I need a drive to the airport, how much is left"), None, "not a drive letter");
+        assert_eq!(parse("how much did u drive today"), None, "texting, not a drive");
+        assert_eq!(parse("how much space is left in my box.com drive and clear it to make room"), None, "never clean this PC for a cloud drive");
+        assert_eq!(parse("free up space on my google drive"), None);
+        assert_eq!(parse("what's taking up space, Google Chrome?"), Some(Ask::Report), "an app on this PC");
+        assert_eq!(parse("how much space does OneDrive use on my D: drive"), Some(Ask::Report), "the PC's drive, named");
+        assert_eq!(parse("how full is my R: drive"), Some(Ask::Report), "a colon makes it a drive letter");
+        assert_eq!(parse("free up space on my friend's drive on Google"), None, "a possessive isn't an S: drive");
+        assert_eq!(parse("what's filling my drive?"), Some(Ask::Report), "still the website's own words");
     }
 
     #[test]

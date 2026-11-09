@@ -217,9 +217,16 @@ export function SphereCanvas({
   response = 1,
   preview = false,
   face = null,
+  fps = 30,
+  stillIfReduced = false,
 }: {
   /** The 3D faces: who, and how they look. */
   face?: FaceOptions | null;
+  /** Frames a second at most: a small idle orb (the chat welcome) needs few. */
+  fps?: number;
+  /** Under reduced motion, draw one still frame and rest (a decorative orb;
+   * the live voice orb keeps moving slowly so speaking stays visible). */
+  stillIfReduced?: boolean;
   state: Exclude<OrbState, "hidden">;
   demo: boolean;
   size: number;
@@ -325,10 +332,20 @@ export function SphereCanvas({
     let glowMix = parse(PALETTES[stateRef.current].glow);
     const rgba = (rgb: number[], a: number) => `rgba(${rgb.map(Math.round).join(",")},${a})`;
 
+    // A decorative orb under reduced motion: one still frame, then the loop
+    // rests (a new style or size starts the effect over and redraws it).
+    const still = reduced && stillIfReduced;
+    let stillDrawn = false;
+    if (still) {
+      mix = PALETTES[stateRef.current].colors.map(parse);
+      glowMix = parse(PALETTES[stateRef.current].glow);
+    }
+    const frameMs = 1000 / Math.max(1, Math.min(60, fps));
     const draw = (now: number) => {
-      if (document.hidden || !inView) { raf = 0; return; }
+      if (document.hidden || !inView || (still && stillDrawn)) { raf = 0; return; }
       raf = requestAnimationFrame(draw);
-      if (now - last < (reduced ? 150 : 33)) return;
+      if (now - last < (reduced ? 150 : frameMs)) return;
+      stillDrawn = true;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       const st = stateRef.current;
@@ -484,7 +501,7 @@ export function SphereCanvas({
     observer.observe(canvas);
     document.addEventListener("visibilitychange", wake);
     return () => { cancelAnimationFrame(raf); observer.disconnect(); document.removeEventListener("visibilitychange", wake); };
-  }, [demo, SIZE, style, response]);
+  }, [demo, SIZE, style, response, fps, stillIfReduced]);
 
   return <canvas ref={canvasRef} style={{ width: SIZE, height: SIZE }} />;
 }

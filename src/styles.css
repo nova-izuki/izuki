@@ -1616,36 +1616,6 @@ html.izk-away .izk-nova-orb-spin {
     0 5px 16px rgba(0, 0, 0, 0.18);
 }
 
-.izk-chat-avatar .izk-nova-orb {
-  filter: none;
-}
-
-.izk-chat-avatar .izk-nova-orb-halo,
-.izk-chat-avatar .izk-nova-orb-spark {
-  display: none;
-}
-
-.izk-chat-avatar .izk-nova-orb-spin {
-  background: radial-gradient(circle at 36% 26%, #c7d2fe 0%, #818cf8 18%, #4f46e5 48%, #312e81 78%, #171533 100%);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.3),
-    inset 0 -6px 14px rgba(3, 5, 14, 0.34);
-  animation: none;
-}
-
-.izk-chat-avatar .izk-nova-orb-spin::after {
-  background:
-    radial-gradient(circle at 38% 24%, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.16) 13%, transparent 31%),
-    linear-gradient(155deg, rgba(255, 255, 255, 0.05), rgba(4, 6, 15, 0.3));
-  box-shadow: inset 0 0 10px rgba(5, 8, 20, 0.24);
-}
-
-.izk-chat-avatar .izk-nova-orb-sheen {
-  left: 23%;
-  top: 14%;
-  opacity: 0.52;
-}
-
 .izk-chat-intro .izk-chat-sub {
   max-width: 340px;
   margin: 3px 0 0;
@@ -1691,6 +1661,101 @@ html.izk-away .izk-nova-orb-spin {
   font-size: 11.5px;
 }
 
+/* ============================================================
+   Nova glass — design pass 02
+   The same room, with deeper light and more tactile controls.
+   Scoped to the config panel so the overlay keeps its own tone.
+   ============================================================ */
+html.izuki-config .izk-sheet {
+  background:
+    radial-gradient(110% 78% at 12% -8%, rgba(var(--izk-a), 0.20) 0%, rgba(var(--izk-a), 0) 58%),
+    radial-gradient(96% 68% at 106% 108%, rgba(var(--izk-b), 0.14) 0%, rgba(var(--izk-b), 0) 60%),
+    linear-gradient(180deg, rgba(17, 16, 27, 0.82) 0%, rgba(9, 9, 16, 0.72) 55%, rgba(12, 11, 20, 0.82) 100%);
+  border-color: rgba(255, 255, 255, 0.17);
+  box-shadow:
+    0 36px 110px rgba(0, 0, 0, 0.78),
+    0 0 0 1px rgba(167, 139, 250, 0.06),
+    0 0 48px rgba(124, 92, 255, 0.13),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 0 100px rgba(124, 92, 255, 0.075);
+}
+
+html.izuki-config .izk-sheet::before {
+  background:
+    linear-gradient(168deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.05) 31%, transparent 76%),
+    linear-gradient(92deg, transparent 12%, rgba(103, 232, 249, 0.14) 66%, rgba(240, 171, 252, 0.10) 84%, transparent 100%);
+}
+
+html.izuki-config .izk-aurora span:nth-child(1) { opacity: 0.95; }
+html.izuki-config .izk-aurora span:nth-child(2) { opacity: 0.88; }
+html.izuki-config .izk-aurora span:nth-child(3) { opacity: 0.78; }
+html.izuki-config .izk-cosmic { opacity: 0.38; }
+html.izuki-config .izk-brand-halo { opacity: 0.82; filter: blur(10px); }
+
+html.izuki-config .izk-segmented {
+  background: rgba(4, 5, 12, 0.56);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 2px 9px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(124, 92, 255, 0.055);
+}
+
+html.izuki-config .izk-seg-thumb {
+  background:
+    radial-gradient(130% 180% at 18% -10%, rgba(255, 255, 255, 0.34), transparent 40%),
+    linear-gradient(125deg, rgba(139, 92, 246, 1) 0%, rgba(99, 102, 241, 0.96) 45%, rgba(34, 211, 238, 0.94) 100%);
+  box-shadow:
+    0 7px 20px rgba(99, 102, 241, 0.38),
+    0 0 24px rgba(34, 211, 238, 0.10),
+    0 0 0 1px rgba(255, 255, 255, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -1px 0 rgba(4, 8, 20, 0.24);
+}
+
+html.izuki-config .izk-seg-thumb::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 38%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+}
+
+html.izuki-config .izk-seg[aria-pressed="true"] {
+  font-weight: 620;
+  text-shadow: 0 1px 12px rgba(255, 255, 255, 0.38);
+}
+
+html.izuki-config .izk-command-dock {
+  transition:
+    background 200ms var(--ease-glass),
+    box-shadow 200ms var(--ease-glass),
+    transform 200ms var(--ease-spring);
+}
+
+html.izuki-config .izk-command-dock:focus-within {
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.28),
+    0 0 0 3px rgba(103, 232, 249, 0.10),
+    0 0 34px rgba(124, 92, 255, 0.20),
+    0 12px 28px rgba(0, 0, 0, 0.24);
+}
+
+html.izuki-config .izk-chat-card {
+  background:
+    radial-gradient(95% 64% at 50% 0%, rgba(var(--izk-a), 0.16) 0%, transparent 66%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.075) 0%, rgba(255, 255, 255, 0.014) 58%),
+    rgba(6, 8, 16, 0.36);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 16px 44px rgba(0, 0, 0, 0.32);
+}
+
 @media (max-width: 430px) {
   .izk-chat-avatar {
     width: 42px;
@@ -1699,4 +1764,97 @@ html.izk-away .izk-nova-orb-spin {
   .izk-chat-intro {
     gap: 10px;
   }
+}
+
+/* ============================================================
+   Nova glass — design pass 03
+   The task card is a live instrument now: a hairline of light,
+   a step rail, and a warmer hold state you can read at a glance.
+   ============================================================ */
+html.izuki-config .izk-titlebar::after {
+  content: "";
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(103, 232, 249, 0.22) 26%,
+    rgba(167, 139, 250, 0.28) 62%,
+    transparent 100%
+  );
+  opacity: 0.8;
+}
+
+html.izuki-config .izk-status-card {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(255, 255, 255, 0.18);
+  background:
+    radial-gradient(120% 160% at 0% 0%, rgba(var(--izk-a), 0.18) 0%, transparent 58%),
+    linear-gradient(125deg, rgba(20, 20, 36, 0.95) 0%, rgba(9, 10, 20, 0.94) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 18px 44px rgba(0, 0, 0, 0.55),
+    0 0 28px rgba(124, 92, 255, 0.09);
+}
+
+html.izuki-config .izk-status-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  pointer-events: none;
+  background: linear-gradient(180deg, #67e8f9, #8b5cf6);
+  opacity: 0.78;
+}
+
+html.izuki-config .izk-status-card[data-kind="success"]::before {
+  background: linear-gradient(180deg, #6ee7b7, #22d3ee);
+}
+
+html.izuki-config .izk-status-card[data-kind="error"]::before {
+  background: linear-gradient(180deg, #fda4af, #f0abfc);
+}
+
+html.izuki-config .izk-status-card[data-paused="true"] {
+  border-color: rgba(251, 191, 36, 0.34);
+  background:
+    radial-gradient(120% 160% at 0% 0%, rgba(251, 191, 36, 0.14) 0%, transparent 58%),
+    linear-gradient(125deg, rgba(28, 23, 22, 0.96) 0%, rgba(12, 11, 18, 0.95) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    0 18px 44px rgba(0, 0, 0, 0.55),
+    0 0 30px rgba(251, 191, 36, 0.09);
+}
+
+html.izuki-config .izk-status-card[data-paused="true"]::before {
+  background: linear-gradient(180deg, #fbbf24, #f0abfc);
+}
+
+html.izuki-config .izk-status-progress {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.40),
+    0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+html.izuki-config .izk-status-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #67e8f9, #8b5cf6 58%, #f0abfc);
+  box-shadow: 0 0 12px rgba(103, 232, 249, 0.38);
+  transition: width 260ms var(--ease-glass);
+}
+
+html.izuki-config .izk-status-progress[data-paused="true"] > span {
+  background: linear-gradient(90deg, #fbbf24, #f0abfc 68%, #67e8f9);
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.30);
 }

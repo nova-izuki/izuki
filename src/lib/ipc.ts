@@ -476,6 +476,10 @@ export interface InboxDigest {
   items: InboxItem[];
   looked_at: number;
   skipped: number;
+  /** Gmail addresses that were actually searched. */
+  checked: string[];
+  /** Accounts that could not be opened, with the reason. */
+  failed: Array<[string, string]>;
 }
 /** A routine (routines.rs). */
 export interface Routine {
@@ -509,7 +513,7 @@ export interface IslandVitals {
 export interface MailAccount {
   id: string;
   address: string;
-  /** "ok", "needs_sign_in", "error". */
+  /** "ok", "needs_sign_in", "unfinished", "error". */
   state: string;
   note?: string;
 }
@@ -955,6 +959,8 @@ export const api = {
   airPointer: (nx: number, ny: number, eye = false) => call<void>("air_pointer", { nx, ny, eye }, () => undefined),
   /** Air and Eye control's emergency stop: held input let go, Air saved as off. */
   airStop: () => call<void>("air_stop", undefined, () => undefined),
+  /** Let go of held Air input without stopping Air (leaving Eye for Hand). */
+  airRelease: () => call<void>("air_release", undefined, () => undefined),
   /** The person is turning Air on: re-arm after an emergency stop. Call before the setting. */
   airArm: () => call<void>("air_arm", undefined, () => undefined),
   /** Resume the eye pointer after a pause (never undoes an emergency stop). */
@@ -993,7 +999,15 @@ export const api = {
   /** Hold a key down / let it go (Air control's game controls). */
   airHold: (key: string, down: boolean) => call<void>("air_hold", { key, down }, () => undefined),
   /** What Izuki is really doing right now, in words. */
-  inboxDigest: (fresh: boolean) => call<InboxDigest>("inbox_digest", { fresh }, () => ({ summary: "", items: [], looked_at: 0, skipped: 0 })),
+  inboxDigest: (fresh: boolean) =>
+    call<InboxDigest>("inbox_digest", { fresh }, () => ({
+      summary: "",
+      items: [],
+      looked_at: 0,
+      skipped: 0,
+      checked: [],
+      failed: [],
+    })),
   sentHistory: () => call<SentItem[]>("sent_history", undefined, () => []),
   /** The Island's Vitals tab (vitals.rs): measured, never estimated. */
   islandVitals: () =>
@@ -1269,6 +1283,10 @@ export const api = {
   setBusy: (busy: boolean) => call<void>("set_busy", { busy }, () => undefined),
   /** Stop the task in progress (no more clicks, no late answer). */
   cancelTask: () => call<void>("cancel_task", undefined, () => undefined),
+  /** Pause after the current step; Resume continues the same plan. */
+  pauseTask: () => call<boolean>("pause_task", undefined, () => false),
+  /** Resume a paused task; false when nothing was paused. */
+  resumeTask: () => call<boolean>("resume_task", undefined, () => false),
   /** Developer self-test mode (IZUKI_SELFTEST=1). */
   selftestEnabled: () => call<string>("selftest_enabled", undefined, () => ""),
   /** Open a file Izuki made (the "Open" button on a result card). */

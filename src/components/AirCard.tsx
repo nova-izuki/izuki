@@ -172,7 +172,13 @@ export function AirCard() {
       disabled={disabled}
       aria-pressed={key === mode}
       title={disabled ? "Available only after Hand and Eye have each been verified on your camera." : hint}
-      onClick={() => (key === "hand" || key === "eye") && patch({ air_control_mode: key })}
+      onClick={() => {
+        if (key !== "hand" && key !== "eye") return;
+        // Leaving Eye lets go of anything it holds at once. Not the emergency
+        // stop: that saves Air as off, and the person only changed mode.
+        if (mode === "eye" && key === "hand") void api.airRelease().catch(() => undefined);
+        patch({ air_control_mode: key });
+      }}
       className={`izk-no-drag flex min-h-[58px] flex-col items-center justify-center gap-0.5 rounded-xl border px-2 py-1.5 text-center transition-colors ${
         key === mode
           ? "border-izk-teal/70 bg-izk-teal/15 text-izk-ink"

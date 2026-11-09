@@ -38,6 +38,7 @@ pub mod headsup;
 pub mod ghost;
 pub mod hotkey;
 pub mod instant;
+pub mod intent;
 pub mod island;
 pub mod keys;
 pub mod live;
@@ -456,6 +457,7 @@ pub fn run() {
             commands::mate_hot,
             commands::air_pointer,
             commands::air_stop,
+            commands::air_release,
             commands::air_arm,
             commands::air_resume,
             commands::air_safety,
@@ -554,6 +556,8 @@ pub fn run() {
             commands::boost_undo_startup,
             commands::boost_admin,
             commands::cancel_task,
+            commands::pause_task,
+            commands::resume_task,
             commands::quit_app,
             commands::selftest_enabled,
             commands::open_app,

@@ -12,7 +12,7 @@ use crate::brain;
 use crate::capture;
 use crate::events;
 use crate::ghost::{self, Prediction};
-use crate::model::{DesktopBounds, DrawSession, Flow, VisionPlan, Watcher};
+use crate::model::{DesktopBounds, DrawSession, Flow, StatusEvent, VisionPlan, Watcher};
 use crate::overlay;
 use crate::settings::{ProviderId, Settings};
 use crate::state;
@@ -832,6 +832,42 @@ pub fn set_busy(app: AppHandle, busy: bool) {
 pub fn cancel_task() {
     brain::cancel_task();
     crate::composio::stop();
+}
+
+/// Pause after the step currently running. If Izuki is still planning and has
+/// not touched the screen yet, the pause is queued and applied before the
+/// first click or key press.
+#[tauri::command]
+pub fn pause_task(app: AppHandle) -> bool {
+    let active = brain::has_active_steps();
+    if !brain::pause_task() {
+        // Replace a stale "working" card rather than leave a dead button.
+        let _ = app.emit(events::STATUS, StatusEvent::info("Nothing to pause right now."));
+        return false;
+    }
+    let _ = app.emit(
+        events::STATUS,
+        if active {
+            StatusEvent::working("Pausing after this step…")
+        } else {
+            StatusEvent::info("Paused")
+        },
+    );
+    true
+}
+
+/// Resume the paused plan from the next step, including a pause that was
+/// waiting for the first step. Stop remains available and always cancels.
+#[tauri::command]
+pub fn resume_task(app: AppHandle) -> bool {
+    if !brain::resume_task() {
+        // The task ended while it was paused (an answer with no steps): the
+        // "Paused" card must not stay up with a Resume that does nothing.
+        let _ = app.emit(events::STATUS, StatusEvent::info("Nothing was paused."));
+        return false;
+    }
+    let _ = app.emit(events::STATUS, StatusEvent::working("Continuing…"));
+    true
 }
 
 /// Self-test mode (developer only): launched with IZUKI_SELFTEST=1, the
@@ -1921,6 +1957,14 @@ pub fn air_scroll(amount: i32) -> R<()> {
 #[tauri::command]
 pub fn air_stop() {
     crate::airsafe::stop("Stop button");
+}
+
+/// Let go of anything Air is holding (a pressed button, a held key) without
+/// the emergency stop's latch: switching from Eye to Hand mode, where Air
+/// stays on. The stop itself (`air_stop`) also saves Air as off.
+#[tauri::command]
+pub fn air_release() {
+    std::thread::spawn(crate::airsafe::release_now);
 }
 
 /// The person is turning Air control on (a toggle, the Air button, their

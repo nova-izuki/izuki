@@ -248,6 +248,10 @@ export function GlassConfigPanel() {
         {/* The Draw page's command bar stays up here, always in reach. */}
         {tab === "draw" && <div className="izk-no-drag px-[18px] pb-[10px]"><DrawCommandBar /></div>}
 
+        <Recover name="toast" silent>
+          <StatusToast />
+        </Recover>
+
         <div className="izk-divider mx-[18px]" />
 
         {/* ---------------- content ---------------- */}
@@ -275,10 +279,6 @@ export function GlassConfigPanel() {
           </motion.div>
           <ScrollButtons tab={tab} />
         </main>
-
-        <Recover name="toast" silent>
-          <StatusToast />
-        </Recover>
 
         <Recover name="keys" silent>
           <KeyCatcher />

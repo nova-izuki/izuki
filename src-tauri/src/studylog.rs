@@ -9,23 +9,108 @@
 pub const RULE: &str = "\n\nSTUDY LOG IS ON: every question the user asks and your answer are saved to their notes so they can learn from them later. When they ask a question, answer so it teaches: the answer first, then why or how in a few short steps, then one last line starting \"Remember:\" with the key idea. Commands and small talk are answered normally.";
 
 /// "Save every question and answer to my notes" → Some(true); "stop saving my
-/// questions" → Some(false).
+/// questions" → Some(false). A bare mention of "answer" or "question" is
+/// never a state change.
 pub fn parse(said: &str) -> Option<bool> {
-    let s = format!(" {} ", said.to_lowercase().replace(['’', '\''], "").replace(|c: char| !c.is_alphanumeric() && c != ' ', " "));
+    let s = said
+        .to_lowercase()
+        .replace('’', "").replace("'", "")
+        .replace(|c: char| !c.is_alphanumeric() && c != ' ', " ");
     let s = s.split_whitespace().collect::<Vec<_>>().join(" ");
-    let s = format!(" {s} ");
-    let about = [" question", " questions", " quest ", " q and a", " qa ", " q&a", " answers", " study log", " what i ask", " everything i ask", " all i ask"];
-    if !about.iter().any(|w| s.contains(w)) {
+    if s.is_empty() {
         return None;
     }
-    let stop = [" stop ", " dont ", " do not ", " turn off ", " switch off ", " no more ", " quit "];
-    let keep = [" save ", " keep ", " log ", " record ", " write down ", " put ", " add ", " store ", " study log on ", " turn on "];
-    let to_notes = s.contains(" note") || s.contains(" study log") || s.contains(" learn later") || s.contains(" later ");
-    let every = [" every ", " all ", " each ", " always ", " from now on ", " study log "].iter().any(|w| s.contains(w));
-    if stop.iter().any(|w| s.contains(w)) && (to_notes || s.contains(" saving ")) {
+    let padded = format!(" {s} ");
+    let has_log = padded.contains(" study log ");
+    let has_question = [
+        " question ", " questions ", " quest ", " q and a ", " qa ", " what i ask ", " everything i ask",
+        " all i ask ", " saving my questions ",
+    ]
+    .iter()
+    .any(|w| padded.contains(w));
+    let to_notes = padded.contains(" note") || has_log || padded.contains(" learn later ");
+    let every = [" every ", " all ", " each ", " always ", " from now on "]
+        .iter()
+        .any(|w| padded.contains(w));
+    let saving = padded.contains(" saving ");
+
+    let words: Vec<&str> = s.split(' ').collect();
+    // "Is my study log on?" asks; it doesn't switch anything.
+    if matches!(words.first().copied(), Some("is" | "are" | "was" | "whats" | "what" | "does" | "did" | "has")) {
+        return None;
+    }
+    let switches = switches_in(&words, has_log);
+    let off = switches.iter().any(|w| !w.on);
+    let on = switches.iter().any(|w| w.on);
+    // "Don't stop saving my questions" is about keeping on, no "every" needed.
+    let keeps_on = switches.iter().any(|w| w.on && w.negated);
+
+    if has_log {
+        // "Keep the study log off": an off anywhere wins.
+        return if off { Some(false) } else if on { Some(true) } else { None };
+    }
+    if off && (has_question || saving) && (to_notes || saving) {
         return Some(false);
     }
-    (keep.iter().any(|w| s.contains(w)) && to_notes && every).then_some(true)
+    (on && has_question && (to_notes || saving) && (every || keeps_on)).then_some(true)
+}
+
+/// One switching verb in a request, and which way it points once a
+/// "don't"/"never" in front of it is taken into account.
+struct Switch {
+    on: bool,
+    negated: bool,
+}
+
+/// Every on/off verb in `w`. A negation binds to the verb it's in front of
+/// ("don't turn ON study log" is off, "don't STOP saving" is on), within a
+/// few words and not across "and"/"but". `log_topic`: bare "on"/"off" count
+/// ("study log off").
+fn switches_in(w: &[&str], log_topic: bool) -> Vec<Switch> {
+    let negated = |i: usize| {
+        for j in (i.saturating_sub(4)..i).rev() {
+            match w[j] {
+                // "Why don't you save…" is a suggestion, not a no.
+                "dont" if j > 0 && w[j - 1] == "why" => return false,
+                "dont" | "never" | "not" | "wont" => return true,
+                "and" | "but" | "then" | "so" => return false,
+                _ => {}
+            }
+        }
+        false
+    };
+    let mut out = Vec::new();
+    for i in 0..w.len() {
+        let next = w.get(i + 1).copied();
+        let prev = i.checked_sub(1).map(|j| w[j]);
+        let way = match w[i] {
+            "turn" | "switch" if next == Some("on") => Some(true),
+            "turn" | "switch" if next == Some("off") => Some(false),
+            "write" if next == Some("down") => Some(true),
+            "enable" | "start" | "keep" | "save" | "record" | "put" | "add" | "store" => Some(true),
+            // The "log" in "study log" is the name, not the verb.
+            "log" if prev != Some("study") => Some(true),
+            "disable" | "stop" | "quit" => Some(false),
+            "no" if next == Some("more") => Some(false),
+            "off" if log_topic && !matches!(prev, Some("turn" | "switch")) => Some(false),
+            "on" if log_topic && prev == Some("log") => Some(true),
+            _ => None,
+        };
+        if let Some(on) = way {
+            let neg = negated(i);
+            out.push(Switch { on: on != neg, negated: neg });
+        }
+    }
+    out
+}
+
+/// A change proposed by a model is allowed only when the user's own latest
+/// message asked for that same change.
+pub fn change_authorized(request: &str, last_user: &str) -> bool {
+    match parse(request) {
+        None => true,
+        Some(want) => parse(last_user) == Some(want),
+    }
 }
 
 pub fn on() -> bool {
@@ -169,8 +254,50 @@ mod tests {
         assert_eq!(parse("turn on study log"), Some(true));
         assert_eq!(parse("stop saving my questions"), Some(false));
         assert_eq!(parse("don't save my questions to notes any more"), Some(false));
+        assert_eq!(parse("don't turn off study log"), Some(true));
         assert_eq!(parse("what is a question mark"), None);
         assert_eq!(parse("save this as a note"), None, "one answer, not every one");
+        assert_eq!(parse("answer"), None, "a bare answer is not a command");
+        assert_eq!(parse("answer all for me"), None);
+        assert_eq!(parse("help me"), None);
+        assert_eq!(parse("windows"), None);
+        assert_eq!(parse("whatttt"), None);
+        assert_eq!(parse("what's in my study log?"), None);
+        assert_eq!(parse("study log off"), Some(false));
+        assert_eq!(parse("study log on"), Some(true));
+    }
+
+    #[test]
+    fn a_negation_belongs_to_the_verb_it_is_in_front_of() {
+        // Never switched on by a "don't".
+        assert_eq!(parse("don't turn on study log"), Some(false));
+        assert_eq!(parse("do not turn on the study log"), Some(false));
+        assert_eq!(parse("I don't want you to save my questions to my notes"), Some(false));
+        // Never switched off by a "don't".
+        assert_eq!(parse("don't stop saving my questions"), Some(true));
+        assert_eq!(parse("never turn off the study log"), Some(true));
+        // Off anywhere wins; a suggestion isn't a no.
+        assert_eq!(parse("keep the study log off"), Some(false));
+        assert_eq!(parse("why don't you save every question to my notes"), Some(true));
+        // A negation doesn't reach across "and".
+        assert_eq!(parse("don't explain and save every question to my notes"), Some(true));
+        // A question about it changes nothing.
+        assert_eq!(parse("Is my study log on?"), None);
+        assert_eq!(parse("is the study log off"), None);
+        assert_eq!(parse("does the study log save every question?"), None);
+        assert_eq!(parse("can you turn on study log"), Some(true), "a request, not a question");
+    }
+
+    #[test]
+    fn only_the_users_own_words_authorize_a_change() {
+        assert!(change_authorized("turn off study log", "turn off study log"));
+        assert!(change_authorized("stop saving my questions", "stop saving my questions"));
+        assert!(!change_authorized("turn off study log", "answer"));
+        assert!(!change_authorized("stop saving my questions", "windows"));
+        assert!(!change_authorized("stop saving my questions", "whatttt"));
+        assert!(change_authorized("open Chrome", "open Chrome"), "non-studylog tools pass through");
+        // Reading the log changes nothing, so it never needs the user's say-so.
+        assert!(change_authorized("study | progress", "how am I doing?"));
     }
 
     #[test]
