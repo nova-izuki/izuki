@@ -2687,7 +2687,7 @@ pub fn submit_voice_command_in(app: &AppHandle, store: &Arc<Store>, prompt: Stri
     // FL Studio: connecting it is Izuki's own setup, and FL's jobs need that
     // link — never worked out by clicking through FL's menus (that only ever
     // reached FL's MIDI list, empty without Izuki's cable).
-    let resumes = (is_keep_going(&prompt) || is_yes(&prompt)).then(|| UNFINISHED.lock().as_ref().map(|(t, _)| t.clone())).flatten();
+    let resumes = (is_keep_going(&prompt) || (is_yes(&prompt) && yes_resumes())).then(|| UNFINISHED.lock().as_ref().map(|(t, _)| t.clone())).flatten();
     // What Izuki said last: the conversation's, else the last screen task's.
     let last_said = recent
         .iter()
@@ -3190,7 +3190,7 @@ fn submit_task(
     // "Keep going" after a task had to stop: pick it up where it left off.
     hydrate_unfinished();
     let (prompt, resumed) = match UNFINISHED.lock().take() {
-        Some((task, done)) if is_keep_going(&prompt) || is_yes(&prompt) => (task, done),
+        Some((task, done)) if is_keep_going(&prompt) || (is_yes(&prompt) && yes_resumes()) => (task, done),
         Some(t) => {
             // Something new — forget the old one.
             let _ = t;
@@ -4125,6 +4125,10 @@ fn submit_task(
                     .to_string()
             } else if why.starts_with(crate::ext::UNCONFIRMED) {
                 format!("Your last action may already have happened, but it wasn't confirmed — {why}. Check this fresh screenshot for whether it did (a new page, a ticked box, the typed text) before anything else, and do NOT repeat it if it did.")
+            } else if why.starts_with("typed_mismatch:") {
+                format!("Your typing didn't land as intended — {why}. Look at the field in this fresh screenshot: if it holds wrong or extra text, select it all and type the intended text again (once). Make sure the right field is focused first; never type into a different box.")
+            } else if why.starts_with("play_not_started:") {
+                format!("The video didn't start — {why}. In this fresh screenshot, click the intended video result (or the page's play button) instead of searching again. Don't retype the search.")
             } else if why.starts_with("target_changed:") {
                 crate::lessons::note(&uia::foreground_app(), "controls here move or redraw: take a fresh look and pick the control by its label right before clicking");
                 format!("Your last action was NOT executed — {why}. Parse this fresh screenshot and select the intended numbered control by its label and position. Do not reuse old IDs or coordinates. Do not close or minimise windows to fix a changed target. If the intended control is absent, explain that instead of guessing.")
@@ -4727,6 +4731,19 @@ static UNFINISHED: parking_lot::Mutex<Option<(String, Vec<String>)>> = parking_l
 /// When the task waiting for "keep going" stopped.
 static UNFINISHED_AT: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
 
+/// The waiting task was loaded from disk (a previous run), not stopped in
+/// this one: then only an explicit "keep going" resumes it.
+static UNFINISHED_FROM_DISK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A bare "yes" counts as "keep going" only as an answer to what Izuki just
+/// asked: the task stopped in this run, moments ago. Never for a checkpoint
+/// from an earlier run, where "yes" is surely about something else (and
+/// would otherwise hand the screen back to a days-old task).
+fn yes_resumes() -> bool {
+    !UNFINISHED_FROM_DISK.load(std::sync::atomic::Ordering::SeqCst)
+        && UNFINISHED_AT.lock().is_some_and(|at| at.elapsed() < Duration::from_secs(120))
+}
+
 /// A task stopped partway: kept (with when) for "keep going".
 fn set_unfinished(task: (String, Vec<String>)) {
     if let Err(error) = crate::resume::save(&crate::store::data_dir(), &task.0, &task.1) {
@@ -4734,6 +4751,7 @@ fn set_unfinished(task: (String, Vec<String>)) {
     }
     *UNFINISHED.lock() = Some(task);
     *UNFINISHED_AT.lock() = Some(std::time::Instant::now());
+    UNFINISHED_FROM_DISK.store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
 /// Load a checkpoint left by a previous process. This is lazy so it works
@@ -4754,6 +4772,7 @@ fn hydrate_unfinished() {
     if slot.is_none() && !saved.objective.trim().is_empty() {
         *slot = Some((saved.objective, saved.done));
         *UNFINISHED_AT.lock() = Some(at);
+        UNFINISHED_FROM_DISK.store(true, std::sync::atomic::Ordering::SeqCst);
     }
 }
 

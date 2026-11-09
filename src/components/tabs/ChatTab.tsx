@@ -1083,6 +1083,15 @@ export function ChatTab() {
     if (chat.id === chatSessionId) beginChat(false);
   };
 
+  // Deleting takes two clicks (the first turns the trash into "Delete?"), so a
+  // stray click beside the pin can't lose a whole chat; it disarms after 4 s.
+  const [armedDelete, setArmedDelete] = useState<string | null>(null);
+  useEffect(() => {
+    if (!armedDelete) return;
+    const t = setTimeout(() => setArmedDelete(null), 4000);
+    return () => clearTimeout(t);
+  }, [armedDelete]);
+
   /** Keep a chat at the top; pins survive updates and the recent cap. */
   const togglePin = (chat: RecentChat) => {
     commitRecent(pinSession(recentRef.current, chat.id, !chat.pinned));
@@ -1280,12 +1289,22 @@ export function ChatTab() {
                         </button>
                         <button
                           type="button"
-                          aria-label={`Delete ${chat.title}`}
-                          title="Delete chat"
-                          onClick={() => deleteChat(chat)}
-                          className="flex w-[28px] shrink-0 items-center justify-center text-izk-muted/60 transition hover:text-izk-danger"
+                          aria-label={armedDelete === chat.id ? `Confirm: delete ${chat.title}` : `Delete ${chat.title}`}
+                          title={armedDelete === chat.id ? "Click again to delete" : "Delete chat"}
+                          onClick={() => {
+                            if (armedDelete === chat.id) {
+                              setArmedDelete(null);
+                              deleteChat(chat);
+                            } else setArmedDelete(chat.id);
+                          }}
+                          className={cx(
+                            "flex shrink-0 items-center justify-center transition",
+                            armedDelete === chat.id
+                              ? "px-2 text-[10.5px] font-semibold text-izk-danger"
+                              : "w-[28px] text-izk-muted/60 hover:text-izk-danger"
+                          )}
                         >
-                          <Trash2 size={12} strokeWidth={2.2} />
+                          {armedDelete === chat.id ? "Delete?" : <Trash2 size={12} strokeWidth={2.2} />}
                         </button>
                       </div>
                     ))
