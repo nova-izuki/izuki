@@ -194,3 +194,7 @@ The owner gave Claude primary ownership of Eye Control: tracking, calibration, c
 ## Release 1.0.198 prepared from milestone-196 (Claude, release coordinator, 2026-11-08)
 
 Merged after green CI and resolved CodeRabbit threads: PR #33 (weighted agent scheduling, flag off), PR #35 (Freebuff: Chat history and pins, panel design, unfinished-task resume, no false success reports) and PR #36 (Eye Control release gate). Claude fixed PR #35's three significant findings in `760aaf6` (a restart's checkpoint resumes only on "keep going"; retry notes for the new failure kinds; two-step chat delete). The nine minor ones are Freebuff's task #37. Eye Control ships with the native emergency stop, and the eye cursor is drawn without moving the mouse until the supervised camera session (`airsafe::EYE_MOUSE_RELEASED`). `docs/INTEGRATION.md` has the current state for all three agents.
+
+## Two developers, one app (owner, 2026-11-08, latest)
+
+Only Claude Code and Freebuff are developing Izuki now; Codex is paused and its finished work (robot hand, fallback contract, mobile, companion) stays merged. Either assistant may work on any part of Izuki, one owner per GitHub issue (claim it first, agree on the issue before touching files the other holds, move the `agent:` label when taking over a bug). Eye Control stays Claude's main responsibility, and Claude stays the release coordinator. The rules are in AGENTS.md ("Two developers, one app"); the shared status is `docs/INTEGRATION.md`.

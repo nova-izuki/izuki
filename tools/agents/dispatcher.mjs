@@ -21,7 +21,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, writeState, unavailable, counts, orphans, PRIORITY } from './scheduler.mjs';
+import { describe, writeState, unavailable, counts, orphans, mismatched, PRIORITY } from './scheduler.mjs';
 import * as gh from './github.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..');
@@ -246,6 +246,9 @@ function recoverOrphans(tasks) {
       try { stopped += stopRecorded(new Map(descendants(pid).map((p) => [`${p.pid}@${p.start}`, p]))); } catch { /* none */ }
       try { process.kill(pid); stopped++; } catch { /* already gone */ }
     }
+    // Its leftover process is stopped either way; a task whose label names
+    // the other agent isn't requeued (the coordinator blocks it).
+    if (mismatched(t)) { say(`#${t.number}: stopped its leftover run; label and record disagree, left for the owner`); continue; }
     setTask(t, 'assigned', { heartbeat: undefined, progress: undefined, history: [...(t.state.history || []), { agent: 'claude', attempt: t.state.attempt, at: iso(), result: 'interrupted' }] }, `The dispatcher running this task stopped mid-run (restarted, or its window closed), and the run ended with it${stopped ? '; the Claude process it left going was stopped' : ''}. Not counted as an attempt. The task is waiting for Claude again and continues from \`${t.state.branch}\` (anything the run left in its folder is saved there first).`);
     say(`#${t.number}: its run ended with a dispatcher that stopped; waiting again (not an attempt)`);
   }
@@ -253,7 +256,7 @@ function recoverOrphans(tasks) {
 
 function nextTask(tasks) {
   return tasks
-    .filter((t) => t.open && t.status === 'assigned' && t.state.agent === 'claude' && gh.trusted(t.author))
+    .filter((t) => t.open && t.status === 'assigned' && t.state.agent === 'claude' && !mismatched(t) && gh.trusted(t.author))
     .sort((a, b) => PRIORITY[a.priority] - PRIORITY[b.priority] || a.number - b.number)[0];
 }
 
