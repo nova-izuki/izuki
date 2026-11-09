@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, FolderOpen, History, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, Pin, RotateCcw, Send, Sparkles, Square, Trash2, Volume2, X } from "lucide-react";
+import { AlarmClock, AlertTriangle, Check, ChevronDown, ChevronRight, Copy, FolderOpen, History, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, Pencil, Pin, RotateCcw, Send, Sparkles, Square, Trash2, Volume2, X } from "lucide-react";
 import { api, CAMERA_PICTURE_KEY, emit, EV, ISLAND_TO_CHAT_KEY, on, type CodingUpdate, type ResearchUpdate } from "../../lib/ipc";
 import { ResearchPanel, researchAsk, type ResearchState } from "../ResearchPanel";
 import { CodingPanel, type CodingState } from "../CodingPanel";
@@ -18,7 +18,8 @@ import { AirToggle } from "../AirToggle";
 import { brainReady } from "../../lib/setup";
 import { attachmentContext, CHAT_FILE_TYPES, keepDocumentText, readChatFile, type ChatAttachment } from "../../lib/attachments";
 import { rememberPrompt } from "../../lib/recentPrompts";
-import { chatTitle, orderSessions, pinSession, rememberSession, removeSession, searchSessions, timeAgo, type ChatSession } from "../../lib/chatHistory";
+import { chatTitle, orderSessions, pinSession, rememberSession, removeSession, renameSession, searchSessions, timeAgo, type ChatSession } from "../../lib/chatHistory";
+import { clarificationFor, friendlyProviderError, providerRefusal, PROVIDER_REFUSAL_NOTE } from "../../lib/chatIntent";
 import { looksLikeDirections, needsApps, opensAnApp, recentHistory, shareHistory } from "../../lib/conversation";
 
 /**
@@ -765,8 +766,13 @@ export function ChatTab() {
           return;
         }
       }
-      // A just-flipped Ask/Auto switch is saved before the request goes out,
-      // so Auto really runs without asking.
+      const hasChatContext = msgs.some((m) => m.role === "user" && m.content.trim() && !clarificationFor(m.content, false)) || images.length > 0 || attached.length > 0;
+      const ask = !note && !here ? clarificationFor(t, hasChatContext) : null;
+      if (ask) {
+        setMsgs((m) => [...m, { role: "user", content: t }, { role: "assistant", content: ask }]);
+        setDraft(""); setPics([]); setDocuments([]);
+        return;
+      }
       await useIzuki.getState().flushSettings().catch(() => undefined);
       // Directions pasted from another AI or a guide ("1. Open Settings
       // 2. Click…"): Izuki does them on the screen instead of explaining them.
@@ -1005,13 +1011,15 @@ export function ChatTab() {
                       setup: true,
                     }
                   : {
-                      content: d.error ? (/offline/i.test(d.error) ? d.error : `I couldn't reach my AI brain — ${d.error}`) : "Hmm, I lost my words there. Try again?",
+                      content: d.error ? friendlyProviderError(d.error) : "Hmm, I lost my words there. Try again?",
                       failed: true,
                       retry: true,
                     }
               );
             } else {
-              setLast({ content: shown });
+              setLast({ content: providerRefusal(shown) ? `${shown}
+
+${PROVIDER_REFUSAL_NOTE}` : shown });
             }
             resolve();
             return;
@@ -1079,8 +1087,17 @@ export function ChatTab() {
 
   const deleteChat = (chat: RecentChat) => {
     commitRecent(removeSession(recentRef.current, chat.id));
-    // Do not re-save the conversation we just deleted on the way out.
     if (chat.id === chatSessionId) beginChat(false);
+  };
+  const renameChat = (chat: RecentChat) => {
+    const title = window.prompt("Rename chat", chat.title);
+    if (title && title.trim()) commitRecent(renameSession(recentRef.current, chat.id, title));
+  };
+  const clearAllChats = () => {
+    if (!recentRef.current.length) return;
+    if (!window.confirm("Delete all saved chats? This cannot be undone. Notes and files are not affected.")) return;
+    commitRecent([]);
+    beginChat(false); setRecentsOpen(false); setRecentQuery("");
   };
 
   /** Keep a chat at the top; pins survive updates and the recent cap. */
@@ -1267,6 +1284,15 @@ export function ChatTab() {
                         </button>
                         <button
                           type="button"
+                          aria-label={`Rename ${chat.title}`}
+                          title="Rename chat"
+                          onClick={() => renameChat(chat)}
+                          className="flex w-[26px] shrink-0 items-center justify-center text-izk-muted/60 transition hover:text-izk-ink"
+                        >
+                          <Pencil size={11} strokeWidth={2.2} />
+                        </button>
+                        <button
+                          type="button"
                           aria-label={`${chat.pinned ? "Unpin" : "Pin"} ${chat.title}`}
                           aria-pressed={!!chat.pinned}
                           title={chat.pinned ? "Unpin chat" : "Pin to top"}
@@ -1295,19 +1321,14 @@ export function ChatTab() {
                     </div>
                   )}
                 </div>
-                <div className="border-t border-white/8 p-2">
-                  <button
-                    type="button"
-                    onClick={startNewChat}
-                    className="flex h-[34px] w-full items-center justify-center gap-1.5 rounded-[9px] border border-white/10 bg-white/[0.045] text-[11.5px] font-semibold text-izk-ink transition hover:bg-white/[0.085]"
-                  >
-                    <RotateCcw size={12} strokeWidth={2.4} /> New chat
-                  </button>
+                <div className="flex gap-1.5 border-t border-white/8 p-2">
+                  <button type="button" onClick={startNewChat} className="flex h-[34px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[9px] border border-white/10 bg-white/[0.045] text-[11.5px] font-semibold text-izk-ink transition hover:bg-white/[0.085]"><RotateCcw size={12} strokeWidth={2.4} /> New chat</button>
+                  <button type="button" onClick={clearAllChats} disabled={!recent.length} aria-label="Clear all chats" title="Delete every saved chat (asks first)" className="flex h-[34px] w-[36px] shrink-0 items-center justify-center rounded-[9px] border border-red-300/20 text-izk-muted transition hover:border-red-300/40 hover:text-izk-danger disabled:opacity-35"><Trash2 size={13} strokeWidth={2.2} /></button>
                 </div>
               </motion.aside>
           </motion.div>
         )}
-        <div className="izk-chat-toolbar flex items-center justify-between gap-2 px-[14px] pt-[12px]">
+        <div className="izk-chat-toolbar flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 px-[14px] pt-[12px]">
           <button
             type="button"
             onClick={() => patch({ control_style: settings.control_style === "precision" ? "mouse" : "precision" })}
@@ -1370,8 +1391,9 @@ export function ChatTab() {
                   <NovaOrb size={36} />
                 </span>
                 <div className="min-w-0 text-left">
-                  <div className="text-[15px] font-semibold text-izk-ink">Chat with Izuki</div>
-                  <p className="izk-chat-sub">Ask a question, or point at something on your screen.</p>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-izk-muted">IZUKI</div>
+                  <div className="mt-0.5 text-[17px] font-semibold tracking-[-0.01em] text-izk-ink">How can I help?</div>
+                  <p className="izk-chat-sub">Ask a question, work through a problem, or point at something on your screen.</p>
                 </div>
               </div>
               <div className="izk-chat-ideas flex flex-wrap justify-center gap-1.5">
@@ -1415,7 +1437,7 @@ export function ChatTab() {
                   "max-w-[85%] whitespace-pre-wrap break-words rounded-[16px] px-3 py-2 text-[13px] leading-snug",
                   m.role === "user"
                     ? "rounded-br-[6px] text-white"
-                    : cx("rounded-bl-[6px] border border-white/8 bg-white/6 text-izk-ink", m.failed && "text-izk-danger")
+                    : cx("rounded-bl-[6px] border border-white/8 bg-white/6 text-izk-ink", m.failed && "border-izk-danger/25 bg-izk-danger/[0.055]")
                 )}
                 style={
                   m.role === "user"
@@ -1440,6 +1462,11 @@ export function ChatTab() {
                     c={m.coding}
                     onChange={(patch) => setMsgs((all) => all.map((x, j) => (j === i && x.coding ? { ...x, coding: { ...x.coding, ...patch } } : x)))}
                   />
+                )}
+                {m.failed && m.content && (
+                  <div className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-izk-danger/90">
+                    <AlertTriangle size={11} strokeWidth={2.4} /> Couldn't finish
+                  </div>
                 )}
                 {m.content ? (
                   m.role === "assistant" ? <ChatText text={m.content} /> : m.content
@@ -1499,7 +1526,7 @@ export function ChatTab() {
         </div>
 
         <div
-          className="izk-chat-composer border-t border-white/8 p-[10px]"
+          className="izk-chat-composer shrink-0 border-t border-white/8 p-[10px] pb-[max(10px,env(safe-area-inset-bottom))]"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             if (!e.dataTransfer.files.length) return;
@@ -1546,7 +1573,7 @@ export function ChatTab() {
               e.target.value = "";
             }}
           />
-          <div className="flex items-end gap-1.5">
+          <div className="flex flex-wrap items-end gap-1.5">
             <button
               type="button"
               onClick={() => picker.current?.click()}
@@ -1677,7 +1704,7 @@ export function ChatTab() {
                 }
               }}
               placeholder={dictation.listening ? "Listening…" : deep ? "What should I research?" : "Message Izuki"}
-              className="izk-field izk-no-drag max-h-[120px] min-h-[36px] flex-1 resize-none rounded-[18px] py-[8px] text-[13px]"
+              className="izk-field izk-no-drag max-h-[120px] min-h-[36px] min-w-[150px] flex-1 basis-[220px] resize-none rounded-[18px] py-[8px] text-[13px]"
             />
             {busy ? (
               <button

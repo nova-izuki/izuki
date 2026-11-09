@@ -14,7 +14,7 @@ const { outputFiles } = await build({
 });
 const mod = { exports: {} };
 new Function('require', 'module', 'exports', outputFiles[0].text)(require, mod, mod.exports);
-const { chatTitle, timeAgo, orderSessions, pinSession, rememberSession, removeSession, searchSessions, RECENT_CHAT_LIMIT } = mod.exports;
+const { chatTitle, timeAgo, orderSessions, pinSession, rememberSession, removeSession, renameSession, clearSessions, searchSessions, RECENT_CHAT_LIMIT } = mod.exports;
 
 const msg = (role, content) => ({ role, content });
 
@@ -43,9 +43,15 @@ list = rememberSession(list, 'active', 'Renamed active', [msg('user', 'Active ch
 assert.equal(list.filter((s) => s.id === 'active').length, 1, 'no duplicate sessions');
 assert.equal(list[0].title, 'Renamed active');
 
-assert.deepEqual(searchSessions(list, 'OLD 1').map((s) => s.title).slice(0, 2), ['Old 12', 'Old 11']);
+assert.deepEqual(searchSessions(list, 'OLD 1').map((s) => s.title).slice(0, 2), ['Old 19', 'Old 18']);
+const contentHit = [{ id: 'c', title: 'Untitled', at: 1, messages: [msg('user', 'photosynthesis and light')] }];
+assert.equal(searchSessions(contentHit, 'PHOTOSYNTHESIS').length, 1, 'conversation text is searchable');
 assert.deepEqual(searchSessions(list, '  ').length, list.length);
 assert.deepEqual(removeSession(list, 'active').map((s) => s.id).includes('active'), false);
+const renamed = renameSession(list, 'old-19', '  My   revision  ');
+assert.equal(renamed.find((s) => s.id === 'old-19')?.title, 'My revision');
+assert.equal(rememberSession(renamed, 'old-19', 'Auto title', [msg('user', 'new turn')], 30_000).find((s) => s.id === 'old-19')?.title, 'My revision', 'rename survives auto-save');
+assert.deepEqual(clearSessions(), [], 'clear all is explicit and empty');
 
 // Pinned chats stay first and survive both updates and the recent cap.
 const withPin = pinSession(list, 'old-9', true);

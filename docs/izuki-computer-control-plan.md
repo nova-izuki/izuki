@@ -140,6 +140,14 @@ On `freebuff/continuation`:
   success, and a YouTube search that did not start playback is a failure.
 - `brain.rs` feeds those failures back as recoverable snags, so the next look
   can fix the field or choose a real result instead of claiming completion.
+- Pause/Resume is now real: Pause finishes the current step, then waits before
+  the next action; Resume continues the same plan, and Stop still cancels and
+  clears the checkpoint. It is exposed in the existing task card.
+- Every physical pointer move now proves it landed: a move that Windows clamps
+  to another pixel fails instead of scrolling, dragging or drawing there.
+  Off-screen drag/stroke points are rejected before the mouse button goes down.
+  Wheel errors are no longer swallowed, and a failed modifier press releases
+  the modifiers already held.
 - Regression tests cover checkpoint round trips, corruption and bounds; the
   recoverable-failure test is written but its execution is still pending
   because the running app held the shared test target lock.

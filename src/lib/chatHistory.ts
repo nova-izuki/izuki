@@ -6,16 +6,23 @@ export interface ChatSession<T> {
   messages: T[];
   /** Kept at the top of Recent chats and never dropped by the recent cap. */
   pinned?: boolean;
+  /** The title was chosen by the person, not generated from their first line. */
+  renamed?: boolean;
 }
 
-/** Keep the unpinned list short enough to stay fast and easy to scan. */
-export const RECENT_CHAT_LIMIT = 10;
+/**
+ * Keep the unpinned list long enough for real work, but not unbounded: every
+ * message copy lives in local storage. Pinned chats are extra and never
+ * dropped by this limit.
+ */
+export const RECENT_CHAT_LIMIT = 50;
 
 /** A short title from the first thing the person asked. */
 export function chatTitle(messages: ReadonlyArray<{ role: string; content?: string }>): string {
   const source = messages.find((m) => m.role === "user" && (m.content ?? "").trim())?.content ?? "";
   const plain = source
-    .replace(/[`*#>\[\]]/g, "")
+    .replace(/[`*#>]/g, "")
+    .replace(/[\[\]]/g, "")
     .replace(/\s+/g, " ")
     .trim();
   if (!plain) return "New chat";
@@ -36,7 +43,7 @@ export function timeAgo(at: number, now = Date.now()): string {
   return new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** Pinned chats first, then the newest unpinned ones (pins are extra, never dropped). */
+/** Pinned chats first, then the newest unpinned ones. */
 export function orderSessions<T>(sessions: readonly ChatSession<T>[]): ChatSession<T>[] {
   const pinned = sessions.filter((s) => s.pinned).sort((a, b) => b.at - a.at);
   const recent = sessions
@@ -56,14 +63,19 @@ export function rememberSession<T>(
 ): ChatSession<T>[] {
   if (!messages.length) return orderSessions(sessions);
   const existing = sessions.find((s) => s.id === id);
-  const entry: ChatSession<T> = {
-    id,
-    title: title.trim() || "New chat",
-    at,
-    messages,
-    pinned: existing?.pinned,
-  };
-  return orderSessions([entry, ...sessions.filter((s) => s.id !== id)]);
+  return orderSessions([
+    {
+      id,
+      // A name the person chose is never overwritten by the auto title on the
+      // next message.
+      title: existing?.renamed ? existing.title : title.trim() || "New chat",
+      at,
+      messages,
+      pinned: existing?.pinned,
+      renamed: existing?.renamed,
+    },
+    ...sessions.filter((s) => s.id !== id),
+  ]);
 }
 
 /** Keep a conversation at the top (or put it back in age order). */
@@ -73,12 +85,31 @@ export function pinSession<T>(sessions: readonly ChatSession<T>[], id: string, p
   );
 }
 
+/** Rename without changing its place in history. */
+export function renameSession<T>(sessions: readonly ChatSession<T>[], id: string, title: string): ChatSession<T>[] {
+  const clean = title.trim().replace(/\s+/g, " ").slice(0, 80);
+  if (!clean) return sessions.slice();
+  return orderSessions(sessions.map((s) => (s.id === id ? { ...s, title: clean, renamed: true } : s)));
+}
+
 export function removeSession<T>(sessions: readonly ChatSession<T>[], id: string): ChatSession<T>[] {
   return sessions.filter((s) => s.id !== id);
 }
 
+/** Remove every saved chat. Call only after an explicit confirmation. */
+export function clearSessions<T>(): ChatSession<T>[] {
+  return [];
+}
+
+/** Search both the title and the conversation text. */
 export function searchSessions<T>(sessions: readonly ChatSession<T>[], query: string): ChatSession<T>[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return sessions.slice();
-  return sessions.filter((s) => s.title.toLowerCase().includes(needle));
+  return sessions.filter((s) => {
+    if (s.title.toLowerCase().includes(needle)) return true;
+    return s.messages.some((m) => {
+      const content = (m as { content?: unknown } | null)?.content;
+      return typeof content === "string" && content.toLowerCase().includes(needle);
+    });
+  });
 }

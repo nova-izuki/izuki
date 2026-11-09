@@ -126,7 +126,7 @@ fn set_reason(app: &AppHandle, st: &mut State, why: &str) {
     eprintln!("[headsup] idle: {why}");
     let _ = app.emit(
         crate::events::STATUS,
-        StatusEvent { kind: "info", message: "Heads-ups are on but can't run yet".into(), detail: Some(why.to_string()) },
+        StatusEvent { kind: "info", message: "Heads-ups are on — one more step needed".into(), detail: Some(why.to_string()) },
     );
 }
 

@@ -78,6 +78,39 @@ fn place(e: &mut Enigo, x: i32, y: i32) {
     let _ = e.move_mouse(x, y, Coordinate::Abs);
 }
 
+/// Whether the pointer is within a couple of pixels of where it was put.
+fn near(got: (i32, i32), want: (i32, i32)) -> bool {
+    (got.0 - want.0).abs() <= 2 && (got.1 - want.1).abs() <= 2
+}
+
+/// Whether a point is on a real monitor (the virtual desktop can start left
+/// of the main screen, so zero is not the edge).
+fn on_screen(b: crate::model::Rect, x: i32, y: i32) -> bool {
+    x >= b.x && y >= b.y && x < b.x + b.w && y < b.y + b.h
+}
+
+fn off_screen_message(b: crate::model::Rect, x: i32, y: i32) -> String {
+    format!(
+        "target_changed: {},{} is off the screen — it is {}x{} starting at {},{}. Use a numbered target from the controls list, or a point inside the screen",
+        x, y, b.w, b.h, b.x, b.y
+    )
+}
+
+/// The pointer really is at (x, y): put it back once if something moved it,
+/// and refuse to continue if it still isn't there. Every physical move goes
+/// through this, so a scroll, drag or draw can never silently land elsewhere.
+fn ensure_pointer(e: &mut Enigo, x: i32, y: i32) -> Result<()> {
+    if near(crate::capture::cursor_pos(), (x, y)) {
+        return Ok(());
+    }
+    place(e, x, y);
+    std::thread::sleep(Duration::from_millis(30));
+    if near(crate::capture::cursor_pos(), (x, y)) {
+        return Ok(());
+    }
+    Err(anyhow!("target_changed: the pointer couldn't reach {x},{y} (something moved it); take another look"))
+}
+
 /// Put the pointer right there at once (Air control's fingertip).
 pub fn pointer_to(x: i32, y: i32) {
     if let Ok(mut e) = enigo() {
@@ -112,8 +145,12 @@ pub fn scroll_sideways_here(amount: i32) -> Result<()> {
     e.scroll(amount, Axis::Horizontal).map_err(|err| anyhow!("sideways scroll failed: {err:?}"))
 }
 
-/// Glide the real cursor from where it is to (x, y).
+/// Glide the real cursor from where it is to (x, y), then prove it arrived.
 pub fn glide_to(x: i32, y: i32, duration_ms: u64) -> Result<()> {
+    let b = crate::capture::virtual_bounds();
+    if !on_screen(b, x, y) {
+        return Err(anyhow!("{}", off_screen_message(b, x, y)));
+    }
     let mut e = enigo()?;
     let (sx, sy) = e.location().unwrap_or_else(|_| crate::capture::cursor_pos());
     let (sx, sy) = (sx as f64, sy as f64);
@@ -126,7 +163,7 @@ pub fn glide_to(x: i32, y: i32, duration_ms: u64) -> Result<()> {
     // Very short hops are not worth animating.
     if dist < 3.0 {
         place(&mut e, x, y);
-        return Ok(());
+        return ensure_pointer(&mut e, x, y);
     }
 
     // Control points bowed off the straight line, sign chosen at random so
@@ -169,7 +206,7 @@ pub fn glide_to(x: i32, y: i32, duration_ms: u64) -> Result<()> {
     }
 
     place(&mut e, x, y);
-    Ok(())
+    ensure_pointer(&mut e, x, y)
 }
 
 fn tiny_pause() {
@@ -185,17 +222,11 @@ pub fn click_at(x: i32, y: i32, button: Button, times: u8, duration_ms: u64) -> 
 /// it isn't (you nudged the mouse, or the app held it back), and an error
 /// rather than a click somewhere else if it still can't get there.
 fn land_exactly(x: i32, y: i32) -> Result<()> {
-    let off = |(cx, cy): (i32, i32)| (cx - x).abs() > 2 || (cy - y).abs() > 2;
-    if !off(crate::capture::cursor_pos()) {
+    if near(crate::capture::cursor_pos(), (x, y)) {
         return Ok(());
     }
     let mut e = enigo()?;
-    place(&mut e, x, y);
-    std::thread::sleep(Duration::from_millis(30));
-    if off(crate::capture::cursor_pos()) {
-        return Err(anyhow!("target_changed: the pointer couldn't reach {x},{y} (something moved it); take another look"));
-    }
-    Ok(())
+    ensure_pointer(&mut e, x, y)
 }
 
 /// Click something that may only appear once the mouse is over it. Glide
@@ -256,6 +287,14 @@ fn click_at_here(button: Button, times: u8) -> Result<()> {
 }
 
 pub fn drag(from: (i32, i32), to: (i32, i32), duration_ms: u64) -> Result<()> {
+    // Check both ends before pressing: a refused destination must not turn
+    // into a click where the drag started.
+    let b = crate::capture::virtual_bounds();
+    for (x, y) in [from, to] {
+        if !on_screen(b, x, y) {
+            return Err(anyhow!("{}", off_screen_message(b, x, y)));
+        }
+    }
     glide_to(from.0, from.1, duration_ms / 2)?;
     tiny_pause();
     {
@@ -280,6 +319,10 @@ pub fn drag(from: (i32, i32), to: (i32, i32), duration_ms: u64) -> Result<()> {
 /// feel live, slow enough for drawing apps to catch every bit of it).
 pub fn stroke(points: &[[i32; 2]], move_ms: u64) -> Result<()> {
     let Some(first) = points.first() else { return Ok(()) };
+    let b = crate::capture::virtual_bounds();
+    if let Some(p) = points.iter().find(|p| !on_screen(b, p[0], p[1])) {
+        return Err(anyhow!("{}", off_screen_message(b, p[0], p[1])));
+    }
     glide_to(first[0], first[1], move_ms / 2)?;
     tiny_pause();
     let mut e = enigo()?;
@@ -387,8 +430,15 @@ pub fn press_key(name: &str) -> Result<()> {
         .ok_or_else(|| anyhow!("unknown key: {name}"))?;
 
     let mut e = enigo()?;
-    for m in &held {
-        e.key(*m, Direction::Press).map_err(|err| anyhow!("key press failed: {err:?}"))?;
+    for (i, m) in held.iter().enumerate() {
+        if let Err(err) = e.key(*m, Direction::Press) {
+            // Never leave an earlier modifier stuck down because a later one
+            // failed to press.
+            for done in held[..i].iter().rev() {
+                e.key(*done, Direction::Release).ok();
+            }
+            return Err(anyhow!("key press failed: {err:?}"));
+        }
         std::thread::sleep(Duration::from_millis(25));
     }
     let tapped = e.key(key, Direction::Click);
@@ -510,7 +560,10 @@ pub fn scroll_axis(x: i32, y: i32, amount: i32, axis: Axis, duration_ms: u64) ->
     // Break the scroll into notches so pages with momentum keep up.
     let step = if amount > 0 { 1 } else { -1 };
     for _ in 0..amount.abs().min(40) {
-        e.scroll(step, axis).ok();
+        if aborted() {
+            return Err(anyhow!("stopped"));
+        }
+        e.scroll(step, axis).map_err(|err| anyhow!("scroll failed: {err:?}"))?;
         std::thread::sleep(Duration::from_millis(18));
     }
     Ok(())
@@ -694,15 +747,7 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         let b = crate::capture::virtual_bounds();
         let inside = step.x >= b.x && step.y >= b.y && step.x < b.x + b.w && step.y < b.y + b.h;
         if !inside {
-            return Err(anyhow!(
-                "target_changed: {},{} is off the screen — it is {}x{} starting at {},{}. Use a numbered target from the controls list, or a point inside the screen",
-                step.x,
-                step.y,
-                b.w,
-                b.h,
-                b.x,
-                b.y
-            ));
+            return Err(anyhow!("{}", off_screen_message(b, step.x, step.y)));
         }
     }
 
@@ -1176,6 +1221,22 @@ mod tests {
         assert!(has_typed("A  B", "a b"));
         assert!(!has_typed("Hello", "goodbye"));
         assert!(!has_typed("", "hello"));
+    }
+
+    #[test]
+    fn pointer_landing_tolerates_a_two_pixel_near_miss_only() {
+        assert!(near((100, 100), (102, 98)));
+        assert!(!near((100, 100), (103, 100)));
+    }
+
+    #[test]
+    fn points_off_the_screen_are_recognised_before_moving() {
+        let b = crate::model::Rect { x: -1920, y: 0, w: 3840, h: 1080 };
+        assert!(on_screen(b, -1920, 0));
+        assert!(on_screen(b, 1919, 1079));
+        assert!(!on_screen(b, -1921, 0));
+        assert!(!on_screen(b, 1920, 0));
+        assert!(!on_screen(b, 0, 1080));
     }
 
     #[test]

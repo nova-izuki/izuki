@@ -312,6 +312,7 @@ fn tool_progress(tool: &Tool) -> String {
 /// Who the reply is for: spoken aloud on the PC, or written in the Chat tab
 /// or on the user's phone.
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum Style {
     Voice { expressive: bool },
     Text,
@@ -587,6 +588,9 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
                 crate::reminders::take_tags(&whole.lock());
                 if error.is_none() {
                     let asked = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.as_str()).unwrap_or("");
+                    if let Some(kind) = crate::intent::refusal_kind(&whole.lock()) {
+                        eprintln!("[chat] request={id} provider refusal={kind}");
+                    }
                     crate::studylog::record(asked, &whole.lock());
                 }
             }
@@ -606,8 +610,15 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
                 return emit(said, true, None);
             }
         }
+        let asked = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.as_str()).unwrap_or("");
+        let has_context = history.iter().filter(|t| t.role == "user").count() > 1
+            || history.iter().rev().find(|t| t.role == "user").is_some_and(|t| !t.images.is_empty());
+        eprintln!("[chat] request={id} style={style:?} turns={} context={has_context}", history.len());
+        if let Some(question) = crate::intent::clarification(asked, has_context) {
+            return emit(question.to_string(), true, None);
+        }
         let files = style == Style::Text;
-        let mut chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
+        let mut chain: Vec<ProviderConfig> = crate::brain::chat_chain().into_iter().filter(streamable).collect();
         // A real question (why, how, explain, compare…) goes to the strongest
         // brain that's working; quick chat stays with the fastest.
         if history.iter().rev().find(|t| t.role == "user").is_some_and(|t| crate::brain::needs_thought(crate::attachments::typed_only(&t.content))) {
@@ -626,6 +637,9 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
         let mut messages = messages_for(&history, style);
         // Times an answer was sent back for claiming what never happened.
         let mut corrections = 0;
+        // The last real tool outcome. If the final model call fails, this is
+        // the only truthful result we have — never a blanket "Done".
+        let mut last_step: Option<(bool, String)> = None;
         for round in 0..=TOOL_ROUNDS {
             let last = round == TOOL_ROUNDS;
             if last {
@@ -708,11 +722,24 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
                             } else if files {
                                 // Nothing came back. Never end in silence: after
                                 // a command ran, say it's done; otherwise why.
-                                match failed.into_inner() {
-                                    Some(e) if round > 0 => emit(format!("Done — that ran. (I couldn't write the summary: {e})"), true, None),
-                                    Some(e) => emit(String::new(), true, Some(e)),
-                                    None if round > 0 => emit("Done — that ran without any problems. Anything else?".into(), true, None),
-                                    None => emit(String::new(), true, Some("no answer came back — try again".into())),
+                                let failure = failed.into_inner();
+                                if round > 0 {
+                                    if let Some(e) = failure.as_deref() {
+                                        eprintln!("[chat] request={id} after-tool summary failed: {e}");
+                                    }
+                                    emit(
+                                        crate::intent::after_tool_failure(
+                                            last_step.as_ref().map(|(ok, _)| *ok),
+                                            failure.as_deref(),
+                                        ),
+                                        true,
+                                        None,
+                                    );
+                                } else {
+                                    match failure {
+                                        Some(e) => emit(String::new(), true, Some(e)),
+                                        None => emit(String::new(), true, Some("no answer came back — try again".into())),
+                                    }
                                 }
                             }
                             return;
@@ -794,8 +821,12 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             } else if only_looks {
                 look_only(&tool)
             } else {
-                run_tool(&tool)
+                run_tool(&tool, asked)
             };
+            let step_ok = !(result.starts_with("That didn't work")
+                || result.starts_with("It finished with an error")
+                || result.contains("\nErrors:"));
+            last_step = Some((step_ok, result.clone()));
             if files {
                 call(tool.as_call(&result, None));
             }
@@ -1073,7 +1104,7 @@ fn parse_tool(reply: &str) -> Option<Tool> {
     }
 }
 
-fn run_tool(tool: &Tool) -> String {
+fn run_tool(tool: &Tool, last_user: &str) -> String {
     match tool {
         Tool::Weather(_) => eprintln!("[chat] tool: Weather"),
         _ => eprintln!("[chat] tool: {tool:?}"),
@@ -1090,6 +1121,12 @@ fn run_tool(tool: &Tool) -> String {
         Tool::Weather(place) => crate::web::weather(place),
         Tool::Flow(name, what) => crate::composio::run_n8n(name, &json!({ "request": what, "from": "Izuki" }))
             .map(|r| format!("The \"{name}\" workflow ran. It answered: {r}")),
+        // A state change proposed by a model needs the user's own latest
+        // words. The old path let a bare "answer" turn the Study log off.
+        Tool::Izuki(request) if !crate::studylog::change_authorized(request, last_user) => {
+            eprintln!("[chat] blocked unrequested study-log change");
+            Ok("I didn't change the Study log — that needs an explicit request from you in this chat.".into())
+        }
         // Never invented: either a real ability answered, or it says none fits.
         Tool::Izuki(request) => Ok(crate::companion::izuki_tool(request).unwrap_or_else(|| {
             "Izuki has no built-in ability for that request. Try another way (search, browse, hand over to the screen or the apps), or tell the user plainly.".into()
@@ -1101,7 +1138,7 @@ fn run_tool(tool: &Tool) -> String {
 }
 
 /// A whole reply, using tools along the way (the phone, calls, Telegram).
-fn complete_with_tools(mut messages: Vec<Value>) -> anyhow::Result<String> {
+fn complete_with_tools(mut messages: Vec<Value>, last_user: &str) -> anyhow::Result<String> {
     for round in 0..=TOOL_ROUNDS {
         if round == TOOL_ROUNDS {
             messages.push(json!({ "role": "user", "content": NO_MORE_TOOLS }));
@@ -1109,7 +1146,7 @@ fn complete_with_tools(mut messages: Vec<Value>) -> anyhow::Result<String> {
         let text = complete(&messages)?;
         match parse_tool(&text) {
             Some(tool) if round < TOOL_ROUNDS => {
-                let result = run_tool(&tool);
+                let result = run_tool(&tool, last_user);
                 messages.push(json!({ "role": "assistant", "content": text }));
                 messages.push(json!({ "role": "user", "content": format!("[result]\n{result}\n[Now carry on — another tag, or your answer.]") }));
             }
@@ -1231,7 +1268,13 @@ pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
         }
     }
     crate::execution::check().map_err(|r| anyhow::anyhow!(r.explanation()))?;
-    let answer = complete_with_tools(messages_for(history, style))?;
+    let asked = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.as_str()).unwrap_or("");
+    let has_context = history.iter().filter(|t| t.role == "user").count() > 1
+        || history.iter().rev().find(|t| t.role == "user").is_some_and(|t| !t.images.is_empty());
+    if let Some(question) = crate::intent::clarification(asked, has_context) {
+        return Ok(question.to_string());
+    }
+    let answer = complete_with_tools(messages_for(history, style), asked)?;
     if let Some(asked) = history.iter().rev().find(|t| t.role == "user") {
         crate::studylog::record(&asked.content, &answer);
     }
@@ -1241,7 +1284,13 @@ pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
 /// A written reply that never hands over to the apps lane — for when it
 /// can't help (no apps linked) and the chat should just answer.
 pub fn reply_here(history: &[Turn], style: Style) -> anyhow::Result<String> {
-    complete_with_tools(with_system(history, system_prompt(style, false)))
+    let asked = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.as_str()).unwrap_or("");
+    let has_context = history.iter().filter(|t| t.role == "user").count() > 1
+        || history.iter().rev().find(|t| t.role == "user").is_some_and(|t| !t.images.is_empty());
+    if let Some(question) = crate::intent::clarification(asked, has_context) {
+        return Ok(question.to_string());
+    }
+    complete_with_tools(with_system(history, system_prompt(style, false)), asked)
 }
 
 /// Any finished answer to `messages` (system prompt first), raced across
@@ -1325,7 +1374,7 @@ pub fn complete_with_web(messages: &[Value], id: u64, deep: bool, on_text: &dyn 
 /// `complete`, handing each piece of the answer to `on_text` as it arrives
 /// (the Island types it out). `cancel(id)` stops it.
 pub fn complete_streaming(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -> anyhow::Result<String> {
-    let chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
+    let chain: Vec<ProviderConfig> = crate::brain::chat_chain().into_iter().filter(streamable).collect();
     if chain.is_empty() {
         if !crate::brain::online() {
             anyhow::bail!("{}", crate::brain::OFFLINE);
@@ -1343,7 +1392,7 @@ pub fn complete_streaming(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -
 /// For work that needs a capable model (coding): the strongest working brain
 /// first, small models only after all the others, room to think.
 pub fn complete_strong(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -> anyhow::Result<String> {
-    let mut chain: Vec<ProviderConfig> = crate::brain::brain_chain().into_iter().filter(streamable).collect();
+    let mut chain: Vec<ProviderConfig> = crate::brain::chat_chain().into_iter().filter(streamable).collect();
     if chain.is_empty() {
         return complete_streaming(messages, id, on_text);
     }

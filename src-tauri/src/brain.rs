@@ -1090,7 +1090,120 @@ pub(crate) const NO_BRAIN: &str = "I haven't got an AI to think with yet. Add a 
 pub const OFFLINE: &str = "You're offline right now — check your Wi-Fi, then ask me again.";
 
 pub fn brain_chain() -> Vec<crate::settings::ProviderConfig> {
-    offline_only(brain_chain_inner())
+    let mut chain = offline_only(brain_chain_inner());
+    swap_local_text_model(&mut chain, false);
+    chain
+}
+
+/// Chat needs a text model. Ollama happily returns `moondream`, a
+/// picture-description model, for `/v1/chat/completions`; its gibberish
+/// ("igor saurkj aer") used to be shown as an answer. Keep the configured
+/// order, but swap a picture-only local model for a real installed chat model
+/// or drop it so a cloud brain can answer.
+pub fn chat_chain() -> Vec<crate::settings::ProviderConfig> {
+    let mut chain = brain_chain();
+    // brain_chain has already swapped a usable local model in. This second
+    // pass only drops a picture-only model when nothing else is installed.
+    swap_local_text_model(&mut chain, true);
+    chain
+}
+
+/// Ollama's configured model is often `moondream`: a picture-describer with a
+/// 2K context. Chat called it "igor saurkj aer"; the screen agent overflowed
+/// its context with a normal screenshot. Swap in a real installed model for
+/// every lane that sends text or a screen, and keep the old model only when
+/// there is genuinely no alternative (then chat still refuses it).
+fn swap_local_text_model(chain: &mut Vec<crate::settings::ProviderConfig>, drop_picture_only: bool) {
+    let Some(base_url) = chain
+        .iter()
+        .find(|c| c.id == crate::settings::ProviderId::Ollama && picture_only_model(&c.model))
+        .map(|c| c.base_url.clone())
+    else {
+        return;
+    };
+    let replacement = installed_local_chat_model(&base_url);
+    if let Some(model) = replacement.as_deref() {
+        eprintln!("[brain] local picture-only model skipped for text and screen; using {model}");
+        for c in chain.iter_mut().filter(|c| c.id == crate::settings::ProviderId::Ollama && picture_only_model(&c.model)) {
+            c.model = model.to_string();
+        }
+    }
+    if drop_picture_only {
+        chain.retain(|c| !(c.id == crate::settings::ProviderId::Ollama && picture_only_model(&c.model)));
+    }
+}
+
+/// Vision-first Ollama models that are routinely installed beside a chat
+/// model. They are right for screenshots and wrong for conversation.
+fn picture_only_model(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    ["moondream", "llava", "bakllava", "minicpm-v", "qwen2.5vl", "qwen2-vl", "llama3.2-vision"]
+        .iter()
+        .any(|name| m.contains(name))
+}
+
+/// Pick a sensible installed chat model rather than the first line of
+/// `/api/tags` (often a 0.5B model).
+fn local_chat_choice(models: impl IntoIterator<Item = String>) -> Option<String> {
+    let mut choices: Vec<(u8, String)> = models
+        .into_iter()
+        .filter(|m| !picture_only_model(m) && !m.to_ascii_lowercase().contains("embed"))
+        .map(|m| {
+            let n = m.to_ascii_lowercase();
+            let score = if n.contains("qwen3.5") && n.contains("4b") { 100 }
+                else if n.contains("qwen3.5") { 92 }
+                else if n.contains("qwen3") { 84 }
+                else if n.contains("dolphin") { 76 }
+                else if n.contains("llama3.2") { 68 }
+                else if n.contains("llama3") { 60 }
+                else if n.contains("phi") { 52 }
+                else { 20 };
+            (score, m)
+        })
+        .collect();
+    choices.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    choices.into_iter().next().map(|(_, m)| m)
+}
+
+static LOCAL_MODEL_CACHE: parking_lot::Mutex<Option<(String, Option<String>, std::time::Instant)>> = parking_lot::Mutex::new(None);
+
+fn installed_local_chat_model(base_url: &str) -> Option<String> {
+    if let Some((url, model, at)) = LOCAL_MODEL_CACHE.lock().as_ref() {
+        if url == base_url && at.elapsed() < std::time::Duration::from_secs(30) {
+            return model.clone();
+        }
+    }
+    let picked = installed_local_chat_model_uncached(base_url);
+    *LOCAL_MODEL_CACHE.lock() = Some((base_url.to_string(), picked.clone(), std::time::Instant::now()));
+    picked
+}
+
+fn installed_local_chat_model_uncached(base_url: &str) -> Option<String> {
+    let root = base_url
+        .trim_end_matches('/')
+        .trim_end_matches("/v1")
+        .trim_end_matches("/api");
+    if root.is_empty() {
+        return None;
+    }
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_millis(1200))
+        .build()
+        .ok()?;
+    let body: serde_json::Value = client
+        .get(format!("{root}/api/tags"))
+        .send()
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .json()
+        .ok()?;
+    let names = body
+        .get("models")?
+        .as_array()?
+        .iter()
+        .filter_map(|m| m.get("name").and_then(|n| n.as_str()).map(str::to_string));
+    local_chat_choice(names)
 }
 
 /// Every brain that is set up at all, resting or not — the honest total for
@@ -1574,6 +1687,7 @@ fn promises_action(summary: &str) -> bool {
         "let me", "i'll", "i will", "i'm going to", "on it", "getting you", "get you", "bringing up", "pulling up",
         "wait for", "waiting for", "still loading", "finish loading", "here we go", "one sec", "hang on", "hold on",
         "right now", "right away", "i got you", "i gotchu", "gotchu", "imma", "i'ma", "fixing to",
+        "handling that", "handling this", "taking care of", "working on it", "working on that",
     ];
     if DOING.iter().any(|p| s.contains(p)) {
         return true;
@@ -1836,7 +1950,10 @@ fn last_resort(mut plan: VisionPlan, wants_action: bool) -> VisionPlan {
         // A model's choice, not a fault in Izuki: logged, not reported.
         eprintln!("[brain] no brain acted on a request to do something (best was {} {})", plan.provider, plan.model);
     }
-    if crate::easy::narrates(&plan.summary) || plan.summary.trim().is_empty() {
+    if crate::easy::narrates(&plan.summary)
+        || plan.summary.trim().is_empty()
+        || (wants_action && promises_action(&plan.summary))
+    {
         plan.summary = if wants_action {
             "Sorry, I couldn't work out how to do that on this screen. Can you say it another way, or point at it?".into()
         } else {
@@ -1909,7 +2026,19 @@ fn ask_racing(
 
     // Every key's other strong free models join in (free limits are per
     // model), resting ones and — to drive the screen — tiny ones left out.
-    let expanded = crate::freebrains::expand(chain.to_vec(), wants_action);
+    let economy = crate::state::try_store().map(|s| s.settings().economy_mode).unwrap_or(true);
+    let mut expanded = crate::freebrains::expand(chain.to_vec(), wants_action);
+    // The screenshot is the expensive part. In economy mode, use a local
+    // vision-capable model first so the image never leaves this PC.
+    if economy && !req.image_jpeg.is_empty() {
+        if let Some(i) = expanded.iter().position(|c| c.id == crate::settings::ProviderId::Ollama) {
+            if i > 0 {
+                let local = expanded.remove(i);
+                expanded.insert(0, local);
+                eprintln!("[brain] screen: local model first (saves cloud image quota)");
+            }
+        }
+    }
     // Bound spend per look, even when every configured provider is failing
     // (a rate-limited model says so in well under a second).
     let chain = &expanded[..expanded.len().min(6)];
@@ -1929,7 +2058,7 @@ fn ask_racing(
             ),
         });
     }
-    let economy = crate::state::try_store().map(|s| s.settings().economy_mode).unwrap_or(true);
+    let one_at_a_time = !req.image_jpeg.is_empty();
     let began = Instant::now();
     let mut last_launch = began;
     let req = Arc::new(req);
@@ -2040,7 +2169,7 @@ fn ask_racing(
                     // A quick "no" (rate-limited, out of quota) says nothing about
                     // the next brain's speed: ask two at once, so one that hangs
                     // (14 s on a busy day) isn't the whole wait.
-                    if took < Duration::from_millis(2500) && launched < chain.len() && launched - finished < 2 {
+                    if !one_at_a_time && took < Duration::from_millis(2500) && launched < chain.len() && launched - finished < 2 {
                         launch(launched);
                         launched += 1;
                     }
@@ -2077,7 +2206,7 @@ fn ask_racing(
                 // Whatever is running now has said nothing for 4 s: one backup,
                 // even when saving credits — never more than two at a time.
                 let stuck = last_launch.elapsed() >= Duration::from_secs(4);
-                if (!economy || slow_first || stuck) && launched < chain.len() && launched - finished < 2 && last_launch.elapsed() >= hedge_after {
+                if !one_at_a_time && (!economy || slow_first || stuck) && launched < chain.len() && launched - finished < 2 && last_launch.elapsed() >= hedge_after {
                     eprintln!("[brain] trying one speculative backup");
                     launch(launched);
                     launched += 1;
@@ -2215,14 +2344,59 @@ impl Drop for Working {
         let mut w = WORK_TASK.lock();
         if w.0 == self.0 {
             *w = (0, String::new());
+            // A pause pressed while a plan was still being made has no runner
+            // to consume it. The task that was being planned is over, so it
+            // must not pause the next, unrelated task.
+            PAUSE_QUEUED.store(false, std::sync::atomic::Ordering::SeqCst);
         }
     }
+}
+
+/// Wait between steps while the person has asked for a pause. The step that
+/// was already running is allowed to finish, so nothing is left half-clicked
+/// or half-typed. Stop always wins over a pause.
+fn wait_while_paused(app: &AppHandle, alive: &dyn Fn() -> bool, step_index: usize, total: usize) -> bool {
+    if !TASK_PAUSED.load(std::sync::atomic::Ordering::SeqCst) {
+        return true;
+    }
+    // `step_index` is the step that has *not* started yet. Saying where the
+    // task stopped makes a pause feel like a checkpoint, not a frozen app.
+    let detail = if step_index == 0 {
+        format!("Paused before step 1 of {total}. Resume when you're ready, or Stop to end the task.")
+    } else {
+        format!("Paused after step {step_index} of {total}. The current step is finished. Resume when you're ready, or Stop to end the task.")
+    };
+    let _ = app.emit(
+        events::STATUS,
+        StatusEvent {
+            kind: "info",
+            message: "Paused".into(),
+            detail: Some(detail),
+        },
+    );
+    while TASK_PAUSED.load(std::sync::atomic::Ordering::SeqCst) {
+        if !alive() {
+            let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    if !alive() {
+        let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
+        return false;
+    }
+    let _ = app.emit(
+        events::STATUS,
+        StatusEvent::working(format!("Resuming at step {} of {total}…", step_index + 1)),
+    );
+    true
 }
 
 /// Run `steps` on this thread. `true` if every step ran (not stopped and
 /// no step failed).
 fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> (bool, usize) {
             if !crate::execution::allowed() { return (false, 0); }
+            let _active = TaskActive::begin();
             STEP_SNAG.lock().take();
             let executed = std::cell::Cell::new(0usize);
             let settings = store.settings();
@@ -2247,6 +2421,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
 
             let run = || {
                 for (i, step) in steps.iter().enumerate() {
+                    if !wait_while_paused(app, alive, i, steps.len()) { return false; }
                     if crate::execution::charge(crate::execution::Work::Action).is_err() { return false; }
                     if !alive() {
                         let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
@@ -4545,6 +4720,41 @@ const CIRCLES_BEFORE_STOPPING: u32 = 3;
 /// stops it instead of just muting it.
 static TASK_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// How many step runners are live right now. Pause only makes sense while a
+/// task is actually between steps; it is not a pause on a model request.
+static STEPS_ACTIVE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// A pause requested by the person. The current step is never interrupted;
+/// the runner waits before the next one.
+static TASK_PAUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// A pause pressed while the model is still thinking. There is no step runner
+/// to stop yet, so the request waits here and is applied before the first step.
+static PAUSE_QUEUED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Marks a step runner live for as long as it exists, and clears a pause when
+/// the runner ends so a later task cannot inherit it.
+struct TaskActive;
+
+impl TaskActive {
+    fn begin() -> Self {
+        // Only the outer runner owns the transition from planning to acting.
+        // A nested runner must not wipe a pause the outer one is holding.
+        let root = STEPS_ACTIVE.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
+        if root {
+            TASK_PAUSED.store(PAUSE_QUEUED.swap(false, std::sync::atomic::Ordering::SeqCst), std::sync::atomic::Ordering::SeqCst);
+        }
+        Self
+    }
+}
+
+impl Drop for TaskActive {
+    fn drop(&mut self) {
+        if STEPS_ACTIVE.fetch_sub(1, std::sync::atomic::Ordering::SeqCst) <= 1 {
+            TASK_PAUSED.store(false, std::sync::atomic::Ordering::SeqCst);
+            PAUSE_QUEUED.store(false, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+}
+
 fn task_is_current(task: u64, generation: u64, aborted: bool) -> bool { generation == task && !aborted }
 fn task_alive(task: u64) -> bool { task_is_current(task, TASK_GEN.load(std::sync::atomic::Ordering::SeqCst), automation::aborted()) && crate::execution::allowed() }
 
@@ -4570,16 +4780,94 @@ mod step_snag_tests {
         assert!(!recoverable_step_snag("password_box: never type there"));
     }
 }
+#[cfg(test)]
+mod pause_tests {
+    use super::*;
+    use std::sync::atomic::Ordering::SeqCst;
+
+    fn clear_pause_state() {
+        STEPS_ACTIVE.store(0, SeqCst);
+        TASK_PAUSED.store(false, SeqCst);
+        PAUSE_QUEUED.store(false, SeqCst);
+    }
+
+    #[test]
+    fn pausing_while_planning_is_honoured_before_the_first_step() {
+        clear_pause_state();
+        assert!(!has_active_steps());
+        assert!(pause_task());
+        assert!(PAUSE_QUEUED.load(SeqCst));
+        assert!(!TASK_PAUSED.load(SeqCst));
+
+        let active = TaskActive::begin();
+        assert!(has_active_steps());
+        assert!(TASK_PAUSED.load(SeqCst));
+        assert!(!PAUSE_QUEUED.load(SeqCst));
+
+        assert!(resume_task());
+        assert!(!TASK_PAUSED.load(SeqCst));
+        drop(active);
+        assert!(!has_active_steps());
+        assert!(!TASK_PAUSED.load(SeqCst));
+    }
+
+    #[test]
+    fn a_nested_runner_does_not_clear_the_outer_pause() {
+        clear_pause_state();
+        let outer = TaskActive::begin();
+        assert!(pause_task());
+        let nested = TaskActive::begin();
+        assert!(TASK_PAUSED.load(SeqCst));
+
+        drop(nested);
+        assert!(TASK_PAUSED.load(SeqCst));
+        drop(outer);
+        assert!(!TASK_PAUSED.load(SeqCst));
+        assert!(!PAUSE_QUEUED.load(SeqCst));
+    }
+}
+
 fn stopped_plan() -> VisionPlan { VisionPlan { summary: "Stopped.".into(), outcome: crate::model::TaskOutcome::Cancelled, ..Default::default() } }
 pub fn reserve_draw_task() -> u64 {
     automation::clear_abort();
+    TASK_PAUSED.store(false, std::sync::atomic::Ordering::SeqCst);
+    PAUSE_QUEUED.store(false, std::sync::atomic::Ordering::SeqCst);
     TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+}
+
+/// Whether a step runner is live right now. Used only to word the status:
+/// during planning there is nothing to interrupt yet, but the pause is still
+/// accepted and applied before the first action.
+pub fn has_active_steps() -> bool {
+    STEPS_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) > 0
+}
+
+/// Ask the live step runner to pause before its next step, or queue the pause
+/// for a task that is still planning. It never interrupts a half-finished
+/// click or key press.
+pub fn pause_task() -> bool {
+    if STEPS_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+        PAUSE_QUEUED.store(true, std::sync::atomic::Ordering::SeqCst);
+        return true;
+    }
+    TASK_PAUSED.store(true, std::sync::atomic::Ordering::SeqCst);
+    true
+}
+
+/// Let a paused runner continue, or cancel a pause that was waiting for the
+/// first step. False when there was nothing to resume.
+pub fn resume_task() -> bool {
+    let paused = TASK_PAUSED.swap(false, std::sync::atomic::Ordering::SeqCst);
+    let queued = PAUSE_QUEUED.swap(false, std::sync::atomic::Ordering::SeqCst);
+    paused || queued
 }
 
 /// Stop the task in progress, forget any half-done one, and let go of a
 /// question it was waiting on. (Stop hotkey, Esc, the orb's ✕, "stop".)
 pub fn cancel_task() {
     TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    TASK_PAUSED.store(false, std::sync::atomic::Ordering::SeqCst);
+    PAUSE_QUEUED.store(false, std::sync::atomic::Ordering::SeqCst);
     crate::coach::stop();
     automation::request_abort();
     UNFINISHED.lock().take();
@@ -5056,6 +5344,8 @@ mod speed_tests {
             "Bet, let me get you to Chrome, fam.",
             "The page is still loading — let me wait a moment for it to finish.",
             "Say less, I'm on it — Chrome, here we go.",
+            "Right, handling that for you now, Solomon.",
+            "I'm taking care of that now.",
         ] {
             assert!(promises_action(s), "{s}");
         }
@@ -5070,6 +5360,17 @@ mod speed_tests {
         ] {
             assert!(!promises_action(s), "{s}");
         }
+    }
+
+    #[test]
+    fn a_promise_without_a_step_is_not_shown_as_the_result() {
+        let plan = crate::model::VisionPlan {
+            summary: "Right, handling that for you now, Solomon.".into(),
+            ..Default::default()
+        };
+        let said = super::last_resort(plan, true);
+        assert!(said.summary.contains("couldn't work out how"), "{}", said.summary);
+        assert!(!said.summary.to_lowercase().contains("handling"));
     }
 
     #[test]
@@ -5970,5 +6271,30 @@ mod bench_count_tests {
         let now = Instant::now();
         let over = vec![(ProviderId::Groq, now - Duration::from_secs(1))];
         assert!(benched_of(&over, &["groq"], now).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod chat_model_tests {
+    use super::{local_chat_choice, picture_only_model};
+
+    #[test]
+    fn picture_only_models_never_answer_text() {
+        assert!(picture_only_model("moondream:latest"));
+        assert!(picture_only_model("llava:latest"));
+        assert!(!picture_only_model("qwen3.5:4b"));
+        assert!(!picture_only_model("dolphin-llama3:latest"));
+    }
+
+    #[test]
+    fn local_chat_choice_skips_vision_models_and_tiny_defaults() {
+        let picked = local_chat_choice(vec![
+            "moondream:latest".into(),
+            "qwen3.5:0.5b".into(),
+            "qwen3.5:4b".into(),
+            "qwen3.5:2b".into(),
+        ]);
+        assert_eq!(picked.as_deref(), Some("qwen3.5:4b"));
+        assert_eq!(local_chat_choice(vec!["moondream:latest".into()]), None);
     }
 }

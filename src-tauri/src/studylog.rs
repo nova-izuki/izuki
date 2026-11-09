@@ -9,23 +9,68 @@
 pub const RULE: &str = "\n\nSTUDY LOG IS ON: every question the user asks and your answer are saved to their notes so they can learn from them later. When they ask a question, answer so it teaches: the answer first, then why or how in a few short steps, then one last line starting \"Remember:\" with the key idea. Commands and small talk are answered normally.";
 
 /// "Save every question and answer to my notes" → Some(true); "stop saving my
-/// questions" → Some(false).
+/// questions" → Some(false). A bare mention of "answer" or "question" is
+/// never a state change.
 pub fn parse(said: &str) -> Option<bool> {
-    let s = format!(" {} ", said.to_lowercase().replace(['’', '\''], "").replace(|c: char| !c.is_alphanumeric() && c != ' ', " "));
+    let s = said
+        .to_lowercase()
+        .replace('’', "").replace("'", "")
+        .replace(|c: char| !c.is_alphanumeric() && c != ' ', " ");
     let s = s.split_whitespace().collect::<Vec<_>>().join(" ");
-    let s = format!(" {s} ");
-    let about = [" question", " questions", " quest ", " q and a", " qa ", " q&a", " answers", " study log", " what i ask", " everything i ask", " all i ask"];
-    if !about.iter().any(|w| s.contains(w)) {
+    if s.is_empty() {
         return None;
     }
-    let stop = [" stop ", " dont ", " do not ", " turn off ", " switch off ", " no more ", " quit "];
-    let keep = [" save ", " keep ", " log ", " record ", " write down ", " put ", " add ", " store ", " study log on ", " turn on "];
-    let to_notes = s.contains(" note") || s.contains(" study log") || s.contains(" learn later") || s.contains(" later ");
-    let every = [" every ", " all ", " each ", " always ", " from now on ", " study log "].iter().any(|w| s.contains(w));
-    if stop.iter().any(|w| s.contains(w)) && (to_notes || s.contains(" saving ")) {
+    let padded = format!(" {s} ");
+    let has_log = padded.contains(" study log ");
+    let has_question = [
+        " question ", " questions ", " quest ", " q and a ", " qa ", " what i ask ", " everything i ask",
+        " all i ask ", " saving my questions ",
+    ]
+    .iter()
+    .any(|w| padded.contains(w));
+    let to_notes = padded.contains(" note") || has_log || padded.contains(" learn later ");
+    let every = [" every ", " all ", " each ", " always ", " from now on "]
+        .iter()
+        .any(|w| padded.contains(w));
+
+    if has_log {
+        if padded.contains(" don t turn off ") || padded.contains(" do not turn off ") || padded.contains(" never turn off ") {
+            return Some(true);
+        }
+        let off = [" turn off ", " switch off ", " disable ", " stop ", " no more ", " quit ", " off "]
+            .iter()
+            .any(|w| padded.contains(w));
+        let on = [" turn on ", " switch on ", " enable ", " start ", " keep ", " save ", " record ", " log ", " on "]
+            .iter()
+            .any(|w| padded.contains(w));
+        if off {
+            return Some(false);
+        }
+        if on {
+            return Some(true);
+        }
+        return None;
+    }
+
+    let stop = [" stop ", " don t ", " do not ", " no more ", " quit ", " turn off ", " switch off "]
+        .iter()
+        .any(|w| padded.contains(w));
+    let save = [" save ", " keep ", " log ", " record ", " write down ", " put ", " add ", " store ", " turn on "]
+        .iter()
+        .any(|w| padded.contains(w));
+    if stop && (has_question || padded.contains(" saving ")) && (to_notes || padded.contains(" saving ")) {
         return Some(false);
     }
-    (keep.iter().any(|w| s.contains(w)) && to_notes && every).then_some(true)
+    (save && has_question && to_notes && every).then_some(true)
+}
+
+/// A change proposed by a model is allowed only when the user's own latest
+/// message asked for that same change.
+pub fn change_authorized(request: &str, last_user: &str) -> bool {
+    match parse(request) {
+        None => true,
+        Some(want) => parse(last_user) == Some(want),
+    }
 }
 
 pub fn on() -> bool {
@@ -171,6 +216,23 @@ mod tests {
         assert_eq!(parse("don't save my questions to notes any more"), Some(false));
         assert_eq!(parse("what is a question mark"), None);
         assert_eq!(parse("save this as a note"), None, "one answer, not every one");
+        assert_eq!(parse("answer"), None, "a bare answer is not a command");
+        assert_eq!(parse("answer all for me"), None);
+        assert_eq!(parse("help me"), None);
+        assert_eq!(parse("windows"), None);
+        assert_eq!(parse("whatttt"), None);
+        assert_eq!(parse("what's in my study log?"), None);
+        assert_eq!(parse("study log off"), Some(false));
+    }
+
+    #[test]
+    fn only_the_users_own_words_authorize_a_change() {
+        assert!(change_authorized("turn off study log", "turn off study log"));
+        assert!(change_authorized("stop saving my questions", "stop saving my questions"));
+        assert!(!change_authorized("turn off study log", "answer"));
+        assert!(!change_authorized("stop saving my questions", "windows"));
+        assert!(!change_authorized("stop saving my questions", "whatttt"));
+        assert!(change_authorized("open Chrome", "open Chrome"), "non-studylog tools pass through");
     }
 
     #[test]

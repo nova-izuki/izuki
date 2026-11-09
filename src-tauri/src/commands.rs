@@ -12,7 +12,7 @@ use crate::brain;
 use crate::capture;
 use crate::events;
 use crate::ghost::{self, Prediction};
-use crate::model::{DesktopBounds, DrawSession, Flow, VisionPlan, Watcher};
+use crate::model::{DesktopBounds, DrawSession, Flow, StatusEvent, VisionPlan, Watcher};
 use crate::overlay;
 use crate::settings::{ProviderId, Settings};
 use crate::state;
@@ -828,6 +828,37 @@ pub fn set_busy(app: AppHandle, busy: bool) {
 pub fn cancel_task() {
     brain::cancel_task();
     crate::composio::stop();
+}
+
+/// Pause after the step currently running. If Izuki is still planning and has
+/// not touched the screen yet, the pause is queued and applied before the
+/// first click or key press.
+#[tauri::command]
+pub fn pause_task(app: AppHandle) -> bool {
+    let active = brain::has_active_steps();
+    if !brain::pause_task() {
+        return false;
+    }
+    let _ = app.emit(
+        events::STATUS,
+        if active {
+            StatusEvent::working("Pausing after this step…")
+        } else {
+            StatusEvent::info("Paused")
+        },
+    );
+    true
+}
+
+/// Resume the paused plan from the next step, including a pause that was
+/// waiting for the first step. Stop remains available and always cancels.
+#[tauri::command]
+pub fn resume_task(app: AppHandle) -> bool {
+    if !brain::resume_task() {
+        return false;
+    }
+    let _ = app.emit(events::STATUS, StatusEvent::working("Continuing…"));
+    true
 }
 
 /// Self-test mode (developer only): launched with IZUKI_SELFTEST=1, the

@@ -1218,6 +1218,10 @@ export const api = {
   setBusy: (busy: boolean) => call<void>("set_busy", { busy }, () => undefined),
   /** Stop the task in progress (no more clicks, no late answer). */
   cancelTask: () => call<void>("cancel_task", undefined, () => undefined),
+  /** Pause after the current step; Resume continues the same plan. */
+  pauseTask: () => call<boolean>("pause_task", undefined, () => false),
+  /** Resume a paused task; false when nothing was paused. */
+  resumeTask: () => call<boolean>("resume_task", undefined, () => false),
   /** Developer self-test mode (IZUKI_SELFTEST=1). */
   selftestEnabled: () => call<string>("selftest_enabled", undefined, () => ""),
   /** Open a file Izuki made (the "Open" button on a result card). */
