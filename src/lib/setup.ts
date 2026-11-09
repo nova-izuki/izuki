@@ -45,10 +45,12 @@ export function isExpected(kind: FoundKey["kind"]) {
   return expecting.has(kind);
 }
 
-export const KEY_PAGES: Record<"gemini" | "composio" | "groq", string> = {
+export const KEY_PAGES: Record<"gemini" | "composio" | "groq" | "nvidia", string> = {
   gemini: "https://aistudio.google.com/apikey",
   composio: "https://dashboard.composio.dev/",
   groq: "https://console.groq.com/keys",
+  // Signed in: Settings → API Keys (it asks to sign in first).
+  nvidia: "https://build.nvidia.com/settings/api-keys",
 };
 
 export async function openLink(url: string) {
@@ -61,7 +63,7 @@ export async function openLink(url: string) {
 }
 
 /** Send them to get a free key; it's picked up when they copy it. */
-export function getKey(kind: "gemini" | "composio" | "groq") {
+export function getKey(kind: "gemini" | "composio" | "groq" | "nvidia") {
   expectKey(kind);
   void openLink(KEY_PAGES[kind]);
 }

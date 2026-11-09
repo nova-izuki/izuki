@@ -80,6 +80,11 @@ function EyeStopPanel({ stopKey }: { stopKey: string }) {
           </button>
         </div>
       )}
+      {safety && !safety.eye_mouse && (
+        <div className="mt-1.5 text-sky-200">
+          This version shows the eye cursor only. Moving the mouse with your eyes comes after a supervised accuracy test.
+        </div>
+      )}
       {safety?.stopped && <div className="mt-1.5 text-amber-200">Stopped. Turn Air control on again when you're ready.</div>}
       {safety && !safety.ready && <div className="mt-1.5 text-amber-200">The emergency stop isn't running, so the eye pointer won't move.</div>}
     </div>

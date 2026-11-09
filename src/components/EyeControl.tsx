@@ -219,6 +219,7 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
     let clickAt = 0;
     let lastPublish = "";
     let lastTellAt = 0;
+    let lastKind = "";
     let faceNow = false;
     let autoFaceStatus = false;
     let calHadGaze = false;
@@ -229,6 +230,33 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
     // check lets the real mouse follow the eyes.
     let check: ValidationState | null = null;
     let verdict: ValidationSummary | null = null;
+    // Whether this build lets the eye lane move the real mouse (Rust decides,
+    // airsafe::EYE_MOUSE_RELEASED; until it's verified the cursor is drawn only).
+    // Asked again when each check finishes, so a lookup that failed or came
+    // late doesn't stick; a changed answer re-says where things stand.
+    let eyeMouse = false;
+    const askEyeMouse = () => {
+      void api
+        .airSafety()
+        .then((s) => {
+          const next = !!s.eye_mouse;
+          if (!alive || next === eyeMouse) return;
+          eyeMouse = next;
+          if (verdict) autoFaceStatus = false;
+        })
+        .catch(() => undefined);
+    };
+    askEyeMouse();
+    // The verdict stays what the check measured; whether it moves the mouse
+    // is decided each time from both, never stored.
+    const pointerAllowed = () => !!verdict?.pass && eyeMouse;
+    const verdictMessage = () => {
+      if (!verdict) return "Preview only: the mouse doesn't move.";
+      if (verdict.pass && !eyeMouse) {
+        return `Accuracy check passed (average error ${Math.round(verdict.accuracy * 100)}%, wobble ${Math.round(verdict.jitter * 100)}%). This version shows the eye cursor only: moving the mouse with your eyes comes after a supervised test.`;
+      }
+      return verdict.reason;
+    };
     let checkShown = -1;
     const markSight = (face: boolean, eyes: boolean) => {
       setSight((prev) => (prev.face === face && prev.eyes === eyes ? prev : { face, eyes }));
@@ -273,8 +301,13 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
       // Calibration samples update every camera frame. Sending one event per
       // frame makes Settings repaint its whole page; five a second is enough
       // for the progress bar and keeps the UI usable on a laptop.
-      if (payload.state === "calibrating" && now - lastTellAt < 200) return;
+      // A new step (state or mode) always goes through, or the accuracy
+      // check's first word was dropped and Settings showed "dot 9 of 9"
+      // for the whole check.
+      const kind = `${payload.state}|${payload.mode ?? ""}`;
+      if (payload.state === "calibrating" && kind === lastKind && now - lastTellAt < 200) return;
       lastPublish = key;
+      lastKind = kind;
       lastTellAt = now;
       void emit(EV.airEyeStatus, payload).catch(() => undefined);
     };
@@ -816,21 +849,23 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
         draw(true);
         if (finished) {
           verdict = summarizeValidation(check.dots);
+          askEyeMouse();
+          const message = verdictMessage();
           setCheckView(null);
           calAt = now + 850;
           steadySince = now;
-          setStatus(verdict.reason);
+          setStatus(message);
           tell({
             state: "ready",
-            message: verdict.reason,
+            message,
             face: true,
             calibrated: true,
-            clicks: clicksRef.current && verdict.pass,
+            clicks: clicksRef.current && pointerAllowed(),
             samples: cal.points.length,
             quality: cal.rms ?? undefined,
             accuracy: Number.isFinite(verdict.accuracy) ? verdict.accuracy : undefined,
             jitter: Number.isFinite(verdict.jitter) ? verdict.jitter : undefined,
-            mode: verdict.pass ? "pointer" : "preview",
+            mode: pointerAllowed() ? "pointer" : "preview",
           });
         }
         return;
@@ -856,7 +891,7 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
       // it, and nothing moves while the emergency stop isn't running.
       // Only a passed accuracy check moves the real mouse, and only to a
       // steady look (not every flicker); otherwise the cursor is just drawn.
-      const pointerMode = !!verdict?.pass;
+      const pointerMode = pointerAllowed();
       if (pointerMode && now > calAt && now - steadySince >= FIXATION_MS) void api.airPointer(pointer.x, pointer.y, true).catch(() => undefined);
       draw(true);
 
@@ -892,7 +927,7 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
       if (!autoFaceStatus) {
         autoFaceStatus = true;
         const message = !pointerMode
-          ? verdict?.reason ?? "Preview only: the mouse doesn't move."
+          ? verdictMessage()
           : clicksRef.current
             ? "Eye control on — look and hold to steer, double blink to click."
             : "Eye control on — look and hold to steer.";

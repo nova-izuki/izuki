@@ -23,7 +23,7 @@ import type {
   NoteLinks,
   VoiceCatalog,
   FoundKey,
-  N8nImport, AirSafety} from "./types";
+  N8nImport, AirSafety, FreeSearch} from "./types";
 
 export const IS_TAURI =
   typeof window !== "undefined" &&
@@ -934,7 +934,9 @@ export const api = {
   airResume: () => call<boolean>("air_resume", undefined, () => false),
   /** Air and Eye control's safety state: stopped, paused (and why), ready. */
   airSafety: () =>
-    call<AirSafety>("air_safety", undefined, () => ({ stopped: false, paused: null, ready: false, stop_key: "Ctrl+Alt+Shift+X" })),
+    call<AirSafety>("air_safety", undefined, () => ({ stopped: false, paused: null, ready: false, stop_key: "Ctrl+Alt+Shift+X", eye_mouse: false })),
+  /** Air control: a pinch held still is still tracked (the native watchdog lets go only when tracking stops). */
+  airAlive: () => call<void>("air_alive", undefined, () => undefined),
   /** Air control: press / let go of a mouse button. */
   airButton: (right: boolean, down: boolean) => call<void>("air_button", { right, down }, () => undefined),
   /** Two pinches in a row: a real double-click (opens desktop icons and files). */
@@ -1200,6 +1202,17 @@ export const api = {
 
   probeProvider: (id: string) =>
     call<string>("probe_provider", { id }, () => "Not running inside Izuki."),
+
+  /** Try the likely free models on this provider's key for real; the ones that answered, best first. */
+  freeModelsSearch: (id: string) =>
+    call<FreeSearch>("free_models_search", { id }, () => ({
+      working: [
+        { id: "meta/llama-4-maverick-17b-128e-instruct", sees: true, ms: 2400 },
+        { id: "meta/llama-3.3-70b-instruct", sees: false, ms: 900 },
+      ],
+      listed: 82,
+      tried: 7,
+    })),
 
   cursorPos: () => call<[number, number]>("cursor_pos", undefined, () => [0, 0]),
 

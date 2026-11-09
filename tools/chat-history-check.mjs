@@ -14,7 +14,7 @@ const { outputFiles } = await build({
 });
 const mod = { exports: {} };
 new Function('require', 'module', 'exports', outputFiles[0].text)(require, mod, mod.exports);
-const { chatTitle, timeAgo, orderSessions, pinSession, rememberSession, removeSession, renameSession, clearSessions, searchSessions, RECENT_CHAT_LIMIT } = mod.exports;
+const { chatTitle, timeAgo, orderSessions, pinSession, rememberSession, removeSession, renameSession, clearSessions, searchSessions, startingMessages, RECENT_CHAT_LIMIT } = mod.exports;
 
 const msg = (role, content) => ({ role, content });
 
@@ -62,6 +62,15 @@ assert.equal(afterPin[0].id, 'old-9', 'a pinned chat stays first when another ch
 assert.equal(afterPin.find((s) => s.id === 'old-9')?.pinned, true, 'the pin survives an update');
 assert.equal(afterPin.filter((s) => s.id === 'old-9').length, 1, 'pinning does not duplicate the chat');
 assert.equal(pinSession(afterPin, 'old-9', false)[0].id, 'after-pin', 'unpinning restores newest-first order');
+// An old pinned chat with a full list of newer ones: unpinning keeps it, and
+// the oldest other unpinned chat makes room instead.
+let full = pinSession(long, 'old-0', true);
+for (let i = 0; i < RECENT_CHAT_LIMIT; i++) full = rememberSession(full, `new-${i}`, `New ${i}`, [msg('user', `new ${i}`)], 50_000 + i);
+const unpinned = pinSession(full, 'old-0', false);
+assert(unpinned.some((s) => s.id === 'old-0'), 'an unpinned old chat is never dropped');
+assert.equal(unpinned.length, RECENT_CHAT_LIMIT, 'the cap still holds');
+assert.equal(unpinned.at(-1).id, 'old-0', 'it goes back in age order (oldest last)');
+assert(!unpinned.some((s) => s.id === 'new-0'), 'the oldest other chat made room');
 assert.deepEqual(
   orderSessions([
     { id: 'a', title: 'A', at: 1, messages: [], pinned: true },
@@ -72,4 +81,23 @@ assert.deepEqual(
   'orderSessions puts pinned chats first, then newest first'
 );
 
-console.log('chat history: ok (titles, relative times, ordering, cap, pin, search and removal)');
+// Which copy of the open chat to start with (two copies, saved separately).
+const A = [msg('user', 'a1'), msg('assistant', 'a2'), msg('user', 'a3')];
+const B = [msg('user', 'b1')];
+const entry = (id, messages, rev) => ({ id, title: id, at: 1, messages, rev });
+// An old install: no write numbers anywhere, the live copy wins as before.
+assert.deepEqual(startingMessages({ rev: 0, messages: A }, 'chat', entry('chat', B)), A, 'old saves: live first');
+// The live write failed and Recent's went through: Recent's is newer, whatever the counts.
+assert.deepEqual(startingMessages({ rev: 4, session: 'chat', messages: B }, 'chat', entry('chat', A, 7)), A, 'newer Recent copy wins');
+assert.deepEqual(startingMessages({ rev: 9, session: 'chat', messages: A }, 'chat', entry('chat', B, 7)), A, 'newer live copy wins');
+// Equal counts don't decide anything: write order does.
+assert.deepEqual(startingMessages({ rev: 3, session: 'chat', messages: [msg('user', 'old')] }, 'chat', entry('chat', [msg('user', 'new')], 4)), [msg('user', 'new')]);
+// A chat cleared on purpose is a newer, empty live copy: it stays clear.
+assert.deepEqual(startingMessages({ rev: 12, session: 'chat', messages: [] }, 'chat', entry('chat', A, 11)), [], 'a cleared chat stays cleared');
+// A switch whose live write failed: the live copy is another chat's, never shown as this one.
+assert.deepEqual(startingMessages({ rev: 20, session: 'other', messages: A }, 'chat', entry('chat', B)), B, 'another chat\'s live copy is never used');
+assert.deepEqual(startingMessages({ rev: 20, session: 'other', messages: A }, 'chat', undefined), [], 'and nothing else to show is an empty chat');
+// rememberSession keeps the write number with the entry.
+assert.equal(rememberSession([], 's', 'S', B, 5, 31)[0].rev, 31);
+
+console.log('chat history: ok (titles, relative times, ordering, cap, pin, search, removal and which saved copy is newer)');

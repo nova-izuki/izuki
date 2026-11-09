@@ -39,6 +39,19 @@ static BUTTONS: AtomicU8 = AtomicU8::new(0);
 /// Heartbeats of the key watcher (hotkey.rs) and of the watchdog below.
 static KEY_BEAT: AtomicU64 = AtomicU64::new(0);
 static DOG_BEAT: AtomicU64 = AtomicU64::new(0);
+/// Whether the eye lane may move the real mouse in a released build. Not
+/// yet: the emergency stop is verified on real Windows (eye_stop_probe,
+/// 2026-11-08), but gaze accuracy still needs the owner's supervised session
+/// with a real camera. Until then installed builds draw the eye cursor only;
+/// development builds (where that session runs) may move the mouse after the
+/// accuracy check. Set to `true` once that session passes.
+pub const EYE_MOUSE_RELEASED: bool = false;
+
+/// The eye lane may move the real mouse and click in this build.
+pub fn eye_mouse_allowed() -> bool {
+    EYE_MOUSE_RELEASED || cfg!(debug_assertions)
+}
+
 /// The crash handler's release is running (never twice, never inside itself).
 static RELEASING: AtomicBool = AtomicBool::new(false);
 /// When Air last pressed a mouse button down (ms), for the eye lane's limit.
@@ -114,6 +127,8 @@ pub struct Status {
     pub ready: bool,
     /// The emergency key combination, as shown to the person.
     pub stop_key: String,
+    /// The eye lane may move the real mouse in this build ([`eye_mouse_allowed`]).
+    pub eye_mouse: bool,
 }
 
 /// A line in the log that can never panic (stderr failing must not stop a stop).
@@ -211,6 +226,7 @@ pub fn status() -> Status {
         paused: Pause::from(PAUSED.load(Ordering::SeqCst)).map(|p| p.words().to_string()),
         ready: ready(),
         stop_key: stop_key_words(),
+        eye_mouse: eye_mouse_allowed(),
     }
 }
 
@@ -278,7 +294,8 @@ pub fn stop_if_eye(why: &str) {
 /// Air control saved as off, the overlay and tray told — the tray's own path.
 fn turn_air_off() {
     let Some(app) = APP.get() else { return };
-    let store = crate::state::store();
+    // Not opened yet (early in startup, or a test host): nothing saved to change.
+    let Some(store) = crate::state::try_store() else { return };
     let mut settings = store.settings();
     if !settings.air_enabled {
         return;
@@ -296,7 +313,11 @@ fn turn_air_off() {
 
 /// The person turned Air control on again: the stop is re-armed.
 pub fn arm() {
-    let was = STOPPED.swap(false, Ordering::SeqCst) || PAUSED.swap(0, Ordering::SeqCst) != 0;
+    // Both every time: a pause that landed while a stop was going through
+    // must not outlive the person turning Air on again.
+    let was_stopped = STOPPED.swap(false, Ordering::SeqCst);
+    let was_paused = PAUSED.swap(0, Ordering::SeqCst) != 0;
+    let was = was_stopped || was_paused;
     *LAST_SET.lock() = None;
     TRAIL.lock().clear();
     if was {
@@ -344,6 +365,10 @@ pub fn physical_key() {
 /// `ny` normalized) if that's safe. `false` when it didn't move.
 pub fn eye_pointer(x: i32, y: i32, nx: f64, ny: f64) -> bool {
     touch();
+    // Not released in this build: the eye cursor is drawn, the mouse stays put.
+    if !eye_mouse_allowed() {
+        return false;
+    }
     if !ready() {
         pause(Pause::NoSafety);
         return false;
@@ -388,7 +413,8 @@ pub fn button_allowed(right: bool, down: bool) -> bool {
     if !down {
         return true;
     }
-    if !allowed() {
+    // The eye lane's clicks come with its mouse: not in a build that doesn't allow it.
+    if !allowed() || (eye_lane() && !eye_mouse_allowed()) {
         return false;
     }
     BUTTONS.fetch_or(bit, Ordering::SeqCst);
@@ -573,6 +599,11 @@ mod tests {
         assert_eq!(PAUSED.load(Ordering::SeqCst), 0, "a pause doesn't replace a stop");
         arm();
         assert!(allowed(), "the person turning Air on again re-arms it");
+        // A pause written while a stop went through is cleared by the same arm.
+        STOPPED.store(true, Ordering::SeqCst);
+        PAUSED.store(Pause::Mouse as u8, Ordering::SeqCst);
+        arm();
+        assert!(allowed(), "arm clears the stop and the pause together");
     }
 
     #[test]
@@ -627,6 +658,17 @@ mod tests {
         assert!(eye_lane(), "with the eye lane selected every pointer move takes the gaze's checks");
         set_eye_lane(false);
         assert!(!eye_lane());
+    }
+
+    #[test]
+    fn a_released_build_never_lets_the_eye_lane_move_the_mouse_until_verified() {
+        let _g = SERIAL.lock();
+        fresh();
+        // Tests build with debug assertions, where the supervised session runs.
+        assert_eq!(eye_mouse_allowed(), EYE_MOUSE_RELEASED || cfg!(debug_assertions));
+        assert_eq!(status().eye_mouse, eye_mouse_allowed());
+        // The switch that ships today: the eye cursor is drawn only.
+        assert!(!EYE_MOUSE_RELEASED, "released only after the owner's supervised accuracy session");
     }
 
     #[test]

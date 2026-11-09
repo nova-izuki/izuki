@@ -667,6 +667,23 @@ export interface VoiceCatalog {
   voices: Array<{ id: string; label: string }>;
 }
 
+/** One free model on the person's key that answered a real request (freebrains.rs). */
+export interface FreeModel {
+  id: string;
+  /** Shown a picture, it said what was in it: it can drive the screen. */
+  sees: boolean;
+  /** How long its short test answer took. */
+  ms: number;
+}
+
+/** What a search of the person's key found. */
+export interface FreeSearch {
+  /** Best for Izuki first: screen models, then chat-only ones. */
+  working: FreeModel[];
+  listed: number;
+  tried: number;
+}
+
 /** A key the user just copied (keys.rs). */
 export interface FoundKey {
   kind: "gemini" | "groq" | "openrouter" | "xai" | "nvidia" | "anthropic" | "openai" | "composio" | "telegram";
@@ -790,4 +807,6 @@ export interface AirSafety {
   ready: boolean;
   /** The emergency key combination, as shown ("Ctrl+Alt+Shift+X"). */
   stop_key: string;
+  /** This build lets the eye lane move the real mouse (false: the eye cursor is drawn only). */
+  eye_mouse: boolean;
 }

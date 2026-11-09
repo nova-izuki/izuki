@@ -160,7 +160,8 @@ resolveStop();await flush();assert.equal(stopped.status().phase,'review');
 // the code (a hand-copied version once "passed" while matching nothing).
 {
   const {readFileSync}=await import('node:fs');
-  const ui=readFileSync('extension/workspace-ui.js','utf8');
+  // A Windows checkout has CRLF line ends; the patterns below expect \n.
+  const ui=readFileSync('extension/workspace-ui.js','utf8').replace(/\r\n/g,'\n');
   const grab=name=>{const m=ui.match(new RegExp('const '+name+'=(.*);\\n'));assert(m,`${name} not found in workspace-ui.js`);return m[1];};
   const BETWEEN=eval(grab('BETWEEN')),NOT_COMPOUND=eval(grab('NOT_COMPOUND'));
   void BETWEEN;void NOT_COMPOUND;
