@@ -934,7 +934,7 @@ export const api = {
   airResume: () => call<boolean>("air_resume", undefined, () => false),
   /** Air and Eye control's safety state: stopped, paused (and why), ready. */
   airSafety: () =>
-    call<AirSafety>("air_safety", undefined, () => ({ stopped: false, paused: null, ready: false, stop_key: "Ctrl+Alt+Shift+X" })),
+    call<AirSafety>("air_safety", undefined, () => ({ stopped: false, paused: null, ready: false, stop_key: "Ctrl+Alt+Shift+X", eye_mouse: false })),
   /** Air control: press / let go of a mouse button. */
   airButton: (right: boolean, down: boolean) => call<void>("air_button", { right, down }, () => undefined),
   /** Two pinches in a row: a real double-click (opens desktop icons and files). */
