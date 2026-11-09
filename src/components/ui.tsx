@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import { foldSections } from "../lib/sections";
 
 export function cx(...parts: Array<string | false | null | undefined>) {
@@ -255,10 +256,12 @@ export function Segmented<T extends string>({
    *  people guessing which tab was which); only the chosen one shows its icon. */
   compact?: boolean;
 }) {
+  const groupId = useId();
+  const reduced = useReducedMotion();
   return (
     <div
       className={cx(
-        "izk-no-drag izk-inset inline-flex items-center gap-1 rounded-full p-1",
+        "izk-no-drag izk-inset izk-segmented inline-flex items-center gap-1 rounded-full p-1",
         size === "sm" ? "text-[11.5px]" : "text-[12.5px]"
       )}
     >
@@ -270,22 +273,30 @@ export function Segmented<T extends string>({
             type="button"
             title={o.label}
             aria-label={o.label}
+            aria-pressed={active}
             onClick={() => onChange(o.value)}
             className={cx(
-              "relative flex items-center gap-1.5 rounded-full font-medium transition-all duration-200",
+              "izk-seg relative flex items-center gap-1.5 overflow-hidden rounded-full font-medium transition-colors duration-200",
               size === "sm" ? (compact ? "px-2 py-1" : "px-2.5 py-1") : "px-3 py-1.5",
-              active
-                ? "text-white shadow-[0_4px_14px_rgba(124,92,255,0.4),inset_0_1px_0_rgba(255,255,255,0.35)]"
-                : "text-izk-muted hover:text-izk-ink"
+              active ? "text-white" : "text-izk-muted hover:text-izk-ink"
             )}
-            style={
-              active
-                ? { background: "linear-gradient(135deg,rgba(124,92,255,0.9),rgba(78,205,196,0.75))" }
-                : undefined
-            }
           >
-            {(!compact || active) && o.icon}
-            {o.label}
+            {active && (
+              <motion.span
+                layoutId={`izk-seg-${groupId}`}
+                className="izk-seg-thumb"
+                transition={
+                  reduced
+                    ? { duration: 0 }
+                    : { type: "spring", stiffness: 480, damping: 38, mass: 0.6 }
+                }
+                aria-hidden="true"
+              />
+            )}
+            <span className="relative z-10 flex items-center gap-1.5">
+              {(!compact || active) && o.icon}
+              {o.label}
+            </span>
           </button>
         );
       })}

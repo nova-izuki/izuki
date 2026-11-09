@@ -47,10 +47,11 @@ export function DrawCommandBar() {
   // Find anything in Izuki as you type (the same as Ctrl+K) — Enter still sends it as a command.
   const found=text.trim().length>=2?findFeatures(text,3):[];
   // Lives in the panel's header (under the tabs), so it never scrolls away.
-  return <section id="draw-command" className="relative" aria-label="Type a command">
+  return <section id="draw-command" className="izk-command-section relative" aria-label="Type a command">
     <label htmlFor="draw-command-input" className="sr-only">Or type it</label>
-    <form className="izk-inset flex items-center gap-2 rounded-[16px] p-1.5" onSubmit={e=>{e.preventDefault();submit();}}>
-      <input ref={input} id="draw-command-input" value={text} onChange={e=>{setText(e.target.value);api.prefetchWhileTyping();}} onKeyDown={e=>{if(e.key==='Enter'&&e.nativeEvent.isComposing)e.preventDefault();}} disabled={busy} placeholder="Tell Izuki what to do — “open Spotify”, “summarise this page”…" className="h-[38px] min-w-0 flex-1 bg-transparent px-2 text-[12.5px] text-izk-ink outline-none placeholder:text-izk-muted/55"/>
+    <form className="izk-command-dock flex items-center gap-2 rounded-[16px] p-1.5" onSubmit={e=>{e.preventDefault();submit();}}>
+      <span className="izk-command-glyph" aria-hidden="true"><Sparkles size={14} strokeWidth={2.2}/></span>
+      <input ref={input} id="draw-command-input" value={text} onChange={e=>{setText(e.target.value);api.prefetchWhileTyping();}} onKeyDown={e=>{if(e.key==='Enter'&&e.nativeEvent.isComposing)e.preventDefault();}} disabled={busy} placeholder="Tell Izuki what to do — “open Spotify”, “summarise this page”…" className="izk-command-input h-[38px] min-w-0 flex-1 bg-transparent px-2 text-[12.5px] text-izk-ink outline-none placeholder:text-izk-muted/55"/>
       <button type="submit" aria-label="Send command" disabled={busy||!text.trim()} className="izk-btn-primary flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[12px] disabled:opacity-40"><Send size={15}/></button>
     </form>
     {found.length>0&&<div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10.5px]" aria-label="Found in Izuki">

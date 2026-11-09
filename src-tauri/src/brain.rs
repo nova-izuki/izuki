@@ -2485,7 +2485,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             if let Some(evidence) = evidence { let _ = evidence.finish(crate::mission_journal::EvidenceOutcome::Unknown); }
                             // Something on top, or greyed out: the brain can fix
                             // that on its next look — the task goes on.
-                            if why.starts_with("covered:") || why.starts_with("disabled:") || why.starts_with("target_changed:") || why.starts_with(crate::ext::UNCONFIRMED) {
+                            if recoverable_step_snag(&why) {
                                 *STEP_SNAG.lock() = Some(why.clone());
                             }
                             let _ = app.emit(
@@ -2687,7 +2687,7 @@ pub fn submit_voice_command_in(app: &AppHandle, store: &Arc<Store>, prompt: Stri
     // FL Studio: connecting it is Izuki's own setup, and FL's jobs need that
     // link — never worked out by clicking through FL's menus (that only ever
     // reached FL's MIDI list, empty without Izuki's cable).
-    let resumes = (is_keep_going(&prompt) || is_yes(&prompt)).then(|| UNFINISHED.lock().as_ref().map(|(t, _)| t.clone())).flatten();
+    let resumes = (is_keep_going(&prompt) || (is_yes(&prompt) && yes_resumes())).then(|| UNFINISHED.lock().as_ref().map(|(t, _)| t.clone())).flatten();
     // What Izuki said last: the conversation's, else the last screen task's.
     let last_said = recent
         .iter()
@@ -3188,8 +3188,9 @@ fn submit_task(
     let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted() && crate::execution::allowed();
 
     // "Keep going" after a task had to stop: pick it up where it left off.
+    hydrate_unfinished();
     let (prompt, resumed) = match UNFINISHED.lock().take() {
-        Some((task, done)) if is_keep_going(&prompt) || is_yes(&prompt) => (task, done),
+        Some((task, done)) if is_keep_going(&prompt) || (is_yes(&prompt) && yes_resumes()) => (task, done),
         Some(t) => {
             // Something new — forget the old one.
             let _ = t;
@@ -3197,6 +3198,9 @@ fn submit_task(
         }
         None => (prompt, Vec::new()),
     };
+    // A taken task is no longer waiting. Clear its durable copy before any
+    // action can fail; a fresh stop writes a fresh checkpoint.
+    crate::resume::clear(&crate::store::data_dir()).ok();
     // Video classroom is a teaching pass, not an autonomous screen task. Its
     // pen overlay must survive until the frontend has spoken the explanation;
     // otherwise the marks disappear as soon as this backend plan returns.
@@ -4121,6 +4125,10 @@ fn submit_task(
                     .to_string()
             } else if why.starts_with(crate::ext::UNCONFIRMED) {
                 format!("Your last action may already have happened, but it wasn't confirmed — {why}. Check this fresh screenshot for whether it did (a new page, a ticked box, the typed text) before anything else, and do NOT repeat it if it did.")
+            } else if why.starts_with("typed_mismatch:") {
+                format!("Your typing didn't land as intended — {why}. Look at the field in this fresh screenshot: if it holds wrong or extra text, select it all and type the intended text again (once). Make sure the right field is focused first; never type into a different box.")
+            } else if why.starts_with("play_not_started:") {
+                format!("The video didn't start — {why}. In this fresh screenshot, click the intended video result (or the page's play button) instead of searching again. Don't retype the search.")
             } else if why.starts_with("target_changed:") {
                 crate::lessons::note(&uia::foreground_app(), "controls here move or redraw: take a fresh look and pick the control by its label right before clicking");
                 format!("Your last action was NOT executed — {why}. Parse this fresh screenshot and select the intended numbered control by its label and position. Do not reuse old IDs or coordinates. Do not close or minimise windows to fix a changed target. If the intended control is absent, explain that instead of guessing.")
@@ -4543,6 +4551,29 @@ static TASK_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::ne
 
 fn task_is_current(task: u64, generation: u64, aborted: bool) -> bool { generation == task && !aborted }
 fn task_alive(task: u64) -> bool { task_is_current(task, TASK_GEN.load(std::sync::atomic::Ordering::SeqCst), automation::aborted()) && crate::execution::allowed() }
+
+/// A failed step the next look can fix. These are fed back to the model as the
+/// reason for stopping this round; anything else stops the task honestly.
+fn recoverable_step_snag(why: &str) -> bool {
+    ["covered:", "disabled:", "target_changed:", "typed_mismatch:", "play_not_started:"]
+        .iter()
+        .any(|prefix| why.starts_with(prefix))
+        || why.starts_with(crate::ext::UNCONFIRMED)
+}
+
+#[cfg(test)]
+mod step_snag_tests {
+    use super::recoverable_step_snag;
+
+    #[test]
+    fn a_wrong_field_or_unplayed_video_gets_a_fresh_look() {
+        assert!(recoverable_step_snag("typed_mismatch: the box shows something else"));
+        assert!(recoverable_step_snag("play_not_started: only results opened"));
+        assert!(recoverable_step_snag("target_changed: the button moved"));
+        assert!(!recoverable_step_snag("your PC is locked"));
+        assert!(!recoverable_step_snag("password_box: never type there"));
+    }
+}
 fn stopped_plan() -> VisionPlan { VisionPlan { summary: "Stopped.".into(), outcome: crate::model::TaskOutcome::Cancelled, ..Default::default() } }
 pub fn reserve_draw_task() -> u64 {
     automation::clear_abort();
@@ -4556,6 +4587,7 @@ pub fn cancel_task() {
     crate::coach::stop();
     automation::request_abort();
     UNFINISHED.lock().take();
+    crate::resume::clear(&crate::store::data_dir()).ok();
     answer_help(None);
 }
 
@@ -4699,19 +4731,60 @@ static UNFINISHED: parking_lot::Mutex<Option<(String, Vec<String>)>> = parking_l
 /// When the task waiting for "keep going" stopped.
 static UNFINISHED_AT: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
 
+/// The waiting task was loaded from disk (a previous run), not stopped in
+/// this one: then only an explicit "keep going" resumes it.
+static UNFINISHED_FROM_DISK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A bare "yes" counts as "keep going" only as an answer to what Izuki just
+/// asked: the task stopped in this run, moments ago. Never for a checkpoint
+/// from an earlier run, where "yes" is surely about something else (and
+/// would otherwise hand the screen back to a days-old task).
+fn yes_resumes() -> bool {
+    !UNFINISHED_FROM_DISK.load(std::sync::atomic::Ordering::SeqCst)
+        && UNFINISHED_AT.lock().is_some_and(|at| at.elapsed() < Duration::from_secs(120))
+}
+
 /// A task stopped partway: kept (with when) for "keep going".
 fn set_unfinished(task: (String, Vec<String>)) {
+    if let Err(error) = crate::resume::save(&crate::store::data_dir(), &task.0, &task.1) {
+        eprintln!("[agent] couldn't save the keep-going checkpoint: {error}");
+    }
     *UNFINISHED.lock() = Some(task);
     *UNFINISHED_AT.lock() = Some(std::time::Instant::now());
+    UNFINISHED_FROM_DISK.store(false, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Load a checkpoint left by a previous process. This is lazy so it works
+/// before the first task and never overwrites a live in-memory task.
+fn hydrate_unfinished() {
+    if UNFINISHED.lock().is_some() {
+        return;
+    }
+    let Some(saved) = crate::resume::load(&crate::store::data_dir()) else { return };
+    let age = chrono::Utc::now()
+        .timestamp_millis()
+        .saturating_sub(saved.stopped_at)
+        .clamp(0, 30 * 60 * 1000) as u64;
+    let at = std::time::Instant::now()
+        .checked_sub(Duration::from_millis(age))
+        .unwrap_or_else(std::time::Instant::now);
+    let mut slot = UNFINISHED.lock();
+    if slot.is_none() && !saved.objective.trim().is_empty() {
+        *slot = Some((saved.objective, saved.done));
+        *UNFINISHED_AT.lock() = Some(at);
+        UNFINISHED_FROM_DISK.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 /// When the task waiting for "keep going" stopped (`None`: nothing waits).
 pub fn unfinished_since() -> Option<std::time::Instant> {
+    hydrate_unfinished();
     UNFINISHED.lock().as_ref().and(*UNFINISHED_AT.lock())
 }
 
 /// What that task was about, clipped to a sentence (`None`: nothing waits).
 pub fn unfinished_task() -> Option<String> {
+    hydrate_unfinished();
     UNFINISHED
         .lock()
         .as_ref()

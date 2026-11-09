@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="tile" x1="0.1" y1="0" x2="0.95" y2="1">
+      <stop offset="0%"   stop-color="#9B7DFF"/>
+      <stop offset="55%"  stop-color="#4A63E8"/>
+      <stop offset="100%" stop-color="#181733"/>
+    </linearGradient>
+    <!-- a translucent white wash over the tile — the thing that reads as
+         "frosted glass" instead of a flat gradient swatch -->
+    <linearGradient id="frost" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="50%"  stop-color="#FFFFFF" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.14"/>
+    </linearGradient>
+    <linearGradient id="hand" x1="0.1" y1="0" x2="0.8" y2="1">
+      <stop offset="0%"   stop-color="#FFFFFF"/>
+      <stop offset="28%"  stop-color="#F4F7FB"/>
+      <stop offset="52%"  stop-color="#CBD5E0"/>
+      <stop offset="78%"  stop-color="#93A0AE"/>
+      <stop offset="100%" stop-color="#5B6673"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="45%"  stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0%"   stop-color="#FFFFFF" stop-opacity="0.75"/>
+      <stop offset="45%"  stop-color="#FFFFFF" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.35"/>
+    </linearGradient>
+    <!-- the glass "cap": a bright band across the top third, fading out —
+         this is what makes the tile read as a glossy iOS-style dome rather
+         than a flat colour swatch -->
+    <linearGradient id="glasscap" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#FFFFFF" stop-opacity="0.6"/>
+      <stop offset="55%"  stop-color="#FFFFFF" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#000000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.22"/>
+    </linearGradient>
+    <radialGradient id="shadow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%"  stop-color="#0A0818" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#0A0818" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="tileclip">
+      <rect x="72" y="72" width="880" height="880" rx="232" ry="232"/>
+    </clipPath>
+    <filter id="blur18" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="13"/>
+    </filter>
+    <!-- one tapered, rounded-tip finger — reused, rotated/scaled per digit -->
+    <path id="finger" d="M -17,0 C -17,-44 -14,-96 -12,-126 A 12,12 0 0 1 12,-126 C 14,-96 17,-44 17,0 Z"/>
+    <path id="palm" d="
+      M -104,-6
+      C -104,-58 -66,-96 -2,-96
+      C 64,-96 104,-56 104,-4
+      C 104,54 84,128 34,158
+      C 8,174 -8,174 -34,158
+      C -84,128 -104,54 -104,-6
+      Z"/>
+  </defs>
+
+  <!-- tile: a coloured glass pane, not a flat opaque swatch — a hair
+       translucent so it reads as glass rather than solid plastic -->
+  <rect x="72" y="72" width="880" height="880" rx="232" ry="232" fill="url(#tile)" fill-opacity="0.94"/>
+
+  <g clip-path="url(#tileclip)">
+    <!-- frosted wash + floor shadow, for real glass depth -->
+    <rect x="72" y="72" width="880" height="880" fill="url(#frost)"/>
+    <rect x="72" y="72" width="880" height="880" fill="url(#floor)"/>
+
+    <!-- soft contact shadow the hand casts onto the glass beneath it -->
+    <ellipse cx="512" cy="742" rx="150" ry="46" fill="url(#shadow)" filter="url(#blur18)"/>
+
+    <!-- the hand IS the icon — chrome/silver so it reads as a real mark, not
+         a mascot. A dark contour keeps every finger legible once this gets
+         downsampled to a 16px taskbar icon, where soft gradient edges alone
+         blur into the tile. -->
+    <g
+      transform="translate(512 620)"
+      fill="url(#hand)"
+      stroke="#241F3D"
+      stroke-opacity="0.38"
+      stroke-width="6"
+      stroke-linejoin="round"
+    >
+      <use href="#palm"/>
+
+      <g transform="translate(-96 22) rotate(-58) scale(1.18 0.86)">
+        <use href="#finger"/>
+      </g>
+      <use href="#finger" transform="translate(-58 -92) rotate(-19) scale(0.86 0.72)"/>
+      <use href="#finger" transform="translate(-21 -96) rotate(-6) scale(0.92 0.93)"/>
+      <use href="#finger" transform="translate(15 -96) rotate(5) scale(0.92 1)"/>
+      <use href="#finger" transform="translate(50 -90) rotate(17) scale(0.84 0.85)"/>
+    </g>
+
+    <!-- chrome specular sheen on the hand itself -->
+    <g transform="translate(512 620)" fill="url(#sheen)" opacity="0.55">
+      <use href="#palm"/>
+    </g>
+
+    <!-- glass dome cap over the whole tile, like a glossy iOS icon -->
+    <rect x="72" y="72" width="880" height="440" fill="url(#glasscap)"/>
+    <ellipse cx="320" cy="175" rx="240" ry="100" fill="#FFFFFF" opacity="0.2"/>
+  </g>
+
+  <!-- bevelled glass rim, bright top-left, softer bottom-right -->
+  <rect x="75" y="75" width="874" height="874" rx="229" ry="229" fill="none" stroke="url(#rim)" stroke-width="7"/>
+</svg>

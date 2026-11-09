@@ -155,6 +155,33 @@ Claude Code is unavailable (weekly usage limit), so the owner explicitly transfe
 
 Integrated the verified work of all three lanes as 1.0.197 (build 197): Freebuff's PDF editing, coded-font refusal and Open-result card (`58875e1`, `0b00912`, `350aedf`, `b343491`); Freebuff's optional eye calibration (`de18ee2`); Claude's agent-bridge recovery commits (`0363389`…`198bf89`, merged with `main`'s #24 after a line-by-line comparison that kept the newer branch implementation); and Codex's robot-hand fix (PR #29), fallback foundation (PR #28) and capture-stub cleanup (`556ba4f`). PR #17 carries the release to `main`; `docs/RELEASE-1.0.197.md` has the plain-English notes. Not included: Claude's unfinished Smart Screen Actions attempt on `agent/claude-18-1` (WIP, never verified) and #25 scheduling; Codex's older hand branch was superseded by PR #29 and was not merged again.
 
+## Eye Control handoff to Claude; Freebuff continues the rest (owner, 2026-11-08)
+
+**Claude Code owns Eye Control only.** Full file list, uncommitted state, test
+evidence, live diagnostics and known bugs: `docs/HANDOFF-2026-11-08-eye-control.md`.
+Claude must not be asked to release or merge anything that depends on unverified
+Eye Control. Freebuff did not edit, stage, commit, stash or revert any Eye file.
+
+**Freebuff owns the continuation**: advanced Windows computer control and
+long-task reliability (`docs/izuki-computer-control-plan.md`), Smart Screen
+Actions, browser/application control, screen understanding, document editing,
+Developer Mode, Smart Vision, Auto-Review, real testing, design directions and
+the Face/Sound roadmap. Work is isolated on `freebuff/continuation` in
+`.work/freebuff-continuation`; it is based on committed `milestone-196`, not on
+Claude's uncommitted Eye work. No version bump, merge, push or release is part
+of this claim.
+
+First implemented slice on that branch: durable "keep going" checkpoints
+survive an app restart and resume only on the user's explicit command;
+typed-field mismatches and failed YouTube playback no longer report success.
+Files: `src-tauri/src/resume.rs`, `src-tauri/src/brain.rs`,
+`src-tauri/src/automation.rs`, `src-tauri/src/lib.rs`, docs.
+
+Test evidence: the six `resume::tests` pass. The two new automation regression
+cases are written and compile, but were not executed: the running app holds the
+shared Cargo target lock, and a clean target rebuild was stopped at the low-disk
+guard. Run those two cases before calling this branch release-ready or merging.
+
 ## Claude — Eye Control safety and accuracy (owner assignment, 2026-11-08; claimed)
 
 The owner gave Claude primary ownership of Eye Control: tracking, calibration, cursor behavior, emergency controls, reliability and real Windows testing. Freebuff continues its other lanes. Why: in the owner's real test, after the nine-dot calibration the gaze cursor moved unpredictably and there was no reliable stop (the laptop had to be turned away).
