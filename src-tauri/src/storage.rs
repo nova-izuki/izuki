@@ -26,9 +26,25 @@ pub enum Ask {
 /// A cloud drive ("my Google Drive", "OneDrive storage", "box.com") with
 /// nothing saying this PC: never a scan or a clean-up of this PC's disk.
 fn cloud_only(s: &str) -> bool {
-    let cloud = ["google", "gdrive", "onedrive", "one drive", "dropbox", "icloud", "mega.nz", "mega nz", "box.com", "box com"].iter().any(|w| s.contains(w));
-    let local = ["c drive", "c:", "my pc", "my laptop", "my computer", "this pc", "hard drive", "ssd", "local"].iter().any(|w| s.contains(w));
+    // Google Drive by name ("Google Chrome" is an app on this PC).
+    let cloud = ["google drive", "drive on google", "google one", "gdrive", "onedrive", "one drive", "dropbox", "icloud", "mega.nz", "mega nz", "box.com", "box com"]
+        .iter()
+        .any(|w| s.contains(w));
+    let local = drive_letter(s) || ["my pc", "my laptop", "my computer", "this pc", "hard drive", "ssd", "local"].iter().any(|w| s.contains(w));
     cloud && !local
+}
+
+/// A drive letter: "my D drive", "the E: drive", "R:". Letters that are
+/// usually words or texting ("a drive", "did u drive") count only with a colon.
+fn drive_letter(s: &str) -> bool {
+    let words: Vec<&str> = s.split_whitespace().collect();
+    words.iter().enumerate().any(|(i, w)| {
+        let letter = w.trim_end_matches(':');
+        let colon = w.len() == 2 && w.ends_with(':');
+        let single = letter.len() == 1 && letter.chars().all(|c| c.is_ascii_alphabetic());
+        let named = words.get(i + 1).is_some_and(|n| *n == "drive" || *n == "drives");
+        single && (colon || (named && !matches!(letter, "a" | "i" | "u" | "r" | "y")))
+    })
 }
 
 pub fn parse(said: &str) -> Option<Ask> {
@@ -72,15 +88,8 @@ pub fn is_storage_question(said: &str) -> bool {
     if cloud_only(s) {
         return false;
     }
-    // "My D drive", "the E: drive": any drive letter (not "a drive", "I drive").
-    let words: Vec<&str> = s.split_whitespace().collect();
-    let lettered = words.windows(2).any(|w| {
-        let letter = w[0].trim_end_matches(':');
-        // Not "a drive", nor texting ("did u drive", "r u driving").
-        letter.len() == 1 && letter.chars().all(|c| c.is_ascii_alphabetic()) && !matches!(letter, "a" | "i" | "u" | "r" | "y") && (w[1] == "drive" || w[1] == "drives")
-    });
-    // "My drive" / "C drive" are the PC's own.
-    let disk = lettered
+    // "My drive" / "C drive" / "the D: drive" are the PC's own.
+    let disk = drive_letter(s)
         || ["storage", "storag", "storaege", "disk", "drive space", "hard drive", "my drive", "c drive", "my drives", "ssd", " gb", " tb", "gigs"]
         .iter()
         .any(|w| s.contains(w));
@@ -470,6 +479,9 @@ mod tests {
         assert_eq!(parse("how much did u drive today"), None, "texting, not a drive");
         assert_eq!(parse("how much space is left in my box.com drive and clear it to make room"), None, "never clean this PC for a cloud drive");
         assert_eq!(parse("free up space on my google drive"), None);
+        assert_eq!(parse("what's taking up space, Google Chrome?"), Some(Ask::Report), "an app on this PC");
+        assert_eq!(parse("how much space does OneDrive use on my D: drive"), Some(Ask::Report), "the PC's drive, named");
+        assert_eq!(parse("how full is my R: drive"), Some(Ask::Report), "a colon makes it a drive letter");
     }
 
     #[test]
