@@ -34,7 +34,7 @@ pub fn parse(said: &str) -> Option<bool> {
         .any(|w| padded.contains(w));
 
     if has_log {
-        if padded.contains(" don t turn off ") || padded.contains(" do not turn off ") || padded.contains(" never turn off ") {
+        if padded.contains(" dont turn off ") || padded.contains(" do not turn off ") || padded.contains(" never turn off ") {
             return Some(true);
         }
         let off = [" turn off ", " switch off ", " disable ", " stop ", " no more ", " quit ", " off "]
@@ -52,7 +52,7 @@ pub fn parse(said: &str) -> Option<bool> {
         return None;
     }
 
-    let stop = [" stop ", " don t ", " do not ", " no more ", " quit ", " turn off ", " switch off "]
+    let stop = [" stop ", " dont ", " do not ", " no more ", " quit ", " turn off ", " switch off "]
         .iter()
         .any(|w| padded.contains(w));
     let save = [" save ", " keep ", " log ", " record ", " write down ", " put ", " add ", " store ", " turn on "]
@@ -214,6 +214,7 @@ mod tests {
         assert_eq!(parse("turn on study log"), Some(true));
         assert_eq!(parse("stop saving my questions"), Some(false));
         assert_eq!(parse("don't save my questions to notes any more"), Some(false));
+        assert_eq!(parse("don't turn off study log"), Some(true));
         assert_eq!(parse("what is a question mark"), None);
         assert_eq!(parse("save this as a note"), None, "one answer, not every one");
         assert_eq!(parse("answer"), None, "a bare answer is not a command");
