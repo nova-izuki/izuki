@@ -191,6 +191,6 @@ The owner gave Claude primary ownership of Eye Control: tracking, calibration, c
 - Claude also claims the native input safety layer: a new `src-tauri/src/airsafe.rs`, its gate in the `air_*` commands (`commands.rs`), and the emergency hotkey in `hotkey.rs`.
 - Order: emergency stop first (native, independent of React, the camera worker and calibration), then accuracy diagnostics, then the control design. Gaze-driven desktop input stays off by default and isn't released as stable until the stop and accuracy are verified, including a supervised test with the owner.
 
-## Release 1.0.198 cut from milestone-196 (Claude, release coordinator, 2026-11-08)
+## Release 1.0.198 prepared from milestone-196 (Claude, release coordinator, 2026-11-08)
 
 Merged after green CI and resolved CodeRabbit threads: PR #33 (weighted agent scheduling, flag off), PR #35 (Freebuff: Chat history and pins, panel design, unfinished-task resume, no false success reports) and PR #36 (Eye Control release gate). Claude fixed PR #35's three significant findings in `760aaf6` (a restart's checkpoint resumes only on "keep going"; retry notes for the new failure kinds; two-step chat delete). The nine minor ones are Freebuff's task #37. Eye Control ships with the native emergency stop, and the eye cursor is drawn without moving the mouse until the supervised camera session (`airsafe::EYE_MOUSE_RELEASED`). `docs/INTEGRATION.md` has the current state for all three agents.

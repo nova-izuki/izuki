@@ -313,7 +313,11 @@ fn turn_air_off() {
 
 /// The person turned Air control on again: the stop is re-armed.
 pub fn arm() {
-    let was = STOPPED.swap(false, Ordering::SeqCst) || PAUSED.swap(0, Ordering::SeqCst) != 0;
+    // Both every time: a pause that landed while a stop was going through
+    // must not outlive the person turning Air on again.
+    let was_stopped = STOPPED.swap(false, Ordering::SeqCst);
+    let was_paused = PAUSED.swap(0, Ordering::SeqCst) != 0;
+    let was = was_stopped || was_paused;
     *LAST_SET.lock() = None;
     TRAIL.lock().clear();
     if was {
@@ -595,6 +599,11 @@ mod tests {
         assert_eq!(PAUSED.load(Ordering::SeqCst), 0, "a pause doesn't replace a stop");
         arm();
         assert!(allowed(), "the person turning Air on again re-arms it");
+        // A pause written while a stop went through is cleared by the same arm.
+        STOPPED.store(true, Ordering::SeqCst);
+        PAUSED.store(Pause::Mouse as u8, Ordering::SeqCst);
+        arm();
+        assert!(allowed(), "arm clears the stop and the pause together");
     }
 
     #[test]

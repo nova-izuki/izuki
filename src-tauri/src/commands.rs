@@ -1873,6 +1873,17 @@ pub fn air_safety() -> crate::airsafe::Status {
     crate::airsafe::status()
 }
 
+/// Air control: a pinch held still is still being tracked. The watchdog lets
+/// go of a held button after 3 s without a word, which is for tracking that
+/// stopped, not for a press-and-hold. Moves nothing, and counts only while
+/// Air is allowed (stopped or paused, the watchdog lets go regardless).
+#[tauri::command]
+pub fn air_alive() {
+    if crate::airsafe::allowed() {
+        crate::airsafe::touch();
+    }
+}
+
 /// Air control: the 3D app in front (Blender, Unity…), if Air's 3D
 /// controls are on — a pinch dragged there turns the model.
 #[tauri::command]

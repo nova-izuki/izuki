@@ -510,19 +510,19 @@ function useChatState() {
       chatSubs.delete(f);
     };
   }, []);
-  return { msgs: chatMsgs, busy: chatBusy };
+  // The session id too, so a reset from outside (resetChat) is seen here.
+  return { msgs: chatMsgs, busy: chatBusy, session: chatSessionId };
 }
 
 
 export function ChatTab() {
-  const { msgs, busy } = useChatState();
+  const { msgs, busy, session } = useChatState();
   // Suggestions that fit what's on screen and the time of day.
   const ideas = useSmartIdeas(4);
   const setMsgs = setChatMsgs;
   const setBusy = setChatBusy;
   const [recent, setRecent] = useState<RecentChat[]>(() => readRecent());
   const recentRef = useRef<RecentChat[]>(recent);
-  const [activeChat, setActiveChat] = useState(chatSessionId);
   const [recentsOpen, setRecentsOpen] = useState(false);
   const [recentQuery, setRecentQuery] = useState("");
   const commitRecent = useCallback((next: RecentChat[]) => {
@@ -530,10 +530,41 @@ export function ChatTab() {
     setRecent(next);
     saveRecent(next);
   }, []);
+  // Each save rewrites the whole list, so while a reply streams it's saved
+  // at most every 1.5 s, and once more the moment it settles.
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Save the live chat into Recent chats, from the module state (always the
+   *  latest; a save waiting on the timer is folded in). A chat only looked at
+   *  keeps its time instead of jumping to "Just now", and an unchanged one
+   *  isn't written again. */
+  const saveCurrent = useCallback(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    if (!chatMsgs.length) return;
+    const stored = storedMessages(chatMsgs);
+    const existing = recentRef.current.find((s) => s.id === chatSessionId);
+    if (existing && JSON.stringify(existing.messages) === JSON.stringify(stored)) return;
+    commitRecent(rememberSession(recentRef.current, chatSessionId, chatTitle(chatMsgs), stored));
+  }, [commitRecent]);
   useEffect(() => {
     if (!msgs.length) return;
-    commitRecent(rememberSession(recentRef.current, chatSessionId, chatTitle(msgs), storedMessages(msgs)));
-  }, [msgs, commitRecent]);
+    if (!busy) {
+      saveCurrent();
+      return;
+    }
+    if (saveTimer.current) return;
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
+      saveCurrent();
+    }, 1500);
+  }, [msgs, busy, saveCurrent]);
+  // Leaving the tab mid-reply: the waiting save happens now.
+  useEffect(
+    () => () => {
+      if (saveTimer.current) saveCurrent();
+    },
+    [saveCurrent]
+  );
   useEffect(() => {
     if (!recentsOpen) return;
     const close = (event: KeyboardEvent) => {
@@ -673,14 +704,18 @@ export function ChatTab() {
   // transcript would push the live conversation out of the short shared
   // window the orb is using — so opening this tab would end the thread the
   // user was in the middle of.
-  const baseline = useRef<number | null>(null);
+  // Measured per chat: a New chat, an opened saved chat or a cleared one
+  // starts again from what it holds now (never publishing an old transcript,
+  // never hiding the new turns behind the last chat's length).
+  const baseline = useRef<{ session: string; from: number } | null>(null);
   useEffect(() => {
-    if (baseline.current === null) {
-      baseline.current = msgs.length;
+    const b = baseline.current;
+    if (!b || b.session !== session || msgs.length < b.from) {
+      baseline.current = { session, from: msgs.length };
       return;
     }
-    shareHistory(msgs.slice(baseline.current).map(({ role, content }) => ({ role, content })));
-  }, [msgs]);
+    shareHistory(msgs.slice(b.from).map(({ role, content }) => ({ role, content })));
+  }, [msgs, session]);
 
   /** Coding mode on, and its project (remembered on this PC). */
   const [code, setCode] = useState(() => {
@@ -1052,12 +1087,10 @@ export function ChatTab() {
   const beginChat = (keepCurrent: boolean) => {
     stop();
     clearAttachments();
-    if (keepCurrent && msgs.length) {
-      commitRecent(rememberSession(recentRef.current, chatSessionId, chatTitle(msgs), storedMessages(msgs)));
-    }
+    // After stop(), so a cut-off reply is saved as stopped.
+    if (keepCurrent) saveCurrent();
     const id = newChatId();
     setChatSessionId(id);
-    setActiveChat(id);
     setMsgs([]);
     setRecentsOpen(false);
     setRecentQuery("");
@@ -1069,9 +1102,12 @@ export function ChatTab() {
     if (chat.id !== chatSessionId) {
       stop();
       clearAttachments();
+      // The chat being left is saved first (as stopped, if it was mid-reply).
+      saveCurrent();
       setChatSessionId(chat.id);
-      setActiveChat(chat.id);
-      setMsgs(chat.messages);
+      // Tidied like a chat reopened after a restart: a reply cut short says
+      // so (with Try again) instead of an empty bubble or a "working" card.
+      setMsgs(tidy(chat.messages));
     }
     setRecentsOpen(false);
     setRecentQuery("");
@@ -1260,13 +1296,13 @@ export function ChatTab() {
                         key={chat.id}
                         className={cx(
                           "group flex items-stretch rounded-[10px] transition-colors",
-                          chat.id === activeChat ? "bg-white/[0.065]" : "hover:bg-white/[0.04]"
+                          chat.id === session ? "bg-white/[0.065]" : "hover:bg-white/[0.04]"
                         )}
                       >
                         <button
                           type="button"
                           onClick={() => openChat(chat)}
-                          aria-current={chat.id === activeChat ? "true" : undefined}
+                          aria-current={chat.id === session ? "true" : undefined}
                           className="min-w-0 flex-1 px-2.5 py-2 text-left"
                         >
                           <span className="block truncate text-[12px] font-medium text-izk-ink">{chat.title}</span>

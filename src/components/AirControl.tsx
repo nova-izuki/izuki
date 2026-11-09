@@ -315,6 +315,8 @@ export function AirControl({
     /** This pinch has clearly moved: from now on it's a drag. Until then the
      * pointer holds still, so a click stays a click. */
     let dragOut = false;
+    /** When a still pinch last told Rust it's alive (see `settling` below). */
+    let aliveAt = 0;
     /** A pinch that began on Izuki's own control: pressed here on release, no Windows click. */
     let ownDown: HTMLElement | null = null;
     /** Where the hand was when the pinch began (the drag step measures the hand itself). */
@@ -950,6 +952,12 @@ export function AirControl({
         pointer = { x: tx, y: ty };
         void api.airPointer(pointer.x, pointer.y).catch(() => undefined);
         if (grabbing) fake("pointermove", pointer);
+      } else if (now - aliveAt > 500) {
+        // A held pinch that holds still sends no pointer moves. Say it's
+        // alive, or the native watchdog lets go of the button after 3 s and
+        // a later drag moves with nothing pressed (airsafe.rs).
+        aliveAt = now;
+        void api.airAlive().catch(() => undefined);
       }
 
       // Over Izuki's own panel: the box is that control, exactly.

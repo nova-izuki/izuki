@@ -56,6 +56,15 @@ assert.equal(afterPin[0].id, 'old-9', 'a pinned chat stays first when another ch
 assert.equal(afterPin.find((s) => s.id === 'old-9')?.pinned, true, 'the pin survives an update');
 assert.equal(afterPin.filter((s) => s.id === 'old-9').length, 1, 'pinning does not duplicate the chat');
 assert.equal(pinSession(afterPin, 'old-9', false)[0].id, 'after-pin', 'unpinning restores newest-first order');
+// An old pinned chat with a full list of newer ones: unpinning keeps it, and
+// the oldest other unpinned chat makes room instead.
+let full = pinSession(long, 'old-0', true);
+for (let i = 0; i < RECENT_CHAT_LIMIT; i++) full = rememberSession(full, `new-${i}`, `New ${i}`, [msg('user', `new ${i}`)], 50_000 + i);
+const unpinned = pinSession(full, 'old-0', false);
+assert(unpinned.some((s) => s.id === 'old-0'), 'an unpinned old chat is never dropped');
+assert.equal(unpinned.length, RECENT_CHAT_LIMIT, 'the cap still holds');
+assert.equal(unpinned.at(-1).id, 'old-0', 'it goes back in age order (oldest last)');
+assert(!unpinned.some((s) => s.id === 'new-0'), 'the oldest other chat made room');
 assert.deepEqual(
   orderSessions([
     { id: 'a', title: 'A', at: 1, messages: [], pinned: true },

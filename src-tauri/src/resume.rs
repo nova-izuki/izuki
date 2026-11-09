@@ -18,6 +18,15 @@ const MAX_OBJECTIVE: usize = 4_000;
 const MAX_DONE: usize = 64;
 const MAX_DONE_ITEM: usize = 400;
 const MAX_FILE_BYTES: u64 = 256 * 1024;
+/// A checkpoint older than this isn't what anyone means by "keep going" now:
+/// resuming it would hand the screen to a task from another day.
+pub const MAX_AGE_MS: i64 = 6 * 60 * 60 * 1000;
+
+/// Too old to resume, or stamped by a clock that has since moved a long way.
+pub fn expired(task: &SavedTask, now_ms: i64) -> bool {
+    let age = now_ms.saturating_sub(task.stopped_at);
+    !(-MAX_AGE_MS..=MAX_AGE_MS).contains(&age)
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SavedTask {
@@ -160,6 +169,17 @@ mod tests {
         std::fs::write(path(&root), serde_json::to_vec(&wrong_version).unwrap()).unwrap();
         assert!(load(&root).is_none());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_checkpoint_from_another_day_has_expired() {
+        let task = |stopped_at| SavedTask { version: 1, objective: "Old".into(), done: vec![], stopped_at };
+        let now = 1_800_000_000_000;
+        assert!(!expired(&task(now - 60_000), now), "a minute ago resumes");
+        assert!(!expired(&task(now - MAX_AGE_MS), now), "right at the limit resumes");
+        assert!(expired(&task(now - MAX_AGE_MS - 1), now), "past the limit doesn't");
+        assert!(expired(&task(now - 3 * 24 * 60 * 60 * 1000), now), "days ago doesn't");
+        assert!(expired(&task(now + MAX_AGE_MS + 1), now), "a clock that jumped back a long way doesn't");
     }
 
     #[test]

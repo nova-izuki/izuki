@@ -457,6 +457,7 @@ pub fn run() {
             commands::air_arm,
             commands::air_resume,
             commands::air_safety,
+            commands::air_alive,
             commands::air_button,
             commands::air_scroll,
             commands::air_scroll_side,

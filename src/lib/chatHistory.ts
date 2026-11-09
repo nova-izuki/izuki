@@ -36,13 +36,17 @@ export function timeAgo(at: number, now = Date.now()): string {
   return new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** Pinned chats first, then the newest unpinned ones (pins are extra, never dropped). */
-export function orderSessions<T>(sessions: readonly ChatSession<T>[]): ChatSession<T>[] {
+/**
+ * Pinned chats first, then the newest unpinned ones (pins are extra, never
+ * dropped). `keep` is a chat that must survive the cap, such as one just
+ * unpinned: the oldest other unpinned chat makes room for it instead.
+ */
+export function orderSessions<T>(sessions: readonly ChatSession<T>[], keep?: string): ChatSession<T>[] {
   const pinned = sessions.filter((s) => s.pinned).sort((a, b) => b.at - a.at);
-  const recent = sessions
-    .filter((s) => !s.pinned)
-    .sort((a, b) => b.at - a.at)
-    .slice(0, RECENT_CHAT_LIMIT);
+  const unpinned = sessions.filter((s) => !s.pinned).sort((a, b) => b.at - a.at);
+  let recent = unpinned.slice(0, RECENT_CHAT_LIMIT);
+  const kept = keep === undefined ? undefined : unpinned.find((s) => s.id === keep);
+  if (kept && !recent.includes(kept)) recent = [...recent.slice(0, RECENT_CHAT_LIMIT - 1), kept];
   return [...pinned, ...recent];
 }
 
@@ -66,10 +70,11 @@ export function rememberSession<T>(
   return orderSessions([entry, ...sessions.filter((s) => s.id !== id)]);
 }
 
-/** Keep a conversation at the top (or put it back in age order). */
+/** Keep a conversation at the top (or put it back in age order, never dropping it). */
 export function pinSession<T>(sessions: readonly ChatSession<T>[], id: string, pinned = true): ChatSession<T>[] {
   return orderSessions(
-    sessions.map((s) => (s.id === id ? { ...s, pinned: pinned || undefined } : s))
+    sessions.map((s) => (s.id === id ? { ...s, pinned: pinned || undefined } : s)),
+    pinned ? undefined : id
   );
 }
 

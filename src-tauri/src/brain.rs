@@ -2687,7 +2687,7 @@ pub fn submit_voice_command_in(app: &AppHandle, store: &Arc<Store>, prompt: Stri
     // FL Studio: connecting it is Izuki's own setup, and FL's jobs need that
     // link — never worked out by clicking through FL's menus (that only ever
     // reached FL's MIDI list, empty without Izuki's cable).
-    let resumes = (is_keep_going(&prompt) || (is_yes(&prompt) && yes_resumes())).then(|| UNFINISHED.lock().as_ref().map(|(t, _)| t.clone())).flatten();
+    let resumes = resumes_waiting(&prompt).then(|| UNFINISHED.lock().as_ref().map(|(t, _)| t.clone())).flatten();
     // What Izuki said last: the conversation's, else the last screen task's.
     let last_said = recent
         .iter()
@@ -2724,7 +2724,7 @@ fn is_follow_on(said: &str) -> bool {
 /// follow-on. A "keep going" for a task that had to stop is left alone —
 /// that one resumes exactly where it stopped (UNFINISHED).
 fn with_what_came_before(prompt: &str) -> String {
-    if UNFINISHED.lock().is_some() && (is_keep_going(prompt) || is_yes(prompt)) {
+    if UNFINISHED.lock().is_some() && resumes_waiting(prompt) {
         return prompt.to_string();
     }
     let last = LAST_TASK.lock().clone();
@@ -3189,8 +3189,11 @@ fn submit_task(
 
     // "Keep going" after a task had to stop: pick it up where it left off.
     hydrate_unfinished();
-    let (prompt, resumed) = match UNFINISHED.lock().take() {
-        Some((task, done)) if is_keep_going(&prompt) || (is_yes(&prompt) && yes_resumes()) => (task, done),
+    let resumes = resumes_waiting(&prompt);
+    // A taken task is no longer waiting: its durable copy goes with it,
+    // before any action can fail; a fresh stop writes a fresh checkpoint.
+    let (prompt, resumed) = match take_unfinished() {
+        Some((task, done)) if resumes => (task, done),
         Some(t) => {
             // Something new — forget the old one.
             let _ = t;
@@ -3198,9 +3201,6 @@ fn submit_task(
         }
         None => (prompt, Vec::new()),
     };
-    // A taken task is no longer waiting. Clear its durable copy before any
-    // action can fail; a fresh stop writes a fresh checkpoint.
-    crate::resume::clear(&crate::store::data_dir()).ok();
     // Video classroom is a teaching pass, not an autonomous screen task. Its
     // pen overlay must survive until the frontend has spoken the explanation;
     // otherwise the marks disappear as soon as this backend plan returns.
@@ -4586,8 +4586,7 @@ pub fn cancel_task() {
     TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     crate::coach::stop();
     automation::request_abort();
-    UNFINISHED.lock().take();
-    crate::resume::clear(&crate::store::data_dir()).ok();
+    take_unfinished();
     answer_help(None);
 }
 
@@ -4744,6 +4743,39 @@ fn yes_resumes() -> bool {
         && UNFINISHED_AT.lock().is_some_and(|at| at.elapsed() < Duration::from_secs(120))
 }
 
+/// Whether this message resumes the task waiting for "keep going". A
+/// checkpoint from an earlier run needs the bare command ("keep going",
+/// "continue"): there "continue reading my essay" is a new request and a
+/// "yes" is about something else. A task stopped in this run also takes
+/// "keep going …" with more words, or a "yes" moments after it stopped.
+fn resumes_waiting(said: &str) -> bool {
+    if UNFINISHED_FROM_DISK.load(std::sync::atomic::Ordering::SeqCst) {
+        return is_bare_keep_going(said);
+    }
+    is_keep_going(said) || (is_yes(said) && yes_resumes())
+}
+
+/// The checkpoint on disk was taken or dropped in this run: it's never
+/// loaded again, even when Windows wouldn't let the file be removed, or a
+/// reader (buddy.rs) comes in between the take and the removal.
+static CHECKPOINT_TAKEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Drop the durable copy of the waiting task (the flag first, see above).
+fn drop_checkpoint() {
+    CHECKPOINT_TAKEN.store(true, std::sync::atomic::Ordering::SeqCst);
+    if let Err(error) = crate::resume::clear(&crate::store::data_dir()) {
+        eprintln!("[agent] couldn't remove the keep-going checkpoint (it won't be resumed): {error}");
+    }
+}
+
+/// Take the waiting task, if any; it's no longer waiting, on disk either.
+fn take_unfinished() -> Option<(String, Vec<String>)> {
+    CHECKPOINT_TAKEN.store(true, std::sync::atomic::Ordering::SeqCst);
+    let task = UNFINISHED.lock().take();
+    drop_checkpoint();
+    task
+}
+
 /// A task stopped partway: kept (with when) for "keep going".
 fn set_unfinished(task: (String, Vec<String>)) {
     if let Err(error) = crate::resume::save(&crate::store::data_dir(), &task.0, &task.1) {
@@ -4752,24 +4784,30 @@ fn set_unfinished(task: (String, Vec<String>)) {
     *UNFINISHED.lock() = Some(task);
     *UNFINISHED_AT.lock() = Some(std::time::Instant::now());
     UNFINISHED_FROM_DISK.store(false, std::sync::atomic::Ordering::SeqCst);
+    CHECKPOINT_TAKEN.store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
 /// Load a checkpoint left by a previous process. This is lazy so it works
-/// before the first task and never overwrites a live in-memory task.
+/// before the first task and never overwrites a live in-memory task. One
+/// from another day is dropped, not offered.
 fn hydrate_unfinished() {
-    if UNFINISHED.lock().is_some() {
+    if UNFINISHED.lock().is_some() || CHECKPOINT_TAKEN.load(std::sync::atomic::Ordering::SeqCst) {
         return;
     }
     let Some(saved) = crate::resume::load(&crate::store::data_dir()) else { return };
-    let age = chrono::Utc::now()
-        .timestamp_millis()
-        .saturating_sub(saved.stopped_at)
-        .clamp(0, 30 * 60 * 1000) as u64;
+    let now = chrono::Utc::now().timestamp_millis();
+    if crate::resume::expired(&saved, now) {
+        eprintln!("[agent] dropped a keep-going checkpoint from more than {} hours ago", crate::resume::MAX_AGE_MS / 3_600_000);
+        drop_checkpoint();
+        return;
+    }
+    let age = now.saturating_sub(saved.stopped_at).clamp(0, 30 * 60 * 1000) as u64;
     let at = std::time::Instant::now()
         .checked_sub(Duration::from_millis(age))
         .unwrap_or_else(std::time::Instant::now);
     let mut slot = UNFINISHED.lock();
-    if slot.is_none() && !saved.objective.trim().is_empty() {
+    // Checked again under the slot's lock: a take in between wins.
+    if slot.is_none() && !CHECKPOINT_TAKEN.load(std::sync::atomic::Ordering::SeqCst) && !saved.objective.trim().is_empty() {
         *slot = Some((saved.objective, saved.done));
         *UNFINISHED_AT.lock() = Some(at);
         UNFINISHED_FROM_DISK.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -4794,14 +4832,24 @@ pub fn unfinished_task() -> Option<String> {
 
 /// "Keep going", "continue", "carry on"…
 fn is_keep_going(said: &str) -> bool {
+    let s = keep_going_words(said);
+    KEEP_GOING.iter().any(|k| s == *k || s.starts_with(&format!("{k} ")))
+}
+
+/// Just the command, nothing after it ("keep going", not "continue reading
+/// my essay"): what a checkpoint from an earlier run needs.
+fn is_bare_keep_going(said: &str) -> bool {
+    KEEP_GOING.contains(&keep_going_words(said).as_str())
+}
+
+const KEEP_GOING: [&str; 11] = [
+    "keep going", "continue", "carry on", "go on", "resume", "finish it", "finish the rest",
+    "do the rest", "keep doing it", "next", "go ahead",
+];
+
+fn keep_going_words(said: &str) -> String {
     let s = said.trim().trim_end_matches(['.', '!', '?']).to_lowercase();
-    let s = s.trim_start_matches("okay ").trim_start_matches("ok ").trim_start_matches("please ");
-    [
-        "keep going", "continue", "carry on", "go on", "resume", "finish it", "finish the rest",
-        "do the rest", "keep doing it", "next", "go ahead",
-    ]
-    .iter()
-    .any(|k| s == *k || s.starts_with(&format!("{k} ")))
+    s.trim_start_matches("okay ").trim_start_matches("ok ").trim_start_matches("please ").to_string()
 }
 
 /// "Yes", "yeah", "sure"… — answering the question Izuki just asked ("want me
@@ -5647,6 +5695,13 @@ mod speed_tests {
         }
         assert!(!is_keep_going("open chrome"));
         assert!(!is_keep_going("what's next on my calendar"));
+        // A checkpoint from an earlier run takes only the bare command.
+        for said in ["keep going", "Keep going.", "okay continue", "please carry on", "next!"] {
+            assert!(is_bare_keep_going(said), "{said}");
+        }
+        assert!(!is_bare_keep_going("continue reading my essay"));
+        assert!(!is_bare_keep_going("go ahead and send it to Sam"));
+        assert!(!is_bare_keep_going("yes"));
     }
 
     #[test]
