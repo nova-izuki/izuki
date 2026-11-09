@@ -51,6 +51,14 @@ export function WindhawkCard() {
       if (next.installed) setNote("Windhawk is installed. Open it, go to Explore, and pick a mod.");
     });
 
+  // An install started before this card opened: check back until it's done.
+  const installingElsewhere = !!s?.installing && busy !== "install";
+  useEffect(() => {
+    if (!installingElsewhere) return;
+    const t = window.setInterval(() => void api.windhawkStatus().then(setS).catch(() => undefined), 5000);
+    return () => window.clearInterval(t);
+  }, [installingElsewhere]);
+
   const mods = s?.mods ?? [];
   const shown = all ? mods : mods.slice(0, FIRST);
 

@@ -161,7 +161,10 @@ pub fn parse(said: &str) -> Option<Ask> {
     if has(" split my screen") || has(" split the screen") || (has(" split screen") && windows) {
         return Some(Ask::Arrange(Kind::Side));
     }
-    if has(" focus layout") {
+    // "Focus layout" on its own, or for the windows; not "a focus layout
+    // for my website".
+    let short = s.split_whitespace().count() <= 5 && !has(" for ") && !has(" in my ") && !has(" on my ");
+    if has(" focus layout") && (windows || short) {
         return Some(Ask::Arrange(Kind::Focus));
     }
     // About the windows, and asked to arrange them: "a grid layout for my
@@ -498,6 +501,9 @@ mod tests {
         assert_eq!(parse("does Mario Kart have split screen"), None, "a game's mode");
         assert_eq!(parse("set up split screen for Minecraft"), None);
         assert_eq!(parse("put my windows in a grid layout"), Some(Ask::Arrange(Kind::Grid)));
+        assert_eq!(parse("make a focus layout for my website"), None, "a website's layout");
+        assert_eq!(parse("switch to focus layout"), Some(Ask::Arrange(Kind::Focus)));
+        assert_eq!(parse("put my windows in the focus layout"), Some(Ask::Arrange(Kind::Focus)));
     }
 
     #[cfg(windows)]
