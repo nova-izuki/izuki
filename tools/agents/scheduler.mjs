@@ -384,10 +384,19 @@ export function redistribute(tasks, states, now) {
  * prompt again.
  */
 /**
+ * (above) A task whose label and hidden state name different agents: a
+ * reassignment that only partly reached GitHub. Neither agent may start
+ * it, and the coordinator blocks it for the owner, whatever order of
+ * writes failed to leave it that way.
+ *
  * A reassignment applied to the task record a coordinator pass keeps in
  * memory. The rest of the pass plans by `agent`, so it must name the new
  * agent, or the same pass hands the task back to the one that just failed it.
  */
+export function mismatched(t) {
+  return t.open && ['assigned', 'in-progress', 'review'].includes(t.status) && !!t.state.agent && t.agent !== 'any' && t.state.agent !== t.agent;
+}
+
 export function reassigned(t, to) {
   t.agent = to;
   t.labels = [...(t.labels || []).filter((l) => !l.startsWith('agent:')), `agent:${to}`];

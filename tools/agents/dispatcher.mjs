@@ -21,7 +21,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, writeState, unavailable, counts, orphans, PRIORITY } from './scheduler.mjs';
+import { describe, writeState, unavailable, counts, orphans, mismatched, PRIORITY } from './scheduler.mjs';
 import * as gh from './github.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..');
@@ -239,7 +239,8 @@ function liveRuns() {
  */
 function recoverOrphans(tasks) {
   if (!tasks.some((t) => t.open && t.status === 'in-progress' && t.state.agent === 'claude')) return;
-  for (const o of orphans(tasks.filter((t) => gh.trusted(t.author)), liveRuns(), Date.now(), HEARTBEAT_MS)) {
+  // A task whose label names the other agent is left for the coordinator to block.
+  for (const o of orphans(tasks.filter((t) => gh.trusted(t.author) && !mismatched(t)), liveRuns(), Date.now(), HEARTBEAT_MS)) {
     const t = tasks.find((x) => x.number === o.task);
     let stopped = 0;
     for (const pid of o.stop) {
@@ -253,7 +254,7 @@ function recoverOrphans(tasks) {
 
 function nextTask(tasks) {
   return tasks
-    .filter((t) => t.open && t.status === 'assigned' && t.state.agent === 'claude' && gh.trusted(t.author))
+    .filter((t) => t.open && t.status === 'assigned' && t.state.agent === 'claude' && !mismatched(t) && gh.trusted(t.author))
     .sort((a, b) => PRIORITY[a.priority] - PRIORITY[b.priority] || a.number - b.number)[0];
 }
 

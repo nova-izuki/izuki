@@ -6,7 +6,7 @@
 // It never runs anything from an issue's text: tasks are instructions for an
 // agent, and only accounts with write access may give them.
 import fs from 'node:fs';
-import { describe, writeState, agentStates, performance, plan, recover, reassigned, redistribute, classifyFailure, productivity, compose, WEIGHTED_ASSIGNMENT, AGENTS } from './scheduler.mjs';
+import { describe, writeState, agentStates, performance, plan, recover, reassigned, mismatched, redistribute, classifyFailure, productivity, compose, WEIGHTED_ASSIGNMENT, AGENTS } from './scheduler.mjs';
 import * as gh from './github.mjs';
 
 const DRY = process.argv.includes('--dry-run');
@@ -46,6 +46,11 @@ each('untrusted', tasks.filter((t) => t.open && !gh.trusted(t.author) && !t.labe
     gh.comment(t.number, 'The agent bridge only takes tasks from accounts with write access to this repository. This one is ignored.');
   });
 });
+
+// A half-finished reassignment (the label and the hidden record name
+// different agents) is blocked for the owner before any step below can hand
+// it to either agent, whichever GitHub write failed to leave it that way.
+each('reconcile', tasks.filter(mismatched), (t) => update(t, 'blocked', {}, `This task's label says **${t.agent}**, but the bridge's record says **${t.state.agent}**: a reassignment only partly reached GitHub. It's blocked so that neither agent starts it. To fix it, set the \`agent:\` label to the one who should do it, then set \`status:queued\`.`));
 
 function update(t, status, statePatch, note) {
   const state = { ...t.state, ...statePatch };

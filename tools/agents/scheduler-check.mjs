@@ -1,6 +1,6 @@
 // The bridge scheduler's decisions, checked without GitHub or agents.
 import assert from 'node:assert/strict';
-import { readState, writeState, describe, overlaps, agentStates, performance, score, plan, recover, reassigned, unavailable, counts, redistribute, classifyFailure, orphans, metrics, compose, productivity, WEIGHTS, STALE_MS } from './scheduler.mjs';
+import { readState, writeState, describe, overlaps, agentStates, performance, score, plan, recover, reassigned, mismatched, unavailable, counts, redistribute, classifyFailure, orphans, metrics, compose, productivity, WEIGHTS, STALE_MS } from './scheduler.mjs';
 
 const issue = (number, labels, body = '', extra = {}) => ({ number, title: `Task ${number}`, labels, body, author: { login: 'owner' }, state: 'OPEN', createdAt: '2026-11-03T08:00:00Z', ...extra });
 const trusted = (login) => login === 'owner';
@@ -166,6 +166,13 @@ const passedOn = reassigned(requeued, recover(flexible, 'timeout').to);
 assert.equal(passedOn.agent, 'freebuff');
 assert.deepEqual(passedOn.labels.filter((l) => l.startsWith('agent:')), ['agent:freebuff'], 'one agent label, the new one');
 assert.deepEqual(plan([passedOn], agentStates([], now), {}, trusted).map((p) => p.agent), ['freebuff'], 'the same pass assigns it to the new agent');
+// A reassignment that only partly reached GitHub (label and record disagree) is frozen.
+const half = (status, label, agent) => describe(issue(42, ['agent-task', `status:${status}`, `agent:${label}`], writeState('h', { agent })));
+assert(mismatched(half('in-progress', 'freebuff', 'claude')), 'label freebuff, record claude, running');
+assert(mismatched(half('assigned', 'claude', 'freebuff')));
+assert(!mismatched(half('assigned', 'claude', 'claude')), 'they agree');
+assert(!mismatched(half('queued', 'freebuff', 'claude')), 'queued: assignment rewrites the record from the label');
+assert(!mismatched(half('assigned', 'any', 'claude')), 'an any-agent label carries no claim');
 assert.equal(recover(failing('claude', ['failed', 'failed', 'failed']), 'ci-failed').action, 'block');
 
 // An agent that can't work (a usage limit) isn't a failed task. The result
