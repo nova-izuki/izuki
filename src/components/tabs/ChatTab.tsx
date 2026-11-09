@@ -1516,7 +1516,18 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
                   <p className="izk-chat-sub">Ask a question, work through a problem, or point at something on your screen.</p>
                 </div>
               </div>
+              <div className="w-full max-w-[460px]">
+                <AirToggle variant="panel" />
+              </div>
               <div className="izk-chat-ideas flex flex-wrap justify-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void send("Check what's taking up space on my PC. Explain the highlights simply and tell me what's safe to clear.", false, false, [], [], false)}
+                  className="izk-pill izk-chat-idea izk-no-drag h-auto border-cyan-300/25 bg-cyan-400/10 px-3 py-1.5 text-left text-[11.5px] text-cyan-100"
+                  title="Look at this PC's drives and folders; nothing is deleted"
+                >
+                  🩺 PC checkup
+                </button>
                 {ideas.map((idea) => (
                   <button
                     key={idea.label}

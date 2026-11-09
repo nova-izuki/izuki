@@ -28,7 +28,7 @@ const HAND_MOVES: Array<[string, string]> = [
  * safe default; Both is deliberately disabled until the native Eye owner
  * verifies simultaneous input.
  */
-export function AirToggle({ variant = "chip", className }: { variant?: "chip" | "mini"; className?: string }) {
+export function AirToggle({ variant = "chip", className }: { variant?: "chip" | "mini" | "panel"; className?: string }) {
   const [onNow, setOn] = useState<boolean | null>(null);
   const [mode, setMode] = useState<AirMode>("hand");
   const [open, setOpen] = useState(false);
@@ -92,6 +92,8 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
 
   const stopNow = () => {
     setOpen(false);
+    current.current = false;
+    setOn(false);
     void api.airStop().catch(() => undefined);
     void emit(EV.patchSettings, { air_enabled: false });
   };
@@ -211,6 +213,91 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
       </span>
     </span>
   );
+
+  if (variant === "panel") {
+    return (
+      <span
+        ref={box}
+        className={cx(
+          "izk-no-drag block w-full rounded-[13px] border border-white/10 bg-white/[0.035] p-2.5 text-left",
+          className
+        )}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="flex items-center justify-between gap-2">
+          <span className="flex min-w-0 items-center gap-2 text-[11.5px] font-semibold text-izk-ink">
+            <span aria-hidden="true">{icon}</span>
+            <span className="truncate">{lane} control</span>
+            <span className={cx("rounded-full px-1.5 py-0.5 text-[9px] font-bold tracking-wide", onNow ? "bg-cyan-400/20 text-cyan-200" : "bg-white/8 text-izk-muted")}>
+              {onNow ? "ON" : "OFF"}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={flip}
+            className={cx(
+              "izk-pill shrink-0 px-2.5 py-1 text-[10.5px] font-semibold",
+              onNow ? "border-cyan-300/40 text-cyan-100" : "text-izk-ink"
+            )}
+          >
+            {onNow ? "Turn off" : "Turn on"}
+          </button>
+        </span>
+        <span className="mt-2 grid grid-cols-3 gap-1.5" role="group" aria-label="AIR control mode">
+          {MODES.map((m) => {
+            const disabled = m.key === "both";
+            const selected = !disabled && mode === m.key;
+            return (
+              <button
+                key={m.key}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                disabled={disabled}
+                title={m.note}
+                onClick={() => !disabled && choose(m.key as AirMode)}
+                className={cx(
+                  "flex min-w-0 items-center justify-center gap-1 rounded-[8px] border px-1.5 py-1.5 text-[10px] font-semibold transition-colors",
+                  disabled
+                    ? "cursor-not-allowed border-white/6 text-izk-muted/40"
+                    : selected
+                      ? "border-cyan-300/50 bg-cyan-400/12 text-cyan-100"
+                      : "border-white/8 text-izk-muted hover:bg-white/6 hover:text-izk-ink"
+                )}
+              >
+                <span aria-hidden="true">{m.icon}</span>
+                <span className="truncate">{m.key === "both" ? "Both" : m.key === "eye" ? "Eye" : "Hand"}</span>
+              </button>
+            );
+          })}
+        </span>
+        <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-izk-muted">
+          <button type="button" onClick={() => setGuide((v) => !v)} className="font-medium text-izk-ink/85 hover:text-izk-ink">
+            {guide ? "Hide hand moves" : "Hand moves"}
+          </button>
+          {onNow && (
+            <button type="button" onClick={stopNow} className="font-medium text-rose-300 hover:text-rose-200">
+              Stop Air now
+            </button>
+          )}
+          <button type="button" onClick={openSettings} className="font-medium hover:text-izk-ink">
+            Air settings →
+          </button>
+        </span>
+        {guide && (
+          <span role="group" aria-label="Hand gestures" className="mt-2 block rounded-[8px] bg-white/[0.04] px-2 py-1.5">
+            {HAND_MOVES.map(([how, what]) => (
+              <span key={how} className="flex items-baseline gap-2 py-0.5 text-[10px] leading-snug">
+                <span className="w-[92px] shrink-0 text-izk-ink/85">{how}</span>
+                <span className="text-izk-muted">{what}</span>
+              </span>
+            ))}
+          </span>
+        )}
+      </span>
+    );
+  }
 
   if (variant === "mini") {
     return (
