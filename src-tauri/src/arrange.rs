@@ -124,7 +124,7 @@ pub enum Ask {
 /// "grid layout", "focus layout", "undo the window layout". `None` for
 /// anything else, and for questions about how to do it ("how do I…").
 pub fn parse(said: &str) -> Option<Ask> {
-    let s = format!(
+    let mut s = format!(
         " {} ",
         said.to_lowercase()
             .replace(['’', '\''], "")
@@ -135,6 +135,13 @@ pub fn parse(said: &str) -> Option<Ask> {
             .collect::<Vec<_>>()
             .join(" ")
     );
+    // "Hey Nova, …" is a wake phrase, not part of the request.
+    for wake in [" hey nova ", " hi nova ", " ok nova ", " okay nova ", " hey izuki ", " nova ", " izuki "] {
+        if let Some(rest) = s.strip_prefix(wake) {
+            s = format!(" {rest}");
+            break;
+        }
+    }
     let has = |w: &str| s.contains(w);
     if [" how do", " how to", " how can i", " what is", " whats ", " why "].iter().any(|w| has(w)) {
         return None;
@@ -503,6 +510,8 @@ mod tests {
         assert_eq!(parse("put my windows in a grid layout"), Some(Ask::Arrange(Kind::Grid)));
         assert_eq!(parse("make a focus layout for my website"), None, "a website's layout");
         assert_eq!(parse("switch to focus layout"), Some(Ask::Arrange(Kind::Focus)));
+        assert_eq!(parse("Hey Nova, focus layout right now"), Some(Ask::Arrange(Kind::Focus)));
+        assert_eq!(parse("Izuki focus layout please"), Some(Ask::Arrange(Kind::Focus)));
         assert_eq!(parse("put my windows in the focus layout"), Some(Ask::Arrange(Kind::Focus)));
     }
 
