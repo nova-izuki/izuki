@@ -790,4 +790,6 @@ export interface AirSafety {
   ready: boolean;
   /** The emergency key combination, as shown ("Ctrl+Alt+Shift+X"). */
   stop_key: string;
+  /** This build lets the eye lane move the real mouse (false: the eye cursor is drawn only). */
+  eye_mouse: boolean;
 }
