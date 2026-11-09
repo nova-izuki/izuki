@@ -65,6 +65,9 @@ export function parseStorageReport(text: string): StorageReportData | null {
     });
   }
   if (!drives.length) return null;
+  const native = /^[A-Z]: has [\d.]+ (?:MB|GB|TB) free of [\d.]+ (?:MB|GB|TB)/.test(clean)
+    && /(?:Your own files I only show|Say “open apps and features”)/.test(clean);
+  if (!native) return null;
 
   const inside: Array<{ name: string; items: string[] }> = [];
   const insideMatches = clean.matchAll(/Biggest inside ([^:]+):\s+(.+?)\.(?:\s|$)/gi);
