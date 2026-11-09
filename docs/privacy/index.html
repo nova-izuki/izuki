@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Izuki Privacy Policy — What Stays on Your PC and What Leaves It</title>
+  <meta name="description" content="How Izuki, the free AI assistant for Windows, handles your screen, voice, keys and data: what stays on your PC, what goes to the AI service you choose, and how to delete it." />
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#04050c" />
+  <link rel="canonical" href="https://nova-izuki.github.io/izuki/privacy/" />
+  <link rel="icon" type="image/png" sizes="96x96" href="../icon-96.png" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Izuki" />
+  <meta property="og:title" content="Izuki privacy policy" />
+  <meta property="og:description" content="What stays on your PC, what goes to the AI you choose, and how to delete it." />
+  <meta property="og:url" content="https://nova-izuki.github.io/izuki/privacy/" />
+  <meta property="og:image" content="https://nova-izuki.github.io/izuki/og.png" />
+  <link rel="stylesheet" href="../shared/legal.css" />
+</head>
+<body>
+  <nav aria-label="Main navigation"><a class="brand" href="../"><img src="../icon-96.png" width="34" height="34" alt="" /> IZUKI</a><a class="nav-dl" href="../#trust">Is it safe?</a></nav>
+  <main>
+    <header>
+      <div class="eyebrow">Privacy policy</div>
+      <h1>Your screen, your keys, your PC.</h1>
+      <p class="updated">Last updated: 9 November 2026 · applies to the Izuki app for Windows, its phone and TV companions, and this website.</p>
+      <p>Izuki is a free, open-source assistant made by Solomon Nwachukwu (“we”, “us”). This page says plainly what Izuki keeps, what it sends and to whom, and how you stay in control. Because Izuki is open source, you can check every line of it on <a href="https://github.com/nova-izuki/izuki">GitHub</a>.</p>
+      <div class="summary">
+        <h2>The short version</h2>
+        <ul>
+          <li><b>No Izuki account, no ads, no analytics.</b> We don't receive your screen, your voice, your chats or your keys.</li>
+          <li><b>Your requests go to the AI service you pick</b>, with your own key: a screenshot only when the task needs your screen.</li>
+          <li><b>Hearing your voice happens on your PC</b> unless you switch on <i>Sharper hearing</i>.</li>
+          <li><b>Everything Izuki remembers is on your PC</b>, where you can see it and delete it.</li>
+          <li><b>Extras send data only once you turn them on</b>: linked apps, your phone, your TV, cloud voices.</li>
+        </ul>
+      </div>
+      <ul class="toc" aria-label="On this page">
+        <li><a href="#stays">What stays on your PC</a></li>
+        <li><a href="#what-leaves">What leaves your PC</a></li>
+        <li><a href="#extras">Extras you switch on</a></li>
+        <li><a href="#us">What we receive</a></li>
+        <li><a href="#website">This website</a></li>
+        <li><a href="#control">Your controls</a></li>
+        <li><a href="#children">Children</a></li>
+        <li><a href="#changes">Changes &amp; contact</a></li>
+      </ul>
+    </header>
+
+    <section id="stays">
+      <h2>What stays on your PC</h2>
+      <p>Izuki keeps its data in your Windows user folder, at <code>%APPDATA%\Izuki</code>, and in the app's own storage. None of it is uploaded to us.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th scope="col">What</th><th scope="col">Why it's kept</th></tr></thead>
+        <tbody>
+          <tr><td><b>Settings and AI keys</b> (<code>settings.json</code>)</td><td>So Izuki can talk to the AI and apps you set up. Keys are stored as plain text in your user folder, so anyone who can sign in to your Windows account could read them; see <a href="../security/#keys">keeping your keys safe</a>.</td></tr>
+          <tr><td><b>Memories</b> (<code>memories.json</code>)</td><td>Things you asked Izuki to remember. Listed in Settings, where you can delete any of them or all of them. Izuki never saves passwords, keys or card numbers as memories, and never saves test answers.</td></tr>
+          <tr><td><b>Chats, notes, reminders, study logs</b></td><td>Your history, so you can search it and pick it up again.</td></tr>
+          <tr><td><b>Logs</b> (<code>logs\izuki.log</code>)</td><td>To diagnose problems. Keys, emails, phone numbers and your Windows user name are scrubbed from error reports.</td></tr>
+          <tr><td><b>Missed wake-word clips</b> (<code>debug\</code>)</td><td>When “Hey Nova” isn't recognised, the last few short clips (a dozen at most) are kept to help improve recognition. They never leave your PC.</td></tr>
+          <tr><td><b>Screenshots for a request</b></td><td>Taken when a request needs your screen, held in memory for that request, and not saved to disk.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="what-leaves">
+      <h2>What leaves your PC, and where it goes</h2>
+      <h3>To the AI service you choose</h3>
+      <p>Izuki doesn't have an AI of its own: you connect one with your own key (for example Google Gemini, Groq, NVIDIA, OpenRouter, Mistral or Anthropic), or run one on your PC with Ollama. When you ask something, Izuki sends that service:</p>
+      <ul>
+        <li>what you asked, and the recent turns of the conversation;</li>
+        <li><b>a screenshot</b>, only when the request needs your screen (plain conversation sends text only), with the names of the buttons and fields on screen;</li>
+        <li>memories that matter to the request, and files or pictures you attached.</li>
+      </ul>
+      <p class="note">That service's own privacy policy and terms apply to what it receives. <b>Free tiers often let the provider keep or use what you send</b> (Google's free Gemini API uses it to improve Google's products, and NVIDIA's free trial says requests may be logged), so don't keep anything on screen you wouldn't want them to see while you ask. A model on your PC through Ollama keeps everything local.</p>
+      <h3>Hearing and speaking</h3>
+      <ul>
+        <li>The wake word and speech-to-text run <b>on your PC</b>. With <i>Sharper hearing</i> on, what you say to Izuki is also sent to your Gemini or Groq key to transcribe. You can switch it off in Talk settings.</li>
+        <li>The default natural voice runs on your PC. If you pick a cloud voice (Gemini, Groq, Azure or ElevenLabs), the text being spoken goes to that service.</li>
+      </ul>
+      <h3>The web</h3>
+      <p>When you ask Izuki to search or read a page, your search words go to search services (such as Google through your Gemini key, Brave, Wikipedia, DuckDuckGo or Bing), and pages are fetched directly from the sites, like a browser would.</p>
+      <h3>Updates and downloads</h3>
+      <p>Izuki asks GitHub for its newest version and downloads updates from GitHub. On-device speech and voice models are downloaded once from Hugging Face, from a fixed list of sources, and then run on your PC.</p>
+    </section>
+
+    <section id="extras">
+      <h2>Extras that send data only once you turn them on</h2>
+      <ul>
+        <li><b>Your apps</b> (Gmail, Calendar, Slack and others): linked through <a href="https://composio.dev/privacy">Composio</a> with your own Composio key. Izuki reads what a request needs, and asks before it sends, posts or deletes anything.</li>
+        <li><b>Your phone and TV</b>: linking one copies your AI settings, keys and memories to that device so it works on its own. <b>Call Izuki</b> opens a temporary Cloudflare “quick tunnel” (encrypted https, behind a long secret link) so your phone can reach your PC; your phone's own speech recognition, which may be run by its maker (Google or Apple), hears you on that page.</li>
+        <li><b>Discord and Telegram</b>: messages go through the bot you set up, to your PC.</li>
+        <li><b>Lecture and call notes</b>: after you say yes, short pieces of the audio go to the speech-to-text service you have a key for (Groq's Whisper, or Gemini) to be written down. Only the words are kept, never the audio.</li>
+        <li><b>The browser extension</b>: see its own <a href="../extension/privacy.html">extension privacy policy</a>.</li>
+      </ul>
+    </section>
+
+    <section id="us">
+      <h2>What we receive</h2>
+      <p><b>Nothing, automatically.</b> There's no account, no analytics and no telemetry. Izuki can send error reports with keys, emails, phone numbers and your user name removed, but no report destination is switched on, so reports stay in your logs folder. If that ever changes, this page will say so first, and you can turn reports off in Settings → <i>Something wrong?</i>.</p>
+      <p>We only see what you choose to send us: an email to <a href="mailto:izuki.hq@gmail.com">izuki.hq@gmail.com</a>, or an issue you open on GitHub (which is public).</p>
+      <p>We don't sell or share personal data, because we don't collect it.</p>
+    </section>
+
+    <section id="website">
+      <h2>This website</h2>
+      <p>This site has <b>no analytics, no ads and no tracking cookies</b>. Like any website, it loads some things from other services, which see your IP address when they do: fonts from Google Fonts, the Earth photo from Unsplash, and release notes from GitHub. Your browser may remember small preferences in its own storage; that never leaves your browser. The site is hosted on GitHub Pages.</p>
+    </section>
+
+    <section id="control">
+      <h2>Your controls</h2>
+      <ul>
+        <li><b>See and delete memories</b> in Settings, one at a time or all at once. Say “forget …” to remove one.</li>
+        <li><b>Delete chats</b> one by one, or all at once from Recent chats.</li>
+        <li><b>Remove a key</b> by clearing it in Settings, and revoke it on the provider's site if you think it leaked.</li>
+        <li><b>Unlink apps, your phone or your TV</b> in Settings at any time.</li>
+        <li><b>Turn off error reports</b> in Settings → <i>Something wrong?</i>.</li>
+        <li><b>Remove everything</b>: uninstall Izuki, then delete the folder <code>%APPDATA%\Izuki</code>.</li>
+      </ul>
+    </section>
+
+    <section id="children">
+      <h2>Children</h2>
+      <p>Izuki isn't made for children under 13. The AI services you connect have their own age rules, often 13 or older, and 18 or older for some.</p>
+    </section>
+
+    <section id="changes">
+      <h2>Changes and contact</h2>
+      <p>If Izuki starts handling data differently, we'll update this page and its date before that version ships, and say so in the release notes. Questions or requests: <a href="mailto:izuki.hq@gmail.com">izuki.hq@gmail.com</a>.</p>
+    </section>
+  </main>
+  <footer><a href="../">Izuki home</a> · <a href="../terms/">Terms of use</a> · <a href="../security/">Security &amp; verify your download</a> · <a href="../help/">Help</a> · <a href="https://github.com/nova-izuki/izuki">Source on GitHub</a></footer>
+</body>
+</html>

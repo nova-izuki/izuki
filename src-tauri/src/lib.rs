@@ -2,6 +2,7 @@
 
 pub mod android;
 pub mod apps;
+pub mod arrange;
 pub mod attachments;
 pub mod briefing;
 pub mod browser;
@@ -62,6 +63,7 @@ pub mod airsafe;
 pub mod daw;
 pub mod tweaks;
 pub mod winlook;
+pub mod windhawk;
 pub mod research;
 pub mod accounts;
 pub mod lecture;
@@ -494,6 +496,14 @@ pub fn run() {
             commands::tweak_pack,
             commands::looks_status,
             commands::look_apply,
+            commands::look_vibe,
+            commands::window_layout,
+            commands::window_layout_undo,
+            commands::window_layout_can_undo,
+            commands::windhawk_status,
+            commands::windhawk_install,
+            commands::windhawk_open,
+            commands::windhawk_mod,
             commands::look_accent,
             commands::look_switch,
             commands::look_undo,

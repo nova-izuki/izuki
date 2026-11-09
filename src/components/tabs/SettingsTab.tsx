@@ -827,6 +827,17 @@ function FollowCard() {
       >
         All links · nova-izuki.github.io/izuki
       </button>
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-izk-muted">
+        {([
+          ["Privacy", "privacy"],
+          ["Terms", "terms"],
+          ["Security & verify your download", "security"],
+        ] as const).map(([label, page]) => (
+          <button key={page} type="button" onClick={() => void openLink(`https://nova-izuki.github.io/izuki/${page}/`)} className="izk-no-drag underline-offset-2 hover:text-izk-ink hover:underline">
+            {label}
+          </button>
+        ))}
+      </div>
     </Section>
   );
 }

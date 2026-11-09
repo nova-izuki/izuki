@@ -731,6 +731,33 @@ export interface CodingUpdate {
 }
 
 /** A Windows tweak (tweaks.rs): a switch, read live from Windows. */
+/** A mood in plain words, matched to a look (winlook::vibe). */
+export interface LookVibe {
+  preset: string;
+  name: string;
+  /** A tweak pack that suits it ("gamer", "clean", "power"). */
+  pack: string | null;
+  /** The word that decided it. */
+  word: string;
+}
+
+/** A Windhawk mod worth starting with (windhawk.rs). */
+export interface WindhawkMod {
+  id: string;
+  name: string;
+  what: string;
+  win11: boolean;
+}
+
+export interface WindhawkStatus {
+  installed: boolean;
+  path: string | null;
+  can_install: boolean;
+  mods: WindhawkMod[];
+  /** An install started earlier is still running. */
+  installing: boolean;
+}
+
 export interface WindowsTweak {
   id: string;
   label: string;
@@ -1023,6 +1050,17 @@ export const api = {
   tweakSet: (id: string, on: boolean) => call<WindowsTweak[]>("tweak_set", { id, on }, () => []),
   looksStatus: () => call<LooksStatus | null>("looks_status", undefined, () => null),
   lookApply: (id: string, wallpaper: boolean) => call<LooksStatus | null>("look_apply", { id, wallpaper }, () => null),
+  /** The look for a mood in plain words ("cozy", "cyberpunk"); null when none fits. */
+  lookVibe: (text: string) => call<LookVibe | null>("look_vibe", { text }, () => null),
+  /** Arrange this screen's windows: "side", "focus", "columns" or "grid". */
+  windowLayout: (kind: "side" | "focus" | "columns" | "grid") => call<string>("window_layout", { kind }, () => "Arranging windows works in the Windows app."),
+  windowLayoutUndo: () => call<string>("window_layout_undo", undefined, () => ""),
+  /** An arrangement (made here or by voice) can be put back. */
+  windowLayoutCanUndo: () => call<boolean>("window_layout_can_undo", undefined, () => false),
+  windhawkStatus: () => call<WindhawkStatus>("windhawk_status", undefined, () => ({ installed: false, path: null, can_install: false, mods: [], installing: false })),
+  windhawkInstall: () => call<WindhawkStatus>("windhawk_install", undefined, () => ({ installed: false, path: null, can_install: false, mods: [], installing: false })),
+  windhawkOpen: () => call<void>("windhawk_open", undefined, () => undefined),
+  windhawkMod: (id: string) => call<void>("windhawk_mod", { id }, () => undefined),
   lookAccent: (colour: string) => call<LooksStatus | null>("look_accent", { colour }, () => null),
   lookSwitch: (name: string, on: boolean) => call<LooksStatus | null>("look_switch", { name, on }, () => null),
   lookUndo: () => call<LooksStatus | null>("look_undo", undefined, () => null),
