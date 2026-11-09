@@ -255,10 +255,13 @@ This replaces the two ownership sections below (kept for history).
     recorded PR, its roadmap key), and changing it from outside can leave
     two runs on it or merge an old PR.
     - Comment on the issue instead.
-    - The bridge itself moves a task to the other agent after two failed
-      attempts.
-    - A safe, atomic `/takeover` command is issue #49. Until it lands, an
-      urgent case goes to the owner.
+    - A task opened as `agent:any` is moved to the other agent by the bridge
+      itself after two failed attempts. A task opened for a named agent is
+      retried and, after a third failure, blocked; it is never reassigned
+      automatically.
+    - A safe, atomic `/takeover` command is issue #49. Until it lands, a
+      stuck or blocked task for a named agent, or any urgent case, goes to
+      the owner.
 - **Branches:** each assistant works in its own worktree and branch
   (`claude/…`, `freebuff/…`), never in the other's. A PR goes into
   `milestone-196` and merges only with CI green and every review thread
