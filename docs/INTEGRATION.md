@@ -11,15 +11,18 @@ unfinished ships just because it exists.
 
 Last updated: 2026-11-08 (Claude): PRs #33, #35 and #36 merged; 1.0.198 prepared in release PR #38. It counts as released only after the post-merge checks in the checklist below pass.
 
-## Lanes (owner, 2026-11-08)
+## Who does what (owner, 2026-11-08, latest)
 
-- **Claude Code:** Eye Control (tracking, calibration, cursor, emergency
-  stop, real Windows testing); the agent bridge (`tools/agents/`); releases
-  and version files.
-- **Freebuff:** everything else in the product, including computer control,
-  Smart Screen Actions, browser and application control, documents, Smart
-  Vision, Developer Mode, design and Chat. It works on `freebuff/continuation`.
-- **Codex:** its assigned tasks, when available.
+- **Two developers:** Claude Code and Freebuff. Either may work on any part
+  of Izuki. Ownership is per GitHub issue, not per area. Claim an issue
+  before starting, and agree on its comments before touching files the
+  other holds (AGENTS.md, "Two developers, one app").
+- **Claude Code:** Eye Control first. Claude is also the release
+  coordinator: version files and release notes.
+- **Freebuff:** works on `freebuff/continuation` (or its own `freebuff/…`
+  branches).
+- **Codex:** paused. Don't assign it work. Its finished work is merged and
+  listed below.
 
 ## Work
 
