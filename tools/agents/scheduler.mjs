@@ -106,7 +106,11 @@ export function describe(issue) {
     body,
     author: issue.author?.login || issue.author || '',
     open: (issue.state || 'OPEN').toUpperCase() === 'OPEN',
+    // The labels themselves, for the steps that check one (untrusted, a reassignment).
+    labels,
     status: label(t, 'status:') || 'queued',
+    // false when the status label is missing (the status above is then a default).
+    statusLabelled: !!label(t, 'status:'),
     agent: label(t, 'agent:') || 'any',
     priority: label(t, 'priority:') || 'normal',
     kind: label(t, 'kind:') || 'feature',
@@ -381,6 +385,27 @@ export function redistribute(tasks, states, now) {
  * approach, hand it to the other agent, or stop and escalate. Never the same
  * prompt again.
  */
+/**
+ * (above) A task whose label and hidden state name different agents: a
+ * reassignment that only partly reached GitHub. Neither agent may start
+ * it, and the coordinator blocks it for the owner, whatever order of
+ * writes failed to leave it that way.
+ *
+ * A reassignment applied to the task record a coordinator pass keeps in
+ * memory. The rest of the pass plans by `agent`, so it must name the new
+ * agent, or the same pass hands the task back to the one that just failed it.
+ */
+export function mismatched(t) {
+  const live = ['assigned', 'in-progress', 'review'].includes(t.status) || (t.status === 'queued' && t.statusLabelled === false);
+  return t.open && live && !!t.state.agent && t.agent !== 'any' && t.state.agent !== t.agent;
+}
+
+export function reassigned(t, to) {
+  t.agent = to;
+  t.labels = [...(t.labels || []).filter((l) => !l.startsWith('agent:')), `agent:${to}`];
+  return t;
+}
+
 export function recover(task, category) {
   const history = task.state.history || [];
   const attempts = history.filter(counts).length;

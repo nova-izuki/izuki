@@ -6,7 +6,7 @@
 // It never runs anything from an issue's text: tasks are instructions for an
 // agent, and only accounts with write access may give them.
 import fs from 'node:fs';
-import { describe, writeState, agentStates, performance, plan, recover, redistribute, classifyFailure, productivity, compose, WEIGHTED_ASSIGNMENT, AGENTS } from './scheduler.mjs';
+import { describe, writeState, agentStates, performance, plan, recover, reassigned, mismatched, redistribute, classifyFailure, productivity, compose, WEIGHTED_ASSIGNMENT, AGENTS } from './scheduler.mjs';
 import * as gh from './github.mjs';
 
 const DRY = process.argv.includes('--dry-run');
@@ -47,16 +47,26 @@ each('untrusted', tasks.filter((t) => t.open && !gh.trusted(t.author) && !t.labe
   });
 });
 
+// A half-finished reassignment (the label and the hidden record name
+// different agents) is blocked for the owner before any step below can hand
+// it to either agent, whichever GitHub write failed to leave it that way.
+each('reconcile', tasks.filter(mismatched), (t) => update(t, 'blocked', {}, `This task's label says **${t.agent}**, but the bridge's record says **${t.state.agent}**: a reassignment only partly reached GitHub. It's blocked so that neither agent starts it. To fix it, set the \`agent:\` label to the one who should do it, then set \`status:queued\`.`));
+
 function update(t, status, statePatch, note) {
   const state = { ...t.state, ...statePatch };
-  act(`#${t.number}: ${t.status} → ${status}${note ? ` (${note.slice(0, 80)})` : ''}`, () => {
+  const was = t.status;
+  // The record in memory takes the change even if a GitHub write below
+  // fails partway, so no later step of this pass acts on the old status
+  // (a blocked task can't be merged as if still in review). The next pass
+  // rereads GitHub and finishes the job.
+  t.status = status;
+  t.state = state;
+  act(`#${t.number}: ${was} → ${status}${note ? ` (${note.slice(0, 80)})` : ''}`, () => {
     gh.editIssue(t.number, { body: writeState(t.body || gh.api(`repos/${gh.REPO}/issues/${t.number}`).body, state) });
-    if (status !== t.status) gh.setLabels(t.number, [`status:${status}`], [`status:${t.status}`]);
+    if (status !== was) gh.setLabels(t.number, [`status:${status}`], [`status:${was}`]);
     if (note) gh.comment(t.number, note);
     if (status === 'done') gh.editIssue(t.number, { state: 'closed', state_reason: 'completed' });
   });
-  t.status = status;
-  t.state = state;
 }
 
 // `recorded`: the run already wrote this failure into the history (the
@@ -66,8 +76,16 @@ function fail(t, category, detail, recorded = false) {
   const next = recover({ ...t, state: { ...t.state, history } }, category);
   const text = `${detail ? `${detail}\n\n` : ''}${next.note}`;
   if (next.action === 'block') return update(t, 'blocked', { history, pr: undefined, commit: undefined }, text);
+  if (next.action === 'reassign') {
+    // The relabel comes first. If GitHub refuses it, setLabels throws before
+    // anything else changes: the task stays as it was (failed), `each` notes
+    // it, and the next pass recovers it again. The failure isn't counted
+    // twice, because nothing was written.
+    act(`#${t.number}: to ${next.to}`, () => gh.setLabels(t.number, [`agent:${next.to}`], [`agent:${t.agent}`]));
+    // The rest of this pass reads the task from memory, not from GitHub.
+    reassigned(t, next.to);
+  }
   update(t, 'queued', { history, agent: next.action === 'reassign' ? undefined : t.state.agent, strategy: next.note, pr: undefined, commit: undefined, reviewSince: undefined }, text);
-  if (next.action === 'reassign') act(`#${t.number}: to ${next.to}`, () => gh.setLabels(t.number, [`agent:${next.to}`], [`agent:${t.agent}`]));
 }
 
 // Why checks failed, from their logs (a CodeRabbit failure is a review

@@ -42,8 +42,15 @@ export function trusted(login) {
 }
 
 export function setLabels(number, add = [], remove = []) {
+  // Old labels go first, and only "not there" is ignored: any other failure
+  // stops before the new label is added, so an issue never ends up with two
+  // agent labels (which neither agent would take).
   for (const name of remove) {
-    try { api(`repos/${REPO}/issues/${number}/labels/${encodeURIComponent(name)}`, { method: 'DELETE' }); } catch { /* wasn't there */ }
+    try {
+      api(`repos/${REPO}/issues/${number}/labels/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    } catch (e) {
+      if (!/HTTP 404|Not Found/i.test(`${e.stderr || ''} ${e.message || ''}`)) throw e;
+    }
   }
   if (add.length) api(`repos/${REPO}/issues/${number}/labels`, { method: 'POST', body: { labels: add } });
 }

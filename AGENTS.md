@@ -1,10 +1,12 @@
 # Instructions for AI coding agents working on Izuki
 
-Three assistants work in this repo for the same owner, sometimes at the
-same time: **Claude Code**, **ChatGPT Codex** and **Freebuff/Codebuff**.
-This file is the shared rulebook. Codex reads `AGENTS.md`, and Freebuff
-reads `knowledge.md`, which points here. Claude has its own copy of the
-same rules in `.claude/skills/izuki-dev`.
+Two assistants develop Izuki for the same owner, often at the same time:
+**Claude Code** and **Freebuff/Codebuff**. **ChatGPT Codex** is paused (owner,
+2026-11-08): don't assign it work or wait on it; its finished work is already
+merged and stays. This file is the shared rulebook. Codex reads `AGENTS.md`,
+and Freebuff reads `knowledge.md`, which points here. Claude has its own copy
+of the same rules in `.claude/skills/izuki-dev`. How the two split work now:
+"Two developers, one app" below.
 
 **Before you edit anything, read [docs/COLLAB.md](docs/COLLAB.md):** it says
 who owns which files right now.
@@ -199,7 +201,7 @@ findings are leads to check, not orders. The shared log for the milestone is
 The owner isn't a programmer. Release notes, UI text and messages are plain
 English: short sentences, no jargon, and say what the user will notice.
 
-## Who works on what (owner, 2026-11-03)
+## Who works on what (owner, 2026-11-03; superseded by "Two developers, one app")
 
 Freebuff keeps Smart Eye / Air Control, Smart Vision and Developer Mode.
 Claude Code keeps Smart Screen Actions, speed optimization and security fixes
@@ -218,7 +220,56 @@ merges and releases (one coordinator, nothing published twice), only after
 every required check passes. Codex and Freebuff push verified work and mark
 it ready in COLLAB.md.
 
-## Current ownership change (owner, 2026-11-08)
+## Two developers, one app (owner, 2026-11-08, latest)
+
+This replaces the two ownership sections below (kept for history).
+
+- **Who:** only Claude Code and Freebuff are developing Izuki. Codex is
+  paused. Its completed work (robot hand, fallback contract, mobile and
+  companion work) is in `milestone-196`. Don't redo it, and keep its branches.
+- **What:** either assistant may investigate, fix, test and improve any part
+  of Izuki. Eye Control stays Claude's main responsibility. Claude also
+  remains the release coordinator: the only one who bumps versions and
+  writes release notes (rule 2).
+- **One owner per piece of work, through a GitHub issue.** Before starting,
+  open or claim an issue labelled `agent:claude` or `agent:freebuff` with
+  `status:assigned`. Name the files you expect to touch on one line in
+  exactly this form: `Files: src/a.ts, src-tauri/src/b.rs`. That line, comma
+  separated, is the only file list the agent bridge reads for its overlap
+  check. If the other assistant already holds an issue for that area or those
+  files, comment there and agree before editing them.
+- **Plain claims and bridge tasks:**
+  - **A plain claim** has no `agent-task` label. The agent bridge never
+    touches it: its labels and `Files:` line are for the two of you.
+  - **A bridge task** is labelled `agent-task`. Open it with
+    `status:queued`, never `status:assigned`: the bridge assigns it, writes
+    the hidden state block in the issue body that records the working agent,
+    and dispatches it. Never edit that block by hand.
+- **Taking over a bug:** if you find a bug the other can't get to soon, or
+  one in the other's work that you can fix, say so on its issue (or open
+  one), then fix it. Never fix the same thing silently in parallel.
+  - On a plain claim, move the `agent:` label to yourself.
+  - **A bridge task is never handed over by hand**: no relabelling, no
+    closing it to reopen elsewhere. Several parts of the bridge act on it at
+    once (dispatchers in other checkouts, queued coordinator runs, its
+    recorded PR, its roadmap key), and changing it from outside can leave
+    two runs on it or merge an old PR.
+    - Comment on the issue instead.
+    - A task opened as `agent:any` is moved to the other agent by the bridge
+      itself after two failed attempts. A task opened for a named agent is
+      retried and, after a third failure, blocked; it is never reassigned
+      automatically.
+    - A safe, atomic `/takeover` command is issue #49. Until it lands, a
+      stuck or blocked task for a named agent, or any urgent case, goes to
+      the owner.
+- **Branches:** each assistant works in its own worktree and branch
+  (`claude/…`, `freebuff/…`), never in the other's. A PR goes into
+  `milestone-196` and merges only with CI green and every review thread
+  handled.
+- **Shared status:** `docs/INTEGRATION.md` lists what's done, what's in
+  review and what's left. Update your own rows when their state changes.
+
+## Current ownership change (owner, 2026-11-08; superseded by "Two developers, one app")
 
 **Claude Code now owns Eye Control only.** Its files are the Eye/Air/camera
 files listed in `docs/HANDOFF-2026-11-08-eye-control.md` and the uncommitted
