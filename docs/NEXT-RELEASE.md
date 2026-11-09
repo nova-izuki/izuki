@@ -19,8 +19,8 @@ into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
   guide, can stop AIR immediately, and jumps straight to its settings.
   [Freebuff]
 - After a scroll or a shortcut in the window you're looking at, Izuki
-  checks the screen really changed. If
-  it didn't, it looks again before going on, and never presses it twice
-  blindly. After opening an app it notes when nothing new appeared. Volume,
+  checks the screen really changed, and says so when it can't confirm it.
+  During a task it then looks again before going on, and never presses it
+  twice blindly. After opening an app it notes when nothing new appeared. Volume,
   music, copy and cut keys aren't checked, since they change nothing on
   screen. [Freebuff]

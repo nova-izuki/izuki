@@ -48,7 +48,9 @@ fn drive_letter(s: &str) -> bool {
 }
 
 pub fn parse(said: &str) -> Option<Ask> {
-    let s = format!(" {} ", said.to_lowercase().replace(['’', '\'', '?', '!', ',', '.'], " ").split_whitespace().collect::<Vec<_>>().join(" "));
+    // Apostrophes are dropped, not spaced: "friend's drive" must not leave an
+    // "s drive" that reads as a drive letter.
+    let s = format!(" {} ", said.to_lowercase().replace(['’', '\''], "").replace(['?', '!', ',', '.'], " ").split_whitespace().collect::<Vec<_>>().join(" "));
     if cloud_only(&s) {
         return None;
     }
@@ -482,6 +484,8 @@ mod tests {
         assert_eq!(parse("what's taking up space, Google Chrome?"), Some(Ask::Report), "an app on this PC");
         assert_eq!(parse("how much space does OneDrive use on my D: drive"), Some(Ask::Report), "the PC's drive, named");
         assert_eq!(parse("how full is my R: drive"), Some(Ask::Report), "a colon makes it a drive letter");
+        assert_eq!(parse("free up space on my friend's drive on Google"), None, "a possessive isn't an S: drive");
+        assert_eq!(parse("what's filling my drive?"), Some(Ask::Report), "still the website's own words");
     }
 
     #[test]
