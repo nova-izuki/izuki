@@ -476,6 +476,10 @@ export interface InboxDigest {
   items: InboxItem[];
   looked_at: number;
   skipped: number;
+  /** Gmail addresses that were actually searched. */
+  checked: string[];
+  /** Accounts that could not be opened, with the reason. */
+  failed: Array<[string, string]>;
 }
 /** A routine (routines.rs). */
 export interface Routine {
@@ -509,7 +513,7 @@ export interface IslandVitals {
 export interface MailAccount {
   id: string;
   address: string;
-  /** "ok", "needs_sign_in", "error". */
+  /** "ok", "needs_sign_in", "unfinished", "error". */
   state: string;
   note?: string;
 }
@@ -966,7 +970,15 @@ export const api = {
   /** Hold a key down / let it go (Air control's game controls). */
   airHold: (key: string, down: boolean) => call<void>("air_hold", { key, down }, () => undefined),
   /** What Izuki is really doing right now, in words. */
-  inboxDigest: (fresh: boolean) => call<InboxDigest>("inbox_digest", { fresh }, () => ({ summary: "", items: [], looked_at: 0, skipped: 0 })),
+  inboxDigest: (fresh: boolean) =>
+    call<InboxDigest>("inbox_digest", { fresh }, () => ({
+      summary: "",
+      items: [],
+      looked_at: 0,
+      skipped: 0,
+      checked: [],
+      failed: [],
+    })),
   sentHistory: () => call<SentItem[]>("sent_history", undefined, () => []),
   /** The Island's Vitals tab (vitals.rs): measured, never estimated. */
   islandVitals: () =>

@@ -22,3 +22,6 @@ into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
 - Izuki now looks after scrolling, opening an app or page, and pressing a
   shortcut: it says when the screen didn't change, while keeping quiet for
   volume/media keys and pages that stayed in the same tab. [Freebuff]
+- Inbox now retries a transient Gmail account check, shows an unfinished
+  sign-in as unfinished instead of a broken account, and names the Gmail
+  address it actually read. [Freebuff]

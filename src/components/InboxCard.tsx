@@ -108,16 +108,20 @@ export function InboxCard() {
             </div>
           ))}
           {broken.map((a) => (
-            <div key={a.id} className="flex items-center gap-1.5 text-izk-danger">
-              <span aria-hidden>⚠️</span>
+            <div key={a.id} className={`flex items-center gap-1.5 ${a.state === "error" ? "text-izk-danger" : "text-amber-200"}`}>
+              <span aria-hidden>{a.state === "unfinished" ? "⏳" : "⚠️"}</span>
               <span className="min-w-0 flex-1 truncate" title={a.note || undefined}>
-                {a.state === "needs_sign_in" ? "A Gmail link needs signing in again — not searched" : "A Gmail account couldn't be opened just now — not searched"}
+                {a.state === "needs_sign_in"
+                  ? "A Gmail link needs signing in again — not searched"
+                  : a.state === "unfinished"
+                    ? "A Gmail sign-in wasn't finished — not an account yet"
+                    : "A Gmail account couldn't be opened just now — not searched"}
               </span>
             </div>
           ))}
           {accounts.duplicates > 0 && (
             <div className="text-izk-muted">
-              {accounts.duplicates} extra link{accounts.duplicates === 1 ? "" : "s"} to an account already listed (searched once — harmless).
+              {accounts.duplicates} extra link{accounts.duplicates === 1 ? "" : "s"} to an account already listed — read once, not counted twice.
             </div>
           )}
           <button type="button" onClick={() => void addAccount()} className="izk-pill izk-no-drag mt-1 h-[26px] px-2.5 text-[11px]">
@@ -135,6 +139,12 @@ export function InboxCard() {
       {digest && (
         <div className="mt-1 space-y-1.5">
           {digest.summary && <p className="text-[12px] leading-snug text-izk-ink">{digest.summary}</p>}
+          {digest.checked.length > 0 && (
+            <p className="text-[10.5px] text-izk-muted">
+              Read: {digest.checked.join(", ")}
+              {digest.failed.length > 0 && ` · ${digest.failed.length} account${digest.failed.length === 1 ? "" : "s"} not searched`}
+            </p>
+          )}
           {items.length === 0 && <p className="text-[11.5px] text-izk-muted">Nothing that needs you — {digest.looked_at} emails looked at.</p>}
           {items.map((m, i) => (
             <div key={i} className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-[11.5px]">
