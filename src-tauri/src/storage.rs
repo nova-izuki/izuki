@@ -55,7 +55,15 @@ pub fn is_storage_question(said: &str) -> bool {
     if ["free up", "clean", "clear ", "delete", "uninstall", "remove "].iter().any(|w| s.contains(w)) {
         return false;
     }
-    // "My drive" / "C drive" are the PC's own; "Google Drive" never says "my drive".
+    // A cloud drive ("my Google Drive", "OneDrive storage") isn't this PC's
+    // disk, unless the PC is named too ("how much space is OneDrive taking
+    // on my C drive").
+    let cloud = ["google", "gdrive", "onedrive", "one drive", "dropbox", "icloud", "mega.nz", "box.com"].iter().any(|w| s.contains(w));
+    let local = ["c drive", "c:", "my pc", "my laptop", "my computer", "this pc", "hard drive", "ssd", "local"].iter().any(|w| s.contains(w));
+    if cloud && !local {
+        return false;
+    }
+    // "My drive" / "C drive" are the PC's own.
     let disk = ["storage", "storag", "storaege", "disk", "drive space", "hard drive", "my drive", "c drive", "my drives", "ssd", " gb", " tb", "gigs"]
         .iter()
         .any(|w| s.contains(w));
@@ -435,6 +443,9 @@ mod tests {
         assert_eq!(parse("What's taking up space on my PC?"), Some(Ask::Report));
         assert_eq!(parse("how full is my C drive"), Some(Ask::Report));
         assert_eq!(parse("what's in my google drive"), None);
+        assert_eq!(parse("how full is my drive on google"), None, "a cloud drive");
+        assert_eq!(parse("how much space is left in my google drive"), None);
+        assert_eq!(parse("how much space is OneDrive taking on my PC"), Some(Ask::Report), "the PC's disk, named");
     }
 
     #[test]

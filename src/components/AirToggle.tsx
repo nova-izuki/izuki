@@ -7,8 +7,8 @@ type AirMode = "hand" | "eye";
 
 const MODES: Array<{ key: AirMode | "both"; label: string; icon: string; note: string }> = [
   { key: "hand", label: "Hand control", icon: "🖐️", note: "Move and click with a visible hand." },
-  { key: "eye", label: "Eye control", icon: "👁️", note: "Look to move; dwell to click." },
-  { key: "both", label: "Hand + Eye", icon: "◎", note: "Unavailable until simultaneous operation is safety-verified." },
+  { key: "eye", label: "Eye control", icon: "👁️", note: "Look to move the pointer. A double blink clicks, if you turn that on." },
+  { key: "both", label: "Hand + Eye", icon: "◎", note: "Using both together isn't available yet." },
 ];
 
 const HAND_MOVES: Array<[string, string]> = [
@@ -184,22 +184,17 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
       )}
       <button
         type="button"
-        onClick={flip}
-        className="flex w-full items-center gap-2 rounded-[8px] px-2 py-2 text-left text-[11px] font-medium text-izk-ink hover:bg-white/8"
+        // One power button: on, it's the stop (it lets go of anything Air
+        // holds and turns it off); off, it turns the chosen mode on.
+        onClick={onNow ? stopNow : flip}
+        className={cx(
+          "flex w-full items-center gap-2 rounded-[8px] px-2 py-2 text-left text-[11px] font-medium",
+          onNow ? "text-rose-300 hover:bg-rose-500/10" : "text-izk-ink hover:bg-white/8"
+        )}
       >
         <span className="w-[18px] text-center" aria-hidden="true">{onNow ? "■" : "▶"}</span>
-        {onNow ? `Turn ${lane} control off` : `Turn ${lane} control on`}
+        {onNow ? `Stop ${lane} control` : `Turn ${lane} control on`}
       </button>
-      {onNow && (
-        <button
-          type="button"
-          onClick={stopNow}
-          className="flex w-full items-center gap-2 rounded-[8px] px-2 py-2 text-left text-[11px] font-medium text-rose-300 hover:bg-rose-500/10"
-        >
-          <span className="w-[18px] text-center" aria-hidden="true">■</span>
-          Stop Air now
-        </button>
-      )}
       <button
         type="button"
         onClick={openSettings}
@@ -210,7 +205,7 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
         <span className="ml-auto text-[10px] text-izk-muted" aria-hidden="true">→</span>
       </button>
       <span className="block px-2 pb-1 pt-1 text-[9px] leading-snug text-izk-muted">
-        Both stays off until Eye Control is verified safe alongside Hand.
+        Hand and Eye together isn't available yet.
       </span>
     </span>
   );
@@ -276,11 +271,6 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
           <button type="button" onClick={() => setGuide((v) => !v)} className="font-medium text-izk-ink/85 hover:text-izk-ink">
             {guide ? "Hide hand moves" : "Hand moves"}
           </button>
-          {onNow && (
-            <button type="button" onClick={stopNow} className="font-medium text-rose-300 hover:text-rose-200">
-              Stop Air now
-            </button>
-          )}
           <button type="button" onClick={openSettings} className="font-medium hover:text-izk-ink">
             Air settings →
           </button>

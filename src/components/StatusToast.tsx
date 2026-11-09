@@ -30,7 +30,8 @@ function readStep(status: { message: string; detail?: string | null }): Step | n
   if (!hit) return null;
   const total = Math.max(1, Number.parseInt(hit[2], 10) || 1);
   const current = Math.min(total, Math.max(1, Number.parseInt(hit[1], 10) || 1));
-  return { current, total, before: /before\s+step\s+\d+/i.test(text) };
+  // "Paused before step 3", "a fresh look first, then step 3": not begun.
+  return { current, total, before: /(?:before|then)\s+step\s+\d+/i.test(text) };
 }
 
 export function StatusToast() {

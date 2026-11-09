@@ -35,6 +35,10 @@ pub fn parse(said: &str) -> Option<bool> {
     let saving = padded.contains(" saving ");
 
     let words: Vec<&str> = s.split(' ').collect();
+    // "Is my study log on?" asks; it doesn't switch anything.
+    if matches!(words.first().copied(), Some("is" | "are" | "was" | "whats" | "what" | "does" | "did" | "has")) {
+        return None;
+    }
     let switches = switches_in(&words, has_log);
     let off = switches.iter().any(|w| !w.on);
     let on = switches.iter().any(|w| w.on);
@@ -277,6 +281,11 @@ mod tests {
         assert_eq!(parse("why don't you save every question to my notes"), Some(true));
         // A negation doesn't reach across "and".
         assert_eq!(parse("don't explain and save every question to my notes"), Some(true));
+        // A question about it changes nothing.
+        assert_eq!(parse("Is my study log on?"), None);
+        assert_eq!(parse("is the study log off"), None);
+        assert_eq!(parse("does the study log save every question?"), None);
+        assert_eq!(parse("can you turn on study log"), Some(true), "a request, not a question");
     }
 
     #[test]

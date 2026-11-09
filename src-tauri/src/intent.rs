@@ -73,11 +73,20 @@ pub fn clarification(text: &str, has_context: bool) -> Option<&'static str> {
 
 /// A short, public explanation for a failed AI call. Provider bodies often
 /// contain several HTTP errors and JSON; they are useful in logs, not chat.
+/// `code` stands alone in `text`: "HTTP 429" yes, "4290 tokens" no.
+fn has_code(text: &str, code: &str) -> bool {
+    text.match_indices(code).any(|(i, _)| {
+        let before = text[..i].chars().next_back();
+        let after = text[i + code.len()..].chars().next();
+        !before.is_some_and(|c| c.is_ascii_digit()) && !after.is_some_and(|c| c.is_ascii_digit())
+    })
+}
+
 pub fn public_failure(error: &str) -> &'static str {
     let e = error.to_ascii_lowercase();
-    let rate = e.contains("429") || e.contains("rate limit") || e.contains("too many requests");
+    let rate = has_code(&e, "429") || e.contains("rate limit") || e.contains("too many requests");
     let credits = e.contains("no credits") || e.contains("insufficient_quota") || e.contains("credit balance");
-    let retired = e.contains("410") || e.contains("end of life") || e.contains("has been retired");
+    let retired = has_code(&e, "410") || e.contains("end of life") || e.contains("has been retired");
     let unreachable = e.contains("connection refused")
         || e.contains("connection reset")
         || e.contains("error sending request")
@@ -207,5 +216,9 @@ mod tests {
         assert!(!said.contains('{'));
         assert!(after_tool_failure(Some(false), Some(raw)).contains("didn't finish"));
         assert!(after_tool_failure(Some(true), None).contains("result card"));
+        // Digits inside other numbers aren't status codes.
+        assert_eq!(public_failure("used 4290 tokens; try a shorter message"), "No AI service answered.");
+        assert_eq!(public_failure("request id 74101 failed"), "No AI service answered.");
+        assert_eq!(public_failure("HTTP 429 Too Many Requests"), "The AI services are rate-limited right now.");
     }
 }

@@ -1172,26 +1172,32 @@ fn local_chat_choice(models: impl IntoIterator<Item = String>) -> Option<String>
     choices.into_iter().next().map(|(_, m)| m)
 }
 
-static LOCAL_MODEL_CACHE: parking_lot::Mutex<Option<(String, Option<String>, std::time::Instant)>> = parking_lot::Mutex::new(None);
+/// (Ollama address, model picked, when, whether Ollama answered at all).
+static LOCAL_MODEL_CACHE: parking_lot::Mutex<Option<(String, Option<String>, std::time::Instant, bool)>> = parking_lot::Mutex::new(None);
 
 fn installed_local_chat_model(base_url: &str) -> Option<String> {
-    if let Some((url, model, at)) = LOCAL_MODEL_CACHE.lock().as_ref() {
-        if url == base_url && at.elapsed() < std::time::Duration::from_secs(30) {
+    if let Some((url, model, at, answered)) = LOCAL_MODEL_CACHE.lock().as_ref() {
+        // An answer holds for 30 s; no answer (Ollama starting up) only 5 s.
+        let keep = std::time::Duration::from_secs(if *answered { 30 } else { 5 });
+        if url == base_url && at.elapsed() < keep {
             return model.clone();
         }
     }
-    let picked = installed_local_chat_model_uncached(base_url);
-    *LOCAL_MODEL_CACHE.lock() = Some((base_url.to_string(), picked.clone(), std::time::Instant::now()));
+    let found = installed_local_chat_model_uncached(base_url);
+    let picked = found.clone().flatten();
+    *LOCAL_MODEL_CACHE.lock() = Some((base_url.to_string(), picked.clone(), std::time::Instant::now(), found.is_some()));
     picked
 }
 
-fn installed_local_chat_model_uncached(base_url: &str) -> Option<String> {
+/// `None` when Ollama didn't answer; `Some(None)` when it answered and has
+/// no chat model installed.
+fn installed_local_chat_model_uncached(base_url: &str) -> Option<Option<String>> {
     let root = base_url
         .trim_end_matches('/')
         .trim_end_matches("/v1")
         .trim_end_matches("/api");
     if root.is_empty() {
-        return None;
+        return Some(None);
     }
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_millis(1200))
@@ -1205,12 +1211,12 @@ fn installed_local_chat_model_uncached(base_url: &str) -> Option<String> {
         .ok()?
         .json()
         .ok()?;
-    let names = body
-        .get("models")?
-        .as_array()?
-        .iter()
-        .filter_map(|m| m.get("name").and_then(|n| n.as_str()).map(str::to_string));
-    local_chat_choice(names)
+    let names: Vec<String> = body
+        .get("models")
+        .and_then(|m| m.as_array())
+        .map(|list| list.iter().filter_map(|m| m.get("name").and_then(|n| n.as_str()).map(str::to_string)).collect())
+        .unwrap_or_default();
+    Some(local_chat_choice(names))
 }
 
 /// Every brain that is set up at all, resting or not — the honest total for
@@ -2311,7 +2317,21 @@ where F: FnOnce() + Send + 'static,
         .name("izuki-act".into())
         .spawn(move || {
             let _execution = crate::execution::attach(execution_context);
-            run_steps_blocking(&app, &store, &steps, &|| task_alive(task));
+            let (finished, _) = run_steps_blocking(&app, &store, &steps, &|| task_alive(task));
+            // A replay has no brain to take a fresh look: when it stopped
+            // part-way (paused and resumed, a covered or greyed-out button),
+            // it says so rather than going quiet or clicking stale spots.
+            if !finished && task_alive(task) {
+                if let Some(why) = STEP_SNAG.lock().take() {
+                    eprintln!("[replay] stopped part-way: {why}");
+                    let detail = if why.starts_with("paused:") {
+                        "You paused it, and a replay can't look again the way a task can, so it stopped instead of clicking where things used to be. Run it again when you're ready.".to_string()
+                    } else {
+                        format!("A step couldn't be done safely: {}", plainly(&why))
+                    };
+                    let _ = app.emit(events::STATUS, StatusEvent { kind: "info", message: "The replay stopped part-way".into(), detail: Some(detail) });
+                }
+            }
             on_done();
         })
         .ok();
@@ -3320,7 +3340,10 @@ pub fn run_instant(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<Vi
     let worked = if steps.is_empty() {
         crate::execution::charge(crate::execution::Work::Action).is_ok() && alive() && crate::instant::run_direct(act)
     } else {
+        // A scroll at the end of a page or a key with nothing to show comes
+        // back unconfirmed: for an instant command it's done as asked.
         run_steps_blocking(app, store, &steps, &alive).0
+            || STEP_SNAG.lock().take().is_some_and(|why| why.starts_with(crate::ext::UNCONFIRMED))
     };
     if !worked && alive() {
         eprintln!("[bug] instant command didn't work: {act:?}");

@@ -610,7 +610,8 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
                 return emit(said, true, None);
             }
         }
-        let asked = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.as_str()).unwrap_or("");
+        // Only the typed words: an attached file's text never authorises a change.
+        let asked = history.iter().rev().find(|t| t.role == "user").map(|t| crate::attachments::typed_only(&t.content)).unwrap_or("");
         eprintln!("[chat] request={id} style={style:?} turns={}", history.len());
         if let Some(question) = clarify(&history) {
             return emit(question.to_string(), true, None);
@@ -1266,7 +1267,7 @@ pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
         }
     }
     crate::execution::check().map_err(|r| anyhow::anyhow!(r.explanation()))?;
-    let asked = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.as_str()).unwrap_or("");
+    let asked = history.iter().rev().find(|t| t.role == "user").map(|t| crate::attachments::typed_only(&t.content)).unwrap_or("");
     if let Some(question) = clarify(history) {
         return Ok(question.to_string());
     }
@@ -1280,7 +1281,7 @@ pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
 /// A written reply that never hands over to the apps lane — for when it
 /// can't help (no apps linked) and the chat should just answer.
 pub fn reply_here(history: &[Turn], style: Style) -> anyhow::Result<String> {
-    let asked = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.as_str()).unwrap_or("");
+    let asked = history.iter().rev().find(|t| t.role == "user").map(|t| crate::attachments::typed_only(&t.content)).unwrap_or("");
     if let Some(question) = clarify(history) {
         return Ok(question.to_string());
     }

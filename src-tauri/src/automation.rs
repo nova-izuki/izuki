@@ -996,8 +996,11 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
                 let before = judged.then(|| (front_look(), crate::uia::open_windows(40)));
                 press_key(k)?;
                 if let Some((look, windows)) = before {
+                    // Unconfirmed, not failed: the batch stops for a fresh
+                    // look, which tells it whether the key worked (a toggle
+                    // pressed twice would undo itself).
                     if let Some(snag) = check_shortcut(k, look, &windows)? {
-                        return Ok(format!("pressed {k}, but {snag}"));
+                        return Err(anyhow!("{}pressed {k}, but {snag}", crate::ext::UNCONFIRMED));
                     }
                 }
             }
@@ -1011,7 +1014,7 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
             let before = crate::capture::capture(watch_region(sx, sy)).ok();
             scroll_axis(sx, sy, amount, axis, move_ms)?;
             if let Some(snag) = check_scrolled(before, sx, sy)? {
-                return Ok(format!("scrolled at {label}, but {snag}"));
+                return Err(anyhow!("{}scrolled at {label}, but {snag}", crate::ext::UNCONFIRMED));
             }
         }
         Intent::Copy => {
@@ -1242,7 +1245,7 @@ fn check_opened(message: String, before_front: &str, target: &str) -> String {
 /// copy or a cut — so "nothing changed on screen" is no sign they failed. The
 /// shortcut check skips these rather than cry wolf.
 fn shortcut_acts_offscreen(combo: &str) -> bool {
-    let c = combo.trim().to_lowercase();
+    let c = canonical_combo(combo);
     let last = c.rsplit('+').next().unwrap_or("");
     const SILENT: &[&str] = &[
         "volumeup", "volume_up", "volumedown", "volume_down", "volumemute", "volume_mute", "mute",
@@ -1253,11 +1256,30 @@ fn shortcut_acts_offscreen(combo: &str) -> bool {
     SILENT.contains(&last) || matches!(c.as_str(), "ctrl+c" | "ctrl+x" | "ctrl+insert")
 }
 
+/// "Control + C", "ctl+c" and "Ctrl+C" are one shortcut: parts trimmed and
+/// lower-cased, modifiers by what they mean (as `press_key` reads them).
+fn canonical_combo(combo: &str) -> String {
+    combo
+        .split('+')
+        .map(|part| {
+            let p = part.trim().to_lowercase();
+            match parse_modifier(&p) {
+                Some(Key::Control) => "ctrl".to_string(),
+                Some(Key::Shift) => "shift".to_string(),
+                Some(Key::Alt) => "alt".to_string(),
+                Some(Key::Meta) => "win".to_string(),
+                _ => p.replace([' ', '-'], "_"),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
 /// Only modifier combinations are judged by the screen. A lone Tab, arrow or
 /// Enter moves too little to tell "it did nothing" from "it worked", and the
 /// off-screen keys can't be judged by the screen at all.
 fn shortcut_worth_checking(combo: &str) -> bool {
-    combo.contains('+') && !shortcut_acts_offscreen(combo)
+    canonical_combo(combo).contains('+') && !shortcut_acts_offscreen(combo)
 }
 
 /// Any sign a shortcut did something: the window in front changed, a new one
@@ -1482,6 +1504,12 @@ mod tests {
         assert!(shortcut_acts_offscreen("medianexttrack"));
         assert!(!shortcut_acts_offscreen("ctrl+s"));
         assert!(!shortcut_acts_offscreen("alt+tab"));
+        // Spaced and aliased spellings are the same keys.
+        assert!(shortcut_acts_offscreen("Ctrl + C"));
+        assert!(shortcut_acts_offscreen("control+c"));
+        assert!(shortcut_acts_offscreen(" volume_up "));
+        assert!(!shortcut_worth_checking(" enter "));
+        assert!(shortcut_worth_checking("Control + S"));
         // A new window, a new title, or a redrawn window all count as "it did something".
         let none: Vec<String> = vec![];
         let one = vec!["Save As".to_string()];
@@ -1800,7 +1828,7 @@ if ($Mode -eq 'cover') {
             let _ = super::execute(&step(serde_json::json!({"action":"scroll","x":lx,"y":ly,"key":"up","scroll_amount":30})), 320, true, false);
             wait_for(Duration::from_secs(3), || top_index().filter(|&v| v == 0).map(|_| ()));
             let at_end = super::execute(&step(serde_json::json!({"action":"scroll","x":lx,"y":ly,"key":"up","scroll_amount":4})), 320, true, false);
-            let end_ok = at_end.as_ref().map(|s| s.contains("nothing")).unwrap_or(false) && top_index() == Some(0);
+            let end_ok = at_end.as_ref().err().is_some_and(|e| e.to_string().contains("nothing")) && top_index() == Some(0);
             (down_ok && end_ok, format!("down={down:?} end={at_end:?}"))
         } else {
             (false, "no list control".into())
