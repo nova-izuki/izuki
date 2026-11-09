@@ -67,7 +67,15 @@ function fail(t, category, detail, recorded = false) {
   const text = `${detail ? `${detail}\n\n` : ''}${next.note}`;
   if (next.action === 'block') return update(t, 'blocked', { history, pr: undefined, commit: undefined }, text);
   update(t, 'queued', { history, agent: next.action === 'reassign' ? undefined : t.state.agent, strategy: next.note, pr: undefined, commit: undefined, reviewSince: undefined }, text);
-  if (next.action === 'reassign') act(`#${t.number}: to ${next.to}`, () => gh.setLabels(t.number, [`agent:${next.to}`], [`agent:${t.agent}`]));
+  if (next.action === 'reassign') {
+    act(`#${t.number}: to ${next.to}`, () => gh.setLabels(t.number, [`agent:${next.to}`], [`agent:${t.agent}`]));
+    // The rest of this pass reads the task from memory, not from GitHub:
+    // without this, the assign step below would hand the task straight back
+    // to the agent that just failed it, under the other agent's label, and
+    // both could start it.
+    t.agent = next.to;
+    t.labels = [...(t.labels || []).filter((l) => !l.startsWith('agent:')), `agent:${next.to}`];
+  }
 }
 
 // Why checks failed, from their logs (a CodeRabbit failure is a review
