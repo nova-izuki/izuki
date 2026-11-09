@@ -484,7 +484,18 @@ function saveRecent(list: RecentChat[]): Unsaved | null {
  * mid-answer and the reply still arrives, and is there when you come back.
  * (It used to be lost — "That reply didn't come through.")
  */
-let chatMsgs: Msg[] = load();
+/** Recent chats live out here too, so a list that couldn't be written yet
+ *  survives leaving the tab, until a write goes through. */
+let recentMem: RecentChat[] = readRecent();
+/** Writes that didn't go through, for each copy: the live chat and the list. */
+const unsavedNow: { live: Unsaved | null; recent: Unsaved | null } = { live: null, recent: null };
+let chatMsgs: Msg[] = (() => {
+  const live = load();
+  // The live copy missed a write that Recent chats got (storage was full):
+  // take the newer one, so the older copy never overwrites it.
+  const kept = recentMem.find((c) => c.id === chatSessionId);
+  return kept && kept.messages.length > live.length ? kept.messages : live;
+})();
 let chatBusy = false;
 const chatSubs = new Set<() => void>();
 const ping = () => chatSubs.forEach((f) => f());
@@ -494,7 +505,7 @@ function setChatMsgs(next: Msg[] | ((m: Msg[]) => Msg[])) {
   // A patch for "the last message" when there is none (New chat pressed
   // while a reply was on its way) changes nothing.
   if (chatMsgs.length === 0 && was.length === 0 && typeof next === "function") return;
-  save(chatMsgs);
+  unsavedNow.live = save(chatMsgs);
   ping();
 }
 /** A fresh, empty chat — the way back if the tab ever fails to draw. */
@@ -504,8 +515,21 @@ export function resetChat() {
   setChatSessionId(newChatId());
   chatMsgs = [];
   chatBusy = false;
-  save(chatMsgs);
+  unsavedNow.live = save(chatMsgs);
   ping();
+}
+/** Write Recent chats; when that works after a failed write, the live
+ *  chat is written again too, so both copies are current. */
+function writeRecent(list: RecentChat[]) {
+  recentMem = list;
+  unsavedNow.recent = saveRecent(list);
+  if (!unsavedNow.recent && unsavedNow.live) unsavedNow.live = save(chatMsgs);
+  ping();
+}
+/** Why something wasn't kept ("full" first: that one has a fix), or null when both copies are current. */
+function unsavedWhy(): Unsaved | null {
+  const { live, recent } = unsavedNow;
+  return live === "full" || recent === "full" ? "full" : live ?? recent;
 }
 function setChatBusy(v: boolean) {
   chatBusy = v;
@@ -523,34 +547,28 @@ function useChatState() {
     };
   }, []);
   // The session id too, so a reset from outside (resetChat) is seen here.
-  return { msgs: chatMsgs, busy: chatBusy, session: chatSessionId };
+  return { msgs: chatMsgs, busy: chatBusy, session: chatSessionId, notKept: unsavedWhy() };
 }
 
 
 export function ChatTab() {
-  const { msgs, busy, session } = useChatState();
+  const { msgs, busy, session, notKept } = useChatState();
   // Suggestions that fit what's on screen and the time of day.
   const ideas = useSmartIdeas(4);
   const setMsgs = setChatMsgs;
   const setBusy = setChatBusy;
-  const [recent, setRecent] = useState<RecentChat[]>(() => readRecent());
+  const [recent, setRecent] = useState<RecentChat[]>(() => recentMem);
   const recentRef = useRef<RecentChat[]>(recent);
   const [recentsOpen, setRecentsOpen] = useState(false);
   const [recentQuery, setRecentQuery] = useState("");
-  // A write that failed is said plainly and tried again on the next save,
-  // instead of the list looking saved and being gone after a restart.
-  const [recentUnsaved, setRecentUnsaved] = useState<Unsaved | null>(null);
-  const unsaved = useRef(false);
+  // A write that failed is said plainly (notKept) and tried again on the
+  // next save, instead of the list looking saved and being gone after a
+  // restart; the state lives outside the tab (unsavedNow), so leaving the
+  // tab loses neither the list nor the warning.
   const commitRecent = useCallback((next: RecentChat[]) => {
     recentRef.current = next;
     setRecent(next);
-    let why = saveRecent(next);
-    // Recovering from a failed write: the live chat may not have been kept
-    // either. Write it too, or its older copy would come back after a
-    // restart and overwrite this newer one in Recent chats.
-    if (!why && unsaved.current) why = save(chatMsgs);
-    unsaved.current = why !== null;
-    setRecentUnsaved(why);
+    writeRecent(next);
   }, []);
   // Each save rewrites the whole list, so while a reply streams it's saved
   // at most every 1.5 s, and once more the moment it settles.
@@ -565,7 +583,7 @@ export function ChatTab() {
     if (!chatMsgs.length) return;
     const stored = storedMessages(chatMsgs);
     const existing = recentRef.current.find((s) => s.id === chatSessionId);
-    if (!unsaved.current && existing && JSON.stringify(existing.messages) === JSON.stringify(stored)) return;
+    if (!unsavedWhy() && existing && JSON.stringify(existing.messages) === JSON.stringify(stored)) return;
     commitRecent(rememberSession(recentRef.current, chatSessionId, chatTitle(chatMsgs), stored));
   }, [commitRecent]);
   useEffect(() => {
@@ -1604,9 +1622,9 @@ export function ChatTab() {
           {documents.length > 0 && <div className="mb-2 flex flex-wrap gap-2">{documents.map((file, i) => <span key={i} className="flex max-w-full items-center gap-2 rounded-lg border border-white/15 px-2 py-1 text-[11px]"><span className="truncate">📎 {file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setDocuments((all) => all.filter((_, j) => j !== i))}><X size={12} /></button></span>)}</div>}
           {readingFiles && <p role="status" className="mb-2 text-[11px] text-izk-muted">Reading your files…</p>}
           {fileError && <p role="alert" className="mb-2 text-[11px] text-izk-danger">{fileError}</p>}
-          {recentUnsaved && (
+          {notKept && (
             <p role="alert" className="mb-2 text-[11px] text-izk-danger">
-              {recentUnsaved === "full"
+              {notKept === "full"
                 ? "This chat couldn't be kept in Recent chats: Izuki's storage on this PC is full. Delete an old chat to make room."
                 : "This chat couldn't be kept in Recent chats: this PC is blocking Izuki's storage. It stays here until Izuki closes."}
             </p>
