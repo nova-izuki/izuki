@@ -4,7 +4,7 @@ import { AlarmClock, AlertTriangle, Check, ChevronDown, ChevronRight, Copy, Fold
 import { api, CAMERA_PICTURE_KEY, emit, EV, ISLAND_TO_CHAT_KEY, on, type CodingUpdate, type ResearchUpdate } from "../../lib/ipc";
 import { ResearchPanel, researchAsk, type ResearchState } from "../ResearchPanel";
 import { CodingPanel, type CodingState } from "../CodingPanel";
-import { ChatText } from "../ChatText";
+import { AssistantText } from "../StorageReport";
 import { LaterCard } from "../LaterCard";
 import { useDictation } from "../../hooks/useDictation";
 import { useSmartIdeas } from "../../lib/smartIdeas";
@@ -1600,7 +1600,7 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
                   </div>
                 )}
                 {m.content ? (
-                  m.role === "assistant" ? <ChatText text={m.content} /> : m.content
+                  m.role === "assistant" ? <AssistantText text={m.content} /> : m.content
                 ) : busy && i === msgs.length - 1 && !m.research && !m.coding ? (
                   <span className={cx("flex items-center gap-1.5 text-izk-muted", (!!m.steps?.length || !!m.action) && "mt-1.5")}>
                     <Loader2 size={13} className="animate-spin" /> {m.status ?? "Thinking…"}
@@ -1995,7 +1995,7 @@ function ToolCard({ call }: { call: ToolCall }) {
   const verdict = verdictOf(call);
   const look = VERDICT[verdict.v];
   const output = call.output.replace(/\n?\[Proof check: [^\]]+\]/, "").trim();
-  const [closed, setClosed] = useState(false);
+  const [closed, setClosed] = useState(true);
   const [all, setAll] = useState(false);
   const [big, setBig] = useState(false);
   const lines = output.split("\n");
