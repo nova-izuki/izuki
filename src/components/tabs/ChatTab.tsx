@@ -111,6 +111,8 @@ const NEEDS_BRAIN = /no chat-capable brain|add an api key|key was rejected|rejec
 const FIRST_WORDS_MS = 45_000;
 
 const KEY = "izuki.chat.v1";
+/** When the live chat was last written (ms): which copy is newer at start. */
+const LIVE_AT_KEY = "izuki.chat.v1.at";
 const KEEP = 60;
 const SCREEN = /^\s*\[?SCREEN\]?\s*$/i;
 
@@ -442,6 +444,8 @@ function failure(e: unknown): Unsaved {
 function save(msgs: Msg[]): Unsaved | null {
   try {
     localStorage.setItem(KEY, JSON.stringify(storedMessages(msgs)));
+    // Stamped after the chat itself, so a stamp never vouches for a write that failed.
+    localStorage.setItem(LIVE_AT_KEY, String(Date.now()));
     return null;
   } catch (e) {
     return failure(e);
@@ -491,10 +495,19 @@ let recentMem: RecentChat[] = readRecent();
 const unsavedNow: { live: Unsaved | null; recent: Unsaved | null } = { live: null, recent: null };
 let chatMsgs: Msg[] = (() => {
   const live = load();
-  // The live copy missed a write that Recent chats got (storage was full):
-  // take the newer one, so the older copy never overwrites it.
+  // Whichever copy was written last wins: the live chat missed a write
+  // that Recent chats got (storage was full), so Recent's is newer; a
+  // chat cleared on purpose is a newer, empty live copy and stays clear.
+  // Before stamps existed the live copy always won, as it always had.
+  let liveAt = Number.POSITIVE_INFINITY;
+  try {
+    const at = Number(localStorage.getItem(LIVE_AT_KEY));
+    if (at > 0) liveAt = at;
+  } catch {
+    /* storage is optional */
+  }
   const kept = recentMem.find((c) => c.id === chatSessionId);
-  return kept && kept.messages.length > live.length ? kept.messages : live;
+  return kept && kept.at > liveAt ? kept.messages : live;
 })();
 let chatBusy = false;
 const chatSubs = new Set<() => void>();
@@ -531,6 +544,17 @@ function unsavedWhy(): Unsaved | null {
   const { live, recent } = unsavedNow;
   return live === "full" || recent === "full" ? "full" : live ?? recent;
 }
+/** What to tell the person: which copy wasn't kept, and why. */
+function notKeptLine(): string | null {
+  const why = unsavedWhy();
+  if (!why) return null;
+  const what = unsavedNow.recent
+    ? "This chat couldn't be kept in Recent chats"
+    : "This chat couldn't be saved for the next time Izuki opens";
+  return why === "full"
+    ? `${what}: Izuki's storage on this PC is full. Delete an old chat to make room.`
+    : `${what}: this PC is blocking Izuki's storage. It stays here until Izuki closes.`;
+}
 function setChatBusy(v: boolean) {
   chatBusy = v;
   ping();
@@ -547,7 +571,7 @@ function useChatState() {
     };
   }, []);
   // The session id too, so a reset from outside (resetChat) is seen here.
-  return { msgs: chatMsgs, busy: chatBusy, session: chatSessionId, notKept: unsavedWhy() };
+  return { msgs: chatMsgs, busy: chatBusy, session: chatSessionId, notKept: notKeptLine() };
 }
 
 
@@ -1624,9 +1648,7 @@ export function ChatTab() {
           {fileError && <p role="alert" className="mb-2 text-[11px] text-izk-danger">{fileError}</p>}
           {notKept && (
             <p role="alert" className="mb-2 text-[11px] text-izk-danger">
-              {notKept === "full"
-                ? "This chat couldn't be kept in Recent chats: Izuki's storage on this PC is full. Delete an old chat to make room."
-                : "This chat couldn't be kept in Recent chats: this PC is blocking Izuki's storage. It stays here until Izuki closes."}
+              {notKept}
             </p>
           )}
           {queued && (
