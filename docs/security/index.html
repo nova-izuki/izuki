@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Is Izuki Safe? Security, Signed Updates and How to Verify Your Download</title>
+  <meta name="description" content="How to check your Izuki download is genuine, why Windows shows “Windows protected your PC”, how updates are signed, the safety rules built into the code, and how to report a security problem." />
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#04050c" />
+  <link rel="canonical" href="https://nova-izuki.github.io/izuki/security/" />
+  <link rel="icon" type="image/png" sizes="96x96" href="../icon-96.png" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Izuki" />
+  <meta property="og:title" content="Is Izuki safe? Security and verifying your download" />
+  <meta property="og:description" content="Check your download is genuine, how updates are signed, and the safety rules built into Izuki." />
+  <meta property="og:url" content="https://nova-izuki.github.io/izuki/security/" />
+  <meta property="og:image" content="https://nova-izuki.github.io/izuki/og.png" />
+  <link rel="stylesheet" href="../shared/legal.css" />
+  <script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    { "@type": "Question", "name": "Is Izuki safe to install?", "acceptedAnswer": { "@type": "Answer", "text": "Izuki is open source (MIT), so all of its code is public on GitHub. Download it only from the official site or GitHub releases, and you can check the file's SHA-256 against the one GitHub shows. Updates are signed and checked before they install." } },
+    { "@type": "Question", "name": "Why does Windows say “Windows protected your PC”?", "acceptedAnswer": { "@type": "Answer", "text": "Windows SmartScreen warns about new apps that aren't signed with a paid code-signing certificate. Izuki's installer isn't code-signed yet. Check the download first, then choose More info → Run anyway." } },
+    { "@type": "Question", "name": "How do I report a security problem in Izuki?", "acceptedAnswer": { "@type": "Answer", "text": "Email izuki.hq@gmail.com with “Security” in the subject, and please don't post the details publicly until it's fixed." } }
+  ]
+}</script>
+</head>
+<body>
+  <nav aria-label="Main navigation"><a class="brand" href="../"><img src="../icon-96.png" width="34" height="34" alt="" /> IZUKI</a><a class="nav-dl" href="../#trust">Is it safe?</a></nav>
+  <main>
+    <header>
+      <div class="eyebrow">Security</div>
+      <h1>Check it yourself. That's the point.</h1>
+      <p class="updated">Last updated: 9 November 2026</p>
+      <p>Izuki can use your mouse and keyboard, so it has to be something you can trust, and something you can <b>check</b> rather than take on faith. Here's how to make sure your copy is genuine, what protects you while it works, and how to tell us about a problem.</p>
+      <ul class="toc" aria-label="On this page">
+        <li><a href="#where">Where to get it</a></li>
+        <li><a href="#smartscreen">“Windows protected your PC”</a></li>
+        <li><a href="#verify">Verify your download</a></li>
+        <li><a href="#updates">Signed updates</a></li>
+        <li><a href="#rules">Safety rules in the code</a></li>
+        <li><a href="#keys">Keeping your keys safe</a></li>
+        <li><a href="#report">Report a problem</a></li>
+      </ul>
+    </header>
+
+    <section id="where">
+      <h2>Where to get Izuki</h2>
+      <p>Only from these two places:</p>
+      <ul>
+        <li>the <b>Download</b> button on <a href="../">nova-izuki.github.io/izuki</a>;</li>
+        <li><a href="https://github.com/nova-izuki/izuki/releases">github.com/nova-izuki/izuki/releases</a>.</li>
+      </ul>
+      <p>Izuki is free. A copy on another site, in a bundle, or for sale isn't from us, so don't run it.</p>
+    </section>
+
+    <section id="smartscreen">
+      <h2>Why Windows says “Windows protected your PC”</h2>
+      <p>Windows SmartScreen shows that warning for new apps whose installer isn't signed with a paid code-signing certificate. Izuki's installer isn't code-signed yet, so you'll see <b>“Unknown publisher”</b>. That's a statement about the certificate, not a finding about the file. Check your download first (next section), then choose <b>More info → Run anyway</b>.</p>
+      <p class="note">If you're not sure, don't run it. Ask us at <a href="mailto:izuki.hq@gmail.com">izuki.hq@gmail.com</a>, or open an issue on GitHub.</p>
+    </section>
+
+    <section id="verify">
+      <h2>Verify your download</h2>
+      <p>GitHub publishes a SHA-256 fingerprint for every file in a release. If the fingerprint of your file matches, it's byte-for-byte the file we released.</p>
+      <ol>
+        <li>Open the <a href="https://github.com/nova-izuki/izuki/releases/latest">latest release</a> and find <b>Izuki-Setup.exe</b> under <b>Assets</b>. GitHub shows its <code>sha256:</code> fingerprint next to it.</li>
+        <li>Open <b>PowerShell</b> (Start → type “PowerShell”) and run:
+          <pre><code>Get-FileHash "$env:USERPROFILE\Downloads\Izuki-Setup.exe" -Algorithm SHA256</code></pre>
+        </li>
+        <li>Compare the <b>Hash</b> it prints with GitHub's fingerprint. Upper or lower case doesn't matter, but every character must match. If they don't, delete the file and download it again from GitHub.</li>
+      </ol>
+      <p>You can also upload the file to <a href="https://www.virustotal.com/">VirusTotal</a> for a second opinion from many virus scanners.</p>
+    </section>
+
+    <section id="updates">
+      <h2>Signed updates</h2>
+      <p>Once Izuki is installed, it updates itself. Every update is signed with Izuki's private signing key, and the app checks the signature with the public key built into it (key ID <code>079F8F3DAA47A42C</code>) <b>before</b> it installs anything. An update whose signature doesn't match is refused. Updates come only from Izuki's GitHub releases.</p>
+      <p>Changed your mind about an update? Settings can go back to the previous version, using the same signature check.</p>
+    </section>
+
+    <section id="rules">
+      <h2>Safety rules built into the code</h2>
+      <p>A free AI model can be told to behave and still not do it. So these rules are enforced by Izuki's own code, not left to the AI's judgement:</p>
+      <ul>
+        <li><b>No password boxes.</b> It checks what a box is before typing and refuses password fields, and it never reads them.</li>
+        <li><b>Not on the lock screen.</b> A keystroke there would go into your PIN.</li>
+        <li><b>No final buttons unless you asked.</b> Submit, Send, Pay, Buy, Delete, Erase, Format, Share, Invite, Close account: only when you asked for exactly that.</li>
+        <li><b>No graded quizzes or tests.</b> It explains and coaches; it won't pick or submit answers.</li>
+        <li><b>No surprise commands.</b> It won't type a command into your terminal unless you spelled it out, and the Chat shows every command it runs.</li>
+        <li><b>Asks before sending</b> email or messages from your linked apps.</li>
+        <li><b>Stops at once.</b> Esc stops everything, Ctrl+Shift+Q works any time, and you can pause a task between steps. Eye control has its own emergency stop and is off unless you turn it on.</li>
+      </ul>
+      <p>All of this is open source: <a href="https://github.com/nova-izuki/izuki">read the code on GitHub</a>.</p>
+    </section>
+
+    <section id="keys">
+      <h2>Keeping your keys safe</h2>
+      <p>Your AI and app keys are saved in Izuki's settings file in your Windows user folder (<code>%APPDATA%\Izuki</code>), in plain text, on your PC only. Anyone who can sign in to your Windows account could read them, so:</p>
+      <ul>
+        <li>keep a password or PIN on your Windows account;</li>
+        <li>prefer free keys, or set a spending limit at the provider;</li>
+        <li>if you think a key leaked, revoke it on the provider's site and paste a new one into Izuki.</li>
+      </ul>
+      <p>Izuki sends each key only to the service it belongs to.</p>
+    </section>
+
+    <section id="report">
+      <h2>Report a security problem</h2>
+      <p>Found a way Izuki could be misused, or a bug that exposes data? Email <a href="mailto:izuki.hq@gmail.com?subject=Security">izuki.hq@gmail.com</a> with <b>“Security”</b> in the subject. Please include Izuki's version (shown in Settings) and the steps to reproduce it, and give us a chance to fix it before you post details publicly. We'll reply as soon as we can and credit you in the release notes if you'd like.</p>
+      <p>For everything else, <a href="https://github.com/nova-izuki/izuki/issues/new/choose">open an issue on GitHub</a>.</p>
+    </section>
+  </main>
+  <footer><a href="../">Izuki home</a> · <a href="../privacy/">Privacy policy</a> · <a href="../terms/">Terms of use</a> · <a href="../help/">Help</a> · <a href="https://github.com/nova-izuki/izuki">Source on GitHub</a></footer>
+</body>
+</html>
