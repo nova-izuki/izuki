@@ -23,8 +23,19 @@ pub enum Ask {
 /// "What's taking up space?" → Report; "free up some space", "clear the safe
 /// stuff" → ClearSafe; "empty the recycle bin" → EmptyBin. Other wordings
 /// reach [`handle`] through the chat's [IZUKI: storage | …] tool.
+/// A cloud drive ("my Google Drive", "OneDrive storage", "box.com") with
+/// nothing saying this PC: never a scan or a clean-up of this PC's disk.
+fn cloud_only(s: &str) -> bool {
+    let cloud = ["google", "gdrive", "onedrive", "one drive", "dropbox", "icloud", "mega.nz", "mega nz", "box.com", "box com"].iter().any(|w| s.contains(w));
+    let local = ["c drive", "c:", "my pc", "my laptop", "my computer", "this pc", "hard drive", "ssd", "local"].iter().any(|w| s.contains(w));
+    cloud && !local
+}
+
 pub fn parse(said: &str) -> Option<Ask> {
     let s = format!(" {} ", said.to_lowercase().replace(['’', '\'', '?', '!', ',', '.'], " ").split_whitespace().collect::<Vec<_>>().join(" "));
+    if cloud_only(&s) {
+        return None;
+    }
     if [" recycle bin", " recycling bin"].iter().any(|w| s.contains(w)) {
         return [" empty", " clear", " clean"].iter().any(|w| s.contains(w)).then_some(Ask::EmptyBin);
     }
@@ -58,17 +69,15 @@ pub fn is_storage_question(said: &str) -> bool {
     // A cloud drive ("my Google Drive", "OneDrive storage") isn't this PC's
     // disk, unless the PC is named too ("how much space is OneDrive taking
     // on my C drive").
-    // (parse turns "box.com" into "box com".)
-    let cloud = ["google", "gdrive", "onedrive", "one drive", "dropbox", "icloud", "mega.nz", "mega nz", "box.com", "box com"].iter().any(|w| s.contains(w));
-    let local = ["c drive", "c:", "my pc", "my laptop", "my computer", "this pc", "hard drive", "ssd", "local"].iter().any(|w| s.contains(w));
-    if cloud && !local {
+    if cloud_only(s) {
         return false;
     }
     // "My D drive", "the E: drive": any drive letter (not "a drive", "I drive").
     let words: Vec<&str> = s.split_whitespace().collect();
     let lettered = words.windows(2).any(|w| {
         let letter = w[0].trim_end_matches(':');
-        letter.len() == 1 && letter.chars().all(|c| c.is_ascii_alphabetic()) && !matches!(letter, "a" | "i") && (w[1] == "drive" || w[1] == "drives")
+        // Not "a drive", nor texting ("did u drive", "r u driving").
+        letter.len() == 1 && letter.chars().all(|c| c.is_ascii_alphabetic()) && !matches!(letter, "a" | "i" | "u" | "r" | "y") && (w[1] == "drive" || w[1] == "drives")
     });
     // "My drive" / "C drive" are the PC's own.
     let disk = lettered
@@ -458,6 +467,9 @@ mod tests {
         assert_eq!(parse("how full is my D drive"), Some(Ask::Report), "any drive letter");
         assert_eq!(parse("how much is left on the E: drive"), Some(Ask::Report));
         assert_eq!(parse("I need a drive to the airport, how much is left"), None, "not a drive letter");
+        assert_eq!(parse("how much did u drive today"), None, "texting, not a drive");
+        assert_eq!(parse("how much space is left in my box.com drive and clear it to make room"), None, "never clean this PC for a cloud drive");
+        assert_eq!(parse("free up space on my google drive"), None);
     }
 
     #[test]

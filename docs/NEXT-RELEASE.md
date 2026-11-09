@@ -6,8 +6,7 @@ into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
 
 - A task that was saved before a restart can be finished: say “keep
   going” (a saved task expires after six hours). Izuki also checks short
-  typed boxes it can read, and a video that never started, before counting
-  them as done. [Freebuff]
+  typed boxes it can read before counting them as done. [Freebuff]
 - Pause now works even while Izuki is still thinking: it holds before the
   first click, tells you the step it stopped at, and Resume continues from
   there. [Freebuff]
@@ -21,6 +20,6 @@ into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
   [Freebuff]
 - After a scroll or a shortcut, Izuki checks the screen really changed. If
   it didn't, it looks again before going on, and never presses it twice
-  blindly. After opening an app it notes when nothing new appeared. Volume
-  and music keys aren't checked, since they change nothing on screen.
-  [Freebuff]
+  blindly. After opening an app it notes when nothing new appeared. Volume,
+  music, copy and cut keys aren't checked, since they change nothing on
+  screen. [Freebuff]

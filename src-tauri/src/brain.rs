@@ -3367,7 +3367,8 @@ pub fn run_instant(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<Vi
         provider: "local".into(),
         model: "instant".into(),
         mood: Some(if worked { "cheerful" } else if unconfirmed { "calm" } else { "sympathetic" }.into()),
-        done: (worked || unconfirmed) && alive(),
+        // Unconfirmed isn't done: the reply says it couldn't tell.
+        done: worked && alive(),
         outcome: if !alive() {
             crate::model::TaskOutcome::Cancelled
         } else if worked || unconfirmed {
