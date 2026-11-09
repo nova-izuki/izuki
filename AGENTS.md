@@ -249,17 +249,31 @@ This replaces the two ownership sections below (kept for history).
   one in the other's work that you can fix, say so on its issue (or open
   one), then fix it. Never fix the same thing silently in parallel.
   - On a plain claim, move the `agent:` label to yourself.
+  - **A bridge task is only handed over with the bridge paused**, so nothing
+    dispatches, verifies or merges it mid-change.
+    - **Pause:** create `.work/agents/paused` (the dispatcher), run
+      `gh workflow disable agent-coordinator.yml`, and wait until
+      `gh run list --workflow agent-coordinator.yml --status in_progress` is
+      empty (the coordinator).
+    - **Resume:** `gh workflow enable agent-coordinator.yml`, then delete the
+      pause file. Issue #49 will replace all of this with one atomic
+      `/takeover` command.
   - A bridge task that is still `queued` or `assigned` (no run started, no
-    PR yet): move the `agent:` label and set `status:queued`. The bridge
-    reassigns it by the label and updates its own state.
+    PR yet): with the bridge paused, move the `agent:` label and set
+    `status:queued`. The bridge reassigns it by the label when it resumes.
   - A bridge task that is `in-progress` or `review`: don't relabel it. A
     relabel doesn't stop a run that is already going, and the task keeps its
     recorded PR or commit, which the bridge could still verify and merge.
-    Agree on the issue first. Then:
+    Agree on the issue first. Then, with the bridge paused:
     1. The run's owner stops the run.
-    2. Its PR is closed without merging.
-    3. The issue is closed with "taken over in #N".
-    4. The work continues in a new issue.
+    2. Its PR is closed without merging. Check that it shows closed, not
+       merged.
+    3. The issue is closed with "taken over in #N". The work continues in
+       the new issue #N.
+    4. Move the dependencies to #N:
+       - replace `#old` with `#N` in every open issue's `Depends on:` line;
+       - point any `after` entry in `docs/agents/roadmap.json` that names
+         the old task's key at the new one.
 - **Branches:** each assistant works in its own worktree and branch
   (`claude/…`, `freebuff/…`), never in the other's. A PR goes into
   `milestone-196` and merges only with CI green and every review thread
