@@ -219,6 +219,7 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
     let clickAt = 0;
     let lastPublish = "";
     let lastTellAt = 0;
+    let lastKind = "";
     let faceNow = false;
     let autoFaceStatus = false;
     let calHadGaze = false;
@@ -300,8 +301,13 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
       // Calibration samples update every camera frame. Sending one event per
       // frame makes Settings repaint its whole page; five a second is enough
       // for the progress bar and keeps the UI usable on a laptop.
-      if (payload.state === "calibrating" && now - lastTellAt < 200) return;
+      // A new step (state or mode) always goes through, or the accuracy
+      // check's first word was dropped and Settings showed "dot 9 of 9"
+      // for the whole check.
+      const kind = `${payload.state}|${payload.mode ?? ""}`;
+      if (payload.state === "calibrating" && kind === lastKind && now - lastTellAt < 200) return;
       lastPublish = key;
+      lastKind = kind;
       lastTellAt = now;
       void emit(EV.airEyeStatus, payload).catch(() => undefined);
     };
