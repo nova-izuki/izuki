@@ -1,6 +1,6 @@
 // The bridge scheduler's decisions, checked without GitHub or agents.
 import assert from 'node:assert/strict';
-import { readState, writeState, describe, overlaps, agentStates, performance, score, plan, recover, unavailable, counts, redistribute, classifyFailure, orphans, metrics, compose, productivity, WEIGHTS, STALE_MS } from './scheduler.mjs';
+import { readState, writeState, describe, overlaps, agentStates, performance, score, plan, recover, reassigned, unavailable, counts, redistribute, classifyFailure, orphans, metrics, compose, productivity, WEIGHTS, STALE_MS } from './scheduler.mjs';
 
 const issue = (number, labels, body = '', extra = {}) => ({ number, title: `Task ${number}`, labels, body, author: { login: 'owner' }, state: 'OPEN', createdAt: '2026-11-03T08:00:00Z', ...extra });
 const trusted = (login) => login === 'owner';
@@ -159,6 +159,13 @@ assert.equal(recover(failing('claude', ['failed', 'failed'], false), 'timeout').
 // An "any agent" task keeps that after assignment relabels it (state.flexible).
 const flexible = describe(issue(41, ['agent-task', 'status:failed', 'agent:claude'], writeState('f', { agent: 'claude', flexible: true, history: [{ agent: 'claude', result: 'failed' }, { agent: 'claude', result: 'failed' }] })));
 assert.equal(recover(flexible, 'timeout').action, 'reassign');
+// The same coordinator pass: once recovery reassigns a task, assignment
+// follows the new agent instead of handing it back to the one that failed it.
+const requeued = { ...flexible, status: 'queued', labels: [...flexible.labels], state: { ...flexible.state, agent: undefined } };
+const passedOn = reassigned(requeued, recover(flexible, 'timeout').to);
+assert.equal(passedOn.agent, 'freebuff');
+assert.deepEqual(passedOn.labels.filter((l) => l.startsWith('agent:')), ['agent:freebuff'], 'one agent label, the new one');
+assert.deepEqual(plan([passedOn], agentStates([], now), {}, trusted).map((p) => p.agent), ['freebuff'], 'the same pass assigns it to the new agent');
 assert.equal(recover(failing('claude', ['failed', 'failed', 'failed']), 'ci-failed').action, 'block');
 
 // An agent that can't work (a usage limit) isn't a failed task. The result

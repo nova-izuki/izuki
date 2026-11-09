@@ -106,6 +106,8 @@ export function describe(issue) {
     body,
     author: issue.author?.login || issue.author || '',
     open: (issue.state || 'OPEN').toUpperCase() === 'OPEN',
+    // The labels themselves, for the steps that check one (untrusted, a reassignment).
+    labels,
     status: label(t, 'status:') || 'queued',
     agent: label(t, 'agent:') || 'any',
     priority: label(t, 'priority:') || 'normal',
@@ -381,6 +383,17 @@ export function redistribute(tasks, states, now) {
  * approach, hand it to the other agent, or stop and escalate. Never the same
  * prompt again.
  */
+/**
+ * A reassignment applied to the task record a coordinator pass keeps in
+ * memory. The rest of the pass plans by `agent`, so it must name the new
+ * agent, or the same pass hands the task back to the one that just failed it.
+ */
+export function reassigned(t, to) {
+  t.agent = to;
+  t.labels = [...(t.labels || []).filter((l) => !l.startsWith('agent:')), `agent:${to}`];
+  return t;
+}
+
 export function recover(task, category) {
   const history = task.state.history || [];
   const attempts = history.filter(counts).length;

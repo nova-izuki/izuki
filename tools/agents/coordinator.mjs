@@ -6,7 +6,7 @@
 // It never runs anything from an issue's text: tasks are instructions for an
 // agent, and only accounts with write access may give them.
 import fs from 'node:fs';
-import { describe, writeState, agentStates, performance, plan, recover, redistribute, classifyFailure, productivity, compose, WEIGHTED_ASSIGNMENT, AGENTS } from './scheduler.mjs';
+import { describe, writeState, agentStates, performance, plan, recover, reassigned, redistribute, classifyFailure, productivity, compose, WEIGHTED_ASSIGNMENT, AGENTS } from './scheduler.mjs';
 import * as gh from './github.mjs';
 
 const DRY = process.argv.includes('--dry-run');
@@ -68,13 +68,11 @@ function fail(t, category, detail, recorded = false) {
   if (next.action === 'block') return update(t, 'blocked', { history, pr: undefined, commit: undefined }, text);
   update(t, 'queued', { history, agent: next.action === 'reassign' ? undefined : t.state.agent, strategy: next.note, pr: undefined, commit: undefined, reviewSince: undefined }, text);
   if (next.action === 'reassign') {
+    // If the relabel fails, setLabels throws before the new label is added:
+    // the task keeps its old agent, here and on GitHub, and `each` notes it.
     act(`#${t.number}: to ${next.to}`, () => gh.setLabels(t.number, [`agent:${next.to}`], [`agent:${t.agent}`]));
-    // The rest of this pass reads the task from memory, not from GitHub:
-    // without this, the assign step below would hand the task straight back
-    // to the agent that just failed it, under the other agent's label, and
-    // both could start it.
-    t.agent = next.to;
-    t.labels = [...(t.labels || []).filter((l) => !l.startsWith('agent:')), `agent:${next.to}`];
+    // The rest of this pass reads the task from memory, not from GitHub.
+    reassigned(t, next.to);
   }
 }
 
