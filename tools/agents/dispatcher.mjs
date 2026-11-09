@@ -239,14 +239,16 @@ function liveRuns() {
  */
 function recoverOrphans(tasks) {
   if (!tasks.some((t) => t.open && t.status === 'in-progress' && t.state.agent === 'claude')) return;
-  // A task whose label names the other agent is left for the coordinator to block.
-  for (const o of orphans(tasks.filter((t) => gh.trusted(t.author) && !mismatched(t)), liveRuns(), Date.now(), HEARTBEAT_MS)) {
+  for (const o of orphans(tasks.filter((t) => gh.trusted(t.author)), liveRuns(), Date.now(), HEARTBEAT_MS)) {
     const t = tasks.find((x) => x.number === o.task);
     let stopped = 0;
     for (const pid of o.stop) {
       try { stopped += stopRecorded(new Map(descendants(pid).map((p) => [`${p.pid}@${p.start}`, p]))); } catch { /* none */ }
       try { process.kill(pid); stopped++; } catch { /* already gone */ }
     }
+    // Its leftover process is stopped either way; a task whose label names
+    // the other agent isn't requeued (the coordinator blocks it).
+    if (mismatched(t)) { say(`#${t.number}: stopped its leftover run; label and record disagree, left for the owner`); continue; }
     setTask(t, 'assigned', { heartbeat: undefined, progress: undefined, history: [...(t.state.history || []), { agent: 'claude', attempt: t.state.attempt, at: iso(), result: 'interrupted' }] }, `The dispatcher running this task stopped mid-run (restarted, or its window closed), and the run ended with it${stopped ? '; the Claude process it left going was stopped' : ''}. Not counted as an attempt. The task is waiting for Claude again and continues from \`${t.state.branch}\` (anything the run left in its folder is saved there first).`);
     say(`#${t.number}: its run ended with a dispatcher that stopped; waiting again (not an attempt)`);
   }

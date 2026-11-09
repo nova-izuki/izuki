@@ -109,6 +109,8 @@ export function describe(issue) {
     // The labels themselves, for the steps that check one (untrusted, a reassignment).
     labels,
     status: label(t, 'status:') || 'queued',
+    // false when the status label is missing (the status above is then a default).
+    statusLabelled: !!label(t, 'status:'),
     agent: label(t, 'agent:') || 'any',
     priority: label(t, 'priority:') || 'normal',
     kind: label(t, 'kind:') || 'feature',
@@ -394,7 +396,8 @@ export function redistribute(tasks, states, now) {
  * agent, or the same pass hands the task back to the one that just failed it.
  */
 export function mismatched(t) {
-  return t.open && ['assigned', 'in-progress', 'review'].includes(t.status) && !!t.state.agent && t.agent !== 'any' && t.state.agent !== t.agent;
+  const live = ['assigned', 'in-progress', 'review'].includes(t.status) || (t.status === 'queued' && t.statusLabelled === false);
+  return t.open && live && !!t.state.agent && t.agent !== 'any' && t.state.agent !== t.agent;
 }
 
 export function reassigned(t, to) {

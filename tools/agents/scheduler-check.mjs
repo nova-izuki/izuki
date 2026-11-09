@@ -173,6 +173,8 @@ assert(mismatched(half('assigned', 'claude', 'freebuff')));
 assert(!mismatched(half('assigned', 'claude', 'claude')), 'they agree');
 assert(!mismatched(half('queued', 'freebuff', 'claude')), 'queued: assignment rewrites the record from the label');
 assert(!mismatched(half('assigned', 'any', 'claude')), 'an any-agent label carries no claim');
+const noStatus = describe(issue(43, ['agent-task', 'agent:freebuff'], writeState('h', { agent: 'claude' })));
+assert(mismatched(noStatus), 'a missing status label is not a repair');
 assert.equal(recover(failing('claude', ['failed', 'failed', 'failed']), 'ci-failed').action, 'block');
 
 // An agent that can't work (a usage limit) isn't a failed task. The result

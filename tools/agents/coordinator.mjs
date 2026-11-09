@@ -54,14 +54,19 @@ each('reconcile', tasks.filter(mismatched), (t) => update(t, 'blocked', {}, `Thi
 
 function update(t, status, statePatch, note) {
   const state = { ...t.state, ...statePatch };
-  act(`#${t.number}: ${t.status} → ${status}${note ? ` (${note.slice(0, 80)})` : ''}`, () => {
+  const was = t.status;
+  // The record in memory takes the change even if a GitHub write below
+  // fails partway, so no later step of this pass acts on the old status
+  // (a blocked task can't be merged as if still in review). The next pass
+  // rereads GitHub and finishes the job.
+  t.status = status;
+  t.state = state;
+  act(`#${t.number}: ${was} → ${status}${note ? ` (${note.slice(0, 80)})` : ''}`, () => {
     gh.editIssue(t.number, { body: writeState(t.body || gh.api(`repos/${gh.REPO}/issues/${t.number}`).body, state) });
-    if (status !== t.status) gh.setLabels(t.number, [`status:${status}`], [`status:${t.status}`]);
+    if (status !== was) gh.setLabels(t.number, [`status:${status}`], [`status:${was}`]);
     if (note) gh.comment(t.number, note);
     if (status === 'done') gh.editIssue(t.number, { state: 'closed', state_reason: 'completed' });
   });
-  t.status = status;
-  t.state = state;
 }
 
 // `recorded`: the run already wrote this failure into the history (the
