@@ -24,3 +24,6 @@ into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
   twice blindly. After opening an app it notes when nothing new appeared. Volume,
   music, copy and cut keys aren't checked, since they change nothing on
   screen. [Freebuff]
+- Inbox now retries a transient Gmail account check, shows an unfinished
+  sign-in as unfinished instead of a broken account, and names the Gmail
+  address it actually read. [Freebuff]
