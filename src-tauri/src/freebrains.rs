@@ -119,9 +119,9 @@ pub fn refresh() {
 
 /// Each keyed provider's strong free vision models, best first.
 fn discover(providers: &[ProviderConfig]) -> HashMap<String, Vec<String>> {
-    let Ok(client) = reqwest::blocking::Client::builder().timeout(Duration::from_secs(15)).build() else { return HashMap::new() };
     let mut out: HashMap<String, Vec<String>> = HashMap::new();
     for p in providers.iter().filter(|p| !p.api_key.trim().is_empty() && key_travels_safely(&p.base_url)) {
+        let Ok(client) = key_client(&p.base_url, Duration::from_secs(15)) else { continue };
         let base = p.base_url.trim_end_matches('/');
         let mut names: Vec<String> = Vec::new();
         match p.id {
@@ -260,6 +260,15 @@ fn key_travels_safely(base_url: &str) -> bool {
     url.starts_with("https://") || (url.starts_with("http://") && crate::brain::on_this_pc(base_url.trim()))
 }
 
+/// A client for requests that carry a key. A server on this PC is reached
+/// directly, never through a proxy, which would carry the key off the
+/// machine over plain http.
+fn key_client(base_url: &str, timeout: Duration) -> reqwest::Result<reqwest::blocking::Client> {
+    let builder = reqwest::blocking::Client::builder().timeout(timeout);
+    let builder = if crate::brain::on_this_pc(base_url.trim()) { builder.no_proxy() } else { builder };
+    builder.build()
+}
+
 /// Not a chat model at all: music, safety filters, embeddings, speech, image
 /// makers, and the specialist models NVIDIA lists beside the chat ones
 /// (robot video, chip calibration plots, captioning, code-only).
@@ -377,7 +386,7 @@ pub fn search(cfg: &ProviderConfig) -> anyhow::Result<FreeSearch> {
         anyhow::bail!("the endpoint starts with http://, so your key would travel unprotected — use the https:// address");
     }
     crate::tls_ready();
-    let client = reqwest::blocking::Client::builder().timeout(Duration::from_secs(25)).build()?;
+    let client = key_client(&cfg.base_url, Duration::from_secs(25))?;
     let res = client
         .get(format!("{}/models", cfg.base_url.trim_end_matches('/')))
         .bearer_auth(cfg.api_key.trim())

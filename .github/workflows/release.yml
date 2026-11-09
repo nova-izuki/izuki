@@ -18,6 +18,11 @@ concurrency:
   group: release-${{ github.ref_name }}
   cancel-in-progress: false
 
+env:
+  # CI never uses a GPU: onnxruntime-node's install would download its CUDA
+  # files from GitHub releases, and a 504 there failed whole runs.
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
 jobs:
   windows:
     runs-on: windows-latest
