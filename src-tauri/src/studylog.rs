@@ -40,7 +40,7 @@ pub fn parse(said: &str) -> Option<bool> {
         let off = [" turn off ", " switch off ", " disable ", " stop ", " no more ", " quit ", " off "]
             .iter()
             .any(|w| padded.contains(w));
-        let on = [" turn on ", " switch on ", " enable ", " start ", " keep ", " save ", " record ", " log ", " on "]
+        let on = [" turn on ", " switch on ", " enable ", " start ", " keep ", " save ", " record ", " study log on "]
             .iter()
             .any(|w| padded.contains(w));
         if off {
@@ -224,6 +224,7 @@ mod tests {
         assert_eq!(parse("whatttt"), None);
         assert_eq!(parse("what's in my study log?"), None);
         assert_eq!(parse("study log off"), Some(false));
+        assert_eq!(parse("study log on"), Some(true));
     }
 
     #[test]
