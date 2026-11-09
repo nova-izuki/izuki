@@ -161,7 +161,8 @@ export function NvidiaGuide({ provider, onModel }: { provider: ProviderConfig; o
       )}
 
       <div className="mt-1.5 text-[10px] text-izk-muted/80">
-        NVIDIA's free tier is for trying things out: about 40 requests a minute, and it isn't offered in every country. NVIDIA
+        NVIDIA's free tier is for trying things out, not for running a business on (its trial terms rule out production use):
+        about 40 requests a minute, and it isn't offered in every country. NVIDIA
         records free-tier requests and may use them to improve its models, so keep private things off the screen while it's
         Izuki's brain.
       </div>
