@@ -552,6 +552,7 @@ pub fn run() {
             commands::preview_plan,
             commands::panic_stop,
             commands::probe_provider,
+            commands::free_models_search,
             commands::ghost_predict,
             commands::read_clipboard,
             commands::write_clipboard,

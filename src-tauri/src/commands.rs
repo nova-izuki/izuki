@@ -888,6 +888,20 @@ pub async fn probe_provider(id: String) -> R<String> {
     blocking(move || vision::probe(&cfg).map_err(err)).await?
 }
 
+/// Search the person's own key for the free models that fit Izuki: each
+/// likely one is tried for real (a picture for the screen ones), and the
+/// ones that answered come back best first.
+#[tauri::command]
+pub async fn free_models_search(id: String) -> R<crate::freebrains::FreeSearch> {
+    let settings = state::store().settings();
+    let pid = ProviderId::parse(&id).ok_or_else(|| format!("unknown provider: {id}"))?;
+    let cfg = settings
+        .provider(pid)
+        .cloned()
+        .ok_or_else(|| format!("{id} is not configured"))?;
+    blocking(move || crate::freebrains::search(&cfg).map_err(err)).await?
+}
+
 #[tauri::command]
 pub async fn ghost_predict() -> Option<Prediction> {
     blocking(|| ghost::predict(&state::store(), &uia::foreground_app()))
