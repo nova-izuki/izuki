@@ -1806,6 +1806,68 @@ pub enum Ask {
     Premium,
 }
 
+/// A mood in plain words ("cozy", "cyberpunk", "black and gold") and the
+/// look closest to it, with a pack of tweaks that suits it, if one does.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Vibe {
+    pub preset: &'static str,
+    pub name: &'static str,
+    /// A tweak pack from tweaks.rs that fits ("gamer" for a gaming vibe).
+    pub pack: Option<&'static str>,
+    /// The word that decided it, to say back ("cozy").
+    pub word: &'static str,
+}
+
+/// Words for a mood → look id, tweak pack. More than one row can match; the
+/// row with the most matching words wins, then the earlier row.
+const VIBES: &[(&[&str], &str, Option<&str>)] = &[
+    (&["gaming", "gamer", "rgb", "esports"], "synthwave", Some("gamer")),
+    (&["hacker", "matrix", "coder", "coding", "programmer", "terminal", "developer"], "matrix", Some("power")),
+    (&["cozy", "cosy", "warm", "autumn", "fall", "coffee", "fireplace", "candle", "candles"], "amber", None),
+    (&["fire", "lava", "red", "volcano", "bold", "fiery"], "ember", None),
+    (&["nature", "forest", "green", "plants", "jungle", "earthy", "woods", "leafy"], "forest", None),
+    (&["pink", "cherry", "blossom", "spring", "cute", "kawaii", "anime", "sakura"], "sakura", None),
+    (&["minimal", "minimalist", "clean", "simple", "white", "bright", "office", "professional", "tidy"], "paper", Some("clean")),
+    (&["study", "studying", "focus", "focused", "productive", "productivity", "school", "exam", "exams"], "focus", Some("clean")),
+    (&["retro", "80s", "neon", "synth", "synthwave", "vaporwave", "cyberpunk", "outrun", "arcade"], "synthwave", None),
+    (&["sunset", "orange", "golden hour", "summer", "tropical"], "sunset", None),
+    (&["ocean", "sea", "beach", "blue", "water", "chill", "calm", "waves", "relaxing", "peaceful"], "ocean", None),
+    (&["snow", "winter", "ice", "icy", "frost", "frosty", "arctic", "cold", "frozen"], "arctic", None),
+    (&["space", "galaxy", "stars", "starry", "cosmic", "universe", "nebula", "purple", "astronaut"], "galaxy", None),
+    (&["desert", "sand", "sandy", "boho", "beige", "dune", "earth tones"], "dune", None),
+    (&["luxury", "luxurious", "gold", "golden", "rich", "elegant", "classy", "expensive", "black and gold"], "obsidian", None),
+    (&["northern lights", "aurora", "teal", "mint"], "aurora", None),
+    (&["underwater", "deep sea", "diving", "abyss", "deep ocean"], "deepsea", None),
+    (&["lavender", "pastel", "soft", "dreamy", "lilac", "cloudy"], "lavender", None),
+    (&["night", "dark", "midnight", "moon", "moonlight", "late night", "sleepy"], "midnight", None),
+];
+
+/// The look for a mood in plain words: `None` when no mood word is there.
+pub fn vibe(text: &str) -> Option<Vibe> {
+    let s = format!(
+        " {} ",
+        text.to_lowercase()
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    let mut best: Option<(usize, &'static str, &'static str, Option<&'static str>)> = None;
+    for (words, preset, pack) in VIBES {
+        let hits: Vec<&'static str> = words.iter().copied().filter(|w| s.contains(&format!(" {w} "))).collect();
+        if let Some(first) = hits.first() {
+            if best.is_none_or(|(n, ..)| hits.len() > n) {
+                best = Some((hits.len(), *preset, *first, *pack));
+            }
+        }
+    }
+    let (_, preset, word, pack) = best?;
+    let p = PRESETS.iter().find(|p| p.id == preset)?;
+    Some(Vibe { preset: p.id, name: p.name, pack, word })
+}
+
 pub fn parse(said: &str) -> Option<Ask> {
     let mut s = said.to_lowercase().chars().map(|c| if c.is_alphanumeric() || c == '#' { c } else { ' ' }).collect::<String>();
     s = format!(" {} ", s.split_whitespace().collect::<Vec<_>>().join(" "));
@@ -1884,9 +1946,9 @@ pub fn parse(said: &str) -> Option<Ask> {
     // "the midnight theme", "change the look to forest") — not a name
     // anywhere in the sentence ("the theme of my essay is the forest").
     let words: Vec<&str> = s.split_whitespace().collect();
-    let is_look_word = |w: Option<&&str>| w.is_some_and(|w| ["look", "looks", "theme", "style", "vibe", "makeover"].contains(w));
+    let is_look_word = |w: Option<&&str>| w.is_some_and(|w| ["look", "looks", "theme", "style", "vibe", "makeover", "aesthetic"].contains(w));
     let at = |i: usize, back: usize| i.checked_sub(back).and_then(|j| words.get(j));
-    PRESETS
+    let named = PRESETS
         .iter()
         .find(|p| {
             let name = p.name.to_lowercase();
@@ -1901,7 +1963,22 @@ pub fn parse(said: &str) -> Option<Ask> {
                     || at(i, 1).is_some_and(|w| ["like", "to", "called", "into"].contains(w)) && is_look_word(at(i, 2))
             })
         })
-        .map(|p| Ask::Apply(p.id))
+        .map(|p| Ask::Apply(p.id));
+    if named.is_some() {
+        return named;
+    }
+    // No look by name: a mood ("make my PC look cozy", "give my desktop a
+    // cyberpunk vibe", "switch to a calm theme") picks the closest look. The
+    // mood word sits right by a look word, or the PC is named.
+    if elsewhere || refused || negated || asking_how {
+        return None;
+    }
+    let near_look = words.iter().enumerate().filter(|(_, w)| is_look_word(Some(w))).find_map(|(j, _)| {
+        let from = j.saturating_sub(3);
+        let to = (j + 4).min(words.len());
+        vibe(&words[from..to].join(" "))
+    });
+    near_look.or_else(|| my_pc.then(|| vibe(&s)).flatten()).map(|v| Ask::Apply(v.preset))
 }
 
 /// "a red accent", "an orange accent".
@@ -2255,6 +2332,32 @@ mod win {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_mood_in_plain_words_picks_a_look() {
+        use super::{parse, vibe, Ask};
+        assert_eq!(parse("make my PC look cozy"), Some(Ask::Apply("amber")));
+        assert_eq!(parse("give my desktop a cyberpunk vibe"), Some(Ask::Apply("synthwave")));
+        assert_eq!(parse("switch to a calm theme"), Some(Ask::Apply("ocean")));
+        assert_eq!(parse("make my laptop look black and gold"), Some(Ask::Apply("obsidian")));
+        // A name still wins, and other things stay other things.
+        assert_eq!(parse("make my PC look like Nova"), Some(Ask::Apply("nova")));
+        assert_eq!(parse("change the look of my essay to something cozy"), None, "an essay's look");
+        assert_eq!(parse("how do I make my pc look cozy"), None, "a question");
+        assert_eq!(parse("don't make my pc look dark"), None);
+        assert_eq!(parse("make the paper look neater and change its style"), None);
+        // The matcher: whole words, the best row, its pack.
+        let gaming = vibe("an RGB gaming setup").unwrap();
+        assert_eq!((gaming.preset, gaming.pack, gaming.word), ("synthwave", Some("gamer"), "gaming"));
+        assert_eq!(vibe("northern lights please").unwrap().preset, "aurora");
+        assert_eq!(vibe("deep sea diving").unwrap().preset, "deepsea", "two words beat one");
+        assert_eq!(vibe("redecorate"), None, "not \"red\" inside another word");
+        assert_eq!(vibe("hello there"), None);
+        for (words, preset, _) in super::VIBES {
+            assert!(super::PRESETS.iter().any(|p| p.id == *preset), "{preset}");
+            assert!(!words.is_empty());
+        }
+    }
+
     use super::*;
 
     #[test]
