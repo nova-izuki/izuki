@@ -6,7 +6,7 @@
 // It never runs anything from an issue's text: tasks are instructions for an
 // agent, and only accounts with write access may give them.
 import fs from 'node:fs';
-import { describe, writeState, agentStates, performance, plan, recover, redistribute, classifyFailure, AGENTS } from './scheduler.mjs';
+import { describe, writeState, agentStates, performance, plan, recover, redistribute, classifyFailure, productivity, compose, WEIGHTED_ASSIGNMENT, AGENTS } from './scheduler.mjs';
 import * as gh from './github.mjs';
 
 const DRY = process.argv.includes('--dry-run');
@@ -213,10 +213,15 @@ each('roadmap', AGENTS, (agent) => {
   usedKeys.set(item.key, { status: 'queued' });
 });
 
-// ASSIGN: dependency-ready work to free agents, by measured performance.
+// ASSIGN: dependency-ready work to free agents, by measured performance. When
+// the weighted §2 score is enabled, it ranks the agents on each task kind;
+// otherwise the smoothed first-try prior does (the dashboard shows the
+// weighted score either way, so it can be proven before it drives anything).
 const stats = performance(tasks);
+const weighted = WEIGHTED_ASSIGNMENT || process.env.BRIDGE_WEIGHTED === '1';
+const rank = weighted ? (agent, kind) => productivity(stats, kind)[agent] : undefined;
 states = agentStates(tasks, now, facts);
-each('assign', plan(tasks, states, stats, gh.trusted), (pick) => {
+each('assign', plan(tasks, states, stats, gh.trusted, rank), (pick) => {
   const t = byNumber().get(pick.task);
   update(t, 'assigned', { agent: pick.agent, assignedAt: iso(), ...(t.agent === 'any' || t.state.flexible ? { flexible: true } : {}) }, null);
   act(`#${t.number}: assigned to ${pick.agent} (${pick.why})`, () => {
@@ -227,11 +232,14 @@ each('assign', plan(tasks, states, stats, gh.trusted), (pick) => {
 
 // The dashboard: one issue, rewritten each pass.
 states = agentStates(tasks, now, facts);
+// The weighted §2 productivity score, head-to-head over each agent's whole
+// record (shown whether or not it drives assignment yet).
+const prod = compose(Object.fromEntries(AGENTS.map((a) => [a, stats[a] || null])));
 const fmt = (xs) => (xs.length ? `${(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(0)} min` : '—');
 const rows = AGENTS.map((a) => {
   const s = stats[a] || { done: 0, failed: 0, firstTry: 0, minutes: [], waits: [] };
   const cur = states[a].running || states[a].held[0];
-  return `| ${a} | ${states[a].state}${states[a].until ? ` until ${states[a].until.slice(11, 16)} UTC` : ''} | ${cur ? `#${cur}` : '—'} | ${s.done} | ${s.done ? Math.round((100 * s.firstTry) / s.done) + '%' : '—'} | ${s.failed} | ${fmt(s.minutes)} | ${fmt(s.waits)} |`;
+  return `| ${a} | ${states[a].state}${states[a].until ? ` until ${states[a].until.slice(11, 16)} UTC` : ''} | ${cur ? `#${cur}` : '—'} | ${s.done} | ${s.done ? Math.round((100 * s.firstTry) / s.done) + '%' : '—'} | ${s.failed} | ${fmt(s.minutes)} | ${fmt(s.waits)} | ${prod[a].toFixed(2)} |`;
 });
 const open = tasks.filter((t) => t.open);
 const list = (st) => open.filter((t) => t.status === st).map((t) => `#${t.number}`).join(' ') || '—';
@@ -245,9 +253,11 @@ try {
 const next = roadmap.filter((i) => !usedKeys.has(i.key)).slice(0, 3).map((i) => `${i.agent}: ${i.title}`).join('; ') || '—';
 const dashboard = `Rewritten by the agent coordinator (tools/agents/coordinator.mjs) on every pass. Last pass: ${iso()}.
 
-| Agent | State | Task | Verified done | First try | Failed attempts | Avg time to done | Avg queue wait |
-| --- | --- | --- | --- | --- | --- | --- | --- |
+| Agent | State | Task | Verified done | First try | Failed attempts | Avg time to done | Avg queue wait | Weighted score |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
 ${rows.join('\n')}
+
+Weighted score: the §2 productivity model (docs/AGENT-SCHEDULER-REQUIREMENTS.md) — verified rate, first-try pass, completion time, review fixes, re-work, regressions, queue wait and cost — compared head-to-head (0.50 means no comparative evidence yet). Weighted assignment is **${weighted ? 'on' : 'off'}**.
 
 **Queued:** ${list('queued')} · **Assigned:** ${list('assigned')} · **In progress:** ${list('in-progress')} · **In review:** ${list('review')} · **Blocked:** ${list('blocked')}
 
