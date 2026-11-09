@@ -121,7 +121,7 @@ pub fn refresh() {
 fn discover(providers: &[ProviderConfig]) -> HashMap<String, Vec<String>> {
     let Ok(client) = reqwest::blocking::Client::builder().timeout(Duration::from_secs(15)).build() else { return HashMap::new() };
     let mut out: HashMap<String, Vec<String>> = HashMap::new();
-    for p in providers.iter().filter(|p| !p.api_key.trim().is_empty()) {
+    for p in providers.iter().filter(|p| !p.api_key.trim().is_empty() && key_travels_safely(&p.base_url)) {
         let base = p.base_url.trim_end_matches('/');
         let mut names: Vec<String> = Vec::new();
         match p.id {
@@ -254,6 +254,12 @@ pub fn expand(chain: Vec<ProviderConfig>, for_screen: bool) -> Vec<ProviderConfi
     out
 }
 
+/// A key is only sent over https, or over plain http to a server on this PC.
+fn key_travels_safely(base_url: &str) -> bool {
+    let url = base_url.trim().to_ascii_lowercase();
+    url.starts_with("https://") || (url.starts_with("http://") && crate::brain::on_this_pc(base_url.trim()))
+}
+
 /// Not a chat model at all: music, safety filters, embeddings, speech, image
 /// makers, and the specialist models NVIDIA lists beside the chat ones
 /// (robot video, chip calibration plots, captioning, code-only).
@@ -366,6 +372,9 @@ fn try_model(client: &reqwest::blocking::Client, cfg: &ProviderConfig, model: &s
 pub fn search(cfg: &ProviderConfig) -> anyhow::Result<FreeSearch> {
     if cfg.api_key.trim().is_empty() {
         anyhow::bail!("add your API key first");
+    }
+    if !key_travels_safely(&cfg.base_url) {
+        anyhow::bail!("the endpoint starts with http://, so your key would travel unprotected — use the https:// address");
     }
     crate::tls_ready();
     let client = reqwest::blocking::Client::builder().timeout(Duration::from_secs(25)).build()?;
@@ -496,6 +505,15 @@ mod tests {
         assert!(!vision.iter().chain(&chat).any(|m| m.contains("cosmos") || m.contains("paligemma") || m.contains("embed") || m.contains("safety") || m.contains("coder")), "specialist models aren't chat: {vision:?} {chat:?}");
         assert!(chat.iter().any(|m| m == "meta/llama-3.3-70b-instruct"), "{chat:?}");
         assert!(chat.len() <= 3 && vision.len() <= 4, "a short, polite number of tries");
+    }
+
+    #[test]
+    fn a_key_never_travels_over_plain_http_to_another_machine() {
+        assert!(key_travels_safely("https://integrate.api.nvidia.com/v1"));
+        assert!(key_travels_safely("http://127.0.0.1:20128/v1"));
+        assert!(key_travels_safely("http://localhost:11434"));
+        assert!(!key_travels_safely("http://integrate.api.nvidia.com/v1"));
+        assert!(!key_travels_safely("http://192.168.1.20:8000/v1"));
     }
 
     #[test]

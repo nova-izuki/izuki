@@ -25,42 +25,45 @@ export function NvidiaGuide({ provider, onModel }: { provider: ProviderConfig; o
   const onModelRef = useRef(onModel);
   onModelRef.current = onModel;
 
-  /** One search at a time (a copied key and a click can both start one). */
+  /** One search at a time; a new key that arrives during one queues another
+   *  (for that key), and the running one's results are dropped. */
   const running = useRef(false);
+  const again = useRef(false);
 
   /** `choose`: put the best one in use when the model set now didn't answer. */
-  const search = useCallback(
-    async (choose: boolean) => {
-      if (running.current) return;
-      running.current = true;
-      setBusy(true);
-      setError("");
-      setPicked("");
-      try {
-        // A key pasted a moment ago is still in the debounced save.
-        await useIzuki.getState().flushSettings();
-        const result = await api.freeModelsSearch("nvidia");
-        setFound(result);
-        const best = result.working.find((m) => m.sees) ?? result.working[0];
-        if (choose && best && !result.working.some((m) => m.id === modelRef.current)) {
-          onModelRef.current(best.id);
-          setPicked(best.id);
-        }
-      } catch (e) {
-        setError(String(e));
-      } finally {
-        running.current = false;
-        setBusy(false);
+  const search = useCallback(async (choose: boolean): Promise<void> => {
+    running.current = true;
+    again.current = false;
+    setBusy(true);
+    setError("");
+    setPicked("");
+    try {
+      // A key pasted a moment ago is still in the debounced save.
+      await useIzuki.getState().flushSettings();
+      const result = await api.freeModelsSearch("nvidia");
+      if (again.current) return; // tried with the old key
+      setFound(result);
+      const best = result.working.find((m) => m.sees) ?? result.working[0];
+      if (choose && best && !result.working.some((m) => m.id === modelRef.current)) {
+        onModelRef.current(best.id);
+        setPicked(best.id);
       }
-    },
-    []
-  );
+    } catch (e) {
+      if (!again.current) setError(String(e));
+    } finally {
+      running.current = false;
+      setBusy(false);
+      if (again.current) void search(true);
+    }
+  }, []);
 
   // The key was copied from NVIDIA's page and saved (setup.ts): look for the
   // models that fit straight away, and put the best one in use if needed.
   useEffect(() => {
     const onKey = (e: Event) => {
-      if ((e as CustomEvent).detail === "nvidia") void search(true);
+      if ((e as CustomEvent).detail !== "nvidia") return;
+      if (running.current) again.current = true;
+      else void search(true);
     };
     window.addEventListener("izuki:key", onKey);
     return () => window.removeEventListener("izuki:key", onKey);
@@ -98,7 +101,9 @@ export function NvidiaGuide({ provider, onModel }: { provider: ProviderConfig; o
             <button
               type="button"
               disabled={!hasKey || busy}
-              onClick={() => void search(true)}
+              onClick={() => {
+                if (!running.current) void search(true);
+              }}
               className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px] disabled:opacity-50"
               title={hasKey ? "Try the free models on your key" : "Add your key first"}
             >
@@ -138,7 +143,7 @@ export function NvidiaGuide({ provider, onModel }: { provider: ProviderConfig; o
                 </span>
                 <button
                   type="button"
-                  disabled={inUse}
+                  disabled={inUse || busy}
                   onClick={() => onModel(m.id)}
                   className="izk-pill izk-no-drag h-[22px] shrink-0 px-2 text-[10.5px] disabled:opacity-60"
                 >
