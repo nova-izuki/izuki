@@ -20,10 +20,14 @@ export function NvidiaGuide({ provider, onModel }: { provider: ProviderConfig; o
   const [error, setError] = useState("");
   const [picked, setPicked] = useState("");
   const hasKey = !!provider.api_key.trim();
+  // The latest model and setter, for a search that finishes later. Updated
+  // after each commit, not during render.
   const modelRef = useRef(provider.model);
-  modelRef.current = provider.model;
   const onModelRef = useRef(onModel);
-  onModelRef.current = onModel;
+  useEffect(() => {
+    modelRef.current = provider.model;
+    onModelRef.current = onModel;
+  });
 
   /** One search at a time; a new key that arrives during one queues another
    *  (for that key), and the running one's results are dropped. */

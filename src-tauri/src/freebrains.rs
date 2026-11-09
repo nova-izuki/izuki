@@ -514,6 +514,7 @@ mod tests {
         assert!(key_travels_safely("http://localhost:11434"));
         assert!(!key_travels_safely("http://integrate.api.nvidia.com/v1"));
         assert!(!key_travels_safely("http://192.168.1.20:8000/v1"));
+        assert!(!key_travels_safely("http://127.example.com/v1"));
     }
 
     #[test]
