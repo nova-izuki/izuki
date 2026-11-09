@@ -9,13 +9,20 @@ const path = require("path");
 const ts = require("typescript");
 const src = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "eyeGate.ts"), "utf8");
 const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+const mapSrc = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "eyeMap.ts"), "utf8");
+const mapJs = ts.transpileModule(mapSrc, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+const mapMod = { exports: {} };
+new Function("exports", "require", "module", mapJs)(mapMod.exports, require, mapMod);
 const mod = { exports: {} };
-new Function("exports", "require", "module", js)(mod.exports, require, mod);
+const localRequire = (id) => id === "./eyeMap" ? mapMod.exports : require(id);
+new Function("exports", "require", "module", js)(mod.exports, localRequire, mod);
 const {
-  newEyeGate, requestGate, endGate, gateOpen, newBlink, blinkStep, gazeOffset,
-  newCalibration, startCalibration, calibrationStep, applyCalibration, calibrationReady,
-  CALIBRATION_TIMEOUT_MS,
+  newEyeGate, requestGate, endGate, gateOpen, newBlink, blinkStep, fuseEyeGaze,
+  newCalibration, startCalibration, calibrationStep, applyCalibration, calibrationReady, cancelCalibration,
+  retryCalibrationTarget, CALIBRATION_TIMEOUT_MS, CALIBRATION_TARGET_TIMEOUT_MS,
 } = mod.exports;
+const { CALIBRATION_TARGETS, fitGazeModel, predictGaze } = mapMod.exports;
+const workerSrc = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "eyeWorker.ts"), "utf8");
 
 let failed = 0;
 function check(what, cond) {
@@ -103,75 +110,100 @@ check("a fresh gate knows nothing of the last process (no persistence)",
 
 // ---------------------------------------------------------------- gaze
 
-check("an iris centred in the box reads ~0,0",
-  (() => { const g = gazeOffset({ x: 0.5, y: 0.5 }, { x: 0.4, y: 0.5 }, { x: 0.6, y: 0.5 }, { x: 0.5, y: 0.45 }, { x: 0.5, y: 0.55 }); return g && Math.abs(g.x) < 0.01 && Math.abs(g.y) < 0.01; })());
+const eye = (irisX, irisY, innerX, outerX, centreY = 0.5) => ({
+  iris: { x: irisX, y: irisY },
+  inner: { x: innerX, y: centreY },
+  outer: { x: outerX, y: centreY },
+});
 
-check("a right-shifted iris reads positive x, clamped only at the ends",
-  (() => { const g = gazeOffset({ x: 0.58, y: 0.5 }, { x: 0.4, y: 0.5 }, { x: 0.6, y: 0.5 }, { x: 0.5, y: 0.45 }, { x: 0.5, y: 0.55 }); return g && Math.abs(g.x - 0.8) < 0.01 && Math.abs(g.y) < 0.01; })());
+check("an iris centred in its eye reads ~0,0",
+  (() => {
+    const g = fuseEyeGaze(eye(0.4, 0.5, 0.45, 0.35), eye(0.6, 0.5, 0.55, 0.65));
+    return g && Math.abs(g.x) < 0.01 && Math.abs(g.y) < 0.01;
+  })());
 
-check("a collapsed box is null, not infinity",
-  gazeOffset({ x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 }) === null);
+check("both eye boxes agree on a rightward look even though their corner order is opposite",
+  (() => {
+    const g = fuseEyeGaze(eye(0.44, 0.5, 0.45, 0.35), eye(0.64, 0.5, 0.55, 0.65));
+    return g && g.x > 0.7 && Math.abs(g.y) < 0.01;
+  })());
 
-check("missing landmarks are null",
-  gazeOffset(null, null, null, null, null) === null);
+check("a leftward look is negative, not clamped by one eye's geometry",
+  (() => {
+    const g = fuseEyeGaze(eye(0.36, 0.5, 0.45, 0.35), eye(0.56, 0.5, 0.55, 0.65));
+    return g && g.x < -0.7;
+  })());
+
+check("looking down produces a strong positive vertical reading",
+  (() => {
+    const g = fuseEyeGaze(eye(0.4, 0.53, 0.45, 0.35), eye(0.6, 0.53, 0.55, 0.65));
+    return g && g.y > 0.5;
+  })());
+
+check("one readable eye is used alone",
+  (() => {
+    const g = fuseEyeGaze(null, eye(0.64, 0.5, 0.55, 0.65));
+    return g && g.x > 0.7 && Math.abs(g.y) < 0.01;
+  })());
+
+check("a collapsed eye is null, not infinity",
+  fuseEyeGaze(eye(0.5, 0.5, 0.5, 0.5), null) === null);
+
+check("missing landmarks are null", fuseEyeGaze(null, null) === null);
+check("the image-left iris 468 is paired with the image-left eye 33/133",
+  /const RIGHT_IRIS = 468;/.test(workerSrc) && /const RIGHT_EYE = \{ outer: 33/.test(workerSrc) &&
+  /const LEFT_IRIS = 473;/.test(workerSrc) && /const LEFT_EYE = \{ outer: 263/.test(workerSrc));
 
 // ---------------------------------------------------------------- calibration
 
-{
-  const c = newCalibration();
-  check("a fresh calibration is OFF, idle and anchorless",
-    !c.enabled && c.state === "idle" && c.anchor === null && !calibrationReady(c));
-  const raw = { x: 0.4, y: -0.2 };
-  const same = applyCalibration(c, raw);
-  check("with no calibration the gaze passes through unchanged",
-    same === raw && applyCalibration(null, raw) === raw);
-}
-
-{
-  const c = newCalibration();
-  const g = newEyeGate();
-  check("the gesture cannot start while the eye gate is closed",
-    startCalibration(c, g, 0) === false && c.state === "idle" && !c.enabled);
-}
-
-{
-  const c = newCalibration();
-  const g = newEyeGate();
-  requestGate(g, "session", false);
-  check("with the gate open the one gesture starts collecting",
-    startCalibration(c, g, 0) === true && c.state === "collecting" && c.enabled);
-  // Ten steady looks at a camera that sits high and to the left, then one blink.
+const head = { yaw: 0.08, pitch: -0.04, roll: 0.01, scale: 0.34 };
+const rawFor = (target) => ({ x: (target.x - 0.5) * 1.4, y: (target.y - 0.5) * 1.4, head });
+const feedTarget = (c, g, target, start, count = 12) => {
   let state = c.state;
-  for (let i = 0; i < 10; i++) {
-    state = calibrationStep(c, g, { x: 0.18 + (i % 3) * 0.01, y: -0.07 }, false, i * 50);
+  let t = start;
+  for (let i = 0; i < count; i++) {
+    t += 120;
+    state = calibrationStep(c, g, rawFor(target), t);
   }
-  check("steady looks keep collecting without committing", state === "collecting");
-  state = calibrationStep(c, g, { x: 0.19, y: -0.07 }, true, 600);
-  check("the blink commits: ready with the measured neutral point",
-    state === "ready" && calibrationReady(c)
-      && Math.abs(c.anchor.x - 0.19) < 0.02 && Math.abs(c.anchor.y + 0.07) < 0.01);
-  const centred = applyCalibration(c, { x: 0.19, y: -0.07 });
-  check("the neutral point now reads as centre",
-    centred && Math.abs(centred.x) < 0.02 && Math.abs(centred.y) < 0.01);
-  const clamped = applyCalibration(c, { x: 0.95, y: 0.99 });
-  check("corrected looks stay inside -1..1",
-    clamped && clamped.x <= 1 && clamped.y <= 1 && clamped.x >= -1 && clamped.y >= -1);
+  return { state, t };
+};
+
+{
+  const c = newCalibration();
+  check("a fresh calibration has nine targets and no map",
+    c.targets.length === CALIBRATION_TARGETS.length && c.targets.length === 9 &&
+    c.state === "idle" && c.model === null && !calibrationReady(c));
+  check("a fresh look is not mapped before calibration",
+    applyCalibration(c, { x: 0.2, y: 0.1 }) === null);
+}
+
+{
+  const c = newCalibration();
+  check("calibration cannot start while the gate is closed",
+    startCalibration(c, newEyeGate(), 0) === false && c.state === "idle" && !c.enabled);
 }
 
 {
   const c = newCalibration();
   const g = newEyeGate();
   requestGate(g, "session", false);
-  startCalibration(c, g, 0);
-  // A shaky hold: the user moved their eyes around the marker.
-  for (let i = 0; i < 10; i++) {
-    calibrationStep(c, g, { x: -0.4 + i * 0.08, y: 0 }, false, i * 50);
+  check("calibration starts only through an open gate", startCalibration(c, g, 0) === true);
+  let state = "collecting";
+  let t = 0;
+  for (const target of c.targets) {
+    const fed = feedTarget(c, g, target, t);
+    state = fed.state;
+    t = fed.t;
   }
-  check("a shaky hold fails at the blink and leaves no anchor",
-    calibrationStep(c, g, { x: 0, y: 0 }, true, 600) === "failed"
-      && c.anchor === null && !calibrationReady(c));
-  const raw = { x: 0.3, y: 0.1 };
-  check("a failed calibration never touches later looks", applyCalibration(c, raw) === raw);
+  check("nine steady looks auto-advance and fit a map",
+    state === "ready" && calibrationReady(c) && c.targetIndex === 9 && c.points.length === 9 &&
+    c.model !== null && c.rms !== null && c.rms <= 0.14);
+  let worst = 0;
+  for (const target of c.targets) {
+    const mapped = applyCalibration(c, rawFor(target), head);
+    worst = Math.max(worst, Math.hypot(mapped.x - target.x, mapped.y - target.y));
+  }
+  check("the committed map puts every target back on its screen point", worst < 0.06);
 }
 
 {
@@ -179,8 +211,19 @@ check("missing landmarks are null",
   const g = newEyeGate();
   requestGate(g, "session", false);
   startCalibration(c, g, 0);
-  check("a held gesture that runs out of time fails",
-    calibrationStep(c, g, { x: 0, y: 0 }, false, CALIBRATION_TIMEOUT_MS + 1) === "failed");
+  let t = 0;
+  for (const target of c.targets) t = feedTarget(c, g, target, t).t;
+  const bad = 3;
+  c.state = "failed";
+  c.model = null;
+  c.badIndex = bad;
+  c.targetIndex = c.targets.length;
+  check("a failed fit can retry one dot without discarding the other eight",
+    retryCalibrationTarget(c, g, bad, 0) === true &&
+    c.state === "collecting" && c.retryIndex === bad && c.points.length === 9);
+  const fed = feedTarget(c, g, c.targets[bad], 0);
+  check("the one-dot retry replaces only that fixation and refits",
+    fed.state === "ready" && c.retryIndex === null && c.points.length === 9 && c.state === "ready");
 }
 
 {
@@ -188,11 +231,45 @@ check("missing landmarks are null",
   const g = newEyeGate();
   requestGate(g, "session", false);
   startCalibration(c, g, 0);
-  calibrationStep(c, g, { x: 0.1, y: 0.1 }, false, 50);
+  let t = 0;
+  for (let i = 0; i < 12; i++) {
+    t += 120;
+    calibrationStep(c, g, {
+      ...rawFor(c.targets[0]),
+      head: { ...head, yaw: head.yaw + (i % 2 ? 0.04 : -0.04) },
+    }, t);
+  }
+  check("small natural head movement does not block a fixation",
+    c.points.length === 1 && c.targetIndex === 1 && c.headStable);
+}
+
+{
+  const c = newCalibration();
+  const g = newEyeGate();
+  requestGate(g, "session", false);
+  startCalibration(c, g, 0);
+  let state = "collecting";
+  let t = 0;
+  for (const target of c.targets) {
+    for (let i = 0; i < 12; i++) {
+      t += 120;
+      state = calibrationStep(c, g, { x: 0, y: 0, head: null }, t);
+    }
+  }
+  check("a map that cannot generalise is refused, not applied",
+    state === "failed" && !calibrationReady(c) && c.model === null && applyCalibration(c, { x: 0, y: 0 }) === null);
+}
+
+{
+  const c = newCalibration();
+  const g = newEyeGate();
+  requestGate(g, "session", false);
+  startCalibration(c, g, 0);
+  calibrationStep(c, g, { x: 0.1, y: 0.1, head }, 120);
   endGate(g, "session");
-  check("closing the gate ends the gesture with it",
-    calibrationStep(c, g, { x: 0.1, y: 0.1 }, false, 100) === "idle"
-      && !c.enabled && c.samples.length === 0 && c.anchor === null);
+  check("closing the gate clears the unfinished nine-point calibration",
+    calibrationStep(c, g, { x: 0.1, y: 0.1, head }, 240) === "idle" &&
+    !c.enabled && c.targets.length === 9 && c.points.length === 0 && c.model === null);
 }
 
 {
@@ -200,15 +277,119 @@ check("missing landmarks are null",
   const g = newEyeGate();
   requestGate(g, "session", false);
   startCalibration(c, g, 0);
-  for (let i = 0; i < 10; i++) {
-    calibrationStep(c, g, { x: 0.75, y: 0.1 }, false, i * 50);
+  check("an unfinished calibration times out",
+    calibrationStep(c, g, null, CALIBRATION_TIMEOUT_MS + 1) === "failed" && !calibrationReady(c));
+}
+
+{
+  const points = CALIBRATION_TARGETS.map((target) => ({ target, sample: rawFor(target), samples: 12, spread: 0 }));
+  // One fixation is 12% of the screen away from where it should be.
+  points[2].sample = { ...points[2].sample, x: points[2].sample.x + 0.12 };
+  const model = fitGazeModel(points);
+  let worst = 0;
+  if (model) {
+    for (let i = 0; i < points.length; i++) {
+      if (i === 2) continue;
+      const mapped = predictGaze(model, points[i].sample);
+      if (!mapped) {
+        worst = Infinity;
+        continue;
+      }
+      worst = Math.max(worst, Math.hypot(mapped.x - points[i].target.x, mapped.y - points[i].target.y));
+    }
   }
-  check("a wildly off-centre anchor is refused rather than applied",
-    calibrationStep(c, g, { x: 0.75, y: 0.1 }, true, 600) === "failed" && c.anchor === null);
+  check("one noisy target is down-weighted instead of swinging the map",
+    !!model && model.rms < 0.1 && worst < 0.04);
+}
+
+{
+  const c = newCalibration();
+  const g = newEyeGate();
+  requestGate(g, "session", false);
+  startCalibration(c, g, 0);
+  const target = c.targets[0];
+  let t = 0;
+  for (let i = 0; i < 6; i++) {
+    t += 120;
+    calibrationStep(c, g, rawFor(target), t);
+  }
+  const kept = calibrationStep(c, g, null, t + 200);
+  check("a 200 ms iris dropout does not erase the current fixation",
+    kept === "collecting" && c.recent.length >= 6 && c.points.length === 0);
+  t += 250;
+  let committed = "collecting";
+  for (let i = 0; i < 5 && c.points.length === 0; i++) {
+    committed = calibrationStep(c, g, rawFor(target), t + i * 120);
+  }
+  check("the look commits after the brief dropout without a blink",
+    committed === "collecting" && c.points.length === 1 && c.targetIndex === 1);
+}
+
+{
+  const c = newCalibration();
+  const g = newEyeGate();
+  requestGate(g, "session", false);
+  startCalibration(c, g, 0);
+  const state = calibrationStep(c, g, null, CALIBRATION_TARGET_TIMEOUT_MS + 1);
+  check("a dot with no readable iris times out without skipping",
+    state === "failed" && c.failReason === "timeout" && c.targetIndex === 0 && c.points.length === 0);
+}
+
+{
+  const c = newCalibration();
+  const g = newEyeGate();
+  requestGate(g, "session", false);
+  startCalibration(c, g, 0);
+  let t = 0;
+  for (let i = 0; i < 12; i++) {
+    t += 120;
+    calibrationStep(c, g, {
+      ...rawFor(c.targets[0]),
+      head: { ...head, yaw: head.yaw + (i % 2 ? 0.12 : -0.12) },
+    }, t);
+  }
+  check("a moving head cannot commit a dot",
+    c.state === "collecting" && c.points.length === 0 && !c.headStable);
+}
+
+{
+  const c = newCalibration();
+  const g = newEyeGate();
+  requestGate(g, "session", false);
+  startCalibration(c, g, 0);
+  let t = 0;
+  const first = feedTarget(c, g, c.targets[0], t);
+  t = first.t;
+  for (let i = 0; i < 12; i++) {
+    t += 120;
+    calibrationStep(c, g, {
+      ...rawFor(c.targets[1]),
+      head: { ...head, yaw: head.yaw + 0.2 },
+    }, t);
+  }
+  check("a different head position cannot advance to the next dot",
+    c.points.length === 1 && c.targetIndex === 1 && !c.headStable);
+  for (let i = 0; i < 12; i++) {
+    t += 120;
+    calibrationStep(c, g, rawFor(c.targets[1]), t);
+  }
+  check("returning to the starting head position resumes calibration",
+    c.points.length === 2 && c.targetIndex === 2);
+}
+
+{
+  const c = newCalibration();
+  const g = newEyeGate();
+  requestGate(g, "session", false);
+  startCalibration(c, g, 0);
+  calibrationStep(c, g, rawFor(CALIBRATION_TARGETS[0]), 120);
+  cancelCalibration(c);
+  check("cancelling an unfinished calibration clears it without a map",
+    c.state === "idle" && c.points.length === 0 && !calibrationReady(c) && applyCalibration(c, { x: 0, y: 0 }) === null);
 }
 
 if (failed) {
-  console.error(`\n${failed} eye-gate check(s) failed`);
+  console.error(String.fromCharCode(10) + failed + " eye-gate check(s) failed");
   process.exit(1);
 }
-console.log("\neye-gate checks pass");
+console.log(String.fromCharCode(10) + "eye-gate checks pass");

@@ -154,3 +154,43 @@ Claude Code is unavailable (weekly usage limit), so the owner explicitly transfe
 ## Release 1.0.197 prepared from milestone-196 (Freebuff, temporary lead, 2026-11-07)
 
 Integrated the verified work of all three lanes as 1.0.197 (build 197): Freebuff's PDF editing, coded-font refusal and Open-result card (`58875e1`, `0b00912`, `350aedf`, `b343491`); Freebuff's optional eye calibration (`de18ee2`); Claude's agent-bridge recovery commits (`0363389`…`198bf89`, merged with `main`'s #24 after a line-by-line comparison that kept the newer branch implementation); and Codex's robot-hand fix (PR #29), fallback foundation (PR #28) and capture-stub cleanup (`556ba4f`). PR #17 carries the release to `main`; `docs/RELEASE-1.0.197.md` has the plain-English notes. Not included: Claude's unfinished Smart Screen Actions attempt on `agent/claude-18-1` (WIP, never verified) and #25 scheduling; Codex's older hand branch was superseded by PR #29 and was not merged again.
+
+## Eye Control handoff to Claude; Freebuff continues the rest (owner, 2026-11-08)
+
+**Claude Code owns Eye Control only.** Full file list, uncommitted state, test
+evidence, live diagnostics and known bugs: `docs/HANDOFF-2026-11-08-eye-control.md`.
+Claude must not be asked to release or merge anything that depends on unverified
+Eye Control. Freebuff did not edit, stage, commit, stash or revert any Eye file.
+
+**Freebuff owns the continuation**: advanced Windows computer control and
+long-task reliability (`docs/izuki-computer-control-plan.md`), Smart Screen
+Actions, browser/application control, screen understanding, document editing,
+Developer Mode, Smart Vision, Auto-Review, real testing, design directions and
+the Face/Sound roadmap. Work is isolated on `freebuff/continuation` in
+`.work/freebuff-continuation`; it is based on committed `milestone-196`, not on
+Claude's uncommitted Eye work. No version bump, merge, push or release is part
+of this claim.
+
+First implemented slice on that branch: durable "keep going" checkpoints
+survive an app restart and resume only on the user's explicit command;
+typed-field mismatches and failed YouTube playback no longer report success.
+Files: `src-tauri/src/resume.rs`, `src-tauri/src/brain.rs`,
+`src-tauri/src/automation.rs`, `src-tauri/src/lib.rs`, docs.
+
+Test evidence: the six `resume::tests` pass. The two new automation regression
+cases are written and compile, but were not executed: the running app holds the
+shared Cargo target lock, and a clean target rebuild was stopped at the low-disk
+guard. Run those two cases before calling this branch release-ready or merging.
+
+## Claude — Eye Control safety and accuracy (owner assignment, 2026-11-08; claimed)
+
+The owner gave Claude primary ownership of Eye Control: tracking, calibration, cursor behavior, emergency controls, reliability and real Windows testing. Freebuff continues its other lanes. Why: in the owner's real test, after the nine-dot calibration the gaze cursor moved unpredictably and there was no reliable stop (the laptop had to be turned away).
+
+- Claude stopped the running dev build (`target/debug/izuki.exe`) that had gaze control on with no emergency stop. The released 1.0.197 has only the gated one-gesture calibration, which never moves the pointer.
+- Freebuff's uncommitted eye work in the shared folder is preserved unchanged as `678c5e9` on `claude/eye-safety` (16 files). The shared-folder copies are left as they are. **Freebuff: please don't edit these files any more:** `src/components/EyeControl.tsx`, `src/lib/eyeControl.ts`, `src/lib/eyeMap.ts`, `src/lib/eyeTrack.ts`, `src/lib/eyeWorker.ts`, `src/lib/eyeGate.ts`, `tools/eye-*.cjs`, the eye parts of `AirControl.tsx`/`AirCard.tsx`/`AirToggle.tsx`, the `air_eye_*`/`air_control_mode` settings. Smart Vision's `capture.rs`/`shots.rs` and `docs/izuki-computer-control-plan.md` stay yours.
+- Claude also claims the native input safety layer: a new `src-tauri/src/airsafe.rs`, its gate in the `air_*` commands (`commands.rs`), and the emergency hotkey in `hotkey.rs`.
+- Order: emergency stop first (native, independent of React, the camera worker and calibration), then accuracy diagnostics, then the control design. Gaze-driven desktop input stays off by default and isn't released as stable until the stop and accuracy are verified, including a supervised test with the owner.
+
+## Release 1.0.198 prepared from milestone-196 (Claude, release coordinator, 2026-11-08)
+
+Merged after green CI and resolved CodeRabbit threads: PR #33 (weighted agent scheduling, flag off), PR #35 (Freebuff: Chat history and pins, panel design, unfinished-task resume, no false success reports) and PR #36 (Eye Control release gate). Claude fixed PR #35's three significant findings in `760aaf6` (a restart's checkpoint resumes only on "keep going"; retry notes for the new failure kinds; two-step chat delete). The nine minor ones are Freebuff's task #37. Eye Control ships with the native emergency stop, and the eye cursor is drawn without moving the mouse until the supervised camera session (`airsafe::EYE_MOUSE_RELEASED`). `docs/INTEGRATION.md` has the current state for all three agents.

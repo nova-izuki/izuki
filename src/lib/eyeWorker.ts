@@ -18,17 +18,31 @@
  * nothing here is written to storage.
  */
 import { FaceLandmarker } from "@mediapipe/tasks-vision";
-import { blinkStep, gazeOffset, newBlink } from "./eyeGate";
+import { blinkStep, fuseEyeGaze, newBlink, type EyeLook } from "./eyeGate";
+import type { HeadPose } from "./eyeMap";
 
 /**
- * Face Landmarker's 478-point model: iris rings at 468 (left) and 473
- * (right); eye corners. The order of inner/outer only matters through the
- * width sign, and `gazeOffset` is sign-safe in either direction.
+ * Face Landmarker's 478-point model. The iris indices are paired by where
+ * they actually sit in the image: 468 is inside the image-left eye (corners
+ * 33/133) and 473 is inside the image-right eye (corners 263/362). Naming
+ * the landmarks "left" and "right" by anatomy instead of image position is
+ * how the first version crossed the eyes and cancelled horizontal gaze.
  */
-const LEFT_IRIS = 468;
-const RIGHT_IRIS = 473;
+const RIGHT_IRIS = 468;
+const LEFT_IRIS = 473;
 const RIGHT_EYE = { outer: 33, inner: 133, top: 159, bottom: 145 };
 const LEFT_EYE = { outer: 263, inner: 362, top: 386, bottom: 374 };
+
+// Compact face/eye guides for the preview. These are the same landmarks the
+// tracker already uses, so the guide is not a second model or a second look.
+const FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
+const RIGHT_EYE_OUTLINE = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246];
+const LEFT_EYE_OUTLINE = [263, 249, 390, 373, 374, 380, 381, 382, 362, 398, 384, 385, 386, 387, 388, 466];
+const RIGHT_IRIS_OUTLINE = [468, 469, 470, 471, 472];
+const LEFT_IRIS_OUTLINE = [473, 474, 475, 476, 477];
+const RIGHT_BROW = [46, 53, 52, 65, 55, 70, 63, 105, 66, 107];
+const LEFT_BROW = [276, 283, 282, 295, 285, 300, 293, 334, 296, 336];
+const LIPS = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185];
 
 let landmarker: FaceLandmarker | null = null;
 let blink = newBlink();
@@ -96,31 +110,68 @@ function earOf(lm: Pt[], eye: typeof RIGHT_EYE): number | null {
   return h / w;
 }
 
-/** One look's blink EAR (the tighter of the two eyes) and gaze direction. */
+/** Nose-to-eye geometry, normalised by eye/face widths; stable enough for a regression covariate. */
+function headOf(lm: Pt[]): HeadPose | null {
+  const nose = pt(lm, 1);
+  const left = pt(lm, 33);
+  const right = pt(lm, 263);
+  const leftFace = pt(lm, 127);
+  const rightFace = pt(lm, 356);
+  const chin = pt(lm, 152);
+  const brow = pt(lm, 10);
+  if (!nose || !left || !right || !leftFace || !rightFace || !chin || !brow) return null;
+  const eyeDistance = Math.hypot(right.x - left.x, right.y - left.y);
+  const faceWidth = Math.hypot(rightFace.x - leftFace.x, rightFace.y - leftFace.y);
+  const faceHeight = Math.hypot(chin.x - brow.x, chin.y - brow.y);
+  if (eyeDistance < 1e-6 || faceWidth < 1e-6 || faceHeight < 1e-6) return null;
+  const eyeMid = { x: (left.x + right.x) / 2, y: (left.y + right.y) / 2 };
+  const head = {
+    yaw: (nose.x - eyeMid.x) / eyeDistance,
+    pitch: (nose.y - eyeMid.y) / faceHeight,
+    roll: Math.atan2(right.y - left.y, right.x - left.x),
+    scale: eyeDistance / faceWidth,
+  };
+  return Object.values(head).every((value) => Number.isFinite(value)) ? head : null;
+}
+
+/** The iris and two corners needed for one eye's geometry. */
+function eyeLook(lm: Pt[], eye: typeof RIGHT_EYE, iris: number): EyeLook | null {
+  const irisPoint = pt(lm, iris);
+  const inner = pt(lm, eye.inner);
+  const outer = pt(lm, eye.outer);
+  if (!irisPoint || !inner || !outer) return null;
+  return { iris: irisPoint, inner, outer };
+}
+
+/** One look's blink EAR (the tighter of the two eyes), gaze direction and head pose. */
 function readFace(lm: Pt[]) {
-  const right = earOf(lm, RIGHT_EYE);
-  const left = earOf(lm, LEFT_EYE);
-  const ear = right !== null && left !== null ? Math.min(right, left) : right ?? left;
-  const towardRight = gazeOffset(
-    pt(lm, RIGHT_IRIS),
-    pt(lm, RIGHT_EYE.inner),
-    pt(lm, RIGHT_EYE.outer),
-    pt(lm, RIGHT_EYE.top),
-    pt(lm, RIGHT_EYE.bottom),
-  );
-  const towardLeft = gazeOffset(
-    pt(lm, LEFT_IRIS),
-    pt(lm, LEFT_EYE.inner),
-    pt(lm, LEFT_EYE.outer),
-    pt(lm, LEFT_EYE.top),
-    pt(lm, LEFT_EYE.bottom),
-  );
-  // Both eyes read: average them (head tilt affects each eye oppositely).
-  // One eye read: take what there is; neither: null.
-  const gaze = towardRight && towardLeft
-    ? { x: (towardRight.x + towardLeft.x) / 2, y: (towardRight.y + towardLeft.y) / 2 }
-    : towardRight ?? towardLeft;
-  return { ear, gaze };
+  const rightEar = earOf(lm, RIGHT_EYE);
+  const leftEar = earOf(lm, LEFT_EYE);
+  const ear = rightEar !== null && leftEar !== null ? Math.min(rightEar, leftEar) : rightEar ?? leftEar;
+  const rightLook = eyeLook(lm, RIGHT_EYE, RIGHT_IRIS);
+  const leftLook = eyeLook(lm, LEFT_EYE, LEFT_IRIS);
+  const group = (indices: number[]) =>
+    indices
+      .map((i) => pt(lm, i))
+      .filter((p): p is Pt => p !== null)
+      .map((p) => ({ x: p.x, y: p.y }));
+  // Measure both irises from their own eye centres; one eye is enough.
+  return {
+    ear,
+    gaze: fuseEyeGaze(rightLook, leftLook),
+    head: headOf(lm),
+    eyes: { left: !!leftLook, right: !!rightLook },
+    guide: {
+      face: group(FACE_OVAL),
+      rightEye: group(RIGHT_EYE_OUTLINE),
+      leftEye: group(LEFT_EYE_OUTLINE),
+      rightIris: group(RIGHT_IRIS_OUTLINE),
+      leftIris: group(LEFT_IRIS_OUTLINE),
+      rightBrow: group(RIGHT_BROW),
+      leftBrow: group(LEFT_BROW),
+      lips: group(LIPS),
+    },
+  };
 }
 
 async function start(base: string) {
@@ -145,19 +196,35 @@ async function start(base: string) {
 }
 
 function look(frame: ImageBitmap, t: number) {
-  if (!landmarker) return;
+  if (!landmarker) {
+    // A picture can arrive while the model is still loading. Release it and
+    // acknowledge it, or the main thread's one-in-flight pump stays stuck.
+    frame.close();
+    postMessage({ type: "done", t });
+    return;
+  }
   if (t <= lastT) t = lastT + 1; // VIDEO mode wants increasing timestamps
   lastT = t;
-  const result = landmarker.detectForVideo(frame, t);
+  let result: ReturnType<FaceLandmarker["detectForVideo"]>;
+  try {
+    result = landmarker.detectForVideo(frame, t);
+  } catch (e) {
+    frame.close();
+    postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) });
+    postMessage({ type: "done", t });
+    return;
+  }
   frame.close();
   const face = result.faceLandmarks && result.faceLandmarks[0];
   if (!face || face.length < RIGHT_EYE.bottom) {
     blinkStep(blink, null); // a lost face re-arms blink detection
     postMessage({ type: "none", t });
+    postMessage({ type: "done", t });
     return;
   }
-  const { ear, gaze } = readFace(face);
-  postMessage({ type: "face", ear: ear ?? null, gaze, blink: blinkStep(blink, ear), t });
+  const { ear, gaze, head, eyes, guide } = readFace(face);
+  postMessage({ type: "face", ear: ear ?? null, gaze, head, eyes, guide, blink: blinkStep(blink, ear), t });
+  postMessage({ type: "done", t });
 }
 
 onmessage = (e: MessageEvent) => {

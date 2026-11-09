@@ -58,6 +58,7 @@ pub mod flp;
 pub mod audiofile;
 pub mod mate;
 pub mod air;
+pub mod airsafe;
 pub mod daw;
 pub mod tweaks;
 pub mod winlook;
@@ -78,6 +79,7 @@ pub mod selfknow;
 pub mod shop;
 pub mod picker;
 pub mod remote;
+pub mod resume;
 pub mod rtools;
 pub mod offline;
 pub mod officeedit;
@@ -451,6 +453,11 @@ pub fn run() {
             commands::voice_race,
             commands::mate_hot,
             commands::air_pointer,
+            commands::air_stop,
+            commands::air_arm,
+            commands::air_resume,
+            commands::air_safety,
+            commands::air_alive,
             commands::air_button,
             commands::air_scroll,
             commands::air_scroll_side,
@@ -604,6 +611,8 @@ pub fn run() {
             tray::build(&handle)?;
             hotkey::rebind(&handle, &settings);
             hotkey::install_escape_watch(&handle);
+            // Air and Eye control's emergency stop and watchdog (airsafe.rs).
+            airsafe::install(&handle, &settings.eye_stop_hotkey, settings.air_control_mode == "eye");
             wheel::install(&handle);
             updates::check_later(&handle);
             watcher::spawn(handle.clone(), store.clone());
@@ -702,6 +711,8 @@ pub fn run() {
             // Quitting (or updating) mid-listen must never leave other
             // apps' sound turned down.
             if let tauri::RunEvent::Exit = event {
+                // Nothing Air or Eye holds stays pressed after Izuki is gone.
+                airsafe::release_now();
                 duck::restore_now();
                 call::stop();
             }

@@ -89,7 +89,7 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
       data-tauri-drag-region
       className="absolute inset-0 z-[60] flex flex-col rounded-[inherit] bg-black/60 p-4 backdrop-blur-md"
     >
-      <div className="izk-no-drag relative mx-auto flex min-h-0 max-h-full w-full max-w-[520px] flex-col overflow-hidden rounded-[22px] border border-white/12 bg-[#11131f]/95 shadow-[0_24px_70px_rgba(0,0,0,0.6)]">
+      <div className="izk-no-drag izk-setup-sheet relative mx-auto flex min-h-0 max-h-full w-full max-w-[520px] flex-col overflow-hidden rounded-[22px] border border-white/12 bg-[#11131f]/95 shadow-[0_24px_70px_rgba(0,0,0,0.6)]">
         <button
           type="button"
           onClick={onClose}
@@ -98,8 +98,8 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
           <ArrowLeft size={14} /> Back
         </button>
         <div className="flex items-start gap-3 border-b border-white/8 p-4 pt-2">
-          <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[13px] bg-gradient-to-br from-izk-violet/60 to-izk-teal/50">
-            <Sparkles size={18} className="text-white" />
+          <span className="izk-setup-mark flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[13px] bg-gradient-to-br from-izk-violet/60 to-izk-teal/50">
+            <Sparkles size={18} className="relative z-10 text-white" />
           </span>
           <div className="min-w-0 flex-1">
             <h2 className="text-[16px] font-bold text-izk-ink">Get Izuki connected</h2>
@@ -107,8 +107,8 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
               All free. Tap a button, copy the key on the page that opens, and come back — Izuki picks it up by itself.
             </p>
             <div className="mt-2 flex items-center gap-2">
-              <div className="h-[6px] flex-1 overflow-hidden rounded-full bg-white/8">
-                <div className="h-full rounded-full bg-gradient-to-r from-izk-violet to-izk-teal transition-all" style={{ width: `${(doneCount / steps.length) * 100}%` }} />
+              <div className="izk-setup-progress h-[6px] flex-1 overflow-hidden rounded-full bg-white/8">
+                <div className="izk-setup-progress-fill h-full rounded-full bg-gradient-to-r from-izk-violet to-izk-teal transition-all" style={{ width: `${(doneCount / steps.length) * 100}%` }} />
               </div>
               <span className="shrink-0 text-[10.5px] font-semibold text-izk-muted">{doneCount} of {steps.length} ready</span>
             </div>
@@ -371,7 +371,7 @@ function Step({
   return (
     <div
       className={cx(
-        "rounded-[16px] border p-3 transition-colors",
+        "izk-setup-step rounded-[16px] border p-3 transition-colors",
         done ? "border-izk-good/25 bg-izk-good/6" : need ? "border-izk-violet/40 bg-izk-violet/10" : "border-white/8 bg-white/4"
       )}
     >

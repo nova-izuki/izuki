@@ -217,3 +217,23 @@ deploying and updating without asking each time; Claude coordinates the
 merges and releases (one coordinator, nothing published twice), only after
 every required check passes. Codex and Freebuff push verified work and mark
 it ready in COLLAB.md.
+
+## Current ownership change (owner, 2026-11-08)
+
+**Claude Code now owns Eye Control only.** Its files are the Eye/Air/camera
+files listed in `docs/HANDOFF-2026-11-08-eye-control.md` and the uncommitted
+Eye work in the shared `milestone-196` worktree. Freebuff must not edit,
+stage, commit, stash or revert them.
+
+**Freebuff continues the rest of the product**: advanced Windows computer
+control and long-task execution, Smart Screen Actions, browser and application
+control, screen understanding, document editing, Personal Developer Mode,
+Smart Vision, Claude Live Auto-Review, Smart Real Testing, design directions,
+and the Face/Sound roadmap. Freebuff works on `freebuff/continuation` in
+`.work/freebuff-continuation` until the Eye branch is safe; it does not merge
+or release work that depends on unverified Eye Control.
+
+Claude remains the release coordinator and the only assistant that bumps
+versions or writes release notes. The standing release authorization and every
+safety rule above still apply. Changes that depend on Eye Control wait for
+Claude's live verification and commit.

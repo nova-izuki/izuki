@@ -233,7 +233,7 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
       exit={{ opacity: 0 }}
       transition={{ duration: 0.18 }}
       data-tauri-drag-region
-      className="izk-no-drag absolute inset-0 z-[60] flex flex-col items-center justify-center rounded-[inherit] bg-black/55 p-6 backdrop-blur-md"
+      className="izk-no-drag izk-tour-overlay absolute inset-0 z-[60] flex flex-col items-center justify-center rounded-[inherit] bg-black/55 p-6 backdrop-blur-md"
     >
       <button
         type="button"
@@ -251,9 +251,9 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -8, scale: 0.98 }}
           transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-          className="izk-card izk-grain flex w-full max-w-[400px] flex-col items-center gap-4 rounded-[26px] p-6 text-center"
+          className="izk-card izk-grain izk-tour-card flex w-full max-w-[400px] flex-col items-center gap-4 rounded-[26px] p-6 text-center"
         >
-          {step.icon}
+          <div className="izk-tour-icon">{step.icon}</div>
           <div className="w-full">
             <h2 className="text-[16px] font-bold tracking-[-0.01em] text-izk-ink">{step.title}</h2>
             <div className="mt-1.5 text-[12.5px] leading-relaxed text-izk-muted">{step.body}</div>
@@ -261,12 +261,13 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
         </motion.div>
       </AnimatePresence>
 
-      <div className="mt-5 flex items-center gap-1.5">
+      <div className="izk-tour-dots mt-5 flex items-center gap-1.5" aria-hidden="true">
         {steps.map((_, d) => (
           <span
             key={d}
+            data-active={d === i}
             className={cx(
-              "h-[6px] rounded-full transition-all duration-300",
+              "izk-tour-dot h-[6px] rounded-full transition-all duration-300",
               d === i ? "w-[18px] bg-izk-violet" : "w-[6px] bg-white/18"
             )}
           />

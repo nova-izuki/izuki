@@ -31,6 +31,12 @@ const M_ALT: u8 = 4;
 const M_WIN: u8 = 8;
 
 /// A shortcut ("Ctrl+Super+Space") as modifier bits and a Windows virtual key.
+/// A combination as the key watchers see it: modifier bits and key code
+/// (`None` without a modifier or for a key they can't read).
+pub fn native_combo(combo: &str) -> Option<(u8, u32)> {
+    hook_combo(combo)
+}
+
 fn hook_combo(combo: &str) -> Option<(u8, u32)> {
     let mut mods = 0u8;
     let mut vk = None;
@@ -212,8 +218,20 @@ fn watch_esc_key() {
     let down = |vk: i32| unsafe { (GetAsyncKeyState(vk) as u16 & 0x8000) != 0 };
     let mut esc_was = false;
     let mut q_was = false;
+    let mut stop_was = false;
     loop {
         std::thread::sleep(std::time::Duration::from_millis(40));
+        // Air/Eye control's emergency stop, watched here too: this watcher
+        // can't be taken away, and its heartbeat is what lets the gaze
+        // pointer move at all (airsafe::ready).
+        crate::airsafe::key_watch_beat();
+        let (stop_mods, stop_vk) = crate::airsafe::stop_key();
+        let stop_now = down(stop_vk as i32) && mods_held(stop_mods);
+        if stop_now && !stop_was {
+            eprintln!("[hotkey] Air/Eye emergency stop (key watch)");
+            crate::airsafe::stop("emergency key");
+        }
+        stop_was = stop_now;
         let esc = down(VK_ESCAPE.0 as i32);
         let q = down(0x51) && down(VK_CONTROL.0 as i32) && down(VK_SHIFT.0 as i32);
         let esc_pressed = esc && !esc_was;
@@ -236,6 +254,17 @@ fn watch_esc_key() {
             }
         }
     }
+}
+
+/// The modifier keys in `mods` (M_* bits) are all held right now.
+#[cfg(windows)]
+fn mods_held(mods: u8) -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT};
+    let down = |vk: i32| unsafe { (GetAsyncKeyState(vk) as u16 & 0x8000) != 0 };
+    (mods & M_CTRL == 0 || down(VK_CONTROL.0 as i32))
+        && (mods & M_SHIFT == 0 || down(VK_SHIFT.0 as i32))
+        && (mods & M_ALT == 0 || down(VK_MENU.0 as i32))
+        && (mods & M_WIN == 0 || down(VK_LWIN.0 as i32) || down(VK_RWIN.0 as i32))
 }
 
 #[cfg(not(windows))]
@@ -299,6 +328,24 @@ unsafe extern "system" fn esc_hook(
             if up_msg && (key.vkCode == VK_LWIN.0 as u32 || key.vkCode == VK_RWIN.0 as u32) && WIN_SWALLOWED.swap(false, Ordering::SeqCst) {
                 keybd_event(0xE8, 0, KEYBD_EVENT_FLAGS(0), 0);
                 keybd_event(0xE8, 0, KEYEVENTF_KEYUP, 0);
+            }
+        }
+    }
+    // Air/Eye control: a real key from the person pauses the gaze pointer
+    // (they're taking over), and the emergency combination stops Air and Eye
+    // outright. Only flags are flipped here; the work happens elsewhere.
+    if code >= 0 {
+        let msg = wparam.0 as u32;
+        if msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN {
+            let key = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
+            let injected = key.flags.0 & LLKHF_INJECTED.0 != 0;
+            let ours = injected && key.dwExtraInfo == enigo::EVENT_MARKER as usize;
+            if !injected {
+                crate::airsafe::physical_key();
+            }
+            let (stop_mods, stop_vk) = crate::airsafe::stop_key();
+            if !ours && key.vkCode == stop_vk && mods_held(stop_mods) {
+                crate::airsafe::stop("emergency key");
             }
         }
     }
@@ -592,6 +639,8 @@ fn halt(app: &AppHandle) {
 /// (Esc only reaches Izuki while it's busy, and never over admin windows
 /// like Task Manager; a registered hotkey always does).
 pub fn stop_everything(app: &AppHandle) {
+    // Eye control in use: this is its emergency stop too (Air saved as off).
+    crate::airsafe::stop_if_eye("Ctrl+Shift+Q / Stop");
     halt(app);
     let store = crate::state::store();
     let running: Vec<String> = store.watchers().into_iter().filter(|w| w.enabled).map(|w| w.id).collect();

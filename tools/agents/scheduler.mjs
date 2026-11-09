@@ -155,29 +155,49 @@ export function agentStates(tasks, now, facts = {}) {
 }
 
 /**
- * How well each agent has done on each kind of task: verified completions,
- * first-try passes and failures over the finished tasks. A new agent or kind
- * starts at an even prior, so no one is assumed better.
+ * How well each agent has done on each kind of task: the inputs the §2
+ * productivity score needs (docs/AGENT-SCHEDULER-REQUIREMENTS.md) — verified
+ * completions, first-try passes, failures, re-work, review fixes, completion
+ * times and queue waits — kept both overall and per task kind, so agents are
+ * compared only on like tasks. A new agent or kind starts empty (a neutral
+ * prior), so no one is assumed better.
  */
 export function performance(tasks) {
   const stats = {};
+  const blank = () => ({ done: 0, failed: 0, firstTry: 0, rework: 0, reviewFixes: 0, regressions: 0, minutes: [], waits: [] });
+  const bins = (agent, kind) => {
+    const s = (stats[agent] ??= { ...blank(), byKind: {} });
+    return [s, (s.byKind[kind] ??= blank())];
+  };
   for (const t of tasks) {
     const agent = t.state.agent;
     if (!agent || !t.state.history?.length) continue;
-    const s = (stats[agent] ??= { done: 0, failed: 0, firstTry: 0, minutes: [], waits: [], byKind: {} });
-    const k = (s.byKind[t.kind] ??= { done: 0, failed: 0 });
-    // Only real failures: a pause or an unavailable agent isn't one (`counts`).
-    const failures = t.state.history.filter((h) => h.result === 'failed').length;
-    s.failed += failures;
-    k.failed += failures;
+    // Each failure counts against the agent that made it: a task handed to
+    // the other agent keeps its history, and the newcomer isn't charged for
+    // the first one's attempts. Only real failures: a pause or an outage
+    // isn't one (`counts`). Old entries without an agent are the task's.
+    for (const h of t.state.history) {
+      if (h.result !== 'failed') continue;
+      const [fs, fk] = bins(h.agent || agent, t.kind);
+      fs.failed++; fk.failed++;
+      // Review rounds that failed a check are the §2 "quality" cost: fixes required.
+      if (h.category === 'review') { fs.reviewFixes++; fk.reviewFixes++; }
+    }
+    const [s, k] = bins(agent, t.kind);
     if (t.status === 'done') {
-      s.done++;
-      k.done++;
-      if (failures === 0) s.firstTry++;
+      s.done++; k.done++;
+      // First try vs re-work, by the finishing agent's own attempts (§2).
+      const own = t.state.history.filter((h) => h.result === 'failed' && (h.agent || agent) === agent).length;
+      if (own === 0) { s.firstTry++; k.firstTry++; }
+      else { s.rework++; k.rework++; }
+      // Timing belongs to whoever made it: a task handed over keeps the first
+      // agent's start and the first assignment's wait, so neither is the
+      // finisher's to be measured by. Left unrecorded rather than misattributed.
+      if (t.state.history.some((h) => h.agent && h.agent !== agent)) continue;
       const started = Date.parse(t.state.startedAt || ''), ended = Date.parse(t.state.doneAt || '');
-      if (started && ended > started) s.minutes.push((ended - started) / 60000);
+      if (started && ended > started) { const min = (ended - started) / 60000; s.minutes.push(min); k.minutes.push(min); }
       const created = Date.parse(t.createdAt || ''), assigned = Date.parse(t.state.assignedAt || '');
-      if (created && assigned >= created) s.waits.push((assigned - created) / 60000);
+      if (created && assigned >= created) { const w = (assigned - created) / 60000; s.waits.push(w); k.waits.push(w); }
     }
   }
   return stats;
@@ -189,6 +209,86 @@ export function score(stats, agent, kind) {
   return (k.done + 1) / (k.done + k.failed + 2);
 }
 
+/**
+ * §2 of docs/AGENT-SCHEDULER-REQUIREMENTS.md: the owner's weights for a
+ * per-lane productivity score. They sum to 1, and "verified tasks/hour" is
+ * capped at 0.30 so raw response speed can't dominate the richer signals.
+ *
+ * Known gap: `rate` and `time` both come from the same completion minutes
+ * (rate = 60 / mean time), so today speed really carries 0.45. Before
+ * weighted assignment is turned on either way (WEIGHTED_ASSIGNMENT, or
+ * BRIDGE_WEIGHTED=1 in the environment), `rate` must count verified tasks per
+ * hour of all working time, failed attempts included (docs/INTEGRATION.md).
+ */
+export const WEIGHTS = { rate: 0.30, firstTry: 0.20, time: 0.15, quality: 0.15, rework: 0.10, regressions: 0.05, wait: 0.03, cost: 0.02 };
+
+/** Per metric: +1 means more is better, -1 means less is better. */
+const DIRECTION = { rate: 1, firstTry: 1, time: -1, quality: -1, rework: -1, regressions: -1, wait: -1, cost: -1 };
+
+/**
+ * The raw §2 metrics for one scoring bin (an agent's whole record, or its
+ * record on one task kind), or null when there's no verified work to measure.
+ * Metrics the bridge doesn't record yet (regressions after merge, resource
+ * cost) are left null and score neutral, so the model stays honest about what
+ * it actually knows rather than inventing a number.
+ */
+export function metrics(bin) {
+  if (!bin || !bin.done) return null;
+  const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  const hours = bin.minutes.reduce((a, b) => a + b, 0) / 60;
+  return {
+    // Verified tasks per hour, over the completions whose time is known (a
+    // handed-over task has none): untimed ones never inflate the rate.
+    rate: hours > 0 ? bin.minutes.length / hours : null,
+    firstTry: bin.firstTry / bin.done,          // first-attempt pass rate
+    time: mean(bin.minutes),                    // average completion time (min)
+    quality: bin.reviewFixes / bin.done,        // review fixes required per task
+    rework: bin.rework / bin.done,              // share of verified tasks that needed a retry
+    regressions: bin.regressions ? bin.regressions / bin.done : null,
+    wait: mean(bin.waits),                      // average queue wait (min)
+    cost: null,                                 // resource use isn't recorded yet
+  };
+}
+
+/**
+ * A weighted productivity score in [0,1] for each agent, from the §2 metrics
+ * of the bins given (one bin per agent). Each metric is compared head-to-head
+ * across the agents (min–max normalised, direction-aware); a metric an agent
+ * has no evidence for, or one that every agent ties on, scores a neutral 0.5.
+ * So no one is assumed better without evidence, and the score never collapses
+ * to zero for everyone — the strongest agent on a kind always stays near the
+ * top (§2: a model that zeroes everyone is the wrong weighting).
+ */
+export function compose(binByAgent) {
+  const agents = Object.keys(binByAgent);
+  const m = Object.fromEntries(agents.map((a) => [a, metrics(binByAgent[a])]));
+  const out = Object.fromEntries(agents.map((a) => [a, 0]));
+  for (const key of Object.keys(WEIGHTS)) {
+    const present = agents.map((a) => m[a]?.[key]).filter((v) => v != null && Number.isFinite(v));
+    const lo = Math.min(...present), hi = Math.max(...present);
+    for (const a of agents) {
+      const v = m[a]?.[key];
+      let n = 0.5; // neutral: no evidence, or every agent ties
+      if (v != null && Number.isFinite(v) && hi > lo) { const s = (v - lo) / (hi - lo); n = DIRECTION[key] > 0 ? s : 1 - s; }
+      out[a] += WEIGHTS[key] * n;
+    }
+  }
+  return out; // weights sum to 1 and each term is in [0,1], so each score is in [0,1]
+}
+
+/** The weighted productivity of each agent on one task kind (compare only like with like, §2). */
+export function productivity(stats, kind, agents = AGENTS) {
+  return compose(Object.fromEntries(agents.map((a) => [a, stats[a]?.byKind?.[kind] || null])));
+}
+
+/**
+ * Whether assignment ranks agents by the weighted §2 score instead of the
+ * smoothed first-try prior. Off until the dashboard's live numbers prove the
+ * weighting (the dashboard shows the score even while this is off); set the
+ * BRIDGE_WEIGHTED=1 environment variable to turn it on without a code change.
+ */
+export const WEIGHTED_ASSIGNMENT = false;
+
 /** Whether every task this one depends on is done. */
 export function ready(task, byNumber) {
   return task.deps.every((n) => byNumber.get(n)?.status === 'done');
@@ -197,9 +297,13 @@ export function ready(task, byNumber) {
 /**
  * The next assignments: queued, trusted, dependency-ready tasks, most
  * urgent first, each to an idle agent that can take it, never onto files
- * another agent holds, and never a second task for a busy agent.
+ * another agent holds, and never a second task for a busy agent. Where a
+ * task either agent may take, `rank(agent, kind)` (higher is better) decides
+ * between the free agents; it defaults to the smoothed first-try prior, and
+ * the coordinator passes the weighted §2 score when that's enabled.
  */
-export function plan(tasks, states, stats, trusted) {
+export function plan(tasks, states, stats, trusted, rank) {
+  const rankFn = rank || ((agent, kind) => score(stats, agent, kind));
   const byNumber = new Map(tasks.map((t) => [t.number, t]));
   const free = new Set(AGENTS.filter((a) => states[a].state === 'idle'));
   const held = Object.fromEntries(AGENTS.map((a) => [a, [...states[a].files]]));
@@ -211,9 +315,11 @@ export function plan(tasks, states, stats, trusted) {
     const candidates = (task.agent === 'any' ? AGENTS : [task.agent]).filter((a) => free.has(a))
       .filter((a) => !AGENTS.some((other) => other !== a && overlaps(task.files, held[other])));
     if (!candidates.length) continue;
-    candidates.sort((a, b) => score(stats, b, task.kind) - score(stats, a, task.kind));
+    // A tie on the rank (the weighted score sees one-sided evidence as
+    // neutral) goes to the better smoothed record, never to list order.
+    candidates.sort((a, b) => rankFn(b, task.kind) - rankFn(a, task.kind) || score(stats, b, task.kind) - score(stats, a, task.kind));
     const agent = candidates[0];
-    out.push({ task: task.number, agent, why: task.agent === 'any' ? `best measured on ${task.kind} (${score(stats, agent, task.kind).toFixed(2)}) among free agents` : `assigned to ${agent}` });
+    out.push({ task: task.number, agent, why: task.agent === 'any' ? `best measured on ${task.kind} (${rankFn(agent, task.kind).toFixed(2)}) among free agents` : `assigned to ${agent}` });
     free.delete(agent);
     held[agent].push(...task.files);
   }

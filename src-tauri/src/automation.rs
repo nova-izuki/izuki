@@ -426,6 +426,43 @@ pub fn key_hold(name: &str, down: bool) -> Result<()> {
         .map_err(|err| anyhow!("key {} failed: {err:?}", if down { "down" } else { "up" }))
 }
 
+/// Whether [`key_hold`] is holding any key (never waits on the lock).
+pub fn keys_held() -> bool {
+    HELD.try_lock().is_some_and(|h| !h.1.is_empty())
+}
+
+/// Let go of every key [`key_hold`] is holding (Air's emergency stop). A key
+/// is forgotten only once its release was sent; the lock is never waited on
+/// for long (this also runs from the crash handler).
+pub fn release_held_keys() {
+    use std::io::Write;
+    // Never panics on a failed log line: this also runs from the crash handler.
+    let log = |line: String| {
+        let _ = writeln!(std::io::stderr(), "{line}");
+    };
+    let Some(mut held) = HELD.try_lock_for(std::time::Duration::from_millis(200)) else {
+        log("[air] couldn't let go of held keys: busy".into());
+        return;
+    };
+    if held.1.is_empty() {
+        return;
+    }
+    let mut e = match enigo() {
+        Ok(e) => e,
+        Err(err) => {
+            log(format!("[air] couldn't let go of held keys: {err}"));
+            return;
+        }
+    };
+    held.1.retain(|(k, name)| match e.key(*k, Direction::Release) {
+        Ok(()) => false,
+        Err(err) => {
+            log(format!("[air] couldn't let go of {name}: {err:?}"));
+            true
+        }
+    });
+}
+
 /// Keys held by [`key_hold`], and the window they were held for.
 static HELD: parking_lot::Mutex<(Option<isize>, Vec<(Key, String)>)> = parking_lot::Mutex::new((None, Vec::new()));
 
@@ -808,7 +845,7 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
             if let Some(text) = &step.text_to_type {
                 type_text(text)?;
                 if let Some(shown) = check_typed(text)? {
-                    return Err(anyhow!("typed text did not match the focused field: {shown}"));
+                    return Err(anyhow!("typed_mismatch: the focused field shows \"{shown}\" instead of \"{text}\" — look again before claiming it was typed"));
                 }
             }
         }
@@ -853,10 +890,11 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         }
         Intent::PlayYoutube => {
             let what = step.text_to_type.as_deref().unwrap_or_default();
-            return Ok(match crate::youtube::play(what)? {
-                Some(title) => format!("started playing \"{title}\" on YouTube (ads are skipped by themselves)"),
-                None => format!("opened YouTube results for \"{what}\" but didn't pick a video"),
-            });
+            return match crate::youtube::play(what)? {
+                Some(title) => Ok(format!("started playing \"{title}\" on YouTube (ads are skipped by themselves)")),
+                None if aborted() => Err(anyhow!("stopped")),
+                None => Err(anyhow!("play_not_started: YouTube opened results for \"{what}\" but didn't start a video; look at the results and choose one")),
+            };
         }
         Intent::Search => {
             let q = step.text_to_type.as_deref().unwrap_or_default();
@@ -895,7 +933,7 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
             if let Some(text) = &step.text_to_type {
                 type_text(text)?;
                 if let Some(shown) = check_typed(text)? {
-                    return Ok(format!("typed \"{text}\", but the box shows \"{shown}\""));
+                    return Err(anyhow!("typed_mismatch: the box shows \"{shown}\" instead of \"{text}\" — do not report this as typed; take another look and try the field again"));
                 }
             }
         }
@@ -1130,6 +1168,14 @@ mod tests {
         assert_eq!(scroll_direction(Some("down"), -3), (3, Axis::Vertical));
         assert_eq!(scroll_direction(None, -5), (-5, Axis::Vertical));
         assert_eq!(scroll_direction(Some("pagedown"), 2), (2, Axis::Vertical));
+    }
+
+    #[test]
+    fn typed_text_is_checked_against_what_the_box_shows() {
+        assert!(has_typed("Hello world", "hello"));
+        assert!(has_typed("A  B", "a b"));
+        assert!(!has_typed("Hello", "goodbye"));
+        assert!(!has_typed("", "hello"));
     }
 
     #[test]

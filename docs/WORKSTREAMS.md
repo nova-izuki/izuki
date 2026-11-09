@@ -180,3 +180,26 @@ and release discipline through the owner, and never hardcode one laptop's
 setup. The owner-only Smart Developer Mode stays compiled-out by default
 (`devmode.rs`, `DeveloperMode.tsx`, `--features devvision` observer with
 `IZUKI_VISION=1`): public users never gain an observer.
+
+## 6. Ownership change and continuation branch (owner, 2026-11-08)
+
+**Claude Code owns Eye Control only.** The complete handoff — uncommitted
+files, passing tests, live diagnostics, and the unresolved accuracy and
+emergency-stop bugs — is `docs/HANDOFF-2026-11-08-eye-control.md`. Freebuff
+did not touch those files.
+
+**Freebuff owns the remaining product**: advanced Windows computer control
+and long-task reliability, Smart Screen Actions, browser/application control,
+screen understanding, document editing, Developer Mode, Smart Vision, Claude
+Live Auto-Review, Smart Real Testing, design directions and the Face/Sound
+roadmap. Its work is isolated on `freebuff/continuation` in
+`.work/freebuff-continuation`, based on the committed `milestone-196`, not on
+Claude's uncommitted Eye work.
+
+First implemented slice: `src-tauri/src/resume.rs` persists the unfinished
+task and completed steps across a restart; it resumes only on “keep going”,
+never automatically. `automation.rs` now reports a typed-field mismatch and
+a YouTube result that never started playback as failures, and `brain.rs`
+treats both as recoverable reasons for a fresh look. This closes two places
+where a command returning was being treated as success. Remaining control
+work is still tracked in `docs/izuki-computer-control-plan.md`.

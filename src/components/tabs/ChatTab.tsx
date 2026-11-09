@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, FolderOpen, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, RotateCcw, Send, Sparkles, Square, Volume2, X } from "lucide-react";
+import { AlarmClock, Check, ChevronDown, ChevronRight, Copy, FolderOpen, History, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, Pin, RotateCcw, Send, Sparkles, Square, Trash2, Volume2, X } from "lucide-react";
 import { api, CAMERA_PICTURE_KEY, emit, EV, ISLAND_TO_CHAT_KEY, on, type CodingUpdate, type ResearchUpdate } from "../../lib/ipc";
 import { ResearchPanel, researchAsk, type ResearchState } from "../ResearchPanel";
 import { CodingPanel, type CodingState } from "../CodingPanel";
@@ -10,6 +10,7 @@ import { useDictation } from "../../hooks/useDictation";
 import { useSmartIdeas } from "../../lib/smartIdeas";
 import { sendChatCommand } from "../VoiceEngine";
 import { VoiceOrb } from "../VoiceOrb";
+import { NovaOrb } from "../NovaOrb";
 import { cx } from "../ui";
 import type { Reminder } from "../../lib/types";
 import { useIzuki } from "../../lib/store";
@@ -17,6 +18,7 @@ import { AirToggle } from "../AirToggle";
 import { brainReady } from "../../lib/setup";
 import { attachmentContext, CHAT_FILE_TYPES, keepDocumentText, readChatFile, type ChatAttachment } from "../../lib/attachments";
 import { rememberPrompt } from "../../lib/recentPrompts";
+import { chatTitle, orderSessions, pinSession, rememberSession, removeSession, searchSessions, startingMessages, timeAgo, type ChatSession, type LiveCopy } from "../../lib/chatHistory";
 import { looksLikeDirections, needsApps, opensAnApp, recentHistory, shareHistory } from "../../lib/conversation";
 
 /**
@@ -61,6 +63,46 @@ interface Msg {
   coding?: CodingState;
 }
 
+type RecentChat = ChatSession<Msg>;
+
+const RECENT_KEY = "izuki.chat.recent.v1";
+const ACTIVE_KEY = "izuki.chat.active.v1";
+
+function newChatId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `chat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+}
+
+function readActiveChatId(): string {
+  try {
+    const saved = localStorage.getItem(ACTIVE_KEY);
+    if (saved) return saved;
+  } catch {
+    /* storage is optional */
+  }
+  const id = newChatId();
+  try {
+    localStorage.setItem(ACTIVE_KEY, id);
+  } catch {
+    /* storage is optional */
+  }
+  return id;
+}
+
+let chatSessionId = readActiveChatId();
+
+function setChatSessionId(id: string) {
+  chatSessionId = id;
+  try {
+    localStorage.setItem(ACTIVE_KEY, id);
+  } catch {
+    /* storage is optional */
+  }
+}
+
 
 /** A failure that setting up a brain would fix. */
 const NEEDS_BRAIN = /no chat-capable brain|add an api key|key was rejected|rejected the key|unauthori[sz]ed|\b401\b|invalid api key|api key not valid/i;
@@ -69,6 +111,9 @@ const NEEDS_BRAIN = /no chat-capable brain|add an api key|key was rejected|rejec
 const FIRST_WORDS_MS = 45_000;
 
 const KEY = "izuki.chat.v1";
+/** The last write number given to either copy of the open chat (LiveCopy). */
+let lastRev = 0;
+const nextRev = () => ++lastRev;
 const KEEP = 60;
 const SCREEN = /^\s*\[?SCREEN\]?\s*$/i;
 
@@ -343,49 +388,108 @@ function runResearch(
   });
 }
 
-function load(): Msg[] {
+function tidy(msgs: Msg[]): Msg[] {
+  // A reply still empty from last time (the app closed or the tab changed
+  // mid-answer) would spin forever — say so and offer to ask again.
+  return msgs
+    .slice(-KEEP)
+    .map((m) => ({
+      ...m,
+      // Still working when the app closed: it was cut short.
+      research: m.research?.phase === "working" ? { ...m.research, phase: "error" as const } : m.research,
+      coding: m.coding?.phase === "working" ? { ...m.coding, phase: "error" as const } : m.coding,
+    }))
+    .map((m) =>
+      m.role === "assistant" && !m.content.trim() && !m.action && !m.coding
+        ? { ...m, content: "That reply didn't come through.", failed: true, retry: true }
+        : m
+    );
+}
+
+/** The open chat as saved, with its write number and whose it is. */
+function loadLive(): LiveCopy<Msg> {
   try {
-    const raw = localStorage.getItem(KEY);
-    // A reply still empty from last time (the app closed or the tab changed
-    // mid-answer) would spin forever — say so and offer to ask again.
-    return clean(raw ? JSON.parse(raw) : [])
-      .slice(-KEEP)
-      .map((m) => ({
-        ...m,
-        // Still working when the app closed: it was cut short.
-        research: m.research?.phase === "working" ? { ...m.research, phase: "error" as const } : m.research,
-        coding: m.coding?.phase === "working" ? { ...m.coding, phase: "error" as const } : m.coding,
-      }))
-      .map((m) =>
-        m.role === "assistant" && !m.content.trim() && !m.action && !m.coding
-          ? { ...m, content: "That reply didn't come through.", failed: true, retry: true }
-          : m
-      );
+    const raw: unknown = JSON.parse(localStorage.getItem(KEY) || "[]");
+    // An old save is the bare list.
+    if (Array.isArray(raw)) return { rev: 0, messages: tidy(clean(raw)) };
+    const saved = (raw ?? {}) as { rev?: unknown; session?: unknown; messages?: unknown };
+    return {
+      rev: typeof saved.rev === "number" && Number.isFinite(saved.rev) ? saved.rev : 0,
+      session: typeof saved.session === "string" ? saved.session : undefined,
+      messages: tidy(clean(saved.messages ?? [])),
+    };
   } catch {
-    return [];
+    return { rev: 0, messages: [] };
   }
 }
 
 /** How much attached file text a reopened chat keeps, newest files first. */
 const STORED_DOCUMENTS = 60_000;
 
-function save(msgs: Msg[]) {
+function storedMessages(msgs: Msg[]): Msg[] {
+  // Pictures are big: they're kept for this session only. So is a coding
+  // change's diff and its logs (Apply works without them). Attached files
+  // keep their text, newest first, so "and what does page 4 say?" still has
+  // the document it's about after a restart — within a fixed budget.
+  const kept = msgs.slice(-KEEP);
+  const stored = keepDocumentText(kept, STORED_DOCUMENTS);
+  return kept.map((m, index) => {
+    const lean = m.coding ? { ...m, coding: { ...m.coding, diff: undefined, steps: m.coding.steps.map(({ kind, text, ok }) => ({ kind, text, ok })) } } : m;
+    const { kept: files, lost } = stored[index];
+    // Name whatever didn't fit: a missing document is never a mystery.
+    return { ...lean, images: undefined, documents: files.length ? files : undefined, content: `${lean.content}${lean.images?.length ? " 🖼️" : ""}${lost.length ? ` 📎 ${lost.map((d) => d.name).join(", ")} (too long to keep after closing — attach again for more)` : ""}`.trim() };
+  });
+}
+
+/** Why a write didn't go through: storage is full, or blocked altogether. */
+type Unsaved = "full" | "blocked";
+
+function failure(e: unknown): Unsaved {
+  const name = e instanceof DOMException ? e.name : "";
+  return name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED" ? "full" : "blocked";
+}
+
+/** The live chat; null when kept. (Private mode or full: the chat still works, it just isn't kept.) */
+function save(msgs: Msg[]): Unsaved | null {
   try {
-    // Pictures are big: they're kept for this session only. So is a coding
-    // change's diff and its logs (Apply works without them). Attached files
-    // keep their text, newest first, so "and what does page 4 say?" still has
-    // the document it's about after a restart — within a fixed budget.
-    const kept = msgs.slice(-KEEP);
-    const stored = keepDocumentText(kept, STORED_DOCUMENTS);
-    const light = kept.map((m, index) => {
-      const lean = m.coding ? { ...m, coding: { ...m.coding, diff: undefined, steps: m.coding.steps.map(({ kind, text, ok }) => ({ kind, text, ok })) } } : m;
-      const { kept: files, lost } = stored[index];
-      // Name whatever didn't fit: a missing document is never a mystery.
-      return { ...lean, images: undefined, documents: files.length ? files : undefined, content: `${lean.content}${lean.images?.length ? " 🖼️" : ""}${lost.length ? ` 📎 ${lost.map((d) => d.name).join(", ")} (too long to keep after closing — attach again for more)` : ""}`.trim() };
-    });
-    localStorage.setItem(KEY, JSON.stringify(light));
+    // One write: the messages, their write number and whose they are
+    // together, so a copy is never half-saved.
+    localStorage.setItem(KEY, JSON.stringify({ rev: nextRev(), session: chatSessionId, messages: storedMessages(msgs) }));
+    return null;
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+function readRecent(): RecentChat[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+    if (!Array.isArray(raw)) return [];
+    const out: RecentChat[] = [];
+    for (const row of raw) {
+      if (!row || typeof row !== "object") continue;
+      const saved = row as Record<string, unknown>;
+      if (typeof saved.id !== "string" || !Array.isArray(saved.messages)) continue;
+      const messages = tidy(clean(saved.messages));
+      if (!messages.some((m) => m.role === "user" && m.content.trim())) continue;
+      const at = typeof saved.at === "number" && Number.isFinite(saved.at) ? saved.at : Date.now();
+      const title = typeof saved.title === "string" && saved.title.trim() ? saved.title : chatTitle(messages);
+      const rev = typeof saved.rev === "number" && Number.isFinite(saved.rev) ? saved.rev : undefined;
+      out.push({ id: saved.id, title, at, messages, pinned: saved.pinned === true, rev });
+    }
+    return orderSessions(out);
   } catch {
-    /* private mode / full — the chat still works, it just isn't kept */
+    return [];
+  }
+}
+
+/** The Recent chats list; null when kept. */
+function saveRecent(list: RecentChat[]): Unsaved | null {
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(list));
+    return null;
+  } catch (e) {
+    return failure(e);
   }
 }
 
@@ -394,7 +498,18 @@ function save(msgs: Msg[]) {
  * mid-answer and the reply still arrives, and is there when you come back.
  * (It used to be lost — "That reply didn't come through.")
  */
-let chatMsgs: Msg[] = load();
+/** Recent chats live out here too, so a list that couldn't be written yet
+ *  survives leaving the tab, until a write goes through. */
+let recentMem: RecentChat[] = readRecent();
+/** Writes that didn't go through, for each copy: the live chat and the list. */
+const unsavedNow: { live: Unsaved | null; recent: Unsaved | null } = { live: null, recent: null };
+let chatMsgs: Msg[] = (() => {
+  const live = loadLive();
+  // Write numbers carry on from the highest one saved.
+  lastRev = Math.max(0, live.rev, ...recentMem.map((c) => c.rev ?? 0));
+  // The newer copy of this chat (chatHistory.ts says which and why).
+  return startingMessages(live, chatSessionId, recentMem.find((c) => c.id === chatSessionId));
+})();
 let chatBusy = false;
 const chatSubs = new Set<() => void>();
 const ping = () => chatSubs.forEach((f) => f());
@@ -404,17 +519,42 @@ function setChatMsgs(next: Msg[] | ((m: Msg[]) => Msg[])) {
   // A patch for "the last message" when there is none (New chat pressed
   // while a reply was on its way) changes nothing.
   if (chatMsgs.length === 0 && was.length === 0 && typeof next === "function") return;
-  save(chatMsgs);
+  unsavedNow.live = save(chatMsgs);
   ping();
 }
 /** A fresh, empty chat — the way back if the tab ever fails to draw. */
 export function resetChat() {
   chatStream.current = null;
   chatFinish.current = null;
+  setChatSessionId(newChatId());
   chatMsgs = [];
   chatBusy = false;
-  save(chatMsgs);
+  unsavedNow.live = save(chatMsgs);
   ping();
+}
+/** Write Recent chats; when that works after a failed write, the live
+ *  chat is written again too, so both copies are current. */
+function writeRecent(list: RecentChat[]) {
+  recentMem = list;
+  unsavedNow.recent = saveRecent(list);
+  if (!unsavedNow.recent && unsavedNow.live) unsavedNow.live = save(chatMsgs);
+  ping();
+}
+/** Why something wasn't kept ("full" first: that one has a fix), or null when both copies are current. */
+function unsavedWhy(): Unsaved | null {
+  const { live, recent } = unsavedNow;
+  return live === "full" || recent === "full" ? "full" : live ?? recent;
+}
+/** What to tell the person: which copy wasn't kept, and why. */
+function notKeptLine(): string | null {
+  const why = unsavedWhy();
+  if (!why) return null;
+  const what = unsavedNow.recent
+    ? "This chat couldn't be kept in Recent chats"
+    : "This chat couldn't be saved for the next time Izuki opens";
+  return why === "full"
+    ? `${what}: Izuki's storage on this PC is full. Delete an old chat to make room.`
+    : `${what}: this PC is blocking Izuki's storage. It stays here until Izuki closes.`;
 }
 function setChatBusy(v: boolean) {
   chatBusy = v;
@@ -431,16 +571,73 @@ function useChatState() {
       chatSubs.delete(f);
     };
   }, []);
-  return { msgs: chatMsgs, busy: chatBusy };
+  // The session id too, so a reset from outside (resetChat) is seen here.
+  return { msgs: chatMsgs, busy: chatBusy, session: chatSessionId, notKept: notKeptLine() };
 }
 
 
 export function ChatTab() {
-  const { msgs, busy } = useChatState();
+  const { msgs, busy, session, notKept } = useChatState();
   // Suggestions that fit what's on screen and the time of day.
   const ideas = useSmartIdeas(4);
   const setMsgs = setChatMsgs;
   const setBusy = setChatBusy;
+  const [recent, setRecent] = useState<RecentChat[]>(() => recentMem);
+  const recentRef = useRef<RecentChat[]>(recent);
+  const [recentsOpen, setRecentsOpen] = useState(false);
+  const [recentQuery, setRecentQuery] = useState("");
+  // A write that failed is said plainly (notKept) and tried again on the
+  // next save, instead of the list looking saved and being gone after a
+  // restart; the state lives outside the tab (unsavedNow), so leaving the
+  // tab loses neither the list nor the warning.
+  const commitRecent = useCallback((next: RecentChat[]) => {
+    recentRef.current = next;
+    setRecent(next);
+    writeRecent(next);
+  }, []);
+  // Each save rewrites the whole list, so while a reply streams it's saved
+  // at most every 1.5 s, and once more the moment it settles.
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Save the live chat into Recent chats, from the module state (always the
+   *  latest; a save waiting on the timer is folded in). A chat only looked at
+   *  keeps its time instead of jumping to "Just now", and an unchanged one
+   *  isn't written again. */
+  const saveCurrent = useCallback(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    if (!chatMsgs.length) return;
+    const stored = storedMessages(chatMsgs);
+    const existing = recentRef.current.find((s) => s.id === chatSessionId);
+    if (!unsavedWhy() && existing && JSON.stringify(existing.messages) === JSON.stringify(stored)) return;
+    commitRecent(rememberSession(recentRef.current, chatSessionId, chatTitle(chatMsgs), stored, Date.now(), nextRev()));
+  }, [commitRecent]);
+  useEffect(() => {
+    if (!msgs.length) return;
+    if (!busy) {
+      saveCurrent();
+      return;
+    }
+    if (saveTimer.current) return;
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
+      saveCurrent();
+    }, 1500);
+  }, [msgs, busy, saveCurrent]);
+  // Leaving the tab mid-reply: the waiting save happens now.
+  useEffect(
+    () => () => {
+      if (saveTimer.current) saveCurrent();
+    },
+    [saveCurrent]
+  );
+  useEffect(() => {
+    if (!recentsOpen) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setRecentsOpen(false);
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [recentsOpen]);
   const [draft, setDraft] = useState("");
   /** Pictures waiting to go with the next message. */
   const [pics, setPics] = useState<string[]>([]);
@@ -572,14 +769,18 @@ export function ChatTab() {
   // transcript would push the live conversation out of the short shared
   // window the orb is using — so opening this tab would end the thread the
   // user was in the middle of.
-  const baseline = useRef<number | null>(null);
+  // Measured per chat: a New chat, an opened saved chat or a cleared one
+  // starts again from what it holds now (never publishing an old transcript,
+  // never hiding the new turns behind the last chat's length).
+  const baseline = useRef<{ session: string; from: number } | null>(null);
   useEffect(() => {
-    if (baseline.current === null) {
-      baseline.current = msgs.length;
+    const b = baseline.current;
+    if (!b || b.session !== session || msgs.length < b.from) {
+      baseline.current = { session, from: msgs.length };
       return;
     }
-    shareHistory(msgs.slice(baseline.current).map(({ role, content }) => ({ role, content })));
-  }, [msgs]);
+    shareHistory(msgs.slice(b.from).map(({ role, content }) => ({ role, content })));
+  }, [msgs, session]);
 
   /** Coding mode on, and its project (remembered on this PC). */
   const [code, setCode] = useState(() => {
@@ -942,6 +1143,63 @@ export function ChatTab() {
     setBusy(false);
   };
 
+  const openRecents = () => {
+    setRecentQuery("");
+    setRecentsOpen(true);
+  };
+
+  /** Leave the current thread, keeping it first unless it is being deleted. */
+  const beginChat = (keepCurrent: boolean) => {
+    stop();
+    clearAttachments();
+    // After stop(), so a cut-off reply is saved as stopped.
+    if (keepCurrent) saveCurrent();
+    const id = newChatId();
+    setChatSessionId(id);
+    setMsgs([]);
+    setRecentsOpen(false);
+    setRecentQuery("");
+  };
+
+  const startNewChat = () => beginChat(true);
+
+  const openChat = (chat: RecentChat) => {
+    if (chat.id !== chatSessionId) {
+      stop();
+      clearAttachments();
+      // The chat being left is saved first (as stopped, if it was mid-reply).
+      saveCurrent();
+      setChatSessionId(chat.id);
+      // Tidied like a chat reopened after a restart: a reply cut short says
+      // so (with Try again) instead of an empty bubble or a "working" card.
+      setMsgs(tidy(chat.messages));
+    }
+    setRecentsOpen(false);
+    setRecentQuery("");
+  };
+
+  const deleteChat = (chat: RecentChat) => {
+    commitRecent(removeSession(recentRef.current, chat.id));
+    // Do not re-save the conversation we just deleted on the way out.
+    if (chat.id === chatSessionId) beginChat(false);
+  };
+
+  // Deleting takes two clicks (the first turns the trash into "Delete?"), so a
+  // stray click beside the pin can't lose a whole chat; it disarms after 4 s.
+  const [armedDelete, setArmedDelete] = useState<string | null>(null);
+  useEffect(() => {
+    if (!armedDelete) return;
+    const t = setTimeout(() => setArmedDelete(null), 4000);
+    return () => clearTimeout(t);
+  }, [armedDelete]);
+
+  /** Keep a chat at the top; pins survive updates and the recent cap. */
+  const togglePin = (chat: RecentChat) => {
+    commitRecent(pinSession(recentRef.current, chat.id, !chat.pinned));
+  };
+
+  const shownRecent = searchSessions(recent, recentQuery);
+
   // Pressing Enter while it's working stops the work and sends what you typed
   // (see the composer). Nothing you type during a lab is lost, and the app
   // doesn't sit there deaf until the task ends on its own.
@@ -1047,34 +1305,166 @@ export function ChatTab() {
       </AnimatePresence>
 
       {/* ------------------------------------------------ the chat */}
-      <div className="izk-card flex min-h-[420px] flex-col p-0">
-        <div className="flex items-center justify-between px-[14px] pt-[12px]">
+      <div className="izk-card izk-chat-card relative flex min-h-[420px] flex-col p-0">
+        {recentsOpen && (
+          <motion.div
+            key="recent-chats"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="izk-chat-recents-layer absolute inset-0 z-30"
+          >
+              <button
+                type="button"
+                aria-label="Close recent chats"
+                onClick={() => setRecentsOpen(false)}
+                className="absolute inset-0 h-full w-full bg-black/45"
+              />
+              <motion.aside
+                id="izuki-recent-chats"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Recent chats"
+                initial={{ x: -18, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                className="izk-chat-recents absolute inset-y-0 left-0 flex w-[86%] max-w-[316px] flex-col"
+              >
+                <div className="flex items-start justify-between border-b border-white/8 px-3.5 py-3">
+                  <div className="min-w-0">
+                    <div className="text-[12.5px] font-semibold text-izk-ink">Recent chats</div>
+                    <div className="mt-0.5 text-[10.5px] text-izk-muted">Saved on this PC</div>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Close recent chats"
+                    onClick={() => setRecentsOpen(false)}
+                    className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-izk-muted transition hover:bg-white/10 hover:text-izk-ink"
+                  >
+                    <X size={14} strokeWidth={2.4} />
+                  </button>
+                </div>
+                {recent.length > 0 && (
+                  <div className="px-2 pt-2">
+                    <input
+                      value={recentQuery}
+                      onChange={(event) => setRecentQuery(event.target.value)}
+                      placeholder="Search chats"
+                      aria-label="Search recent chats"
+                      className="izk-field h-[30px] w-full px-2.5 text-[11.5px]"
+                    />
+                  </div>
+                )}
+                <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+                  {shownRecent.length > 0 ? (
+                    shownRecent.map((chat) => (
+                      <div
+                        key={chat.id}
+                        className={cx(
+                          "group flex items-stretch rounded-[10px] transition-colors",
+                          chat.id === session ? "bg-white/[0.065]" : "hover:bg-white/[0.04]"
+                        )}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => openChat(chat)}
+                          aria-current={chat.id === session ? "true" : undefined}
+                          className="min-w-0 flex-1 px-2.5 py-2 text-left"
+                        >
+                          <span className="block truncate text-[12px] font-medium text-izk-ink">{chat.title}</span>
+                          <span className="mt-0.5 block truncate text-[10.5px] text-izk-muted">
+                            {timeAgo(chat.at)} · {chat.messages.length} {chat.messages.length === 1 ? "message" : "messages"}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`${chat.pinned ? "Unpin" : "Pin"} ${chat.title}`}
+                          aria-pressed={!!chat.pinned}
+                          title={chat.pinned ? "Unpin chat" : "Pin to top"}
+                          onClick={() => togglePin(chat)}
+                          className={cx(
+                            "flex w-[26px] shrink-0 items-center justify-center transition",
+                            chat.pinned ? "text-amber-300/90 hover:text-amber-200" : "text-izk-muted/60 hover:text-izk-ink"
+                          )}
+                        >
+                          <Pin size={12} strokeWidth={2.2} fill={chat.pinned ? "currentColor" : "none"} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={armedDelete === chat.id ? `Confirm: delete ${chat.title}` : `Delete ${chat.title}`}
+                          title={armedDelete === chat.id ? "Click again to delete" : "Delete chat"}
+                          onClick={() => {
+                            if (armedDelete === chat.id) {
+                              setArmedDelete(null);
+                              deleteChat(chat);
+                            } else setArmedDelete(chat.id);
+                          }}
+                          className={cx(
+                            "flex shrink-0 items-center justify-center transition",
+                            armedDelete === chat.id
+                              ? "px-2 text-[10.5px] font-semibold text-izk-danger"
+                              : "w-[28px] text-izk-muted/60 hover:text-izk-danger"
+                          )}
+                        >
+                          {armedDelete === chat.id ? "Delete?" : <Trash2 size={12} strokeWidth={2.2} />}
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-3 py-8 text-center text-[11.5px] leading-relaxed text-izk-muted">
+                      {recent.length ? "No chats match that search." : "Your chats will show up here."}
+                    </div>
+                  )}
+                </div>
+                <div className="border-t border-white/8 p-2">
+                  <button
+                    type="button"
+                    onClick={startNewChat}
+                    className="flex h-[34px] w-full items-center justify-center gap-1.5 rounded-[9px] border border-white/10 bg-white/[0.045] text-[11.5px] font-semibold text-izk-ink transition hover:bg-white/[0.085]"
+                  >
+                    <RotateCcw size={12} strokeWidth={2.4} /> New chat
+                  </button>
+                </div>
+              </motion.aside>
+          </motion.div>
+        )}
+        <div className="izk-chat-toolbar flex items-center justify-between gap-2 px-[14px] pt-[12px]">
           <button
             type="button"
             onClick={() => patch({ control_style: settings.control_style === "precision" ? "mouse" : "precision" })}
-            className="izk-no-drag text-[10.5px] text-izk-muted transition-colors hover:text-izk-ink"
+            className="izk-no-drag min-w-0 truncate text-left text-[10.5px] text-izk-muted transition-colors hover:text-izk-ink"
             title="Tap to switch: Jarvis mode works without moving the mouse; Mouse mode moves a visible hand."
           >
             {/* What this button switches, and nothing else ("· Save credits"
                 beside it read like a second switch that wasn't there). */}
             {settings.control_style === "precision" ? "⚡ Jarvis mode — no mouse" : "↗ Mouse mode — moves the pointer"}
           </button>
-          {/* (Ask first ↔ Auto lives once, beside the message box.) */}
-          <AirToggle className="h-[26px]" />
-          {msgs.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                stop();
-                setMsgs([]);
-                clearAttachments();
-              }}
-              className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
-              title="Start a new chat"
-            >
-              <RotateCcw size={11} strokeWidth={2.4} /> New chat
-            </button>
-          )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {recent.length > 0 && (
+              <button
+                type="button"
+                onClick={openRecents}
+                aria-label="Recent chats"
+                aria-expanded={recentsOpen}
+                aria-controls="izuki-recent-chats"
+                title="Recent chats"
+                className="izk-pill izk-no-drag flex h-[26px] w-[26px] items-center justify-center px-0"
+              >
+                <History size={13} strokeWidth={2.2} />
+              </button>
+            )}
+            {/* (Ask first ↔ Auto lives once, beside the message box.) */}
+            <AirToggle className="h-[26px]" />
+            {msgs.length > 0 && (
+              <button
+                type="button"
+                onClick={startNewChat}
+                className="izk-pill izk-no-drag h-[26px] px-2.5 text-[11px]"
+                title="Start a new chat"
+              >
+                <RotateCcw size={11} strokeWidth={2.4} /> New chat
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-1 flex-col gap-2 px-[14px] py-[12px]">
@@ -1094,20 +1484,34 @@ export function ChatTab() {
             </button>
           )}
           {msgs.length === 0 && (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 py-6 text-center">
-              <div className="text-[15px] font-semibold text-izk-ink">Hey! What's on your mind?</div>
-              <div className="flex flex-wrap justify-center gap-1.5">
+            <div className="izk-chat-welcome flex flex-1 flex-col items-center justify-center gap-3 py-6">
+              <div className="izk-chat-intro">
+                <span className="izk-chat-avatar" aria-hidden="true">
+                  <NovaOrb size={36} />
+                </span>
+                <div className="min-w-0 text-left">
+                  <div className="text-[15px] font-semibold text-izk-ink">Chat with Izuki</div>
+                  <p className="izk-chat-sub">Ask a question, or point at something on your screen.</p>
+                </div>
+              </div>
+              <div className="izk-chat-ideas flex flex-wrap justify-center gap-1.5">
                 {ideas.map((idea) => (
                   <button
                     key={idea.label}
                     type="button"
                     onClick={() => void send(idea.ask, false, false, [], [], false)}
-                    className="izk-pill izk-no-drag h-auto px-3 py-1.5 text-left text-[11.5px]"
+                    className="izk-pill izk-chat-idea izk-no-drag h-auto px-3 py-1.5 text-left text-[11.5px]"
                   >
                     {idea.label}
                   </button>
                 ))}
               </div>
+              {recent.length > 0 && (
+                <button type="button" onClick={openRecents} className="izk-chat-history-link">
+                  <History size={12} strokeWidth={2.2} /> Recent chats
+                  <ChevronRight size={12} strokeWidth={2.2} />
+                </button>
+              )}
             </div>
           )}
           {msgs.map((m, i) =>
@@ -1215,7 +1619,7 @@ export function ChatTab() {
         </div>
 
         <div
-          className="border-t border-white/8 p-[10px]"
+          className="izk-chat-composer border-t border-white/8 p-[10px]"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             if (!e.dataTransfer.files.length) return;
@@ -1243,6 +1647,11 @@ export function ChatTab() {
           {documents.length > 0 && <div className="mb-2 flex flex-wrap gap-2">{documents.map((file, i) => <span key={i} className="flex max-w-full items-center gap-2 rounded-lg border border-white/15 px-2 py-1 text-[11px]"><span className="truncate">📎 {file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setDocuments((all) => all.filter((_, j) => j !== i))}><X size={12} /></button></span>)}</div>}
           {readingFiles && <p role="status" className="mb-2 text-[11px] text-izk-muted">Reading your files…</p>}
           {fileError && <p role="alert" className="mb-2 text-[11px] text-izk-danger">{fileError}</p>}
+          {notKept && (
+            <p role="alert" className="mb-2 text-[11px] text-izk-danger">
+              {notKept}
+            </p>
+          )}
           {queued && (
             <p role="status" className="mb-2 flex items-center gap-2 text-[11px] text-izk-muted">
               <span className="min-w-0 truncate">Stopping, then sending: “{queued.text || "your files"}”</span>
