@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🟩", title: "A free NVIDIA brain, set up for you", how: "Settings → Izuki's brain → NVIDIA NIM walks you through it: open build.nvidia.com, make a free key, copy it, and Izuki tries NVIDIA's free models on your key and picks the ones that fit, one that sees your screen and a fast one for chat.", try: { label: "Open Settings", tab: "settings" } },
   { icon: "💬", title: "Chat history you can come back to", how: "Your conversations are kept on this PC: search them, pick one up where you left off, and pin the ones that matter above the recent list. Deleting asks once more, and a deleted chat stays deleted.", try: { label: "Open Chat", tab: "chat" } },
   { icon: "↩️", title: "Unfinished tasks wait for \"keep going\"", how: "If a task stops partway, even across a restart, say \"keep going\" and Izuki resumes it. A step whose typing didn't land or whose video never started now counts as failed, and Izuki fixes it instead of reporting success." },
   { icon: "🛑", title: "An emergency stop for Eye Control", how: "Ctrl+Alt+Shift+X stops Eye Control from anywhere, lets go of anything held and stays off. A Stop button and \"Izuki, stop eye control\" work too, and moving your own mouse pauses it. In this version the eye cursor is drawn but doesn't move the mouse yet; Eye Control stays off unless you turn it on." },

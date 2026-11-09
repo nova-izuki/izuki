@@ -1197,7 +1197,9 @@ fn local_up(base_url: &str) -> bool {
 pub(crate) fn on_this_pc(base_url: &str) -> bool {
     host_port(base_url).is_some_and(|(h, _)| {
         let h = h.to_ascii_lowercase();
-        h == "localhost" || h.starts_with("127.") || h == "::1" || h == "0.0.0.0"
+        // Whole addresses only: "127.example.com" is someone else's server
+        // (a key would go to it over plain http if it counted as local).
+        h == "localhost" || h.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified())
     })
 }
 
@@ -2687,6 +2689,9 @@ pub fn submit_voice_command_in(app: &AppHandle, store: &Arc<Store>, prompt: Stri
     // FL Studio: connecting it is Izuki's own setup, and FL's jobs need that
     // link — never worked out by clicking through FL's menus (that only ever
     // reached FL's MIDI list, empty without Izuki's cable).
+    // Loaded first, like the getters: the first "keep going" after a
+    // restart must reach the FL Studio guard with its task.
+    hydrate_unfinished();
     let resumes = resumes_waiting(&prompt).then(|| UNFINISHED.lock().as_ref().map(|(t, _)| t.clone())).flatten();
     // What Izuki said last: the conversation's, else the last screen task's.
     let last_said = recent
@@ -5172,6 +5177,10 @@ mod speed_tests {
         assert!(on_this_pc("http://localhost:20128/v1"));
         assert!(on_this_pc("http://127.0.0.1:11434"));
         assert!(!on_this_pc("https://openrouter.ai/api/v1"));
+        assert!(on_this_pc("http://127.0.1.1:8080/v1"), "all of 127/8 is this PC");
+        assert!(on_this_pc("http://[::1]:11434"));
+        assert!(!on_this_pc("http://127.example.com/v1"), "a name that starts with 127. is a remote server");
+        assert!(!on_this_pc("http://localhost.example.com/v1"));
     }
 
     use crate::model::ActionStep;

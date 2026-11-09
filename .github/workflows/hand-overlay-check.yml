@@ -19,6 +19,11 @@ on:
 permissions:
   contents: read
 
+env:
+  # CI never uses a GPU: onnxruntime-node's install would download its CUDA
+  # files from GitHub releases, and a 504 there failed whole runs.
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
 jobs:
   hand-overlay:
     runs-on: ubuntu-latest
