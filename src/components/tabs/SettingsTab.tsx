@@ -24,6 +24,7 @@ import { PhoneCard } from "../PhoneCard";
 import { BoostCard } from "../BoostCard";
 import { FlStudioCard } from "../FlStudioCard";
 import { AirCard } from "../AirCard";
+import { NvidiaGuide } from "../NvidiaGuide";
 import { OrbStudio } from "../OrbStudio";
 import { UpdateControls } from '../UpdateControls';
 import { DiscordCard } from "../DiscordCard";
@@ -248,6 +249,7 @@ export function SettingsTab() {
 
                 {expanded && (
                   <div className="flex flex-col gap-2 border-t border-white/8 p-2.5 pt-3">
+                    {p.id === "nvidia" && <NvidiaGuide provider={p} onModel={(m) => setProvider(p.id, { model: m })} />}
                     <LabelledField
                       label="Model"
                       value={p.model}
@@ -307,6 +309,8 @@ export function SettingsTab() {
                                 ? "LLM|… (free from llama.developer.meta.com → API keys)"
                               : p.id === "mistral"
                                 ? "free from console.mistral.ai → API Keys (pick the free Experiment plan)"
+                              : p.id === "nvidia"
+                                ? "nvapi-… (free from build.nvidia.com → Settings → API Keys)"
                               : p.id === "9router"
                                 ? "not needed — 9Router holds its own provider keys"
                                 : "paste your key"
