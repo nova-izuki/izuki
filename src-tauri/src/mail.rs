@@ -118,6 +118,18 @@ impl Source for Composio {
     }
 }
 
+/// A profile read can fail once while Composio is busy. One quick retry
+/// keeps a duplicate link from being reported as a whole unreadable account.
+fn read_address(src: &dyn Source, link: &str) -> Result<String> {
+    match src.address(link) {
+        Ok(a) => Ok(a),
+        Err(first) => {
+            std::thread::sleep(Duration::from_millis(150));
+            src.address(link).map_err(|second| anyhow!("{first}; retry: {second}"))
+        }
+    }
+}
+
 /// Every Gmail account, links to the same address counted once.
 /// Returns (accounts, how many duplicate links were skipped).
 pub fn accounts(src: &dyn Source) -> Result<(Vec<Account>, usize)> {
@@ -127,7 +139,7 @@ pub fn accounts(src: &dyn Source) -> Result<(Vec<Account>, usize)> {
     let mut dupes = 0;
     for l in links {
         match l.status.to_uppercase().as_str() {
-            "ACTIVE" => match src.address(&l.id) {
+            "ACTIVE" => match read_address(src, &l.id) {
                 Ok(a) => {
                     if seen.insert(a.clone()) {
                         out.push(Account { id: l.id, address: a, state: "ok".into(), note: String::new() });
@@ -776,6 +788,44 @@ mod tests {
         let said = say(&ask, &f, &accs);
         assert!(said.contains("Home_Depot_Hiring") && said.contains("second@example.com"), "{said}");
         assert!(said.contains("all 2 of your Gmail accounts"), "{said}");
+    }
+
+    #[test]
+    fn retries_a_transient_profile_failure() {
+        struct Flaky<'a> {
+            inner: &'a Fake,
+            fail_once: std::sync::Mutex<HashSet<String>>,
+        }
+        impl Source for Flaky<'_> {
+            fn links(&self) -> Result<Vec<Link>> { self.inner.links() }
+            fn address(&self, link: &str) -> Result<String> {
+                if self.fail_once.lock().unwrap().remove(link) {
+                    return Err(anyhow!("Composio answered 500: upstream error"));
+                }
+                self.inner.address(link)
+            }
+            fn fetch(&self, link: &str, query: &str, max: usize) -> Result<Value> {
+                self.inner.fetch(link, query, max)
+            }
+        }
+        let fake = two_accounts();
+        let mut fail_once = HashSet::new();
+        fail_once.insert("ca_a".to_string());
+        let src = Flaky { inner: &fake, fail_once: std::sync::Mutex::new(fail_once) };
+        let (accs, dupes) = accounts(&src).unwrap();
+        assert_eq!(dupes, 1);
+        assert_eq!(accs.iter().filter(|a| a.state == "ok").count(), 2);
+        assert!(!accs.iter().any(|a| a.state == "error"), "{accs:?}");
+    }
+
+    #[test]
+    fn a_real_profile_failure_is_still_reported() {
+        let mut fake = two_accounts();
+        fake.addrs.remove("ca_a");
+        let (accs, _) = accounts(&fake).unwrap();
+        let error = accs.iter().find(|a| a.state == "error").expect("the link that cannot answer");
+        assert!(error.note.contains("no profile"), "{error:?}");
+        assert!(accs.iter().any(|a| a.address == "first@example.com" && a.state == "ok"), "the duplicate link still reads the account");
     }
 
     #[test]
