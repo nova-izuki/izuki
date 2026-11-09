@@ -66,14 +66,16 @@ function fail(t, category, detail, recorded = false) {
   const next = recover({ ...t, state: { ...t.state, history } }, category);
   const text = `${detail ? `${detail}\n\n` : ''}${next.note}`;
   if (next.action === 'block') return update(t, 'blocked', { history, pr: undefined, commit: undefined }, text);
-  update(t, 'queued', { history, agent: next.action === 'reassign' ? undefined : t.state.agent, strategy: next.note, pr: undefined, commit: undefined, reviewSince: undefined }, text);
   if (next.action === 'reassign') {
-    // If the relabel fails, setLabels throws before the new label is added:
-    // the task keeps its old agent, here and on GitHub, and `each` notes it.
+    // The relabel comes first. If GitHub refuses it, setLabels throws before
+    // anything else changes: the task stays as it was (failed), `each` notes
+    // it, and the next pass recovers it again. The failure isn't counted
+    // twice, because nothing was written.
     act(`#${t.number}: to ${next.to}`, () => gh.setLabels(t.number, [`agent:${next.to}`], [`agent:${t.agent}`]));
     // The rest of this pass reads the task from memory, not from GitHub.
     reassigned(t, next.to);
   }
+  update(t, 'queued', { history, agent: next.action === 'reassign' ? undefined : t.state.agent, strategy: next.note, pr: undefined, commit: undefined, reviewSince: undefined }, text);
 }
 
 // Why checks failed, from their logs (a CodeRabbit failure is a review
