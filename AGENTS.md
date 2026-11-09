@@ -232,14 +232,25 @@ This replaces the two ownership sections below (kept for history).
   remains the release coordinator: the only one who bumps versions and
   writes release notes (rule 2).
 - **One owner per piece of work, through a GitHub issue.** Before starting,
-  open or claim an issue (`agent-task`, `agent:claude` or `agent:freebuff`,
-  `status:assigned`), and name the files you expect to touch. If the other
-  assistant already holds an issue for that area or those files, comment
-  there and agree before editing them.
+  open or claim an issue labelled `agent:claude` or `agent:freebuff` with
+  `status:assigned`. Name the files you expect to touch on one line in
+  exactly this form: `Files: src/a.ts, src-tauri/src/b.rs`. That line, comma
+  separated, is the only file list the agent bridge reads for its overlap
+  check. If the other assistant already holds an issue for that area or those
+  files, comment there and agree before editing them.
+- **Plain claims and bridge tasks:**
+  - **A plain claim** has no `agent-task` label. The agent bridge never
+    touches it: its labels and `Files:` line are for the two of you.
+  - **A bridge task** is labelled `agent-task`. The bridge dispatches it and
+    keeps a hidden state block in the issue body that records the working
+    agent. Never edit that block by hand.
 - **Taking over a bug:** if you find a bug the other can't get to soon, or
   one in the other's work that you can fix, say so on its issue (or open
-  one), move the `agent:` label to yourself, and then fix it. Never fix the
-  same thing silently in parallel.
+  one), then fix it. Never fix the same thing silently in parallel.
+  - On a plain claim, move the `agent:` label to yourself.
+  - On a bridge task, move the `agent:` label and set `status:queued`. The
+    bridge then reassigns it by the label and updates its own state, so it
+    won't keep dispatching the task to the other assistant.
 - **Branches:** each assistant works in its own worktree and branch
   (`claude/…`, `freebuff/…`), never in the other's. A PR goes into
   `milestone-196` and merges only with CI green and every review thread

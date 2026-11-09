@@ -60,7 +60,7 @@ Not claimed yet, for whichever developer gets there first (open an issue to clai
 ## Outstanding
 
 - **Supervised Eye accuracy session** (owner and Claude, #43). Real camera: calibrate, run the 5-dot check, try the stop key, the Stop button, a voice stop and mouse takeover. If it passes, set `airsafe::EYE_MOUSE_RELEASED = true`.
-- **Hand overlay: the native window-switch step** (#27, taken over by Claude; Codex is paused). Run `node tools/hand-overlay-check.cjs --native` from the owner's own terminal. A background terminal can't take the foreground.
+- **Hand overlay: the native window-switch step** (#27, taken over by Claude; Codex is paused). From the owner's own terminal (a background terminal can't take the foreground), in `src-tauri`: `$env:IZUKI_TEST_MANIFEST=1; cargo build --example hand_overlay_probe`, then from the repo root `$env:IZUKI_HAND_TEST_HOST="$PWD\src-tauri\target\debug\examples\hand_overlay_probe.exe"; node tools/hand-overlay-check.cjs --native` (PowerShell; the manifest switch is needed or the probe can't start, see docs/VALIDATION-HAND-OVERLAY-2026-11-03.md).
 - **Scheduler weights (Claude, bridge):** `rate` and `time` come from the same minutes, so speed carries 0.45, not 0.30. Measure `rate` over all working time (failed attempts included) before weighted assignment is turned on (`WEIGHTED_ASSIGNMENT` or `BRIDGE_WEIGHTED=1`).
 - **#37** (PR #35's nine minor review findings: Chat recents focus, reduced motion, design-study wording, ownership notes): in Freebuff's queue, not release blockers.
 - **#18** (Smart Screen Actions: check results) and **#32** (YouTube ad skip): in Freebuff's queue. #18 has unverified earlier work on `agent/claude-18-1`.
