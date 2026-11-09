@@ -754,6 +754,8 @@ export interface WindhawkStatus {
   path: string | null;
   can_install: boolean;
   mods: WindhawkMod[];
+  /** An install started earlier is still running. */
+  installing: boolean;
 }
 
 export interface WindowsTweak {
@@ -1053,8 +1055,10 @@ export const api = {
   /** Arrange this screen's windows: "side", "focus", "columns" or "grid". */
   windowLayout: (kind: "side" | "focus" | "columns" | "grid") => call<string>("window_layout", { kind }, () => "Arranging windows works in the Windows app."),
   windowLayoutUndo: () => call<string>("window_layout_undo", undefined, () => ""),
-  windhawkStatus: () => call<WindhawkStatus>("windhawk_status", undefined, () => ({ installed: false, path: null, can_install: false, mods: [] })),
-  windhawkInstall: () => call<WindhawkStatus>("windhawk_install", undefined, () => ({ installed: false, path: null, can_install: false, mods: [] })),
+  /** An arrangement (made here or by voice) can be put back. */
+  windowLayoutCanUndo: () => call<boolean>("window_layout_can_undo", undefined, () => false),
+  windhawkStatus: () => call<WindhawkStatus>("windhawk_status", undefined, () => ({ installed: false, path: null, can_install: false, mods: [], installing: false })),
+  windhawkInstall: () => call<WindhawkStatus>("windhawk_install", undefined, () => ({ installed: false, path: null, can_install: false, mods: [], installing: false })),
   windhawkOpen: () => call<void>("windhawk_open", undefined, () => undefined),
   windhawkMod: (id: string) => call<void>("windhawk_mod", { id }, () => undefined),
   lookAccent: (colour: string) => call<LooksStatus | null>("look_accent", { colour }, () => null),

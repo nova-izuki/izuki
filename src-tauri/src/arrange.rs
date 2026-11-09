@@ -156,10 +156,17 @@ pub fn parse(said: &str) -> Option<Ask> {
     if has(" put my windows back") || has(" put the windows back") {
         return Some(Ask::Undo);
     }
-    if has(" split screen") || has(" split my screen") || has(" split the screen") {
+    // "Split my screen" is about this screen; a bare "split screen" is often
+    // a game's mode ("does Mario Kart have split screen?").
+    if has(" split my screen") || has(" split the screen") || (has(" split screen") && windows) {
         return Some(Ask::Arrange(Kind::Side));
     }
-    if !(windows || layout) || !(verb || layout) {
+    if has(" focus layout") {
+        return Some(Ask::Arrange(Kind::Focus));
+    }
+    // About the windows, and asked to arrange them: "a grid layout for my
+    // website" or "set the layout to two columns" is about something else.
+    if !windows || !(verb || layout) {
         return None;
     }
     if has(" side by side") || has(" next to each other") || has(" half and half") {
@@ -170,10 +177,6 @@ pub fn parse(said: &str) -> Option<Ask> {
     }
     if has(" columns") || has(" column layout") {
         return Some(Ask::Arrange(Kind::Columns));
-    }
-    // "Focus" alone is Focus mode ("focus for 25 minutes"): only the layout.
-    if has(" focus layout") {
-        return Some(Ask::Arrange(Kind::Focus));
     }
     let arrange = [" arrange", " organize", " organise", " tidy up my windows", " sort out my windows", " clean up my windows"].iter().any(|w| has(w));
     if arrange && windows {
@@ -391,6 +394,17 @@ pub fn apply(kind: Kind) -> Result<String> {
     Ok(said)
 }
 
+/// Is there an arrangement to put back?
+#[cfg(windows)]
+pub fn can_undo() -> bool {
+    !UNDO.lock().is_empty()
+}
+
+#[cfg(not(windows))]
+pub fn can_undo() -> bool {
+    false
+}
+
 /// Put the last arranged windows back where they were.
 #[cfg(windows)]
 pub fn undo() -> Result<String> {
@@ -479,6 +493,11 @@ mod tests {
         assert_eq!(parse("arrange the desktop icons"), None);
         assert_eq!(parse("compare these two phones side by side"), None, "a question for the chat");
         assert_eq!(parse("compare windows 10 and windows 11 side by side"), None);
+        assert_eq!(parse("I want a grid layout for my website"), None, "CSS, not windows");
+        assert_eq!(parse("set the layout to two columns"), None, "a document's layout");
+        assert_eq!(parse("does Mario Kart have split screen"), None, "a game's mode");
+        assert_eq!(parse("set up split screen for Minecraft"), None);
+        assert_eq!(parse("put my windows in a grid layout"), Some(Ask::Arrange(Kind::Grid)));
     }
 
     #[cfg(windows)]

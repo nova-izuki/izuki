@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/ipc";
 import { Section } from "./ui";
 
@@ -24,6 +24,15 @@ export function WindowArrange({ disabled, onBusy }: { disabled: boolean; onBusy:
   const [canUndo, setCanUndo] = useState(false);
   const locked = useRef(false);
 
+  // An arrangement made earlier (or by voice) can still be put back.
+  useEffect(() => {
+    let alive = true;
+    void api.windowLayoutCanUndo().then((v) => alive && setCanUndo(v)).catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const run = async (id: Kind | "undo") => {
     if (locked.current || disabled) return;
     locked.current = true;
@@ -34,11 +43,10 @@ export function WindowArrange({ disabled, onBusy }: { disabled: boolean; onBusy:
     try {
       const said = id === "undo" ? await api.windowLayoutUndo() : await api.windowLayout(id);
       setMessage(said);
-      setCanUndo(id !== "undo");
     } catch (e) {
       setError(String(e).replace(/^Error:\s*/, ""));
-      if (id === "undo") setCanUndo(false);
     } finally {
+      setCanUndo(await api.windowLayoutCanUndo().catch(() => false));
       locked.current = false;
       setBusy("");
       onBusy(null);

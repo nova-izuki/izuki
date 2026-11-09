@@ -499,6 +499,7 @@ pub fn run() {
             commands::look_vibe,
             commands::window_layout,
             commands::window_layout_undo,
+            commands::window_layout_can_undo,
             commands::windhawk_status,
             commands::windhawk_install,
             commands::windhawk_open,

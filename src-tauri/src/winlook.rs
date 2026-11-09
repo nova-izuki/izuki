@@ -1973,6 +1973,11 @@ pub fn parse(said: &str) -> Option<Ask> {
     if elsewhere || refused || negated || asking_how {
         return None;
     }
+    // "Make my room look cozy" or "my resume look professional" isn't about
+    // the PC: a mood needs the PC named, or a theme asked for.
+    if !(my_pc || s.contains(" theme")) {
+        return None;
+    }
     let near_look = words.iter().enumerate().filter(|(_, w)| is_look_word(Some(w))).find_map(|(j, _)| {
         let from = j.saturating_sub(3);
         let to = (j + 4).min(words.len());
@@ -2345,6 +2350,9 @@ mod tests {
         assert_eq!(parse("how do I make my pc look cozy"), None, "a question");
         assert_eq!(parse("don't make my pc look dark"), None);
         assert_eq!(parse("make the paper look neater and change its style"), None);
+        for other in ["make my room look cozy", "make my resume look professional", "make my code look clean", "make my garden look green"] {
+            assert_eq!(parse(other), None, "{other}");
+        }
         // The matcher: whole words, the best row, its pack.
         let gaming = vibe("an RGB gaming setup").unwrap();
         assert_eq!((gaming.preset, gaming.pack, gaming.word), ("synthwave", Some("gamer"), "gaming"));

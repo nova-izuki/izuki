@@ -1777,6 +1777,12 @@ pub async fn window_layout(kind: String) -> R<String> {
     blocking(move || crate::arrange::apply(kind).map_err(|e| e.to_string())).await?
 }
 
+/// Is there a window arrangement to put back (by button or by voice)?
+#[tauri::command]
+pub fn window_layout_can_undo() -> bool {
+    crate::arrange::can_undo()
+}
+
 /// Put the last arranged windows back.
 #[tauri::command]
 pub async fn window_layout_undo() -> R<String> {

@@ -8,8 +8,11 @@ let pending: StyleSection | null = null;
 const EVENT = "izk-style-section";
 
 /** Ask the Style tab to show a section (now if it's open, or when it opens). */
+/** Cards inside a section that links can point at directly. */
+const CARDS: Record<string, StyleSection> = { "style-arrange": "layouts", "style-windhawk": "tweaks" };
+
 export function requestStyleSection(id: string | undefined) {
-  const section = id?.startsWith("style-") ? (id.slice(6) as StyleSection) : null;
+  const section = id && CARDS[id] ? CARDS[id] : id?.startsWith("style-") ? (id.slice(6) as StyleSection) : null;
   if (!section || !["looks", "layouts", "tweaks", "auto"].includes(section)) return;
   pending = section;
   window.dispatchEvent(new CustomEvent(EVENT, { detail: section }));

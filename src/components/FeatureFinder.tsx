@@ -8,8 +8,8 @@ import { useIzuki, type TabId } from "../lib/store";
 export type Feature = { label: string; hint: string; tab: TabId; id?: string };
 export const FEATURES: Feature[] = [
   { label: "Windows layouts", hint: "desktop design layout studio classic workspace photo gallery room to breathe taskbar arrange keep daily wallpaper spotlight", tab: "style", id: "style-layouts" },
-  { label: "Arrange my windows", hint: "side by side, split screen, split my screen, grid, tile windows, columns, focus layout, window layout, snap layouts, fancyzones, organise windows, undo layout", tab: "style", id: "style-layouts" },
-  { label: "Windhawk mods", hint: "windhawk, mods, vertical taskbar, taskbar styler, start menu styler, taskbar height, icon size, clock weather cpu, notification center, translucent windows, rounded corners, deeper customization", tab: "style", id: "style-tweaks" },
+  { label: "Arrange my windows", hint: "side by side, split screen, split my screen, grid, tile windows, columns, focus layout, window layout, snap layouts, fancyzones, organise windows, undo layout", tab: "style", id: "style-arrange" },
+  { label: "Windhawk mods", hint: "windhawk, mods, vertical taskbar, taskbar styler, start menu styler, taskbar height, icon size, clock weather cpu, notification center, translucent windows, rounded corners, deeper customization", tab: "style", id: "style-windhawk" },
   { label: "2D characters", hint: "character, cartoon, comic, spider-verse, flat vector, full body, half body, voice character, dre, nia, avatar", tab: "settings", id: "settings-look" },
   { label: "Voice & accent", hint: "voice, accent, character voice, male, female, dre, nia, british, nigerian, speak responses", tab: "draw", id: "draw-voice" },
   { label: "Chat with Izuki", hint: "Conversation, files and voice", tab: "chat" },

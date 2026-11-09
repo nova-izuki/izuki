@@ -70,8 +70,8 @@ export function WindhawkCard() {
         ) : (
           <>
             {s?.can_install && (
-              <button type="button" disabled={!!busy} onClick={() => void install()} className="izk-btn-primary izk-no-drag h-[30px] px-3.5 text-[12px] disabled:opacity-60">
-                {busy === "install" ? "Installing… (Windows may ask)" : "Install Windhawk"}
+              <button type="button" disabled={!!busy || s.installing} onClick={() => void install()} className="izk-btn-primary izk-no-drag h-[30px] px-3.5 text-[12px] disabled:opacity-60">
+                {busy === "install" || s.installing ? "Installing… (Windows may ask)" : "Install Windhawk"}
               </button>
             )}
             <button type="button" onClick={() => void api.openUrl("https://windhawk.net/")} className="izk-pill izk-no-drag flex h-[30px] items-center gap-1.5 px-3 text-[11.5px]">

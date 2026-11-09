@@ -53,17 +53,43 @@ pub struct Status {
     /// winget is there to install it with.
     pub can_install: bool,
     pub mods: Vec<Mod>,
+    /// An install started earlier is still running.
+    pub installing: bool,
 }
 
-/// Where Windhawk's program is, if it's installed (its installer, and
-/// winget's, put it in Program Files\Windhawk).
+/// Where Windhawk's program is, if it's installed: Program Files\Windhawk
+/// (its installer's and winget's usual place), a per-user install, or
+/// wherever its own uninstall entry says it went.
 #[cfg(windows)]
 fn program() -> Option<PathBuf> {
-    ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"]
+    const UNINSTALL: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Windhawk";
+    let mut places: Vec<PathBuf> = ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"]
         .iter()
         .filter_map(|v| std::env::var(v).ok())
-        .map(|dir| PathBuf::from(dir).join("Windhawk").join("windhawk.exe"))
-        .find(|p| p.is_file())
+        .map(|dir| PathBuf::from(dir).join("Windhawk"))
+        .collect();
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        places.push(PathBuf::from(local).join("Programs").join("Windhawk"));
+    }
+    for found in [crate::tweaks::reg::get_machine_text(UNINSTALL, "InstallLocation"), crate::tweaks::reg::get_text(UNINSTALL, "InstallLocation")]
+        .into_iter()
+        .flatten()
+    {
+        places.push(PathBuf::from(found.trim().trim_matches('"')));
+    }
+    places.into_iter().map(|dir| dir.join("windhawk.exe")).find(|p| p.is_file())
+}
+
+/// An install is running (only one at a time, wherever it was started).
+static INSTALLING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Clears the install flag however `install` ends.
+struct Installing;
+
+impl Drop for Installing {
+    fn drop(&mut self) {
+        INSTALLING.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 #[cfg(not(windows))]
@@ -95,6 +121,7 @@ pub fn status() -> Status {
         path: path.map(|p| p.to_string_lossy().into_owned()),
         can_install: cfg!(windows) && has_winget(),
         mods: MODS.to_vec(),
+        installing: INSTALLING.load(std::sync::atomic::Ordering::SeqCst),
     }
 }
 
@@ -104,6 +131,10 @@ pub fn install() -> Result<Status> {
     if program().is_some() {
         return Ok(status());
     }
+    if INSTALLING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return Err(anyhow!("Windhawk is already being installed. Give it a minute, then check here again."));
+    }
+    let _installing = Installing;
     if !has_winget() {
         return Err(anyhow!("winget (Windows' App Installer) isn't available on this PC. Get Windhawk from windhawk.net instead."));
     }

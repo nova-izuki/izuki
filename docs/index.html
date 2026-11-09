@@ -1116,9 +1116,11 @@
       .fx-chip { flex: none; }
       .fx-search { flex-basis: 100%; }
       .fx-grid { grid-template-columns: 1fr; gap: 8px; }
-      .fx-card { padding: 14px 16px; border-radius: 16px; cursor: pointer; }
-      .fx-card p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-      .fx-card.open p { display: block; }
+      .fx-card { padding: 14px 16px; border-radius: 16px; }
+      /* Two lines a card only once the script can open them (no JS: all shown). */
+      .fx-grid.fx-ready .fx-card { cursor: pointer; }
+      .fx-grid.fx-ready .fx-card p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .fx-grid.fx-ready .fx-card.open p { display: block; }
     }
 
     /* ---------- trust ---------- */
@@ -1553,7 +1555,7 @@
         <article class="nw-card nw-feat rv"><div class="glyph">⏸️</div><h3>Pause a task, then pick it up</h3><p>Every task card has <b>Pause</b>: the step that's running finishes, then Izuki waits for you. Use your PC, press <b>Resume</b>, and it takes a fresh look before the next step, so it never clicks where things used to be. After a scroll, a shortcut or opening an app it checks that something really happened.</p></article>
         <article class="nw-card nw-feat rv"><div class="glyph">🩺</div><h3>A storage checkup you can actually read</h3><p>Tap <b>PC checkup</b> in the Chat tab and get a card, not a wall of text: each drive's bar, the biggest apps, folders and files, and what's safe to clear. It's measured on your PC, and nothing is deleted unless you say so.</p></article>
         <article class="nw-card nw-feat rv"><div class="glyph">🖐️</div><h3>Hand or Eye control, right from the chat</h3><p>Pick <b>Hand</b> or <b>Eye</b> control, see every hand move, and <b>stop Air at once</b> from the chat or the orb. Switching from Eye to Hand lets go of anything it was holding. Eye control stays off unless you turn it on.</p></article>
-        <article class="nw-card nw-feat rv"><div class="glyph">🪟</div><h3>Arrange your windows with one sentence</h3><p>Say <b>“put my windows side by side”</b>, “tile my windows” or “focus layout”, or tap it in Style → Layouts. The windows on your screen snap into place, the one you used last gets the biggest spot, and <b>“undo the layout”</b> puts every one back where it was.</p></article>
+        <article class="nw-card nw-feat rv"><div class="glyph">🪟</div><h3>Arrange your windows with one sentence</h3><p>Say <b>“put my windows side by side”</b>, “tile my windows” or “focus layout”, or tap it in Style → Layouts. Up to two windows go side by side and up to four in a grid or columns; the one you used last gets the biggest spot, and the rest stay where they are. <b>“Undo the layout”</b> puts them all back. (Windows won't let Izuki move an app run as administrator; it says so.)</p></article>
         <article class="nw-card nw-feat rv"><div class="glyph">✨</div><h3>Describe a vibe, get a desktop</h3><p>Type or say <b>“make my PC look cozy”</b>, “cyberpunk” or “black and gold” and Izuki picks the closest of its 19 looks, with matching tweaks if you want them. For deeper changes, Style → Tweaks helps you add <b>Windhawk</b> and points to the mods worth starting with.</p></article>
         <article class="nw-card nw-feat rv"><div class="glyph">🟩</div><h3>A free NVIDIA brain, set up for you</h3><p>In Settings, Izuki walks you to NVIDIA's free key page, says plainly what the free tier means, then <b>tries NVIDIA's free models on your own key</b> and picks the ones that fit: one that can see your screen to do things, and a fast one for chat.</p></article>
         <article class="nw-card nw-feat rv"><div class="glyph">💬</div><h3>Chat history, pins, and tasks that wait for you</h3><p>Your chats are saved <b>on your PC</b>: search them, pick one up again, and <b>pin</b> the ones that matter. A task cut short, even by a restart, resumes when you say <b>“keep going”</b>, and a step that didn't really work is fixed instead of reported as done. Eye Control gets a native <b>emergency stop</b> (Ctrl+Alt+Shift+X) and stays off unless you turn it on.</p></article>
@@ -2978,13 +2980,23 @@ $("nw-wake")?.addEventListener("click", async () => {
     apply();
   }));
   q.addEventListener("input", apply);
-  more.addEventListener("click", () => { expanded = true; apply(); cards.find((c) => !c.hidden && cards.indexOf(c) >= FIRST)?.focus?.(); });
+  more.addEventListener("click", () => {
+    expanded = true;
+    apply();
+    // The button is gone now: focus moves to the first card it revealed.
+    const first = cards.filter((c) => !c.hidden)[FIRST];
+    if (first) {
+      if (!first.hasAttribute("tabindex")) first.tabIndex = -1;
+      first.focus();
+    }
+  });
   // On a phone each card shows two lines; a tap opens the rest.
   const narrow = matchMedia("(max-width: 700px)");
   const toggle = (card) => { const open = card.classList.toggle("open"); card.setAttribute("aria-expanded", String(open)); };
   cards.forEach((card) => {
-    card.addEventListener("click", () => narrow.matches && toggle(card));
-    card.addEventListener("keydown", (e) => { if (narrow.matches && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggle(card); } });
+    // A link inside a card ("Get it free") works as a link, not a toggle.
+    card.addEventListener("click", (e) => narrow.matches && !e.target.closest("a") && toggle(card));
+    card.addEventListener("keydown", (e) => { if (narrow.matches && e.target === card && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggle(card); } });
   });
   const roles = () => cards.forEach((card) => {
     if (narrow.matches) { card.setAttribute("role", "button"); card.tabIndex = 0; card.setAttribute("aria-expanded", String(card.classList.contains("open"))); }
@@ -2992,6 +3004,7 @@ $("nw-wake")?.addEventListener("click", async () => {
   });
   narrow.addEventListener?.("change", roles);
   roles();
+  grid.classList.add("fx-ready");
   tools.hidden = false;
   apply();
 })();
