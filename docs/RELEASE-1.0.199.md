@@ -26,7 +26,7 @@ When you copy a new key, Izuki runs the search by itself, and if the model alrea
 ## Fixes
 
 - **Gemma 4 31B, NVIDIA's default here,** was mistaken for a tiny model and left out of screen work. It's used again.
-- **Your key travels only protected (https)**, or to a server on your own PC. An address that only looked local, such as `127.example.com`, no longer counts as your PC.
+- **The free-model search sends your key only over a protected (https) connection**, or to a server on your own PC. An address that only looked local, such as `127.example.com`, no longer counts as your PC.
 
 ## Checked before release
 

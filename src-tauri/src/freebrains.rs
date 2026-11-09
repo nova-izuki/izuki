@@ -399,7 +399,15 @@ pub fn search(cfg: &ProviderConfig) -> anyhow::Result<FreeSearch> {
     let tries: Vec<(String, bool)> = vision.iter().map(|m| (m.clone(), true)).chain(chat.iter().map(|m| (m.clone(), false))).collect();
     let http = &client;
     let mut working: Vec<FreeModel> = std::thread::scope(|s| {
-        let handles: Vec<_> = tries.iter().map(|(m, picture)| s.spawn(move || try_model(http, cfg, m, *picture))).collect();
+        // A screen candidate that turns the picture down (a text-only model
+        // whose name looked like a vision one) is tried once more as chat,
+        // so it shows up as chat-only instead of vanishing.
+        let handles: Vec<_> = tries
+            .iter()
+            .map(|(m, picture)| {
+                s.spawn(move || try_model(http, cfg, m, *picture).or_else(|| if *picture { try_model(http, cfg, m, false) } else { None }))
+            })
+            .collect();
         handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect()
     });
     working.sort_by(|a, b| b.sees.cmp(&a.sees).then_with(|| if a.sees { rank(&b.id).cmp(&rank(&a.id)) } else { a.ms.cmp(&b.ms) }));
