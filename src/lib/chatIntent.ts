@@ -18,36 +18,53 @@ function normalized(text: string): string {
     .trim();
 }
 
+/** Work to be answered, by name ("answer all these questions"). */
+const QUESTION_NOUNS = new Set([
+  "question", "questions", "quiz", "quizzes", "test", "tests", "exam", "exams", "problem", "problems", "exercise",
+  "exercises", "assignment", "assignments", "homework", "worksheet", "worksheets",
+]);
+/** Where the work would be, if it had been pasted or attached. */
+const MATERIAL = new Set(["document", "documents", "doc", "pdf", "page", "pages", "book", "file", "files", "chapter", "text"]);
+/** Words that point at something without saying what it is. */
+const FILLER = new Set([
+  "all", "these", "those", "them", "this", "that", "it", "everything", "each", "every", "one", "ones", "of", "the",
+  "a", "my", "for", "me", "please", "pls", "plz", "now", "quick", "quickly", "about", "on", "in", "from", "practice",
+  "graded", "here", "there", "above", "below", "and", "to", "with",
+]);
+
+const WHAT_TO_ANSWER = "What should I answer? Paste the question or attach the document, and I'll take it from there.";
+const PRACTICE_OR_GRADED =
+  "What should I answer? Paste the questions or attach the document, and tell me whether they're practice or graded. For graded work I can explain and give hints, but I won't complete or submit it for you.";
+
 /**
  * A short request that has no attached/pasted material and no earlier turn to
  * continue. Returns the one useful question to ask instead of sending the
  * fragment to a model or to a local command.
+ *
+ * Only a request that is nothing but a pointer qualifies ("answer all of
+ * these", "do the quiz"). Anything with real content after the verb
+ * ("explain everything about black holes", "do everything you can to speed
+ * up my PC", "finish all the steps") goes on as it is. Mirrors
+ * `intent::clarification` in Rust.
  */
 export function clarificationFor(text: string, hasContext: boolean): string | null {
   if (hasContext) return null;
   const s = normalized(text);
   if (!s) return null;
-  const words = s.split(" ");
-  const first = words[0];
-  const wantsAnswer = ["answer", "solve", "do", "complete", "finish", "explain"].includes(first);
-  const hasQuestionNoun = words.some((w) =>
-    ["question", "questions", "quiz", "quizzes", "test", "tests", "problem", "problems", "exercise", "exercises", "assignment", "assignments"].includes(w)
-  );
-  const hasAll = words.some((w) => ["all", "these", "those", "them", "everything", "each"].includes(w));
-  const hasAboutMaterial =
-    words.includes("about") &&
-    words.some((w) => ["document", "page", "book", "file", "assignment", "quiz", "test", "chapter"].includes(w));
-
-  if (/^(?:answer|answer this|answer that)$/.test(s)) {
-    return "What should I answer? Paste the question or attach the document, and I'll take it from there.";
-  }
-  if (/^(?:help me|explain|continue|go on|carry on)$/.test(s)) {
+  if (/^(?:help|help me|explain|explain this|continue|go on|carry on)$/.test(s)) {
     return "What would you like me to help with? Paste the question or a little context, and I'll pick it up from there.";
   }
-  if (wantsAnswer && (hasAll || hasQuestionNoun || hasAboutMaterial)) {
-    return "What should I answer? Paste the questions or attach the document, and tell me whether they're practice or graded. For graded work I can explain and give hints, but I won't complete or submit it for you.";
-  }
-  return null;
+  const [first, ...rest] = s.split(" ");
+  const namesWork = rest.some((w) => QUESTION_NOUNS.has(w));
+  const onlyPointers = rest.every((w) => FILLER.has(w) || QUESTION_NOUNS.has(w) || MATERIAL.has(w));
+  const asks =
+    first === "answer" || first === "solve"
+      ? onlyPointers
+      : ["do", "complete", "finish", "explain"].includes(first)
+        ? namesWork && onlyPointers
+        : false;
+  if (!asks) return null;
+  return namesWork || rest.some((w) => MATERIAL.has(w)) ? PRACTICE_OR_GRADED : WHAT_TO_ANSWER;
 }
 
 /**
@@ -62,9 +79,9 @@ export function friendlyProviderError(text: string): string {
   const raw = String(text ?? "").replace(/\s+/g, " ").trim();
   if (!raw) return "The AI service didn't return an answer. Try again in a minute.";
   const t = raw.toLowerCase();
-  const rate = /(?:http\s*)?429|rate[- ]?limit|too many requests/.test(t);
+  const rate = /\b429\b|rate[- ]?limit|too many requests/.test(t);
   const credits = /no credits|insufficient[_ ]quota|credit balance|out of credits/.test(t);
-  const retired = /(?:http\s*)?410|\bend of life\b|has been retired/.test(t);
+  const retired = /\b410\b|\bend of life\b|has been retired/.test(t);
   const unreachable = /error sending request|failed to fetch|connection (?:refused|reset)|network error|timed? out|offline/.test(t);
   const crowded =
     "All available AI services are rate-limited or unavailable right now. Try again in a minute, or check Settings → Izuki's brain.";
@@ -82,8 +99,12 @@ export function friendlyProviderError(text: string): string {
 export function providerRefusal(text: string): boolean {
   const t = text.toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, " ").trim();
   if (!t) return false;
+  // A refusal says so up front, and briefly. A long answer that says "as an
+  // AI tutor…" or quotes a rule further down is an answer, not a refusal.
+  const opening = t.slice(0, 160);
+  const short = t.length <= 320;
   const sorry = /^(?:i'm sorry|i am sorry|sorry)[, ]/.test(t);
-  const cannot = /\b(?:can't|cannot|can not|unable to|won't|will not)\s+(?:help|assist|comply|do that|provide|support)\b/.test(t);
-  const policy = /\b(?:against (?:my|the) (?:policy|guidelines)|as an ai|not able to help|not able to assist)\b/.test(t);
-  return (sorry && (cannot || policy)) || (t.startsWith("i ") && cannot) || (policy && !t.startsWith("i can "));
+  const cannot = /\b(?:can't|cannot|can not|unable to|won't|will not)\s+(?:help|assist|comply|do that|provide|support)\b/.test(opening);
+  const policy = /\b(?:against (?:my|the) (?:policy|guidelines)|not able to help|not able to assist)\b/.test(opening);
+  return (sorry && (cannot || policy)) || ((t.startsWith("i ") || t.startsWith("as an ai")) && cannot && short) || (policy && short && !t.startsWith("i can "));
 }

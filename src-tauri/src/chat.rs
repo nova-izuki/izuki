@@ -611,10 +611,8 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             }
         }
         let asked = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.as_str()).unwrap_or("");
-        let has_context = history.iter().filter(|t| t.role == "user").count() > 1
-            || history.iter().rev().find(|t| t.role == "user").is_some_and(|t| !t.images.is_empty());
-        eprintln!("[chat] request={id} style={style:?} turns={} context={has_context}", history.len());
-        if let Some(question) = crate::intent::clarification(asked, has_context) {
+        eprintln!("[chat] request={id} style={style:?} turns={}", history.len());
+        if let Some(question) = clarify(&history) {
             return emit(question.to_string(), true, None);
         }
         let files = style == Style::Text;
@@ -1269,9 +1267,7 @@ pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
     }
     crate::execution::check().map_err(|r| anyhow::anyhow!(r.explanation()))?;
     let asked = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.as_str()).unwrap_or("");
-    let has_context = history.iter().filter(|t| t.role == "user").count() > 1
-        || history.iter().rev().find(|t| t.role == "user").is_some_and(|t| !t.images.is_empty());
-    if let Some(question) = crate::intent::clarification(asked, has_context) {
+    if let Some(question) = clarify(history) {
         return Ok(question.to_string());
     }
     let answer = complete_with_tools(messages_for(history, style), asked)?;
@@ -1285,12 +1281,23 @@ pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
 /// can't help (no apps linked) and the chat should just answer.
 pub fn reply_here(history: &[Turn], style: Style) -> anyhow::Result<String> {
     let asked = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.as_str()).unwrap_or("");
-    let has_context = history.iter().filter(|t| t.role == "user").count() > 1
-        || history.iter().rev().find(|t| t.role == "user").is_some_and(|t| !t.images.is_empty());
-    if let Some(question) = crate::intent::clarification(asked, has_context) {
+    if let Some(question) = clarify(history) {
         return Ok(question.to_string());
     }
     complete_with_tools(with_system(history, system_prompt(style, false)), asked)
+}
+
+/// One question back when a first message has nothing to work from ("answer
+/// all of these", with nothing pasted or attached); `None` sends it on. Only
+/// the typed words count as the ask; an earlier turn, a picture or an
+/// attached file is something to work from.
+fn clarify(history: &[Turn]) -> Option<&'static str> {
+    let last = history.iter().rev().find(|t| t.role == "user")?;
+    let typed = crate::attachments::typed_only(&last.content);
+    let has_context = history.iter().filter(|t| t.role == "user").count() > 1
+        || !last.images.is_empty()
+        || typed.len() < last.content.trim_end().len();
+    crate::intent::clarification(typed, has_context)
 }
 
 /// Any finished answer to `messages` (system prompt first), raced across

@@ -476,7 +476,7 @@ function readRecent(): RecentChat[] {
       const at = typeof saved.at === "number" && Number.isFinite(saved.at) ? saved.at : Date.now();
       const title = typeof saved.title === "string" && saved.title.trim() ? saved.title : chatTitle(messages);
       const rev = typeof saved.rev === "number" && Number.isFinite(saved.rev) ? saved.rev : undefined;
-      out.push({ id: saved.id, title, at, messages, pinned: saved.pinned === true, rev });
+      out.push({ id: saved.id, title, at, messages, pinned: saved.pinned === true, renamed: saved.renamed === true || undefined, rev });
     }
     return orderSessions(out);
   } catch {
@@ -848,7 +848,7 @@ export function ChatTab() {
         setDraft("");
         return;
       }
-      if (!note) setDraft("");
+      if (!note) setDraft((d) => (d.trim() === text.trim() ? "" : d));
       // Typing "allow" / "yes" / "no" answers the card that's waiting — the
       // way the orb's chat bar does — instead of asking the AI about it.
       if (!note) {
@@ -870,7 +870,6 @@ export function ChatTab() {
       const ask = !note && !here ? clarificationFor(t, hasChatContext) : null;
       if (ask) {
         setMsgs((m) => [...m, { role: "user", content: t }, { role: "assistant", content: ask }]);
-        setDraft(""); setPics([]); setDocuments([]);
         return;
       }
       await useIzuki.getState().flushSettings().catch(() => undefined);
@@ -1111,7 +1110,7 @@ export function ChatTab() {
                       setup: true,
                     }
                   : {
-                      content: d.error ? friendlyProviderError(d.error) : "Hmm, I lost my words there. Try again?",
+                      content: d.error ? (console.warn("[chat] provider error:", d.error), friendlyProviderError(d.error)) : "Hmm, I lost my words there. Try again?",
                       failed: true,
                       retry: true,
                     }
@@ -1190,13 +1189,28 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
     commitRecent(removeSession(recentRef.current, chat.id));
     if (chat.id === chatSessionId) beginChat(false);
   };
-  const renameChat = (chat: RecentChat) => {
-    const title = window.prompt("Rename chat", chat.title);
-    if (title && title.trim()) commitRecent(renameSession(recentRef.current, chat.id, title));
+  /** The chat being renamed, and the title typed so far. */
+  const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null);
+  const finishRename = (save: boolean) => {
+    if (save && renaming?.title.trim()) commitRecent(renameSession(recentRef.current, renaming.id, renaming.title));
+    setRenaming(null);
   };
+  /** A PC checkup is on its way (guards a double click before `busy` is set). */
+  const checkupBusy = useRef(false);
+  // Clearing every chat takes two clicks, like deleting one; it disarms after 4 s.
+  const [armedClear, setArmedClear] = useState(false);
+  useEffect(() => {
+    if (!armedClear) return;
+    const t = setTimeout(() => setArmedClear(false), 4000);
+    return () => clearTimeout(t);
+  }, [armedClear]);
   const clearAllChats = () => {
     if (!recentRef.current.length) return;
-    if (!window.confirm("Delete all saved chats? This cannot be undone. Notes and files are not affected.")) return;
+    if (!armedClear) {
+      setArmedClear(true);
+      return;
+    }
+    setArmedClear(false);
     commitRecent([]);
     beginChat(false); setRecentsOpen(false); setRecentQuery("");
   };
@@ -1381,22 +1395,49 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
                           chat.id === session ? "bg-white/[0.065]" : "hover:bg-white/[0.04]"
                         )}
                       >
-                        <button
-                          type="button"
-                          onClick={() => openChat(chat)}
-                          aria-current={chat.id === session ? "true" : undefined}
-                          className="min-w-0 flex-1 px-2.5 py-2 text-left"
-                        >
-                          <span className="block truncate text-[12px] font-medium text-izk-ink">{chat.title}</span>
-                          <span className="mt-0.5 block truncate text-[10.5px] text-izk-muted">
-                            {timeAgo(chat.at)} · {chat.messages.length} {chat.messages.length === 1 ? "message" : "messages"}
-                          </span>
-                        </button>
+                        {renaming?.id === chat.id ? (
+                          <form
+                            className="min-w-0 flex-1 px-1.5 py-1.5"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              finishRename(true);
+                            }}
+                          >
+                            <input
+                              autoFocus
+                              value={renaming.title}
+                              maxLength={80}
+                              aria-label={`New name for ${chat.title}`}
+                              onChange={(e) => setRenaming({ id: chat.id, title: e.target.value })}
+                              onKeyDown={(e) => {
+                                if (e.key === "Escape") {
+                                  e.stopPropagation();
+                                  finishRename(false);
+                                }
+                              }}
+                              onBlur={() => finishRename(true)}
+                              className="izk-field izk-no-drag h-[30px] w-full px-2 text-[12px]"
+                            />
+                          </form>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => openChat(chat)}
+                            aria-current={chat.id === session ? "true" : undefined}
+                            className="min-w-0 flex-1 px-2.5 py-2 text-left"
+                          >
+                            <span className="block truncate text-[12px] font-medium text-izk-ink">{chat.title}</span>
+                            <span className="mt-0.5 block truncate text-[10.5px] text-izk-muted">
+                              {timeAgo(chat.at)} · {chat.messages.length} {chat.messages.length === 1 ? "message" : "messages"}
+                            </span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           aria-label={`Rename ${chat.title}`}
                           title="Rename chat"
-                          onClick={() => renameChat(chat)}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => (renaming?.id === chat.id ? finishRename(true) : setRenaming({ id: chat.id, title: chat.title }))}
                           className="flex w-[26px] shrink-0 items-center justify-center text-izk-muted/60 transition hover:text-izk-ink"
                         >
                           <Pencil size={11} strokeWidth={2.2} />
@@ -1443,7 +1484,7 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
                 </div>
                 <div className="flex gap-1.5 border-t border-white/8 p-2">
                   <button type="button" onClick={startNewChat} className="flex h-[34px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[9px] border border-white/10 bg-white/[0.045] text-[11.5px] font-semibold text-izk-ink transition hover:bg-white/[0.085]"><RotateCcw size={12} strokeWidth={2.4} /> New chat</button>
-                  <button type="button" onClick={clearAllChats} disabled={!recent.length} aria-label="Clear all chats" title="Delete every saved chat (asks first)" className="flex h-[34px] w-[36px] shrink-0 items-center justify-center rounded-[9px] border border-red-300/20 text-izk-muted transition hover:border-red-300/40 hover:text-izk-danger disabled:opacity-35"><Trash2 size={13} strokeWidth={2.2} /></button>
+                  <button type="button" onClick={clearAllChats} disabled={!recent.length} aria-label={armedClear ? "Confirm: delete every saved chat" : "Clear all chats"} title={armedClear ? "Click again to delete every saved chat. Notes and files aren't affected." : "Delete every saved chat (asks first)"} className={cx("flex h-[34px] shrink-0 items-center justify-center rounded-[9px] border transition disabled:opacity-35", armedClear ? "border-red-300/50 bg-red-500/10 px-2.5 text-[11px] font-semibold text-izk-danger" : "w-[36px] border-red-300/20 text-izk-muted hover:border-red-300/40 hover:text-izk-danger")}>{armedClear ? "Delete all?" : <Trash2 size={13} strokeWidth={2.2} />}</button>
                 </div>
               </motion.aside>
           </motion.div>
@@ -1522,8 +1563,17 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
               <div className="izk-chat-ideas flex flex-wrap justify-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => void send("Check what's taking up space on my PC. Explain the highlights simply and tell me what's safe to clear.", false, false, [], [], false)}
-                  className="izk-pill izk-chat-idea izk-no-drag h-auto border-cyan-300/25 bg-cyan-400/10 px-3 py-1.5 text-left text-[11.5px] text-cyan-100"
+                  disabled={busy}
+                  onClick={() => {
+                    // One checkup per click, even while settings are still saving.
+                    if (checkupBusy.current) return;
+                    checkupBusy.current = true;
+                    // Worded for the storage report (not PC Care's "is it slow" check).
+                    void send("What's taking up space on my PC?", false, false, [], [], false).finally(() => {
+                      checkupBusy.current = false;
+                    });
+                  }}
+                  className="izk-pill izk-chat-idea izk-no-drag h-auto border-cyan-300/25 bg-cyan-400/10 px-3 py-1.5 text-left text-[11.5px] text-cyan-100 disabled:opacity-50"
                   title="Look at this PC's drives and folders; nothing is deleted"
                 >
                   🩺 PC checkup
@@ -1596,7 +1646,7 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
                 )}
                 {m.failed && m.content && (
                   <div className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-izk-danger/90">
-                    <AlertTriangle size={11} strokeWidth={2.4} /> Couldn't finish
+                    <AlertTriangle size={11} strokeWidth={2.4} /> {"Couldn't finish"}
                   </div>
                 )}
                 {m.content ? (
@@ -2061,6 +2111,8 @@ function ToolCard({ call }: { call: ToolCall }) {
           )}
         </div>
       )}
+      {/* A partial result ("done, but 2 skipped") stays visible with the card closed. */}
+      {closed && verdict.note && <p className={`px-2.5 py-1 font-sans text-[10.5px] ${look.tone}`}>{verdict.note}</p>}
       {big && <ToolViewer call={call} output={output} verdict={verdict} onClose={() => setBig(false)} />}
     </div>
   );

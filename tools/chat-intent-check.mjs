@@ -34,7 +34,26 @@ assert.equal(clarificationFor('windows', false), null);
 assert.equal(clarificationFor('turn off study log', false), null);
 assert.equal(clarificationFor('what is photosynthesis?', false), null);
 
+// A real request after the verb is never stopped with a question.
+for (const said of [
+  'explain everything about black holes',
+  'explain each step of photosynthesis',
+  'do everything you can to speed up my PC',
+  'do everything on this page',
+  'finish all the steps',
+  'complete all my reminders for today',
+  'answer the email from mom',
+  'solve x^2 = 4',
+]) assert.equal(clarificationFor(said, false), null, said);
+assert.match(clarificationFor('do the quiz', false), /practice or graded/i);
+
 assert.equal(providerRefusal("I'm sorry, but I can't help with that."), true);
+assert.equal(providerRefusal("As an AI, I can't help with that."), true);
+// An answer isn't a refusal because of a phrase somewhere in it.
+assert.equal(providerRefusal('As an AI tutor, here is the method: first isolate x, then divide both sides.'), false);
+assert.equal(providerRefusal('Here is a full explanation of the topic. '.repeat(8) + 'That would be against the guidelines of most schools.'), false);
+// Status codes are whole numbers: "4290 tokens" is not a 429.
+assert.doesNotMatch(friendlyProviderError('Used 4290 tokens of 6000 this minute; try a shorter message'), /rate-limited/i);
 assert.equal(providerRefusal("I can't help with that."), true);
 assert.equal(providerRefusal("That answer is correct."), false);
 assert.equal(providerRefusal("I can help with that once you paste the question."), false);

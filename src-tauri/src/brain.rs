@@ -1089,48 +1089,55 @@ pub(crate) const NO_BRAIN: &str = "I haven't got an AI to think with yet. Add a 
 /// What to say when the internet's down and no brain on this PC can answer.
 pub const OFFLINE: &str = "You're offline right now — check your Wi-Fi, then ask me again.";
 
+/// The brains for screen work. A real local vision model (qwen2.5vl,
+/// llama3.2-vision…) stays as configured, since the screenshot is what it's
+/// for; only a tiny describer like `moondream`, whose 2K context can't even
+/// hold a screen prompt, is swapped for an installed chat model (which still
+/// acts through the numbered controls list).
 pub fn brain_chain() -> Vec<crate::settings::ProviderConfig> {
     let mut chain = offline_only(brain_chain_inner());
-    swap_local_text_model(&mut chain, false);
+    swap_local_text_model(&mut chain, tiny_describer, false);
     chain
 }
 
 /// Chat needs a text model. Ollama happily returns `moondream`, a
 /// picture-description model, for `/v1/chat/completions`; its gibberish
 /// ("igor saurkj aer") used to be shown as an answer. Keep the configured
-/// order, but swap a picture-only local model for a real installed chat model
-/// or drop it so a cloud brain can answer.
+/// order, but swap a picture-first local model for a real installed chat
+/// model, or drop it so a cloud brain can answer.
 pub fn chat_chain() -> Vec<crate::settings::ProviderConfig> {
-    let mut chain = brain_chain();
-    // brain_chain has already swapped a usable local model in. This second
-    // pass only drops a picture-only model when nothing else is installed.
-    swap_local_text_model(&mut chain, true);
+    let mut chain = offline_only(brain_chain_inner());
+    swap_local_text_model(&mut chain, picture_only_model, true);
     chain
 }
 
-/// Ollama's configured model is often `moondream`: a picture-describer with a
-/// 2K context. Chat called it "igor saurkj aer"; the screen agent overflowed
-/// its context with a normal screenshot. Swap in a real installed model for
-/// every lane that sends text or a screen, and keep the old model only when
-/// there is genuinely no alternative (then chat still refuses it).
-fn swap_local_text_model(chain: &mut Vec<crate::settings::ProviderConfig>, drop_picture_only: bool) {
+/// Swap the configured Ollama model for an installed chat model when `unfit`
+/// says it's wrong for this lane, and (with `drop_unfit`) leave it out when
+/// nothing else is installed.
+fn swap_local_text_model(chain: &mut Vec<crate::settings::ProviderConfig>, unfit: fn(&str) -> bool, drop_unfit: bool) {
     let Some(base_url) = chain
         .iter()
-        .find(|c| c.id == crate::settings::ProviderId::Ollama && picture_only_model(&c.model))
+        .find(|c| c.id == crate::settings::ProviderId::Ollama && unfit(&c.model))
         .map(|c| c.base_url.clone())
     else {
         return;
     };
     let replacement = installed_local_chat_model(&base_url);
     if let Some(model) = replacement.as_deref() {
-        eprintln!("[brain] local picture-only model skipped for text and screen; using {model}");
-        for c in chain.iter_mut().filter(|c| c.id == crate::settings::ProviderId::Ollama && picture_only_model(&c.model)) {
+        eprintln!("[brain] local model unfit for this lane; using {model}");
+        for c in chain.iter_mut().filter(|c| c.id == crate::settings::ProviderId::Ollama && unfit(&c.model)) {
             c.model = model.to_string();
         }
     }
-    if drop_picture_only {
-        chain.retain(|c| !(c.id == crate::settings::ProviderId::Ollama && picture_only_model(&c.model)));
+    if drop_unfit {
+        chain.retain(|c| !(c.id == crate::settings::ProviderId::Ollama && unfit(&c.model)));
     }
+}
+
+/// A picture describer too small to plan screen work: its context overflows
+/// on a normal screenshot plus the controls list.
+fn tiny_describer(model: &str) -> bool {
+    model.to_ascii_lowercase().contains("moondream")
 }
 
 /// Vision-first Ollama models that are routinely installed beside a chat
@@ -2030,10 +2037,13 @@ fn ask_racing(
     // model), resting ones and — to drive the screen — tiny ones left out.
     let economy = crate::state::try_store().map(|s| s.settings().economy_mode).unwrap_or(true);
     let mut expanded = crate::freebrains::expand(chain.to_vec(), wants_action);
-    // The screenshot is the expensive part. In economy mode, use a local
-    // vision-capable model first so the image never leaves this PC.
+    // The screenshot is the expensive part. In economy mode, a local model
+    // goes first so the image never leaves this PC, but only while it has
+    // kept up (a slow one on a laptop CPU would put its wait on every look).
+    // The hedge below still asks a backup if it's slow this time.
     if economy && !req.image_jpeg.is_empty() {
-        if let Some(i) = expanded.iter().position(|c| c.id == crate::settings::ProviderId::Ollama) {
+        let local_keeps_up = expected_ms(crate::settings::ProviderId::Ollama).map_or(true, |ms| ms <= 6_000.0);
+        if let Some(i) = expanded.iter().position(|c| c.id == crate::settings::ProviderId::Ollama).filter(|_| local_keeps_up) {
             if i > 0 {
                 let local = expanded.remove(i);
                 expanded.insert(0, local);
@@ -2060,7 +2070,9 @@ fn ask_racing(
             ),
         });
     }
-    let one_at_a_time = !req.image_jpeg.is_empty();
+    // Saving cloud image quota: a quick "no" doesn't start two at once. The
+    // slow-brain hedge below still applies, so one model never stalls a look.
+    let one_at_a_time = economy && !req.image_jpeg.is_empty();
     let began = Instant::now();
     let mut last_launch = began;
     let req = Arc::new(req);
@@ -2208,7 +2220,7 @@ fn ask_racing(
                 // Whatever is running now has said nothing for 4 s: one backup,
                 // even when saving credits — never more than two at a time.
                 let stuck = last_launch.elapsed() >= Duration::from_secs(4);
-                if !one_at_a_time && (!economy || slow_first || stuck) && launched < chain.len() && launched - finished < 2 && last_launch.elapsed() >= hedge_after {
+                if (!economy || slow_first || stuck) && launched < chain.len() && launched - finished < 2 && last_launch.elapsed() >= hedge_after {
                     eprintln!("[brain] trying one speculative backup");
                     launch(launched);
                     launched += 1;
@@ -2354,12 +2366,24 @@ impl Drop for Working {
     }
 }
 
+/// What a pause between steps came to.
+#[derive(Debug, PartialEq, Eq)]
+enum Hold {
+    /// No pause was asked for: carry on with the step.
+    No,
+    /// Paused, then resumed. The PC was the person's meanwhile, so the plan's
+    /// screen is stale: take a fresh look before the next step.
+    Resumed,
+    /// Stopped while paused.
+    Stopped,
+}
+
 /// Wait between steps while the person has asked for a pause. The step that
 /// was already running is allowed to finish, so nothing is left half-clicked
 /// or half-typed. Stop always wins over a pause.
-fn wait_while_paused(app: &AppHandle, alive: &dyn Fn() -> bool, step_index: usize, total: usize) -> bool {
+fn wait_while_paused(app: &AppHandle, alive: &dyn Fn() -> bool, step_index: usize, total: usize) -> Hold {
     if !TASK_PAUSED.load(std::sync::atomic::Ordering::SeqCst) {
-        return true;
+        return Hold::No;
     }
     // `step_index` is the step that has *not* started yet. Saying where the
     // task stopped makes a pause feel like a checkpoint, not a frozen app.
@@ -2379,19 +2403,19 @@ fn wait_while_paused(app: &AppHandle, alive: &dyn Fn() -> bool, step_index: usiz
     while TASK_PAUSED.load(std::sync::atomic::Ordering::SeqCst) {
         if !alive() {
             let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
-            return false;
+            return Hold::Stopped;
         }
         std::thread::sleep(Duration::from_millis(100));
     }
     if !alive() {
         let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
-        return false;
+        return Hold::Stopped;
     }
     let _ = app.emit(
         events::STATUS,
-        StatusEvent::working(format!("Resuming at step {} of {total}…", step_index + 1)),
+        StatusEvent::working(format!("Resuming — a fresh look first, then step {} of {total}…", step_index + 1)),
     );
-    true
+    Hold::Resumed
 }
 
 /// Run `steps` on this thread. `true` if every step ran (not stopped and
@@ -2423,7 +2447,19 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
 
             let run = || {
                 for (i, step) in steps.iter().enumerate() {
-                    if !wait_while_paused(app, alive, i, steps.len()) { return false; }
+                    match wait_while_paused(app, alive, i, steps.len()) {
+                        Hold::No => {}
+                        Hold::Stopped => return false,
+                        // The windows may have moved and the Resume click is
+                        // itself input: never act on the old plan's spots.
+                        // The loop takes a fresh look and carries on.
+                        Hold::Resumed => {
+                            *STEP_SNAG.lock() = Some(
+                                "paused: you paused the task and used the PC — checking the current screen before the next step".into(),
+                            );
+                            return false;
+                        }
+                    }
                     if crate::execution::charge(crate::execution::Work::Action).is_err() { return false; }
                     if !alive() {
                         let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
@@ -4794,15 +4830,44 @@ mod pause_tests {
     use super::*;
     use std::sync::atomic::Ordering::SeqCst;
 
-    fn clear_pause_state() {
+    /// The pause flags are process-wide: these tests take turns, and each
+    /// leaves them (and the task slot) as it found them, even on a panic.
+    static TURN: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+    struct Turn(#[allow(dead_code)] parking_lot::MutexGuard<'static, ()>);
+
+    fn reset() {
         STEPS_ACTIVE.store(0, SeqCst);
         TASK_PAUSED.store(false, SeqCst);
         PAUSE_QUEUED.store(false, SeqCst);
     }
 
+    impl Drop for Turn {
+        fn drop(&mut self) {
+            reset();
+            *WORK_TASK.lock() = (0, String::new());
+        }
+    }
+
+    fn clear_pause_state(task: u64) -> Turn {
+        let turn = Turn(TURN.lock());
+        reset();
+        *WORK_TASK.lock() = (task, String::new());
+        turn
+    }
+
+    #[test]
+    fn with_no_task_a_pause_is_refused_and_never_queued() {
+        let _turn = clear_pause_state(0);
+        assert!(!pause_task());
+        assert!(!PAUSE_QUEUED.load(SeqCst), "a queued pause would stop the next, unrelated task");
+        assert!(!TASK_PAUSED.load(SeqCst));
+        assert!(!resume_task(), "nothing was paused");
+    }
+
     #[test]
     fn pausing_while_planning_is_honoured_before_the_first_step() {
-        clear_pause_state();
+        let _turn = clear_pause_state(7);
         assert!(!has_active_steps());
         assert!(pause_task());
         assert!(PAUSE_QUEUED.load(SeqCst));
@@ -4822,7 +4887,7 @@ mod pause_tests {
 
     #[test]
     fn a_nested_runner_does_not_clear_the_outer_pause() {
-        clear_pause_state();
+        let _turn = clear_pause_state(7);
         let outer = TaskActive::begin();
         assert!(pause_task());
         let nested = TaskActive::begin();
@@ -4855,11 +4920,22 @@ pub fn has_active_steps() -> bool {
 /// for a task that is still planning. It never interrupts a half-finished
 /// click or key press.
 pub fn pause_task() -> bool {
-    if STEPS_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) == 0 {
-        PAUSE_QUEUED.store(true, std::sync::atomic::Ordering::SeqCst);
+    use std::sync::atomic::Ordering::SeqCst;
+    if STEPS_ACTIVE.load(SeqCst) > 0 {
+        TASK_PAUSED.store(true, SeqCst);
         return true;
     }
-    TASK_PAUSED.store(true, std::sync::atomic::Ordering::SeqCst);
+    // Nothing planning and nothing acting: there's no task to pause, and a
+    // queued pause would stop the next, unrelated one.
+    if WORK_TASK.lock().0 == 0 {
+        return false;
+    }
+    // Publish the queued pause first, then look again: a runner that began in
+    // between has already swapped the queue, so hand the pause to it directly.
+    PAUSE_QUEUED.store(true, SeqCst);
+    if STEPS_ACTIVE.load(SeqCst) > 0 && PAUSE_QUEUED.swap(false, SeqCst) {
+        TASK_PAUSED.store(true, SeqCst);
+    }
     true
 }
 

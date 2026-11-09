@@ -22,8 +22,8 @@ function Summary({
         {title}
       </div>
       <div className="mt-1.5 flex flex-wrap gap-1.5">
-        {items.map((item) => (
-          <span key={item} className="rounded-full border border-white/10 bg-white/[0.045] px-2 py-1 text-[10.5px] leading-none text-izk-ink/85">
+        {items.map((item, i) => (
+          <span key={`${i}:${item}`} className="rounded-full border border-white/10 bg-white/[0.045] px-2 py-1 text-[10.5px] leading-none text-izk-ink/85">
             {item}
           </span>
         ))}
@@ -52,13 +52,21 @@ export function StorageReport({ report }: { report: StorageReportData }) {
       </div>
 
       <div className="space-y-2.5 px-3 py-3">
-        {report.drives.map((drive) => (
-          <div key={drive.name}>
+        {report.drives.map((drive, i) => (
+          <div key={`${i}:${drive.name}`}>
             <div className="flex items-baseline justify-between gap-2 text-[11px]">
               <span className="font-semibold text-izk-ink">{drive.name}</span>
               <span className="text-izk-muted">{drive.freeLabel} free of {drive.totalLabel}</span>
             </div>
-            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/8" aria-label={`${drive.name} ${Math.round(drive.usedPercent)}% used`}>
+            <div
+              className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/8"
+              role="progressbar"
+              aria-label={`${drive.name} used`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(drive.usedPercent)}
+              aria-valuetext={`${Math.round(drive.usedPercent)}% used, ${drive.freeLabel} free`}
+            >
               <span
                 className={low ? "block h-full rounded-full bg-gradient-to-r from-amber-300/80 to-rose-400/80" : "block h-full rounded-full bg-gradient-to-r from-izk-teal/80 to-cyan-300/80"}
                 style={{ width: `${Math.max(2, drive.usedPercent)}%` }}
@@ -70,8 +78,8 @@ export function StorageReport({ report }: { report: StorageReportData }) {
 
         <Summary title="Biggest installed apps" icon={<FolderOpen size={11} />} items={report.apps} />
         <Summary title="Biggest folders" icon={<FolderOpen size={11} />} items={report.folders} />
-        {report.inside.map((group) => (
-          <Summary key={group.name} title={`Inside ${group.name}`} icon={<FolderOpen size={11} />} items={group.items} />
+        {report.inside.map((group, i) => (
+          <Summary key={`${i}:${group.name}`} title={`Inside ${group.name}`} icon={<FolderOpen size={11} />} items={group.items} />
         ))}
         <Summary title="Biggest files" icon={<FileText size={11} />} items={report.files} />
         <Summary title="Safe to clear" icon={<ShieldCheck size={11} />} items={report.safe} tone="text-izk-teal/85" />

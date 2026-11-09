@@ -32,36 +32,72 @@ pub fn parse(said: &str) -> Option<bool> {
     let every = [" every ", " all ", " each ", " always ", " from now on "]
         .iter()
         .any(|w| padded.contains(w));
+    let saving = padded.contains(" saving ");
+
+    let words: Vec<&str> = s.split(' ').collect();
+    let switches = switches_in(&words, has_log);
+    let off = switches.iter().any(|w| !w.on);
+    let on = switches.iter().any(|w| w.on);
+    // "Don't stop saving my questions" is about keeping on, no "every" needed.
+    let keeps_on = switches.iter().any(|w| w.on && w.negated);
 
     if has_log {
-        if padded.contains(" dont turn off ") || padded.contains(" do not turn off ") || padded.contains(" never turn off ") {
-            return Some(true);
-        }
-        let off = [" turn off ", " switch off ", " disable ", " stop ", " no more ", " quit ", " off "]
-            .iter()
-            .any(|w| padded.contains(w));
-        let on = [" turn on ", " switch on ", " enable ", " start ", " keep ", " save ", " record ", " study log on "]
-            .iter()
-            .any(|w| padded.contains(w));
-        if off {
-            return Some(false);
-        }
-        if on {
-            return Some(true);
-        }
-        return None;
+        // "Keep the study log off": an off anywhere wins.
+        return if off { Some(false) } else if on { Some(true) } else { None };
     }
-
-    let stop = [" stop ", " dont ", " do not ", " no more ", " quit ", " turn off ", " switch off "]
-        .iter()
-        .any(|w| padded.contains(w));
-    let save = [" save ", " keep ", " log ", " record ", " write down ", " put ", " add ", " store ", " turn on "]
-        .iter()
-        .any(|w| padded.contains(w));
-    if stop && (has_question || padded.contains(" saving ")) && (to_notes || padded.contains(" saving ")) {
+    if off && (has_question || saving) && (to_notes || saving) {
         return Some(false);
     }
-    (save && has_question && to_notes && every).then_some(true)
+    (on && has_question && (to_notes || saving) && (every || keeps_on)).then_some(true)
+}
+
+/// One switching verb in a request, and which way it points once a
+/// "don't"/"never" in front of it is taken into account.
+struct Switch {
+    on: bool,
+    negated: bool,
+}
+
+/// Every on/off verb in `w`. A negation binds to the verb it's in front of
+/// ("don't turn ON study log" is off, "don't STOP saving" is on), within a
+/// few words and not across "and"/"but". `log_topic`: bare "on"/"off" count
+/// ("study log off").
+fn switches_in(w: &[&str], log_topic: bool) -> Vec<Switch> {
+    let negated = |i: usize| {
+        for j in (i.saturating_sub(4)..i).rev() {
+            match w[j] {
+                // "Why don't you save…" is a suggestion, not a no.
+                "dont" if j > 0 && w[j - 1] == "why" => return false,
+                "dont" | "never" | "not" | "wont" => return true,
+                "and" | "but" | "then" | "so" => return false,
+                _ => {}
+            }
+        }
+        false
+    };
+    let mut out = Vec::new();
+    for i in 0..w.len() {
+        let next = w.get(i + 1).copied();
+        let prev = i.checked_sub(1).map(|j| w[j]);
+        let way = match w[i] {
+            "turn" | "switch" if next == Some("on") => Some(true),
+            "turn" | "switch" if next == Some("off") => Some(false),
+            "write" if next == Some("down") => Some(true),
+            "enable" | "start" | "keep" | "save" | "record" | "put" | "add" | "store" => Some(true),
+            // The "log" in "study log" is the name, not the verb.
+            "log" if prev != Some("study") => Some(true),
+            "disable" | "stop" | "quit" => Some(false),
+            "no" if next == Some("more") => Some(false),
+            "off" if log_topic && !matches!(prev, Some("turn" | "switch")) => Some(false),
+            "on" if log_topic && prev == Some("log") => Some(true),
+            _ => None,
+        };
+        if let Some(on) = way {
+            let neg = negated(i);
+            out.push(Switch { on: on != neg, negated: neg });
+        }
+    }
+    out
 }
 
 /// A change proposed by a model is allowed only when the user's own latest
@@ -228,6 +264,22 @@ mod tests {
     }
 
     #[test]
+    fn a_negation_belongs_to_the_verb_it_is_in_front_of() {
+        // Never switched on by a "don't".
+        assert_eq!(parse("don't turn on study log"), Some(false));
+        assert_eq!(parse("do not turn on the study log"), Some(false));
+        assert_eq!(parse("I don't want you to save my questions to my notes"), Some(false));
+        // Never switched off by a "don't".
+        assert_eq!(parse("don't stop saving my questions"), Some(true));
+        assert_eq!(parse("never turn off the study log"), Some(true));
+        // Off anywhere wins; a suggestion isn't a no.
+        assert_eq!(parse("keep the study log off"), Some(false));
+        assert_eq!(parse("why don't you save every question to my notes"), Some(true));
+        // A negation doesn't reach across "and".
+        assert_eq!(parse("don't explain and save every question to my notes"), Some(true));
+    }
+
+    #[test]
     fn only_the_users_own_words_authorize_a_change() {
         assert!(change_authorized("turn off study log", "turn off study log"));
         assert!(change_authorized("stop saving my questions", "stop saving my questions"));
@@ -235,6 +287,8 @@ mod tests {
         assert!(!change_authorized("stop saving my questions", "windows"));
         assert!(!change_authorized("stop saving my questions", "whatttt"));
         assert!(change_authorized("open Chrome", "open Chrome"), "non-studylog tools pass through");
+        // Reading the log changes nothing, so it never needs the user's say-so.
+        assert!(change_authorized("study | progress", "how am I doing?"));
     }
 
     #[test]

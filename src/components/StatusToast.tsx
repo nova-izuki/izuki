@@ -7,7 +7,7 @@ const ICONS = {
   info: <Info size={14} strokeWidth={2.4} />,
   working: (
     <span className="relative flex h-[14px] w-[14px] items-center justify-center" aria-hidden>
-      <span className="absolute inset-0 animate-ping rounded-full bg-current opacity-25" />
+      <span className="absolute inset-0 rounded-full bg-current opacity-25 motion-safe:animate-ping" />
       <span className="h-[6px] w-[6px] rounded-full bg-current" />
     </span>
   ),

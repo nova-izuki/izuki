@@ -174,9 +174,9 @@ export function AirCard() {
       title={disabled ? "Available only after Hand and Eye have each been verified on your camera." : hint}
       onClick={() => {
         if (key !== "hand" && key !== "eye") return;
-        // Leaving Eye must release its synthetic input immediately; the shared
-        // selector needs no knowledge of the camera/calibration internals.
-        if (mode === "eye" && key === "hand") void api.airStop().catch(() => undefined);
+        // Leaving Eye lets go of anything it holds at once. Not the emergency
+        // stop: that saves Air as off, and the person only changed mode.
+        if (mode === "eye" && key === "hand") void api.airRelease().catch(() => undefined);
         patch({ air_control_mode: key });
       }}
       className={`izk-no-drag flex min-h-[58px] flex-col items-center justify-center gap-0.5 rounded-xl border px-2 py-1.5 text-center transition-colors ${

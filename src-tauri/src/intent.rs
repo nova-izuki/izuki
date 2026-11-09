@@ -17,8 +17,30 @@ fn words(s: &str) -> Vec<&str> {
     s.split_whitespace().collect()
 }
 
+/// Work to be answered, by name ("answer all these questions").
+const QUESTION_NOUNS: &[&str] = &[
+    "question", "questions", "quiz", "quizzes", "test", "tests", "exam", "exams", "problem", "problems", "exercise",
+    "exercises", "assignment", "assignments", "homework", "worksheet", "worksheets",
+];
+/// Where the work would be, if it had been pasted or attached.
+const MATERIAL: &[&str] = &["document", "documents", "doc", "pdf", "page", "pages", "book", "file", "files", "chapter", "text"];
+/// Words that point at something without saying what it is.
+const FILLER: &[&str] = &[
+    "all", "these", "those", "them", "this", "that", "it", "everything", "each", "every", "one", "ones", "of", "the",
+    "a", "my", "for", "me", "please", "pls", "plz", "now", "quick", "quickly", "about", "on", "in", "from", "practice",
+    "graded", "here", "there", "above", "below", "and", "to", "with",
+];
+
+const WHAT_TO_ANSWER: &str = "What should I answer? Paste the question or attach the document, and I'll take it from there.";
+const PRACTICE_OR_GRADED: &str = "What should I answer? Paste the questions or attach the document, and tell me whether they're practice or graded. For graded work I can explain and give hints, but I won't complete or submit it for you.";
+
 /// `None` means send it to the brain. `Some(question)` means the request has
 /// no material to work from yet, so ask exactly one useful thing instead.
+///
+/// Only a request that is *nothing but* a pointer qualifies: "answer all of
+/// these", "do the quiz". Anything with real content after the verb
+/// ("explain everything about black holes", "do everything you can to speed
+/// up my PC", "finish all the steps") goes to the brain as it is.
 pub fn clarification(text: &str, has_context: bool) -> Option<&'static str> {
     if has_context {
         return None;
@@ -27,30 +49,26 @@ pub fn clarification(text: &str, has_context: bool) -> Option<&'static str> {
     if s.is_empty() {
         return None;
     }
-    let w = words(&s);
-    let first = *w.first().unwrap_or(&"");
-    let wants_answer = ["answer", "solve", "do", "complete", "finish", "explain"].contains(&first);
-    let has_question_noun = w.iter().any(|x| {
-        [
-            "question", "questions", "quiz", "quizzes", "test", "tests", "problem", "problems", "exercise",
-            "exercises", "assignment", "assignments",
-        ]
-        .contains(x)
-    });
-    let has_all = w.iter().any(|x| ["all", "these", "those", "them", "everything", "each"].contains(x));
-    let has_about_material = w.contains(&"about")
-        && w.iter().any(|x| ["document", "page", "book", "file", "assignment", "quiz", "test", "chapter"].contains(x));
-
-    if matches!(s.as_str(), "answer" | "answer this" | "answer that") {
-        return Some("What should I answer? Paste the question or attach the document, and I'll take it from there.");
-    }
-    if matches!(s.as_str(), "help me" | "explain" | "continue" | "go on" | "carry on") {
+    if matches!(s.as_str(), "help" | "help me" | "explain" | "explain this" | "continue" | "go on" | "carry on") {
         return Some("What would you like me to help with? Paste the question or a little context, and I'll pick it up from there.");
     }
-    if wants_answer && (has_all || has_question_noun || has_about_material) {
-        return Some("What should I answer? Paste the questions or attach the document, and tell me whether they're practice or graded. For graded work I can explain and give hints, but I won't complete or submit it for you.");
+    let w = words(&s);
+    let first = *w.first().unwrap_or(&"");
+    let rest = &w[1..];
+    let names_work = rest.iter().any(|x| QUESTION_NOUNS.contains(x));
+    let only_pointers = rest.iter().all(|x| FILLER.contains(x) || QUESTION_NOUNS.contains(x) || MATERIAL.contains(x));
+    let asks = match first {
+        // "Answer it", "solve all of these": nothing to answer yet.
+        "answer" | "solve" => only_pointers,
+        // "Do", "finish", "explain" are everyday verbs: only when they name
+        // the work and nothing else ("do the quiz", "explain these questions").
+        "do" | "complete" | "finish" | "explain" => names_work && only_pointers,
+        _ => false,
+    };
+    if !asks {
+        return None;
     }
-    None
+    Some(if names_work || rest.iter().any(|x| MATERIAL.contains(x)) { PRACTICE_OR_GRADED } else { WHAT_TO_ANSWER })
 }
 
 /// A short, public explanation for a failed AI call. Provider bodies often
@@ -108,17 +126,20 @@ pub fn refusal_kind(text: &str) -> Option<&'static str> {
     if t.is_empty() {
         return None;
     }
+    // A refusal says so up front, and briefly. A long answer that happens to
+    // say "as an AI tutor…" or quote a rule further down is an answer.
+    let opening: String = t.chars().take(160).collect();
+    let short = t.chars().count() <= 320;
     let sorry = t.starts_with("i'm sorry") || t.starts_with("i am sorry") || t.starts_with("sorry,");
     let cannot = ["can't help", "cannot help", "can not help", "unable to help", "can't assist", "cannot assist"]
         .iter()
-        .any(|x| t.contains(x));
-    let policy = t.contains("against my policy")
-        || t.contains("against the policy")
-        || t.contains("against my guidelines")
-        || t.contains("as an ai")
-        || t.contains("not able to help")
-        || t.contains("not able to assist");
-    ((sorry && (cannot || policy)) || (t.starts_with("i ") && cannot) || (policy && !t.starts_with("i can ")))
+        .any(|x| opening.contains(x));
+    let policy = ["against my policy", "against the policy", "against my guidelines", "against the guidelines", "not able to help", "not able to assist"]
+        .iter()
+        .any(|x| opening.contains(x));
+    ((sorry && (cannot || policy))
+        || ((t.starts_with("i ") || t.starts_with("as an ai")) && cannot && short)
+        || (policy && short && !t.starts_with("i can ")))
         .then_some("provider-policy")
 }
 
@@ -137,6 +158,28 @@ mod tests {
         assert!(clarification("whatttt", false).is_none());
         assert!(clarification("turn off study log", false).is_none());
         assert!(clarification("what is photosynthesis?", false).is_none());
+        assert_eq!(clarification("answer all these practice questions.", false), Some(PRACTICE_OR_GRADED));
+        assert_eq!(clarification("answer all my questions about this document.", false), Some(PRACTICE_OR_GRADED));
+        assert_eq!(clarification("explain all these graded questions", false), Some(PRACTICE_OR_GRADED));
+        assert_eq!(clarification("do the quiz", false), Some(PRACTICE_OR_GRADED));
+        assert_eq!(clarification("solve it", false), Some(WHAT_TO_ANSWER));
+    }
+
+    #[test]
+    fn a_real_request_after_the_verb_goes_to_the_brain() {
+        for said in [
+            "explain everything about black holes",
+            "explain each step of photosynthesis",
+            "do everything you can to speed up my PC",
+            "do everything on this page",
+            "finish all the steps",
+            "complete all my reminders for today",
+            "answer the email from mom",
+            "solve x^2 = 4",
+            "answer this: 2 + 2",
+        ] {
+            assert!(clarification(said, false).is_none(), "{said}");
+        }
     }
 
     #[test]
@@ -145,6 +188,11 @@ mod tests {
         assert_eq!(refusal_kind("I cannot assist with that request."), Some("provider-policy"));
         assert_eq!(refusal_kind("That answer is correct."), None);
         assert_eq!(refusal_kind("I can help once you paste the question."), None);
+        assert_eq!(refusal_kind("As an AI, I can't help with that."), Some("provider-policy"));
+        // An answer is not a refusal because of a phrase in it.
+        assert_eq!(refusal_kind("As an AI tutor, here is the method: first isolate x, then divide both sides."), None);
+        let long = format!("{} That would be against the guidelines of most schools.", "Here is a full explanation of the topic. ".repeat(8));
+        assert_eq!(refusal_kind(&long), None);
     }
 
     #[test]

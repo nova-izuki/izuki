@@ -35,6 +35,8 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
   const [guide, setGuide] = useState(false);
   const setTab = useIzuki((s) => s.setTab);
   const box = useRef<HTMLSpanElement>(null);
+  /** The button that opens the picker: Escape gives focus back to it. */
+  const trigger = useRef<HTMLButtonElement>(null);
   /** The latest value, so quick double taps flip from where the last tap left it. */
   const current = useRef<boolean | null>(null);
   current.current = onNow;
@@ -62,7 +64,10 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
     if (!open) return;
     const close = (event: PointerEvent | KeyboardEvent) => {
       if (event instanceof KeyboardEvent) {
-        if (event.key === "Escape") setOpen(false);
+        if (event.key === "Escape") {
+          setOpen(false);
+          trigger.current?.focus();
+        }
         return;
       }
       if (!box.current?.contains(event.target as Node)) setOpen(false);
@@ -77,25 +82,25 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
 
   if (onNow === null) return null;
 
-  const flip = () => {
-    const next = !current.current;
-    current.current = next;
-    setOn(next);
-    // Turning it on is the explicit re-arm after an emergency stop. Turning
-    // it off must also release any synthetic buttons Air is still holding.
-    if (next) void api.airArm().catch(() => undefined).finally(() => void emit(EV.patchSettings, { air_enabled: true }));
-    else {
-      void api.airStop().catch(() => undefined);
-      void emit(EV.patchSettings, { air_enabled: false });
-    }
-  };
-
-  const stopNow = () => {
-    setOpen(false);
+  /** Air off: the stop lets go of anything Air still holds, and it's saved off. */
+  const turnOff = () => {
     current.current = false;
     setOn(false);
     void api.airStop().catch(() => undefined);
     void emit(EV.patchSettings, { air_enabled: false });
+  };
+
+  const flip = () => {
+    if (current.current) return turnOff();
+    current.current = true;
+    setOn(true);
+    // Turning it on is the explicit re-arm after an emergency stop.
+    void api.airArm().catch(() => undefined).finally(() => void emit(EV.patchSettings, { air_enabled: true }));
+  };
+
+  const stopNow = () => {
+    setOpen(false);
+    turnOff();
   };
 
   const openSettings = () => {
@@ -109,9 +114,10 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
     setOpen(false);
     // Persist the preference even while Air is off, so the next arm uses it.
     void emit(EV.patchSettings, { air_control_mode: next });
-    // Hand and Eye never own input together. Turning Eye off unmounts its
-    // owner; native EyeControl performs its own synthetic-input release.
-    if (mode === "eye" && next !== "eye") void api.airStop().catch(() => undefined);
+    // Hand and Eye never own input together. Leaving Eye lets go of anything
+    // it holds at once; not the emergency stop, which would save Air as off
+    // when the person only changed mode.
+    if (mode === "eye" && next !== "eye") void api.airRelease().catch(() => undefined);
   };
 
   const lane = mode === "eye" ? "Eye" : "Hand";
@@ -119,8 +125,8 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
   const title = `${lane} control is ${onNow ? "on" : "selected"}. Click for mode and power.`;
   const menu = open && (
     <span
-      role="menu"
-      aria-label="AIR control mode"
+      role="group"
+      aria-label="AIR control mode and power"
       data-izk-hit
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
@@ -136,8 +142,7 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
           <button
             key={m.key}
             type="button"
-            role="menuitemradio"
-            aria-checked={!disabled && mode === m.key}
+            aria-pressed={!disabled && mode === m.key}
             disabled={disabled}
             title={m.note}
             onClick={() => !disabled && choose(m.key as AirMode)}
@@ -159,7 +164,6 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
       <span className="my-1 block h-px bg-white/8" />
       <button
         type="button"
-        role="menuitem"
         aria-expanded={guide}
         onClick={() => setGuide((v) => !v)}
         className="flex w-full items-center gap-2 rounded-[8px] px-2 py-2 text-left text-[11px] font-medium text-izk-ink hover:bg-white/8"
@@ -180,7 +184,6 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
       )}
       <button
         type="button"
-        role="menuitem"
         onClick={flip}
         className="flex w-full items-center gap-2 rounded-[8px] px-2 py-2 text-left text-[11px] font-medium text-izk-ink hover:bg-white/8"
       >
@@ -190,7 +193,6 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
       {onNow && (
         <button
           type="button"
-          role="menuitem"
           onClick={stopNow}
           className="flex w-full items-center gap-2 rounded-[8px] px-2 py-2 text-left text-[11px] font-medium text-rose-300 hover:bg-rose-500/10"
         >
@@ -200,7 +202,6 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
       )}
       <button
         type="button"
-        role="menuitem"
         onClick={openSettings}
         className="flex w-full items-center gap-2 rounded-[8px] px-2 py-2 text-left text-[11px] font-medium text-izk-ink hover:bg-white/8"
       >
@@ -252,8 +253,7 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
               <button
                 key={m.key}
                 type="button"
-                role="menuitemradio"
-                aria-checked={selected}
+                aria-pressed={selected}
                 disabled={disabled}
                 title={m.note}
                 onClick={() => !disabled && choose(m.key as AirMode)}
@@ -303,9 +303,10 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
     return (
       <span ref={box} className={cx("relative inline-flex", className)}>
         <button
+          ref={trigger}
           type="button"
           data-izk-hit
-          aria-haspopup="menu"
+          aria-haspopup="true"
           aria-expanded={open}
           aria-label={`${lane} control. Open AIR mode picker.`}
           title={title}
@@ -330,8 +331,9 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
   return (
     <span ref={box} className={cx("relative inline-flex", className)}>
       <button
+        ref={trigger}
         type="button"
-        aria-haspopup="menu"
+        aria-haspopup="true"
         aria-expanded={open}
         aria-label={`${lane} control selected. Open AIR mode picker.`}
         title={title}

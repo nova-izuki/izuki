@@ -837,6 +837,8 @@ pub fn cancel_task() {
 pub fn pause_task(app: AppHandle) -> bool {
     let active = brain::has_active_steps();
     if !brain::pause_task() {
+        // Replace a stale "working" card rather than leave a dead button.
+        let _ = app.emit(events::STATUS, StatusEvent::info("Nothing to pause right now."));
         return false;
     }
     let _ = app.emit(
@@ -855,6 +857,9 @@ pub fn pause_task(app: AppHandle) -> bool {
 #[tauri::command]
 pub fn resume_task(app: AppHandle) -> bool {
     if !brain::resume_task() {
+        // The task ended while it was paused (an answer with no steps): the
+        // "Paused" card must not stay up with a Resume that does nothing.
+        let _ = app.emit(events::STATUS, StatusEvent::info("Nothing was paused."));
         return false;
     }
     let _ = app.emit(events::STATUS, StatusEvent::working("Continuing…"));
@@ -1897,6 +1902,14 @@ pub fn air_scroll(amount: i32) -> R<()> {
 #[tauri::command]
 pub fn air_stop() {
     crate::airsafe::stop("Stop button");
+}
+
+/// Let go of anything Air is holding (a pressed button, a held key) without
+/// the emergency stop's latch: switching from Eye to Hand mode, where Air
+/// stays on. The stop itself (`air_stop`) also saves Air as off.
+#[tauri::command]
+pub fn air_release() {
+    std::thread::spawn(crate::airsafe::release_now);
 }
 
 /// The person is turning Air control on (a toggle, the Air button, their

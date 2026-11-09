@@ -455,6 +455,7 @@ pub fn run() {
             commands::mate_hot,
             commands::air_pointer,
             commands::air_stop,
+            commands::air_release,
             commands::air_arm,
             commands::air_resume,
             commands::air_safety,

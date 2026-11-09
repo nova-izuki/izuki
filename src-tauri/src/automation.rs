@@ -97,8 +97,10 @@ fn off_screen_message(b: crate::model::Rect, x: i32, y: i32) -> String {
 }
 
 /// The pointer really is at (x, y): put it back once if something moved it,
-/// and refuse to continue if it still isn't there. Every physical move goes
-/// through this, so a scroll, drag or draw can never silently land elsewhere.
+/// and refuse to continue if it still isn't there. Every glide ends here, so
+/// a click, scroll, drag or draw always *starts* where it should. (A stroke's
+/// points in between are placed as they come, with the button held, and
+/// aren't checked one by one.)
 fn ensure_pointer(e: &mut Enigo, x: i32, y: i32) -> Result<()> {
     if near(crate::capture::cursor_pos(), (x, y)) {
         return Ok(());
@@ -988,12 +990,15 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
         Intent::Key => {
             if let Some(k) = &step.key {
                 // Look at the app in front before the keys, so the shortcut's
-                // effect can be told from nothing happening.
-                let before = front_look();
-                let before_windows = crate::uia::open_windows(40);
+                // effect can be told from nothing happening. Only for keys that
+                // will be judged: Enter, Tab or the arrows cost no capture.
+                let judged = shortcut_worth_checking(k);
+                let before = judged.then(|| (front_look(), crate::uia::open_windows(40)));
                 press_key(k)?;
-                if let Some(snag) = check_shortcut(k, before, &before_windows)? {
-                    return Ok(format!("pressed {k}, but {snag}"));
+                if let Some((look, windows)) = before {
+                    if let Some(snag) = check_shortcut(k, look, &windows)? {
+                        return Ok(format!("pressed {k}, but {snag}"));
+                    }
                 }
             }
         }
@@ -1273,10 +1278,14 @@ fn shortcut_changed(
     window_diff.is_some_and(|d| d >= WINDOW_CHANGED)
 }
 
-/// Nothing changed after a shortcut.
+/// Nothing changed after a shortcut. It may still have worked (bold on one
+/// word, an undo, is a small change), and pressing a toggle twice undoes it:
+/// so the note asks for a fresh look, never a blind repeat.
 fn shortcut_snag(changed: bool) -> Option<String> {
-    (!changed)
-        .then(|| "it doesn't look like anything changed — the shortcut may not do anything here, or the wrong window had focus".to_string())
+    (!changed).then(|| {
+        "it doesn't look like anything changed — it may still have worked (a small change is easy to miss), or the wrong window had focus. Take a fresh look before pressing it again; pressing a toggle twice undoes it"
+            .to_string()
+    })
 }
 
 /// A look at the app in front: its title and a picture of it, so a shortcut's
@@ -1807,13 +1816,19 @@ if ($Mode -eq 'cover') {
                 std::thread::sleep(Duration::from_millis(250));
             }
         }
-        let before_title = crate::uia::foreground_title();
         let t = Instant::now();
-        let said = super::execute(&step(serde_json::json!({"action":"key","key":"ctrl+shift+b"})), 320, true, false);
-        let fired = wait_for(Duration::from_secs(3), || (count(&log, "shortcut") >= 1).then_some(()));
-        let saw_change = said.as_ref().map(|s| !s.contains("doesn't look like anything changed")).unwrap_or(false);
-        let title_changed = crate::uia::foreground_title() != before_title;
-        rows.push(Row { what: "shortcut: the change is seen", ok: fired.is_some() && saw_change && title_changed, ms: t.elapsed().as_millis(), note: format!("{said:?}") });
+        // The keys go only to the test window: if it couldn't be brought to
+        // the front, the row fails rather than typing into the person's app.
+        if in_front() != fixture {
+            rows.push(Row { what: "shortcut: the change is seen", ok: false, ms: t.elapsed().as_millis(), note: "skipped: the test window isn't in front".into() });
+        } else {
+            let before_title = crate::uia::foreground_title();
+            let said = super::execute(&step(serde_json::json!({"action":"key","key":"ctrl+shift+b"})), 320, true, false);
+            let fired = wait_for(Duration::from_secs(3), || (count(&log, "shortcut") >= 1).then_some(()));
+            let saw_change = said.as_ref().map(|s| !s.contains("doesn't look like anything changed")).unwrap_or(false);
+            let title_changed = crate::uia::foreground_title() != before_title;
+            rows.push(Row { what: "shortcut: the change is seen", ok: fired.is_some() && saw_change && title_changed, ms: t.elapsed().as_millis(), note: format!("{said:?}") });
+        }
 
         // 8. Opening: a new window coming to the front is seen; nothing new is
         //    a snag. Exercised against a real window transition (not a launched

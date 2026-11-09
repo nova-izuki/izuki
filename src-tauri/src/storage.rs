@@ -55,7 +55,10 @@ pub fn is_storage_question(said: &str) -> bool {
     if ["free up", "clean", "clear ", "delete", "uninstall", "remove "].iter().any(|w| s.contains(w)) {
         return false;
     }
-    let disk = ["storage", "storag", "storaege", "disk", "drive space", "hard drive", "ssd", " gb", " tb", "gigs"].iter().any(|w| s.contains(w));
+    // "My drive" / "C drive" are the PC's own; "Google Drive" never says "my drive".
+    let disk = ["storage", "storag", "storaege", "disk", "drive space", "hard drive", "my drive", "c drive", "my drives", "ssd", " gb", " tb", "gigs"]
+        .iter()
+        .any(|w| s.contains(w));
     let space = ["spac"].iter().any(|w| s.contains(w))
         && !["space bar", "spacebar", "outer space", "spaces between", "spacing", "workspace", "namespace", "my space)"].iter().any(|w| s.contains(w));
     // Asking how it's used or how much is left — not just mentioning a disk.
@@ -427,6 +430,11 @@ mod tests {
         assert_eq!(parse("open the recycle bin"), None);
         assert_eq!(parse("free up some memory"), None, "memory is PC Boost");
         assert_eq!(parse("press the space bar"), None);
+        // The website's own wording, and the Chat tab's PC checkup button.
+        assert_eq!(parse("What's filling my drive?"), Some(Ask::Report));
+        assert_eq!(parse("What's taking up space on my PC?"), Some(Ask::Report));
+        assert_eq!(parse("how full is my C drive"), Some(Ask::Report));
+        assert_eq!(parse("what's in my google drive"), None);
     }
 
     #[test]

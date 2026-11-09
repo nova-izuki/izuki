@@ -35,6 +35,10 @@ export function NovaOrb({
         style={style}
         response={settings.orb_response ?? 1}
         face={faceFor(settings)}
+        // A small waiting orb: a gentle 12 frames a second is plenty, and it
+        // keeps the open Chat tab from costing a core while it sits there.
+        fps={12}
+        stillIfReduced
       />
     </span>
   );
