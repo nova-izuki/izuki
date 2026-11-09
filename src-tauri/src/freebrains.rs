@@ -65,7 +65,9 @@ pub fn too_small(model: &str) -> bool {
         .split(|c: char| !(c.is_ascii_alphanumeric() || c == '.'))
         .filter_map(|part| part.strip_suffix('b').and_then(|n| n.parse::<f32>().ok()))
         .next();
-    size.is_some_and(|b| b < 20.0) || ["-nano", "-mini", "gemma-3-4b", "gemma-3n", "phi-", "tinyllama", "1b", "3b"].iter().any(|k| m.contains(k))
+    // Sizes are read from whole name parts above ("1b", "3b"); a bare "1b"
+    // inside a name also matched "31b" and benched Gemma 4 31B as tiny.
+    size.is_some_and(|b| b < 20.0) || ["-nano", "-mini", "gemma-3-4b", "gemma-3n", "phi-", "tinyllama"].iter().any(|k| m.contains(k))
 }
 
 /// How good a free model is at reading a screen (bigger is better).
@@ -149,9 +151,7 @@ fn discover(providers: &[ProviderConfig]) -> HashMap<String, Vec<String>> {
                         } else {
                             sees(p.id, &id)
                         };
-                        // Not chat models at all (music, safety filters, embeddings).
-                        let odd = ["lyria", "safety", "guard", "embed", "moderation", "rerank", "-tts", "whisper", "image-gen", "imagen"].iter().any(|k| id.to_lowercase().contains(k));
-                        if ok && !odd && !too_small(&id) {
+                        if ok && !not_chat(&id) && !too_small(&id) {
                             names.push(id);
                         }
                     }
@@ -254,6 +254,160 @@ pub fn expand(chain: Vec<ProviderConfig>, for_screen: bool) -> Vec<ProviderConfi
     out
 }
 
+/// Not a chat model at all: music, safety filters, embeddings, speech, image
+/// makers, and the specialist models NVIDIA lists beside the chat ones
+/// (robot video, chip calibration plots, captioning, code-only).
+fn not_chat(id: &str) -> bool {
+    let id = id.to_lowercase();
+    [
+        "lyria", "safety", "guard", "embed", "moderation", "rerank", "-tts", "whisper", "image-gen", "imagen",
+        "diffusion", "cosmos", "ising", "paligemma", "reward", "retriever", "parse", "riva", "translate",
+        "coder", "codestral", "starcoder",
+    ]
+    .iter()
+    .any(|k| id.contains(k))
+}
+
+/// One free model on the person's key that answered a real request.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FreeModel {
+    pub id: String,
+    /// It was shown a picture and said what was in it: it can drive the screen.
+    pub sees: bool,
+    /// How long its short test answer took.
+    pub ms: u64,
+}
+
+/// What a search of the person's key found.
+#[derive(Debug, Clone, Serialize)]
+pub struct FreeSearch {
+    /// The models that answered, best for Izuki first: those that see the
+    /// screen (strongest first), then chat-only ones (fastest first).
+    pub working: Vec<FreeModel>,
+    /// How many models the key lists, and how many were tried.
+    pub listed: usize,
+    pub tried: usize,
+}
+
+/// A 16×16 red square: a screen model must say "red".
+const RED_PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR42mP4z8BAEmIY1TCqYfhqAACQ+f8B8u7oVwAAAABJRU5ErkJggg==";
+
+/// Which listed models are worth a real try: the strongest few that should
+/// see a screen, and a few chat models (a free list changes every few weeks
+/// and lists models that no longer answer, so nothing is trusted by name).
+fn candidates(ids: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut vision: Vec<String> = ids
+        .iter()
+        .filter(|m| sees(ProviderId::Nvidia, m.as_str()) && !not_chat(m.as_str()) && !too_small(m.as_str()))
+        .cloned()
+        .collect();
+    vision.sort_by_key(|m| -rank(m.as_str()));
+    vision.dedup();
+    vision.truncate(4);
+    let mut chat: Vec<String> = ids
+        .iter()
+        .filter(|m| !vision.contains(*m) && !not_chat(m.as_str()) && !too_small(m.as_str()) && chat_rank(m.as_str()) > 0)
+        .cloned()
+        .collect();
+    chat.sort_by_key(|m| -chat_rank(m.as_str()));
+    chat.dedup();
+    chat.truncate(3);
+    (vision, chat)
+}
+
+/// How good a free model is for plain chat (0: not a chat model by its name).
+fn chat_rank(m: &str) -> i32 {
+    let m = m.to_ascii_lowercase();
+    let mut r = rank(&m);
+    for (k, v) in [("llama-3.3-70b", 52), ("gpt-oss", 47), ("flash", 45), ("deepseek", 44), ("nemotron", 40), ("instruct", 20), ("-it", 20), ("chat", 20)] {
+        if m.contains(k) {
+            r = r.max(v);
+        }
+    }
+    r
+}
+
+/// The text of a chat answer, if it has any. A "thinking" model that spent
+/// its whole allowance reasoning answers with nothing: no use to Izuki.
+fn answer_text(body: &serde_json::Value) -> Option<String> {
+    let text = body["choices"][0]["message"]["content"].as_str().unwrap_or("").trim().to_string();
+    (!text.is_empty()).then_some(text)
+}
+
+/// Try one model for real: a picture for a screen candidate, a word for chat.
+fn try_model(client: &reqwest::blocking::Client, cfg: &ProviderConfig, model: &str, picture: bool) -> Option<FreeModel> {
+    let content = if picture {
+        serde_json::json!([
+            { "type": "text", "text": "What colour fills this picture? Answer with one word." },
+            { "type": "image_url", "image_url": { "url": format!("data:image/png;base64,{RED_PNG}") } }
+        ])
+    } else {
+        serde_json::json!("Reply with the single word: ready")
+    };
+    let started = Instant::now();
+    let body: serde_json::Value = client
+        .post(format!("{}/chat/completions", cfg.base_url.trim_end_matches('/')))
+        .bearer_auth(cfg.api_key.trim())
+        .json(&serde_json::json!({ "model": model, "messages": [{ "role": "user", "content": content }], "max_tokens": 24, "temperature": 0 }))
+        .send()
+        .ok()
+        .filter(|r| r.status().is_success())?
+        .json()
+        .ok()?;
+    let text = answer_text(&body)?;
+    let sees = picture && text.to_lowercase().contains("red");
+    Some(FreeModel { id: model.to_string(), sees, ms: started.elapsed().as_millis() as u64 })
+}
+
+/// Search the person's own key for the free models that fit Izuki: list
+/// what the key offers, try the likely ones with a real request (at the
+/// same time, well inside a free tier's per-minute allowance), and keep
+/// the ones that answered. The screen ones also become this key's siblings.
+pub fn search(cfg: &ProviderConfig) -> anyhow::Result<FreeSearch> {
+    if cfg.api_key.trim().is_empty() {
+        anyhow::bail!("add your API key first");
+    }
+    crate::tls_ready();
+    let client = reqwest::blocking::Client::builder().timeout(Duration::from_secs(25)).build()?;
+    let res = client
+        .get(format!("{}/models", cfg.base_url.trim_end_matches('/')))
+        .bearer_auth(cfg.api_key.trim())
+        .send()
+        .map_err(|_| anyhow::anyhow!("couldn't reach {} — check the internet connection", cfg.label))?;
+    match res.status().as_u16() {
+        200..=299 => {}
+        401 | 403 => anyhow::bail!("the key was turned down — copy it again, the whole key"),
+        code => anyhow::bail!("{} answered {code}", cfg.label),
+    }
+    let body: serde_json::Value = res
+        .json()
+        .map_err(|_| anyhow::anyhow!("{} sent a model list Izuki couldn't read — try again in a minute", cfg.label))?;
+    let ids: Vec<String> = body["data"].as_array().into_iter().flatten().filter_map(|m| m["id"].as_str().map(str::to_string)).collect();
+    if ids.is_empty() {
+        anyhow::bail!("the key works, but {} lists no models for it yet — a brand-new key can take a few minutes", cfg.label);
+    }
+    let (vision, chat) = candidates(&ids);
+    let tries: Vec<(String, bool)> = vision.iter().map(|m| (m.clone(), true)).chain(chat.iter().map(|m| (m.clone(), false))).collect();
+    let http = &client;
+    let mut working: Vec<FreeModel> = std::thread::scope(|s| {
+        let handles: Vec<_> = tries.iter().map(|(m, picture)| s.spawn(move || try_model(http, cfg, m, *picture))).collect();
+        handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect()
+    });
+    working.sort_by(|a, b| b.sees.cmp(&a.sees).then_with(|| if a.sees { rank(&b.id).cmp(&rank(&a.id)) } else { a.ms.cmp(&b.ms) }));
+    let seeing: Vec<String> = working.iter().filter(|m| m.sees).map(|m| m.id.clone()).collect();
+    if !seeing.is_empty() {
+        let mut g = load();
+        let saved = g.get_or_insert_with(Saved::default);
+        saved.models.insert(key(cfg.id), seeing);
+        saved.at = crate::model::now_ms() as u64 / 1000;
+        if !cfg!(test) {
+            let _ = std::fs::write(file(), serde_json::to_string(&*saved).unwrap_or_default());
+        }
+    }
+    eprintln!("[free-brains] search on {}: {} listed, {} tried, {} answered", cfg.label, ids.len(), tries.len(), working.len());
+    Ok(FreeSearch { working, listed: ids.len(), tried: tries.len() })
+}
+
 fn short(m: &str) -> String {
     m.rsplit('/').next().unwrap_or(m).trim_end_matches(":free").chars().take(28).collect()
 }
@@ -290,6 +444,10 @@ mod tests {
         assert!(!too_small("meta-llama/llama-4-maverick-17b-128e-instruct"));
         assert!(!too_small("gemini-2.5-flash"));
         assert!(too_small("gemma-3-4b-it"));
+        assert!(!too_small("google/gemma-4-31b-it"), "31B isn't tiny (\"1b\" inside \"31b\")");
+        assert!(!too_small("qwen/qwen2.5-vl-72b-instruct"));
+        assert!(too_small("meta/llama-3.2-1b-instruct"));
+        assert!(too_small("meta/llama-3.2-3b-instruct"));
         assert!(sees(ProviderId::Groq, "meta-llama/llama-4-scout-17b-16e-instruct"));
         assert!(!sees(ProviderId::Groq, "llama-3.3-70b-versatile"));
         assert!(sees(ProviderId::Gemini, "gemini-2.5-flash-lite"));
@@ -308,5 +466,45 @@ mod tests {
         let d = soonest_wake().expect("two models are resting");
         assert!(d <= Duration::from_secs(5), "waited for the slowest: {d:?}");
         assert!(d > Duration::from_secs(3), "never waits for a model that is already back: {d:?}");
+    }
+
+    #[test]
+    fn a_free_search_tries_the_strong_screen_models_and_a_few_chat_ones() {
+        // Shaped like NVIDIA's free list in November 2026.
+        let ids: Vec<String> = [
+            "meta/llama-4-maverick-17b-128e-instruct",
+            "google/gemma-4-31b-it",
+            "meta/llama-3.2-90b-vision-instruct",
+            "meta/llama-3.2-11b-vision-instruct",
+            "nvidia/cosmos-nemotron-34b",
+            "google/paligemma",
+            "nvidia/nv-embedqa-e5-v5",
+            "meta/llama-3.3-70b-instruct",
+            "openai/gpt-oss-20b",
+            "z-ai/glm-5.3-flash",
+            "nvidia/nemotron-3.5-bolt-e4b",
+            "qwen/qwen2.5-coder-32b-instruct",
+            "nvidia/llama-3.1-nemoguard-8b-content-safety",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let (vision, chat) = candidates(&ids);
+        assert_eq!(vision.first().map(String::as_str), Some("meta/llama-4-maverick-17b-128e-instruct"), "{vision:?}");
+        assert!(vision.iter().any(|m| m == "google/gemma-4-31b-it"), "{vision:?}");
+        assert!(!vision.iter().any(|m| m.contains("11b")), "tiny screen models aren't offered: {vision:?}");
+        assert!(!vision.iter().chain(&chat).any(|m| m.contains("cosmos") || m.contains("paligemma") || m.contains("embed") || m.contains("safety") || m.contains("coder")), "specialist models aren't chat: {vision:?} {chat:?}");
+        assert!(chat.iter().any(|m| m == "meta/llama-3.3-70b-instruct"), "{chat:?}");
+        assert!(chat.len() <= 3 && vision.len() <= 4, "a short, polite number of tries");
+    }
+
+    #[test]
+    fn an_empty_answer_doesnt_count() {
+        let said = serde_json::json!({ "choices": [{ "message": { "content": " Red. " } }] });
+        assert_eq!(answer_text(&said).as_deref(), Some("Red."));
+        // A "thinking" model that used its whole allowance thinking.
+        let thought = serde_json::json!({ "choices": [{ "message": { "content": "", "reasoning_content": "Let me look…" } }] });
+        assert_eq!(answer_text(&thought), None);
+        assert_eq!(answer_text(&serde_json::json!({ "error": "not found" })), None);
     }
 }
