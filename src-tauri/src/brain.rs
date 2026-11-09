@@ -3337,28 +3337,44 @@ pub fn run_instant(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<Vi
     let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted() && crate::execution::allowed();
     eprintln!("[instant] \"{said}\" → {act:?}");
     let steps = crate::instant::steps(act);
+    // A scroll at the end of a page, or a key with nothing to show, comes back
+    // unconfirmed: it was pressed, but nothing proves it worked, so the reply
+    // says exactly that ("Saved." would be a guess).
+    let mut unconfirmed = false;
     let worked = if steps.is_empty() {
         crate::execution::charge(crate::execution::Work::Action).is_ok() && alive() && crate::instant::run_direct(act)
     } else {
-        // A scroll at the end of a page or a key with nothing to show comes
-        // back unconfirmed: for an instant command it's done as asked.
-        run_steps_blocking(app, store, &steps, &alive).0
-            || STEP_SNAG.lock().take().is_some_and(|why| why.starts_with(crate::ext::UNCONFIRMED))
+        let done = run_steps_blocking(app, store, &steps, &alive).0;
+        unconfirmed = !done && STEP_SNAG.lock().take().is_some_and(|why| why.starts_with(crate::ext::UNCONFIRMED));
+        done
     };
-    if !worked && alive() {
+    if !worked && !unconfirmed && alive() {
         eprintln!("[bug] instant command didn't work: {act:?}");
     }
     // A few acts answer from the PC itself (the clock); their words are made
     // now, not fixed in the parser.
     let answer = crate::instant::spoken(act).unwrap_or_else(|| say.to_string());
+    let summary = if worked {
+        answer
+    } else if unconfirmed {
+        "Done, but nothing on screen changed, so I can't tell if it worked. It may already be at the end, or there was nothing to change.".to_string()
+    } else {
+        "Hmm, that didn't work — try asking me another way?".to_string()
+    };
     Some(VisionPlan {
         steps,
-        summary: if worked { answer } else { "Hmm, that didn't work — try asking me another way?".to_string() },
+        summary,
         provider: "local".into(),
         model: "instant".into(),
-        mood: Some(if worked { "cheerful" } else { "sympathetic" }.into()),
-        done: worked && alive(),
-        outcome: if !alive() { crate::model::TaskOutcome::Cancelled } else if worked { crate::model::TaskOutcome::Partial } else { crate::model::TaskOutcome::Failed },
+        mood: Some(if worked { "cheerful" } else if unconfirmed { "calm" } else { "sympathetic" }.into()),
+        done: (worked || unconfirmed) && alive(),
+        outcome: if !alive() {
+            crate::model::TaskOutcome::Cancelled
+        } else if worked || unconfirmed {
+            crate::model::TaskOutcome::Partial
+        } else {
+            crate::model::TaskOutcome::Failed
+        },
         ..Default::default()
     })
 }

@@ -58,13 +58,21 @@ pub fn is_storage_question(said: &str) -> bool {
     // A cloud drive ("my Google Drive", "OneDrive storage") isn't this PC's
     // disk, unless the PC is named too ("how much space is OneDrive taking
     // on my C drive").
-    let cloud = ["google", "gdrive", "onedrive", "one drive", "dropbox", "icloud", "mega.nz", "box.com"].iter().any(|w| s.contains(w));
+    // (parse turns "box.com" into "box com".)
+    let cloud = ["google", "gdrive", "onedrive", "one drive", "dropbox", "icloud", "mega.nz", "mega nz", "box.com", "box com"].iter().any(|w| s.contains(w));
     let local = ["c drive", "c:", "my pc", "my laptop", "my computer", "this pc", "hard drive", "ssd", "local"].iter().any(|w| s.contains(w));
     if cloud && !local {
         return false;
     }
+    // "My D drive", "the E: drive": any drive letter (not "a drive", "I drive").
+    let words: Vec<&str> = s.split_whitespace().collect();
+    let lettered = words.windows(2).any(|w| {
+        let letter = w[0].trim_end_matches(':');
+        letter.len() == 1 && letter.chars().all(|c| c.is_ascii_alphabetic()) && !matches!(letter, "a" | "i") && (w[1] == "drive" || w[1] == "drives")
+    });
     // "My drive" / "C drive" are the PC's own.
-    let disk = ["storage", "storag", "storaege", "disk", "drive space", "hard drive", "my drive", "c drive", "my drives", "ssd", " gb", " tb", "gigs"]
+    let disk = lettered
+        || ["storage", "storag", "storaege", "disk", "drive space", "hard drive", "my drive", "c drive", "my drives", "ssd", " gb", " tb", "gigs"]
         .iter()
         .any(|w| s.contains(w));
     let space = ["spac"].iter().any(|w| s.contains(w))
@@ -446,6 +454,10 @@ mod tests {
         assert_eq!(parse("how full is my drive on google"), None, "a cloud drive");
         assert_eq!(parse("how much space is left in my google drive"), None);
         assert_eq!(parse("how much space is OneDrive taking on my PC"), Some(Ask::Report), "the PC's disk, named");
+        assert_eq!(parse("how much space is left in my box.com drive"), None, "a cloud drive, dots and all");
+        assert_eq!(parse("how full is my D drive"), Some(Ask::Report), "any drive letter");
+        assert_eq!(parse("how much is left on the E: drive"), Some(Ask::Report));
+        assert_eq!(parse("I need a drive to the airport, how much is left"), None, "not a drive letter");
     }
 
     #[test]

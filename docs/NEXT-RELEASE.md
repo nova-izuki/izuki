@@ -4,9 +4,10 @@ Codex and Freebuff: add one line per change you pushed. Write it in plain
 words for the owner, and put your name in brackets. Claude moves these lines
 into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
 
-- A task cut short by a restart waits for you. Say “keep going” to finish
-  it. A box with the wrong text, or a video that never started, no longer
-  counts as done. [Freebuff]
+- A task that was saved before a restart can be finished: say “keep
+  going” (a saved task expires after six hours). Izuki also checks short
+  typed boxes it can read, and a video that never started, before counting
+  them as done. [Freebuff]
 - Pause now works even while Izuki is still thinking: it holds before the
   first click, tells you the step it stopped at, and Resume continues from
   there. [Freebuff]
@@ -18,7 +19,8 @@ into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
 - The hand chip now shows whether AIR is on, opens a compact hand-gesture
   guide, can stop AIR immediately, and jumps straight to its settings.
   [Freebuff]
-- After scrolling, opening an app or pressing a shortcut, Izuki checks the
-  screen really changed. If it didn't, it looks again before going on.
-  Volume and music keys aren't checked, since they change nothing on
-  screen. [Freebuff]
+- After a scroll or a shortcut, Izuki checks the screen really changed. If
+  it didn't, it looks again before going on, and never presses it twice
+  blindly. After opening an app it notes when nothing new appeared. Volume
+  and music keys aren't checked, since they change nothing on screen.
+  [Freebuff]
