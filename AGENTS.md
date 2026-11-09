@@ -241,16 +241,25 @@ This replaces the two ownership sections below (kept for history).
 - **Plain claims and bridge tasks:**
   - **A plain claim** has no `agent-task` label. The agent bridge never
     touches it: its labels and `Files:` line are for the two of you.
-  - **A bridge task** is labelled `agent-task`. The bridge dispatches it and
-    keeps a hidden state block in the issue body that records the working
-    agent. Never edit that block by hand.
+  - **A bridge task** is labelled `agent-task`. Open it with
+    `status:queued`, never `status:assigned`: the bridge assigns it, writes
+    the hidden state block in the issue body that records the working agent,
+    and dispatches it. Never edit that block by hand.
 - **Taking over a bug:** if you find a bug the other can't get to soon, or
   one in the other's work that you can fix, say so on its issue (or open
   one), then fix it. Never fix the same thing silently in parallel.
   - On a plain claim, move the `agent:` label to yourself.
-  - On a bridge task, move the `agent:` label and set `status:queued`. The
-    bridge then reassigns it by the label and updates its own state, so it
-    won't keep dispatching the task to the other assistant.
+  - A bridge task that is still `queued` or `assigned` (no run started, no
+    PR yet): move the `agent:` label and set `status:queued`. The bridge
+    reassigns it by the label and updates its own state.
+  - A bridge task that is `in-progress` or `review`: don't relabel it. A
+    relabel doesn't stop a run that is already going, and the task keeps its
+    recorded PR or commit, which the bridge could still verify and merge.
+    Agree on the issue first. Then:
+    1. The run's owner stops the run.
+    2. Its PR is closed without merging.
+    3. The issue is closed with "taken over in #N".
+    4. The work continues in a new issue.
 - **Branches:** each assistant works in its own worktree and branch
   (`claude/…`, `freebuff/…`), never in the other's. A PR goes into
   `milestone-196` and merges only with CI green and every review thread
