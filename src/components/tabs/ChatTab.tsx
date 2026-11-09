@@ -18,7 +18,7 @@ import { AirToggle } from "../AirToggle";
 import { brainReady } from "../../lib/setup";
 import { attachmentContext, CHAT_FILE_TYPES, keepDocumentText, readChatFile, type ChatAttachment } from "../../lib/attachments";
 import { rememberPrompt } from "../../lib/recentPrompts";
-import { chatTitle, orderSessions, pinSession, rememberSession, removeSession, searchSessions, timeAgo, type ChatSession } from "../../lib/chatHistory";
+import { chatTitle, orderSessions, pinSession, rememberSession, removeSession, searchSessions, startingMessages, timeAgo, type ChatSession, type LiveCopy } from "../../lib/chatHistory";
 import { looksLikeDirections, needsApps, opensAnApp, recentHistory, shareHistory } from "../../lib/conversation";
 
 /**
@@ -111,8 +111,9 @@ const NEEDS_BRAIN = /no chat-capable brain|add an api key|key was rejected|rejec
 const FIRST_WORDS_MS = 45_000;
 
 const KEY = "izuki.chat.v1";
-/** When the live chat was last written (ms): which copy is newer at start. */
-const LIVE_AT_KEY = "izuki.chat.v1.at";
+/** The last write number given to either copy of the open chat (LiveCopy). */
+let lastRev = 0;
+const nextRev = () => ++lastRev;
 const KEEP = 60;
 const SCREEN = /^\s*\[?SCREEN\]?\s*$/i;
 
@@ -405,12 +406,20 @@ function tidy(msgs: Msg[]): Msg[] {
     );
 }
 
-function load(): Msg[] {
+/** The open chat as saved, with its write number and whose it is. */
+function loadLive(): LiveCopy<Msg> {
   try {
-    const raw = localStorage.getItem(KEY);
-    return tidy(clean(raw ? JSON.parse(raw) : []));
+    const raw: unknown = JSON.parse(localStorage.getItem(KEY) || "[]");
+    // An old save is the bare list.
+    if (Array.isArray(raw)) return { rev: 0, messages: tidy(clean(raw)) };
+    const saved = (raw ?? {}) as { rev?: unknown; session?: unknown; messages?: unknown };
+    return {
+      rev: typeof saved.rev === "number" && Number.isFinite(saved.rev) ? saved.rev : 0,
+      session: typeof saved.session === "string" ? saved.session : undefined,
+      messages: tidy(clean(saved.messages ?? [])),
+    };
   } catch {
-    return [];
+    return { rev: 0, messages: [] };
   }
 }
 
@@ -443,9 +452,9 @@ function failure(e: unknown): Unsaved {
 /** The live chat; null when kept. (Private mode or full: the chat still works, it just isn't kept.) */
 function save(msgs: Msg[]): Unsaved | null {
   try {
-    localStorage.setItem(KEY, JSON.stringify(storedMessages(msgs)));
-    // Stamped after the chat itself, so a stamp never vouches for a write that failed.
-    localStorage.setItem(LIVE_AT_KEY, String(Date.now()));
+    // One write: the messages, their write number and whose they are
+    // together, so a copy is never half-saved.
+    localStorage.setItem(KEY, JSON.stringify({ rev: nextRev(), session: chatSessionId, messages: storedMessages(msgs) }));
     return null;
   } catch (e) {
     return failure(e);
@@ -465,7 +474,8 @@ function readRecent(): RecentChat[] {
       if (!messages.some((m) => m.role === "user" && m.content.trim())) continue;
       const at = typeof saved.at === "number" && Number.isFinite(saved.at) ? saved.at : Date.now();
       const title = typeof saved.title === "string" && saved.title.trim() ? saved.title : chatTitle(messages);
-      out.push({ id: saved.id, title, at, messages, pinned: saved.pinned === true });
+      const rev = typeof saved.rev === "number" && Number.isFinite(saved.rev) ? saved.rev : undefined;
+      out.push({ id: saved.id, title, at, messages, pinned: saved.pinned === true, rev });
     }
     return orderSessions(out);
   } catch {
@@ -494,20 +504,11 @@ let recentMem: RecentChat[] = readRecent();
 /** Writes that didn't go through, for each copy: the live chat and the list. */
 const unsavedNow: { live: Unsaved | null; recent: Unsaved | null } = { live: null, recent: null };
 let chatMsgs: Msg[] = (() => {
-  const live = load();
-  // Whichever copy was written last wins: the live chat missed a write
-  // that Recent chats got (storage was full), so Recent's is newer; a
-  // chat cleared on purpose is a newer, empty live copy and stays clear.
-  // Before stamps existed the live copy always won, as it always had.
-  let liveAt = Number.POSITIVE_INFINITY;
-  try {
-    const at = Number(localStorage.getItem(LIVE_AT_KEY));
-    if (at > 0) liveAt = at;
-  } catch {
-    /* storage is optional */
-  }
-  const kept = recentMem.find((c) => c.id === chatSessionId);
-  return kept && kept.at > liveAt ? kept.messages : live;
+  const live = loadLive();
+  // Write numbers carry on from the highest one saved.
+  lastRev = Math.max(0, live.rev, ...recentMem.map((c) => c.rev ?? 0));
+  // The newer copy of this chat (chatHistory.ts says which and why).
+  return startingMessages(live, chatSessionId, recentMem.find((c) => c.id === chatSessionId));
 })();
 let chatBusy = false;
 const chatSubs = new Set<() => void>();
@@ -608,7 +609,7 @@ export function ChatTab() {
     const stored = storedMessages(chatMsgs);
     const existing = recentRef.current.find((s) => s.id === chatSessionId);
     if (!unsavedWhy() && existing && JSON.stringify(existing.messages) === JSON.stringify(stored)) return;
-    commitRecent(rememberSession(recentRef.current, chatSessionId, chatTitle(chatMsgs), stored));
+    commitRecent(rememberSession(recentRef.current, chatSessionId, chatTitle(chatMsgs), stored, Date.now(), nextRev()));
   }, [commitRecent]);
   useEffect(() => {
     if (!msgs.length) return;
