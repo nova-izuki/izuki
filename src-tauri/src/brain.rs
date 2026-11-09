@@ -4837,9 +4837,10 @@ fn is_keep_going(said: &str) -> bool {
 }
 
 /// Just the command, nothing after it ("keep going", not "continue reading
-/// my essay"): what a checkpoint from an earlier run needs.
+/// my essay"): what a checkpoint from an earlier run needs. "Go ahead" and
+/// "go on" are left out: they're also how people say yes to something else.
 fn is_bare_keep_going(said: &str) -> bool {
-    KEEP_GOING.contains(&keep_going_words(said).as_str())
+    KEEP_GOING.contains(&keep_going_words(said).as_str()) && !is_yes(said)
 }
 
 const KEEP_GOING: [&str; 11] = [
@@ -5702,6 +5703,8 @@ mod speed_tests {
         assert!(!is_bare_keep_going("continue reading my essay"));
         assert!(!is_bare_keep_going("go ahead and send it to Sam"));
         assert!(!is_bare_keep_going("yes"));
+        assert!(!is_bare_keep_going("go ahead"), "also a yes to something else");
+        assert!(!is_bare_keep_going("Go on."), "also a yes to something else");
     }
 
     #[test]

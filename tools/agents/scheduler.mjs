@@ -216,7 +216,8 @@ export function score(stats, agent, kind) {
  *
  * Known gap: `rate` and `time` both come from the same completion minutes
  * (rate = 60 / mean time), so today speed really carries 0.45. Before
- * WEIGHTED_ASSIGNMENT is turned on, `rate` must count verified tasks per
+ * weighted assignment is turned on either way (WEIGHTED_ASSIGNMENT, or
+ * BRIDGE_WEIGHTED=1 in the environment), `rate` must count verified tasks per
  * hour of all working time, failed attempts included (docs/INTEGRATION.md).
  */
 export const WEIGHTS = { rate: 0.30, firstTry: 0.20, time: 0.15, quality: 0.15, rework: 0.10, regressions: 0.05, wait: 0.03, cost: 0.02 };
