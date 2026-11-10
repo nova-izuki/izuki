@@ -48,6 +48,7 @@ fn language_hint(choice: &str) -> (&'static str, &'static str) {
 
 fn client() -> Result<reqwest::blocking::Client> {
     Ok(reqwest::blocking::Client::builder()
+        .redirect(crate::transport::redirects())
         .timeout(Duration::from_secs(8))
         .connect_timeout(Duration::from_secs(3))
         .build()?)

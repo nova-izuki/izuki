@@ -514,6 +514,7 @@ fn client() -> Result<reqwest::blocking::Client> {
     // Bounded so a stuck cloud call can't freeze "thinking" for long — the
     // agent checks for a stop between calls, so shorter here means a faster stop.
     let built = reqwest::blocking::Client::builder()
+        .redirect(crate::transport::redirects())
         // A screen step is quick or it's stuck: give up and let the next brain
         // answer. Twenty seconds, not fourteen: a free vision model on a busy
         // day routinely needs 12–18 s to *start* describing a picture, and the
@@ -1003,6 +1004,7 @@ fn ask_ollama(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Result
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(240))
         .connect_timeout(Duration::from_secs(4))
+        .redirect(crate::transport::redirects())
         .build()
         .context("could not start the HTTP client")?;
     let send = |with_image: bool| -> Result<(reqwest::StatusCode, Value)> {

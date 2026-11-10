@@ -258,6 +258,7 @@ fn gemini_speak(settings: &Settings, c: &reqwest::blocking::Client, text: &str, 
 
 fn client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
+        .redirect(crate::transport::redirects())
         .connect_timeout(Duration::from_secs(8))
         .timeout(Duration::from_secs(40))
         .build()

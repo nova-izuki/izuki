@@ -1711,6 +1711,7 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
         }
     }
     let client = reqwest::blocking::Client::builder()
+        .redirect(crate::transport::redirects())
         .connect_timeout(Duration::from_secs(6))
         .timeout(if deep && !cfg.on_this_pc() { Duration::from_secs(150) } else { reply_timeout(cfg) })
         .build()?;

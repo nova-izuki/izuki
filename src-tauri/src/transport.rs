@@ -11,17 +11,56 @@ use crate::settings::ProviderConfig;
 
 /// Whether a key may be sent to `base_url`: https anywhere, plain http only
 /// to this PC. An empty address is the provider's own built-in one (https).
+/// Parsed the way a browser parses it (the Settings warning does the same),
+/// so "http://127.1", "http://[::1]/v1" and "http://user@evil.example" read
+/// as what they really are.
 pub fn key_may_go(base_url: &str) -> bool {
-    let url = base_url.trim().to_ascii_lowercase();
-    url.is_empty() || url.starts_with("https://") || (url.starts_with("http://") && crate::brain::on_this_pc(base_url.trim()))
+    let t = base_url.trim();
+    if t.is_empty() {
+        return true;
+    }
+    let Ok(url) = reqwest::Url::parse(t) else { return false };
+    match url.scheme() {
+        "https" => true,
+        "http" => this_pc(url.host_str().unwrap_or("")),
+        _ => false,
+    }
 }
 
-/// The plain-words refusal for a key that would travel unencrypted.
+/// A host name that is this PC: "localhost", or a loopback or unspecified
+/// address (brackets around IPv6 allowed).
+fn this_pc(host: &str) -> bool {
+    let h = host.trim_start_matches('[').trim_end_matches(']');
+    h.eq_ignore_ascii_case("localhost")
+        || h.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified())
+}
+
+/// Redirects for clients that carry keys: followed only to where a key may
+/// go. An https endpoint that redirects to plain http elsewhere stops there
+/// (the request fails) rather than forwarding the key headers unencrypted.
+pub fn redirects() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        if attempt.previous().len() >= 10 {
+            attempt.error("too many redirects")
+        } else if key_may_go(attempt.url().as_str()) {
+            attempt.follow()
+        } else {
+            attempt.stop()
+        }
+    })
+}
+
+/// The plain-words refusal for a key that would travel unencrypted. (No
+/// "network" in it: that word reads as a passing outage to the brain race,
+/// which would retry instead of saying what to change.)
 pub fn refusal(label: &str) -> String {
     format!(
-        "{label}'s address starts with http://, so its key would cross the network unencrypted. Use its https:// address (Settings → Izuki's brain → Endpoint)."
+        "{label}'s address isn't encrypted (http://) and isn't on this PC, so Izuki won't send its key there. Use its https:// address (Settings → Izuki's brain → Endpoint)."
     )
 }
+
+/// Words that mark a refusal from `refusal`, for error handling.
+pub const REFUSED: &str = "won't send its key there";
 
 /// Refuse, in plain words, a request that would send `cfg`'s key unencrypted
 /// across the network. A provider without a key always passes.
@@ -52,6 +91,14 @@ mod tests {
         assert!(!key_may_go("http://127.example.com/v1"), "a name that only looks local");
         assert!(!key_may_go("http://api.example.com/v1"));
         assert!(!key_may_go("ftp://api.example.com"), "only http(s)");
+        // Read the way a browser reads them.
+        assert!(key_may_go("http://[::1]/v1"), "IPv6 loopback, no port");
+        assert!(key_may_go("http://[::1]:20128/v1"));
+        assert!(key_may_go("http://127.1:11434"), "short IPv4 is 127.0.0.1");
+        assert!(!key_may_go("http://user@evil.example/v1"), "userinfo isn't the host");
+        assert!(!key_may_go("http://127.0.0.1@evil.example/v1"));
+        assert!(!key_may_go("http:\\\\evil.example\\v1"), "backslashes");
+        assert!(!key_may_go("http://localhost.evil.example/v1"));
     }
 
     #[test]
@@ -62,5 +109,6 @@ mod tests {
         assert!(check_key_route(&cfg("http://localhost:1234/v1", "sk-123")).is_ok());
         let said = check_key_route(&cfg("http://api.example.com/v1", "sk-123")).unwrap_err().to_string();
         assert!(said.contains("https://") && !said.contains("sk-123"), "plain, and never repeats the key: {said}");
+        assert!(said.contains(REFUSED) && !said.contains("network"), "never read as an outage: {said}");
     }
 }
