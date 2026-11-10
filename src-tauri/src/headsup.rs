@@ -126,7 +126,7 @@ fn set_reason(app: &AppHandle, st: &mut State, why: &str) {
     eprintln!("[headsup] idle: {why}");
     let _ = app.emit(
         crate::events::STATUS,
-        StatusEvent { kind: "info", message: "Heads-ups are on but can't run yet".into(), detail: Some(why.to_string()) },
+        StatusEvent { kind: "info", message: "Heads-ups are on — one more step needed".into(), detail: Some(why.to_string()) },
     );
 }
 
@@ -332,6 +332,11 @@ pub struct InboxDigest {
     /// How many emails were looked at, and how many were just noise.
     pub looked_at: usize,
     pub skipped: usize,
+    /// Addresses actually searched and any that could not be opened.
+    #[serde(default)]
+    pub checked: Vec<String>,
+    #[serde(default)]
+    pub failed: Vec<(String, String)>,
 }
 
 static DIGEST: Mutex<Option<(InboxDigest, Instant)>> = Mutex::new(None);
@@ -366,7 +371,7 @@ pub fn inbox_digest(fresh: bool) -> anyhow::Result<InboxDigest> {
         })
         .collect();
     if mails.is_empty() {
-        let d = InboxDigest { summary: format!("Your inbox is quiet — nothing new in the last few days.{coverage}"), ..Default::default() };
+        let d = InboxDigest { summary: format!("Your inbox is quiet — nothing new in the last few days.{coverage}"), checked: found.checked.clone(), failed: found.failed.clone(), ..Default::default() };
         *DIGEST.lock() = Some((d.clone(), Instant::now()));
         return Ok(d);
     }
@@ -380,6 +385,8 @@ pub fn inbox_digest(fresh: bool) -> anyhow::Result<InboxDigest> {
         json!({ "role": "user", "content": format!("Today is {}.\nEmails:\n{list}", chrono::Local::now().format("%A %-d %B %Y")) }),
     ])?;
     let mut d = parse_digest(&reply).unwrap_or_else(|| InboxDigest { summary: reply.trim().chars().take(400).collect(), ..Default::default() });
+    d.checked = found.checked.clone();
+    d.failed = found.failed.clone();
     d.summary.push_str(&coverage);
     d.looked_at = mails.len();
     d.skipped = mails.len().saturating_sub(d.items.len());
@@ -391,7 +398,8 @@ const DIGEST_PROMPT: &str = "You go through the user's recent emails like a shar
 Pick ONLY the ones that matter to them as a person: someone waiting for a reply, money (bills, payments, \
 refunds, invoices, bank), deliveries, school or work tasks and deadlines, meetings and appointments, \
 security alerts about their accounts, and personal messages from real people. Skip newsletters, marketing, \
-receipts with nothing to do, and automated noise. For each one that matters, write the real to-do in plain \
+receipts with nothing to do, and automated noise, including AI-assistant product notifications that don't \
+ask you to do anything real. For each one that matters, write the real to-do in plain \
 words with any date or amount (\"Pay the £42 electric bill by Friday\", \"Reply to Sam about Saturday's \
 shift\"). Reply with ONLY JSON: {\"summary\": \"one or two friendly spoken sentences about what matters most\", \
 \"items\": [{\"from\": \"name\", \"subject\": \"subject\", \"kind\": \"reply|money|delivery|school|work|meeting|security|personal\", \
@@ -403,7 +411,7 @@ fn parse_digest(reply: &str) -> Option<InboxDigest> {
     let b = reply.rfind('}')?;
     let v: Value = serde_json::from_str(&reply[a..=b]).ok()?;
     let items: Vec<InboxItem> = v["items"].as_array().map(|arr| arr.iter().filter_map(|x| serde_json::from_value(x.clone()).ok()).take(8).collect()).unwrap_or_default();
-    Some(InboxDigest { summary: v["summary"].as_str().unwrap_or("").trim().to_string(), items, looked_at: 0, skipped: 0 })
+    Some(InboxDigest { summary: v["summary"].as_str().unwrap_or("").trim().to_string(), items, ..Default::default() })
 }
 
 /// "What's important in my email?", "go through my inbox", "anything I need to do in my email?"

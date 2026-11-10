@@ -11,15 +11,18 @@ unfinished ships just because it exists.
 
 Last updated: 2026-11-08 (Claude): PRs #33, #35 and #36 merged; 1.0.198 prepared in release PR #38. It counts as released only after the post-merge checks in the checklist below pass.
 
-## Lanes (owner, 2026-11-08)
+## Who does what (owner, 2026-11-08, latest)
 
-- **Claude Code:** Eye Control (tracking, calibration, cursor, emergency
-  stop, real Windows testing); the agent bridge (`tools/agents/`); releases
-  and version files.
-- **Freebuff:** everything else in the product, including computer control,
-  Smart Screen Actions, browser and application control, documents, Smart
-  Vision, Developer Mode, design and Chat. It works on `freebuff/continuation`.
-- **Codex:** its assigned tasks, when available.
+- **Two developers:** Claude Code and Freebuff. Either may work on any part
+  of Izuki. Ownership is per GitHub issue, not per area. Claim an issue
+  before starting, and agree on its comments before touching files the
+  other holds (AGENTS.md, "Two developers, one app").
+- **Claude Code:** Eye Control first. Claude is also the release
+  coordinator: version files and release notes.
+- **Freebuff:** works on `freebuff/continuation` (or its own `freebuff/…`
+  branches).
+- **Codex:** paused. Don't assign it work. Its finished work is merged and
+  listed below.
 
 ## Work
 
@@ -39,10 +42,25 @@ Last updated: 2026-11-08 (Claude): PRs #33, #35 and #36 merged; 1.0.198 prepared
 | Robot hand only during actions (#27) | Codex | `main` (1.0.197) | released | CI; native host assertions | shipped |
 | Codex fallback foundation (#28) | Codex | `main` (1.0.197) | released | `contract.test.mjs` 10/10 | shipped |
 
+## Next, after 1.0.198 (claimed on GitHub)
+
+| Issue | Owner | Area |
+| --- | --- | --- |
+| #40 Eye Control: recover when the camera is switched, unplugged or busy | Claude | Eye |
+| #41 Eye Control: steady eye cursor when the head moves after calibration | Claude | Eye |
+| #42 Eye Control: first-run guide (stop key, calibration, preview) | Claude | Eye, Settings UI |
+| #43 Eye Control: supervised accuracy session, then the eye lane may move the mouse | Claude + owner | Eye (blocked on the owner) |
+| #44 AIR Control (hand): press-and-hold, drag and tracking-loss reliability | Claude | AIR |
+| #18 Smart Screen Actions: check the result of scrolling, opening and shortcuts | Freebuff | computer automation |
+| #32 Skip YouTube ads through the extension | Freebuff | browser |
+| #37 Minor review findings from PRs #35 and #38 | Freebuff | Chat, design |
+
+Not claimed yet, for whichever developer gets there first (open an issue to claim it): Chat reliability beyond #37 (streaming errors, retries, long chats), application performance (startup, idle CPU, the Settings page), and UI/UX polish outside Eye Control.
+
 ## Outstanding
 
-- **Supervised Eye accuracy session** (owner and Claude). Real camera: calibrate, run the 5-dot check, try the stop key, the Stop button, a voice stop and mouse takeover. If it passes, set `airsafe::EYE_MOUSE_RELEASED = true`.
-- **Hand overlay: the native window-switch step** (Codex's #27). Run `node tools/hand-overlay-check.cjs --native` from the owner's own terminal. A background terminal can't take the foreground.
+- **Supervised Eye accuracy session** (owner and Claude, #43). Real camera: calibrate, run the 5-dot check, try the stop key, the Stop button, a voice stop and mouse takeover. If it passes, set `airsafe::EYE_MOUSE_RELEASED = true`.
+- **Hand overlay: the native window-switch step** (#27, taken over by Claude; Codex is paused). From the owner's own terminal (a background terminal can't take the foreground), in `src-tauri`: `$env:IZUKI_TEST_MANIFEST=1; cargo build --example hand_overlay_probe`, then from the repo root `$env:IZUKI_HAND_TEST_HOST="$PWD\src-tauri\target\debug\examples\hand_overlay_probe.exe"; node tools/hand-overlay-check.cjs --native` (PowerShell; the manifest switch is needed or the probe can't start, see docs/VALIDATION-HAND-OVERLAY-2026-11-03.md).
 - **Scheduler weights (Claude, bridge):** `rate` and `time` come from the same minutes, so speed carries 0.45, not 0.30. Measure `rate` over all working time (failed attempts included) before weighted assignment is turned on (`WEIGHTED_ASSIGNMENT` or `BRIDGE_WEIGHTED=1`).
 - **#37** (PR #35's nine minor review findings: Chat recents focus, reduced motion, design-study wording, ownership notes): in Freebuff's queue, not release blockers.
 - **#18** (Smart Screen Actions: check results) and **#32** (YouTube ad skip): in Freebuff's queue. #18 has unverified earlier work on `agent/claude-18-1`.

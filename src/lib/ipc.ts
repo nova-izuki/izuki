@@ -476,6 +476,10 @@ export interface InboxDigest {
   items: InboxItem[];
   looked_at: number;
   skipped: number;
+  /** Gmail addresses that were actually searched. */
+  checked: string[];
+  /** Accounts that could not be opened, with the reason. */
+  failed: Array<[string, string]>;
 }
 /** A routine (routines.rs). */
 export interface Routine {
@@ -509,7 +513,7 @@ export interface IslandVitals {
 export interface MailAccount {
   id: string;
   address: string;
-  /** "ok", "needs_sign_in", "error". */
+  /** "ok", "needs_sign_in", "unfinished", "error". */
   state: string;
   note?: string;
 }
@@ -731,6 +735,33 @@ export interface CodingUpdate {
 }
 
 /** A Windows tweak (tweaks.rs): a switch, read live from Windows. */
+/** A mood in plain words, matched to a look (winlook::vibe). */
+export interface LookVibe {
+  preset: string;
+  name: string;
+  /** A tweak pack that suits it ("gamer", "clean", "power"). */
+  pack: string | null;
+  /** The word that decided it. */
+  word: string;
+}
+
+/** A Windhawk mod worth starting with (windhawk.rs). */
+export interface WindhawkMod {
+  id: string;
+  name: string;
+  what: string;
+  win11: boolean;
+}
+
+export interface WindhawkStatus {
+  installed: boolean;
+  path: string | null;
+  can_install: boolean;
+  mods: WindhawkMod[];
+  /** An install started earlier is still running. */
+  installing: boolean;
+}
+
 export interface WindowsTweak {
   id: string;
   label: string;
@@ -928,6 +959,8 @@ export const api = {
   airPointer: (nx: number, ny: number, eye = false) => call<void>("air_pointer", { nx, ny, eye }, () => undefined),
   /** Air and Eye control's emergency stop: held input let go, Air saved as off. */
   airStop: () => call<void>("air_stop", undefined, () => undefined),
+  /** Let go of held Air input without stopping Air (leaving Eye for Hand). */
+  airRelease: () => call<void>("air_release", undefined, () => undefined),
   /** The person is turning Air on: re-arm after an emergency stop. Call before the setting. */
   airArm: () => call<void>("air_arm", undefined, () => undefined),
   /** Resume the eye pointer after a pause (never undoes an emergency stop). */
@@ -966,7 +999,15 @@ export const api = {
   /** Hold a key down / let it go (Air control's game controls). */
   airHold: (key: string, down: boolean) => call<void>("air_hold", { key, down }, () => undefined),
   /** What Izuki is really doing right now, in words. */
-  inboxDigest: (fresh: boolean) => call<InboxDigest>("inbox_digest", { fresh }, () => ({ summary: "", items: [], looked_at: 0, skipped: 0 })),
+  inboxDigest: (fresh: boolean) =>
+    call<InboxDigest>("inbox_digest", { fresh }, () => ({
+      summary: "",
+      items: [],
+      looked_at: 0,
+      skipped: 0,
+      checked: [],
+      failed: [],
+    })),
   sentHistory: () => call<SentItem[]>("sent_history", undefined, () => []),
   /** The Island's Vitals tab (vitals.rs): measured, never estimated. */
   islandVitals: () =>
@@ -1023,6 +1064,17 @@ export const api = {
   tweakSet: (id: string, on: boolean) => call<WindowsTweak[]>("tweak_set", { id, on }, () => []),
   looksStatus: () => call<LooksStatus | null>("looks_status", undefined, () => null),
   lookApply: (id: string, wallpaper: boolean) => call<LooksStatus | null>("look_apply", { id, wallpaper }, () => null),
+  /** The look for a mood in plain words ("cozy", "cyberpunk"); null when none fits. */
+  lookVibe: (text: string) => call<LookVibe | null>("look_vibe", { text }, () => null),
+  /** Arrange this screen's windows: "side", "focus", "columns" or "grid". */
+  windowLayout: (kind: "side" | "focus" | "columns" | "grid") => call<string>("window_layout", { kind }, () => "Arranging windows works in the Windows app."),
+  windowLayoutUndo: () => call<string>("window_layout_undo", undefined, () => ""),
+  /** An arrangement (made here or by voice) can be put back. */
+  windowLayoutCanUndo: () => call<boolean>("window_layout_can_undo", undefined, () => false),
+  windhawkStatus: () => call<WindhawkStatus>("windhawk_status", undefined, () => ({ installed: false, path: null, can_install: false, mods: [], installing: false })),
+  windhawkInstall: () => call<WindhawkStatus>("windhawk_install", undefined, () => ({ installed: false, path: null, can_install: false, mods: [], installing: false })),
+  windhawkOpen: () => call<void>("windhawk_open", undefined, () => undefined),
+  windhawkMod: (id: string) => call<void>("windhawk_mod", { id }, () => undefined),
   lookAccent: (colour: string) => call<LooksStatus | null>("look_accent", { colour }, () => null),
   lookSwitch: (name: string, on: boolean) => call<LooksStatus | null>("look_switch", { name, on }, () => null),
   lookUndo: () => call<LooksStatus | null>("look_undo", undefined, () => null),
@@ -1231,6 +1283,10 @@ export const api = {
   setBusy: (busy: boolean) => call<void>("set_busy", { busy }, () => undefined),
   /** Stop the task in progress (no more clicks, no late answer). */
   cancelTask: () => call<void>("cancel_task", undefined, () => undefined),
+  /** Pause after the current step; Resume continues the same plan. */
+  pauseTask: () => call<boolean>("pause_task", undefined, () => false),
+  /** Resume a paused task; false when nothing was paused. */
+  resumeTask: () => call<boolean>("resume_task", undefined, () => false),
   /** Developer self-test mode (IZUKI_SELFTEST=1). */
   selftestEnabled: () => call<string>("selftest_enabled", undefined, () => ""),
   /** Open a file Izuki made (the "Open" button on a result card). */

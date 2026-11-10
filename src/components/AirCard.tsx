@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Eye, Hand, Trash2 } from "lucide-react";
 import { Row, Section, Toggle } from "./ui";
 import { AIR_ACTIONS, AIR_SLOTS, airBindings } from "../lib/airActions";
@@ -95,6 +95,8 @@ function EyeStopPanel({ stopKey }: { stopKey: string }) {
 export function AirCard() {
   const settings = useIzuki((s) => s.settings);
   const patch = useIzuki((s) => s.patchSettings);
+  /** A mode switch is letting go of Eye's input: a second tap waits for it. */
+  const switching = useRef(false);
   const select = "izk-field izk-no-drag max-w-[190px] py-1 text-[11.5px]";
   const [cams, setCams] = useState<MediaDeviceInfo[]>([]);
   const [cam, setCam] = useState<string>(savedCamera() ?? "");
@@ -172,7 +174,19 @@ export function AirCard() {
       disabled={disabled}
       aria-pressed={key === mode}
       title={disabled ? "Available only after Hand and Eye have each been verified on your camera." : hint}
-      onClick={() => (key === "hand" || key === "eye") && patch({ air_control_mode: key })}
+      onClick={async () => {
+        if ((key !== "hand" && key !== "eye") || switching.current) return;
+        switching.current = true;
+        try {
+        // Leaving Eye lets go of anything it holds first, then Hand takes
+        // over. Not the emergency stop: that saves Air as off, and the person
+        // only changed mode.
+        if (mode === "eye" && key === "hand") await api.airRelease().catch(() => undefined);
+        patch({ air_control_mode: key });
+        } finally {
+          switching.current = false;
+        }
+      }}
       className={`izk-no-drag flex min-h-[58px] flex-col items-center justify-center gap-0.5 rounded-xl border px-2 py-1.5 text-center transition-colors ${
         key === mode
           ? "border-izk-teal/70 bg-izk-teal/15 text-izk-ink"

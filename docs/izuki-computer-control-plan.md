@@ -140,10 +140,20 @@ On `freebuff/continuation`:
   success, and a YouTube search that did not start playback is a failure.
 - `brain.rs` feeds those failures back as recoverable snags, so the next look
   can fix the field or choose a real result instead of claiming completion.
+- Pause/Resume is now real: Pause finishes the current step, then waits before
+  the next action; Resume continues the same plan, and Stop still cancels and
+  clears the checkpoint. It is exposed in the existing task card.
+- Every glide now proves where it ended: a move that Windows clamps to another
+  pixel fails instead of clicking, scrolling, dragging or drawing there. (A
+  stroke's points in between are placed with the button held and aren't
+  checked one by one.)
+  Off-screen drag/stroke points are rejected before the mouse button goes down.
+  Wheel errors are no longer swallowed, and a failed modifier press releases
+  the modifiers already held.
 - Regression tests cover checkpoint round trips, corruption and bounds; the
   recoverable-failure test is written but its execution is still pending
   because the running app held the shared test target lock.
 
-Still not implemented: a full persisted step graph, task-level pause/resume
-controls for interactive runs, a durable idempotency ledger, scroll/key/app
-postconditions beyond the existing checks, and the task activity panel.
+Still not implemented: a full persisted step graph, a durable idempotency
+ledger, and the task activity panel. (Pause/Resume and the scroll, shortcut and
+open result checks are in; after a Resume the agent takes a fresh look first.)

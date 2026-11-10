@@ -12,7 +12,7 @@ use crate::brain;
 use crate::capture;
 use crate::events;
 use crate::ghost::{self, Prediction};
-use crate::model::{DesktopBounds, DrawSession, Flow, VisionPlan, Watcher};
+use crate::model::{DesktopBounds, DrawSession, Flow, StatusEvent, VisionPlan, Watcher};
 use crate::overlay;
 use crate::settings::{ProviderId, Settings};
 use crate::state;
@@ -539,7 +539,11 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         .await
         .ok();
     }
-    // Windows looks: "make my PC look Nova", "undo the look", "accent colour red" (winlook.rs).
+    // Window layouts: "put my windows side by side", "undo the layout" (arrange.rs).
+    if let Some(ask) = crate::arrange::parse(&said) {
+        return blocking(move || crate::arrange::handle(ask)).await.ok();
+    }
+    // Windows looks: "make my PC look Nova", "make it cozy", "undo the look", "accent colour red" (winlook.rs).
     if let Some(ask) = crate::winlook::parse(&said) {
         return blocking(move || crate::winlook::handle(ask)).await.ok();
     }
@@ -828,6 +832,42 @@ pub fn set_busy(app: AppHandle, busy: bool) {
 pub fn cancel_task() {
     brain::cancel_task();
     crate::composio::stop();
+}
+
+/// Pause after the step currently running. If Izuki is still planning and has
+/// not touched the screen yet, the pause is queued and applied before the
+/// first click or key press.
+#[tauri::command]
+pub fn pause_task(app: AppHandle) -> bool {
+    let active = brain::has_active_steps();
+    if !brain::pause_task() {
+        // Replace a stale "working" card rather than leave a dead button.
+        let _ = app.emit(events::STATUS, StatusEvent::info("Nothing to pause right now."));
+        return false;
+    }
+    let _ = app.emit(
+        events::STATUS,
+        if active {
+            StatusEvent::working("Pausing after this step…")
+        } else {
+            StatusEvent::info("Paused")
+        },
+    );
+    true
+}
+
+/// Resume the paused plan from the next step, including a pause that was
+/// waiting for the first step. Stop remains available and always cancels.
+#[tauri::command]
+pub fn resume_task(app: AppHandle) -> bool {
+    if !brain::resume_task() {
+        // The task ended while it was paused (an answer with no steps): the
+        // "Paused" card must not stay up with a Resume that does nothing.
+        let _ = app.emit(events::STATUS, StatusEvent::info("Nothing was paused."));
+        return false;
+    }
+    let _ = app.emit(events::STATUS, StatusEvent::working("Continuing…"));
+    true
 }
 
 /// Self-test mode (developer only): launched with IZUKI_SELFTEST=1, the
@@ -1758,6 +1798,57 @@ pub async fn look_apply(id: String, wallpaper: bool) -> R<crate::winlook::Status
     blocking(move || crate::winlook::apply(&id, wallpaper).map_err(|e| e.to_string())).await?
 }
 
+/// The look for a mood in plain words ("cozy", "cyberpunk"), to preview
+/// before applying it. `None` when no mood word is in the text.
+#[tauri::command]
+pub fn look_vibe(text: String) -> Option<crate::winlook::Vibe> {
+    crate::winlook::vibe(&text)
+}
+
+/// Arrange the windows on this screen: "side", "focus", "columns" or "grid"
+/// (arrange.rs). Says what moved.
+#[tauri::command]
+pub async fn window_layout(kind: String) -> R<String> {
+    let kind = crate::arrange::Kind::from_id(&kind).ok_or("unknown layout")?;
+    blocking(move || crate::arrange::apply(kind).map_err(|e| e.to_string())).await?
+}
+
+/// Is there a window arrangement to put back (by button or by voice)?
+#[tauri::command]
+pub fn window_layout_can_undo() -> bool {
+    crate::arrange::can_undo()
+}
+
+/// Put the last arranged windows back.
+#[tauri::command]
+pub async fn window_layout_undo() -> R<String> {
+    blocking(|| crate::arrange::undo().map_err(|e| e.to_string())).await?
+}
+
+/// Is Windhawk installed, can it be, and the mods worth starting with.
+#[tauri::command]
+pub async fn windhawk_status() -> R<crate::windhawk::Status> {
+    blocking(crate::windhawk::status).await
+}
+
+/// Install Windhawk with winget (the person pressed Install; Windows asks too).
+#[tauri::command]
+pub async fn windhawk_install() -> R<crate::windhawk::Status> {
+    blocking(|| crate::windhawk::install().map_err(|e| e.to_string())).await?
+}
+
+#[tauri::command]
+pub async fn windhawk_open() -> R<()> {
+    blocking(|| crate::windhawk::open().map_err(|e| e.to_string())).await?
+}
+
+/// A listed mod's page on windhawk.net, in the browser.
+#[tauri::command]
+pub async fn windhawk_mod(id: String) -> R<()> {
+    let url = crate::windhawk::mod_page(&id).map_err(|e| e.to_string())?;
+    blocking(move || crate::apps::open_url(&url).map_err(|e| e.to_string())).await?
+}
+
 /// Just the accent colour ("#rrggbb").
 #[tauri::command]
 pub async fn look_accent(colour: String) -> R<crate::winlook::Status> {
@@ -1866,6 +1957,15 @@ pub fn air_scroll(amount: i32) -> R<()> {
 #[tauri::command]
 pub fn air_stop() {
     crate::airsafe::stop("Stop button");
+}
+
+/// Let go of anything Air is holding (a pressed button, a held key) without
+/// the emergency stop's latch: switching from Eye to Hand mode, where Air
+/// stays on. The stop itself (`air_stop`) also saves Air as off.
+#[tauri::command]
+pub async fn air_release() -> R<()> {
+    // Finished before it returns, so Hand's first press can't be let go of.
+    blocking(crate::airsafe::release_now).await
 }
 
 /// The person is turning Air control on (a toggle, the Air button, their
