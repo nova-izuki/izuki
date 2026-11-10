@@ -2341,6 +2341,65 @@ where F: FnOnce() + Send + 'static,
 /// on its next look (a window on top of the button, a greyed-out button).
 static STEP_SNAG: Mutex<Option<String>> = Mutex::new(None);
 
+thread_local! {
+    /// A step failed in a way a fresh look can re-plan around. The task loop
+    /// takes this after each run; it is not set for a pause or a hard stop.
+    static STEP_REPLAN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Final actions already attempted in this task (send, pay, delete…). A
+    /// re-plan may never press one of these a second time — the first press
+    /// may have gone through even when its result check failed.
+    static FINAL_TRIED: std::cell::RefCell<Vec<&'static str>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn clear_replan_state() {
+    STEP_REPLAN.with(|f| f.set(false));
+    FINAL_TRIED.with(|f| f.borrow_mut().clear());
+}
+
+fn request_step_replan() {
+    STEP_REPLAN.with(|f| f.set(true));
+}
+
+fn take_step_replan() -> bool {
+    STEP_REPLAN.with(|f| f.replace(false))
+}
+
+/// Remember a final button right before it is attempted, so a later round can
+/// never press it again even if the user's original request allowed it.
+fn note_final_tried(step: &ActionStep) {
+    let Some(phrase) = final_button(step).and_then(|name| final_phrase(&name)) else { return };
+    FINAL_TRIED.with(|f| {
+        let mut tried = f.borrow_mut();
+        if !tried.contains(&phrase) {
+            tried.push(phrase);
+        }
+    });
+}
+
+fn repeated_final_phrase(steps: &[ActionStep]) -> Option<&'static str> {
+    let tried = FINAL_TRIED.with(|f| f.borrow().clone());
+    steps.iter().find_map(|step| {
+        let phrase = final_button(step).and_then(|name| final_phrase(&name))?;
+        tried.contains(&phrase).then_some(phrase)
+    })
+}
+
+fn final_already_tried(step: &ActionStep) -> Option<&'static str> {
+    let phrase = final_button(step).and_then(|name| final_phrase(&name))?;
+    FINAL_TRIED.with(|f| f.borrow().contains(&phrase).then_some(phrase))
+}
+
+fn tried_final_note() -> Option<String> {
+    let tried = FINAL_TRIED.with(|f| f.borrow().clone());
+    if tried.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "FINAL ACTIONS ALREADY TRIED: {}. Never press one of these again — the first press may have gone through even if its result check failed. Work only on what is left, or ask the user to check and continue.",
+        tried.join(", ")
+    ))
+}
+
 /// What the screen is being worked for right now (the agent's task, a named
 /// click) and its number, so each step can be checked against it; empty for
 /// replays.
@@ -2444,6 +2503,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
             if !crate::execution::allowed() { return (false, 0); }
             let _active = TaskActive::begin();
             STEP_SNAG.lock().take();
+            take_step_replan();
             let executed = std::cell::Cell::new(0usize);
             let settings = store.settings();
             let move_ms = settings.move_duration_ms;
@@ -2605,12 +2665,21 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                                  meant (use its target id), press esc for a menu or pop-up, and never minimise, maximise or close a \
                                  window unless asked."
                             ));
+                            request_step_replan();
                             return false;
                         }
                     }
                     // Clicking the taskbar button of the window that's already in
                     // front minimises it (Windows' toggle) — "switch to FL Studio"
                     // while FL was open hid it, again and again.
+                    if let Some(phrase) = final_already_tried(step) {
+                        *STEP_SNAG.lock() = Some(format!(
+                            "final_repeat: “{phrase}” was already attempted; it is not being pressed a second time"
+                        ));
+                        request_step_replan();
+                        return false;
+                    }
+                    note_final_tried(step);
                     let front_before = (matches!(step.action, Intent::Click | Intent::Auto)
                         && uia::on_taskbar(step.x, step.y)
                         && !asked_for_window(&WORK_TASK.lock().1, "minimise"))
@@ -2619,6 +2688,16 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     match automation::execute(step, move_ms, settings.magnetic_hand, settings.dry_run)
                     {
                         Ok(detail) => {
+                            // Opening something has its own result check: it can
+                            // return a note without being an error. A note that
+                            // nothing new came up is still a failed step, and the
+                            // next look must re-plan instead of claiming success.
+                            if detail.contains("nothing new came to the front") {
+                                if let Some(evidence) = evidence { let _ = evidence.finish(crate::mission_journal::EvidenceOutcome::Unknown); }
+                                *STEP_SNAG.lock() = Some(format!("{}{}", crate::ext::UNCONFIRMED, detail));
+                                request_step_replan();
+                                return false;
+                            }
                             executed.set(i + 1);
                             if let Some(raw) = front_before {
                                 // (The minimise animation takes a moment.)
@@ -2720,6 +2799,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             // that on its next look — the task goes on.
                             if recoverable_step_snag(&why) {
                                 *STEP_SNAG.lock() = Some(why.clone());
+                                request_step_replan();
                             }
                             let _ = app.emit(
                                 events::STATUS,
@@ -3590,6 +3670,9 @@ fn submit_task(
     let mut waited_on_goal = false;
     // Rounds in a row that did nothing ("let me wait for it to load").
     let mut idle_rounds = 0u32;
+    // Failed steps that were re-planned from a fresh look. Bounded so a step
+    // that cannot work can never become a loop.
+    let mut step_replans = 0u32;
     // A step held back and nothing done since: the last word must say so.
     let mut held_back: Option<String> = None;
     let mut all_steps: Vec<ActionStep> = Vec::new();
@@ -3632,6 +3715,9 @@ fn submit_task(
     // Izuki's last word, set when it stops on purpose (kept through finalizing).
     let mut final_word: Option<String> = None;
     let working = Working::on(&prompt);
+    // A new task starts with no failed-step debt and no final action blocked
+    // by a previous task's attempt.
+    clear_replan_state();
     for round in 0..MAX_ROUNDS {
         if crate::execution::charge(crate::execution::Work::Round).is_err() { break; }
         if !alive() {
@@ -3765,6 +3851,9 @@ fn submit_task(
         // to fix): this look thinks it through properly; otherwise it's fast.
         let think = told.is_some() || repeats > 0 || goal_repeats > 0;
         if let Some(note) = told.take() {
+            ask.push_str(&format!("\n{note}"));
+        }
+        if let Some(note) = tried_final_note() {
             ask.push_str(&format!("\n{note}"));
         }
         if let Some(n) = &notes {
@@ -4005,6 +4094,22 @@ fn submit_task(
             None => false,
         };
         let held_why = if held { held_back.clone() } else { None };
+
+        // A re-plan that proposes a final button already attempted earlier in
+        // this task is stopped, not executed. Its first press may have gone
+        // through even when the result check failed; pressing it again could
+        // send, pay or delete twice.
+        if let Some(phrase) = repeated_final_phrase(&steps) {
+            eprintln!("[agent] a re-plan would repeat the final action \"{phrase}\" — stopping");
+            set_unfinished((prompt.clone(), done_so_far.clone()));
+            let mut plan = plan;
+            plan.summary = format!(
+                "I was about to press “{phrase}” again, but I already tried it. I've stopped so it can't send, pay or delete twice. Check whether it went through, then tell me how to continue."
+            );
+            plan.mood = Some("careful".into());
+            last_plan = Some(plan);
+            break;
+        }
 
         // An action being planned is not evidence that it succeeded. Check
         // a fresh screen before accepting "done" for an autonomous task —
@@ -4299,6 +4404,7 @@ fn submit_task(
         // ("clear what's in the way" gone wrong) is caught and undone.
         let working_in = uia::target_window();
         let (finished, executed) = run_steps_blocking(app, store, &steps, &alive);
+        let replan = take_step_replan();
         last_click = steps
             .iter()
             .take(executed)
@@ -4373,7 +4479,15 @@ fn submit_task(
             break;
         }
         if let Some(why) = &snag {
-            eprintln!("[agent] a click couldn't happen — {why}");
+            eprintln!("[agent] a step failed — {why}");
+            if why.starts_with("final_repeat:") {
+                set_unfinished((prompt.clone(), done_so_far.clone()));
+                let mut plan = last_plan.take().unwrap_or_default();
+                plan.summary = "I was about to press a Send/Pay/Delete-style button again, but I already tried it once. I've stopped so it can't happen twice. Check whether the first attempt went through, then tell me how to continue.".into();
+                plan.mood = Some("careful".into());
+                last_plan = Some(plan);
+                break;
+            }
             let note = if why.starts_with("paused:") {
                 "The person used the PC while you worked, so you paused. Things may have moved or another window may \
                  be in front: parse this fresh screenshot, bring the window you were working in back if needed, and \
@@ -4389,14 +4503,26 @@ fn submit_task(
                 crate::lessons::note(&uia::foreground_app(), "controls here move or redraw: take a fresh look and pick the control by its label right before clicking");
                 format!("Your last action was NOT executed — {why}. Parse this fresh screenshot and select the intended numbered control by its label and position. Do not reuse old IDs or coordinates. Do not close or minimise windows to fix a changed target. If the intended control is absent, explain that instead of guessing.")
             } else { format!(
-                "Your last click didn't happen — {why}. Deal with it like a person would: close what's on top (its ✕ \
+                "Your last step didn't complete — {why}. Deal with it like a person would: close what's on top (its ✕ \
                  or Close), drag it aside by its title bar, or minimise it; if the button is greyed out, first do what \
-                 turns it on (fill in the required boxes, tick the box, pick an option). Then click it again."
+                 turns it on (fill in the required boxes, tick the box, pick an option). Then try again from this fresh screen."
             ) };
             told = Some(match told.take() {
                 Some(t) => format!("{t}\n{note}"),
                 None => note,
             });
+        }
+        if replan {
+            if !can_replan(step_replans) {
+                eprintln!("[agent] {} failed step re-plans — stopping instead of looping", step_replans + 1);
+                set_unfinished((prompt.clone(), done_so_far.clone()));
+                if let Some(p) = last_plan.as_mut() {
+                    p.summary = "A step keeps failing after fresh looks, so I've stopped rather than loop. The screen is as it is now: check it, and tell me what to do or say \"keep going\".".into();
+                    p.mood = Some("sympathetic".into());
+                }
+                break;
+            }
+            step_replans += 1;
         }
         if let Some(raw) = working_in.filter(|_| !asked_to_minimise(&prompt)) {
             if let Some(title) = uia::restore_if_minimised(raw) {
@@ -4415,8 +4541,10 @@ fn submit_task(
         if done && finished {
             completed = true;
         }
-        // A snag (something on top, greyed out) means look again and fix it — not stop.
-        let fixable = snag.is_some();
+        // Any failed step whose fresh look can fix it means look again and
+        // re-plan — not stop. A hard stop (locked PC, password box, Stop) has
+        // no re-plan flag and still ends the task honestly.
+        let fixable = snag.is_some() || replan;
         // Every so often: still getting somewhere? (New steps done, not the same ones.)
         if (round + 1) % PROGRESS_EVERY == 0 && !done {
             // Steps done in this window that hadn't been done before it —
@@ -4754,6 +4882,14 @@ Only ask the user after three honest, different tries.";
 /// checked every PROGRESS_EVERY rounds.
 const MAX_ROUNDS: usize = 60;
 const PROGRESS_EVERY: usize = 12;
+/// How many times one task may try a fresh look after a step fails. Three is
+/// enough to get past a pop-up, a moved button or a slow page; a fourth failed
+/// attempt is a loop, so Izuki stops and says so instead.
+const MAX_STEP_REPLANS: u32 = 3;
+
+fn can_replan(used: u32) -> bool {
+    used < MAX_STEP_REPLANS
+}
 /// Did this round do nothing it hadn't already done?
 ///
 /// A round with no steps isn't a repeat — it's a look, which the idle-round
@@ -4843,18 +4979,26 @@ impl Drop for TaskActive {
 fn task_is_current(task: u64, generation: u64, aborted: bool) -> bool { generation == task && !aborted }
 fn task_alive(task: u64) -> bool { task_is_current(task, TASK_GEN.load(std::sync::atomic::Ordering::SeqCst), automation::aborted()) && crate::execution::allowed() }
 
-/// A failed step the next look can fix. These are fed back to the model as the
-/// reason for stopping this round; anything else stops the task honestly.
+/// A failed step the next look can fix. Any action type can fail (a click,
+/// typing, a shortcut, a scroll, opening an app or page, a drag), so every
+/// failure is re-planned unless it is a deliberate hard stop. The caller still
+/// bounds how many times that can happen.
 fn recoverable_step_snag(why: &str) -> bool {
-    ["covered:", "disabled:", "target_changed:", "typed_mismatch:", "play_not_started:"]
-        .iter()
-        .any(|prefix| why.starts_with(prefix))
-        || why.starts_with(crate::ext::UNCONFIRMED)
+    !(why.starts_with("stopped")
+        || why.starts_with("password_box:")
+        || why.contains("PC is locked"))
 }
 
 #[cfg(test)]
 mod step_snag_tests {
-    use super::recoverable_step_snag;
+    use super::*;
+
+    fn click_named(name: &str) -> ActionStep {
+        serde_json::from_value(serde_json::json!({
+            "action": "click", "x": 1, "y": 1, "snapped_to": name
+        }))
+        .expect("a click step")
+    }
 
     #[test]
     fn a_wrong_field_or_unplayed_video_gets_a_fresh_look() {
@@ -4863,6 +5007,57 @@ mod step_snag_tests {
         assert!(recoverable_step_snag("target_changed: the button moved"));
         assert!(!recoverable_step_snag("your PC is locked"));
         assert!(!recoverable_step_snag("password_box: never type there"));
+    }
+
+    #[test]
+    fn every_result_check_can_replan_but_hard_stops_cannot() {
+        assert!(recoverable_step_snag(&format!("{}scrolled at the list, but nothing moved", crate::ext::UNCONFIRMED)));
+        assert!(recoverable_step_snag(&format!("{}pressed ctrl+s, but nothing changed", crate::ext::UNCONFIRMED)));
+        assert!(recoverable_step_snag("could not open an input channel: the desktop is busy"));
+        assert!(!recoverable_step_snag("stopped"));
+        assert!(!recoverable_step_snag("password_box: never type there"));
+        assert!(!recoverable_step_snag("your PC is locked"));
+    }
+
+    #[test]
+    fn a_task_gets_three_fresh_looks_then_stops() {
+        assert!(can_replan(0));
+        assert!(can_replan(1));
+        assert!(can_replan(MAX_STEP_REPLANS - 1));
+        assert!(!can_replan(MAX_STEP_REPLANS));
+        assert!(!can_replan(MAX_STEP_REPLANS + 1));
+    }
+
+    #[test]
+    fn a_final_action_is_never_repeated_after_an_attempt() {
+        clear_replan_state();
+        let send = click_named("Send");
+        note_final_tried(&send);
+        assert_eq!(final_already_tried(&send), Some("send"));
+        assert_eq!(repeated_final_phrase(std::slice::from_ref(&send)), Some("send"));
+        assert!(tried_final_note().is_some_and(|note| note.contains("send")));
+        // The same final step repeated inside one plan is blocked too.
+        assert_eq!(final_already_tried(&send), Some("send"));
+        clear_replan_state();
+        assert!(repeated_final_phrase(&[send]).is_none());
+    }
+
+    #[test]
+    fn an_ordinary_button_can_be_pressed_again() {
+        clear_replan_state();
+        let next = click_named("Sending options");
+        note_final_tried(&next);
+        assert!(repeated_final_phrase(&[next]).is_none());
+        clear_replan_state();
+    }
+
+    #[test]
+    fn the_replan_flag_is_one_shot() {
+        clear_replan_state();
+        assert!(!take_step_replan());
+        request_step_replan();
+        assert!(take_step_replan());
+        assert!(!take_step_replan());
     }
 }
 #[cfg(test)]
