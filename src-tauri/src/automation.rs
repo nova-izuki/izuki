@@ -646,9 +646,58 @@ fn doing_line(step: &ActionStep) -> String {
     }
 }
 
+/// What a step did, for "What Izuki did" (actlog.rs). Never what was typed,
+/// only how much; nothing for steps that only show or wait.
+fn done_line(step: &ActionStep) -> Option<String> {
+    let name = step.snapped_to.as_deref().map(|n| n.split(" → ").next().unwrap_or(n).trim()).filter(|n| !n.is_empty());
+    let short = |s: &str| s.chars().take(48).collect::<String>();
+    let what = match step.action {
+        Intent::Click | Intent::Auto => name.map_or_else(|| "Clicked".to_string(), |n| format!("Clicked “{}”", short(n))),
+        Intent::DoubleClick => name.map_or_else(|| "Double-clicked".to_string(), |n| format!("Double-clicked “{}”", short(n))),
+        Intent::RightClick => "Opened a right-click menu".into(),
+        Intent::Type => {
+            let n = step.text_to_type.as_deref().map_or(0, |t| t.chars().count());
+            let into = name.map(|b| format!(" into “{}”", short(b))).unwrap_or_default();
+            format!("Typed {n} character{}{into}", if n == 1 { "" } else { "s" })
+        }
+        Intent::Key => format!("Pressed {}", step.key.as_deref().unwrap_or("a key")),
+        Intent::Scroll => "Scrolled".into(),
+        Intent::Drag | Intent::Stroke => "Dragged".into(),
+        Intent::Copy => "Copied text".into(),
+        Intent::OpenApp => format!("Opened {}", step.text_to_type.as_deref().map(short).unwrap_or_else(|| "an app".into())),
+        Intent::OpenUrl => {
+            let url = step.text_to_type.as_deref().unwrap_or_default();
+            let host = reqwest::Url::parse(url).ok().and_then(|u| u.host_str().map(|h| h.trim_start_matches("www.").to_string()));
+            format!("Opened {}", host.unwrap_or_else(|| "a web page".into()))
+        }
+        Intent::Search => "Searched the web".into(),
+        Intent::PlayYoutube => "Played a video on YouTube".into(),
+        _ => return None,
+    };
+    // Where: the app's name from its title ("Inbox - Gmail - Google Chrome" → "Google Chrome").
+    let title = crate::uia::foreground_title();
+    let tail = [" - ", " — ", " | "].iter().filter_map(|sep| title.rfind(sep).map(|i| i + sep.len())).max().unwrap_or(0);
+    let app = title[tail..].trim().to_string();
+    let opened = matches!(step.action, Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube);
+    // Working in Izuki's own tab or window behind yours: the app in front isn't where it happened.
+    let elsewhere = crate::ext::in_tab_mode() || crate::uia::working_behind().is_some();
+    Some(if app.is_empty() || opened || elsewhere || app.eq_ignore_ascii_case("izuki") { what } else { format!("{what} in {}", short(&app)) })
+}
+
 /// Run a single planned step. `magnetic` snaps the point onto a real control
-/// first; `dry_run` animates nothing at the OS level.
+/// first; `dry_run` animates nothing at the OS level. Every step that really
+/// ran goes on "What Izuki did".
 pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -> Result<String> {
+    let done = execute_step(step, move_ms, magnetic, dry_run);
+    if !dry_run && done.is_ok() {
+        if let Some(line) = done_line(step) {
+            crate::actlog::record("screen", &line);
+        }
+    }
+    done
+}
+
+fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -> Result<String> {
     // Never act on the lock screen: a keystroke there goes into the PIN or
     // password box.
     if crate::uia::screen_locked() {

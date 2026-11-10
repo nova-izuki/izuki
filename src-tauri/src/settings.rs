@@ -641,6 +641,12 @@ pub struct Settings {
     /// two weeks) for "how long was I on YouTube today?".
     #[serde(default = "default_true")]
     pub screen_time_enabled: bool,
+    /// "What Izuki did": a plain list of what Izuki changed or did on this
+    /// PC (actlog.rs), kept on this PC for two weeks, never what was typed.
+    /// On by default: it only describes what Izuki itself did, never leaves
+    /// the PC, and Settings → Privacy turns it off or clears it.
+    #[serde(default = "default_true")]
+    pub keep_activity: bool,
     /// The user's town or city, for the weather glance ("" = from memory).
     #[serde(default)]
     pub home_city: String,
@@ -1274,6 +1280,7 @@ impl Default for Settings {
             buddy_breaks: true,
             recall_enabled: false,
             screen_time_enabled: true,
+            keep_activity: true,
             home_city: String::new(),
             learn_city: false,
             n8n_hooks: Vec::new(),
