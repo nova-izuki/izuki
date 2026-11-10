@@ -1126,6 +1126,12 @@ fn run_tool(tool: &Tool, last_user: &str) -> String {
             eprintln!("[chat] blocked unrequested study-log change");
             Ok("I didn't change the Study log — that needs an explicit request from you in this chat.".into())
         }
+        // Deleting (emptying the Recycle Bin, clearing files) can't be undone:
+        // only when the person's own words asked for exactly that.
+        Tool::Izuki(request) if crate::companion::deletes(request).is_some_and(|ask| crate::storage::parse(last_user) != Some(ask)) => {
+            eprintln!("[chat] blocked an unrequested delete: {request}");
+            Ok("I didn't delete anything: emptying the Recycle Bin or clearing files needs you to ask for exactly that in this chat.".into())
+        }
         // Never invented: either a real ability answered, or it says none fits.
         Tool::Izuki(request) => Ok(crate::companion::izuki_tool(request).unwrap_or_else(|| {
             "Izuki has no built-in ability for that request. Try another way (search, browse, hand over to the screen or the apps), or tell the user plainly.".into()

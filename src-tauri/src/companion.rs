@@ -313,7 +313,8 @@ fn ability_of(arg: &str) -> Ability {
         }),
         "screentime" => Ability::ScreenTime(if details.is_empty() { "how long was I on my PC today".into() } else { details.clone() }),
         "fl" | "flstudio" | "music" | "beat" | "daw" => Ability::Fl(words()),
-        "storage" | "disk" | "space" | "drive" => Ability::Storage(if d.contains("recycle") {
+        // Emptying needs the word for it; "how full is the recycle bin" is a look.
+        "storage" | "disk" | "space" | "drive" => Ability::Storage(if d.contains("recycle") && ["empty", "clear", "clean"].iter().any(|w| d.contains(w)) {
             crate::storage::Ask::EmptyBin
         } else if ["clear", "free up", "clean", "make room", "delete temp"].iter().any(|w| d.contains(w)) && !["what", "check", "show", "taking", "using"].iter().any(|w| d.contains(w)) {
             crate::storage::Ask::ClearSafe
@@ -322,6 +323,16 @@ fn ability_of(arg: &str) -> Ability {
         }),
         "recall" => Ability::Recall(words()),
         _ => Ability::Words(words()),
+    }
+}
+
+/// What a model-proposed [IZUKI: …] call would delete, if anything: emptying
+/// the Recycle Bin or clearing files. The chat runs those only when the
+/// person's own latest words asked for exactly that (chat::run_tool).
+pub fn deletes(arg: &str) -> Option<crate::storage::Ask> {
+    match ability_of(arg) {
+        Ability::Storage(ask @ (crate::storage::Ask::EmptyBin | crate::storage::Ask::ClearSafe)) => Some(ask),
+        _ => None,
     }
 }
 
@@ -803,6 +814,9 @@ mod tests {
         assert_eq!(ability_of("storage | what's using the space"), Ability::Storage(crate::storage::Ask::Report));
         assert_eq!(ability_of("storage | free up space"), Ability::Storage(crate::storage::Ask::ClearSafe));
         assert_eq!(ability_of("storage | empty the recycle bin"), Ability::Storage(crate::storage::Ask::EmptyBin));
+        assert_eq!(ability_of("storage | how full is the recycle bin"), Ability::Storage(crate::storage::Ask::Report), "a look, not a delete");
+        assert_eq!(deletes("storage | empty the recycle bin"), Some(crate::storage::Ask::EmptyBin));
+        assert_eq!(deletes("storage | what's taking up space"), None);
         assert_eq!(ability_of("fl | line the 808 up with the kick"), Ability::Fl("line the 808 up with the kick".into()));
         // A plain sentence, or an unknown name, goes to the phrase parsers as words.
         assert_eq!(ability_of("what's due this week on Blackboard"), Ability::Words("what's due this week on Blackboard".into()));

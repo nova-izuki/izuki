@@ -121,12 +121,16 @@ impl Source for Composio {
 /// A profile read can fail once while Composio is busy. One quick retry
 /// keeps a duplicate link from being reported as a whole unreadable account.
 fn read_address(src: &dyn Source, link: &str) -> Result<String> {
+    let began = Instant::now();
     match src.address(link) {
         Ok(a) => Ok(a),
-        Err(first) => {
+        // A quick failure (busy, a 500) gets one more try. A slow one (a
+        // timeout) doesn't: the inbox check shouldn't wait for it twice.
+        Err(first) if began.elapsed() < Duration::from_secs(3) => {
             std::thread::sleep(Duration::from_millis(150));
             src.address(link).map_err(|second| anyhow!("{first}; retry: {second}"))
         }
+        Err(first) => Err(first),
     }
 }
 
