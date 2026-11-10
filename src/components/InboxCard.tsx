@@ -142,7 +142,7 @@ export function InboxCard() {
           {digest.checked.length > 0 && (
             <p className="text-[10.5px] text-izk-muted">
               Read: {digest.checked.join(", ")}
-              {digest.failed.length > 0 && ` · ${digest.failed.length} account${digest.failed.length === 1 ? "" : "s"} not searched`}
+              {digest.failed.length > 0 && ` · ${digest.failed.length} Gmail check${digest.failed.length === 1 ? "" : "s"} failed`}
             </p>
           )}
           {items.length === 0 && <p className="text-[11.5px] text-izk-muted">Nothing that needs you — {digest.looked_at} emails looked at.</p>}

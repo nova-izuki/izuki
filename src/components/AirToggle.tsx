@@ -109,15 +109,15 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
     window.setTimeout(() => document.getElementById("settings-air")?.scrollIntoView({ behavior: "smooth", block: "start" }), 160);
   };
 
-  const choose = (next: AirMode) => {
+  const choose = async (next: AirMode) => {
     setMode(next);
     setOpen(false);
+    // Hand and Eye never own input together. Leaving Eye lets go of anything
+    // it holds first (not the emergency stop, which would save Air as off when
+    // the person only changed mode), then the new mode is saved.
+    if (mode === "eye" && next !== "eye") await api.airRelease().catch(() => undefined);
     // Persist the preference even while Air is off, so the next arm uses it.
     void emit(EV.patchSettings, { air_control_mode: next });
-    // Hand and Eye never own input together. Leaving Eye lets go of anything
-    // it holds at once; not the emergency stop, which would save Air as off
-    // when the person only changed mode.
-    if (mode === "eye" && next !== "eye") void api.airRelease().catch(() => undefined);
   };
 
   const lane = mode === "eye" ? "Eye" : "Hand";

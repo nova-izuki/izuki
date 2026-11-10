@@ -1963,8 +1963,9 @@ pub fn air_stop() {
 /// the emergency stop's latch: switching from Eye to Hand mode, where Air
 /// stays on. The stop itself (`air_stop`) also saves Air as off.
 #[tauri::command]
-pub fn air_release() {
-    std::thread::spawn(crate::airsafe::release_now);
+pub async fn air_release() -> R<()> {
+    // Finished before it returns, so Hand's first press can't be let go of.
+    blocking(crate::airsafe::release_now).await
 }
 
 /// The person is turning Air control on (a toggle, the Air button, their

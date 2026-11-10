@@ -30,7 +30,7 @@ fn cloud_only(s: &str) -> bool {
     let cloud = ["google drive", "drive on google", "google one", "gdrive", "onedrive", "one drive", "dropbox", "icloud", "mega.nz", "mega nz", "box.com", "box com"]
         .iter()
         .any(|w| s.contains(w));
-    let local = drive_letter(s) || ["my pc", "my laptop", "my computer", "this pc", "hard drive", "ssd", "local"].iter().any(|w| s.contains(w));
+    let local = drive_letter(s) || ["my pc", "my laptop", "my computer", "this pc", "hard drive", "ssd", "local", "recycle bin", "recycling bin"].iter().any(|w| s.contains(w));
     cloud && !local
 }
 
@@ -43,7 +43,9 @@ fn drive_letter(s: &str) -> bool {
         let colon = w.len() == 2 && w.ends_with(':');
         let single = letter.len() == 1 && letter.chars().all(|c| c.is_ascii_alphabetic());
         let named = words.get(i + 1).is_some_and(|n| *n == "drive" || *n == "drives");
-        single && (colon || (named && !matches!(letter, "a" | "i" | "u" | "r" | "y")))
+        // "My U drive" names one; "did u drive" doesn't.
+        let owned = i.checked_sub(1).and_then(|j| words.get(j)).is_some_and(|p| matches!(*p, "my" | "the"));
+        single && (colon || (named && (owned || !matches!(letter, "a" | "i" | "u" | "r" | "y"))))
     })
 }
 
@@ -485,6 +487,8 @@ mod tests {
         assert_eq!(parse("how much space does OneDrive use on my D: drive"), Some(Ask::Report), "the PC's drive, named");
         assert_eq!(parse("how full is my R: drive"), Some(Ask::Report), "a colon makes it a drive letter");
         assert_eq!(parse("free up space on my friend's drive on Google"), None, "a possessive isn't an S: drive");
+        assert_eq!(parse("how full is my U drive"), Some(Ask::Report), "named as mine");
+        assert_eq!(parse("empty the Windows Recycle Bin after downloading from Dropbox"), Some(Ask::EmptyBin), "the bin is this PC's");
         assert_eq!(parse("what's filling my drive?"), Some(Ask::Report), "still the website's own words");
     }
 
