@@ -6,7 +6,7 @@
 //! when you ask.
 
 use anyhow::{anyhow, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Tweak {
@@ -148,25 +148,231 @@ pub fn list() -> Vec<Tweak> {
 pub fn set(id: &str, on: bool) -> Result<Vec<Tweak>> {
     apply(id, on)?;
     shell::announce();
+    if let Some(d) = DEFS.iter().find(|d| d.id == id) {
+        crate::actlog::record("style", &format!("Turned {} “{}”", if on { "on" } else { "off" }, d.label));
+    }
     Ok(list())
 }
 
 /// Turn on every tweak in a pack (the ones already on stay on). Errors
-/// don't stop the rest; they're reported together.
+/// don't stop the rest; they're reported together. How each changed
+/// setting was before is saved first, so "undo the tweaks" puts back
+/// exactly that, even after a restart.
 pub fn set_pack(id: &str) -> Result<Vec<Tweak>> {
     let pack = PACKS.iter().find(|p| p.id == id).ok_or_else(|| anyhow!("no pack called {id}"))?;
+    let _turn = PACK_TURN.lock();
     let mut problems = Vec::new();
+    let mut undo_lost: Option<String> = None;
+    let mut before = Vec::new();
     for t in pack.ids {
-        if let Err(e) = apply(t, true) {
-            let label = DEFS.iter().find(|d| d.id == *t).map_or(*t, |d| d.label);
-            problems.push(format!("{label} ({e})"));
+        let Some(d) = DEFS.iter().find(|d| d.id == *t) else { continue };
+        // Already on: the pack changes nothing, so its undo leaves it alone.
+        if is_on(d) {
+            continue;
+        }
+        let was = snapshot(d);
+        let done = apply(t, true);
+        // Saved even when Windows refused part of it: a value that did change
+        // must still go back.
+        before.push(Before { id: d.id.to_string(), was });
+        if let Err(e) = done {
+            problems.push(format!("{} ({e})", d.label));
+        }
+    }
+    if !before.is_empty() {
+        let mut stack = undo_stack();
+        stack.push(PackUndo { pack: id.to_string(), at: now_secs(), before });
+        let keep = stack.len().saturating_sub(UNDO_KEEP);
+        if let Err(e) = save_undo_stack(&stack[keep..]) {
+            // The pack is on, but there's no way back: say so, never "Undo" for nothing.
+            undo_lost = Some(format!("The {} pack is on, but its undo couldn't be saved ({e}), so Undo can't put it back automatically.", pack_name(id)));
         }
     }
     shell::announce();
-    if !problems.is_empty() {
-        return Err(anyhow!("Most of it is on, but Windows kept these as they were: {}", problems.join("; ")));
+    crate::actlog::record("style", &format!("Turned on the {} tweaks", pack_name(id)));
+    match (problems.is_empty(), undo_lost) {
+        (true, None) => Ok(list()),
+        (true, Some(lost)) => Err(anyhow!(lost)),
+        (false, lost) => Err(anyhow!("Most of it is on, but Windows kept these as they were: {}.{}", problems.join("; "), lost.map(|l| format!(" {l}")).unwrap_or_default())),
     }
-    Ok(list())
+}
+
+/// A pack's name as people say it.
+pub fn pack_name(id: &str) -> &str {
+    match id {
+        "gamer" => "Gamer",
+        "clean" => "Clean",
+        "premium" => "Premium",
+        "power" => "Power user",
+        other => other,
+    }
+}
+
+/// How one setting was before a pack changed it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum Was {
+    /// A number; `None` when it wasn't there (Windows' own default).
+    Dword { key: String, name: String, value: Option<u32> },
+    /// A text; `None` when it wasn't there.
+    Text { key: String, name: String, value: Option<String> },
+    /// A tweak that isn't one plain value (the hidden taskbar, the classic
+    /// menu, a pointer set, animations): whether it was on.
+    Switch { id: String, on: bool },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Before {
+    id: String,
+    was: Vec<Was>,
+}
+
+/// One pack turned on, and how the settings it changed were before.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PackUndo {
+    pack: String,
+    /// When (Unix seconds).
+    at: u64,
+    before: Vec<Before>,
+}
+
+/// The last pack that can be undone, for the Style tab's Undo button.
+#[derive(Debug, Clone, Serialize)]
+pub struct PackUndoInfo {
+    pub pack: String,
+    pub name: String,
+    pub at: u64,
+}
+
+/// How many packs back "undo" can go.
+const UNDO_KEEP: usize = 8;
+
+/// A pack and an undo never overlap (the Style tab, voice and the phone can
+/// all ask at once), so no undo record is lost or brought back.
+static PACK_TURN: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+fn undo_path() -> std::path::PathBuf {
+    crate::store::data_dir().join("tweak-packs-undo.json")
+}
+
+fn undo_stack() -> Vec<PackUndo> {
+    std::fs::read_to_string(undo_path()).ok().and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default()
+}
+
+/// Written whole (a new file, then swapped in): a power cut mid-write never
+/// leaves half a file, which would read as nothing to undo.
+fn save_undo_stack(stack: &[PackUndo]) -> Result<()> {
+    let path = undo_path();
+    if stack.is_empty() {
+        return match std::fs::remove_file(&path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+            _ => Ok(()),
+        };
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let fresh = path.with_extension("json.new");
+    std::fs::write(&fresh, serde_json::to_string_pretty(stack)?)?;
+    std::fs::rename(&fresh, &path)?;
+    Ok(())
+}
+
+/// How a tweak's settings are right now, in the form they're put back in.
+fn snapshot(d: &Def) -> Vec<Was> {
+    match &d.how {
+        How::Values(vals) => vals.iter().map(|(k, n, _, _)| Was::Dword { key: (*k).into(), name: (*n).into(), value: reg::get_dword(k, n) }).collect(),
+        How::ValuesOrNone(vals) => vals.iter().map(|(k, n, _)| Was::Dword { key: (*k).into(), name: (*n).into(), value: reg::get_dword(k, n) }).collect(),
+        How::Texts(vals) => vals.iter().map(|(k, n, _, _)| Was::Text { key: (*k).into(), name: (*n).into(), value: reg::get_text(k, n) }).collect(),
+        How::AutoHide | How::ClassicMenu | How::Cursors(_) | How::NoAnimations => vec![Was::Switch { id: d.id.into(), on: is_on(d) }],
+    }
+}
+
+fn put_back(w: &Was) -> Result<()> {
+    match w {
+        Was::Dword { key, name, value: Some(v) } => reg::set_dword(key, name, *v),
+        Was::Text { key, name, value: Some(v) } => reg::set_text(key, name, v),
+        Was::Dword { key, name, value: None } | Was::Text { key, name, value: None } => reg::delete_value(key, name),
+        Was::Switch { id, on } => apply(id, *on),
+    }
+}
+
+/// The pack "undo the tweaks" would put back, if any.
+pub fn last_pack() -> Option<PackUndoInfo> {
+    undo_stack().last().map(|u| PackUndoInfo { name: pack_name(&u.pack).to_string(), pack: u.pack.clone(), at: u.at })
+}
+
+/// Put the settings the last pack changed back exactly as they were. A
+/// setting already back where it was (you turned it off yourself) is left
+/// alone. Returns what was done, in words, and the fresh list.
+pub fn undo_pack() -> Result<(String, Vec<Tweak>)> {
+    let _turn = PACK_TURN.lock();
+    let mut stack = undo_stack();
+    let last = stack.pop().ok_or_else(|| anyhow!("There are no tweak packs to undo — Izuki hasn't turned one on."))?;
+    let mut problems = Vec::new();
+    let mut changed = 0;
+    // Last changed, first put back.
+    for b in last.before.iter().rev() {
+        let Some(d) = DEFS.iter().find(|d| d.id == b.id) else { continue };
+        if snapshot(d) == b.was {
+            continue;
+        }
+        let mut ok = true;
+        for w in b.was.iter().rev() {
+            if let Err(e) = put_back(w) {
+                ok = false;
+                problems.push(format!("{} ({e})", d.label));
+                break;
+            }
+        }
+        if ok {
+            changed += 1;
+        }
+    }
+    shell::announce();
+    let name = pack_name(&last.pack).to_string();
+    if !problems.is_empty() {
+        // Keep it, so Undo can be tried again for what Windows refused.
+        stack.push(last);
+        let _ = save_undo_stack(&stack);
+        return Err(anyhow!("Put most of the {name} tweaks back, but Windows kept these: {}", problems.join("; ")));
+    }
+    if let Err(e) = save_undo_stack(&stack) {
+        eprintln!("[tweaks] the undo list couldn't be updated: {e}");
+    }
+    crate::actlog::record("style", &format!("Undid the {name} tweaks"));
+    eprintln!("[tweaks] undid pack {} ({changed} put back)", last.pack);
+    let said = match changed {
+        0 => format!("The {name} tweaks were already back the way you had them."),
+        1 => format!("Put back the one setting the {name} pack changed."),
+        n => format!("Put back the {n} settings the {name} pack changed, exactly as they were. Some show after Explorer restarts."),
+    };
+    Ok((said, list()))
+}
+
+/// "Undo the tweaks", "undo the gamer pack", "put my taskbar back". Not a
+/// question about it, and not "don't undo…".
+pub fn parse_undo(said: &str) -> bool {
+    let s = format!(" {} ", said.to_lowercase().replace(['’', '\''], "").chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" "));
+    let has = |w: &str| s.contains(w);
+    if [" how ", " what ", " whats ", " why ", " can you explain", " dont ", " do not ", " never "].iter().any(|w| has(w)) {
+        return false;
+    }
+    let undo = [" undo ", " revert ", " put back ", " roll back ", " take back "].iter().any(|w| has(w)) || (has(" put my ") && has(" back "));
+    let what = has(" tweak") || has(" pack ") || has(" taskbar back ") || has(" taskbar the way ");
+    undo && what
+}
+
+/// The voice answer for "undo the tweaks".
+pub fn undo_pack_said() -> String {
+    match undo_pack() {
+        Ok((said, _)) => said,
+        Err(e) => e.to_string(),
+    }
 }
 
 fn apply(id: &str, on: bool) -> Result<()> {
@@ -486,6 +692,41 @@ mod tests {
                 assert!(DEFS.iter().any(|d| d.id == *t), "pack {} names a real tweak ({t})", p.id);
             }
         }
+    }
+
+    #[test]
+    fn undo_is_asked_for_in_plain_words() {
+        assert!(parse_undo("undo the tweaks"));
+        assert!(parse_undo("Undo the gamer pack"));
+        assert!(parse_undo("revert the tweaks you made"));
+        assert!(parse_undo("put my taskbar back"));
+        assert!(parse_undo("roll back the clean pack please"));
+        assert!(!parse_undo("undo the look"), "the look has its own undo");
+        assert!(!parse_undo("undo that"));
+        assert!(!parse_undo("how do I undo the tweaks"));
+        assert!(!parse_undo("don't undo the tweaks"));
+        assert!(!parse_undo("pack my bag"));
+        assert!(!parse_undo("undo the layout"));
+    }
+
+    #[test]
+    fn a_saved_undo_reads_back_the_same() {
+        let u = PackUndo {
+            pack: "gamer".into(),
+            at: 1,
+            before: vec![Before {
+                id: "fast_menus".into(),
+                was: vec![
+                    Was::Text { key: "Control Panel\\Desktop".into(), name: "MenuShowDelay".into(), value: Some("400".into()) },
+                    Was::Dword { key: "k".into(), name: "n".into(), value: None },
+                    Was::Switch { id: "no_animations".into(), on: false },
+                ],
+            }],
+        };
+        let raw = serde_json::to_string(&vec![u.clone()]).unwrap();
+        let back: Vec<PackUndo> = serde_json::from_str(&raw).unwrap();
+        assert_eq!(back[0].before[0].was, u.before[0].was);
+        assert_eq!(pack_name("power"), "Power user");
     }
 
     /// Writes each existing value back unchanged, to find any Windows

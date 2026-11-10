@@ -165,6 +165,56 @@ check("there are exactly three eye sensitivities",
   check("each dot takes under two seconds", VALIDATION_SETTLE_MS + VALIDATION_COLLECT_MS <= 2000);
 }
 
+// #40: the camera unplugged, switched or taken by another app.
+{
+  const { cameraProblem, cameraRetryDelay } = mod.exports;
+  const dom = (name, message = "") => Object.assign(new Error(message), { name });
+  check("unplugged mid-session: said plainly, picked back up by itself", cameraProblem("disconnected").kind === "gone" && /picks it back up/.test(cameraProblem("disconnected").message));
+  check("Teams or Zoom holding the camera reads as busy", cameraProblem(dom("NotReadableError", "Could not start video source")).kind === "busy");
+  check("every camera refusing reads as busy", cameraProblem(new Error("no camera would start")).kind === "busy");
+  check("a camera that never answers reads as busy", cameraProblem(new Error("the camera didn't answer")).kind === "busy");
+  check("no camera at all reads as missing", cameraProblem(dom("NotFoundError")).kind === "missing");
+  check("Windows' camera privacy switch reads as denied, with where to fix it", cameraProblem(dom("NotAllowedError")).kind === "denied" && /Privacy & security/.test(cameraProblem(dom("NotAllowedError")).message));
+  check("a model that failed to load isn't a camera problem", cameraProblem(new Error("eye tracking didn't load")).kind === "other");
+  check("a camera problem is tried again quickly at first", cameraRetryDelay("busy", 0) === 2000 && cameraRetryDelay("gone", 0) === 2000);
+  check("then every 15 s, never faster than the first try and never stopping", cameraRetryDelay("busy", 50) === 15000 && cameraRetryDelay("missing", 3) === 15000);
+  check("a blocked camera is tried less often", cameraRetryDelay("denied", 0) >= 10000 && cameraRetryDelay("denied", 9) === 30000);
+  check("anything else isn't retried in a loop", cameraRetryDelay("other", 0) === null);
+  const src202 = fs.readFileSync(path.join(__dirname, "..", "src", "components", "EyeControl.tsx"), "utf8");
+  check("every stop lets go of the mouse (airRelease) before anything else", /runtimeStopped = true;\s*\/\/[^\n]*\n\s*void api\.airRelease\(\)/.test(src202));
+  check("a camera plugged back in is tried at once (devicechange), and the listener is removed", /addEventListener\("devicechange"/.test(src202) && /removeEventListener\("devicechange"/.test(src202));
+  check("the retry timer is cleared when Eye Control closes", /clearTimeout\(retryTimer\);\s*if \(onDevices\)/.test(src202));
+}
+
+// #41: the head moving after calibration.
+{
+  const { headDriftStep, headDriftAmount, newHeadDrift, HEAD_MOVED, HEAD_TOO_FAR, HEAD_SETTLE_MS } = mod.exports;
+  const anchor = { yaw: 0.02, pitch: 0.4, roll: 0, scale: 0.42 };
+  const at = (d) => ({ ...anchor, ...d });
+  check("no movement: nothing to say", headDriftAmount(anchor, anchor).amount === 0);
+  check("turning is named", /turned/.test(headDriftAmount(anchor, at({ yaw: 0.2 })).why));
+  check("leaning in is named", /closer/.test(headDriftAmount(anchor, at({ scale: 0.52 })).why));
+  const s = newHeadDrift();
+  let r = headDriftStep(s, anchor, at({ yaw: anchor.yaw + HEAD_TOO_FAR + 0.05 }), 0);
+  check("one far frame doesn't stop the mouse", r.level === "ok" && !r.changed);
+  r = headDriftStep(s, anchor, at({ yaw: anchor.yaw + HEAD_TOO_FAR + 0.05 }), HEAD_SETTLE_MS + 1);
+  check("too far for half a second: the mouse waits, and recalibrating is offered", r.level === "far" && r.changed && /Calibrate eyes/.test(r.message) && /mouse waits/.test(r.message));
+  r = headDriftStep(s, anchor, at({ yaw: anchor.yaw + HEAD_TOO_FAR * 0.9 }), HEAD_SETTLE_MS + 400);
+  check("just under the limit isn't enough to resume (no flicker at the edge)", r.level === "far");
+  headDriftStep(s, anchor, at({ yaw: anchor.yaw + 0.01 }), 2000);
+  r = headDriftStep(s, anchor, at({ yaw: anchor.yaw + 0.01 }), 2000 + HEAD_SETTLE_MS + 1);
+  check("back where it was: steering again", r.level === "ok" && r.changed && /steering again/.test(r.message));
+  const m = newHeadDrift();
+  headDriftStep(m, anchor, at({ pitch: anchor.pitch + HEAD_MOVED + 0.03 }), 0);
+  r = headDriftStep(m, anchor, at({ pitch: anchor.pitch + HEAD_MOVED + 0.03 }), HEAD_SETTLE_MS + 1);
+  check("a small move is mentioned but nothing stops", r.level === "moved" && /a little/.test(r.message));
+  const none = newHeadDrift();
+  r = headDriftStep(none, null, at({ yaw: 0.9 }), 10_000);
+  check("not calibrated yet: no head check", r.level === "ok" && !r.changed);
+  r = headDriftStep(none, anchor, null, 10_000);
+  check("no head reading this frame: no change", r.level === "ok" && !r.changed);
+}
+
 if (failed) {
   console.error(`\n${failed} eye-control check(s) failed`);
   process.exit(1);

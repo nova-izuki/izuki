@@ -39,7 +39,11 @@ fn this_pc(host: &str) -> bool {
 /// straight to it, never through a proxy: a proxy would carry them, and any
 /// key in them, off the PC.
 pub fn is_local(base_url: &str) -> bool {
-    reqwest::Url::parse(base_url.trim()).ok().is_some_and(|u| this_pc(u.host_str().unwrap_or("")))
+    let t = base_url.trim();
+    let host_of = |s: &str| reqwest::Url::parse(s).ok().and_then(|u| u.host_str().filter(|h| !h.is_empty()).map(str::to_string));
+    // "localhost:11434", typed without http://, still names this PC.
+    let host = host_of(t).or_else(|| if t.contains("://") { None } else { host_of(&format!("http://{t}")) });
+    host.is_some_and(|h| this_pc(&h))
 }
 
 /// Redirects for clients that can carry keys. A request that started where a

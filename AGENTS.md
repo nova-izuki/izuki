@@ -201,24 +201,13 @@ findings are leads to check, not orders. The shared log for the milestone is
 The owner isn't a programmer. Release notes, UI text and messages are plain
 English: short sentences, no jargon, and say what the user will notice.
 
-## Who works on what (owner, 2026-11-03; superseded by "Two developers, one app")
+## Historical ownership note (2026-11-03; superseded)
 
-Freebuff keeps Smart Eye / Air Control, Smart Vision and Developer Mode.
-Claude Code keeps Smart Screen Actions, speed optimization and security fixes
-(plus the release and version files, rule 2). Codex or anyone else claims a
-row in COLLAB.md first. Both finish existing critical work first: the
-security-critical fixes and the milestone verification come before new
-features. Status, missing pieces, ownership,
-dependencies and next steps for each workstream live in `docs/WORKSTREAMS.md`
-— update your lane's section there when its state changes, and read it before
-starting work so you build on the other assistant's pieces instead of
-repeating or overwriting them. Never overwrite the other assistant's files
-(claim in `docs/COLLAB.md` first). Merging and publishing follow rule 2:
-the owner's standing authorization covers pushing, merging, releasing,
-deploying and updating without asking each time; Claude coordinates the
-merges and releases (one coordinator, nothing published twice), only after
-every required check passes. Codex and Freebuff push verified work and mark
-it ready in COLLAB.md.
+This old split is no longer active. Under "Two developers, one app" above,
+either assistant may fix any part of Izuki after claiming the issue; Eye
+Control is Claude's main responsibility. `docs/WORKSTREAMS.md` and
+`docs/INTEGRATION.md` track the shared state, and no assistant overwrites
+another's files.
 
 ## Two developers, one app (owner, 2026-11-08, latest)
 
@@ -269,9 +258,10 @@ This replaces the two ownership sections below (kept for history).
 - **Shared status:** `docs/INTEGRATION.md` lists what's done, what's in
   review and what's left. Update your own rows when their state changes.
 
-## Current ownership change (owner, 2026-11-08; superseded by "Two developers, one app")
+## Historical Eye Control handoff (2026-11-08; superseded)
 
-**Claude Code now owns Eye Control only.** Its files are the Eye/Air/camera
+This was the 2026-11-08 handoff; the current split is above. It records that
+**Claude Code owns Eye Control only.** Its files are the Eye/Air/camera
 files listed in `docs/HANDOFF-2026-11-08-eye-control.md` and the uncommitted
 Eye work in the shared `milestone-196` worktree. Freebuff must not edit,
 stage, commit, stash or revert them.

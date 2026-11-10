@@ -363,6 +363,26 @@ pub fn undo(name: &str) -> Result<String> {
     Ok("Undone — your files are back as they were before I applied.".into())
 }
 
+/// Every coding copy taken away the safe way (links to your project's
+/// folders first, then git's own worktree removal), for "Erase everything".
+/// The names of any whose links couldn't be undone: those are left whole,
+/// never deleted through a link into your project.
+pub fn discard_all() -> Vec<String> {
+    let mut stuck = Vec::new();
+    let Ok(read) = std::fs::read_dir(workspaces_dir()) else { return stuck };
+    for e in read.flatten() {
+        let file = e.file_name().to_string_lossy().to_string();
+        let Some(name) = file.strip_suffix(".json") else { continue };
+        let Ok(ws) = load_meta(name) else { continue };
+        if remove(&ws).is_err() {
+            stuck.push(name.to_string());
+        } else {
+            let _ = std::fs::remove_file(meta_path(name));
+        }
+    }
+    stuck
+}
+
 /// Throw the copy away; your files were never touched.
 pub fn discard(name: &str) -> Result<String> {
     let ws = load_meta(name)?;

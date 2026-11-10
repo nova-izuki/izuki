@@ -108,6 +108,18 @@ pub fn status(device: &str) -> Result<Value> {
     }))
 }
 
+/// "What Izuki did" notes your phone taking the controls once per sitting
+/// (10 minutes apart), not every tap.
+fn noted_in_list(device: &str) {
+    static LAST: parking_lot::Mutex<Option<(String, std::time::Instant)>> = parking_lot::Mutex::new(None);
+    let mut last = LAST.lock();
+    let fresh = last.as_ref().is_none_or(|(d, at)| d != device || at.elapsed() > std::time::Duration::from_secs(600));
+    if fresh {
+        crate::actlog::record("phone", &format!("Your phone ({device}) used this PC's mouse and keyboard"));
+    }
+    *last = Some((device.to_string(), std::time::Instant::now()));
+}
+
 /// One thing from the phone: `{ "op": "move", "dx": 12, "dy": -4 }`, and so on.
 pub fn run(req: &Value, device: &str) -> Result<Value> {
     allowed()?;
@@ -132,6 +144,7 @@ pub fn run(req: &Value, device: &str) -> Result<Value> {
     };
     if op != "move" {
         audit(device, op, &detail);
+        noted_in_list(device);
     }
     match op {
         // The trackpad: how far the finger slid (already scaled by the phone).

@@ -587,6 +587,8 @@ export function ChatTab() {
   const recentRef = useRef<RecentChat[]>(recent);
   const [recentsOpen, setRecentsOpen] = useState(false);
   const [recentQuery, setRecentQuery] = useState("");
+  const recentsDialog = useRef<HTMLElement | null>(null);
+  const historyButton = useRef<HTMLButtonElement | null>(null);
   // A write that failed is said plainly (notKept) and tried again on the
   // next save, instead of the list looking saved and being gone after a
   // restart; the state lives outside the tab (unsavedNow), so leaving the
@@ -631,13 +633,60 @@ export function ChatTab() {
     },
     [saveCurrent]
   );
+  // A modal panel takes the keyboard with it: focus enters, Tab stays inside,
+  // Escape closes, and closing returns focus to the history button. Without
+  // this, Tab could wander into the chat behind the panel and Escape would
+  // drop the user somewhere they did not choose.
   useEffect(() => {
     if (!recentsOpen) return;
-    const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setRecentsOpen(false);
+    const returnTo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = recentsDialog.current;
+    const focusables = () =>
+      Array.from(
+        dialog?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+        ) ?? []
+      ).filter((element) => element.getClientRects().length > 0);
+    const first = dialog?.querySelector<HTMLElement>("[data-izk-recents-initial]") ?? focusables()[0] ?? dialog;
+    first?.focus({ preventScroll: true });
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setRecentsOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusables();
+      if (!items.length) {
+        event.preventDefault();
+        dialog?.focus();
+        return;
+      }
+      const firstItem = items[0];
+      const lastItem = items[items.length - 1];
+      const active = document.activeElement;
+      if (!dialog?.contains(active)) {
+        event.preventDefault();
+        firstItem.focus();
+      } else if (event.shiftKey && active === firstItem) {
+        event.preventDefault();
+        lastItem.focus();
+      } else if (!event.shiftKey && active === lastItem) {
+        event.preventDefault();
+        firstItem.focus();
+      }
     };
-    window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      // The empty-chat history link unmounts once a chat is opened. Focus the
+      // toolbar History button then, so keyboard users are not dropped on the
+      // document; the composer is the last safe fallback.
+      if (returnTo?.isConnected) returnTo.focus({ preventScroll: true });
+      else if (historyButton.current?.isConnected) historyButton.current.focus({ preventScroll: true });
+      else input.current?.focus({ preventScroll: true });
+    };
   }, [recentsOpen]);
   const [draft, setDraft] = useState("");
   /** Pictures waiting to go with the next message. */
@@ -1355,6 +1404,8 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
                 role="dialog"
                 aria-modal="true"
                 aria-label="Recent chats"
+                ref={recentsDialog}
+                tabIndex={-1}
                 initial={{ x: -18, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
@@ -1381,7 +1432,8 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
                       onChange={(event) => setRecentQuery(event.target.value)}
                       placeholder="Search chats"
                       aria-label="Search recent chats"
-                      className="izk-field h-[30px] w-full px-2.5 text-[11.5px]"
+                      data-izk-recents-initial
+                      className="izk-field h-[36px] w-full px-2.5 text-[16px] sm:h-[30px] sm:text-[11.5px]"
                     />
                   </div>
                 )}
@@ -1504,6 +1556,7 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
             {recent.length > 0 && (
               <button
                 type="button"
+                ref={historyButton}
                 onClick={openRecents}
                 aria-label="Recent chats"
                 aria-expanded={recentsOpen}

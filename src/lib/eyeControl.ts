@@ -168,6 +168,129 @@ export function eyeClickStep(state: EyeClickState, step: EyeClickStep): boolean 
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// The camera going away. Unplugged, switched off, or taken by another app
+// (Teams, Zoom): Eye Control says so plainly, stops steering at once (the
+// caller lets go of everything), and picks the camera back up by itself.
+// ---------------------------------------------------------------------------
+
+export type CameraTrouble = "busy" | "missing" | "denied" | "gone" | "other";
+
+/** What went wrong with the camera, in plain words, from the error the browser gave. */
+export function cameraProblem(e: unknown): { kind: CameraTrouble; message: string } {
+  const name = typeof e === "object" && e && "name" in e ? String((e as { name: unknown }).name) : "";
+  const text = (e instanceof Error ? e.message : typeof e === "string" ? e : "").toLowerCase();
+  if (text === "disconnected" || text.includes("camera disconnected")) {
+    return { kind: "gone", message: "the camera was unplugged or switched off. Eye Control stopped steering and picks it back up by itself when the camera returns." };
+  }
+  if (["NotAllowedError", "SecurityError", "PermissionDeniedError"].includes(name)) {
+    return { kind: "denied", message: "Windows is blocking the camera for Izuki. Turn it on in Windows Settings → Privacy & security → Camera; Eye Control picks it up by itself." };
+  }
+  if (["NotFoundError", "DevicesNotFoundError", "OverconstrainedError"].includes(name) || text.includes("no camera support")) {
+    return { kind: "missing", message: "no camera found. Plug one in and Eye Control picks it up by itself." };
+  }
+  if (["NotReadableError", "TrackStartError", "AbortError"].includes(name) || text.includes("no camera would start") || text.includes("didn't answer") || text.includes("picture didn't start")) {
+    return { kind: "busy", message: "another app is using the camera (Teams, Zoom, the Camera app…). Eye Control picks it up as soon as it's free." };
+  }
+  return { kind: "other", message: text || "something went wrong" };
+}
+
+/**
+ * How long to wait before trying the camera again (ms), or null when trying
+ * again by itself won't help (a problem that isn't the camera). Quick at
+ * first, then every 15 s (30 s while Windows blocks it), for as long as Eye
+ * Control stays on. A camera plugged back in is also tried at once.
+ */
+export function cameraRetryDelay(kind: CameraTrouble, attempt: number): number | null {
+  if (kind === "other") return null;
+  const steps = kind === "denied" ? [10_000, 20_000, 30_000] : [2_000, 4_000, 8_000, 15_000];
+  return steps[Math.min(Math.max(0, attempt), steps.length - 1)];
+}
+
+// ---------------------------------------------------------------------------
+// The head moving after calibration. The map is fitted for one head position;
+// turning, tilting or leaning shifts every look. A small move is mentioned; a
+// move too far to trust stops the real mouse (the eye cursor is still drawn)
+// and asks for a quick recalibration. Back where it was, it carries on.
+// ---------------------------------------------------------------------------
+
+/** The face-pose reading (normalised geometry, from eyeWorker.ts). */
+export interface HeadPoseReading {
+  yaw: number;
+  pitch: number;
+  roll: number;
+  scale: number;
+}
+
+/** Past this the cursor may drift: said, nothing stops. Same as calibration's own tolerance. */
+export const HEAD_MOVED = 0.1;
+/** Past this the map can't be trusted: the real mouse waits. */
+export const HEAD_TOO_FAR = 0.18;
+/** A change must hold this long before it counts (one odd frame never does). */
+export const HEAD_SETTLE_MS = 500;
+
+export type HeadLevel = "ok" | "moved" | "far";
+
+export interface HeadDriftState {
+  level: HeadLevel;
+  /** A different level seen, and since when; it counts after HEAD_SETTLE_MS. */
+  pending: HeadLevel;
+  since: number;
+}
+
+export function newHeadDrift(): HeadDriftState {
+  return { level: "ok", pending: "ok", since: 0 };
+}
+
+/** How far the head is from where it was at calibration, and the biggest change in words. */
+export function headDriftAmount(anchor: HeadPoseReading, head: HeadPoseReading): { amount: number; why: string } {
+  const parts: Array<[number, string]> = [
+    [Math.abs(head.yaw - anchor.yaw), "turned your head"],
+    [Math.abs(head.pitch - anchor.pitch), "tilted your head up or down"],
+    [Math.abs(head.roll - anchor.roll), "tilted your head to the side"],
+    // Face size changes with distance; it varies less, so it counts more.
+    [Math.abs(head.scale - anchor.scale) / 0.6, head.scale > anchor.scale ? "moved closer to the screen" : "moved back from the screen"],
+  ];
+  const [amount, why] = parts.reduce((a, b) => (b[0] > a[0] ? b : a));
+  return { amount: Number.isFinite(amount) ? amount : 0, why };
+}
+
+/**
+ * Feed one look. Returns the level now, whether it just changed, and what to
+ * say. No anchor (not calibrated) or no reading: the level stays as it was.
+ * Leaving "far" needs the head clearly back (under 80% of the limit), so it
+ * doesn't flicker at the edge.
+ */
+export function headDriftStep(
+  state: HeadDriftState,
+  anchor: HeadPoseReading | null | undefined,
+  head: HeadPoseReading | null | undefined,
+  now: number,
+): { level: HeadLevel; changed: boolean; message: string } {
+  if (!anchor || !head) return { level: state.level, changed: false, message: "" };
+  const { amount, why } = headDriftAmount(anchor, head);
+  const farLimit = state.level === "far" ? HEAD_TOO_FAR * 0.8 : HEAD_TOO_FAR;
+  const seen: HeadLevel = amount > farLimit ? "far" : amount > HEAD_MOVED ? "moved" : "ok";
+  if (seen === state.level) {
+    state.pending = seen;
+    return { level: state.level, changed: false, message: "" };
+  }
+  if (seen !== state.pending) {
+    state.pending = seen;
+    state.since = now;
+    return { level: state.level, changed: false, message: "" };
+  }
+  if (now - state.since < HEAD_SETTLE_MS) return { level: state.level, changed: false, message: "" };
+  state.level = seen;
+  const message =
+    seen === "far"
+      ? `You've ${why} since calibrating, so the eye cursor can't be trusted and the mouse waits. Move back to where you were, or press Calibrate eyes for a quick recalibration.`
+      : seen === "moved"
+        ? `You've ${why} a little since calibrating. If the cursor drifts, press Calibrate eyes.`
+        : "Back where you calibrated — steering again.";
+  return { level: seen, changed: true, message };
+}
+
 /** What the overlay tells Settings and the live status line. */
 export interface EyeStatusPayload {
   state: "off" | "starting" | "no-face" | "tracking" | "calibrating" | "ready" | "failed" | "error";

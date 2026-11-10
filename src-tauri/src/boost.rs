@@ -237,6 +237,9 @@ pub fn close_helpers() -> Vec<String> {
             closed.push(pretty(&h.name));
         }
     }
+    if !closed.is_empty() {
+        crate::actlog::record("system", &format!("Closed background helpers to speed up your PC: {}", closed.join(", ")));
+    }
     closed
 }
 
@@ -249,7 +252,11 @@ pub fn close_named(name: &str) -> Vec<String> {
     }
     let windows = sys::windowed();
     let closed = sys::pids_named(name).into_iter().filter(|p| !windows.contains(p)).filter(|p| sys::close(*p)).count();
-    if closed == 0 { vec![] } else { vec![pretty(name)] }
+    if closed == 0 {
+        return vec![];
+    }
+    crate::actlog::record("system", &format!("Closed {} in the background to speed up your PC", pretty(name)));
+    vec![pretty(name)]
 }
 
 /// Processes with a window on screen (never trimmed or closed).
