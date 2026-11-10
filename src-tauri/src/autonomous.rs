@@ -9,6 +9,7 @@
 
 use std::time::{Duration, Instant};
 
+use serde_json::json;
 use tauri::AppHandle;
 
 const BROWSERS: &[&str] = &["chrome", "msedge", "firefox", "brave", "opera", "vivaldi", "arc"];
@@ -55,6 +56,24 @@ fn press_first(want: fn(&str) -> bool) -> Option<String> {
     crate::uia::press_named(&control.name).then_some(control.name)
 }
 
+/// Ask the extension to press the page's own Skip button. With no extension
+/// (or an older one that doesn't know this request), use the old control walk.
+/// A request the extension took but never answered is not repeated: it may
+/// already have clicked, and a second press could hit the next ad's button.
+fn skip_youtube_ad() -> Option<String> {
+    if crate::ext::connected() {
+        match crate::ext::request("skipad", json!({}), Duration::from_secs(2)) {
+            Ok(v) => {
+                return v["skipped"].as_bool().filter(|skipped| *skipped)
+                    .map(|_| v["label"].as_str().unwrap_or("Skip").to_string());
+            }
+            Err(e) if e.to_string().starts_with(crate::ext::UNCONFIRMED) => return None,
+            Err(_) => {}
+        }
+    }
+    press_first(is_skip_ad)
+}
+
 /// Run in the background: does nothing at all until one of the two is on.
 pub fn spawn(_app: AppHandle) {
     let _ = std::thread::Builder::new().name("izuki-autonomous".into()).spawn(|| {
@@ -79,7 +98,7 @@ pub fn spawn(_app: AppHandle) {
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 if s.auto_skip_ads && title.to_lowercase().contains("youtube") && Instant::now() >= youtube_next {
                     youtube_next = Instant::now() + YOUTUBE_EVERY;
-                    if let Some(name) = press_first(is_skip_ad) {
+                    if let Some(name) = skip_youtube_ad() {
                         eprintln!("[autonomous] pressed \"{name}\" on YouTube");
                         youtube_next = Instant::now() + AFTER_SKIP;
                     }

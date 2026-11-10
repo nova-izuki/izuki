@@ -154,6 +154,10 @@ async function run(op, args) {
     case "scroll":
       await inPage(tab.id, (dy) => window.scrollBy({ top: dy, behavior: "smooth" }), [Number(args.dy) || 600]);
       return true;
+    case "skipad":
+      // One query inside YouTube's player, instead of walking every control
+      // in the window from outside. No tab? targetTab already said so.
+      return await inPage(tab.id, skipAd);
     case "open":
       await chrome.tabs.update(tab.id, { url: String(args.url) });
       return true;
@@ -322,6 +326,37 @@ function typeEl(id, text) {
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));
   return true;
+}
+
+function skipAd() {
+  // Only YouTube, and only inside its player: a page's own "Skip" link is not
+  // an ad. One query; each button is checked by its visible label.
+  if (!/(^|\.)youtube\.com$/i.test(location.hostname)) return { skipped: false };
+  const player = document.querySelector("#movie_player, .html5-video-player");
+  if (!player) return { skipped: false };
+  const skipName = (value) => {
+    const name = String(value || "").toLowerCase().replace(/[^a-z0-9]+$/g, "").trim();
+    return ["skip", "skip ad", "skip ads", "skip advertisement"].includes(name);
+  };
+  const labelOf = (el) => {
+    for (const value of [el.getAttribute("aria-label"), el.textContent]) {
+      const raw = String(value || "").replace(/\s+/g, " ").trim();
+      if (raw && skipName(raw)) return raw.slice(0, 80);
+    }
+    return "";
+  };
+  for (const el of player.querySelectorAll('button, [role="button"]')) {
+    if (el.disabled || el.getAttribute("aria-disabled") === "true") continue;
+    const r = el.getBoundingClientRect();
+    const st = getComputedStyle(el);
+    if (r.width < 2 || r.height < 2 || r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) continue;
+    if (st.visibility === "hidden" || st.display === "none" || Number(st.opacity) === 0) continue;
+    const label = labelOf(el);
+    if (!label) continue;
+    el.click();
+    return { skipped: true, label };
+  }
+  return { skipped: false };
 }
 
 // ---- stay connected --------------------------------------------------------

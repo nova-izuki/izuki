@@ -27,3 +27,7 @@ into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
 - Inbox now retries a transient Gmail account check, shows an unfinished
   sign-in as unfinished instead of a broken account, and names the Gmail
   address it actually read. [Freebuff]
+- On YouTube, Izuki now asks the browser extension to find the page's own
+  Skip button, instead of searching every control in the window while an ad
+  plays. Without the extension, or with an older copy, the old search stays.
+  [Freebuff]
