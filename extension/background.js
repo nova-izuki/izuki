@@ -112,6 +112,7 @@ async function inPage(tabId, func, args = []) {
   return res ? res.result : null;
 }
 
+/** Do one signed job from Izuki and return the operation's data. */
 async function run(op, args) {
   // Blackboard's API needs no tab (and must work with none in front).
   if (op === "bbfetch") return await bbFetch(String(args.url || ""));
@@ -154,10 +155,16 @@ async function run(op, args) {
     case "scroll":
       await inPage(tab.id, (dy) => window.scrollBy({ top: dy, behavior: "smooth" }), [Number(args.dy) || 600]);
       return true;
-    case "skipad":
+    case "skipad": {
       // One query inside YouTube's player, instead of walking every control
-      // in the window from outside. No tab? targetTab already said so.
+      // in the window from outside. Re-check the tab now: the person may
+      // have switched tabs while the request was on its way, and autonomous
+      // actions must never land in a tab they aren't looking at.
+      const win = await chrome.windows.get(tab.windowId).catch(() => null);
+      const now = await chrome.tabs.get(tab.id).catch(() => null);
+      if (!win?.focused || !now?.active) return { skipped: false, reason: "not in front" };
       return await inPage(tab.id, skipAd);
+    }
     case "open":
       await chrome.tabs.update(tab.id, { url: String(args.url) });
       return true;
@@ -328,16 +335,20 @@ function typeEl(id, text) {
   return true;
 }
 
+/** Press YouTube's own visible ad-skip button, only while this tab is in front. */
 function skipAd() {
   // Only YouTube, and only inside its player: a page's own "Skip" link is not
   // an ad. One query; each button is checked by its visible label.
   if (!/(^|\.)youtube\.com$/i.test(location.hostname)) return { skipped: false };
+  if (document.visibilityState !== "visible" || !document.hasFocus()) return { skipped: false };
   const player = document.querySelector("#movie_player, .html5-video-player");
   if (!player) return { skipped: false };
+  /** Is this exactly one of YouTube's ad-skip labels? */
   const skipName = (value) => {
     const name = String(value || "").toLowerCase().replace(/[^a-z0-9]+$/g, "").trim();
     return ["skip", "skip ad", "skip ads", "skip advertisement"].includes(name);
   };
+  /** The first visible label on this button that means "skip this ad". */
   const labelOf = (el) => {
     for (const value of [el.getAttribute("aria-label"), el.textContent]) {
       const raw = String(value || "").replace(/\s+/g, " ").trim();
