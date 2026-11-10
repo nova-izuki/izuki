@@ -531,6 +531,30 @@ fn client() -> Result<reqwest::blocking::Client> {
     Ok(CLIENT.get_or_init(|| built).clone())
 }
 
+/// For a server on this PC: the same settings, never through a proxy (a
+/// proxy would carry the request, and its key, off the PC).
+fn local_client() -> Result<reqwest::blocking::Client> {
+    static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
+    if let Some(c) = CLIENT.get() {
+        return Ok(c.clone());
+    }
+    crate::tls_ready();
+    let built = reqwest::blocking::Client::builder()
+        .redirect(crate::transport::redirects())
+        .no_proxy()
+        .timeout(Duration::from_secs(20))
+        .connect_timeout(Duration::from_secs(5))
+        .pool_idle_timeout(Duration::from_secs(90))
+        .build()
+        .context("could not start the HTTP client")?;
+    Ok(CLIENT.get_or_init(|| built).clone())
+}
+
+/// The client for a provider's address: straight to this PC, or the shared one.
+fn client_for(base_url: &str) -> Result<reqwest::blocking::Client> {
+    if crate::transport::is_local(base_url) { local_client() } else { client() }
+}
+
 /// Open the connection to the first brains now (you've started talking), so
 /// the real request finds it ready. Costs one tiny request; never waits.
 pub fn warm_up() {
@@ -860,7 +884,7 @@ fn parse_more(raw: &str) -> bool {
 /// Cheap reachability check for the settings screen.
 pub fn probe(cfg: &ProviderConfig) -> Result<String> {
     crate::transport::check_key_route(cfg)?;
-    let c = client()?;
+    let c = client_for(&cfg.base_url)?;
     let base = cfg.base_url.trim_end_matches('/');
 
     match cfg.id {
@@ -1001,10 +1025,12 @@ fn ask_ollama(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Result
     let base = cfg.base_url.trim_end_matches('/').trim_end_matches("/v1").trim_end_matches("/api");
     // A model on the PC itself may have to load into memory first, and runs
     // slower than a data centre — give it minutes, not seconds.
-    let client = reqwest::blocking::Client::builder()
+    let builder = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(240))
         .connect_timeout(Duration::from_secs(4))
-        .redirect(crate::transport::redirects())
+        .redirect(crate::transport::redirects());
+    let builder = if crate::transport::is_local(&cfg.base_url) { builder.no_proxy() } else { builder };
+    let client = builder
         .build()
         .context("could not start the HTTP client")?;
     let send = |with_image: bool| -> Result<(reqwest::StatusCode, Value)> {
@@ -1209,7 +1235,7 @@ fn ask_gemini_as(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Res
         body["generationConfig"]["thinkingConfig"] = config;
     }
 
-    let res = client()?.post(url).header("x-goog-api-key", key).json(&body).send()?;
+    let res = client_for(&cfg.base_url)?.post(url).header("x-goog-api-key", key).json(&body).send()?;
     let status = res.status();
     let value: Value = res.json()?;
     if status.as_u16() == 400 && knob != NoThink::Neither {
@@ -1269,7 +1295,7 @@ fn ask_anthropic(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Res
         }]
     });
 
-    let res = client()?
+    let res = client_for(&cfg.base_url)?
         .post(format!("{base}/messages"))
         .header("x-api-key", key)
         .header("anthropic-version", "2023-06-01")
@@ -1307,7 +1333,7 @@ fn smaller_output_budget(status: u16, value: &Value, current: u32) -> Option<u32
 
 fn ask_openai_compatible(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Result<String> {
     let base = cfg.base_url.trim_end_matches('/');
-    let client = client()?;
+    let client = client_for(&cfg.base_url)?;
     let image = format!("data:image/jpeg;base64,{}", req.b64());
     let text = style.user(req);
 

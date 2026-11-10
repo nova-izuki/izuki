@@ -259,7 +259,7 @@ pub fn expand(chain: Vec<ProviderConfig>, for_screen: bool) -> Vec<ProviderConfi
 /// machine over plain http.
 fn key_client(base_url: &str, timeout: Duration) -> reqwest::Result<reqwest::blocking::Client> {
     let builder = reqwest::blocking::Client::builder().timeout(timeout).redirect(crate::transport::redirects());
-    let builder = if crate::brain::on_this_pc(base_url.trim()) { builder.no_proxy() } else { builder };
+    let builder = if crate::transport::is_local(base_url) { builder.no_proxy() } else { builder };
     builder.build()
 }
 

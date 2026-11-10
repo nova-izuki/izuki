@@ -35,14 +35,27 @@ fn this_pc(host: &str) -> bool {
         || h.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified())
 }
 
-/// Redirects for clients that carry keys: followed only to where a key may
-/// go. An https endpoint that redirects to plain http elsewhere stops there
-/// (the request fails) rather than forwarding the key headers unencrypted.
+/// The address is a server on this PC (http or https). Requests there go
+/// straight to it, never through a proxy: a proxy would carry them, and any
+/// key in them, off the PC.
+pub fn is_local(base_url: &str) -> bool {
+    reqwest::Url::parse(base_url.trim()).ok().is_some_and(|u| this_pc(u.host_str().unwrap_or("")))
+}
+
+/// Redirects for clients that can carry keys. A request that started where a
+/// key may not go was keyless (`check_key_route` refused the keyed ones
+/// before sending), so its redirects are followed as usual. Otherwise a
+/// redirect is followed only to where a key may go, and never from a remote
+/// server onto this PC (that client may use a proxy, which would carry the
+/// key off the PC). Stopping fails the request; the key isn't forwarded.
 pub fn redirects() -> reqwest::redirect::Policy {
     reqwest::redirect::Policy::custom(|attempt| {
+        let first = attempt.previous().first().map(|u| u.as_str().to_string());
+        let keyless = first.as_deref().is_some_and(|u| !key_may_go(u));
+        let onto_this_pc = first.as_deref().is_some_and(|u| !is_local(u)) && is_local(attempt.url().as_str());
         if attempt.previous().len() >= 10 {
             attempt.error("too many redirects")
-        } else if key_may_go(attempt.url().as_str()) {
+        } else if keyless || (key_may_go(attempt.url().as_str()) && !onto_this_pc) {
             attempt.follow()
         } else {
             attempt.stop()
@@ -99,6 +112,12 @@ mod tests {
         assert!(!key_may_go("http://127.0.0.1@evil.example/v1"));
         assert!(!key_may_go("http:\\\\evil.example\\v1"), "backslashes");
         assert!(!key_may_go("http://localhost.evil.example/v1"));
+        // This PC, for skipping proxies.
+        assert!(is_local("http://127.0.0.1:11434"));
+        assert!(is_local("https://localhost:8443/v1"));
+        assert!(is_local("http://[::1]/v1"));
+        assert!(!is_local("https://api.example.com/v1"));
+        assert!(!is_local("http://192.168.1.20:1234"));
     }
 
     #[test]
