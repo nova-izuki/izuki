@@ -642,7 +642,9 @@ pub struct Settings {
     #[serde(default = "default_true")]
     pub screen_time_enabled: bool,
     /// "What Izuki did": a plain list of what Izuki changed or did on this
-    /// PC (activity.rs), kept on this PC for two weeks, never what was typed.
+    /// PC (actlog.rs), kept on this PC for two weeks, never what was typed.
+    /// On by default: it only describes what Izuki itself did, never leaves
+    /// the PC, and Settings → Privacy turns it off or clears it.
     #[serde(default = "default_true")]
     pub keep_activity: bool,
     /// The user's town or city, for the weather glance ("" = from memory).

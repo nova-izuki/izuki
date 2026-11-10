@@ -329,7 +329,7 @@ export interface Settings {
   buddy_breaks: boolean;
   recall_enabled: boolean;
   screen_time_enabled: boolean;
-  /** "What Izuki did": a local list of Izuki's actions (activity.rs). */
+  /** "What Izuki did": a local list of Izuki's actions (actlog.rs). */
   keep_activity: boolean;
   home_city: string;
   learn_city: boolean;

@@ -85,7 +85,8 @@ export function AccessCard() {
     {
       title: "Your phone",
       rows: [
-        { icon: "📱", label: "Phone controls this PC", detail: "Your linked phone can move the mouse and type here. Each action is logged; Izuki shows a badge while it's in use.", on: settings.phone_remote, set: (v) => patch({ phone_remote: v }), manage: { id: "settings-phone" } },
+        { icon: "🙋", label: "Phone asks Izuki to do things here", detail: "From your phone, Discord or Telegram, Izuki can open apps, arrange windows and change looks on this PC. Off: those requests are refused.", on: settings.phone_controls_pc, set: (v) => patch({ phone_controls_pc: v }), manage: { id: "settings-phone" } },
+        { icon: "📱", label: "Phone as trackpad and keyboard", detail: "Your linked phone can move the mouse and type here directly. Each action is logged; Izuki shows a badge while it's in use.", on: settings.phone_remote, set: (v) => patch({ phone_remote: v }), manage: { id: "settings-phone" } },
         { icon: "⌨️", label: "Phone terminal", detail: "Your linked phone can run commands on this PC.", on: settings.phone_terminal, set: (v) => patch({ phone_terminal: v }), manage: { id: "settings-phone" } },
         { icon: "📞", label: "Call Izuki", detail: "Opens a private link (through Cloudflare) so your phone can talk to Izuki on this PC.", on: settings.call_enabled, set: (v) => patch({ call_enabled: v }), manage: { id: "settings-phone" } },
       ],
@@ -104,6 +105,12 @@ export function AccessCard() {
         { icon: "📅", label: "Calendar heads-ups", detail: "Reads your linked calendar to remind you before things start.", on: settings.heads_up_calendar, set: (v) => patch({ heads_up_calendar: v }) },
         { icon: "🧩", label: "Browser extension", detail: "Lets Izuki read and act inside the web page you're on, in your own browser.", status: <Badge tone={ext?.connected ? "good" : "neutral"}>{ext ? (ext.connected ? "Connected" : "Not connected") : "Checking…"}</Badge>, manage: { id: "settings-browser" } },
         { icon: "🔑", label: "Saved keys", detail: keys.length ? `${keys.join(", ")}. Kept in your Izuki folder on this PC, sent only to their own service (always encrypted, or to this PC).` : "No keys saved.", status: <Badge tone="neutral">{keys.length}</Badge>, manage: { id: "settings-brain" } },
+      ],
+    },
+    {
+      title: "Acts without asking",
+      rows: [
+        { icon: "⚡", label: "Chat saves files and runs commands by itself", detail: "In the Chat tab's Code mode, file saves and commands run without the Allow card (each still shows). Off: you allow each one.", on: settings.chat_auto_run, set: (v) => patch({ chat_auto_run: v }) },
       ],
     },
     {
@@ -134,7 +141,7 @@ export function AccessCard() {
                       </button>
                     )}
                   </span>
-                  <span className="shrink-0 pt-0.5">{r.set ? <Toggle checked={!!r.on} onChange={r.set} /> : r.status}</span>
+                  <span className="shrink-0 pt-0.5">{r.set ? <Toggle checked={!!r.on} onChange={r.set} label={r.label} /> : r.status}</span>
                 </li>
               ))}
             </ul>
@@ -173,6 +180,7 @@ export function ActivityCard() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [error, setError] = useState("");
   const asked = useRef(0);
+  const dayNow = useRef("");
 
   const load = (which?: string) => {
     const n = ++asked.current;
@@ -183,6 +191,9 @@ export function ActivityCard() {
         if (n !== asked.current) return;
         setDays(all);
         const d = which && all.includes(which) ? which : all[0] ?? "";
+        // Another day starts unfiltered (its kinds may differ).
+        if (d !== dayNow.current) setKind("all");
+        dayNow.current = d;
         setDay(d);
         const items = d ? await api.actionsDay(d) : [];
         if (n === asked.current) setList(items);
@@ -231,7 +242,7 @@ export function ActivityCard() {
           ))}
         </div>
       )}
-      {kinds.length > 1 && (
+      {(kinds.length > 1 || kind !== "all") && (
         <div className="mb-2 flex flex-wrap gap-1">
           {["all", ...kinds].map((k) => (
             <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)} className={cx("izk-no-drag rounded-full px-2 py-0.5 text-[10.5px]", kind === k ? "bg-white/12 text-izk-ink" : "text-izk-muted hover:text-izk-ink")}>
@@ -373,12 +384,12 @@ export function MyDataCard() {
           <ul className="mt-1.5 list-disc pl-4 text-[11px] leading-relaxed text-izk-muted">
             <li>Gone for good: memories, notes, chats, routines, reminders, research, saved layouts, “What Izuki did”, logs and settings.</li>
             <li>Izuki closes, starts again by itself and erases before loading anything, then opens like new.</li>
-            <li>Kept: downloaded AI models and tools, Code mode's working copies of your projects (close those in Code mode), and what lets you undo Windows changes (looks and tweaks).</li>
+            <li>Kept: downloaded AI models and tools, and what lets you undo Windows changes (looks and tweaks). Code mode's working copies of your projects are erased too; your real projects aren't touched.</li>
             <li>Accounts linked through Composio (like Gmail) stay linked there; remove them first in Apps → Inbox if you want.</li>
           </ul>
-          <label className="mt-2 flex items-center gap-2 text-[11.5px] text-izk-ink">
-            <Toggle checked={keepKeys} onChange={setKeepKeys} /> Keep my AI and app keys
-          </label>
+          <span className="mt-2 flex items-center gap-2 text-[11.5px] text-izk-ink">
+            <Toggle checked={keepKeys} onChange={setKeepKeys} label="Keep my AI and app keys" /> Keep my AI and app keys
+          </span>
           <form
             className="mt-2.5 flex flex-wrap items-center gap-2"
             onSubmit={(e) => {

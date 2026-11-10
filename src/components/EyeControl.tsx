@@ -226,8 +226,10 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let onDevices: (() => void) | null = null;
     let waitingForCamera = false;
-    // The head's distance from where it was at calibration (#41).
+    // The head's distance from where it was at calibration (#41), and what
+    // was said about it (re-said whenever the status is said again).
     let drift = newHeadDrift();
+    let driftMessage = "";
     let lastFace = 0;
     let calAt = 0;
     let clickAt = 0;
@@ -625,12 +627,13 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
     };
 
     const startCal = () => {
-      if (!readyForCalibration) {
-        setStatus(waitingForCamera ? "Waiting for the camera — Eye Control picks it up by itself." : "The eye camera is still starting — try Calibrate again in a moment.");
-        return;
-      }
+      // Stopped first: a tracker that hit an error isn't "still starting".
       if (runtimeStopped) {
         setStatus(waitingForCamera ? "Waiting for the camera — Eye Control picks it up by itself." : "Eye Control stopped — turn Air control off and on to retry.");
+        return;
+      }
+      if (!readyForCalibration) {
+        setStatus(waitingForCamera ? "Waiting for the camera — Eye Control picks it up by itself." : "The eye camera is still starting — try Calibrate again in a moment.");
         return;
       }
       if (!faceNow) {
@@ -652,6 +655,7 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
       calHadGaze = false;
       jumpState = newGazeJumpState();
       drift = newHeadDrift();
+      driftMessage = "";
       calAt = performance.now();
       const target = cal.targets[0] ?? null;
       setCalView({
@@ -937,6 +941,7 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
       // Only a passed accuracy check moves the real mouse, and only to a
       // steady look (not every flicker); otherwise the cursor is just drawn.
       const head = headDriftStep(drift, cal.headAnchor, f.head ?? null, now);
+      if (head.changed) driftMessage = head.level === "ok" ? "" : head.message;
       if (head.changed) {
         if (head.level === "ok") {
           // Back: the usual status is said again below.
@@ -983,7 +988,10 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
 
       if (!autoFaceStatus) {
         autoFaceStatus = true;
-        const message = !pointerMode
+        // A head that has moved stays the reason, whatever else re-said the status.
+        const message = head.level !== "ok" && driftMessage
+          ? driftMessage
+          : !pointerMode
           ? verdictMessage()
           : clicksRef.current
             ? "Eye control on — look and hold to steer, double blink to click."

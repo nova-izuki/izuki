@@ -12,11 +12,12 @@
 //! - **Erase:** wipes it all, the next time Izuki starts, before anything
 //!   has loaded (a running Izuki holds some of it in memory and would write
 //!   it back). Izuki closes, starts again by itself, erases, and opens fresh.
-//!   Kept: downloaded AI models and tools, Code mode's working copies of
-//!   your projects (git worktrees: deleting them from outside would leave
-//!   the real project pointing at nothing), and what's needed to undo
+//!   Kept: downloaded AI models and tools, and what's needed to undo
 //!   changes to Windows (looks, tweaks, services), which are about the PC,
-//!   not you. Your AI keys only if you ask to keep them.
+//!   not you. Code mode's working copies of your projects go too (your real
+//!   projects aren't touched; git lists the old copy as prunable). Your AI
+//!   keys only if you ask to keep them. If the old Izuki won't close,
+//!   nothing is erased and the next start tries again.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -25,10 +26,15 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Folders in the data folder that are downloads or tools, not your data.
-const NOT_DATA_DIRS: &[&str] = &["models", "bin", "elevated", "wakewords", "workspaces", "looks"];
-/// Izuki's own secrets: never copied.
-const SECRET_FILES: &[&str] = &["bridge-key"];
+/// Folders in the data folder that are downloads or tools, not your data:
+/// kept by Erase.
+const NOT_DATA_DIRS: &[&str] = &["models", "bin", "elevated", "wakewords", "looks"];
+/// Left out of a copy too: Code mode's working copies of your projects
+/// (your own code, which you have anyway). Erased like the rest.
+const NOT_IN_COPY_DIRS: &[&str] = &["workspaces", "vision"];
+/// Izuki's own secrets: never copied. The signing key for phone
+/// notifications and the phones' push addresses are secrets as well.
+const SECRET_FILES: &[&str] = &["bridge-key", "vapid.key", "push.json"];
 /// Kept by Erase: what puts Windows back the way it was.
 const UNDO_FILES: &[&str] = &["looks.json", "services-undo.json", "tweak-packs-undo.json"];
 /// The biggest single file put in the copy, and the whole copy.
@@ -94,7 +100,7 @@ fn files_for_copy(root: &Path) -> Vec<(PathBuf, String)> {
                 continue;
             }
             if kind.is_dir() {
-                if !NOT_DATA_DIRS.contains(&top) && top != "vision" {
+                if !NOT_DATA_DIRS.contains(&top) && !NOT_IN_COPY_DIRS.contains(&top) {
                     stack.push(path);
                 }
                 continue;
@@ -123,9 +129,18 @@ pub fn export(app_data: Option<Value>) -> Result<PathBuf> {
 }
 
 fn write_zip(root: &Path, out: &Path, app_data: Option<Value>) -> Result<()> {
-    use zip::write::SimpleFileOptions;
     let partial = out.with_extension("zip.part");
-    let file = std::fs::File::create(&partial).with_context(|| format!("couldn't make {}", partial.display()))?;
+    let done = write_zip_to(root, &partial, out, app_data);
+    if done.is_err() {
+        // Half a copy is still part of your data: never left lying in Downloads.
+        let _ = std::fs::remove_file(&partial);
+    }
+    done
+}
+
+fn write_zip_to(root: &Path, partial: &Path, out: &Path, app_data: Option<Value>) -> Result<()> {
+    use zip::write::SimpleFileOptions;
+    let file = std::fs::File::create(partial).with_context(|| format!("couldn't make {}", partial.display()))?;
     let mut zip = zip::ZipWriter::new(file);
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     let mut total = 0u64;
@@ -170,7 +185,7 @@ fn write_zip(root: &Path, out: &Path, app_data: Option<Value>) -> Result<()> {
     zip.start_file("README.txt", opts)?;
     zip.write_all(readme(put, &left_out).as_bytes())?;
     zip.finish()?;
-    std::fs::rename(&partial, out).with_context(|| format!("couldn't save {}", out.display()))?;
+    std::fs::rename(partial, out).with_context(|| format!("couldn't save {}", out.display()))?;
     Ok(())
 }
 
@@ -241,7 +256,7 @@ pub fn ask_to_erase(keep_keys: bool) -> Result<()> {
 const KEY_FIELDS: &[&str] = &[
     "providers", "active_provider", "fallback_provider", "groq_api_key", "elevenlabs_key", "azure_speech_key", "azure_speech_region", "composio_api_key",
     "composio_user_id", "telegram_token", "telegram_chat_id", "discord_token", "discord_user_id", "stripe_key", "shopify_store", "shopify_token", "n8n_url",
-    "n8n_api_key",
+    "n8n_api_key", "fl_key",
 ];
 
 /// Runs first thing at start, before the log, settings or windows: if an
@@ -251,15 +266,27 @@ pub fn erase_if_asked() {
     let marker = root.join(MARKER);
     let Ok(raw) = std::fs::read(&marker) else { return };
     let pending: Pending = serde_json::from_slice(&raw).unwrap_or(Pending { pid: 0, keep_keys: false });
-    if pending.pid != 0 && pending.pid != std::process::id() {
-        wait_for_exit(pending.pid);
+    // The old Izuki still running would write its memory back over the
+    // erase: nothing is erased then, and the next start tries again.
+    if pending.pid != 0 && pending.pid != std::process::id() && !wait_for_exit(pending.pid) {
+        *LEFT.lock() = vec!["nothing: the old Izuki didn't close within 20 seconds, so the erase waits for the next start".into()];
+        ERASED.store(true, std::sync::atomic::Ordering::SeqCst);
+        return;
     }
     let kept_keys = if pending.keep_keys { keys_from(&root.join("settings.json")) } else { None };
-    let mut left = erase_in(&root);
+    // Code mode's copies go the safe way first: their links into your
+    // project are undone before anything is deleted. One whose links
+    // couldn't be undone is left whole.
+    let stuck = crate::coding::discard_all();
+    let keep_workspaces = !stuck.is_empty();
+    let mut left = erase_in(&root, keep_workspaces);
     // A file the old Izuki still held a moment ago: once more, after a pause.
     if !left.is_empty() {
         std::thread::sleep(std::time::Duration::from_millis(1500));
-        left = erase_in(&root);
+        left = erase_in(&root, keep_workspaces);
+    }
+    if keep_workspaces {
+        left.push(format!("Code mode's copies {} (a link into your project couldn't be undone; close them in Code mode)", stuck.join(", ")));
     }
     if let Some(keys) = kept_keys {
         let _ = std::fs::write(root.join("settings.json"), serde_json::to_vec_pretty(&settings_with(&keys)).unwrap_or_default());
@@ -318,13 +345,14 @@ fn keys_from(settings: &Path) -> Option<Value> {
 }
 
 /// Delete everything in the data folder except downloads, tools and the
-/// undo for Windows changes. What couldn't be deleted, by name.
-fn erase_in(root: &Path) -> Vec<String> {
+/// undo for Windows changes (and Code mode's copies when `keep_workspaces`).
+/// What couldn't be deleted, by name.
+fn erase_in(root: &Path, keep_workspaces: bool) -> Vec<String> {
     let mut left = Vec::new();
     let Ok(read) = std::fs::read_dir(root) else { return left };
     for e in read.flatten() {
         let name = e.file_name().to_string_lossy().to_string();
-        if NOT_DATA_DIRS.contains(&name.as_str()) || UNDO_FILES.contains(&name.as_str()) || name == MARKER {
+        if NOT_DATA_DIRS.contains(&name.as_str()) || UNDO_FILES.contains(&name.as_str()) || name == MARKER || (keep_workspaces && name == "workspaces") {
             continue;
         }
         let path = e.path();
@@ -344,6 +372,11 @@ fn erase_in(root: &Path) -> Vec<String> {
 /// hold it for a few seconds after Izuki closes, so it's tried for up to
 /// five. What couldn't be removed, in words.
 fn erase_window_storage() -> Option<String> {
+    // Windows can be told to keep every app's WebView2 storage in one other
+    // folder; that one is shared, so it isn't Izuki's to delete.
+    if let Some(custom) = std::env::var_os("WEBVIEW2_USER_DATA_FOLDER").filter(|v| !v.is_empty()) {
+        return Some(format!("the window's own storage, which Windows keeps in a shared folder ({}); clear Izuki's part of it yourself", std::path::Path::new(&custom).display()));
+    }
     let folder = dirs::data_local_dir()?.join("com.novaizuki.izuki").join("EBWebView");
     for _ in 0..10 {
         match std::fs::remove_dir_all(&folder) {
@@ -355,22 +388,25 @@ fn erase_window_storage() -> Option<String> {
     Some("the window's own storage (chat history)".into())
 }
 
+/// Waits for the Izuki that asked to close (it does in about 2 s): true once
+/// it has (or was already gone), false if it's still running after 20 s.
 #[cfg(windows)]
-fn wait_for_exit(pid: u32) {
-    use windows::Win32::Foundation::CloseHandle;
+fn wait_for_exit(pid: u32) -> bool {
+    use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
     use windows::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
     unsafe {
-        if let Ok(h) = OpenProcess(PROCESS_SYNCHRONIZE, false, pid) {
-            // At most 20 s: Izuki closes itself in about 2.
-            let _ = WaitForSingleObject(h, 20_000);
-            let _ = CloseHandle(h);
-        }
+        // Can't be opened: it has already gone.
+        let Ok(h) = OpenProcess(PROCESS_SYNCHRONIZE, false, pid) else { return true };
+        let ended = WaitForSingleObject(h, 20_000) == WAIT_OBJECT_0;
+        let _ = CloseHandle(h);
+        ended
     }
 }
 
 #[cfg(not(windows))]
-fn wait_for_exit(_pid: u32) {
+fn wait_for_exit(_pid: u32) -> bool {
     std::thread::sleep(std::time::Duration::from_secs(3));
+    true
 }
 
 /// What's kept about you right now, for the Privacy page: how many files
@@ -448,6 +484,10 @@ mod tests {
         std::fs::write(root.join("settings.json"), r#"{"groq_api_key":"gsk_secret","name":"Sam"}"#).unwrap();
         std::fs::write(root.join("settings.backup-1.json"), r#"{"providers":[{"api_key":"AIza_old"}]}"#).unwrap();
         std::fs::write(root.join("bridge-key"), "never").unwrap();
+        std::fs::write(root.join("vapid.key"), "push-signing-secret").unwrap();
+        std::fs::write(root.join("push.json"), r#"[{"endpoint":"https://push.example/abc","auth":"push-auth-secret"}]"#).unwrap();
+        std::fs::create_dir_all(root.join("workspaces").join("proj")).unwrap();
+        std::fs::write(root.join("workspaces").join("proj").join("main.rs"), "fn main() {}").unwrap();
         std::fs::create_dir_all(root.join("models")).unwrap();
         std::fs::write(root.join("models").join("big.onnx"), "weights").unwrap();
         std::fs::create_dir_all(root.join("actions")).unwrap();
@@ -466,6 +506,7 @@ mod tests {
         }
         assert!(all.contains("likes tea") && all.contains("Sam") && all.contains("README.txt") && all.contains("izuki.chats"));
         assert!(!all.contains("gsk_secret") && !all.contains("AIza_old") && !all.contains("never") && !all.contains("weights") && !all.contains("\"p\""), "{all}");
+        assert!(!all.contains("push-signing-secret") && !all.contains("push-auth-secret") && !all.contains("fn main"), "push secrets and project copies stay out");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&out_dir);
     }
@@ -473,11 +514,11 @@ mod tests {
     #[test]
     fn erase_keeps_downloads_and_undo_and_can_keep_keys() {
         let root = temp();
-        for f in ["memories.json", "notes.json", "settings.json", "looks.json", "tweak-packs-undo.json", "bridge-key"] {
+        for f in ["memories.json", "notes.json", "settings.json", "looks.json", "tweak-packs-undo.json", "bridge-key", "vapid.key"] {
             std::fs::write(root.join(f), "{}").unwrap();
         }
         std::fs::write(root.join("settings.json"), r#"{"groq_api_key":"gsk","name":"Sam","providers":[{"api_key":"AIza"}]}"#).unwrap();
-        for d in ["models", "logs", "debug", "actions"] {
+        for d in ["models", "logs", "debug", "actions", "workspaces"] {
             std::fs::create_dir_all(root.join(d)).unwrap();
             std::fs::write(root.join(d).join("x"), "x").unwrap();
         }
@@ -498,7 +539,7 @@ mod tests {
         assert_eq!(back.providers[0].api_key, "AIza-real");
         assert!(!back.onboarding_seen);
         let _ = std::fs::remove_file(root.join("real.json"));
-        assert!(erase_in(&root).is_empty());
+        assert!(erase_in(&root, false).is_empty());
         let mut left: Vec<String> = std::fs::read_dir(&root).unwrap().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
         left.sort();
         assert_eq!(left, ["looks.json", "models", "tweak-packs-undo.json"]);

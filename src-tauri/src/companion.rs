@@ -743,6 +743,10 @@ pub fn notify_everywhere(text: &str) {
 /// The Style requests that change the PC (each needs "phone controls this
 /// PC" on), and the list of what Izuki did (only reads).
 fn style_on_pc(said: &str) -> Option<String> {
+    // "Every weekday at 9, set up my Work layout" is a routine, made below.
+    if crate::routines::scheduled(said) {
+        return None;
+    }
     let on_pc = |run: &dyn Fn() -> String| pc_allowed().unwrap_or_else(run);
     if let Some(ask) = crate::arrange::parse(said).filter(|a| crate::arrange::claims(a, said)) {
         return Some(on_pc(&|| crate::arrange::handle(ask.clone())));

@@ -314,14 +314,25 @@ export function StyleTab() {
 
   // The last one-tap pack (or a vibe's or Premium's tweaks) can be put back
   // exactly; asked again whenever the tweaks change.
+  // Also after anything here finishes (a vibe or Premium whose pack Windows
+  // partly refused still saves its undo), and when the panel comes back into
+  // view (voice, the phone or Discord may have used or undone a pack).
   const [lastPack, setLastPack] = useState<PackUndoInfo | null>(null);
+  const packAsk = useRef(0);
+  const refreshPack = () => {
+    const n = ++packAsk.current;
+    void api.tweakPackLast().then((v) => n === packAsk.current && setLastPack(v)).catch(() => undefined);
+  };
+  useEffect(refreshPack, [tweaks, busy]);
   useEffect(() => {
-    let alive = true;
-    void api.tweakPackLast().then((v) => alive && setLastPack(v)).catch(() => undefined);
+    const seen = () => document.visibilityState === "visible" && refreshPack();
+    document.addEventListener("visibilitychange", seen);
+    window.addEventListener("focus", seen);
     return () => {
-      alive = false;
+      document.removeEventListener("visibilitychange", seen);
+      window.removeEventListener("focus", seen);
     };
-  }, [tweaks]);
+  }, []);
 
   const run = <T,>(key: string, what: () => Promise<T>, then: (v: T) => void, said: string | ((v: T) => string), failed?: () => void) => {
     if (busyRef.current) return;
@@ -629,7 +640,7 @@ export function StyleTab() {
                 disabled={busy !== null}
                 title="Or say “undo the tweaks”"
                 className="izk-pill izk-no-drag px-3 py-1"
-                onClick={() => run("pack-undo", () => api.tweakPackUndo(), (r) => r.tweaks.length && setTweaks(r.tweaks), (r) => r.said)}
+                onClick={() => run("pack-undo", () => api.tweakPackUndo(), (r) => r.tweaks.length && setTweaks(r.tweaks), (r) => r.said, () => void api.tweaksList().then(setTweaks).catch(() => undefined))}
               >
                 {busy === "pack-undo" ? "Putting back…" : `Undo the ${lastPack.name} tweaks`}
               </button>

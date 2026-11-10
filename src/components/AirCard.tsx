@@ -33,7 +33,7 @@ const EYE_MOVES: Array<[string, string]> = [
  * Eye Control's emergency stop, in Settings: the keys, a Stop button, and
  * the pause state from Rust (airsafe.rs), with Resume.
  */
-function EyeStopPanel({ stopKey }: { stopKey: string }) {
+function EyeStopPanel({ stopKey, talkKey }: { stopKey: string; talkKey: string }) {
   const [safety, setSafety] = useState<AirSafety | null>(null);
   const [stopFailed, setStopFailed] = useState(false);
   useEffect(() => {
@@ -51,7 +51,7 @@ function EyeStopPanel({ stopKey }: { stopKey: string }) {
     <div className="mt-2 rounded-xl border border-rose-400/40 bg-rose-500/10 px-2.5 py-2 text-[10.5px] leading-snug text-rose-50">
       <div className="flex items-center justify-between gap-2">
         <span>
-          <b>Emergency stop:</b> {stopKey} · the Stop button on screen · say “stop eye control”. Moving the mouse or typing pauses the eye
+          <b>Emergency stop:</b> {stopKey} · the Stop button on screen · hold {talkKey} and say “stop eye control”. Moving the mouse or typing pauses the eye
           pointer.
         </span>
         <button
@@ -235,8 +235,8 @@ export function AirCard() {
             ? "Hand Control uses the existing hand tracker. All gestures, game controls and taught poses below are unchanged."
             : "Eye Control looks where you look. Calibrate first; single blinks never click. Both is deliberately unavailable until Hand and Eye have each passed on this camera."}
         </p>
-        {mode === "eye" && <EyeGuide stopKey={settings.eye_stop_hotkey} />}
-        {mode === "eye" && <EyeStopPanel stopKey={settings.eye_stop_hotkey} />}
+        {mode === "eye" && <EyeGuide stopKey={settings.eye_stop_hotkey} talkKey={settings.hotkey_voice} />}
+        {mode === "eye" && <EyeStopPanel stopKey={settings.eye_stop_hotkey} talkKey={settings.hotkey_voice} />}
         {mode === "eye" && (
           <div className="mt-2 flex items-start gap-2 rounded-xl bg-sky-400/10 px-2.5 py-2 text-[10.5px] leading-snug text-sky-100">
             <span aria-hidden className="mt-0.5">🔒</span>

@@ -41,6 +41,13 @@ export function WindowArrange({ disabled, onBusy }: { disabled: boolean; onBusy:
   // The layout whose delete was pressed once (a second press deletes).
   const [deleting, setDeleting] = useState("");
   const locked = useRef(false);
+  const refreshAsk = useRef(0);
+  /** What can be undone and the saved list, read again; an older answer never overwrites a newer one. */
+  const refresh = () => {
+    const n = ++refreshAsk.current;
+    void api.windowLayoutCanUndo().then((v) => n === refreshAsk.current && setCanUndo(v)).catch(() => undefined);
+    void api.layoutsSaved().then((v) => n === refreshAsk.current && setSaved(v)).catch(() => undefined);
+  };
 
   // An arrangement made earlier (or by voice) can still be put back, and
   // layouts saved by voice show up here.
@@ -67,12 +74,10 @@ export function WindowArrange({ disabled, onBusy }: { disabled: boolean; onBusy:
     } catch (e) {
       setError(String(e).replace(/^Error:\s*/, ""));
     } finally {
-      setCanUndo(await api.windowLayoutCanUndo().catch(() => false));
-      const fresh = await api.layoutsSaved().catch(() => null);
-      if (fresh) setSaved(fresh);
       locked.current = false;
       setBusy("");
       onBusy(null);
+      refresh();
     }
   };
 
@@ -154,6 +159,7 @@ export function WindowArrange({ disabled, onBusy }: { disabled: boolean; onBusy:
             }}
           >
             <input
+              name="layout-name"
               value={name}
               onChange={(e) => setName(e.target.value.slice(0, 32))}
               placeholder="Name it: Work, Coding…"

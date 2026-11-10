@@ -596,6 +596,7 @@ pub fn run() {
             bugs::start();
             eprintln!("[izuki] starting v{}", env!("CARGO_PKG_VERSION"));
             mydata::report_erase();
+            actlog::prune_old();
             let store = state::init();
             bugs::set_enabled(store.settings().send_bug_reports);
             ext::spawn();

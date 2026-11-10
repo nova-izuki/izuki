@@ -28,6 +28,8 @@ pub struct Entry {
 const KEEP_DAYS: i64 = 14;
 /// The longest line kept (a long window title is cut).
 const MOST_CHARS: usize = 180;
+/// The most one day's list holds (a stuck loop can't fill the disk).
+const MOST_PER_DAY: u64 = 2 * 1024 * 1024;
 
 /// Serialises writes, and remembers the day already tidied this run.
 static WRITING: parking_lot::Mutex<String> = parking_lot::Mutex::new(String::new());
@@ -82,7 +84,11 @@ fn write_to(folder: &std::path::Path, day: &str, entry: &Entry) -> Result<()> {
         prune(folder, day);
         *tidied = day.to_string();
     }
-    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(folder.join(format!("{day}.jsonl")))?;
+    let path = folder.join(format!("{day}.jsonl"));
+    if std::fs::metadata(&path).is_ok_and(|m| m.len() >= MOST_PER_DAY) {
+        return Err(anyhow!("today's list is full ({} MB)", MOST_PER_DAY / 1024 / 1024));
+    }
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
     let mut line = serde_json::to_string(entry)?;
     line.push('\n');
     f.write_all(line.as_bytes())?;
@@ -103,9 +109,17 @@ fn prune(folder: &std::path::Path, today: &str) {
     }
 }
 
-/// The days that have something on them, newest first.
+/// The days that have something on them, newest first (never older than
+/// two weeks, even while the list is off).
 pub fn days() -> Vec<String> {
+    prune_old();
     days_in(&dir())
+}
+
+/// Removes days older than two weeks, whether or not the list is on. Runs
+/// at start and whenever the list is read.
+pub fn prune_old() {
+    prune(&dir(), &chrono::Local::now().format("%Y-%m-%d").to_string());
 }
 
 fn days_in(folder: &std::path::Path) -> Vec<String> {
@@ -165,8 +179,11 @@ pub fn answer(yesterday: bool) -> String {
         return "I don't keep a list of what I do right now — it's off in Settings → Privacy. Turn on \"Keep a list of what Izuki does\" and I'll note everything from then on.".into();
     }
     let when = if yesterday { chrono::Local::now() - chrono::Duration::days(1) } else { chrono::Local::now() };
-    let list = day(&when.format("%Y-%m-%d").to_string()).unwrap_or_default();
-    summary(&list, if yesterday { "yesterday" } else { "today" })
+    match day(&when.format("%Y-%m-%d").to_string()) {
+        Ok(list) => summary(&list, if yesterday { "yesterday" } else { "today" }),
+        // Never a false "nothing": say the list couldn't be read.
+        Err(e) => format!("I couldn't read the list of what I did just now ({e}). It's in Settings → Privacy → What Izuki did."),
+    }
 }
 
 fn summary(list: &[Entry], when: &str) -> String {
@@ -226,6 +243,10 @@ mod tests {
         write_to(&d, "2026-11-10", &e("Opened Chrome")).unwrap();
         write_to(&d, "2026-11-10", &e("Arranged 2 windows side by side")).unwrap();
         assert_eq!(days_in(&d), vec!["2026-11-10".to_string()]);
+        // A full day takes no more.
+        std::fs::write(d.join("2026-11-11.jsonl"), vec![b'x'; MOST_PER_DAY as usize]).unwrap();
+        assert!(write_to(&d, "2026-11-11", &e("one too many")).is_err());
+        let _ = std::fs::remove_file(d.join("2026-11-11.jsonl"));
         let today = day_in(&d, "2026-11-10").unwrap();
         assert_eq!(today.iter().map(|e| e.text.as_str()).collect::<Vec<_>>(), ["Arranged 2 windows side by side", "Opened Chrome"]);
         assert!(day_in(&d, "2026-11-09").unwrap().is_empty(), "a day with nothing");

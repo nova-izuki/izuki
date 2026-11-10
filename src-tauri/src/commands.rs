@@ -542,11 +542,13 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     // Window layouts: "put my windows side by side", "undo the layout",
     // "save my windows as Work", "set up my Work layout" (arrange.rs). A
     // "setup" that isn't one of your saved layouts is left for the rest.
-    if let Some(ask) = crate::arrange::parse(&said).filter(|a| crate::arrange::claims(a, &said)) {
+    // "Every weekday at 9, set up my Work layout" is a routine (below), not now.
+    let scheduled = crate::routines::scheduled(&said);
+    if let Some(ask) = crate::arrange::parse(&said).filter(|a| !scheduled && crate::arrange::claims(a, &said)) {
         return blocking(move || crate::arrange::handle(ask)).await.ok();
     }
     // "Undo the tweaks", "undo the gamer pack" (tweaks.rs).
-    if crate::tweaks::parse_undo(&said) {
+    if !scheduled && crate::tweaks::parse_undo(&said) {
         return blocking(crate::tweaks::undo_pack_said).await.ok();
     }
     // "What did you do today?": the "What Izuki did" list (actlog.rs).
@@ -554,7 +556,7 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         return blocking(move || crate::actlog::answer(yesterday)).await.ok();
     }
     // Windows looks: "make my PC look Nova", "make it cozy", "undo the look", "accent colour red" (winlook.rs).
-    if let Some(ask) = crate::winlook::parse(&said) {
+    if let Some(ask) = crate::winlook::parse(&said).filter(|_| !scheduled) {
         return blocking(move || crate::winlook::handle(ask)).await.ok();
     }
     // "Go to San Jac Blackboard": the right website, opened directly (sites.rs).
@@ -1947,7 +1949,12 @@ pub fn my_data_show(app: AppHandle, path: String) -> R<()> {
 /// "Erase everything": Izuki closes, starts again by itself and erases
 /// before anything loads. `keep_keys` keeps your AI and app keys.
 #[tauri::command]
-pub async fn erase_everything(app: AppHandle, keep_keys: bool) -> R<()> {
+pub async fn erase_everything(app: AppHandle, window: tauri::Window, keep_keys: bool) -> R<()> {
+    // Only the settings window has the two-step confirmation; no other
+    // window (the overlay, the Island) may ask for this.
+    if window.label() != crate::overlay::CONFIG_LABEL {
+        return Err(err("erasing is done from Izuki's Settings"));
+    }
     blocking(move || crate::mydata::one_at_a_time(|| crate::mydata::ask_to_erase(keep_keys)).map_err(|e| e.to_string())).await??;
     crate::quit(&app);
     Ok(())

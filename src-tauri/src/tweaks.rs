@@ -160,6 +160,7 @@ pub fn set(id: &str, on: bool) -> Result<Vec<Tweak>> {
 /// exactly that, even after a restart.
 pub fn set_pack(id: &str) -> Result<Vec<Tweak>> {
     let pack = PACKS.iter().find(|p| p.id == id).ok_or_else(|| anyhow!("no pack called {id}"))?;
+    let _turn = PACK_TURN.lock();
     let mut problems = Vec::new();
     let mut before = Vec::new();
     for t in pack.ids {
@@ -181,7 +182,10 @@ pub fn set_pack(id: &str) -> Result<Vec<Tweak>> {
         let mut stack = undo_stack();
         stack.push(PackUndo { pack: id.to_string(), at: now_secs(), before });
         let keep = stack.len().saturating_sub(UNDO_KEEP);
-        save_undo_stack(&stack[keep..]);
+        if let Err(e) = save_undo_stack(&stack[keep..]) {
+            // The pack is on, but there's no way back: say so, never "Undo" for nothing.
+            problems.push(format!("the undo for this pack couldn't be saved ({e}), so it can't be undone automatically"));
+        }
     }
     shell::announce();
     crate::actlog::record("style", &format!("Turned on the {} tweaks", pack_name(id)));
@@ -241,6 +245,10 @@ pub struct PackUndoInfo {
 /// How many packs back "undo" can go.
 const UNDO_KEEP: usize = 8;
 
+/// A pack and an undo never overlap (the Style tab, voice and the phone can
+/// all ask at once), so no undo record is lost or brought back.
+static PACK_TURN: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
 fn now_secs() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
@@ -253,23 +261,23 @@ fn undo_stack() -> Vec<PackUndo> {
     std::fs::read_to_string(undo_path()).ok().and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default()
 }
 
-fn save_undo_stack(stack: &[PackUndo]) {
+/// Written whole (a new file, then swapped in): a power cut mid-write never
+/// leaves half a file, which would read as nothing to undo.
+fn save_undo_stack(stack: &[PackUndo]) -> Result<()> {
     let path = undo_path();
     if stack.is_empty() {
-        let _ = std::fs::remove_file(&path);
-        return;
+        return match std::fs::remove_file(&path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+            _ => Ok(()),
+        };
     }
     if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
+        std::fs::create_dir_all(dir)?;
     }
-    match serde_json::to_string_pretty(stack) {
-        Ok(raw) => {
-            if let Err(e) = std::fs::write(&path, raw) {
-                eprintln!("[tweaks] couldn't save the undo for packs: {e}");
-            }
-        }
-        Err(e) => eprintln!("[tweaks] couldn't save the undo for packs: {e}"),
-    }
+    let fresh = path.with_extension("json.new");
+    std::fs::write(&fresh, serde_json::to_string_pretty(stack)?)?;
+    std::fs::rename(&fresh, &path)?;
+    Ok(())
 }
 
 /// How a tweak's settings are right now, in the form they're put back in.
@@ -300,6 +308,7 @@ pub fn last_pack() -> Option<PackUndoInfo> {
 /// setting already back where it was (you turned it off yourself) is left
 /// alone. Returns what was done, in words, and the fresh list.
 pub fn undo_pack() -> Result<(String, Vec<Tweak>)> {
+    let _turn = PACK_TURN.lock();
     let mut stack = undo_stack();
     let last = stack.pop().ok_or_else(|| anyhow!("There are no tweak packs to undo — Izuki hasn't turned one on."))?;
     let mut problems = Vec::new();
@@ -327,10 +336,12 @@ pub fn undo_pack() -> Result<(String, Vec<Tweak>)> {
     if !problems.is_empty() {
         // Keep it, so Undo can be tried again for what Windows refused.
         stack.push(last);
-        save_undo_stack(&stack);
+        let _ = save_undo_stack(&stack);
         return Err(anyhow!("Put most of the {name} tweaks back, but Windows kept these: {}", problems.join("; ")));
     }
-    save_undo_stack(&stack);
+    if let Err(e) = save_undo_stack(&stack) {
+        eprintln!("[tweaks] the undo list couldn't be updated: {e}");
+    }
     crate::actlog::record("style", &format!("Undid the {name} tweaks"));
     eprintln!("[tweaks] undid pack {} ({changed} put back)", last.pack);
     let said = match changed {

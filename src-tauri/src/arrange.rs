@@ -175,14 +175,14 @@ fn parse_saved(s: &str) -> Option<Ask> {
     if !about {
         return None;
     }
-    if [" save ", " remember ", " store ", " keep "].iter().any(|w| has(w)) {
-        // "Save this layout as Work", "save my windows as Coding"; a bare
-        // "save the layout" (a document's?) needs the windows named.
-        let named = saved_name(s);
-        if let Some(n) = named {
+    if [" save ", " remember "].iter().any(|w| has(w)) {
+        // "Save this layout as Work", "save my windows as Coding". Without a
+        // name, only an explicit window layout ("save my window layout"); a
+        // bare "save the layout" may be a document's.
+        if let Some(n) = saved_name(s) {
             return Some(Ask::Save(n));
         }
-        if has(" window") {
+        if has(" window layout") || has(" window setup") || has(" windows layout") {
             return Some(Ask::Save("My layout".into()));
         }
         return None;
@@ -519,12 +519,20 @@ pub fn saved() -> Vec<Saved> {
     list
 }
 
+/// One change to the saved layouts at a time (the Style tab and the phone
+/// could save at the same moment).
+static SAVED_TURN: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+/// Written whole: a new file, then swapped in, so a power cut mid-write
+/// never leaves half a list (which would read as no layouts at all).
 fn write_saved(list: &[Saved]) -> Result<()> {
     let path = saved_path();
     if let Some(d) = path.parent() {
         std::fs::create_dir_all(d)?;
     }
-    std::fs::write(&path, serde_json::to_string_pretty(list)?).map_err(|e| anyhow!("couldn't save the layout ({e})"))
+    let fresh = path.with_extension("json.new");
+    std::fs::write(&fresh, serde_json::to_string_pretty(list)?).map_err(|e| anyhow!("couldn't save the layout ({e})"))?;
+    std::fs::rename(&fresh, &path).map_err(|e| anyhow!("couldn't save the layout ({e})"))
 }
 
 fn find_saved<'a>(list: &'a [Saved], name: &str) -> Option<&'a Saved> {
@@ -545,6 +553,7 @@ fn clean_name(name: &str) -> Result<String> {
 
 /// Delete a saved layout.
 pub fn forget(name: &str) -> Result<()> {
+    let _turn = SAVED_TURN.lock();
     let mut list = saved();
     let before = list.len();
     list.retain(|s| !s.name.eq_ignore_ascii_case(name.trim()));
@@ -630,6 +639,7 @@ pub fn save(name: &str) -> Result<String> {
     if windows.is_empty() {
         return Err(anyhow!("There are no app windows open to save. Open and place the apps you want, then save."));
     }
+    let _turn = SAVED_TURN.lock();
     let mut list = saved();
     let replaced = find_saved(&list, &name).is_some();
     list.retain(|s| !s.name.eq_ignore_ascii_case(&name));
@@ -962,6 +972,9 @@ mod tests {
         // Not windows.
         assert_eq!(parse("save the slide layout"), None);
         assert_eq!(parse("save my essay"), None);
+        assert_eq!(parse("keep my windows open"), None, "not a save");
+        assert_eq!(parse("keep my windows as they are"), None);
+        assert_eq!(parse("store my windows passwords"), None);
         assert_eq!(parse("how do I save my window layout"), None);
         assert_eq!(parse("don't set up my work layout"), None);
     }

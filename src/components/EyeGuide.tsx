@@ -24,7 +24,7 @@ function markSeen() {
  * move). Three short steps, then it stays out of the way; "How Eye Control
  * works" opens it again.
  */
-export function EyeGuide({ stopKey }: { stopKey: string }) {
+export function EyeGuide({ stopKey, talkKey }: { stopKey: string; talkKey: string }) {
   const [open, setOpen] = useState(() => !seen());
   const [step, setStep] = useState(0);
 
@@ -34,8 +34,9 @@ export function EyeGuide({ stopKey }: { stopKey: string }) {
       title: "Stopping it, any time",
       body: (
         <>
-          Press <kbd className="rounded bg-white/15 px-1 font-semibold text-white">{stopKey}</kbd>, press the red <b>■ Stop</b> on screen, or say
-          “Izuki, stop eye control”. Moving your own mouse or typing pauses it too. If the camera is unplugged or another app takes it, Eye Control stops
+          Press <kbd className="rounded bg-white/15 px-1 font-semibold text-white">{stopKey}</kbd>, press the red <b>■ Stop</b> on screen, or hold
+          your talk key (<kbd className="rounded bg-white/15 px-1 font-semibold text-white">{talkKey}</kbd>) and say “stop eye control” (with “Hey
+          Izuki” on, just say it). Moving your own mouse or typing pauses it too. If the camera is unplugged or another app takes it, Eye Control stops
           steering at once and picks the camera back up by itself.
         </>
       ),
