@@ -79,7 +79,7 @@ export function AccessCard() {
         { icon: "🖥️", label: "Your screen", detail: "A picture of your screen goes to the AI you chose, only when you ask Izuki to look or do something on it.", status: <Badge tone="good">Only when you ask</Badge>, manage: { id: "settings-brain" } },
         { icon: "🕘", label: "Recall", detail: "Notes the titles of windows you had open, on this PC for a week, so “what was that site this morning?” works. Never private or sign-in windows.", on: settings.recall_enabled, set: (v) => patch({ recall_enabled: v }) },
         { icon: "⏱️", label: "Screen time", detail: "Counts minutes per app and big site (names only, this PC, two weeks).", on: settings.screen_time_enabled, set: (v) => patch({ screen_time_enabled: v }) },
-        { icon: "📷", label: "Camera (Hand and Eye control)", detail: "Your camera, on this PC only, while Hand or Eye control is on. No picture is saved or sent.", on: settings.air_enabled, set: (v) => patch({ air_enabled: v }), manage: { id: "settings-air" } },
+        { icon: "📷", label: "Camera (Hand and Eye control)", detail: "Your camera, on this PC only, while Hand or Eye control is on. No picture is saved or sent.", on: settings.air_enabled, set: (v) => (v ? void api.airArm().catch(() => undefined).finally(() => patch({ air_enabled: true })) : patch({ air_enabled: false })), manage: { id: "settings-air" } },
       ],
     },
     {

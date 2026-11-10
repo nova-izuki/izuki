@@ -39,12 +39,16 @@ fn data() -> PathBuf {
     crate::store::data_dir()
 }
 
+/// Fields whose whole value is private though the name doesn't say so: a
+/// TV's pairing pass, private calendar links, webhook addresses.
+const SECRET_NAMES: &[&str] = &["tv_pair", "school_feeds", "n8n_hooks"];
+
 /// A field that holds a key, token, password or pairing code ("api_key",
-/// "telegram_token", "roku_dev_password", "call_token") — not "hotkey_draw".
+/// "telegram_token", "roku_dev_password", "call_token", "tv_pair") — not
+/// "hotkey_draw".
 fn is_secret_field(name: &str) -> bool {
-    name.to_ascii_lowercase()
-        .split(|c: char| c == '_' || c == '-' || c == '.')
-        .any(|part| matches!(part, "key" | "token" | "password" | "pass" | "secret" | "code" | "pin"))
+    let lower = name.to_ascii_lowercase();
+    SECRET_NAMES.contains(&lower.as_str()) || lower.split(|c: char| c == '_' || c == '-' || c == '.').any(|part| matches!(part, "key" | "token" | "password" | "pass" | "secret" | "code" | "pin"))
 }
 
 /// The same JSON, with every secret field's value replaced.
@@ -52,7 +56,8 @@ fn without_secrets(v: &mut Value) {
     match v {
         Value::Object(map) => {
             for (k, val) in map.iter_mut() {
-                if is_secret_field(k) && !matches!(val, Value::Null | Value::Bool(_)) && val.as_str() != Some("") {
+                let empty = matches!(val, Value::Null | Value::Bool(_)) || val.as_str() == Some("") || val.as_array().is_some_and(|a| a.is_empty());
+                if is_secret_field(k) && !empty {
                     *val = Value::String("[removed]".into());
                 } else {
                     without_secrets(val);
@@ -248,11 +253,18 @@ pub fn erase_if_asked() {
         wait_for_exit(pending.pid);
     }
     let kept_keys = if pending.keep_keys { keys_from(&root.join("settings.json")) } else { None };
-    let left = erase_in(&root);
-    if let Some(keys) = kept_keys {
-        let _ = std::fs::write(root.join("settings.json"), serde_json::to_vec_pretty(&keys).unwrap_or_default());
+    let mut left = erase_in(&root);
+    // A file the old Izuki still held a moment ago: once more, after a pause.
+    if !left.is_empty() {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        left = erase_in(&root);
     }
-    erase_window_storage();
+    if let Some(keys) = kept_keys {
+        let _ = std::fs::write(root.join("settings.json"), serde_json::to_vec_pretty(&settings_with(&keys)).unwrap_or_default());
+    }
+    if let Some(why) = erase_window_storage() {
+        left.push(why);
+    }
     let _ = std::fs::remove_file(&marker);
     // The log starts after this; the line goes into the fresh one.
     ERASED.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -274,6 +286,26 @@ pub fn report_erase() {
             eprintln!("[mydata] erased at start; Windows kept {} file(s) in use: {}", left.len(), left.join(", "));
         }
     }
+}
+
+/// Fresh settings with the kept keys in: a whole settings file, so it loads
+/// like any other (every field there, everything else new). A kept field
+/// that wouldn't load is left out rather than spoil the file.
+fn settings_with(keys: &Value) -> Value {
+    let mut base = serde_json::to_value(crate::settings::Settings::default()).unwrap_or_else(|_| Value::Object(Default::default()));
+    let Some(kept) = keys.as_object() else { return base };
+    for (name, v) in kept {
+        let mut next = base.clone();
+        if let Some(b) = next.as_object_mut() {
+            b.insert(name.clone(), v.clone());
+        }
+        if serde_json::from_value::<crate::settings::Settings>(next.clone()).is_ok() {
+            base = next;
+        } else {
+            eprintln!("[mydata] a kept setting ({name}) wouldn't load; left out");
+        }
+    }
+    base
 }
 
 fn keys_from(settings: &Path) -> Option<Value> {
@@ -306,11 +338,19 @@ fn erase_in(root: &Path) -> Vec<String> {
 }
 
 /// The window's own storage (chat history, cached voice lines): WebView2's
-/// folder, before any window has opened it.
-fn erase_window_storage() {
-    if let Some(local) = dirs::data_local_dir() {
-        let _ = std::fs::remove_dir_all(local.join("com.novaizuki.izuki").join("EBWebView"));
+/// folder, before any window has opened it. The old window's helpers can
+/// hold it for a few seconds after Izuki closes, so it's tried for up to
+/// five. What couldn't be removed, in words.
+fn erase_window_storage() -> Option<String> {
+    let folder = dirs::data_local_dir()?.join("com.novaizuki.izuki").join("EBWebView");
+    for _ in 0..10 {
+        match std::fs::remove_dir_all(&folder) {
+            Ok(()) => return None,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(500)),
+        }
     }
+    Some("the window's own storage (chat history)".into())
 }
 
 #[cfg(windows)]
@@ -386,11 +426,15 @@ mod tests {
             "linked_devices": [{ "name": "Pixel", "token": "t0k" }],
             "hotkey_draw": "Ctrl+D",
             "stripe_key": "",
-            "keep_activity": true
+            "keep_activity": true,
+            "tv_pair": "samsung-pass",
+            "school_feeds": ["https://blackboard.example/feeds/ical/private-token.ics"],
+            "n8n_hooks": []
         });
         without_secrets(&mut v);
         let s = v.to_string();
-        assert!(!s.contains("gsk_live") && !s.contains("AIza") && !s.contains("t0k"), "{s}");
+        assert!(!s.contains("gsk_live") && !s.contains("AIza") && !s.contains("t0k") && !s.contains("samsung-pass") && !s.contains("private-token"), "{s}");
+        assert_eq!(v["n8n_hooks"], serde_json::json!([]), "an empty list stays empty");
         assert!(s.contains("Ctrl+D") && s.contains("flash") && s.contains("Pixel"));
         assert_eq!(v["stripe_key"], "", "an empty field stays empty: nothing to hide");
     }
@@ -438,6 +482,20 @@ mod tests {
         let keys = keys_from(&root.join("settings.json")).unwrap();
         assert_eq!(keys["groq_api_key"], "gsk");
         assert!(keys.get("name").is_none(), "only the keys are kept");
+        // What's written back is a whole settings file that loads, keys in;
+        // a kept field that wouldn't load (this provider has no id) is left out.
+        let fresh: crate::settings::Settings = serde_json::from_value(settings_with(&keys)).expect("kept keys make a settings file that loads");
+        assert_eq!(fresh.groq_api_key, "gsk");
+        assert!(!fresh.onboarding_seen, "everything else starts fresh");
+        // A real settings file: the AI keys in the providers come through.
+        let mut real = crate::settings::Settings::default();
+        real.providers[0].api_key = "AIza-real".into();
+        real.onboarding_seen = true;
+        std::fs::write(root.join("real.json"), serde_json::to_vec(&real).unwrap()).unwrap();
+        let back: crate::settings::Settings = serde_json::from_value(settings_with(&keys_from(&root.join("real.json")).unwrap())).unwrap();
+        assert_eq!(back.providers[0].api_key, "AIza-real");
+        assert!(!back.onboarding_seen);
+        let _ = std::fs::remove_file(root.join("real.json"));
         assert!(erase_in(&root).is_empty());
         let mut left: Vec<String> = std::fs::read_dir(&root).unwrap().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
         left.sort();

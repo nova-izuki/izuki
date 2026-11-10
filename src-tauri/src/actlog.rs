@@ -153,7 +153,8 @@ pub fn parse_ask(said: &str) -> Option<bool> {
     let s = format!(" {} ", said.to_lowercase().replace(['’', '\''], "").chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" "));
     let has = |w: &str| s.contains(w);
     let asks = [" what did you ", " what have you ", " whatve you ", " show me what you ", " show me what izuki ", " what did izuki ", " what has izuki ", " list what you "].iter().any(|w| has(w));
-    let did = [" did", " done", " changed", " change "].iter().any(|w| has(w));
+    // The doing itself, right after "you": "what did you eat today" is chat.
+    let did = [" you do ", " you did ", " you done ", " you changed ", " you change ", " izuki do ", " izuki did ", " izuki done ", " izuki changed "].iter().any(|w| has(w));
     let when_or_where = [" today", " yesterday", " on my pc", " on my computer", " on my laptop", " to my pc", " to my computer", " so far", " while i was away", " while i was gone"].iter().any(|w| has(w));
     (asks && did && when_or_where).then(|| has(" yesterday"))
 }
@@ -252,6 +253,9 @@ mod tests {
         assert_eq!(parse_ask("what are you doing"), None, "now, not the list");
         assert_eq!(parse_ask("what did you think of the movie"), None);
         assert_eq!(parse_ask("what did my teacher do today"), None);
+        assert_eq!(parse_ask("what did you eat today?"), None, "chat, not the list");
+        assert_eq!(parse_ask("what did you learn today"), None);
+        assert_eq!(parse_ask("what has Izuki done on my computer"), Some(false));
     }
 
     #[test]
