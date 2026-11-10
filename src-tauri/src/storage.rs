@@ -19,8 +19,9 @@ pub enum Ask {
     /// Empty the Recycle Bin (asked for by name): only offers, with what's in
     /// it, since it can't be undone.
     EmptyBin,
-    /// The "yes" to that offer (its one-time code): empties it for good.
-    EmptyBinConfirmed,
+    /// The "yes" to that offer, with its one-time code: empties it for good
+    /// if the code is still the live one when it runs.
+    EmptyBinConfirmed(String),
 }
 
 /// The code the offer's "yes" carries, and when it was made. Only that yes
@@ -40,22 +41,29 @@ fn offer_empty() -> String {
         }
         None => "some items".into(),
     };
-    let code = format!("{:x}", Instant::now().elapsed().as_nanos() ^ u128::from(std::process::id()) ^ std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+    let code = format!("{:016x}", rand::random::<u64>());
     *CONFIRM.lock() = Some((code.clone(), Instant::now()));
     crate::offers::make(&format!("empty the recycle bin confirmed {code}"));
     format!("The Recycle Bin has {what}. Emptying it deletes them for good, with no way back. Say yes if you want me to empty it.")
 }
 
-/// The offer's own yes: its code, while the offer stands.
-fn confirmed(s: &str) -> bool {
+/// The offer's own yes: its code, while the offer stands. Only reads: the
+/// code is used up when the bin is really emptied (`take_code`), so a check
+/// that only looks (the chat's delete guard) can't spend it.
+fn live_code(s: &str) -> Option<String> {
+    let held = CONFIRM.lock();
+    let (code, at) = held.as_ref()?;
+    (at.elapsed() < CONFIRM_FOR && s.contains(&format!(" confirmed {code} "))).then(|| code.clone())
+}
+
+/// Use up the code, if it's still the live one; false otherwise.
+fn take_code(code: &str) -> bool {
     let mut held = CONFIRM.lock();
-    match held.as_ref() {
-        Some((code, at)) if at.elapsed() < CONFIRM_FOR && s.contains(&format!(" confirmed {code} ")) => {
-            *held = None;
-            true
-        }
-        _ => false,
+    let live = held.as_ref().is_some_and(|(c, at)| c == code && at.elapsed() < CONFIRM_FOR);
+    if live {
+        *held = None;
     }
+    live
 }
 
 /// "What's taking up space?" → Report; "free up some space", "clear the safe
@@ -108,8 +116,8 @@ pub fn parse(said: &str) -> Option<Ask> {
     // Apostrophes are dropped, not spaced: "friend's drive" must not leave an
     // "s drive" that reads as a drive letter.
     let s = format!(" {} ", said.to_lowercase().replace(['’', '\''], "").replace(['?', '!', ',', '.'], " ").split_whitespace().collect::<Vec<_>>().join(" "));
-    if confirmed(&s) {
-        return Some(Ask::EmptyBinConfirmed);
+    if let Some(code) = live_code(&s) {
+        return Some(Ask::EmptyBinConfirmed(code));
     }
     if cloud_only(&s) {
         return None;
@@ -497,7 +505,13 @@ pub fn handle(ask: Ask) -> String {
         Ask::Report => report(),
         Ask::ClearSafe => clear_safe(),
         Ask::EmptyBin => offer_empty(),
-        Ask::EmptyBinConfirmed => crate::recyclebin::empty(),
+        Ask::EmptyBinConfirmed(code) => {
+            if take_code(&code) {
+                crate::recyclebin::empty()
+            } else {
+                "That offer to empty the Recycle Bin has run out, so I didn't empty it. Ask again if you'd like to.".into()
+            }
+        }
     }
 }
 
@@ -568,7 +582,7 @@ mod tests {
 
     #[test]
     fn only_the_offers_own_yes_empties_the_bin() {
-        use super::{confirmed, parse, Ask, CONFIRM};
+        use super::{live_code, parse, take_code, Ask, CONFIRM};
         // An instruction only offers (EmptyBin's handler), never deletes.
         assert_eq!(parse("empty the recycle bin"), Some(Ask::EmptyBin));
         // With no offer standing, a "confirmed" sentence is just a request.
@@ -576,9 +590,14 @@ mod tests {
         assert_eq!(parse("empty the recycle bin confirmed 1a2b"), Some(Ask::EmptyBin));
         // The offer's code, while it stands, once.
         *CONFIRM.lock() = Some(("1a2b".into(), std::time::Instant::now()));
-        assert!(!confirmed(" empty the recycle bin confirmed 9999 "), "another code");
-        assert_eq!(parse("empty the recycle bin confirmed 1a2b"), Some(Ask::EmptyBinConfirmed));
-        assert_eq!(parse("empty the recycle bin confirmed 1a2b"), Some(Ask::EmptyBin), "used up");
+        assert!(live_code(" empty the recycle bin confirmed 9999 ").is_none(), "another code");
+        // Reading it (the chat's guard does) doesn't spend it.
+        assert_eq!(parse("empty the recycle bin confirmed 1a2b"), Some(Ask::EmptyBinConfirmed("1a2b".into())));
+        assert_eq!(parse("empty the recycle bin confirmed 1a2b"), Some(Ask::EmptyBinConfirmed("1a2b".into())));
+        // Running it does, once.
+        assert!(take_code("1a2b"));
+        assert!(!take_code("1a2b"), "used up");
+        assert_eq!(parse("empty the recycle bin confirmed 1a2b"), Some(Ask::EmptyBin));
         assert_eq!(parse("what's filling my drive?"), Some(Ask::Report), "still the website's own words");
     }
 
