@@ -625,6 +625,9 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
             } else {
                 cfg.base_url.trim().trim_end_matches('/').to_string()
             };
+            if !crate::transport::key_may_go(&base) {
+                return Err(crate::transport::refusal(&cfg.label));
+            }
             c.post(format!("{base}/audio/speech"))
                 .bearer_auth(cfg.api_key.trim())
                 .json(&json!({

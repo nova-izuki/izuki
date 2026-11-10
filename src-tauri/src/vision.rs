@@ -601,6 +601,8 @@ fn lean(req: &VisionRequest) -> VisionRequest {
 }
 
 pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
+    // A key never crosses the network unencrypted (transport.rs).
+    crate::transport::check_key_route(cfg)?;
     let started = Instant::now();
     let style = Style::of(cfg);
     // Within this AI's per-minute allowance (budget.rs): leaner when tight,
@@ -856,6 +858,7 @@ fn parse_more(raw: &str) -> bool {
 
 /// Cheap reachability check for the settings screen.
 pub fn probe(cfg: &ProviderConfig) -> Result<String> {
+    crate::transport::check_key_route(cfg)?;
     let c = client()?;
     let base = cfg.base_url.trim_end_matches('/');
 
