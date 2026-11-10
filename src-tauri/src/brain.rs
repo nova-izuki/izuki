@@ -2646,6 +2646,17 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             }
                         }
                     }
+                    // A duplicate final action is refused before the hand is
+                    // shown or a journal step is opened: it must not look as
+                    // if Izuki tried it again.
+                    if let Some(attempt) = final_already_tried(step) {
+                        *STEP_SNAG.lock() = Some(format!(
+                            "final_repeat: “{}” was already attempted; it is not being pressed a second time",
+                            attempt.name
+                        ));
+                        request_step_replan();
+                        return false;
+                    }
                     let highlight = settings.click_highlight
                         && matches!(step.action, Intent::Click | Intent::DoubleClick | Intent::RightClick | Intent::Auto | Intent::Type)
                         && (step.x != 0 || step.y != 0);
@@ -2713,18 +2724,10 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             return false;
                         }
                     }
+                    let final_attempt = note_final_tried(step);
                     // Clicking the taskbar button of the window that's already in
                     // front minimises it (Windows' toggle) — "switch to FL Studio"
                     // while FL was open hid it, again and again.
-                    if let Some(attempt) = final_already_tried(step) {
-                        *STEP_SNAG.lock() = Some(format!(
-                            "final_repeat: “{}” was already attempted; it is not being pressed a second time",
-                            attempt.name
-                        ));
-                        request_step_replan();
-                        return false;
-                    }
-                    let final_attempt = note_final_tried(step);
                     let front_before = (matches!(step.action, Intent::Click | Intent::Auto)
                         && uia::on_taskbar(step.x, step.y)
                         && !asked_for_window(&WORK_TASK.lock().1, "minimise"))
@@ -2845,7 +2848,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                         }
                         Err(e) => {
                             let why = e.to_string();
-                            if why.starts_with("target_changed:") {
+                            if pre_action_failure(&why) {
                                 if let Some(attempt) = &final_attempt {
                                     forget_final_tried(attempt);
                                 }
@@ -4165,6 +4168,7 @@ fn submit_task(
                 attempt.name
             );
             plan.mood = Some("careful".into());
+            final_word = Some(plan.summary.clone());
             last_plan = Some(plan);
             break;
         }
@@ -4544,6 +4548,7 @@ fn submit_task(
                 let mut plan = last_plan.take().unwrap_or_default();
                 plan.summary = "I was about to press a Send/Pay/Delete-style button again, but I already tried it once. I've stopped so it can't happen twice. Check whether the first attempt went through, then tell me how to continue.".into();
                 plan.mood = Some("careful".into());
+                final_word = Some(plan.summary.clone());
                 last_plan = Some(plan);
                 break;
             }
@@ -4579,6 +4584,7 @@ fn submit_task(
                 if let Some(p) = last_plan.as_mut() {
                     p.summary = "A step keeps failing after fresh looks, so I've stopped rather than loop. The screen is as it is now: check it, and tell me what to do or say \"keep going\".".into();
                     p.mood = Some("sympathetic".into());
+                    final_word = Some(p.summary.clone());
                 }
                 break;
             }
@@ -5040,10 +5046,19 @@ impl Drop for TaskActive {
 fn task_is_current(task: u64, generation: u64, aborted: bool) -> bool { generation == task && !aborted }
 fn task_alive(task: u64) -> bool { task_is_current(task, TASK_GEN.load(std::sync::atomic::Ordering::SeqCst), automation::aborted()) && crate::execution::allowed() }
 
+/// Did this failure happen before the pointer or keyboard touched the control?
+/// A final action that never started can be retried safely.
+fn pre_action_failure(why: &str) -> bool {
+    ["needs_front:", "target_changed:", "disabled:", "covered:"]
+        .iter()
+        .any(|prefix| why.starts_with(prefix))
+}
+
 /// A failed step the next look can fix. Any action type can fail (a click,
 /// typing, a shortcut, a scroll, opening an app or page, a drag), so every
 /// failure is re-planned unless it is a deliberate hard stop. The caller still
-/// bounds how many times that can happen.
+/// bounds how many times that can happen. A password-field refusal is a hard
+/// stop too.
 fn recoverable_step_snag(why: &str) -> bool {
     let why = why.to_lowercase();
     !(why.starts_with("stopped")
@@ -5084,6 +5099,15 @@ mod step_snag_tests {
     }
 
     #[test]
+    fn pre_action_failures_can_retry_a_final_control() {
+        assert!(pre_action_failure("disabled: \"Send\" is greyed out, so clicking it does nothing yet"));
+        assert!(pre_action_failure("covered: a pop-up is on top of \"Send\""));
+        assert!(pre_action_failure("target_changed: the button moved"));
+        assert!(!pre_action_failure("typed_mismatch: the box shows something else"));
+        assert!(!pre_action_failure("stopped"));
+    }
+
+    #[test]
     fn a_task_gets_three_fresh_looks_then_stops() {
         assert!(can_replan(0));
         assert!(can_replan(1));
@@ -5100,7 +5124,7 @@ mod step_snag_tests {
         assert_eq!(final_already_tried(&send), Some(added.clone()));
         assert_eq!(repeated_final_control(std::slice::from_ref(&send)), Some(added.clone()));
         assert!(tried_final_note().is_some_and(|note| note.contains("send")));
-        // The same final step repeated inside one plan is blocked too.
+        // The exact final control remains blocked for a later attempt.
         assert_eq!(final_already_tried(&send), Some(added.clone()));
         forget_final_tried(&added);
         assert!(repeated_final_control(&[send]).is_none());
