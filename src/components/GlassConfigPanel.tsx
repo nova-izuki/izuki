@@ -1,7 +1,7 @@
 import { ScrollButtons } from "./ScrollButtons";
 import { DrawCommandBar } from "./TalkToIzuki";
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Layers, MessageCircle, Minus, PenLine, Settings2, X, Eye, Blocks, Maximize2, Minimize2, NotebookPen, Palette } from "lucide-react";
 import { IzukiMark } from "./IzukiMark";
 import { Segmented, cx } from "./ui";
@@ -77,6 +77,7 @@ export function GlassConfigPanel() {
   const whatsNew = useWhatsNew(!settingsLoaded || !onboardingSeen || tourOpen || setupOpen);
   const setSetupOpen = useIzuki((s) => s.setSetupOpen);
   const [maxed, setMaxed] = useState(false);
+  const reducedMotion = useReducedMotion();
   // Six tabs don't fit with names at the panel's usual width.
   const [narrow, setNarrow] = useState(() => window.innerWidth < 600);
   useEffect(() => {
@@ -261,9 +262,9 @@ export function GlassConfigPanel() {
               tab hostage while an exit animation finishes. */}
           <motion.div
             key={tab}
-            initial={{ opacity: 0, y: 10, scale: 0.992 }}
+            initial={reducedMotion ? false : { opacity: 0, y: 10, scale: 0.992 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+            transition={reducedMotion ? { duration: 0 } : { duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
             className="flex flex-col gap-3"
           >
             <Recover name={`tab:${tab}`} onReset={tab === "chat" ? resetChat : undefined}>

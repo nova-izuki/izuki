@@ -246,6 +246,10 @@
     box-shadow: 0 1.2cqw 2.8cqw rgba(124,92,255,.34), inset 0 1px 0 rgba(255,255,255,.46), inset 0 0 0 1px rgba(255,255,255,.14);
   }
   .p-tab[aria-pressed="true"] .ico { filter: drop-shadow(0 0 5px rgba(255,255,255,.5)); }
+  @container (max-width: 520px) {
+    .p-tab { gap: 0; padding: 0; }
+    .p-tab span { display: none; }
+  }
 
   .p-rule { height: 1px; margin: 0 4.2cqw; background: linear-gradient(90deg, transparent, rgba(255,255,255,.13) 12%, rgba(255,255,255,.13) 88%, transparent); flex: none; }
 
@@ -280,6 +284,7 @@
     transition: border-color 180ms var(--ease), box-shadow 180ms var(--ease);
   }
   .p-composer:focus-within { border-color: rgba(103,232,249,.52); box-shadow: inset 0 2px 8px rgba(0,0,0,.38), 0 0 0 4px rgba(103,232,249,.075), 0 0 28px rgba(124,92,255,.16); }
+  .p-preview-status { min-height: 2.2cqw; margin: 1.2cqw 0 0; color: #9ea0ad; font: 2.05cqw/1.35 var(--mono); }
   .p-mic { width: 8.2cqw; height: 8.2cqw; flex: none; display: grid; place-items: center; border-radius: 50%; border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.055); color: rgba(212,214,224,.8); }
   .p-mic .ico { width: 3.2cqw; height: 3.2cqw; }
   .p-mic:hover { background: rgba(255,255,255,.1); color: #fff; }
@@ -289,7 +294,6 @@
   .p-send:hover { filter: brightness(1.1); }
   .p-send:active { transform: scale(.95); }
   .p-send .ico { width: 3.5cqw; height: 3.5cqw; }
-  .p-send[data-sent="true"] { background: #58e6a8; border-color: rgba(88,230,168,.6); }
 
   .ico { display: inline-block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
@@ -438,6 +442,9 @@
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.8 12s3.2-6 9.2-6 9.2 6 9.2 6-3.2 6-9.2 6S2.8 12 2.8 12Z"/><circle cx="12" cy="12" r="2.6"/></symbol>
   <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 8.5 4.7L12 12.4 3.5 7.7 12 3Z"/><path d="m3.5 12 8.5 4.7 8.5-4.7"/><path d="m3.5 16.3 8.5 4.7 8.5-4.7"/></symbol>
   <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10"/><path d="M18 7h2"/><path d="M4 17h2"/><path d="M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18h1.5a1.8 1.8 0 0 0 0-3.6H13a2 2 0 0 1 0-4h4.5A3.5 3.5 0 0 0 21 10 7 7 0 0 0 14 3Z"/><circle cx="7.5" cy="10" r="1"/><circle cx="10" cy="6.8" r="1"/><circle cx="14" cy="6.4" r="1"/></symbol>
   <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0"/><path d="M12 18v3"/></symbol>
   <symbol id="i-send" viewBox="0 0 24 24"><path d="m21 3-7.2 18-3.8-7-7-3.8L21 3Z"/><path d="m10 14 4.8-4.8"/></symbol>
   <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="2.2"/></symbol>
@@ -539,7 +546,7 @@
 
     <div class="compare-grid">
       <figure class="specimen">
-        <figcaption class="specimen-head"><span class="tag">Current</span><span>Shipping v1.0.197</span></figcaption>
+        <figcaption class="specimen-head"><span class="tag">Current</span><span>Shipping v1.0.201</span></figcaption>
         <div class="shot">
           <img src="shots/panel-chat.jpg" alt="Current IZUKI Chat panel: floating glass window, IZUKI palm mark, capsule tabs, chat card and composer." loading="lazy">
         </div>
@@ -572,11 +579,14 @@
               </header>
 
               <nav class="p-tabs" aria-label="IZUKI tabs">
-                <button type="button" class="p-tab" data-tab="Draw" aria-pressed="false"><svg class="ico" aria-hidden="true"><use href="#i-pen"></use></svg><span>Draw</span></button>
-                <button type="button" class="p-tab" data-tab="Chat" aria-pressed="true"><svg class="ico" aria-hidden="true"><use href="#i-chat"></use></svg><span>Chat</span></button>
-                <button type="button" class="p-tab" data-tab="Flows" aria-pressed="false"><svg class="ico" aria-hidden="true"><use href="#i-layers"></use></svg><span>Flows</span></button>
-                <button type="button" class="p-tab" data-tab="Watchers" aria-pressed="false"><svg class="ico" aria-hidden="true"><use href="#i-eye"></use></svg><span>Watchers</span></button>
-                <button type="button" class="p-tab" data-tab="Settings" aria-pressed="false"><svg class="ico" aria-hidden="true"><use href="#i-sliders"></use></svg><span>Settings</span></button>
+                <button type="button" class="p-tab" data-tab="Draw" aria-label="Draw" title="Draw — shown for comparison" aria-pressed="false" aria-disabled="true" tabindex="-1"><svg class="ico" aria-hidden="true"><use href="#i-pen"></use></svg><span>Draw</span></button>
+                <button type="button" class="p-tab" data-tab="Chat" aria-label="Chat" title="Chat — this study's visible panel" aria-pressed="true" aria-disabled="true" tabindex="-1"><svg class="ico" aria-hidden="true"><use href="#i-chat"></use></svg><span>Chat</span></button>
+                <button type="button" class="p-tab" data-tab="Apps" aria-label="Apps" title="Apps — shown for comparison" aria-pressed="false" aria-disabled="true" tabindex="-1"><svg class="ico" aria-hidden="true"><use href="#i-grid"></use></svg><span>Apps</span></button>
+                <button type="button" class="p-tab" data-tab="Notes" aria-label="Notes" title="Notes — shown for comparison" aria-pressed="false" aria-disabled="true" tabindex="-1"><svg class="ico" aria-hidden="true"><use href="#i-note"></use></svg><span>Notes</span></button>
+                <button type="button" class="p-tab" data-tab="Flows" aria-label="Flows" title="Flows — shown for comparison" aria-pressed="false" aria-disabled="true" tabindex="-1"><svg class="ico" aria-hidden="true"><use href="#i-layers"></use></svg><span>Flows</span></button>
+                <button type="button" class="p-tab" data-tab="Watchers" aria-label="Watchers" title="Watchers — shown for comparison" aria-pressed="false" aria-disabled="true" tabindex="-1"><svg class="ico" aria-hidden="true"><use href="#i-eye"></use></svg><span>Watchers</span></button>
+                <button type="button" class="p-tab" data-tab="Style" aria-label="Style" title="Style — shown for comparison" aria-pressed="false" aria-disabled="true" tabindex="-1"><svg class="ico" aria-hidden="true"><use href="#i-palette"></use></svg><span>Style</span></button>
+                <button type="button" class="p-tab" data-tab="Settings" aria-label="Settings" title="Settings — shown for comparison" aria-pressed="false" aria-disabled="true" tabindex="-1"><svg class="ico" aria-hidden="true"><use href="#i-sliders"></use></svg><span>Settings</span></button>
               </nav>
 
               <div class="p-rule" aria-hidden="true"></div>
@@ -597,8 +607,9 @@
                     <button type="button" class="p-mic" aria-label="Microphone preview"><svg class="ico" aria-hidden="true"><use href="#i-mic"></use></svg></button>
                     <label class="sr-only" for="preview-command">Message Izuki</label>
                     <input id="preview-command" autocomplete="off" placeholder="Message Izuki">
-                    <button type="submit" class="p-send" aria-label="Send preview message"><svg class="ico" aria-hidden="true"><use href="#i-send"></use></svg></button>
+                    <button type="submit" class="p-send" aria-label="Preview message (not sent)" title="Preview only — nothing is sent"><svg class="ico" aria-hidden="true"><use href="#i-send"></use></svg></button>
                   </form>
+                  <p class="p-preview-status" id="preview-status" role="status" aria-live="polite"></p>
                 </section>
               </main>
             </div>
@@ -771,11 +782,8 @@
     });
   }
 
-  document.querySelectorAll(".p-tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      document.querySelectorAll(".p-tab").forEach((other) => other.setAttribute("aria-pressed", String(other === tab)));
-    });
-  });
+  // This study shows the Chat panel. The other tabs are visual specimens, so
+  // clicking them must not select a tab whose panel is not visible.
 
   const composer = document.getElementById("preview-composer");
   const command = document.getElementById("preview-command");
@@ -792,16 +800,9 @@
         command.focus();
         return;
       }
-      const send = composer.querySelector(".p-send");
-      send.dataset.sent = "true";
-      send.setAttribute("aria-label", "Sent to Izuki");
-      command.value = "";
-      command.placeholder = "Sent to Izuki ✓";
-      window.setTimeout(() => {
-        send.dataset.sent = "false";
-        send.setAttribute("aria-label", "Send preview message");
-        command.placeholder = "Message Izuki";
-      }, 1600);
+      const status = document.getElementById("preview-status");
+      if (status) status.textContent = "Preview only — this page does not send anything.";
+      command.focus();
     });
   }
 </script>

@@ -1456,11 +1456,6 @@ html.izuki-config[data-backdrop="tabbed"] body {
   outline-offset: 2px;
 }
 
-@keyframes izk-nova-breathe {
-  0%, 100% { opacity: 0.62; transform: scale(0.96); }
-  50% { opacity: 1; transform: scale(1.04); }
-}
-
 /* No idle work when the app is in the background. */
 html.izk-away .izk-nova-orb-spin {
   animation-play-state: paused;
