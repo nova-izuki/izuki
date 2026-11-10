@@ -492,6 +492,14 @@ pub fn respond_with(app: &AppHandle, said: &str, images: Vec<String>, spoken: bo
         push("assistant", &text);
         return Reply::text(text);
     }
+    // Windows layouts, looks and tweaks on the PC, from the phone and
+    // Discord too: "put my windows side by side", "set up my Work layout",
+    // "make my PC look cozy", "undo the tweaks". And "what did you do today?".
+    if let Some(text) = style_on_pc(said) {
+        push("user", said);
+        push("assistant", &text);
+        return Reply::text(text);
+    }
     // Routines, from the phone and Discord too: "every morning at 8, …".
     if let Some(ask) = crate::routines::parse(said) {
         push("user", said);
@@ -732,6 +740,26 @@ pub fn notify_everywhere(text: &str) {
 /// Something to do on the PC, asked from away.
 /// Acting on the PC from here (phone, Discord): the same rules as `on_pc` —
 /// only when the user allowed it, never while the PC is locked. `Some(why not)`.
+/// The Style requests that change the PC (each needs "phone controls this
+/// PC" on), and the list of what Izuki did (only reads).
+fn style_on_pc(said: &str) -> Option<String> {
+    // "Every weekday at 9, set up my Work layout" is a routine, made below.
+    if crate::routines::scheduled(said) {
+        return None;
+    }
+    let on_pc = |run: &dyn Fn() -> String| pc_allowed().unwrap_or_else(run);
+    if let Some(ask) = crate::arrange::parse(said).filter(|a| crate::arrange::claims(a, said)) {
+        return Some(on_pc(&|| crate::arrange::handle(ask.clone())));
+    }
+    if crate::tweaks::parse_undo(said) {
+        return Some(on_pc(&crate::tweaks::undo_pack_said));
+    }
+    if let Some(ask) = crate::winlook::parse(said) {
+        return Some(on_pc(&|| crate::winlook::handle(ask.clone())));
+    }
+    crate::actlog::parse_ask(said).map(crate::actlog::answer)
+}
+
 fn pc_allowed() -> Option<String> {
     if !crate::state::store().settings().phone_controls_pc {
         return Some("That needs your PC, and doing things on it from your phone is switched off (Izuki → Settings → Phone).".into());

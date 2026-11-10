@@ -180,7 +180,25 @@ fn recorded_tool(tool: &str, account: Option<&str>, run: impl FnOnce() -> Result
         Err(_) => EvidenceOutcome::Unknown,
     };
     if let Some(step) = step { step.finish(outcome).map_err(|_| anyhow!(crate::execution::StopReason::CheckpointFailure.explanation()))?; }
+    if changes(tool) && matches!(outcome, EvidenceOutcome::Returned) {
+        crate::actlog::record("messages", &format!("Did “{}” in your connected apps", tool_words(tool)));
+    }
     result
+}
+
+/// "GMAIL_SEND_EMAIL" → "Gmail: send email", for "What Izuki did".
+fn tool_words(tool: &str) -> String {
+    let mut words = tool.split('_').filter(|w| !w.is_empty()).map(str::to_lowercase);
+    let app = words.next().map(|a| {
+        let mut c = a.chars();
+        c.next().map_or_else(String::new, |f| f.to_uppercase().chain(c).collect())
+    });
+    let rest: Vec<String> = words.collect();
+    match app {
+        Some(app) if !rest.is_empty() => format!("{app}: {}", rest.join(" ")),
+        Some(app) => app,
+        None => tool.to_string(),
+    }
 }
 
 pub fn execute_on(connection: &str, tool: &str, arguments: Value) -> Result<Value> {

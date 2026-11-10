@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Clock, Gamepad2, Gem, Heart, Image as ImageIcon, Layers, MapPin, Moon, Palette, RefreshCw, RotateCcw, Shuffle, Sparkles, Sun, Undo2, Wand2, Wrench, Zap } from "lucide-react";
-import { api, type LookAuto, type LookPhoto, type LookPreset, type LooksStatus, type LookVibe, type WindowsTweak } from "../../lib/ipc";
+import { api, type LookAuto, type LookPhoto, type LookPreset, type LooksStatus, type LookVibe, type PackUndoInfo, type WindowsTweak } from "../../lib/ipc";
 import { onStyleSection, takeStyleSection, type StyleSection } from "../../lib/styleNav";
 import { Section, cx } from "../ui";
 import { DesktopLayouts } from "../DesktopLayouts";
@@ -312,6 +312,28 @@ export function StyleTab() {
     void api.tweaksList().then(setTweaks).catch((e) => setError(friendly(e)));
   }, []);
 
+  // The last one-tap pack (or a vibe's or Premium's tweaks) can be put back
+  // exactly; asked again whenever the tweaks change.
+  // Also after anything here finishes (a vibe or Premium whose pack Windows
+  // partly refused still saves its undo), and when the panel comes back into
+  // view (voice, the phone or Discord may have used or undone a pack).
+  const [lastPack, setLastPack] = useState<PackUndoInfo | null>(null);
+  const packAsk = useRef(0);
+  const refreshPack = () => {
+    const n = ++packAsk.current;
+    void api.tweakPackLast().then((v) => n === packAsk.current && setLastPack(v)).catch(() => undefined);
+  };
+  useEffect(refreshPack, [tweaks, busy]);
+  useEffect(() => {
+    const seen = () => document.visibilityState === "visible" && refreshPack();
+    document.addEventListener("visibilitychange", seen);
+    window.addEventListener("focus", seen);
+    return () => {
+      document.removeEventListener("visibilitychange", seen);
+      window.removeEventListener("focus", seen);
+    };
+  }, []);
+
   const run = <T,>(key: string, what: () => Promise<T>, then: (v: T) => void, said: string | ((v: T) => string), failed?: () => void) => {
     if (busyRef.current) return;
     busyRef.current = key;
@@ -371,8 +393,9 @@ export function StyleTab() {
       async () => {
         const looks = await api.lookApply(v.preset, withWallpaper);
         // The tweaks are a bonus: the look counts even if a tweak doesn't.
-        const tidy = withPack && v.pack ? await api.tweakPack(v.pack).catch(() => null) : null;
-        return { looks, tidy };
+        let problem = "";
+        const tidy = withPack && v.pack ? await api.tweakPack(v.pack).catch((e) => ((problem = friendly(e)), null)) : null;
+        return { looks, tidy, problem };
       },
       ({ looks, tidy }) => {
         setLooks(looks);
@@ -383,7 +406,7 @@ export function StyleTab() {
         setSweep((n) => n + 1);
         setHover(null);
       },
-      ({ tidy }) => `${v.name} is on${tidy?.length && v.pack ? `, with the ${PACK_NAMES[v.pack] ?? v.pack} tweaks` : ""}.`
+      ({ tidy, problem }) => `${v.name} is on${tidy?.length && v.pack ? `, with the ${PACK_NAMES[v.pack] ?? v.pack} tweaks` : ""}.${problem ? ` Tweaks: ${problem}` : ""}`
     );
 
   const auto = s?.auto;
@@ -407,8 +430,9 @@ export function StyleTab() {
       async () => {
         const looks = await api.lookAuto(next);
         // The clean taskbar is a bonus: the photo counts even if a tweak doesn't.
-        const tidy = await api.tweakPack("premium").catch(() => null);
-        return { looks, tidy };
+        let problem = "";
+        const tidy = await api.tweakPack("premium").catch((e) => ((problem = friendly(e)), null));
+        return { looks, tidy, problem };
       },
       ({ looks, tidy }) => {
         setLooks(looks);
@@ -421,8 +445,8 @@ export function StyleTab() {
         setSection("auto");
       },
       // Only what really happened.
-      ({ looks, tidy }) =>
-        `${looks?.photo ? `Premium is on: ${photoName(looks.photo)}, with colours to match` : "Real photos are on — the first one is still on its way"}${tidy?.length ? ", and a clean taskbar." : "."}`
+      ({ looks, tidy, problem }) =>
+        `${looks?.photo ? `Premium is on: ${photoName(looks.photo)}, with colours to match` : "Real photos are on — the first one is still on its way"}${tidy?.length ? ", and a clean taskbar." : "."}${problem ? ` Taskbar tweaks: ${problem}` : ""}`
     );
   };
   const photos = s?.history ?? [];
@@ -610,6 +634,20 @@ export function StyleTab() {
               </button>
             ))}
           </div>
+          {lastPack && (
+            <p className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11.5px] text-izk-muted">
+              <span>The {lastPack.name} pack changed some Windows settings. Undo puts back exactly what was there.</span>
+              <button
+                type="button"
+                disabled={busy !== null}
+                title="Or say “undo the tweaks”"
+                className="izk-pill izk-no-drag px-3 py-1"
+                onClick={() => run("pack-undo", () => api.tweakPackUndo(), (r) => r.tweaks.length && setTweaks(r.tweaks), (r) => r.said, () => void api.tweaksList().then(setTweaks).catch(() => undefined))}
+              >
+                {busy === "pack-undo" ? "Putting back…" : `Undo the ${lastPack.name} tweaks`}
+              </button>
+            </p>
+          )}
           <div className="flex flex-wrap gap-1.5">
             {GROUPS.map((g) => (
               <button

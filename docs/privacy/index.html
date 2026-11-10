@@ -23,7 +23,7 @@
     <header>
       <div class="eyebrow">Privacy policy</div>
       <h1>Your screen, your keys, your PC.</h1>
-      <p class="updated">Last updated: 9 November 2026 · applies to the Izuki app for Windows, its phone and TV companions, and this website.</p>
+      <p class="updated">Last updated: 10 November 2026 · applies to the Izuki app for Windows, its phone and TV companions, and this website.</p>
       <p>Izuki is a free, open-source assistant made by Solomon Nwachukwu (“we”, “us”). This page says plainly what Izuki keeps, what it sends and to whom, and how you stay in control. Because Izuki is open source, you can check every line of it on <a href="https://github.com/nova-izuki/izuki">GitHub</a>.</p>
       <div class="summary">
         <h2>The short version</h2>
@@ -58,6 +58,8 @@
           <tr><td><b>Chats, notes, reminders, study logs</b></td><td>Your history, so you can search it and pick it up again.</td></tr>
           <tr><td><b>Logs</b> (<code>logs\izuki.log</code>)</td><td>To diagnose problems. Keys, emails, phone numbers and your Windows user name are scrubbed from error reports.</td></tr>
           <tr><td><b>Missed wake-word clips</b> (<code>debug\</code>)</td><td>When “Hey Nova” isn't recognised, the last few short clips (a dozen at most) are kept to help improve recognition. They never leave your PC.</td></tr>
+          <tr><td><b>What Izuki did</b> (<code>actions\</code>)</td><td>A list of what Izuki did or changed on your PC (clicks, apps opened, looks and tweaks, files cleared, messages sent), so you can always check. Kept for two weeks. It never holds what was typed into a box, only how much. Turn it off or clear it in Settings → Privacy.</td></tr>
+          <tr><td><b>Saved window layouts and undo</b> (<code>layouts.json</code>, <code>looks.json</code>, <code>tweak-packs-undo.json</code>)</td><td>Where your windows go for a saved layout, and how Windows was before a look or tweak pack, so Undo can put it back exactly.</td></tr>
           <tr><td><b>Screenshots for a request</b></td><td>Taken when a request needs your screen, held in memory for that request, and not saved to disk.</td></tr>
         </tbody>
       </table></div>
@@ -115,7 +117,11 @@
         <li><b>Remove a key</b> by clearing it in Settings, and revoke it on the provider's site if you think it leaked.</li>
         <li><b>Unlink apps, your phone or your TV</b> in Settings at any time.</li>
         <li><b>Turn off error reports</b> in Settings → <i>Something wrong?</i>.</li>
-        <li><b>Remove everything</b>: uninstall Izuki, then delete the folder <code>%APPDATA%\Izuki</code>.</li>
+        <li><b>See what Izuki can reach</b> in Settings → Privacy → <i>What Izuki can access</i>: the microphone, the screen, the camera, your phone, linked accounts and saved keys, each with its switch.</li>
+        <li><b>See everything it did</b> in Settings → Privacy → <i>What Izuki did</i>, or clear that list.</li>
+        <li><b>Take a copy of your data</b>: Settings → Privacy → <i>Your data</i> saves everything Izuki keeps about you in one .zip in your Downloads, with your keys and passwords left out.</li>
+        <li><b>Erase everything</b>: Settings → Privacy → <i>Your data</i>. Izuki closes, starts again and erases its data before loading anything. Kept: downloaded AI models and tools, and what lets you undo changes to Windows. Code mode's working copies of your projects are removed too, the same careful way Code mode does it; your real projects aren't touched. You can choose to keep your keys.</li>
+        <li><b>Remove Izuki completely</b>: erase everything as above, then uninstall it.</li>
       </ul>
     </section>
 

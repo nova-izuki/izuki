@@ -32,6 +32,7 @@ import { AndroidCard } from "../AndroidCard";
 import { TvCard } from "../TvCard";
 import { ThemePicker } from "../ThemePicker";
 import { ExtensionCard } from "../ExtensionCard";
+import { AccessCard, ActivityCard, MyDataCard } from "../PrivacyCards";
 import { BugCard } from "../BugCard";
 import { DeveloperMode } from "../DeveloperMode";
 import { Badge, CollapsibleSections, Row, Section, SectionControls, Segmented, SettingsSearch, Slider, Toggle, cx } from "../ui";
@@ -64,6 +65,8 @@ const JUMPS: { label: string; id: string; tab?: TabId }[] = [
   { label: "💬 Discord", id: "settings-discord" },
   { label: "📺 TV", id: "settings-tv" },
   { label: "🧩 Browser", id: "settings-browser" },
+  { label: "🔒 Privacy", id: "settings-access" },
+  { label: "📝 What Izuki did", id: "settings-activity" },
   { label: "❓ Help", id: "settings-help" },
   { label: "⬆️ Updates", id: "settings-updates" },
 ];
@@ -109,6 +112,9 @@ export function SettingsTab() {
       { label: "Desktop mate", id: "settings-mate", keywords: "desktop pet character companion buddy mate walking dancing cat dog shimeji overlay always on top" },
       { label: "Control my TV", id: "settings-tv", keywords: "roku samsung lg android tv fire" },
       { label: "Browser extension", id: "settings-browser", keywords: "chrome edge side panel ask page" },
+      { label: "What Izuki can access", id: "settings-access", keywords: "privacy permissions access microphone camera screen accounts keys revoke turn off trust" },
+      { label: "What Izuki did", id: "settings-activity", keywords: "history log actions activity audit what happened changes clicked" },
+      { label: "Your data: copy or erase", id: "settings-mydata", keywords: "export download backup copy erase delete everything wipe reset data gdpr privacy" },
       { label: "Meta Llama", id: "settings-brain", keywords: "meta llama facebook" },
       { label: "Help & tour", id: "settings-help", keywords: "tour guide how" },
       { label: "Hold to dictate", id: "settings-shortcuts", keywords: "dictate dictation wispr flow talk to type voice typing type what I say speech to text hold a key tidy filler words um" },
@@ -620,6 +626,10 @@ export function SettingsTab() {
       <AndroidCard />
       <div id="settings-tv"><TvCard /></div>
       <div id="settings-browser"><ExtensionCard /></div>
+
+      <AccessCard />
+      <ActivityCard />
+      <MyDataCard />
 
       {/* ------------------------------------------------ help */}
       <Section id="settings-help" title="Help" group="Help" foldable>

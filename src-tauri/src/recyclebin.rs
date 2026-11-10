@@ -31,10 +31,14 @@ pub fn empty() -> String {
         return "The Recycle Bin is already empty.".into();
     }
     match unsafe { SHEmptyRecycleBinW(None, PCWSTR::null(), SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND) } {
-        Ok(()) => match known {
-            Some((items, mb)) => format!("Emptied the Recycle Bin — {items} item{} ({}).", if items == 1 { "" } else { "s" }, pretty_mb(mb)),
-            None => "Emptied the Recycle Bin.".into(),
-        },
+        Ok(()) => {
+            let said = match known {
+                Some((items, mb)) => format!("Emptied the Recycle Bin — {items} item{} ({}).", if items == 1 { "" } else { "s" }, pretty_mb(mb)),
+                None => "Emptied the Recycle Bin.".into(),
+            };
+            crate::actlog::record("files", said.trim_end_matches('.'));
+            said
+        }
         Err(e) => format!("I couldn't empty the Recycle Bin: {e}"),
     }
 }

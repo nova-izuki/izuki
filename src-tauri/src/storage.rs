@@ -489,6 +489,7 @@ fn old_temp_bytes(deadline: Instant) -> u64 {
 pub fn clear_safe() -> String {
     let freed_mb = crate::boost::clear_old_temp();
     let mut out = if freed_mb > 0 {
+        crate::actlog::record("files", &format!("Cleared {} of old temporary files", gb(freed_mb as f64 / 1000.0)));
         format!("Cleared {} of old temporary files.", gb(freed_mb as f64 / 1000.0))
     } else {
         "There were no old temporary files to clear.".to_string()

@@ -151,6 +151,24 @@ pub enum Ask {
 }
 
 /// "every weekday at 8 check my email and send it to my phone".
+/// The request carries a repeating time ("every weekday at 9, …"), so it
+/// becomes a routine rather than being done now. The daily photo wallpaper
+/// is its own setting ("a new wallpaper every day") and isn't counted.
+pub fn scheduled(said: &str) -> bool {
+    matches!(parse(said), Some(Ask::New { .. })) && !matches!(crate::winlook::parse(said), Some(crate::winlook::Ask::DailyPhoto))
+}
+
+#[cfg(test)]
+mod scheduled_tests {
+    #[test]
+    fn a_repeating_time_makes_a_routine_not_an_action_now() {
+        assert!(super::scheduled("every weekday at 9, set up my Work layout"));
+        assert!(super::scheduled("every morning put my windows side by side"));
+        assert!(!super::scheduled("put my windows side by side"));
+        assert!(!super::scheduled("give me a new wallpaper every day"), "the daily photo is its own setting");
+    }
+}
+
 pub fn parse(said: &str) -> Option<Ask> {
     let s = format!(" {} ", said.to_lowercase().replace([',', '!', '?'], " ").split_whitespace().collect::<Vec<_>>().join(" "));
     let pending = PENDING.lock().as_ref().is_some_and(|(_, at)| at.elapsed() < std::time::Duration::from_secs(15 * 60));

@@ -226,6 +226,14 @@ pub fn open_folder(dir: &std::path::Path) -> Result<()> {
 
 /// Open an app by name. `Err` if nothing installed matches.
 pub fn open_app(name: &str) -> Result<String> {
+    let opened = open_app_now(name);
+    if opened.is_ok() {
+        crate::actlog::record("apps", &format!("Opened {}", name.trim()));
+    }
+    opened
+}
+
+fn open_app_now(name: &str) -> Result<String> {
     let target = find_app(name).ok_or_else(|| anyhow!("no app called \"{}\" is installed", name.trim()))?;
     if let Some((exe, profile)) = browser_with_profile(&target) {
         let mut c = std::process::Command::new(&exe);

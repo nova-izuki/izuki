@@ -220,6 +220,7 @@ export const MOCK_SETTINGS: Settings = {
   buddy_breaks: true,
   recall_enabled: false,
   screen_time_enabled: true,
+  keep_activity: true,
   home_city: "",
   learn_city: false,
   app_theme: "nova",
@@ -762,6 +763,38 @@ export interface WindhawkStatus {
   installing: boolean;
 }
 
+/** A saved window layout (arrange.rs). */
+export interface SavedLayout {
+  name: string;
+  /** When it was saved (Unix seconds). */
+  at: number;
+  /** The apps in it, by their short names. */
+  apps: string[];
+}
+
+/** The last tweak pack that can be undone (tweaks.rs). */
+export interface PackUndoInfo {
+  pack: string;
+  name: string;
+  at: number;
+}
+
+/** One line of "What Izuki did" (actlog.rs). */
+export interface ActionEntry {
+  /** Unix milliseconds. */
+  at: number;
+  /** screen, apps, style, files, messages, phone, system. */
+  kind: string;
+  text: string;
+}
+
+/** What Izuki keeps about you (mydata.rs). */
+export interface MyDataSummary {
+  files: number;
+  bytes: number;
+  folder: string;
+}
+
 export interface WindowsTweak {
   id: string;
   label: string;
@@ -1071,6 +1104,13 @@ export const api = {
   windowLayoutUndo: () => call<string>("window_layout_undo", undefined, () => ""),
   /** An arrangement (made here or by voice) can be put back. */
   windowLayoutCanUndo: () => call<boolean>("window_layout_can_undo", undefined, () => false),
+  /** Saved window layouts ("Work", "Coding"), newest first. */
+  layoutsSaved: () => call<SavedLayout[]>("layouts_saved", undefined, () => []),
+  /** Save where every app window is now, under a name. */
+  layoutSave: (name: string) => call<string>("layout_save", { name }, () => "Saving layouts works in the Windows app."),
+  /** Put a saved layout back (opens apps that aren't running). */
+  layoutRestore: (name: string) => call<string>("layout_restore", { name }, () => "Saved layouts work in the Windows app."),
+  layoutForget: (name: string) => call<void>("layout_forget", { name }, () => undefined),
   windhawkStatus: () => call<WindhawkStatus>("windhawk_status", undefined, () => ({ installed: false, path: null, can_install: false, mods: [], installing: false })),
   windhawkInstall: () => call<WindhawkStatus>("windhawk_install", undefined, () => ({ installed: false, path: null, can_install: false, mods: [], installing: false })),
   windhawkOpen: () => call<void>("windhawk_open", undefined, () => undefined),
@@ -1089,6 +1129,21 @@ export const api = {
   /** Daily photo: a big picture of a recent photo (a data URL). */
   lookPhotoPreview: (file: string) => call<string | null>("look_photo_preview", { file }, () => null),
   tweakPack: (id: string) => call<WindowsTweak[]>("tweak_pack", { id }, () => []),
+  /** The last tweak pack that "Undo" would put back (null: none). */
+  tweakPackLast: () => call<PackUndoInfo | null>("tweak_pack_last", undefined, () => null),
+  /** Put back exactly what the last pack changed. */
+  tweakPackUndo: () => call<{ said: string; tweaks: WindowsTweak[] }>("tweak_pack_undo", undefined, () => ({ said: "", tweaks: [] })),
+  /** "What Izuki did": days with something on them, newest first ("2026-11-10"). */
+  actionsDays: () => call<string[]>("actions_days", undefined, () => []),
+  actionsDay: (day: string) => call<ActionEntry[]>("actions_day", { day }, () => []),
+  actionsClear: () => call<void>("actions_clear", undefined, () => undefined),
+  /** How much Izuki keeps about you, and where. */
+  myDataSummary: () => call<MyDataSummary | null>("my_data_summary", undefined, () => null),
+  /** "Take a copy of my data": a .zip in Downloads; its path. */
+  myDataExport: (appData: Record<string, unknown> | null) => call<string>("my_data_export", { appData }, () => ""),
+  myDataShow: (path: string) => call<void>("my_data_show", { path }, () => undefined),
+  /** "Erase everything": Izuki closes, restarts and erases before loading anything. */
+  eraseEverything: (keepKeys: boolean) => call<void>("erase_everything", { keepKeys }, () => undefined),
   restartExplorer: () => call<void>("restart_explorer", undefined, () => undefined),
   boostLive: () => call<{ on: boolean; looked_secs_ago: number | null; done_secs_ago: number | null; done: string | null }>("boost_live", undefined, () => ({ on: false, looked_secs_ago: null, done_secs_ago: null, done: null })),
   /** The desktop mate: where its character is (only clicks there are caught). */

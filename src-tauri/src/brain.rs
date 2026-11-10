@@ -1319,14 +1319,10 @@ fn local_up(base_url: &str) -> bool {
     up
 }
 
-/// An address on this PC (localhost, 127.x, ::1).
+/// An address on this PC (localhost, 127.x, ::1): the one rule the key
+/// checks and the proxy choice use too (transport.rs), so they can't disagree.
 pub(crate) fn on_this_pc(base_url: &str) -> bool {
-    host_port(base_url).is_some_and(|(h, _)| {
-        let h = h.to_ascii_lowercase();
-        // Whole addresses only: "127.example.com" is someone else's server
-        // (a key would go to it over plain http if it counted as local).
-        h == "localhost" || h.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified())
-    })
+    crate::transport::is_local(base_url)
 }
 
 /// A server that says anything at all to `GET <path>/models` is running.
@@ -5906,6 +5902,11 @@ mod speed_tests {
         assert!(on_this_pc("http://[::1]:11434"));
         assert!(!on_this_pc("http://127.example.com/v1"), "a name that starts with 127. is a remote server");
         assert!(!on_this_pc("http://localhost.example.com/v1"));
+        assert!(on_this_pc("http://[::1]/v1"), "IPv6 with no port");
+        assert!(on_this_pc("localhost:11434"), "typed without http://");
+        assert!(on_this_pc("127.0.0.1:1234/v1"));
+        assert!(!on_this_pc("api.groq.com/openai/v1"));
+        assert!(!on_this_pc(""));
     }
 
     use crate::model::ActionStep;
