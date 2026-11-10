@@ -23,6 +23,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🔒", title: "Your AI keys never travel unencrypted", how: "Izuki sends a key only over https, or to a server on your own PC. An http:// address elsewhere gets a note under Settings → Izuki's brain → Endpoint, and the key isn't sent." },
+  { icon: "📺", title: "Lighter YouTube ad skipping", how: "With the browser extension connected, Izuki presses YouTube's own Skip button in the tab you're watching, instead of searching every button in the window while an ad plays." },
   { icon: "🪟", title: "Arrange your windows with one sentence", how: "Say \"put my windows side by side\", \"tile my windows\" or \"focus layout\", or tap a layout in Style → Layouts. The window you used last gets the biggest spot, and \"undo the layout\" puts them all back.", try: { label: "Open Layouts", tab: "style", id: "style-arrange" } },
   { icon: "✨", title: "Describe a vibe, get a desktop", how: "Type or say a mood, like \"make my PC look cozy\", \"cyberpunk\" or \"black and gold\", and Izuki picks the closest of its 19 looks, with matching tweaks if you want them. Put my old look back undoes it.", try: { label: "Open Looks", tab: "style", id: "style-looks" } },
   { icon: "🧩", title: "Go further with Windhawk", how: "Style → Tweaks explains Windhawk, installs it when you press Install (Windows asks first), and links 12 mods worth starting with: a vertical taskbar, a restyled Start menu, a clock with the weather.", try: { label: "Open Windhawk", tab: "style", id: "style-windhawk" } },
