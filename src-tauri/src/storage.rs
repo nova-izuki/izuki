@@ -16,8 +16,46 @@ pub enum Ask {
     Report,
     /// Clear what's safe to clear: old temporary files.
     ClearSafe,
-    /// Empty the Recycle Bin (asked for by name).
+    /// Empty the Recycle Bin (asked for by name): only offers, with what's in
+    /// it, since it can't be undone.
     EmptyBin,
+    /// The "yes" to that offer (its one-time code): empties it for good.
+    EmptyBinConfirmed,
+}
+
+/// The code the offer's "yes" carries, and when it was made. Only that yes
+/// empties the bin: no sentence, however it's worded, can delete by itself.
+static CONFIRM: parking_lot::Mutex<Option<(String, Instant)>> = parking_lot::Mutex::new(None);
+
+/// How long the offer to empty the bin stands (as long as any offer).
+const CONFIRM_FOR: Duration = Duration::from_secs(5 * 60);
+
+/// The offer: what's in the bin, and that a yes deletes it for good.
+fn offer_empty() -> String {
+    let what = match crate::recyclebin::size() {
+        Some((0, _)) => return "The Recycle Bin is already empty.".into(),
+        Some((items, mb)) => {
+            let size = if mb >= 1024 { format!("{:.1} GB", mb as f64 / 1024.0) } else { format!("{mb} MB") };
+            format!("{items} item{} ({size})", if items == 1 { "" } else { "s" })
+        }
+        None => "some items".into(),
+    };
+    let code = format!("{:x}", Instant::now().elapsed().as_nanos() ^ u128::from(std::process::id()) ^ std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+    *CONFIRM.lock() = Some((code.clone(), Instant::now()));
+    crate::offers::make(&format!("empty the recycle bin confirmed {code}"));
+    format!("The Recycle Bin has {what}. Emptying it deletes them for good, with no way back. Say yes if you want me to empty it.")
+}
+
+/// The offer's own yes: its code, while the offer stands.
+fn confirmed(s: &str) -> bool {
+    let mut held = CONFIRM.lock();
+    match held.as_ref() {
+        Some((code, at)) if at.elapsed() < CONFIRM_FOR && s.contains(&format!(" confirmed {code} ")) => {
+            *held = None;
+            true
+        }
+        _ => false,
+    }
 }
 
 /// "What's taking up space?" → Report; "free up some space", "clear the safe
@@ -31,9 +69,13 @@ fn empties_bin(s: &str, bin_at: usize) -> bool {
     let first = s.split_whitespace().next().unwrap_or("");
     let question = matches!(first, "is" | "are" | "was" | "does" | "did" | "do" | "has" | "how" | "what" | "whats" | "why" | "where" | "when" | "which")
         || s.contains(" how do") || s.contains(" how to") || s.contains(" should i");
+    let indirect = [" tell me if", " if i should", " whether", " should i", " if it", " if my"].iter().any(|w| s.contains(w));
     let refused = [" dont ", " do not ", " never ", " stop "].iter().any(|w| s.contains(w));
-    let verb = [" empty", " clear", " clean"].iter().any(|w| s[..bin_at].contains(w));
-    verb && !question && !refused
+    // "Empty the recycle bin", "clear my recycling bin": the verb is for the
+    // bin, at most two words before it, with no "and" between.
+    let before: Vec<&str> = s[..bin_at].split_whitespace().rev().take(3).collect();
+    let verb = before.iter().position(|w| matches!(*w, "empty" | "clear" | "clean")).is_some_and(|i| !before[..i].iter().any(|w| matches!(*w, "and" | "then")));
+    verb && !question && !indirect && !refused
 }
 
 /// A cloud drive ("my Google Drive", "OneDrive storage", "box.com") with
@@ -66,6 +108,9 @@ pub fn parse(said: &str) -> Option<Ask> {
     // Apostrophes are dropped, not spaced: "friend's drive" must not leave an
     // "s drive" that reads as a drive letter.
     let s = format!(" {} ", said.to_lowercase().replace(['’', '\''], "").replace(['?', '!', ',', '.'], " ").split_whitespace().collect::<Vec<_>>().join(" "));
+    if confirmed(&s) {
+        return Some(Ask::EmptyBinConfirmed);
+    }
     if cloud_only(&s) {
         return None;
     }
@@ -451,7 +496,8 @@ pub fn handle(ask: Ask) -> String {
     match ask {
         Ask::Report => report(),
         Ask::ClearSafe => clear_safe(),
-        Ask::EmptyBin => crate::recyclebin::empty(),
+        Ask::EmptyBin => offer_empty(),
+        Ask::EmptyBinConfirmed => crate::recyclebin::empty(),
     }
 }
 
@@ -516,6 +562,23 @@ mod tests {
         }
         assert_eq!(parse("can you empty my recycle bin"), Some(Ask::EmptyBin), "a request");
         assert_eq!(parse("please clear the recycling bin"), Some(Ask::EmptyBin));
+        assert_ne!(parse("please tell me if I should empty the recycle bin"), Some(Ask::EmptyBin), "an indirect question");
+        assert_ne!(parse("clear space on my C drive and show me the Windows Recycle Bin"), Some(Ask::EmptyBin), "the clearing is for the drive");
+    }
+
+    #[test]
+    fn only_the_offers_own_yes_empties_the_bin() {
+        use super::{confirmed, parse, Ask, CONFIRM};
+        // An instruction only offers (EmptyBin's handler), never deletes.
+        assert_eq!(parse("empty the recycle bin"), Some(Ask::EmptyBin));
+        // With no offer standing, a "confirmed" sentence is just a request.
+        *CONFIRM.lock() = None;
+        assert_eq!(parse("empty the recycle bin confirmed 1a2b"), Some(Ask::EmptyBin));
+        // The offer's code, while it stands, once.
+        *CONFIRM.lock() = Some(("1a2b".into(), std::time::Instant::now()));
+        assert!(!confirmed(" empty the recycle bin confirmed 9999 "), "another code");
+        assert_eq!(parse("empty the recycle bin confirmed 1a2b"), Some(Ask::EmptyBinConfirmed));
+        assert_eq!(parse("empty the recycle bin confirmed 1a2b"), Some(Ask::EmptyBin), "used up");
         assert_eq!(parse("what's filling my drive?"), Some(Ask::Report), "still the website's own words");
     }
 
