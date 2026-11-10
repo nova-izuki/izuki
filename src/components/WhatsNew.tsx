@@ -23,6 +23,10 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🔒", title: "Your data, in your hands", how: "Settings → Privacy: what Izuki can access (each with its switch), a list of everything it did on your PC, a copy of all your data in one file with keys left out, and Erase everything.", try: { label: "Open Privacy", tab: "settings", id: "settings-access" } },
+  { icon: "🪟", title: "Saved window layouts", how: "Say \"save my windows as Work\", then \"set up my Work layout\" any time: every window goes back on every screen, and apps that aren't running open.", try: { label: "Open Layouts", tab: "style", id: "style-arrange" } },
+  { icon: "↩️", title: "Undo for tweak packs", how: "A one-tap pack, a vibe's tweaks or Make my PC premium can be put back exactly as it was. Tap Undo under the packs, or say \"undo the tweaks\".", try: { label: "Open Tweaks", tab: "style", id: "style-tweaks" } },
+  { icon: "👁️", title: "Eye control that recovers", how: "An unplugged or busy camera is picked back up by itself, moving your head after calibrating is noticed, and a first-run guide shows how to stop and calibrate." },
   { icon: "🔒", title: "Your AI keys never travel unencrypted", how: "Izuki sends a key only over https, or to a server on your own PC. An http:// address elsewhere gets a note under Settings → Izuki's brain → Endpoint, and the key isn't sent." },
   { icon: "📺", title: "Lighter YouTube ad skipping", how: "With the browser extension connected, Izuki presses YouTube's own Skip button in the tab you're watching, instead of searching every button in the window while an ad plays." },
   { icon: "🪟", title: "Arrange your windows with one sentence", how: "Say \"put my windows side by side\", \"tile my windows\" or \"focus layout\", or tap a layout in Style → Layouts. The window you used last gets the biggest spot, and \"undo the layout\" puts them all back.", try: { label: "Open Layouts", tab: "style", id: "style-arrange" } },
