@@ -1791,7 +1791,7 @@ fn is_hopeless(err: &str) -> bool {
         return false;
     }
     out_of_money
-        || ["no active credentials", "rejected the key", "unauthorized", "connection refused"].iter().any(|p| e.contains(p))
+        || ["no active credentials", "rejected the key", "unauthorized", "connection refused", crate::transport::REFUSED].iter().any(|p| e.contains(p))
         || ["401", "402", "403", "404"].iter().any(|c| has_status(&e, c))
         // Can't reach a *local* brain (Ollama/9Router not running) — but a
         // busy cloud queue timing out is just slow, not broken.

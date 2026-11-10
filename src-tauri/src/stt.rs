@@ -48,6 +48,7 @@ fn language_hint(choice: &str) -> (&'static str, &'static str) {
 
 fn client() -> Result<reqwest::blocking::Client> {
     Ok(reqwest::blocking::Client::builder()
+        .redirect(crate::transport::redirects())
         .timeout(Duration::from_secs(8))
         .connect_timeout(Duration::from_secs(3))
         .build()?)
@@ -153,6 +154,9 @@ fn gemini(base: &str, key: &str, wav: &[u8], mime: &str, choice: &str) -> Result
     use base64::Engine;
     let base = base.trim().trim_end_matches('/');
     let base = if base.is_empty() { "https://generativelanguage.googleapis.com" } else { base };
+    if !crate::transport::key_may_go(base) {
+        return Err(anyhow!("{}", crate::transport::refusal("Gemini")));
+    }
     // The light model: quick, and its own free allowance (the screen work
     // uses the main one).
     let model = crate::vision::GEMINI_LITE;

@@ -120,7 +120,7 @@ pub fn refresh() {
 /// Each keyed provider's strong free vision models, best first.
 fn discover(providers: &[ProviderConfig]) -> HashMap<String, Vec<String>> {
     let mut out: HashMap<String, Vec<String>> = HashMap::new();
-    for p in providers.iter().filter(|p| !p.api_key.trim().is_empty() && key_travels_safely(&p.base_url)) {
+    for p in providers.iter().filter(|p| !p.api_key.trim().is_empty() && crate::transport::key_may_go(&p.base_url)) {
         let Ok(client) = key_client(&p.base_url, Duration::from_secs(15)) else { continue };
         let base = p.base_url.trim_end_matches('/');
         let mut names: Vec<String> = Vec::new();
@@ -254,18 +254,12 @@ pub fn expand(chain: Vec<ProviderConfig>, for_screen: bool) -> Vec<ProviderConfi
     out
 }
 
-/// A key is only sent over https, or over plain http to a server on this PC.
-fn key_travels_safely(base_url: &str) -> bool {
-    let url = base_url.trim().to_ascii_lowercase();
-    url.starts_with("https://") || (url.starts_with("http://") && crate::brain::on_this_pc(base_url.trim()))
-}
-
 /// A client for requests that carry a key. A server on this PC is reached
 /// directly, never through a proxy, which would carry the key off the
 /// machine over plain http.
 fn key_client(base_url: &str, timeout: Duration) -> reqwest::Result<reqwest::blocking::Client> {
-    let builder = reqwest::blocking::Client::builder().timeout(timeout);
-    let builder = if crate::brain::on_this_pc(base_url.trim()) { builder.no_proxy() } else { builder };
+    let builder = reqwest::blocking::Client::builder().timeout(timeout).redirect(crate::transport::redirects());
+    let builder = if crate::transport::is_local(base_url) { builder.no_proxy() } else { builder };
     builder.build()
 }
 
@@ -382,7 +376,7 @@ pub fn search(cfg: &ProviderConfig) -> anyhow::Result<FreeSearch> {
     if cfg.api_key.trim().is_empty() {
         anyhow::bail!("add your API key first");
     }
-    if !key_travels_safely(&cfg.base_url) {
+    if !crate::transport::key_may_go(&cfg.base_url) {
         anyhow::bail!("the endpoint starts with http://, so your key would travel unprotected — use the https:// address");
     }
     crate::tls_ready();
@@ -526,12 +520,12 @@ mod tests {
 
     #[test]
     fn a_key_never_travels_over_plain_http_to_another_machine() {
-        assert!(key_travels_safely("https://integrate.api.nvidia.com/v1"));
-        assert!(key_travels_safely("http://127.0.0.1:20128/v1"));
-        assert!(key_travels_safely("http://localhost:11434"));
-        assert!(!key_travels_safely("http://integrate.api.nvidia.com/v1"));
-        assert!(!key_travels_safely("http://192.168.1.20:8000/v1"));
-        assert!(!key_travels_safely("http://127.example.com/v1"));
+        assert!(crate::transport::key_may_go("https://integrate.api.nvidia.com/v1"));
+        assert!(crate::transport::key_may_go("http://127.0.0.1:20128/v1"));
+        assert!(crate::transport::key_may_go("http://localhost:11434"));
+        assert!(!crate::transport::key_may_go("http://integrate.api.nvidia.com/v1"));
+        assert!(!crate::transport::key_may_go("http://192.168.1.20:8000/v1"));
+        assert!(!crate::transport::key_may_go("http://127.example.com/v1"));
     }
 
     #[test]

@@ -258,6 +258,7 @@ fn gemini_speak(settings: &Settings, c: &reqwest::blocking::Client, text: &str, 
 
 fn client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
+        .redirect(crate::transport::redirects())
         .connect_timeout(Duration::from_secs(8))
         .timeout(Duration::from_secs(40))
         .build()
@@ -625,6 +626,9 @@ pub fn synthesize(settings: &Settings, engine: &str, text: &str, mood: Option<&s
             } else {
                 cfg.base_url.trim().trim_end_matches('/').to_string()
             };
+            if !crate::transport::key_may_go(&base) {
+                return Err(crate::transport::refusal(&cfg.label));
+            }
             c.post(format!("{base}/audio/speech"))
                 .bearer_auth(cfg.api_key.trim())
                 .json(&json!({
