@@ -6,6 +6,7 @@ import { useIzuki } from "../lib/store";
 import { api, emit, EV, on } from "../lib/ipc";
 import { listCameras, rankCameras, saveCamera, savedCamera } from "../lib/camera";
 import { EYE_SENSITIVITIES, type EyeStatusPayload } from "../lib/eyeControl";
+import { EyeGuide } from "./EyeGuide";
 import type { AirSafety } from "../lib/types";
 
 const MOVES: Array<[string, string]> = [
@@ -234,6 +235,7 @@ export function AirCard() {
             ? "Hand Control uses the existing hand tracker. All gestures, game controls and taught poses below are unchanged."
             : "Eye Control looks where you look. Calibrate first; single blinks never click. Both is deliberately unavailable until Hand and Eye have each passed on this camera."}
         </p>
+        {mode === "eye" && <EyeGuide stopKey={settings.eye_stop_hotkey} />}
         {mode === "eye" && <EyeStopPanel stopKey={settings.eye_stop_hotkey} />}
         {mode === "eye" && (
           <div className="mt-2 flex items-start gap-2 rounded-xl bg-sky-400/10 px-2.5 py-2 text-[10.5px] leading-snug text-sky-100">

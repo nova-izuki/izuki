@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Clock, Gamepad2, Gem, Heart, Image as ImageIcon, Layers, MapPin, Moon, Palette, RefreshCw, RotateCcw, Shuffle, Sparkles, Sun, Undo2, Wand2, Wrench, Zap } from "lucide-react";
-import { api, type LookAuto, type LookPhoto, type LookPreset, type LooksStatus, type LookVibe, type WindowsTweak } from "../../lib/ipc";
+import { api, type LookAuto, type LookPhoto, type LookPreset, type LooksStatus, type LookVibe, type PackUndoInfo, type WindowsTweak } from "../../lib/ipc";
 import { onStyleSection, takeStyleSection, type StyleSection } from "../../lib/styleNav";
 import { Section, cx } from "../ui";
 import { DesktopLayouts } from "../DesktopLayouts";
@@ -312,6 +312,17 @@ export function StyleTab() {
     void api.tweaksList().then(setTweaks).catch((e) => setError(friendly(e)));
   }, []);
 
+  // The last one-tap pack (or a vibe's or Premium's tweaks) can be put back
+  // exactly; asked again whenever the tweaks change.
+  const [lastPack, setLastPack] = useState<PackUndoInfo | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void api.tweakPackLast().then((v) => alive && setLastPack(v)).catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [tweaks]);
+
   const run = <T,>(key: string, what: () => Promise<T>, then: (v: T) => void, said: string | ((v: T) => string), failed?: () => void) => {
     if (busyRef.current) return;
     busyRef.current = key;
@@ -610,6 +621,20 @@ export function StyleTab() {
               </button>
             ))}
           </div>
+          {lastPack && (
+            <p className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11.5px] text-izk-muted">
+              <span>The {lastPack.name} pack changed some Windows settings. Undo puts back exactly what was there.</span>
+              <button
+                type="button"
+                disabled={busy !== null}
+                title="Or say “undo the tweaks”"
+                className="izk-pill izk-no-drag px-3 py-1"
+                onClick={() => run("pack-undo", () => api.tweakPackUndo(), (r) => r.tweaks.length && setTweaks(r.tweaks), (r) => r.said)}
+              >
+                {busy === "pack-undo" ? "Putting back…" : `Undo the ${lastPack.name} tweaks`}
+              </button>
+            </p>
+          )}
           <div className="flex flex-wrap gap-1.5">
             {GROUPS.map((g) => (
               <button

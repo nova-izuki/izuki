@@ -8,9 +8,14 @@
 //! hidden, minimised, always-on-top or full-screen ones (a game, a video),
 //! never dialogs that can't be resized. A window run as administrator can't be
 //! moved by an app that isn't, so Windows refuses it and Izuki says so.
+//!
+//! Saved layouts: "save my windows as Work" remembers where every app window
+//! is, on every screen; "set up my Work layout" puts each one back, opening
+//! the apps that aren't running yet (ordinary installed apps only, never
+//! Store apps, File Explorer or Izuki), and "undo the layout" undoes that too.
 
 use anyhow::{anyhow, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -114,10 +119,82 @@ pub fn slots(kind: Kind, n: usize, work: Area) -> Vec<Area> {
 }
 
 /// What's asked for in plain words.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ask {
     Arrange(Kind),
     Undo,
+    /// "Save my windows as Work".
+    Save(String),
+    /// "Set up my Work layout".
+    Restore(String),
+    /// "Delete my Work layout".
+    Forget(String),
+}
+
+/// Names that are already a built-in layout or mean "the windows".
+const NOT_A_NAME: &[&str] = &[
+    "window", "windows", "screen", "desktop", "focus", "grid", "column", "columns", "side by side", "split", "split screen", "old", "last", "previous",
+    "current", "this", "app", "apps", "keyboard", "page", "slide", "document",
+];
+
+/// "Work" from " work ": a saved layout's name as said, tidied.
+fn name_of(words: &str) -> Option<String> {
+    let w = words.trim();
+    let w = w.strip_prefix("the ").unwrap_or(w);
+    if w.is_empty() || w.split_whitespace().count() > 4 || NOT_A_NAME.contains(&w) {
+        return None;
+    }
+    let mut c = w.chars();
+    c.next().map(|f| f.to_uppercase().chain(c).collect())
+}
+
+/// A saved layout named in a sentence: after "as", "called" or "named"
+/// ("save my windows as Work"), or between "my"/"the" and "layout"/"setup"
+/// ("set up my work layout").
+fn saved_name(s: &str) -> Option<String> {
+    for lead in [" as ", " called ", " named "] {
+        if let Some(i) = s.rfind(lead) {
+            let rest = &s[i + lead.len()..];
+            let rest = rest.trim_end().trim_end_matches(" please").trim_end_matches(" layout").trim_end_matches(" setup");
+            return name_of(&format!(" {rest} ").replace(" my ", " "));
+        }
+    }
+    for tail in [" layout", " setup"] {
+        let Some(end) = s.find(tail) else { continue };
+        let before = &s[..end];
+        let start = [" my ", " the "].iter().filter_map(|w| before.rfind(w).map(|i| i + w.len())).max()?;
+        return name_of(&before[start..]);
+    }
+    None
+}
+
+/// Saving, setting up or deleting a saved layout, if that's what's asked.
+fn parse_saved(s: &str) -> Option<Ask> {
+    let has = |w: &str| s.contains(w);
+    let about = has(" layout") || has(" setup") || has(" my windows") || has(" these windows") || has(" this window setup");
+    if !about {
+        return None;
+    }
+    if [" save ", " remember ", " store ", " keep "].iter().any(|w| has(w)) {
+        // "Save this layout as Work", "save my windows as Coding"; a bare
+        // "save the layout" (a document's?) needs the windows named.
+        let named = saved_name(s);
+        if let Some(n) = named {
+            return Some(Ask::Save(n));
+        }
+        if has(" window") {
+            return Some(Ask::Save("My layout".into()));
+        }
+        return None;
+    }
+    if [" delete ", " forget ", " remove "].iter().any(|w| has(w)) {
+        return saved_name(s).map(Ask::Forget);
+    }
+    let opens = [" set up ", " setup my ", " restore ", " load ", " open ", " bring back ", " switch to ", " use ", " go to ", " start ", " put on "].iter().any(|w| has(w));
+    if opens && (has(" layout") || has(" setup")) {
+        return saved_name(s).map(Ask::Restore);
+    }
+    None
 }
 
 /// "Put my windows side by side", "tile my windows", "split my screen",
@@ -148,6 +225,9 @@ pub fn parse(said: &str) -> Option<Ask> {
     }
     if [" dont ", " do not ", " never ", " stop "].iter().any(|w| has(w)) {
         return None;
+    }
+    if let Some(ask) = parse_saved(&s) {
+        return Some(ask);
     }
     // About the windows on screen, and asked to arrange them: "compare these
     // two phones side by side" or "Windows 10 and 11 side by side" isn't.
@@ -195,11 +275,25 @@ pub fn parse(said: &str) -> Option<Ask> {
     None
 }
 
+/// Whether a request is really for the windows. Setting up or deleting a
+/// saved layout counts when you have one by that name, or say "layout"; a
+/// "setup" that isn't one of yours ("load my coding setup" with none saved)
+/// is left for the rest of Izuki.
+pub fn claims(ask: &Ask, said: &str) -> bool {
+    match ask {
+        Ask::Restore(name) | Ask::Forget(name) => saved().iter().any(|s| s.name.eq_ignore_ascii_case(name)) || said.to_lowercase().contains("layout"),
+        _ => true,
+    }
+}
+
 /// Run what was asked and say what happened.
 pub fn handle(ask: Ask) -> String {
     let done = match ask {
         Ask::Arrange(kind) => apply(kind),
         Ask::Undo => undo(),
+        Ask::Save(name) => save(&name),
+        Ask::Restore(name) => restore(&name),
+        Ask::Forget(name) => forget(&name).map(|_| format!("Deleted your {name} layout.")),
     };
     done.unwrap_or_else(|e| e.to_string())
 }
@@ -260,10 +354,15 @@ mod win {
 
     /// An ordinary app window someone would want arranged.
     fn arrangeable(h: HWND, me: u32) -> bool {
+        app_window(h, me, false)
+    }
+
+    /// `arrangeable`, or one minimised to the taskbar when `minimised_ok`.
+    fn app_window(h: HWND, me: u32, minimised_ok: bool) -> bool {
         unsafe {
             let mut pid = 0u32;
             GetWindowThreadProcessId(h, Some(&mut pid));
-            if pid == 0 || pid == me || !IsWindowVisible(h).as_bool() || IsIconic(h).as_bool() || GetWindowTextLengthW(h) <= 0 {
+            if pid == 0 || pid == me || !IsWindowVisible(h).as_bool() || (IsIconic(h).as_bool() && !minimised_ok) || GetWindowTextLengthW(h) <= 0 {
                 return false;
             }
             // Owned windows are dialogs and pop-ups of another window.
@@ -284,6 +383,9 @@ mod win {
                 return false;
             }
             // Full screen without being maximised: a game or a video.
+            if IsIconic(h).as_bool() {
+                return true;
+            }
             let mut r = RECT::default();
             if GetWindowRect(h, &mut r).is_err() {
                 return false;
@@ -309,6 +411,30 @@ mod win {
             })
             .collect();
         (work, list)
+    }
+
+    /// Every app window on every screen, front to back (`minimised_ok`:
+    /// ones on the taskbar too).
+    pub fn app_windows(minimised_ok: bool) -> Vec<isize> {
+        let me = std::process::id();
+        all().into_iter().filter(|&raw| app_window(hwnd(raw), me, minimised_ok)).collect()
+    }
+
+    /// The program behind a window ("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe").
+    pub fn exe_of(raw: isize) -> String {
+        use windows::core::PWSTR;
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
+        unsafe {
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(hwnd(raw), Some(&mut pid));
+            let Ok(p) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else { return String::new() };
+            let mut path = [0u16; 520];
+            let mut len = path.len() as u32;
+            let ok = QueryFullProcessImageNameW(p, PROCESS_NAME_WIN32, PWSTR(path.as_mut_ptr()), &mut len).is_ok();
+            let _ = CloseHandle(p);
+            if ok { String::from_utf16_lossy(&path[..len as usize]) } else { String::new() }
+        }
     }
 
     pub fn placement(raw: isize) -> Option<WINDOWPLACEMENT> {
@@ -344,6 +470,306 @@ mod win {
             SetWindowPos(h, None, to.x - l, to.y - t, to.w + l + rt, to.h + t + b, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER).is_ok()
         }
     }
+}
+
+/// Where one window was, as Windows describes it (its normal size and
+/// spot, and whether it was maximised), so it comes back exactly.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Spot {
+    pub show: u32,
+    pub flags: u32,
+    pub min: (i32, i32),
+    pub max: (i32, i32),
+    /// left, top, right, bottom.
+    pub normal: (i32, i32, i32, i32),
+}
+
+/// One window in a saved layout.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedWindow {
+    /// The program, for finding (or opening) it again.
+    pub exe: String,
+    /// Its short name for messages ("Google Chrome").
+    pub app: String,
+    /// Its title then, to tell two windows of one app apart.
+    pub title: String,
+    pub spot: Spot,
+}
+
+/// A saved layout: "Work", "Coding", "Movie night".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Saved {
+    pub name: String,
+    /// When (Unix seconds).
+    pub at: u64,
+    pub windows: Vec<SavedWindow>,
+}
+
+/// The most layouts kept.
+const MOST_SAVED: usize = 12;
+
+fn saved_path() -> std::path::PathBuf {
+    crate::store::data_dir().join("layouts.json")
+}
+
+/// Your saved layouts, newest first.
+pub fn saved() -> Vec<Saved> {
+    let mut list: Vec<Saved> = std::fs::read_to_string(saved_path()).ok().and_then(|r| serde_json::from_str(&r).ok()).unwrap_or_default();
+    list.sort_by(|a, b| b.at.cmp(&a.at));
+    list
+}
+
+fn write_saved(list: &[Saved]) -> Result<()> {
+    let path = saved_path();
+    if let Some(d) = path.parent() {
+        std::fs::create_dir_all(d)?;
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(list)?).map_err(|e| anyhow!("couldn't save the layout ({e})"))
+}
+
+fn find_saved<'a>(list: &'a [Saved], name: &str) -> Option<&'a Saved> {
+    list.iter().find(|s| s.name.eq_ignore_ascii_case(name.trim()))
+}
+
+/// A name for a saved layout: trimmed, short, not a built-in one.
+fn clean_name(name: &str) -> Result<String> {
+    let n: String = name.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(32).collect();
+    if n.is_empty() {
+        return Err(anyhow!("Give the layout a name, like Work or Coding."));
+    }
+    if NOT_A_NAME.contains(&n.to_lowercase().as_str()) {
+        return Err(anyhow!("“{n}” is already one of my built-in layouts — pick another name, like Work or Coding."));
+    }
+    Ok(n)
+}
+
+/// Delete a saved layout.
+pub fn forget(name: &str) -> Result<()> {
+    let mut list = saved();
+    let before = list.len();
+    list.retain(|s| !s.name.eq_ignore_ascii_case(name.trim()));
+    if list.len() == before {
+        return Err(anyhow!("You don't have a layout called {name}."));
+    }
+    write_saved(&list)
+}
+
+/// A program Izuki may open again for a layout: an ordinary installed app.
+/// Never Store apps (they can't be started from their file), File Explorer,
+/// Windows' own hosts, consoles or Izuki.
+fn may_open(exe: &str) -> bool {
+    let lower = exe.to_lowercase();
+    let file = lower.rsplit(['\\', '/']).next().unwrap_or("");
+    let hosts = [
+        "applicationframehost.exe", "explorer.exe", "izuki.exe", "systemsettings.exe", "searchhost.exe", "shellexperiencehost.exe", "textinputhost.exe",
+        "lockapp.exe", "cmd.exe", "powershell.exe", "pwsh.exe", "conhost.exe", "taskmgr.exe", "mmc.exe", "regedit.exe",
+    ];
+    lower.ends_with(".exe") && !lower.contains("\\windowsapps\\") && !hosts.contains(&file) && std::path::Path::new(exe).is_file()
+}
+
+/// The open window that's most likely the saved one: the same program, and
+/// the same title if there is one; `taken` windows are already placed.
+fn best_match(want: &SavedWindow, open: &[(isize, String, String)], taken: &[isize]) -> Option<isize> {
+    let same_exe: Vec<&(isize, String, String)> = open.iter().filter(|(raw, exe, _)| !taken.contains(raw) && !exe.is_empty() && exe.eq_ignore_ascii_case(&want.exe)).collect();
+    if let Some((raw, _, _)) = same_exe.iter().find(|(_, _, t)| *t == want.title) {
+        return Some(*raw);
+    }
+    // Store apps all run in one host: tell them apart by the app's name.
+    if want.exe.to_lowercase().ends_with("applicationframehost.exe") {
+        return same_exe.iter().find(|(_, _, t)| short_of(t) == want.app).map(|(r, _, _)| *r);
+    }
+    same_exe.first().map(|(raw, _, _)| *raw)
+}
+
+/// "Chrome" from "New tab - Google Chrome": the short end of a title.
+fn short_of(title: &str) -> String {
+    let tail = [" - ", " — ", " | "].iter().filter_map(|sep| title.rfind(sep).map(|i| i + sep.len())).max().map_or(title, |i| &title[i..]);
+    let t: String = tail.trim().chars().take(28).collect();
+    if t.is_empty() { "a window".into() } else { t }
+}
+
+#[cfg(windows)]
+fn spot_of(p: &windows::Win32::UI::WindowsAndMessaging::WINDOWPLACEMENT) -> Spot {
+    Spot {
+        show: p.showCmd,
+        flags: p.flags.0,
+        min: (p.ptMinPosition.x, p.ptMinPosition.y),
+        max: (p.ptMaxPosition.x, p.ptMaxPosition.y),
+        normal: (p.rcNormalPosition.left, p.rcNormalPosition.top, p.rcNormalPosition.right, p.rcNormalPosition.bottom),
+    }
+}
+
+#[cfg(windows)]
+fn placement_of(s: &Spot) -> windows::Win32::UI::WindowsAndMessaging::WINDOWPLACEMENT {
+    use windows::Win32::Foundation::{POINT, RECT};
+    use windows::Win32::UI::WindowsAndMessaging::{WINDOWPLACEMENT, WINDOWPLACEMENT_FLAGS};
+    // A layout never brings a window back minimised.
+    let show = if s.show == 2 || s.show == 6 || s.show == 7 { 1 } else { s.show };
+    WINDOWPLACEMENT {
+        length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+        flags: WINDOWPLACEMENT_FLAGS(s.flags),
+        showCmd: show,
+        ptMinPosition: POINT { x: s.min.0, y: s.min.1 },
+        ptMaxPosition: POINT { x: s.max.0, y: s.max.1 },
+        rcNormalPosition: RECT { left: s.normal.0, top: s.normal.1, right: s.normal.2, bottom: s.normal.3 },
+    }
+}
+
+/// Remember where every app window is now, on every screen, as `name`.
+#[cfg(windows)]
+pub fn save(name: &str) -> Result<String> {
+    let name = clean_name(name)?;
+    let windows: Vec<SavedWindow> = win::app_windows(false)
+        .into_iter()
+        .filter_map(|raw| {
+            let p = win::placement(raw)?;
+            let title = win::title(raw);
+            Some(SavedWindow { exe: win::exe_of(raw), app: short_of(&title), title, spot: spot_of(&p) })
+        })
+        .collect();
+    if windows.is_empty() {
+        return Err(anyhow!("There are no app windows open to save. Open and place the apps you want, then save."));
+    }
+    let mut list = saved();
+    let replaced = find_saved(&list, &name).is_some();
+    list.retain(|s| !s.name.eq_ignore_ascii_case(&name));
+    list.insert(0, Saved { name: name.clone(), at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()), windows: windows.clone() });
+    list.truncate(MOST_SAVED);
+    write_saved(&list)?;
+    crate::actlog::record("style", &format!("Saved your windows as the {name} layout"));
+    let apps: Vec<String> = windows.iter().map(|w| w.app.clone()).collect();
+    Ok(format!(
+        "{} {name}: {} window{} ({}). Say “set up my {name} layout” any time to get it back.",
+        if replaced { "Updated" } else { "Saved" },
+        windows.len(),
+        if windows.len() == 1 { "" } else { "s" },
+        apps.join(", ")
+    ))
+}
+
+/// Put every window of a saved layout back where it was, opening the apps
+/// that aren't running (and waiting a little for them). "Undo the layout"
+/// puts things back as they were before.
+#[cfg(windows)]
+pub fn restore(name: &str) -> Result<String> {
+    let list = saved();
+    let Some(layout) = find_saved(&list, name) else {
+        let names: Vec<String> = list.iter().map(|s| s.name.clone()).collect();
+        return Err(anyhow!(if names.is_empty() {
+            format!("You don't have a layout called {name} yet. Place your windows, then say “save my windows as {name}”.")
+        } else {
+            format!("You don't have a layout called {name}. Yours: {}.", names.join(", "))
+        }));
+    };
+    let mut taken: Vec<isize> = Vec::new();
+    let mut undo = Vec::new();
+    let mut placed: Vec<String> = Vec::new();
+    let mut opened: Vec<String> = Vec::new();
+    let mut missing: Vec<&SavedWindow> = Vec::new();
+    let open_now = || -> Vec<(isize, String, String)> { win::app_windows(true).into_iter().map(|r| (r, win::exe_of(r), win::title(r))).collect() };
+    let open = open_now();
+    for w in &layout.windows {
+        match best_match(w, &open, &taken) {
+            Some(raw) => {
+                if let Some(before) = win::placement(raw) {
+                    if win::restore_placement(raw, &placement_of(&w.spot)) {
+                        undo.push((raw, before));
+                        placed.push(w.app.clone());
+                    }
+                }
+                taken.push(raw);
+            }
+            None => missing.push(w),
+        }
+    }
+    // Start what isn't running (once per program), then place each as its window appears.
+    let mut started: Vec<String> = Vec::new();
+    let mut cant_open: Vec<String> = Vec::new();
+    for w in &missing {
+        if started.iter().any(|e| e.eq_ignore_ascii_case(&w.exe)) {
+            continue;
+        }
+        if may_open(&w.exe) && open_program(&w.exe) {
+            started.push(w.exe.clone());
+        } else {
+            cant_open.push(w.app.clone());
+        }
+    }
+    let mut waiting: Vec<&SavedWindow> = missing.iter().copied().filter(|w| started.iter().any(|e| e.eq_ignore_ascii_case(&w.exe))).collect();
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while !waiting.is_empty() && std::time::Instant::now() < until {
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let open = open_now();
+        waiting.retain(|w| {
+            let Some(raw) = best_match(w, &open, &taken) else { return true };
+            // A fresh window: let it finish drawing before it's moved.
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            if win::restore_placement(raw, &placement_of(&w.spot)) {
+                opened.push(w.app.clone());
+            }
+            taken.push(raw);
+            false
+        });
+    }
+    let slow: Vec<String> = waiting.iter().map(|w| w.app.clone()).collect();
+    if !undo.is_empty() {
+        *UNDO.lock() = undo;
+    }
+    if placed.is_empty() && opened.is_empty() {
+        return Err(anyhow!("None of the {} layout's apps could be placed. {}", layout.name, if cant_open.is_empty() { "They may still be starting — try again in a moment." } else { "Open them first, then say it again." }));
+    }
+    crate::actlog::record("style", &format!("Set up the {} layout ({} window{})", layout.name, placed.len() + opened.len(), if placed.len() + opened.len() == 1 { "" } else { "s" }));
+    let mut said = format!("Your {} layout is set up", layout.name);
+    if !placed.is_empty() {
+        said.push_str(&format!(": {}", placed.join(", ")));
+    }
+    if !opened.is_empty() {
+        said.push_str(&format!("{} opened {} for you", if placed.is_empty() { ": I" } else { ", and I" }, opened.join(", ")));
+    }
+    said.push('.');
+    if !slow.is_empty() {
+        said.push_str(&format!(" {} {} still starting — say it again once {} open.", slow.join(", "), if slow.len() == 1 { "is" } else { "are" }, if slow.len() == 1 { "it's" } else { "they're" }));
+    }
+    if !cant_open.is_empty() {
+        said.push_str(&format!(" I can't open {} myself — open {} and say it again.", cant_open.join(", "), if cant_open.len() == 1 { "it" } else { "them" }));
+    }
+    if !UNDO.lock().is_empty() {
+        said.push_str(" Say “undo the layout” to put things back.");
+    }
+    Ok(said)
+}
+
+/// Start a program from its file, on its own (not tied to Izuki).
+#[cfg(windows)]
+fn open_program(exe: &str) -> bool {
+    use std::os::windows::process::CommandExt;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    let dir = std::path::Path::new(exe).parent().map(std::path::Path::to_path_buf);
+    let mut c = std::process::Command::new(exe);
+    c.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).creation_flags(DETACHED_PROCESS);
+    if let Some(d) = dir {
+        c.current_dir(d);
+    }
+    match c.spawn() {
+        Ok(_) => {
+            crate::actlog::record("apps", &format!("Opened {} for a saved layout", short_of(exe.rsplit('\\').next().unwrap_or(exe).trim_end_matches(".exe"))));
+            true
+        }
+        Err(e) => {
+            eprintln!("[arrange] couldn't open {exe}: {e}");
+            false
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn save(_name: &str) -> Result<String> {
+    Err(anyhow!("Saving layouts works on Windows."))
+}
+
+#[cfg(not(windows))]
+pub fn restore(_name: &str) -> Result<String> {
+    Err(anyhow!("Saved layouts work on Windows."))
 }
 
 #[cfg(windows)]
@@ -388,6 +814,7 @@ pub fn apply(kind: Kind) -> Result<String> {
     }
     // A new arrangement replaces the undo only when something really moved.
     *UNDO.lock() = saved;
+    crate::actlog::record("style", &format!("Arranged {} window{} {}", moved.len(), if moved.len() == 1 { "" } else { "s" }, kind.name()));
     let left = list.len().saturating_sub(spots.len());
     let mut said = match moved.as_slice() {
         [one] => format!("{one} now fills the screen."),
@@ -423,6 +850,9 @@ pub fn undo() -> Result<String> {
         return Err(anyhow!("There's no window layout to undo."));
     }
     let back = saved.iter().filter(|(raw, p)| win::restore_placement(*raw, p)).count();
+    if back > 0 {
+        crate::actlog::record("style", &format!("Put {back} window{} back where {} {}", if back == 1 { "" } else { "s" }, if back == 1 { "it" } else { "they" }, if back == 1 { "was" } else { "were" }));
+    }
     Ok(match back {
         0 => "Those windows are closed now, so there was nothing to put back.".into(),
         1 => "Put that window back where it was.".into(),
@@ -513,6 +943,45 @@ mod tests {
         assert_eq!(parse("Hey Nova, focus layout right now"), Some(Ask::Arrange(Kind::Focus)));
         assert_eq!(parse("Izuki focus layout please"), Some(Ask::Arrange(Kind::Focus)));
         assert_eq!(parse("put my windows in the focus layout"), Some(Ask::Arrange(Kind::Focus)));
+    }
+
+    #[test]
+    fn saved_layouts_in_plain_words() {
+        assert_eq!(parse("save my windows as Work"), Some(Ask::Save("Work".into())));
+        assert_eq!(parse("Hey Nova, save this layout as coding"), Some(Ask::Save("Coding".into())));
+        assert_eq!(parse("remember this window setup as movie night"), Some(Ask::Save("Movie night".into())));
+        assert_eq!(parse("save my window layout"), Some(Ask::Save("My layout".into())));
+        assert_eq!(parse("set up my work layout"), Some(Ask::Restore("Work".into())));
+        assert_eq!(parse("load my coding setup"), Some(Ask::Restore("Coding".into())));
+        assert_eq!(parse("switch to my gaming layout"), Some(Ask::Restore("Gaming".into())));
+        assert_eq!(parse("delete my work layout"), Some(Ask::Forget("Work".into())));
+        // The built-in ones and the undo stay as they were.
+        assert_eq!(parse("restore my window layout"), Some(Ask::Undo));
+        assert_eq!(parse("switch to focus layout"), Some(Ask::Arrange(Kind::Focus)));
+        assert_eq!(parse("undo the layout"), Some(Ask::Undo));
+        // Not windows.
+        assert_eq!(parse("save the slide layout"), None);
+        assert_eq!(parse("save my essay"), None);
+        assert_eq!(parse("how do I save my window layout"), None);
+        assert_eq!(parse("don't set up my work layout"), None);
+    }
+
+    #[test]
+    fn the_right_window_is_found_again() {
+        let want = SavedWindow { exe: "C:\\Apps\\code.exe".into(), app: "Visual Studio Code".into(), title: "main.rs - izuki - Visual Studio Code".into(), spot: Spot { show: 1, flags: 0, min: (0, 0), max: (0, 0), normal: (0, 0, 10, 10) } };
+        let open = vec![
+            (1, "c:\\apps\\code.exe".to_string(), "notes.md - other - Visual Studio Code".to_string()),
+            (2, "C:\\Apps\\code.exe".to_string(), "main.rs - izuki - Visual Studio Code".to_string()),
+            (3, "C:\\Apps\\chrome.exe".to_string(), "main.rs - izuki - Visual Studio Code".to_string()),
+        ];
+        assert_eq!(best_match(&want, &open, &[]), Some(2), "same program and title first");
+        assert_eq!(best_match(&want, &open, &[2]), Some(1), "then the same program");
+        assert_eq!(best_match(&want, &open, &[1, 2]), None, "never another program");
+        assert!(!may_open("C:\\Program Files\\WindowsApps\\Microsoft.Todos\\Todo.exe"), "Store apps start another way");
+        assert!(!may_open("C:\\Windows\\explorer.exe"));
+        assert!(!may_open("C:\\nowhere\\gone.exe"), "a program that's been uninstalled");
+        assert!(clean_name("focus").is_err() && clean_name("  ").is_err());
+        assert_eq!(clean_name("  Movie   night ").unwrap(), "Movie night");
     }
 
     #[cfg(windows)]

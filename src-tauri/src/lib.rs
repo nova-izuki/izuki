@@ -138,6 +138,8 @@ pub mod clip;
 pub mod recall;
 pub mod timers;
 pub mod activity;
+pub mod actlog;
+pub mod mydata;
 pub mod boost;
 pub mod playbooks;
 pub mod beats;
@@ -267,6 +269,8 @@ pub fn tls_ready() {
 }
 
 pub fn run() {
+    // "Erase everything" happens here, before anything has read the data.
+    mydata::erase_if_asked();
     tls_ready();
     // Physical pixels everywhere, so a point drawn on the overlay is the same
     // point the mouse is later moved to.
@@ -503,6 +507,19 @@ pub fn run() {
             commands::window_layout,
             commands::window_layout_undo,
             commands::window_layout_can_undo,
+            commands::layouts_saved,
+            commands::layout_save,
+            commands::layout_restore,
+            commands::layout_forget,
+            commands::tweak_pack_last,
+            commands::tweak_pack_undo,
+            commands::actions_days,
+            commands::actions_day,
+            commands::actions_clear,
+            commands::my_data_summary,
+            commands::my_data_export,
+            commands::my_data_show,
+            commands::erase_everything,
             commands::windhawk_status,
             commands::windhawk_install,
             commands::windhawk_open,
@@ -578,6 +595,7 @@ pub fn run() {
             // This runs only for the owning process, after the instance guard.
             bugs::start();
             eprintln!("[izuki] starting v{}", env!("CARGO_PKG_VERSION"));
+            mydata::report_erase();
             let store = state::init();
             bugs::set_enabled(store.settings().send_bug_reports);
             ext::spawn();

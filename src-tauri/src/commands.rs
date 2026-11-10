@@ -539,9 +539,19 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         .await
         .ok();
     }
-    // Window layouts: "put my windows side by side", "undo the layout" (arrange.rs).
-    if let Some(ask) = crate::arrange::parse(&said) {
+    // Window layouts: "put my windows side by side", "undo the layout",
+    // "save my windows as Work", "set up my Work layout" (arrange.rs). A
+    // "setup" that isn't one of your saved layouts is left for the rest.
+    if let Some(ask) = crate::arrange::parse(&said).filter(|a| crate::arrange::claims(a, &said)) {
         return blocking(move || crate::arrange::handle(ask)).await.ok();
+    }
+    // "Undo the tweaks", "undo the gamer pack" (tweaks.rs).
+    if crate::tweaks::parse_undo(&said) {
+        return blocking(crate::tweaks::undo_pack_said).await.ok();
+    }
+    // "What did you do today?": the "What Izuki did" list (actlog.rs).
+    if let Some(yesterday) = crate::actlog::parse_ask(&said) {
+        return blocking(move || crate::actlog::answer(yesterday)).await.ok();
     }
     // Windows looks: "make my PC look Nova", "make it cozy", "undo the look", "accent colour red" (winlook.rs).
     if let Some(ask) = crate::winlook::parse(&said) {
@@ -1823,6 +1833,124 @@ pub fn window_layout_can_undo() -> bool {
 #[tauri::command]
 pub async fn window_layout_undo() -> R<String> {
     blocking(|| crate::arrange::undo().map_err(|e| e.to_string())).await?
+}
+
+/// A saved window layout, for the Style tab's list.
+#[derive(serde::Serialize)]
+pub struct SavedLayoutInfo {
+    pub name: String,
+    pub at: u64,
+    pub apps: Vec<String>,
+}
+
+/// Your saved window layouts, newest first.
+#[tauri::command]
+pub async fn layouts_saved() -> R<Vec<SavedLayoutInfo>> {
+    blocking(|| {
+        crate::arrange::saved()
+            .into_iter()
+            .map(|s| {
+                let mut apps: Vec<String> = Vec::new();
+                for w in &s.windows {
+                    if !apps.contains(&w.app) {
+                        apps.push(w.app.clone());
+                    }
+                }
+                SavedLayoutInfo { name: s.name, at: s.at, apps }
+            })
+            .collect()
+    })
+    .await
+}
+
+/// Save where every app window is now, as `name`.
+#[tauri::command]
+pub async fn layout_save(name: String) -> R<String> {
+    blocking(move || crate::arrange::save(&name).map_err(|e| e.to_string())).await?
+}
+
+/// Put a saved layout's windows back (opening apps that aren't running).
+#[tauri::command]
+pub async fn layout_restore(name: String) -> R<String> {
+    blocking(move || crate::arrange::restore(&name).map_err(|e| e.to_string())).await?
+}
+
+/// Delete a saved layout.
+#[tauri::command]
+pub async fn layout_forget(name: String) -> R<()> {
+    blocking(move || crate::arrange::forget(&name).map_err(|e| e.to_string())).await?
+}
+
+/// The last tweak pack "undo the tweaks" would put back, if any.
+#[tauri::command]
+pub async fn tweak_pack_last() -> R<Option<crate::tweaks::PackUndoInfo>> {
+    blocking(crate::tweaks::last_pack).await
+}
+
+/// What undoing a pack did, and the fresh tweaks.
+#[derive(serde::Serialize)]
+pub struct PackUndone {
+    pub said: String,
+    pub tweaks: Vec<crate::tweaks::Tweak>,
+}
+
+/// Put back exactly what the last tweak pack changed.
+#[tauri::command]
+pub async fn tweak_pack_undo() -> R<PackUndone> {
+    blocking(|| crate::tweaks::undo_pack().map(|(said, tweaks)| PackUndone { said, tweaks }).map_err(|e| e.to_string())).await?
+}
+
+/// "What Izuki did": the days with something on them, newest first.
+#[tauri::command]
+pub async fn actions_days() -> R<Vec<String>> {
+    blocking(crate::actlog::days).await
+}
+
+/// "What Izuki did" on one day ("2026-11-10"), newest first.
+#[tauri::command]
+pub async fn actions_day(day: String) -> R<Vec<crate::actlog::Entry>> {
+    blocking(move || crate::actlog::day(&day).map_err(|e| e.to_string())).await?
+}
+
+/// Empty the "What Izuki did" list.
+#[tauri::command]
+pub async fn actions_clear() -> R<()> {
+    blocking(|| crate::actlog::clear().map_err(|e| e.to_string())).await?
+}
+
+/// How much Izuki keeps about you, and where.
+#[tauri::command]
+pub async fn my_data_summary() -> R<crate::mydata::Summary> {
+    blocking(crate::mydata::summary).await
+}
+
+/// "Take a copy of my data": a .zip in Downloads. `app_data` is the
+/// window's own storage (chat history), sent without secrets. The path back.
+#[tauri::command]
+pub async fn my_data_export(app_data: Option<serde_json::Value>) -> R<String> {
+    blocking(move || crate::mydata::one_at_a_time(|| crate::mydata::export(app_data)).map(|p| p.display().to_string()).map_err(|e| e.to_string())).await?
+}
+
+/// Show a file Izuki made in its folder (the copy of your data).
+#[tauri::command]
+pub fn my_data_show(app: AppHandle, path: String) -> R<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let p = std::path::PathBuf::from(&path);
+    // Only Izuki's own copies: an "Izuki data … .zip" that's really there.
+    let ours = p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("Izuki data ") && n.ends_with(".zip"));
+    if !ours || !p.is_file() {
+        return Err(err("that copy isn't there any more"));
+    }
+    app.opener().reveal_item_in_dir(p).map_err(err)
+}
+
+/// "Erase everything": Izuki closes, starts again by itself and erases
+/// before anything loads. `keep_keys` keeps your AI and app keys.
+#[tauri::command]
+pub async fn erase_everything(app: AppHandle, keep_keys: bool) -> R<()> {
+    blocking(move || crate::mydata::one_at_a_time(|| crate::mydata::ask_to_erase(keep_keys)).map_err(|e| e.to_string())).await??;
+    crate::quit(&app);
+    Ok(())
 }
 
 /// Is Windhawk installed, can it be, and the mods worth starting with.

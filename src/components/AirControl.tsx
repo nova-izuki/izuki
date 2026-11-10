@@ -7,6 +7,7 @@ import { AIR_KEYBOARD_OPEN, AirKeyboard } from "./AirKeyboard";
 import { AirMirror, HAND_BONES } from "./AirMirror";
 import { actionLabel, airBindings, type AirSlot } from "../lib/airActions";
 import { newScroll, scrollStep, type ScrollState } from "../lib/airScroll";
+import { newPinch, pinchLetGo, pinchStep } from "../lib/airPinch";
 import { normalizeEyeSensitivity, type EyeSensitivity } from "../lib/eyeControl";
 import type { Settings } from "../lib/types";
 
@@ -367,7 +368,9 @@ export function AirControl({
     let upSince = 0;
     let downSince = 0;
     /** When the fingers first came together: a pinch counts once held a moment. */
-    let pinchSeen = 0;
+    // The pinch's press and let-go timing (airPinch.ts): it holds through a
+    // fast flick, and after Izuki lets go for you it waits for open fingers.
+    const pinchState = newPinch();
     /** Keys the game controls are holding down right now. */
     const held = new Set<string>();
     const hold = (key: string, down: boolean) => {
@@ -656,7 +659,10 @@ export function AirControl({
           ownDown = null;
           pinchFrom = null;
           pinchDown = false;
+          pinchLetGo(pinchState);
         }
+        // A second pinch held back as a possible double-click ends here too.
+        pendingDouble = null;
         sx.reset();
         sy.reset();
         mode = "";
@@ -705,11 +711,12 @@ export function AirControl({
         // Whatever was under way stops cleanly (a pick-up ends once, here).
         if (grabbing) fake("pointerup", pointer);
         else if (pinchDown && !ownDown && endPinch3d()) void api.airButton(false, false).catch(() => undefined);
+        if (pinchDown) pinchLetGo(pinchState);
+        pendingDouble = null;
         grabbing = false;
         ownDown = null;
         pinchFrom = null;
         pinchDown = false;
-        pinchSeen = 0;
         scroll = null;
         swipeFrom = null;
         customName = "";
@@ -985,9 +992,7 @@ export function AirControl({
 
       // Thumb + index: press (and hold to drag).
       const touching = !taught && pinch(8, pinchDown);
-      if (!touching) pinchSeen = 0;
-      else if (!pinchSeen) pinchSeen = now;
-      const p = touching && (pinchDown || now - pinchSeen >= 80);
+      const p = pinchStep(pinchState, touching, pinchDown, now);
       if (p && !pinchDown) {
         pinchDown = true;
         pinchAt = now;

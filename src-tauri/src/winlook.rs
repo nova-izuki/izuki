@@ -595,7 +595,24 @@ fn due(a: &Auto, current: Option<&str>, now_min: u32, now_ms: i64) -> Option<Str
 }
 
 /// Turn Auto on, change it, or turn it off. The look changes straight away if it should.
-pub fn set_auto(mut a: Auto) -> Result<Status> {
+pub fn set_auto(a: Auto) -> Result<Status> {
+    let mode = a.mode.clone();
+    let was = memory().auto.mode;
+    let done = set_auto_now(a);
+    if done.is_ok() && mode != was {
+        let what = match mode.as_str() {
+            "off" => "Turned off automatic wallpapers".to_string(),
+            "photo" => "Turned on a new photo wallpaper every day".to_string(),
+            "daynight" => "Turned on day and night looks".to_string(),
+            "shuffle" => "Turned on shuffled looks".to_string(),
+            other => format!("Set the look to change by itself ({other})"),
+        };
+        crate::actlog::record("style", &what);
+    }
+    done
+}
+
+fn set_auto_now(mut a: Auto) -> Result<Status> {
     if !["off", "daynight", "shuffle", "photo"].contains(&a.mode.as_str()) {
         return Err(anyhow!("no auto mode called {}", a.mode));
     }
@@ -1199,6 +1216,14 @@ fn put_wallpaper(file: &str) -> Result<()> {
 
 /// Apply a whole look. `wallpaper: false` keeps your picture.
 pub fn apply(id: &str, wallpaper: bool) -> Result<Status> {
+    let done = apply_now(id, wallpaper);
+    if done.is_ok() {
+        crate::actlog::record("style", &format!("Changed the Windows look to {}", PRESETS.iter().find(|p| p.id == id).map_or(id, |p| p.name)));
+    }
+    done
+}
+
+fn apply_now(id: &str, wallpaper: bool) -> Result<Status> {
     let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
     apply_locked(id, wallpaper)
 }
@@ -1437,6 +1462,14 @@ fn thumb_of(img: &image::RgbImage) -> String {
 /// A new photo now, applied with matching colours. Keeps your own look
 /// saved for Undo, like every look.
 pub fn photo_now(next: bool) -> Result<Status> {
+    let done = photo_now_now(next);
+    if done.is_ok() {
+        crate::actlog::record("style", &"Changed the wallpaper to a new photo".to_string());
+    }
+    done
+}
+
+fn photo_now_now(next: bool) -> Result<Status> {
     let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
     let source = memory().auto.source;
     photo_locked(&source, next)
@@ -1600,6 +1633,14 @@ pub fn photo_preview(file: &str) -> Result<String> {
 
 /// A recent photo again (from the Style tab's strip).
 pub fn photo_use(file: &str) -> Result<Status> {
+    let done = photo_use_now(file);
+    if done.is_ok() {
+        crate::actlog::record("style", &"Changed the wallpaper to a saved photo".to_string());
+    }
+    done
+}
+
+fn photo_use_now(file: &str) -> Result<Status> {
     let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
     let mut m = memory();
     let h = m.history.iter().find(|h| h.file == file).cloned().ok_or_else(|| anyhow!("that photo isn't in your recent ones any more"))?;
@@ -1625,6 +1666,14 @@ pub fn photo_use(file: &str) -> Result<Status> {
 
 /// Just the accent colour ("#rrggbb").
 pub fn set_accent(colour: &str) -> Result<Status> {
+    let done = set_accent_now(colour);
+    if done.is_ok() {
+        crate::actlog::record("style", &format!("Changed the accent colour to {colour}"));
+    }
+    done
+}
+
+fn set_accent_now(colour: &str) -> Result<Status> {
     let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
     let c = parse_hex(colour).ok_or_else(|| anyhow!("that isn't a colour ({colour})"))?;
     save_before()?;
@@ -1639,6 +1688,14 @@ pub fn set_accent(colour: &str) -> Result<Status> {
 
 /// One switch: "dark", "glass", "bars" or "titles".
 pub fn set_switch(name: &str, on: bool) -> Result<Status> {
+    let done = set_switch_now(name, on);
+    if done.is_ok() {
+        crate::actlog::record("style", &format!("Turned {} {}", match name { "dark" => "dark mode", "glass" => "see-through effects", "bars" => "the tinted taskbar", "titles" => "tinted title bars", other => other }, if on { "on" } else { "off" }));
+    }
+    done
+}
+
+fn set_switch_now(name: &str, on: bool) -> Result<Status> {
     let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
     save_before()?;
     match name {
@@ -1669,6 +1726,14 @@ pub fn set_switch(name: &str, on: bool) -> Result<Status> {
 
 /// Put back everything you had before the first look.
 pub fn undo() -> Result<Status> {
+    let done = undo_now();
+    if done.is_ok() {
+        crate::actlog::record("style", &"Put your old Windows look back".to_string());
+    }
+    done
+}
+
+fn undo_now() -> Result<Status> {
     let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
     let mut m = memory();
     let Some(before) = m.before.clone() else {
@@ -2071,7 +2136,7 @@ pub fn handle(ask: Ask) -> String {
                             Some(p) => format!("a fresh 4K photo, {}, with your accent colour and dark or light mode matched to it", describe(&p)),
                             None => "real 4K photos are on (the first one didn't come through yet; I'll keep trying)".into(),
                         },
-                        if tidy.is_ok() { ", and a clean taskbar: just your apps, with the search box, Task view, Widgets and Copilot hidden. Some of that shows after Explorer restarts (Style → Tweaks)." } else { "." }
+                        if tidy.is_ok() { ", and a clean taskbar: just your apps, with the search box, Task view, Widgets and Copilot hidden. Some of that shows after Explorer restarts (Style → Tweaks); “undo the tweaks” puts the taskbar back." } else { "." }
                     )
                 }
                 Err(e) => format!("I couldn't make the change: {e}"),

@@ -27,10 +27,15 @@ import { FIXATION_MS, newValidation, summarizeValidation, validationStep, valida
 import { CALIBRATION_MAX_RMS, CALIBRATION_TARGETS } from "../lib/eyeMap";
 import {
   acceptGazeJump,
+  cameraProblem,
+  cameraRetryDelay,
   eyeClickStep,
+  headDriftStep,
   newEyeClickState,
   newGazeJumpState,
+  newHeadDrift,
   smoothEye,
+  type CameraTrouble,
   type EyeSensitivity,
   type EyeStatusPayload,
 } from "../lib/eyeControl";
@@ -200,8 +205,10 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
   const [sight, setSight] = useState({ face: false, eyes: false });
   const [light, setLight] = useState<number | null>(null);
   const [camName, setCamName] = useState("");
-  /** Another camera was picked in Settings. */
+  /** Another camera was picked in Settings, or the camera is tried again. */
   const [camKey, setCamKey] = useState(0);
+  /** How many times in a row the camera has been tried again (reset once it works). */
+  const camTries = useRef(0);
 
   useEffect(() => {
     let alive = true;
@@ -214,6 +221,13 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
     let steadySince = performance.now();
     let runtimeStopped = false;
     let endedHandler: (() => void) | null = null;
+    // The camera went away: tried again on a timer, and at once when a camera
+    // is plugged in (a device change).
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let onDevices: (() => void) | null = null;
+    let waitingForCamera = false;
+    // The head's distance from where it was at calibration (#41).
+    let drift = newHeadDrift();
     let lastFace = 0;
     let calAt = 0;
     let clickAt = 0;
@@ -533,6 +547,8 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
     const stopWithError = (why: string) => {
       if (!alive || runtimeStopped) return;
       runtimeStopped = true;
+      // Nothing held, nothing moving (airsafe.rs lets go of buttons and the pointer).
+      void api.airRelease().catch(() => undefined);
       readyForCalibration = false;
       faceNow = false;
       lastFace = 0;
@@ -580,13 +596,41 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
         : "Calibration couldn't read your eyes — centre your face in the preview and add light.";
     };
 
+    /**
+     * Try the camera again later (a fresh start of this whole effect, so the
+     * session, gate and calibration start clean). Only for camera troubles:
+     * anything else would fail the same way again.
+     */
+    const recoverLater = (kind: CameraTrouble) => {
+      const delay = cameraRetryDelay(kind, camTries.current);
+      if (delay === null || !alive) return;
+      camTries.current += 1;
+      waitingForCamera = true;
+      const again = () => {
+        if (!alive) return;
+        clearTimeout(retryTimer);
+        setCamKey((k) => k + 1);
+      };
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(again, delay);
+      const md = navigator.mediaDevices;
+      if (md?.addEventListener && !onDevices) {
+        onDevices = () => {
+          clearTimeout(retryTimer);
+          // Let Windows finish setting the camera up first.
+          retryTimer = setTimeout(again, 800);
+        };
+        md.addEventListener("devicechange", onDevices);
+      }
+    };
+
     const startCal = () => {
       if (!readyForCalibration) {
-        setStatus("The eye camera is still starting — try Calibrate again in a moment.");
+        setStatus(waitingForCamera ? "Waiting for the camera — Eye Control picks it up by itself." : "The eye camera is still starting — try Calibrate again in a moment.");
         return;
       }
       if (runtimeStopped) {
-        setStatus("Eye Control stopped — turn Air control off and on to retry.");
+        setStatus(waitingForCamera ? "Waiting for the camera — Eye Control picks it up by itself." : "Eye Control stopped — turn Air control off and on to retry.");
         return;
       }
       if (!faceNow) {
@@ -607,6 +651,7 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
       setCheckView(null);
       calHadGaze = false;
       jumpState = newGazeJumpState();
+      drift = newHeadDrift();
       calAt = performance.now();
       const target = cal.targets[0] ?? null;
       setCalView({
@@ -891,7 +936,19 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
       // it, and nothing moves while the emergency stop isn't running.
       // Only a passed accuracy check moves the real mouse, and only to a
       // steady look (not every flicker); otherwise the cursor is just drawn.
-      const pointerMode = pointerAllowed();
+      const head = headDriftStep(drift, cal.headAnchor, f.head ?? null, now);
+      if (head.changed) {
+        if (head.level === "ok") {
+          // Back: the usual status is said again below.
+          autoFaceStatus = false;
+        } else {
+          autoFaceStatus = true;
+          setStatus(head.message);
+          const mouse = pointerAllowed() && head.level !== "far";
+          tell({ state: "ready", message: head.message, face: true, calibrated: true, clicks: clicksRef.current && mouse, mode: mouse ? "pointer" : "preview" });
+        }
+      }
+      const pointerMode = pointerAllowed() && head.level !== "far";
       if (pointerMode && now > calAt && now - steadySince >= FIXATION_MS) void api.airPointer(pointer.x, pointer.y, true).catch(() => undefined);
       draw(true);
 
@@ -1019,7 +1076,11 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
         }
         stream = cam.stream;
         setCamName(cam.label);
-        const onEnded = () => stopWithError("the camera disconnected.");
+        const onEnded = () => {
+          const trouble = cameraProblem("disconnected");
+          stopWithError(trouble.message);
+          recoverLater(trouble.kind);
+        };
         endedHandler = onEnded;
         stream.getVideoTracks().forEach((track) => track.addEventListener("ended", onEnded));
         const v = video.current;
@@ -1039,6 +1100,9 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
         const engine = await within(tracker.ready(), 60_000, "eye tracking didn't load");
         if (!alive) return;
         readyForCalibration = true;
+        // The camera works: the next trouble starts its tries from the beginning.
+        camTries.current = 0;
+        waitingForCamera = false;
         setStatus("Face the camera, then calibrate.");
         tell({
           state: "no-face",
@@ -1100,14 +1164,19 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
         setSight({ face: false, eyes: false });
         setLight(null);
         endGate(gate, "session");
-        setStatus(`Eye control couldn't start — ${why}`);
+        void api.airRelease().catch(() => undefined);
+        // A camera trouble is said plainly and tried again by itself.
+        const trouble = cameraProblem(e);
+        const message = trouble.kind === "other" ? `Eye control couldn't start — ${why}` : `Eye control is waiting: ${trouble.message}`;
+        setStatus(message);
         tell({
           state: "error",
-          message: `Eye control couldn't start — ${why}`,
+          message,
           face: false,
           calibrated: false,
           clicks: clicksRef.current,
         });
+        recoverLater(trouble.kind);
       }
     })();
 
@@ -1115,6 +1184,8 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
       alive = false;
       clearInterval(lowTimer);
       clearInterval(calTimer);
+      clearTimeout(retryTimer);
+      if (onDevices) navigator.mediaDevices?.removeEventListener("devicechange", onDevices);
       const ended = endedHandler;
       if (ended) stream?.getVideoTracks().forEach((track) => track.removeEventListener("ended", ended));
       void offCal.then((f) => f()).catch(() => undefined);

@@ -867,6 +867,8 @@
     if (pc) {
       idea("📬", "My email", "Through your PC", () => ask("What's new in my email?"));
       idea("🖥️", "My PC", "Do something on it", () => text.focus());
+      idea("🪟", "Tidy my PC windows", "Side by side, or a saved layout", () => ask("Put my windows side by side"));
+      idea("📝", "What did Izuki do?", "Today, on your PC", () => ask("What did you do on my PC today?"));
     }
     idea("+", "Make something", "Write, brainstorm, improve", () => { text.value = "Help me create "; refreshSend(); text.focus(); });
     idea("=", "Connect my life", "Email, calendar, socials", () => openSettings("apps-filter"));
@@ -1751,6 +1753,11 @@
     const t = " " + String(said || "").toLowerCase() + " ";
     return PC_DO.some((k) => t.includes(k)) || PC_LOOK.some((k) => t.includes(k));
   };
+  // Windows layouts, looks, tweaks and "what did you do" are always about the
+  // PC: "put my windows side by side", "set up my Work layout", "make my PC
+  // look cozy", "undo the tweaks", "what did you do today?".
+  const PC_STYLE = /\b(?:my windows|window layout|my [\w ]{1,20} layout|split my screen|tile my windows|undo the tweaks|undo the \w+ pack|my (?:pc|computer|laptop|desktop) look|what did you do (?:today|yesterday|on my (?:pc|computer|laptop))|what (?:have|did) you (?:done|changed?) on my (?:pc|computer|laptop))\b/i;
+  const wantsPcStyle = (said) => PC_STYLE.test(String(said || ""));
   const wantsReminder = (said) => /\b(remind me|set (a |an )?reminder|my reminders)\b/i.test(String(said || ""));
   // Explicit device intent wins over app names and generic action verbs.
   const phoneTarget = (said) => /\b(?:my phone|the phone|this phone|my iphone|the iphone|this iphone|my android|the android|this android|on (?:phone|iphone|android|mobile)|open (?:phone|iphone|android))\b/i.test(String(said || ""));
@@ -1766,6 +1773,7 @@
     if (phoneTarget(said)) return pcTarget(said) ? "clarify" : "phone";
     if (wantsReminder(said)) return havePc ? "pc" : "chat";
     if (wantsAccount(said)) return haveApps ? "apps" : havePc ? "pc" : "chat";
+    if (havePc && wantsPcStyle(said)) return "pc";
     return havePc && wantsPc(said) ? pcTarget(said) ? "pc" : "clarify" : "chat";
   };
 

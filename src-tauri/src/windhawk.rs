@@ -157,6 +157,7 @@ pub fn install() -> Result<Status> {
         if let Some(done) = child.try_wait()? {
             let now = status();
             return if now.installed {
+                crate::actlog::record("apps", "Installed Windhawk (from winget, after you pressed Install)");
                 Ok(now)
             } else if done.success() {
                 Err(anyhow!("winget finished, but Windhawk isn't where it should be. Open windhawk.net to install it."))
