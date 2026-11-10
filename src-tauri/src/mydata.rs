@@ -392,12 +392,28 @@ fn erase_window_storage() -> Option<String> {
 /// it has (or was already gone), false if it's still running after 20 s.
 #[cfg(windows)]
 fn wait_for_exit(pid: u32) -> bool {
+    use windows::core::PWSTR;
     use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
-    use windows::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, WaitForSingleObject, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
+    };
     unsafe {
         // Can't be opened: it has already gone.
-        let Ok(h) = OpenProcess(PROCESS_SYNCHRONIZE, false, pid) else { return true };
-        let ended = WaitForSingleObject(h, 20_000) == WAIT_OBJECT_0;
+        let Ok(h) = OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else { return true };
+        // Only an Izuki is waited for: Windows reuses process numbers, and an
+        // unrelated program with the old number must never hold up a start.
+        let mut path = [0u16; 520];
+        let mut len = path.len() as u32;
+        let image = QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, PWSTR(path.as_mut_ptr()), &mut len)
+            .ok()
+            .map(|_| String::from_utf16_lossy(&path[..len as usize]));
+        let ours = std::env::current_exe().ok().and_then(|e| e.file_name().map(|n| n.to_string_lossy().to_lowercase()));
+        let same_program = match (image, ours) {
+            (Some(image), Some(ours)) => image.to_lowercase().ends_with(&format!("\\{ours}")),
+            // Can't tell: wait, as before.
+            _ => true,
+        };
+        let ended = !same_program || WaitForSingleObject(h, 20_000) == WAIT_OBJECT_0;
         let _ = CloseHandle(h);
         ended
     }
