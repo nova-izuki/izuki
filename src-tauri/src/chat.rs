@@ -1685,6 +1685,8 @@ fn shrunk(messages: &[Value]) -> Vec<Value> {
 pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn() -> bool, on_text: &dyn Fn(String)) -> anyhow::Result<bool> {
     // Includes recursive size/model retries: Stop must not start another POST.
     if stop() { return Ok(false); }
+    // A key never crosses the network unencrypted (transport.rs).
+    crate::transport::check_key_route(cfg)?;
     let deep = DEEP_HERE.with(|d| d.get());
     // Plain conversation on Groq: its fast text model first (its own allowance).
     if cfg.id == ProviderId::Groq && !deep && cfg.model != GROQ_FAST_CHAT && !has_images(messages) && !crate::freebrains::resting(cfg.id, GROQ_FAST_CHAT) {
@@ -1708,10 +1710,13 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
             }
         }
     }
-    let client = reqwest::blocking::Client::builder()
+    let builder = reqwest::blocking::Client::builder()
+        .redirect(crate::transport::redirects())
         .connect_timeout(Duration::from_secs(6))
-        .timeout(if deep && !cfg.on_this_pc() { Duration::from_secs(150) } else { reply_timeout(cfg) })
-        .build()?;
+        .timeout(if deep && !cfg.on_this_pc() { Duration::from_secs(150) } else { reply_timeout(cfg) });
+    // A server on this PC is reached directly, never through a proxy.
+    let builder = if crate::transport::is_local(&cfg.base_url) { builder.no_proxy() } else { builder };
+    let client = builder.build()?;
     let body = json!({
         "model": cfg.model,
         "messages": messages,

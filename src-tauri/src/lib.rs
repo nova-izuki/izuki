@@ -143,6 +143,7 @@ pub mod playbooks;
 pub mod beats;
 pub mod screentime;
 pub mod readaloud;
+pub mod transport;
 pub mod tts;
 pub mod uia;
 pub mod updates;

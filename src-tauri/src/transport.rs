@@ -1,0 +1,133 @@
+//! Where an API key may travel.
+//!
+//! A key goes over https to anywhere, or over plain http only to a server on
+//! this PC (Ollama, LM Studio, 9Router). Typing an `http://` address for a
+//! remote server would otherwise send the key across the network unencrypted,
+//! so every request that attaches a configured key checks its route here
+//! first. A keyless server on the local network (LM Studio on another PC)
+//! still works: there is no key to protect.
+
+use crate::settings::ProviderConfig;
+
+/// Whether a key may be sent to `base_url`: https anywhere, plain http only
+/// to this PC. An empty address is the provider's own built-in one (https).
+/// Parsed the way a browser parses it (the Settings warning does the same),
+/// so "http://127.1", "http://[::1]/v1" and "http://user@evil.example" read
+/// as what they really are.
+pub fn key_may_go(base_url: &str) -> bool {
+    let t = base_url.trim();
+    if t.is_empty() {
+        return true;
+    }
+    let Ok(url) = reqwest::Url::parse(t) else { return false };
+    match url.scheme() {
+        "https" => true,
+        "http" => this_pc(url.host_str().unwrap_or("")),
+        _ => false,
+    }
+}
+
+/// A host name that is this PC: "localhost", or a loopback or unspecified
+/// address (brackets around IPv6 allowed).
+fn this_pc(host: &str) -> bool {
+    let h = host.trim_start_matches('[').trim_end_matches(']');
+    h.eq_ignore_ascii_case("localhost")
+        || h.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified())
+}
+
+/// The address is a server on this PC (http or https). Requests there go
+/// straight to it, never through a proxy: a proxy would carry them, and any
+/// key in them, off the PC.
+pub fn is_local(base_url: &str) -> bool {
+    reqwest::Url::parse(base_url.trim()).ok().is_some_and(|u| this_pc(u.host_str().unwrap_or("")))
+}
+
+/// Redirects for clients that can carry keys. A request that started where a
+/// key may not go was keyless (`check_key_route` refused the keyed ones
+/// before sending), so its redirects are followed as usual. Otherwise a
+/// redirect is followed only to where a key may go, and never from a remote
+/// server onto this PC (that client may use a proxy, which would carry the
+/// key off the PC). Stopping fails the request; the key isn't forwarded.
+pub fn redirects() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        let first = attempt.previous().first().map(|u| u.as_str().to_string());
+        let keyless = first.as_deref().is_some_and(|u| !key_may_go(u));
+        let onto_this_pc = first.as_deref().is_some_and(|u| !is_local(u)) && is_local(attempt.url().as_str());
+        if attempt.previous().len() >= 10 {
+            attempt.error("too many redirects")
+        } else if keyless || (key_may_go(attempt.url().as_str()) && !onto_this_pc) {
+            attempt.follow()
+        } else {
+            attempt.stop()
+        }
+    })
+}
+
+/// The plain-words refusal for a key that would travel unencrypted. (No
+/// "network" in it: that word reads as a passing outage to the brain race,
+/// which would retry instead of saying what to change.)
+pub fn refusal(label: &str) -> String {
+    format!(
+        "{label}'s address isn't encrypted (http://) and isn't on this PC, so Izuki won't send its key there. Use its https:// address (Settings → Izuki's brain → Endpoint)."
+    )
+}
+
+/// Words that mark a refusal from `refusal`, for error handling.
+pub const REFUSED: &str = "won't send its key there";
+
+/// Refuse, in plain words, a request that would send `cfg`'s key unencrypted
+/// across the network. A provider without a key always passes.
+pub fn check_key_route(cfg: &ProviderConfig) -> anyhow::Result<()> {
+    if cfg.api_key.trim().is_empty() || key_may_go(&cfg.base_url) {
+        return Ok(());
+    }
+    anyhow::bail!("{}", refusal(&cfg.label))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::ProviderId;
+
+    fn cfg(base_url: &str, api_key: &str) -> ProviderConfig {
+        ProviderConfig { id: ProviderId::Custom, label: "My server".into(), base_url: base_url.into(), model: "m".into(), api_key: api_key.into(), enabled: true }
+    }
+
+    #[test]
+    fn a_key_never_crosses_the_network_unencrypted() {
+        assert!(key_may_go("https://integrate.api.nvidia.com/v1"));
+        assert!(key_may_go("HTTPS://API.EXAMPLE.COM/v1"));
+        assert!(key_may_go("http://127.0.0.1:11434"));
+        assert!(key_may_go("http://localhost:20128/v1"));
+        assert!(key_may_go(""), "the provider's own https address");
+        assert!(!key_may_go("http://192.168.1.20:1234/v1"), "another PC on the network");
+        assert!(!key_may_go("http://127.example.com/v1"), "a name that only looks local");
+        assert!(!key_may_go("http://api.example.com/v1"));
+        assert!(!key_may_go("ftp://api.example.com"), "only http(s)");
+        // Read the way a browser reads them.
+        assert!(key_may_go("http://[::1]/v1"), "IPv6 loopback, no port");
+        assert!(key_may_go("http://[::1]:20128/v1"));
+        assert!(key_may_go("http://127.1:11434"), "short IPv4 is 127.0.0.1");
+        assert!(!key_may_go("http://user@evil.example/v1"), "userinfo isn't the host");
+        assert!(!key_may_go("http://127.0.0.1@evil.example/v1"));
+        assert!(!key_may_go("http:\\\\evil.example\\v1"), "backslashes");
+        assert!(!key_may_go("http://localhost.evil.example/v1"));
+        // This PC, for skipping proxies.
+        assert!(is_local("http://127.0.0.1:11434"));
+        assert!(is_local("https://localhost:8443/v1"));
+        assert!(is_local("http://[::1]/v1"));
+        assert!(!is_local("https://api.example.com/v1"));
+        assert!(!is_local("http://192.168.1.20:1234"));
+    }
+
+    #[test]
+    fn only_a_request_with_a_key_is_refused() {
+        assert!(check_key_route(&cfg("http://192.168.1.20:1234/v1", "")).is_ok(), "a keyless LAN server still works");
+        assert!(check_key_route(&cfg("http://192.168.1.20:1234/v1", "sk-123")).is_err());
+        assert!(check_key_route(&cfg("https://api.example.com/v1", "sk-123")).is_ok());
+        assert!(check_key_route(&cfg("http://localhost:1234/v1", "sk-123")).is_ok());
+        let said = check_key_route(&cfg("http://api.example.com/v1", "sk-123")).unwrap_err().to_string();
+        assert!(said.contains("https://") && !said.contains("sk-123"), "plain, and never repeats the key: {said}");
+        assert!(said.contains(REFUSED) && !said.contains("network"), "never read as an outage: {said}");
+    }
+}

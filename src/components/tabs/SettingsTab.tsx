@@ -273,6 +273,11 @@ export function SettingsTab() {
                       placeholder="http://127.0.0.1:11434"
                       mono
                     />
+                    {p.api_key.trim() && keyWouldTravelPlain(p.base_url) && (
+                      <p role="alert" className="text-[10.5px] leading-snug text-izk-danger">
+                        This address isn't encrypted (http://) and isn't on this PC, so Izuki won't send your key there. Use its https:// address.
+                      </p>
+                    )}
                     {!local && (
                       <div>
                         <div className="mb-1 flex items-center justify-between">
@@ -840,6 +845,22 @@ function FollowCard() {
       </div>
     </Section>
   );
+}
+
+/**
+ * The address would carry a key across the network unencrypted: plain http
+ * to anywhere but this PC (as Rust's transport::key_may_go refuses it).
+ */
+function keyWouldTravelPlain(baseUrl: string): boolean {
+  const url = baseUrl.trim();
+  if (!/^http:\/\//i.test(url)) return false;
+  try {
+    const host = new URL(url).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    const local = host === "localhost" || host === "::1" || host === "0.0.0.0" || host === "::" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+    return !local;
+  } catch {
+    return true;
+  }
 }
 
 function SupportCard() {

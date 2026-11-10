@@ -514,6 +514,7 @@ fn client() -> Result<reqwest::blocking::Client> {
     // Bounded so a stuck cloud call can't freeze "thinking" for long — the
     // agent checks for a stop between calls, so shorter here means a faster stop.
     let built = reqwest::blocking::Client::builder()
+        .redirect(crate::transport::redirects())
         // A screen step is quick or it's stuck: give up and let the next brain
         // answer. Twenty seconds, not fourteen: a free vision model on a busy
         // day routinely needs 12–18 s to *start* describing a picture, and the
@@ -528,6 +529,30 @@ fn client() -> Result<reqwest::blocking::Client> {
         .build()
         .context("could not start the HTTP client")?;
     Ok(CLIENT.get_or_init(|| built).clone())
+}
+
+/// For a server on this PC: the same settings, never through a proxy (a
+/// proxy would carry the request, and its key, off the PC).
+fn local_client() -> Result<reqwest::blocking::Client> {
+    static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
+    if let Some(c) = CLIENT.get() {
+        return Ok(c.clone());
+    }
+    crate::tls_ready();
+    let built = reqwest::blocking::Client::builder()
+        .redirect(crate::transport::redirects())
+        .no_proxy()
+        .timeout(Duration::from_secs(20))
+        .connect_timeout(Duration::from_secs(5))
+        .pool_idle_timeout(Duration::from_secs(90))
+        .build()
+        .context("could not start the HTTP client")?;
+    Ok(CLIENT.get_or_init(|| built).clone())
+}
+
+/// The client for a provider's address: straight to this PC, or the shared one.
+fn client_for(base_url: &str) -> Result<reqwest::blocking::Client> {
+    if crate::transport::is_local(base_url) { local_client() } else { client() }
 }
 
 /// Open the connection to the first brains now (you've started talking), so
@@ -601,6 +626,8 @@ fn lean(req: &VisionRequest) -> VisionRequest {
 }
 
 pub fn ask(cfg: &ProviderConfig, req: &VisionRequest) -> Result<VisionPlan> {
+    // A key never crosses the network unencrypted (transport.rs).
+    crate::transport::check_key_route(cfg)?;
     let started = Instant::now();
     let style = Style::of(cfg);
     // Within this AI's per-minute allowance (budget.rs): leaner when tight,
@@ -856,7 +883,8 @@ fn parse_more(raw: &str) -> bool {
 
 /// Cheap reachability check for the settings screen.
 pub fn probe(cfg: &ProviderConfig) -> Result<String> {
-    let c = client()?;
+    crate::transport::check_key_route(cfg)?;
+    let c = client_for(&cfg.base_url)?;
     let base = cfg.base_url.trim_end_matches('/');
 
     match cfg.id {
@@ -997,9 +1025,12 @@ fn ask_ollama(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Result
     let base = cfg.base_url.trim_end_matches('/').trim_end_matches("/v1").trim_end_matches("/api");
     // A model on the PC itself may have to load into memory first, and runs
     // slower than a data centre — give it minutes, not seconds.
-    let client = reqwest::blocking::Client::builder()
+    let builder = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(240))
         .connect_timeout(Duration::from_secs(4))
+        .redirect(crate::transport::redirects());
+    let builder = if crate::transport::is_local(&cfg.base_url) { builder.no_proxy() } else { builder };
+    let client = builder
         .build()
         .context("could not start the HTTP client")?;
     let send = |with_image: bool| -> Result<(reqwest::StatusCode, Value)> {
@@ -1204,7 +1235,7 @@ fn ask_gemini_as(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Res
         body["generationConfig"]["thinkingConfig"] = config;
     }
 
-    let res = client()?.post(url).header("x-goog-api-key", key).json(&body).send()?;
+    let res = client_for(&cfg.base_url)?.post(url).header("x-goog-api-key", key).json(&body).send()?;
     let status = res.status();
     let value: Value = res.json()?;
     if status.as_u16() == 400 && knob != NoThink::Neither {
@@ -1264,7 +1295,7 @@ fn ask_anthropic(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Res
         }]
     });
 
-    let res = client()?
+    let res = client_for(&cfg.base_url)?
         .post(format!("{base}/messages"))
         .header("x-api-key", key)
         .header("anthropic-version", "2023-06-01")
@@ -1302,7 +1333,7 @@ fn smaller_output_budget(status: u16, value: &Value, current: u32) -> Option<u32
 
 fn ask_openai_compatible(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Result<String> {
     let base = cfg.base_url.trim_end_matches('/');
-    let client = client()?;
+    let client = client_for(&cfg.base_url)?;
     let image = format!("data:image/jpeg;base64,{}", req.b64());
     let text = style.user(req);
 

@@ -114,6 +114,9 @@ fn google_via_gemini(q: &str) -> Result<Vec<Hit>> {
     let cfg = settings.provider(ProviderId::Gemini).filter(|c| !c.api_key.trim().is_empty()).cloned().ok_or_else(|| anyhow!("no Gemini key"))?;
     let base = cfg.base_url.trim_end_matches('/').to_string();
     let base = if base.is_empty() { "https://generativelanguage.googleapis.com".to_string() } else { base };
+    if !crate::transport::key_may_go(&base) {
+        return Err(anyhow!("{}", crate::transport::refusal(&cfg.label)));
+    }
     let mut last = anyhow!("Google search through Gemini didn't answer");
     // The light model first (quick, and its own allowance), then the chosen one.
     for model in ["gemini-flash-lite-latest".to_string(), crate::vision::gemini_model_now(&cfg.model)] {
