@@ -218,6 +218,24 @@ struct Pending {
     /// The Izuki that asked; the erase waits for it to close.
     pid: u32,
     keep_keys: bool,
+    /// When it was asked (Unix seconds). A request is carried out only in
+    /// the restart right after it, never days later.
+    #[serde(default)]
+    at: u64,
+}
+
+/// How long a request to erase stays good: the restart takes seconds.
+const ERASE_WITHIN_SECS: u64 = 10 * 60;
+
+/// The request, if it's readable and was asked in the last ten minutes
+/// (a clock set back a little doesn't make it stale; one far in the future
+/// isn't trusted).
+fn fresh_request(raw: &[u8], now: u64) -> Option<Pending> {
+    serde_json::from_slice::<Pending>(raw).ok().filter(|p| p.at <= now + 60 && now.saturating_sub(p.at) <= ERASE_WITHIN_SECS)
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
 /// Erase everything: remembered now, done as Izuki starts again (it closes
@@ -225,7 +243,7 @@ struct Pending {
 pub fn ask_to_erase(keep_keys: bool) -> Result<()> {
     let root = data();
     std::fs::create_dir_all(&root)?;
-    let p = Pending { pid: std::process::id(), keep_keys };
+    let p = Pending { pid: std::process::id(), keep_keys, at: now_secs() };
     std::fs::write(root.join(MARKER), serde_json::to_vec(&p)?).context("couldn't save the request to erase")?;
     eprintln!("[mydata] erase asked for (keep keys: {keep_keys}); closing to erase at the next start");
     // A fresh Izuki, which waits for this one to close and then erases.
@@ -265,11 +283,20 @@ pub fn erase_if_asked() {
     let root = data();
     let marker = root.join(MARKER);
     let Ok(raw) = std::fs::read(&marker) else { return };
-    let pending: Pending = serde_json::from_slice(&raw).unwrap_or(Pending { pid: 0, keep_keys: false });
+    // Only a fresh, readable request erases: one left over from a restart
+    // that never happened (or unreadable) is dropped, never acted on later
+    // without being asked again.
+    let Some(pending) = fresh_request(&raw, now_secs()) else {
+        let _ = std::fs::remove_file(&marker);
+        *LEFT.lock() = vec!["nothing: an old request to erase was found and dropped (ask again in Settings → Privacy)".into()];
+        ERASED.store(true, std::sync::atomic::Ordering::SeqCst);
+        return;
+    };
     // The old Izuki still running would write its memory back over the
-    // erase: nothing is erased then, and the next start tries again.
+    // erase: nothing is erased, and the request is dropped (ask again).
     if pending.pid != 0 && pending.pid != std::process::id() && !wait_for_exit(pending.pid) {
-        *LEFT.lock() = vec!["nothing: the old Izuki didn't close within 20 seconds, so the erase waits for the next start".into()];
+        let _ = std::fs::remove_file(&marker);
+        *LEFT.lock() = vec!["nothing: the old Izuki didn't close within 20 seconds, so nothing was erased (ask again in Settings → Privacy)".into()];
         ERASED.store(true, std::sync::atomic::Ordering::SeqCst);
         return;
     }
@@ -349,8 +376,17 @@ fn keys_from(settings: &Path) -> Option<Value> {
 /// What couldn't be deleted, by name.
 fn erase_in(root: &Path, keep_workspaces: bool) -> Vec<String> {
     let mut left = Vec::new();
-    let Ok(read) = std::fs::read_dir(root) else { return left };
-    for e in read.flatten() {
+    let read = match std::fs::read_dir(root) {
+        Ok(read) => read,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return left,
+        // Never "everything erased" when the folder couldn't even be read.
+        Err(e) => return vec![format!("the Izuki folder ({e})")],
+    };
+    for e in read {
+        let Ok(e) = e else {
+            left.push("an item Windows wouldn't list".into());
+            continue;
+        };
         let name = e.file_name().to_string_lossy().to_string();
         if NOT_DATA_DIRS.contains(&name.as_str()) || UNDO_FILES.contains(&name.as_str()) || name == MARKER || (keep_workspaces && name == "workspaces") {
             continue;
@@ -525,6 +561,17 @@ mod tests {
         assert!(!all.contains("push-signing-secret") && !all.contains("push-auth-secret") && !all.contains("fn main"), "push secrets and project copies stay out");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&out_dir);
+    }
+
+    #[test]
+    fn only_a_fresh_request_erases() {
+        let at = 1_000_000;
+        let ask = |when: u64| serde_json::to_vec(&Pending { pid: 1, keep_keys: false, at: when }).unwrap();
+        assert!(fresh_request(&ask(at), at + 5).is_some(), "the restart right after");
+        assert!(fresh_request(&ask(at), at + ERASE_WITHIN_SECS + 1).is_none(), "days later: dropped, never erased");
+        assert!(fresh_request(br#"{"pid":1,"keep_keys":false}"#, at).is_none(), "no time: dropped");
+        assert!(fresh_request(b"{not json", at).is_none());
+        assert!(fresh_request(&ask(at + 3600), at).is_none(), "from the future: not trusted");
     }
 
     #[test]

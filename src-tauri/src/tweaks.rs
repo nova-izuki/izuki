@@ -162,6 +162,7 @@ pub fn set_pack(id: &str) -> Result<Vec<Tweak>> {
     let pack = PACKS.iter().find(|p| p.id == id).ok_or_else(|| anyhow!("no pack called {id}"))?;
     let _turn = PACK_TURN.lock();
     let mut problems = Vec::new();
+    let mut undo_lost: Option<String> = None;
     let mut before = Vec::new();
     for t in pack.ids {
         let Some(d) = DEFS.iter().find(|d| d.id == *t) else { continue };
@@ -184,15 +185,16 @@ pub fn set_pack(id: &str) -> Result<Vec<Tweak>> {
         let keep = stack.len().saturating_sub(UNDO_KEEP);
         if let Err(e) = save_undo_stack(&stack[keep..]) {
             // The pack is on, but there's no way back: say so, never "Undo" for nothing.
-            problems.push(format!("the undo for this pack couldn't be saved ({e}), so it can't be undone automatically"));
+            undo_lost = Some(format!("The {} pack is on, but its undo couldn't be saved ({e}), so Undo can't put it back automatically.", pack_name(id)));
         }
     }
     shell::announce();
     crate::actlog::record("style", &format!("Turned on the {} tweaks", pack_name(id)));
-    if !problems.is_empty() {
-        return Err(anyhow!("Most of it is on, but Windows kept these as they were: {}", problems.join("; ")));
+    match (problems.is_empty(), undo_lost) {
+        (true, None) => Ok(list()),
+        (true, Some(lost)) => Err(anyhow!(lost)),
+        (false, lost) => Err(anyhow!("Most of it is on, but Windows kept these as they were: {}.{}", problems.join("; "), lost.map(|l| format!(" {l}")).unwrap_or_default())),
     }
-    Ok(list())
 }
 
 /// A pack's name as people say it.

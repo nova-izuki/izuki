@@ -24,7 +24,7 @@ function markSeen() {
  * move). Three short steps, then it stays out of the way; "How Eye Control
  * works" opens it again.
  */
-export function EyeGuide({ stopKey, talkKey }: { stopKey: string; talkKey: string }) {
+export function EyeGuide({ stopKey, talkKey, mouse }: { stopKey: string; talkKey: string; mouse: boolean }) {
   const [open, setOpen] = useState(() => !seen());
   const [step, setStep] = useState(0);
 
@@ -55,7 +55,12 @@ export function EyeGuide({ stopKey, talkKey }: { stopKey: string; talkKey: strin
     {
       icon: "👁️",
       title: "What “preview” means",
-      body: (
+      body: mouse ? (
+        <>
+          On this PC the accuracy check passed, so the <b>real mouse follows</b> a steady look (moving your own mouse or typing pauses it). Until a
+          check passes, Izuki only draws an eye cursor and the mouse stays where it is. Single blinks never click.
+        </>
+      ) : (
         <>
           This version draws an <b>eye cursor</b> where you look, and the real mouse stays where it is. Moving the mouse with your eyes comes after a
           supervised accuracy test on your camera. Single blinks never click.

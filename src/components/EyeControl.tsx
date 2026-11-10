@@ -948,9 +948,10 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
           autoFaceStatus = false;
         } else {
           autoFaceStatus = true;
-          setStatus(head.message);
           const mouse = pointerAllowed() && head.level !== "far";
-          tell({ state: "ready", message: head.message, face: true, calibrated: true, clicks: clicksRef.current && mouse, mode: mouse ? "pointer" : "preview" });
+          const said = pointerAllowed() ? head.message : `${head.message} ${verdictMessage()}`;
+          setStatus(said);
+          tell({ state: "ready", message: said, face: true, calibrated: true, clicks: clicksRef.current && mouse, mode: mouse ? "pointer" : "preview" });
         }
       }
       const pointerMode = pointerAllowed() && head.level !== "far";
@@ -988,9 +989,10 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
 
       if (!autoFaceStatus) {
         autoFaceStatus = true;
-        // A head that has moved stays the reason, whatever else re-said the status.
+        // A head that has moved stays the reason, whatever else re-said the
+        // status; when the mouse is held for another reason too, both are said.
         const message = head.level !== "ok" && driftMessage
-          ? driftMessage
+          ? pointerAllowed() ? driftMessage : `${driftMessage} ${verdictMessage()}`
           : !pointerMode
           ? verdictMessage()
           : clicksRef.current
