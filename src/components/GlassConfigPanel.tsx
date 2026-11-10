@@ -77,6 +77,16 @@ export function GlassConfigPanel() {
   const whatsNew = useWhatsNew(!settingsLoaded || !onboardingSeen || tourOpen || setupOpen);
   const setSetupOpen = useIzuki((s) => s.setSetupOpen);
   const [maxed, setMaxed] = useState(false);
+  // Read once for the first paint, then follow the setting live: turning
+  // reduced motion on must stop the tab transition without a remount.
+  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setReducedMotion(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
   // Six tabs don't fit with names at the panel's usual width.
   const [narrow, setNarrow] = useState(() => window.innerWidth < 600);
   useEffect(() => {
@@ -261,9 +271,9 @@ export function GlassConfigPanel() {
               tab hostage while an exit animation finishes. */}
           <motion.div
             key={tab}
-            initial={{ opacity: 0, y: 10, scale: 0.992 }}
+            initial={reducedMotion ? false : { opacity: 0, y: 10, scale: 0.992 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+            transition={reducedMotion ? { duration: 0 } : { duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
             className="flex flex-col gap-3"
           >
             <Recover name={`tab:${tab}`} onReset={tab === "chat" ? resetChat : undefined}>
