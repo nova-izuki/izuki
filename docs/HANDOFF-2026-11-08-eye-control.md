@@ -74,7 +74,9 @@ These are logic and build checks, not a successful live gaze-navigation run.
 ## Live diagnostics
 
 The overlay exposes `window.__izukiEyeCal` with `state`, `rms`, `failReason`,
-`points`, `badIndex`, `retryIndex`, `gaze`, `eyes`, `headStable`. The last
+`points`, `badIndex`, `retryIndex`, `gaze`, `eyes`, `headStable`. This
+diagnostic hook exists only in a development build; a normal installed build
+does not expose it. The last
 pre-fix failure was RMS `0.2464`, with the bottom outer dots reading nearly
 the same horizontal position; that is why the row moved to 70%.
 
