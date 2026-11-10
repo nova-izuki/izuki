@@ -56,6 +56,16 @@ fn press_first(want: fn(&str) -> bool) -> Option<String> {
     crate::uia::press_named(&control.name).then_some(control.name)
 }
 
+/// Press Skip in the foreground YouTube window, rechecking both the browser
+/// and the page title now (the user may have switched while we asked the
+/// extension). Never press a "Skip" in some other app.
+fn skip_ad_in_front() -> Option<String> {
+    if !browser_in_front() || !crate::uia::foreground_title().to_lowercase().contains("youtube") {
+        return None;
+    }
+    press_first(is_skip_ad)
+}
+
 /// Ask the extension to press the page's own Skip button. With no extension
 /// (or an older one that doesn't know this request), use the old control walk.
 /// A request the extension took but never answered is not repeated: it may
@@ -63,6 +73,7 @@ fn press_first(want: fn(&str) -> bool) -> Option<String> {
 fn skip_youtube_ad() -> Option<String> {
     if crate::ext::connected() {
         match crate::ext::request("skipad", json!({}), Duration::from_secs(2)) {
+            Ok(v) if v["no_foreground"].as_bool() == Some(true) => return skip_ad_in_front(),
             Ok(v) => {
                 return v["skipped"].as_bool().filter(|skipped| *skipped)
                     .map(|_| v["label"].as_str().unwrap_or("Skip").to_string());
@@ -71,7 +82,7 @@ fn skip_youtube_ad() -> Option<String> {
             Err(_) => {}
         }
     }
-    press_first(is_skip_ad)
+    skip_ad_in_front()
 }
 
 /// Run in the background: does nothing at all until one of the two is on.

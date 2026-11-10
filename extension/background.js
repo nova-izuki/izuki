@@ -162,7 +162,10 @@ async function run(op, args) {
       // actions must never land in a tab they aren't looking at.
       const win = await chrome.windows.get(tab.windowId).catch(() => null);
       const now = await chrome.tabs.get(tab.id).catch(() => null);
-      if (!win?.focused || !now?.active) return { skipped: false, reason: "not in front" };
+      // Distinct from "YouTube is in front but has no Skip button": this
+      // extension cannot see the foreground at all, so another browser may
+      // be showing YouTube. Let the native side recheck and use the old walk.
+      if (!win?.focused || !now?.active) return { skipped: false, no_foreground: true };
       return await inPage(tab.id, skipAd);
     }
     case "open":
