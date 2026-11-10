@@ -588,6 +588,7 @@ export function ChatTab() {
   const [recentsOpen, setRecentsOpen] = useState(false);
   const [recentQuery, setRecentQuery] = useState("");
   const recentsDialog = useRef<HTMLElement | null>(null);
+  const historyButton = useRef<HTMLButtonElement | null>(null);
   // A write that failed is said plainly (notKept) and tried again on the
   // next save, instead of the list looking saved and being gone after a
   // restart; the state lives outside the tab (unsavedNow), so leaving the
@@ -679,7 +680,12 @@ export function ChatTab() {
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
+      // The empty-chat history link unmounts once a chat is opened. Focus the
+      // toolbar History button then, so keyboard users are not dropped on the
+      // document; the composer is the last safe fallback.
       if (returnTo?.isConnected) returnTo.focus({ preventScroll: true });
+      else if (historyButton.current?.isConnected) historyButton.current.focus({ preventScroll: true });
+      else input.current?.focus({ preventScroll: true });
     };
   }, [recentsOpen]);
   const [draft, setDraft] = useState("");
@@ -1550,6 +1556,7 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
             {recent.length > 0 && (
               <button
                 type="button"
+                ref={historyButton}
                 onClick={openRecents}
                 aria-label="Recent chats"
                 aria-expanded={recentsOpen}

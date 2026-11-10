@@ -1,7 +1,7 @@
 import { ScrollButtons } from "./ScrollButtons";
 import { DrawCommandBar } from "./TalkToIzuki";
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { Layers, MessageCircle, Minus, PenLine, Settings2, X, Eye, Blocks, Maximize2, Minimize2, NotebookPen, Palette } from "lucide-react";
 import { IzukiMark } from "./IzukiMark";
 import { Segmented, cx } from "./ui";
@@ -77,7 +77,16 @@ export function GlassConfigPanel() {
   const whatsNew = useWhatsNew(!settingsLoaded || !onboardingSeen || tourOpen || setupOpen);
   const setSetupOpen = useIzuki((s) => s.setSetupOpen);
   const [maxed, setMaxed] = useState(false);
-  const reducedMotion = useReducedMotion();
+  // Read once for the first paint, then follow the setting live: turning
+  // reduced motion on must stop the tab transition without a remount.
+  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setReducedMotion(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
   // Six tabs don't fit with names at the panel's usual width.
   const [narrow, setNarrow] = useState(() => window.innerWidth < 600);
   useEffect(() => {
