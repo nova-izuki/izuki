@@ -23,6 +23,19 @@ pub enum Ask {
 /// "What's taking up space?" → Report; "free up some space", "clear the safe
 /// stuff" → ClearSafe; "empty the recycle bin" → EmptyBin. Other wordings
 /// reach [`handle`] through the chat's [IZUKI: storage | …] tool.
+/// Emptying the Recycle Bin can't be undone, so only an instruction does it:
+/// the verb before the bin ("empty the recycle bin", "can you clear my
+/// recycle bin"). "Is my recycle bin empty?" or "how do I empty the recycle
+/// bin" asks; it never deletes anything.
+fn empties_bin(s: &str, bin_at: usize) -> bool {
+    let first = s.split_whitespace().next().unwrap_or("");
+    let question = matches!(first, "is" | "are" | "was" | "does" | "did" | "do" | "has" | "how" | "what" | "whats" | "why" | "where" | "when" | "which")
+        || s.contains(" how do") || s.contains(" how to") || s.contains(" should i");
+    let refused = [" dont ", " do not ", " never ", " stop "].iter().any(|w| s.contains(w));
+    let verb = [" empty", " clear", " clean"].iter().any(|w| s[..bin_at].contains(w));
+    verb && !question && !refused
+}
+
 /// A cloud drive ("my Google Drive", "OneDrive storage", "box.com") with
 /// nothing saying this PC: never a scan or a clean-up of this PC's disk.
 fn cloud_only(s: &str) -> bool {
@@ -30,7 +43,7 @@ fn cloud_only(s: &str) -> bool {
     let cloud = ["google drive", "drive on google", "google one", "gdrive", "onedrive", "one drive", "dropbox", "icloud", "mega.nz", "mega nz", "box.com", "box com"]
         .iter()
         .any(|w| s.contains(w));
-    let local = drive_letter(s) || ["my pc", "my laptop", "my computer", "this pc", "hard drive", "ssd", "local", "recycle bin", "recycling bin"].iter().any(|w| s.contains(w));
+    let local = drive_letter(s) || ["my pc", "my laptop", "my computer", "this pc", "hard drive", "ssd", "local", "windows recycle bin", "windows recycling bin"].iter().any(|w| s.contains(w));
     cloud && !local
 }
 
@@ -56,8 +69,8 @@ pub fn parse(said: &str) -> Option<Ask> {
     if cloud_only(&s) {
         return None;
     }
-    if [" recycle bin", " recycling bin"].iter().any(|w| s.contains(w)) {
-        return [" empty", " clear", " clean"].iter().any(|w| s.contains(w)).then_some(Ask::EmptyBin);
+    if let Some(bin_at) = [" recycle bin", " recycling bin"].iter().filter_map(|w| s.find(w)).min() {
+        return empties_bin(&s, bin_at).then_some(Ask::EmptyBin);
     }
     if s.contains(" safe stuff") && [" clear", " clean", " delete", " remove", " get rid"].iter().any(|w| s.contains(w)) {
         return Some(Ask::ClearSafe);
@@ -489,6 +502,20 @@ mod tests {
         assert_eq!(parse("free up space on my friend's drive on Google"), None, "a possessive isn't an S: drive");
         assert_eq!(parse("how full is my U drive"), Some(Ask::Report), "named as mine");
         assert_eq!(parse("empty the Windows Recycle Bin after downloading from Dropbox"), Some(Ask::EmptyBin), "the bin is this PC's");
+        // A question about the bin never empties it.
+        for asked in [
+            "is my recycle bin empty?",
+            "Is my OneDrive recycle bin empty?",
+            "how do I empty the recycle bin",
+            "what's in my recycle bin",
+            "should I empty the recycle bin",
+            "don't empty the recycle bin",
+            "empty my OneDrive recycle bin",
+        ] {
+            assert_ne!(parse(asked), Some(Ask::EmptyBin), "{asked}");
+        }
+        assert_eq!(parse("can you empty my recycle bin"), Some(Ask::EmptyBin), "a request");
+        assert_eq!(parse("please clear the recycling bin"), Some(Ask::EmptyBin));
         assert_eq!(parse("what's filling my drive?"), Some(Ask::Report), "still the website's own words");
     }
 
