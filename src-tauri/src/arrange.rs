@@ -522,15 +522,18 @@ pub fn saved() -> Vec<Saved> {
 /// `saved`, for a change: a file that's there but can't be read is kept
 /// aside as `layouts.json.bad` first, so saving a new layout never
 /// overwrites layouts that might still be recovered.
-fn saved_for_change() -> Vec<Saved> {
+fn saved_for_change() -> Result<Vec<Saved>> {
     let path = saved_path();
     if let Ok(raw) = std::fs::read_to_string(&path) {
         if serde_json::from_str::<Vec<Saved>>(&raw).is_err() {
-            let _ = std::fs::rename(&path, path.with_extension("json.bad"));
-            eprintln!("[arrange] layouts.json couldn't be read; kept it as layouts.json.bad");
+            // Its own name each time, so an earlier backup is never replaced.
+            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+            let aside = path.with_extension(format!("json.bad-{stamp}"));
+            std::fs::rename(&path, &aside).map_err(|e| anyhow!("your saved layouts file couldn't be read or set aside ({e}), so nothing was changed"))?;
+            eprintln!("[arrange] layouts.json couldn't be read; kept it as {}", aside.display());
         }
     }
-    saved()
+    Ok(saved())
 }
 
 /// One change to the saved layouts at a time (the Style tab and the phone
@@ -568,7 +571,7 @@ fn clean_name(name: &str) -> Result<String> {
 /// Delete a saved layout.
 pub fn forget(name: &str) -> Result<()> {
     let _turn = SAVED_TURN.lock();
-    let mut list = saved_for_change();
+    let mut list = saved_for_change()?;
     let before = list.len();
     list.retain(|s| !s.name.eq_ignore_ascii_case(name.trim()));
     if list.len() == before {
@@ -654,7 +657,7 @@ pub fn save(name: &str) -> Result<String> {
         return Err(anyhow!("There are no app windows open to save. Open and place the apps you want, then save."));
     }
     let _turn = SAVED_TURN.lock();
-    let mut list = saved_for_change();
+    let mut list = saved_for_change()?;
     let replaced = find_saved(&list, &name).is_some();
     list.retain(|s| !s.name.eq_ignore_ascii_case(&name));
     list.insert(0, Saved { name: name.clone(), at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()), windows: windows.clone() });

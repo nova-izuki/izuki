@@ -595,7 +595,7 @@ pub fn run() {
             // This runs only for the owning process, after the instance guard.
             bugs::start();
             eprintln!("[izuki] starting v{}", env!("CARGO_PKG_VERSION"));
-            mydata::report_erase();
+            mydata::report_erase(app.handle());
             actlog::prune_old();
             let store = state::init();
             bugs::set_enabled(store.settings().send_bug_reports);

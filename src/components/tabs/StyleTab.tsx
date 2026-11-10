@@ -393,8 +393,9 @@ export function StyleTab() {
       async () => {
         const looks = await api.lookApply(v.preset, withWallpaper);
         // The tweaks are a bonus: the look counts even if a tweak doesn't.
-        const tidy = withPack && v.pack ? await api.tweakPack(v.pack).catch(() => null) : null;
-        return { looks, tidy };
+        let problem = "";
+        const tidy = withPack && v.pack ? await api.tweakPack(v.pack).catch((e) => ((problem = friendly(e)), null)) : null;
+        return { looks, tidy, problem };
       },
       ({ looks, tidy }) => {
         setLooks(looks);
@@ -405,7 +406,7 @@ export function StyleTab() {
         setSweep((n) => n + 1);
         setHover(null);
       },
-      ({ tidy }) => `${v.name} is on${tidy?.length && v.pack ? `, with the ${PACK_NAMES[v.pack] ?? v.pack} tweaks` : ""}.`
+      ({ tidy, problem }) => `${v.name} is on${tidy?.length && v.pack ? `, with the ${PACK_NAMES[v.pack] ?? v.pack} tweaks` : ""}.${problem ? ` Tweaks: ${problem}` : ""}`
     );
 
   const auto = s?.auto;
@@ -429,8 +430,9 @@ export function StyleTab() {
       async () => {
         const looks = await api.lookAuto(next);
         // The clean taskbar is a bonus: the photo counts even if a tweak doesn't.
-        const tidy = await api.tweakPack("premium").catch(() => null);
-        return { looks, tidy };
+        let problem = "";
+        const tidy = await api.tweakPack("premium").catch((e) => ((problem = friendly(e)), null));
+        return { looks, tidy, problem };
       },
       ({ looks, tidy }) => {
         setLooks(looks);
@@ -443,8 +445,8 @@ export function StyleTab() {
         setSection("auto");
       },
       // Only what really happened.
-      ({ looks, tidy }) =>
-        `${looks?.photo ? `Premium is on: ${photoName(looks.photo)}, with colours to match` : "Real photos are on — the first one is still on its way"}${tidy?.length ? ", and a clean taskbar." : "."}`
+      ({ looks, tidy, problem }) =>
+        `${looks?.photo ? `Premium is on: ${photoName(looks.photo)}, with colours to match` : "Real photos are on — the first one is still on its way"}${tidy?.length ? ", and a clean taskbar." : "."}${problem ? ` Taskbar tweaks: ${problem}` : ""}`
     );
   };
   const photos = s?.history ?? [];

@@ -2136,7 +2136,11 @@ pub fn handle(ask: Ask) -> String {
                             Some(p) => format!("a fresh 4K photo, {}, with your accent colour and dark or light mode matched to it", describe(&p)),
                             None => "real 4K photos are on (the first one didn't come through yet; I'll keep trying)".into(),
                         },
-                        if tidy.is_ok() { ", and a clean taskbar: just your apps, with the search box, Task view, Widgets and Copilot hidden. Some of that shows after Explorer restarts (Style → Tweaks); “undo the tweaks” puts the taskbar back." } else { "." }
+                        match &tidy {
+                            Ok(_) => ", and a clean taskbar: just your apps, with the search box, Task view, Widgets and Copilot hidden. Some of that shows after Explorer restarts (Style → Tweaks); “undo the tweaks” puts the taskbar back.".to_string(),
+                            // Partly refused, or no way back saved: said, never "Done" alone.
+                            Err(e) => format!(". The taskbar tweaks: {e}"),
+                        }
                     )
                 }
                 Err(e) => format!("I couldn't make the change: {e}"),

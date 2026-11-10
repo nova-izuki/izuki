@@ -332,16 +332,29 @@ pub fn erase_if_asked() {
 static ERASED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static LEFT: parking_lot::Mutex<Vec<String>> = parking_lot::Mutex::new(Vec::new());
 
-/// Called once the log is running: says what the erase did.
-pub fn report_erase() {
-    if ERASED.load(std::sync::atomic::Ordering::SeqCst) {
-        let left = LEFT.lock().clone();
-        if left.is_empty() {
-            eprintln!("[mydata] everything was erased at start");
-        } else {
-            eprintln!("[mydata] erased at start; Windows kept {} file(s) in use: {}", left.len(), left.join(", "));
-        }
+/// What the erase did, in plain words (None: no erase was asked for).
+fn erase_said(erased: bool, left: &[String]) -> Option<String> {
+    if !erased {
+        return None;
     }
+    Some(match left.first() {
+        None => "Everything Izuki kept about you was erased. This is a fresh start.".to_string(),
+        Some(first) if first.starts_with("nothing:") => format!("Nothing was erased: {}.", first.trim_start_matches("nothing:").trim()),
+        Some(_) => format!("Erased everything except {}.", left.join("; ")),
+    })
+}
+
+/// Called once the log is running: says what the erase did, in the log and
+/// to you (a heads-up once the window is up), so a request that didn't go
+/// through is never silent.
+pub fn report_erase(app: &tauri::AppHandle) {
+    let Some(said) = erase_said(ERASED.load(std::sync::atomic::Ordering::SeqCst), &LEFT.lock()) else { return };
+    eprintln!("[mydata] {said}");
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(8));
+        crate::headsup::deliver(&app, "Erase everything", &said);
+    });
 }
 
 /// Fresh settings with the kept keys in: a whole settings file, so it loads
@@ -561,6 +574,15 @@ mod tests {
         assert!(!all.contains("push-signing-secret") && !all.contains("push-auth-secret") && !all.contains("fn main"), "push secrets and project copies stay out");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&out_dir);
+    }
+
+    #[test]
+    fn what_the_erase_did_is_said_plainly() {
+        assert_eq!(erase_said(false, &[]), None, "no erase asked for: nothing to say");
+        assert!(erase_said(true, &[]).unwrap().contains("fresh start"));
+        let dropped = erase_said(true, &["nothing: an old request to erase was found and dropped".into()]).unwrap();
+        assert!(dropped.starts_with("Nothing was erased"), "{dropped}");
+        assert!(erase_said(true, &["logs".into()]).unwrap().contains("except logs"));
     }
 
     #[test]
