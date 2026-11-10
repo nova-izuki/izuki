@@ -343,7 +343,8 @@ function skipAd() {
   // Only YouTube, and only inside its player: a page's own "Skip" link is not
   // an ad. One query; each button is checked by its visible label.
   if (!/(^|\.)youtube\.com$/i.test(location.hostname)) return { skipped: false };
-  if (document.visibilityState !== "visible" || !document.hasFocus()) return { skipped: false };
+  const inFront = () => document.visibilityState === "visible" && document.hasFocus();
+  if (!inFront()) return { skipped: false };
   const player = document.querySelector("#movie_player, .html5-video-player");
   if (!player) return { skipped: false };
   /** Is this exactly one of YouTube's ad-skip labels? */
@@ -367,6 +368,9 @@ function skipAd() {
     if (st.visibility === "hidden" || st.display === "none" || Number(st.opacity) === 0) continue;
     const label = labelOf(el);
     if (!label) continue;
+    // Last check at the click itself, not only when the job arrived: a tab
+    // switch in between must not click in the background.
+    if (!inFront()) return { skipped: false };
     el.click();
     return { skipped: true, label };
   }
