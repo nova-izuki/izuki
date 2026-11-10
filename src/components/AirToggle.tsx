@@ -39,6 +39,8 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
   const trigger = useRef<HTMLButtonElement>(null);
   /** The latest value, so quick double taps flip from where the last tap left it. */
   const current = useRef<boolean | null>(null);
+  /** The latest mode pick: an older one whose release finished late isn't saved. */
+  const pick = useRef(0);
   current.current = onNow;
 
   useEffect(() => {
@@ -109,15 +111,17 @@ export function AirToggle({ variant = "chip", className }: { variant?: "chip" | 
     window.setTimeout(() => document.getElementById("settings-air")?.scrollIntoView({ behavior: "smooth", block: "start" }), 160);
   };
 
-  const choose = (next: AirMode) => {
+  const choose = async (next: AirMode) => {
+    const mine = ++pick.current;
     setMode(next);
     setOpen(false);
+    // Hand and Eye never own input together. Leaving Eye lets go of anything
+    // it holds first (not the emergency stop, which would save Air as off when
+    // the person only changed mode), then the new mode is saved.
+    if (mode === "eye" && next !== "eye") await api.airRelease().catch(() => undefined);
+    if (mine !== pick.current) return;
     // Persist the preference even while Air is off, so the next arm uses it.
     void emit(EV.patchSettings, { air_control_mode: next });
-    // Hand and Eye never own input together. Leaving Eye lets go of anything
-    // it holds at once; not the emergency stop, which would save Air as off
-    // when the person only changed mode.
-    if (mode === "eye" && next !== "eye") void api.airRelease().catch(() => undefined);
   };
 
   const lane = mode === "eye" ? "Eye" : "Hand";
