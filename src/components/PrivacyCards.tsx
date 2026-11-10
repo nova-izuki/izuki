@@ -373,7 +373,7 @@ export function MyDataCard() {
           <ul className="mt-1.5 list-disc pl-4 text-[11px] leading-relaxed text-izk-muted">
             <li>Gone for good: memories, notes, chats, routines, reminders, research, saved layouts, “What Izuki did”, logs and settings.</li>
             <li>Izuki closes, starts again by itself and erases before loading anything, then opens like new.</li>
-            <li>Kept: downloaded AI models, and what lets you undo Windows changes (looks and tweaks).</li>
+            <li>Kept: downloaded AI models and tools, Code mode's working copies of your projects (close those in Code mode), and what lets you undo Windows changes (looks and tweaks).</li>
             <li>Accounts linked through Composio (like Gmail) stay linked there; remove them first in Apps → Inbox if you want.</li>
           </ul>
           <label className="mt-2 flex items-center gap-2 text-[11.5px] text-izk-ink">

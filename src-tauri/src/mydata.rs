@@ -12,7 +12,9 @@
 //! - **Erase:** wipes it all, the next time Izuki starts, before anything
 //!   has loaded (a running Izuki holds some of it in memory and would write
 //!   it back). Izuki closes, starts again by itself, erases, and opens fresh.
-//!   Kept: downloaded AI models and tools, and what's needed to undo
+//!   Kept: downloaded AI models and tools, Code mode's working copies of
+//!   your projects (git worktrees: deleting them from outside would leave
+//!   the real project pointing at nothing), and what's needed to undo
 //!   changes to Windows (looks, tweaks, services), which are about the PC,
 //!   not you. Your AI keys only if you ask to keep them.
 
