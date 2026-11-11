@@ -1763,7 +1763,7 @@
   const PC_APPS = "(?:chrome|google chrome|edge|firefox|brave|opera|spotify|discord|slack|teams|zoom|outlook|word|excel|powerpoint|notepad|vs ?code|visual studio code|terminal|file explorer|explorer|obs|steam|whatsapp|telegram|notion|obsidian|figma|blender|photoshop|premiere|after effects|fl studio|vlc|calculator)";
   const PC_PLACE = new RegExp("\\b(?:(?:put|move|snap|send|throw|place|drag|make) (?:the |my )?" + PC_APPS + "(?: window| app)? (?:on|to|in|into|onto|at)? ?(?:the |my )?(?:left|right|top|bottom|middle|cent(?:er|re)|full ?screen|(?:other|second|next) (?:screen|monitor|display))|(?:cent(?:er|re)|maximi[sz]e) (?:the |my )?" + PC_APPS + ")\\b", "i");
   // "Put this window on the left": the window in front, said as a window.
-  const PC_THIS_WINDOW = /\b(?:put|move|snap|send|place|drag|center|centre) (?:this|that|the|my) window (?:to |on |in |into |onto )?(?:the |my )?(?:left|right|top|bottom|middle|cent(?:er|re)|full ?screen|(?:other|second|next) (?:screen|monitor|display))\b/i;
+  const PC_THIS_WINDOW = /\b(?:(?:put|move|snap|send|place|drag|center|centre) (?:this|that|the|my)(?: [\w]{1,20}){0,3} window (?:to |on |in |into |onto )?(?:the |my )?(?:left|right|top|bottom|middle|cent(?:er|re)|full ?screen|(?:other|second|next) (?:screen|monitor|display))\b|(?:cent(?:er|re)|maximi[sz]e) (?:this|that|the|my)(?: [\w]{1,20}){0,3} window(?: please)?[\s.!?]*$)/i;
   const wantsPcStyle = (said) => PC_STYLE.test(String(said || "")) || PC_PLACE.test(String(said || "")) || PC_THIS_WINDOW.test(String(said || ""));
   const wantsReminder = (said) => /\b(remind me|set (a |an )?reminder|my reminders)\b/i.test(String(said || ""));
   // Explicit device intent wins over app names and generic action verbs.
