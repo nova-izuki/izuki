@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🪟", title: "Put any app where you want it", how: "Say \"put Chrome on the left\", \"Discord in the top right corner\", \"center Notepad\" or \"move Spotify to my other screen\". Izuki moves just that app, and \"undo the layout\" puts it back.", try: { label: "Open Layouts", tab: "style", id: "style-arrange" } },
   { icon: "🔒", title: "Your data, in your hands", how: "Settings → Privacy: what Izuki can access (each with its switch), a list of everything it did on your PC, a copy of all your data in one file with keys left out, and Erase everything.", try: { label: "Open Privacy", tab: "settings", id: "settings-access" } },
   { icon: "🪟", title: "Saved window layouts", how: "Say \"save my windows as Work\", then \"set up my Work layout\" any time: every window goes back on every screen, and apps that aren't running open.", try: { label: "Open Layouts", tab: "style", id: "style-arrange" } },
   { icon: "↩️", title: "Undo for tweak packs", how: "A one-tap pack, a vibe's tweaks or Make my PC premium can be put back exactly as it was. Tap Undo under the packs, or say \"undo the tweaks\".", try: { label: "Open Tweaks", tab: "style", id: "style-tweaks" } },
