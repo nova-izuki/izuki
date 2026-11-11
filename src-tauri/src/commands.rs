@@ -1843,6 +1843,28 @@ pub async fn window_layout_undo() -> R<String> {
     blocking(|| crate::arrange::undo().map_err(|e| e.to_string())).await?
 }
 
+/// How dark "dim the rest" is ("soft", "medium", "deep"), or None when off.
+#[tauri::command]
+pub fn dim_state() -> Option<crate::haze::Level> {
+    crate::haze::state()
+}
+
+/// Dim everything but the window in front (`level`), or bring it all back
+/// (None). Says what happened.
+#[tauri::command]
+pub async fn dim_set(level: Option<String>) -> R<String> {
+    let level = match level.as_deref() {
+        None => None,
+        Some(id) => Some(crate::haze::Level::from_id(id).ok_or("unknown level")?),
+    };
+    // Bringing the dim up waits for its window: never on the main thread.
+    blocking(move || match level {
+        None => Ok(crate::haze::stop()),
+        Some(level) => crate::haze::start(level).map_err(|e| e.to_string()),
+    })
+    .await?
+}
+
 /// A saved window layout, for the Style tab's list.
 #[derive(serde::Serialize)]
 pub struct SavedLayoutInfo {

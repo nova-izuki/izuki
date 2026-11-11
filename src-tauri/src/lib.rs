@@ -3,6 +3,7 @@
 pub mod android;
 pub mod apps;
 pub mod arrange;
+pub mod haze;
 pub mod attachments;
 pub mod briefing;
 pub mod browser;
@@ -176,6 +177,8 @@ static REOPEN_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::Atom
 /// Quit used to do nothing then — the process ends anyway.
 pub fn quit(app: &AppHandle) {
     eprintln!("[izuki] quitting");
+    // Windows Izuki pinned on top or made see-through go back to normal.
+    arrange::let_go();
     std::thread::spawn(|| {
         std::thread::sleep(std::time::Duration::from_secs(2));
         eprintln!("[izuki] the tidy exit took too long — ending now");
@@ -507,6 +510,8 @@ pub fn run() {
             commands::window_layout,
             commands::window_layout_undo,
             commands::window_layout_can_undo,
+            commands::dim_state,
+            commands::dim_set,
             commands::layouts_saved,
             commands::layout_save,
             commands::layout_restore,

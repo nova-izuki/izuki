@@ -1108,7 +1108,57 @@ pub fn brain_chain() -> Vec<crate::settings::ProviderConfig> {
 pub fn chat_chain() -> Vec<crate::settings::ProviderConfig> {
     let mut chain = offline_only(brain_chain_inner());
     swap_local_text_model(&mut chain, picture_only_model, true);
+    use_siblings_for_resting(&mut chain);
     chain
+}
+
+/// A chosen model that's resting (retired by its provider, refused for this
+/// key, or rate-limited on its own) is swapped for the best other model on
+/// the same key that isn't, so the chat lane doesn't ask a model that can't
+/// answer. NVIDIA retired llama-3.2-11b-vision on 5 Nov 2026 and every chat
+/// message still asked it first ("410 Gone"); with the others busy, the
+/// message failed. With no other model to use, that brain is left out.
+fn use_siblings_for_resting(chain: &mut Vec<crate::settings::ProviderConfig>) {
+    chain.retain_mut(|c| {
+        if !crate::freebrains::resting(c.id, &c.model) {
+            return true;
+        }
+        match crate::freebrains::siblings(c).into_iter().find(|m| !crate::freebrains::resting(c.id, m)) {
+            Some(m) => {
+                c.label = format!("{} · {}", c.label.split(" · ").next().unwrap_or(&c.label), m.rsplit('/').next().unwrap_or(&m));
+                c.model = m;
+                true
+            }
+            None => false,
+        }
+    });
+}
+
+/// The provider took this model away (retired it: "410 Gone", "end of
+/// life", "decommissioned") or won't serve it to this key. Asking again won't
+/// change that today; the key's other models are fine.
+pub fn model_gone(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    ["410 gone", "\"status\":410", "(410"].iter().any(|w| e.contains(w))
+        || e.contains("denied access to model")
+        || ["end of life", "decommissioned", "has been deprecated", "is deprecated", "no longer available", "no longer supported", "model_not_found", "model not found"]
+            .iter()
+            .any(|w| e.contains(w))
+}
+
+/// `model_gone`, and about this very model: the error names it. A lane can
+/// fall back to another model inside one request (Groq's fast chat model,
+/// Gemini's lite one); a retirement notice about that one mustn't bench the
+/// model that was chosen.
+pub fn model_gone_for(cfg: &crate::settings::ProviderConfig, err: &str) -> bool {
+    model_gone(err) && !cfg.model.trim().is_empty() && err.to_ascii_lowercase().contains(&cfg.model.to_ascii_lowercase())
+}
+
+/// Rest a model its provider took away, for a day: the key's other models
+/// carry on (both lanes use them). Logged once in plain words.
+pub fn rest_gone_model(cfg: &crate::settings::ProviderConfig) {
+    eprintln!("[brain] {} won't serve {} any more (retired or not allowed for this key) — using its other models for a day", cfg.label, cfg.model);
+    crate::freebrains::rest_model(cfg, Duration::from_secs(24 * 3600));
 }
 
 /// Swap the configured Ollama model for an installed chat model when `unfit`
@@ -1788,7 +1838,7 @@ fn is_hopeless(err: &str) -> bool {
     }
     out_of_money
         || ["no active credentials", "rejected the key", "unauthorized", "connection refused", crate::transport::REFUSED].iter().any(|p| e.contains(p))
-        || ["401", "402", "403", "404"].iter().any(|c| has_status(&e, c))
+        || ["401", "402", "403", "404", "410"].iter().any(|c| has_status(&e, c))
         // Can't reach a *local* brain (Ollama/9Router not running) — but a
         // busy cloud queue timing out is just slow, not broken.
         || (e.contains("error sending request") && (e.contains("localhost") || e.contains("127.0.0.1")))
@@ -2099,8 +2149,9 @@ fn ask_racing(
                 let e = e.to_string();
                 // One model rate-limited, others on the same key free: rest just it.
                 match rest_for(&e) {
-                    // Denied for this key (a model it can't use at all): a day, not ten minutes.
-                    _ if e.contains("denied access to model") => crate::freebrains::rest_model(&cfg, Duration::from_secs(24 * 3600)),
+                    // Retired, or denied for this key (a model it can't use at
+                    // all): a day, not ten minutes — its siblings carry on.
+                    _ if model_gone_for(&cfg, &e) => rest_gone_model(&cfg),
                     Some(d) if crate::freebrains::has_siblings(&cfg) && !is_hopeless(&e) => crate::freebrains::rest_model(&cfg, d),
                     _ => note_failure(cfg.id, &e),
                 }
@@ -6338,6 +6389,45 @@ mod honesty_tests {
         assert_eq!(progress_line("Opening Blackboard", Some(notes)), strip_filler("Opening Blackboard"));
         // The real thing comes first when both were held back.
         assert!(progress_line("Picking B", Some(&format!("{quiz} {notes}"))).starts_with("This looks like a graded quiz"));
+    }
+
+    #[test]
+    fn a_retired_model_is_rested_and_its_siblings_answer_chat() {
+        assert!(super::model_gone("NVIDIA NIM (free tier): HTTP 410 Gone: {\"title\":\"Gone\",\"status\":410,\"detail\":\"The model 'meta/llama-3.2-11b-vision-instruct' has reached its end of life\"}"));
+        assert!(super::model_gone("openrouter denied access to model \"x\" (403 Forbidden)"));
+        assert!(super::model_gone("The model `gemma-7b` has been decommissioned"));
+        assert!(!super::model_gone("429 Too Many Requests"));
+        assert!(!super::model_gone("error sending request for url (https://integrate.api.nvidia.com/v1/chat/completions)"));
+        assert!(!super::model_gone("generated 410 tokens"), "a number in a sentence isn't a status");
+        assert!(super::is_hopeless("HTTP 410 Gone"));
+        let other = crate::settings::ProviderConfig {
+            id: crate::settings::ProviderId::Groq,
+            label: "Groq".into(),
+            model: "qwen/qwen3.8-27b".into(),
+            base_url: String::new(),
+            api_key: String::new(),
+            enabled: true,
+        };
+        assert!(!super::model_gone_for(&other, "The model `llama-3.1-8b-instant` has been decommissioned"), "another model's notice");
+        assert!(super::model_gone_for(&other, "The model `qwen/qwen3.8-27b` has been decommissioned"));
+        let cfg = crate::settings::ProviderConfig {
+            id: crate::settings::ProviderId::Nvidia,
+            label: "NVIDIA NIM (free tier)".into(),
+            model: "test/retired-model-410".into(),
+            base_url: String::new(),
+            api_key: String::new(),
+            enabled: true,
+        };
+        let mut chain = vec![cfg.clone()];
+        super::use_siblings_for_resting(&mut chain);
+        assert_eq!(chain[0].model, cfg.model, "not resting: kept as chosen");
+        super::rest_gone_model(&cfg);
+        let mut chain = vec![cfg.clone()];
+        super::use_siblings_for_resting(&mut chain);
+        match crate::freebrains::siblings(&cfg).into_iter().find(|m| !crate::freebrains::resting(cfg.id, m)) {
+            Some(m) => assert_eq!(chain[0].model, m, "a sibling answers instead"),
+            None => assert!(chain.is_empty(), "no sibling: left out, never asked"),
+        }
     }
 
     #[test]
