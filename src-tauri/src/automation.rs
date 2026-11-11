@@ -862,9 +862,22 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
             // right under the point, so the taskbar isn't covering anything.)
             let cover = uia::covered_at(x, y).filter(|c| !(right_here && c == "the taskbar"));
             if let Some(cover) = cover {
-                if step.action == Intent::Click && uia::press_named(name) {
-                    eprintln!("[hands] \"{name}\" was under {cover} — pressed it directly");
-                    return Ok(format!("pressed \"{name}\" directly (it was behind {cover})"));
+                if step.action == Intent::Click {
+                    match uia::press_named_checked(name) {
+                        Ok(true) => {
+                            eprintln!("[hands] \"{name}\" was under {cover} — pressed it directly");
+                            return Ok(format!("pressed \"{name}\" directly (it was behind {cover})"));
+                        }
+                        Ok(false) => {}
+                        // The press itself errored: it may still have acted, so
+                        // this is not "never pressed" (a Send stays remembered).
+                        Err(e) => {
+                            return Err(anyhow!(
+                                "{}pressing \"{name}\" directly may have worked ({e}) — take a fresh look before trying it again",
+                                crate::ext::UNCONFIRMED
+                            ))
+                        }
+                    }
                 }
                 // Another app's window is in the way (the person's editor, say):
                 // bring the window being worked in to the front and look again

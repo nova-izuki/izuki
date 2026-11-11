@@ -2425,6 +2425,9 @@ fn final_already_tried(step: &ActionStep) -> Option<FinalTried> {
     FINAL_TRIED.with(|f| f.borrow().iter().find(|t| t.name == attempt.name).cloned())
 }
 
+/// How that warning starts (it's kept out of saved routes).
+const FINAL_WARNING: &str = "FINAL ACTIONS ALREADY TRIED:";
+
 /// The warning given to the model while it works and carried into a resumed
 /// task: a final action was attempted, so it must not be pressed again.
 fn tried_final_note() -> Option<String> {
@@ -2434,7 +2437,7 @@ fn tried_final_note() -> Option<String> {
     }
     let names: Vec<&str> = tried.iter().map(|t| t.name.as_str()).collect();
     Some(format!(
-        "FINAL ACTIONS ALREADY TRIED: {}. Never press one of these again — the first press may have gone through even if its result check failed. Work only on what is left, or ask the user to check and continue.",
+        "{FINAL_WARNING} {}. Never press one of these again — the first press may have gone through even if its result check failed. Work only on what is left, or ask the user to check and continue.",
         names.join(", ")
     ))
 }
@@ -3883,7 +3886,9 @@ fn submit_task(
             // (In a tab you aren't looking at, the screenshot is your tab:
             // "nothing changed" means nothing, and pressing again would click twice.)
             if unchanged && !crate::ext::in_tab_mode() {
-                if let Some((name, target)) = last_click.take() {
+                // Never a Send, Pay or Delete: its first press may have gone
+                // through even though the screen looks the same.
+                if let Some((name, target)) = last_click.take().filter(|(n, _)| final_phrase(n).is_none()) {
                     let pressed = uia::press_named(&name)
                         || target.and_then(crate::ext::dom_id_for).is_some_and(|d| crate::ext::click(&d).is_ok());
                     if pressed {
@@ -4709,7 +4714,10 @@ fn submit_task(
 
     // It worked: keep how, for next time.
     if completed && alive() && !done_so_far.is_empty() {
-        crate::recipes::remember(&prompt, &uia::foreground_app(), &done_so_far);
+        // The final-action warning belongs to this task, never to a route
+        // reused for another one.
+        let route: Vec<String> = done_so_far.iter().filter(|l| !l.starts_with(FINAL_WARNING)).cloned().collect();
+        crate::recipes::remember(&prompt, &uia::foreground_app(), &route);
     }
 
     let mut plan = last_plan.unwrap_or_default();

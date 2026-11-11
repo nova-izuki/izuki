@@ -1159,6 +1159,38 @@ pub fn press_named(_name: &str) -> bool {
     false
 }
 
+/// `press_named`, telling "nothing to press" (Ok(false)) apart from a press
+/// that errored (Err): an error may already have acted, so it's never retried
+/// another way or treated as untouched.
+#[cfg(windows)]
+pub fn press_named_checked(name: &str) -> anyhow::Result<bool> {
+    use uiautomation::patterns::{UIInvokePattern, UILegacyIAccessiblePattern, UISelectionItemPattern, UITogglePattern};
+    use uiautomation::UIAutomation;
+    let Ok(automation) = UIAutomation::new().or_else(|_| UIAutomation::new_direct()) else { return Ok(false) };
+    let Some(el) = find_named(&automation, name) else { return Ok(false) };
+    if let Ok(p) = el.get_pattern::<UIInvokePattern>() {
+        p.invoke().map_err(|e| anyhow::anyhow!("invoke failed: {e}"))?;
+        return Ok(true);
+    }
+    if let Ok(p) = el.get_pattern::<UITogglePattern>() {
+        p.toggle().map_err(|e| anyhow::anyhow!("toggle failed: {e}"))?;
+        return Ok(true);
+    }
+    if let Ok(p) = el.get_pattern::<UISelectionItemPattern>() {
+        p.select().map_err(|e| anyhow::anyhow!("select failed: {e}"))?;
+        return Ok(true);
+    }
+    match el.get_pattern::<UILegacyIAccessiblePattern>() {
+        Ok(p) => p.do_default_action().map(|_| true).map_err(|e| anyhow::anyhow!("default action failed: {e}")),
+        Err(_) => Ok(false),
+    }
+}
+
+#[cfg(not(windows))]
+pub fn press_named_checked(_name: &str) -> anyhow::Result<bool> {
+    Ok(false)
+}
+
 /// What the text box with the keyboard focus holds now (never a password box).
 /// Invoke only the named control actually under the verified point. A call
 /// that errors may already have acted: propagate it, never duplicate by click.
