@@ -647,6 +647,10 @@ pub struct Settings {
     /// the PC, and Settings → Privacy turns it off or clears it.
     #[serde(default = "default_true")]
     pub keep_activity: bool,
+    /// Focus mode also dims everything but the window you're in (haze.rs),
+    /// and brings it back when the session ends. Off until turned on.
+    #[serde(default)]
+    pub focus_dims: bool,
     /// The user's town or city, for the weather glance ("" = from memory).
     #[serde(default)]
     pub home_city: String,
@@ -1281,6 +1285,7 @@ impl Default for Settings {
             recall_enabled: false,
             screen_time_enabled: true,
             keep_activity: true,
+            focus_dims: false,
             home_city: String::new(),
             learn_city: false,
             n8n_hooks: Vec::new(),

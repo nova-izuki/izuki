@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type SavedLayout } from "../lib/ipc";
-import { Section } from "./ui";
+import { api, type DimLevel, type SavedLayout } from "../lib/ipc";
+import { useIzuki } from "../lib/store";
+import { Section, Toggle } from "./ui";
 
 type Kind = "side" | "focus" | "columns" | "grid";
 
@@ -10,6 +11,14 @@ const KINDS: { id: Kind; name: string; hint: string; say: string; cells: [number
   { id: "focus", name: "Focus", hint: "The one you're using big, two more stacked beside it.", say: "focus layout", cells: [[0, 0, 66.6, 100], [66.6, 0, 33.4, 50], [66.6, 50, 33.4, 50]] },
   { id: "columns", name: "Columns", hint: "Up to four tall columns, great on a wide screen.", say: "put my windows in columns", cells: [[0, 0, 25, 100], [25, 0, 25, 100], [50, 0, 25, 100], [75, 0, 25, 100]] },
   { id: "grid", name: "Grid", hint: "Up to four windows, a quarter of the screen each.", say: "tile my windows", cells: [[0, 0, 50, 50], [50, 0, 50, 50], [0, 50, 50, 50], [50, 50, 50, 50]] },
+];
+
+/** How dark "dim the rest" goes, with the dot each chip shows. */
+const DIMS: { id: DimLevel | null; name: string; shade: number }[] = [
+  { id: null, name: "Off", shade: 0 },
+  { id: "soft", name: "Soft", shade: 0.35 },
+  { id: "medium", name: "Medium", shade: 0.57 },
+  { id: "deep", name: "Deep", shade: 0.78 },
 ];
 
 /** "3 min ago", "yesterday", "12 Nov" for when a layout was saved. */
@@ -30,6 +39,10 @@ function savedWhen(at: number): string {
  * Saved layouts: "Save" remembers where every app window is on every
  * screen; "Set up" puts them back and opens the apps that aren't running
  * ("save my windows as Work", "set up my Work layout").
+ *
+ * Dim the rest (haze.rs): everything but the window in front fades back, and
+ * follows you when you switch windows ("dim the rest", "undim"); Focus mode
+ * can turn it on by itself.
  */
 export function WindowArrange({ disabled, onBusy }: { disabled: boolean; onBusy: (key: string | null) => void }) {
   const [busy, setBusy] = useState("");
@@ -40,24 +53,40 @@ export function WindowArrange({ disabled, onBusy }: { disabled: boolean; onBusy:
   const [name, setName] = useState("");
   // The layout whose delete was pressed once (a second press deletes).
   const [deleting, setDeleting] = useState("");
+  const [dim, setDim] = useState<DimLevel | null>(null);
+  const focusDims = useIzuki((s) => s.settings.focus_dims);
+  const patch = useIzuki((s) => s.patchSettings);
   const locked = useRef(false);
   const refreshAsk = useRef(0);
-  /** What can be undone and the saved list, read again; an older answer never overwrites a newer one. */
+  const dimAsk = useRef(0);
+  const alive = useRef(true);
+  /** How dark the rest is, read again; an older answer never overwrites a newer one. */
+  const readDim = () => {
+    const n = ++dimAsk.current;
+    void api.dimState().then((v) => alive.current && n === dimAsk.current && setDim(v)).catch(() => undefined);
+  };
+  /** What can be undone, the saved list and the dim, read again; an older answer never overwrites a newer one. */
   const refresh = () => {
     const n = ++refreshAsk.current;
     void api.windowLayoutCanUndo().then((v) => n === refreshAsk.current && setCanUndo(v)).catch(() => undefined);
     void api.layoutsSaved().then((v) => n === refreshAsk.current && setSaved(v)).catch(() => undefined);
+    readDim();
   };
 
-  // An arrangement made earlier (or by voice) can still be put back, and
-  // layouts saved by voice show up here.
+  // An arrangement made earlier (or by voice) can still be put back, layouts
+  // saved by voice show up here, and a dim said by voice shows when you come
+  // back to the panel.
   useEffect(() => {
-    let alive = true;
-    void api.windowLayoutCanUndo().then((v) => alive && setCanUndo(v)).catch(() => undefined);
-    void api.layoutsSaved().then((v) => alive && setSaved(v)).catch(() => undefined);
+    alive.current = true;
+    void api.windowLayoutCanUndo().then((v) => alive.current && setCanUndo(v)).catch(() => undefined);
+    void api.layoutsSaved().then((v) => alive.current && setSaved(v)).catch(() => undefined);
+    readDim();
+    window.addEventListener("focus", readDim);
     return () => {
-      alive = false;
+      alive.current = false;
+      window.removeEventListener("focus", readDim);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /** One thing at a time; the message (or the problem) shown after. */
@@ -208,6 +237,37 @@ export function WindowArrange({ disabled, onBusy }: { disabled: boolean; onBusy:
             ))}
           </ul>
         )}
+      </div>
+      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.025] p-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="min-w-0">
+            <span className="block text-[12px] font-semibold text-izk-ink">Dim the rest</span>
+            <span className="block text-[10.5px] leading-snug text-izk-muted">Everything but the window you’re in fades back. Switch windows and the light follows you.</span>
+          </span>
+          <div role="group" aria-label="How dark the rest goes" className="flex shrink-0 items-center gap-1">
+            {DIMS.map((d) => (
+              <button
+                key={d.name}
+                type="button"
+                aria-pressed={dim === d.id}
+                disabled={!!busy || disabled}
+                onClick={() => void go(`dim-${d.name}`, () => api.dimSet(d.id))}
+                title={d.id ? `Or say “dim the rest${d.id === "soft" ? " a little" : d.id === "deep" ? " more" : ""}”` : "Or say “undim”"}
+                className="izk-pill izk-no-drag flex items-center gap-1.5 px-2.5 py-1 text-[11px]"
+              >
+                <span aria-hidden className="h-2 w-2 rounded-full border border-white/30" style={{ background: d.shade ? `rgba(0,0,0,${d.shade})` : "rgba(255,255,255,0.8)" }} />
+                {d.name}
+              </button>
+            ))}
+          </div>
+        </div>
+        <label className="mt-2 flex items-center justify-between gap-2 text-[11px] text-izk-muted">
+          <span>Also while I focus (“focus for 25 minutes”)</span>
+          <Toggle checked={!!focusDims} onChange={(v) => patch({ focus_dims: v })} label="Dim the rest while I focus" />
+        </label>
+        <p className="mt-2 text-[10.5px] leading-snug text-izk-muted">
+          By voice, for one app: “keep Spotify on top”, “make Discord see-through”, “make this window 50% transparent”, “unpin Spotify”, “make Discord solid again” — or “hide everything except this” (“undo the layout” brings them back).
+        </p>
       </div>
       {message && <p role="status" className="mt-3 text-[12px] leading-relaxed text-izk-teal">{message}</p>}
       {error && <p role="alert" className="mt-3 text-[12px] leading-relaxed text-izk-danger">{error}</p>}

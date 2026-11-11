@@ -3,6 +3,7 @@
 pub mod android;
 pub mod apps;
 pub mod arrange;
+pub mod haze;
 pub mod attachments;
 pub mod briefing;
 pub mod browser;
@@ -182,6 +183,9 @@ pub fn quit(app: &AppHandle) {
         duck::restore_now();
         std::process::exit(0);
     });
+    // Windows Izuki pinned on top or made see-through go back to normal
+    // (again on RunEvent::Exit; doing it twice is harmless).
+    arrange::let_go();
     app.exit(0);
 }
 
@@ -507,6 +511,8 @@ pub fn run() {
             commands::window_layout,
             commands::window_layout_undo,
             commands::window_layout_can_undo,
+            commands::dim_state,
+            commands::dim_set,
             commands::layouts_saved,
             commands::layout_save,
             commands::layout_restore,
@@ -750,6 +756,7 @@ pub fn run() {
                 airsafe::release_now();
                 duck::restore_now();
                 call::stop();
+                arrange::let_go();
             }
             if let tauri::RunEvent::Ready = event {
                 // `--minimised` is passed by the autostart entry so Izuki

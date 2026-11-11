@@ -221,6 +221,7 @@ export const MOCK_SETTINGS: Settings = {
   recall_enabled: false,
   screen_time_enabled: true,
   keep_activity: true,
+  focus_dims: false,
   home_city: "",
   learn_city: false,
   app_theme: "nova",
@@ -763,6 +764,9 @@ export interface WindhawkStatus {
   installing: boolean;
 }
 
+/** How dark "dim the rest" makes everything but the window in front. */
+export type DimLevel = "soft" | "medium" | "deep";
+
 /** A saved window layout (arrange.rs). */
 export interface SavedLayout {
   name: string;
@@ -1111,6 +1115,10 @@ export const api = {
   /** Put a saved layout back (opens apps that aren't running). */
   layoutRestore: (name: string) => call<string>("layout_restore", { name }, () => "Saved layouts work in the Windows app."),
   layoutForget: (name: string) => call<void>("layout_forget", { name }, () => undefined),
+  /** How dark "dim the rest" is right now, or null when it's off (haze.rs). */
+  dimState: () => call<DimLevel | null>("dim_state", undefined, () => null),
+  /** Dim everything but the window in front ("soft" | "medium" | "deep"), or null to bring it back. */
+  dimSet: (level: DimLevel | null) => call<string>("dim_set", { level }, () => "Dimming the rest works in the Windows app."),
   windhawkStatus: () => call<WindhawkStatus>("windhawk_status", undefined, () => ({ installed: false, path: null, can_install: false, mods: [], installing: false })),
   windhawkInstall: () => call<WindhawkStatus>("windhawk_install", undefined, () => ({ installed: false, path: null, can_install: false, mods: [], installing: false })),
   windhawkOpen: () => call<void>("windhawk_open", undefined, () => undefined),
