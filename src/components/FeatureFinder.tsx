@@ -8,7 +8,7 @@ import { useIzuki, type TabId } from "../lib/store";
 export type Feature = { label: string; hint: string; tab: TabId; id?: string };
 export const FEATURES: Feature[] = [
   { label: "Windows layouts", hint: "desktop design layout studio classic workspace photo gallery room to breathe taskbar arrange keep daily wallpaper spotlight", tab: "style", id: "style-layouts" },
-  { label: "Arrange my windows", hint: "side by side, split screen, split my screen, grid, tile windows, columns, focus layout, window layout, snap layouts, fancyzones, organise windows, undo layout", tab: "style", id: "style-arrange" },
+  { label: "Arrange my windows", hint: "side by side, split screen, split my screen, grid, tile windows, columns, focus layout, window layout, snap layouts, fancyzones, organise windows, undo layout, put chrome on the left, move to my other screen, second monitor, corner, center a window, full screen an app", tab: "style", id: "style-arrange" },
   { label: "Saved window layouts", hint: "save my windows as work, save this layout, set up my work layout, restore my coding setup, workspace, open my apps where they were, multiple monitors, every screen", tab: "style", id: "style-arrange" },
   { label: "What Izuki can access", hint: "privacy, permissions, access, microphone, camera, screen, connected accounts, gmail, keys, phone control, turn off, revoke, trust", tab: "settings", id: "settings-access" },
   { label: "What Izuki did", hint: "history, activity, log, actions, what did you do today, what changed, clicks, audit", tab: "settings", id: "settings-activity" },
