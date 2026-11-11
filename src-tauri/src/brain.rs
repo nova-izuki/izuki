@@ -2415,8 +2415,23 @@ fn final_press_confirmed(attempt: Option<&FinalTried>) {
     }
 }
 
-/// A fresh look: presses that went through normally are forgotten (the
-/// screen now shows what they did); doubtful ones stay.
+/// The request is about several items ("delete these three files", "accept
+/// all the invites", "archive every email from Sam"). Only then may the same
+/// final button be pressed again — for the next item, after a fresh look.
+/// Anything else keeps every final press blocked for the whole task: a Send
+/// or Pay that went through must never happen twice.
+fn asks_for_several(prompt: &str) -> bool {
+    let p = format!(
+        " {} ",
+        prompt.to_lowercase().chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ")
+    );
+    [" all ", " every ", " each ", " both ", " several ", " multiple ", " two ", " three ", " four ", " five ", " six ", " seven ", " eight ", " nine ", " ten "]
+        .iter()
+        .any(|w| p.contains(w))
+}
+
+/// A fresh look on a several-items task: presses that went through normally
+/// are forgotten (the screen now shows what they did); doubtful ones stay.
 fn forget_confirmed_finals() {
     let done: Vec<String> = FINAL_CONFIRMED.with(|c| std::mem::take(&mut *c.borrow_mut()));
     if !done.is_empty() {
@@ -3811,10 +3826,15 @@ fn submit_task(
     // A new task starts with no failed-step debt and no final action blocked
     // by a previous task's attempt.
     clear_replan_state();
+    // "Delete these three files": the same Delete may be pressed again for
+    // the next file, a fresh look later. Otherwise never twice in a task.
+    let several = asks_for_several(&prompt);
     for round in 0..MAX_ROUNDS {
-        // This round starts with a fresh look: presses that went through
-        // last round are done; doubtful ones stay blocked.
-        forget_confirmed_finals();
+        // This round starts with a fresh look: on a several-items task,
+        // presses that went through last round are done; doubtful ones stay.
+        if several {
+            forget_confirmed_finals();
+        }
         if crate::execution::charge(crate::execution::Work::Round).is_err() { break; }
         if !alive() {
             eprintln!("[agent] stopped (replaced or cancelled)");
@@ -5158,6 +5178,13 @@ mod step_snag_tests {
         assert!(final_already_tried(&delete).is_some(), "not twice in the same plan");
         forget_confirmed_finals();
         assert!(final_already_tried(&delete).is_none(), "after a fresh look, the second file's Delete is a new press");
+        // Only a request about several items does that.
+        assert!(asks_for_several("delete these three files"));
+        assert!(asks_for_several("accept all the invites"));
+        assert!(asks_for_several("archive every email from Sam"));
+        assert!(!asks_for_several("send the email to Bob"));
+        assert!(!asks_for_several("pay the electricity bill"));
+        assert!(!asks_for_several("send it at 3"));
         // A press that didn't confirm stays blocked, fresh look or not.
         let second = note_final_tried(&delete).expect("Delete is final");
         assert_eq!(final_already_tried(&delete), Some(second));
