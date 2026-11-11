@@ -2425,9 +2425,14 @@ fn asks_for_several(prompt: &str) -> bool {
         " {} ",
         prompt.to_lowercase().chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ")
     );
-    [" all ", " every ", " each ", " both ", " several ", " multiple ", " two ", " three ", " four ", " five ", " six ", " seven ", " eight ", " nine ", " ten "]
-        .iter()
-        .any(|w| p.contains(w))
+    let words: Vec<&str> = p.split_whitespace().collect();
+    // "Delete these 3 files": a count of 2 or more before a plural word
+    // ("send it at 3 pm" isn't one).
+    let counted = words.windows(2).any(|w| w[0].parse::<u32>().is_ok_and(|n| (2..=100).contains(&n)) && w[1].len() > 2 && w[1].ends_with('s'));
+    counted
+        || [" all ", " every ", " each ", " both ", " several ", " multiple ", " two ", " three ", " four ", " five ", " six ", " seven ", " eight ", " nine ", " ten "]
+            .iter()
+            .any(|w| p.contains(w))
 }
 
 /// A fresh look on a several-items task: presses that went through normally
@@ -5185,6 +5190,9 @@ mod step_snag_tests {
         assert!(!asks_for_several("send the email to Bob"));
         assert!(!asks_for_several("pay the electricity bill"));
         assert!(!asks_for_several("send it at 3"));
+        assert!(asks_for_several("delete these 3 files"));
+        assert!(!asks_for_several("send it at 3 pm"));
+        assert!(!asks_for_several("pay 1 bills"), "one isn't several");
         // A press that didn't confirm stays blocked, fresh look or not.
         let second = note_final_tried(&delete).expect("Delete is final");
         assert_eq!(final_already_tried(&delete), Some(second));
