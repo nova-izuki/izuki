@@ -2347,9 +2347,10 @@ thread_local! {
     /// A step failed in a way a fresh look can re-plan around. The task loop
     /// takes this after each run; it is not set for a pause or a hard stop.
     static STEP_REPLAN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// Final actions already attempted in this task (send, pay, delete…). A
-    /// re-plan may never press the same control a second time — the first
-    /// press may have gone through even when its result check failed.
+    /// Final actions attempted in this task (send, pay, delete…) whose press
+    /// didn't confirm. A re-plan may never press the same control again — the
+    /// first press may have gone through even when its result check failed.
+    /// A press that went through normally is forgotten at once.
     static FINAL_TRIED: std::cell::RefCell<Vec<FinalTried>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -2396,6 +2397,15 @@ fn note_final_tried(step: &ActionStep) -> Option<FinalTried> {
 /// before the button was pressed (the safe retry must not stay blocked).
 fn forget_final_tried(attempt: &FinalTried) {
     FINAL_TRIED.with(|f| f.borrow_mut().retain(|t| t.name != attempt.name));
+}
+
+/// A press that went through normally is done, not doubtful: the same label
+/// may be pressed again for the next item (deleting three files presses
+/// Delete three times). Only an unconfirmed or failed press stays remembered.
+fn final_press_confirmed(attempt: Option<&FinalTried>) {
+    if let Some(attempt) = attempt {
+        forget_final_tried(attempt);
+    }
 }
 
 /// The first final control in a proposed plan that was already attempted.
@@ -2743,6 +2753,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                                 return false;
                             }
                             executed.set(i + 1);
+                            final_press_confirmed(final_attempt.as_ref());
                             if let Some(raw) = front_before {
                                 // (The minimise animation takes a moment.)
                                 std::thread::sleep(Duration::from_millis(350));
@@ -2837,6 +2848,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             && recover_click(&app, step).is_some() =>
                         {
                             executed.set(i + 1);
+                            final_press_confirmed(final_attempt.as_ref());
                             if let Some(evidence) = evidence {
                                 if evidence.finish(crate::mission_journal::EvidenceOutcome::Returned).is_err() { return false; }
                             }
@@ -3292,6 +3304,9 @@ pub fn run_named_click(app: &AppHandle, store: &Arc<Store>, said: &str) -> Optio
     if matches!(c.kind.as_str(), "RadioButton" | "CheckBox") || (c.kind == "Button" && reads_as_choice(&c.name)) {
         return None;
     }
+    // A new request: an earlier task's attempts don't block this click (the
+    // blocking pool reuses threads, and the list is per thread).
+    clear_replan_state();
     let my_task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     automation::clear_abort();
     let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted() && crate::execution::allowed();
@@ -3466,7 +3481,9 @@ pub fn run_instant(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<Vi
     if uia::screen_locked() {
         return None;
     }
-    // Like any new task, this replaces one still running.
+    // Like any new task, this replaces one still running, and starts with no
+    // earlier task's re-plan signal or final-action attempts.
+    clear_replan_state();
     let my_task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     automation::clear_abort();
     let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted() && crate::execution::allowed();
@@ -5101,6 +5118,21 @@ mod step_snag_tests {
         assert!(pre_action_failure("target_changed: the button moved"));
         assert!(!pre_action_failure("typed_mismatch: the box shows something else"));
         assert!(!pre_action_failure("stopped"));
+    }
+
+    #[test]
+    fn a_confirmed_press_can_be_pressed_again_for_the_next_item() {
+        clear_replan_state();
+        let delete = click_named("Delete");
+        let first = note_final_tried(&delete).expect("Delete is final");
+        final_press_confirmed(Some(&first));
+        assert!(final_already_tried(&delete).is_none(), "the second file's Delete is a new press");
+        // A press that didn't confirm stays blocked.
+        let second = note_final_tried(&delete).expect("Delete is final");
+        assert_eq!(final_already_tried(&delete), Some(second));
+        final_press_confirmed(None);
+        assert!(final_already_tried(&delete).is_some());
+        clear_replan_state();
     }
 
     #[test]
