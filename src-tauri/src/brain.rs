@@ -2352,12 +2352,17 @@ thread_local! {
     /// first press may have gone through even when its result check failed.
     /// A press that went through normally is forgotten at once.
     static FINAL_TRIED: std::cell::RefCell<Vec<FinalTried>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// Final presses in this batch that went through normally: still blocked
+    /// until the next fresh look (two "Send" steps in one plan must not both
+    /// press), then forgotten so the next item's Delete can be pressed.
+    static FINAL_CONFIRMED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// Start a new task with no stale re-plan signal or final-action memory.
 fn clear_replan_state() {
     STEP_REPLAN.with(|f| f.set(false));
     FINAL_TRIED.with(|f| f.borrow_mut().clear());
+    FINAL_CONFIRMED.with(|f| f.borrow_mut().clear());
 }
 
 /// Ask the task loop for a fresh look after a failed step.
@@ -2399,12 +2404,23 @@ fn forget_final_tried(attempt: &FinalTried) {
     FINAL_TRIED.with(|f| f.borrow_mut().retain(|t| t.name != attempt.name));
 }
 
-/// A press that went through normally is done, not doubtful: the same label
-/// may be pressed again for the next item (deleting three files presses
-/// Delete three times). Only an unconfirmed or failed press stays remembered.
+/// A press that went through normally is done, not doubtful: after the next
+/// fresh look the same label may be pressed again for the next item
+/// (deleting three files presses Delete three times). Until then it stays
+/// blocked, so a plan can't press it twice in one go. An unconfirmed or
+/// failed press stays remembered for the whole task.
 fn final_press_confirmed(attempt: Option<&FinalTried>) {
     if let Some(attempt) = attempt {
-        forget_final_tried(attempt);
+        FINAL_CONFIRMED.with(|c| c.borrow_mut().push(attempt.name.clone()));
+    }
+}
+
+/// A fresh look: presses that went through normally are forgotten (the
+/// screen now shows what they did); doubtful ones stay.
+fn forget_confirmed_finals() {
+    let done: Vec<String> = FINAL_CONFIRMED.with(|c| std::mem::take(&mut *c.borrow_mut()));
+    if !done.is_empty() {
+        FINAL_TRIED.with(|f| f.borrow_mut().retain(|t| !done.contains(&t.name)));
     }
 }
 
@@ -2848,6 +2864,8 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             && e.to_string().starts_with("target_changed:")
                             && !e.to_string().contains("covers")
                             && !crate::ext::in_tab_mode()
+                            && final_attempt.is_none()
+                            && final_already_tried(step).is_none()
                             && recover_click(&app, step).is_some() =>
                         {
                             executed.set(i + 1);
@@ -3794,6 +3812,9 @@ fn submit_task(
     // by a previous task's attempt.
     clear_replan_state();
     for round in 0..MAX_ROUNDS {
+        // This round starts with a fresh look: presses that went through
+        // last round are done; doubtful ones stay blocked.
+        forget_confirmed_finals();
         if crate::execution::charge(crate::execution::Work::Round).is_err() { break; }
         if !alive() {
             eprintln!("[agent] stopped (replaced or cancelled)");
@@ -5134,11 +5155,14 @@ mod step_snag_tests {
         let delete = click_named("Delete");
         let first = note_final_tried(&delete).expect("Delete is final");
         final_press_confirmed(Some(&first));
-        assert!(final_already_tried(&delete).is_none(), "the second file's Delete is a new press");
-        // A press that didn't confirm stays blocked.
+        assert!(final_already_tried(&delete).is_some(), "not twice in the same plan");
+        forget_confirmed_finals();
+        assert!(final_already_tried(&delete).is_none(), "after a fresh look, the second file's Delete is a new press");
+        // A press that didn't confirm stays blocked, fresh look or not.
         let second = note_final_tried(&delete).expect("Delete is final");
         assert_eq!(final_already_tried(&delete), Some(second));
         final_press_confirmed(None);
+        forget_confirmed_finals();
         assert!(final_already_tried(&delete).is_some());
         clear_replan_state();
     }
