@@ -1756,8 +1756,15 @@
   // Windows layouts, looks, tweaks and "what did you do" are always about the
   // PC: "put my windows side by side", "set up my Work layout", "make my PC
   // look cozy", "undo the tweaks", "what did you do today?".
-  const PC_STYLE = /\b(?:(?:put|arrange|tile|snap|organi[sz]e|split|save|move|tidy|lay out) (?:my|the) windows|(?:set up|setup|restore|load|save|switch to|use|delete|forget) my [\w ]{1,20} (?:layout|setup)|(?:save|undo|restore) (?:my |the )?window layout|split my screen|undo the tweaks|undo the \w+ pack|my (?:pc|computer|laptop|desktop) look|what did you do (?:today|yesterday|on my (?:pc|computer|laptop))|what (?:have|did) you (?:done|changed?) on my (?:pc|computer|laptop))\b/i;
-  const wantsPcStyle = (said) => PC_STYLE.test(String(said || ""));
+  const PC_STYLE = /\b(?:(?:put|move|snap|send|throw) [\w ]{1,24} (?:to|on|onto|in|into) (?:the |my )?(?:other|second|next) (?:screen|monitor|display)|(?:put|move|snap) [\w ]{1,24} (?:to|on|in) the (?:left|right) half|(?:put|move|snap) [\w ]{1,24} (?:in|to|into) the (?:top|bottom) (?:left|right) corner|(?:put|arrange|tile|snap|organi[sz]e|split|save|move|tidy|lay out) (?:my|the) windows|(?:set up|setup|restore|load|save|switch to|use|delete|forget) my [\w ]{1,20} (?:layout|setup)|(?:save|undo|restore) (?:my |the )?window layout|split my screen|undo the tweaks|undo the \w+ pack|my (?:pc|computer|laptop|desktop) look|what did you do (?:today|yesterday|on my (?:pc|computer|laptop))|what (?:have|did) you (?:done|changed?) on my (?:pc|computer|laptop))\b/i;
+  // One app by name ("put Chrome on the left", "center Notepad", "make VS Code
+  // full screen"): only for apps people run on a PC, so "move the couch to the
+  // left" stays a chat.
+  const PC_APPS = "(?:chrome|google chrome|edge|firefox|brave|opera|spotify|discord|slack|teams|zoom|outlook|word|excel|powerpoint|notepad|vs ?code|visual studio code|terminal|file explorer|explorer|obs|steam|whatsapp|telegram|notion|obsidian|figma|blender|photoshop|premiere|after effects|fl studio|vlc|calculator)";
+  const PC_PLACE = new RegExp("\\b(?:(?:put|move|snap|send|throw|place|drag|make) (?:the |my )?" + PC_APPS + "(?: window| app)? (?:on|to|in|into|onto|at)? ?(?:the |my )?(?:left|right|top|bottom|middle|cent(?:er|re)|full ?screen|(?:other|second|next) (?:screen|monitor|display))|(?:cent(?:er|re)|maximi[sz]e) (?:the |my )?" + PC_APPS + ")\\b", "i");
+  // "Put this window on the left": the window in front, said as a window.
+  const PC_THIS_WINDOW = /\b(?:(?:put|move|snap|send|place|drag|center|centre) (?:this|that|the|my)(?: [\w]{1,20}){0,3} window (?:to |on |in |into |onto )?(?:the |my )?(?:left|right|top|bottom|middle|cent(?:er|re)|full ?screen|(?:other|second|next) (?:screen|monitor|display))\b|(?:cent(?:er|re)|maximi[sz]e) (?:this|that|the|my)(?: [\w]{1,20}){0,3} window(?: please)?[\s.!?]*$)/i;
+  const wantsPcStyle = (said) => PC_STYLE.test(String(said || "")) || PC_PLACE.test(String(said || "")) || PC_THIS_WINDOW.test(String(said || ""));
   const wantsReminder = (said) => /\b(remind me|set (a |an )?reminder|my reminders)\b/i.test(String(said || ""));
   // Explicit device intent wins over app names and generic action verbs.
   const phoneTarget = (said) => /\b(?:my phone|the phone|this phone|my iphone|the iphone|this iphone|my android|the android|this android|on (?:phone|iphone|android|mobile)|open (?:phone|iphone|android))\b/i.test(String(said || ""));
@@ -1772,8 +1779,10 @@
     if (wantsWebRead(said)) return havePc ? "pc" : "web-unavailable";
     if (phoneTarget(said)) return pcTarget(said) ? "clarify" : "phone";
     if (wantsReminder(said)) return havePc ? "pc" : "chat";
-    if (wantsAccount(said)) return haveApps ? "apps" : havePc ? "pc" : "chat";
+    // A window placement names an app ("maximize Discord") but is about the
+    // PC's screen, not the Discord account: it goes to the PC first.
     if (havePc && wantsPcStyle(said)) return "pc";
+    if (wantsAccount(said)) return haveApps ? "apps" : havePc ? "pc" : "chat";
     return havePc && wantsPc(said) ? pcTarget(said) ? "pc" : "clarify" : "chat";
   };
 
