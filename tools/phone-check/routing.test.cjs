@@ -25,8 +25,9 @@ for (const s of [
   "put my windows side by side", "Set up my Work layout", "save my windows as coding", "make my PC look cozy",
   "undo the tweaks", "undo the gamer pack", "what did you do today?", "What have you changed on my computer?",
   "move Spotify to my other screen", "put chrome on the left half", "put discord in the top right corner",
+  "put Chrome on the left", "center Notepad", "make VS Code full screen", "maximize Discord", "snap the spotify window to the right",
 ]) is(JSON.stringify(s), requestLane(s, false, true), "pc");
-for (const s of ["compare these phones side by side", "what did you do last summer", "make my essay look nicer", "fix my website layout", "my windows are dirty", "how do I clean my windows", "change my blog layout", "put the chicken in the middle", "move the couch to the left"]) {
+for (const s of ["compare these phones side by side", "what did you do last summer", "make my essay look nicer", "fix my website layout", "my windows are dirty", "how do I clean my windows", "change my blog layout", "put the chicken in the middle", "move the couch to the left", "center the title", "make the text full screen"]) {
   is(JSON.stringify(s) + " stays a chat", requestLane(s, false, true), "chat");
 }
 is("no PC linked: a layout request is just a chat", requestLane("put my windows side by side", false, false), "chat");

@@ -280,6 +280,12 @@ fn parse_place(s: &str) -> Option<Ask> {
     if app.is_empty() && (spot == Zone::Full || crate::instant::parse(s.trim()).is_some()) {
         return None;
     }
+    // "Center this" in a document is the text; "put this in the corner" in a
+    // design app is a shape. With no app named, only another screen, or
+    // saying "window", means the window.
+    if app.is_empty() && spot != Zone::OtherScreen && !s.contains(" window") {
+        return None;
+    }
     Some(Ask::Place(app.to_string(), spot))
 }
 
@@ -1346,7 +1352,10 @@ mod tests {
         assert_eq!(p("make chrome full screen"), Some(Ask::Place("chrome".into(), Zone::Full)));
         assert_eq!(p("maximize discord"), Some(Ask::Place("discord".into(), Zone::Full)));
         assert_eq!(p("move this to my second monitor"), Some(Ask::Place(String::new(), Zone::OtherScreen)));
-        assert_eq!(p("center it"), Some(Ask::Place(String::new(), Zone::Center)));
+        assert_eq!(p("center it"), None, "in a document that's the text");
+        assert_eq!(p("center this window"), Some(Ask::Place(String::new(), Zone::Center)));
+        assert_eq!(p("put this in the top right corner"), None, "a shape in a design app");
+        assert_eq!(p("put this window in the top right corner"), Some(Ask::Place(String::new(), Zone::TopRight)));
         assert_eq!(p("make it full screen"), None, "the video's full screen (instant.rs)");
         assert_eq!(p("put it on the left"), None, "instant.rs snaps the window in front");
         assert_eq!(p("put the spotify window in the bottom-left corner"), Some(Ask::Place("spotify".into(), Zone::BottomLeft)));
