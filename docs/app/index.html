@@ -1756,7 +1756,7 @@
   // Windows layouts, looks, tweaks and "what did you do" are always about the
   // PC: "put my windows side by side", "set up my Work layout", "make my PC
   // look cozy", "undo the tweaks", "what did you do today?".
-  const PC_STYLE = /\b(?:(?:put|arrange|tile|snap|organi[sz]e|split|save|move|tidy|lay out) (?:my|the) windows|(?:set up|setup|restore|load|save|switch to|use|delete|forget) my [\w ]{1,20} (?:layout|setup)|(?:save|undo|restore) (?:my |the )?window layout|split my screen|undo the tweaks|undo the \w+ pack|my (?:pc|computer|laptop|desktop) look|what did you do (?:today|yesterday|on my (?:pc|computer|laptop))|what (?:have|did) you (?:done|changed?) on my (?:pc|computer|laptop))\b/i;
+  const PC_STYLE = /\b(?:(?:put|move|snap|send|throw) [\w ]{1,24} (?:to|on|onto|in|into) (?:the |my )?(?:other|second|next) (?:screen|monitor|display)|(?:put|move|snap) [\w ]{1,24} (?:to|on|in) the (?:left|right) half|(?:put|move|snap) [\w ]{1,24} (?:in|to|into) the (?:top|bottom) (?:left|right) corner|(?:put|arrange|tile|snap|organi[sz]e|split|save|move|tidy|lay out) (?:my|the) windows|(?:set up|setup|restore|load|save|switch to|use|delete|forget) my [\w ]{1,20} (?:layout|setup)|(?:save|undo|restore) (?:my |the )?window layout|split my screen|undo the tweaks|undo the \w+ pack|my (?:pc|computer|laptop|desktop) look|what did you do (?:today|yesterday|on my (?:pc|computer|laptop))|what (?:have|did) you (?:done|changed?) on my (?:pc|computer|laptop))\b/i;
   const wantsPcStyle = (said) => PC_STYLE.test(String(said || ""));
   const wantsReminder = (said) => /\b(remind me|set (a |an )?reminder|my reminders)\b/i.test(String(said || ""));
   // Explicit device intent wins over app names and generic action verbs.

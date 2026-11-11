@@ -540,8 +540,9 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         .ok();
     }
     // Window layouts: "put my windows side by side", "undo the layout",
-    // "save my windows as Work", "set up my Work layout" (arrange.rs). A
-    // "setup" that isn't one of your saved layouts is left for the rest.
+    // "save my windows as Work", "set up my Work layout", "put Chrome on
+    // the left" (arrange.rs). A "setup" that isn't one of your saved layouts,
+    // or an app that isn't open, is left for the rest.
     // "Every weekday at 9, set up my Work layout" is a routine (below), not now.
     let scheduled = crate::routines::scheduled(&said);
     if let Some(ask) = crate::arrange::parse(&said).filter(|a| !scheduled && crate::arrange::claims(a, &said)) {
