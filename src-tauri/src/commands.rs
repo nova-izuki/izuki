@@ -88,6 +88,12 @@ pub fn save_settings(app: AppHandle, mut settings: Settings) -> Settings {
     }
     let saved = state::store().set_settings(settings);
     crate::bugs::set_enabled(saved.send_bug_reports);
+    // A changed key: what its old key was refused doesn't hold for the new one.
+    for p in &saved.providers {
+        if previous.providers.iter().any(|o| o.id == p.id && o.api_key != p.api_key) {
+            crate::freebrains::forget_rests(p.id);
+        }
+    }
     if saved.mate_enabled != previous.mate_enabled {
         crate::mate::apply(&app);
     }
@@ -754,9 +760,11 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     if let Some(reply) = crate::reminders::cancel_request(&said) {
         return Some(reply);
     }
-    // Focus mode: "focus for 25 minutes", "stop focus".
+    // Focus mode: "focus for 25 minutes", "stop focus". It may bring up the
+    // dim (and wait for it), so it runs off the async worker.
     if let Some(ask) = crate::focus::parse(&said) {
-        return Some(crate::focus::run(&app, ask));
+        let app2 = app.clone();
+        return blocking(move || crate::focus::run(&app2, ask)).await.ok();
     }
     // Recall: "what was that site I was on this morning?"
     if crate::recall::is_recall_question(&said) {

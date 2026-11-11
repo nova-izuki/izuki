@@ -454,9 +454,14 @@ fn parse_dim(s: &str) -> Option<Ask> {
         return Some(Ask::Dim(None));
     }
     let words = s.split_whitespace().count();
+    // "Dim the rest of the lights", "fade the rest of the song": something
+    // else. "The rest" counts only at the end, or before window words.
+    if any(&[" the rest of ", " the rest in ", " everything else in ", " everything else on the "]) && !any(&[" window", " screen", " apps"]) {
+        return None;
+    }
     let on = any(&[
-        " dim the rest", " dim everything else", " dim everything except", " dim everything but", " dim all the other", " dim the other windows",
-        " dim other windows", " dim my other windows", " dim the background windows", " dim all other windows", " fade the rest", " fade everything else",
+        " dim the rest ", " dim everything else", " dim everything except", " dim everything but", " dim all the other", " dim the other windows",
+        " dim other windows", " dim my other windows", " dim the background windows", " dim all other windows", " fade the rest ", " fade everything else",
         " fade everything except", " fade everything but", " spotlight mode", " spotlight this window", " spotlight my window", " spotlight the window",
     ]) || (has(" dim the background ") && words <= 5);
     let about_dim = has(" the dim ") && any(&[" darker ", " lighter ", " deeper ", " softer ", " too dark ", " stronger ", " weaker "]);
@@ -1922,6 +1927,10 @@ mod tests {
         assert_eq!(p("turn off the dim"), Some(Ask::Dim(None)));
         // The screen's brightness, a photo, a question: not this.
         assert_eq!(p("dim my screen"), None);
+        assert_eq!(p("dim the rest of the lights"), None);
+        assert_eq!(p("fade the rest of the song"), None);
+        assert_eq!(p("dim the restaurant sign"), None);
+        assert_eq!(p("dim the rest of the windows"), Some(Ask::Dim(Some(Level::Medium))));
         assert_eq!(p("dim the background of this photo"), None);
         assert_eq!(p("don't dim the rest"), None);
         assert_eq!(p("don't undim"), None);

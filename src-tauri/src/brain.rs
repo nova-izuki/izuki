@@ -6428,6 +6428,8 @@ mod honesty_tests {
             Some(m) => assert_eq!(chain[0].model, m, "a sibling answers instead"),
             None => assert!(chain.is_empty(), "no sibling: left out, never asked"),
         }
+        crate::freebrains::unrest(cfg.id, &cfg.model);
+        assert!(!crate::freebrains::resting(cfg.id, &cfg.model));
     }
 
     #[test]

@@ -177,14 +177,15 @@ static REOPEN_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::Atom
 /// Quit used to do nothing then — the process ends anyway.
 pub fn quit(app: &AppHandle) {
     eprintln!("[izuki] quitting");
-    // Windows Izuki pinned on top or made see-through go back to normal.
-    arrange::let_go();
     std::thread::spawn(|| {
         std::thread::sleep(std::time::Duration::from_secs(2));
         eprintln!("[izuki] the tidy exit took too long — ending now");
         duck::restore_now();
         std::process::exit(0);
     });
+    // Windows Izuki pinned on top or made see-through go back to normal
+    // (again on RunEvent::Exit; doing it twice is harmless).
+    arrange::let_go();
     app.exit(0);
 }
 
@@ -755,6 +756,7 @@ pub fn run() {
                 airsafe::release_now();
                 duck::restore_now();
                 call::stop();
+                arrange::let_go();
             }
             if let tauri::RunEvent::Ready = event {
                 // `--minimised` is passed by the autostart entry so Izuki
