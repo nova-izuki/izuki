@@ -108,7 +108,7 @@ export function WindowArrange({ disabled, onBusy }: { disabled: boolean; onBusy:
     <Section
       id="style-arrange"
       title="Arrange my windows"
-      hint="One tap lays out the app windows on this screen; the one you used last gets the biggest spot. Or just say it."
+      hint="One tap lays out the app windows on this screen; the one you used last gets the biggest spot. Or just say it — even for one app: “put Chrome on the left”, “move Spotify to my other screen”, “Discord in the top right corner”."
       right={canUndo && (
         <button type="button" disabled={!!busy || disabled} onClick={() => void run("undo")} className="izk-pill izk-no-drag px-3 py-1 text-[11px]">
           {busy === "undo" ? "Putting back…" : "Undo"}

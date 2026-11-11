@@ -24,8 +24,15 @@ console.log("windows, looks and tweaks go to the PC (when there is one):");
 for (const s of [
   "put my windows side by side", "Set up my Work layout", "save my windows as coding", "make my PC look cozy",
   "undo the tweaks", "undo the gamer pack", "what did you do today?", "What have you changed on my computer?",
+  "move Spotify to my other screen", "put chrome on the left half", "put discord in the top right corner",
+  "put Chrome on the left", "center Notepad", "make VS Code full screen", "maximize Discord", "snap the spotify window to the right",
+  "put this window on the left", "move the window to my other screen", "put the GIMP window on the left", "center this window", "maximize the notion window",
 ]) is(JSON.stringify(s), requestLane(s, false, true), "pc");
-for (const s of ["compare these phones side by side", "what did you do last summer", "make my essay look nicer", "fix my website layout", "my windows are dirty", "how do I clean my windows", "change my blog layout"]) {
+for (const s of ["maximize Discord", "send Spotify to the other screen", "put this window on the left"]) {
+  is(JSON.stringify(s) + " with apps linked still goes to the PC", requestLane(s, true, true), "pc");
+}
+is("a Discord message with apps linked stays with the apps", requestLane("send a message on discord to sam", true, true), "apps");
+for (const s of ["compare these phones side by side", "what did you do last summer", "make my essay look nicer", "fix my website layout", "my windows are dirty", "how do I clean my windows", "change my blog layout", "put the chicken in the middle", "move the couch to the left", "center the title", "make the text full screen", "put the window cleaner on the left", "center the window frame on the wall"]) {
   is(JSON.stringify(s) + " stays a chat", requestLane(s, false, true), "chat");
 }
 is("no PC linked: a layout request is just a chat", requestLane("put my windows side by side", false, false), "chat");

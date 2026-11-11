@@ -9,6 +9,11 @@
 //! never dialogs that can't be resized. A window run as administrator can't be
 //! moved by an app that isn't, so Windows refuses it and Izuki says so.
 //!
+//! One app by name: "put Chrome on the left", "move Spotify to my other
+//! screen", "Discord in the top right corner", "center Notepad", "make VS
+//! Code full screen". Only when that app has a window open; "undo the
+//! layout" puts it back.
+//!
 //! Saved layouts: "save my windows as Work" remembers where every app window
 //! is, on every screen; "set up my Work layout" puts each one back, opening
 //! the apps that aren't running yet (ordinary installed apps only, never
@@ -129,6 +134,213 @@ pub enum Ask {
     Restore(String),
     /// "Delete my Work layout".
     Forget(String),
+    /// "Put Chrome on the left": one app (by name; "" = the window in front) to a spot.
+    Place(String, Zone),
+}
+
+/// Where one app goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Zone {
+    Left,
+    Right,
+    Top,
+    Bottom,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+    Center,
+    Full,
+    OtherScreen,
+}
+
+impl Zone {
+    fn name(self) -> &'static str {
+        match self {
+            Zone::Left => "on the left half",
+            Zone::Right => "on the right half",
+            Zone::Top => "on the top half",
+            Zone::Bottom => "on the bottom half",
+            Zone::TopLeft => "in the top-left corner",
+            Zone::TopRight => "in the top-right corner",
+            Zone::BottomLeft => "in the bottom-left corner",
+            Zone::BottomRight => "in the bottom-right corner",
+            Zone::Center => "in the middle",
+            Zone::Full => "full screen",
+            Zone::OtherScreen => "on your other screen",
+        }
+    }
+
+    /// Its rectangle in a screen's work area (none for full screen or
+    /// another screen, which aren't a spot on this one). Halves and quarters
+    /// cover the area exactly; the middle is 70% by 80%, centred.
+    pub fn area(self, work: Area) -> Option<Area> {
+        let xs = split(work.x, work.w, 2);
+        let ys = split(work.y, work.h, 2);
+        let at = |(x, w): (i32, i32), (y, h): (i32, i32)| Area { x, y, w, h };
+        let whole_x = (work.x, work.w);
+        let whole_y = (work.y, work.h);
+        Some(match self {
+            Zone::Left => at(xs[0], whole_y),
+            Zone::Right => at(xs[1], whole_y),
+            Zone::Top => at(whole_x, ys[0]),
+            Zone::Bottom => at(whole_x, ys[1]),
+            Zone::TopLeft => at(xs[0], ys[0]),
+            Zone::TopRight => at(xs[1], ys[0]),
+            Zone::BottomLeft => at(xs[0], ys[1]),
+            Zone::BottomRight => at(xs[1], ys[1]),
+            Zone::Center => {
+                let (w, h) = (work.w * 7 / 10, work.h * 8 / 10);
+                Area { x: work.x + (work.w - w) / 2, y: work.y + (work.h - h) / 2, w, h }
+            }
+            Zone::Full | Zone::OtherScreen => return None,
+        })
+    }
+}
+
+/// The spot named in a sentence (corners before halves: "top left" isn't "left").
+fn spot_in(s: &str) -> Option<Zone> {
+    let has = |w: &str| s.contains(w);
+    let any = |ws: &[&str]| ws.iter().any(|w| has(w));
+    if any(&[" other screen", " other monitor", " other display", " second screen", " second monitor", " second display", " next screen", " next monitor"]) {
+        return Some(Zone::OtherScreen);
+    }
+    if any(&[" top left", " upper left"]) {
+        return Some(Zone::TopLeft);
+    }
+    if any(&[" top right", " upper right"]) {
+        return Some(Zone::TopRight);
+    }
+    if any(&[" bottom left", " lower left"]) {
+        return Some(Zone::BottomLeft);
+    }
+    if any(&[" bottom right", " lower right"]) {
+        return Some(Zone::BottomRight);
+    }
+    if any(&[" full screen ", " fullscreen ", " maximize ", " maximise ", " maximized ", " maximised "]) {
+        return Some(Zone::Full);
+    }
+    if any(&[" center ", " centre ", " middle "]) {
+        return Some(Zone::Center);
+    }
+    if any(&[" top half", " upper half", " top of the screen", " top of my screen"]) {
+        return Some(Zone::Top);
+    }
+    if any(&[" bottom half", " lower half", " bottom of the screen", " bottom of my screen"]) {
+        return Some(Zone::Bottom);
+    }
+    if has(" left ") {
+        return Some(Zone::Left);
+    }
+    if has(" right ") {
+        return Some(Zone::Right);
+    }
+    None
+}
+
+/// Words that never name one app ("put my windows on the left").
+const NOT_ONE_APP: &[&str] = &["windows", "apps", "everything", "all", "all of them", "them", "all my windows", "both"];
+
+/// "Put Chrome on the left", "move Spotify to my other screen", "center
+/// Notepad", "make VS Code full screen", "maximize Discord". The app is the
+/// words between the verb and where it goes; "it", "this" or "the window"
+/// is the window in front ("").
+fn parse_place(s: &str) -> Option<Ask> {
+    let spot = spot_in(s)?;
+    let verbs = [" put ", " move ", " snap ", " send ", " throw ", " drag ", " make ", " place ", " push ", " stick ", " center ", " centre ", " maximize ", " maximise "];
+    let verb = verbs.iter().find(|v| s.starts_with(*v))?;
+    let rest = &s[verb.len() - 1..];
+    // The app ends where the place begins.
+    let stops = [" on ", " to ", " in ", " into ", " onto ", " at ", " over ", " full ", " fullscreen ", " so ", " please "];
+    let end = stops.iter().filter_map(|w| rest.find(w)).min().unwrap_or(rest.len());
+    let mut app = rest[..end].trim();
+    for lead in ["the ", "my ", "that ", "this "] {
+        if let Some(r) = app.strip_prefix(lead) {
+            app = r;
+        }
+    }
+    for tail in [" window", " app", " please"] {
+        if let Some(r) = app.strip_suffix(tail) {
+            app = r;
+        }
+    }
+    let app = app.trim();
+    if NOT_ONE_APP.contains(&app) || app.split_whitespace().count() > 4 {
+        return None;
+    }
+    // "Center it", "move this to my other screen": the window in front.
+    let app = if ["", "it", "this", "that", "window", "the window", "this window"].contains(&app) { "" } else { app };
+    // A verb that only means placing ("center", "maximize") needs no "on"/"to".
+    if app.is_empty() && !matches!(*verb, " center " | " centre " | " maximize " | " maximise ") && end == rest.len() {
+        return None;
+    }
+    // The window in front, said the everyday way ("snap left", "maximize it",
+    // "make it full screen", which means the video): instant.rs already does
+    // those, and "full screen" for the window in front is a video's.
+    if app.is_empty() && (spot == Zone::Full || crate::instant::parse(s.trim()).is_some()) {
+        return None;
+    }
+    // "Center this" in a document is the text; "put this in the corner" in a
+    // design app is a shape. With no app named, only another screen, or
+    // saying "window", means the window.
+    if app.is_empty() && spot != Zone::OtherScreen && !s.contains(" window") {
+        return None;
+    }
+    Some(Ask::Place(app.to_string(), spot))
+}
+
+/// The exe names people mean by an app's everyday name.
+const APP_ALIASES: &[(&str, &str)] = &[
+    ("vs code", "code"),
+    ("vscode", "code"),
+    ("visual studio code", "code"),
+    ("word", "winword"),
+    ("microsoft word", "winword"),
+    ("powerpoint", "powerpnt"),
+    ("edge", "msedge"),
+    ("microsoft edge", "msedge"),
+    ("file explorer", "explorer"),
+    ("files", "explorer"),
+    ("terminal", "windowsterminal"),
+    ("windows terminal", "windowsterminal"),
+    ("teams", "ms-teams"),
+    ("obs", "obs64"),
+    ("fl studio", "fl64"),
+    ("after effects", "afterfx"),
+    ("premiere", "adobe premiere pro"),
+    ("premiere pro", "adobe premiere pro"),
+    ("google chrome", "chrome"),
+];
+
+/// The open window that's `name`: by program first ("chrome" → chrome.exe),
+/// then by the app's name in its title. The one used last wins a tie (the
+/// list is front to back). `open` is (window, program path, title).
+fn app_named(name: &str, open: &[(isize, String, String)]) -> Option<isize> {
+    let want = name.to_lowercase();
+    let squashed: String = want.split_whitespace().collect();
+    let exe_wanted = APP_ALIASES.iter().find(|(n, _)| *n == want).map(|(_, e)| *e);
+    let mut best: Option<(u8, isize)> = None;
+    for (raw, exe, title) in open {
+        let stem = exe.rsplit(['\\', '/']).next().unwrap_or("").to_lowercase();
+        let stem = stem.trim_end_matches(".exe");
+        let app = short_of(title).to_lowercase();
+        let title_l = format!(" {} ", title.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" "));
+        let score = if exe_wanted.is_some_and(|e| stem == e) || stem == squashed {
+            4
+        } else if app == want {
+            3
+        } else if squashed.len() >= 4 && stem.contains(&squashed) {
+            2
+        } else if want.len() >= 3 && title_l.contains(&format!(" {want} ")) {
+            1
+        } else {
+            0
+        };
+        if score > 0 && best.is_none_or(|(b, _)| score > b) {
+            best = Some((score, *raw));
+        }
+    }
+    best.map(|(_, raw)| raw)
 }
 
 /// Names that are already a built-in layout or mean "the windows".
@@ -229,6 +441,9 @@ pub fn parse(said: &str) -> Option<Ask> {
     if let Some(ask) = parse_saved(&s) {
         return Some(ask);
     }
+    if let Some(ask) = parse_place(&s) {
+        return Some(ask);
+    }
     // About the windows on screen, and asked to arrange them: "compare these
     // two phones side by side" or "Windows 10 and 11 side by side" isn't.
     let windows = [" window", " apps ", " my apps", " my screen", " the screen"].iter().any(|w| has(w));
@@ -282,6 +497,8 @@ pub fn parse(said: &str) -> Option<Ask> {
 pub fn claims(ask: &Ask, said: &str) -> bool {
     match ask {
         Ask::Restore(name) | Ask::Forget(name) => saved().iter().any(|s| s.name.eq_ignore_ascii_case(name)) || said.to_lowercase().contains("layout"),
+        // "Put the chicken in the oven" names no window: not ours.
+        Ask::Place(app, _) => app.is_empty() || window_for(app).is_some(),
         _ => true,
     }
 }
@@ -294,6 +511,7 @@ pub fn handle(ask: Ask) -> String {
         Ask::Save(name) => save(&name),
         Ask::Restore(name) => restore(&name),
         Ask::Forget(name) => forget(&name).map(|_| format!("Deleted your {name} layout.")),
+        Ask::Place(app, spot) => place_app(&app, spot),
     };
     done.unwrap_or_else(|e| e.to_string())
 }
@@ -303,7 +521,7 @@ mod win {
     use super::Area;
     use windows::Win32::Foundation::{HWND, LPARAM, RECT};
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS};
-    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, HDC, HMONITOR, MONITORINFO, MONITOR_DEFAULTTONEAREST};
     use windows::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GetClassNameW, GetForegroundWindow, GetWindow, GetWindowLongW, GetWindowPlacement, GetWindowRect,
         GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, IsZoomed,
@@ -411,6 +629,56 @@ mod win {
             })
             .collect();
         (work, list)
+    }
+
+    /// Every screen: (its id, its work area), in Windows' order.
+    pub fn monitors() -> Vec<(isize, Area)> {
+        unsafe extern "system" fn each(m: HMONITOR, _: HDC, _: *mut RECT, l: LPARAM) -> BOOL {
+            let v = &mut *(l.0 as *mut Vec<(isize, Area)>);
+            let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+            if GetMonitorInfoW(m, &mut info).as_bool() {
+                let r = info.rcWork;
+                v.push((m.0 as isize, Area { x: r.left, y: r.top, w: r.right - r.left, h: r.bottom - r.top }));
+            }
+            BOOL(1)
+        }
+        let mut out: Vec<(isize, Area)> = Vec::new();
+        unsafe {
+            let _ = EnumDisplayMonitors(None, None, Some(each), LPARAM(&mut out as *mut _ as isize));
+        }
+        out
+    }
+
+    /// The screen a window is on: (its id, its work area).
+    pub fn screen_of(raw: isize) -> (isize, Area) {
+        let (m, work, _) = monitor_of(hwnd(raw));
+        (m, work)
+    }
+
+    /// The window's outer rectangle, and whether it's maximised or minimised.
+    pub fn rect_of(raw: isize) -> Option<(Area, bool, bool)> {
+        let h = hwnd(raw);
+        let mut r = RECT::default();
+        unsafe {
+            GetWindowRect(h, &mut r).ok()?;
+            Some((Area { x: r.left, y: r.top, w: r.right - r.left, h: r.bottom - r.top }, IsZoomed(h).as_bool(), IsIconic(h).as_bool()))
+        }
+    }
+
+    pub fn show(raw: isize, how: windows::Win32::UI::WindowsAndMessaging::SHOW_WINDOW_CMD) {
+        unsafe {
+            let _ = ShowWindow(hwnd(raw), how);
+        }
+    }
+
+    /// The app window in front (not Izuki's own), if any.
+    pub fn front_app() -> Option<isize> {
+        let me = std::process::id();
+        let front = unsafe { GetForegroundWindow() };
+        if !front.0.is_null() && app_window(front, me, false) {
+            return Some(front.0 as isize);
+        }
+        app_windows(false).into_iter().next()
     }
 
     /// Every app window on every screen, front to back (`minimised_ok`:
@@ -766,6 +1034,83 @@ pub fn restore(name: &str) -> Result<String> {
     Ok(said)
 }
 
+/// The open window for an app named in words ("chrome", "vs code").
+#[cfg(windows)]
+fn window_for(app: &str) -> Option<isize> {
+    let open: Vec<(isize, String, String)> = win::app_windows(true).into_iter().map(|r| (r, win::exe_of(r), win::title(r))).collect();
+    app_named(app, &open)
+}
+
+#[cfg(not(windows))]
+fn window_for(_app: &str) -> Option<isize> {
+    None
+}
+
+/// Where a window lands on another screen: the same place and size,
+/// relative to each screen's work area, kept inside the new one.
+fn onto(rect: Area, from: Area, to: Area) -> Area {
+    let scale = |v: i32, a: i32, b: i32| if a > 0 { (v as i64 * b as i64 / a as i64) as i32 } else { v };
+    let w = scale(rect.w, from.w, to.w).clamp(200.min(to.w), to.w);
+    let h = scale(rect.h, from.h, to.h).clamp(150.min(to.h), to.h);
+    let x = (to.x + scale(rect.x - from.x, from.w, to.w)).clamp(to.x, to.x + to.w - w);
+    let y = (to.y + scale(rect.y - from.y, from.h, to.h)).clamp(to.y, to.y + to.h - h);
+    Area { x, y, w, h }
+}
+
+/// "Put Chrome on the left": that app's window to the spot ("" = the window
+/// in front). "Undo the layout" puts it back.
+#[cfg(windows)]
+pub fn place_app(app: &str, spot: Zone) -> Result<String> {
+    use windows::Win32::UI::WindowsAndMessaging::{SW_MAXIMIZE, SW_RESTORE};
+    let raw = if app.is_empty() { win::front_app() } else { window_for(app) }
+        .ok_or_else(|| anyhow!(if app.is_empty() { "There's no app window in front to move.".to_string() } else { format!("I don't see {app} open. Open it first, then say it again.") }))?;
+    let shown = if app.is_empty() { short_of(&win::title(raw)) } else { short_of(&win::title(raw)).chars().next().map_or_else(|| app.to_string(), |_| short_of(&win::title(raw))) };
+    let before = win::placement(raw).ok_or_else(|| anyhow!("Windows didn't say where {shown} is."))?;
+    let (rect, maximised, minimised) = win::rect_of(raw).ok_or_else(|| anyhow!("Windows didn't say where {shown} is."))?;
+    let (screen, work) = win::screen_of(raw);
+    let moved = match spot {
+        Zone::Full => {
+            win::show(raw, SW_MAXIMIZE);
+            true
+        }
+        Zone::OtherScreen => {
+            let screens = win::monitors();
+            if screens.len() < 2 {
+                return Err(anyhow!("You have one screen, so there's no other screen to move {shown} to."));
+            }
+            let at = screens.iter().position(|(m, _)| *m == screen).unwrap_or(0);
+            let (_, next) = screens[(at + 1) % screens.len()];
+            if maximised || minimised {
+                win::show(raw, SW_RESTORE);
+            }
+            // A restored window's own size, not the maximised one.
+            let base = if maximised || minimised { win::rect_of(raw).map_or(rect, |(r, _, _)| r) } else { rect };
+            let ok = win::place(raw, onto(base, work, next));
+            if ok && maximised {
+                win::show(raw, SW_MAXIMIZE);
+            }
+            ok
+        }
+        _ => {
+            if minimised {
+                win::show(raw, SW_RESTORE);
+            }
+            spot.area(work).is_some_and(|to| win::place(raw, to))
+        }
+    };
+    if !moved {
+        return Err(anyhow!("Windows didn't let me move {shown}. If it runs as administrator, only an app running as administrator can move it."));
+    }
+    *UNDO.lock() = vec![(raw, before)];
+    crate::actlog::record("style", &format!("Moved {shown} {}", spot.name()));
+    Ok(format!("{shown} is {}. Say “undo the layout” to put it back.", spot.name()))
+}
+
+#[cfg(not(windows))]
+pub fn place_app(_app: &str, _spot: Zone) -> Result<String> {
+    Err(anyhow!("Moving windows works on Windows."))
+}
+
 /// Start a program from its file, on its own (not tied to Izuki).
 #[cfg(windows)]
 fn open_program(exe: &str) -> bool {
@@ -994,6 +1339,74 @@ mod tests {
         assert_eq!(parse("store my windows passwords"), None);
         assert_eq!(parse("how do I save my window layout"), None);
         assert_eq!(parse("don't set up my work layout"), None);
+    }
+
+    #[test]
+    fn one_app_to_a_spot_in_plain_words() {
+        let p = |s: &str| parse(s);
+        assert_eq!(p("put chrome on the left"), Some(Ask::Place("chrome".into(), Zone::Left)));
+        assert_eq!(p("Hey Nova, move Spotify to my other screen"), Some(Ask::Place("spotify".into(), Zone::OtherScreen)));
+        assert_eq!(p("put discord in the top right corner"), Some(Ask::Place("discord".into(), Zone::TopRight)));
+        assert_eq!(p("snap vs code to the right half"), Some(Ask::Place("vs code".into(), Zone::Right)));
+        assert_eq!(p("center notepad"), Some(Ask::Place("notepad".into(), Zone::Center)));
+        assert_eq!(p("make chrome full screen"), Some(Ask::Place("chrome".into(), Zone::Full)));
+        assert_eq!(p("maximize discord"), Some(Ask::Place("discord".into(), Zone::Full)));
+        assert_eq!(p("move this to my second monitor"), Some(Ask::Place(String::new(), Zone::OtherScreen)));
+        assert_eq!(p("center it"), None, "in a document that's the text");
+        assert_eq!(p("center this window"), Some(Ask::Place(String::new(), Zone::Center)));
+        assert_eq!(p("put this in the top right corner"), None, "a shape in a design app");
+        assert_eq!(p("put this window in the top right corner"), Some(Ask::Place(String::new(), Zone::TopRight)));
+        assert_eq!(p("make it full screen"), None, "the video's full screen (instant.rs)");
+        assert_eq!(p("put it on the left"), None, "instant.rs snaps the window in front");
+        assert_eq!(p("put the spotify window in the bottom-left corner"), Some(Ask::Place("spotify".into(), Zone::BottomLeft)));
+        // Not one app, or not a place.
+        assert_eq!(p("put my windows on the left"), None);
+        assert_eq!(p("put my windows side by side"), Some(Ask::Arrange(Kind::Side)), "the layouts still work");
+        assert_eq!(p("how do I put chrome on the left"), None);
+        assert_eq!(p("don't move spotify to the other screen"), None);
+        assert_eq!(p("turn left at the light"), None);
+        assert_eq!(p("put the money in the middle drawer"), Some(Ask::Place("money".into(), Zone::Center)), "parsed, but no window is called that: claims() leaves it");
+    }
+
+    #[test]
+    fn spots_cover_the_screen_exactly() {
+        let work = Area { x: 0, y: 0, w: 1919, h: 1039 };
+        let halves = [Zone::Left, Zone::Right].map(|s| s.area(work).unwrap());
+        assert!(covers_exactly(&halves, work));
+        let quarters = [Zone::TopLeft, Zone::TopRight, Zone::BottomLeft, Zone::BottomRight].map(|s| s.area(work).unwrap());
+        assert!(covers_exactly(&quarters, work));
+        let mid = Zone::Center.area(work).unwrap();
+        assert!(mid.x > 0 && mid.y > 0 && mid.x + mid.w < work.w && mid.y + mid.h < work.h);
+        assert!(Zone::Full.area(work).is_none() && Zone::OtherScreen.area(work).is_none());
+    }
+
+    #[test]
+    fn a_window_keeps_its_place_on_the_other_screen() {
+        let laptop = Area { x: 0, y: 0, w: 1366, h: 728 };
+        let big = Area { x: 1366, y: -200, w: 2560, h: 1400 };
+        let left_half = Area { x: 0, y: 0, w: 683, h: 728 };
+        let there = onto(left_half, laptop, big);
+        assert_eq!((there.x, there.y, there.w, there.h), (1366, -200, 1280, 1400), "the left half there too");
+        // Never off the new screen, even from an odd spot.
+        let odd = onto(Area { x: 1300, y: 700, w: 900, h: 600 }, laptop, Area { x: -800, y: 0, w: 800, h: 600 });
+        assert!(odd.x >= -800 && odd.x + odd.w <= 0 && odd.y >= 0 && odd.y + odd.h <= 600, "{odd:?}");
+    }
+
+    #[test]
+    fn an_app_is_found_by_the_name_people_use() {
+        let open = vec![
+            (1, "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe".to_string(), "Inbox - Gmail - Google Chrome".to_string()),
+            (2, "C:\\Users\\x\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe".to_string(), "main.rs - izuki - Visual Studio Code".to_string()),
+            (3, "C:\\Users\\x\\AppData\\Roaming\\Spotify\\Spotify.exe".to_string(), "Spotify Premium".to_string()),
+            (4, "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE".to_string(), "Essay.docx - Word".to_string()),
+            (5, "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe".to_string(), "YouTube - Google Chrome".to_string()),
+        ];
+        assert_eq!(app_named("chrome", &open), Some(1), "the one used last");
+        assert_eq!(app_named("vs code", &open), Some(2));
+        assert_eq!(app_named("Spotify", &open), Some(3));
+        assert_eq!(app_named("word", &open), Some(4));
+        assert_eq!(app_named("discord", &open), None, "not open");
+        assert_eq!(app_named("money", &open), None);
     }
 
     #[test]
