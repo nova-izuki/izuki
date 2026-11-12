@@ -23,6 +23,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🌗", title: "Dim the rest", how: "Say \"dim the rest\" and everything but the window you're in fades back. The light follows you when you switch windows, Focus mode can do it for you, and \"undim\" brings it all back.", try: { label: "Open Layouts", tab: "style", id: "style-arrange" } },
+  { icon: "📌", title: "Keep on top, see-through", how: "\"Keep Spotify on top\", \"make Discord see-through\", \"make this window 50% transparent\", or \"hide everything except this\". Each one undoes in a sentence.", try: { label: "Open Layouts", tab: "style", id: "style-arrange" } },
   { icon: "🪟", title: "Put any app where you want it", how: "Say \"put Chrome on the left\", \"Discord in the top right corner\", \"center Notepad\" or \"move Spotify to my other screen\". Izuki moves just that app, and \"undo the layout\" puts it back.", try: { label: "Open Layouts", tab: "style", id: "style-arrange" } },
   { icon: "🔒", title: "Your data, in your hands", how: "Settings → Privacy: what Izuki can access (each with its switch), a list of everything it did on your PC, a copy of all your data in one file with keys left out, and Erase everything.", try: { label: "Open Privacy", tab: "settings", id: "settings-access" } },
   { icon: "🪟", title: "Saved window layouts", how: "Say \"save my windows as Work\", then \"set up my Work layout\" any time: every window goes back on every screen, and apps that aren't running open.", try: { label: "Open Layouts", tab: "style", id: "style-arrange" } },
