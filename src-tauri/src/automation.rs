@@ -969,10 +969,12 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
                 }
             }
         }
-        // Typing straight into the box too: in Jarvis mode always; otherwise
-        // only into an empty box (setting it replaces what's there, where a
-        // click and typing would have added to it).
-        if targeted_type && (precision || uia::grounded_value(identity).is_some_and(|v| v.is_empty())) {
+        // Typing straight into the box too: in Jarvis mode into any box whose
+        // text can be read; otherwise only into an empty box (setting it
+        // replaces what's there, where a click and typing would have added
+        // to it). A box whose text can't be read is clicked and typed into.
+        let now = uia::grounded_value(identity);
+        if targeted_type && ((precision && now.is_some()) || now.is_some_and(|v| v.is_empty())) {
             if let Some(text) = &step.text_to_type {
                 match uia::set_text_grounded(identity, text) {
                     Ok(true) => return Ok(format!("typed into parsed control {} directly (no mouse)", step.target.unwrap_or(0))),
