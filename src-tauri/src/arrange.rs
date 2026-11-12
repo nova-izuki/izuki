@@ -1668,7 +1668,9 @@ fn windows_of_one_app(app: &str) -> Vec<isize> {
         let name = short_of(&best.2).to_lowercase();
         return open.iter().filter(|(_, e, t)| stem(e) == program && short_of(t).to_lowercase() == name).map(|(r, _, _)| *r).collect();
     }
-    open.iter().filter(|(_, e, _)| stem(e) == program).map(|(r, _, _)| *r).collect()
+    // The very same program file, not just one with the same name.
+    let path = best.1.to_lowercase();
+    open.iter().filter(|(_, e, _)| e.to_lowercase() == path).map(|(r, _, _)| *r).collect()
 }
 
 #[cfg(not(windows))]

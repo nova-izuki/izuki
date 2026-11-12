@@ -950,8 +950,16 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
         // click and typing would have added to it).
         if targeted_type && (precision || uia::grounded_value(identity).is_some_and(|v| v.is_empty())) {
             if let Some(text) = &step.text_to_type {
-                if uia::set_text_grounded(identity, text).unwrap_or(false) {
-                    return Ok(format!("typed into parsed control {} directly (no mouse)", step.target.unwrap_or(0)));
+                match uia::set_text_grounded(identity, text) {
+                    Ok(true) => return Ok(format!("typed into parsed control {} directly (no mouse)", step.target.unwrap_or(0))),
+                    Ok(false) => {}
+                    // It may have gone in: never type it a second time by keyboard.
+                    Err(e) => {
+                        return Err(anyhow!(
+                            "{}setting the text directly may have worked ({e}) — take a fresh look before typing it again",
+                            crate::ext::UNCONFIRMED
+                        ))
+                    }
                 }
             }
         }
