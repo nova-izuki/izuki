@@ -84,6 +84,7 @@ export async function emit(event: string, payload?: unknown): Promise<void> {
 export const MOCK_SETTINGS: Settings = {
   active_provider: "gemini",
   fallback_provider: "nvidia",
+  brain_mode: "auto",
   providers: [
     {
       id: "ollama",

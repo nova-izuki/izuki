@@ -245,11 +245,15 @@ export interface ProviderConfig {
 
 export type BackdropMode = "acrylic" | "mica" | "tabbed" | "none";
 
+export type BrainMode = "auto" | "backup" | "one";
+
 export interface Settings {
   /** Provider consulted first. */
   active_provider: ProviderId;
   /** Consulted when the active provider errors or times out. */
   fallback_provider: ProviderId | null;
+  /** How Izuki uses the brains: "auto" (fastest, switches freely), "backup" (the fallback only when the chosen one can't answer), "one" (only the chosen brain). */
+  brain_mode: BrainMode;
   providers: ProviderConfig[];
 
   hotkey_draw: string;
