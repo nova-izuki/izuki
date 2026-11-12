@@ -337,6 +337,13 @@ pub struct InboxDigest {
     pub checked: Vec<String>,
     #[serde(default)]
     pub failed: Vec<(String, String)>,
+    /// Every email from the last few days that was read (promotions and
+    /// social included), and when (unix ms) — so "Check again" visibly
+    /// checked, even when it finds the same thing.
+    #[serde(default)]
+    pub found: usize,
+    #[serde(default)]
+    pub checked_at: i64,
 }
 
 static DIGEST: Mutex<Option<(InboxDigest, Instant)>> = Mutex::new(None);
@@ -371,7 +378,14 @@ pub fn inbox_digest(fresh: bool) -> anyhow::Result<InboxDigest> {
         })
         .collect();
     if mails.is_empty() {
-        let d = InboxDigest { summary: format!("Your inbox is quiet — nothing new in the last few days.{coverage}"), checked: found.checked.clone(), failed: found.failed.clone(), ..Default::default() };
+        let d = InboxDigest {
+            summary: format!("Your inbox is quiet — nothing new in the last few days.{coverage}"),
+            checked: found.checked.clone(),
+            failed: found.failed.clone(),
+            found: found.mails.len(),
+            checked_at: chrono::Utc::now().timestamp_millis(),
+            ..Default::default()
+        };
         *DIGEST.lock() = Some((d.clone(), Instant::now()));
         return Ok(d);
     }
@@ -390,6 +404,8 @@ pub fn inbox_digest(fresh: bool) -> anyhow::Result<InboxDigest> {
     d.summary.push_str(&coverage);
     d.looked_at = mails.len();
     d.skipped = mails.len().saturating_sub(d.items.len());
+    d.found = found.mails.len();
+    d.checked_at = chrono::Utc::now().timestamp_millis();
     *DIGEST.lock() = Some((d.clone(), Instant::now()));
     Ok(d)
 }

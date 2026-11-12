@@ -483,6 +483,10 @@ export interface InboxDigest {
   checked: string[];
   /** Accounts that could not be opened, with the reason. */
   failed: Array<[string, string]>;
+  /** Every email from the last few days that was read, promotions included. */
+  found: number;
+  /** When it was checked (unix ms). */
+  checked_at: number;
 }
 /** A routine (routines.rs). */
 export interface Routine {
@@ -1045,6 +1049,8 @@ export const api = {
       skipped: 0,
       checked: [],
       failed: [],
+      found: 0,
+      checked_at: 0,
     })),
   sentHistory: () => call<SentItem[]>("sent_history", undefined, () => []),
   /** The Island's Vitals tab (vitals.rs): measured, never estimated. */
