@@ -439,7 +439,9 @@ pub fn is_inbox_question(said: &str) -> bool {
         "what's new", "whats new", "anything new", "to do", "todo", "need to do", "anything urgent", "urgent",
     ]
     .iter()
-    .any(|w| s.contains(w));
+    .any(|w| s.contains(w))
+        // "Any good emails?", "anything worth reading in my gmail".
+        || crate::mail::wants_what_matters(said);
     mail && dig && !["send", "write", "reply to", "draft", "delete", "archive"].iter().any(|w| s.contains(w))
 }
 
