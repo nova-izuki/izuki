@@ -2388,6 +2388,158 @@ where F: FnOnce() + Send + 'static,
 /// on its next look (a window on top of the button, a greyed-out button).
 static STEP_SNAG: Mutex<Option<String>> = Mutex::new(None);
 
+/// A final control that has been attempted, keyed by its exact visible label.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FinalTried {
+    name: String,
+}
+
+thread_local! {
+    /// A step failed in a way a fresh look can re-plan around. The task loop
+    /// takes this after each run; it is not set for a pause or a hard stop.
+    static STEP_REPLAN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Final actions attempted in this task (send, pay, delete…) whose press
+    /// didn't confirm. A re-plan may never press the same control again — the
+    /// first press may have gone through even when its result check failed.
+    /// A press that went through normally is forgotten at once.
+    static FINAL_TRIED: std::cell::RefCell<Vec<FinalTried>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// Final presses in this batch that went through normally: still blocked
+    /// until the next fresh look (two "Send" steps in one plan must not both
+    /// press), then forgotten so the next item's Delete can be pressed.
+    static FINAL_CONFIRMED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Start a new task with no stale re-plan signal or final-action memory.
+fn clear_replan_state() {
+    STEP_REPLAN.with(|f| f.set(false));
+    FINAL_TRIED.with(|f| f.borrow_mut().clear());
+    FINAL_CONFIRMED.with(|f| f.borrow_mut().clear());
+}
+
+/// Ask the task loop for a fresh look after a failed step.
+fn request_step_replan() {
+    STEP_REPLAN.with(|f| f.set(true));
+}
+
+/// Take the one-shot re-plan signal, leaving it clear for the next run.
+fn take_step_replan() -> bool {
+    STEP_REPLAN.with(|f| f.replace(false))
+}
+
+/// The final control a step would press, with its exact visible label.
+fn final_tried_key(step: &ActionStep) -> Option<FinalTried> {
+    let name = final_button(step)?;
+    final_phrase(&name)?;
+    Some(FinalTried { name })
+}
+
+/// Remember a final button right before it is attempted. Returns the entry
+/// only when this call added it, so a pre-action failure can remove just this
+/// attempt without forgetting an earlier one.
+fn note_final_tried(step: &ActionStep) -> Option<FinalTried> {
+    let attempt = final_tried_key(step)?;
+    FINAL_TRIED.with(|f| {
+        let mut tried = f.borrow_mut();
+        if tried.iter().any(|t| t.name == attempt.name) {
+            None
+        } else {
+            tried.push(attempt.clone());
+            Some(attempt)
+        }
+    })
+}
+
+/// Forget only the attempt this step added, after a failure that happened
+/// before the button was pressed (the safe retry must not stay blocked).
+fn forget_final_tried(attempt: &FinalTried) {
+    FINAL_TRIED.with(|f| f.borrow_mut().retain(|t| t.name != attempt.name));
+}
+
+/// A press that went through normally is done, not doubtful: after the next
+/// fresh look the same label may be pressed again for the next item
+/// (deleting three files presses Delete three times). Until then it stays
+/// blocked, so a plan can't press it twice in one go. An unconfirmed or
+/// failed press stays remembered for the whole task.
+fn final_press_confirmed(attempt: Option<&FinalTried>) {
+    if let Some(attempt) = attempt {
+        FINAL_CONFIRMED.with(|c| c.borrow_mut().push(attempt.name.clone()));
+    }
+}
+
+/// The request is about several items ("delete these three files", "accept
+/// all the invites", "archive every email from Sam"). Only then may the same
+/// final button be pressed again — for the next item, after a fresh look.
+/// Anything else keeps every final press blocked for the whole task: a Send
+/// or Pay that went through must never happen twice.
+fn asks_for_several(prompt: &str) -> bool {
+    let p = format!(
+        " {} ",
+        prompt.to_lowercase().chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ")
+    );
+    let words: Vec<&str> = p.split_whitespace().collect();
+    // "Delete these 3 files": a count of 2 or more before a plural word
+    // ("send it at 3 pm" isn't one).
+    let counted = words.windows(2).any(|w| w[0].parse::<u32>().is_ok_and(|n| (2..=100).contains(&n)) && w[1].len() > 2 && w[1].ends_with('s'));
+    counted
+        || [" all ", " every ", " each ", " both ", " several ", " multiple ", " two ", " three ", " four ", " five ", " six ", " seven ", " eight ", " nine ", " ten "]
+            .iter()
+            .any(|w| p.contains(w))
+}
+
+/// A fresh look on a several-items task: presses that went through normally
+/// are forgotten (the screen now shows what they did); doubtful ones stay.
+fn forget_confirmed_finals() {
+    let done: Vec<String> = FINAL_CONFIRMED.with(|c| std::mem::take(&mut *c.borrow_mut()));
+    if !done.is_empty() {
+        FINAL_TRIED.with(|f| f.borrow_mut().retain(|t| !done.contains(&t.name)));
+    }
+}
+
+/// The first final control in a proposed plan that was already attempted.
+/// Matches the exact label, so two controls that share a word ("Submit order"
+/// and "Submit quiz") do not block each other.
+fn repeated_final_control(steps: &[ActionStep]) -> Option<FinalTried> {
+    let tried = FINAL_TRIED.with(|f| f.borrow().clone());
+    steps.iter().find_map(|step| {
+        let attempt = final_tried_key(step)?;
+        tried.iter().find(|t| t.name == attempt.name).cloned()
+    })
+}
+
+/// The earlier attempt of this exact final control, if any.
+fn final_already_tried(step: &ActionStep) -> Option<FinalTried> {
+    let attempt = final_tried_key(step)?;
+    FINAL_TRIED.with(|f| f.borrow().iter().find(|t| t.name == attempt.name).cloned())
+}
+
+/// How that warning starts (it's kept out of saved routes).
+const FINAL_WARNING: &str = "FINAL ACTIONS ALREADY TRIED:";
+
+/// The warning given to the model while it works and carried into a resumed
+/// task: a final action was attempted, so it must not be pressed again.
+fn tried_final_note() -> Option<String> {
+    let tried = FINAL_TRIED.with(|f| f.borrow().clone());
+    if tried.is_empty() {
+        return None;
+    }
+    let names: Vec<&str> = tried.iter().map(|t| t.name.as_str()).collect();
+    Some(format!(
+        "{FINAL_WARNING} {}. Never press one of these again — the first press may have gone through even if its result check failed. Work only on what is left, or ask the user to check and continue.",
+        names.join(", ")
+    ))
+}
+
+/// Put that warning into the steps carried across a "keep going" stop. The
+/// thread-local attempt list is cleared for the new run; this reminder stays
+/// with the task's done list.
+fn remember_final_warning(done: &mut Vec<String>) {
+    if let Some(note) = tried_final_note() {
+        if !done.iter().any(|line| line == &note) {
+            done.push(note);
+        }
+    }
+}
+
 /// What the screen is being worked for right now (the agent's task, a named
 /// click) and its number, so each step can be checked against it; empty for
 /// replays.
@@ -2491,6 +2643,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
             if !crate::execution::allowed() { return (false, 0); }
             let _active = TaskActive::begin();
             STEP_SNAG.lock().take();
+            take_step_replan();
             let executed = std::cell::Cell::new(0usize);
             let settings = store.settings();
             let move_ms = settings.move_duration_ms;
@@ -2589,6 +2742,28 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             }
                         }
                     }
+                    // A duplicate final action is refused before the hand is
+                    // shown or a journal step is opened: it must not look as
+                    // if Izuki tried it again.
+                    if let Some(attempt) = final_already_tried(step) {
+                        *STEP_SNAG.lock() = Some(format!(
+                            "final_repeat: “{}” was already attempted; it is not being pressed a second time",
+                            attempt.name
+                        ));
+                        request_step_replan();
+                        return false;
+                    }
+                    // A double-click on Send, Pay or Delete is two presses.
+                    if step.action == Intent::DoubleClick {
+                        if let Some(attempt) = final_tried_key(step) {
+                            *STEP_SNAG.lock() = Some(format!(
+                                "final_double: “{}” is never double-clicked — that would press it twice; click it once",
+                                attempt.name
+                            ));
+                            request_step_replan();
+                            return false;
+                        }
+                    }
                     let highlight = settings.click_highlight
                         && matches!(step.action, Intent::Click | Intent::DoubleClick | Intent::RightClick | Intent::Auto | Intent::Type)
                         && (step.x != 0 || step.y != 0);
@@ -2652,9 +2827,11 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                                  meant (use its target id), press esc for a menu or pop-up, and never minimise, maximise or close a \
                                  window unless asked."
                             ));
+                            request_step_replan();
                             return false;
                         }
                     }
+                    let final_attempt = note_final_tried(step);
                     // Clicking the taskbar button of the window that's already in
                     // front minimises it (Windows' toggle) — "switch to FL Studio"
                     // while FL was open hid it, again and again.
@@ -2666,7 +2843,18 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     match automation::execute(step, move_ms, settings.magnetic_hand, settings.dry_run)
                     {
                         Ok(detail) => {
+                            // Opening something has its own result check: it can
+                            // return a note without being an error. A note that
+                            // nothing new came up is still a failed step, and the
+                            // next look must re-plan instead of claiming success.
+                            if detail.contains("nothing new came to the front") {
+                                if let Some(evidence) = evidence { let _ = evidence.finish(crate::mission_journal::EvidenceOutcome::Unknown); }
+                                *STEP_SNAG.lock() = Some(format!("{}{}", crate::ext::UNCONFIRMED, detail));
+                                request_step_replan();
+                                return false;
+                            }
                             executed.set(i + 1);
+                            final_press_confirmed(final_attempt.as_ref());
                             if let Some(raw) = front_before {
                                 // (The minimise animation takes a moment.)
                                 std::thread::sleep(Duration::from_millis(350));
@@ -2694,6 +2882,9 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             );
                         }
                         Err(e) if e.to_string().starts_with("needs_front:") && crate::ext::in_tab_mode() => {
+                            if let Some(attempt) = &final_attempt {
+                                forget_final_tried(attempt);
+                            }
                             // In a tab you aren't looking at: never pull you
                             // over to it — wait until you go back there yourself.
                             let _ = app.emit(
@@ -2722,6 +2913,9 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             return false;
                         }
                         Err(e) if e.to_string().starts_with("needs_front:") => {
+                            if let Some(attempt) = &final_attempt {
+                                forget_final_tried(attempt);
+                            }
                             // Needs the real mouse or keyboard: wait for you
                             // to pause, borrow the window, look again.
                             let _ = app.emit(
@@ -2752,9 +2946,12 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             && e.to_string().starts_with("target_changed:")
                             && !e.to_string().contains("covers")
                             && !crate::ext::in_tab_mode()
+                            && final_attempt.is_none()
+                            && final_already_tried(step).is_none()
                             && recover_click(&app, step).is_some() =>
                         {
                             executed.set(i + 1);
+                            final_press_confirmed(final_attempt.as_ref());
                             if let Some(evidence) = evidence {
                                 if evidence.finish(crate::mission_journal::EvidenceOutcome::Returned).is_err() { return false; }
                             }
@@ -2762,11 +2959,17 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                         }
                         Err(e) => {
                             let why = e.to_string();
+                            if pre_action_failure(&why) {
+                                if let Some(attempt) = &final_attempt {
+                                    forget_final_tried(attempt);
+                                }
+                            }
                             if let Some(evidence) = evidence { let _ = evidence.finish(crate::mission_journal::EvidenceOutcome::Unknown); }
                             // Something on top, or greyed out: the brain can fix
                             // that on its next look — the task goes on.
                             if recoverable_step_snag(&why) {
                                 *STEP_SNAG.lock() = Some(why.clone());
+                                request_step_replan();
                             }
                             let _ = app.emit(
                                 events::STATUS,
@@ -3204,6 +3407,9 @@ pub fn run_named_click(app: &AppHandle, store: &Arc<Store>, said: &str) -> Optio
     if matches!(c.kind.as_str(), "RadioButton" | "CheckBox") || (c.kind == "Button" && reads_as_choice(&c.name)) {
         return None;
     }
+    // A new request: an earlier task's attempts don't block this click (the
+    // blocking pool reuses threads, and the list is per thread).
+    clear_replan_state();
     let my_task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     automation::clear_abort();
     let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted() && crate::execution::allowed();
@@ -3378,7 +3584,9 @@ pub fn run_instant(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<Vi
     if uia::screen_locked() {
         return None;
     }
-    // Like any new task, this replaces one still running.
+    // Like any new task, this replaces one still running, and starts with no
+    // earlier task's re-plan signal or final-action attempts.
+    clear_replan_state();
     let my_task = TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     automation::clear_abort();
     let alive = move || TASK_GEN.load(std::sync::atomic::Ordering::SeqCst) == my_task && !automation::aborted() && crate::execution::allowed();
@@ -3637,6 +3845,9 @@ fn submit_task(
     let mut waited_on_goal = false;
     // Rounds in a row that did nothing ("let me wait for it to load").
     let mut idle_rounds = 0u32;
+    // Failed steps that were re-planned from a fresh look. Bounded so a step
+    // that cannot work can never become a loop.
+    let mut step_replans = 0u32;
     // A step held back and nothing done since: the last word must say so.
     let mut held_back: Option<String> = None;
     let mut all_steps: Vec<ActionStep> = Vec::new();
@@ -3679,7 +3890,18 @@ fn submit_task(
     // Izuki's last word, set when it stops on purpose (kept through finalizing).
     let mut final_word: Option<String> = None;
     let working = Working::on(&prompt);
+    // A new task starts with no failed-step debt and no final action blocked
+    // by a previous task's attempt.
+    clear_replan_state();
+    // "Delete these three files": the same Delete may be pressed again for
+    // the next file, a fresh look later. Otherwise never twice in a task.
+    let several = asks_for_several(&prompt);
     for round in 0..MAX_ROUNDS {
+        // This round starts with a fresh look: on a several-items task,
+        // presses that went through last round are done; doubtful ones stay.
+        if several {
+            forget_confirmed_finals();
+        }
         if crate::execution::charge(crate::execution::Work::Round).is_err() { break; }
         if !alive() {
             eprintln!("[agent] stopped (replaced or cancelled)");
@@ -3772,7 +3994,9 @@ fn submit_task(
             // (In a tab you aren't looking at, the screenshot is your tab:
             // "nothing changed" means nothing, and pressing again would click twice.)
             if unchanged && !crate::ext::in_tab_mode() {
-                if let Some((name, target)) = last_click.take() {
+                // Never a Send, Pay or Delete: its first press may have gone
+                // through even though the screen looks the same.
+                if let Some((name, target)) = last_click.take().filter(|(n, _)| final_phrase(n).is_none()) {
                     let pressed = uia::press_named(&name)
                         || target.and_then(crate::ext::dom_id_for).is_some_and(|d| crate::ext::click(&d).is_ok());
                     if pressed {
@@ -3812,6 +4036,9 @@ fn submit_task(
         // to fix): this look thinks it through properly; otherwise it's fast.
         let think = told.is_some() || repeats > 0 || goal_repeats > 0;
         if let Some(note) = told.take() {
+            ask.push_str(&format!("\n{note}"));
+        }
+        if let Some(note) = tried_final_note() {
             ask.push_str(&format!("\n{note}"));
         }
         if let Some(n) = &notes {
@@ -4052,6 +4279,25 @@ fn submit_task(
             None => false,
         };
         let held_why = if held { held_back.clone() } else { None };
+
+        // A re-plan that proposes a final button already attempted earlier in
+        // this task is stopped, not executed. Its first press may have gone
+        // through even when the result check failed; pressing it again could
+        // send, pay or delete twice.
+        if let Some(attempt) = repeated_final_control(&steps) {
+            eprintln!("[agent] a re-plan would repeat the final action \"{}\" — stopping", attempt.name);
+            remember_final_warning(&mut done_so_far);
+            set_unfinished((prompt.clone(), done_so_far.clone()));
+            let mut plan = plan;
+            plan.summary = format!(
+                "I was about to press “{}” again, but I already tried it. I've stopped so it can't send, pay or delete twice. Check whether it went through, then tell me how to continue.",
+                attempt.name
+            );
+            plan.mood = Some("careful".into());
+            final_word = Some(plan.summary.clone());
+            last_plan = Some(plan);
+            break;
+        }
 
         // An action being planned is not evidence that it succeeded. Check
         // a fresh screen before accepting "done" for an autonomous task —
@@ -4346,6 +4592,7 @@ fn submit_task(
         // ("clear what's in the way" gone wrong) is caught and undone.
         let working_in = uia::target_window();
         let (finished, executed) = run_steps_blocking(app, store, &steps, &alive);
+        let replan = take_step_replan();
         last_click = steps
             .iter()
             .take(executed)
@@ -4420,7 +4667,17 @@ fn submit_task(
             break;
         }
         if let Some(why) = &snag {
-            eprintln!("[agent] a click couldn't happen — {why}");
+            eprintln!("[agent] a step failed — {why}");
+            if why.starts_with("final_repeat:") {
+                remember_final_warning(&mut done_so_far);
+                set_unfinished((prompt.clone(), done_so_far.clone()));
+                let mut plan = last_plan.take().unwrap_or_default();
+                plan.summary = "I was about to press a Send/Pay/Delete-style button again, but I already tried it once. I've stopped so it can't happen twice. Check whether the first attempt went through, then tell me how to continue.".into();
+                plan.mood = Some("careful".into());
+                final_word = Some(plan.summary.clone());
+                last_plan = Some(plan);
+                break;
+            }
             let note = if why.starts_with("paused:") {
                 "The person used the PC while you worked, so you paused. Things may have moved or another window may \
                  be in front: parse this fresh screenshot, bring the window you were working in back if needed, and \
@@ -4436,14 +4693,28 @@ fn submit_task(
                 crate::lessons::note(&uia::foreground_app(), "controls here move or redraw: take a fresh look and pick the control by its label right before clicking");
                 format!("Your last action was NOT executed — {why}. Parse this fresh screenshot and select the intended numbered control by its label and position. Do not reuse old IDs or coordinates. Do not close or minimise windows to fix a changed target. If the intended control is absent, explain that instead of guessing.")
             } else { format!(
-                "Your last click didn't happen — {why}. Deal with it like a person would: close what's on top (its ✕ \
+                "Your last step didn't complete — {why}. Deal with it like a person would: close what's on top (its ✕ \
                  or Close), drag it aside by its title bar, or minimise it; if the button is greyed out, first do what \
-                 turns it on (fill in the required boxes, tick the box, pick an option). Then click it again."
+                 turns it on (fill in the required boxes, tick the box, pick an option). Then try again from this fresh screen."
             ) };
             told = Some(match told.take() {
                 Some(t) => format!("{t}\n{note}"),
                 None => note,
             });
+        }
+        if replan {
+            if !can_replan(step_replans) {
+                eprintln!("[agent] {} failed step re-plans — stopping instead of looping", step_replans + 1);
+                remember_final_warning(&mut done_so_far);
+                set_unfinished((prompt.clone(), done_so_far.clone()));
+                if let Some(p) = last_plan.as_mut() {
+                    p.summary = "A step keeps failing after fresh looks, so I've stopped rather than loop. The screen is as it is now: check it, and tell me what to do or say \"keep going\".".into();
+                    p.mood = Some("sympathetic".into());
+                    final_word = Some(p.summary.clone());
+                }
+                break;
+            }
+            step_replans += 1;
         }
         if let Some(raw) = working_in.filter(|_| !asked_to_minimise(&prompt)) {
             if let Some(title) = uia::restore_if_minimised(raw) {
@@ -4462,8 +4733,10 @@ fn submit_task(
         if done && finished {
             completed = true;
         }
-        // A snag (something on top, greyed out) means look again and fix it — not stop.
-        let fixable = snag.is_some();
+        // Any failed step whose fresh look can fix it means look again and
+        // re-plan — not stop. A hard stop (locked PC, password box, Stop) has
+        // no re-plan flag and still ends the task honestly.
+        let fixable = snag.is_some() || replan;
         // Every so often: still getting somewhere? (New steps done, not the same ones.)
         if (round + 1) % PROGRESS_EVERY == 0 && !done {
             // Steps done in this window that hadn't been done before it —
@@ -4549,7 +4822,10 @@ fn submit_task(
 
     // It worked: keep how, for next time.
     if completed && alive() && !done_so_far.is_empty() {
-        crate::recipes::remember(&prompt, &uia::foreground_app(), &done_so_far);
+        // The final-action warning belongs to this task, never to a route
+        // reused for another one.
+        let route: Vec<String> = done_so_far.iter().filter(|l| !l.starts_with(FINAL_WARNING)).cloned().collect();
+        crate::recipes::remember(&prompt, &uia::foreground_app(), &route);
     }
 
     let mut plan = last_plan.unwrap_or_default();
@@ -4801,6 +5077,15 @@ Only ask the user after three honest, different tries.";
 /// checked every PROGRESS_EVERY rounds.
 const MAX_ROUNDS: usize = 60;
 const PROGRESS_EVERY: usize = 12;
+/// How many times one task may try a fresh look after a step fails. Three is
+/// enough to get past a pop-up, a moved button or a slow page; a fourth failed
+/// attempt is a loop, so Izuki stops and says so instead.
+const MAX_STEP_REPLANS: u32 = 3;
+
+/// Whether another failed step may be re-planned from a fresh look.
+fn can_replan(used: u32) -> bool {
+    used < MAX_STEP_REPLANS
+}
 /// Did this round do nothing it hadn't already done?
 ///
 /// A round with no steps isn't a repeat — it's a look, which the idle-round
@@ -4890,18 +5175,37 @@ impl Drop for TaskActive {
 fn task_is_current(task: u64, generation: u64, aborted: bool) -> bool { generation == task && !aborted }
 fn task_alive(task: u64) -> bool { task_is_current(task, TASK_GEN.load(std::sync::atomic::Ordering::SeqCst), automation::aborted()) && crate::execution::allowed() }
 
-/// A failed step the next look can fix. These are fed back to the model as the
-/// reason for stopping this round; anything else stops the task honestly.
-fn recoverable_step_snag(why: &str) -> bool {
-    ["covered:", "disabled:", "target_changed:", "typed_mismatch:", "play_not_started:"]
+/// Did this failure happen before the pointer or keyboard touched the control?
+/// A final action that never started can be retried safely.
+fn pre_action_failure(why: &str) -> bool {
+    ["needs_front:", "target_changed:", "disabled:", "covered:"]
         .iter()
         .any(|prefix| why.starts_with(prefix))
-        || why.starts_with(crate::ext::UNCONFIRMED)
+}
+
+/// A failed step the next look can fix. Any action type can fail (a click,
+/// typing, a shortcut, a scroll, opening an app or page, a drag), so every
+/// failure is re-planned unless it is a deliberate hard stop. The caller still
+/// bounds how many times that can happen. A password-field refusal is a hard
+/// stop too.
+fn recoverable_step_snag(why: &str) -> bool {
+    let why = why.to_lowercase();
+    !(why.starts_with("stopped")
+        || why.starts_with("password_box:")
+        || why.contains("pc is locked")
+        || why.contains("password box"))
 }
 
 #[cfg(test)]
 mod step_snag_tests {
-    use super::recoverable_step_snag;
+    use super::*;
+
+    fn click_named(name: &str) -> ActionStep {
+        serde_json::from_value(serde_json::json!({
+            "action": "click", "x": 1, "y": 1, "snapped_to": name
+        }))
+        .expect("a click step")
+    }
 
     #[test]
     fn a_wrong_field_or_unplayed_video_gets_a_fresh_look() {
@@ -4910,6 +5214,120 @@ mod step_snag_tests {
         assert!(recoverable_step_snag("target_changed: the button moved"));
         assert!(!recoverable_step_snag("your PC is locked"));
         assert!(!recoverable_step_snag("password_box: never type there"));
+    }
+
+    #[test]
+    fn every_result_check_can_replan_but_hard_stops_cannot() {
+        assert!(recoverable_step_snag(&format!("{}scrolled at the list, but nothing moved", crate::ext::UNCONFIRMED)));
+        assert!(recoverable_step_snag(&format!("{}pressed ctrl+s, but nothing changed", crate::ext::UNCONFIRMED)));
+        assert!(recoverable_step_snag("could not open an input channel: the desktop is busy"));
+        assert!(!recoverable_step_snag("stopped"));
+        assert!(!recoverable_step_snag("password_box: never type there"));
+        assert!(!recoverable_step_snag("Izuki never types into password boxes"));
+        assert!(!recoverable_step_snag("your PC is locked"));
+    }
+
+    #[test]
+    fn pre_action_failures_can_retry_a_final_control() {
+        assert!(pre_action_failure("disabled: \"Send\" is greyed out, so clicking it does nothing yet"));
+        assert!(pre_action_failure("covered: a pop-up is on top of \"Send\""));
+        assert!(pre_action_failure("target_changed: the button moved"));
+        assert!(!pre_action_failure("typed_mismatch: the box shows something else"));
+        assert!(!pre_action_failure("stopped"));
+    }
+
+    #[test]
+    fn a_confirmed_press_can_be_pressed_again_for_the_next_item() {
+        clear_replan_state();
+        let delete = click_named("Delete");
+        let first = note_final_tried(&delete).expect("Delete is final");
+        final_press_confirmed(Some(&first));
+        assert!(final_already_tried(&delete).is_some(), "not twice in the same plan");
+        forget_confirmed_finals();
+        assert!(final_already_tried(&delete).is_none(), "after a fresh look, the second file's Delete is a new press");
+        // Only a request about several items does that.
+        assert!(asks_for_several("delete these three files"));
+        assert!(asks_for_several("accept all the invites"));
+        assert!(asks_for_several("archive every email from Sam"));
+        assert!(!asks_for_several("send the email to Bob"));
+        assert!(!asks_for_several("pay the electricity bill"));
+        assert!(!asks_for_several("send it at 3"));
+        assert!(asks_for_several("delete these 3 files"));
+        assert!(!asks_for_several("send it at 3 pm"));
+        assert!(!asks_for_several("pay 1 bills"), "one isn't several");
+        // A press that didn't confirm stays blocked, fresh look or not.
+        let second = note_final_tried(&delete).expect("Delete is final");
+        assert_eq!(final_already_tried(&delete), Some(second));
+        final_press_confirmed(None);
+        forget_confirmed_finals();
+        assert!(final_already_tried(&delete).is_some());
+        clear_replan_state();
+    }
+
+    #[test]
+    fn a_task_gets_three_fresh_looks_then_stops() {
+        assert!(can_replan(0));
+        assert!(can_replan(1));
+        assert!(can_replan(MAX_STEP_REPLANS - 1));
+        assert!(!can_replan(MAX_STEP_REPLANS));
+        assert!(!can_replan(MAX_STEP_REPLANS + 1));
+    }
+
+    #[test]
+    fn a_final_action_is_never_repeated_after_an_attempt() {
+        clear_replan_state();
+        let send = click_named("Send");
+        let added = note_final_tried(&send).expect("Send is a final action");
+        assert_eq!(final_already_tried(&send), Some(added.clone()));
+        assert_eq!(repeated_final_control(std::slice::from_ref(&send)), Some(added.clone()));
+        assert!(tried_final_note().is_some_and(|note| note.contains("send")));
+        // The exact final control remains blocked for a later attempt.
+        assert_eq!(final_already_tried(&send), Some(added.clone()));
+        forget_final_tried(&added);
+        assert!(repeated_final_control(&[send]).is_none());
+        clear_replan_state();
+    }
+
+    #[test]
+    fn distinct_final_controls_can_share_a_word() {
+        clear_replan_state();
+        let order = click_named("Submit order");
+        let quiz = click_named("Submit quiz");
+        note_final_tried(&order).expect("Submit order is final");
+        assert!(final_already_tried(&quiz).is_none());
+        assert!(repeated_final_control(&[quiz]).is_none());
+        clear_replan_state();
+    }
+
+    #[test]
+    fn a_final_warning_survives_into_a_resumed_done_list_once() {
+        clear_replan_state();
+        note_final_tried(&click_named("Send")).expect("Send is final");
+        let mut done = vec!["Opened the form".to_string()];
+        remember_final_warning(&mut done);
+        let count = done.len();
+        remember_final_warning(&mut done);
+        assert_eq!(done.len(), count);
+        assert!(done.last().is_some_and(|line| line.contains("send")));
+        clear_replan_state();
+    }
+
+    #[test]
+    fn an_ordinary_button_can_be_pressed_again() {
+        clear_replan_state();
+        let next = click_named("Sending options");
+        assert!(note_final_tried(&next).is_none());
+        assert!(repeated_final_control(&[next]).is_none());
+        clear_replan_state();
+    }
+
+    #[test]
+    fn the_replan_flag_is_one_shot() {
+        clear_replan_state();
+        assert!(!take_step_replan());
+        request_step_replan();
+        assert!(take_step_replan());
+        assert!(!take_step_replan());
     }
 }
 #[cfg(test)]
