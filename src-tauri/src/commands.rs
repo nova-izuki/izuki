@@ -410,7 +410,9 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     let said = crate::offers::answer(&said).unwrap_or(said);
     // "Do it" right after Izuki wrote the 808 fix: Izuki runs it in FL's Piano
     // roll itself (flstudio.rs) instead of leaving the menu clicks to you.
-    if let Some(task) = crate::flstudio::apply_follow_up(&said) {
+    // (Not from inside a direct step: that never starts another screen task —
+    // and the follow-up stays waiting for the person's own "do it".)
+    if let Some(task) = (!crate::direct::in_step()).then(|| crate::flstudio::apply_follow_up(&said)).flatten() {
         let app2 = app.clone();
         return blocking(move || brain::submit_voice_command(&app2, &state::store(), task).summary).await.ok();
     }
@@ -663,6 +665,16 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         .await
         .ok();
     }
+    // "Open Bluetooth settings", "take me to Windows Update": that page, at once.
+    if let Some((uri, name)) = crate::direct::settings_page(&said) {
+        return Some(match crate::direct::open_settings(uri) {
+            Ok(()) => {
+                crate::actlog::record("apps", &format!("Opened {name} settings"));
+                format!("Opened {name} settings.")
+            }
+            Err(e) => format!("I couldn't open {name} settings: {e}"),
+        });
+    }
     // "Open my files and open downloads": that folder in File Explorer, at once.
     if let Some((dir, name)) = crate::apps::folder_request(&said) {
         return Some(match crate::apps::open_folder(&dir) {
@@ -815,6 +827,11 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         return Some(text);
     }
     crate::instant::parse(&said)?;
+    // A direct step's keys are the agent's own steps: running them here
+    // would replace the very task that asked.
+    if crate::direct::in_step() {
+        return None;
+    }
     blocking(move || brain::run_instant(&app, &state::store(), &said).map(|p| p.summary))
         .await
         .ok()

@@ -1546,11 +1546,11 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
             type="button"
             onClick={() => patch({ control_style: settings.control_style === "precision" ? "mouse" : "precision" })}
             className="izk-no-drag min-w-0 truncate text-left text-[10.5px] text-izk-muted transition-colors hover:text-izk-ink"
-            title="Tap to switch: Jarvis mode works without moving the mouse; Mouse mode moves a visible hand."
+            title="Tap to switch. Both press real buttons directly and do what they can without clicking. Jarvis mode never uses the pointer; Flexible also uses it for what can't be pressed directly."
           >
             {/* What this button switches, and nothing else ("· Save credits"
                 beside it read like a second switch that wasn't there). */}
-            {settings.control_style === "precision" ? "⚡ Jarvis mode — no mouse" : "↗ Mouse mode — moves the pointer"}
+            {settings.control_style === "precision" ? "⚡ Jarvis mode — no mouse" : "↗ Flexible — direct first, pointer when needed"}
           </button>
           <div className="flex shrink-0 items-center gap-1.5">
             {recent.length > 0 && (

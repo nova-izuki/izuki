@@ -1108,7 +1108,11 @@ pub fn brain_chain() -> Vec<crate::settings::ProviderConfig> {
 pub fn chat_chain() -> Vec<crate::settings::ProviderConfig> {
     let mut chain = offline_only(brain_chain_inner());
     swap_local_text_model(&mut chain, picture_only_model, true);
-    use_siblings_for_resting(&mut chain);
+    // Another model on the same key is another brain: only when switching
+    // freely.
+    if switches_freely() {
+        use_siblings_for_resting(&mut chain);
+    }
     chain
 }
 
@@ -1286,18 +1290,43 @@ fn offline_only(mut chain: Vec<crate::settings::ProviderConfig>) -> Vec<crate::s
     chain
 }
 
+/// How Izuki may use the brains (Settings → Izuki's brain): switch freely,
+/// fall back only on failure, or only ever the chosen one.
+pub fn brain_mode() -> crate::settings::BrainMode {
+    crate::state::try_store().map_or(crate::settings::BrainMode::Auto, |s| s.settings().brain_mode)
+}
+
+/// Izuki may pick among the brains, reorder them and ask several at once.
+pub fn switches_freely() -> bool {
+    brain_mode() == crate::settings::BrainMode::Auto
+}
+
 /// The brains that are set up, in preference order, before any is skipped for
 /// being broken, resting, or not running.
 fn configured_chain() -> Vec<crate::settings::ProviderConfig> {
     let settings = crate::state::store().settings();
+    chain_for(&settings)
+}
+
+/// `configured_chain` for these settings: the chosen brain; then, unless
+/// it's "only my brain", the fallback; then, when switching freely, every
+/// other brain with a key.
+fn chain_for(settings: &crate::settings::Settings) -> Vec<crate::settings::ProviderConfig> {
+    use crate::settings::BrainMode;
     let Some(primary) = settings.provider(settings.active_provider).cloned() else {
         return Vec::new();
     };
     let mut chain = vec![primary];
+    if settings.brain_mode == BrainMode::One {
+        return chain;
+    }
     if let Some(f) = settings.fallback_provider.and_then(|id| settings.provider(id).cloned()) {
         if f.id != chain[0].id && (!f.api_key.trim().is_empty() || f.on_this_pc()) {
             chain.push(f);
         }
+    }
+    if settings.brain_mode == BrainMode::Backup {
+        return chain;
     }
     for p in &settings.providers {
         if !p.api_key.trim().is_empty() && !p.on_this_pc() && !chain.iter().any(|c| c.id == p.id) {
@@ -1312,7 +1341,10 @@ fn brain_chain_inner() -> Vec<crate::settings::ProviderConfig> {
     skip_broken(&mut chain);
     skip_resting(&mut chain);
     skip_local_not_running(&mut chain);
-    order_by_speed(&mut chain);
+    // The order you chose stays, unless Izuki may switch freely.
+    if switches_freely() {
+        order_by_speed(&mut chain);
+    }
     chain
 }
 
@@ -1413,6 +1445,9 @@ fn small_model(model: &str) -> bool {
 
 /// Small models move behind every bigger one (order otherwise kept).
 fn smartest_first(chain: &mut Vec<crate::settings::ProviderConfig>) {
+    if !switches_freely() {
+        return;
+    }
     if chain.iter().any(|c| !small_model(&c.model)) {
         chain.sort_by_key(|c| small_model(&c.model));
     }
@@ -1914,7 +1949,7 @@ pub fn needs_thought(asked: &str) -> bool {
 /// For a thinking question: the strongest brain that's working first (the
 /// rest stay as backups). Speed still wins for small talk.
 pub fn prefer_strong(chain: &mut [crate::settings::ProviderConfig]) {
-    if chain.len() < 2 {
+    if chain.len() < 2 || !switches_freely() {
         return;
     }
     let best = (0..chain.len()).max_by_key(|i| (strength(&chain[*i]), std::cmp::Reverse(*i))).unwrap_or(0);
@@ -1948,6 +1983,10 @@ fn order_by_speed(chain: &mut [crate::settings::ProviderConfig]) {
         chain.swap(0, 1);
     }
 }
+
+/// "My brain + backup": how long the chosen brain may say nothing before the
+/// fallback is asked instead.
+pub const STALLED: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// The task's to-do list, for the Island: [{text, done}] (empty: none).
 const TODO_EVENT: &str = "izuki://task-todo";
@@ -2088,12 +2127,19 @@ fn ask_racing(
     // Every key's other strong free models join in (free limits are per
     // model), resting ones and — to drive the screen — tiny ones left out.
     let economy = crate::state::try_store().map(|s| s.settings().economy_mode).unwrap_or(true);
-    let mut expanded = crate::freebrains::expand(chain.to_vec(), wants_action);
+    // "My brain + backup" / "only my brain": exactly the models chosen, in
+    // that order, one at a time — the next only when one can't answer.
+    let freely = switches_freely();
+    let mut expanded = if freely {
+        crate::freebrains::expand(chain.to_vec(), wants_action)
+    } else {
+        chain.iter().filter(|c| !crate::freebrains::resting(c.id, &c.model)).cloned().collect()
+    };
     // The screenshot is the expensive part. In economy mode, a local model
     // goes first so the image never leaves this PC, but only while it has
     // kept up (a slow one on a laptop CPU would put its wait on every look).
     // The hedge below still asks a backup if it's slow this time.
-    if economy && !req.image_jpeg.is_empty() {
+    if freely && economy && !req.image_jpeg.is_empty() {
         let local_keeps_up = expected_ms(crate::settings::ProviderId::Ollama).map_or(true, |ms| ms <= 6_000.0);
         if let Some(i) = expanded.iter().position(|c| c.id == crate::settings::ProviderId::Ollama).filter(|_| local_keeps_up) {
             if i > 0 {
@@ -2124,7 +2170,7 @@ fn ask_racing(
     }
     // Saving cloud image quota: a quick "no" doesn't start two at once. The
     // slow-brain hedge below still applies, so one model never stalls a look.
-    let one_at_a_time = economy && !req.image_jpeg.is_empty();
+    let one_at_a_time = !freely || (economy && !req.image_jpeg.is_empty());
     let began = Instant::now();
     let mut last_launch = began;
     let req = Arc::new(req);
@@ -2273,8 +2319,11 @@ fn ask_racing(
                 // Whatever is running now has said nothing for 4 s: one backup,
                 // even when saving credits — never more than two at a time.
                 let stuck = last_launch.elapsed() >= Duration::from_secs(4);
-                if (!economy || slow_first || stuck) && launched < chain.len() && launched - finished < 2 && last_launch.elapsed() >= hedge_after {
-                    eprintln!("[brain] trying one speculative backup");
+                // Not switching freely: the backup only after 20 s of nothing
+                // (a brain that hangs can't answer) — never alongside.
+                let gave_up = !freely && launched == finished + 1 && last_launch.elapsed() >= STALLED;
+                if (freely || gave_up) && (!economy || slow_first || stuck || gave_up) && launched < chain.len() && launched - finished < 2 && last_launch.elapsed() >= hedge_after {
+                    eprintln!("[brain] {}", if freely { "trying one speculative backup" } else { "no answer for 20 s — asking the fallback brain" });
                     launch(launched);
                     launched += 1;
                     last_launch = Instant::now();
@@ -2702,7 +2751,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     // never sit over the next question's answers.
                     if matches!(
                         step.action,
-                        Intent::Auto | Intent::Click | Intent::DoubleClick | Intent::RightClick | Intent::Type | Intent::Drag | Intent::Scroll | Intent::Key | Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube
+                        Intent::Auto | Intent::Click | Intent::DoubleClick | Intent::RightClick | Intent::Type | Intent::Drag | Intent::Scroll | Intent::Key | Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube | Intent::Do
                     ) {
                         let _ = app.emit("izuki://pen-clear", ());
                     }
@@ -2713,7 +2762,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     // Tell the overlay's hand where it is going before we move
                     // the real pointer, so the animation leads rather than trails.
                     // (Instant skills happen nowhere on screen — no hand.)
-                    let placeless = matches!(step.action, Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube);
+                    let placeless = matches!(step.action, Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube | Intent::Do);
                     // Switched to another app? Izuki keeps working in its own
                     // window behind yours (automation::execute_behind).
                     uia::follow_or_hold(person_touched(own.get()));
@@ -2745,6 +2794,16 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     // A duplicate final action is refused before the hand is
                     // shown or a journal step is opened: it must not look as
                     // if Izuki tried it again.
+                    // A direct step that would close, delete, send, pay or
+                    // restart needs the person's own words for it.
+                    if step.action == Intent::Do {
+                        let task = WORK_TASK.lock().1.clone();
+                        if let Err(why) = crate::direct::allowed(step.text_to_type.as_deref().unwrap_or_default(), &task) {
+                            *STEP_SNAG.lock() = Some(why);
+                            request_step_replan();
+                            return false;
+                        }
+                    }
                     if let Some(attempt) = final_already_tried(step) {
                         *STEP_SNAG.lock() = Some(format!(
                             "final_repeat: “{}” was already attempted; it is not being pressed a second time",
@@ -5813,6 +5872,7 @@ fn describe_step(s: &ActionStep) -> String {
         Intent::OpenUrl => format!("opened {}", s.text_to_type.as_deref().unwrap_or("a web page")),
         Intent::Search => format!("searched the web for \"{}\"", s.text_to_type.as_deref().unwrap_or("")),
         Intent::PlayYoutube => format!("played \"{}\" on YouTube", s.text_to_type.as_deref().unwrap_or("")),
+        Intent::Do => format!("did \"{}\" directly", s.text_to_type.as_deref().unwrap_or("")),
         Intent::Draw => format!("drew a {} at {},{}", s.shape.as_deref().unwrap_or("mark"), s.x, s.y),
         Intent::Stroke => format!("drew a line through {} points starting at {},{}", s.path.as_ref().map_or(0, |p| p.len()), s.x, s.y),
         other => format!("{} at {},{}", other.as_str(), s.x, s.y),
@@ -6807,6 +6867,32 @@ mod honesty_tests {
         assert_eq!(progress_line("Opening Blackboard", Some(notes)), strip_filler("Opening Blackboard"));
         // The real thing comes first when both were held back.
         assert!(progress_line("Picking B", Some(&format!("{quiz} {notes}"))).starts_with("This looks like a graded quiz"));
+    }
+
+    #[test]
+    fn the_brain_mode_decides_which_brains_may_answer() {
+        use crate::settings::{BrainMode, ProviderId, Settings};
+        let mut s = Settings::default();
+        s.active_provider = ProviderId::Gemini;
+        s.fallback_provider = Some(ProviderId::Groq);
+        for p in s.providers.iter_mut() {
+            if matches!(p.id, ProviderId::Gemini | ProviderId::Groq | ProviderId::Openrouter) {
+                p.api_key = "test-key".into();
+            }
+        }
+        let ids = |s: &Settings| super::chain_for(s).iter().map(|c| c.id).collect::<Vec<_>>();
+        s.brain_mode = BrainMode::One;
+        assert_eq!(ids(&s), vec![ProviderId::Gemini], "only my brain");
+        s.brain_mode = BrainMode::Backup;
+        assert_eq!(ids(&s), vec![ProviderId::Gemini, ProviderId::Groq], "my brain, then the fallback, nothing else");
+        s.brain_mode = BrainMode::Auto;
+        let all = ids(&s);
+        assert_eq!(&all[..2], &[ProviderId::Gemini, ProviderId::Groq]);
+        assert!(all.contains(&ProviderId::Openrouter), "every brain with a key may help");
+        // Old settings files have no brain_mode: they keep switching freely.
+        let mut v = serde_json::to_value(Settings::default()).unwrap();
+        v.as_object_mut().unwrap().remove("brain_mode");
+        assert_eq!(serde_json::from_value::<Settings>(v).unwrap().brain_mode, BrainMode::Auto);
     }
 
     #[test]

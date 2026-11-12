@@ -641,6 +641,7 @@ fn doing_line(step: &ActionStep) -> String {
         Intent::Watch => "Watching for the change…".into(),
         Intent::Search => "Searching…".into(),
         Intent::PlayYoutube => "Finding it on YouTube…".into(),
+        Intent::Do => format!("Doing it directly: {}…", step.text_to_type.as_deref().map(short).unwrap_or_default()),
         Intent::Draw | Intent::Point => "Showing you…".into(),
         _ => "Working on it…".into(),
     }
@@ -672,13 +673,14 @@ fn done_line(step: &ActionStep) -> Option<String> {
         }
         Intent::Search => "Searched the web".into(),
         Intent::PlayYoutube => "Played a video on YouTube".into(),
+        Intent::Do => format!("Did “{}” directly", step.text_to_type.as_deref().map(short).unwrap_or_default()),
         _ => return None,
     };
     // Where: the app's name from its title ("Inbox - Gmail - Google Chrome" → "Google Chrome").
     let title = crate::uia::foreground_title();
     let tail = [" - ", " — ", " | "].iter().filter_map(|sep| title.rfind(sep).map(|i| i + sep.len())).max().unwrap_or(0);
     let app = title[tail..].trim().to_string();
-    let opened = matches!(step.action, Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube);
+    let opened = matches!(step.action, Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube | Intent::Do);
     // Working in Izuki's own tab or window behind yours: the app in front isn't where it happened.
     let elsewhere = crate::ext::in_tab_mode() || crate::uia::working_behind().is_some();
     Some(if app.is_empty() || opened || elsewhere || app.eq_ignore_ascii_case("izuki") { what } else { format!("{what} in {}", short(&app)) })
@@ -709,6 +711,14 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
     }
     if !dry_run {
         crate::state::trace(doing_line(step));
+    }
+    // Izuki's own abilities touch no screen: the same whether Izuki is
+    // working in front, behind your app or in its own tab (direct.rs).
+    if step.action == Intent::Do {
+        if dry_run {
+            return Ok(format!("[dry run] do {}", step.text_to_type.as_deref().unwrap_or_default()));
+        }
+        return crate::direct::run(step.text_to_type.as_deref().unwrap_or_default());
     }
     // You're using another app: work in Izuki's window behind it, through
     // Windows, without touching your mouse or keyboard.
@@ -806,7 +816,7 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
     // pixels need the magnetic snap.
     let pointless = matches!(
         step.action,
-        Intent::Watch | Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube | Intent::Draw
+        Intent::Watch | Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube | Intent::Draw | Intent::Do
     );
 
     // Further down the page: the app scrolls exactly to it first, and the
@@ -926,14 +936,30 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
             std::thread::sleep(Duration::from_millis(180));
         }
         if aborted() { return Err(anyhow!("stopped")); }
-        if precision && matches!(step.action, Intent::Click | Intent::Auto) && uia::invoke_grounded(identity)? {
-            return Ok(format!("activated parsed control {} directly", step.target.unwrap_or(0)));
+        // Do it, don't touch it: a real control is pressed through Windows
+        // itself — exact, and your mouse stays where you left it. In Jarvis
+        // mode always; otherwise where pressing is exactly a click (a
+        // button, a link, a tab, a tick box — not a list item, which a press
+        // would open).
+        let click_like = uia::presses_like_a_click(&identity.kind);
+        if (precision || click_like) && matches!(step.action, Intent::Click | Intent::Auto) && uia::invoke_grounded(identity)? {
+            return Ok(format!("activated parsed control {} directly (no mouse)", step.target.unwrap_or(0)));
         }
-        // Jarvis mode types straight into the box too — your mouse stays put.
-        if precision && targeted_type {
+        // Typing straight into the box too: in Jarvis mode always; otherwise
+        // only into an empty box (setting it replaces what's there, where a
+        // click and typing would have added to it).
+        if targeted_type && (precision || uia::grounded_value(identity).is_some_and(|v| v.is_empty())) {
             if let Some(text) = &step.text_to_type {
-                if uia::set_text_grounded(identity, text).unwrap_or(false) {
-                    return Ok(format!("typed into parsed control {} directly", step.target.unwrap_or(0)));
+                match uia::set_text_grounded(identity, text) {
+                    Ok(true) => return Ok(format!("typed into parsed control {} directly (no mouse)", step.target.unwrap_or(0))),
+                    Ok(false) => {}
+                    // It may have gone in: never type it a second time by keyboard.
+                    Err(e) => {
+                        return Err(anyhow!(
+                            "{}setting the text directly may have worked ({e}) — take a fresh look before typing it again",
+                            crate::ext::UNCONFIRMED
+                        ))
+                    }
                 }
             }
         }
@@ -959,6 +985,33 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
             }
         }
         return Ok(format!("{} on parsed control {}", step.action.as_str(), step.target.unwrap_or(0)));
+    }
+
+    // Do it, don't touch it: a named button, link or tab under the point is
+    // pressed through Windows itself; the pointer is only for what can't be
+    // pressed that way (a canvas, a game, a list item, an app that draws its
+    // own buttons).
+    if matches!(step.action, Intent::Click | Intent::Auto) && !step.hover_first {
+        if let Some(name) = verified_name.map(|n| n.split(" → ").next().unwrap_or(n).to_string()) {
+            match uia::press_at(x, y, &name) {
+                Ok(true) => {
+                    // A press on YouTube is usually "play this": watch for its ads.
+                    if uia::foreground_title().to_lowercase().contains("youtube") {
+                        crate::youtube::watch_ads(crate::youtube::AD_WATCH);
+                    }
+                    return Ok(format!("pressed \"{name}\" directly (no mouse)"));
+                }
+                Ok(false) => {}
+                Err(e) if e.to_string().starts_with("disabled:") => return Err(e),
+                // It may have acted: never press it again another way.
+                Err(e) => {
+                    return Err(anyhow!(
+                        "{}pressing \"{name}\" directly may have worked ({e}) — take a fresh look before trying it again",
+                        crate::ext::UNCONFIRMED
+                    ))
+                }
+            }
+        }
     }
 
     // Hover-only controls (a tab's ✕) need the pointer over them before
@@ -1012,6 +1065,8 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
             let q = step.text_to_type.as_deref().unwrap_or_default();
             return crate::patience::search(q);
         }
+        // (Handled first, above: it touches no screen.)
+        Intent::Do => return crate::direct::run(step.text_to_type.as_deref().unwrap_or_default()),
         Intent::Drag => {
             let to = (step.x2.unwrap_or(x), step.y2.unwrap_or(y));
             drag((x, y), to, move_ms)?;

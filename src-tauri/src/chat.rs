@@ -1395,9 +1395,9 @@ pub fn complete_streaming(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -
         }
         anyhow::bail!("no AI brain is set up yet — add a free Gemini key in Izuki's Settings");
     }
-    // Deep: the brain that can really think goes first.
+    // Deep: the brain that can really think goes first (when Izuki may pick).
     let mut chain = chain;
-    if is_deep(id) {
+    if is_deep(id) && crate::brain::switches_freely() {
         chain.sort_by_key(|c| if c.id == ProviderId::Gemini { 0 } else { 1 });
     }
     finish_with(chain, messages, id, on_text)
@@ -1412,7 +1412,9 @@ pub fn complete_strong(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -> a
     }
     crate::brain::prefer_strong(&mut chain);
     // (A stable sort: the order stays as it was, small ones moved last.)
-    chain.sort_by_key(crate::easy::is_small);
+    if crate::brain::switches_freely() {
+        chain.sort_by_key(crate::easy::is_small);
+    }
     struct Unmark(u64);
     impl Drop for Unmark {
         fn drop(&mut self) {
@@ -1492,10 +1494,13 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
     use std::sync::{mpsc, Arc};
 
     let winner = Arc::new(AtomicUsize::new(usize::MAX));
+    // Brains given up on ("my brain + backup" moved on after 20 s of nothing):
+    // they stop, and anything they say late is never heard.
+    let dropped = Arc::new(Mutex::new(Vec::<usize>::new()));
     let (tx, rx) = mpsc::channel::<Event>();
     let launch = |i: usize| {
         crate::state::trace(format!("Asking {}…", crate::state::short_name(&chain[i].label)));
-        let (tx, cfg, messages, winner) = (tx.clone(), chain[i].clone(), messages.to_vec(), winner.clone());
+        let (tx, cfg, messages, winner, dropped) = (tx.clone(), chain[i].clone(), messages.to_vec(), winner.clone(), dropped.clone());
         let deep = is_deep(id);
         std::thread::spawn(move || {
             DEEP_HERE.with(|d| d.set(deep));
@@ -1503,7 +1508,7 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
             let first = Mutex::new(None::<u128>);
             let stop = || {
                 let w = winner.load(Ordering::SeqCst);
-                cancelled(id) || (w != usize::MAX && w != i)
+                cancelled(id) || (w != usize::MAX && w != i) || dropped.lock().contains(&i)
             };
             let on_text = |t: String| {
                 first.lock().get_or_insert(started.elapsed().as_millis());
@@ -1544,6 +1549,10 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
 
     launch(0);
     let began = Instant::now();
+    // Not switching freely: one brain at a time, the next only when one
+    // fails or says nothing for 20 s — and its own time counts from then.
+    let freely = crate::brain::switches_freely();
+    let mut since = began;
     let mut launched = 1;
     let mut failed = 0;
     let mut errors = Vec::new();
@@ -1557,15 +1566,21 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
         // Nobody has said a word for this long: stop waiting and say why.
         let deep = is_deep(id);
         let first_words = Duration::from_secs(if local { 240 } else if deep { 150 } else { 40 });
-        if winner.load(Ordering::SeqCst) == usize::MAX && launched == chain.len() && began.elapsed() > first_words {
+        if winner.load(Ordering::SeqCst) == usize::MAX && launched == chain.len() && since.elapsed() > first_words {
             errors.push("no answer in time".into());
             return emit(String::new(), true, Some(errors.join("; ")));
         }
         let patience = if local { 240 } else { 90 };
         let wait = if won == usize::MAX && launched < chain.len() {
-            if deep { HEDGE_AFTER_DEEP } else { HEDGE_AFTER }
+            if !freely {
+                crate::brain::STALLED.saturating_sub(since.elapsed()).max(Duration::from_millis(200))
+            } else if deep {
+                HEDGE_AFTER_DEEP
+            } else {
+                HEDGE_AFTER
+            }
         } else if won == usize::MAX {
-            first_words.saturating_sub(began.elapsed()).max(Duration::from_millis(200))
+            first_words.saturating_sub(since.elapsed()).max(Duration::from_millis(200))
         } else {
             Duration::from_secs(patience)
         };
@@ -1584,6 +1599,9 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
             }
         };
         match got {
+            Ok(Event::Text(i, _)) if dropped.lock().contains(&i) => {}
+            // (Already counted as failed when it was let go.)
+            Ok(Event::Failed(i, _)) if dropped.lock().contains(&i) => {}
             Ok(Event::Text(i, t)) => {
                 // The first brain to say anything is the one that's heard.
                 let _ = winner.compare_exchange(usize::MAX, i, Ordering::SeqCst, Ordering::SeqCst);
@@ -1604,14 +1622,30 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
                 if launched < chain.len() {
                     launch(launched);
                     launched += 1;
+                    if !freely {
+                        since = Instant::now();
+                    }
                 } else if failed == launched {
                     return emit(String::new(), true, Some(errors.join("; ")));
                 }
             }
-            Err(mpsc::RecvTimeoutError::Timeout) if winner.load(Ordering::SeqCst) == usize::MAX && launched < chain.len() => {
-                eprintln!("[chat] {} is slow to start — asking {} too", chain[launched - 1].label, chain[launched].label);
+            Err(mpsc::RecvTimeoutError::Timeout)
+                if winner.load(Ordering::SeqCst) == usize::MAX && launched < chain.len() && (freely || since.elapsed() >= crate::brain::STALLED) =>
+            {
+                if freely {
+                    eprintln!("[chat] {} is slow to start — asking {} too", chain[launched - 1].label, chain[launched].label);
+                } else {
+                    eprintln!("[chat] {} said nothing for 20 s — asking the fallback brain, {}", chain[launched - 1].label, chain[launched].label);
+                    // One brain at a time: the silent one is let go.
+                    dropped.lock().push(launched - 1);
+                    errors.push(format!("{}: said nothing for 20 s", chain[launched - 1].label));
+                    failed += 1;
+                }
                 launch(launched);
                 launched += 1;
+                if !freely {
+                    since = Instant::now();
+                }
             }
             Err(_) if winner.load(Ordering::SeqCst) == usize::MAX => {
                 // Loops back to the first-words check above.
@@ -1696,7 +1730,8 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
     crate::transport::check_key_route(cfg)?;
     let deep = DEEP_HERE.with(|d| d.get());
     // Plain conversation on Groq: its fast text model first (its own allowance).
-    if cfg.id == ProviderId::Groq && !deep && cfg.model != GROQ_FAST_CHAT && !has_images(messages) && !crate::freebrains::resting(cfg.id, GROQ_FAST_CHAT) {
+    // (Not when you've said to use exactly your brain: that's your model.)
+    if cfg.id == ProviderId::Groq && !deep && cfg.model != GROQ_FAST_CHAT && !has_images(messages) && !crate::freebrains::resting(cfg.id, GROQ_FAST_CHAT) && crate::brain::switches_freely() {
         let mut fast = cfg.clone();
         fast.model = GROQ_FAST_CHAT.into();
         let said = std::cell::Cell::new(false);
@@ -1797,7 +1832,7 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
     // Gemini's main model is often "experiencing high demand" on the free
     // tier; its lighter sibling usually isn't, and answers even faster.
     let busy = matches!(resp.status().as_u16(), 429 | 503);
-    if busy && cfg.id == ProviderId::Gemini && cfg.model.contains("flash") && !cfg.model.contains("lite") {
+    if busy && cfg.id == ProviderId::Gemini && cfg.model.contains("flash") && !cfg.model.contains("lite") && crate::brain::switches_freely() {
         eprintln!("[chat] {} is busy ({}) — using {}", cfg.model, resp.status(), crate::vision::GEMINI_LITE);
         if resp.status().as_u16() == 429 {
             crate::vision::gemini_main_tired();

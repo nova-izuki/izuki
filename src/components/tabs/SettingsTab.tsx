@@ -44,9 +44,16 @@ import { brainReady } from "../../lib/setup";
 import { rank } from "../../lib/search";
 import { canonicalShortcut, MODIFIER_KEYS, shortcutFromKey } from "../../lib/hotkeys";
 import { JumpBar, jumpTo } from "../JumpBar";
-import type { BackdropMode, ProviderId } from "../../lib/types";
+import type { BackdropMode, BrainMode, ProviderId } from "../../lib/types";
 
 const LOCAL_PROVIDERS: ProviderId[] = ["ollama"];
+
+/** How Izuki uses your brains, in plain words (brain.rs `brain_mode`). */
+const BRAIN_MODES: { id: BrainMode; name: string; hint: string }[] = [
+  { id: "auto", name: "Fastest", hint: "Izuki uses whichever of your brains answers best, and switches when one is slow or busy." },
+  { id: "backup", name: "My brain + backup", hint: "Your brain answers. The fallback brain steps in only if it errors or says nothing for 20 seconds." },
+  { id: "one", name: "Only my brain", hint: "Only your chosen brain, exactly the model you picked. If it can't answer, Izuki tells you instead of switching." },
+];
 /** The quick-jump bar: every part of this long page, one tap away. */
 const JUMPS: { label: string; id: string; tab?: TabId }[] = [
   { label: "🧠 AI", id: "settings-brain" },
@@ -381,13 +388,52 @@ export function SettingsTab() {
 
         <div className="izk-divider my-3" />
 
+        <div className="flex flex-col gap-2" id="settings-brain-mode">
+          <span className="flex items-center gap-2 text-[12.5px] font-semibold text-izk-ink">
+            <Brain size={14} strokeWidth={2.3} aria-hidden /> How Izuki uses your brains
+          </span>
+          <div role="radiogroup" aria-label="How Izuki uses your brains" className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+            {BRAIN_MODES.map((m) => {
+              const on = (settings.brain_mode ?? "auto") === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => patch({ brain_mode: m.id })}
+                  className={cx(
+                    "izk-no-drag rounded-2xl border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-izk-teal",
+                    on ? "border-izk-violet/50 bg-izk-violet/12" : "border-white/10 bg-white/[0.03] hover:border-white/20"
+                  )}
+                >
+                  <span className="flex items-center justify-between gap-2 text-[12px] font-semibold text-izk-ink">
+                    {m.name}
+                    {on && <Check size={13} strokeWidth={2.6} className="text-izk-teal" aria-hidden />}
+                  </span>
+                  <span className="mt-0.5 block text-[10.5px] leading-snug text-izk-muted">{m.hint}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="izk-divider my-3" />
+
         <Row
           label="Fallback brain"
-          hint="Used automatically if the first one times out or errors."
+          hint={
+            (settings.brain_mode ?? "auto") === "one"
+              ? "Not used: “Only my brain” is on."
+              : (settings.brain_mode ?? "auto") === "backup"
+                ? "Steps in only when your brain errors or says nothing for 20 seconds."
+                : "Asked first when your brain is slow, busy or errors."
+          }
           icon={<Sparkles size={14} strokeWidth={2.3} />}
         >
           <select
             className="izk-field izk-no-drag h-[32px] w-[152px] py-0 text-[11.5px]"
+            disabled={(settings.brain_mode ?? "auto") === "one"}
             value={settings.fallback_provider ?? ""}
             onChange={(e) =>
               patch({ fallback_provider: (e.target.value || null) as ProviderId | null })
@@ -458,9 +504,9 @@ export function SettingsTab() {
 
       {/* ------------------------------------------------ execution */}
       <Section id="settings-execution" title="Execution" group="Screen control" foldable hint="How the hand behaves once the plan comes back.">
-        <Row label="Control style" hint="Jarvis mode presses buttons and types into boxes directly through Windows — no mouse moving, so it's faster and your own mouse stays free. Mouse mode moves a visible hand like a person would (best for games and drawing apps).">
+        <Row label="Control style" hint="Both press real buttons, links and tabs directly through Windows, and Izuki does what it can itself (dark mode, settings pages, folders, layouts) without clicking at all — your own mouse stays free. Jarvis mode only acts on real controls it can identify — never a guessed spot (it may still use the pointer on one of those that can't be pressed directly). Flexible may also click a spot by eye (games, drawing apps).">
           <select aria-label="Control style" className="izk-field izk-no-drag max-w-[165px] py-1 text-[11.5px]" value={settings.control_style} onChange={(e) => patch({ control_style: e.target.value as typeof settings.control_style })}>
-            <option value="mouse">Mouse</option>
+            <option value="mouse">Flexible — pointer when needed</option>
             <option value="precision">Jarvis mode — no mouse</option>
           </select>
         </Row>
