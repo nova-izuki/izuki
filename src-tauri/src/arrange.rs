@@ -1495,11 +1495,12 @@ pub fn only_this() -> Result<String> {
 /// A File Explorer window already showing one of `names` ("Downloads", or
 /// "Downloads - File Explorer"), brought to the front (restored if it was on
 /// the taskbar). True when there was one.
+/// None: no such window. Some(false): there is one, but Windows wouldn't
+/// bring it to the front.
 #[cfg(windows)]
-pub fn bring_folder_window(names: &[String]) -> bool {
-    let Some(raw) = folder_windows(names).into_iter().next() else { return false };
-    crate::uia::raise_window(raw);
-    true
+pub fn bring_folder_window(names: &[String]) -> Option<bool> {
+    let raw = folder_windows(names).into_iter().next()?;
+    Some(crate::uia::raise_window(raw))
 }
 
 /// File Explorer windows showing one of `names`, front to back.
@@ -1519,8 +1520,13 @@ pub fn folder_windows(names: &[String]) -> Vec<isize> {
 }
 
 #[cfg(not(windows))]
-pub fn bring_folder_window(_names: &[String]) -> bool {
-    false
+pub fn bring_folder_window(_names: &[String]) -> Option<bool> {
+    None
+}
+
+#[cfg(not(windows))]
+pub fn folder_windows(_names: &[String]) -> Vec<isize> {
+    Vec::new()
 }
 
 /// Izuki is quitting: every window it pinned or made see-through goes back

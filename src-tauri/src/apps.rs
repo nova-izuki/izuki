@@ -221,13 +221,29 @@ pub fn folder_request(said: &str) -> Option<(std::path::PathBuf, &'static str)> 
 /// A folder named on its own ("Downloads", "my documents", "the Downloads
 /// folder"), as the agent asks to open it: where it is and its name.
 pub fn known_folder(name: &str) -> Option<(std::path::PathBuf, &'static str)> {
-    let s = name.trim().to_lowercase();
-    let s = s.strip_prefix("my ").or_else(|| s.strip_prefix("the ")).unwrap_or(&s);
+    let said = name.trim().to_lowercase();
+    let s = said.strip_prefix("my ").or_else(|| said.strip_prefix("the ")).unwrap_or(&said);
     let s = s.strip_suffix(" folder").unwrap_or(s).trim();
     if s.is_empty() || s.split_whitespace().count() > 1 {
         return None;
     }
+    // A bare app name stays the app ("Photos" is the Photos app); "my
+    // photos" or "the photos folder" is the folder.
+    if s == said && BUILT_IN.iter().any(|(n, _)| *n == s) {
+        return None;
+    }
     folder_request(&format!("open {s}"))
+}
+
+/// How opening a folder went.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FolderOpened {
+    /// A new File Explorer window was started.
+    New,
+    /// It was already open, and it's in front now.
+    Front,
+    /// It's already open, but Windows kept it behind (it's on the taskbar).
+    Behind,
 }
 
 /// Open a folder in File Explorer — once. An Explorer window already showing
@@ -235,13 +251,21 @@ pub fn known_folder(name: &str) -> Option<(std::path::PathBuf, &'static str)> {
 /// the window that's open, they don't open another. On 9 Nov the agent
 /// opened Downloads six times: each one opened behind another window, and
 /// the next look opened it again.
-pub fn open_folder(dir: &std::path::Path) -> Result<bool> {
-    let names: Vec<String> = dir.file_name().and_then(|n| n.to_str()).map(|n| vec![n.to_string()]).unwrap_or_default();
-    if crate::arrange::bring_folder_window(&names) {
-        return Ok(true);
+pub fn open_folder(dir: &std::path::Path) -> Result<FolderOpened> {
+    match crate::arrange::bring_folder_window(&folder_names(dir)) {
+        Some(true) => return Ok(FolderOpened::Front),
+        // Open, but Windows wouldn't bring it forward: another one wouldn't
+        // help — say where it is instead.
+        Some(false) => return Ok(FolderOpened::Behind),
+        None => {}
     }
     std::process::Command::new("explorer").arg(dir).spawn()?;
-    Ok(false)
+    Ok(FolderOpened::New)
+}
+
+/// The names File Explorer shows a folder by.
+pub fn folder_names(dir: &std::path::Path) -> Vec<String> {
+    dir.file_name().and_then(|n| n.to_str()).map(|n| vec![n.to_string()]).unwrap_or_default()
 }
 
 /// Open an app by name. `Err` if nothing installed matches.
@@ -287,7 +311,7 @@ mod folder_tests {
         let names = vec![dir.file_name().unwrap().to_string_lossy().into_owned()];
         let before = crate::arrange::folder_windows(&names);
         let first = open_folder(&dir).unwrap();
-        assert_eq!(first, !before.is_empty(), "reused exactly when one was open");
+        assert_eq!(first != FolderOpened::New, !before.is_empty(), "reused exactly when one was open");
         let mut now = crate::arrange::folder_windows(&names);
         for _ in 0..40 {
             if !now.is_empty() {
@@ -297,7 +321,7 @@ mod folder_tests {
             now = crate::arrange::folder_windows(&names);
         }
         assert!(!now.is_empty(), "a Downloads window is open");
-        assert!(open_folder(&dir).unwrap(), "the second ask finds the open window");
+        assert_ne!(open_folder(&dir).unwrap(), FolderOpened::New, "the second ask finds the open window");
         std::thread::sleep(std::time::Duration::from_millis(1500));
         let after = crate::arrange::folder_windows(&names);
         assert_eq!(after.len(), now.len(), "no second Downloads window");
@@ -316,6 +340,8 @@ mod folder_tests {
         assert_eq!(known_folder("my documents").map(|f| f.1), Some("Documents"));
         assert_eq!(known_folder("Spotify"), None);
         assert_eq!(known_folder("downloads manager"), None, "an app, not the folder");
+        assert_eq!(known_folder("Photos"), None, "the Photos app");
+        assert_eq!(known_folder("my photos").map(|f| f.1), Some("Pictures"));
         assert_eq!(folder_request("show me my documents folder").map(|f| f.1), Some("Documents"));
         assert_eq!(folder_request("open file explorer then go to pictures").map(|f| f.1), Some("Pictures"));
         assert_eq!(folder_request("open the newest pdf in my downloads"), None);

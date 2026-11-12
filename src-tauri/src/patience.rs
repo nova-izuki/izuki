@@ -166,19 +166,7 @@ pub fn go_to(url: &str) -> Result<bool> {
 /// to the front instead of opening again.
 pub fn open_app(name: &str) -> Result<String> {
     if let Some((dir, folder)) = crate::apps::known_folder(name) {
-        let before = crate::uia::open_windows(40);
-        let front = crate::uia::foreground_title();
-        return Ok(if crate::apps::open_folder(&dir)? {
-            format!("{folder} was already open — brought it to the front (didn't open another)")
-        } else {
-            match wait_for_window(&before, &front, folder) {
-                Some(secs) => {
-                    learn(secs);
-                    format!("opened {folder}")
-                }
-                None => format!("started {folder}, but it's taking a while to open on this PC — don't open it again; set \"wait\" to a few seconds and look again"),
-            }
-        });
+        return open_folder_once(&dir, folder);
     }
     let k = key("app", &crate::apps::find_app(name).unwrap_or_else(|| name.to_string()));
     let shown = name.trim().to_string();
@@ -211,6 +199,39 @@ pub fn open_app(name: &str) -> Result<String> {
              set \"wait\" to a few seconds and look again"
         ),
     })
+}
+
+/// A folder in File Explorer, once: one that's open comes forward; one that
+/// was started a moment ago isn't started again; "opened" means a window
+/// showing that very folder appeared.
+fn open_folder_once(dir: &std::path::Path, folder: &str) -> Result<String> {
+    use crate::apps::FolderOpened;
+    let k = key("folder", &dir.to_string_lossy());
+    let names = crate::apps::folder_names(dir);
+    let launching = opened_lately(&k).is_some_and(|ago| ago < patience());
+    if launching && crate::arrange::folder_windows(&names).is_empty() {
+        return Ok(format!("{folder} was already started a moment ago — didn't open another; set \"wait\" and look again"));
+    }
+    match crate::apps::open_folder(dir)? {
+        FolderOpened::Front => return Ok(format!("{folder} was already open — brought it to the front (didn't open another)")),
+        FolderOpened::Behind => {
+            return Ok(format!("{folder} was already open, but Windows kept it behind — it's on the taskbar (didn't open another)"))
+        }
+        FolderOpened::New => {}
+    }
+    note_opened(k);
+    let started = Instant::now();
+    while started.elapsed() < patience() {
+        std::thread::sleep(Duration::from_millis(150));
+        if crate::automation::aborted() {
+            break;
+        }
+        if !crate::arrange::folder_windows(&names).is_empty() {
+            learn(started.elapsed().as_secs_f32());
+            return Ok(format!("opened {folder}"));
+        }
+    }
+    Ok(format!("started {folder}, but it's taking a while to open on this PC — don't open it again; set \"wait\" to a few seconds and look again"))
 }
 
 /// The agent's "open this page": once, in the same tab when it can.

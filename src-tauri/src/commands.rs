@@ -666,8 +666,9 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     // "Open my files and open downloads": that folder in File Explorer, at once.
     if let Some((dir, name)) = crate::apps::folder_request(&said) {
         return Some(match crate::apps::open_folder(&dir) {
-            Ok(false) => format!("Opened your {name} folder."),
-            Ok(true) => format!("Your {name} folder was already open — it's in front now."),
+            Ok(crate::apps::FolderOpened::New) => format!("Opened your {name} folder."),
+            Ok(crate::apps::FolderOpened::Front) => format!("Your {name} folder was already open — it's in front now."),
+            Ok(crate::apps::FolderOpened::Behind) => format!("Your {name} folder is already open — it's on the taskbar."),
             Err(e) => format!("I couldn't open {name}: {e}"),
         });
     }
