@@ -191,6 +191,18 @@ pub fn rest_model(cfg: &ProviderConfig, d: Duration) {
     eprintln!("[free-brains] resting {} for {} s — its siblings carry on", cfg.model, d.as_secs());
 }
 
+/// A new key for a provider: its models' rests (a denial for the old key, a
+/// rate limit on it) don't carry over.
+pub fn forget_rests(id: ProviderId) {
+    RESTING.lock().retain(|(p, _, _)| *p != id);
+}
+
+/// Take one model's rest away (tests tidy up after themselves).
+#[cfg(test)]
+pub fn unrest(id: ProviderId, model: &str) {
+    RESTING.lock().retain(|(p, m, _)| !(*p == id && m == model));
+}
+
 pub(crate) fn resting(id: ProviderId, model: &str) -> bool {
     let mut r = RESTING.lock();
     let now = Instant::now();

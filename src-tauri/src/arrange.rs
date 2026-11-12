@@ -14,6 +14,11 @@
 //! Code full screen". Only when that app has a window open; "undo the
 //! layout" puts it back.
 //!
+//! Keep on top and see-through: "keep Spotify on top", "make Discord
+//! see-through", "make this window 50% transparent", "unpin Spotify", "make
+//! Discord solid again". Izuki lets every window go back to normal when it
+//! quits. "Dim the rest" fades everything but the window in front (haze.rs).
+//!
 //! Saved layouts: "save my windows as Work" remembers where every app window
 //! is, on every screen; "set up my Work layout" puts each one back, opening
 //! the apps that aren't running yet (ordinary installed apps only, never
@@ -136,6 +141,15 @@ pub enum Ask {
     Forget(String),
     /// "Put Chrome on the left": one app (by name; "" = the window in front) to a spot.
     Place(String, Zone),
+    /// "Keep Spotify on top" (true), "unpin Spotify" (false).
+    OnTop(String, bool),
+    /// "Make Discord see-through": how solid it stays, in percent; None =
+    /// solid again.
+    SeeThrough(String, Option<u8>),
+    /// "Dim the rest" (how dark), "undim" (None).
+    Dim(Option<crate::haze::Level>),
+    /// "Hide everything except this": every other app window to the taskbar.
+    OnlyThis,
 }
 
 /// Where one app goes.
@@ -289,6 +303,176 @@ fn parse_place(s: &str) -> Option<Ask> {
     Some(Ask::Place(app.to_string(), spot))
 }
 
+/// The app named between a verb at the start and the first of `stops`
+/// ("keep spotify on top" → "spotify"; "it", "this" or "this window" → "").
+fn app_between(s: &str, verbs: &[&str], stops: &[&str]) -> Option<(String, bool)> {
+    let verb = verbs.iter().find(|v| s.starts_with(*v))?;
+    let rest = &s[verb.len() - 1..];
+    let end = stops.iter().filter_map(|w| rest.find(w)).min().unwrap_or(rest.len());
+    let mut app = rest[..end].trim();
+    let said_window = app.ends_with(" window") || app == "window" || s.contains(" window ");
+    for lead in ["the ", "my ", "that ", "this "] {
+        if let Some(r) = app.strip_prefix(lead) {
+            app = r;
+        }
+    }
+    for tail in [" window", " app", " please"] {
+        if let Some(r) = app.strip_suffix(tail) {
+            app = r;
+        }
+    }
+    let app = app.trim();
+    if NOT_ONE_APP.contains(&app) || app.split_whitespace().count() > 4 {
+        return None;
+    }
+    let app = if ["", "it", "this", "that", "window"].contains(&app) { "" } else { app };
+    Some((app.to_string(), said_window))
+}
+
+/// "Keep Spotify on top", "pin this window on top", "make Notepad always on
+/// top", "always on top"; "unpin Spotify", "stop keeping it on top", "don't
+/// keep Discord on top". With no app named, only "window" or "always on top"
+/// means a window ("keep it on top" in a design app is a shape).
+fn parse_on_top(s: &str) -> Option<Ask> {
+    let has = |w: &str| s.contains(w);
+    let always = has(" always on top");
+    let top = has(" on top ") || always || [" above everything", " above all windows", " above all my windows", " above other windows", " above the other windows"].iter().any(|w| has(w));
+    // "Put this on top of that" stacks something; it isn't the window.
+    if has(" on top of ") {
+        return None;
+    }
+    let stops: &[&str] = &[" always on top", " on top", " above ", " from the top", " from top", " please"];
+    let window_meant = |app: &str, said_window: bool| !app.is_empty() || said_window || always;
+    // Letting go.
+    for lead in [" unpin ", " un pin "] {
+        if s.starts_with(lead) && (top || !has(" tab") && !has(" taskbar") && !has(" start ")) {
+            // Letting go is only claimed for a window that's on top (claims()).
+            let (app, _) = app_between(s, &[lead], stops)?;
+            return Some(Ask::OnTop(app, false));
+        }
+    }
+    if top {
+        for lead in [" stop keeping ", " dont keep ", " do not keep ", " no longer keep ", " stop pinning "] {
+            if s.starts_with(lead) {
+                let (app, _) = app_between(s, &[lead], stops)?;
+                return Some(Ask::OnTop(app, false));
+            }
+        }
+        if [" dont ", " do not ", " never ", " stop "].iter().any(|w| has(w)) {
+            return None;
+        }
+        if s.trim() == "always on top" {
+            return Some(Ask::OnTop(String::new(), true));
+        }
+        let (app, said_window) = app_between(s, &[" keep ", " pin ", " put ", " make ", " stick ", " set ", " float ", " have ", " leave "], stops)?;
+        return window_meant(&app, said_window).then_some(Ask::OnTop(app, true));
+    }
+    None
+}
+
+/// "Make Discord see-through", "make this window 50% transparent", "make
+/// Spotify a little see-through"; "make Discord solid again". How solid it
+/// stays: "50% transparent" keeps half; a little → 85%; more or very → 50%;
+/// otherwise 75%, never under 20%. With no app named, only "window" means a
+/// window ("make it transparent" in a design app is a picture).
+fn parse_see_through(s: &str) -> Option<Ask> {
+    let has = |w: &str| s.contains(w);
+    let any = |ws: &[&str]| ws.iter().any(|w| has(w));
+    let clear_words = [" see through", " seethrough", " see thru", " transparent", " translucent"];
+    let solid = any(&[" solid", " opaque", " not see through", " not transparent", " not seethrough", " no longer see through", " no longer transparent"]);
+    if !solid && !any(&clear_words) {
+        return None;
+    }
+    if any(&[" dont ", " do not ", " never "]) || (!solid && has(" stop ")) {
+        return None;
+    }
+    let mut stops: Vec<&str> = clear_words.to_vec();
+    stops.extend([" solid", " opaque", " not ", " no longer ", " a little ", " a bit ", " slightly ", " more ", " very ", " half ", " fully ", " so ", " please "]);
+    let digits: Vec<String> = (0..=9).map(|d| format!(" {d}")).collect();
+    stops.extend(digits.iter().map(String::as_str));
+    let (app, said_window) = app_between(s, &[" make ", " turn ", " set ", " put "], &stops)?;
+    if app.is_empty() && !said_window {
+        return None;
+    }
+    if solid {
+        return Some(Ask::SeeThrough(app, None));
+    }
+    let number = s
+        .split_whitespace()
+        .find_map(|w| w.parse::<u32>().ok())
+        .filter(|&n| (1..=100).contains(&n) && (has(" percent") || has(&format!(" {n} ")) ));
+    let keep = match number {
+        Some(n) => 100u32.saturating_sub(n) as u8,
+        None if has(" half ") => 50,
+        None if any(&[" a little ", " a bit ", " slightly "]) => 85,
+        None if any(&[" more ", " very ", " really "]) => 50,
+        None => 75,
+    };
+    Some(Ask::SeeThrough(app, Some(keep.clamp(20, 95))))
+}
+
+/// "Hide everything except this", "minimise everything else", "hide the
+/// other windows", "clear the clutter". Never "close": that could lose work.
+fn parse_only_this(s: &str) -> Option<Ask> {
+    let has = |w: &str| s.contains(w);
+    let any = |ws: &[&str]| ws.iter().any(|w| has(w));
+    if any(&[" dont ", " do not ", " never ", " close "]) {
+        return None;
+    }
+    let hide = any(&[" hide ", " minimize ", " minimise ", " put away "]);
+    let others = any(&[
+        " everything else", " everything except this", " everything but this", " all the other windows", " all other windows", " the other windows",
+        " my other windows", " other apps", " all the other apps", " everything except the window", " everything but the window",
+    ]);
+    // "Clear the clutter" on its own or about the screen; "clear the clutter
+    // on my desk" isn't windows.
+    let clutter = [" clear the clutter ", " clear the clutter please ", " clear the clutter on my screen ", " clear the clutter on the screen "].iter().any(|w| s.ends_with(w));
+    if (hide && others)
+        || clutter
+        || any(&[" declutter my screen", " declutter the screen", " show just this window", " show only this window", " keep just this window", " leave just this window"])
+    {
+        return Some(Ask::OnlyThis);
+    }
+    None
+}
+
+/// "Dim the rest", "dim everything except this window", "dim the rest a
+/// little", "make the dim darker", "undim". A plain "dim my screen" is the
+/// screen's brightness, not this.
+fn parse_dim(s: &str) -> Option<Ask> {
+    use crate::haze::Level;
+    let has = |w: &str| s.contains(w);
+    let any = |ws: &[&str]| ws.iter().any(|w| has(w));
+    if any(&[" dont ", " do not ", " never "]) {
+        return None;
+    }
+    if any(&[
+        " undim", " un dim ", " stop dimming", " dim off ", " turn off the dim", " turn the dim off", " switch off the dim", " no more dim",
+        " stop the dim", " brighten the rest", " brighten everything back", " turn off dim the rest", " spotlight mode off", " turn off spotlight mode",
+        " end spotlight mode", " stop spotlight mode",
+    ]) {
+        return Some(Ask::Dim(None));
+    }
+    let words = s.split_whitespace().count();
+    // "Dim the rest of the lights", "fade the rest of the song": something
+    // else. "The rest" counts only at the end, or before window words.
+    if any(&[" the rest of ", " the rest in ", " everything else in ", " everything else on the "]) && !any(&[" window", " screen", " apps"]) {
+        return None;
+    }
+    let on = any(&[
+        " dim the rest ", " dim everything else", " dim everything except", " dim everything but", " dim all the other", " dim the other windows",
+        " dim other windows", " dim my other windows", " dim the background windows", " dim all other windows", " fade the rest ", " fade everything else",
+        " fade everything except", " fade everything but", " spotlight mode", " spotlight this window", " spotlight my window", " spotlight the window",
+    ]) || (has(" dim the background ") && words <= 5);
+    let about_dim = has(" the dim ") && any(&[" darker ", " lighter ", " deeper ", " softer ", " too dark ", " stronger ", " weaker "]);
+    if !on && !about_dim {
+        return None;
+    }
+    let deeper = any(&[" more ", " darker ", " deeper ", " a lot ", " fully ", " all the way ", " stronger ", " really dark "]);
+    let softer = any(&[" less ", " lighter ", " a little ", " a bit ", " slightly ", " softer ", " too dark ", " weaker ", " not so dark "]);
+    Some(Ask::Dim(Some(if softer { Level::Soft } else if deeper { Level::Deep } else { Level::Medium })))
+}
+
 /// The exe names people mean by an app's everyday name.
 const APP_ALIASES: &[(&str, &str)] = &[
     ("vs code", "code"),
@@ -435,6 +619,10 @@ pub fn parse(said: &str) -> Option<Ask> {
     if [" how do", " how to", " how can i", " what is", " whats ", " why "].iter().any(|w| has(w)) {
         return None;
     }
+    // These say "stop" and "don't" themselves ("stop keeping it on top").
+    if let Some(ask) = parse_dim(&s).or_else(|| parse_on_top(&s)).or_else(|| parse_see_through(&s)).or_else(|| parse_only_this(&s)) {
+        return Some(ask);
+    }
     if [" dont ", " do not ", " never ", " stop "].iter().any(|w| has(w)) {
         return None;
     }
@@ -499,6 +687,11 @@ pub fn claims(ask: &Ask, said: &str) -> bool {
         Ask::Restore(name) | Ask::Forget(name) => saved().iter().any(|s| s.name.eq_ignore_ascii_case(name)) || said.to_lowercase().contains("layout"),
         // "Put the chicken in the oven" names no window: not ours.
         Ask::Place(app, _) => app.is_empty() || window_for(app).is_some(),
+        Ask::OnTop(app, true) | Ask::SeeThrough(app, Some(_)) => app.is_empty() || window_for(app).is_some(),
+        // Letting go: a window that really is on top (one Izuki pinned, or
+        // the app named); "stop keeping it on top" in a design app isn't ours.
+        Ask::OnTop(app, false) => pinned_named(app).is_some() || top_window_named(app).is_some(),
+        Ask::SeeThrough(app, None) => glassed_named(app).is_some(),
         _ => true,
     }
 }
@@ -512,6 +705,11 @@ pub fn handle(ask: Ask) -> String {
         Ask::Restore(name) => restore(&name),
         Ask::Forget(name) => forget(&name).map(|_| format!("Deleted your {name} layout.")),
         Ask::Place(app, spot) => place_app(&app, spot),
+        Ask::OnTop(app, on) => on_top(&app, on),
+        Ask::SeeThrough(app, keep) => see_through(&app, keep),
+        Ask::Dim(Some(level)) => crate::haze::start(level),
+        Ask::Dim(None) => Ok(crate::haze::stop()),
+        Ask::OnlyThis => only_this(),
     };
     done.unwrap_or_else(|e| e.to_string())
 }
@@ -523,11 +721,13 @@ mod win {
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS};
     use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, HDC, HMONITOR, MONITORINFO, MONITOR_DEFAULTTONEAREST};
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetClassNameW, GetForegroundWindow, GetWindow, GetWindowLongW, GetWindowPlacement, GetWindowRect,
-        GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, IsZoomed,
-        SetWindowPlacement, SetWindowPos, ShowWindow, GWL_EXSTYLE, GWL_STYLE, GW_OWNER, SWP_NOACTIVATE, SWP_NOOWNERZORDER,
-        SWP_NOZORDER, SW_RESTORE, WINDOWPLACEMENT, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_THICKFRAME,
+        EnumWindows, GetClassNameW, GetForegroundWindow, GetLayeredWindowAttributes, GetWindow, GetWindowLongW, GetWindowPlacement,
+        GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, IsZoomed,
+        SetLayeredWindowAttributes, SetWindowLongW, SetWindowPlacement, SetWindowPos, ShowWindow, GWL_EXSTYLE, GWL_STYLE, GW_OWNER,
+        HWND_NOTOPMOST, HWND_TOPMOST, LAYERED_WINDOW_ATTRIBUTES_FLAGS, LWA_ALPHA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
+        SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE, WINDOWPLACEMENT, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_THICKFRAME,
     };
+    use windows::Win32::Foundation::COLORREF;
     use windows_core::BOOL;
 
     pub fn hwnd(raw: isize) -> HWND {
@@ -589,7 +789,10 @@ mod win {
             }
             let style = GetWindowLongW(h, GWL_STYLE) as u32;
             let ex = GetWindowLongW(h, GWL_EXSTYLE) as u32;
-            if ex & WS_EX_TOOLWINDOW.0 != 0 || ex & WS_EX_TOPMOST.0 != 0 || style & WS_THICKFRAME.0 == 0 {
+            // Always-on-top windows are overlays and widgets — except one
+            // Izuki pinned there itself, which is still your app.
+            let pinned_here = ex & WS_EX_TOPMOST.0 != 0 && super::pinned_by_izuki(h.0 as isize);
+            if ex & WS_EX_TOOLWINDOW.0 != 0 || (ex & WS_EX_TOPMOST.0 != 0 && !pinned_here) || style & WS_THICKFRAME.0 == 0 {
                 return false;
             }
             let mut cloaked = 0u32;
@@ -713,6 +916,81 @@ mod win {
     pub fn restore_placement(raw: isize, p: &WINDOWPLACEMENT) -> bool {
         let h = hwnd(raw);
         unsafe { IsWindow(Some(h)).as_bool() && SetWindowPlacement(h, p).is_ok() }
+    }
+
+    /// Whether the window still exists.
+    pub fn alive(raw: isize) -> bool {
+        unsafe { IsWindow(Some(hwnd(raw))).as_bool() }
+    }
+
+    /// App windows kept on top by anything, front to back (never Izuki's
+    /// own, a tool window, a dialog or the taskbar).
+    pub fn top_app_windows() -> Vec<isize> {
+        let me = std::process::id();
+        all()
+            .into_iter()
+            .filter(|&raw| {
+                let h = hwnd(raw);
+                unsafe {
+                    let ex = GetWindowLongW(h, GWL_EXSTYLE) as u32;
+                    let mut pid = 0u32;
+                    GetWindowThreadProcessId(h, Some(&mut pid));
+                    ex & WS_EX_TOPMOST.0 != 0
+                        && ex & WS_EX_TOOLWINDOW.0 == 0
+                        && pid != 0
+                        && pid != me
+                        && IsWindowVisible(h).as_bool()
+                        && GetWindowTextLengthW(h) > 0
+                        && !GetWindow(h, GW_OWNER).is_ok_and(|o| !o.0.is_null())
+                        && !matches!(class(h).as_str(), "Shell_TrayWnd" | "Shell_SecondaryTrayWnd")
+                }
+            })
+            .collect()
+    }
+
+    pub fn on_top_now(raw: isize) -> bool {
+        unsafe { GetWindowLongW(hwnd(raw), GWL_EXSTYLE) as u32 & WS_EX_TOPMOST.0 != 0 }
+    }
+
+    /// Keep a window above all others, or let it go back among them; true
+    /// when Windows really did it.
+    pub fn set_on_top(raw: isize, on: bool) -> bool {
+        let after = if on { HWND_TOPMOST } else { HWND_NOTOPMOST };
+        unsafe { SetWindowPos(hwnd(raw), Some(after), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE).is_ok() && on_top_now(raw) == on }
+    }
+
+    /// The window draws its own see-through effects (it was layered before
+    /// Izuki touched it): not ours to change.
+    pub fn layered(raw: isize) -> bool {
+        unsafe { GetWindowLongW(hwnd(raw), GWL_EXSTYLE) as u32 & WS_EX_LAYERED.0 != 0 }
+    }
+
+    /// Make a window see-through (`alpha` 0–255 solid), checked by reading it
+    /// back; true when it took.
+    pub fn set_alpha(raw: isize, alpha: u8) -> bool {
+        let h = hwnd(raw);
+        unsafe {
+            let ex = GetWindowLongW(h, GWL_EXSTYLE) as u32;
+            if ex & WS_EX_LAYERED.0 == 0 {
+                SetWindowLongW(h, GWL_EXSTYLE, (ex | WS_EX_LAYERED.0) as i32);
+            }
+            if SetLayeredWindowAttributes(h, COLORREF(0), alpha, LWA_ALPHA).is_err() {
+                return false;
+            }
+            let mut now = 0u8;
+            let mut flags = LAYERED_WINDOW_ATTRIBUTES_FLAGS(0);
+            GetLayeredWindowAttributes(h, None, Some(&mut now), Some(&mut flags)).is_ok() && now == alpha && flags.0 & LWA_ALPHA.0 != 0
+        }
+    }
+
+    /// Solid again, the way it was before.
+    pub fn clear_alpha(raw: isize) {
+        let h = hwnd(raw);
+        unsafe {
+            let _ = SetLayeredWindowAttributes(h, COLORREF(0), 255, LWA_ALPHA);
+            let ex = GetWindowLongW(h, GWL_EXSTYLE) as u32;
+            SetWindowLongW(h, GWL_EXSTYLE, (ex & !WS_EX_LAYERED.0) as i32);
+        }
     }
 
     /// Put the window's visible frame exactly on `to`. Windows 10/11 windows
@@ -1032,6 +1310,193 @@ pub fn restore(name: &str) -> Result<String> {
         said.push_str(" Say “undo the layout” to put things back.");
     }
     Ok(said)
+}
+
+/// Windows Izuki keeps on top, and ones it made see-through, newest last.
+static PINNED: parking_lot::Mutex<Vec<isize>> = parking_lot::Mutex::new(Vec::new());
+static GLASSED: parking_lot::Mutex<Vec<isize>> = parking_lot::Mutex::new(Vec::new());
+
+/// Izuki pinned this window on top itself.
+fn pinned_by_izuki(raw: isize) -> bool {
+    PINNED.lock().contains(&raw)
+}
+
+/// Among `list`, the live window called `app` ("" = the newest).
+#[cfg(windows)]
+fn named_in(list: &parking_lot::Mutex<Vec<isize>>, app: &str) -> Option<isize> {
+    let live: Vec<isize> = {
+        let mut l = list.lock();
+        l.retain(|&r| win::alive(r));
+        l.clone()
+    };
+    if app.is_empty() {
+        // "Unpin this window": the one in front, if it's one of these; with
+        // just one, that one. Never a different one picked by guesswork.
+        return win::front_app().filter(|f| live.contains(f)).or_else(|| (live.len() == 1).then(|| live[0]));
+    }
+    let open: Vec<(isize, String, String)> = live.iter().rev().map(|&r| (r, win::exe_of(r), win::title(r))).collect();
+    app_named(app, &open)
+}
+
+#[cfg(not(windows))]
+fn named_in(_list: &parking_lot::Mutex<Vec<isize>>, _app: &str) -> Option<isize> {
+    None
+}
+
+/// The app named, among windows kept on top by anything (Izuki, PowerToys,
+/// the app's own setting).
+#[cfg(windows)]
+fn top_window_named(app: &str) -> Option<isize> {
+    if app.is_empty() {
+        return None;
+    }
+    let open: Vec<(isize, String, String)> = win::top_app_windows().into_iter().map(|r| (r, win::exe_of(r), win::title(r))).collect();
+    app_named(app, &open)
+}
+
+#[cfg(not(windows))]
+fn top_window_named(_app: &str) -> Option<isize> {
+    None
+}
+
+fn pinned_named(app: &str) -> Option<isize> {
+    named_in(&PINNED, app)
+}
+
+fn glassed_named(app: &str) -> Option<isize> {
+    named_in(&GLASSED, app)
+}
+
+/// The window an ask is about: the app named, or the one in front.
+#[cfg(windows)]
+fn window_asked(app: &str) -> Result<(isize, String)> {
+    let raw = if app.is_empty() { win::front_app() } else { window_for(app) }
+        .ok_or_else(|| anyhow!(if app.is_empty() { "There's no app window in front.".to_string() } else { format!("I don't see {app} open. Open it first, then say it again.") }))?;
+    let title = short_of(&win::title(raw));
+    Ok((raw, if title.is_empty() { app.to_string() } else { title }))
+}
+
+/// "Keep Spotify on top" / "unpin Spotify".
+#[cfg(windows)]
+pub fn on_top(app: &str, on: bool) -> Result<String> {
+    if on {
+        let (raw, shown) = window_asked(app)?;
+        if !win::set_on_top(raw, true) {
+            return Err(anyhow!("Windows didn't let me keep {shown} on top. If it runs as administrator, only an app running as administrator can change it."));
+        }
+        {
+            let mut p = PINNED.lock();
+            p.retain(|&r| r != raw);
+            p.push(raw);
+        }
+        crate::actlog::record("style", &format!("Kept {shown} on top of every window"));
+        return Ok(format!("{shown} stays on top of everything now. Say “unpin {}” to let it go.", if app.is_empty() { "it" } else { app }));
+    }
+    let raw = pinned_named(app)
+        .or_else(|| top_window_named(app))
+        .ok_or_else(|| anyhow!(if app.is_empty() { "I'm not keeping any window on top.".to_string() } else { format!("{app} isn't being kept on top.") }))?;
+    let shown = short_of(&win::title(raw));
+    // Still tracked if Windows refused, so quitting tries again.
+    if !win::set_on_top(raw, false) {
+        return Err(anyhow!("Windows didn't let me change {shown}. If it runs as administrator, only an app running as administrator can."));
+    }
+    PINNED.lock().retain(|&r| r != raw);
+    crate::actlog::record("style", &format!("Let {shown} go back among the other windows"));
+    Ok(format!("{shown} isn't on top any more."))
+}
+
+/// "Make Discord see-through" (how solid it stays, in percent) / "make
+/// Discord solid again" (None).
+#[cfg(windows)]
+pub fn see_through(app: &str, keep: Option<u8>) -> Result<String> {
+    let Some(keep) = keep else {
+        let raw = glassed_named(app).ok_or_else(|| anyhow!(if app.is_empty() { "No window is see-through.".to_string() } else { format!("{app} isn't see-through.") }))?;
+        let shown = short_of(&win::title(raw));
+        win::clear_alpha(raw);
+        GLASSED.lock().retain(|&r| r != raw);
+        crate::actlog::record("style", &format!("Made {shown} solid again"));
+        return Ok(format!("{shown} is solid again."));
+    };
+    let (raw, shown) = window_asked(app)?;
+    let ours = GLASSED.lock().contains(&raw);
+    if !ours && win::layered(raw) {
+        return Err(anyhow!("{shown} draws its own see-through effects, so I'll leave it as it is."));
+    }
+    let alpha = (keep.clamp(20, 100) as u32 * 255 / 100) as u8;
+    if !win::set_alpha(raw, alpha) {
+        if !ours {
+            win::clear_alpha(raw);
+        }
+        return Err(anyhow!("Windows didn't let me make {shown} see-through. Some apps (and ones run as administrator) don't allow it."));
+    }
+    {
+        let mut g = GLASSED.lock();
+        g.retain(|&r| r != raw);
+        g.push(raw);
+    }
+    crate::actlog::record("style", &format!("Made {shown} see-through ({keep}% solid)"));
+    Ok(format!("{shown} is see-through now — {}% solid. Say “make {} solid again” to undo it.", keep, if app.is_empty() { "it" } else { app }))
+}
+
+#[cfg(not(windows))]
+pub fn on_top(_app: &str, _on: bool) -> Result<String> {
+    Err(anyhow!("Keeping windows on top works on Windows."))
+}
+
+#[cfg(not(windows))]
+pub fn see_through(_app: &str, _keep: Option<u8>) -> Result<String> {
+    Err(anyhow!("See-through windows work on Windows."))
+}
+
+/// "Hide everything except this": every other app window, on every screen,
+/// goes to the taskbar (a window you pinned on top stays). "Undo the layout"
+/// brings them back, the one you used last on top.
+#[cfg(windows)]
+pub fn only_this() -> Result<String> {
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWMINNOACTIVE;
+    let front = win::front_app().ok_or_else(|| anyhow!("There's no app window in front to keep."))?;
+    let shown = short_of(&win::title(front));
+    let others: Vec<isize> = win::app_windows(false).into_iter().filter(|&r| r != front && !pinned_by_izuki(r)).collect();
+    if others.is_empty() {
+        return Ok(format!("{shown} is already the only window showing."));
+    }
+    // Back to front, so putting them back leaves the one used last on top.
+    // Only a window whose place was kept is hidden: undo must bring it back.
+    let before: Vec<_> = others.iter().rev().filter_map(|&r| win::placement(r).map(|p| (r, p))).collect();
+    if before.is_empty() {
+        return Err(anyhow!("Windows didn't say where the other windows are, so I left them alone."));
+    }
+    for (raw, _) in &before {
+        win::show(*raw, SW_SHOWMINNOACTIVE);
+    }
+    let n = before.len();
+    *UNDO.lock() = before;
+    crate::actlog::record("style", &format!("Hid {n} window{} so only {shown} was showing", if n == 1 { "" } else { "s" }));
+    Ok(format!("Just {shown} now — {n} other window{} went to the taskbar. Say “undo the layout” to bring {} back.", if n == 1 { "" } else { "s" }, if n == 1 { "it" } else { "them" }))
+}
+
+#[cfg(not(windows))]
+pub fn only_this() -> Result<String> {
+    Err(anyhow!("Hiding windows works on Windows."))
+}
+
+/// Izuki is quitting: every window it pinned or made see-through goes back
+/// to normal (a window left see-through after Izuki is gone would stay so
+/// until that app restarts).
+pub fn let_go() {
+    #[cfg(windows)]
+    {
+        for raw in std::mem::take(&mut *PINNED.lock()) {
+            if win::alive(raw) {
+                win::set_on_top(raw, false);
+            }
+        }
+        for raw in std::mem::take(&mut *GLASSED.lock()) {
+            if win::alive(raw) {
+                win::clear_alpha(raw);
+            }
+        }
+    }
 }
 
 /// The open window for an app named in words ("chrome", "vs code").
@@ -1366,6 +1831,111 @@ mod tests {
         assert_eq!(p("don't move spotify to the other screen"), None);
         assert_eq!(p("turn left at the light"), None);
         assert_eq!(p("put the money in the middle drawer"), Some(Ask::Place("money".into(), Zone::Center)), "parsed, but no window is called that: claims() leaves it");
+    }
+
+    #[test]
+    fn keep_on_top_in_plain_words() {
+        let p = |s: &str| parse(s);
+        assert_eq!(p("keep spotify on top"), Some(Ask::OnTop("spotify".into(), true)));
+        assert_eq!(p("Hey Nova, pin this window on top"), Some(Ask::OnTop(String::new(), true)));
+        assert_eq!(p("make notepad always on top"), Some(Ask::OnTop("notepad".into(), true)));
+        assert_eq!(p("always on top"), Some(Ask::OnTop(String::new(), true)));
+        assert_eq!(p("keep the calculator window above everything"), Some(Ask::OnTop("calculator".into(), true)));
+        assert_eq!(p("unpin spotify"), Some(Ask::OnTop("spotify".into(), false)));
+        assert_eq!(p("stop keeping it on top"), Some(Ask::OnTop(String::new(), false)));
+        assert_eq!(p("don't keep discord on top"), Some(Ask::OnTop("discord".into(), false)));
+        assert_eq!(p("unpin this window"), Some(Ask::OnTop(String::new(), false)));
+        // Not a window.
+        assert_eq!(p("keep it on top"), None, "a shape in a design app");
+        assert_eq!(p("put this on top of the pile"), None);
+        assert_eq!(p("unpin this tab"), None, "a browser tab");
+        assert_eq!(p("unpin it from the taskbar"), None);
+        assert_eq!(p("how do I keep spotify on top"), None);
+        assert_eq!(p("put my windows on the left"), None);
+    }
+
+    /// Opt-in, on a real desktop (IZUKI_WINDOWS_REAL=1): a real window goes
+    /// on top and back, and see-through and solid again, each read back.
+    #[cfg(windows)]
+    #[test]
+    fn real_on_top_and_see_through_round_trip() {
+        use windows::core::w;
+        use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, WINDOW_EX_STYLE, WS_OVERLAPPEDWINDOW, WS_VISIBLE};
+        if std::env::var("IZUKI_WINDOWS_REAL").is_err() {
+            return;
+        }
+        let h = unsafe {
+            CreateWindowExW(WINDOW_EX_STYLE(0), w!("STATIC"), w!("Izuki test window"), WS_OVERLAPPEDWINDOW | WS_VISIBLE, 100, 100, 400, 300, None, None, None, None)
+        }
+        .expect("a test window");
+        let raw = h.0 as isize;
+        assert!(!win::on_top_now(raw));
+        assert!(win::set_on_top(raw, true), "on top");
+        assert!(win::set_on_top(raw, false), "back among the others");
+        assert!(!win::layered(raw));
+        assert!(win::set_alpha(raw, 128), "see-through, read back");
+        assert!(win::layered(raw));
+        win::clear_alpha(raw);
+        assert!(!win::layered(raw), "solid again, as it was");
+        unsafe {
+            let _ = DestroyWindow(h);
+        }
+    }
+
+    #[test]
+    fn see_through_in_plain_words() {
+        let p = |s: &str| parse(s);
+        assert_eq!(p("make discord see-through"), Some(Ask::SeeThrough("discord".into(), Some(75))));
+        assert_eq!(p("make this window 50% transparent"), Some(Ask::SeeThrough(String::new(), Some(50))));
+        assert_eq!(p("make spotify a little see through"), Some(Ask::SeeThrough("spotify".into(), Some(85))));
+        assert_eq!(p("make notepad 95 percent transparent"), Some(Ask::SeeThrough("notepad".into(), Some(20))), "never under 20%");
+        assert_eq!(p("make discord solid again"), Some(Ask::SeeThrough("discord".into(), None)));
+        assert_eq!(p("make this window not see through"), Some(Ask::SeeThrough(String::new(), None)));
+        // Not a window.
+        assert_eq!(p("make it transparent"), None, "a picture in a design app");
+        assert_eq!(p("don't make discord transparent"), None);
+        assert_eq!(p("don't make discord solid again"), None);
+        assert_eq!(p("what is a transparent window"), None);
+    }
+
+    #[test]
+    fn hide_everything_else_in_plain_words() {
+        let p = |s: &str| parse(s);
+        for said in ["hide everything except this", "Hey Nova, minimise everything else", "hide all the other windows", "clear the clutter", "show just this window", "minimize my other windows"] {
+            assert_eq!(p(said), Some(Ask::OnlyThis), "{said}");
+        }
+        assert_eq!(p("minimize everything"), None, "that's the desktop (instant.rs)");
+        assert_eq!(p("close everything else"), None, "closing could lose work");
+        assert_eq!(p("don't hide the other windows"), None);
+        assert_eq!(p("hide the other column in excel"), None);
+        assert_eq!(p("clear the clutter on my desk"), None);
+    }
+
+    #[test]
+    fn dim_the_rest_in_plain_words() {
+        use crate::haze::Level;
+        let p = |s: &str| parse(s);
+        assert_eq!(p("dim the rest"), Some(Ask::Dim(Some(Level::Medium))));
+        assert_eq!(p("Hey Nova, dim everything except this window"), Some(Ask::Dim(Some(Level::Medium))));
+        assert_eq!(p("dim the rest a little"), Some(Ask::Dim(Some(Level::Soft))));
+        assert_eq!(p("dim everything else more"), Some(Ask::Dim(Some(Level::Deep))));
+        assert_eq!(p("make the dim darker"), Some(Ask::Dim(Some(Level::Deep))));
+        assert_eq!(p("the dim is too dark"), Some(Ask::Dim(Some(Level::Soft))));
+        assert_eq!(p("spotlight mode"), Some(Ask::Dim(Some(Level::Medium))));
+        assert_eq!(p("undim"), Some(Ask::Dim(None)));
+        assert_eq!(p("stop dimming"), Some(Ask::Dim(None)));
+        assert_eq!(p("turn off the dim"), Some(Ask::Dim(None)));
+        // The screen's brightness, a photo, a question: not this.
+        assert_eq!(p("dim my screen"), None);
+        assert_eq!(p("dim the rest of the lights"), None);
+        assert_eq!(p("fade the rest of the song"), None);
+        assert_eq!(p("dim the restaurant sign"), None);
+        assert_eq!(p("dim the rest of the windows"), Some(Ask::Dim(Some(Level::Medium))));
+        assert_eq!(p("dim the background of this photo"), None);
+        assert_eq!(p("don't dim the rest"), None);
+        assert_eq!(p("don't undim"), None);
+        assert_eq!(p("do not stop dimming"), None);
+        assert_eq!(p("how do I dim the rest"), None);
     }
 
     #[test]

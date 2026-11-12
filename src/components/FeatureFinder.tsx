@@ -9,6 +9,10 @@ export type Feature = { label: string; hint: string; tab: TabId; id?: string };
 export const FEATURES: Feature[] = [
   { label: "Windows layouts", hint: "desktop design layout studio classic workspace photo gallery room to breathe taskbar arrange keep daily wallpaper spotlight", tab: "style", id: "style-layouts" },
   { label: "Arrange my windows", hint: "side by side, split screen, split my screen, grid, tile windows, columns, focus layout, window layout, snap layouts, fancyzones, organise windows, undo layout, put chrome on the left, move to my other screen, second monitor, corner, center a window, full screen an app", tab: "style", id: "style-arrange" },
+  { label: "Dim the rest", hint: "dim everything except this window, spotlight mode, hazeover, fade other windows, focus light, dim background windows, undim, darker, dim while I focus", tab: "style", id: "style-arrange" },
+  { label: "Keep a window on top", hint: "always on top, pin a window on top, keep spotify on top, float above everything, picture in picture, unpin, powertoys always on top", tab: "style", id: "style-arrange" },
+  { label: "Hide everything else", hint: "hide everything except this, minimise everything else, hide the other windows, clear the clutter, declutter my screen, just this window, aero shake", tab: "style", id: "style-arrange" },
+  { label: "See-through windows", hint: "make discord see-through, transparent window, translucent, 50% transparent, opacity, glass window, make it solid again", tab: "style", id: "style-arrange" },
   { label: "Saved window layouts", hint: "save my windows as work, save this layout, set up my work layout, restore my coding setup, workspace, open my apps where they were, multiple monitors, every screen", tab: "style", id: "style-arrange" },
   { label: "What Izuki can access", hint: "privacy, permissions, access, microphone, camera, screen, connected accounts, gmail, keys, phone control, turn off, revoke, trust", tab: "settings", id: "settings-access" },
   { label: "What Izuki did", hint: "history, activity, log, actions, what did you do today, what changed, clicks, audit", tab: "settings", id: "settings-activity" },

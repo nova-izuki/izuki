@@ -27,12 +27,15 @@ for (const s of [
   "move Spotify to my other screen", "put chrome on the left half", "put discord in the top right corner",
   "put Chrome on the left", "center Notepad", "make VS Code full screen", "maximize Discord", "snap the spotify window to the right",
   "put this window on the left", "move the window to my other screen", "put the GIMP window on the left", "center this window", "maximize the notion window",
+  "dim the rest", "Dim everything except this window", "undim", "stop dimming", "keep Spotify on top", "pin this window on top", "always on top",
+  "unpin Spotify", "make Discord see-through", "make this window 50% transparent", "make discord solid again", "make Notepad a little transparent",
+  "hide everything except this", "minimise everything else", "clear the clutter",
 ]) is(JSON.stringify(s), requestLane(s, false, true), "pc");
 for (const s of ["maximize Discord", "send Spotify to the other screen", "put this window on the left"]) {
   is(JSON.stringify(s) + " with apps linked still goes to the PC", requestLane(s, true, true), "pc");
 }
 is("a Discord message with apps linked stays with the apps", requestLane("send a message on discord to sam", true, true), "apps");
-for (const s of ["compare these phones side by side", "what did you do last summer", "make my essay look nicer", "fix my website layout", "my windows are dirty", "how do I clean my windows", "change my blog layout", "put the chicken in the middle", "move the couch to the left", "center the title", "make the text full screen", "put the window cleaner on the left", "center the window frame on the wall"]) {
+for (const s of ["compare these phones side by side", "what did you do last summer", "make my essay look nicer", "fix my website layout", "my windows are dirty", "how do I clean my windows", "change my blog layout", "put the chicken in the middle", "move the couch to the left", "center the title", "make the text full screen", "put the window cleaner on the left", "center the window frame on the wall", "dim the lights", "put the cheese on top", "keep your head on top of things", "make the background transparent", "make it transparent", "keep spotify on top of the charts", "hide my feelings", "clear the table", "dim the rest of the lights", "dim the restaurant sign"]) {
   is(JSON.stringify(s) + " stays a chat", requestLane(s, false, true), "chat");
 }
 is("no PC linked: a layout request is just a chat", requestLane("put my windows side by side", false, false), "chat");

@@ -1528,7 +1528,14 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
                     let _ = tx.send(Event::Done(i));
                 }
                 Err(e) => {
-                    crate::brain::note_answer(cfg.id, Err(&e.to_string()));
+                    let why = e.to_string();
+                    // A model the provider retired: rest just it; the key's
+                    // other models answer the next message (chat_chain).
+                    if crate::brain::model_gone_for(&cfg, &why) {
+                        crate::brain::rest_gone_model(&cfg);
+                    } else {
+                        crate::brain::note_answer(cfg.id, Err(&why));
+                    }
                     let _ = tx.send(Event::Failed(i, format!("{}: {e}", cfg.label)));
                 }
             }

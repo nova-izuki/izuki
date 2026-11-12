@@ -76,26 +76,42 @@ pub fn parse(said: &str) -> Option<Ask> {
 pub fn run(app: &AppHandle, ask: Ask) -> String {
     match ask {
         Ask::Start(m) => {
-            *UNTIL.lock() = Some(Instant::now() + Duration::from_secs(m * 60));
-            let run = {
+            // The session's number and its end are set together, so an older
+            // session's timer can never end this one.
+            // "Dim the rest while I focus" (Style → Window layouts), claimed
+            // in the same turn, so a "stop focus" can't slip in between.
+            let wants_dim = crate::state::try_store().is_some_and(|s| s.settings().focus_dims);
+            let (run, dims) = {
                 let mut r = RUN.lock();
                 *r += 1;
-                *r
+                *UNTIL.lock() = Some(Instant::now() + Duration::from_secs(m * 60));
+                (*r, wants_dim && crate::haze::for_focus())
             };
             let app = app.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(Duration::from_secs(m * 60));
-                if *RUN.lock() != run {
-                    return; // stopped or restarted meanwhile
+                {
+                    let r = RUN.lock();
+                    if *r != run {
+                        return; // stopped or restarted meanwhile
+                    }
+                    *UNTIL.lock() = None;
+                    crate::haze::focus_over();
                 }
-                *UNTIL.lock() = None;
                 crate::buddy::focus_over(&app, m);
             });
-            format!("Focus mode on for {m} minutes. I'll keep everything that isn't urgent until you're done — go get it.")
+            format!(
+                "Focus mode on for {m} minutes. I'll keep everything that isn't urgent until you're done{} — go get it.",
+                if dims { ", and everything but your window is dimmed" } else { "" }
+            )
         }
         Ask::Stop => {
-            let was = UNTIL.lock().take().is_some();
-            *RUN.lock() += 1;
+            let was = {
+                let mut r = RUN.lock();
+                *r += 1;
+                crate::haze::focus_over();
+                UNTIL.lock().take().is_some()
+            };
             if was {
                 let app = app.clone();
                 std::thread::spawn(move || crate::buddy::focus_over(&app, 0));
