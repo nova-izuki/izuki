@@ -1494,10 +1494,13 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
     use std::sync::{mpsc, Arc};
 
     let winner = Arc::new(AtomicUsize::new(usize::MAX));
+    // Brains given up on ("my brain + backup" moved on after 20 s of nothing):
+    // they stop, and anything they say late is never heard.
+    let dropped = Arc::new(Mutex::new(Vec::<usize>::new()));
     let (tx, rx) = mpsc::channel::<Event>();
     let launch = |i: usize| {
         crate::state::trace(format!("Asking {}…", crate::state::short_name(&chain[i].label)));
-        let (tx, cfg, messages, winner) = (tx.clone(), chain[i].clone(), messages.to_vec(), winner.clone());
+        let (tx, cfg, messages, winner, dropped) = (tx.clone(), chain[i].clone(), messages.to_vec(), winner.clone(), dropped.clone());
         let deep = is_deep(id);
         std::thread::spawn(move || {
             DEEP_HERE.with(|d| d.set(deep));
@@ -1505,7 +1508,7 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
             let first = Mutex::new(None::<u128>);
             let stop = || {
                 let w = winner.load(Ordering::SeqCst);
-                cancelled(id) || (w != usize::MAX && w != i)
+                cancelled(id) || (w != usize::MAX && w != i) || dropped.lock().contains(&i)
             };
             let on_text = |t: String| {
                 first.lock().get_or_insert(started.elapsed().as_millis());
@@ -1596,6 +1599,9 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
             }
         };
         match got {
+            Ok(Event::Text(i, _)) if dropped.lock().contains(&i) => {}
+            // (Already counted as failed when it was let go.)
+            Ok(Event::Failed(i, _)) if dropped.lock().contains(&i) => {}
             Ok(Event::Text(i, t)) => {
                 // The first brain to say anything is the one that's heard.
                 let _ = winner.compare_exchange(usize::MAX, i, Ordering::SeqCst, Ordering::SeqCst);
@@ -1616,7 +1622,9 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
                 if launched < chain.len() {
                     launch(launched);
                     launched += 1;
-                    since = Instant::now();
+                    if !freely {
+                        since = Instant::now();
+                    }
                 } else if failed == launched {
                     return emit(String::new(), true, Some(errors.join("; ")));
                 }
@@ -1628,10 +1636,16 @@ fn race(chain: &[ProviderConfig], messages: &[Value], id: u64, emit: &dyn Fn(Str
                     eprintln!("[chat] {} is slow to start — asking {} too", chain[launched - 1].label, chain[launched].label);
                 } else {
                     eprintln!("[chat] {} said nothing for 20 s — asking the fallback brain, {}", chain[launched - 1].label, chain[launched].label);
+                    // One brain at a time: the silent one is let go.
+                    dropped.lock().push(launched - 1);
+                    errors.push(format!("{}: said nothing for 20 s", chain[launched - 1].label));
+                    failed += 1;
                 }
                 launch(launched);
                 launched += 1;
-                since = Instant::now();
+                if !freely {
+                    since = Instant::now();
+                }
             }
             Err(_) if winner.load(Ordering::SeqCst) == usize::MAX => {
                 // Loops back to the first-words check above.
@@ -1818,7 +1832,7 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
     // Gemini's main model is often "experiencing high demand" on the free
     // tier; its lighter sibling usually isn't, and answers even faster.
     let busy = matches!(resp.status().as_u16(), 429 | 503);
-    if busy && cfg.id == ProviderId::Gemini && cfg.model.contains("flash") && !cfg.model.contains("lite") {
+    if busy && cfg.id == ProviderId::Gemini && cfg.model.contains("flash") && !cfg.model.contains("lite") && crate::brain::switches_freely() {
         eprintln!("[chat] {} is busy ({}) — using {}", cfg.model, resp.status(), crate::vision::GEMINI_LITE);
         if resp.status().as_u16() == 429 {
             crate::vision::gemini_main_tired();
