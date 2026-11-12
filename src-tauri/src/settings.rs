@@ -108,6 +108,23 @@ pub enum BackdropMode {
     None,
 }
 
+/// How Izuki uses your AI brains.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BrainMode {
+    /// Fastest: whichever of your brains answers best. A slow or busy one is
+    /// passed over, another is asked alongside a slow one, and each key's
+    /// other free models help out.
+    #[default]
+    Auto,
+    /// Your chosen brain; your fallback brain only when it can't answer (an
+    /// error, or nothing for 20 seconds). Never two at once, no other models.
+    Backup,
+    /// Only your chosen brain, exactly the model you picked. If it can't
+    /// answer, Izuki says so instead of switching.
+    One,
+}
+
 /// How a voice or chat command is carried out.
 ///
 /// Windows exposes exactly one hardware cursor, so there is no way for Izuki
@@ -132,6 +149,10 @@ pub struct Settings {
     pub active_provider: ProviderId,
     #[serde(default)]
     pub fallback_provider: Option<ProviderId>,
+    /// Switch between brains freely, use the fallback only on failure, or
+    /// only ever the chosen brain (BrainMode).
+    #[serde(default)]
+    pub brain_mode: BrainMode,
     pub providers: Vec<ProviderConfig>,
 
     pub hotkey_draw: String,
@@ -1028,6 +1049,7 @@ impl Default for Settings {
             // user can set up in a minute. (Ollama needs its own app.)
             active_provider: ProviderId::Gemini,
             fallback_provider: Some(ProviderId::Nvidia),
+            brain_mode: BrainMode::Auto,
             providers: vec![
                 ProviderConfig {
                     id: ProviderId::Ollama,
