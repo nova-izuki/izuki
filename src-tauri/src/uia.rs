@@ -379,7 +379,8 @@ fn fill_with(el: &uiautomation::UIElement, text: &str, focus: bool) -> anyhow::R
     // Setting replaces what's there. Only into an empty box, or when the
     // new text is the whole of it (it starts with what's there) — a box
     // with other text gets clicked and typed into, which adds to it.
-    let now = p.get_value().unwrap_or_default();
+    // (What's there can't be read: nothing done yet — the usual way.)
+    let Ok(now) = p.get_value() else { return Ok(false) };
     if !now.is_empty() && !text.starts_with(&now) {
         return Ok(false);
     }

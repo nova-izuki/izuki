@@ -945,8 +945,10 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
         if matches!(step.action, Intent::Click | Intent::Auto | Intent::DoubleClick)
             && uia::clicks_directly(&identity.kind, double)
             && uia::click_grounded(identity, double).map_err(|e| {
-                // It may have acted (only "disabled" is before acting).
-                if e.to_string().starts_with("disabled:") {
+                // It may have acted — unless it failed before acting (greyed
+                // out, gone or moved, covered, not in front).
+                let why = e.to_string();
+                if ["disabled:", "target_changed:", "covered:", "needs_front:"].iter().any(|p| why.starts_with(p)) {
                     e
                 } else {
                     anyhow!("{}{e} — take a fresh look before trying it again", crate::ext::UNCONFIRMED)
