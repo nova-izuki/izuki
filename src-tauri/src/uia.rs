@@ -482,12 +482,19 @@ pub fn act_behind(win: isize, what: Behind) -> anyhow::Result<Option<String>> {
                 return Err(anyhow::anyhow!("disabled: \"{}\" is greyed out, so clicking it does nothing yet", el.get_name().unwrap_or_default()));
             }
             let label = el.get_name().unwrap_or_default();
+            // A press that errors may still have acted: say so, never treat it
+            // as untouched (the brain keeps a Send remembered, and nothing
+            // presses it again another way).
+            let unsure = |e: uiautomation::Error| anyhow::anyhow!("{}pressing \"{label}\" in the background may have worked ({e}) — take a fresh look before trying it again", crate::ext::UNCONFIRMED);
             let done = if let Ok(p) = el.get_pattern::<UIInvokePattern>() {
-                p.invoke().is_ok()
+                p.invoke().map_err(unsure)?;
+                true
             } else if let Ok(p) = el.get_pattern::<UITogglePattern>() {
-                p.toggle().is_ok()
+                p.toggle().map_err(unsure)?;
+                true
             } else if let Ok(p) = el.get_pattern::<UISelectionItemPattern>() {
-                p.select().is_ok()
+                p.select().map_err(unsure)?;
+                true
             } else if let Ok(p) = el.get_pattern::<UIExpandCollapsePattern>() {
                 match p.get_state() {
                     Ok(ExpandCollapseState::Expanded) => p.collapse().is_ok(),

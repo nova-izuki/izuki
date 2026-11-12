@@ -2753,6 +2753,17 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                         request_step_replan();
                         return false;
                     }
+                    // A double-click on Send, Pay or Delete is two presses.
+                    if step.action == Intent::DoubleClick {
+                        if let Some(attempt) = final_tried_key(step) {
+                            *STEP_SNAG.lock() = Some(format!(
+                                "final_double: “{}” is never double-clicked — that would press it twice; click it once",
+                                attempt.name
+                            ));
+                            request_step_replan();
+                            return false;
+                        }
+                    }
                     let highlight = settings.click_highlight
                         && matches!(step.action, Intent::Click | Intent::DoubleClick | Intent::RightClick | Intent::Auto | Intent::Type)
                         && (step.x != 0 || step.y != 0);
