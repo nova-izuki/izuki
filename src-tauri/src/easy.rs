@@ -41,6 +41,8 @@ pub const EASY_PROMPT: &str = concat!(
     "GO youtube.com — open a web address\n",
     "SEARCH blackboard login — search the web\n",
     "PLAY lofi study music — find a song or video on YouTube and start it\n",
+    "DO turn on dark mode — Izuki does it itself, no clicking: dark mode, wallpaper, a settings page (DO open bluetooth ",
+    "settings), a folder, window layouts, closing an app they asked to close, timers, reminders, focus, screenshots, clean-up\n",
     "WAIT 3 — let a page load for 3 seconds, then look again\n",
     "SAY words — what to say out loud: an answer, or a few words on what you're doing\n",
     "ASK question — only before sending, buying, deleting or submitting, or when a costly choice is truly theirs\n",
@@ -50,7 +52,7 @@ pub const EASY_PROMPT: &str = concat!(
     "just under the words you marked last. Nothing is clicked. Explain in SAY lines while you draw.\n",
     "DONE — only when you can SEE on screen that the whole request is finished\n",
     "Rules: start with the command, never with \"The user…\" — no describing the request, the screen or ",
-    "your plan. If you can see the thing to act on, act on it now. Prefer OPEN, GO, SEARCH and PLAY: they ",
+    "your plan. If you can see the thing to act on, act on it now. Prefer DO, OPEN, GO, SEARCH and PLAY: they ",
     "never miss. Only click what's in the list or clearly on screen. A question about the screen: SAY the ",
     "answer, then DONE.\n",
     "SAFETY: at the last click that deletes, sends, pays, buys or submits, stop and ASK first — even if they ",
@@ -216,6 +218,7 @@ pub fn parse(raw: &str, req: &VisionRequest, any_case: bool) -> Reply {
             }
             "SEARCH" => skill("search", rest),
             "PLAY" => skill("play_youtube", rest),
+            "DO" => skill("do", rest),
             "DRAW" | "MARK" => drawing(rest, req),
             "WAIT" => {
                 out.any = true;
@@ -511,6 +514,21 @@ mod tests {
         assert_eq!(reply.steps[1].x, 640, "an unnamed scroll turns the middle of the page");
         assert_eq!(reply.steps[2].text_to_type.as_deref(), Some("https://youtube.com"));
         assert_eq!(reply.wait, 2);
+    }
+
+    #[test]
+    fn a_small_model_can_do_it_directly() {
+        let r = req(vec![control(4, "Comments")]);
+        let reply = parse("DO turn on dark mode
+DO open bluetooth settings", &r, false);
+        let acts: Vec<Intent> = reply.steps.iter().map(|s| s.action).collect();
+        assert_eq!(acts, vec![Intent::Do, Intent::Do]);
+        assert_eq!(reply.steps[0].text_to_type.as_deref(), Some("turn on dark mode"));
+        // A big model's JSON says "do" (or "skill"/"direct", the names models invent).
+        for name in ["do", "skill", "direct"] {
+            let step: crate::model::ActionStep = serde_json::from_value(serde_json::json!({ "action": name, "text_to_type": "open downloads" })).unwrap();
+            assert_eq!(step.action, Intent::Do, "{name}");
+        }
     }
 
     #[test]

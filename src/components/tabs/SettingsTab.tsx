@@ -504,9 +504,9 @@ export function SettingsTab() {
 
       {/* ------------------------------------------------ execution */}
       <Section id="settings-execution" title="Execution" group="Screen control" foldable hint="How the hand behaves once the plan comes back.">
-        <Row label="Control style" hint="Jarvis mode presses buttons and types into boxes directly through Windows — no mouse moving, so it's faster and your own mouse stays free. Mouse mode moves a visible hand like a person would (best for games and drawing apps).">
+        <Row label="Control style" hint="Both press real buttons, links and tabs directly through Windows, and Izuki does what it can itself (dark mode, settings pages, folders, layouts) without clicking at all — your own mouse stays free. Jarvis mode only acts on real controls it can identify — never a guessed spot (it may still use the pointer on one of those that can't be pressed directly). Flexible may also click a spot by eye (games, drawing apps).">
           <select aria-label="Control style" className="izk-field izk-no-drag max-w-[165px] py-1 text-[11.5px]" value={settings.control_style} onChange={(e) => patch({ control_style: e.target.value as typeof settings.control_style })}>
-            <option value="mouse">Mouse</option>
+            <option value="mouse">Flexible — pointer when needed</option>
             <option value="precision">Jarvis mode — no mouse</option>
           </select>
         </Row>

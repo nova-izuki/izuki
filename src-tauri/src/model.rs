@@ -118,6 +118,11 @@ pub enum Intent {
     Search,
     /// Play something on YouTube — `text_to_type` holds what (youtube.rs).
     PlayYoutube,
+    /// Do it directly through Izuki's own abilities (direct.rs) —
+    /// `text_to_type` holds the request in plain words ("turn on dark mode",
+    /// "open bluetooth settings"). Nothing on screen is clicked.
+    #[serde(alias = "skill", alias = "direct", alias = "izuki")]
+    Do,
     /// Draw on the screen like a teacher's pen — `shape` says what (circle,
     /// underline, arrow, box, note), `text_to_type` holds a note's words.
     /// Nothing is clicked.
@@ -146,6 +151,7 @@ impl Intent {
             Intent::OpenUrl => "open_url",
             Intent::Search => "search",
             Intent::PlayYoutube => "play_youtube",
+            Intent::Do => "do",
             Intent::Draw => "draw",
             Intent::Stroke => "stroke",
         }

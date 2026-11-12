@@ -150,6 +150,11 @@ pub enum Ask {
     Dim(Option<crate::haze::Level>),
     /// "Hide everything except this": every other app window to the taskbar.
     OnlyThis,
+    /// "Close Chrome" ("" = the window in front): its windows close the way
+    /// their ✕ does — an app with unsaved work still asks first. `true`:
+    /// every window of it ("close Chrome", "all the Chrome windows");
+    /// `false`: one ("close the Chrome window").
+    Close(String, bool),
 }
 
 /// Where one app goes.
@@ -436,6 +441,47 @@ fn parse_only_this(s: &str) -> Option<Ask> {
     None
 }
 
+/// "Close Chrome", "quit Spotify", "close all the Chrome windows", "close
+/// this window". Not a tab (ctrl+w, instant.rs), a file or document (the
+/// app's own close), or anything that isn't an open app (claims()).
+fn parse_close(s: &str) -> Option<Ask> {
+    let lead = [" close ", " quit ", " exit "].iter().find(|v| s.starts_with(*v))?;
+    // "Close Chrome and open Spotify", "close Chrome if it froze": more than
+    // closing — the agent does the whole thing (a direct step for the close).
+    if [" and ", " then ", " after ", " before ", " if ", " when ", " unless ", " once "].iter().any(|w| s.contains(w)) {
+        return None;
+    }
+    // One window ("the Chrome window"), unless they said all of them; the
+    // app as a whole ("close Chrome", "quit Spotify") is every window.
+    let one_window = s.contains(" window ") && !s.contains(" all ");
+    // ("File Explorer" is an app; "close this file" is the app's own close.)
+    let s_files = s.replace(" file explorer", " explorer");
+    if [" tab ", " tabs ", " door", " deal", " account", " eyes", " the gap", " file", " document", " popup", " pop up", " ad ", " ads ", " the lid", " laptop"]
+        .iter()
+        .any(|w| s_files.contains(w))
+    {
+        return None;
+    }
+    let (app, said_window) = app_between(s, &[lead], &[" please", " for me", " right now", " now", " too"])?;
+    let app = app.strip_prefix("all ").unwrap_or(&app);
+    let app = app.strip_prefix("the ").or_else(|| app.strip_prefix("my ")).unwrap_or(app);
+    let app = app.strip_suffix(" windows").unwrap_or(app).trim().to_string();
+    // Never several apps at once ("close everything else", "close the other apps").
+    if app.split_whitespace().any(|w| ["everything", "else", "other", "others", "all"].contains(&w)) {
+        return None;
+    }
+    // "Close this app": the one in front.
+    let app = if app == "app" { String::new() } else { app };
+    if NOT_ONE_APP.contains(&app.as_str()) || ["windows", "window", "apps", "all"].contains(&app.as_str()) {
+        return None;
+    }
+    // "Close it" in a document is the document; only "this window/app" is a window.
+    if app.is_empty() && !said_window && !s.contains(" this app") {
+        return None;
+    }
+    Some(Ask::Close(app, !one_window))
+}
+
 /// "Dim the rest", "dim everything except this window", "dim the rest a
 /// little", "make the dim darker", "undim". A plain "dim my screen" is the
 /// screen's brightness, not this.
@@ -500,31 +546,38 @@ const APP_ALIASES: &[(&str, &str)] = &[
 /// then by the app's name in its title. The one used last wins a tie (the
 /// list is front to back). `open` is (window, program path, title).
 fn app_named(name: &str, open: &[(isize, String, String)]) -> Option<isize> {
-    let want = name.to_lowercase();
-    let squashed: String = want.split_whitespace().collect();
-    let exe_wanted = APP_ALIASES.iter().find(|(n, _)| *n == want).map(|(_, e)| *e);
     let mut best: Option<(u8, isize)> = None;
     for (raw, exe, title) in open {
-        let stem = exe.rsplit(['\\', '/']).next().unwrap_or("").to_lowercase();
-        let stem = stem.trim_end_matches(".exe");
-        let app = short_of(title).to_lowercase();
-        let title_l = format!(" {} ", title.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" "));
-        let score = if exe_wanted.is_some_and(|e| stem == e) || stem == squashed {
-            4
-        } else if app == want {
-            3
-        } else if squashed.len() >= 4 && stem.contains(&squashed) {
-            2
-        } else if want.len() >= 3 && title_l.contains(&format!(" {want} ")) {
-            1
-        } else {
-            0
-        };
+        let score = name_score(name, exe, title);
         if score > 0 && best.is_none_or(|(b, _)| score > b) {
             best = Some((score, *raw));
         }
     }
     best.map(|(_, raw)| raw)
+}
+
+/// How well one window answers to `name`: 4 its program ("chrome" →
+/// chrome.exe), 3 the app's name in its title, 2 the program's name contains
+/// it, 1 the word is somewhere in the title, 0 not at all.
+fn name_score(name: &str, exe: &str, title: &str) -> u8 {
+    let want = name.to_lowercase();
+    let squashed: String = want.split_whitespace().collect();
+    let exe_wanted = APP_ALIASES.iter().find(|(n, _)| *n == want).map(|(_, e)| *e);
+    let stem = exe.rsplit(['\\', '/']).next().unwrap_or("").to_lowercase();
+    let stem = stem.trim_end_matches(".exe");
+    let app = short_of(title).to_lowercase();
+    let title_l = format!(" {} ", title.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" "));
+    if exe_wanted.is_some_and(|e| stem == e) || stem == squashed {
+        4
+    } else if app == want {
+        3
+    } else if squashed.len() >= 4 && stem.contains(&squashed) {
+        2
+    } else if want.len() >= 3 && title_l.contains(&format!(" {want} ")) {
+        1
+    } else {
+        0
+    }
 }
 
 /// Names that are already a built-in layout or mean "the windows".
@@ -626,6 +679,9 @@ pub fn parse(said: &str) -> Option<Ask> {
     if [" dont ", " do not ", " never ", " stop "].iter().any(|w| has(w)) {
         return None;
     }
+    if let Some(ask) = parse_close(&s) {
+        return Some(ask);
+    }
     if let Some(ask) = parse_saved(&s) {
         return Some(ask);
     }
@@ -687,7 +743,7 @@ pub fn claims(ask: &Ask, said: &str) -> bool {
         Ask::Restore(name) | Ask::Forget(name) => saved().iter().any(|s| s.name.eq_ignore_ascii_case(name)) || said.to_lowercase().contains("layout"),
         // "Put the chicken in the oven" names no window: not ours.
         Ask::Place(app, _) => app.is_empty() || window_for(app).is_some(),
-        Ask::OnTop(app, true) | Ask::SeeThrough(app, Some(_)) => app.is_empty() || window_for(app).is_some(),
+        Ask::OnTop(app, true) | Ask::SeeThrough(app, Some(_)) | Ask::Close(app, _) => app.is_empty() || window_for(app).is_some(),
         // Letting go: a window that really is on top (one Izuki pinned, or
         // the app named); "stop keeping it on top" in a design app isn't ours.
         Ask::OnTop(app, false) => pinned_named(app).is_some() || top_window_named(app).is_some(),
@@ -710,6 +766,7 @@ pub fn handle(ask: Ask) -> String {
         Ask::Dim(Some(level)) => crate::haze::start(level),
         Ask::Dim(None) => Ok(crate::haze::stop()),
         Ask::OnlyThis => only_this(),
+        Ask::Close(app, all) => close_app(&app, all),
     };
     done.unwrap_or_else(|e| e.to_string())
 }
@@ -918,9 +975,25 @@ mod win {
         unsafe { IsWindow(Some(h)).as_bool() && SetWindowPlacement(h, p).is_ok() }
     }
 
+    /// Ask a window to close, the way its ✕ does (it may ask to save
+    /// first). False when Windows wouldn't pass the request on.
+    pub fn ask_to_close(raw: isize) -> bool {
+        use windows::Win32::Foundation::WPARAM;
+        use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
+        unsafe { PostMessageW(Some(hwnd(raw)), WM_CLOSE, WPARAM(0), LPARAM(0)).is_ok() }
+    }
+
     /// Whether the window still exists.
     pub fn alive(raw: isize) -> bool {
         unsafe { IsWindow(Some(hwnd(raw))).as_bool() }
+    }
+
+    /// The app window in front right now, exactly — none when it's Izuki's
+    /// own, the desktop or the taskbar.
+    pub fn front_exact() -> Option<isize> {
+        let me = std::process::id();
+        let front = unsafe { GetForegroundWindow() };
+        (!front.0.is_null() && app_window(front, me, false)).then_some(front.0 as isize)
     }
 
     /// App windows kept on top by anything, front to back (never Izuki's
@@ -1529,6 +1602,82 @@ pub fn folder_windows(_names: &[String]) -> Vec<isize> {
     Vec::new()
 }
 
+/// "Close Chrome": every window of that app (or just the one in front)
+/// closes the way its ✕ does — politely, so an app with unsaved work still
+/// asks "Save?" and stays until you answer. Never forced, never Izuki
+/// itself, the desktop or the taskbar. Only windows that really are that
+/// app: its program, or its name as the window's own name — a Chrome page
+/// that merely mentions Notepad is not Notepad.
+#[cfg(windows)]
+pub fn close_app(app: &str, all: bool) -> Result<String> {
+    let mut targets: Vec<isize> = if app.is_empty() {
+        // Exactly the window in front — never a guess at "the last one"
+        // (said from Izuki's own panel, that would close something else).
+        win::front_exact().into_iter().collect()
+    } else {
+        windows_of_one_app(app)
+    };
+    // "The Chrome window": the one used last (the list is front to back).
+    if !all {
+        targets.truncate(1);
+    }
+    let Some(&first) = targets.first() else {
+        return Err(anyhow!(if app.is_empty() {
+            "I can't tell which window you mean — say its name, like \"close Chrome\".".to_string()
+        } else {
+            format!("I don't see {app} open.")
+        }));
+    };
+    let shown = {
+        let t = short_of(&win::title(first));
+        if t.is_empty() { app.to_string() } else { t }
+    };
+    let refused = targets.iter().filter(|&&raw| !win::ask_to_close(raw)).count();
+    if refused == targets.len() {
+        return Err(anyhow!("Windows didn't let me close {shown}. If it runs as administrator, only an app running as administrator can close it."));
+    }
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(4);
+    while std::time::Instant::now() < until && targets.iter().any(|&r| win::alive(r)) {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    }
+    let left = targets.iter().filter(|&&r| win::alive(r)).count();
+    let n = targets.len();
+    crate::actlog::record("apps", &format!("Closed {shown} ({} of {n} window{})", n - left, if n == 1 { "" } else { "s" }));
+    Ok(match left {
+        0 if n == 1 => format!("Closed {shown}."),
+        0 => format!("Closed {shown} — all {n} windows."),
+        _ if refused > 0 => format!("Closed some of {shown}; Windows didn't let me close {refused} of its windows."),
+        _ => format!("{shown} is asking something before it closes (unsaved work?) — have a look."),
+    })
+}
+
+/// The windows of exactly one app: the best match for `app` decides which
+/// app it is (its program), then every window of that program — never two
+/// apps that merely share a word ("note" isn't both Notepad and OneNote).
+/// A program that hosts many apps (File Explorer, the Store apps' frame)
+/// counts per window, by the window's own name.
+#[cfg(windows)]
+fn windows_of_one_app(app: &str) -> Vec<isize> {
+    let open: Vec<(isize, String, String)> = win::app_windows(true).into_iter().map(|r| (r, win::exe_of(r), win::title(r))).collect();
+    let Some(best) = open.iter().filter(|(_, e, t)| name_score(app, e, t) >= 2).max_by_key(|(_, e, t)| name_score(app, e, t)) else {
+        return Vec::new();
+    };
+    let stem = |exe: &str| exe.rsplit(['\\', '/']).next().unwrap_or("").to_lowercase();
+    let program = stem(&best.1);
+    if program.is_empty() || ["explorer.exe", "applicationframehost.exe"].contains(&program.as_str()) {
+        let name = short_of(&best.2).to_lowercase();
+        return open.iter().filter(|(_, e, t)| stem(e) == program && short_of(t).to_lowercase() == name).map(|(r, _, _)| *r).collect();
+    }
+    // The very same program file, not just one with the same name.
+    let path = best.1.to_lowercase();
+    open.iter().filter(|(_, e, _)| e.to_lowercase() == path).map(|(r, _, _)| *r).collect()
+}
+
+#[cfg(not(windows))]
+pub fn close_app(_app: &str, _all: bool) -> Result<String> {
+    Err(anyhow!("Closing apps works on Windows."))
+}
+
 /// Izuki is quitting: every window it pinned or made see-through goes back
 /// to normal (a window left see-through after Izuki is gone would stay so
 /// until that app restarts).
@@ -1945,6 +2094,35 @@ mod tests {
         assert_eq!(p("don't make discord transparent"), None);
         assert_eq!(p("don't make discord solid again"), None);
         assert_eq!(p("what is a transparent window"), None);
+    }
+
+    #[test]
+    fn close_an_app_in_plain_words() {
+        let p = |s: &str| parse(s);
+        assert_eq!(p("close chrome"), Some(Ask::Close("chrome".into(), true)));
+        assert_eq!(p("Hey Nova, quit spotify please"), Some(Ask::Close("spotify".into(), true)));
+        assert_eq!(p("close all the chrome windows"), Some(Ask::Close("chrome".into(), true)));
+        assert_eq!(p("close the chrome window"), Some(Ask::Close("chrome".into(), false)), "one window, not every one");
+        assert_eq!(p("close this window"), Some(Ask::Close(String::new(), false)));
+        assert_eq!(p("close this app"), Some(Ask::Close(String::new(), true)));
+        assert_eq!(p("close chrome and open spotify"), None, "the whole request goes to the agent");
+        assert_eq!(p("close chrome if it froze"), None);
+        assert_eq!(p("close file explorer"), Some(Ask::Close("file explorer".into(), true)));
+        assert_eq!(p("close this file"), None);
+        // Not an app window.
+        assert_eq!(p("close it"), None, "in a document that's the document");
+        assert_eq!(p("close this tab"), None, "a tab is ctrl+w (instant.rs)");
+        assert_eq!(p("close the door"), None);
+        assert_eq!(p("close all windows"), None, "never everything at once");
+        assert_eq!(p("don't close chrome"), None);
+        assert_eq!(p("how do I close chrome"), None);
+    }
+
+    #[test]
+    fn a_page_that_mentions_an_app_is_not_that_app() {
+        assert_eq!(name_score("notepad", r"C:\Windows\notepad.exe", "Untitled - Notepad"), 4);
+        assert!(name_score("notepad", r"C:\Program Files\Google\Chrome\Application\chrome.exe", "notepad tips - Google Chrome") < 2);
+        assert_eq!(name_score("calculator", r"C:\Windows\System32\ApplicationFrameHost.exe", "Calculator"), 3);
     }
 
     #[test]
