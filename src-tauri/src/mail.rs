@@ -352,7 +352,13 @@ const QUALITY: &[&str] = &[
 pub fn wants_what_matters(said: &str) -> bool {
     let s = format!(" {} ", said.to_lowercase().replace(['?', '!', ',', '.'], " ").split_whitespace().collect::<Vec<_>>().join(" "));
     let words: Vec<&str> = s.split_whitespace().collect();
-    words.iter().any(|w| MAIL_WORDS.contains(w)) && topic_words(&words).is_empty() && words.iter().any(|w| QUALITY.contains(w))
+    // Unread, a day, or one account named: the search keeps those (the
+    // inbox check reads the last few days of every account).
+    let filtered = [" unread ", " haven't read ", " havent read ", " today ", " this morning ", " yesterday ", " this week ", " past week ", " first ", " second ", " third ", " fourth ", " fifth "]
+        .iter()
+        .any(|w| s.contains(w))
+        || words.iter().any(|w| w.contains('@'));
+    !filtered && words.iter().any(|w| MAIL_WORDS.contains(w)) && topic_words(&words).is_empty() && words.iter().any(|w| QUALITY.contains(w))
 }
 
 /// The words that say what the mail is about: not filler, not where it's
@@ -360,14 +366,34 @@ pub fn wants_what_matters(said: &str) -> bool {
 fn topic_words<'a>(words: &[&'a str]) -> Vec<&'a str> {
     let mut out = Vec::new();
     let into = ["on", "in", "using", "through", "via", "with"];
-    for (i, w) in words.iter().enumerate() {
-        // "on Chrome", "in my browser", "on the web".
+    let place_at = |i: usize| {
+        let w = words[i];
         let placed = (i > 0 && into.contains(&words[i - 1]))
             || (i > 1 && ["my", "the"].contains(&words[i - 1]) && into.contains(&words[i - 2]));
-        if FILLER.contains(w) || MAIL_WORDS.contains(w) || w.contains('@') || QUALITY.contains(w) {
+        PLACES.contains(&w) && (placed || ["browser", "web", "internet", "online", "website"].contains(&w))
+    };
+    // A word that names nothing: filler, a mail word, an address, a place it's
+    // read, or how good it is.
+    let names_nothing = |i: usize| {
+        let w = words[i];
+        FILLER.contains(&w) || MAIL_WORDS.contains(&w) || w.contains('@') || QUALITY.contains(&w) || place_at(i)
+    };
+    for (i, w) in words.iter().enumerate() {
+        // "on Chrome", "in my browser", "on the web": where, not what.
+        if place_at(i) {
             continue;
         }
-        if PLACES.contains(w) && (placed || ["browser", "web", "internet", "online", "website"].contains(w)) {
+        // "using" (etc.) that only leads to a place.
+        if into.contains(w) && (i + 1..words.len().min(i + 3)).any(|j| place_at(j)) {
+            continue;
+        }
+        // "Any good emails" is how good; "Best Buy" is a name — a quality
+        // word right before a word that names something stays.
+        if QUALITY.contains(w) && i + 1 < words.len() && !names_nothing(i + 1) {
+            out.push(*w);
+            continue;
+        }
+        if names_nothing(i) {
             continue;
         }
         out.push(*w);
@@ -750,6 +776,13 @@ mod tests {
         assert_eq!(parse_ask("any good emails from amazon on my phone").map(|a| a.about), Some("amazon".into()));
         assert_eq!(parse_ask("find the email from my phone company").map(|a| a.about), Some("phone company".into()));
         assert_eq!(parse_ask("Find my Home Depot email").map(|a| a.about), Some("home depot".into()));
+        // A name with a "quality" word in it stays whole.
+        assert_eq!(parse_ask("find emails from Best Buy").map(|a| a.about), Some("best buy".into()));
+        // "using Chrome" is where, all of it.
+        assert!(wants_what_matters("check my email using chrome for anything good"));
+        // Filters stay with the search.
+        let unread = parse_ask("any good unread emails from today").expect("a search");
+        assert!(unread.unread && unread.when == "today");
     }
 
     /// Synthetic Gmail: accounts by link id, each with its emails.
