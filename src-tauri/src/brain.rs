@@ -2702,7 +2702,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     // never sit over the next question's answers.
                     if matches!(
                         step.action,
-                        Intent::Auto | Intent::Click | Intent::DoubleClick | Intent::RightClick | Intent::Type | Intent::Drag | Intent::Scroll | Intent::Key | Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube
+                        Intent::Auto | Intent::Click | Intent::DoubleClick | Intent::RightClick | Intent::Type | Intent::Drag | Intent::Scroll | Intent::Key | Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube | Intent::Do
                     ) {
                         let _ = app.emit("izuki://pen-clear", ());
                     }
@@ -2713,7 +2713,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     // Tell the overlay's hand where it is going before we move
                     // the real pointer, so the animation leads rather than trails.
                     // (Instant skills happen nowhere on screen — no hand.)
-                    let placeless = matches!(step.action, Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube);
+                    let placeless = matches!(step.action, Intent::OpenApp | Intent::OpenUrl | Intent::Search | Intent::PlayYoutube | Intent::Do);
                     // Switched to another app? Izuki keeps working in its own
                     // window behind yours (automation::execute_behind).
                     uia::follow_or_hold(person_touched(own.get()));
@@ -2745,6 +2745,16 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     // A duplicate final action is refused before the hand is
                     // shown or a journal step is opened: it must not look as
                     // if Izuki tried it again.
+                    // A direct step that would close, delete, send, pay or
+                    // restart needs the person's own words for it.
+                    if step.action == Intent::Do {
+                        let task = WORK_TASK.lock().1.clone();
+                        if let Err(why) = crate::direct::allowed(step.text_to_type.as_deref().unwrap_or_default(), &task) {
+                            *STEP_SNAG.lock() = Some(why);
+                            request_step_replan();
+                            return false;
+                        }
+                    }
                     if let Some(attempt) = final_already_tried(step) {
                         *STEP_SNAG.lock() = Some(format!(
                             "final_repeat: “{}” was already attempted; it is not being pressed a second time",
@@ -5813,6 +5823,7 @@ fn describe_step(s: &ActionStep) -> String {
         Intent::OpenUrl => format!("opened {}", s.text_to_type.as_deref().unwrap_or("a web page")),
         Intent::Search => format!("searched the web for \"{}\"", s.text_to_type.as_deref().unwrap_or("")),
         Intent::PlayYoutube => format!("played \"{}\" on YouTube", s.text_to_type.as_deref().unwrap_or("")),
+        Intent::Do => format!("did \"{}\" directly", s.text_to_type.as_deref().unwrap_or("")),
         Intent::Draw => format!("drew a {} at {},{}", s.shape.as_deref().unwrap_or("mark"), s.x, s.y),
         Intent::Stroke => format!("drew a line through {} points starting at {},{}", s.path.as_ref().map_or(0, |p| p.len()), s.x, s.y),
         other => format!("{} at {},{}", other.as_str(), s.x, s.y),

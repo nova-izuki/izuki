@@ -313,6 +313,27 @@ pub fn invoke_grounded(identity: &ControlIdentity) -> anyhow::Result<bool> {
 #[cfg(not(windows))]
 pub fn invoke_grounded(_identity: &ControlIdentity) -> anyhow::Result<bool> { Ok(false) }
 
+/// Control kinds where pressing through Windows is exactly a click: buttons,
+/// links, menu items, tabs, tick boxes and option buttons. Not list or tree
+/// items (pressing opens them; a click only picks them), nor anything drawn
+/// by the app itself.
+pub fn presses_like_a_click(kind: &str) -> bool {
+    matches!(kind, "Button" | "Hyperlink" | "MenuItem" | "SplitButton" | "TabItem" | "CheckBox" | "RadioButton")
+}
+
+/// What a numbered text box holds now (None: it has no readable value).
+#[cfg(windows)]
+pub fn grounded_value(identity: &ControlIdentity) -> Option<String> {
+    use uiautomation::patterns::UIValuePattern;
+    let (el, _, _) = grounded_element(identity).ok()?;
+    el.get_pattern::<UIValuePattern>().ok()?.get_value().ok()
+}
+
+#[cfg(not(windows))]
+pub fn grounded_value(_identity: &ControlIdentity) -> Option<String> {
+    None
+}
+
 /// Type into a text box without the mouse: give it the keyboard focus and
 /// set its text through Windows (the box's Value pattern). `false` when the
 /// box won't take it that way — then the caller clicks and types as usual.
@@ -1203,7 +1224,6 @@ pub fn press_named_checked(_name: &str) -> anyhow::Result<bool> {
 /// that errors may already have acted: propagate it, never duplicate by click.
 #[cfg(windows)]
 pub fn press_at(x: i32, y: i32, name: &str) -> anyhow::Result<bool> {
-    use uiautomation::patterns::{UIInvokePattern, UISelectionItemPattern, UITogglePattern};
     use uiautomation::types::Point;
     use uiautomation::UIAutomation;
     if name.trim().is_empty() || covered_at(x, y).is_some() { return Ok(false); }
@@ -1213,11 +1233,7 @@ pub fn press_at(x: i32, y: i32, name: &str) -> anyhow::Result<bool> {
     for _ in 0..5 {
         let Some(el) = current else { break };
         if same_name(&el.get_name().unwrap_or_default(), name) {
-            if !el.is_enabled().unwrap_or(false) { return Err(anyhow::anyhow!("disabled: target control is not enabled")); }
-            if let Ok(p) = el.get_pattern::<UIInvokePattern>() { p.invoke().map_err(|e| anyhow::anyhow!("direct control failed: {e}"))?; return Ok(true); }
-            if let Ok(p) = el.get_pattern::<UITogglePattern>() { p.toggle().map_err(|e| anyhow::anyhow!("direct toggle failed: {e}"))?; return Ok(true); }
-            if let Ok(p) = el.get_pattern::<UISelectionItemPattern>() { p.select().map_err(|e| anyhow::anyhow!("direct selection failed: {e}"))?; return Ok(true); }
-            return Ok(false);
+            return press_element(&el);
         }
         current = walker.as_ref().and_then(|w| w.get_parent(&el).ok());
     }
@@ -1226,6 +1242,23 @@ pub fn press_at(x: i32, y: i32, name: &str) -> anyhow::Result<bool> {
 
 #[cfg(not(windows))]
 pub fn press_at(_x: i32, _y: i32, _name: &str) -> anyhow::Result<bool> { Ok(false) }
+
+/// Press one control through Windows, the way a click would — only where
+/// pressing *is* a click: a list item or a file "invoked" opens instead of
+/// being picked, so that one gets the pointer (Ok(false)). An error may
+/// already have acted: propagate it, never duplicate by click.
+#[cfg(windows)]
+fn press_element(el: &uiautomation::UIElement) -> anyhow::Result<bool> {
+    use uiautomation::patterns::{UIInvokePattern, UISelectionItemPattern, UITogglePattern};
+    if !presses_like_a_click(&el.get_control_type().map(|c| format!("{c:?}")).unwrap_or_default()) {
+        return Ok(false);
+    }
+    if !el.is_enabled().unwrap_or(false) { return Err(anyhow::anyhow!("disabled: target control is not enabled")); }
+    if let Ok(p) = el.get_pattern::<UIInvokePattern>() { p.invoke().map_err(|e| anyhow::anyhow!("direct control failed: {e}"))?; return Ok(true); }
+    if let Ok(p) = el.get_pattern::<UITogglePattern>() { p.toggle().map_err(|e| anyhow::anyhow!("direct toggle failed: {e}"))?; return Ok(true); }
+    if let Ok(p) = el.get_pattern::<UISelectionItemPattern>() { p.select().map_err(|e| anyhow::anyhow!("direct selection failed: {e}"))?; return Ok(true); }
+    Ok(false)
+}
 
 /// What the text box with the keyboard focus holds now (never a password box).
 #[cfg(windows)]
@@ -1977,6 +2010,87 @@ pub fn controls_fresh_or_now(max: usize) -> Vec<Control> {
 }
 
 pub fn invalidate_controls() { PREFETCH.lock().take(); }
+
+#[cfg(test)]
+mod direct_tests {
+    use super::*;
+
+    #[test]
+    fn only_click_like_controls_are_pressed_directly() {
+        assert!(presses_like_a_click("Button"));
+        assert!(presses_like_a_click("Hyperlink"));
+        assert!(presses_like_a_click("CheckBox"));
+        assert!(!presses_like_a_click("ListItem"), "a file in a folder opens when pressed");
+        assert!(!presses_like_a_click("TreeItem"));
+        assert!(!presses_like_a_click("Edit"));
+        assert!(!presses_like_a_click(""));
+    }
+
+    /// Opt-in, on a real desktop (IZUKI_WINDOWS_REAL=1): a real Windows tick
+    /// box is ticked through Windows itself — the mouse never moves.
+    #[cfg(windows)]
+    #[test]
+    fn real_a_tick_box_is_pressed_without_the_mouse() {
+        use windows::core::w;
+        use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            CreateWindowExW, DispatchMessageW, GetCursorPos, GetMessageW, PostThreadMessageW, SendMessageW, TranslateMessage, BM_GETCHECK,
+            BS_AUTOCHECKBOX, MSG, WINDOW_STYLE, WM_QUIT, WS_BORDER, WS_EX_NOACTIVATE, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
+        };
+        if std::env::var("IZUKI_WINDOWS_REAL").is_err() {
+            return;
+        }
+        // The box lives on its own thread with its own messages, like an app's.
+        let (tx, rx) = std::sync::mpsc::channel::<(isize, u32)>();
+        let ui = std::thread::spawn(move || unsafe {
+            let h = CreateWindowExW(
+                WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+                w!("BUTTON"),
+                w!("Izuki test box"),
+                WS_POPUP | WS_VISIBLE | WS_BORDER | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
+                220,
+                220,
+                220,
+                40,
+                None,
+                None,
+                None,
+                None,
+            )
+            .expect("a test tick box");
+            let _ = tx.send((h.0 as isize, windows::Win32::System::Threading::GetCurrentThreadId()));
+            let mut msg = MSG::default();
+            while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                let _ = TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        });
+        let (raw, thread) = rx.recv().unwrap();
+        let h = HWND(raw as *mut core::ffi::c_void);
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let mut before = windows::Win32::Foundation::POINT::default();
+        let _ = unsafe { GetCursorPos(&mut before) };
+        let checked = || unsafe { SendMessageW(h, BM_GETCHECK, Some(WPARAM(0)), Some(LPARAM(0))).0 } == 1;
+        assert!(!checked());
+        // The box itself, as Windows lists it — pressed the way press_at
+        // presses what it finds under a point (a Windows shell layer can sit
+        // over any spot of a real desktop; press_at then rightly refuses).
+        let el = uiautomation::UIAutomation::new().and_then(|a| a.element_from_handle(h.into())).expect("the box");
+        assert_eq!(el.get_name().unwrap_or_default(), "Izuki test box");
+        let pressed = press_element(&el).expect("no error");
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let mut after = windows::Win32::Foundation::POINT::default();
+        let _ = unsafe { GetCursorPos(&mut after) };
+        let ticked = checked();
+        unsafe {
+            let _ = PostThreadMessageW(thread, WM_QUIT, WPARAM(0), LPARAM(0));
+        }
+        let _ = ui.join();
+        assert!(pressed, "pressed through Windows");
+        assert!(ticked, "the box really is ticked");
+        assert_eq!((before.x, before.y), (after.x, after.y), "the mouse never moved");
+    }
+}
 
 #[cfg(test)]
 mod lock_tests {

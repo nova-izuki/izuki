@@ -3,6 +3,7 @@
 pub mod android;
 pub mod apps;
 pub mod arrange;
+pub mod direct;
 pub mod haze;
 pub mod attachments;
 pub mod briefing;
@@ -619,6 +620,12 @@ pub fn run() {
             }
             state::set_app(app.handle());
             let handle = app.handle().clone();
+            // The screen agent's "do" steps run through Izuki's own abilities
+            // (direct.rs) — the same list a spoken request reaches.
+            {
+                let h = handle.clone();
+                direct::set_runner(move |said| tauri::async_runtime::block_on(commands::instant_command(h.clone(), said.to_string())));
+            }
             let settings = store.settings();
 
             overlay::track_orb(&handle);
