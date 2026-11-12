@@ -1175,7 +1175,8 @@ static GEMINI_MAIN_TIRED: parking_lot::Mutex<Option<std::time::Instant>> = parki
 /// the main Flash model's quota is used up.
 pub fn gemini_model_now(model: &str) -> String {
     let tired = GEMINI_MAIN_TIRED.lock().map(|t| t > std::time::Instant::now()).unwrap_or(false);
-    if tired && model.contains("flash") && !model.contains("lite") {
+    // ("Only my brain" / "my brain + backup": exactly the model chosen.)
+    if tired && model.contains("flash") && !model.contains("lite") && crate::brain::switches_freely() {
         GEMINI_LITE.into()
     } else {
         model.to_string()
@@ -1253,7 +1254,7 @@ fn ask_gemini_as(cfg: &ProviderConfig, req: &VisionRequest, style: Style) -> Res
     // Out of free quota (429) or overloaded (503) on the main Flash model:
     // the lighter one has its own allowance, reads screenshots too, and is
     // quicker.
-    if matches!(status.as_u16(), 429 | 503) && cfg.model.contains("flash") && !cfg.model.contains("lite") {
+    if matches!(status.as_u16(), 429 | 503) && cfg.model.contains("flash") && !cfg.model.contains("lite") && crate::brain::switches_freely() {
         eprintln!("[brain] {} answered {status} — trying {GEMINI_LITE}", cfg.model);
         if status.as_u16() == 429 && value.to_string().to_lowercase().contains("quota") {
             gemini_main_tired();

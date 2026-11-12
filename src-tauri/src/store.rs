@@ -51,6 +51,12 @@ fn read_settings(path: &Path) -> Settings {
         if v.get("fallback_provider").is_some_and(|f| !f.is_null() && !known(f)) {
             v["fallback_provider"] = serde_json::Value::Null;
         }
+        // A brain mode from a newer version: back to the default.
+        if v.get("brain_mode").is_some_and(|m| serde_json::from_value::<crate::settings::BrainMode>(m.clone()).is_err()) {
+            if let Some(o) = v.as_object_mut() {
+                o.remove("brain_mode");
+            }
+        }
         if let Ok(s) = serde_json::from_value::<Settings>(v) {
             eprintln!("[store] settings had entries this version doesn't know — skipped them, kept the rest");
             return s;

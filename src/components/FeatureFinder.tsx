@@ -9,6 +9,7 @@ export type Feature = { label: string; hint: string; tab: TabId; id?: string };
 export const FEATURES: Feature[] = [
   { label: "Windows layouts", hint: "desktop design layout studio classic workspace photo gallery room to breathe taskbar arrange keep daily wallpaper spotlight", tab: "style", id: "style-layouts" },
   { label: "Arrange my windows", hint: "side by side, split screen, split my screen, grid, tile windows, columns, focus layout, window layout, snap layouts, fancyzones, organise windows, undo layout, put chrome on the left, move to my other screen, second monitor, corner, center a window, full screen an app", tab: "style", id: "style-arrange" },
+  { label: "How Izuki uses your brains", hint: "only one brain, use only my brain, stop switching brains, fallback brain, backup brain, fastest brain, one model only, don't switch ai, brain mode", tab: "settings", id: "settings-brain-mode" },
   { label: "Jarvis mode — does it directly", hint: "no mouse, press buttons directly, control style, jarvis, don't move my mouse, backend, do it yourself, flexible, pointer", tab: "settings", id: "settings-execution" },
   { label: "Open a Windows settings page", hint: "open bluetooth settings, wifi settings, display settings, sound settings, windows update, default apps, startup apps, night light, settings page", tab: "settings", id: "settings-execution" },
   { label: "Close an app", hint: "close chrome, quit spotify, close this window, close all chrome windows, exit an app", tab: "style", id: "style-arrange" },
