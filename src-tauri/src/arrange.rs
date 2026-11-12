@@ -948,6 +948,18 @@ mod win {
             .collect()
     }
 
+    /// File Explorer's folder windows, front to back (minimised ones too).
+    pub fn explorer_windows() -> Vec<isize> {
+        all()
+            .into_iter()
+            .filter(|&raw| {
+                let h = hwnd(raw);
+                let visible = unsafe { IsWindowVisible(h).as_bool() };
+                visible && class(h) == "CabinetWClass"
+            })
+            .collect()
+    }
+
     pub fn on_top_now(raw: isize) -> bool {
         unsafe { GetWindowLongW(hwnd(raw), GWL_EXSTYLE) as u32 & WS_EX_TOPMOST.0 != 0 }
     }
@@ -1478,6 +1490,43 @@ pub fn only_this() -> Result<String> {
 #[cfg(not(windows))]
 pub fn only_this() -> Result<String> {
     Err(anyhow!("Hiding windows works on Windows."))
+}
+
+/// A File Explorer window already showing one of `names` ("Downloads", or
+/// "Downloads - File Explorer"), brought to the front (restored if it was on
+/// the taskbar). True when there was one.
+/// None: no such window. Some(false): there is one, but Windows wouldn't
+/// bring it to the front.
+#[cfg(windows)]
+pub fn bring_folder_window(names: &[String]) -> Option<bool> {
+    let raw = folder_windows(names).into_iter().next()?;
+    Some(crate::uia::raise_window(raw))
+}
+
+/// File Explorer windows showing one of `names`, front to back.
+#[cfg(windows)]
+pub fn folder_windows(names: &[String]) -> Vec<isize> {
+    let wanted: Vec<String> = names.iter().map(|n| n.trim().to_lowercase()).filter(|n| !n.is_empty()).collect();
+    if wanted.is_empty() {
+        return Vec::new();
+    }
+    win::explorer_windows()
+        .into_iter()
+        .filter(|&raw| {
+            let t = win::title(raw).trim().to_lowercase();
+            wanted.iter().any(|n| t == *n || t.strip_prefix(n.as_str()).is_some_and(|rest| rest.starts_with(" - ")))
+        })
+        .collect()
+}
+
+#[cfg(not(windows))]
+pub fn bring_folder_window(_names: &[String]) -> Option<bool> {
+    None
+}
+
+#[cfg(not(windows))]
+pub fn folder_windows(_names: &[String]) -> Vec<isize> {
+    Vec::new()
 }
 
 /// Izuki is quitting: every window it pinned or made see-through goes back
