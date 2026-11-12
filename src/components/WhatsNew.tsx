@@ -23,6 +23,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "⚡", title: "Does it directly, like Jarvis", how: "Izuki uses its own abilities instead of clicking around, and presses real buttons through Windows — your mouse stays yours. Try \"open Bluetooth settings\" or \"close Chrome\"." },
+  { icon: "🧠", title: "Choose how Izuki uses your brains", how: "Fastest, My brain + backup, or Only my brain.", try: { label: "Open the setting", tab: "settings", id: "settings-brain-mode" } },
   { icon: "📁", title: "A folder opens once", how: "Ask for Downloads when it's already open and Izuki brings that window to the front instead of opening another." },
   { icon: "🌗", title: "Dim the rest", how: "Say \"dim the rest\" and everything but the window you're in fades back. The light follows you when you switch windows, Focus mode can do it for you, and \"undim\" brings it all back.", try: { label: "Open Layouts", tab: "style", id: "style-arrange" } },
   { icon: "📌", title: "Keep on top, see-through", how: "\"Keep Spotify on top\", \"make Discord see-through\", \"make this window 50% transparent\", or \"hide everything except this\". Each one undoes in a sentence.", try: { label: "Open Layouts", tab: "style", id: "style-arrange" } },
