@@ -23,6 +23,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "⌨️", title: "Typing and scrolling, done directly", how: "Izuki fills boxes, scrolls, picks list items, opens dropdowns and sets sliders through Windows itself — your mouse and keyboard stay yours." },
+  { icon: "📬", title: "Inbox says when it checked", how: "Go through my inbox now shows the time, how many emails it read and how many need you.", try: { label: "Open Inbox", tab: "apps", id: "apps-inbox" } },
   { icon: "⚡", title: "Does it directly, like Jarvis", how: "Izuki uses its own abilities instead of clicking around, and presses real buttons through Windows — your mouse stays yours. Try \"open Bluetooth settings\" or \"close Chrome\"." },
   { icon: "🧠", title: "Choose how Izuki uses your brains", how: "Fastest, My brain + backup, or Only my brain.", try: { label: "Open the setting", tab: "settings", id: "settings-brain-mode" } },
   { icon: "📁", title: "A folder opens once", how: "Ask for Downloads when it's already open and Izuki brings that window to the front instead of opening another." },
