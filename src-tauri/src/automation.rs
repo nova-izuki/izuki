@@ -941,9 +941,24 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
         // mode always; otherwise where pressing is exactly a click (a
         // button, a link, a tab, a tick box — not a list item, which a press
         // would open).
-        let click_like = uia::presses_like_a_click(&identity.kind);
-        if (precision || click_like) && matches!(step.action, Intent::Click | Intent::Auto) && uia::invoke_grounded(identity)? {
+        let double = step.action == Intent::DoubleClick;
+        if matches!(step.action, Intent::Click | Intent::Auto | Intent::DoubleClick)
+            && uia::clicks_directly(&identity.kind, double)
+            && uia::click_grounded(identity, double)?
+        {
+            return Ok(format!("{} parsed control {} directly (no mouse)", if double { "opened" } else { "activated" }, step.target.unwrap_or(0)));
+        }
+        if precision && matches!(step.action, Intent::Click | Intent::Auto) && uia::invoke_grounded(identity)? {
             return Ok(format!("activated parsed control {} directly (no mouse)", step.target.unwrap_or(0)));
+        }
+        // A one-line box (a search box, a name, an address) is filled
+        // straight through Windows: no keys, the mouse stays put.
+        if targeted_type {
+            if let Some(text) = &step.text_to_type {
+                if uia::fill_grounded(identity, text)? {
+                    return Ok(format!("typed into parsed control {} directly (no mouse, no keys)", step.target.unwrap_or(0)));
+                }
+            }
         }
         // Typing straight into the box too: in Jarvis mode always; otherwise
         // only into an empty box (setting it replaces what's there, where a
@@ -991,9 +1006,20 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
     // pressed through Windows itself; the pointer is only for what can't be
     // pressed that way (a canvas, a game, a list item, an app that draws its
     // own buttons).
-    if matches!(step.action, Intent::Click | Intent::Auto) && !step.hover_first {
+    // A right-click menu: the control takes the keyboard focus and its menu
+    // opens from the keyboard (shift+F10) — the pointer stays put.
+    if step.action == Intent::RightClick && !step.hover_first {
         if let Some(name) = verified_name.map(|n| n.split(" → ").next().unwrap_or(n).to_string()) {
-            match uia::press_at(x, y, &name) {
+            if uia::focus_at(x, y, &name) {
+                press_key("shift+f10")?;
+                return Ok(format!("opened the menu of \"{name}\" directly (no mouse)"));
+            }
+        }
+    }
+    if matches!(step.action, Intent::Click | Intent::Auto | Intent::DoubleClick) && !step.hover_first {
+        let double = step.action == Intent::DoubleClick;
+        if let Some(name) = verified_name.map(|n| n.split(" → ").next().unwrap_or(n).to_string()) {
+            match uia::click_at_direct(x, y, &name, double) {
                 Ok(true) => {
                     // A press on YouTube is usually "play this": watch for its ads.
                     if uia::foreground_title().to_lowercase().contains("youtube") {
@@ -1069,6 +1095,10 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
         Intent::Do => return crate::direct::run(step.text_to_type.as_deref().unwrap_or_default()),
         Intent::Drag => {
             let to = (step.x2.unwrap_or(x), step.y2.unwrap_or(y));
+            // A slider is set to that spot through Windows — no dragging.
+            if uia::slide_at(x, y, to.0, to.1)? {
+                return Ok(format!("moved the slider at {label} directly (no mouse)"));
+            }
             drag((x, y), to, move_ms)?;
         }
         Intent::Stroke => {
@@ -1080,6 +1110,16 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
             return Ok(format!("drew a line through {} points", path.len()));
         }
         Intent::Type => {
+            // A one-line box there is filled straight through Windows — no
+            // keys, the mouse stays put (a document or a web page is typed
+            // into as before).
+            if x != 0 || y != 0 {
+                if let Some(text) = &step.text_to_type {
+                    if uia::fill_at(x, y, text)? {
+                        return Ok(format!("typed into the box at {label} directly (no mouse, no keys)"));
+                    }
+                }
+            }
             // Focus the field first unless the model gave no coordinates.
             if x != 0 || y != 0 {
                 click_at(x, y, Button::Left, 1, move_ms)?;
@@ -1127,6 +1167,11 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
             // than dragging it to the top-left corner of the screen.
             let (sx, sy) = if x <= 0 && y <= 0 { crate::capture::cursor_pos() } else { (x, y) };
             let (amount, axis) = scroll_direction(step.key.as_deref(), step.scroll_amount.unwrap_or(3));
+            // The pane there scrolled straight through Windows — no wheel,
+            // the mouse stays put; the wheel only if that didn't move it.
+            if uia::scroll_direct(sx, sy, amount, matches!(axis, Axis::Horizontal)).unwrap_or(false) {
+                return Ok(format!("scrolled at {label} directly (no mouse)"));
+            }
             // Remember the spot, then check it really moved afterwards.
             let before = crate::capture::capture(watch_region(sx, sy)).ok();
             scroll_axis(sx, sy, amount, axis, move_ms)?;

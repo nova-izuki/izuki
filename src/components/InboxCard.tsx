@@ -141,7 +141,9 @@ export function InboxCard() {
           {digest.summary && <p className="text-[12px] leading-snug text-izk-ink">{digest.summary}</p>}
           {digest.checked.length > 0 && (
             <p className="text-[10.5px] text-izk-muted">
-              Read: {digest.checked.join(", ")}
+              {digest.checked_at > 0 && `Checked at ${new Date(digest.checked_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · `}
+              {digest.found > 0 && `read ${digest.found} email${digest.found === 1 ? "" : "s"} from the last 3 days in `}
+              {digest.checked.join(", ")}
               {digest.failed.length > 0 && ` · ${digest.failed.length} Gmail check${digest.failed.length === 1 ? "" : "s"} failed`}
             </p>
           )}
@@ -161,7 +163,11 @@ export function InboxCard() {
               </div>
             </div>
           ))}
-          {digest.skipped > 0 && <p className="text-[10.5px] text-izk-muted">{digest.skipped} newsletters and notifications skipped.</p>}
+          {(digest.skipped > 0 || digest.found > digest.looked_at) && (
+            <p className="text-[10.5px] text-izk-muted">
+              {items.length} need{items.length === 1 ? "s" : ""} you · {digest.skipped + Math.max(0, digest.found - digest.looked_at)} promotions, newsletters and notifications skipped.
+            </p>
+          )}
         </div>
       )}
       {note && <p className="mt-1.5 text-[11.5px] text-izk-teal">{note}</p>}

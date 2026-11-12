@@ -313,6 +313,143 @@ pub fn invoke_grounded(identity: &ControlIdentity) -> anyhow::Result<bool> {
 #[cfg(not(windows))]
 pub fn invoke_grounded(_identity: &ControlIdentity) -> anyhow::Result<bool> { Ok(false) }
 
+/// A box Izuki fills directly through Windows: one line (a search box, a
+/// name, an address — not a document, where filling it would replace the
+/// whole text), takes text, isn't a password box, and isn't in a web
+/// browser (the browser extension types inside the page; a page's own
+/// scripts may not notice a box filled from outside).
+#[cfg(windows)]
+fn fills_directly(el: &uiautomation::UIElement) -> bool {
+    use uiautomation::patterns::UIValuePattern;
+    if el.is_password().unwrap_or(true) || !el.is_enabled().unwrap_or(false) {
+        return false;
+    }
+    let kind = el.get_control_type().map(|c| format!("{c:?}")).unwrap_or_default();
+    if !matches!(kind.as_str(), "Edit" | "ComboBox") {
+        return false;
+    }
+    let one_line = el.get_bounding_rectangle().is_ok_and(|r| {
+        let h = r.get_bottom() - r.get_top();
+        h > 0 && h <= 64
+    });
+    if !one_line {
+        return false;
+    }
+    let in_browser = el.get_process_id().map_or(true, |pid| {
+        let n = process_name(pid as u32).to_lowercase();
+        let n = n.rsplit(['\\', '/']).next().unwrap_or(&n).to_string();
+        ["chrome", "msedge", "firefox", "brave", "opera", "vivaldi", "arc"].iter().any(|b| n.starts_with(b))
+    });
+    !in_browser && el.get_pattern::<UIValuePattern>().is_ok_and(|p| !p.is_readonly().unwrap_or(true))
+}
+
+/// Fill one box with `text` through Windows and read it back. It gets the
+/// keyboard focus first, so an Enter after it lands in it. Once the text
+/// was set, an error never means "type it again" (it may be in already).
+#[cfg(windows)]
+fn fill(el: &uiautomation::UIElement, text: &str) -> anyhow::Result<bool> {
+    use uiautomation::patterns::UIValuePattern;
+    let Ok(p) = el.get_pattern::<UIValuePattern>() else { return Ok(false) };
+    let _ = el.set_focus();
+    p.set_value(text).map_err(|e| {
+        anyhow::anyhow!("{}filling the box directly may have worked ({e}) — take a fresh look before typing it again", crate::ext::UNCONFIRMED)
+    })?;
+    let shown = p.get_value().unwrap_or_default();
+    if shown.trim() != text.trim() {
+        return Err(anyhow::anyhow!(
+            "typed_mismatch: the box shows \"{shown}\" instead of \"{text}\" — do not report this as typed; take another look and try the field again"
+        ));
+    }
+    Ok(true)
+}
+
+/// Fill the one-line box under (x, y) with `text` through Windows — no keys
+/// pressed, the mouse stays put. Ok(false): not a box Izuki fills directly
+/// (it's then clicked and typed into as usual).
+#[cfg(windows)]
+pub fn fill_at(x: i32, y: i32, text: &str) -> anyhow::Result<bool> {
+    use uiautomation::types::Point;
+    use uiautomation::UIAutomation;
+    if covered_at(x, y).is_some() {
+        return Ok(false);
+    }
+    let Ok(a) = UIAutomation::new().or_else(|_| UIAutomation::new_direct()) else { return Ok(false) };
+    let walker = a.get_control_view_walker().ok();
+    let mut current = a.element_from_point(Point::new(x, y)).ok();
+    for _ in 0..3 {
+        let Some(el) = current else { break };
+        if fills_directly(&el) {
+            return fill(&el, text);
+        }
+        current = walker.as_ref().and_then(|w| w.get_parent(&el).ok());
+    }
+    Ok(false)
+}
+
+#[cfg(not(windows))]
+pub fn fill_at(_x: i32, _y: i32, _text: &str) -> anyhow::Result<bool> {
+    Ok(false)
+}
+
+/// `fill_at` for a numbered box from the screen list.
+#[cfg(windows)]
+pub fn fill_grounded(identity: &ControlIdentity, text: &str) -> anyhow::Result<bool> {
+    let (el, _, _) = grounded_element(identity)?;
+    if !fills_directly(&el) {
+        return Ok(false);
+    }
+    fill(&el, text)
+}
+
+#[cfg(not(windows))]
+pub fn fill_grounded(_identity: &ControlIdentity, _text: &str) -> anyhow::Result<bool> {
+    Ok(false)
+}
+
+/// Scroll the pane under (x, y) through Windows (its scroll pattern) —
+/// no wheel, the mouse stays put. `amount` in wheel notches (three lines
+/// each; down/right when positive). Ok(false) when nothing there scrolls
+/// that way or it didn't move — then the wheel does it (a scroll that
+/// didn't happen is safe to do again).
+#[cfg(windows)]
+pub fn scroll_direct(x: i32, y: i32, amount: i32, horizontal: bool) -> anyhow::Result<bool> {
+    use uiautomation::patterns::UIScrollPattern;
+    use uiautomation::types::{Point, ScrollAmount};
+    use uiautomation::UIAutomation;
+    if amount == 0 || covered_at(x, y).is_some() {
+        return Ok(false);
+    }
+    let Ok(a) = UIAutomation::new().or_else(|_| UIAutomation::new_direct()) else { return Ok(false) };
+    let walker = a.get_control_view_walker().ok();
+    let mut current = a.element_from_point(Point::new(x, y)).ok();
+    for _ in 0..8 {
+        let Some(el) = current else { break };
+        if let Ok(p) = el.get_pattern::<UIScrollPattern>() {
+            let can = if horizontal { p.is_horizontally_scrollable() } else { p.is_vertically_scrollable() };
+            if can.unwrap_or(false) {
+                let at = |p: &UIScrollPattern| if horizontal { p.get_horizontal_scroll_percent() } else { p.get_vertical_scroll_percent() };
+                let before = at(&p).unwrap_or(-1.0);
+                let step = if amount < 0 { ScrollAmount::SmallDecrement } else { ScrollAmount::SmallIncrement };
+                for _ in 0..(amount.unsigned_abs() * 3).clamp(1, 45) {
+                    let r = if horizontal { p.scroll(step, ScrollAmount::NoAmount) } else { p.scroll(ScrollAmount::NoAmount, step) };
+                    if r.is_err() {
+                        break;
+                    }
+                }
+                let after = at(&p).unwrap_or(-1.0);
+                return Ok((after - before).abs() > 0.001);
+            }
+        }
+        current = walker.as_ref().and_then(|w| w.get_parent(&el).ok());
+    }
+    Ok(false)
+}
+
+#[cfg(not(windows))]
+pub fn scroll_direct(_x: i32, _y: i32, _amount: i32, _horizontal: bool) -> anyhow::Result<bool> {
+    Ok(false)
+}
+
 /// Control kinds where pressing through Windows is exactly a click: buttons,
 /// links, menu items, tabs, tick boxes and option buttons. Not list or tree
 /// items (pressing opens them; a click only picks them), nor anything drawn
@@ -1224,6 +1361,13 @@ pub fn press_named_checked(_name: &str) -> anyhow::Result<bool> {
 /// that errors may already have acted: propagate it, never duplicate by click.
 #[cfg(windows)]
 pub fn press_at(x: i32, y: i32, name: &str) -> anyhow::Result<bool> {
+    click_at_direct(x, y, name, false)
+}
+
+/// `press_at` for a click or a double-click: the named control under the
+/// point, done through Windows (`click_element`).
+#[cfg(windows)]
+pub fn click_at_direct(x: i32, y: i32, name: &str, double: bool) -> anyhow::Result<bool> {
     use uiautomation::types::Point;
     use uiautomation::UIAutomation;
     if name.trim().is_empty() || covered_at(x, y).is_some() { return Ok(false); }
@@ -1233,7 +1377,7 @@ pub fn press_at(x: i32, y: i32, name: &str) -> anyhow::Result<bool> {
     for _ in 0..5 {
         let Some(el) = current else { break };
         if same_name(&el.get_name().unwrap_or_default(), name) {
-            return press_element(&el);
+            return click_element(&el, double);
         }
         current = walker.as_ref().and_then(|w| w.get_parent(&el).ok());
     }
@@ -1243,21 +1387,175 @@ pub fn press_at(x: i32, y: i32, name: &str) -> anyhow::Result<bool> {
 #[cfg(not(windows))]
 pub fn press_at(_x: i32, _y: i32, _name: &str) -> anyhow::Result<bool> { Ok(false) }
 
+#[cfg(not(windows))]
+pub fn click_at_direct(_x: i32, _y: i32, _name: &str, _double: bool) -> anyhow::Result<bool> { Ok(false) }
+
+/// A numbered control clicked (or double-clicked) through Windows
+/// (`click_element`).
+#[cfg(windows)]
+pub fn click_grounded(identity: &ControlIdentity, double: bool) -> anyhow::Result<bool> {
+    let (el, _, _) = grounded_element(identity)?;
+    click_element(&el, double)
+}
+
+#[cfg(not(windows))]
+pub fn click_grounded(_identity: &ControlIdentity, _double: bool) -> anyhow::Result<bool> { Ok(false) }
+
+/// Give the named control under the point the keyboard focus (and pick it,
+/// in a list), for a right-click menu opened from the keyboard. False when
+/// it can't be focused that way.
+#[cfg(windows)]
+pub fn focus_at(x: i32, y: i32, name: &str) -> bool {
+    use uiautomation::patterns::UISelectionItemPattern;
+    use uiautomation::types::Point;
+    use uiautomation::UIAutomation;
+    if name.trim().is_empty() || covered_at(x, y).is_some() {
+        return false;
+    }
+    let Ok(a) = UIAutomation::new().or_else(|_| UIAutomation::new_direct()) else { return false };
+    let walker = a.get_control_view_walker().ok();
+    let mut current = a.element_from_point(Point::new(x, y)).ok();
+    for _ in 0..5 {
+        let Some(el) = current else { break };
+        if same_name(&el.get_name().unwrap_or_default(), name) {
+            if let Ok(p) = el.get_pattern::<UISelectionItemPattern>() {
+                let _ = p.select();
+            }
+            return el.set_focus().is_ok() && el.has_keyboard_focus().unwrap_or(false);
+        }
+        current = walker.as_ref().and_then(|w| w.get_parent(&el).ok());
+    }
+    false
+}
+
+#[cfg(not(windows))]
+pub fn focus_at(_x: i32, _y: i32, _name: &str) -> bool { false }
+
+/// Move the slider under (x, y) to where (x2, y2) is along it, through
+/// Windows (its value) — no dragging. Ok(false) when there's no slider there.
+#[cfg(windows)]
+pub fn slide_at(x: i32, y: i32, x2: i32, y2: i32) -> anyhow::Result<bool> {
+    use uiautomation::patterns::UIRangeValuePattern;
+    use uiautomation::types::Point;
+    use uiautomation::UIAutomation;
+    if covered_at(x, y).is_some() {
+        return Ok(false);
+    }
+    let Ok(a) = UIAutomation::new().or_else(|_| UIAutomation::new_direct()) else { return Ok(false) };
+    let walker = a.get_control_view_walker().ok();
+    let mut current = a.element_from_point(Point::new(x, y)).ok();
+    for _ in 0..3 {
+        let Some(el) = current else { break };
+        let kind = el.get_control_type().map(|c| format!("{c:?}")).unwrap_or_default();
+        if kind == "Slider" {
+            let Ok(p) = el.get_pattern::<UIRangeValuePattern>() else { return Ok(false) };
+            if p.is_readonly().unwrap_or(true) || !el.is_enabled().unwrap_or(false) {
+                return Ok(false);
+            }
+            let Ok(r) = el.get_bounding_rectangle() else { return Ok(false) };
+            let (w, h) = ((r.get_right() - r.get_left()).max(1), (r.get_bottom() - r.get_top()).max(1));
+            let frac = slider_fraction(w >= h, r.get_left(), r.get_top(), w, h, x2, y2);
+            let (min, max) = (p.get_minimum().unwrap_or(0.0), p.get_maximum().unwrap_or(100.0));
+            p.set_value(min + frac * (max - min)).map_err(|e| {
+                anyhow::anyhow!("{}moving the slider directly may have worked ({e}) — take a fresh look before moving it again", crate::ext::UNCONFIRMED)
+            })?;
+            return Ok(true);
+        }
+        current = walker.as_ref().and_then(|w| w.get_parent(&el).ok());
+    }
+    Ok(false)
+}
+
+#[cfg(not(windows))]
+pub fn slide_at(_x: i32, _y: i32, _x2: i32, _y2: i32) -> anyhow::Result<bool> { Ok(false) }
+
+/// Where a point falls along a slider, 0.0 (its start: left, or bottom when
+/// it stands upright) to 1.0.
+pub fn slider_fraction(across: bool, left: i32, top: i32, w: i32, h: i32, x2: i32, y2: i32) -> f64 {
+    let f = if across { (x2 - left) as f64 / w as f64 } else { (top + h - y2) as f64 / h as f64 };
+    f.clamp(0.0, 1.0)
+}
+
+/// What a click (or a double-click) on this control does, done through
+/// Windows instead: a button pressed, a tick box ticked, an option chosen,
+/// an item in a list, tree or table picked (one click) or opened (two), a
+/// dropdown or a menu with a submenu opened. Ok(false): nothing like that
+/// here — the pointer then. An error may already have acted: never repeated
+/// another way.
+#[cfg(windows)]
+fn click_element(el: &uiautomation::UIElement, double: bool) -> anyhow::Result<bool> {
+    use uiautomation::patterns::{UIExpandCollapsePattern, UIInvokePattern, UISelectionItemPattern, UITogglePattern};
+    use uiautomation::types::ExpandCollapseState;
+    let kind = el.get_control_type().map(|c| format!("{c:?}")).unwrap_or_default();
+    if !clicks_directly(&kind, double) {
+        return Ok(false);
+    }
+    if !el.is_enabled().unwrap_or(false) {
+        return Err(anyhow::anyhow!("disabled: target control is not enabled"));
+    }
+    let failed = |what: &'static str| move |e: uiautomation::Error| anyhow::anyhow!("direct {what} failed: {e}");
+    let toggle_open = |p: UIExpandCollapsePattern| -> anyhow::Result<bool> {
+        match p.get_state() {
+            Ok(ExpandCollapseState::Expanded) => p.collapse().map_err(failed("collapse"))?,
+            _ => p.expand().map_err(failed("expand"))?,
+        }
+        Ok(true)
+    };
+    if matches!(kind.as_str(), "ListItem" | "TreeItem" | "DataItem") {
+        if double {
+            // Two clicks open it.
+            if let Ok(p) = el.get_pattern::<UIInvokePattern>() {
+                p.invoke().map_err(failed("open"))?;
+                return Ok(true);
+            }
+            if let Ok(p) = el.get_pattern::<UIExpandCollapsePattern>() {
+                return toggle_open(p);
+            }
+            return Ok(false);
+        }
+        // One click picks it.
+        if let Ok(p) = el.get_pattern::<UISelectionItemPattern>() {
+            let _ = el.set_focus();
+            p.select().map_err(failed("selection"))?;
+            return Ok(true);
+        }
+        return Ok(false);
+    }
+    if kind == "ComboBox" {
+        return match el.get_pattern::<UIExpandCollapsePattern>() {
+            Ok(p) => toggle_open(p),
+            Err(_) => Ok(false),
+        };
+    }
+    if let Ok(p) = el.get_pattern::<UIInvokePattern>() { p.invoke().map_err(failed("control"))?; return Ok(true); }
+    if let Ok(p) = el.get_pattern::<UITogglePattern>() { p.toggle().map_err(failed("toggle"))?; return Ok(true); }
+    if let Ok(p) = el.get_pattern::<UISelectionItemPattern>() { p.select().map_err(failed("selection"))?; return Ok(true); }
+    // A menu item that opens a submenu, a split button's arrow.
+    if let Ok(p) = el.get_pattern::<UIExpandCollapsePattern>() {
+        return toggle_open(p);
+    }
+    Ok(false)
+}
+
+/// Kinds of control a click (or a double-click) is done on through Windows:
+/// buttons, links, menu items, tabs, tick boxes and option buttons (one
+/// click); items in lists, trees and tables (picked with one, opened with
+/// two); dropdowns (one). Anything else gets the pointer.
+pub fn clicks_directly(kind: &str, double: bool) -> bool {
+    if double {
+        matches!(kind, "ListItem" | "TreeItem" | "DataItem")
+    } else {
+        presses_like_a_click(kind) || matches!(kind, "ListItem" | "TreeItem" | "DataItem" | "ComboBox")
+    }
+}
+
 /// Press one control through Windows, the way a click would — only where
 /// pressing *is* a click: a list item or a file "invoked" opens instead of
 /// being picked, so that one gets the pointer (Ok(false)). An error may
 /// already have acted: propagate it, never duplicate by click.
 #[cfg(windows)]
 fn press_element(el: &uiautomation::UIElement) -> anyhow::Result<bool> {
-    use uiautomation::patterns::{UIInvokePattern, UISelectionItemPattern, UITogglePattern};
-    if !presses_like_a_click(&el.get_control_type().map(|c| format!("{c:?}")).unwrap_or_default()) {
-        return Ok(false);
-    }
-    if !el.is_enabled().unwrap_or(false) { return Err(anyhow::anyhow!("disabled: target control is not enabled")); }
-    if let Ok(p) = el.get_pattern::<UIInvokePattern>() { p.invoke().map_err(|e| anyhow::anyhow!("direct control failed: {e}"))?; return Ok(true); }
-    if let Ok(p) = el.get_pattern::<UITogglePattern>() { p.toggle().map_err(|e| anyhow::anyhow!("direct toggle failed: {e}"))?; return Ok(true); }
-    if let Ok(p) = el.get_pattern::<UISelectionItemPattern>() { p.select().map_err(|e| anyhow::anyhow!("direct selection failed: {e}"))?; return Ok(true); }
-    Ok(false)
+    click_element(el, false)
 }
 
 /// What the text box with the keyboard focus holds now (never a password box).
@@ -2015,6 +2313,10 @@ pub fn invalidate_controls() { PREFETCH.lock().take(); }
 mod direct_tests {
     use super::*;
 
+    /// The real-desktop tests take turns: two test windows asked about at
+    /// once from one process confuse UI Automation.
+    static REAL: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
     #[test]
     fn only_click_like_controls_are_pressed_directly() {
         assert!(presses_like_a_click("Button"));
@@ -2024,6 +2326,99 @@ mod direct_tests {
         assert!(!presses_like_a_click("TreeItem"));
         assert!(!presses_like_a_click("Edit"));
         assert!(!presses_like_a_click(""));
+        // A list item is picked with one click and opened with two — both
+        // through Windows; a button is never "double-pressed".
+        assert!(clicks_directly("ListItem", false) && clicks_directly("ListItem", true));
+        assert!(clicks_directly("ComboBox", false));
+        assert!(!clicks_directly("Button", true));
+        assert!(!clicks_directly("Pane", false));
+    }
+
+    #[test]
+    fn a_slider_moves_to_where_it_was_dragged() {
+        // Across: left edge 0, right edge 1.
+        assert_eq!(slider_fraction(true, 100, 0, 200, 20, 200, 10), 0.5);
+        assert_eq!(slider_fraction(true, 100, 0, 200, 20, 50, 10), 0.0, "past the start");
+        assert_eq!(slider_fraction(true, 100, 0, 200, 20, 400, 10), 1.0, "past the end");
+        // Upright: the bottom is the start.
+        assert_eq!(slider_fraction(false, 0, 100, 20, 200, 10, 250), 0.25);
+    }
+
+    /// Opt-in, on a real desktop (IZUKI_WINDOWS_REAL=1): a real one-line box
+    /// is filled through Windows — no keys, and the mouse never moves.
+    #[cfg(windows)]
+    #[test]
+    fn real_a_box_is_filled_without_keys_or_mouse() {
+        let _turn = REAL.lock();
+        use windows::core::w;
+        use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            CreateWindowExW, DispatchMessageW, GetCursorPos, GetMessageW, GetWindowTextW, PostThreadMessageW, TranslateMessage, MSG,
+            WM_QUIT, WS_BORDER, WS_EX_NOACTIVATE, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
+        };
+        if std::env::var("IZUKI_WINDOWS_REAL").is_err() {
+            return;
+        }
+        let (tx, rx) = std::sync::mpsc::channel::<(isize, u32)>();
+        let ui = std::thread::spawn(move || unsafe {
+            // Like any app's window thread: COM on, so Windows can describe
+            // the box to UI Automation.
+            let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED);
+            // A small window with a one-line box inside, like any app's.
+            let frame = CreateWindowExW(WS_EX_TOPMOST | WS_EX_NOACTIVATE, w!("STATIC"), w!("Izuki test"), WS_POPUP | WS_VISIBLE | WS_BORDER, 240, 300, 300, 50, None, None, None, None)
+                .expect("a test window");
+            let h = CreateWindowExW(
+                windows::Win32::UI::WindowsAndMessaging::WINDOW_EX_STYLE(0),
+                w!("EDIT"),
+                w!(""),
+                windows::Win32::UI::WindowsAndMessaging::WS_CHILD | WS_VISIBLE | WS_BORDER,
+                10,
+                12,
+                270,
+                24,
+                Some(frame),
+                None,
+                None,
+                None,
+            )
+            .expect("a test box");
+            let _ = tx.send((h.0 as isize, windows::Win32::System::Threading::GetCurrentThreadId()));
+            let mut msg = MSG::default();
+            while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                let _ = TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        });
+        let (raw, thread) = rx.recv().unwrap();
+        let h = HWND(raw as *mut core::ffi::c_void);
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let mut before = windows::Win32::Foundation::POINT::default();
+        let _ = unsafe { GetCursorPos(&mut before) };
+        // The box as UI Automation finds it from its parent window (the way
+        // the screen list walks an app).
+        let el = {
+            let a = uiautomation::UIAutomation::new().expect("UI Automation");
+            let parent = unsafe { windows::Win32::UI::WindowsAndMessaging::GetParent(h) }.expect("its window");
+            let frame = a.element_from_handle(parent.into());
+            let frame = frame.expect("the window");
+            let cond = a.create_true_condition().expect("a condition");
+            frame.find_first(uiautomation::types::TreeScope::Descendants, &cond).expect("the box")
+        };
+        let ok = fills_directly(&el);
+        let filled = ok && fill(&el, "hello from izuki").expect("no error");
+        let mut buf = [0u16; 64];
+        let n = unsafe { GetWindowTextW(h, &mut buf) };
+        let text = String::from_utf16_lossy(&buf[..n.max(0) as usize]);
+        let mut after = windows::Win32::Foundation::POINT::default();
+        let _ = unsafe { GetCursorPos(&mut after) };
+        unsafe {
+            let _ = PostThreadMessageW(thread, WM_QUIT, WPARAM(0), LPARAM(0));
+        }
+        let _ = ui.join();
+        assert!(ok, "a one-line box is one Izuki fills directly");
+        assert!(filled);
+        assert_eq!(text, "hello from izuki", "the box really holds it");
+        assert_eq!((before.x, before.y), (after.x, after.y), "the mouse never moved");
     }
 
     /// Opt-in, on a real desktop (IZUKI_WINDOWS_REAL=1): a real Windows tick
@@ -2031,6 +2426,7 @@ mod direct_tests {
     #[cfg(windows)]
     #[test]
     fn real_a_tick_box_is_pressed_without_the_mouse() {
+        let _turn = REAL.lock();
         use windows::core::w;
         use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
         use windows::Win32::UI::WindowsAndMessaging::{
