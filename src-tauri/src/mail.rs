@@ -332,7 +332,80 @@ const FILLER: &[&str] = &[
 /// unread emails in my second gmail" → what to look for. `None` for
 /// anything that writes, sends or changes mail, and for the "what's
 /// important" kind (the inbox digest does those).
+/// Where the mail would be read ("on Chrome", "in my browser", "on my
+/// phone") — never what it's about.
+const PLACES: &[&str] = &[
+    "chrome", "edge", "firefox", "brave", "opera", "safari", "browser", "web", "internet", "phone", "pc", "laptop", "computer", "app", "website", "site",
+    "online", "gmail.com",
+];
+
+/// How good or important, not what about: "any good emails", "anything
+/// important", "something worth reading" ask what matters — the inbox check.
+const QUALITY: &[&str] = &[
+    "good", "great", "nice", "interesting", "important", "useful", "cool", "worth", "worthwhile", "best", "notable", "exciting", "fun", "anything",
+    "something", "stuff", "things", "matters", "matter", "relevant", "decent", "special", "reading", "checking", "seeing",
+];
+
+/// "check my gmail on chrome for any good message", "any good emails?",
+/// "anything important in my inbox": the person wants what matters picked
+/// out (the inbox check), not a search for those words.
+pub fn wants_what_matters(said: &str) -> bool {
+    let s = format!(" {} ", said.to_lowercase().replace(['?', '!', ',', '.'], " ").split_whitespace().collect::<Vec<_>>().join(" "));
+    let words: Vec<&str> = s.split_whitespace().collect();
+    // Unread, a day, or one account named: the search keeps those (the
+    // inbox check reads the last few days of every account).
+    let filtered = [" unread ", " haven't read ", " havent read ", " today ", " this morning ", " yesterday ", " this week ", " past week ", " first ", " second ", " third ", " fourth ", " fifth "]
+        .iter()
+        .any(|w| s.contains(w))
+        || words.iter().any(|w| w.contains('@'));
+    !filtered && words.iter().any(|w| MAIL_WORDS.contains(w)) && topic_words(&words).is_empty() && words.iter().any(|w| QUALITY.contains(w))
+}
+
+/// The words that say what the mail is about: not filler, not where it's
+/// read ("on chrome"), not how good it is ("any good").
+fn topic_words<'a>(words: &[&'a str]) -> Vec<&'a str> {
+    let mut out = Vec::new();
+    let into = ["on", "in", "using", "through", "via", "with"];
+    let place_at = |i: usize| {
+        let w = words[i];
+        let placed = (i > 0 && into.contains(&words[i - 1]))
+            || (i > 1 && ["my", "the"].contains(&words[i - 1]) && into.contains(&words[i - 2]));
+        PLACES.contains(&w) && (placed || ["browser", "web", "internet", "online", "website"].contains(&w))
+    };
+    // A word that names nothing: filler, a mail word, an address, a place it's
+    // read, or how good it is.
+    let names_nothing = |i: usize| {
+        let w = words[i];
+        FILLER.contains(&w) || MAIL_WORDS.contains(&w) || w.contains('@') || QUALITY.contains(&w) || place_at(i)
+    };
+    for (i, w) in words.iter().enumerate() {
+        // "on Chrome", "in my browser", "on the web": where, not what.
+        if place_at(i) {
+            continue;
+        }
+        // "using" (etc.) that only leads to a place.
+        if into.contains(w) && (i + 1..words.len().min(i + 3)).any(|j| place_at(j)) {
+            continue;
+        }
+        // "Any good emails" is how good; "Best Buy" is a name — a quality
+        // word right before a word that names something stays.
+        if QUALITY.contains(w) && i + 1 < words.len() && !names_nothing(i + 1) {
+            out.push(*w);
+            continue;
+        }
+        if names_nothing(i) {
+            continue;
+        }
+        out.push(*w);
+    }
+    out
+}
+
 pub fn parse_ask(said: &str) -> Option<Ask> {
+    // "Any good emails?" asks what matters: the inbox check answers that.
+    if wants_what_matters(said) {
+        return None;
+    }
     let s = format!(" {} ", said.to_lowercase().replace(['?', '!', ',', '.'], " ").split_whitespace().collect::<Vec<_>>().join(" "));
     let words: Vec<&str> = s.split_whitespace().collect();
     if !words.iter().any(|w| MAIL_WORDS.contains(w)) {
@@ -357,12 +430,7 @@ pub fn parse_ask(said: &str) -> Option<Ask> {
             ask.account = Some(w.trim_matches(|c: char| !c.is_alphanumeric() && c != '@' && c != '.').to_string());
         }
     }
-    let about: Vec<&str> = words
-        .iter()
-        .copied()
-        .filter(|w| !FILLER.contains(w) && !MAIL_WORDS.contains(w) && !w.contains('@'))
-        .collect();
-    ask.about = about.join(" ");
+    ask.about = topic_words(&words).join(" ");
     if ask.about.is_empty() && !ask.unread && !ask.attachments && ask.when.is_empty() && ask.account.is_none() {
         // "check my email" — the inbox digest answers that.
         return None;
@@ -694,6 +762,28 @@ pub fn masked(a: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_matters_is_the_inbox_check_not_a_word_search() {
+        // The owner's own words: not a search for "chrome good".
+        let said = "check my gmail on chrome for any good message";
+        assert!(parse_ask(said).is_none(), "not a keyword search");
+        assert!(wants_what_matters(said));
+        assert!(crate::headsup::is_inbox_question(said), "the inbox check answers it");
+        assert!(crate::headsup::is_inbox_question("any good emails?"));
+        assert!(crate::headsup::is_inbox_question("anything worth reading in my inbox"));
+        // A real topic still searches — without the "where" or "how good".
+        assert_eq!(parse_ask("any good emails from amazon on my phone").map(|a| a.about), Some("amazon".into()));
+        assert_eq!(parse_ask("find the email from my phone company").map(|a| a.about), Some("phone company".into()));
+        assert_eq!(parse_ask("Find my Home Depot email").map(|a| a.about), Some("home depot".into()));
+        // A name with a "quality" word in it stays whole.
+        assert_eq!(parse_ask("find emails from Best Buy").map(|a| a.about), Some("best buy".into()));
+        // "using Chrome" is where, all of it.
+        assert!(wants_what_matters("check my email using chrome for anything good"));
+        // Filters stay with the search.
+        let unread = parse_ask("any good unread emails from today").expect("a search");
+        assert!(unread.unread && unread.when == "today");
+    }
 
     /// Synthetic Gmail: accounts by link id, each with its emails.
     struct Fake {
