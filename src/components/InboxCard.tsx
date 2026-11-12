@@ -165,7 +165,7 @@ export function InboxCard() {
           ))}
           {(digest.skipped > 0 || digest.found > digest.looked_at) && (
             <p className="text-[10.5px] text-izk-muted">
-              {items.length} need{items.length === 1 ? "s" : ""} you · {digest.skipped + Math.max(0, digest.found - digest.looked_at)} promotions, newsletters and notifications skipped.
+              {items.length} need{items.length === 1 ? "s" : ""} you · {digest.skipped + Math.max(0, digest.found - digest.looked_at)} didn't (promotions, newsletters, notifications, or past the newest 25).
             </p>
           )}
         </div>

@@ -328,11 +328,7 @@ fn fills_directly(el: &uiautomation::UIElement) -> bool {
     if !matches!(kind.as_str(), "Edit" | "ComboBox") {
         return false;
     }
-    let one_line = el.get_bounding_rectangle().is_ok_and(|r| {
-        let h = r.get_bottom() - r.get_top();
-        h > 0 && h <= 64
-    });
-    if !one_line {
+    if !one_line_box(el) {
         return false;
     }
     let in_browser = el.get_process_id().map_or(true, |pid| {
@@ -343,24 +339,68 @@ fn fills_directly(el: &uiautomation::UIElement) -> bool {
     !in_browser && el.get_pattern::<UIValuePattern>().is_ok_and(|p| !p.is_readonly().unwrap_or(true))
 }
 
+/// One line, not a multi-line editor: a classic Windows box says so in its
+/// own style (ES_MULTILINE); any other is judged by its height.
+#[cfg(windows)]
+fn one_line_box(el: &uiautomation::UIElement) -> bool {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongW, GWL_STYLE};
+    const ES_MULTILINE: u32 = 0x0004;
+    if let Ok(h) = el.get_native_window_handle() {
+        let raw: isize = h.into();
+        if raw != 0 {
+            let class = el.get_classname().unwrap_or_default().to_lowercase();
+            if class == "edit" || class.starts_with("richedit") {
+                let style = unsafe { GetWindowLongW(HWND(raw as *mut core::ffi::c_void), GWL_STYLE) } as u32;
+                return style & ES_MULTILINE == 0;
+            }
+        }
+    }
+    el.get_bounding_rectangle().is_ok_and(|r| {
+        let h = r.get_bottom() - r.get_top();
+        h > 0 && h <= 64
+    })
+}
+
 /// Fill one box with `text` through Windows and read it back. It gets the
 /// keyboard focus first, so an Enter after it lands in it. Once the text
 /// was set, an error never means "type it again" (it may be in already).
 #[cfg(windows)]
 fn fill(el: &uiautomation::UIElement, text: &str) -> anyhow::Result<bool> {
+    fill_with(el, text, true)
+}
+
+/// `fill`, `focus` saying whether the box must take the keyboard focus
+/// first (always, for real; a test window can't take it from you).
+#[cfg(windows)]
+fn fill_with(el: &uiautomation::UIElement, text: &str, focus: bool) -> anyhow::Result<bool> {
     use uiautomation::patterns::UIValuePattern;
     let Ok(p) = el.get_pattern::<UIValuePattern>() else { return Ok(false) };
-    let _ = el.set_focus();
+    // Setting replaces what's there. Only into an empty box, or when the
+    // new text is the whole of it (it starts with what's there) — a box
+    // with other text gets clicked and typed into, which adds to it.
+    let now = p.get_value().unwrap_or_default();
+    if !now.is_empty() && !text.starts_with(&now) {
+        return Ok(false);
+    }
+    // The cursor in the box first (an Enter after it must land there);
+    // if it won't take it, nothing was done yet — the usual way then.
+    if focus && (el.set_focus().is_err() || !el.has_keyboard_focus().unwrap_or(false)) {
+        return Ok(false);
+    }
     p.set_value(text).map_err(|e| {
         anyhow::anyhow!("{}filling the box directly may have worked ({e}) — take a fresh look before typing it again", crate::ext::UNCONFIRMED)
     })?;
-    let shown = p.get_value().unwrap_or_default();
-    if shown.trim() != text.trim() {
-        return Err(anyhow::anyhow!(
+    match p.get_value() {
+        Ok(shown) if shown == text => Ok(true),
+        Ok(shown) => Err(anyhow::anyhow!(
             "typed_mismatch: the box shows \"{shown}\" instead of \"{text}\" — do not report this as typed; take another look and try the field again"
-        ));
+        )),
+        Err(e) => Err(anyhow::anyhow!(
+            "{}the box was filled but couldn't be read back ({e}) — take a fresh look before typing it again",
+            crate::ext::UNCONFIRMED
+        )),
     }
-    Ok(true)
 }
 
 /// Fill the one-line box under (x, y) with `text` through Windows — no keys
@@ -428,21 +468,34 @@ pub fn scroll_direct(x: i32, y: i32, amount: i32, horizontal: bool) -> anyhow::R
             let can = if horizontal { p.is_horizontally_scrollable() } else { p.is_vertically_scrollable() };
             if can.unwrap_or(false) {
                 let at = |p: &UIScrollPattern| if horizontal { p.get_horizontal_scroll_percent() } else { p.get_vertical_scroll_percent() };
-                let before = at(&p).unwrap_or(-1.0);
+                let before = at(&p).ok();
                 let step = if amount < 0 { ScrollAmount::SmallDecrement } else { ScrollAmount::SmallIncrement };
+                let mut ran = 0;
                 for _ in 0..(amount.unsigned_abs() * 3).clamp(1, 45) {
                     let r = if horizontal { p.scroll(step, ScrollAmount::NoAmount) } else { p.scroll(ScrollAmount::NoAmount, step) };
                     if r.is_err() {
                         break;
                     }
+                    ran += 1;
                 }
-                let after = at(&p).unwrap_or(-1.0);
-                return Ok((after - before).abs() > 0.001);
+                let after = at(&p).ok();
+                return Ok(scrolled(ran, before, after));
             }
         }
         current = walker.as_ref().and_then(|w| w.get_parent(&el).ok());
     }
     Ok(false)
+}
+
+/// Did a direct scroll happen? Nothing ran: no. It ran and the position
+/// moved: yes. It ran but the position couldn't be read: counted as done —
+/// scrolling again with the wheel could scroll twice.
+pub fn scrolled(ran: u32, before: Option<f64>, after: Option<f64>) -> bool {
+    match (ran, before, after) {
+        (0, _, _) => false,
+        (_, Some(b), Some(a)) => (a - b).abs() > 0.001,
+        _ => true,
+    }
 }
 
 #[cfg(not(windows))]
@@ -2335,6 +2388,15 @@ mod direct_tests {
     }
 
     #[test]
+    fn a_direct_scroll_is_never_doubled_by_the_wheel() {
+        assert!(!scrolled(0, Some(0.0), Some(0.0)), "nothing ran: the wheel may try");
+        assert!(scrolled(3, Some(0.0), Some(12.0)));
+        assert!(!scrolled(3, Some(100.0), Some(100.0)), "at the end already: the wheel may try");
+        assert!(scrolled(3, None, Some(5.0)), "ran, position unknown: done, no wheel");
+        assert!(scrolled(3, Some(5.0), None));
+    }
+
+    #[test]
     fn a_slider_moves_to_where_it_was_dragged() {
         // Across: left edge 0, right edge 1.
         assert_eq!(slider_fraction(true, 100, 0, 200, 20, 200, 10), 0.5);
@@ -2405,7 +2467,7 @@ mod direct_tests {
             frame.find_first(uiautomation::types::TreeScope::Descendants, &cond).expect("the box")
         };
         let ok = fills_directly(&el);
-        let filled = ok && fill(&el, "hello from izuki").expect("no error");
+        let filled = ok && fill_with(&el, "hello from izuki", false).expect("no error");
         let mut buf = [0u16; 64];
         let n = unsafe { GetWindowTextW(h, &mut buf) };
         let text = String::from_utf16_lossy(&buf[..n.max(0) as usize]);

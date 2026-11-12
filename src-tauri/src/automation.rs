@@ -944,7 +944,14 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
         let double = step.action == Intent::DoubleClick;
         if matches!(step.action, Intent::Click | Intent::Auto | Intent::DoubleClick)
             && uia::clicks_directly(&identity.kind, double)
-            && uia::click_grounded(identity, double)?
+            && uia::click_grounded(identity, double).map_err(|e| {
+                // It may have acted (only "disabled" is before acting).
+                if e.to_string().starts_with("disabled:") {
+                    e
+                } else {
+                    anyhow!("{}{e} — take a fresh look before trying it again", crate::ext::UNCONFIRMED)
+                }
+            })?
         {
             return Ok(format!("{} parsed control {} directly (no mouse)", if double { "opened" } else { "activated" }, step.target.unwrap_or(0)));
         }
@@ -1095,7 +1102,14 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
         Intent::Do => return crate::direct::run(step.text_to_type.as_deref().unwrap_or_default()),
         Intent::Drag => {
             let to = (step.x2.unwrap_or(x), step.y2.unwrap_or(y));
-            // A slider is set to that spot through Windows — no dragging.
+            // A slider is set to that spot through Windows — no dragging
+            // (both ends on a screen first, like any drag).
+            let b = crate::capture::virtual_bounds();
+            let on_screen = |(px, py): (i32, i32)| px >= b.x && py >= b.y && px < b.x + b.w && py < b.y + b.h;
+            if !on_screen((x, y)) || !on_screen(to) {
+                let (ox, oy) = if on_screen((x, y)) { to } else { (x, y) };
+                return Err(anyhow!("{}", off_screen_message(b, ox, oy)));
+            }
             if uia::slide_at(x, y, to.0, to.1)? {
                 return Ok(format!("moved the slider at {label} directly (no mouse)"));
             }
