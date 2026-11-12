@@ -218,10 +218,30 @@ pub fn folder_request(said: &str) -> Option<(std::path::PathBuf, &'static str)> 
     best.map(|(_, d, n)| (d, n))
 }
 
-/// Open a folder in File Explorer.
-pub fn open_folder(dir: &std::path::Path) -> Result<()> {
+/// A folder named on its own ("Downloads", "my documents", "the Downloads
+/// folder"), as the agent asks to open it: where it is and its name.
+pub fn known_folder(name: &str) -> Option<(std::path::PathBuf, &'static str)> {
+    let s = name.trim().to_lowercase();
+    let s = s.strip_prefix("my ").or_else(|| s.strip_prefix("the ")).unwrap_or(&s);
+    let s = s.strip_suffix(" folder").unwrap_or(s).trim();
+    if s.is_empty() || s.split_whitespace().count() > 1 {
+        return None;
+    }
+    folder_request(&format!("open {s}"))
+}
+
+/// Open a folder in File Explorer — once. An Explorer window already showing
+/// it comes to the front instead (true); asked again, a person switches to
+/// the window that's open, they don't open another. On 9 Nov the agent
+/// opened Downloads six times: each one opened behind another window, and
+/// the next look opened it again.
+pub fn open_folder(dir: &std::path::Path) -> Result<bool> {
+    let names: Vec<String> = dir.file_name().and_then(|n| n.to_str()).map(|n| vec![n.to_string()]).unwrap_or_default();
+    if crate::arrange::bring_folder_window(&names) {
+        return Ok(true);
+    }
     std::process::Command::new("explorer").arg(dir).spawn()?;
-    Ok(())
+    Ok(false)
 }
 
 /// Open an app by name. `Err` if nothing installed matches.
@@ -252,10 +272,50 @@ fn open_app_now(name: &str) -> Result<String> {
 mod folder_tests {
     use super::*;
 
+    /// Opt-in, on a real desktop (IZUKI_WINDOWS_REAL=1): asking for
+    /// Downloads twice leaves one Downloads window, and only windows this
+    /// test opened are closed again.
+    #[cfg(windows)]
+    #[test]
+    fn real_a_folder_opens_once() {
+        use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+        use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
+        if std::env::var("IZUKI_WINDOWS_REAL").is_err() {
+            return;
+        }
+        let Some(dir) = dirs::download_dir() else { return };
+        let names = vec![dir.file_name().unwrap().to_string_lossy().into_owned()];
+        let before = crate::arrange::folder_windows(&names);
+        let first = open_folder(&dir).unwrap();
+        assert_eq!(first, !before.is_empty(), "reused exactly when one was open");
+        let mut now = crate::arrange::folder_windows(&names);
+        for _ in 0..40 {
+            if !now.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            now = crate::arrange::folder_windows(&names);
+        }
+        assert!(!now.is_empty(), "a Downloads window is open");
+        assert!(open_folder(&dir).unwrap(), "the second ask finds the open window");
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let after = crate::arrange::folder_windows(&names);
+        assert_eq!(after.len(), now.len(), "no second Downloads window");
+        // Close only what this test opened.
+        for raw in after.into_iter().filter(|r| !before.contains(r)) {
+            let _ = unsafe { PostMessageW(Some(HWND(raw as *mut core::ffi::c_void)), WM_CLOSE, WPARAM(0), LPARAM(0)) };
+        }
+    }
+
     #[test]
     fn opens_the_folder_asked_for() {
         assert_eq!(folder_request("open my files and open downloads").map(|f| f.1), Some("Downloads"));
         assert_eq!(folder_request("open downloads").map(|f| f.1), Some("Downloads"));
+        assert_eq!(known_folder("Downloads").map(|f| f.1), Some("Downloads"));
+        assert_eq!(known_folder("the Downloads folder").map(|f| f.1), Some("Downloads"));
+        assert_eq!(known_folder("my documents").map(|f| f.1), Some("Documents"));
+        assert_eq!(known_folder("Spotify"), None);
+        assert_eq!(known_folder("downloads manager"), None, "an app, not the folder");
         assert_eq!(folder_request("show me my documents folder").map(|f| f.1), Some("Documents"));
         assert_eq!(folder_request("open file explorer then go to pictures").map(|f| f.1), Some("Pictures"));
         assert_eq!(folder_request("open the newest pdf in my downloads"), None);

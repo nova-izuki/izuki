@@ -161,8 +161,25 @@ pub fn go_to(url: &str) -> Result<bool> {
     Ok(false)
 }
 
-/// The agent's "open this app": once, then wait for it.
+/// The agent's "open this app": once, then wait for it. A folder
+/// ("Downloads") opens in File Explorer, and one that's already open comes
+/// to the front instead of opening again.
 pub fn open_app(name: &str) -> Result<String> {
+    if let Some((dir, folder)) = crate::apps::known_folder(name) {
+        let before = crate::uia::open_windows(40);
+        let front = crate::uia::foreground_title();
+        return Ok(if crate::apps::open_folder(&dir)? {
+            format!("{folder} was already open — brought it to the front (didn't open another)")
+        } else {
+            match wait_for_window(&before, &front, folder) {
+                Some(secs) => {
+                    learn(secs);
+                    format!("opened {folder}")
+                }
+                None => format!("started {folder}, but it's taking a while to open on this PC — don't open it again; set \"wait\" to a few seconds and look again"),
+            }
+        });
+    }
     let k = key("app", &crate::apps::find_app(name).unwrap_or_else(|| name.to_string()));
     let shown = name.trim().to_string();
     if let Some(ago) = opened_lately(&k) {
