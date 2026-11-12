@@ -71,6 +71,7 @@ fn sounds_failed(said: &str) -> bool {
     [
         "i couldn't", "couldn't ", "i can't ", "can't ", "i don't see", "didn't work", "that didn't", "doesn't work", "isn't working",
         "not set up", "isn't set up", "works on windows", "works in the windows app", "no app window", "windows didn't let", "failed",
+        "there's no ", "there is no ", "isn't open", "is not open", "not linked", "isn't linked", "can't tell which",
     ]
     .iter()
     .any(|p| s.starts_with(p) || s.contains(&format!(" {p}")) || s.contains(&format!("—{p}")))
@@ -109,6 +110,45 @@ fn words(s: &str) -> String {
     )
 }
 
+/// The parts of the person's request (split at "and", "then", "but",
+/// "also") where they asked for one of `consent`, without "don't", "not",
+/// "never" or "without" before it in that part. Each part from the action on.
+fn clauses_with<'a>(asked: &[&'a str], consent: &[&str]) -> Vec<Vec<&'a str>> {
+    let breaks = ["and", "then", "but", "also", "so", "or"];
+    let mut parts: Vec<&[&'a str]> = Vec::new();
+    let mut start = 0;
+    for (i, w) in asked.iter().enumerate() {
+        if breaks.contains(w) {
+            parts.push(&asked[start..i]);
+            start = i + 1;
+        }
+    }
+    parts.push(&asked[start..]);
+    let mut out = Vec::new();
+    for part in parts {
+        let joined = format!(" {} ", part.join(" "));
+        for w in consent {
+            let Some(at) = joined.find(&format!(" {w} ")) else { continue };
+            let before = joined[..at].split_whitespace().count();
+            let denied = part[..before].iter().any(|n| ["dont", "not", "never", "no", "without", "stop", "cant"].contains(n));
+            if !denied {
+                out.push(part[before..].to_vec());
+            }
+        }
+    }
+    out
+}
+
+/// A direct step about "this" or "it" means whatever is in front when it
+/// runs — maybe not what was on screen when it was planned. Steps that act
+/// on a window must name the app.
+fn points_at_the_front(step: &str) -> bool {
+    let acts_on_window = [" close ", " quit ", " exit ", " center ", " centre ", " maximize ", " maximise ", " pin ", " unpin ", " keep ", " put ", " move ", " make ", " hide "]
+        .iter()
+        .any(|v| step.starts_with(v));
+    acts_on_window && [" this ", " it ", " that ", " the window ", " this window ", " the app "].iter().any(|w| step.contains(w))
+}
+
 /// Little words that don't name what a step acts on.
 const FILLER: &[&str] = &[
     "the", "a", "an", "my", "this", "that", "these", "those", "it", "all", "of", "in", "on", "from", "to", "for", "and", "please", "now", "window",
@@ -123,6 +163,12 @@ const FILLER: &[&str] = &[
 pub fn allowed(request: &str, task: &str) -> Result<(), String> {
     let step = words(request);
     let asked = words(task);
+    if points_at_the_front(&step) {
+        return Err(format!(
+            "Not done: \"{}\" says \"this\" — name the app (\"close Chrome\", \"put Spotify on the left\"), the window in front may have changed",
+            request.trim()
+        ));
+    }
     let asked_words: Vec<&str> = asked.split_whitespace().collect();
     for (kind, risky, consent) in SAY_SO {
         let risky_here: Vec<&str> = risky.iter().copied().filter(|w| step.contains(&format!(" {w} "))).collect();
@@ -135,16 +181,10 @@ pub fn allowed(request: &str, task: &str) -> Result<(), String> {
                 request.trim()
             ))
         };
-        // Said, and not denied: "don't close Chrome" is no.
-        let said_yes = consent.iter().any(|w| {
-            let first = w.split(' ').next().unwrap_or(w);
-            asked_words.iter().enumerate().any(|(i, aw)| {
-                *aw == first
-                    && asked.contains(&format!(" {w} "))
-                    && !asked_words[i.saturating_sub(3)..i].iter().any(|n| ["dont", "not", "never", "no", "without"].contains(n))
-            })
-        });
-        if !said_yes {
+        // Where they said it, and the rest of that part of their sentence:
+        // "don't close Chrome" (or "I don't want you to close it") is no.
+        let clauses = clauses_with(&asked_words, consent);
+        if clauses.is_empty() {
             return refuse();
         }
         // What it closes, sends to or pays for was named by them too ("close
@@ -157,7 +197,9 @@ pub fn allowed(request: &str, task: &str) -> Result<(), String> {
             .split_whitespace()
             .filter(|w| !FILLER.contains(w) && !risky.iter().any(|r| r.split(' ').any(|p| p == *w)))
             .collect();
-        if !target.iter().all(|w| asked_words.contains(w)) {
+        // Named with that action, not elsewhere in the request ("close
+        // Spotify and open Chrome" is no yes to closing Chrome).
+        if !clauses.iter().any(|c| target.iter().all(|w| c.contains(w))) {
             return refuse();
         }
     }
@@ -220,6 +262,11 @@ pub fn settings_page(said: &str) -> Option<(&'static str, &'static str)> {
     if !verb || [" how ", " what ", " why ", " dont ", " do not ", " never "].iter().any(|w| s.contains(w)) {
         return None;
     }
+    // "Open Bluetooth settings and set a timer": more than one thing — the
+    // agent does all of it (a direct step for the page).
+    if [" and ", " then ", " after ", " also "].iter().any(|w| s.contains(w)) {
+        return None;
+    }
     if NOT_WINDOWS.iter().any(|w| s.contains(w)) {
         return None;
     }
@@ -278,6 +325,7 @@ mod tests {
         assert_eq!(settings_page("how do I open bluetooth settings"), None);
         assert_eq!(settings_page("turn on bluetooth"), None, "that's a switch, not the page");
         assert_eq!(settings_page("open my phone settings"), None);
+        assert_eq!(settings_page("open bluetooth settings and set a timer"), None, "the whole request goes to the agent");
     }
 
     #[test]
@@ -293,6 +341,11 @@ mod tests {
         assert!(allowed("close chrome", "close spotify").is_err(), "a yes for Spotify isn't one for Chrome");
         assert!(allowed("close chrome", "don't close chrome, open spotify").is_err());
         assert!(allowed("close spotify", "please close spotify for me").is_ok());
+        assert!(allowed("close chrome", "close spotify and open chrome").is_err(), "Chrome was named for opening, not closing");
+        assert!(allowed("close chrome", "i dont want you to close chrome").is_err(), "a no anywhere before it in that part");
+        assert!(allowed("close chrome", "open spotify and close chrome").is_ok());
+        assert!(allowed("close this window", "close this window").is_err(), "name the app: the front may have changed");
+        assert!(allowed("turn on dark mode", "make it dark").is_ok());
     }
 
     #[test]

@@ -986,7 +986,13 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
     if matches!(step.action, Intent::Click | Intent::Auto) && !step.hover_first {
         if let Some(name) = verified_name.map(|n| n.split(" → ").next().unwrap_or(n).to_string()) {
             match uia::press_at(x, y, &name) {
-                Ok(true) => return Ok(format!("pressed \"{name}\" directly (no mouse)")),
+                Ok(true) => {
+                    // A press on YouTube is usually "play this": watch for its ads.
+                    if uia::foreground_title().to_lowercase().contains("youtube") {
+                        crate::youtube::watch_ads(crate::youtube::AD_WATCH);
+                    }
+                    return Ok(format!("pressed \"{name}\" directly (no mouse)"));
+                }
                 Ok(false) => {}
                 Err(e) if e.to_string().starts_with("disabled:") => return Err(e),
                 // It may have acted: never press it again another way.

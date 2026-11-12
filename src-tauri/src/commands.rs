@@ -410,8 +410,9 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     let said = crate::offers::answer(&said).unwrap_or(said);
     // "Do it" right after Izuki wrote the 808 fix: Izuki runs it in FL's Piano
     // roll itself (flstudio.rs) instead of leaving the menu clicks to you.
-    // (Not from inside a direct step: that never starts another screen task.)
-    if let Some(task) = crate::flstudio::apply_follow_up(&said).filter(|_| !crate::direct::in_step()) {
+    // (Not from inside a direct step: that never starts another screen task —
+    // and the follow-up stays waiting for the person's own "do it".)
+    if let Some(task) = (!crate::direct::in_step()).then(|| crate::flstudio::apply_follow_up(&said)).flatten() {
         let app2 = app.clone();
         return blocking(move || brain::submit_voice_command(&app2, &state::store(), task).summary).await.ok();
     }
