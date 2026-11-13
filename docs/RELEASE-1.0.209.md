@@ -7,6 +7,7 @@
 - **Typed in Chat**, a mail question takes the inbox/search lane before any model or screen step.
 - **"Any good message?"** runs the same inbox check as Apps → Inbox. "On Chrome" is where you would read it, never a search term.
 - **Real searches still search:** a named sender or topic, or a filter like "unread" or "today", stays a Gmail search.
+- **Outlook stays Outlook:** the Gmail inbox shortcut does not answer a question that explicitly names another mail service.
 - **Check again is fresh:** an explicit check reads the inbox again instead of replaying the ten-minute cache.
 - **The wait says what it is doing:** "Checking your inbox…" instead of "Thinking…".
 

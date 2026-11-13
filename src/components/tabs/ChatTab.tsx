@@ -1037,6 +1037,9 @@ export function ChatTab() {
       // The Later list ("remind me later I'm buying…", "what's on my list"): done at once.
       if (!attached.length && (LATER.test(t) || (MAIL_ASK.test(t) && wantsApps(t)) || INSTANT_ASK.test(t) || STORAGE_ASK.test(t) || STUDY_ASK.test(t))) {
         const said = await api.instantCommand(t).catch(() => null);
+        // Stop may have been pressed while the mail check ran; never start the
+        // apps fallback for a request the person already cancelled.
+        if (streamId.current !== id) return;
         if (said) {
           setLast({ content: said, status: undefined });
           if (streamId.current === id) { streamId.current = null; setBusy(false); }

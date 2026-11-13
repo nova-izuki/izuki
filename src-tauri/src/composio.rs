@@ -415,11 +415,21 @@ fn mail_lane(latest: &str) -> Option<MailLane> {
     // nothing to search for ("any good emails?") takes the inbox check.
     if let Some(ask) = crate::mail::parse_ask(latest) {
         Some(MailLane::Search(ask))
-    } else if crate::headsup::is_inbox_question(latest) {
+    } else if !names_other_mail(latest) && crate::headsup::is_inbox_question(latest) {
         Some(MailLane::Inbox)
     } else {
         None
     }
+}
+
+/// The inbox check reads Gmail only. A question that explicitly names another
+/// mail service keeps the model/apps path, so Outlook isn't answered with a
+/// Gmail summary (or told no Gmail account is linked).
+fn names_other_mail(latest: &str) -> bool {
+    let s = latest.to_lowercase();
+    ["outlook", "office365", "office 365", "hotmail", "yahoo", "proton", "icloud", "exchange"]
+        .iter()
+        .any(|p| s.contains(p))
 }
 
 /// Handle a request that needs the user's apps. `history` ends with it.
@@ -1207,6 +1217,8 @@ mod tests {
         assert!(matches!(mail_lane("find my Home Depot email"), Some(MailLane::Search(_))));
         // A filter is still a search, not the inbox digest.
         assert!(matches!(mail_lane("any good unread emails from today"), Some(MailLane::Search(_))));
+        // The Gmail-only inbox check must not answer an Outlook question.
+        assert!(mail_lane("check my Outlook inbox for anything important").is_none());
         assert!(mail_lane("what time is it").is_none());
     }
 
