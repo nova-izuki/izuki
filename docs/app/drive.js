@@ -367,6 +367,9 @@
     start,
     stop: () => stop(false),
     get active() { return active; },
+    /** Live speed in metres per second while Drive mode is on. */
+    get speed() { return speed; },
+    get perMs() { return perMs; },
     /** Start watching for driving (called once the app is up). */
     watchForDriving,
     /** Turn the "Driving?" offer off or on. */

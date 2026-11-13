@@ -43,6 +43,8 @@
 <script src="edge-glow.js"></script>
 <script src="apps.js"></script>
 <script src="drive.js"></script>
+<script src="autopilot.js"></script>
+<script src="cockpit.js"></script>
 <script src="remote.js"></script>
 <script src="touchgrass.js"></script>
 <script src="lecture.js"></script>
@@ -276,6 +278,7 @@
 </style>
 <link rel="stylesheet" href="companion.css">
 <link rel="stylesheet" href="platform.css">
+<link rel="stylesheet" href="cockpit.css">
 </head>
 <body>
 <div class="app">
@@ -516,7 +519,14 @@
       <h3>Android hands-free controls</h3>
       <p id="native-controls-status" class="note">Checking Android control…</p>
       <div class="row" style="margin-top:8px"><button class="btn" id="open-android-controls" type="button">Enable Android controls</button></div>
-      <p class="note">Optional and visible: Android opens its own Accessibility settings. When enabled, Izuki can do the phone navigation you directly ask for: Home, Back, recent apps, notifications and Quick Settings. It never acts in the background by itself.</p>
+      <p class="note">Optional and visible: Android opens its own Accessibility settings. When enabled, Izuki can do the phone navigation you directly ask for: Home, Back, recent apps, notifications, Quick Settings, lock, screenshots, taps, swipes, typing and scrolling. Autopilot runs a short routine one visible step at a time, and never sends, pays or deletes. It never acts in the background by itself.</p>
+    </section>
+
+    <section id="native-cockpit-help" hidden>
+      <h3>Cockpit &amp; Autopilot</h3>
+      <p>Open the cockpit here for a live panel: battery, network, speed in Drive mode, and one-line routines. Autopilot opens apps, searches, taps what you name, types, scrolls and goes Back or Home. Every step is shown, Stop is always there, and it refuses Send, Pay, Buy and Delete controls.</p>
+      <div class="row" style="margin-top:10px"><button class="btn" id="open-cockpit" type="button">Open cockpit</button></div>
+      <p class="note" style="margin-top:8px">Android Accessibility control must be on. A locked phone is never touched.</p>
     </section>
 
     <section>
@@ -2991,6 +3001,10 @@
     $("native-device").hidden = !native;
     $("native-device-title").textContent = platform === "ios" ? "Your iPhone companion" : "Your Android companion";
     $("native-ios-limits").hidden = platform !== "ios";
+    const cockpitHelp = $("native-cockpit-help");
+    if (cockpitHelp) cockpitHelp.hidden = !(native && platform === "android");
+    const openCockpit = $("open-cockpit");
+    if (openCockpit) openCockpit.onclick = () => { sheet.hidden = true; window.IzukiCockpit?.open?.(); };
     $("test-haptic").onclick = async () => {
       const done = await window.IzukiNative.haptic();
       $("native-feedback").textContent = done ? "Tap sent. Your phone's haptic settings decide whether you feel it." : "Haptic feedback isn't available on this device or is disabled in system settings.";

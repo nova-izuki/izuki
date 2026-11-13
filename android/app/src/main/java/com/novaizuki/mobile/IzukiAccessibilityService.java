@@ -1,12 +1,15 @@
 package com.novaizuki.mobile;
 
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.GestureDescription;
 import android.animation.ValueAnimator;
+import android.app.KeyguardManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
@@ -83,6 +86,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
   @Override public void onInterrupt() { }
   @Override public boolean onUnbind(android.content.Intent intent) {
     hideOrb();
+    synchronized (listed) { releaseListed(); }
     active = null;
     return super.onUnbind(intent);
   }
@@ -93,6 +97,9 @@ public class IzukiAccessibilityService extends AccessibilityService {
     String component = new ComponentName(context, IzukiAccessibilityService.class).flattenToString();
     return enabled.toLowerCase().contains(component.toLowerCase());
   }
+
+  /** The accessibility layer is on and actually connected, not merely enabled. */
+  static boolean ready() { return active != null; }
 
   static boolean running() { return active != null; }
 
@@ -106,6 +113,15 @@ public class IzukiAccessibilityService extends AccessibilityService {
       case "recents": global = GLOBAL_ACTION_RECENTS; break;
       case "notifications": global = GLOBAL_ACTION_NOTIFICATIONS; break;
       case "quick_settings": global = GLOBAL_ACTION_QUICK_SETTINGS; break;
+      case "power": global = GLOBAL_ACTION_POWER_DIALOG; break;
+      case "lock":
+        if (Build.VERSION.SDK_INT < 28) return false;
+        global = GLOBAL_ACTION_LOCK_SCREEN;
+        break;
+      case "screenshot":
+        if (Build.VERSION.SDK_INT < 28) return false;
+        global = GLOBAL_ACTION_TAKE_SCREENSHOT;
+        break;
       default: return false;
     }
     return service.performGlobalAction(global);
@@ -118,8 +134,15 @@ public class IzukiAccessibilityService extends AccessibilityService {
     IzukiAccessibilityService service = active;
     JSONObject out = new JSONObject();
     JSONArray items = new JSONArray();
+    if (service != null) {
+      android.util.DisplayMetrics dm = service.getResources().getDisplayMetrics();
+      out.put("w", dm.widthPixels);
+      out.put("h", dm.heightPixels);
+      out.put("density", dm.density);
+      out.put("locked", locked(service));
+    }
     synchronized (listed) {
-      listed.clear();
+      releaseListed();
       AccessibilityNodeInfo root = service == null ? null : service.getRootInActiveWindow();
       if (root != null) {
         out.put("app", root.getPackageName() == null ? "" : root.getPackageName().toString());
@@ -130,13 +153,28 @@ public class IzukiAccessibilityService extends AccessibilityService {
     return out;
   }
 
+  /** Free the copies a previous screen read kept; without this every read leaked nodes. */
+  private static void releaseListed() {
+    for (AccessibilityNodeInfo node : listed) {
+      try { node.recycle(); } catch (Exception ignored) { }
+    }
+    listed.clear();
+  }
+
+  static boolean locked(Context context) {
+    KeyguardManager km = (KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
+    return km != null && km.isKeyguardLocked();
+  }
+
   private static void walk(AccessibilityNodeInfo node, JSONArray items, int depth) throws JSONException {
     if (node == null || depth > 40 || listed.size() >= 160) return;
     if (!node.isVisibleToUser()) return;
+    // Never read a password field, and never let its hint/description stand in
+    // for the value either. Skip its subtree: there is nothing safe in there.
+    if (node.isPassword()) return;
     String text = node.getText() == null ? "" : node.getText().toString();
     String desc = node.getContentDescription() == null ? "" : node.getContentDescription().toString();
     boolean acts = node.isClickable() || node.isFocusable() || node.isEditable() || node.isCheckable() || node.isScrollable();
-    if (node.isPassword()) text = ""; // never read passwords
     String label = (text.isEmpty() ? desc : text).replaceAll("\\s+", " ").trim();
     if (!label.isEmpty() || (acts && node.isEditable())) {
       Rect r = new Rect();
@@ -210,6 +248,87 @@ public class IzukiAccessibilityService extends AccessibilityService {
       if (f != null) return f;
     }
     return null;
+  }
+
+  // ---- real touch gestures -------------------------------------------------
+
+  /** Tap, long-press or swipe at real screen coordinates (Android 7+). */
+  static boolean gesture(String op, float x1, float y1, float x2, float y2, long ms) {
+    IzukiAccessibilityService service = active;
+    if (service == null || Build.VERSION.SDK_INT < 24) return false;
+    Path path = new Path();
+    long duration;
+    if ("tap".equals(op)) {
+      path.moveTo(x1, y1);
+      duration = 60;
+    } else if ("longpress".equals(op)) {
+      path.moveTo(x1, y1);
+      duration = Math.max(500, Math.min(2000, ms));
+    } else if ("swipe".equals(op)) {
+      path.moveTo(x1, y1);
+      path.lineTo(x2, y2);
+      duration = Math.max(80, Math.min(2500, ms));
+    } else {
+      return false;
+    }
+    GestureDescription gesture = new GestureDescription.Builder()
+      .addStroke(new GestureDescription.StrokeDescription(path, 0, duration))
+      .build();
+    // AccessibilityService expects gesture dispatch on its main thread.
+    ui.post(() -> {
+      try { service.dispatchGesture(gesture, null, null); } catch (Exception ignored) { }
+    });
+    return true;
+  }
+
+  /** Press the visible control whose label is `query` (exact first, then contains). */
+  static boolean tapText(String query) {
+    IzukiAccessibilityService service = active;
+    if (service == null || query == null || query.trim().isEmpty()) return false;
+    AccessibilityNodeInfo root = service.getRootInActiveWindow();
+    if (root == null) return false;
+    String q = query.trim();
+    AccessibilityNodeInfo node = findText(root, q, 0, true);
+    if (node == null) node = findText(root, q, 0, false);
+    if (node == null) return false;
+    AccessibilityNodeInfo target = node;
+    for (int i = 0; i < 6 && target != null && !target.isClickable(); i++) target = target.getParent();
+    if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+    node.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+    return node.performAction(AccessibilityNodeInfo.ACTION_CLICK) || node.performAction(AccessibilityNodeInfo.ACTION_SELECT);
+  }
+
+  private static AccessibilityNodeInfo findText(AccessibilityNodeInfo node, String query, int depth, boolean exact) {
+    if (node == null || depth > 40) return null;
+    if (!node.isVisibleToUser() || node.isPassword()) return null;
+    String text = node.getText() == null ? "" : node.getText().toString();
+    String desc = node.getContentDescription() == null ? "" : node.getContentDescription().toString();
+    String label = (text.isEmpty() ? desc : text).replaceAll("\\s+", " ").trim();
+    boolean hit = exact ? label.equalsIgnoreCase(query) : label.toLowerCase(Locale.ROOT).contains(query.toLowerCase(Locale.ROOT));
+    if (hit && (node.isClickable() || node.isFocusable() || node.isEditable())) return node;
+    for (int i = 0; i < node.getChildCount(); i++) {
+      AccessibilityNodeInfo found = findText(node.getChild(i), query, depth + 1, exact);
+      if (found != null) return found;
+    }
+    return null;
+  }
+
+  /** Press Enter/Search on the focused field, or the search/send control on screen. */
+  static boolean submit() {
+    IzukiAccessibilityService service = active;
+    if (service == null) return false;
+    AccessibilityNodeInfo root = service.getRootInActiveWindow();
+    if (root == null) return false;
+    AccessibilityNodeInfo node = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+    if (node == null) node = findText(root, "search", 0, false);
+    if (node == null) node = findText(root, "send", 0, false);
+    if (node == null) node = findText(root, "go", 0, false);
+    if (node == null) return false;
+            if (Build.VERSION.SDK_INT >= 30
+                && node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.getId())) return true;
+    AccessibilityNodeInfo target = node;
+    for (int i = 0; i < 6 && target != null && !target.isClickable(); i++) target = target.getParent();
+    return target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK);
   }
 
   // ---- a picture of the screen ------------------------------------------------
