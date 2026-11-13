@@ -445,9 +445,10 @@ pub fn is_inbox_question(said: &str) -> bool {
     mail && dig && !["send", "write", "reply to", "draft", "delete", "archive"].iter().any(|w| s.contains(w))
 }
 
-/// The digest, said out loud.
+/// The digest, said out loud. An explicit request is a fresh look; the
+/// ten-minute cache is for the Inbox card and heads-ups, not for "check again".
 pub fn inbox_spoken() -> String {
-    match inbox_digest(false) {
+    match inbox_digest(true) {
         Ok(d) => {
             let mut s = d.summary.clone();
             let todo: Vec<String> = d.items.iter().filter(|i| !i.action.trim().is_empty()).take(3).map(|i| i.action.trim().trim_end_matches('.').to_string()).collect();

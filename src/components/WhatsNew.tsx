@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "📬", title: "“Any good email?” is checked, not searched", how: "Typed in Chat, a Gmail question goes straight to your inbox. “Any good message?” picks out what matters; a named sender or filter still searches.", try: { label: "Open Inbox", tab: "apps", id: "apps-inbox" } },
   { icon: "📬", title: "“Any good emails?” means what you meant", how: "Ask for anything good or important in your inbox and Izuki goes through it and picks out what needs you.", try: { label: "Open Inbox", tab: "apps", id: "apps-inbox" } },
   { icon: "⌨️", title: "Typing and scrolling, done directly", how: "Izuki fills boxes, scrolls, picks list items, opens dropdowns and sets sliders through Windows itself — your mouse and keyboard stay yours." },
   { icon: "📬", title: "Inbox says when it checked", how: "Go through my inbox now shows the time, how many emails it read and how many need you.", try: { label: "Open Inbox", tab: "apps", id: "apps-inbox" } },
