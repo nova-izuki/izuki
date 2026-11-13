@@ -126,6 +126,15 @@ pub fn say(app: &AppHandle, key: &str, text: &str, level: Level) -> bool {
             }
             return Some((level >= Level::Important, level == Level::Urgent));
         }
+        // In the middle of talking to Izuki or a task: what isn't urgent
+        // waits — it mustn't land in the middle of their own request.
+        if crate::hotkey::is_busy() && level < Level::Urgent {
+            // Kept for "welcome back": the caller's own once-only flag is
+            // already set, so dropping it here lost the heads-up for good.
+            s.missed.push(text.to_string());
+            s.missed.truncate(8);
+            return Some((false, false));
+        }
         // Focus mode: everything that isn't urgent waits for "time's up".
         if crate::focus::active() && level < Level::Urgent {
             s.missed.push(text.to_string());
