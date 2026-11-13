@@ -324,7 +324,8 @@ public class IzukiAccessibilityService extends AccessibilityService {
     if (node == null) node = findText(root, "send", 0, false);
     if (node == null) node = findText(root, "go", 0, false);
     if (node == null) return false;
-    if (Build.VERSION.SDK_INT >= 30 && node.performAction(AccessibilityNodeInfo.ACTION_IME_ENTER)) return true;
+            if (Build.VERSION.SDK_INT >= 30
+                && node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.getId())) return true;
     AccessibilityNodeInfo target = node;
     for (int i = 0; i < 6 && target != null && !target.isClickable(); i++) target = target.getParent();
     return target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK);
