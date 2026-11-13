@@ -354,7 +354,7 @@ pub fn wants_what_matters(said: &str) -> bool {
     let words: Vec<&str> = s.split_whitespace().collect();
     // Unread, a day, or one account named: the search keeps those (the
     // inbox check reads the last few days of every account).
-    let filtered = [" unread ", " haven't read ", " havent read ", " today ", " this morning ", " yesterday ", " this week ", " past week ", " first ", " second ", " third ", " fourth ", " fifth "]
+    let filtered = [" unread ", " haven't read ", " havent read ", " today ", " this morning ", " yesterday ", " this week ", " past week ", " first ", " second ", " third ", " fourth ", " fifth ", " attachment ", " attachments "]
         .iter()
         .any(|w| s.contains(w))
         || words.iter().any(|w| w.contains('@'));
@@ -370,13 +370,16 @@ fn topic_words<'a>(words: &[&'a str]) -> Vec<&'a str> {
         let w = words[i];
         let placed = (i > 0 && into.contains(&words[i - 1]))
             || (i > 1 && ["my", "the"].contains(&words[i - 1]) && into.contains(&words[i - 2]));
-        PLACES.contains(&w) && (placed || ["browser", "web", "internet", "online", "website"].contains(&w))
+        // "about my website" names the topic; "on the website" is where.
+        let about = (i > 0 && ["about", "regarding", "re"].contains(&words[i - 1]))
+            || (i > 1 && ["my", "our", "the"].contains(&words[i - 1]) && ["about", "regarding", "re"].contains(&words[i - 2]));
+        PLACES.contains(&w) && !about && (placed || ["online", "gmail.com"].contains(&w))
     };
     // A word that names nothing: filler, a mail word, an address, a place it's
     // read, or how good it is.
     let names_nothing = |i: usize| {
         let w = words[i];
-        FILLER.contains(&w) || MAIL_WORDS.contains(&w) || w.contains('@') || QUALITY.contains(&w) || place_at(i)
+        FILLER.contains(&w) || MAIL_WORDS.contains(&w) || w.contains('@') || QUALITY.contains(&w) || into.contains(&w) || place_at(i)
     };
     for (i, w) in words.iter().enumerate() {
         // "on Chrome", "in my browser", "on the web": where, not what.
@@ -783,6 +786,15 @@ mod tests {
         // Filters stay with the search.
         let unread = parse_ask("any good unread emails from today").expect("a search");
         assert!(unread.unread && unread.when == "today");
+        // "about my website" is the topic; "online" alone is where.
+        assert_eq!(parse_ask("find emails about my website").map(|a| a.about), Some("website".into()));
+        assert!(parse_ask("check my email online").is_none());
+        // A location connector before a quality word is still where, not what.
+        assert!(wants_what_matters("check my email for anything good using chrome"));
+        assert!(parse_ask("check my email for anything good using chrome").is_none());
+        // Attachments stay a filter on a real search.
+        let files = parse_ask("show me any good emails with attachments").expect("an attachment search");
+        assert!(files.attachments && files.about.is_empty());
     }
 
     /// Synthetic Gmail: accounts by link id, each with its emails.
