@@ -375,11 +375,13 @@ fn topic_words<'a>(words: &[&'a str]) -> Vec<&'a str> {
             || (i > 1 && ["my", "our", "the"].contains(&words[i - 1]) && ["about", "regarding", "re"].contains(&words[i - 2]));
         PLACES.contains(&w) && !about && (placed || ["online", "gmail.com"].contains(&w))
     };
+    // "using Chrome" is where; "through play" is part of the topic.
+    let leads_to_place = |i: usize| into.contains(&words[i]) && (i + 1..words.len().min(i + 3)).any(|j| place_at(j));
     // A word that names nothing: filler, a mail word, an address, a place it's
     // read, or how good it is.
     let names_nothing = |i: usize| {
         let w = words[i];
-        FILLER.contains(&w) || MAIL_WORDS.contains(&w) || w.contains('@') || QUALITY.contains(&w) || into.contains(&w) || place_at(i)
+        FILLER.contains(&w) || MAIL_WORDS.contains(&w) || w.contains('@') || QUALITY.contains(&w) || leads_to_place(i) || place_at(i)
     };
     for (i, w) in words.iter().enumerate() {
         // "on Chrome", "in my browser", "on the web": where, not what.
@@ -387,7 +389,7 @@ fn topic_words<'a>(words: &[&'a str]) -> Vec<&'a str> {
             continue;
         }
         // "using" (etc.) that only leads to a place.
-        if into.contains(w) && (i + 1..words.len().min(i + 3)).any(|j| place_at(j)) {
+        if leads_to_place(i) {
             continue;
         }
         // "Any good emails" is how good; "Best Buy" is a name — a quality
@@ -788,6 +790,7 @@ mod tests {
         assert!(unread.unread && unread.when == "today");
         // "about my website" is the topic; "online" alone is where.
         assert_eq!(parse_ask("find emails about my website").map(|a| a.about), Some("website".into()));
+        assert_eq!(parse_ask("find emails about learning through play").map(|a| a.about), Some("learning through play".into()));
         assert!(parse_ask("check my email online").is_none());
         // A location connector before a quality word is still where, not what.
         assert!(wants_what_matters("check my email for anything good using chrome"));
