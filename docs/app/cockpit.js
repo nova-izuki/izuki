@@ -96,7 +96,6 @@
         </section>
       </div>`;
     document.body.appendChild(panel);
-    $("open-cockpit")?.addEventListener("click", open);
     $("ck-close").onclick = close;
     $("ck-home").onclick = () => void act("home");
     $("ck-back").onclick = () => void act("back");
