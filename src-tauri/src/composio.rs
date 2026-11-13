@@ -415,21 +415,11 @@ fn mail_lane(latest: &str) -> Option<MailLane> {
     // nothing to search for ("any good emails?") takes the inbox check.
     if let Some(ask) = crate::mail::parse_ask(latest) {
         Some(MailLane::Search(ask))
-    } else if !names_other_mail(latest) && crate::headsup::is_inbox_question(latest) {
+    } else if crate::headsup::is_inbox_question(latest) {
         Some(MailLane::Inbox)
     } else {
         None
     }
-}
-
-/// The inbox check reads Gmail only. A question that explicitly names another
-/// mail service keeps the model/apps path, so Outlook isn't answered with a
-/// Gmail summary (or told no Gmail account is linked).
-fn names_other_mail(latest: &str) -> bool {
-    let s = latest.to_lowercase();
-    ["outlook", "office365", "office 365", "hotmail", "yahoo", "proton", "icloud", "exchange"]
-        .iter()
-        .any(|p| s.contains(p))
 }
 
 /// Handle a request that needs the user's apps. `history` ends with it.

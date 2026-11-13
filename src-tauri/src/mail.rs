@@ -346,6 +346,16 @@ const QUALITY: &[&str] = &[
     "something", "stuff", "things", "matters", "matter", "relevant", "decent", "special", "reading", "checking", "seeing",
 ];
 
+/// Mail services the Gmail-only search and inbox check must leave to their
+/// own app. Without this, "check my Outlook inbox" was answered with a Gmail
+/// summary (or "no Gmail account is linked").
+pub fn names_other_mail(said: &str) -> bool {
+    let s = said.to_lowercase();
+    ["outlook", "office365", "office 365", "hotmail", "yahoo", "proton", "icloud"]
+        .iter()
+        .any(|p| s.contains(p))
+}
+
 /// "check my gmail on chrome for any good message", "any good emails?",
 /// "anything important in my inbox": the person wants what matters picked
 /// out (the inbox check), not a search for those words.
@@ -358,7 +368,7 @@ pub fn wants_what_matters(said: &str) -> bool {
         .iter()
         .any(|w| s.contains(w))
         || words.iter().any(|w| w.contains('@'));
-    !filtered && words.iter().any(|w| MAIL_WORDS.contains(w)) && topic_words(&words).is_empty() && words.iter().any(|w| QUALITY.contains(w))
+    !names_other_mail(said) && !filtered && words.iter().any(|w| MAIL_WORDS.contains(w)) && topic_words(&words).is_empty() && words.iter().any(|w| QUALITY.contains(w))
 }
 
 /// The words that say what the mail is about: not filler, not where it's
@@ -407,6 +417,10 @@ fn topic_words<'a>(words: &[&'a str]) -> Vec<&'a str> {
 }
 
 pub fn parse_ask(said: &str) -> Option<Ask> {
+    // The Gmail-only search has nothing to say about another mail service.
+    if names_other_mail(said) {
+        return None;
+    }
     // "Any good emails?" asks what matters: the inbox check answers that.
     if wants_what_matters(said) {
         return None;
@@ -795,6 +809,9 @@ mod tests {
         // A location connector before a quality word is still where, not what.
         assert!(wants_what_matters("check my email for anything good using chrome"));
         assert!(parse_ask("check my email for anything good using chrome").is_none());
+        // Outlook is not Gmail: neither the inbox check nor a Gmail search.
+        assert!(!wants_what_matters("check my Outlook inbox for anything good"));
+        assert!(parse_ask("check my Outlook inbox for anything important").is_none());
         // Attachments stay a filter on a real search.
         let files = parse_ask("show me any good emails with attachments").expect("an attachment search");
         assert!(files.attachments && files.about.is_empty());
