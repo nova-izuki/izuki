@@ -1234,6 +1234,12 @@ export const api = {
   androidConnect: () => call<string>("android_connect", undefined, () => { throw new Error("not in Izuki"); }),
   /** Do something on the phone from the PC ("… on my phone"). */
   androidDo: (prompt: string) => call<string>("android_do", { prompt }, () => { throw new Error("not in Izuki"); }),
+  /** Live phone screen for the PC remote panel (a JPEG data URL). */
+  androidScreen: () => call<string>("android_screen", undefined, () => { throw new Error("not in Izuki"); }),
+  androidTap: (x: number, y: number) => call<void>("android_tap", { x, y }, () => { throw new Error("not in Izuki"); }),
+  androidSwipe: (x1: number, y1: number, x2: number, y2: number, ms: number) => call<void>("android_swipe", { x1, y1, x2, y2, ms }, () => { throw new Error("not in Izuki"); }),
+  androidKey: (name: string) => call<void>("android_key", { name }, () => { throw new Error("not in Izuki"); }),
+  androidType: (text: string) => call<void>("android_type", { text }, () => { throw new Error("not in Izuki"); }),
   /** The wake-word models installed (file names) — the user's own. */
   listWakewords: () => call<string[]>("list_wakewords", {}, () => []),
   openWakewordsFolder: () => call<void>("open_wakewords_folder", {}, () => undefined),

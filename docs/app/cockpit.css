@@ -1,0 +1,185 @@
+/* Izuki Cockpit — a calm, dark instrument panel for the phone. */
+#go-cockpit.ck-launch {
+  width: auto;
+  min-width: 40px;
+  padding: 0 11px;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+}
+#go-cockpit.ck-launch svg { width: 17px; height: 17px; }
+@media (max-width: 430px) {
+  #go-cockpit.ck-launch span { display: none; }
+  #go-cockpit.ck-launch { padding: 0; }
+}
+
+#izuki-cockpit {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  overflow-y: auto;
+  color: #ecfeff;
+  background:
+    radial-gradient(70% 55% at 50% 0%, rgba(34, 211, 238, 0.16), transparent 65%),
+    radial-gradient(60% 45% at 100% 100%, rgba(139, 92, 246, 0.16), transparent 65%),
+    #05070c;
+  padding: calc(var(--safe-top, 0px) + 16px) 16px calc(var(--safe-bottom, 0px) + 20px);
+  font-family: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+#izuki-cockpit[hidden] { display: none; }
+#izuki-cockpit:before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(rgba(103, 232, 249, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103, 232, 249, 0.055) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(ellipse at center, #000 25%, transparent 78%);
+}
+.ck-shell { position: relative; z-index: 1; max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.ck-top { display: flex; align-items: center; gap: 10px; }
+.ck-brand { font-size: 11px; letter-spacing: 0.34em; font-weight: 800; color: #67e8f9; }
+.ck-brand small { display: block; margin-top: 3px; color: rgba(236, 254, 255, 0.46); font-size: 9.5px; letter-spacing: 0.22em; font-weight: 600; }
+.ck-live { margin-left: auto; display: flex; align-items: center; gap: 7px; font-size: 10.5px; letter-spacing: 0.14em; color: rgba(236, 254, 255, 0.62); }
+.ck-live i { width: 7px; height: 7px; border-radius: 50%; background: #34d399; box-shadow: 0 0 10px #34d399; animation: ckPulse 2s ease-in-out infinite; }
+.ck-live.off i { background: #fbbf24; box-shadow: 0 0 10px #fbbf24; }
+.ck-close { width: 38px; height: 38px; border-radius: 50%; border: 1px solid rgba(103, 232, 249, 0.28); background: rgba(0, 0, 0, 0.3); color: #cffafe; font-size: 20px; line-height: 1; }
+.ck-grid { display: grid; grid-template-columns: 1fr minmax(250px, 1.15fr) 1fr; gap: 12px; align-items: stretch; }
+.ck-card {
+  position: relative;
+  border: 1px solid rgba(103, 232, 249, 0.18);
+  background: linear-gradient(160deg, rgba(9, 22, 33, 0.88), rgba(6, 12, 20, 0.78));
+  border-radius: 22px;
+  padding: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 18px 50px rgba(0, 0, 0, 0.2);
+}
+.ck-card:before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 0;
+  width: 38px;
+  height: 1px;
+  background: #67e8f9;
+  box-shadow: 0 0 10px #67e8f9;
+}
+.ck-label { font-size: 9.5px; letter-spacing: 0.28em; font-weight: 800; color: rgba(103, 232, 249, 0.72); margin-bottom: 10px; }
+.ck-battery { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.ck-ring { position: relative; width: 150px; height: 150px; }
+.ck-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ck-ring .ck-ring-track { fill: none; stroke: rgba(103, 232, 249, 0.1); stroke-width: 7; }
+.ck-ring .ck-ring-fill { fill: none; stroke: #67e8f9; stroke-width: 7; stroke-linecap: round; transition: stroke-dashoffset 700ms cubic-bezier(0.16, 1, 0.3, 1), stroke 300ms; filter: drop-shadow(0 0 7px rgba(103, 232, 249, 0.55)); }
+.ck-ring .ck-ring-fill.low { stroke: #fbbf24; filter: drop-shadow(0 0 7px rgba(251, 191, 36, 0.5)); }
+.ck-ring-copy { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+.ck-ring-copy b { display: block; font-size: 34px; font-weight: 300; letter-spacing: -0.04em; line-height: 1; }
+.ck-ring-copy span { display: block; margin-top: 5px; font-size: 10px; letter-spacing: 0.2em; color: rgba(236, 254, 255, 0.55); }
+.ck-charge { margin-top: 2px; font-size: 11.5px; color: #a5f3fc; letter-spacing: 0.08em; }
+.ck-facts { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+.ck-fact { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding-bottom: 7px; border-bottom: 1px solid rgba(103, 232, 249, 0.08); font-size: 12px; }
+.ck-fact:last-child { border-bottom: 0; padding-bottom: 0; }
+.ck-fact span:first-child { color: rgba(236, 254, 255, 0.5); }
+.ck-fact span:last-child { color: #ecfeff; text-align: right; }
+.ck-fact .ok { color: #6ee7b7; }
+.ck-fact .warn { color: #fbbf24; }
+.ck-centre { display: flex; flex-direction: column; align-items: center; justify-content: space-between; text-align: center; padding: 18px 14px; }
+.ck-speed { display: flex; align-items: baseline; justify-content: center; gap: 6px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.ck-speed b { font-size: clamp(74px, 18vw, 118px); font-weight: 200; letter-spacing: -0.07em; line-height: 0.86; text-shadow: 0 0 38px rgba(103, 232, 249, 0.3); }
+.ck-speed small { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; color: rgba(236, 254, 255, 0.55); }
+.ck-mode { margin-top: 8px; font-size: 10px; font-weight: 800; letter-spacing: 0.3em; color: rgba(103, 232, 249, 0.8); }
+.ck-clock { margin-top: 14px; font-size: 28px; font-weight: 300; letter-spacing: 0.04em; }
+.ck-date { margin-top: 3px; font-size: 10px; letter-spacing: 0.18em; color: rgba(236, 254, 255, 0.46); }
+.ck-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; margin-top: 16px; }
+.ck-actions button {
+  min-height: 62px;
+  border-radius: 16px;
+  border: 1px solid rgba(103, 232, 249, 0.16);
+  background: rgba(103, 232, 249, 0.06);
+  color: #ecfeff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.ck-actions button i { font-style: normal; font-size: 20px; line-height: 1; }
+.ck-actions button:active { transform: scale(0.97); background: rgba(103, 232, 249, 0.16); }
+.ck-actions button:disabled { opacity: 0.4; }
+.ck-right .ck-big { font-size: 20px; font-weight: 300; margin-bottom: 2px; }
+.ck-right .ck-sub { font-size: 11.5px; color: rgba(236, 254, 255, 0.5); line-height: 1.45; }
+.ck-pilot { margin-top: 2px; }
+.ck-pilot .ck-head { display: flex; align-items: center; gap: 10px; }
+.ck-pilot .ck-head .ck-label { margin: 0; }
+.ck-pilot .ck-head .ck-kicker { margin-left: auto; font-size: 9.5px; color: rgba(236, 254, 255, 0.42); letter-spacing: 0.1em; }
+.ck-form { display: flex; gap: 7px; margin-top: 10px; }
+.ck-form input {
+  flex: 1;
+  min-width: 0;
+  border-radius: 13px;
+  border: 1px solid rgba(103, 232, 249, 0.2);
+  background: rgba(0, 0, 0, 0.32);
+  color: #ecfeff;
+  padding: 11px 12px;
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.ck-form input:focus { border-color: rgba(103, 232, 249, 0.65); box-shadow: 0 0 0 3px rgba(103, 232, 249, 0.1); }
+.ck-run {
+  border: 0;
+  border-radius: 13px;
+  padding: 0 16px;
+  background: linear-gradient(135deg, #22d3ee, #8b5cf6);
+  color: #031018;
+  font-weight: 800;
+  font-size: 13px;
+}
+.ck-run.stop { background: rgba(251, 191, 36, 0.16); color: #fde68a; border: 1px solid rgba(251, 191, 36, 0.35); }
+.ck-run:disabled { opacity: 0.4; }
+.ck-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ck-chips button {
+  border: 1px solid rgba(103, 232, 249, 0.18);
+  background: rgba(103, 232, 249, 0.05);
+  color: rgba(236, 254, 255, 0.8);
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 11px;
+}
+.ck-chips button:active { background: rgba(103, 232, 249, 0.16); }
+.ck-log {
+  margin-top: 10px;
+  max-height: 146px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font: 11.5px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  scrollbar-width: thin;
+}
+.ck-line { display: flex; gap: 7px; color: rgba(236, 254, 255, 0.6); }
+.ck-line:before { content: "›"; color: rgba(103, 232, 249, 0.55); flex: none; }
+.ck-line.title { color: #a5f3fc; font-weight: 700; }
+.ck-line.step { color: rgba(236, 254, 255, 0.78); }
+.ck-line.done { color: #6ee7b7; }
+.ck-line.bad { color: #fca5a5; }
+.ck-line.bad:before { content: "!"; color: #fca5a5; }
+.ck-note { margin-top: 8px; font-size: 10.5px; line-height: 1.4; color: rgba(236, 254, 255, 0.38); }
+.ck-empty { color: rgba(236, 254, 255, 0.45); font-size: 12px; padding: 4px 0; }
+@keyframes ckPulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+@media (max-width: 760px) {
+  .ck-grid { grid-template-columns: 1fr; }
+  .ck-centre { order: -1; }
+  .ck-speed b { font-size: clamp(86px, 26vw, 132px); }
+  .ck-ring { width: 126px; height: 126px; }
+  .ck-actions { grid-template-columns: repeat(3, 1fr); }
+  .ck-pilot .ck-log { max-height: 132px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ck-live i { animation: none; }
+  .ck-ring .ck-ring-fill { transition: none; }
+}

@@ -1,5 +1,6 @@
 package com.novaizuki.mobile;
 
+import android.app.KeyguardManager;
 import android.app.UiModeManager;
 import android.content.Context;
 import android.content.Intent;
@@ -12,6 +13,10 @@ import androidx.core.content.FileProvider;
 import java.io.File;
 import java.io.FileOutputStream;
 import android.media.AudioManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
+import android.os.BatteryManager;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.view.KeyEvent;
@@ -77,12 +82,39 @@ public class IzukiControlPlugin extends Plugin {
   /** A picture of the screen: { image (base64 JPEG), type }. */
   @PluginMethod
   public void snapshot(PluginCall call) {
+    if (IzukiAccessibilityService.locked(getContext())) { call.reject("locked"); return; }
     IzukiAccessibilityService.snapshot(image -> {
       JSObject result = new JSObject();
       result.put("image", image);
       result.put("type", "image/jpeg");
       call.resolve(result);
     }, call::reject);
+  }
+
+  /** Safe, non-personal device numbers for the cockpit: battery, network, sound. */
+  @PluginMethod
+  public void device(PluginCall call) {
+    JSObject result = new JSObject();
+    BatteryManager bm = (BatteryManager) getContext().getSystemService(Context.BATTERY_SERVICE);
+    result.put("battery", bm == null ? -1 : bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY));
+    result.put("charging", bm != null && bm.isCharging());
+    ConnectivityManager cm = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+    NetworkCapabilities nc = cm == null ? null : cm.getNetworkCapabilities(cm.getActiveNetwork());
+    result.put("online", nc != null && nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET));
+    result.put("wifi", nc != null && nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI));
+    KeyguardManager km = (KeyguardManager) getContext().getSystemService(Context.KEYGUARD_SERVICE);
+    result.put("locked", km != null && km.isKeyguardLocked());
+    PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+    result.put("screenOn", pm != null && pm.isInteractive());
+    AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+    result.put("volume", am == null ? -1 : am.getStreamVolume(AudioManager.STREAM_MUSIC));
+    result.put("volumeMax", am == null ? -1 : am.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
+    result.put("model", Build.MODEL);
+    result.put("sdk", Build.VERSION.SDK_INT);
+    result.put("width", getContext().getResources().getDisplayMetrics().widthPixels);
+    result.put("height", getContext().getResources().getDisplayMetrics().heightPixels);
+    result.put("control", IzukiAccessibilityService.running());
+    call.resolve(result);
   }
 
   @PluginMethod
@@ -172,6 +204,7 @@ public class IzukiControlPlugin extends Plugin {
   @PluginMethod
   public void perform(PluginCall call) {
     String action = call.getString("action", "");
+    if (!"lock".equals(action) && IzukiAccessibilityService.locked(getContext())) { call.reject("locked"); return; }
     if (!IzukiAccessibilityService.perform(action)) {
       call.reject("Control is off. Turn on Izuki Companion in Accessibility settings first.");
       return;
@@ -186,6 +219,7 @@ public class IzukiControlPlugin extends Plugin {
   @PluginMethod
   public void screen(PluginCall call) {
     if (!IzukiAccessibilityService.running()) { call.reject("off"); return; }
+    if (IzukiAccessibilityService.locked(getContext())) { call.reject("locked"); return; }
     try {
       call.resolve(JSObject.fromJSONObject(IzukiAccessibilityService.screen()));
     } catch (Exception e) {
@@ -193,23 +227,54 @@ public class IzukiControlPlugin extends Plugin {
     }
   }
 
-  /** {op: click|focus|type|scroll, n, text, dir} */
+  /** {op: click|focus|type|scroll|tapText|submit|tap|swipe|longpress, n, text, dir, x, y, x2, y2, ms} */
   @PluginMethod
   public void act(PluginCall call) {
     if (!IzukiAccessibilityService.running()) { call.reject("off"); return; }
+    if (IzukiAccessibilityService.locked(getContext())) { call.reject("locked"); return; }
     String op = call.getString("op", "");
     int n = call.getInt("n", 0);
+    float x = coord(call, "x");
+    float y = coord(call, "y");
+    float x2 = coord(call, "x2");
+    float y2 = coord(call, "y2");
+    int ms = call.getInt("ms", 300);
     boolean done;
     switch (op) {
       case "click": done = IzukiAccessibilityService.click(n); break;
       case "focus": done = IzukiAccessibilityService.focus(n); break;
       case "type": done = IzukiAccessibilityService.type(n, call.getString("text", "")); break;
       case "scroll": done = IzukiAccessibilityService.scroll(call.getString("dir", "down")); break;
+      case "tapText": done = IzukiAccessibilityService.tapText(call.getString("text", "")); break;
+      case "submit": done = IzukiAccessibilityService.submit(); break;
+      case "tap": done = IzukiAccessibilityService.gesture("tap", x, y, 0, 0, 60); break;
+      case "swipe": done = IzukiAccessibilityService.gesture("swipe", x, y, x2, y2, ms); break;
+      case "longpress": done = IzukiAccessibilityService.gesture("longpress", x, y, 0, 0, ms); break;
       default: done = IzukiAccessibilityService.perform(op);
     }
     JSObject result = new JSObject();
     result.put("done", done);
     call.resolve(result);
+  }
+
+  /** A real touch gesture at screen coordinates (tap, swipe, long-press). */
+  @PluginMethod
+  public void gesture(PluginCall call) {
+    if (!IzukiAccessibilityService.running()) { call.reject("off"); return; }
+    if (IzukiAccessibilityService.locked(getContext())) { call.reject("locked"); return; }
+    boolean done = IzukiAccessibilityService.gesture(
+      call.getString("op", "tap"),
+      coord(call, "x"), coord(call, "y"),
+      coord(call, "x2"), coord(call, "y2"),
+      call.getInt("ms", 300));
+    JSObject result = new JSObject();
+    result.put("done", done);
+    call.resolve(result);
+  }
+
+  private static float coord(PluginCall call, String key) {
+    Double v = call.getDouble(key);
+    return v == null ? 0f : v.floatValue();
   }
 
   @PluginMethod
@@ -252,6 +317,7 @@ public class IzukiControlPlugin extends Plugin {
   /** Open an app by name ("netflix", "youtube") or package id. */
   @PluginMethod
   public void launch(PluginCall call) {
+    if (IzukiAccessibilityService.locked(getContext())) { call.reject("locked"); return; }
     String wanted = call.getString("name", "").toLowerCase(Locale.ROOT).trim();
     PackageManager pm = getContext().getPackageManager();
     ResolveInfo best = null;

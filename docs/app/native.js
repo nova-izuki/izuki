@@ -117,16 +117,112 @@
         return !!status?.enabled;
       } catch { return false; }
     },
+    /** The phone's accessibility screen: {app, items, w, h, locked}. */
+    async screen() {
+      try { return (await control()?.screen()) || null; } catch { return null; }
+    },
+    /** One accessible action: click, focus, type, scroll, tapText, submit, tap, swipe. */
+    async act(args) {
+      try { return (await control()?.act(args)) || null; } catch { return null; }
+    },
+    /** A real touch at screen coordinates. */
+    async gesture(args) {
+      try { return (await control()?.gesture(args)) || null; } catch { return null; }
+    },
+    /** Open an installed app by name. */
+    async launch(name) {
+      try { return (await control()?.launch({ name })) || null; } catch { return null; }
+    },
+    /** Installed launchable apps: [{ name, id }]. */
+    async apps() {
+      try { return (await control()?.apps())?.apps || []; } catch { return []; }
+    },
+    /** play, pause, next, previous, stop. */
+    async media(key) {
+      try { await control()?.media({ key }); return true; } catch { return false; }
+    },
+    /** up, down, mute, unmute. */
+    async volume(dir, steps = 3) {
+      try { await control()?.volume({ dir, steps }); return true; } catch { return false; }
+    },
+    /** Battery, charging, network, lock, screen and volume — safe device facts. */
+    async device() {
+      try { return (await control()?.device()) || null; } catch { return null; }
+    },
+    /** A JPEG of the active screen, or null when it is protected/off. */
+    async snapshot() {
+      try { return (await control()?.snapshot()) || null; } catch { return null; }
+    },
     async openAndroidControlSettings() {
       if (!control()) return false;
       try { await control().openAccessibilitySettings(); return true; } catch { return false; }
     },
     async quickDeviceCommand(words) {
-      const text = String(words || "").trim().toLowerCase().replace(/\s+on (?:my |the |this )?(?:phone|android)[.!?]*$/, "").replace(/[.!?]+$/, "");
-      const matches = [[/^(go )?home$/, "home", "Opened Home."], [/^(go )?back$/, "back", "Went back."], [/^(show )?(recent|recent apps|app switcher)$/, "recents", "Opened recent apps."], [/^(show |open )?notifications$/, "notifications", "Opened notifications."], [/^(show |open )?(quick settings|controls)$/, "quick_settings", "Opened Quick Settings."]];
-      const found = matches.find(([pattern]) => pattern.test(text));
-      if (!found || !control()) return null;
-      try { await control().perform({ action: found[1] }); return found[2]; } catch { return "I couldn't perform that phone action. Check Android accessibility permission in Settings. I haven't sent it to your PC."; }
+      const text = String(words || "").trim().toLowerCase().replace(/\s+on (?:my |the |this )?(?:phone|android)[.!?]*$/, "").replace(/[.!?]+$/, "").trim();
+      if (!text || !control()) return null;
+      const failed = "I couldn't perform that phone action. Check Android accessibility permission in Settings. I haven't sent it to your PC.";
+      const nav = [
+        [/^(go )?home$/, "home", "Opened Home."],
+        [/^(go )?back$/, "back", "Went back."],
+        [/^(show )?(recent|recent apps|app switcher)$/, "recents", "Opened recent apps."],
+        [/^(show |open )?notifications$/, "notifications", "Opened notifications."],
+        [/^(show |open )?(quick settings|controls)$/, "quick_settings", "Opened Quick Settings."],
+        [/^(lock|lock (?:my |the )?phone)$/, "lock", "Locked your phone."],
+        [/^(take a |grab a )?screenshot$/, "screenshot", "Took a screenshot."],
+        [/^(open )?(power|power menu|shutdown menu)$/, "power", "Opened the power menu."],
+      ];
+      const found = nav.find(([pattern]) => pattern.test(text));
+      if (found) {
+        try { await control().perform({ action: found[1] }); return found[2]; } catch { return failed; }
+      }
+      if (/^(volume up|turn it up|louder)$/.test(text)) {
+        return (await window.IzukiNative.volume("up")) ? "Turned the volume up." : failed;
+      }
+      if (/^(volume down|turn it down|quieter)$/.test(text)) {
+        return (await window.IzukiNative.volume("down")) ? "Turned the volume down." : failed;
+      }
+      if (/^(mute|unmute)$/.test(text)) {
+        return (await window.IzukiNative.volume(text)) ? `${text === "mute" ? "Muted" : "Unmuted"} the phone.` : failed;
+      }
+      const media = text.match(/^(play|pause|resume|play\/pause|next(?: song)?|previous(?: song)?)$/);
+      if (media) {
+        const key = media[1].startsWith("next") ? "next" : media[1].startsWith("previous") ? "previous" : media[1] === "pause" ? "pause" : media[1] === "play" ? "play" : "playpause";
+        return (await window.IzukiNative.media(key)) ? "Done." : failed;
+      }
+      const open = text.match(/^open (.+)$/);
+      if (open) {
+        const app = await window.IzukiNative.launch(open[1]);
+        return app?.name ? `Opened ${app.name}.` : null;
+      }
+      const tap = text.match(/^(?:tap|press|click) (.+)$/);
+      if (tap) {
+        const done = await window.IzukiNative.act({ op: "tapText", text: tap[1] });
+        return done?.done ? `Tapped ${tap[1]}.` : failed;
+      }
+      const scroll = text.match(/^scroll (up|down)$/);
+      if (scroll) {
+        const done = await window.IzukiNative.act({ op: "scroll", dir: scroll[1] });
+        return done?.done ? `Scrolled ${scroll[1]}.` : failed;
+      }
+      const search = text.match(/^search(?: for)? (.+)$/);
+      if (search) {
+        const typed = await window.IzukiNative.act({ op: "type", text: search[1], n: 0 });
+        if (!typed?.done) return failed;
+        await window.IzukiNative.act({ op: "submit" });
+        return `Searched for ${search[1]}.`;
+      }
+      const type = text.match(/^type (.+)$/);
+      if (type) {
+        const done = await window.IzukiNative.act({ op: "type", text: type[1], n: 0 });
+        return done?.done ? `Typed ${type[1]}.` : failed;
+      }
+      if (/^(read|what'?s on) (?:the |my )?screen$/.test(text)) {
+        const screen = await window.IzukiNative.screen();
+        if (!screen) return failed;
+        const count = Array.isArray(screen.items) ? screen.items.length : 0;
+        return `I can see ${count} control${count === 1 ? "" : "s"}${screen.app ? ` in ${screen.app}` : ""}.`;
+      }
+      return null;
     },
   };
 })();

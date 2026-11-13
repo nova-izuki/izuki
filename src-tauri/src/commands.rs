@@ -2843,3 +2843,68 @@ pub async fn android_do(prompt: String) -> Result<String, String> {
         .await
         .map_err(|e| e.to_string())?)
 }
+
+fn android_on() -> Result<(), String> {
+    if state::store().settings().android_enabled {
+        Ok(())
+    } else {
+        Err("Turn on “Control my Android” in Settings → Phone first.".into())
+    }
+}
+
+/// A live JPEG of the paired phone for the PC's remote panel.
+#[tauri::command]
+pub async fn android_screen() -> Result<String, String> {
+    android_on()?;
+    blocking(|| {
+        if crate::android::locked() {
+            return Err("Your phone is locked. Unlock it, then try again.".to_string());
+        }
+        crate::android::screenshot_data_url().map_err(|e| e.to_string())
+    })
+    .await?
+}
+
+/// Tap a point in the phone screenshot's own pixels.
+#[tauri::command]
+pub async fn android_tap(x: i32, y: i32) -> Result<(), String> {
+    android_on()?;
+    blocking(move || {
+        if crate::android::locked() { return Err("Your phone is locked.".to_string()); }
+        crate::android::tap(x, y).map_err(|e| e.to_string())
+    })
+    .await?
+}
+
+/// Swipe between two points in the phone screenshot's own pixels.
+#[tauri::command]
+pub async fn android_swipe(x1: i32, y1: i32, x2: i32, y2: i32, ms: u32) -> Result<(), String> {
+    android_on()?;
+    blocking(move || {
+        if crate::android::locked() { return Err("Your phone is locked.".to_string()); }
+        crate::android::swipe(x1, y1, x2, y2, ms.clamp(80, 2500)).map_err(|e| e.to_string())
+    })
+    .await?
+}
+
+/// A named Android key: back, home, recents, enter, power, volume_up/down.
+#[tauri::command]
+pub async fn android_key(name: String) -> Result<(), String> {
+    android_on()?;
+    blocking(move || {
+        if crate::android::locked() { return Err("Your phone is locked.".to_string()); }
+        crate::android::key(&name).map_err(|e| e.to_string())
+    })
+    .await?
+}
+
+/// Type into the phone's focused field from the PC remote panel.
+#[tauri::command]
+pub async fn android_type(text: String) -> Result<(), String> {
+    android_on()?;
+    blocking(move || {
+        if crate::android::locked() { return Err("Your phone is locked.".to_string()); }
+        crate::android::type_text(&text).map_err(|e| e.to_string())
+    })
+    .await?
+}

@@ -17,6 +17,16 @@ const window = {
         status: async () => ({ enabled: true }),
         perform: async ({ action }) => calls.push(action),
         openAccessibilitySettings: async () => calls.push("settings"),
+        launch: async ({ name }) => {
+          if (String(name).toLowerCase() !== "youtube") throw new Error("not installed");
+          calls.push("launch:YouTube");
+          return { name: "YouTube" };
+        },
+        act: async ({ op, text }) => { calls.push(`act:${op}${text ? `:${text}` : ""}`); return { done: true }; },
+        media: async ({ key }) => { calls.push(`media:${key}`); return true; },
+        volume: async ({ dir }) => { calls.push(`volume:${dir}`); return true; },
+        device: async () => ({ battery: 80, charging: false, online: true, wifi: true, control: true }),
+        screen: async () => ({ app: "YouTube", items: [{ n: 1, text: "Search" }, { n: 2, text: "Home" }] }),
       },
       LocalNotifications: {
         checkPermissions: async () => ({ display: "prompt" }),
@@ -38,11 +48,20 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   assert.deepEqual(calls, ["home"]);
   assert.equal(await window.IzukiNative.quickDeviceCommand("open my banking app"), null);
   assert.deepEqual(calls, ["home"], "unrecognised words must never become device actions");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("open YouTube"), "Opened YouTube.");
+  assert.deepEqual(calls, ["home", "launch:YouTube"]);
+  assert.equal(await window.IzukiNative.quickDeviceCommand("tap Search"), "Tapped search.");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("volume up"), "Turned the volume up.");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("next song"), "Done.");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("lock"), "Locked your phone.");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("screenshot"), "Took a screenshot.");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("read screen"), "I can see 2 controls in YouTube.");
   assert.equal(await window.IzukiNative.scheduleReminder({ at: Date.now() + 60_000, text: "Study" }), true);
   assert.equal(prompted, true);
-  assert.equal(calls[1].title, "Izuki reminder");
-  assert.equal(calls[1].body, "Study");
-  assert.equal(calls[1].sound, "default", "native reminders should use the device's configured alert/haptic behavior");
+  const reminder = calls.find((call) => call?.extra?.izukiReminder);
+  assert.equal(reminder.title, "Izuki reminder");
+  assert.equal(reminder.body, "Study");
+  assert.equal(reminder.sound, "default", "native reminders should use the device's configured alert/haptic behavior");
   assert.equal(await window.IzukiNative.quickDeviceCommand("go home on my phone"), "Opened Home.");
   window.Capacitor.Plugins.IzukiControl.perform = async () => { throw new Error("permission denied"); };
   assert.match(await window.IzukiNative.quickDeviceCommand("go back on my Android"), /haven't sent it to your PC/, "failed phone action must not fall through to a PC command");
