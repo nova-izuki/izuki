@@ -23,6 +23,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🏎️", title: "Your phone has a cockpit", how: "Settings → Phone → Open cockpit: battery, network, lock state, Drive speed and quick actions in one dark panel. Autopilot runs short routines and shows every step; Stop ends it, and Send/Pay/Delete are refused.", try: { label: "Open Phone", tab: "settings", id: "settings-phone" } },
+  { icon: "📱", title: "Your phone screen, on your PC", how: "Settings → Control my Android → Open phone screen shows the real phone over ADB. Tap, drag to swipe, use Back/Home/Recents/Enter or type into the focused field. The lock screen stays private.", try: { label: "Open Phone", tab: "settings", id: "settings-phone" } },
   { icon: "📬", title: "“Any good email?” is checked, not searched", how: "Typed in Chat, a Gmail question goes straight to your inbox. “Any good message?” picks out what matters; a named sender or filter still searches.", try: { label: "Open Inbox", tab: "apps", id: "apps-inbox" } },
   { icon: "📬", title: "“Any good emails?” means what you meant", how: "Ask for anything good or important in your inbox and Izuki goes through it and picks out what needs you.", try: { label: "Open Inbox", tab: "apps", id: "apps-inbox" } },
   { icon: "⌨️", title: "Typing and scrolling, done directly", how: "Izuki fills boxes, scrolls, picks list items, opens dropdowns and sets sliders through Windows itself — your mouse and keyboard stay yours." },
