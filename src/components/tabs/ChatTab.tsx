@@ -128,6 +128,10 @@ const ACCOUNTS =
 const WRITE_ONLY =
   /\b(help me (write|draft|compose)|write (me )?(an? )?(e-?mail|message|note|reply)|draft (me )?(an? )?(e-?mail|message|note|reply))\b/i;
 const wantsApps = (t: string) => (ACCOUNTS.test(t) || needsApps(t)) && !opensAnApp(t) && !WRITE_ONLY.test(t) && !/\b(remind me|set (a |an )?reminder)\b/i.test(t);
+// Mail is answered by the inbox/search lane at once. "Any good message"
+// must reach instant_command, where headsup.rs checks the inbox, rather
+// than the model inventing a keyword search for "chrome good".
+const MAIL_ASK = /\b(?:e-?mails?|gmail|inbox|mail)\b/i;
 const APPS = /^\s*\[?APPS\]?\s*$/i;
 const REMIND_TAG = /\s*\[(?:REMIND|ALARM)[^\]]*\]?\s*/gi;
 // Focus mode and Recall are answered on the PC itself, at once.
@@ -1031,8 +1035,11 @@ export function ChatTab() {
         return;
       }
       // The Later list ("remind me later I'm buying…", "what's on my list"): done at once.
-      if (!attached.length && (LATER.test(t) || INSTANT_ASK.test(t) || STORAGE_ASK.test(t) || STUDY_ASK.test(t))) {
+      if (!attached.length && (LATER.test(t) || (MAIL_ASK.test(t) && wantsApps(t)) || INSTANT_ASK.test(t) || STORAGE_ASK.test(t) || STUDY_ASK.test(t))) {
         const said = await api.instantCommand(t).catch(() => null);
+        // Stop may have been pressed while the mail check ran; never start the
+        // apps fallback for a request the person already cancelled.
+        if (streamId.current !== id) return;
         if (said) {
           setLast({ content: said, status: undefined });
           if (streamId.current === id) { streamId.current = null; setBusy(false); }
@@ -1998,6 +2005,7 @@ function firstStatus(t: string): string {
   if (/\b(battery|cpu|ram|memory|running|slow|lag)\b/.test(s)) return "🩺 Checking your PC…";
   if (/\b(wifi|wi-fi|internet|network|ip address)\b/.test(s)) return "📶 Checking your network…";
   if (/\b(weather|forecast|rain)\b/.test(s)) return "🌤️ Checking the weather…";
+  if (MAIL_ASK.test(s) && !WRITE_ONLY.test(s) && !/\b(send|draft|reply|write|compose)\b/.test(s)) return "📬 Checking your inbox…";
   if (/\b(news|latest|today|price|search|look up|who is|what is the)\b/.test(s)) return "🔎 Looking it up…";
   if (/\b(write|draft|email|essay|letter|poem|story|caption)\b/.test(s)) return "✍️ Writing…";
   if (/\b(explain|why|how does|teach|help me understand)\b/.test(s)) return "💡 Working it out…";
