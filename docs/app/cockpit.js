@@ -20,17 +20,8 @@
   function build() {
     if (built) return;
     built = true;
-    const launch = document.createElement("button");
-    launch.type = "button";
-    launch.id = "go-cockpit";
-    launch.className = "icon-btn compact-action ck-launch";
-    launch.setAttribute("aria-label", "Cockpit — phone status and Autopilot");
-    launch.title = "Cockpit";
-    launch.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="m12 12 4-4"/><path d="M12 4v2M20 12h-2M12 20v-2M4 12h2"/></svg><span>Cockpit</span>';
-    const drive = $("go-drive");
-    if (drive?.parentElement) drive.insertAdjacentElement("afterend", launch);
-    else document.querySelector(".tools")?.prepend(launch);
-
+    // Launched from Settings → Phone, not the toolbar: the phone header is
+    // already tight at 320px and the cockpit is an occasional destination.
     const panel = document.createElement("div");
     panel.id = "izuki-cockpit";
     panel.hidden = true;
@@ -105,7 +96,7 @@
         </section>
       </div>`;
     document.body.appendChild(panel);
-    launch.onclick = open;
+    $("open-cockpit")?.addEventListener("click", open);
     $("ck-close").onclick = close;
     $("ck-home").onclick = () => void act("home");
     $("ck-back").onclick = () => void act("back");
