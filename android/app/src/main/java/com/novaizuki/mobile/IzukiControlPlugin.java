@@ -18,6 +18,7 @@ import android.net.NetworkCapabilities;
 import android.os.BatteryManager;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import android.speech.SpeechRecognizer;
 import android.provider.Settings;
 import android.view.KeyEvent;
 import com.getcapacitor.JSArray;
@@ -55,8 +56,31 @@ import org.json.JSONObject;
 public class IzukiControlPlugin extends Plugin {
   private final ExecutorService work = Executors.newCachedThreadPool();
   private static volatile IzukiControlPlugin instance;
+  private static volatile String pendingWake = "";
+  private AudioManager.OnAudioFocusChangeListener focusListener;
 
   @Override public void load() { instance = this; }
+
+  /** Remember a wake phrase delivered before the web page was ready. */
+  static void setWakePhrase(String phrase) {
+    pendingWake = phrase == null ? "" : phrase;
+  }
+
+  /** Tell an already-open Izuki page that “Hey Nova” was heard. */
+  static void notifyWake(String phrase) {
+    IzukiControlPlugin p = instance;
+    if (p == null) return;
+    JSObject data = new JSObject();
+    data.put("phrase", phrase == null ? "Hey Nova" : phrase);
+    p.notifyListeners("wake", data, true);
+  }
+
+  /** The phone was unlocked: a wake that arrived behind the lock can now run. */
+  static void notifyUnlock() {
+    IzukiControlPlugin p = instance;
+    if (p == null) return;
+    p.notifyListeners("unlock", new JSObject(), true);
+  }
 
   /** Tell the Izuki page something happened on the TV (e.g. a paywall). */
   static void emit(String event, String app, String pkg, String say) {
@@ -89,6 +113,76 @@ public class IzukiControlPlugin extends Plugin {
       result.put("type", "image/jpeg");
       call.resolve(result);
     }, call::reject);
+  }
+
+  /** Turn the opt-in “Hey Nova” listener on or off. */
+  @PluginMethod
+  public void wake(PluginCall call) {
+    boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+    if (on && !SpeechRecognizer.isRecognitionAvailable(getContext())) {
+      call.reject("Speech recognition isn't available on this phone.");
+      return;
+    }
+    getContext().getSharedPreferences("izuki_native", Context.MODE_PRIVATE).edit()
+        .putBoolean(IzukiWakeService.KEY_WAKE, on).apply();
+    try {
+      if (on) IzukiWakeService.start(getContext());
+      else IzukiWakeService.stop(getContext());
+    } catch (Exception e) {
+      getContext().getSharedPreferences("izuki_native", Context.MODE_PRIVATE).edit()
+          .putBoolean(IzukiWakeService.KEY_WAKE, false).apply();
+      call.reject("Couldn't start the wake listener: " + e.getMessage());
+      return;
+    }
+    JSObject result = new JSObject();
+    result.put("on", on);
+    result.put("running", IzukiWakeService.isRunning());
+    result.put("available", SpeechRecognizer.isRecognitionAvailable(getContext()));
+    call.resolve(result);
+  }
+
+  @PluginMethod
+  public void wakeStatus(PluginCall call) {
+    JSObject result = new JSObject();
+    result.put("on", getContext().getSharedPreferences("izuki_native", Context.MODE_PRIVATE)
+        .getBoolean(IzukiWakeService.KEY_WAKE, false));
+    result.put("running", IzukiWakeService.isRunning());
+    result.put("available", SpeechRecognizer.isRecognitionAvailable(getContext()));
+    call.resolve(result);
+  }
+
+  /** The live call needs the microphone; pause the hotword without turning it off. */
+  @PluginMethod
+  public void wakePause(PluginCall call) {
+    if (!getContext().getSharedPreferences("izuki_native", Context.MODE_PRIVATE)
+        .getBoolean(IzukiWakeService.KEY_WAKE, false)) {
+      call.resolve();
+      return;
+    }
+    int minutes = Math.max(1, Math.min(60, call.getInt("minutes", 30)));
+    try { IzukiWakeService.pause(getContext(), minutes * 60_000L); }
+    catch (Exception e) { call.reject("Couldn't pause the wake listener: " + e.getMessage()); return; }
+    call.resolve();
+  }
+
+  @PluginMethod
+  public void wakeResume(PluginCall call) {
+    if (!getContext().getSharedPreferences("izuki_native", Context.MODE_PRIVATE)
+        .getBoolean(IzukiWakeService.KEY_WAKE, false)) {
+      call.resolve();
+      return;
+    }
+    try { IzukiWakeService.resume(getContext()); }
+    catch (Exception e) { call.reject("Couldn't resume the wake listener: " + e.getMessage()); return; }
+    call.resolve();
+  }
+
+  @PluginMethod
+  public void takeWake(PluginCall call) {
+    JSObject result = new JSObject();
+    result.put("phrase", pendingWake);
+    pendingWake = "";
+    call.resolve(result);
   }
 
   /** Safe, non-personal device numbers for the cockpit: battery, network, sound. */
@@ -338,6 +432,76 @@ public class IzukiControlPlugin extends Plugin {
     JSObject result = new JSObject();
     result.put("name", best.loadLabel(pm).toString());
     call.resolve(result);
+  }
+
+  /** The phone's stream levels, for the sound panel (not private content). */
+  @PluginMethod
+  public void audio(PluginCall call) {
+    AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+    JSObject result = new JSObject();
+    if (am == null) { call.reject("Sound control isn't available on this phone."); return; }
+    int[][] streams = {
+        {AudioManager.STREAM_MUSIC, 0}, {AudioManager.STREAM_RING, 1},
+        {AudioManager.STREAM_ALARM, 2}, {AudioManager.STREAM_NOTIFICATION, 3},
+    };
+    String[] names = {"media", "ring", "alarm", "notification"};
+    for (int i = 0; i < streams.length; i++) {
+      int stream = streams[i][0];
+      result.put(names[i], am.getStreamVolume(stream));
+      result.put(names[i] + "Max", am.getStreamMaxVolume(stream));
+    }
+    result.put("musicMuted", am.isStreamMute(AudioManager.STREAM_MUSIC));
+    call.resolve(result);
+  }
+
+  /** Set one stream, clamped to what the phone will actually accept. */
+  @PluginMethod
+  public void setVolume(PluginCall call) {
+    String name = call.getString("stream", "media");
+    int stream;
+    switch (name) {
+      case "ring": stream = AudioManager.STREAM_RING; break;
+      case "alarm": stream = AudioManager.STREAM_ALARM; break;
+      case "notification": stream = AudioManager.STREAM_NOTIFICATION; break;
+      default: stream = AudioManager.STREAM_MUSIC; break;
+    }
+    AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+    if (am == null) { call.reject("Sound control isn't available on this phone."); return; }
+    int max = am.getStreamMaxVolume(stream);
+    int level = Math.max(0, Math.min(max, call.getInt("level", 0)));
+    try {
+      am.setStreamVolume(stream, level, AudioManager.FLAG_SHOW_UI);
+    } catch (SecurityException e) {
+      // Do Not Disturb or a device policy can forbid changing this stream.
+      call.reject("Android won't let Izuki change this volume right now (Do Not Disturb or a device policy).");
+      return;
+    }
+    JSObject result = new JSObject();
+    result.put("stream", name);
+    result.put("level", am.getStreamVolume(stream));
+    result.put("max", max);
+    call.resolve(result);
+  }
+
+  /** Duck other media with audio focus while Izuki's voice is speaking. */
+  @PluginMethod
+  public void audioFocus(PluginCall call) {
+    AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+    if (am == null) { call.reject("Sound control isn't available on this phone."); return; }
+    boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+    if (focusListener == null) focusListener = change -> { };
+    int result;
+    try {
+      result = on
+          ? am.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+          : am.abandonAudioFocus(focusListener);
+    } catch (SecurityException e) {
+      call.reject("Android won't share audio focus right now.");
+      return;
+    }
+    JSObject out = new JSObject();
+    out.put("focused", result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
+    call.resolve(out);
   }
 
   // ---- play, pause, volume ------------------------------------------------------

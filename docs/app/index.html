@@ -45,6 +45,7 @@
 <script src="drive.js"></script>
 <script src="autopilot.js"></script>
 <script src="cockpit.js"></script>
+<script src="pilot.js"></script>
 <script src="remote.js"></script>
 <script src="touchgrass.js"></script>
 <script src="lecture.js"></script>
@@ -279,6 +280,7 @@
 <link rel="stylesheet" href="companion.css">
 <link rel="stylesheet" href="platform.css">
 <link rel="stylesheet" href="cockpit.css">
+<link rel="stylesheet" href="pilot.css">
 </head>
 <body>
 <div class="app">
@@ -522,11 +524,27 @@
       <p class="note">Optional and visible: Android opens its own Accessibility settings. When enabled, Izuki can do the phone navigation you directly ask for: Home, Back, recent apps, notifications, Quick Settings, lock, screenshots, taps, swipes, typing and scrolling. Autopilot runs a short routine one visible step at a time, and never sends, pays or deletes. It never acts in the background by itself.</p>
     </section>
 
+    <section id="native-wake" hidden>
+      <h3>“Hey Nova” wake word</h3>
+      <p id="wake-status" class="note">Checking the wake listener…</p>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="btn" id="wake-toggle" type="button">Turn on</button></div>
+      <p class="note" style="margin-top:8px">Optional. Android shows a persistent listening notification while it is on. “Hey Nova” wakes the screen, but <b>never unlocks the phone</b>: if the lock screen is up, Izuki waits for you. Android's own speech service does the listening; Izuki only receives the words, and the listener can use battery.</p>
+    </section>
+
+    <section id="native-sound" hidden>
+      <h3>Phone sound</h3>
+      <div class="field"><label for="sound-media">Media <span id="sound-media-val">—</span></label><input id="sound-media" type="range" min="0" max="15" value="0"></div>
+      <div class="field"><label for="sound-ring">Ring <span id="sound-ring-val">—</span></label><input id="sound-ring" type="range" min="0" max="7" value="0"></div>
+      <div class="field"><label for="sound-alarm">Alarm <span id="sound-alarm-val">—</span></label><input id="sound-alarm" type="range" min="0" max="7" value="0"></div>
+      <label class="note" style="display:flex;align-items:center;gap:8px;margin-top:8px"><input id="sound-duck" type="checkbox"> Quiet other audio while Izuki talks</label>
+      <p class="note">These change the phone's own streams. “Quiet other audio” only asks Android to duck other media while Izuki is speaking; it does not mute or record anything else.</p>
+    </section>
+
     <section id="native-cockpit-help" hidden>
       <h3>Cockpit &amp; Autopilot</h3>
       <p>Open the cockpit here for a live panel: battery, network, speed in Drive mode, and one-line routines. Autopilot opens apps, searches, taps what you name, types, scrolls and goes Back or Home. Every step is shown, Stop is always there, and it refuses Send, Pay, Buy and Delete controls.</p>
-      <div class="row" style="margin-top:10px"><button class="btn" id="open-cockpit" type="button">Open cockpit</button></div>
-      <p class="note" style="margin-top:8px">Android Accessibility control must be on. A locked phone is never touched.</p>
+      <div class="row" style="margin-top:10px;flex-wrap:wrap"><button class="btn" id="open-cockpit" type="button">Open cockpit</button><button class="btn" id="open-pilot" type="button">Open Autopilot</button></div>
+      <p class="note" style="margin-top:8px">Android Accessibility control must be on. A locked phone is never touched. Autopilot also lives on Home, and its Test phone control button checks real taps and swipes against safe test targets.</p>
     </section>
 
     <section>
@@ -849,6 +867,13 @@
       notesBtn.type = "button";
       notesBtn.onclick = () => void showNotes(true);
       w.appendChild(notesBtn);
+    }
+    // Autopilot is a normal-home action, not something hidden behind the cockpit.
+    if (window.IzukiNative?.installed?.() && window.IzukiNative.platform?.() === "android" && window.IzukiPilot) {
+      const pilotBtn = el("button", "home-resume", "\ud83c\udfce\ufe0f Autopilot \u2014 run it on my phone");
+      pilotBtn.type = "button";
+      pilotBtn.onclick = () => window.IzukiPilot.open();
+      w.appendChild(pilotBtn);
     }
     const pendingReminders = reminders.filter((r) => !r.done).length;
     pulseItem("Private", "Chats stay on this phone");
@@ -1929,6 +1954,19 @@
         return;
       }
     }
+    // An explicit "autopilot ..." opens the visible Autopilot sheet. It does
+    // not run until the person presses Run there, even though the phrase is
+    // already an instruction.
+    if (!audio && !files.length) {
+      const auto = said.match(/^autopilot\b[:,]?\s+(.+)$/i);
+      if (auto && window.IzukiNative?.platform?.() === "android" && window.IzukiPilot) {
+        window.IzukiPilot.open(auto[1].trim());
+        const reply = "Autopilot is ready. Check the routine and press Run.";
+        history.push({ role: "user", text: said }, { role: "model", text: reply }); saveAll();
+        bubble("me", said); bubble("izuki", reply);
+        return;
+      }
+    }
     // A tiny, direct Android lane: no AI, no screen guesswork and no hidden
     // action. Only explicit, allowlisted phone-navigation phrases can use it.
     if (!audio && !files.length) {
@@ -2376,8 +2414,14 @@
       return;
     }
     const s = stream || voiceStream({ siri });
-    if (!stream) s.feed(t);
-    await s.end(t);
+    const ducked = localStorage.getItem("izuki.duck") === "1" && window.IzukiNative?.installed?.();
+    if (ducked) void window.IzukiNative?.audioFocus?.(true);
+    try {
+      if (!stream) s.feed(t);
+      await s.end(t);
+    } finally {
+      if (ducked) void window.IzukiNative?.audioFocus?.(false);
+    }
   }
 
   /**
@@ -2729,8 +2773,8 @@
 
   // ------------------------------------------------------------ the call
   const live = $("live");
-  let callStart = 0, callClock = null;
-  function openLive() {
+  let callStart = 0, callClock = null, wakePausedForCall = false;
+  async function openLive() {
     if (!ready()) return render();
     $("live-name").textContent = person().name;
     $("live-style").textContent = person().style;
@@ -2747,6 +2791,23 @@
     callClock = setInterval(tick, 1000);
     note("call started");
     if (!talking) {
+      // The native wake listener and the call cannot both own the microphone.
+      // Step the listener aside for this call; it is turned back on when the
+      // call ends, and the person's wake-word switch stays on.
+      try {
+        const wake = await window.IzukiNative?.wakeStatus?.();
+        if (wake?.on) {
+          wakePausedForCall = true;
+          await window.IzukiNative?.wakePause?.(30);
+          // The person may have hung up while the native pause was in flight.
+          if (live.hidden) {
+            wakePausedForCall = false;
+            void window.IzukiNative?.wakeResume?.();
+            return;
+          }
+        }
+      } catch {}
+      if (live.hidden) return;
       talking = true;
       unlockAudio();
       listen();
@@ -2757,6 +2818,10 @@
     clearInterval(callClock);
     note("call ended");
     if (talking) stopTalking("");
+    if (wakePausedForCall) {
+      wakePausedForCall = false;
+      void window.IzukiNative?.wakeResume?.();
+    }
   }
   $("go-live").onclick = openLive;
 
@@ -2975,6 +3040,61 @@
     }
   };
 
+  async function loadWakePanel() {
+    const status = $("wake-status"), button = $("wake-toggle");
+    if (!status || !button) return;
+    const st = await window.IzukiNative?.wakeStatus?.();
+    if (!st) {
+      status.textContent = "Update the Android companion to use the “Hey Nova” wake word.";
+      button.disabled = true;
+      return;
+    }
+    if (!st.available) {
+      status.textContent = "Android speech recognition isn't available on this phone, so the wake word can't listen here.";
+      button.disabled = true;
+      button.textContent = "Unavailable";
+      return;
+    }
+    const on = !!st.on;
+    status.textContent = on
+      ? (st.running ? "On. Say “Hey Nova” — I'll wake the screen and wait for you to unlock." : "On. Waiting for Android to start the listener… If this stays, turn it off and on with Izuki open.")
+      : "Off. Turn it on to listen for “Hey Nova” while the app is in the background.";
+    button.disabled = false;
+    button.textContent = on ? "Turn off" : "Turn on";
+    button.onclick = async () => {
+      button.disabled = true;
+      const result = await window.IzukiNative?.wake?.(!on);
+      if (!result) setStatus("Couldn't change the wake word. Check Android microphone permission.");
+      await loadWakePanel();
+    };
+  }
+
+  async function loadSoundPanel() {
+    const a = await window.IzukiNative?.audio?.();
+    const bind = (name) => {
+      const slider = $("sound-" + name), label = $("sound-" + name + "-val");
+      if (!slider || !label) return;
+      const max = Number(a?.[name + "Max"]);
+      const value = Number(a?.[name]);
+      if (Number.isFinite(max) && max > 0) slider.max = String(max);
+      if (Number.isFinite(value)) slider.value = String(value);
+      const show = () => { label.textContent = `${slider.value} / ${slider.max}`; };
+      show();
+      slider.disabled = !a;
+      slider.oninput = show;
+      slider.onchange = () => { void window.IzukiNative?.setVolume?.(name, Number(slider.value)); };
+    };
+    bind("media"); bind("ring"); bind("alarm");
+    const duck = $("sound-duck");
+    if (duck) {
+      duck.checked = localStorage.getItem("izuki.duck") === "1";
+      duck.onchange = () => {
+        localStorage.setItem("izuki.duck", duck.checked ? "1" : "0");
+        if (!duck.checked) void window.IzukiNative?.audioFocus?.(false);
+      };
+    }
+  }
+
   function openSettings(focusId = "") {
     try { $("orb-style").value = localStorage.getItem("izuki.orbStyle") || "liquid"; } catch { $("orb-style").value = "liquid"; }
     try { $("orb-response").value = localStorage.getItem("izuki.orbResponse") || "1"; } catch {}
@@ -3005,6 +3125,8 @@
     if (cockpitHelp) cockpitHelp.hidden = !(native && platform === "android");
     const openCockpit = $("open-cockpit");
     if (openCockpit) openCockpit.onclick = () => { sheet.hidden = true; window.IzukiCockpit?.open?.(); };
+    const openPilot = $("open-pilot");
+    if (openPilot) openPilot.onclick = () => { sheet.hidden = true; window.IzukiPilot?.open?.(); };
     $("test-haptic").onclick = async () => {
       const done = await window.IzukiNative.haptic();
       $("native-feedback").textContent = done ? "Tap sent. Your phone's haptic settings decide whether you feel it." : "Haptic feedback isn't available on this device or is disabled in system settings.";
@@ -3018,7 +3140,15 @@
       const status = $("native-controls-status");
       window.IzukiNative.controlStatus().then((enabled) => { status.textContent = enabled ? "Android control is enabled. Say “go home”, “go back”, “show recent apps”, “open notifications” or “open quick settings”." : "Android control is off. Enable it once to use direct phone navigation."; });
       $("open-android-controls").onclick = () => void window.IzukiNative.openAndroidControlSettings();
-    } else controlPanel.hidden = true;
+      $("native-wake").hidden = false;
+      $("native-sound").hidden = false;
+      void loadWakePanel();
+      void loadSoundPanel();
+    } else {
+      controlPanel.hidden = true;
+      $("native-wake").hidden = true;
+      $("native-sound").hidden = true;
+    }
     $("bug-result").textContent = "";
     if (window.izukiApps?.configured()) showApps();
     sheet.hidden = false;
@@ -3416,6 +3546,50 @@
   }
   window.addEventListener("izuki-launch", receiveNativeDraft);
   void receiveNativeDraft();
+
+  // “Hey Nova” from the native listener. The service wakes the screen and
+  // posts a notification; the page only starts talking after the phone is
+  // actually unlocked.
+  let pendingWake = "";
+  let lastWakeText = "", lastWakeAt = 0;
+  function startWake(phrase) {
+    if (talking) return;
+    const fingerprint = String(phrase || "").trim().toLowerCase();
+    // The service event and the intent that brings the app forward can both
+    // carry the same phrase. One “Hey Nova” should start one thing.
+    if (fingerprint && fingerprint === lastWakeText && Date.now() - lastWakeAt < 6000) return;
+    lastWakeText = fingerprint; lastWakeAt = Date.now();
+    const said = String(phrase || "").replace(/^.*?\b(?:hey|hi|ok|okay)[\s,]+(?:nova|izuki)\b[\s,]*/i, "").trim();
+    if (!ready()) {
+      setStatus("I heard “Hey Nova”. Add a free AI key or link your PC first.");
+      return;
+    }
+    if (said) { void ask(said); return; }
+    openLive();
+  }
+  async function receiveWake() {
+    if (document.hidden) return;
+    const fresh = await window.IzukiNative?.takeWake?.();
+    if (fresh) pendingWake = fresh;
+    if (!pendingWake) return;
+    const d = await window.IzukiNative?.device?.();
+    if (d?.locked) {
+      setStatus("I heard “Hey Nova”. Unlock your phone and I'll pick up.");
+      return;
+    }
+    const phrase = pendingWake;
+    pendingWake = "";
+    startWake(phrase);
+  }
+  window.IzukiNative?.onWake?.((data) => {
+    pendingWake = String(data?.phrase || "Hey Nova");
+    if (!document.hidden) void receiveWake();
+  });
+  // A wake can arrive while the phone is showing its lock screen. Android's
+  // ACTION_USER_PRESENT is earlier and more reliable than a focus event here.
+  window.IzukiNative?.onUnlock?.(() => { if (pendingWake) void receiveWake(); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) void receiveWake(); });
+  void receiveWake();
   // "Hey Siri, Izuki": the Shortcut opens …?q=what you said.
   const q = new URLSearchParams(location.search).get("q");
   if (q && ready()) {

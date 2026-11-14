@@ -149,6 +149,47 @@
     async device() {
       try { return (await control()?.device()) || null; } catch { return null; }
     },
+    /** The opt-in “Hey Nova” listener: { on, running, available }. */
+    async wakeStatus() {
+      try { return (await control()?.wakeStatus()) || null; } catch { return null; }
+    },
+    async wake(on) {
+      try { return (await control()?.wake({ on: !!on })) || null; } catch { return null; }
+    },
+    /** A phrase from a wake that arrived before the page was ready. */
+    async takeWake() {
+      try { return String((await control()?.takeWake())?.phrase || ""); } catch { return ""; }
+    },
+    /** Step aside while a live call uses the microphone; the switch stays on. */
+    async wakePause(minutes = 30) {
+      try { await control()?.wakePause?.({ minutes }); return true; } catch { return false; }
+    },
+    async wakeResume() {
+      try { await control()?.wakeResume?.(); return true; } catch { return false; }
+    },
+    /** Android reports the phone was unlocked, so a waiting wake can continue. */
+    onUnlock(callback) {
+      const p = control();
+      if (!p?.addListener) return null;
+      try { return p.addListener("unlock", () => { try { callback?.(); } catch {} }); } catch { return null; }
+    },
+    /** Listen for a wake event while the app is open. */
+    onWake(callback) {
+      const p = control();
+      if (!p?.addListener) return null;
+      try { return p.addListener("wake", (data) => { try { callback?.(data); } catch {} }); } catch { return null; }
+    },
+    /** Media, ring, alarm and notification levels, with their maxima. */
+    async audio() {
+      try { return (await control()?.audio()) || null; } catch { return null; }
+    },
+    async setVolume(stream, level) {
+      try { return (await control()?.setVolume({ stream, level })) || null; } catch { return null; }
+    },
+    /** Duck other apps while Izuki's voice is speaking. */
+    async audioFocus(on) {
+      try { return (await control()?.audioFocus({ on: !!on })) || null; } catch { return null; }
+    },
     /** A JPEG of the active screen, or null when it is protected/off. */
     async snapshot() {
       try { return (await control()?.snapshot()) || null; } catch { return null; }
