@@ -50,6 +50,35 @@
     if (!screen) throw new Error("The phone screen isn't readable — unlock it and check Accessibility control.");
     return screen;
   }
+
+  /**
+   * Lock-aware pause: never touch a locked phone, but don't throw the routine
+   * away either. Wait visibly for the person to unlock, then continue exactly
+   * where the plan stopped. Stop still wins at any moment.
+   */
+  async function waitForUnlocked() {
+    const n = needBridge();
+    if (!n.device) return;
+    const until = Date.now() + 90_000;
+    let announced = false;
+    while (true) {
+      assertRunning();
+      const d = await n.device().catch(() => null);
+      if (!d) return;
+      if (!d.locked && d.screenOn !== false) {
+        if (announced) add("Unlocked. Continuing.", "done");
+        return;
+      }
+      if (!announced) {
+        add(d.locked
+          ? "Phone is locked. Unlock it — I'll wait and continue."
+          : "Phone screen is off. Turn it on — I'll wait and continue.", "warn");
+        announced = true;
+      }
+      if (Date.now() > until) throw new Error("The phone stayed locked. Unlock it, then run the routine again.");
+      if (!(await sleep(800))) throw new Error("Stopped.");
+    }
+  }
   async function waitFor(text, timeout = 7000) {
     const wanted = norm(text);
     const until = Date.now() + timeout;
@@ -248,7 +277,21 @@
         assertRunning();
         state.step = i + 1;
         add(`Step ${i + 1}/${made.steps.length}: ${made.steps[i].label}`, "step");
-        await made.steps[i].run();
+        await waitForUnlocked();
+        try {
+          await made.steps[i].run();
+        } catch (error) {
+          // A lock can land between the check and the action. The native layer
+          // refuses locked actions, and its bridge may turn that refusal into
+          // a null result rather than an error, so ask the phone directly.
+          const phone = await needBridge().device?.().catch(() => null);
+          if (phone?.locked || /locked|screen isn't readable/i.test(String(error?.message || error))) {
+            await waitForUnlocked();
+            await made.steps[i].run();
+          } else {
+            throw error;
+          }
+        }
         assertRunning();
       }
       add("Done. Nothing was sent, paid for or deleted.", "done");

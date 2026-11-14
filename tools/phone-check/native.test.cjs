@@ -6,7 +6,7 @@ const path = require("path");
 const vm = require("vm");
 
 const calls = [];
-let prompted = false;
+let prompted = false, appSettings = 0;
 const window = {
   Capacitor: {
     isNativePlatform: () => true,
@@ -27,6 +27,10 @@ const window = {
         volume: async ({ dir }) => { calls.push(`volume:${dir}`); return true; },
         device: async () => ({ battery: 80, charging: false, online: true, wifi: true, control: true }),
         screen: async () => ({ app: "YouTube", items: [{ n: 1, text: "Search" }, { n: 2, text: "Home" }] }),
+        wakeStatus: async () => ({ on: false, running: false, available: true, mic: false, notifications: true }),
+        wake: async ({ on }) => { if (on) throw new Error("mic"); return { on: false }; },
+        wakePause: async () => { throw new Error("busy"); },
+        openAppSettings: async () => { appSettings++; },
       },
       LocalNotifications: {
         checkPermissions: async () => ({ display: "prompt" }),
@@ -58,6 +62,14 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   assert.equal(await window.IzukiNative.quickDeviceCommand("read screen"), "I can see 2 controls in YouTube.");
   assert.equal(await window.IzukiNative.scheduleReminder({ at: Date.now() + 60_000, text: "Study" }), true);
   assert.equal(prompted, true);
+  const wakeStatus = await window.IzukiNative.wakeStatus();
+  assert.equal(wakeStatus.available, true);
+  assert.equal(wakeStatus.mic, false);
+  assert.equal(wakeStatus.notifications, true);
+  assert.equal((await window.IzukiNative.wake(true)).error, "mic");
+  assert.equal(await window.IzukiNative.wakePause(), false, "a failed pause must tell the caller to stop the listener");
+  assert.equal(await window.IzukiNative.openAppSettings(), true);
+  assert.equal(appSettings, 1);
   const reminder = calls.find((call) => call?.extra?.izukiReminder);
   assert.equal(reminder.title, "Izuki reminder");
   assert.equal(reminder.body, "Study");
@@ -77,5 +89,7 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   delete window.Capacitor;
   assert.equal(window.IzukiNative.platform(), "web");
   assert.equal(await window.IzukiNative.haptic(), false);
+  assert.equal(await window.IzukiNative.wakePause(), false, "a browser or older APK must not claim the mic was released");
+  assert.equal(await window.IzukiNative.openAppSettings(), false);
   console.log("Native bridge: explicit Android actions and native reminders pass.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

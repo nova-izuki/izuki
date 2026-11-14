@@ -101,7 +101,7 @@ jobs:
 
             Talk to it. It sees your screen, answers out loud, and uses your mouse and keyboard to get things done.
 
-            🌐 **Website, phone app and the easiest download: [nova-izuki.github.io/izuki](https://nova-izuki.github.io/izuki/)**
+            🌐 **Website, phone app and the easiest download: [izukinova.ai](https://izukinova.ai/)**
 
             **Download `Izuki_*_x64-setup.exe` below and run it.** No admin needed.
             Windows may say "Windows protected your PC" (the app is new and not code-signed yet) → **More info → Run anyway**.
@@ -185,7 +185,7 @@ jobs:
           if (Test-Path $notes) {
             # Every release page leads to the website first — so search
             # engines see the site as Izuki's home, not 40 GitHub pages.
-            $page = "🌐 **Izuki's website — download, phone app and TV app: [nova-izuki.github.io/izuki](https://nova-izuki.github.io/izuki/)**`n`n" + (Get-Content $notes -Raw)
+            $page = "🌐 **Izuki's website — download, phone app and TV app: [izukinova.ai](https://izukinova.ai/)**`n`n" + (Get-Content $notes -Raw)
             $page | Set-Content -Encoding utf8 release-notes.md
             gh release edit $tag --notes-file release-notes.md
             if ($LASTEXITCODE -ne 0) { throw "could not attach release notes" }

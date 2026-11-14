@@ -110,7 +110,7 @@ for i, (name, head, sub, panel_share, line) in enumerate(ADS):
     d = ImageDraw.Draw(im)
     d.text((tx, cy - int(ls * 0.12)), "Izuki", font=nf, fill=(255, 255, 255, 255), anchor="ls")
     d.text((tx, cy + int(ls * 0.12)), line, font=lf, fill=(220, 214, 255, 255), anchor="lm")
-    d.text((tx, cy + int(ls * 0.38)), "nova-izuki.github.io/izuki", font=uf, fill=(103, 232, 249, 255), anchor="lm")
+    d.text((tx, cy + int(ls * 0.38)), "izukinova.ai", font=uf, fill=(103, 232, 249, 255), anchor="lm")
 
     out = os.path.join(OUT, f"izuki-ad-{i + 1}-{'square' if W == H else 'story'}.png")
     im.convert("RGB").save(out, optimize=True)

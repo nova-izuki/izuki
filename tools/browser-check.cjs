@@ -234,6 +234,14 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   await navigate('/docs/', 'document.readyState === "complete" && !!document.getElementById("features")');
   assert(await evaluate('document.getElementById("features").textContent.includes("Two ways to take control")'));
   assert(await evaluate('[...document.querySelectorAll("a.dl")].every(a => a.href.endsWith("/releases/latest/download/Izuki-Setup.exe"))'));
+  assert(await evaluate('!!document.getElementById("wake-demo")'), 'phone wake preview missing');
+  await evaluate('document.querySelector("[data-wake=\\"locked\\"]").click()');
+  await pause(800);
+  assert.equal(await evaluate('document.getElementById("wake-demo-status").textContent'), 'LOCKED', 'wake preview did not show the lock hand-off');
+  await pause(1200);
+  assert.equal(await evaluate('document.getElementById("wake-demo-status").textContent'), 'UNLOCKED', 'wake preview did not continue after unlock');
+  assert(await evaluate('document.getElementById("wake-demo-lock").hidden'), 'lock overlay stayed after unlock');
+  console.log('Website: phone wake preview shows the lock-screen hand-off.');
   for (const width of [390, 1280]) {
     await call('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: false });
     await pause(300);

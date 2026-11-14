@@ -3,7 +3,9 @@
   function parse(value) {
     try {
       let url=new URL(String(value).trim());
-      if(url.origin==='https://nova-izuki.github.io'&&url.pathname==='/izuki/app/') url=new URL(new URLSearchParams(url.hash.slice(1)).get('pc')||'');
+      const appPath=url.hostname==='nova-izuki.github.io'?'/izuki/app/':'/app/';
+      const appHost=url.hostname==='nova-izuki.github.io'||url.hostname==='izukinova.ai'||url.hostname==='www.izukinova.ai';
+      if(appHost&&url.pathname===appPath) url=new URL(new URLSearchParams(url.hash.slice(1)).get('pc')||'');
       if(url.protocol!=='https:'||url.username||url.password||url.search||url.hash||!/^\/[a-zA-Z0-9_-]{20,}\/?$/.test(url.pathname))return null;
       return url.href.replace(/\/$/,'')+'/';
     }catch{return null;}

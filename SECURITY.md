@@ -18,4 +18,4 @@ Only the latest release gets fixes. Izuki updates itself, and every update is si
 
 ## Verifying a download
 
-See [nova-izuki.github.io/izuki/security](https://nova-izuki.github.io/izuki/security/): it explains how to compare your installer's SHA-256 with the one GitHub publishes, and why Windows SmartScreen warns about an installer that isn't code-signed yet.
+See [izukinova.ai/security](https://izukinova.ai/security/): it explains how to compare your installer's SHA-256 with the one GitHub publishes, and why Windows SmartScreen warns about an installer that isn't code-signed yet.

@@ -13,7 +13,7 @@ new Function('require','module','exports',outputFiles[0].text)(require,module,mo
 const React=require('react'), {renderToStaticMarkup}=require('react-dom/server');
 const token='0123456789abcdef0123456789abcdef';
 const direct=`https://a-long-temporary-tunnel.trycloudflare.com/${token}/`;
-const pairing=`https://nova-izuki.github.io/izuki/app/#pc=${encodeURIComponent(direct)}`;
+const pairing=`https://izukinova.ai/app/#pc=${encodeURIComponent(direct)}`;
 for(const text of [direct,pairing]) {
   const svg=renderToStaticMarkup(React.createElement(module.exports.QrCode,{text,label:'Test QR'}));
   assert(svg.includes('flex-shrink:0'),'QR must not collapse in a flex row');
@@ -44,6 +44,8 @@ const context={window:{},URL,URLSearchParams,AbortController,setTimeout,clearTim
 vm.runInNewContext(fs.readFileSync('docs/app/pairing.js','utf8'),context);
 const p=context.window.IzukiPairing;
 assert.equal(p.parse(pairing),direct);assert.equal(p.parse(direct),direct);
+const legacy=`https://nova-izuki.github.io/izuki/app/#pc=${encodeURIComponent(direct)}`;
+assert.equal(p.parse(legacy),direct,'old GitHub Pages pairing links must keep working');
 for(const bad of ['javascript:alert(1)','https://example.com/','https://user:pass@example.com/'+token,'https://example.com/'+token+'?secret=1'])assert.equal(p.parse(bad),null);
 assert.equal((await p.check(pairing)).version,'test');assert(requests.every(r=>!r.options.method||r.options.method==='GET'));
 response={ok:true,status:200,json:async()=>({welcome:'not izuki'})};await assert.rejects(()=>p.check(direct),/no longer reaches/);

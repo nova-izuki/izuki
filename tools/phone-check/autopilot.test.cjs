@@ -83,5 +83,17 @@ const A = window.IzukiAutopilot;
   assert.equal(await A.run("scroll down twice"), true);
   assert.deepEqual(calls, ["act:scroll", "act:scroll"], "a repeated scroll runs the requested number of times");
 
-  console.log("Autopilot: visible steps, field targeting, safety refusals and repeats pass.");
+  // A lock is a pause, not a lost task: the routine waits, then continues.
+  let lockPolls = 0;
+  window.IzukiNative.device = async () => {
+    lockPolls++;
+    return { locked: lockPolls === 1, screenOn: true };
+  };
+  screen = { app: "Home", items: [] };
+  calls.length = 0;
+  assert.equal(await A.run("go home"), true);
+  assert.deepEqual(calls, ["act:home"], "a locked phone waits and then runs the same step once");
+  assert.match(A.state.log.map((x) => x.text).join(" "), /Phone is locked.*Unlocked/);
+
+  console.log("Autopilot: visible steps, field targeting, safety refusals, repeats and lock resume pass.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
