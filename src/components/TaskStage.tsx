@@ -16,7 +16,8 @@ function totalFrom(status: StatusEvent | null): number {
 /** Same quiet step grammar the status card uses ("Step 2 of 5"). */
 function readStep(status: StatusEvent | null): Step | null {
   if (!status) return null;
-  const hit = /step\s+(\d+)\s+(?:of|\/)\s+(\d+)/i.exec(`${status.message} ${status.detail ?? ""}`);
+  // Accept both "Step 2 of 5" and the compact "Step 1/4" form.
+  const hit = /step\s+(\d+)\s*(?:of|\/)\s*(\d+)/i.exec(`${status.message} ${status.detail ?? ""}`);
   if (!hit) return null;
   const total = Math.max(1, Number.parseInt(hit[2], 10) || 1);
   const current = Math.min(total, Math.max(1, Number.parseInt(hit[1], 10) || 1));

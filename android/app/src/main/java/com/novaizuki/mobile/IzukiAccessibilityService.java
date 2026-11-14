@@ -486,7 +486,10 @@ public class IzukiAccessibilityService extends AccessibilityService {
       if (state == null || "idle".equals(state) || "hide".equals(state)) {
         if (orbOwner == null || orbOwner.equals(owner)) {
           orbOwner = null;
-          hideOrb();
+          // Remove in this same UI callback. Calling hideOrb() here would
+          // post a second callback, letting a newer Maps/listen acquire the
+          // orb in between and then be removed by this stale release.
+          removeOrbNow();
         }
         return;
       }
@@ -547,13 +550,18 @@ public class IzukiAccessibilityService extends AccessibilityService {
   private static void hideOrb() {
     ui.post(() -> {
       orbOwner = null;
-      IzukiAccessibilityService service = active;
-      if (orbView != null && service != null) {
-        try { ((WindowManager) service.getSystemService(WINDOW_SERVICE)).removeView(orbView); } catch (Exception ignored) { }
-      }
-      if (dot != null) dot.stop();
-      orbView = null; dot = null; caption = null;
+      removeOrbNow();
     });
+  }
+
+  /** UI-thread removal, used by both hideOrb and the owner-checked path. */
+  private static void removeOrbNow() {
+    IzukiAccessibilityService service = active;
+    if (orbView != null && service != null) {
+      try { ((WindowManager) service.getSystemService(WINDOW_SERVICE)).removeView(orbView); } catch (Exception ignored) { }
+    }
+    if (dot != null) dot.stop();
+    orbView = null; dot = null; caption = null;
   }
 
   private static int dp(Context c, int v) {
