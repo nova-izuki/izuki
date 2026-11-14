@@ -23,11 +23,13 @@
   <meta property="og:image" content="https://izukinova.ai/og.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
+  <meta property="og:image:type" content="image/png" />
   <meta property="og:image:alt" content="Izuki — the AI that lives on your screen" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Izuki — the AI that lives on your screen" />
   <meta name="twitter:description" content="Say “Hey Nova”. It sees your screen, answers out loud, and does the work. Free." />
   <meta name="twitter:image" content="https://izukinova.ai/og.png" />
+  <meta name="twitter:image:alt" content="Izuki — the AI that lives on your screen" />
 
   <script type="application/ld+json">
 {
@@ -46,6 +48,9 @@
       "logo": {
         "@type": "ImageObject",
         "url": "https://izukinova.ai/icon-512.png",
+        "contentUrl": "https://izukinova.ai/icon-512.png",
+        "caption": "Izuki orb logo",
+        "encodingFormat": "image/png",
         "width": 512,
         "height": 512
       },
@@ -251,9 +256,8 @@
   <link rel="icon" href="favicon.ico" sizes="48x48" />
   <link rel="icon" href="icon-96.png" type="image/png" sizes="96x96" />
   <link rel="icon" href="icon-192.png" type="image/png" sizes="192x192" />
-  <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="icon" href="icon-512.png" type="image/png" sizes="512x512" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
@@ -317,7 +321,7 @@
       padding: 10px 12px 10px 18px; border-radius: 999px; border: 1px solid var(--line); background: rgba(8, 9, 20, 0.55);
       backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); }
     .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-family: var(--display); font-weight: 800; letter-spacing: 0.26em; font-size: 15px; }
-    .brand i { width: 10px; height: 10px; border-radius: 50%; background: var(--grad); box-shadow: 0 0 14px #a78bfa; }
+    .brand img { flex: none; width: 30px; height: 30px; border-radius: 10px; box-shadow: 0 0 18px rgba(167, 139, 250, 0.45); }
     .nav-links { display: flex; gap: 22px; font-size: 14.5px; color: var(--muted); }
     .nav-links a { text-decoration: none; transition: color 0.2s; }
     .nav-links a:hover { color: var(--ink); }
@@ -334,7 +338,8 @@
     .btn.small { padding: 9px 16px; font-size: 14px; }
 
     /* ---------- hero ---------- */
-    .hero { width: var(--wrap); margin: 0 auto; height: calc(100vh - 76px); height: calc(100svh - 76px); min-height: 560px; max-height: 1000px; display: grid; grid-template-columns: 1.05fr 0.95fr; align-items: center; gap: 24px; padding-block: 12px 13vh; }
+    .hero { width: var(--wrap); margin: 0 auto; height: calc(100vh - 76px); height: calc(100svh - 76px); min-height: 560px; max-height: 1000px; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); align-items: center; gap: 24px; padding-block: 12px 13vh; }
+    .hero-copy, .hero-art { min-width: 0; }
     .eyebrow { display: inline-flex; align-items: center; gap: 9px; font: 500 12.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
       padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--glass); }
     .eyebrow b { width: 7px; height: 7px; border-radius: 50%; background: var(--live); box-shadow: 0 0 10px var(--live); animation: blink 2s ease-in-out infinite; }
@@ -361,7 +366,18 @@
     .plats a { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; color: var(--ink); font-size: 13.5px; font-weight: 600; text-decoration: none; transition: background 0.2s; }
     .plats a:hover { background: rgba(255, 255, 255, 0.08); }
     .plats small { color: var(--faint); font-weight: 500; }
-    @media (max-width: 520px) { .plats { width: 100%; justify-content: space-between; } .plats a { padding: 6px 8px; } }
+    @media (max-width: 520px) {
+      .plats { width: 100%; flex-wrap: wrap; justify-content: center; }
+      .plats a { padding: 6px 8px; }
+      .ctas .btn { width: 100%; justify-content: center; white-space: normal; text-align: center; }
+      .rel-chip { max-width: 100%; flex-wrap: wrap; row-gap: 4px; }
+      .rel-chip #rel-text { min-width: 0; }
+    }
+    @media (max-width: 380px) {
+      .plats small, .plats a > span:first-child { display: none; }
+      .plats a { font-size: 12.5px; }
+      .rel-chip { border-radius: 16px; justify-content: center; }
+    }
     @media (prefers-reduced-motion: reduce) { .rel-dot { animation: none; } }
 
     .stage { position: relative; aspect-ratio: 1; width: 100%; max-width: min(540px, 66vh); justify-self: center; }
@@ -512,7 +528,8 @@
     @keyframes bar { from { height: 12%; } to { height: 100%; } }
 
     /* ---------- phone ---------- */
-    .phone-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; margin-top: 12px; }
+    .phone-wrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: center; margin-top: 12px; }
+    .phone-wrap > * { min-width: 0; }
     .phone { justify-self: center; width: min(300px, 78vw); aspect-ratio: 9 / 19; border-radius: 46px; padding: 12px; background: linear-gradient(145deg, #262838, #0b0c14);
       box-shadow: 0 50px 100px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.08), 0 0 90px rgba(139,92,246,0.25); transform: perspective(1000px) rotateY(var(--pr, -14deg)) rotateX(4deg); transition: transform 0.2s ease-out; }
     .phone-screen { position: relative; height: 100%; border-radius: 36px; overflow: hidden; background: radial-gradient(80% 50% at 50% 30%, rgba(139,92,246,0.25), transparent), #05060d;
@@ -530,14 +547,16 @@
     .way .n { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-size: 17px; background: rgba(139,92,246,0.18); }
 
     /* ---------- wake word phone preview ---------- */
-    .wake-demo { display: grid; grid-template-columns: 1.05fr 0.75fr; gap: 32px; align-items: center; margin-top: 28px; padding: clamp(20px, 3vw, 34px); border-radius: 28px;
+    .wake-demo { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.75fr); gap: 32px; align-items: center; margin-top: 28px; padding: clamp(20px, 3vw, 34px); border-radius: 28px;
       border: 1px solid rgba(103, 232, 249, 0.24); background: linear-gradient(135deg, rgba(34, 211, 238, 0.08), rgba(139, 92, 246, 0.12) 60%, rgba(236, 72, 153, 0.06));
       box-shadow: 0 30px 90px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.07); }
     .wake-demo h3 { font-size: clamp(24px, 3vw, 36px); line-height: 1.05; margin-top: 8px; }
     .wake-demo-copy > p { color: var(--muted); margin-top: 10px; max-width: 34em; font-size: 15.5px; }
+    .wake-demo-copy { min-width: 0; }
     .wake-demo-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .wake-demo-actions .btn { justify-content: center; }
     .wake-demo-note { font-size: 12.5px; color: var(--faint); margin-top: 12px; min-height: 1.5em; }
-    .wake-demo-phone { justify-self: center; width: min(250px, 72vw); aspect-ratio: 9 / 18; border-radius: 34px; padding: 8px;
+    .wake-demo-phone { min-width: 0; justify-self: center; width: min(250px, 72vw); aspect-ratio: 9 / 18; border-radius: 34px; padding: 8px;
       background: linear-gradient(145deg, #2a2c3c, #0b0c14); box-shadow: 0 35px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.09), 0 0 70px rgba(34,211,238,0.2); }
     .wake-demo-screen { position: relative; height: 100%; border-radius: 27px; overflow: hidden; background: radial-gradient(80% 42% at 50% 30%, rgba(139,92,246,0.25), transparent), #05060d;
       display: flex; flex-direction: column; align-items: center; padding: 24px 14px 14px; }
@@ -561,7 +580,14 @@
     .wake-demo-notif b { flex: none; color: #a5f3fc; font: 700 9px var(--mono); letter-spacing: 0.08em; }
     .wake-demo-notif span { color: #dbeafe; }
     .wake-demo .kicker { color: #67e8f9; }
-    @media (max-width: 900px) { .wake-demo { grid-template-columns: 1fr; } .wake-demo-phone { width: min(210px, 64vw); } }
+    @media (max-width: 900px) { .wake-demo { grid-template-columns: minmax(0, 1fr); } .wake-demo-phone { width: min(210px, 64vw); } }
+    @media (max-width: 620px) {
+      .wake-demo { padding: 20px 18px; gap: 24px; }
+      .wake-demo-actions { display: grid; grid-template-columns: 1fr; }
+      .wake-demo-actions .btn { width: 100%; }
+      .wake-demo-phone { width: min(190px, 72vw); }
+      .wake-demo h3 { text-wrap: balance; }
+    }
 
     /* ---------- how ---------- */
     .how { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 48px; }
@@ -973,7 +999,7 @@
       .film { grid-template-columns: 1fr; gap: 30px; }
       .voices { grid-template-columns: 1fr; }
       .tapme { right: 4%; top: 10%; }
-      .hero { grid-template-columns: 1fr; height: auto; min-height: 0; max-height: none; padding-block: 28px 16vh; }
+      .hero { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 0; max-height: none; padding-block: 28px 16vh; }
       .hero h1 { font-size: clamp(38px, 11vw, 56px); }
       .scene .shade { background: linear-gradient(180deg, rgba(4, 5, 12, 0.72) 0%, rgba(4, 5, 12, 0.55) 45%, rgba(4, 5, 12, 0.8) 80%, #04050c 100%); }
       .scene .glass .g1, .scene .glass .g3 { display: none; }
@@ -1027,9 +1053,9 @@
     }
     /* ---- What's new (live) ---- */
     .nw-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-top: 44px; }
-    .nw-card { position: relative; grid-column: span 2; padding: 24px; border-radius: 24px; border: 1px solid var(--line); background: rgba(255,255,255,0.03); overflow: hidden; }
+    .nw-card { position: relative; grid-column: span 2; min-width: 0; height: 100%; padding: 24px; border-radius: 24px; border: 1px solid var(--line); background: rgba(255,255,255,0.03); overflow: hidden; }
     .nw-card h3 { font-size: 20px; font-weight: 700; }
-    .nw-card p { margin-top: 8px; color: var(--muted); font-size: 15px; }
+    .nw-card p { margin-top: 8px; color: var(--muted); font-size: 15px; overflow-wrap: anywhere; }
     .nw-card .glyph { font-size: 26px; }
     .nw-orbs { grid-column: span 6; display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: center;
       background: radial-gradient(60% 80% at 20% 50%, rgba(56, 189, 248, 0.08), transparent 70%), rgba(255,255,255,0.03); }
@@ -1120,6 +1146,10 @@
     .menu-foot { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 12px 6px 4px; font-size: 13.5px; color: var(--muted); }
     .menu-foot a { text-decoration: none; } .menu-foot a:hover { color: var(--ink); }
     @media (max-width: 900px) { .menu-btn { display: inline-block; } }
+    @media (max-width: 380px) {
+      .brand { gap: 8px; font-size: 13px; letter-spacing: 0.18em; }
+      .brand img { width: 26px; height: 26px; border-radius: 8px; }
+    }
     @media (min-width: 901px) { .menu-sheet { display: none !important; } }
     @media (max-width: 380px) { .menu-grid { grid-template-columns: 1fr; } }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
@@ -1184,7 +1214,7 @@
 
   <nav>
     <div class="nav-in">
-      <a class="brand" href="#top"><i></i>IZUKI</a>
+      <a class="brand" href="#top"><img src="icon-96.png" width="30" height="30" alt="" />IZUKI</a>
       <div class="nav-links">
         <a href="#new">What's new</a>
         <a href="#demo">See it work</a>
