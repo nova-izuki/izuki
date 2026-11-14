@@ -1,5 +1,9 @@
 # “Hey Nova” on Android — real-phone checklist
 
+For the full install, update, orb, Quick Settings, Autopilot and pairing pass,
+use [PHONE-TEST-CHECKLIST.md](PHONE-TEST-CHECKLIST.md). This file covers the
+wake-word, lock-screen, call hand-off and sound checks in detail.
+
 This is the check that cannot be done from CI. The APK build proves the Java
 compiles and the manifest is valid; it does not prove Android grants the
 microphone, keeps the foreground service alive, or hands audio to a call.

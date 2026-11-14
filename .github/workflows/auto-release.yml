@@ -6,13 +6,18 @@ name: Auto release on version bump
 # version without anyone pushing a tag by hand.
 #
 # It waits for Verify instead of starting on the push: a version bump whose
-# tests fail is never tagged. A later fix on main at the same version is
-# released once its tests pass.
+# tests fail is never tagged. The 30-minute schedule is a safety net for a
+# missed workflow_run event or a build that failed after the tag was made:
+# it never tags an unverified commit, and it starts only workflows that are
+# not already running. A published tag is never moved; newer commits at the
+# same version need a version bump.
 on:
   workflow_run:
     workflows: ["Verify companion changes"]
     types: [completed]
     branches: [main]
+  schedule:
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -28,6 +33,7 @@ jobs:
     # Only a Verify that passed, for a push to this repository's own main.
     if: >-
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
@@ -41,7 +47,8 @@ jobs:
         run: |
           set -euo pipefail
           sha="${RUN_SHA:-$GITHUB_SHA}"
-          # Started by hand: the same rule, Verify must have passed for it.
+          # A hand-started or scheduled run uses the latest main commit. Either
+          # way, Verify must have passed for that exact commit.
           passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/verify.yml/runs?head_sha=$sha&status=success&event=push" --jq '.total_count')
           if [ "$passed" -lt 1 ]; then
             echo "Verify has not passed for $sha; not releasing." >&2
@@ -67,13 +74,59 @@ jobs:
           set -euo pipefail
           version=$(node -p "require('./package.json').version")
           tag="v$version"
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
-            echo "$tag already exists; nothing to do."
-            exit 0
-          fi
+
+          release_state() {
+            local release_tag="$1" state
+            for attempt in 1 2 3; do
+              if state=$(gh release view "$release_tag" --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>"$RUNNER_TEMP/release-view.err"); then
+                echo "$state"
+                return 0
+              fi
+              if grep -qi "release not found" "$RUNNER_TEMP/release-view.err"; then
+                echo "missing"
+                return 0
+              fi
+              sleep 5
+            done
+            cat "$RUNNER_TEMP/release-view.err" >&2
+            return 1
+          }
+
+          dispatch_if_idle() {
+            local workflow="$1" active
+            active=$(gh run list --workflow "$workflow" --branch "$tag" --limit 20 --json status --jq '[.[] | select(.status != "completed")] | length')
+            if [ "$active" -gt 0 ]; then
+              echo "$workflow already has an active run for $tag; leaving it alone."
+              return 0
+            fi
+            gh workflow run "$workflow" --ref "$tag"
+          }
+
           # The commit must still be on main (not a branch that was force-moved).
           git fetch origin main
           git merge-base --is-ancestor "$SHA" origin/main || { echo "$SHA is not on main; not releasing." >&2; exit 1; }
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            remote_sha=$(git ls-remote --refs origin "refs/tags/$tag" | awk '{print $1}' | head -1)
+            state=$(release_state "$tag")
+            if [ "$remote_sha" != "$SHA" ]; then
+              if [ "$state" = "published" ]; then
+                echo "::notice::$tag is already published from $remote_sha. $SHA has newer commits at the same version; bump package.json to ship them."
+                exit 0
+              fi
+              echo "$tag is at $remote_sha, not $SHA, and its release is $state; bump the version before retrying." >&2
+              exit 1
+            fi
+            if [ "$state" = "published" ]; then
+              echo "$tag is already published from $SHA; nothing to do."
+              exit 0
+            fi
+            echo "$tag exists but its release is $state; checking the builds."
+            dispatch_if_idle release.yml
+            dispatch_if_idle mobile.yml
+            exit 0
+          fi
+
           # Every version file agrees, the release notes exist, and it's newer
           # than what users have now (never a sideways or backwards release).
           latest=$(gh release view --json tagName --jq '.tagName' 2>/dev/null | sed 's/^v//' || true)
