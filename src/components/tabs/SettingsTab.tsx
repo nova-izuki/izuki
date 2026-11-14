@@ -883,10 +883,10 @@ function FollowCard() {
       </div>
       <button
         type="button"
-        onClick={() => void openLink("https://nova-izuki.github.io/izuki/links/")}
+        onClick={() => void openLink("https://izukinova.ai/links/")}
         className="izk-pill izk-no-drag mt-2 h-[28px] px-3 text-[11.5px]"
       >
-        All links · nova-izuki.github.io/izuki
+        All links · izukinova.ai
       </button>
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-izk-muted">
         {([
@@ -894,7 +894,7 @@ function FollowCard() {
           ["Terms", "terms"],
           ["Security & verify your download", "security"],
         ] as const).map(([label, page]) => (
-          <button key={page} type="button" onClick={() => void openLink(`https://nova-izuki.github.io/izuki/${page}/`)} className="izk-no-drag underline-offset-2 hover:text-izk-ink hover:underline">
+          <button key={page} type="button" onClick={() => void openLink(`https://izukinova.ai/${page}/`)} className="izk-no-drag underline-offset-2 hover:text-izk-ink hover:underline">
             {label}
           </button>
         ))}

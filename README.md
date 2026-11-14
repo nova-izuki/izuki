@@ -11,10 +11,10 @@
 Free · Open source · Hands-free voice · Works with free AI keys
 
 [**⬇ Download for Windows**](https://github.com/nova-izuki/izuki/releases/latest) ·
-[🌐 Website — try it in your browser](https://nova-izuki.github.io/izuki/#try) ·
-[📱 Phone app](https://nova-izuki.github.io/izuki/app/) ·
+[🌐 Website — try it in your browser](https://izukinova.ai/#try) ·
+[📱 Phone app](https://izukinova.ai/app/) ·
 [How to use it](#how-to-use-it) ·
-[Help & troubleshooting](https://nova-izuki.github.io/izuki/help/) ·
+[Help & troubleshooting](https://izukinova.ai/help/) ·
 [Support the builder ☕](#-support-the-builder)
 
 *macOS and Linux versions are coming soon.*
@@ -25,7 +25,7 @@ Free · Open source · Hands-free voice · Works with free AI keys
 [TikTok](https://www.tiktok.com/@izukiapp) ·
 [YouTube](https://www.youtube.com/@izukiapp) ·
 [LinkedIn](https://www.linkedin.com/company/143922746/) ·
-[All links](https://nova-izuki.github.io/izuki/links/)
+[All links](https://izukinova.ai/links/)
 
 </div>
 
@@ -131,7 +131,7 @@ New in **1.0.14**: repaired account routing, Mouse/Precision controls, three mat
 | 🗂️ **Work with your files & terminal (like Open Interpreter)** | In the Chat tab, Izuki reads and searches your files (Word, PowerPoint, PDFs too), writes files, and runs real PowerShell commands — manage files, zip, install, run scripts, even call Python/Node. A **Ask first / Auto-run** toggle (like Claude Code) decides whether it shows an Allow card each time or runs on its own; either way it shows the exact command. It's blocked from your secret files (keys, .ssh). |
 | ⏰ **Reminders** | “Remind me at 6 to call Mum” — by voice, chat or phone. Izuki says it out loud when it's due and texts your phone. |
 | 📱 **On your phone, free** | Pair a Telegram bot (made in a minute with @BotFather) and text Izuki or send voice notes from anywhere — it can even do things on your PC and send you a screenshot. No app store, no server. |
-| 📲 **Izuki for phones, no PC needed** | Open [nova-izuki.github.io/izuki/app](https://nova-izuki.github.io/izuki/app/) on your phone and tap **Install**: a live, hands-free call with a liquid orb (tap it to interrupt), six characters with their own voices (Nova, Leo, Sophie, Kiki, Alfred, Ezinne), send it photos, screenshots, PDFs, voice clips or files and it helps with them, replies read aloud if you like, it remembers you, reminders go into your phone's calendar, and "Hey Siri, Izuki" works with a two-step Shortcut. Free with one key — Gemini, Groq, OpenRouter or Mistral; link your PC for your email, apps and PC tasks. |
+| 📲 **Izuki for phones, no PC needed** | Open [izukinova.ai/app](https://izukinova.ai/app/) on your phone and tap **Install**: a live, hands-free call with a liquid orb (tap it to interrupt), six characters with their own voices (Nova, Leo, Sophie, Kiki, Alfred, Ezinne), send it photos, screenshots, PDFs, voice clips or files and it helps with them, replies read aloud if you like, it remembers you, reminders go into your phone's calendar, and "Hey Siri, Izuki" works with a two-step Shortcut. Free with one key — Gemini, Groq, OpenRouter or Mistral; link your PC for your email, apps and PC tasks. |
 | 📞 **Call it from your phone** | Turn on *Call Izuki* and open the link on your phone to talk hands-free, like a call — your phone does the listening and talking, a free Cloudflare tunnel reaches your PC. A mute button silences Izuki while it still replies in text. |
 | 🤖 **Control your Android phone** | Turn on *Control my Android* (Settings), pair your phone once over Wi-Fi (Android's built-in Wireless debugging — nothing installed on the phone), then say “open YouTube and play lofi **on my phone**”. Izuki taps, types and swipes on the phone the same way it does on the PC. Free. |
 | 🔌 **In your apps** | The **Apps** tab connects Gmail, Google Calendar, Drive, Slack, Notion, GitHub and more in one tap (with your own free Composio key) — from chat, voice or your phone. It always shows a draft and asks before sending or posting. Got an [n8n](https://n8n.io) workflow? Add its webhook and Izuki can run it by name. |

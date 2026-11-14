@@ -1,63 +1,63 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
-    <loc>https://nova-izuki.github.io/izuki/</loc>
-    <image:image><image:loc>https://nova-izuki.github.io/izuki/og.png</image:loc></image:image>
-    <image:image><image:loc>https://nova-izuki.github.io/izuki/icon-512.png</image:loc></image:image>
-    <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/panel-draw.jpg</image:loc></image:image>
-    <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/panel-chat.jpg</image:loc></image:image>
-    <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/panel-watchers.jpg</image:loc></image:image>
-    <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/panel-settings.jpg</image:loc></image:image>
-    <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/phone-call.jpg</image:loc></image:image>
-    <lastmod>2026-11-01</lastmod>
+    <loc>https://izukinova.ai/</loc>
+    <image:image><image:loc>https://izukinova.ai/og.png</image:loc></image:image>
+    <image:image><image:loc>https://izukinova.ai/icon-512.png</image:loc></image:image>
+    <image:image><image:loc>https://izukinova.ai/shots/panel-draw.jpg</image:loc></image:image>
+    <image:image><image:loc>https://izukinova.ai/shots/panel-chat.jpg</image:loc></image:image>
+    <image:image><image:loc>https://izukinova.ai/shots/panel-watchers.jpg</image:loc></image:image>
+    <image:image><image:loc>https://izukinova.ai/shots/panel-settings.jpg</image:loc></image:image>
+    <image:image><image:loc>https://izukinova.ai/shots/phone-call.jpg</image:loc></image:image>
+    <lastmod>2026-11-14</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://nova-izuki.github.io/izuki/app/</loc>
-    <lastmod>2026-11-01</lastmod>
+    <loc>https://izukinova.ai/app/</loc>
+    <lastmod>2026-11-14</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://nova-izuki.github.io/izuki/help/</loc>
+    <loc>https://izukinova.ai/help/</loc>
     <lastmod>2026-11-01</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://nova-izuki.github.io/izuki/security/</loc>
+    <loc>https://izukinova.ai/security/</loc>
     <lastmod>2026-11-09</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://nova-izuki.github.io/izuki/privacy/</loc>
+    <loc>https://izukinova.ai/privacy/</loc>
     <lastmod>2026-11-09</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://nova-izuki.github.io/izuki/terms/</loc>
+    <loc>https://izukinova.ai/terms/</loc>
     <lastmod>2026-11-09</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>
   <url>
-    <loc>https://nova-izuki.github.io/izuki/links/</loc>
+    <loc>https://izukinova.ai/links/</loc>
     <lastmod>2026-11-01</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://nova-izuki.github.io/izuki/screenshots/</loc>
-    <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/panel-draw.jpg</image:loc></image:image>
-    <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/panel-chat.jpg</image:loc></image:image>
-    <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/panel-watchers.jpg</image:loc></image:image>
-    <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/panel-settings.jpg</image:loc></image:image>
-    <image:image><image:loc>https://nova-izuki.github.io/izuki/shots/phone-call.jpg</image:loc></image:image>
-    <image:image><image:loc>https://nova-izuki.github.io/izuki/icon-512.png</image:loc></image:image>
-    <image:image><image:loc>https://nova-izuki.github.io/izuki/og.png</image:loc></image:image>
+    <loc>https://izukinova.ai/screenshots/</loc>
+    <image:image><image:loc>https://izukinova.ai/shots/panel-draw.jpg</image:loc></image:image>
+    <image:image><image:loc>https://izukinova.ai/shots/panel-chat.jpg</image:loc></image:image>
+    <image:image><image:loc>https://izukinova.ai/shots/panel-watchers.jpg</image:loc></image:image>
+    <image:image><image:loc>https://izukinova.ai/shots/panel-settings.jpg</image:loc></image:image>
+    <image:image><image:loc>https://izukinova.ai/shots/phone-call.jpg</image:loc></image:image>
+    <image:image><image:loc>https://izukinova.ai/icon-512.png</image:loc></image:image>
+    <image:image><image:loc>https://izukinova.ai/og.png</image:loc></image:image>
     <lastmod>2026-11-01</lastmod>
   </url>
 </urlset>

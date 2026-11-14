@@ -1,7 +1,7 @@
 //! # Safe Hands
 //!
 //! Accurate, checked mouse and keyboard actions for AI agents on Windows —
-//! the hands behind [Izuki](https://nova-izuki.github.io/izuki/), as a
+//! the hands behind [Izuki](https://izukinova.ai/), as a
 //! library you can use in your own agent.
 //!
 //! An AI that drives a PC fails in boringly predictable ways: it guesses

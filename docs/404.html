@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Izuki — page not found</title>
+  <link rel="canonical" href="https://izukinova.ai/" />
+  <link rel="icon" href="/icon-512.png" />
+  <script>
+    // izukinova.com shares this GitHub Pages 404 while its DNS/registrar
+    // redirect is being set up. Forward visitors to the canonical .ai host,
+    // keeping the path they asked for. A real 301 at the registrar is better.
+    (function () {
+      var host = location.hostname.toLowerCase();
+      if (host === "izukinova.com" || host === "www.izukinova.com") {
+        location.replace("https://izukinova.ai" + location.pathname + location.search + location.hash);
+      }
+    })();
+  </script>
+  <style>
+    :root { color-scheme: dark; --ink: #eef2ff; --muted: #9aa3b5; --line: rgba(255,255,255,.12); }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px;
+      background: radial-gradient(60% 50% at 50% 0%, rgba(139,92,246,.22), transparent 70%), #04050c;
+      color: var(--ink); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 540px; padding: 36px; border: 1px solid var(--line); border-radius: 28px;
+      background: rgba(255,255,255,.035); text-align: center; }
+    h1 { margin: 0; font-size: clamp(48px, 12vw, 84px); line-height: 1;
+      background: linear-gradient(120deg, #67e8f9, #a78bfa 55%, #f0abfc);
+      -webkit-background-clip: text; background-clip: text; color: transparent; }
+    h2 { margin: 14px 0 0; font-size: 24px; }
+    p { margin: 10px 0 0; color: var(--muted); }
+    a { color: #a5f3fc; }
+    .btn { display: inline-block; margin-top: 22px; padding: 12px 18px; border-radius: 999px;
+      background: linear-gradient(120deg, #67e8f9, #a78bfa); color: #06060f; font-weight: 700; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>404</h1>
+    <h2>This page isn't here.</h2>
+    <p>Izuki lives at <a href="https://izukinova.ai/">izukinova.ai</a>. If you followed an old link, the home page has the download and help you need.</p>
+    <a class="btn" href="https://izukinova.ai/">Go to izukinova.ai</a>
+  </main>
+</body>
+</html>

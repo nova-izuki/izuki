@@ -13,7 +13,7 @@ new Function('require','module','exports',outputFiles[0].text)(require,module,mo
 const React=require('react'), {renderToStaticMarkup}=require('react-dom/server');
 const token='0123456789abcdef0123456789abcdef';
 const direct=`https://a-long-temporary-tunnel.trycloudflare.com/${token}/`;
-const pairing=`https://nova-izuki.github.io/izuki/app/#pc=${encodeURIComponent(direct)}`;
+const pairing=`https://izukinova.ai/app/#pc=${encodeURIComponent(direct)}`;
 for(const text of [direct,pairing]) {
   const svg=renderToStaticMarkup(React.createElement(module.exports.QrCode,{text,label:'Test QR'}));
   assert(svg.includes('flex-shrink:0'),'QR must not collapse in a flex row');

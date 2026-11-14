@@ -154,7 +154,8 @@
       try { return (await control()?.wakeStatus()) || null; } catch { return null; }
     },
     async wake(on) {
-      try { return (await control()?.wake({ on: !!on })) || null; } catch { return null; }
+      try { return (await control()?.wake({ on: !!on })) || null; }
+      catch (error) { return { error: String(error?.message || error || "wake_failed") }; }
     },
     /** A phrase from a wake that arrived before the page was ready. */
     async takeWake() {
@@ -162,10 +163,19 @@
     },
     /** Step aside while a live call uses the microphone; the switch stays on. */
     async wakePause(minutes = 30) {
-      try { await control()?.wakePause?.({ minutes }); return true; } catch { return false; }
+      const p = control();
+      // Missing means this is an older APK. Report failure so the caller can
+      // stop the listener outright instead of assuming the mic was released.
+      if (!p?.wakePause) return false;
+      try { await p.wakePause({ minutes }); return true; } catch { return false; }
     },
     async wakeResume() {
-      try { await control()?.wakeResume?.(); return true; } catch { return false; }
+      const p = control();
+      try {
+        if (p?.wakeResume) { await p.wakeResume(); return true; }
+        if (p?.wake) { await p.wake({ on: true }); return true; }
+        return false;
+      } catch { return false; }
     },
     /** Android reports the phone was unlocked, so a waiting wake can continue. */
     onUnlock(callback) {
@@ -197,6 +207,11 @@
     async openAndroidControlSettings() {
       if (!control()) return false;
       try { await control().openAccessibilitySettings(); return true; } catch { return false; }
+    },
+    /** Izuki's own Android app settings: microphone and notifications. */
+    async openAppSettings() {
+      if (!control()) return false;
+      try { await control().openAppSettings?.(); return true; } catch { return false; }
     },
     async quickDeviceCommand(words) {
       const text = String(words || "").trim().toLowerCase().replace(/\s+on (?:my |the |this )?(?:phone|android)[.!?]*$/, "").replace(/[.!?]+$/, "").trim();

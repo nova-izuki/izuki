@@ -40,7 +40,7 @@ export function UpdateControls({compact=false}:{compact?:boolean}) {
       {status.phase==='ready'&&<button type="button" className="izk-btn-primary px-3 py-2" disabled={busy||!IS_TAURI} onClick={()=>void run('install_update')}>Install &amp; close Izuki</button>}
       {/* Also while a newer update is offered: going back is a choice of its own. */}
       {!compact&&status.rollback&&<button type="button" className="izk-pill px-3 py-2" disabled={busy||!IS_TAURI} onClick={()=>void run('rollback_previous')} title="Installs the previous version, checked the same way as an update">Go back to {status.rollback}</button>}
-      <button type="button" className="izk-pill px-3 py-2" onClick={()=>void api.openUrl('https://nova-izuki.github.io/izuki/#download')}>Website</button>
+      <button type="button" className="izk-pill px-3 py-2" onClick={()=>void api.openUrl('https://izukinova.ai/#download')}>Website</button>
       {compact&&!busy&&<button type="button" className="izk-pill px-3 py-2" onClick={()=>setDismissed(status.version)}>Later</button>}
     </div>
     {!compact&&<p className="text-[11px] text-izk-muted">Never installs on a timer. Active screen tasks block installation. Save any unsent drafts before confirming. {status.checked_at?`Last checked ${new Date(status.checked_at).toLocaleString()}.`:''}</p>}

@@ -527,7 +527,7 @@
     <section id="native-wake" hidden>
       <h3>“Hey Nova” wake word</h3>
       <p id="wake-status" class="note">Checking the wake listener…</p>
-      <div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="btn" id="wake-toggle" type="button">Turn on</button></div>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="btn" id="wake-toggle" type="button">Turn on</button><button class="btn ghost" id="wake-fix" type="button" hidden>Fix permissions</button></div>
       <p class="note" style="margin-top:8px">Optional. Android shows a persistent listening notification while it is on. “Hey Nova” wakes the screen, but <b>never unlocks the phone</b>: if the lock screen is up, Izuki waits for you. Android's own speech service does the listening; Izuki only receives the words, and the listener can use battery.</p>
     </section>
 
@@ -1237,7 +1237,7 @@
       })
     );
     const headers = { "Content-Type": "application/json", Authorization: "Bearer " + k };
-    if (b === BRAINS.openrouter) { headers["HTTP-Referer"] = "https://nova-izuki.github.io/izuki/"; headers["X-Title"] = "Izuki"; }
+    if (b === BRAINS.openrouter) { headers["HTTP-Referer"] = "https://izukinova.ai/"; headers["X-Title"] = "Izuki"; }
     const guard = stallGuard(30000);
     try {
       let res;
@@ -2773,7 +2773,18 @@
 
   // ------------------------------------------------------------ the call
   const live = $("live");
-  let callStart = 0, callClock = null, wakePausedForCall = false;
+  let callStart = 0, callClock = null, wakePausedForCall = false, wakeRestartAfterCall = false;
+  /** Put the wake listener back after a call, whether it was paused or stopped. */
+  function restoreWakeAfterCall() {
+    if (wakePausedForCall) {
+      wakePausedForCall = false;
+      void window.IzukiNative?.wakeResume?.();
+    }
+    if (wakeRestartAfterCall) {
+      wakeRestartAfterCall = false;
+      void window.IzukiNative?.wake?.(true);
+    }
+  }
   async function openLive() {
     if (!ready()) return render();
     $("live-name").textContent = person().name;
@@ -2797,17 +2808,26 @@
       try {
         const wake = await window.IzukiNative?.wakeStatus?.();
         if (wake?.on) {
-          wakePausedForCall = true;
-          await window.IzukiNative?.wakePause?.(30);
+          // First choice: pause the hotword without changing the person's
+          // switch. If that fails, stop it outright for this call and turn it
+          // back on afterwards — a live call must never lose the microphone
+          // to a listener that stayed behind.
+          const paused = await window.IzukiNative?.wakePause?.(30);
+          if (paused) {
+            wakePausedForCall = true;
+          } else {
+            wakeRestartAfterCall = true;
+            const stopped = await window.IzukiNative?.wake?.(false);
+            if (!stopped || stopped.error) setStatus("Couldn't release the wake listener. Turn it off in Settings → Phone, then try the call again.");
+          }
           // The person may have hung up while the native pause was in flight.
           if (live.hidden) {
-            wakePausedForCall = false;
-            void window.IzukiNative?.wakeResume?.();
+            restoreWakeAfterCall();
             return;
           }
         }
       } catch {}
-      if (live.hidden) return;
+      if (live.hidden) { restoreWakeAfterCall(); return; }
       talking = true;
       unlockAudio();
       listen();
@@ -2818,10 +2838,7 @@
     clearInterval(callClock);
     note("call ended");
     if (talking) stopTalking("");
-    if (wakePausedForCall) {
-      wakePausedForCall = false;
-      void window.IzukiNative?.wakeResume?.();
-    }
+    restoreWakeAfterCall();
   }
   $("go-live").onclick = openLive;
 
@@ -3041,30 +3058,73 @@
   };
 
   async function loadWakePanel() {
-    const status = $("wake-status"), button = $("wake-toggle");
-    if (!status || !button) return;
+    const status = $("wake-status"), button = $("wake-toggle"), fix = $("wake-fix");
+    if (!status || !button || !fix) return;
     const st = await window.IzukiNative?.wakeStatus?.();
     if (!st) {
       status.textContent = "Update the Android companion to use the “Hey Nova” wake word.";
       button.disabled = true;
+      fix.hidden = true;
       return;
     }
     if (!st.available) {
       status.textContent = "Android speech recognition isn't available on this phone, so the wake word can't listen here.";
       button.disabled = true;
       button.textContent = "Unavailable";
+      fix.hidden = true;
       return;
     }
+    // Fail safe before the service starts: without the microphone it cannot
+    // listen, and without notifications the persistent indicator is hidden.
+    // An older APK has no mic/notifications fields; treat missing as allowed
+    // rather than trapping it behind a permission screen it can't fix.
+    const micOk = st.mic !== false, notificationsOk = st.notifications !== false;
+    if (!micOk || !notificationsOk) {
+      const mic = !micOk;
+      status.textContent = mic
+        ? "Microphone permission is off. Izuki can't listen for “Hey Nova” until you allow it. The wake word stays off."
+        : "Notifications are off. Android needs them for the visible “listening” notification, so the wake word stays off.";
+      button.disabled = true;
+      button.textContent = "Permission needed";
+      fix.hidden = false;
+      fix.textContent = mic ? "Allow microphone" : "Open notification settings";
+      fix.onclick = async () => {
+        fix.disabled = true;
+        if (mic) {
+          let stream = null;
+          try { stream = await navigator.mediaDevices?.getUserMedia?.({ audio: true }); } catch {}
+          stream?.getTracks?.().forEach((track) => track.stop());
+          const after = await window.IzukiNative?.wakeStatus?.();
+          if (!after?.mic) {
+            setStatus("Allow the microphone for Izuki in Android settings, then come back.");
+            await window.IzukiNative?.openAppSettings?.();
+          }
+        } else {
+          await window.IzukiNative?.openAppSettings?.();
+        }
+        fix.disabled = false;
+        await loadWakePanel();
+      };
+      return;
+    }
+    fix.hidden = true;
     const on = !!st.on;
     status.textContent = on
       ? (st.running ? "On. Say “Hey Nova” — I'll wake the screen and wait for you to unlock." : "On. Waiting for Android to start the listener… If this stays, turn it off and on with Izuki open.")
-      : "Off. Turn it on to listen for “Hey Nova” while the app is in the background.";
+      : "Off. Turn it on to listen for “Hey Nova” while the app is in the background. Microphone and notifications are allowed.";
     button.disabled = false;
     button.textContent = on ? "Turn off" : "Turn on";
     button.onclick = async () => {
       button.disabled = true;
       const result = await window.IzukiNative?.wake?.(!on);
-      if (!result) setStatus("Couldn't change the wake word. Check Android microphone permission.");
+      if (!result || result.error) {
+        const code = String(result?.error || "");
+        setStatus(code === "mic"
+          ? "Allow the microphone for Izuki first — the wake word is still off."
+          : code === "notifications"
+            ? "Allow notifications for Izuki first — the wake word is still off."
+            : "Couldn't change the wake word. Check Android microphone and notification permissions.");
+      }
       await loadWakePanel();
     };
   }
@@ -3108,7 +3168,7 @@
     $("pc").value = pc;
     const native = !!window.IzukiNative?.installed?.();
     const platform = window.IzukiNative?.platform?.();
-    const siriUrl = platform === "ios" ? "izuki://ask?q=" : "https://nova-izuki.github.io/izuki/app/?q=";
+    const siriUrl = platform === "ios" ? "izuki://ask?q=" : "https://izukinova.ai/app/?q=";
     $("siri-url").textContent = siriUrl;
     const copySiri = $("copy-siri");
     if (copySiri) copySiri.onclick = async () => {
@@ -3588,7 +3648,13 @@
   // A wake can arrive while the phone is showing its lock screen. Android's
   // ACTION_USER_PRESENT is earlier and more reliable than a focus event here.
   window.IzukiNative?.onUnlock?.(() => { if (pendingWake) void receiveWake(); });
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) void receiveWake(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    void receiveWake();
+    // Coming back from Android settings: refresh the permission row instead
+    // of leaving a stale “Permission needed”.
+    if ($("native-wake") && !$("native-wake").hidden) void loadWakePanel();
+  });
   void receiveWake();
   // "Hey Siri, Izuki": the Shortcut opens …?q=what you said.
   const q = new URLSearchParams(location.search).get("q");

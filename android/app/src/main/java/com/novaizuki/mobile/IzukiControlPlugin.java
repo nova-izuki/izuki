@@ -1,6 +1,8 @@
 package com.novaizuki.mobile;
 
+import android.Manifest;
 import android.app.KeyguardManager;
+import android.app.NotificationManager;
 import android.app.UiModeManager;
 import android.content.Context;
 import android.content.Intent;
@@ -115,12 +117,29 @@ public class IzukiControlPlugin extends Plugin {
     }, call::reject);
   }
 
+  private boolean hasMicrophone() {
+    return getContext().checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+  }
+
+  private boolean notificationsShown() {
+    NotificationManager nm = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+    return nm != null && nm.areNotificationsEnabled();
+  }
+
   /** Turn the opt-in “Hey Nova” listener on or off. */
   @PluginMethod
   public void wake(PluginCall call) {
     boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
     if (on && !SpeechRecognizer.isRecognitionAvailable(getContext())) {
       call.reject("Speech recognition isn't available on this phone.");
+      return;
+    }
+    if (on && !hasMicrophone()) {
+      call.reject("mic");
+      return;
+    }
+    if (on && !notificationsShown()) {
+      call.reject("notifications");
       return;
     }
     getContext().getSharedPreferences("izuki_native", Context.MODE_PRIVATE).edit()
@@ -138,6 +157,8 @@ public class IzukiControlPlugin extends Plugin {
     result.put("on", on);
     result.put("running", IzukiWakeService.isRunning());
     result.put("available", SpeechRecognizer.isRecognitionAvailable(getContext()));
+    result.put("mic", hasMicrophone());
+    result.put("notifications", notificationsShown());
     call.resolve(result);
   }
 
@@ -148,6 +169,8 @@ public class IzukiControlPlugin extends Plugin {
         .getBoolean(IzukiWakeService.KEY_WAKE, false));
     result.put("running", IzukiWakeService.isRunning());
     result.put("available", SpeechRecognizer.isRecognitionAvailable(getContext()));
+    result.put("mic", hasMicrophone());
+    result.put("notifications", notificationsShown());
     call.resolve(result);
   }
 
@@ -292,6 +315,16 @@ public class IzukiControlPlugin extends Plugin {
   @PluginMethod
   public void openAccessibilitySettings(PluginCall call) {
     getActivity().startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+    call.resolve();
+  }
+
+  /** Send the person to Izuki's own Android settings for mic/notification fixes. */
+  @PluginMethod
+  public void openAppSettings(PluginCall call) {
+    Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.parse("package:" + getContext().getPackageName()));
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    getContext().startActivity(intent);
     call.resolve();
   }
 

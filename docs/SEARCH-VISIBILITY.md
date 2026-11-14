@@ -1,37 +1,53 @@
 # Izuki search visibility
 
-The public website is https://nova-izuki.github.io/izuki/. Its hostname homepage
-is maintained in the separate `nova-izuki/nova-izuki.github.io` repository.
-Both pages must keep the same Izuki name and `WebSite` identity:
-`https://nova-izuki.github.io/#website`, with `url` set to
-`https://nova-izuki.github.io/`.
+The public website is **https://izukinova.ai/** and is served from `docs/` in
+this repository. There is no separate root-homepage repository any more; the
+custom domain points at this GitHub Pages site, and `/` is `docs/index.html`.
 
-Google chooses a site name and favicon per hostname, not per subdirectory.
-Keep the root homepage crawlable, its Izuki icon links stable, and its `WebSite`
-metadata consistent with the `/izuki/` page. The root currently redirects to
-`/izuki/`; the destination also carries the same site-name metadata.
-The root `robots.txt` advertises the project sitemap. A `robots.txt` inside
-`/izuki/` alone does not govern crawling of this hostname.
+The canonical host is `izukinova.ai`, not `www.izukinova.ai`, the old
+`nova-izuki.github.io/izuki/` URL, or `izukinova.com`. Every page's canonical
+link, Open Graph URL and structured-data `@id` use the `.ai` host. GitHub Pages
+redirects the old `nova-izuki.github.io/izuki/...` URLs to the custom domain;
+those redirects are for old links, not canonical URLs.
+
+`izukinova.com` is a convenience domain and **301-redirects to the same path on
+`izukinova.ai`** (checked 14 November 2026, including the `/help/` path).
+GitHub Pages only serves one custom domain per site, so that redirect lives at
+the DNS host or registrar, outside this repository. `www.izukinova.ai` also
+301s to the bare `.ai` host. Keep both redirects in place: they are what make
+the `.com` link safe for search engines and shared links. If the `.com`
+redirect ever breaks, fix it at the DNS/registrar level rather than relying on
+the repository's `404.html`; the 404 page only covers unknown `.ai` paths.
+
+Google chooses a site name and favicon per hostname. Keep the root homepage
+crawlable, its Izuki icon links stable, and its `WebSite` identity at
+`https://izukinova.ai/#website` with `url` set to `https://izukinova.ai/`.
+The sitemap and `robots.txt` live at the host root:
+
+- https://izukinova.ai/robots.txt
+- https://izukinova.ai/sitemap.xml
 
 ## After publishing
 
 In the owner's [Google Search Console](https://search.google.com/search-console/):
 
-1. Use a verified URL-prefix property for `https://nova-izuki.github.io/` to
-   inspect the root homepage. A property limited to `/izuki/` does not cover it.
-   If verification is needed, publish the exact verification file or meta tag
-   Google provides in the root repository; do not invent a token.
-2. Inspect the root homepage, the `/izuki/` homepage and
-   `/izuki/screenshots/`. Test their live URLs. Request indexing of the two
-   canonical project pages and refresh the root URL where the tool permits it.
-   The redirecting root itself need not be indexed as a separate result.
-3. Submit `https://nova-izuki.github.io/izuki/sitemap.xml` under Sitemaps.
+1. Add and verify a **Domain property** for `izukinova.ai` if possible, or a
+   URL-prefix property for `https://izukinova.ai/`. Verification is
+   account-specific; use the exact DNS record or file Google provides and do
+   not invent a token.
+2. Inspect the homepage, `/app/`, `/screenshots/` and `/help/`. Test the live
+   URLs, then request indexing for the pages that changed.
+3. Submit `https://izukinova.ai/sitemap.xml` under Sitemaps.
 4. Check Page indexing for crawl or canonical problems. Use Performance with
    Search type set to Image to monitor image impressions. Check Web performance
    for branded queries such as Izuki and Nova Izuki.
+5. If Search Console still lists the old `nova-izuki.github.io` property, keep
+   it long enough to confirm the redirects, but treat `izukinova.ai` as the
+   canonical property.
 
 Search Console access is account-specific. Deploying the website does not
-submit an indexing request or prove that Google has recrawled it.
+submit an indexing request or prove that Google has recrawled it. No one can
+guarantee a first-place ranking.
 
 ## Keeping images discoverable
 
@@ -44,11 +60,11 @@ Only change a sitemap `lastmod` when the corresponding page actually changes.
 The homepage links to the gallery, identifies the application screenshots in
 structured data, and permits large image previews. These are discovery signals;
 they do not guarantee inclusion in Google Images, a favicon, or any ranking.
-Changes can take days to weeks to be recrawled. No one can guarantee a permanent
-first-place search position.
+Changes can take days to weeks to be recrawled.
 
 ## References
 
 - [Google: favicons in Search](https://developers.google.com/search/docs/appearance/favicon-in-search)
 - [Google: site names](https://developers.google.com/search/docs/appearance/site-names)
 - [Google: image SEO](https://developers.google.com/search/docs/appearance/google-images)
+- [GitHub Pages: custom domains](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site)

@@ -10,7 +10,7 @@
 //! from the code — is also reported to Izuki's error tracker, together with
 //! the log lines just before it, so a bug can be seen and fixed without the
 //! user having to describe it. Reports go where
-//! `https://nova-izuki.github.io/izuki/bugs.json` points (a Sentry project),
+//! `https://izukinova.ai/bugs.json` points (a Sentry project),
 //! only while "Send error reports" is on, and always with API keys, links'
 //! secrets, emails, phone numbers and the Windows user name taken out first.
 //!
@@ -27,7 +27,7 @@ use serde_json::{json, Value};
 
 /// Where the error tracker's address is kept — one place for the PC app, the
 /// phone app and the website, changeable without a new release.
-const CONFIG_URL: &str = "https://nova-izuki.github.io/izuki/bugs.json";
+const CONFIG_URL: &str = "https://izukinova.ai/bugs.json";
 /// The log file is started afresh (the old one kept as `izuki.old.log`) past this.
 const MAX_LOG_BYTES: u64 = 4 * 1024 * 1024;
 /// Lines kept in memory to go with a report.
