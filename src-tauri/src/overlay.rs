@@ -433,9 +433,10 @@ static POINTER_SHIELDED: AtomicUsize = AtomicUsize::new(0);
 /// Acting makes every ordinary widget click-through; the Task Stage is the
 /// deliberate human-intervention hole, except during an injected click.
 fn may_take_pointer(hit: bool, task: bool, acting: bool, shielded: bool) -> bool {
-    // A shield is absolute: it must also cover clicks made without an Acting
-    // guard (the YouTube ad skip does its own click).
-    !shielded && (!hit || !acting || task)
+    // Releasing the pointer is always safe. Taking it is not: a shield blocks
+    // every acquisition, including clicks made without an Acting guard (the
+    // YouTube ad skip does its own click).
+    !hit || (!shielded && (!acting || task))
 }
 
 /// Per-widget click-through. In follow/preview mode the overlay ignores the
