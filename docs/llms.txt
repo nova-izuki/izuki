@@ -1,4 +1,4 @@
-# Izuki (Nova Izuki)
+# Izuki (Nova Izuki, also Izuki Nova)
 
 > Izuki is a free, open-source AI assistant for Windows 10 and 11. Say "Hey Nova" and talk naturally: Izuki sees your screen, answers out loud, and uses your mouse and keyboard to get things done. It also works from your phone and on your TV.
 

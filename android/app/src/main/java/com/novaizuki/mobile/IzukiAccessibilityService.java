@@ -8,12 +8,16 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.Shader;
+import android.graphics.SweepGradient;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -569,17 +573,37 @@ public class IzukiAccessibilityService extends AccessibilityService {
     return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, c.getResources().getDisplayMetrics());
   }
 
-  /** A small glowing glass orb that breathes, pulses while talking and spins its light while thinking. */
+  /**
+   * Izuki's liquid orb, the same one the PC, the phone app and the website
+   * draw (docs/app/orb.js): wave-blobs of flowing colour screened together,
+   * cool blue while listening, violet while thinking, pink-cyan-green while
+   * talking. Three layers, so it stays cheap over other apps.
+   */
   static class OrbDot extends View {
+    private static final int[][] LISTEN = { { 6, 182, 212 }, { 10, 132, 255 }, { 99, 102, 241 }, { 34, 211, 238 } };
+    private static final int[][] THINK = { { 147, 51, 234 }, { 79, 70, 229 }, { 219, 39, 119 }, { 124, 58, 237 } };
+    private static final int[][] TALK = { { 236, 72, 153 }, { 6, 182, 212 }, { 16, 185, 129 }, { 139, 92, 246 } };
+    private static final int[][] IDLE = { { 99, 102, 241 }, { 34, 211, 238 }, { 139, 92, 246 }, { 56, 189, 248 } };
     private final Paint glow = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint body = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint clear = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint layer = new Paint();
     private final Paint shine = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path blob = new Path();
+    private final Matrix spin = new Matrix();
+    private final int[] cols = new int[5];
     private final ValueAnimator clock = ValueAnimator.ofFloat(0f, 1f);
     private String state = "listen";
     private float t = 0f;
 
     OrbDot(Context c) {
       super(c);
+      edge.setStyle(Paint.Style.STROKE);
+      // Each layer clears its own middle, then screens onto the others.
+      clear.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
+      layer.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SCREEN));
       clock.setDuration(100000);
       clock.setRepeatCount(ValueAnimator.INFINITE);
       clock.addUpdateListener(a -> { t = (float) a.getCurrentPlayTime() / 1000f; invalidate(); });
@@ -589,21 +613,63 @@ public class IzukiAccessibilityService extends AccessibilityService {
     void setState(String s) { state = s; }
     void stop() { clock.cancel(); }
 
+    private static int rgba(int[] c, float a) {
+      return Color.argb(Math.round(Math.max(0f, Math.min(1f, a)) * 255f), c[0], c[1], c[2]);
+    }
+
+    /** How much it moves, 0..1: a voice while talking, a soft pulse while listening. */
+    private float level() {
+      if ("talk".equals(state)) return 0.35f + 0.55f * (float) Math.abs(Math.sin(t * 6.6) * Math.sin(t * 2.1));
+      if ("listen".equals(state)) return 0.12f + 0.2f * (float) Math.abs(Math.sin(t * 3.8) * Math.sin(t * 1.1));
+      if ("think".equals(state)) return 0.22f + 0.08f * (float) Math.sin(t * 2.6);
+      return 0.08f;
+    }
+
     @Override protected void onDraw(Canvas c) {
-      float w = getWidth(), h = getHeight(), cx = w / 2, cy = h / 2;
-      float base = Math.min(w, h) / 2 * 0.72f;
-      float beat = "talk".equals(state) ? 0.10f * (float) Math.abs(Math.sin(t * 7.0)) : "listen".equals(state) ? 0.05f * (float) Math.sin(t * 3.0) : 0.03f * (float) Math.sin(t * 1.6);
-      float r = base * (1 + beat);
-      int a = Color.rgb(124, 92, 255), b = Color.rgb(78, 205, 196);
-      if ("think".equals(state)) { a = Color.rgb(103, 232, 249); b = Color.rgb(167, 139, 250); }
-      glow.setShader(new RadialGradient(cx, cy, r * 1.45f, new int[] { Color.argb(150, Color.red(a), Color.green(a), Color.blue(a)), Color.TRANSPARENT }, null, Shader.TileMode.CLAMP));
-      c.drawCircle(cx, cy, r * 1.45f, glow);
-      float ang = "think".equals(state) ? t * 4f : t * 0.8f;
-      float ox = (float) Math.cos(ang) * r * 0.35f, oy = (float) Math.sin(ang) * r * 0.35f;
-      body.setShader(new RadialGradient(cx + ox, cy + oy, r * 1.3f, new int[] { b, a, Color.rgb(20, 16, 48) }, new float[] { 0f, 0.55f, 1f }, Shader.TileMode.CLAMP));
-      c.drawCircle(cx, cy, r, body);
-      shine.setShader(new RadialGradient(cx - r * 0.35f, cy - r * 0.4f, r * 0.45f, new int[] { Color.argb(200, 255, 255, 255), Color.TRANSPARENT }, null, Shader.TileMode.CLAMP));
-      c.drawCircle(cx - r * 0.35f, cy - r * 0.4f, r * 0.45f, shine);
+      float w = getWidth(), h = getHeight(), cx = w / 2, cy = h / 2, half = Math.min(w, h) / 2;
+      boolean think = "think".equals(state), talk = "talk".equals(state);
+      int[][] pal = think ? THINK : talk ? TALK : "listen".equals(state) ? LISTEN : IDLE;
+      float lvl = level();
+      float r = half * 0.62f * (1 + lvl * 0.16f);
+      float flow = t * (think ? 1.6f : 1 + lvl * 2.2f);
+      float turn = t * ((think ? 1.3f : talk ? 0.7f : 0.45f) + lvl * 1.2f);
+      glow.setShader(new RadialGradient(cx, cy, half, new int[] { rgba(pal[0], 0.42f + lvl * 0.38f), rgba(pal[0], 0f) }, null, Shader.TileMode.CLAMP));
+      c.drawCircle(cx, cy, half, glow);
+      // Dark glass for the colour to swim in.
+      body.setShader(new RadialGradient(cx, cy + r * 0.2f, r * 1.05f, new int[] { rgba(pal[1], 0.16f), Color.argb(200, 4, 8, 22) }, null, Shader.TileMode.CLAMP));
+      c.drawCircle(cx, cy, r * 0.97f, body);
+      edge.setStrokeWidth(Math.max(1f, half / 40f));
+      for (int k = 0; k < 3; k++) {
+        float phase = k * 2.1f, amp = 0.05f + lvl * 0.2f, scale = 0.86f + k * 0.08f;
+        blob.reset();
+        for (int i = 0; i <= 72; i++) {
+          double a = i / 72.0 * Math.PI * 2;
+          double wave = Math.sin(a * 2 + flow * 1.3 + phase) * 0.5 + Math.sin(a * 3 - flow * 1.9 + phase * 1.7) * 0.35
+              + Math.sin(a * 5 + flow * 2.7 - phase) * 0.25 * (0.3 + lvl * 1.4);
+          float rr = r * scale * (float) (1 + amp * wave);
+          float x = cx + (float) Math.cos(a) * rr, y = cy + (float) Math.sin(a) * rr;
+          if (i == 0) blob.moveTo(x, y); else blob.lineTo(x, y);
+        }
+        blob.close();
+        float ox = (float) Math.cos(flow * 0.7 + phase) * r * 0.16f, oy = (float) Math.sin(flow * 0.9 + phase) * r * 0.16f;
+        for (int j = 0; j < 5; j++) cols[j] = rgba(pal[(j + k) % 4], 0.78f);
+        SweepGradient sweep = new SweepGradient(cx + ox, cy + oy, cols, null);
+        spin.setRotate((float) Math.toDegrees(turn * (k == 1 ? -1 : 1) * (0.8f + k * 0.25f) + phase), cx + ox, cy + oy);
+        sweep.setLocalMatrix(spin);
+        int saved = c.saveLayer(0, 0, w, h, layer);
+        fill.setShader(sweep);
+        c.drawPath(blob, fill);
+        edge.setColor(rgba(pal[(k + 2) % 4], 0.35f + lvl * 0.5f));
+        c.drawPath(blob, edge);
+        // Clear the middle, so each layer reads as a glowing rim of liquid.
+        clear.setShader(new RadialGradient(cx + ox, cy + oy, r * scale * 1.1f,
+            new int[] { Color.argb(247, 0, 0, 0), Color.argb(217, 0, 0, 0), Color.argb(77, 0, 0, 0), Color.TRANSPARENT },
+            new float[] { 0f, 0.6f, 0.88f, 1f }, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, clear);
+        c.restoreToCount(saved);
+      }
+      shine.setShader(new RadialGradient(cx - r * 0.38f, cy - r * 0.42f, r * 0.55f, new int[] { Color.argb(77, 255, 255, 255), Color.TRANSPARENT }, null, Shader.TileMode.CLAMP));
+      c.drawCircle(cx, cy, r * 0.98f, shine);
     }
   }
 }
