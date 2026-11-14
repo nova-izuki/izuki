@@ -2038,6 +2038,8 @@
     html.eyes.js.ready #hero-h1 .ch, html.eyes.js.ready #hero-h1 .shine { animation-delay: calc(.95s + var(--i, 0) * 12ms); }
 
     /* ---------- the release pill ---------- */
+    /* No glowing dot in front of the hero's label either: it read as decoration. */
+    .hero-copy .eyebrow b { display: none; }
     .rel-chip { gap: 0; padding: 4px; border-radius: 12px; font: 500 13px/1 var(--body); letter-spacing: 0; color: #b4c3d6;
       background: rgba(8, 14, 25, .62); border: 1px solid rgba(205, 231, 255, .14); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06); }
     .rel-v { padding: 6px 9px; border-radius: 8px; color: #f2f9ff; font: 700 12.5px/1 var(--body); font-variant-numeric: tabular-nums; letter-spacing: .01em;
@@ -3540,10 +3542,15 @@
     }
   }
   const tapme = $("tapme");
+  // "Preview voice": a tap gets an answer in Izuki's own recorded voice,
+  // timed to start as the reply does.
   $("hero-orb").addEventListener("click", (e) => {
     burst(e.clientX, e.clientY);
     tapme.classList.add("gone");
-    heroSay("*taps the orb*", TAPS[tapN++ % TAPS.length]);
+    const line = TAPS[tapN++ % TAPS.length];
+    heroSay("*taps the orb*", line);
+    unlockVoice();
+    setTimeout(() => voiceLine(line), reduce ? 0 : 1250);
   });
   document.querySelectorAll(".stage .chip").forEach((chip, i) => {
     const lines = [0, 3, null][i];
@@ -3722,26 +3729,34 @@
   let voices = null;
   const voiceMap = () => (voices ||= fetch("media/voice/chat.json").then((r) => (r.ok ? r.json() : {})).catch(() => ({})));
   const hush = () => { clip.pause(); };
+  // Phones only let a page play sound it started from a tap: start (and
+  // stop) the player during the tap, so a reply a moment later can be heard.
+  let unlocked = false;
+  function unlockVoice() {
+    voiceMap();
+    if (unlocked) return;
+    unlocked = true;
+    clip.muted = true;
+    clip.src = "media/briefing/first.mp3";
+    clip.play().then(() => { clip.pause(); clip.muted = false; }).catch(() => { clip.muted = false; unlocked = false; });
+  }
+  async function voiceLine(text, live = () => true) {
+    const name = (await voiceMap())[text];
+    if (!name || !live()) return;
+    clip.muted = false;
+    clip.src = `media/voice/${name}.mp3`;
+    clip.play().catch(() => {});
+  }
   soundBtn.hidden = false;
   soundBtn.addEventListener("click", () => {
     sound = !sound;
     soundBtn.setAttribute("aria-pressed", String(sound));
     soundBtn.textContent = sound ? "Talking out loud" : "Hear it talk";
     if (!sound) { hush(); return; }
-    voiceMap();
-    // Phones only let a page play sound it started from a tap: start (and
-    // stop) the player here, so later replies can be heard.
-    clip.muted = true;
-    clip.src = "media/briefing/first.mp3";
-    clip.play().then(() => { clip.pause(); clip.muted = false; }).catch(() => { clip.muted = false; });
+    unlockVoice();
   });
-  async function speak(text, live) {
-    if (!sound) return;
-    const name = (await voiceMap())[text];
-    if (!name || !sound || !live()) return;
-    clip.muted = false;
-    clip.src = `media/voice/${name}.mp3`;
-    clip.play().catch(() => {});
+  function speak(text, live) {
+    if (sound) voiceLine(text, () => sound && live());
   }
   new MutationObserver(() => (playLog.scrollTop = playLog.scrollHeight)).observe(playLog, { childList: true, subtree: true, characterData: true });
   function bubble(cls, text) {
