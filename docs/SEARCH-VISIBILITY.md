@@ -57,6 +57,37 @@ The sitemap and `robots.txt` live at the host root:
 - https://izukinova.ai/robots.txt
 - https://izukinova.ai/sitemap.xml
 
+## Metadata audit (14 November 2026)
+
+Every indexable page under `docs/` now has a unique title and description, a
+canonical `.ai` URL, Open Graph metadata and one visible or screen-reader H1.
+The homepage description was shortened for search results, its FAQ schema now
+matches the six visible questions, and its JSON-LD parses without duplicate
+keys. The `/app/` page has a screen-reader H1, the extension privacy page has
+its own description/canonical/OG metadata, and both internal design boards plus
+the 404 page are `noindex`. No public HTML page links to the old
+`nova-izuki.github.io` address.
+
+## Old listings to update
+
+The GitHub repository homepage was updated to `https://izukinova.ai/` on
+14 November 2026. These other listings are outside this repository and cannot
+be changed without the owner's account access:
+
+- **ToolCenter** — the English and Chinese listings still show
+  `nova-izuki.github.io` as the official URL. Use **Suggest an update** or claim
+  the listing at <https://www.toolcenter.ai/en/tools/izuki> and
+  <https://www.toolcenter.ai/zh/tools/izuki>; set the URL to
+  `https://izukinova.ai/`.
+- **LinkedIn company page** — the Website field still points to
+  `nova-izuki.github.io/izuki/`, and the About text still describes an
+  Afro-tech community. An admin should change the website to
+  `https://izukinova.ai/` and rewrite the description around the Windows AI
+  assistant: <https://www.linkedin.com/company/izukiapp>.
+
+Search Console access is still required to submit the sitemap and request
+indexing; nothing in this repository can do that for the owner.
+
 ## After publishing
 
 In the owner's [Google Search Console](https://search.google.com/search-console/):
