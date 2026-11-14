@@ -224,6 +224,7 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
     // look; when the eyes move on (steadySince changes) it lets go.
     let lock: { x: number; y: number; nx: number; ny: number; nw: number; nh: number; since: number } | null = null;
     let lockAsked = -1;
+    let lockFrom = { x: 0, y: 0 };
     let runtimeStopped = false;
     let endedHandler: (() => void) | null = null;
     // The camera went away: tried again on a timer, and at once when a camera
@@ -972,10 +973,15 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
         }
       }
       const pointerMode = pointerAllowed() && head.level !== "far";
+      // A look that slowly drifts is a new look: measured from where it
+      // settled, not only frame to frame, so the lock can't ride along to
+      // another control.
+      if (lockAsked === steadySince && Math.hypot(pointer.x - lockFrom.x, pointer.y - lockFrom.y) > 0.035) steadySince = now;
       const settled = now > calAt && now - steadySince >= FIXATION_MS;
       if (lock && lock.since !== steadySince) lock = null;
       if (settled && lockAsked !== steadySince) {
         lockAsked = steadySince;
+        lockFrom = { x: pointer.x, y: pointer.y };
         const since = steadySince;
         void api.eyeTarget(pointer.x, pointer.y).then((box) => {
           if (!box || since !== steadySince) return;
