@@ -6,8 +6,11 @@ import android.app.NotificationManager;
 import android.app.UiModeManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.content.pm.Signature;
+import android.content.pm.SigningInfo;
 import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Build;
@@ -38,8 +41,11 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
@@ -251,19 +257,31 @@ public class IzukiControlPlugin extends Plugin {
     result.put("running", IzukiAccessibilityService.running());
     result.put("tv", isTv());
     try {
-      android.content.pm.PackageInfo info = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
+      PackageInfo info = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
       result.put("version", info.versionName);
+      result.put("versionCode", Build.VERSION.SDK_INT >= 28 ? info.getLongVersionCode() : info.versionCode);
+      result.put("updateAllowed", Build.VERSION.SDK_INT < 26 || getContext().getPackageManager().canRequestPackageInstalls());
     } catch (Exception ignored) { }
     call.resolve(result);
   }
 
   // ---- updating itself ---------------------------------------------------------
 
-  /** Download the newer app and hand it to Android's installer (one press to update). */
+  /**
+   * Download, verify and hand a newer APK to Android's installer.
+   * A partial file is never installable: the download lands in .part, is
+   * checked against GitHub's size/SHA-256, package name and version, then
+   * renamed. If Android returns "App not installed", the JS layer can say
+   * why instead of pretending the update worked.
+   */
   @PluginMethod
   public void installUpdate(PluginCall call) {
     String url = call.getString("url", "");
-    if (!url.startsWith("https://github.com/nova-izuki/izuki/releases/")) { call.reject("not an Izuki update"); return; }
+    Uri parsed = Uri.parse(url);
+    if (!"https".equals(parsed.getScheme()) || !"github.com".equals(parsed.getHost())
+        || parsed.getPath() == null || !parsed.getPath().startsWith("/nova-izuki/izuki/releases/")) {
+      call.reject("not an Izuki update"); return;
+    }
     if (Build.VERSION.SDK_INT >= 26 && !getContext().getPackageManager().canRequestPackageInstalls()) {
       // Android asks once: "allow Izuki to install updates".
       Intent allow = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getContext().getPackageName()));
@@ -272,38 +290,132 @@ public class IzukiControlPlugin extends Plugin {
       call.reject("allow");
       return;
     }
+    String expectedSha = String.valueOf(call.getString("sha256", "")).trim().toLowerCase(Locale.ROOT);
+    if (!expectedSha.isEmpty() && !expectedSha.matches("[0-9a-f]{64}")) { call.reject("bad checksum"); return; }
+    Double sizeArg = call.getDouble("size");
+    long expectedSize = sizeArg == null ? 0L : sizeArg.longValue();
+    String expectedVersion = String.valueOf(call.getString("version", "")).replaceFirst("^v", "").trim();
     work.execute(() -> {
+      File part = new File(getContext().getCacheDir(), "izuki-update.apk.part");
+      File apk = new File(getContext().getCacheDir(), "izuki-update.apk");
+      HttpURLConnection c = null;
       try {
-        File apk = new File(getContext().getCacheDir(), "izuki-update.apk");
-        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-        c.setInstanceFollowRedirects(true);
-        c.setConnectTimeout(15000);
-        c.setReadTimeout(60000);
-        // GitHub hands the file over from another address: follow it.
-        for (int hop = 0; hop < 5; hop++) {
-          int code = c.getResponseCode();
-          if (code < 300 || code >= 400) break;
-          String next = c.getHeaderField("Location");
-          c.disconnect();
-          c = (HttpURLConnection) new URL(next).openConnection();
-          c.setConnectTimeout(15000);
-          c.setReadTimeout(60000);
+        if (part.exists() && !part.delete()) throw new Exception("Couldn't clear the old download.");
+        if (apk.exists() && !apk.delete()) throw new Exception("Couldn't clear the old download.");
+        c = open(url);
+        for (int hop = 0; hop < 6; hop++) {
+          int status = c.getResponseCode();
+          if (status >= 300 && status < 400) {
+            String next = c.getHeaderField("Location");
+            if (next == null || !next.startsWith("https://")) throw new Exception("GitHub's download link didn't lead anywhere.");
+            c.disconnect();
+            c = open(next);
+            continue;
+          }
+          if (status != 200) throw new Exception("GitHub returned " + status + " for the update.");
+          break;
         }
-        try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(apk)) {
+        long total = expectedSize > 0 ? expectedSize : c.getContentLengthLong();
+        if (total > 250L * 1024 * 1024) throw new Exception("That update is unexpectedly large.");
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        long received = 0;
+        int lastPercent = -2;
+        try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(part)) {
           byte[] buf = new byte[65536];
           int n;
-          while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+          while ((n = in.read(buf)) > 0) {
+            out.write(buf, 0, n);
+            digest.update(buf, 0, n);
+            received += n;
+            if (received > 250L * 1024 * 1024) throw new Exception("That update is unexpectedly large.");
+            if (total > 0) {
+              int percent = (int) Math.min(100, received * 100 / total);
+              if (percent != lastPercent) {
+                lastPercent = percent;
+                JSObject progress = new JSObject();
+                progress.put("percent", percent);
+                progress.put("received", received);
+                progress.put("total", total);
+                try { notifyListeners("updateProgress", progress, true); } catch (Exception ignored) { }
+              }
+            }
+          }
         }
+        c.disconnect();
+        if (expectedSize > 0 && received != expectedSize) throw new Exception("The download stopped early. Try again.");
+        if (!expectedSha.isEmpty()) {
+          String actual = hex(digest.digest());
+          if (!actual.equals(expectedSha)) throw new Exception("The download didn't match GitHub's checksum. Try again.");
+        }
+        PackageManager pm = getContext().getPackageManager();
+        int flags = Build.VERSION.SDK_INT >= 28 ? PackageManager.GET_SIGNING_CERTIFICATES : PackageManager.GET_SIGNATURES;
+        PackageInfo archive = pm.getPackageArchiveInfo(part.getAbsolutePath(), flags);
+        if (archive == null || !getContext().getPackageName().equals(archive.packageName)) {
+          throw new Exception("That download isn't the Izuki companion app.");
+        }
+        PackageInfo installed = pm.getPackageInfo(getContext().getPackageName(), flags);
+        long archiveCode = Build.VERSION.SDK_INT >= 28 ? archive.getLongVersionCode() : archive.versionCode;
+        long installedCode = Build.VERSION.SDK_INT >= 28 ? installed.getLongVersionCode() : installed.versionCode;
+        if (archiveCode <= installedCode) throw new Exception("This download is not newer than the installed app.");
+        String archiveVersion = String.valueOf(archive.versionName == null ? "" : archive.versionName).trim();
+        if (!expectedVersion.isEmpty() && !expectedVersion.equals(archiveVersion)) {
+          throw new Exception("The release APK is version " + (archiveVersion.isEmpty() ? "unknown" : archiveVersion)
+              + ", not " + expectedVersion + ". The Android build may still be uploading.");
+        }
+        Set<String> apkKeys = signerHashes(archive);
+        Set<String> installedKeys = signerHashes(installed);
+        if (apkKeys.size() == 1 && installedKeys.size() == 1 && Collections.disjoint(apkKeys, installedKeys)) {
+          throw new Exception("Signature mismatch: Android won't install this over the copy on your phone. Reinstall once from the download page.");
+        }
+        if (!part.renameTo(apk)) throw new Exception("Couldn't finish saving the update.");
         Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", apk);
         Intent install = new Intent(Intent.ACTION_VIEW);
         install.setDataAndType(uri, "application/vnd.android.package-archive");
         install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
         getContext().startActivity(install);
-        call.resolve();
+        JSObject result = new JSObject();
+        result.put("started", true);
+        result.put("version", archiveVersion);
+        result.put("size", received);
+        call.resolve(result);
       } catch (Exception e) {
-        call.reject("The update didn't download: " + e.getMessage());
+        try { if (part.exists()) part.delete(); } catch (Exception ignored) { }
+        call.reject("The update didn't install: " + (e.getMessage() == null ? "unknown error" : e.getMessage()));
       }
     });
+  }
+
+  private static HttpURLConnection open(String url) throws Exception {
+    HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+    c.setInstanceFollowRedirects(false);
+    c.setConnectTimeout(15000);
+    c.setReadTimeout(60000);
+    c.setRequestProperty("Accept", "application/octet-stream");
+    c.setRequestProperty("User-Agent", "Izuki-Companion");
+    return c;
+  }
+
+  private static String hex(byte[] bytes) {
+    StringBuilder out = new StringBuilder(bytes.length * 2);
+    for (byte b : bytes) out.append(String.format(Locale.ROOT, "%02x", b & 0xff));
+    return out.toString();
+  }
+
+  private static Set<String> signerHashes(PackageInfo info) {
+    Set<String> hashes = new HashSet<>();
+    Signature[] signatures = null;
+    try {
+      if (Build.VERSION.SDK_INT >= 28 && info.signingInfo != null) {
+        SigningInfo signing = info.signingInfo;
+        signatures = signing.hasMultipleSigners() ? signing.getApkContentsSigners() : signing.getSigningCertificateHistory();
+      } else {
+        signatures = info.signatures;
+      }
+      if (signatures != null) for (Signature signature : signatures) {
+        hashes.add(hex(MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())));
+      }
+    } catch (Exception ignored) { }
+    return hashes;
   }
 
   private boolean isTv() {

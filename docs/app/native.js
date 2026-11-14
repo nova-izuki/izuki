@@ -50,6 +50,24 @@
     },
   };
 
+  const UPDATE_CACHE = "izuki.updateCache.v1";
+  const UPDATE_PENDING = "izuki.updatePending.v1";
+  const UPDATE_PAGE = "https://izukinova.ai/#download";
+  const UPDATE_APK = "Izuki-Companion-Android-preview.apk";
+  const UPDATE_MAX_AGE = 6 * 60 * 60 * 1000;
+
+  /** "1.0.210" and "v1.0.210-beta" both compare as numbers, never strings. */
+  const versionParts = (v) => String(v || "").replace(/^v/i, "").split(/[^0-9]+/).filter(Boolean).map((n) => parseInt(n, 10) || 0);
+  const compareVersions = (a, b) => {
+    const left = versionParts(a), right = versionParts(b);
+    const length = Math.max(left.length, right.length);
+    for (let i = 0; i < length; i++) {
+      const x = left[i] || 0, y = right[i] || 0;
+      if (x !== y) return x > y ? 1 : -1;
+    }
+    return 0;
+  };
+
   let orbOverApps = true;
   window.IzukiNative = {
     installed: () => !!window.Capacitor?.isNativePlatform?.(),
@@ -94,25 +112,110 @@
         return false;
       }
     },
-    /** A newer Izuki app than this one, if there is: { latest, current, url }. */
-    async checkUpdate() {
-      try {
-        const s = await control()?.status();
-        const current = String(s?.version || "");
-        if (!current) return null;
-        const r = await fetch("https://api.github.com/repos/nova-izuki/izuki/releases/latest", { cache: "no-store" });
-        if (!r.ok) return null;
-        const latest = String((await r.json()).tag_name || "").replace(/^v/, "");
-        const n = (v) => v.split(".").map((x) => parseInt(x, 10) || 0);
-        const [a, b] = [n(latest), n(current)];
-        const newer = a.some((x, i) => x !== (b[i] || 0)) && a.find((x, i) => x !== (b[i] || 0)) > b[a.findIndex((x, i) => x !== (b[i] || 0))];
-        return newer ? { latest, current, url: "https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Companion-Android-preview.apk" } : null;
-      } catch { return null; }
+    /** The installed app's own identity, without reading anything personal. */
+    async appStatus() {
+      try { return (await control()?.status()) || null; } catch { return null; }
     },
-    /** Download it and open Android's installer. "allow" = Android wants permission first. */
-    async installUpdate(url) {
-      try { await control()?.installUpdate({ url }); return "ok"; }
-      catch (e) { return String(e?.message || e) === "allow" ? "allow" : String(e?.message || e); }
+    /**
+     * The latest preview, checked against the installed package. Returns
+     * { update, current, latest, url, size, sha256, notes, releaseUrl, ... }
+     * and never claims "up to date" when the check itself failed.
+     */
+    async checkUpdate({ force = false } = {}) {
+      const p = control();
+      if (!p) return null;
+      try {
+        const s = await p.status();
+        const current = String(s?.version || "").replace(/^v/i, "").trim();
+        if (!current) return { update: false, error: "This Android build didn't report its version.", releaseUrl: UPDATE_PAGE, checkedAt: Date.now() };
+        const checkedAt = Date.now();
+        if (!force) {
+          try {
+            const cached = JSON.parse(localStorage.getItem(UPDATE_CACHE) || "null");
+            if (cached && cached.current === current && checkedAt - Number(cached.checkedAt || 0) < UPDATE_MAX_AGE) return cached;
+          } catch {}
+        }
+        const r = await fetch("https://api.github.com/repos/nova-izuki/izuki/releases/latest", {
+          cache: "no-store",
+          headers: { Accept: "application/vnd.github+json" },
+        });
+        if (!r.ok) throw new Error(r.status === 403 ? "GitHub is rate-limiting update checks. Try again in a few minutes." : `GitHub returned ${r.status}.`);
+        const release = await r.json();
+        const latest = String(release.tag_name || "").replace(/^v/i, "").trim();
+        if (!latest) throw new Error("GitHub didn't name the latest release.");
+        const assets = Array.isArray(release.assets) ? release.assets : [];
+        const apk = assets.find((a) => a?.name === UPDATE_APK) || assets.find((a) => /\.apk$/i.test(a?.name || ""));
+        const base = {
+          current,
+          latest,
+          checkedAt,
+          releaseUrl: release.html_url || UPDATE_PAGE,
+          notes: typeof release.body === "string" ? release.body.slice(0, 4000) : "",
+        };
+        if (!apk) {
+          // A release can be published a moment before CI attaches its APK.
+          // Never send someone to a download URL that isn't there yet.
+          return { ...base, update: false, error: `Izuki ${latest} is on GitHub, but its Android APK isn't attached yet. Try again in a minute.` };
+        }
+        const digest = /^sha256:([a-f0-9]{64})$/i.exec(String(apk.digest || ""))?.[1] || "";
+        const url = String(apk.browser_download_url || "");
+        if (!/^https:\/\/github\.com\/nova-izuki\/izuki\/releases\//.test(url)) {
+          return { ...base, update: false, error: "GitHub didn't return an Izuki release download link." };
+        }
+        const result = {
+          ...base,
+          update: compareVersions(latest, current) > 0,
+          url,
+          size: Number(apk.size) || 0,
+          sha256: digest.toLowerCase(),
+        };
+        try { localStorage.setItem(UPDATE_CACHE, JSON.stringify(result)); } catch {}
+        return result;
+      } catch (e) {
+        return { update: false, error: String(e?.message || e || "Couldn't check for updates."), checkedAt: Date.now(), releaseUrl: UPDATE_PAGE };
+      }
+    },
+    /**
+     * Download and verify the APK, then open Android's installer. Resolves
+     * { ok, started?, error?, signature?, allow? } — never a bare "ok",
+     * because Android still has to accept the package after this returns.
+     */
+    async installUpdate(update) {
+      const p = control();
+      if (!p?.installUpdate) return { ok: false, error: "This build can't install updates itself. Use the download page." };
+      const spec = typeof update === "string" ? { url: update } : (update || {});
+      try {
+        const result = await p.installUpdate({
+          url: String(spec.url || ""),
+          sha256: String(spec.sha256 || ""),
+          size: Number(spec.size) || 0,
+          version: String(spec.latest || spec.version || ""),
+        });
+        return { ok: true, ...(result || {}) };
+      } catch (e) {
+        const error = String(e?.message || e || "The update didn't download.");
+        return { ok: false, error, allow: error === "allow", signature: /signature|different key|incompatible|app not installed/i.test(error) };
+      }
+    },
+    /** Download progress from the native verifier: 0–100, or -1 when unknown. */
+    onUpdateProgress(callback) {
+      const p = control();
+      if (!p?.addListener) return null;
+      try { return p.addListener("updateProgress", (data) => { try { callback?.(Number(data?.percent ?? -1), data || {}); } catch {} }); } catch { return null; }
+    },
+    /** Remember the version Android is installing, so a return can confirm it. */
+    pendingUpdate() {
+      try { return JSON.parse(localStorage.getItem(UPDATE_PENDING) || "null"); } catch { return null; }
+    },
+    setPendingUpdate(version) {
+      try { localStorage.setItem(UPDATE_PENDING, JSON.stringify({ version: String(version || ""), at: Date.now(), seen: false })); } catch {}
+    },
+    clearPendingUpdate() { try { localStorage.removeItem(UPDATE_PENDING); } catch {} },
+    /** A direct, visible phone action for the new home dock. */
+    async phoneAction(action) {
+      const allowed = ["home", "back", "recents", "notifications", "quick_settings", "lock", "screenshot", "power"];
+      if (!control() || !allowed.includes(String(action))) return false;
+      try { await control().perform({ action }); return true; } catch { return false; }
     },
     async controlStatus() {
       try {
