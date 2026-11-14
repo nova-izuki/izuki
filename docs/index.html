@@ -2044,10 +2044,11 @@
     html.eyes.js.ready #hero-h1 .ch, html.eyes.js.ready #hero-h1 .shine { animation-delay: calc(.95s + var(--i, 0) * 12ms); }
 
     /* ---------- the release pill ---------- */
-    /* No glowing dot in front of the hero's label either: it read as decoration. */
-    .hero-copy .eyebrow b { display: none; }
+    /* The hero label and the release pill start with the same line of light as the section labels, not a glowing dot. */
+    .hero-copy .eyebrow b { display: inline-block; flex: none; width: 18px; height: 1px; border-radius: 0; background: linear-gradient(90deg, transparent, #a5e9ff); box-shadow: 0 0 6px rgba(103, 232, 249, .55); animation: none; }
     .rel-chip { gap: 0; padding: 4px; border-radius: 12px; font: 500 13px/1 var(--body); letter-spacing: 0; color: #b4c3d6;
       background: rgba(8, 14, 25, .62); border: 1px solid rgba(205, 231, 255, .14); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06); }
+    .rel-line { flex: none; width: 18px; height: 1px; margin: 0 9px 0 7px; background: linear-gradient(90deg, transparent, #a5e9ff); box-shadow: 0 0 6px rgba(103, 232, 249, .55); }
     .rel-v { padding: 6px 9px; border-radius: 8px; color: #f2f9ff; font: 700 12.5px/1 var(--body); font-variant-numeric: tabular-nums; letter-spacing: .01em;
       background: linear-gradient(135deg, rgba(142, 232, 255, .2), rgba(185, 167, 255, .2)); box-shadow: inset 0 0 0 1px rgba(188, 239, 255, .24); }
     .rel-chip #rel-text.rel-meta { padding: 0 12px; color: #b4c3d6; white-space: nowrap; }
@@ -2060,6 +2061,7 @@
       .rel-chip #rel-text.rel-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; padding: 0 9px; }
       .rel-go { padding: 0 6px 0 9px; }
     }
+    @media (max-width: 420px) { .rel-line { width: 12px; margin: 0 6px 0 5px; } }
     @media (max-width: 360px) { .rel-go { font-size: 0; gap: 0; } }
 
     /* ---------- specs that open up ---------- */
@@ -2303,7 +2305,7 @@
         </div>
         <div class="rel rv" style="--d:.28s">
           <a class="rel-chip" id="rel-chip" href="https://github.com/nova-izuki/izuki/releases/latest">
-            <span class="rel-v" id="rel-v">New</span><span class="rel-meta" id="rel-text">Free · updates itself</span><span class="rel-go">What's new<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <i class="rel-line" aria-hidden="true"></i><span class="rel-v" id="rel-v">New</span><span class="rel-meta" id="rel-text">Free · updates itself</span><span class="rel-go">What's new<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           </a>
           <div class="plats" aria-label="Other devices">
             <a href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Companion-Android-preview.apk">Android <small>preview</small></a>
