@@ -3324,7 +3324,13 @@
     $("bug-result").textContent = "";
     if (window.izukiApps?.configured()) showApps();
     sheet.hidden = false;
-    if (focusId) setTimeout(() => $(focusId)?.focus({ preventScroll: false }), 0);
+    if (focusId) setTimeout(() => {
+      const target = $(focusId);
+      if (!target) return;
+      // A section (App updates) is not focusable, but it can still be scrolled to.
+      target.scrollIntoView?.({ block: "start" });
+      target.focus?.({ preventScroll: true });
+    }, 0);
   }
   const closeSettings = () => { sheet.hidden = true; render(); };
   $("open-settings").onclick = openSettings;

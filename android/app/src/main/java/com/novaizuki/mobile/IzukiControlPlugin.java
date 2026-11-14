@@ -46,6 +46,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
@@ -296,12 +297,14 @@ public class IzukiControlPlugin extends Plugin {
     long expectedSize = sizeArg == null ? 0L : sizeArg.longValue();
     String expectedVersion = String.valueOf(call.getString("version", "")).replaceFirst("^v", "").trim();
     work.execute(() -> {
-      File part = new File(getContext().getCacheDir(), "izuki-update.apk.part");
-      File apk = new File(getContext().getCacheDir(), "izuki-update.apk");
+      // Every attempt gets its own files: a second tap (for example on the TV
+      // tile) can never delete or rename the first attempt's APK.
+      String token = UUID.randomUUID().toString().replace("-", "");
+      File part = new File(getContext().getCacheDir(), "izuki-update-" + token + ".part");
+      File apk = new File(getContext().getCacheDir(), "izuki-update-" + token + ".apk");
       HttpURLConnection c = null;
       try {
-        if (part.exists() && !part.delete()) throw new Exception("Couldn't clear the old download.");
-        if (apk.exists() && !apk.delete()) throw new Exception("Couldn't clear the old download.");
+        cleanOldUpdates();
         c = open(url);
         for (int hop = 0; hop < 6; hop++) {
           int status = c.getResponseCode();
@@ -383,6 +386,18 @@ public class IzukiControlPlugin extends Plugin {
         call.reject("The update didn't install: " + (e.getMessage() == null ? "unknown error" : e.getMessage()));
       }
     });
+  }
+
+  /** Old installers and abandoned downloads are safe to clear after an hour. */
+  private void cleanOldUpdates() {
+    File[] files = getContext().getCacheDir().listFiles();
+    if (files == null) return;
+    long cutoff = System.currentTimeMillis() - 60L * 60 * 1000;
+    for (File file : files) {
+      String name = file.getName();
+      if (name.startsWith("izuki-update-") && (name.endsWith(".apk") || name.endsWith(".part"))
+          && file.lastModified() < cutoff) file.delete();
+    }
   }
 
   private static HttpURLConnection open(String url) throws Exception {

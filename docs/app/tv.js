@@ -639,7 +639,11 @@ async function checkForUpdate() {
   const tile = document.createElement("button");
   tile.className = "tv-tile tv-update";
   tile.innerHTML = `<span>⬆️</span><b>Update Izuki</b><small>Version ${u.latest} is ready</small>`;
+  let installing = false;
   tile.onclick = async () => {
+    if (installing) return;
+    installing = true;
+    tile.disabled = true;
     tile.querySelector("small").textContent = "Downloading and verifying…";
     const r = await window.IzukiNative.installUpdate(u);
     tile.querySelector("small").textContent = r?.ok
@@ -647,6 +651,7 @@ async function checkForUpdate() {
       : r?.allow
         ? "Allow Izuki to install, then press again"
         : (r?.signature ? "Install once from the download page" : (r?.error || "The update didn't install"));
+    if (!r?.ok) { installing = false; tile.disabled = false; }
   };
   document.querySelector(".tv-tiles")?.prepend(tile);
   document.querySelector(".tv-tiles").style.gridTemplateColumns = "repeat(7, 1fr)";

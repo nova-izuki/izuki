@@ -48,6 +48,10 @@ public class MainActivity extends BridgeActivity {
     String phrase = intent.getStringExtra("izuki_wake");
     if (phrase == null) return;
     IzukiControlPlugin.setWakePhrase(phrase);
+    // A warm WebView might not get a visibility change when the Quick Settings
+    // tile brings Izuki forward; tell the open page too. The page's duplicate
+    // guard folds this into the pending phrase when both arrive.
+    IzukiControlPlugin.notifyWake(phrase);
     intent.removeExtra("izuki_wake");
   }
 }
