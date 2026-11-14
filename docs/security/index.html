@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Is Izuki Safe? Security, Signed Updates and How to Verify Your Download</title>
-  <meta name="description" content="How to check your Izuki download is genuine, why Windows shows “Windows protected your PC”, how updates are signed, the safety rules built into the code, and how to report a security problem." />
+  <title>Is Izuki Safe? Security, Signed Updates &amp; Download Checks</title>
+  <meta name="description" content="Check your Izuki download is genuine, why Windows warns about new apps, how updates are signed, and the safety rules built into the code." />
   <meta name="robots" content="index, follow" />
   <meta name="theme-color" content="#04050c" />
   <link rel="canonical" href="https://izukinova.ai/security/" />
@@ -22,7 +22,7 @@
   "mainEntity": [
     { "@type": "Question", "name": "Is Izuki safe to install?", "acceptedAnswer": { "@type": "Answer", "text": "Izuki is open source (MIT), so all of its code is public on GitHub. Download it only from the official site or GitHub releases, and you can check the file's SHA-256 against the one GitHub shows. Updates are signed and checked before they install." } },
     { "@type": "Question", "name": "Why does Windows say “Windows protected your PC”?", "acceptedAnswer": { "@type": "Answer", "text": "Windows SmartScreen warns about new apps that aren't signed with a paid code-signing certificate. Izuki's installer isn't code-signed yet. Check the download first, then choose More info → Run anyway." } },
-    { "@type": "Question", "name": "How do I report a security problem in Izuki?", "acceptedAnswer": { "@type": "Answer", "text": "Email izuki.hq@gmail.com with “Security” in the subject, and please don't post the details publicly until it's fixed." } }
+    { "@type": "Question", "name": "How do I report a security problem in Izuki?", "acceptedAnswer": { "@type": "Answer", "text": "Email support@izukinova.ai with “Security” in the subject, and please don't post the details publicly until it's fixed." } }
   ]
 }</script>
 </head>
@@ -58,7 +58,7 @@
     <section id="smartscreen">
       <h2>Why Windows says “Windows protected your PC”</h2>
       <p>Windows SmartScreen shows that warning for new apps whose installer isn't signed with a paid code-signing certificate. Izuki's installer isn't code-signed yet, so you'll see <b>“Unknown publisher”</b>. That's a statement about the certificate, not a finding about the file. Check your download first (next section), then choose <b>More info → Run anyway</b>.</p>
-      <p class="note">If you're not sure, don't run it. Ask us at <a href="mailto:izuki.hq@gmail.com">izuki.hq@gmail.com</a>, or open an issue on GitHub.</p>
+      <p class="note">If you're not sure, don't run it. Ask us at <a href="mailto:support@izukinova.ai">support@izukinova.ai</a>, or open an issue on GitHub.</p>
     </section>
 
     <section id="verify">
@@ -108,7 +108,7 @@
 
     <section id="report">
       <h2>Report a security problem</h2>
-      <p>Found a way Izuki could be misused, or a bug that exposes data? Email <a href="mailto:izuki.hq@gmail.com?subject=Security">izuki.hq@gmail.com</a> with <b>“Security”</b> in the subject. Please include Izuki's version (shown in Settings) and the steps to reproduce it, and give us a chance to fix it before you post details publicly. We'll reply as soon as we can and credit you in the release notes if you'd like.</p>
+      <p>Found a way Izuki could be misused, or a bug that exposes data? Email <a href="mailto:support@izukinova.ai?subject=Security">support@izukinova.ai</a> with <b>“Security”</b> in the subject. Please include Izuki's version (shown in Settings) and the steps to reproduce it, and give us a chance to fix it before you post details publicly. We'll reply as soon as we can and credit you in the release notes if you'd like.</p>
       <p>For everything else, <a href="https://github.com/nova-izuki/izuki/issues/new/choose">open an issue on GitHub</a>.</p>
     </section>
   </main>

@@ -1,11 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-US">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Izuki (Nova Izuki) — Free AI Assistant for Windows That Uses Your PC</title>
-  <meta name="description" content="Izuki (Nova Izuki) is a free AI assistant for Windows. Say “Hey Nova”, talk naturally, and Izuki sees your screen, answers out loud, and clicks, types and draws to get things done — on your PC and from your phone." />
-  <meta name="keywords" content="Izuki, Nova Izuki, Izuki AI, Hey Nova, Nova AI assistant, AI assistant for Windows, free AI voice assistant, Jarvis for PC, AI that controls your computer, computer use agent, screen AI, hands-free PC assistant, AI desktop companion, AI tutor, open source" />
+  <title>Izuki (Nova Izuki) — Free AI Assistant for Windows</title>
+  <meta name="description" content="Izuki (Nova Izuki) is a free AI assistant for Windows. Say “Hey Nova”, and it sees your screen, answers aloud, and clicks, types and draws to finish the task." />
   <meta name="robots" content="index, follow, max-image-preview:large" />
   <meta name="author" content="Solomon Nwachukwu" />
   <meta name="twitter:site" content="@izukiapp" />
@@ -17,7 +16,8 @@
   <meta property="og:site_name" content="Izuki" />
 
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Izuki — the AI that lives on your screen" />
+  <meta property="og:locale" content="en_US" />
+  <meta property="og:title" content="Izuki — Free AI Assistant for Windows" />
   <meta property="og:description" content="Talk to it. It sees your screen, answers out loud, and does the work. Free and open source." />
   <meta property="og:url" content="https://izukinova.ai/" />
   <meta property="og:image" content="https://izukinova.ai/og.png" />
@@ -26,7 +26,7 @@
   <meta property="og:image:type" content="image/png" />
   <meta property="og:image:alt" content="Izuki — the AI that lives on your screen" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Izuki — the AI that lives on your screen" />
+  <meta name="twitter:title" content="Izuki — Free AI Assistant for Windows" />
   <meta name="twitter:description" content="Say “Hey Nova”. It sees your screen, answers out loud, and does the work. Free." />
   <meta name="twitter:image" content="https://izukinova.ai/og.png" />
   <meta name="twitter:image:alt" content="Izuki — the AI that lives on your screen" />
@@ -60,7 +60,7 @@
         "@type": "Person",
         "name": "Solomon Nwachukwu"
       },
-      "email": "izuki.hq@gmail.com",
+      "email": "support@izukinova.ai",
       "sameAs": [
         "https://github.com/nova-izuki/izuki",
         "https://x.com/izukiapp",
@@ -80,6 +80,7 @@
         "izukinova.ai"
       ],
       "url": "https://izukinova.ai/",
+      "inLanguage": "en-US",
       "publisher": {
         "@id": "https://izukinova.ai/#org"
       }
@@ -163,11 +164,6 @@
       "author": {
         "@id": "https://izukinova.ai/#org"
       },
-      "publisher": {
-        "@id": "https://izukinova.ai/#org"
-      },
-      "downloadUrl": "https://github.com/nova-izuki/izuki/releases/latest",
-      "url": "https://izukinova.ai/",
       "featureList": [
         "Hands-free voice: say “Hey Nova”",
         "Sees your screen and answers out loud",
@@ -183,7 +179,7 @@
         "Air control: drive your PC with your hand in the air, through any camera",
         "Glowing screen edges that flow while Izuki thinks and swell with every word it says",
         "Characters that move like a person: they wave, think, type, talk with their hands and walk to what Izuki clicks",
-        "FL Studio co-producer: “make afrobeats” and watch it build",
+        "FL Studio co-producer: build a beat from a prompt",
         "Talks to Roku, Android TV, Google TV and Fire TV",
         "Free AI from Gemini, Meta Llama (via Groq), OpenRouter, Mistral or a local model",
         "30+ voices and real 3D characters"
@@ -192,37 +188,54 @@
     },
     {
       "@type": "FAQPage",
+      "@id": "https://izukinova.ai/#faq",
       "mainEntity": [
         {
           "@type": "Question",
-          "name": "Is Izuki free?",
+          "name": "Is Izuki really free?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Yes. Izuki is free and open source. It uses free AI keys from Gemini, Groq, OpenRouter or Mistral, or a model on your own PC."
+            "text": "Yes. Izuki is free and MIT-licensed. It runs with your own free AI key from Gemini, Groq, OpenRouter or Mistral, or a model on your own PC. AI providers may apply their own usage limits."
           }
         },
         {
           "@type": "Question",
-          "name": "What does Izuki do?",
+          "name": "What do I need to run it?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Izuki is an AI assistant for Windows. Say “Hey Nova” and talk: it sees your screen, answers out loud, and uses your mouse and keyboard to get things done — opening apps, searching, filling in forms, explaining quizzes and more."
+            "text": "A Windows 10 or Windows 11 PC and an internet connection for the AI service. You will need a free Google Gemini key, or another supported provider key. There is no Izuki account."
           }
         },
         {
           "@type": "Question",
-          "name": "Does Izuki work on phones and TVs?",
+          "name": "Does it work on a Mac or phone?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Yes. Use Izuki on any phone from the web app, or the Android app. It can also control Roku, Samsung, LG, Android TV, Google TV and Fire TV."
+            "text": "The desktop app is for Windows. The phone companion is a free web app for iPhone and Android, with native Android controls in preview. Mac and Linux are not supported yet; the browser extension works in Chrome and Edge."
           }
         },
         {
           "@type": "Question",
-          "name": "Is Izuki safe?",
+          "name": "Which AI does it use?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Your keys stay on your PC, Esc stops everything instantly, and Izuki never types passwords or card numbers and asks before sending anything."
+            "text": "Desktop: Gemini, Groq, OpenRouter, Mistral, Meta Llama, or a local model. In the browser extension, you can also route questions to the AI tab you already use, such as ChatGPT, Claude, Copilot or Perplexity."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is it safe to let it control my PC?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Your keys stay on your devices. It will not type into password fields, act on a locked screen, or press Send, Pay, Buy or Delete unless you specifically asked. Esc stops everything, and the source is open to inspection."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does it record my screen all the time?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Izuki captures the screen only when a task needs it and you have asked for help. Hearing and screen-text recognition happen on your PC. Nothing is continuously uploaded to us, and the site has no analytics or tracking cookies."
           }
         }
       ]
@@ -232,6 +245,8 @@
       "@id": "https://izukinova.ai/#webpage",
       "url": "https://izukinova.ai/",
       "name": "Izuki — Free AI Assistant for Windows",
+      "inLanguage": "en-US",
+      "dateModified": "2026-11-14",
       "isPartOf": {
         "@id": "https://izukinova.ai/#website"
       },
@@ -273,7 +288,7 @@
       --cyan: #22d3ee;
       --violet: #8b5cf6;
       --pink: #ec4899;
-      --live: #34d399;
+      --live: #7dd3fc;
       --grad: linear-gradient(90deg, #67e8f9, #a78bfa 45%, #f0abfc);
       --display: "Sora", ui-sans-serif, system-ui, sans-serif;
       --body: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -342,7 +357,7 @@
     .hero-copy, .hero-art { min-width: 0; }
     .eyebrow { display: inline-flex; align-items: center; gap: 9px; font: 500 12.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
       padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--glass); }
-    .eyebrow b { width: 7px; height: 7px; border-radius: 50%; background: var(--live); box-shadow: 0 0 10px var(--live); animation: blink 2s ease-in-out infinite; }
+    .eyebrow b { width: 2px; height: 11px; border-radius: 1px; background: #7dd3fc; box-shadow: none; animation: none; }
     @keyframes blink { 50% { opacity: 0.35; } }
     .hero h1 { font-size: clamp(38px, min(6vw, 9.6vh), 86px); line-height: 0.98; font-weight: 800; margin-top: clamp(12px, 2.4vh, 22px); }
     .shine { background: linear-gradient(90deg, #67e8f9, #a78bfa, #f0abfc, #67e8f9); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
@@ -354,14 +369,13 @@
     .fine { margin-top: 18px; font-size: 13.5px; color: var(--faint); }
     /* The live release badge: version, freshness, size — read from GitHub so it never goes stale. */
     .rel { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 16px; }
-    .rel-chip { display: inline-flex; align-items: center; gap: 10px; padding: 8px 14px 8px 12px; border-radius: 999px; background: rgba(5, 6, 12, 0.72);
-      border: 1px solid var(--line); color: var(--muted); font-size: 13.5px; text-decoration: none; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-      transition: border-color 0.2s, transform 0.2s; }
-    .rel-chip:hover { border-color: rgba(103, 232, 249, 0.45); transform: translateY(-1px); }
-    .rel-chip b { color: var(--cyan); font-weight: 700; }
-    .rel-chip #rel-text { color: var(--ink); }
-    .rel-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6); animation: relPulse 2.4s ease-out infinite; }
-    @keyframes relPulse { 0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); } 70%, 100% { box-shadow: 0 0 0 9px rgba(52, 211, 153, 0); } }
+    .rel-chip { display: inline-flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 8px; background: rgba(5, 6, 12, 0.72);
+      border: 1px solid var(--line); color: var(--muted); font: 500 12.5px var(--mono); text-decoration: none; letter-spacing: -0.01em; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      transition: border-color 0.2s, background 0.2s; }
+    .rel-chip:hover { border-color: rgba(125, 211, 252, 0.4); background: rgba(10, 17, 28, 0.9); }
+    .rel-chip b { color: #a5e4ff; font-weight: 600; }
+    .rel-chip #rel-text { color: #dce8f5; }
+    .rel-dot { width: 2px; height: 12px; border-radius: 1px; background: #7dd3fc; box-shadow: none; animation: none; }
     .plats { display: inline-flex; gap: 6px; padding: 4px; border-radius: 999px; background: var(--glass); border: 1px solid var(--line); }
     .plats a { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; color: var(--ink); font-size: 13.5px; font-weight: 600; text-decoration: none; transition: background 0.2s; }
     .plats a:hover { background: rgba(255, 255, 255, 0.08); }
@@ -468,10 +482,13 @@
     .eqviz { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; gap: 6px; align-items: flex-end; height: 34%; }
     .eqviz i { width: 10px; border-radius: 4px; background: rgba(255,255,255,0.85); animation: bar 0.7s ease-in-out infinite alternate; }
     .eqviz i:nth-child(odd) { animation-duration: 0.55s; } .eqviz i:nth-child(3n) { animation-duration: 0.9s; }
-    .adart { font: 800 clamp(14px, 2.4vw, 30px)/1 var(--display); text-align: center; letter-spacing: 0.02em; }
-    .adart b { display: block; font-size: 1.6em; margin-top: 4px; }
-    .adbadge { position: absolute; left: 3%; bottom: 8%; font: 700 11px var(--body); background: #ffcc00; color: #111; padding: 3px 7px; border-radius: 4px; }
-    .adsite { position: absolute; left: 3%; top: 7%; font: 600 11px var(--body); background: rgba(0,0,0,0.55); color: #fff; padding: 4px 9px; border-radius: 12px; }
+    .adart { position: relative; z-index: 1; width: min(78%, 520px); text-align: left; }
+    .adart .ad-kicker { display: block; font: 500 clamp(8px, .8vw, 10px)/1 var(--mono); letter-spacing: .2em; color: #9fd8ff; }
+    .adart strong { display: block; margin-top: 9px; font: 800 clamp(18px, 3.2vw, 44px)/.98 var(--display); letter-spacing: -.045em; }
+    .adart small { display: block; margin-top: 9px; font: 500 clamp(9px, 1vw, 12px)/1.45 var(--body); color: #9fb2c7; max-width: 30ch; }
+    .adart em { display: inline-block; margin-top: 13px; padding: 5px 8px; border: 1px solid rgba(186,230,253,.28); border-radius: 5px; font: 600 clamp(8px, .8vw, 10px) var(--mono); font-style: normal; letter-spacing: .08em; color: #dcefff; }
+    .adbadge { position: absolute; left: 3%; bottom: 8%; z-index: 2; font: 700 10px var(--mono); letter-spacing: .04em; background: #eaf8ff; color: #07111f; padding: 4px 7px; border-radius: 4px; }
+    .adsite { position: absolute; right: 3%; top: 7%; z-index: 2; font: 500 10px var(--mono); letter-spacing: .04em; background: rgba(2,7,13,.58); border: 1px solid rgba(186,230,253,.16); color: #c9d9e9; padding: 5px 8px; border-radius: 5px; }
     .ytprog { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255,255,255,0.2); }
     .ytprog i { display: block; height: 100%; width: 0; background: #ff0033; }
     .result .th { position: relative; }
@@ -487,8 +504,12 @@
       opacity: 0; transition: opacity 0.6s; animation: pulse-vid 3s ease-in-out infinite alternate; }
     @keyframes pulse-vid { to { filter: hue-rotate(40deg) brightness(1.15); } }
     .player .vid-title { position: absolute; left: 4%; bottom: 7%; font-family: var(--display); font-weight: 700; font-size: clamp(12px, 1.6vw, 20px); opacity: 0; transition: opacity 0.5s; text-shadow: 0 2px 12px #000; }
-    .ad { position: absolute; inset: 0; background: linear-gradient(135deg, #f59e0b, #ef4444); display: grid; place-items: center; font-family: var(--display); font-weight: 800; font-size: clamp(14px, 2.2vw, 28px); color: #fff; opacity: 0; transition: opacity 0.4s; }
-    .ad small { position: absolute; left: 4%; bottom: 7%; font: 600 11px var(--mono); background: rgba(0,0,0,0.5); padding: 3px 8px; border-radius: 6px; }
+    .ad { position: absolute; inset: 0; overflow: hidden; display: grid; place-items: center; color: #eef7ff; opacity: 0; transition: opacity 0.4s;
+      background:
+        radial-gradient(52% 72% at 78% 38%, rgba(125,211,252,.18), transparent 70%),
+        linear-gradient(135deg, #08111f, #101b2d 55%, #0a121d); }
+    .ad::before { content: ""; position: absolute; right: -12%; top: -30%; width: 70%; aspect-ratio: 1; border: 1px solid rgba(186,230,253,.22); border-radius: 50%;
+      box-shadow: 0 0 0 34px rgba(186,230,253,.03), 0 0 0 70px rgba(186,230,253,.02); }
     .skip { position: absolute; right: 0; bottom: 12%; padding: 9px 16px 9px 16px; border-radius: 18px 0 0 18px; background: rgba(0,0,0,0.6); border: 0; font: 600 clamp(10px, 1.1vw, 13px) var(--body); color: #fff; opacity: 0; transition: opacity 0.3s, background 0.2s; }
     .skip.hit { background: rgba(255,255,255,0.3); }
     .results { display: flex; flex-direction: column; gap: 5%; }
@@ -655,7 +676,7 @@
     @keyframes streak { 50% { transform: scaleX(1.25); opacity: 0.8; } }
     @keyframes rim { 50% { stroke-opacity: 0.8; } }
     @keyframes orbit { from { transform: scale(1.06) translate3d(-1.2%, 0, 0) rotate(-0.6deg); } to { transform: scale(1.16) translate3d(1.4%, 0.8%, 0) rotate(0.6deg); } }
-    /* colour grade: city lights and atmosphere pulled toward the site's violet and cyan */
+    /* color grade: city lights and atmosphere pulled toward the site's violet and cyan */
     .scene .grade { position: absolute; inset: 0; opacity: 0; transition: opacity 1.6s ease; mix-blend-mode: color;
       background: linear-gradient(115deg, rgba(139, 92, 246, 0.85) 0%, rgba(99, 102, 241, 0.7) 45%, rgba(34, 211, 238, 0.75) 100%); }
     .scene.has-photo .grade { opacity: 0.5; }
@@ -873,8 +894,8 @@
     .play-orb { position: relative; display: grid; place-items: center; min-height: 300px; }
     .play-orb canvas { width: min(100%, 360px); aspect-ratio: 1; cursor: pointer; display: block; }
     .play-state { position: absolute; top: 4%; left: 50%; transform: translateX(-50%); font: 500 11.5px var(--mono); letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
-    .play-done { position: absolute; left: 50%; bottom: 6%; padding: 9px 15px; border-radius: 14px; font-size: 14px; font-weight: 700; white-space: nowrap;
-      background: rgba(14, 15, 30, 0.78); border: 1px solid rgba(52, 211, 153, 0.5); box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5), 0 0 26px rgba(52, 211, 153, 0.25);
+    .play-done { position: absolute; left: 50%; bottom: 6%; padding: 9px 15px; border-radius: 8px; font: 600 12.5px var(--mono); white-space: nowrap;
+      background: rgba(8, 14, 24, 0.92); border: 1px solid rgba(125, 211, 252, 0.34); box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
       transform: translate(-50%, 14px) scale(0.9); opacity: 0; transition: opacity 0.35s, transform 0.5s cubic-bezier(.2, 1.4, .3, 1); }
     .play-done.on { opacity: 1; transform: translate(-50%, 0); }
     .play-chat { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
@@ -899,7 +920,7 @@
     .play-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13.5px; color: var(--faint); }
     .play-foot kbd { font-size: 11.5px; }
     .play-sound { padding: 6px 12px; font-size: 13px; }
-    .play-sound[aria-pressed="true"] { border-color: rgba(52, 211, 153, 0.6); background: rgba(52, 211, 153, 0.14); }
+    .play-sound[aria-pressed="true"] { border-color: rgba(125, 211, 252, 0.55); background: rgba(125, 211, 252, 0.1); }
 
     /* ---------- the stop card: press Esc ---------- */
     .card.stop { grid-column: span 6; display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; border-color: rgba(244, 63, 94, 0.28);
@@ -915,7 +936,7 @@
     .film { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
     .film-phone { position: relative; justify-self: center; width: min(360px, 78vw); aspect-ratio: 9 / 16; border-radius: 44px; padding: 10px;
       background: linear-gradient(145deg, #2a2c3c, #0b0c14); box-shadow: 0 60px 140px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.1), 0 0 120px rgba(139,92,246,0.4); }
-    .film-phone::before { content: ""; position: absolute; inset: -3px; border-radius: 47px; z-index: -1; background: conic-gradient(from var(--spin, 0deg), #67e8f9, #a78bfa, #f0abfc, #67e8f9);
+    .film-phone::before { content: ""; position: absolute; inset: -3px; border-radius: 47px; z-index: -1; background: conic-gradient(from var(--spin, 0deg), #7dd3fc, #93a5ff, #bae6fd, #7dd3fc);
       filter: blur(14px); opacity: 0.55; animation: spinGlow 8s linear infinite; }
     @property --spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
     @keyframes spinGlow { to { --spin: 360deg; } }
@@ -946,7 +967,7 @@
 
     /* the demo screen gets a living edge */
     .screen::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; padding: 1.5px;
-      background: conic-gradient(from var(--spin, 0deg), rgba(103,232,249,0.7), rgba(167,139,250,0.15), rgba(240,171,252,0.7), rgba(167,139,250,0.15), rgba(103,232,249,0.7));
+      background: conic-gradient(from var(--spin, 0deg), rgba(125,211,252,0.7), rgba(147,165,255,0.12), rgba(186,230,253,0.7), rgba(147,165,255,0.12), rgba(125,211,252,0.7));
       -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: spinGlow 10s linear infinite; }
 
     /* ---------- back to top + section dots ---------- */
@@ -964,7 +985,7 @@
     .dots-nav a span { position: absolute; right: 22px; top: 50%; transform: translate(6px, -50%); opacity: 0; pointer-events: none; white-space: nowrap; font: 600 12.5px var(--body);
       padding: 5px 10px; border-radius: 8px; background: rgba(8, 9, 20, 0.85); border: 1px solid var(--line); transition: opacity 0.2s, transform 0.2s; }
     .dots-nav a:hover span, .dots-nav a:focus-visible span { opacity: 1; transform: translate(0, -50%); }
-    .dots-nav a.on { background: #a78bfa; transform: scale(1.35); box-shadow: 0 0 12px #a78bfa; }
+    .dots-nav a.on { background: #7dd3fc; transform: scale(1.35); box-shadow: 0 0 12px #7dd3fc; }
     .steps-rail i, .show-dots i { cursor: pointer; }
     .steps-rail i { padding-block: 6px; background-clip: content-box; }
     .reel { cursor: pointer; }
@@ -1203,6 +1224,317 @@
     @media (max-width: 1000px) { .trust-grid { grid-template-columns: 1fr 1fr; } }
     @media (max-width: 640px) { .trust-grid { grid-template-columns: 1fr; gap: 10px; } .trust-card { padding: 18px; border-radius: 18px; } }
   </style>
+  <style>
+    /* ---------- 2026 product polish: restrained, product-led, less novelty ---------- */
+    :root {
+      --ground: #05070c;
+      --ink: #f3f7fc;
+      --muted: #98a6bb;
+      --faint: #65748c;
+      --line: rgba(148, 163, 184, 0.16);
+      --glass: rgba(255, 255, 255, 0.035);
+      --cyan: #7dd3fc;
+      --violet: #93a5ff;
+      --pink: #d8b4fe;
+      --live: #7dd3fc;
+      --grad: linear-gradient(100deg, #e6f8ff, #a7dcff 52%, #aebcff);
+    }
+    html { background: var(--ground); }
+    body {
+      background:
+        radial-gradient(60% 38% at 74% 0%, rgba(56, 189, 248, 0.09), transparent 65%),
+        radial-gradient(45% 30% at 12% 8%, rgba(99, 102, 241, 0.07), transparent 70%),
+        var(--ground);
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1px, transparent 1px);
+      background-size: 72px 72px;
+      mask-image: radial-gradient(ellipse 90% 65% at 50% 0%, #000 15%, transparent 78%);
+      -webkit-mask-image: radial-gradient(ellipse 90% 65% at 50% 0%, #000 15%, transparent 78%);
+    }
+    ::selection { background: rgba(125, 211, 252, 0.28); color: #fff; }
+
+    /* Remove the novelty layer: stock space photo, colored fog, custom cursor and sparkles. */
+    #stars, .aurora, .spot, .scene, .ring-cursor, .ring-dot, .spark, .boot-line { display: none !important; }
+
+    .nav-in {
+      margin-top: 10px;
+      padding: 9px 10px 9px 16px;
+      border-radius: 14px;
+      background: rgba(6, 10, 17, 0.86);
+      border-color: rgba(148, 163, 184, 0.2);
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.28);
+    }
+    .brand { letter-spacing: 0.2em; font-size: 14px; }
+    .brand img { width: 28px; height: 28px; border-radius: 8px; box-shadow: none; }
+    .nav-links { gap: 20px; font-size: 14px; }
+    .nav-links a:hover { color: #dff5ff; }
+    #progress { background: #bae6fd; box-shadow: 0 0 14px rgba(125, 211, 252, 0.55); }
+
+    .btn {
+      border-radius: 11px;
+      padding: 12px 20px;
+      font-size: 15px;
+      font-weight: 650;
+      white-space: normal;
+      transition: transform 0.18s, border-color 0.18s, background 0.18s, box-shadow 0.18s;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn.primary {
+      color: #05070c;
+      background: #eaf8ff;
+      border: 1px solid #eaf8ff;
+      box-shadow: 0 8px 30px rgba(56, 189, 248, 0.16), inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+    }
+    .btn.primary::after { display: none; }
+    .btn.primary:hover { background: #fff; box-shadow: 0 10px 38px rgba(56, 189, 248, 0.24); }
+    .btn.ghost { background: rgba(255, 255, 255, 0.035); border-color: rgba(148, 163, 184, 0.22); }
+    .btn.ghost:hover { background: rgba(255, 255, 255, 0.065); border-color: rgba(125, 211, 252, 0.36); }
+    .btn.small { padding: 9px 14px; border-radius: 9px; font-size: 14px; }
+
+    .hero {
+      position: relative;
+      height: auto;
+      min-height: min(820px, calc(100svh - 96px));
+      max-height: none;
+      padding-block: clamp(52px, 7vw, 96px) clamp(60px, 8vw, 110px);
+      grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+      gap: clamp(28px, 4vw, 64px);
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: -80px calc(50% - 50vw) -80px;
+      pointer-events: none;
+      background:
+        radial-gradient(38% 42% at 70% 44%, rgba(125, 211, 252, 0.12), transparent 72%),
+        radial-gradient(30% 34% at 68% 56%, rgba(147, 165, 255, 0.1), transparent 75%);
+    }
+    .eyebrow {
+      border-radius: 8px;
+      padding: 7px 11px;
+      font-size: 11.5px;
+      letter-spacing: 0.11em;
+      color: #c3d3e4;
+      background: rgba(255, 255, 255, 0.025);
+    }
+    .eyebrow b { width: 2px; height: 11px; border-radius: 1px; background: #7dd3fc; box-shadow: none; animation: none; }
+    .hero h1 {
+      font-size: clamp(42px, min(5.6vw, 9.2vh), 78px);
+      letter-spacing: -0.045em;
+      line-height: 0.99;
+      max-width: 12ch;
+    }
+    .shine {
+      color: #bae6fd;
+      background: none;
+      -webkit-background-clip: initial;
+      background-clip: initial;
+      -webkit-text-fill-color: currentColor;
+      animation: none;
+    }
+    .lede { max-width: 35em; font-size: clamp(16px, min(1.3vw, 2.15vh), 18.5px); line-height: 1.62; }
+    .ctas { gap: 10px; }
+    .fine { color: #8191a6; }
+    .rel { gap: 8px 12px; }
+    .rel-chip {
+      border-radius: 8px;
+      padding: 8px 11px;
+      background: rgba(255, 255, 255, 0.025);
+      border-color: var(--line);
+      font-size: 12.5px;
+    }
+    .rel-chip:hover { transform: none; border-color: rgba(125, 211, 252, 0.4); }
+    .plats { border-radius: 8px; padding: 3px; background: rgba(255, 255, 255, 0.025); }
+    .plats a { border-radius: 6px; padding: 6px 9px; font-size: 12.5px; }
+    .stage .chip {
+      border-radius: 8px;
+      background: rgba(7, 12, 20, 0.82);
+      border-color: rgba(148, 163, 184, 0.22);
+      font: 500 12px var(--mono);
+      letter-spacing: -0.01em;
+    }
+    .stage .chip i { color: #bae6fd; }
+    .tapme {
+      color: #05070c;
+      background: #eaf8ff;
+      border-radius: 8px;
+      box-shadow: 0 8px 26px rgba(0, 0, 0, 0.3);
+      animation: none;
+    }
+    .tapme::after { background: #eaf8ff; }
+    .bubble { border-radius: 12px; }
+    .bubble.you { background: #eaf8ff; color: #05070c; border-bottom-right-radius: 4px; }
+    .bubble.iz { background: rgba(8, 13, 22, 0.88); border-bottom-left-radius: 4px; }
+    .state { letter-spacing: 0.22em; }
+
+    .ticker { background: transparent; padding-block: 15px; }
+    .say {
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.022);
+      font: 500 12.5px var(--mono);
+      color: #93a4b8;
+      padding: 8px 13px;
+    }
+    .say::before, .say::after { color: #7dd3fc; }
+
+    section { padding-block: clamp(72px, 9vw, 112px) 0; }
+    .kicker { color: #8bdcff; letter-spacing: 0.17em; font-size: 11.5px; }
+    section h2 { font-size: clamp(32px, 4.4vw, 56px); line-height: 1.04; letter-spacing: -0.035em; max-width: 18ch; }
+    .sub { margin-top: 14px; font-size: 17.5px; line-height: 1.62; color: #9aa9bd; }
+
+    .glyph { display: none !important; }
+    .card, .nw-card, .trust-card, .stat {
+      border-radius: 16px;
+      border-color: rgba(148, 163, 184, 0.16);
+      background: rgba(255, 255, 255, 0.025);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+    }
+    .card { padding: 24px; transform: none !important; }
+    .card:hover { border-color: rgba(125, 211, 252, 0.28); }
+    .card h3 { margin-top: 0; font-size: 20px; line-height: 1.25; }
+    .card p { line-height: 1.58; }
+    .card::before { background: radial-gradient(300px circle at var(--mx, 50%) var(--my, 50%), rgba(125, 211, 252, 0.09), transparent 48%); }
+    .card.stop { border-color: rgba(148, 163, 184, 0.22); background: rgba(255, 255, 255, 0.025); }
+    .wave i { background: linear-gradient(180deg, #bae6fd, #93a5ff); }
+    .trust-grid { counter-reset: trust; }
+    .trust-card { counter-increment: trust; padding: 22px; }
+    .trust-card::before { content: "0" counter(trust); font: 500 11px var(--mono); letter-spacing: 0.12em; color: #7dd3fc; }
+    .trust-card h3 { margin-top: 10px; }
+    .trust-card a { color: #a5e4ff; }
+    .nw-card { padding: 22px; }
+    .nw-card h3 { margin-top: 0; }
+    .nw-chips button, .fx-chip, .play-chips button, .play-sound, .voice, .way, .nw-sug { border-radius: 8px; }
+    .nw-chips button.on, .fx-chip[aria-pressed="true"] { background: #eaf8ff; color: #05070c; border-color: #eaf8ff; box-shadow: none; }
+    .fx-chip[aria-pressed="true"] span { color: rgba(5, 7, 12, 0.58); }
+    .voice {
+      border-radius: 12px;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.022);
+      transition: border-color 0.18s, background 0.18s;
+    }
+    .voice:hover { transform: none; border-color: rgba(125, 211, 252, 0.32); background: rgba(255, 255, 255, 0.04); }
+    .voice.on { border-color: rgba(125, 211, 252, 0.45); background: rgba(125, 211, 252, 0.055); box-shadow: none; }
+    .voice .av { font: 700 18px var(--display); letter-spacing: 0; border: 1px solid rgba(255, 255, 255, 0.2); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16); }
+    .voice b { font-size: 16.5px; }
+    .voice small { font-size: 13px; }
+    .voice .eq i { background: #a5e4ff; }
+    .more-voices { gap: 7px; margin-top: 18px; }
+    .more-voices span {
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.02);
+      color: #93a4b8;
+      font: 500 11.5px var(--mono);
+    }
+    .way { border-radius: 12px; padding: 14px 16px; background: rgba(255, 255, 255, 0.022); }
+    .way .n { border-radius: 6px; background: rgba(125, 211, 252, 0.08); border: 1px solid rgba(125, 211, 252, 0.14); color: #bae6fd; font: 600 11px var(--mono); }
+    .way b { font-size: 16px; }
+    .way span { font-size: 14.5px; }
+    .stat b { background: none; color: #eaf8ff; -webkit-text-fill-color: currentColor; }
+    .how-step .num { background: #0a101a; border-color: rgba(125, 211, 252, 0.3); box-shadow: none; }
+    .how::before { background: linear-gradient(90deg, transparent, rgba(125, 211, 252, 0.35), transparent); }
+    .tip { border-color: var(--line); background: rgba(255, 255, 255, 0.025); box-shadow: none; }
+    .tip .kicker { margin-bottom: 10px; }
+    .tip-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .btn.cash { background: #eaf8ff; color: #05070c; box-shadow: none; }
+    .avatar { border-radius: 12px; background: #111a2a; border: 1px solid rgba(125, 211, 252, 0.25); }
+    .final h2 { max-width: 16ch; }
+    .final-glow { opacity: 0.4; }
+    .socials a { border-radius: 9px; }
+    .socials a:hover { transform: none; border-color: rgba(125, 211, 252, 0.35); background: rgba(125, 211, 252, 0.06); }
+    .play { border-radius: 18px; border-color: rgba(148, 163, 184, 0.18); background: rgba(255, 255, 255, 0.022); box-shadow: none; }
+    .play-chips button { border-radius: 7px; background: rgba(255, 255, 255, 0.035); font-size: 13px; }
+    .play-chips button:hover { transform: none; background: rgba(125, 211, 252, 0.08); border-color: rgba(125, 211, 252, 0.3); }
+    .play-form { border-radius: 10px; }
+    .play-form button { border-radius: 7px; background: #eaf8ff; font-size: 15px; }
+    .play-form button:hover { transform: none; }
+    .esc-key { border-radius: 12px; }
+    .fx-card { border-radius: 12px; background: rgba(255, 255, 255, 0.022); }
+    .fx-card h3 { font-size: 16px; }
+    .fx-card p { font-size: 13.5px; }
+    .menu-sheet, .menu-grid a { border-radius: 12px; }
+    .nw-island, .nw-open, .nw-screen { border-radius: 12px; }
+    .nw-stage { border-radius: 12px; }
+    .wake-demo { border-radius: 18px; border-color: rgba(148, 163, 184, 0.18); background: rgba(255, 255, 255, 0.022); box-shadow: none; }
+    .wake-demo-phone { border-radius: 22px; }
+    .wake-demo-screen { border-radius: 16px; }
+    .wake-demo-orb { box-shadow: 0 0 42px rgba(125, 211, 252, 0.35), inset -8px -10px 24px rgba(0,0,0,0.35); }
+    .wake-demo-lock { background: rgba(4, 7, 12, 0.84); }
+    .dl-modal { border-radius: 16px; }
+    .dl-steps li::before { border-radius: 8px; }
+
+    /* Product specifications strip */
+    .spec-strip {
+      width: var(--wrap);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+    .spec-strip div { padding: 18px 20px; border-left: 1px solid var(--line); }
+    .spec-strip div:first-child { border-left: 0; padding-left: 0; }
+    .spec-strip span { display: block; font: 500 10.5px var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: #6f8197; }
+    .spec-strip b { display: block; margin-top: 7px; font: 600 15px var(--display); color: #dce8f5; }
+
+    /* Use cases */
+    .use-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 36px; }
+    .use-card {
+      display: flex; flex-direction: column; min-height: 250px; padding: 24px;
+      border: 1px solid var(--line); border-radius: 16px; background: rgba(255, 255, 255, 0.022);
+    }
+    .use-card .no { font: 500 11px var(--mono); letter-spacing: 0.14em; color: #7dd3fc; }
+    .use-card h3 { margin-top: 28px; font-size: clamp(21px, 2vw, 26px); line-height: 1.18; }
+    .use-card p { margin-top: 10px; color: var(--muted); font-size: 15px; line-height: 1.58; }
+    .use-card a { margin-top: auto; padding-top: 22px; color: #bae6fd; font-size: 13.5px; font-weight: 650; text-decoration: none; }
+    .use-card a:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+    /* FAQ */
+    .faq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; margin-top: 32px; }
+    .faq-grid details { border-top: 1px solid var(--line); padding: 18px 0; }
+    .faq-grid summary { display: flex; justify-content: space-between; gap: 16px; cursor: pointer; list-style: none; font: 600 16px var(--display); color: #e8f1fa; }
+    .faq-grid summary::-webkit-details-marker { display: none; }
+    .faq-grid summary::after { content: "+"; color: #7dd3fc; font: 400 18px var(--mono); }
+    .faq-grid details[open] summary::after { content: "−"; }
+    .faq-grid p { margin-top: 10px; color: var(--muted); font-size: 14.5px; line-height: 1.58; }
+    .faq-grid a { color: #bae6fd; }
+
+    .final-meta { display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; margin-top: 22px; }
+    .final-meta span { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; color: #8fa2b8; font: 500 11.5px var(--mono); }
+    .final-alt { margin-top: 18px; color: #7f91a7; font-size: 13px; }
+    .final-alt a { color: #a5e4ff; }
+
+    @media (max-width: 900px) {
+      .hero { min-height: 0; }
+      .spec-strip { grid-template-columns: 1fr 1fr; }
+      .spec-strip div:nth-child(3) { border-left: 0; padding-left: 0; }
+      .use-grid { grid-template-columns: 1fr; }
+      .use-card { min-height: 0; }
+      .faq-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 520px) {
+      .nav-in { border-radius: 12px; }
+      .hero { padding-block: 38px 58px; }
+      .hero h1 { font-size: clamp(38px, 11.5vw, 54px); }
+      .btn { width: auto; }
+      .ctas .btn { width: 100%; }
+      .spec-strip div { padding: 14px 12px; }
+      .spec-strip b { font-size: 13.5px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .tapme, .voice, .card, .btn { animation: none !important; transition: none !important; }
+    }
+  </style>
 </head>
 <body>
   <canvas id="stars" aria-hidden="true"></canvas>
@@ -1216,14 +1548,12 @@
     <div class="nav-in">
       <a class="brand" href="#top"><img src="icon-96.png" width="30" height="30" alt="" />IZUKI</a>
       <div class="nav-links">
-        <a href="#new">What's new</a>
-        <a href="#demo">See it work</a>
-        <a href="#features">Features</a>
-        <a href="#everything">Everything</a>
+        <a href="#app">Product</a>
+        <a href="#features">Capabilities</a>
         <a href="#phone">Phone</a>
-        <a href="#trust">Is it safe?</a>
+        <a href="#trust">Security</a>
+        <a href="#faq">FAQ</a>
         <a href="help/">Help</a>
-        <a href="https://github.com/nova-izuki/izuki">GitHub</a>
       </div>
       <div class="nav-end">
         <a class="btn primary small dl" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">Download</a>
@@ -1232,14 +1562,14 @@
     </div>
     <div class="menu-sheet" id="menu-sheet" hidden>
       <div class="menu-grid">
-        <a href="#new"><b>What's new</b><span>This week's updates</span></a>
-        <a href="#demo"><b>See it work</b><span>A real task, start to finish</span></a>
-        <a href="#features"><b>Features</b><span>What it does, in short</span></a>
-        <a href="#everything"><b>Everything it can do</b><span>Search the full list</span></a>
-        <a href="#voices"><b>Voices</b><span>Hear who Izuki can be</span></a>
-        <a href="#phone"><b>Phone</b><span>Izuki in your pocket</span></a>
+        <a href="#app"><b>Product</b><span>See the desktop assistant</span></a>
+        <a href="#features"><b>Capabilities</b><span>Voice, screen and control</span></a>
+        <a href="#everything"><b>Capability index</b><span>Search the full list</span></a>
+        <a href="#phone"><b>Phone</b><span>Your PC, from your phone</span></a>
         <a href="#how"><b>Get started</b><span>Two minutes, one free key</span></a>
-        <a href="#trust"><b>Is it safe?</b><span>Privacy, controls, open code</span></a>
+        <a href="#trust"><b>Security</b><span>Controls, privacy, open code</span></a>
+        <a href="#faq"><b>FAQ</b><span>Straight answers</span></a>
+        <a href="#download"><b>Download</b><span>Windows 10 &amp; 11</span></a>
       </div>
       <div class="menu-foot">
         <a href="help/">Help</a><a href="privacy/">Privacy</a><a href="terms/">Terms</a><a href="security/">Security</a><a href="https://github.com/nova-izuki/izuki">GitHub</a>
@@ -1250,81 +1580,36 @@
   <main id="top">
     <!-- ========== hero ========== -->
     <header class="hero">
-      <div class="scene" aria-hidden="true">
-        <!-- A real photograph of Earth at night from the International Space
-             Station (NASA, via Unsplash). If it can't load, the drawn planet
-             in the canvas shows instead. -->
-        <div class="photo" id="photo">
-          <div class="orbit">
-            <img id="photo-img" alt="" decoding="async" fetchpriority="high"
-            src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1920&q=80"
-            srcset="https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1280&q=78 1280w, https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1920&q=80 1920w, https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=2560&q=80 2560w"
-            sizes="100vw" />
-            <svg class="sunrise" viewBox="0 0 400 266" preserveAspectRatio="xMidYMin slice" aria-hidden="true">
-              <defs>
-                <radialGradient id="sr-core"><stop offset="0" stop-color="#fff"/><stop offset=".18" stop-color="#fff" stop-opacity=".95"/><stop offset=".45" stop-color="#e0f2fe" stop-opacity=".35"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></radialGradient>
-                <radialGradient id="sr-halo"><stop offset="0" stop-color="#f5f3ff" stop-opacity=".55"/><stop offset=".35" stop-color="#c4b5fd" stop-opacity=".22"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/></radialGradient>
-                <linearGradient id="sr-streak" x1="0" x2="1"><stop offset="0" stop-color="#67e8f9" stop-opacity="0"/><stop offset=".5" stop-color="#fff"/><stop offset="1" stop-color="#f0abfc" stop-opacity="0"/></linearGradient>
-                <linearGradient id="sr-rim" gradientUnits="userSpaceOnUse" x1="40" y1="0" x2="400" y2="0">
-                  <stop offset="0" stop-color="#8b5cf6" stop-opacity="0"/><stop offset=".45" stop-color="#a5f3fc" stop-opacity=".55"/>
-                  <stop offset=".62" stop-color="#fff" stop-opacity="1"/><stop offset=".8" stop-color="#c4b5fd" stop-opacity=".5"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
-                </linearGradient>
-                <filter id="sr-soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.6"/></filter>
-              </defs>
-              <!-- the sunlit edge of the atmosphere: a soft glow under a crisp line -->
-              <path class="rim-glow" d="M 20 128 A 771.1 771.1 0 0 1 400 88.6" stroke="url(#sr-rim)" stroke-width="3" fill="none" filter="url(#sr-soft)"/>
-              <path class="rim" d="M 20 128 A 771.1 771.1 0 0 1 400 88.6" stroke="url(#sr-rim)" stroke-width=".55" fill="none"/>
-              <!-- the sun, just breaking over the edge -->
-              <g class="sun" transform="translate(368 85.4)">
-                <circle r="34" fill="url(#sr-halo)"/>
-                <rect class="streak" x="-150" y="-.45" width="300" height=".9" fill="url(#sr-streak)"/>
-                <g class="rays" stroke="#fff" stroke-linecap="round">
-                  <line x1="0" y1="-26" x2="0" y2="26" stroke-width=".35" stroke-opacity=".8"/>
-                  <line x1="-26" y1="0" x2="26" y2="0" stroke-width=".35" stroke-opacity=".8"/>
-                  <line x1="-10" y1="-10" x2="10" y2="10" stroke-width=".22" stroke-opacity=".5"/>
-                  <line x1="-10" y1="10" x2="10" y2="-10" stroke-width=".22" stroke-opacity=".5"/>
-                </g>
-                <circle r="7" fill="url(#sr-core)"/>
-                <circle r="1.4" fill="#fff"/>
-              </g>
-            </svg>
-          </div>
-        </div>
-        <div class="grade"></div>
-        <div class="glass" aria-hidden="true"><i class="g1"></i><i class="g2"></i><i class="g3"></i><i class="g4"></i><i class="g5"></i></div>
-        <canvas id="scene"></canvas>
-        <div class="shade"></div>
-        <div class="grain"></div>
-      </div>
+
       <div class="hero-copy">
-        <span class="eyebrow rv"><b></b>Izuki · Free · Windows 10 &amp; 11</span>
+        <span class="eyebrow rv"><b></b>IZUKI · WINDOWS 10 &amp; 11 · FREE</span>
         <h1 id="hero-h1" aria-label="Izuki: the AI that lives on your screen."><span class="sr-only">Izuki: </span>The AI that lives on <span class="shine">your screen.</span></h1>
-        <p class="lede rv" style="--d:.16s">Say <b>“Hey Nova”</b> and just talk. Izuki sees your screen, answers you out loud, and uses your mouse and keyboard to get things done — it can even grab a pen and draw on your screen to teach you. Like a friend who's brilliant with computers, living right inside your PC.</p>
+        <p class="lede rv" style="--d:.16s">Say <b>“Hey Nova”</b> and speak normally. Izuki reads your screen, answers aloud, and operates your mouse and keyboard — with clear approval before anything consequential. It can also pick up a pen and teach directly on your screen.</p>
         <div class="ctas rv" style="--d:.24s" id="download">
-          <a class="btn primary dl" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">⬇ Download for Windows — free</a>
-          <a class="btn ghost" href="app/">📱 Izuki on your phone</a>
+          <a class="btn primary dl" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">Download for Windows</a>
+          <a class="btn ghost" href="#features">Explore capabilities</a>
         </div>
         <div class="rel rv" style="--d:.28s">
           <a class="rel-chip" id="rel-chip" href="https://github.com/nova-izuki/izuki/releases/latest">
-            <i class="rel-dot"></i><span id="rel-text">Newest version, straight from the source</span><b>What's new ›</b>
+            <i class="rel-dot"></i><span id="rel-text">Latest release</span><b>What's new ›</b>
           </a>
           <div class="plats" aria-label="Other devices">
-            <a href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Companion-Android-preview.apk"><span>🤖</span>Android <small>preview</small></a>
-            <a href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Companion-iPhone-sideload.ipa"><span>🍎</span>iPhone <small>test</small></a>
-            <a href="app/"><span>🌐</span>Any browser</a>
+            <a href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Companion-Android-preview.apk">Android <small>preview</small></a>
+            <a href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Companion-iPhone-sideload.ipa">iPhone <small>test</small></a>
+            <a href="app/">Any browser</a>
           </div>
         </div>
-        <p class="fine rv" style="--d:.3s">Free forever · Your own free AI key · <a href="#try" style="color:var(--cyan)">Try it right here ↓</a></p>
+        <p class="fine rv" style="--d:.3s">Free forever · No account · Your own AI key · <a href="#try" style="color:var(--cyan)">Try it right here</a></p>
       </div>
       <div class="hero-art">
       <div class="stage rv" style="--d:.2s" aria-hidden="true">
-        <div class="chip c1"><i>✓</i>Ad skipped</div>
-        <div class="chip c2"><i>⏰</i>6:00 PM · Call Mum</div>
-        <div class="chip c3"><i>✉️</i>Draft ready — send it?</div>
+        <div class="chip c1"><i>DONE</i>Ad skipped</div>
+        <div class="chip c2"><i>06:00</i>Call Mom</div>
+        <div class="chip c3"><i>DRAFT</i>Send it?</div>
         <div class="ring"></div>
         <div class="ring r2"></div>
         <canvas id="hero-orb"></canvas>
-        <div class="tapme" id="tapme">tap me ✨</div>
+        <div class="tapme" id="tapme">Preview voice</div>
         <div class="state" id="hero-state">Listening</div>
         <div class="chat">
           <div class="bubble you" id="hero-you"></div>
@@ -1339,23 +1624,30 @@
       <div class="ticker-track" id="ticker"></div>
     </div>
 
+    <div class="spec-strip" aria-label="Izuki product specifications">
+      <div><span>Platform</span><b>Windows 10 &amp; 11</b></div>
+      <div><span>AI providers</span><b>Gemini · Groq · OpenRouter · Mistral</b></div>
+      <div><span>Everywhere else</span><b>iPhone · Android · Web</b></div>
+      <div><span>License</span><b>MIT · Free</b></div>
+    </div>
+
     <!-- ========== the film ========== -->
     <section id="film">
       <div class="film">
         <div>
           <div class="kicker rv">60 seconds</div>
-          <h2 class="rv">Watch Izuki in a minute.</h2>
-          <p class="sub rv">It hears you, sees your screen and does the work — then teaches, reminds, and answers your phone. In 30+ voices.</p>
+          <h2 class="rv">One request. A complete result.</h2>
+          <p class="sub rv">See how a spoken request becomes a finished task — with screen context, voice, control and follow-through. Available in 30+ voices.</p>
           <ul class="rv">
-            <li><i>🎙️</i><span><b>Talk</b> — “Hey Nova” and just say it</span></li>
-            <li><i>🖱️</i><span><b>It clicks for you</b> — even skips the ads</span></li>
-            <li><i>✏️</i><span><b>It teaches</b> with a pen on your screen</span></li>
-            <li><i>📞</i><span><b>Call it</b> from your phone, anywhere</span></li>
+            <li><span><b>Voice</b> — say “Hey Nova” and speak naturally</span></li>
+            <li><span><b>Action</b> — it opens, clicks, types and verifies</span></li>
+            <li><span><b>Teaching</b> — it draws on screen to explain</span></li>
+            <li><span><b>Continuity</b> — continue from your phone</span></li>
           </ul>
         </div>
         <div class="film-phone rv" style="--d:.1s">
           <video id="film-video" src="media/izuki-ad.mp4" poster="media/izuki-ad-poster.jpg" muted loop playsinline preload="metadata"></video>
-          <button class="film-sound" id="film-sound" type="button">🔊 Tap for sound</button>
+          <button class="film-sound" id="film-sound" type="button" aria-pressed="false">Enable sound</button>
         </div>
       </div>
     </section>
@@ -1378,9 +1670,9 @@
 
     <!-- ========== try it: talk to Izuki right here ========== -->
     <section id="try">
-      <div class="kicker rv">Try it now</div>
-      <h2 class="rv">Go on. Say something.</h2>
-      <p class="sub rv">A little taste of talking to Izuki. Tap an idea or type anything — on your PC, it actually goes and does it.</p>
+      <div class="kicker rv">Interactive preview</div>
+      <h2 class="rv">Try a request.</h2>
+      <p class="sub rv">A lightweight preview of the conversation layer. On Windows, the same request can become a real action on your desktop.</p>
       <div class="play rv">
         <div class="play-orb">
           <canvas id="play-orb" aria-label="Izuki's orb — tap it" role="img"></canvas>
@@ -1389,23 +1681,23 @@
         </div>
         <div class="play-chat">
           <div class="play-log" id="play-log" aria-live="polite">
-            <div class="bubble iz hi">Hey, I'm Izuki 👋 What are we doing today?</div>
+            <div class="bubble iz hi">I'm Izuki. What are we doing today?</div>
           </div>
           <div class="play-chips" id="play-chips">
-            <button type="button">▶ Play some music</button>
-            <button type="button">📚 What's due this week?</button>
-            <button type="button">⏰ Remind me at 6 to call Mum</button>
-            <button type="button">✏️ Explain 2x + 3 = 11</button>
-            <button type="button">✉️ Check my email</button>
-            <button type="button">😂 Tell me a joke</button>
+            <button type="button">Summarize this page</button>
+            <button type="button">Plan my week</button>
+            <button type="button">Draft a follow-up email</button>
+            <button type="button">Explain 2x + 3 = 11</button>
+            <button type="button">What's due this week?</button>
+            <button type="button">Set a reminder</button>
           </div>
           <form class="play-form" id="play-form" autocomplete="off">
             <input id="play-in" type="text" maxlength="160" placeholder="Ask Izuki anything…" aria-label="Ask Izuki anything" enterkeyhint="send" />
             <button type="submit" aria-label="Send">➤</button>
           </form>
           <div class="play-foot">
-            <span>Psst — type <kbd>hey nova</kbd> anywhere on this page.</span>
-            <button type="button" class="play-sound" id="play-sound" aria-pressed="false" hidden>🔈 Hear it talk</button>
+            <span>Tip: type <kbd>hey nova</kbd> anywhere on this page.</span>
+            <button type="button" class="play-sound" id="play-sound" aria-pressed="false" hidden>Hear it talk</button>
           </div>
         </div>
       </div>
@@ -1447,8 +1739,8 @@
     <section class="demo" id="demo">
       <div class="demo-head">
         <div class="kicker rv">See it work</div>
-        <h2 class="rv">Watch it actually do it.</h2>
-        <p class="sub rv">Not a chatbot in a box. Scroll, and watch Izuki take one request from “play it” to playing — it even skips the ad.</p>
+        <h2 class="rv">See a task, start to finish.</h2>
+        <p class="sub rv">Not a chat window. Scroll to watch one request become a real sequence of actions — including the checks and the ad skip.</p>
       </div>
       <div class="demo-track" id="demo-track">
         <div class="demo-sticky">
@@ -1458,15 +1750,15 @@
             <div class="yt">
               <div class="player">
                 <div class="vid" id="vid"><div class="eqviz"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
-                <div class="vid-title" id="vid-title">Chill Lofi Beats to Study To 📚</div>
-                <div class="ad" id="ad"><div class="adart">SUMMER SALE<b>50% OFF</b></div><span class="adbadge">Ad · 0:05</span><span class="adsite">Visit advertiser</span></div>
-                <div class="skip" id="skip">Skip Ads ▸|</div>
+                <div class="vid-title" id="vid-title">Focus Beats to Study To</div>
+                <div class="ad" id="ad"><div class="adart"><span class="ad-kicker">AURA AUDIO</span><strong>Silence,<br>engineered.</strong><small>Over-ear headphones for the work that needs your full attention.</small><em>Discover Aura</em></div><span class="adbadge">Ad · 0:05</span><span class="adsite">Sponsored</span></div>
+                <div class="skip" id="skip">Skip ad ›</div>
                 <div class="ytprog"><i id="ytprog"></i></div>
               </div>
               <div class="results">
-                <div class="result" id="r1"><div class="th th1"><em>1:02:14</em></div><div class="tx"><b>Chill Lofi Beats to Study To 📚</b><small>LofiDaily · 2.1M views · 3 days ago</small></div></div>
-                <div class="result"><div class="th th2"><em>45:08</em></div><div class="tx"><b>Trap Workout Mix 2026 🔥</b><small>BassHouse · 890K views · 1 week ago</small></div></div>
-                <div class="result"><div class="th th3"><em>1:00:31</em></div><div class="tx"><b>Chill Afrobeats Mix — 1 Hour 🌴</b><small>Vibes FM · 1.4M views · 2 weeks ago</small></div></div>
+                <div class="result" id="r1"><div class="th th1"><em>1:02:14</em></div><div class="tx"><b>Focus Beats to Study To</b><small>LofiDaily · 2.1M views · 3 days ago</small></div></div>
+                <div class="result"><div class="th th2"><em>45:08</em></div><div class="tx"><b>Trap Workout Mix 2026 </b><small>BassHouse · 890K views · 1 week ago</small></div></div>
+                <div class="result"><div class="th th3"><em>1:00:31</em></div><div class="tx"><b>Deep Focus Mix — 1 Hour</b><small>Focus FM · 1.4M views · 2 weeks ago</small></div></div>
               </div>
             </div>
             <svg class="pen" id="pen" viewBox="0 0 1000 625" preserveAspectRatio="none"><g transform="translate(0 16)">
@@ -1490,7 +1782,7 @@
           <div class="reels-head">
             <div>
               <div class="kicker">Izuki in 5 seconds</div>
-              <h2>Blink and it's done.</h2>
+              <h2>From request to result.</h2>
             </div>
             <div class="reels-count"><b id="reel-n">01</b> / 05</div>
           </div>
@@ -1499,20 +1791,20 @@
               <div class="art a-sees"><div class="win"><i style="top:14%;width:60%"></i><i style="top:30%;width:44%"></i><i class="hit" style="top:46%;left:6%;width:40%;height:16%"></i><i style="top:72%;width:70%"></i><div class="beam"></div></div><div class="eye">SCANNING SCREEN…</div></div>
               <div class="shade"></div><div class="bar"><i></i></div>
               <h3 class="slam">It sees.</h3>
-              <div class="cap"><b>izuki</b><p>“What's this error?” It reads your screen — even the hidden buttons — and tells you.</p><span class="snd">♪ original sound — Nova</span></div>
+              <div class="cap"><b>izuki</b><p>“What's this error?” It reads your screen — even the hidden buttons — and tells you.</p><span class="snd">Original sound — Nova</span></div>
             </article>
             <article class="reel">
               <div class="art a-talks"><i class="rip"></i><i class="rip"></i><i class="rip"></i><canvas id="reel-orb"></canvas></div>
               <div class="shade"></div><div class="bar"><i></i></div>
               <h3 class="slam">It talks back.</h3>
-              <div class="cap"><b>izuki</b><p>Say “Hey Nova” and just talk. Cut in any time — it listens like a person.</p><span class="snd">♪ Hey Nova — Izuki</span></div>
+              <div class="cap"><b>izuki</b><p>Say “Hey Nova” and just talk. Cut in any time — it listens like a person.</p><span class="snd">Hey Nova — Izuki</span></div>
             </article>
             <article class="reel">
               <div class="art a-clicks"><div class="fb b1">Open Spotify</div><div class="fb b2">Skip ▸</div><div class="fb b3">Send reply</div><i class="ring k1"></i><i class="ring k2"></i><i class="ring k3"></i>
                 <svg class="cur" viewBox="0 0 32 32"><path d="M6 3 L6 25 L11.5 19.5 L15 28 L19 26.5 L15.6 18 L23 18 Z" fill="#fff" stroke="#111" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
               <div class="shade"></div><div class="bar"><i></i></div>
               <h3 class="slam">It clicks for you.</h3>
-              <div class="cap"><b>izuki</b><p>Opens apps, types, scrolls to the right link, skips the ad. You just ask.</p><span class="snd">♪ click click done — Izuki</span></div>
+              <div class="cap"><b>izuki</b><p>Opens apps, types, scrolls to the right link, skips the ad. You just ask.</p><span class="snd">click click done — Izuki</span></div>
             </article>
             <article class="reel">
               <div class="art a-teach"><svg viewBox="0 0 300 220">
@@ -1523,19 +1815,19 @@
               </svg></div>
               <div class="shade"></div><div class="bar"><i></i></div>
               <h3 class="slam">It teaches.</h3>
-              <div class="cap"><b>izuki</b><p>“Explain this.” It grabs a pen and underlines the exact words it's explaining — found right on your screen, at any size — step by step.</p><span class="snd">♪ maths just clicked — Izuki</span></div>
+              <div class="cap"><b>izuki</b><p>“Explain this.” It grabs a pen and underlines the exact words it's explaining — found right on your screen, at any size — step by step.</p><span class="snd">math just clicked — Izuki</span></div>
             </article>
             <article class="reel">
-              <div class="art a-island"><div class="pill"><span class="face"><i></i><i></i></span>Last Last · Burna Boy <span class="eq"><i></i><i></i><i></i></span></div></div>
+              <div class="art a-island"><div class="pill"><span class="face"><i></i><i></i></span>Midnight Drive · Spotify <span class="eq"><i></i><i></i><i></i></span></div></div>
               <div class="shade"></div><div class="bar"><i></i></div>
               <h3 class="slam">It lives up top.</h3>
-              <div class="cap"><b>izuki</b><p>A little island at the top of your screen: what it's doing (with Stop), what's playing, your next reminder. Push your mouse up to open it.</p><span class="snd">♪ always there, never in the way — Izuki</span></div>
+              <div class="cap"><b>izuki</b><p>A little island at the top of your screen: what it's doing (with Stop), what's playing, your next reminder. Push your mouse up to open it.</p><span class="snd">always there, never in the way — Izuki</span></div>
             </article>
             <article class="reel">
               <div class="art a-free"><div class="rays"></div><b>$0</b></div>
               <div class="shade"></div><div class="bar"><i></i></div>
               <h3 class="slam">And it's free.</h3>
-              <div class="cap"><b>izuki</b><p>No subscription. No catch. Your own free AI key, on your own PC.</p><span class="snd">♪ free forever — Izuki</span></div>
+              <div class="cap"><b>izuki</b><p>No subscription. No catch. Your own free AI key, on your own PC.</p><span class="snd">free forever — Izuki</span></div>
             </article>
           </div>
         </div>
@@ -1549,9 +1841,9 @@
 
     <!-- ========== what's new (live) ========== -->
     <section id="new">
-      <div class="kicker rv">Just landed</div>
-      <h2 class="rv">New this week. Try it right here.</h2>
-      <p class="sub rv">Everything below is running live on this page — the same code the app uses.</p>
+      <div class="kicker rv">Latest capabilities</div>
+      <h2 class="rv">New in Izuki. Live on this page.</h2>
+      <p class="sub rv">These are interactive previews, not screenshots. They use the same interface patterns as the app.</p>
 
       <div class="nw-grid">
         <!-- the orb gallery -->
@@ -1570,8 +1862,8 @@
               <button type="button" data-s="constellation">Star crystal</button>
             </div>
             <div class="nw-acts">
-              <button type="button" class="btn ghost small" id="nw-talk" aria-pressed="false">🎙️ Make it talk</button>
-              <button type="button" class="btn ghost small" id="nw-think" aria-pressed="false">💭 Make it think</button>
+              <button type="button" class="btn ghost small" id="nw-talk" aria-pressed="false">Make it talk</button>
+              <button type="button" class="btn ghost small" id="nw-think" aria-pressed="false">Make it think</button>
             </div>
           </div>
         </article>
@@ -1584,15 +1876,15 @@
             <button type="button" class="nw-island" id="nw-island" aria-expanded="false">
               <span class="nw-pill">
                 <i class="nw-face"><b></b><b></b></i>
-                <span>Last Last · Burna Boy</span>
+                <span>Midnight Drive · Spotify</span>
                 <span class="nw-eq"><i></i><i></i><i></i><i></i></span>
               </span>
               <span class="nw-open">
                 <span class="nw-row"><i class="nw-face big"><b></b><b></b></i><span><strong>Good evening</strong><small>Ask me anything — or show me.</small></span><em>7:42</em></span>
-                <span class="nw-media"><i class="nw-art"></i><span><strong>Last Last</strong><small>Burna Boy · Spotify</small></span><span class="nw-play">❚❚</span></span>
-                <span class="nw-sug">✏️ Explain this question</span>
-                <span class="nw-sug">👩‍🏫 Teach me through this quiz</span>
-                <span class="nw-big"><span>🎙️<small>Talk</small></span><span>✏️<small>Draw</small></span><span>⚙️<small>Open Izuki</small></span></span>
+                <span class="nw-media"><i class="nw-art"></i><span><strong>Midnight Drive</strong><small>Spotify · Focus mix</small></span><span class="nw-play">❚❚</span></span>
+                <span class="nw-sug">Explain this question</span>
+                <span class="nw-sug">Teach me through this quiz</span>
+                <span class="nw-big"><span>Talk<small>Voice</small></span><span>Draw<small>Screen</small></span><span>Open<small>Izuki</small></span></span>
               </span>
             </button>
             <div class="nw-quiz">Question 3 of 10 — Which device forwards packets between networks?<br />( ) Hub &nbsp; ( ) Switch &nbsp; ( ) Router</div>
@@ -1600,7 +1892,7 @@
         </article>
 
         <!-- wake word on the phone -->
-        <article class="nw-card nw-feat rv"><div class="glyph">📱</div><h3>“Hey Nova” wakes your Android phone</h3><p>The next Android preview adds an optional wake listener. It shows a persistent notification, wakes the screen, and <b>waits at the lock screen</b> — it never unlocks your phone or touches a task while locked. A live call takes the microphone back automatically.</p></article>
+        <article class="nw-card nw-feat rv"><h3>“Hey Nova” wakes your Android phone</h3><p>The Android preview adds an optional wake listener. It shows a persistent notification, wakes the screen, and <b>waits at the lock screen</b> — it never unlocks your phone or touches a task while locked. A live call takes the microphone back automatically.</p></article>
 
         <!-- the status screen -->
         <article class="nw-card nw-hud-card rv">
@@ -1619,14 +1911,14 @@
         </article>
 
         <!-- what's new, in a few words -->
-        <article class="nw-card nw-feat rv"><div class="glyph">⏸️</div><h3>Pause a task, then pick it up</h3><p>Every task card has <b>Pause</b>: the step that's running finishes, then Izuki waits for you. Use your PC, press <b>Resume</b>, and it takes a fresh look before the next step, so it never clicks where things used to be. After a scroll, a shortcut or opening an app it checks that something really happened.</p></article>
-        <article class="nw-card nw-feat rv"><div class="glyph">🩺</div><h3>A storage checkup you can actually read</h3><p>Tap <b>PC checkup</b> in the Chat tab and get a card, not a wall of text: each drive's bar, the biggest apps, folders and files, and what's safe to clear. It's measured on your PC, and nothing is deleted unless you say so.</p></article>
-        <article class="nw-card nw-feat rv"><div class="glyph">🖐️</div><h3>Hand or Eye control, right from the chat</h3><p>Pick <b>Hand</b> or <b>Eye</b> control, see every hand move, and <b>stop Air at once</b> from the chat or the orb. Switching from Eye to Hand lets go of anything it was holding. Eye control stays off unless you turn it on.</p></article>
-        <article class="nw-card nw-feat rv"><div class="glyph">🪟</div><h3>Arrange your windows with one sentence</h3><p>Say <b>“put my windows side by side”</b>, “tile my windows” or “focus layout”, or tap it in Style → Layouts. Up to two windows go side by side and up to four in a grid or columns; the one you used last gets the biggest spot, and the rest stay where they are. <b>“Undo the layout”</b> puts them all back. Save a setup with <b>“save my windows as Work”</b>, and <b>“set up my Work layout”</b> brings back every window on every screen, opening the apps that aren't running. (Windows won't let Izuki move an app run as administrator; it says so.)</p></article>
-        <article class="nw-card nw-feat rv"><div class="glyph">✨</div><h3>Describe a vibe, get a desktop</h3><p>Type or say <b>“make my PC look cozy”</b>, “cyberpunk” or “black and gold” and Izuki picks the closest of its 19 looks, with matching tweaks if you want them. For deeper changes, Style → Tweaks helps you add <b>Windhawk</b> and points to the mods worth starting with. Changed your mind? <b>“Undo the tweaks”</b> puts back exactly what a tweak pack changed.</p></article>
-        <article class="nw-card nw-feat rv"><div class="glyph">🔒</div><h3>Your data, in your hands</h3><p>Settings → Privacy shows <b>everything Izuki can reach</b>, from the mic to your linked accounts, each with an off switch. <b>“What Izuki did”</b> lists every click, app and change it made on your PC (or ask “what did you do today?”). Take a copy of all your data in one file, keys left out, or <b>erase everything</b> in one go.</p></article>
-        <article class="nw-card nw-feat rv"><div class="glyph">🟩</div><h3>A free NVIDIA brain, set up for you</h3><p>In Settings, Izuki walks you to NVIDIA's free key page, says plainly what the free tier means, then <b>tries NVIDIA's free models on your own key</b> and picks the ones that fit: one that can see your screen to do things, and a fast one for chat.</p></article>
-        <article class="nw-card nw-feat rv"><div class="glyph">💬</div><h3>Chat history, pins, and tasks that wait for you</h3><p>Your chats are saved <b>on your PC</b>: search them, pick one up again, and <b>pin</b> the ones that matter. A task cut short, even by a restart, resumes when you say <b>“keep going”</b>, and a step that didn't really work is fixed instead of reported as done. Eye Control gets a native <b>emergency stop</b> (Ctrl+Alt+Shift+X) and stays off unless you turn it on.</p></article>
+        <article class="nw-card nw-feat rv"><h3>Pause a task, then pick it up</h3><p>Every task card has <b>Pause</b>: the step that's running finishes, then Izuki waits for you. Use your PC, press <b>Resume</b>, and it takes a fresh look before the next step, so it never clicks where things used to be. After a scroll, a shortcut or opening an app it checks that something really happened.</p></article>
+        <article class="nw-card nw-feat rv"><h3>A storage checkup you can actually read</h3><p>Tap <b>PC checkup</b> in the Chat tab and get a card, not a wall of text: each drive's bar, the biggest apps, folders and files, and what's safe to clear. It's measured on your PC, and nothing is deleted unless you say so.</p></article>
+        <article class="nw-card nw-feat rv"><h3>Hand or Eye control, right from the chat</h3><p>Pick <b>Hand</b> or <b>Eye</b> control, see every hand move, and <b>stop Air at once</b> from the chat or the orb. Switching from Eye to Hand lets go of anything it was holding. Eye control stays off unless you turn it on.</p></article>
+        <article class="nw-card nw-feat rv"><h3>Arrange your windows with one sentence</h3><p>Say <b>“put my windows side by side”</b>, “tile my windows” or “focus layout”, or tap it in Style → Layouts. Up to two windows go side by side and up to four in a grid or columns; the one you used last gets the biggest spot, and the rest stay where they are. <b>“Undo the layout”</b> puts them all back. Save a setup with <b>“save my windows as Work”</b>, and <b>“set up my Work layout”</b> brings back every window on every screen, opening the apps that aren't running. (Windows won't let Izuki move an app run as administrator; it says so.)</p></article>
+        <article class="nw-card nw-feat rv"><h3>Describe a vibe, get a desktop</h3><p>Type or say <b>“make my PC look cozy”</b>, “cyberpunk” or “black and gold” and Izuki picks the closest of its 19 looks, with matching tweaks if you want them. For deeper changes, Style → Tweaks helps you add <b>Windhawk</b> and points to the mods worth starting with. Changed your mind? <b>“Undo the tweaks”</b> puts back exactly what a tweak pack changed.</p></article>
+        <article class="nw-card nw-feat rv"><h3>Your data, in your hands</h3><p>Settings → Privacy shows <b>everything Izuki can reach</b>, from the mic to your linked accounts, each with an off switch. <b>“What Izuki did”</b> lists every click, app and change it made on your PC (or ask “what did you do today?”). Take a copy of all your data in one file, keys left out, or <b>erase everything</b> in one go.</p></article>
+        <article class="nw-card nw-feat rv"><h3>A free NVIDIA brain, set up for you</h3><p>In Settings, Izuki walks you to NVIDIA's free key page, says plainly what the free tier means, then <b>tries NVIDIA's free models on your own key</b> and picks the ones that fit: one that can see your screen to do things, and a fast one for chat.</p></article>
+        <article class="nw-card nw-feat rv"><h3>Chat history, pins, and tasks that wait for you</h3><p>Your chats are saved <b>on your PC</b>: search them, pick one up again, and <b>pin</b> the ones that matter. A task cut short, even by a restart, resumes when you say <b>“keep going”</b>, and a step that didn't really work is fixed instead of reported as done. Eye Control gets a native <b>emergency stop</b> (Ctrl+Alt+Shift+X) and stays off unless you turn it on.</p></article>
       </div>
 
       <!-- the live changelog -->
@@ -1638,48 +1930,75 @@
 
     <!-- ========== features ========== -->
     <section id="features">
-      <div class="kicker rv">What it can do</div>
-      <h2 class="rv">Talk to it. It does the rest.</h2>
-      <p class="sub rv">Everything a smart friend at your shoulder would do — for free, on your own PC.</p>
+      <div class="kicker rv">Core capabilities</div>
+      <h2 class="rv">One assistant for the whole desktop.</h2>
+      <p class="sub rv">Voice, screen awareness, automation, teaching and PC care — built to act only when you ask.</p>
       <div class="bento">
         <article class="card hero-card rv">
-          <div class="glyph">🎙️</div>
+
           <h3>Hands-free, like a real conversation</h3>
           <p>Say your wake word and talk like you would to a person. Cut in any time. It turns your music down while you talk, hears names right, and keeps listening for what's next.</p>
           <div class="wave" aria-hidden="true"><i style="animation-delay:-.1s"></i><i style="animation-delay:-.5s"></i><i style="animation-delay:-.2s"></i><i style="animation-delay:-.8s"></i><i style="animation-delay:-.3s"></i><i style="animation-delay:-.6s"></i><i style="animation-delay:-.05s"></i><i style="animation-delay:-.9s"></i><i style="animation-delay:-.4s"></i><i style="animation-delay:-.7s"></i><i style="animation-delay:-.15s"></i><i style="animation-delay:-.55s"></i></div>
         </article>
-        <article class="card rv" style="--d:.06s"><div class="glyph">🖱️</div><h3>Does the work</h3><p>Opens apps, searches, clicks, types, scrolls straight to the right link, skips ads — looking again until it's really done.</p></article>
-        <article class="card rv"><div class="glyph">✏️</div><h3>A classroom on your screen</h3><p>Pause a lesson, keep it playing or slow to 0.75×. Izuki explains visible details with pen marks. Follow a lesson for up to five explanations in the Izuki browser.</p></article>
-        <article class="card rv" style="--d:.06s"><div class="glyph">👀</div><h3>Sees what you see</h3><p>“What does this error mean?” It reads your screen — and the app's hidden buttons — to answer precisely.</p></article>
-        <article class="card rv" style="--d:.12s"><div class="glyph">✍️</div><h3>Draw to show it</h3><p>Hold <kbd>Ctrl</kbd>+<kbd>D</kbd>, circle anything, and ask. One tap to click, copy or explain it.</p></article>
-        <article class="card wide rv"><div class="glyph">💬</div><h3>Chat, reminders &amp; memory</h3><p>A chat that never touches your screen, reminders that ring on your PC and phone, and a memory of you that you can see and wipe any time.</p></article>
-        <article class="card wide rv" style="--d:.06s"><div class="glyph">🔌</div><h3>In your apps</h3><p>Search and connect Gmail, Microsoft, work, code, files and supported socials from one Apps tab. Every account uses its own approval, and Izuki still asks before sending.</p></article>
-        <article class="card rv"><div class="glyph">🔔</div><h3>Heads-ups</h3><p>A new important email, a meeting in 15 minutes, homework due tomorrow — it taps you on the shoulder, on your PC and your phone. Plus a morning brief.</p></article>
-        <article class="card rv" style="--d:.06s"><div class="glyph">🌐</div><h3>Searches the web for you</h3><p>“What's the latest on…?” It searches and reads the pages itself, quietly — even school sites you're signed in to, in its own little browser.</p></article>
-        <article class="card wide rv" style="--d:.12s"><div class="glyph">🗂️</div><h3>Your files &amp; a real terminal</h3><p>In the chat it finds and reads your files (Word, PDF, PowerPoint too), writes files, and runs real commands — zip, install, run a script, even Python — like a coding assistant. A <b>Ask first</b> or <b>Auto‑run</b> switch, like Claude Code, and it always shows you the exact command. Your keys stay off‑limits.</p></article>
-        <article class="card wide rv"><div class="glyph">🤖</div><h3>Companion on your phone</h3><p>Use Izuki on any phone from the web app today. The native Android companion adds opt-in Home, Back, Recents, Notifications and Quick Settings; the iPhone companion brings conversations, reminders and Siri handoff within iOS rules. Free core companion.</p></article>
-        <article class="card wide rv"><div class="glyph">🎭</div><h3>30+ voices &amp; characters</h3><p>Warm Nova, deep calm Leo, British Sophie, Nigerian Ezinne, Naija Pidgin Chidi, Spanish Lucía, a hype coach, a butler, a pirate — or Rex, unfiltered and savage, if you dare. Rename it, change the voice, speed and pitch, and give it your own personality.</p></article>
-        <article class="card wide rv" style="--d:.06s"><div class="glyph">🗣️</div><h3>Sounds like a person</h3><p>Natural voices that breathe at commas and pause at full stops — free, no key. Or Google's Gemini voice (your Gemini key), Groq, Azure and ElevenLabs for the most human sound. Offline voice on your PC too, in English, Spanish, French, Swahili, Hindi and more.</p></article>
-        <article class="card wide rv"><div class="glyph">🎯</div><h3>Two ways to take control</h3><p>Mouse mode moves a visible hand like a person would. <b>Jarvis mode</b> presses buttons and types into boxes straight through Windows — no pointer flying around, faster, and your own mouse stays free. It checks the real control before acting and never guesses.</p></article>
-        <article class="card wide rv"><div class="glyph">💧</div><h3>Your companion, your style</h3><p>Liquid glass, Clear water, Pure water, Ferrofluid, Stardust, a Hologram face, Tidal pearl and Star crystal — real 3D light on your graphics card, on PC and phone. <a href="#new" style="color:var(--cyan)">Try them above ↑</a></p></article>
-        <article class="card wide rv"><div class="glyph">↶</div><h3>Keep your flows tidy</h3><p>Clear matching flows or start fresh, then Undo if you change your mind. Exact repeat recordings reuse the saved flow, and video explanations stay out of your library.</p></article>
-        <article class="card wide rv" style="--d:.06s"><div class="glyph">🚀</div><h3>Instant commands</h3><p>Say “scroll down”, “louder”, “pause”, “next song”, “go back”, “new tab” or “minimise this” and it just happens — no AI, no waiting, like Siri. It runs the whole PC too: <b>“set the volume to 30”</b>, “snap left”, “lock my pc”, “take a screenshot”, “open task manager”, and “what time is it” answered straight from the clock — free and instant, with nothing for a model to get wrong.</p></article>
-        <article class="card wide rv"><div class="glyph">🧩</div><h3>Works with any AI — even small free ones</h3><p>Big AIs get the full playbook. Small free ones get <b>Easy Mode</b>: a simple menu, and Izuki finds the real button by its name — so they do the job instead of explaining it. If an AI starts rambling, Izuki ignores it and waits for one that actually acts.</p></article>
-        <article class="card wide rv" style="--d:.06s"><div class="glyph">🐞</div><h3>Useful diagnostics, clear reporting</h3><p>Desktop errors are logged locally. <b>Something wrong?</b> shows whether an automatic reporting service is configured; you can also review and submit an issue on GitHub. Central reporting is not enabled in this release.</p></article>
-        <article class="card wide rv" style="--d:.06s"><div class="glyph">⚡</div><h3>Set up in a minute</h3><p>Copy a free key on the website that opens, come back — Izuki fills it in by itself. Tap Gmail and it walks you through the rest. No settings to hunt for.</p></article>
-        <article class="card wide rv"><div class="glyph">🔒</div><h3>What it will never do on its own</h3><p>Izuki drives your real mouse and keyboard, so these are built into the code, not left to the AI's judgement. <b>It won't type into a password box</b> — it asks the box what it is and refuses, and it never reads one either. <b>It won't act on your lock screen.</b> <b>It won't press anything you can't take back</b> — Submit, Send, Pay, Buy, Delete, Erase, Format, Share, Invite, Close account — unless you asked for that in so many words. <b>It won't pick or submit answers on a quiz</b>; it explains and points, and you choose. <b>It won't type a command into your terminal</b> unless you spelled it out.</p></article>
+        <article class="card rv" style="--d:.06s"><h3>Does the work</h3><p>Opens apps, searches, clicks, types, scrolls straight to the right link, skips ads — looking again until it's really done.</p></article>
+        <article class="card rv"><h3>A classroom on your screen</h3><p>Pause a lesson, keep it playing or slow to 0.75×. Izuki explains visible details with pen marks. Follow a lesson for up to five explanations in the Izuki browser.</p></article>
+        <article class="card rv" style="--d:.06s"><h3>Sees what you see</h3><p>“What does this error mean?” It reads your screen — and the app's hidden buttons — to answer precisely.</p></article>
+        <article class="card rv" style="--d:.12s"><h3>Draw to show it</h3><p>Hold <kbd>Ctrl</kbd>+<kbd>D</kbd>, circle anything, and ask. One tap to click, copy or explain it.</p></article>
+        <article class="card wide rv"><h3>Chat, reminders &amp; memory</h3><p>A chat that never touches your screen, reminders that ring on your PC and phone, and a memory of you that you can see and wipe any time.</p></article>
+        <article class="card wide rv" style="--d:.06s"><h3>In your apps</h3><p>Search and connect Gmail, Microsoft, work, code, files and supported socials from one Apps tab. Every account uses its own approval, and Izuki still asks before sending.</p></article>
+        <article class="card rv"><h3>Heads-ups</h3><p>A new important email, a meeting in 15 minutes, homework due tomorrow — it taps you on the shoulder, on your PC and your phone. Plus a morning brief.</p></article>
+        <article class="card rv" style="--d:.06s"><h3>Searches the web for you</h3><p>“What's the latest on…?” It searches and reads the pages itself, quietly — even school sites you're signed in to, in its own little browser.</p></article>
+        <article class="card wide rv" style="--d:.12s"><h3>Your files &amp; a real terminal</h3><p>In the chat it finds and reads your files (Word, PDF, PowerPoint too), writes files, and runs real commands — zip, install, run a script, even Python — like a coding assistant. A <b>Ask first</b> or <b>Auto‑run</b> switch, like Claude Code, and it always shows you the exact command. Your keys stay off‑limits.</p></article>
+        <article class="card wide rv"><h3>Companion on your phone</h3><p>Use Izuki on any phone from the web app today. The native Android companion adds opt-in Home, Back, Recents, Notifications and Quick Settings; the iPhone companion brings conversations, reminders and Siri handoff within iOS rules. Free core companion.</p></article>
+        <article class="card wide rv"><h3>30+ voices &amp; characters</h3><p>Warm Nova, Atlanta’s Dre, Houston’s Nia, deep calm Leo, British Sophie, Spanish Lucía, a hype coach, a butler, a pirate — or Rex, unfiltered and savage, if you dare. US English sits beside British, Nigerian, Spanish, French and more. Rename it, change the voice, speed and pitch, and give it your own personality.</p></article>
+        <article class="card wide rv" style="--d:.06s"><h3>Sounds like a person</h3><p>Natural voices in US English and more, breathing at commas and pausing at periods — free, no key. Or Google's Gemini voice (your Gemini key), Groq, Azure and ElevenLabs for the most human sound. Offline voice on your PC too, in English, Spanish, French, Swahili, Hindi and more.</p></article>
+        <article class="card wide rv"><h3>Two ways to take control</h3><p>Mouse mode moves a visible hand like a person would. <b>Jarvis mode</b> presses buttons and types into boxes straight through Windows — no pointer flying around, faster, and your own mouse stays free. It checks the real control before acting and never guesses.</p></article>
+        <article class="card wide rv"><h3>Your companion, your style</h3><p>Liquid glass, Clear water, Pure water, Ferrofluid, Stardust, a Hologram face, Tidal pearl and Star crystal — real 3D light on your graphics card, on PC and phone. <a href="#new" style="color:var(--cyan)">Try them above ↑</a></p></article>
+        <article class="card wide rv"><h3>Keep your flows tidy</h3><p>Clear matching flows or start fresh, then Undo if you change your mind. Exact repeat recordings reuse the saved flow, and video explanations stay out of your library.</p></article>
+        <article class="card wide rv" style="--d:.06s"><h3>Instant commands</h3><p>Say “scroll down”, “louder”, “pause”, “next song”, “go back”, “new tab” or “minimize this” and it just happens — no AI, no waiting, like Siri. It runs the whole PC too: <b>“set the volume to 30”</b>, “snap left”, “lock my pc”, “take a screenshot”, “open task manager”, and “what time is it” answered straight from the clock — free and instant, with nothing for a model to get wrong.</p></article>
+        <article class="card wide rv"><h3>Works with any AI — even small free ones</h3><p>Big AIs get the full playbook. Small free ones get <b>Easy Mode</b>: a simple menu, and Izuki finds the real button by its name — so they do the job instead of explaining it. If an AI starts rambling, Izuki ignores it and waits for one that actually acts.</p></article>
+        <article class="card wide rv" style="--d:.06s"><h3>Useful diagnostics, clear reporting</h3><p>Desktop errors are logged locally. <b>Something wrong?</b> shows whether an automatic reporting service is configured; you can also review and submit an issue on GitHub. Central reporting is not enabled in this release.</p></article>
+        <article class="card wide rv" style="--d:.06s"><h3>Set up in a minute</h3><p>Copy a free key on the website that opens, come back — Izuki fills it in by itself. Tap Gmail and it walks you through the rest. No settings to hunt for.</p></article>
+        <article class="card wide rv"><h3>What it will never do on its own</h3><p>Izuki drives your real mouse and keyboard, so these are built into the code, not left to the AI's judgement. <b>It won't type into a password box</b> — it asks the box what it is and refuses, and it never reads one either. <b>It won't act on your lock screen.</b> <b>It won't press anything you can't take back</b> — Submit, Send, Pay, Buy, Delete, Erase, Format, Share, Invite, Close account — unless you asked for that in so many words. <b>It won't pick or submit answers on a quiz</b>; it explains and points, and you choose. <b>It won't type a command into your terminal</b> unless you spelled it out.</p></article>
         <article class="card stop rv" id="stop-card">
-          <div><div class="glyph">🛑</div><h3>One key stops everything</h3><p>Press <kbd>Esc</kbd> and Izuki lets go instantly — the task, the voice, the lot. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Q</kbd> works any time. Go on, try it on this page.</p></div>
+          <div><h3>One key stops everything</h3><p>Press <kbd>Esc</kbd> and Izuki lets go instantly — the task, the voice, the lot. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Q</kbd> works any time. Go on, try it on this page.</p></div>
           <button type="button" class="esc-key" id="esc-key" aria-label="Press Esc">Esc<small id="esc-note">tap me or press Esc</small></button>
+        </article>
+      </div>
+    </section>
+
+    <!-- ========== use cases ========== -->
+    <section id="use-cases" aria-labelledby="use-title">
+      <div class="kicker rv">Built for real days</div>
+      <h2 class="rv" id="use-title">Three ways people use Izuki.</h2>
+      <p class="sub rv">The same assistant adapts to the work in front of you — without turning your desktop into another dashboard.</p>
+      <div class="use-grid">
+        <article class="use-card rv">
+          <span class="no">01 / STUDY</span>
+          <h3>Coursework, without the scramble.</h3>
+          <p>Pull deadlines from Blackboard, explain what is on screen with a pen, and turn notes into flashcards. It coaches through quizzes; it does not take them for you.</p>
+          <a href="#everything">See study capabilities →</a>
+        </article>
+        <article class="use-card rv" style="--d:.06s">
+          <span class="no">02 / WORK</span>
+          <h3>A faster desk.</h3>
+          <p>Summarize email, draft replies, edit real Word, Excel and PDF files, and keep meeting notes. Consequential actions are reviewed before they run.</p>
+          <a href="#everything">See work capabilities →</a>
+        </article>
+        <article class="use-card rv" style="--d:.12s">
+          <span class="no">03 / YOUR PC</span>
+          <h3>A machine that keeps up.</h3>
+          <p>Save window layouts, find what is slowing the PC down, keep long jobs awake and control common settings by voice.</p>
+          <a href="#everything">See PC capabilities →</a>
         </article>
       </div>
     </section>
 
     <!-- ========== everything ========== -->
     <section id="everything" aria-labelledby="fx-title">
-      <div class="kicker rv">The full list</div>
-      <h2 class="rv" id="fx-title">Everything Izuki can do.</h2>
-      <p class="sub rv"><span id="fx-total">61</span> more abilities beyond the ones above, all free and on your own PC. Pick a kind, or search for what you need.</p>
+      <div class="kicker rv">Capability index</div>
+      <h2 class="rv" id="fx-title">Search the full toolkit.</h2>
+      <p class="sub rv"><span id="fx-total">61</span> additional abilities, all free on your own PC. Filter by category or search for a task.</p>
       <div class="fx-tools" id="fx-tools" hidden>
         <div class="fx-chips" role="group" aria-label="Show abilities by kind">
           <button type="button" class="fx-chip" data-cat="all" aria-pressed="true">All <span>61</span></button>
@@ -1695,68 +2014,68 @@
       </div>
       <p class="fx-count" id="fx-count" aria-live="polite"></p>
       <div class="fx-grid" id="fx-grid">
-        <article class="fx-card" data-cat="does"><div class="glyph" aria-hidden="true">👓</div><div class="fx-text"><h3>It reads apps that keep their words to themselves</h3><p>Some apps — VS Code, Discord, Slack, anything built like them — hand Windows a window with no readable text at all. One look against one of them found <b>17 buttons and zero words</b>, so the honest answer was “I can't see anything on screen”. Windows' own OCR now reads the picture the AI was already being shown, on your PC, with nothing extra uploaded. A window that does share its page keeps its own words — the picture is only used when it says more.</p></div></article>
-        <article class="fx-card" data-cat="does"><div class="glyph" aria-hidden="true">✅</div><div class="fx-text"><h3>A to-do list for every task</h3><p>Izuki writes a short checklist, ticks it off as things are really done — watch it on the Island — and checks the list before it says it's finished.</p></div></article>
-        <article class="fx-card" data-cat="does"><div class="glyph" aria-hidden="true">📘</div><div class="fx-text"><h3>Knows how each app works</h3><p>Playbooks for FL Studio, Premiere, Photoshop, Blender, Office and more: Izuki uses each app's own shortcuts and menus instead of dragging by pixels. Free for other developers too.</p></div></article>
-        <article class="fx-card" data-cat="does"><div class="glyph" aria-hidden="true">🤝</div><div class="fx-text"><h3>Works beside you</h3><p>Grab the mouse while Izuki is working and it waits for you — then takes a fresh look and carries on. If a click does nothing, it presses the button straight through Windows or the page itself.</p></div></article>
-        <article class="fx-card" data-cat="does"><div class="glyph" aria-hidden="true">🖼️</div><div class="fx-text"><h3>Send it a picture</h3><p>Drop, paste or attach a photo in the chat — or send one on Discord or Telegram — and Izuki looks at it with you: homework, an error, a receipt, a plant.</p></div></article>
-        <article class="fx-card" data-cat="does"><div class="glyph" aria-hidden="true">📋</div><div class="fx-text"><h3>Paste another AI's steps</h3><p>Got step-by-step directions from another AI? Paste them in and Izuki does them on your screen, one by one, checking each worked.</p></div></article>
-        <article class="fx-card" data-cat="does"><div class="glyph" aria-hidden="true">⚡</div><div class="fx-text"><h3>Jarvis mode</h3><p>Presses buttons and types into boxes straight through Windows — no mouse flying around, and your own mouse stays free.</p></div></article>
-        <article class="fx-card" data-cat="does"><div class="glyph" aria-hidden="true">🧘</div><div class="fx-text"><h3>Patient, like a person</h3><p>Opens each thing once and waits as long as your PC needs — no piles of the same window. In the browser it searches in the same tab instead of opening new ones.</p></div></article>
-        <article class="fx-card" data-cat="does"><div class="glyph" aria-hidden="true">🧰</div><div class="fx-text"><h3>Shows every tool it uses</h3><p>In the chat, each command, search and file shows as a card with what went in and what came back — like a real coding agent.</p></div></article>
-        <article class="fx-card" data-cat="does"><div class="glyph" aria-hidden="true">✅</div><div class="fx-text"><h3>Proof check</h3><p>Ask “how big is Zoom?” and it checks quietly in the background. After every change, it looks again — “✓ Zoom is no longer installed” — before it says done.</p></div></article>
-        <article class="fx-card" data-cat="does"><div class="glyph" aria-hidden="true">⭕</div><div class="fx-text"><h3>Circle it, say “next”</h3><p>It clicks that exact button at once — no AI to wait for — and never clicks your taskbar by mistake.</p></div></article>
-        <article class="fx-card" data-cat="does"><div class="glyph" aria-hidden="true">📝</div><div class="fx-text"><h3>See everything it did</h3><p>Settings → Privacy → <b>What Izuki did</b> lists every click, key, app, look and message Izuki handled on your PC, newest first, day by day. It's kept on your PC for two weeks and never holds what was typed. Or just ask <b>“what did you do today?”</b>.</p></div></article>
-        <article class="fx-card" data-cat="talk"><div class="glyph" aria-hidden="true">⌨️</div><div class="fx-text"><h3>Hold a key and talk into anything</h3><p>Hold <b>Ctrl+Alt+Space</b> anywhere, talk, let go — what you said is typed into whatever box you were already in: an email, WhatsApp, a form, a code comment. The “um”s and false starts taken out, punctuation added. It types; it never sends.</p></div></article>
-        <article class="fx-card" data-cat="talk"><div class="glyph" aria-hidden="true">🎧</div><div class="fx-text"><h3>It offers to write down your call</h3><p>Join a Zoom, Teams or Meet call and Izuki asks once. Say yes and that's the job done: it writes down what your PC plays — headphones are fine — and turns it into notes with timestamps and the full transcript when the call ends. You don't have to follow any of it. No audio is kept.</p></div></article>
-        <article class="fx-card" data-cat="talk"><div class="glyph" aria-hidden="true">🧩</div><div class="fx-text"><h3>Ask in any words</h3><p>Grades, what's due, textbooks, APA references, money, screen time, what's filling your drive — say it however you like, typos and all, from your PC, phone or Discord, and Izuki picks the right ability itself.</p></div></article>
-        <article class="fx-card" data-cat="talk"><div class="glyph" aria-hidden="true">🙋</div><div class="fx-text"><h3>Just say yes</h3><p>When Izuki offers to help — your drive's nearly full, your PC's slow — a plain “yes” does exactly what it offered. “No” lets it go.</p></div></article>
-        <article class="fx-card" data-cat="talk"><div class="glyph" aria-hidden="true">🎵</div><div class="fx-text"><h3>Music mode</h3><p>The orb flows with whatever's playing. Ask “about this song”. Only the volume is read — nothing recorded.</p></div></article>
-        <article class="fx-card" data-cat="talk"><div class="glyph" aria-hidden="true">⌨️</div><div class="fx-text"><h3>Say it, or hold a key</h3><p>“Hey Nova” hands-free — or hold Ctrl + Windows + Space, talk, let go. Wake-up strictness stops false wake-ups.</p></div></article>
-        <article class="fx-card" data-cat="talk"><div class="glyph" aria-hidden="true">🎩</div><div class="fx-text"><h3>Atlas &amp; change by voice</h3><p>A calm British AI-assistant voice. “Switch to Atlas.” “Change your orb to stardust.” Done instantly.</p></div></article>
-        <article class="fx-card" data-cat="talk"><div class="glyph" aria-hidden="true">🔊</div><div class="fx-text"><h3>Reads to you, types for you</h3><p>“Read this to me” reads any selected text or page aloud. “Type what I say” types your words wherever your cursor is — perfect for tired eyes, kids and anyone who'd rather talk.</p></div></article>
-        <article class="fx-card" data-cat="school"><div class="glyph" aria-hidden="true">✅</div><div class="fx-text"><h3>Knows what you've handed in</h3><p>Ask <b>“what haven't I done?”</b> and Izuki reads Blackboard's own records: what's past due and not in, what's still to do, and what's already handed in. Reminders skip work you've already turned in.</p></div></article>
-        <article class="fx-card" data-cat="school"><div class="glyph" aria-hidden="true">📚</div><div class="fx-text"><h3>Deadlines from Blackboard</h3><p>Due dates come straight from your Blackboard (with the extension), and you're told a day before and two hours before — no calendar link needed.</p></div></article>
-        <article class="fx-card" data-cat="school"><div class="glyph" aria-hidden="true">🔗</div><div class="fx-text"><h3>Reads behind the links</h3><p>Ask about a page and Izuki also reads the pages it links to that hold the answer — the syllabus, the assignment details — quietly, with your own sign-ins. Never links like Log out or Buy.</p></div></article>
-        <article class="fx-card" data-cat="school"><div class="glyph" aria-hidden="true">✅</div><div class="fx-text"><h3>Explain it like a teacher</h3><p>When the Island spots a question on your screen, one tap explains it step by step, with the pen on the words that matter — or “Teach me through this quiz”. On a <b>quiz or test page it won't pick or submit answers</b>; it coaches you instead. That's built into the code, not left to the AI.</p></div></article>
-        <article class="fx-card" data-cat="school"><div class="glyph" aria-hidden="true">📜</div><div class="fx-text"><h3>Every answer, kept</h3><p>“Keep my last answer on screen” now scrolls back through all of today's answers, with one tap to clear them.</p></div></article>
-        <article class="fx-card" data-cat="school"><div class="glyph" aria-hidden="true">👩‍🏫</div><div class="fx-text"><h3>Teacher mode</h3><p>On any quiz: explains each question with the pen, lets you answer, tells you why, clicks Next when you're ready.</p></div></article>
-        <article class="fx-card" data-cat="school"><div class="glyph" aria-hidden="true">📝</div><div class="fx-text"><h3>Izuki Notes</h3><p>“Take notes on this” on any page, PDF or quiz — then flashcards, quiz me, summaries. Teacher mode keeps lesson notes when you ask.</p></div></article>
-        <article class="fx-card" data-cat="work"><div class="glyph" aria-hidden="true">📄</div><div class="fx-text"><h3>Edit a PDF, not just Word and Excel</h3><p>Ask Izuki to change words in a <b>PDF</b> and it makes an edited copy beside it, checks the copy opens, and leaves your original alone. PDFs that hide their letters in a special font are refused in plain words instead of garbled. The chat card for an edited file has an <b>Open</b> button that opens the exact copy it wrote.</p></div></article>
-        <article class="fx-card" data-cat="work"><div class="glyph" aria-hidden="true">📄</div><div class="fx-text"><h3>Real Word and Excel files</h3><p>Ask for a report as a <b>Word file</b> or a table as an <b>Excel file</b> and get a real one. Edits go into a copy, never your original, and every save keeps its own backup.</p></div></article>
-        <article class="fx-card" data-cat="work"><div class="glyph" aria-hidden="true">🎼</div><div class="fx-text"><h3>From a beat to a song sketch</h3><p>“Make a 32 bar trap arrangement at 100 bpm in A minor.” Checked MIDI with drums, bass, chords, melody and section markers, ready to import into your DAW. Creates a new sketch; live recording analysis is still to come.</p></div></article>
-        <article class="fx-card" data-cat="work"><div class="glyph" aria-hidden="true">⏰</div><div class="fx-text"><h3>Alarms &amp; your day planned</h3><p>“Wake me at 6:30 every weekday.” A real ringing alarm with Snooze on your PC, and one tap sets it in your phone's own clock. Ask it to plan your day and it books the reminders.</p></div></article>
-        <article class="fx-card" data-cat="work"><div class="glyph" aria-hidden="true">📬</div><div class="fx-text"><h3>Really reads your email</h3><p>“What's important in my email?” — it goes through the last few days, skips the noise and tells you the real to-dos: bills, replies, deliveries, deadlines.</p></div></article>
-        <article class="fx-card" data-cat="work"><div class="glyph" aria-hidden="true">🎯</div><div class="fx-text"><h3>Focus mode &amp; Recall</h3><p>“Focus for 25 minutes” holds everything but the urgent. Copy something and Izuki offers to translate or sum it up. And (if you switch it on) “what was that site I was on this morning?”</p></div></article>
-        <article class="fx-card" data-cat="pc"><div class="glyph" aria-hidden="true">🪟</div><div class="fx-text"><h3>Window layouts, saved by name</h3><p>Lay out your apps the way you work and say <b>“save my windows as Work”</b>. Later, <b>“set up my Work layout”</b> puts every window back on every screen and opens the apps that aren't running. “Put my windows side by side”, grids, columns and a focus layout work too, and “undo the layout” puts everything back.</p></div></article>
-        <article class="fx-card" data-cat="pc"><div class="glyph" aria-hidden="true">🎯</div><div class="fx-text"><h3>Put any app where you want it</h3><p>Say <b>“put Chrome on the left”</b>, “Discord in the top right corner”, “center Notepad” or <b>“move Spotify to my other screen”</b>. Izuki moves just that app, and only when it's really open. “Undo the layout” puts it back.</p></div></article>
-        <article class="fx-card" data-cat="does"><div class="glyph" aria-hidden="true">⚡</div><div class="fx-text"><h3>Does it directly, like Jarvis</h3><p>Izuki doesn't hunt through menus when it doesn't have to. Mid-task it uses its own abilities (dark mode, a settings page, a folder, a layout, a timer) and presses real buttons, links and tabs through Windows itself, so your mouse stays where you left it. <b>"Open Bluetooth settings"</b> and <b>"close Chrome"</b> work in one sentence, and nothing closes, deletes, sends or pays unless you asked.</p></div></article>
-        <article class="fx-card" data-cat="pc"><div class="glyph" aria-hidden="true">🌗</div><div class="fx-text"><h3>Dim the rest, keep on top, see-through</h3><p><b>“Dim the rest”</b> fades everything but the window you're in, and the light follows you when you switch. Focus mode can do it for you. <b>“Keep Spotify on top”</b> pins a window above the others. <b>“Make Discord see-through”</b> or “50% transparent” lets you see behind it. <b>“Hide everything except this”</b> clears the clutter. All of it undoes in one sentence, and the dim never shows in screenshots.</p></div></article>
-        <article class="fx-card" data-cat="pc"><div class="glyph" aria-hidden="true">🩺</div><div class="fx-text"><h3>Finds what's actually slowing your PC</h3><p>Ask <b>“why is my PC so slow?”</b> and PC Care checks the drive, memory, the processor over the last minute and which apps are behind it, then says what would help. A build or a test run is named as work and left alone. <b>Auto Care</b> fixes only the safe causes and checks a minute later that it helped.</p></div></article>
-        <article class="fx-card" data-cat="pc"><div class="glyph" aria-hidden="true">☕</div><div class="fx-text"><h3>Keeps your PC awake while something runs</h3><p>Say <b>“keep my PC awake for 3 hours”</b> before a long download, a render or a coding agent you leave running — a laptop that sleeps cuts them off. The screen still turns off on its usual timer (and locks, if Windows is set to); closing the lid still puts a laptop to sleep. It lets go on its own (12 hours at most), mentions it when you're on battery, and “let it sleep” ends it early.</p></div></article>
-        <article class="fx-card" data-cat="pc"><div class="glyph" aria-hidden="true">💾</div><div class="fx-text"><h3>What's filling my drive?</h3><p>Your biggest folders and files and what's safe to clear, in about half a minute. “Clear the safe stuff” removes old temporary files — your own files are only shown, never deleted.</p></div></article>
-        <article class="fx-card" data-cat="pc"><div class="glyph" aria-hidden="true">🚀</div><div class="fx-text"><h3>PC Boost</h3><p>Notices when your PC is struggling and offers to speed it up — clears old temp files and closes hogging background updaters. Never closes a window you're using. Or let it fix things by itself.</p></div></article>
-        <article class="fx-card" data-cat="pc"><div class="glyph" aria-hidden="true">🦸</div><div class="fx-text"><h3>Comic &amp; flat-art characters</h3><p>Turn any 3D character into a comic-book or flat-vector look, pick skin tone and hair colour in one tap, frame it from head to full body, and the voice switches to match.</p></div></article>
-        <article class="fx-card" data-cat="pc"><div class="glyph" aria-hidden="true">🛰️</div><div class="fx-text"><h3>Status screen with Autopilot</h3><p>Live processor trace, the heaviest apps, and an Autopilot panel that spots what needs doing — low space, battery, a slow PC, a meeting soon — with one-tap fixes or “Handle it all”.</p></div></article>
-        <article class="fx-card" data-cat="pc"><div class="glyph" aria-hidden="true">🧑‍🚀</div><div class="fx-text"><h3>Real 3D faces — even yours</h3><p>Pick a hologram woman or man, a woman or a man — real 3D models that breathe, look at you and talk with the voice. Make your own face on avaturn.me and Izuki talks with your mouth, or add any .glb face you like.</p></div></article>
-        <article class="fx-card" data-cat="pc"><div class="glyph" aria-hidden="true">🎨</div><div class="fx-text"><h3>Your colours</h3><p>Pick the app's colours — or Auto, which changes with the time of day. And eight orb styles, including a hologram face.</p></div></article>
-        <article class="fx-card" data-cat="browser"><div class="glyph" aria-hidden="true">🔎</div><div class="fx-text"><h3>A browser panel that shows its work</h3><p>While it answers, the side panel says what it's doing: reading the page, a linked page, <b>searching the web</b>, putting it together. Clear with one tap, follow up with Shorter, Simpler, Example or Quiz me, and keep typing: your next question waits its turn. Only real facts and sources, named so you can check them.</p></div></article>
-        <article class="fx-card" data-cat="browser"><div class="glyph" aria-hidden="true">🧩</div><div class="fx-text"><h3>Use the AI you already pay for</h3><p>Open the side panel in Chrome or Edge and pick who answers: <b>ChatGPT, Gemini, Claude, Copilot, Perplexity, Grok, DeepSeek, Le Chat, Izuki itself — or any AI tab you pick.</b> Press Connect and what you ask goes to that tab with the page attached, in your own signed-in session. No second subscription, no API key. Turn on <b>Follow questions</b> and each new question on the page is carried over once, by itself.</p></div></article>
-        <article class="fx-card" data-cat="browser"><div class="glyph" aria-hidden="true">🖥️</div><div class="fx-text"><h3>From a browser tab to your actual PC</h3><p>Type what you want done — “download the project files and open the report in Word” — and the panel shows you the exact words first. Press <b>Run with Izuki</b> and it goes through the normal action engine: the same checks, the same buttons it won't press without asking, the same Esc, with a Stop button throughout. An answer from an AI tab is never a command; only the words you reviewed are.</p></div></article>
-        <article class="fx-card" data-cat="browser"><div class="glyph" aria-hidden="true">📌</div><div class="fx-text"><h3>Keeps working in its own tab</h3><p>Start a task in Chrome or Edge and switch tabs: Izuki carries on in its own tab through the extension, never touching your mouse or the tab you're on.</p></div></article>
-        <article class="fx-card" data-cat="browser"><div class="glyph" aria-hidden="true">🧩</div><div class="fx-text"><h3>Ask Izuki in your browser</h3><p>Click the Izuki icon and a side panel opens next to any page: ask about it, compare it with your other tabs, and keep chatting. Right-click to explain, translate, sum up, read aloud or save what you selected. Alt+Shift+I opens it. <a href="extension/" style="color:var(--cyan)">Add the free extension</a>.</p></div></article>
-        <article class="fx-card" data-cat="browser"><div class="glyph" aria-hidden="true">🧩</div><div class="fx-text"><h3>Browser extension</h3><p>Izuki reads the page you share and can use its real links and controls. <a href="extension/" style="color:var(--cyan)">Get it free</a> for Chrome, Edge and compatible Chromium browsers.</p></div></article>
-        <article class="fx-card" data-cat="everywhere"><div class="glyph" aria-hidden="true">📬</div><div class="fx-text"><h3>Nothing lost when the laptop wakes</h3><p>Heads-ups and reminders for your phone that come before the Wi-Fi is back now <b>wait and go once it is</b>, in order, marked with the time they were from, and never twice. Things due at the same time arrive as one heads-up, with course names you'd actually say.</p></div></article>
-        <article class="fx-card" data-cat="everywhere"><div class="glyph" aria-hidden="true">🌅</div><div class="fx-text"><h3>Notices things before you ask</h3><p>What's due tomorrow, while there's still a night to do it in. The three things that matter in the morning. Your week, on Sunday evening. Flashcards gone cold. Once each, never mid-task, and nothing at all when there's nothing to say.</p></div></article>
-        <article class="fx-card" data-cat="everywhere"><div class="glyph" aria-hidden="true">↔️</div><div class="fx-text"><h3>An Island that moves with you</h3><p>Drag it along the top and leave it away from your tabs or address bar. It remembers the safe position, with aligned shortcuts for talking, drawing, screenshots, PC Boost and more.</p></div></article>
-        <article class="fx-card" data-cat="everywhere"><div class="glyph" aria-hidden="true">📺</div><div class="fx-text"><h3>Izuki on your TV</h3><p>“Open Netflix on the TV.” Roku, Samsung and LG over your Wi-Fi, plus an <b>Izuki channel</b> that shows the orb on the TV. On <b>Android TV, Google TV or Fire TV</b>: open the Downloader app and type <a href="https://nova-izuki.github.io/tv/" style="color:var(--cyan)">nova-izuki.github.io/tv</a>.</p></div></article>
-        <article class="fx-card" data-cat="everywhere"><div class="glyph" aria-hidden="true">✨</div><div class="fx-text"><h3>Suggests what you need</h3><p>Spots a quiz, an error, a video or an email and offers the right one-tap help. Instant and private — no AI.</p></div></article>
-        <article class="fx-card" data-cat="everywhere"><div class="glyph" aria-hidden="true">📺</div><div class="fx-text"><h3>A proper TV screen</h3><p>On Roku: a home screen with the time, weather and ideas to try, big captions while Izuki talks, and one press on your PC to install or update it.</p></div></article>
-        <article class="fx-card" data-cat="everywhere"><div class="glyph" aria-hidden="true">🍿</div><div class="fx-text"><h3>Ask your TV like a person</h3><p>“Put on something funny for the kids.” It picks a real title from the apps on your Roku — and asks “Disney Plus or Prime Video?” when there's a choice.</p></div></article>
-        <article class="fx-card" data-cat="everywhere"><div class="glyph" aria-hidden="true">⏱️</div><div class="fx-text"><h3>An Island that's alive</h3><p>Timers counting down, a download that offers to sum itself up, a screenshot whose text you can copy in one tap — Izuki's Island shows what's happening and what to do next.</p></div></article>
-        <article class="fx-card" data-cat="everywhere"><div class="glyph" aria-hidden="true">📺</div><div class="fx-text"><h3>Izuki TV, full control</h3><p>On Android TV, Google TV and Fire TV: “Hey Nova, find Stranger Things” — it opens the app, searches and presses play, step by step, with a little orb over the show.</p></div></article>
-        <article class="fx-card" data-cat="everywhere"><div class="glyph" aria-hidden="true">🔗</div><div class="fx-text"><h3>One setup, everywhere</h3><p>Link your phone or TV to your PC once and it copies your AI, your apps and your memories — then works on its own, even with the PC off.</p></div></article>
-        <article class="fx-card" data-cat="everywhere"><div class="glyph" aria-hidden="true">🫶</div><div class="fx-text"><h3>It speaks up by itself</h3><p>An important email, a meeting soon, low battery, the internet dropping — Izuki tells you out loud, and says “welcome back” with what you missed. Your phone hears about it too.</p></div></article>
+        <article class="fx-card" data-cat="does"><div class="fx-text"><h3>It reads apps that keep their words to themselves</h3><p>Some apps — VS Code, Discord, Slack, anything built like them — hand Windows a window with no readable text at all. One look against one of them found <b>17 buttons and zero words</b>, so the honest answer was “I can't see anything on screen”. Windows' own OCR now reads the picture the AI was already being shown, on your PC, with nothing extra uploaded. A window that does share its page keeps its own words — the picture is only used when it says more.</p></div></article>
+        <article class="fx-card" data-cat="does"><div class="fx-text"><h3>A to-do list for every task</h3><p>Izuki writes a short checklist, ticks it off as things are really done — watch it on the Island — and checks the list before it says it's finished.</p></div></article>
+        <article class="fx-card" data-cat="does"><div class="fx-text"><h3>Knows how each app works</h3><p>Playbooks for FL Studio, Premiere, Photoshop, Blender, Office and more: Izuki uses each app's own shortcuts and menus instead of dragging by pixels. Free for other developers too.</p></div></article>
+        <article class="fx-card" data-cat="does"><div class="fx-text"><h3>Works beside you</h3><p>Grab the mouse while Izuki is working and it waits for you — then takes a fresh look and carries on. If a click does nothing, it presses the button straight through Windows or the page itself.</p></div></article>
+        <article class="fx-card" data-cat="does"><div class="fx-text"><h3>Send it a picture</h3><p>Drop, paste or attach a photo in the chat — or send one on Discord or Telegram — and Izuki looks at it with you: homework, an error, a receipt, a plant.</p></div></article>
+        <article class="fx-card" data-cat="does"><div class="fx-text"><h3>Paste another AI's steps</h3><p>Got step-by-step directions from another AI? Paste them in and Izuki does them on your screen, one by one, checking each worked.</p></div></article>
+        <article class="fx-card" data-cat="does"><div class="fx-text"><h3>Jarvis mode</h3><p>Presses buttons and types into boxes straight through Windows — no mouse flying around, and your own mouse stays free.</p></div></article>
+        <article class="fx-card" data-cat="does"><div class="fx-text"><h3>Patient, like a person</h3><p>Opens each thing once and waits as long as your PC needs — no piles of the same window. In the browser it searches in the same tab instead of opening new ones.</p></div></article>
+        <article class="fx-card" data-cat="does"><div class="fx-text"><h3>Shows every tool it uses</h3><p>In the chat, each command, search and file shows as a card with what went in and what came back — like a real coding agent.</p></div></article>
+        <article class="fx-card" data-cat="does"><div class="fx-text"><h3>Proof check</h3><p>Ask “how big is Zoom?” and it checks quietly in the background. After every change, it looks again — “✓ Zoom is no longer installed” — before it says done.</p></div></article>
+        <article class="fx-card" data-cat="does"><div class="fx-text"><h3>Circle it, say “next”</h3><p>It clicks that exact button at once — no AI to wait for — and never clicks your taskbar by mistake.</p></div></article>
+        <article class="fx-card" data-cat="does"><div class="fx-text"><h3>See everything it did</h3><p>Settings → Privacy → <b>What Izuki did</b> lists every click, key, app, look and message Izuki handled on your PC, newest first, day by day. It's kept on your PC for two weeks and never holds what was typed. Or just ask <b>“what did you do today?”</b>.</p></div></article>
+        <article class="fx-card" data-cat="talk"><div class="fx-text"><h3>Hold a key and talk into anything</h3><p>Hold <b>Ctrl+Alt+Space</b> anywhere, talk, let go — what you said is typed into whatever box you were already in: an email, WhatsApp, a form, a code comment. The “um”s and false starts taken out, punctuation added. It types; it never sends.</p></div></article>
+        <article class="fx-card" data-cat="talk"><div class="fx-text"><h3>It offers to write down your call</h3><p>Join a Zoom, Teams or Meet call and Izuki asks once. Say yes and that's the job done: it writes down what your PC plays — headphones are fine — and turns it into notes with timestamps and the full transcript when the call ends. You don't have to follow any of it. No audio is kept.</p></div></article>
+        <article class="fx-card" data-cat="talk"><div class="fx-text"><h3>Ask in any words</h3><p>Grades, what's due, textbooks, APA references, money, screen time, what's filling your drive — say it however you like, typos and all, from your PC, phone or Discord, and Izuki picks the right ability itself.</p></div></article>
+        <article class="fx-card" data-cat="talk"><div class="fx-text"><h3>Just say yes</h3><p>When Izuki offers to help — your drive's nearly full, your PC's slow — a plain “yes” does exactly what it offered. “No” lets it go.</p></div></article>
+        <article class="fx-card" data-cat="talk"><div class="fx-text"><h3>Music mode</h3><p>The orb flows with whatever's playing. Ask “about this song”. Only the volume is read — nothing recorded.</p></div></article>
+        <article class="fx-card" data-cat="talk"><div class="fx-text"><h3>Say it, or hold a key</h3><p>“Hey Nova” hands-free — or hold Ctrl + Windows + Space, talk, let go. Wake-up strictness stops false wake-ups.</p></div></article>
+        <article class="fx-card" data-cat="talk"><div class="fx-text"><h3>Atlas &amp; change by voice</h3><p>A calm British AI-assistant voice. “Switch to Atlas.” “Change your orb to stardust.” Done instantly.</p></div></article>
+        <article class="fx-card" data-cat="talk"><div class="fx-text"><h3>Reads to you, types for you</h3><p>“Read this to me” reads any selected text or page aloud. “Type what I say” types your words wherever your cursor is — perfect for tired eyes, kids and anyone who'd rather talk.</p></div></article>
+        <article class="fx-card" data-cat="school"><div class="fx-text"><h3>Knows what you've handed in</h3><p>Ask <b>“what haven't I done?”</b> and Izuki reads Blackboard's own records: what's past due and not in, what's still to do, and what's already handed in. Reminders skip work you've already turned in.</p></div></article>
+        <article class="fx-card" data-cat="school"><div class="fx-text"><h3>Deadlines from Blackboard</h3><p>Due dates come straight from your Blackboard (with the extension), and you're told a day before and two hours before — no calendar link needed.</p></div></article>
+        <article class="fx-card" data-cat="school"><div class="fx-text"><h3>Reads behind the links</h3><p>Ask about a page and Izuki also reads the pages it links to that hold the answer — the syllabus, the assignment details — quietly, with your own sign-ins. Never links like Log out or Buy.</p></div></article>
+        <article class="fx-card" data-cat="school"><div class="fx-text"><h3>Explain it like a teacher</h3><p>When the Island spots a question on your screen, one tap explains it step by step, with the pen on the words that matter — or “Teach me through this quiz”. On a <b>quiz or test page it won't pick or submit answers</b>; it coaches you instead. That's built into the code, not left to the AI.</p></div></article>
+        <article class="fx-card" data-cat="school"><div class="fx-text"><h3>Every answer, kept</h3><p>“Keep my last answer on screen” now scrolls back through all of today's answers, with one tap to clear them.</p></div></article>
+        <article class="fx-card" data-cat="school"><div class="fx-text"><h3>Teacher mode</h3><p>On any quiz: explains each question with the pen, lets you answer, tells you why, clicks Next when you're ready.</p></div></article>
+        <article class="fx-card" data-cat="school"><div class="fx-text"><h3>Izuki Notes</h3><p>“Take notes on this” on any page, PDF or quiz — then flashcards, quiz me, summaries. Teacher mode keeps lesson notes when you ask.</p></div></article>
+        <article class="fx-card" data-cat="work"><div class="fx-text"><h3>Edit a PDF, not just Word and Excel</h3><p>Ask Izuki to change words in a <b>PDF</b> and it makes an edited copy beside it, checks the copy opens, and leaves your original alone. PDFs that hide their letters in a special font are refused in plain words instead of garbled. The chat card for an edited file has an <b>Open</b> button that opens the exact copy it wrote.</p></div></article>
+        <article class="fx-card" data-cat="work"><div class="fx-text"><h3>Real Word and Excel files</h3><p>Ask for a report as a <b>Word file</b> or a table as an <b>Excel file</b> and get a real one. Edits go into a copy, never your original, and every save keeps its own backup.</p></div></article>
+        <article class="fx-card" data-cat="work"><div class="fx-text"><h3>From a beat to a song sketch</h3><p>“Make a 32 bar trap arrangement at 100 bpm in A minor.” Checked MIDI with drums, bass, chords, melody and section markers, ready to import into your DAW. Creates a new sketch; live recording analysis is still to come.</p></div></article>
+        <article class="fx-card" data-cat="work"><div class="fx-text"><h3>Alarms &amp; your day planned</h3><p>“Wake me at 6:30 every weekday.” A real ringing alarm with Snooze on your PC, and one tap sets it in your phone's own clock. Ask it to plan your day and it books the reminders.</p></div></article>
+        <article class="fx-card" data-cat="work"><div class="fx-text"><h3>Really reads your email</h3><p>“What's important in my email?” — it goes through the last few days, skips the noise and tells you the real to-dos: bills, replies, deliveries, deadlines.</p></div></article>
+        <article class="fx-card" data-cat="work"><div class="fx-text"><h3>Focus mode &amp; Recall</h3><p>“Focus for 25 minutes” holds everything but the urgent. Copy something and Izuki offers to translate or sum it up. And (if you switch it on) “what was that site I was on this morning?”</p></div></article>
+        <article class="fx-card" data-cat="pc"><div class="fx-text"><h3>Window layouts, saved by name</h3><p>Lay out your apps the way you work and say <b>“save my windows as Work”</b>. Later, <b>“set up my Work layout”</b> puts every window back on every screen and opens the apps that aren't running. “Put my windows side by side”, grids, columns and a focus layout work too, and “undo the layout” puts everything back.</p></div></article>
+        <article class="fx-card" data-cat="pc"><div class="fx-text"><h3>Put any app where you want it</h3><p>Say <b>“put Chrome on the left”</b>, “Discord in the top right corner”, “center Notepad” or <b>“move Spotify to my other screen”</b>. Izuki moves just that app, and only when it's really open. “Undo the layout” puts it back.</p></div></article>
+        <article class="fx-card" data-cat="does"><div class="fx-text"><h3>Does it directly, like Jarvis</h3><p>Izuki doesn't hunt through menus when it doesn't have to. Mid-task it uses its own abilities (dark mode, a settings page, a folder, a layout, a timer) and presses real buttons, links and tabs through Windows itself, so your mouse stays where you left it. <b>"Open Bluetooth settings"</b> and <b>"close Chrome"</b> work in one sentence, and nothing closes, deletes, sends or pays unless you asked.</p></div></article>
+        <article class="fx-card" data-cat="pc"><div class="fx-text"><h3>Dim the rest, keep on top, see-through</h3><p><b>“Dim the rest”</b> fades everything but the window you're in, and the light follows you when you switch. Focus mode can do it for you. <b>“Keep Spotify on top”</b> pins a window above the others. <b>“Make Discord see-through”</b> or “50% transparent” lets you see behind it. <b>“Hide everything except this”</b> clears the clutter. All of it undoes in one sentence, and the dim never shows in screenshots.</p></div></article>
+        <article class="fx-card" data-cat="pc"><div class="fx-text"><h3>Finds what's actually slowing your PC</h3><p>Ask <b>“why is my PC so slow?”</b> and PC Care checks the drive, memory, the processor over the last minute and which apps are behind it, then says what would help. A build or a test run is named as work and left alone. <b>Auto Care</b> fixes only the safe causes and checks a minute later that it helped.</p></div></article>
+        <article class="fx-card" data-cat="pc"><div class="fx-text"><h3>Keeps your PC awake while something runs</h3><p>Say <b>“keep my PC awake for 3 hours”</b> before a long download, a render or a coding agent you leave running — a laptop that sleeps cuts them off. The screen still turns off on its usual timer (and locks, if Windows is set to); closing the lid still puts a laptop to sleep. It lets go on its own (12 hours at most), mentions it when you're on battery, and “let it sleep” ends it early.</p></div></article>
+        <article class="fx-card" data-cat="pc"><div class="fx-text"><h3>What's filling my drive?</h3><p>Your biggest folders and files and what's safe to clear, in about half a minute. “Clear the safe stuff” removes old temporary files — your own files are only shown, never deleted.</p></div></article>
+        <article class="fx-card" data-cat="pc"><div class="fx-text"><h3>PC Boost</h3><p>Notices when your PC is struggling and offers to speed it up — clears old temp files and closes hogging background updaters. Never closes a window you're using. Or let it fix things by itself.</p></div></article>
+        <article class="fx-card" data-cat="pc"><div class="fx-text"><h3>Comic &amp; flat-art characters</h3><p>Turn any 3D character into a comic-book or flat-vector look, pick skin tone and hair color in one tap, frame it from head to full body, and the voice switches to match.</p></div></article>
+        <article class="fx-card" data-cat="pc"><div class="fx-text"><h3>Status screen with Autopilot</h3><p>Live processor trace, the heaviest apps, and an Autopilot panel that spots what needs doing — low space, battery, a slow PC, a meeting soon — with one-tap fixes or “Handle it all”.</p></div></article>
+        <article class="fx-card" data-cat="pc"><div class="fx-text"><h3>Real 3D faces — even yours</h3><p>Pick a hologram woman or man, a woman or a man — real 3D models that breathe, look at you and talk with the voice. Make your own face on avaturn.me and Izuki talks with your mouth, or add any .glb face you like.</p></div></article>
+        <article class="fx-card" data-cat="pc"><div class="fx-text"><h3>Your colors</h3><p>Pick the app's colors — or Auto, which changes with the time of day. And eight orb styles, including a hologram face.</p></div></article>
+        <article class="fx-card" data-cat="browser"><div class="fx-text"><h3>A browser panel that shows its work</h3><p>While it answers, the side panel says what it's doing: reading the page, a linked page, <b>searching the web</b>, putting it together. Clear with one tap, follow up with Shorter, Simpler, Example or Quiz me, and keep typing: your next question waits its turn. Only real facts and sources, named so you can check them.</p></div></article>
+        <article class="fx-card" data-cat="browser"><div class="fx-text"><h3>Use the AI you already pay for</h3><p>Open the side panel in Chrome or Edge and pick who answers: <b>ChatGPT, Gemini, Claude, Copilot, Perplexity, Grok, DeepSeek, Le Chat, Izuki itself — or any AI tab you pick.</b> Press Connect and what you ask goes to that tab with the page attached, in your own signed-in session. No second subscription, no API key. Turn on <b>Follow questions</b> and each new question on the page is carried over once, by itself.</p></div></article>
+        <article class="fx-card" data-cat="browser"><div class="fx-text"><h3>From a browser tab to your actual PC</h3><p>Type what you want done — “download the project files and open the report in Word” — and the panel shows you the exact words first. Press <b>Run with Izuki</b> and it goes through the normal action engine: the same checks, the same buttons it won't press without asking, the same Esc, with a Stop button throughout. An answer from an AI tab is never a command; only the words you reviewed are.</p></div></article>
+        <article class="fx-card" data-cat="browser"><div class="fx-text"><h3>Keeps working in its own tab</h3><p>Start a task in Chrome or Edge and switch tabs: Izuki carries on in its own tab through the extension, never touching your mouse or the tab you're on.</p></div></article>
+        <article class="fx-card" data-cat="browser"><div class="fx-text"><h3>Ask Izuki in your browser</h3><p>Click the Izuki icon and a side panel opens next to any page: ask about it, compare it with your other tabs, and keep chatting. Right-click to explain, translate, sum up, read aloud or save what you selected. Alt+Shift+I opens it. <a href="extension/" style="color:var(--cyan)">Add the free extension</a>.</p></div></article>
+        <article class="fx-card" data-cat="browser"><div class="fx-text"><h3>Browser extension</h3><p>Izuki reads the page you share and can use its real links and controls. <a href="extension/" style="color:var(--cyan)">Get it free</a> for Chrome, Edge and compatible Chromium browsers.</p></div></article>
+        <article class="fx-card" data-cat="everywhere"><div class="fx-text"><h3>Nothing lost when the laptop wakes</h3><p>Heads-ups and reminders for your phone that come before the Wi-Fi is back now <b>wait and go once it is</b>, in order, marked with the time they were from, and never twice. Things due at the same time arrive as one heads-up, with course names you'd actually say.</p></div></article>
+        <article class="fx-card" data-cat="everywhere"><div class="fx-text"><h3>Notices things before you ask</h3><p>What's due tomorrow, while there's still a night to do it in. The three things that matter in the morning. Your week, on Sunday evening. Flashcards gone cold. Once each, never mid-task, and nothing at all when there's nothing to say.</p></div></article>
+        <article class="fx-card" data-cat="everywhere"><div class="fx-text"><h3>An Island that moves with you</h3><p>Drag it along the top and leave it away from your tabs or address bar. It remembers the safe position, with aligned shortcuts for talking, drawing, screenshots, PC Boost and more.</p></div></article>
+        <article class="fx-card" data-cat="everywhere"><div class="fx-text"><h3>Izuki on your TV</h3><p>“Open Netflix on the TV.” Roku, Samsung and LG over your Wi-Fi, plus an <b>Izuki channel</b> that shows the orb on the TV. On <b>Android TV, Google TV or Fire TV</b>: open the Downloader app and type <a href="https://github.com/nova-izuki/izuki/releases/latest" style="color:var(--cyan)">Get the TV build from Releases</a>.</p></div></article>
+        <article class="fx-card" data-cat="everywhere"><div class="fx-text"><h3>Suggests what you need</h3><p>Spots a quiz, an error, a video or an email and offers the right one-tap help. Instant and private — no AI.</p></div></article>
+        <article class="fx-card" data-cat="everywhere"><div class="fx-text"><h3>A proper TV screen</h3><p>On Roku: a home screen with the time, weather and ideas to try, big captions while Izuki talks, and one press on your PC to install or update it.</p></div></article>
+        <article class="fx-card" data-cat="everywhere"><div class="fx-text"><h3>Ask your TV like a person</h3><p>“Put on something funny for the kids.” It picks a real title from the apps on your Roku — and asks “Disney Plus or Prime Video?” when there's a choice.</p></div></article>
+        <article class="fx-card" data-cat="everywhere"><div class="fx-text"><h3>An Island that's alive</h3><p>Timers counting down, a download that offers to sum itself up, a screenshot whose text you can copy in one tap — Izuki's Island shows what's happening and what to do next.</p></div></article>
+        <article class="fx-card" data-cat="everywhere"><div class="fx-text"><h3>Izuki TV, full control</h3><p>On Android TV, Google TV and Fire TV: “Hey Nova, find Stranger Things” — it opens the app, searches and presses play, step by step, with a little orb over the show.</p></div></article>
+        <article class="fx-card" data-cat="everywhere"><div class="fx-text"><h3>One setup, everywhere</h3><p>Link your phone or TV to your PC once and it copies your AI, your apps and your memories — then works on its own, even with the PC off.</p></div></article>
+        <article class="fx-card" data-cat="everywhere"><div class="fx-text"><h3>It speaks up by itself</h3><p>An important email, a meeting soon, low battery, the internet dropping — Izuki tells you out loud, and says “welcome back” with what you missed. Your phone hears about it too.</p></div></article>
       </div>
       <div class="fx-more-row"><button type="button" class="btn ghost fx-more" id="fx-more" aria-controls="fx-grid" hidden>Show all 61</button></div>
     </section>
@@ -1764,21 +2083,22 @@
     <!-- ========== hear the voices ========== -->
     <section id="voices">
       <div class="kicker rv">30+ voices &amp; characters</div>
-      <h2 class="rv">Who do you want Izuki to be?</h2>
-      <p class="sub rv">Tap one to hear it. Each has its own voice and its own way of talking — and you can rename it, pick any voice, and give it your own personality.</p>
+      <h2 class="rv">Choose a voice. Set the tone.</h2>
+      <p class="sub rv">Preview six of them below. Each has its own voice and delivery; you can rename your assistant, change the voice, and adjust its personality.</p>
       <div class="voices" id="voice-grid">
-        <button class="voice rv" type="button" data-src="media/voices/nova.m4a"><span class="av" style="background:linear-gradient(135deg,#a78bfa,#22d3ee)">✨</span><span><b>Nova</b><small>Warm · the default</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
-        <button class="voice rv" type="button" data-src="media/voices/leo.m4a" style="--d:.05s"><span class="av" style="background:linear-gradient(135deg,#1e3a8a,#6366f1)">🌙</span><span><b>Leo</b><small>Deep &amp; calm</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
-        <button class="voice rv" type="button" data-src="media/voices/sophie.m4a" style="--d:.1s"><span class="av" style="background:linear-gradient(135deg,#be185d,#6366f1)">🇬🇧</span><span><b>Sophie</b><small>British</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
-        <button class="voice rv" type="button" data-src="media/voices/alfred.m4a"><span class="av" style="background:linear-gradient(135deg,#334155,#a16207)">🎩</span><span><b>Alfred</b><small>Your butler</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
-        <button class="voice rv" type="button" data-src="media/voices/kiki.m4a" style="--d:.05s"><span class="av" style="background:linear-gradient(135deg,#ec4899,#f59e0b)">💅</span><span><b>Kiki</b><small>Gen Z bestie</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
-        <button class="voice rv" type="button" data-src="media/voices/rex.m4a" style="--d:.1s"><span class="av" style="background:linear-gradient(135deg,#7f1d1d,#ef4444)">😈</span><span><b>Rex 🌶️</b><small>Unfiltered · roasts you</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
+        <button class="voice rv" type="button" data-src="media/voices/nova.m4a"><span class="av" style="background:linear-gradient(135deg,#a78bfa,#22d3ee)">N</span><span><b>Nova</b><small>Warm · the default</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
+        <button class="voice rv" type="button" data-src="media/voices/leo.m4a" style="--d:.05s"><span class="av" style="background:linear-gradient(135deg,#1e3a8a,#6366f1)">L</span><span><b>Leo</b><small>Deep &amp; calm</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
+        <button class="voice rv" type="button" data-src="media/voices/sophie.m4a" style="--d:.1s"><span class="av" style="background:linear-gradient(135deg,#be185d,#6366f1)">S</span><span><b>Sophie</b><small>British</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
+        <button class="voice rv" type="button" data-src="media/voices/alfred.m4a"><span class="av" style="background:linear-gradient(135deg,#334155,#a16207)">A</span><span><b>Alfred</b><small>Your butler</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
+        <button class="voice rv" type="button" data-src="media/voices/kiki.m4a" style="--d:.05s"><span class="av" style="background:linear-gradient(135deg,#ec4899,#f59e0b)">K</span><span><b>Kiki</b><small>Gen Z bestie</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
+        <button class="voice rv" type="button" data-src="media/voices/rex.m4a" style="--d:.1s"><span class="av" style="background:linear-gradient(135deg,#7f1d1d,#ef4444)">R</span><span><b>Rex</b><small>Unfiltered · roasts you</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
       </div>
       <div class="more-voices rv">
-        <span>🇳🇬 Ezinne</span><span>🇳🇬 Abeo</span><span>🇳🇬 Chidi · Pidgin</span><span>🇳🇬 Amaka · Pidgin</span><span>🇪🇸 Lucía</span><span>🇲🇽 Mateo</span><span>🇫🇷 Camille</span>
-        <span>🇧🇷 Bia</span><span>🇩🇪 Lena</span><span>🇰🇪 Zuri · Swahili</span><span>🇮🇳 Priya</span><span>🇮🇪 Niamh</span><span>🇦🇺 Jack</span><span>🇿🇦 Thabo</span><span>🔥 Blaze</span>
-        <span>🎬 Morgan</span><span>🏴‍☠️ Captain Salty</span><span>🧘 Sage</span><span>👩‍🏫 Ada</span><span>+ more</span>
+        <span>Dre · Atlanta</span><span>Nia · Houston</span><span>Lucía · Spain</span><span>Mateo · Mexico</span><span>Camille · France</span><span>Bia · Brazil</span>
+        <span>Lena · Germany</span><span>Zuri · Kenya</span><span>Thabo · South Africa</span><span>Priya · India</span><span>Niamh · Ireland</span><span>Jack · Australia</span>
+        <span>Ezinne · Nigeria</span><span>Chidi · Pidgin</span><span>Amaka · Pidgin</span><span>Morgan · Narrator</span><span>Sage · Calm</span><span>Ada · Teacher</span><span>+ more</span>
       </div>
+      <p class="sub rv" style="margin-top:18px;font-size:14.5px;color:var(--faint)">US English is included alongside British, Nigerian, Spanish, French, German, Portuguese, Hindi and Swahili voices.</p>
     </section>
 
     <!-- ========== phone ========== -->
@@ -1786,14 +2106,14 @@
       <div class="phone-wrap">
         <div>
           <div class="kicker rv">Away from your desk</div>
-          <h2 class="rv">It's in your pocket too.</h2>
-          <p class="sub rv">No app store, no fees. Five free ways to reach Izuki from your phone:</p>
+          <h2 class="rv">Your PC, from your phone.</h2>
+          <p class="sub rv">No app store and no extra fee. Five ways to reach Izuki when you step away from the desk:</p>
           <div class="ways">
-            <div class="way rv"><div class="n">📞</div><div><b>Call Izuki</b><span>Scan a QR code on your PC and talk hands-free — it hears you, answers out loud, and can do things on your PC.</span></div></div>
-            <div class="way rv" style="--d:.05s"><div class="n">📲</div><div><b>The phone app</b><span>Add <a href="app/" style="color:var(--cyan)">Izuki for phones</a> to your home screen. Works with no PC at all. “Hey Siri, Izuki” too.</span></div></div>
-            <div class="way rv" style="--d:.1s"><div class="n">✈️</div><div><b>Telegram or Discord</b><span>Text it or send a voice note from anywhere. <kbd>/screen</kbd> shows your PC, <kbd>/stop</kbd> stops it.</span></div></div>
-            <div class="way rv" style="--d:.15s"><div class="n">⏰</div><div><b>Reminders everywhere</b><span>Set one by voice, chat or text — it rings on your PC and lands in your phone's calendar.</span></div></div>
-            <div class="way rv" style="--d:.2s"><div class="n">🗣️</div><div><b>“Hey Nova” on Android</b><span>The optional preview listener wakes the screen, posts a visible notification and waits for your unlock. It never gets past the lock screen.</span></div></div>
+            <div class="way rv"><div class="n">01</div><div><b>Call Izuki</b><span>Scan a QR code on your PC and talk hands-free — it hears you, answers out loud, and can act on your PC.</span></div></div>
+            <div class="way rv" style="--d:.05s"><div class="n">02</div><div><b>The phone app</b><span>Add <a href="app/" style="color:var(--cyan)">Izuki for phones</a> to your home screen. Works with no PC at all. “Hey Siri, Izuki” too.</span></div></div>
+            <div class="way rv" style="--d:.1s"><div class="n">03</div><div><b>Telegram or Discord</b><span>Text it or send a voice note from anywhere. <kbd>/screen</kbd> shows your PC, <kbd>/stop</kbd> stops it.</span></div></div>
+            <div class="way rv" style="--d:.15s"><div class="n">04</div><div><b>Reminders everywhere</b><span>Set one by voice, chat or text — it rings on your PC and lands in your phone's calendar.</span></div></div>
+            <div class="way rv" style="--d:.2s"><div class="n">05</div><div><b>“Hey Nova” on Android</b><span>The optional preview listener wakes the screen, posts a visible notification and waits for your unlock. It never gets past the lock screen.</span></div></div>
           </div>
         </div>
         <div class="phone rv" id="phone-el" aria-hidden="true">
@@ -1817,7 +2137,7 @@
           <div class="wake-demo-actions" role="group" aria-label="Phone wake preview">
             <button class="btn primary small" type="button" data-wake="open">Try “open YouTube”</button>
             <button class="btn ghost small" type="button" data-wake="locked">Try it while locked</button>
-            <button class="btn ghost small" type="button" data-wake="call">Try “call Mum”</button>
+            <button class="btn ghost small" type="button" data-wake="call">Try “call Mom”</button>
           </div>
           <p class="wake-demo-note" id="wake-demo-note" aria-live="polite">A preview only — the real app runs this on Android with your microphone and notification permissions.</p>
         </div>
@@ -1829,7 +2149,7 @@
             <div class="wake-demo-orb" id="wake-demo-orb"></div>
             <div class="wake-demo-heard" id="wake-demo-heard">Say “Hey Nova”</div>
             <div class="wake-demo-line" id="wake-demo-line">Then ask for something.</div>
-            <div class="wake-demo-lock" id="wake-demo-lock" hidden>🔒<br>Unlock to continue</div>
+            <div class="wake-demo-lock" id="wake-demo-lock" hidden>LOCKED<br>Unlock to continue</div>
             <div class="wake-demo-notif" id="wake-demo-notif" hidden><b>IZUKI</b><span id="wake-demo-notif-text">I'm here — unlock your phone to talk.</span></div>
           </div>
         </div>
@@ -1854,12 +2174,12 @@
       <h2 class="rv" id="trust-title">Built to be trusted with your PC.</h2>
       <p class="sub rv">An assistant that clicks and types for you has to earn that. Here's exactly how Izuki treats your screen, your keys and your things — and where you can check every word of it yourself.</p>
       <div class="trust-grid">
-        <article class="trust-card rv"><div class="glyph" aria-hidden="true">🔓</div><h3>Open source, every line</h3><p>Izuki is MIT-licensed and all of its code is public. What it does with your screen, your voice and your keys is there for anyone to read and check.</p><a href="https://github.com/nova-izuki/izuki">Read the code ↗</a></article>
-        <article class="trust-card rv" style="--d:.05s"><div class="glyph" aria-hidden="true">🔑</div><h3>Your AI, your key</h3><p>There's no Izuki account. Your screen and your words go from your PC to the AI service <b>you</b> picked, using your own free key. Hearing you and reading text off the screen happen on your PC (unless you switch on <i>Sharper hearing</i>).</p><a href="privacy/#what-leaves">What leaves your PC</a></article>
-        <article class="trust-card rv" style="--d:.1s"><div class="glyph" aria-hidden="true">✋</div><h3>It asks before anything final</h3><p>Send, Pay, Buy, Delete, Submit: never pressed unless you asked for exactly that. It won't type into a password box or act on your lock screen, and it won't do graded quizzes or tests for you.</p><a href="#features">What it never does</a></article>
-        <article class="trust-card rv" style="--d:.15s"><div class="glyph" aria-hidden="true">⏹️</div><h3>You're always in charge</h3><p><b>Esc</b> stops everything at once and <b>Ctrl+Shift+Q</b> works any time. Pause a task between steps, take over, and carry on. Settings → Privacy lists what Izuki can reach and everything it did, and copies or erases all your data. Eye control is off unless you turn it on, with its own emergency stop.</p><a href="privacy/#control">Your controls</a></article>
-        <article class="trust-card rv" style="--d:.2s"><div class="glyph" aria-hidden="true">🚫</div><h3>No ads, no trackers</h3><p>No sign-up and no ads in the app. This website has no analytics or tracking cookies. Error reports stay on your PC; nothing is sent to us automatically.</p><a href="privacy/">Privacy policy</a></article>
-        <article class="trust-card rv" style="--d:.25s"><div class="glyph" aria-hidden="true">✍️</div><h3>Signed updates</h3><p>Every update is signed, and Izuki checks the signature before it installs one. The installer itself isn't code-signed yet, so Windows warns you the first time. Here's how to check your download is the real one.</p><a href="security/">Check your download</a></article>
+        <article class="trust-card rv"><h3>Open source, every line</h3><p>Izuki is MIT-licensed and all of its code is public. What it does with your screen, your voice and your keys is there for anyone to read and check.</p><a href="https://github.com/nova-izuki/izuki">Read the code ↗</a></article>
+        <article class="trust-card rv" style="--d:.05s"><h3>Your AI, your key</h3><p>There's no Izuki account. Your screen and your words go from your PC to the AI service <b>you</b> picked, using your own free key. Hearing you and reading text off the screen happen on your PC (unless you switch on <i>Sharper hearing</i>).</p><a href="privacy/#what-leaves">What leaves your PC</a></article>
+        <article class="trust-card rv" style="--d:.1s"><h3>It asks before anything final</h3><p>Send, Pay, Buy, Delete, Submit: never pressed unless you asked for exactly that. It won't type into a password box or act on your lock screen, and it won't do graded quizzes or tests for you.</p><a href="#features">What it never does</a></article>
+        <article class="trust-card rv" style="--d:.15s"><h3>You're always in charge</h3><p><b>Esc</b> stops everything at once and <b>Ctrl+Shift+Q</b> works any time. Pause a task between steps, take over, and carry on. Settings → Privacy lists what Izuki can reach and everything it did, and copies or erases all your data. Eye control is off unless you turn it on, with its own emergency stop.</p><a href="privacy/#control">Your controls</a></article>
+        <article class="trust-card rv" style="--d:.2s"><h3>No ads, no trackers</h3><p>No sign-up and no ads in the app. This website has no analytics or tracking cookies. Error reports stay on your PC; nothing is sent to us automatically.</p><a href="privacy/">Privacy policy</a></article>
+        <article class="trust-card rv" style="--d:.25s"><h3>Signed updates</h3><p>Every update is signed, and Izuki checks the signature before it installs one. The installer itself isn't code-signed yet, so Windows warns you the first time. Here's how to check your download is the real one.</p><a href="security/">Check your download</a></article>
       </div>
       <nav class="trust-links rv" aria-label="Policies">
         <a href="privacy/">Privacy policy</a>
@@ -1882,38 +2202,80 @@
       </div>
     </section>
 
+    <!-- ========== FAQ ========== -->
+    <section id="faq" aria-labelledby="faq-title">
+      <div class="kicker rv">Questions</div>
+      <h2 class="rv" id="faq-title">The short answers.</h2>
+      <p class="sub rv">What to know before you install.</p>
+      <div class="faq-grid rv">
+        <details>
+          <summary>Is Izuki really free?</summary>
+          <p>Yes. Izuki is free and MIT-licensed. It runs with your own free AI key from Gemini, Groq, OpenRouter or Mistral, or a model on your own PC. AI providers may apply their own usage limits.</p>
+        </details>
+        <details>
+          <summary>What do I need to run it?</summary>
+          <p>A Windows 10 or Windows 11 PC and an internet connection for the AI service. You will need a free Google Gemini key, or another supported provider key. There is no Izuki account.</p>
+        </details>
+        <details>
+          <summary>Does it work on a Mac or phone?</summary>
+          <p>The desktop app is for Windows. The phone companion is a free web app for iPhone and Android, with native Android controls in preview. Mac and Linux are not supported yet; the browser extension works in Chrome and Edge.</p>
+        </details>
+        <details>
+          <summary>Which AI does it use?</summary>
+          <p>Desktop: Gemini, Groq, OpenRouter, Mistral, Meta Llama, or a local model. In the browser extension, you can also route questions to the AI tab you already use, such as ChatGPT, Claude, Copilot or Perplexity.</p>
+        </details>
+        <details>
+          <summary>Is it safe to let it control my PC?</summary>
+          <p>Your keys stay on your devices. It will not type into password fields, act on a locked screen, or press Send, Pay, Buy or Delete unless you specifically asked. Esc stops everything, and the source is open to inspection.</p>
+        </details>
+        <details>
+          <summary>Does it record my screen all the time?</summary>
+          <p>No. Izuki captures the screen only when a task needs it and you have asked for help. Hearing and screen-text recognition happen on your PC. Nothing is continuously uploaded to us, and the site has no analytics or tracking cookies.</p>
+        </details>
+      </div>
+    </section>
+
     <!-- ========== support ========== -->
     <section id="support">
       <div class="tip rv">
         <div>
-          <h2>☕ Buy the builder a coffee</h2>
-          <p>Izuki is free, and it's going to stay free. It's built by one person, late at night, on a lot of coffee and a big dream. If Izuki saved you time or made you smile, a small tip keeps the next feature coming. Every dollar counts — and a ⭐ on GitHub means just as much.</p>
+          <div class="kicker">Independent software</div>
+          <h2>Support the build.</h2>
+          <p>Izuki is free and open source. If it earns a place in your workflow, star the repo or leave a tip. A star helps other people find it; a tip funds the next release.</p>
         </div>
-        <a class="btn cash" href="https://cash.app/$louismane2">💚 Tip $louismane2</a>
+        <div class="tip-actions">
+          <a class="btn primary" href="https://github.com/nova-izuki/izuki">Star on GitHub</a>
+          <a class="btn ghost" href="https://cash.app/$louismane2">Tip via Cash App</a>
+        </div>
       </div>
       <div class="about rv" style="margin-top: 56px">
         <div class="avatar">SN</div>
         <div>
-          <h2>Made by Solomon Nwachukwu</h2>
-          <p>I'm an IT and cybersecurity student, and Izuki is step one of something bigger: real robot companions (that's <b>Nova Izuki</b>), an Afro-tech community where more of us get to build the future instead of just using it, and one day a company that creates real opportunities for a lot of people. Step by step.</p>
-          <p>Questions, ideas or collaborations: <a href="mailto:izuki.hq@gmail.com">izuki.hq@gmail.com</a></p>
+          <h2>Built by Solomon Nwachukwu</h2>
+          <p>Izuki is an independent Windows assistant, built in public. The goal is practical AI that works on the computer people already own, with the source open for inspection.</p>
+          <p>Questions, ideas or collaborations: <a href="mailto:support@izukinova.ai">support@izukinova.ai</a></p>
         </div>
       </div>
     </section>
 
-    <section class="final">
+    <section class="final" id="get-izuki">
       <div class="final-glow" aria-hidden="true"></div>
-      <h2 class="rv">Say <span class="shine">“Hey Nova.”</span></h2>
-      <p class="sub rv" style="margin-inline:auto">Your computer's been waiting for someone to talk to.</p>
+      <div class="kicker rv">Start here</div>
+      <h2 class="rv">Put your PC on <span class="shine">voice command.</span></h2>
+      <p class="sub rv" style="margin-inline:auto">Download Izuki for Windows 10 or 11. Free, no account, and your AI key stays on your machine.</p>
       <div class="ctas rv">
-        <a class="btn primary dl" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">⬇ Download for Windows — free</a>
-        <a class="btn ghost" href="https://github.com/nova-izuki/izuki">⭐ Star on GitHub</a>
+        <a class="btn primary dl" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">Download for Windows</a>
+        <a class="btn ghost" href="https://github.com/nova-izuki/izuki">View source on GitHub</a>
       </div>
+      <div class="final-meta rv">
+        <span>Windows 10 &amp; 11</span><span>No account</span><span>Free forever</span><span>MIT licensed</span>
+      </div>
+      <p class="final-alt rv">Need portable or MSI? <a href="https://github.com/nova-izuki/izuki/releases/latest">See all release formats</a> · <a href="app/">Use it on your phone</a> · <a href="extension/">Add the browser extension</a></p>
     </section>
   </main>
 
   <footer>
-    <p><a href="help/">Izuki help: install, extension, AI keys, troubleshooting</a> · <a href="screenshots/">Izuki screenshots &amp; brand images</a></p>
+    <p><a href="help/">Izuki help: install, extension, AI keys, troubleshooting</a> · <a href="screenshots/">Izuki screenshots &amp; brand images</a> · <a href="extension/">Browser extension</a></p>
     <p class="legal-links"><a href="privacy/">Privacy</a> · <a href="terms/">Terms</a> · <a href="security/">Security &amp; verify your download</a> · <a href="extension/privacy.html">Extension privacy</a></p>
     <div class="socials" aria-label="Izuki on social media">
       <a href="https://x.com/izukiapp" aria-label="Izuki on X" rel="me noopener" target="_blank"><svg viewBox="0 0 24 24"><path d="M17.8 3h3.1l-6.8 7.7 8 10.3h-6.3l-4.9-6.4L5.3 21H2.2l7.2-8.3L1.8 3h6.4l4.4 5.8L17.8 3zm-1.1 16.2h1.7L7.4 4.7H5.6l11.1 14.5z"/></svg></a>
@@ -1924,36 +2286,36 @@
       <a href="https://github.com/nova-izuki/izuki" aria-label="Izuki on GitHub" rel="me noopener" target="_blank"><svg viewBox="0 0 24 24"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2 0-.4-.5-1.6.2-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.7 1.6.2 2.8.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.5.4.9 1 .9 2.2v3.3c0 .3.1.7.8.6A12 12 0 0 0 12 .3"/></svg></a>
       <span class="handle">@izukiapp everywhere</span>
     </div>
-    <span>© 2026 Izuki · <a href="https://izukinova.ai/">izukinova.ai</a> · <a href="https://izukinova.com/">izukinova.com</a> · MIT licensed · Made with ❤️ by Solomon Nwachukwu · Earth photo: <a href="https://unsplash.com/photos/photo-of-outer-space-Q1p7bh3SHj8?utm_source=izuki&utm_medium=referral">NASA</a> on <a href="https://unsplash.com/?utm_source=izuki&utm_medium=referral">Unsplash</a></span>
-    <span><a href="https://github.com/nova-izuki/izuki">GitHub</a> · <a class="dl" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">Download</a> · <a href="app/">Phone app</a> · <a href="links/">All links</a> · <a href="https://github.com/nova-izuki/izuki#privacy">Privacy</a></span>
+    <span>© 2026 Izuki · <a href="https://izukinova.ai/">izukinova.ai</a> · <a href="https://izukinova.com/">izukinova.com</a> · MIT licensed · Built by Solomon Nwachukwu</span>
+    <span><a href="https://github.com/nova-izuki/izuki">GitHub</a> · <a class="dl" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">Download</a> · <a href="app/">Phone app</a> · <a href="extension/">Extension</a> · <a href="links/">All links</a> · <a href="https://github.com/nova-izuki/izuki#privacy">Privacy</a></span>
   </footer>
 
   <dialog class="dl-modal" id="dl-modal" aria-labelledby="dl-title">
     <button class="dl-close" type="button" id="dl-close" aria-label="Close">✕</button>
     <div class="dl-in" id="dl-win">
-      <h3 id="dl-title">🎉 Your download has started!</h3>
+      <h3 id="dl-title">Your download has started.</h3>
       <p>Three quick steps and you're talking to Izuki:</p>
       <p style="margin-top:-6px;color:var(--faint);font-size:13.5px">You're getting the newest version — <b>Izuki-Setup.exe</b> (the standard Windows installer). Just run that one.</p>
       <ol class="dl-steps">
-        <li><span>Open <b>Izuki-Setup.exe</b> from your downloads (the ⬇ arrow at the top-right of your browser, or your <b>Downloads</b> folder). That's the right file — ignore the portable/MSI unless you know you need them.</span></li>
+        <li><span>Open <b>Izuki-Setup.exe</b> from your downloads (the download arrow at the top-right of your browser, or your <b>Downloads</b> folder). That's the right file — ignore the portable/MSI unless you know you need them.</span></li>
         <li><span>If Windows says <b>“Windows protected your PC”</b>, click <b>More info → Run anyway</b>. Izuki is new, so it isn't “signed” yet — it's safe and open source.</span></li>
-        <li><span>The welcome tour opens. Paste a <b>free</b> Google Gemini key when it asks — that's all. Then say “Hey Nova”. 👋. It keeps itself up to date automatically after this.</span></li>
+        <li><span>The welcome tour opens. Paste a <b>free</b> Google Gemini key when it asks — that's all. Then say “Hey Nova”. It keeps itself up to date automatically after this.</span></li>
       </ol>
       <div class="dl-foot"><span>Didn't start? <a href="#" id="dl-again">Try again</a></span><a href="https://github.com/nova-izuki/izuki/releases/latest" target="_blank" rel="noopener">Other formats (portable · MSI)</a></div>
     </div>
     <div class="dl-in" id="dl-other" hidden>
-      <h3>Izuki runs on Windows PCs 💻</h3>
+      <h3>Izuki runs on Windows PCs.</h3>
       <p>Looks like you're on a phone or a Mac. The PC app needs Windows 10 or 11 — but you can use Izuki on your phone right now, free.</p>
       <div class="ctas" style="margin-top:20px">
-        <a class="btn primary" href="app/">📱 Open the phone app</a>
-        <a class="btn ghost" href="#" id="dl-anyway">⬇ Download anyway</a>
+        <a class="btn primary" href="app/">Open the phone app</a>
+        <a class="btn ghost" href="#" id="dl-anyway">Download anyway</a>
       </div>
       <div class="dl-foot"><span>Tip: open this page on your PC to install it there.</span></div>
     </div>
   </dialog>
 
   <button class="totop" id="totop" type="button" aria-label="Back to the top">
-    <svg viewBox="0 0 52 52" aria-hidden="true"><defs><linearGradient id="tt-grad" x1="0" x2="1"><stop offset="0" stop-color="#67e8f9"/><stop offset=".5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f0abfc"/></linearGradient></defs><circle cx="26" cy="26" r="24"/></svg>
+    <svg viewBox="0 0 52 52" aria-hidden="true"><defs><linearGradient id="tt-grad" x1="0" x2="1"><stop offset="0" stop-color="#eaf8ff"/><stop offset=".5" stop-color="#bae6fd"/><stop offset="1" stop-color="#93a5ff"/></linearGradient></defs><circle cx="26" cy="26" r="24"/></svg>
     ↑
   </button>
   <nav class="dots-nav" id="dots-nav" aria-label="Jump to a section">
@@ -2021,7 +2383,7 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
   // ------------------------------------------------ the liquid orb
-  // The same orb as in the app: wave-blobs of flowing colour, screened
+  // The same orb as in the app: wave-blobs of flowing color, screened
   // together, rippling with sound.
   const PALETTES = {
     listening: { colors: ["6,182,212", "10,132,255", "99,102,241", "34,211,238"], glow: "14,165,233", spin: 0.45 },
@@ -2311,14 +2673,14 @@
   // Plays by itself, but it's alive: tap the orb or a chip and it answers
   // you instead, then carries on. Esc stops it, like the real thing.
   const SCRIPT = [
-    ["Hey Nova, play some chill Afrobeats on YouTube.", "Playing it now — and I'll skip the ad for you. 🎶"],
+    ["Hey Nova, play some chill lofi on YouTube.", "Playing it now — and I'll skip the ad for you. "],
     ["What's this error on my screen?", "It says your disk is almost full. Want me to open Storage settings?"],
-    ["Explain this maths problem.", "Sure — first, look at the part I've circled: that's the x we're solving for…"],
-    ["Remind me at 6 to call Mum.", "Done! I'll remind you at 6 — on your PC and your phone."],
+    ["Explain this math problem.", "Sure — first, look at the part I've circled: that's the x we're solving for…"],
+    ["Remind me at 6 to call Mom.", "Done! I'll remind you at 6 — on your PC and your phone."],
   ];
   const TAPS = [
-    "Hey! That tickles. 😄", "I'm awake! Say “Hey Nova” and I'm all yours.", "Boop. 👀 Scroll down — I want to show you something.",
-    "Still here. Still free. Still brilliant with computers.", "Okay okay, you found my favourite spot. 💜", "Want to talk properly? There's a chat box just below. 👇",
+    "Hey! That tickles.", "I'm awake! Say “Hey Nova” and I'm all yours.", "Scroll down — the real work happens on your PC.",
+    "Still here. Ready when you are.", "The desktop app does the real work. ", "Use the chat box below to keep going. ",
   ];
   const you = $("hero-you"), iz = $("hero-iz"), heroState = $("hero-state");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -2364,7 +2726,7 @@
   converse(heroGen);
 
   // Little bursts of light, for taps and wins.
-  const SPARK = ["#67e8f9", "#a78bfa", "#f0abfc", "#fde68a", "#34d399", "#ffffff"];
+  const SPARK = ["#67e8f9", "#a78bfa", "#f0abfc", "#fde68a", "#ffffff"];
   function burst(x, y, n = 16) {
     if (reduce) return;
     for (let i = 0; i < n; i++) {
@@ -2390,7 +2752,7 @@
     chip.addEventListener("click", (e) => {
       burst(e.clientX, e.clientY, 10);
       if (lines != null) heroSay(SCRIPT[lines][0], SCRIPT[lines][1], (lines + 1) % SCRIPT.length);
-      else heroSay("Reply to Sam saying I'll be there Friday.", "Here's the draft: “Hi Sam, I'll be there Friday!” — send it? ✉️");
+      else heroSay("Reply to Sam saying I'll be there Friday.", "Here's the draft: “Hi Sam, I'll be there Friday!” — send it?");
     });
   });
 
@@ -2398,30 +2760,30 @@
   // Canned answers (no AI, nothing sent anywhere) that show the kind of
   // thing the real one does.
   const BRAIN = [
-    [/^\*boop\*$/, () => TAPS[tapN++ % TAPS.length], "✨ Boop"],
-    [/\b(hey|hi|hello|yo|sup|hiya|howdy)\b.*\bnova\b|\bhey nova\b/i, "Mhm? I'm listening. 👂 What can I do for you?", "👂 Listening"],
-    [/joke|funny|laugh/i, ["Why did the PC go to therapy? Too many unresolved tabs. 😅", "I told my computer a joke about UDP. Not sure it got it. 🤭", "Why was the laptop cold? It left its Windows open. 🥶"], "😂 Nailed it"],
-    [/stop|cancel|esc\b|shut up|quiet/i, "Stopped. 🛑 Press Esc any time and I let go — instantly.", "🛑 Stopped"],
-    [/play|song|music|youtube|spotify|playlist|afrobeat|lofi|beats/i, "Playing it now — and I'll skip the ad for you. 🎶", "✓ Ad skipped"],
-    [/remind|reminder|alarm|wake me/i, "Done! I'll remind you then — out loud on your PC, and on your phone. ⏰", "⏰ Reminder set"],
-    [/homework|assignment|due|school|blackboard|canvas|class|exam|test\b|study/i, "You've got a History essay due tomorrow at 11:59 PM and a quiz Friday. Want me to make you a study plan? 📚", "📚 2 things due"],
-    [/math|maths|equation|solve|algebra|\d\s*x|x\s*=|explain|teach/i, "Easy — watch, I'll draw it. 2x + 3 = 11, take 3 from both sides: 2x = 8. Halve it: x = 4. ✏️", "✏️ Drawn on screen"],
-    [/email|inbox|gmail|mail|reply/i, "You've got 3 new emails — one from Sam about Friday. Want me to draft a reply? (I'll show you before sending.)", "✉️ Draft ready"],
-    [/schedule|calendar|plan|week|meeting|busy|free time/i, "You're free Tuesday after 3 and all of Thursday. Shall I block Thursday morning for study? 🗓️", "🗓️ Week planned"],
-    [/weather|news|search|google|look up|latest|who is|who's|what's happening/i, "On it — searching the web and reading the pages for you… here's the short version, with links if you want more. 🌐", "🌐 3 pages read"],
-    [/file|folder|document|pdf|essay|download|desktop/i, "Found it in Documents → School. Want me to open it? (I always ask before changing a file.) 📁", "📁 Found it"],
-    [/screen|error|what('s| is) this|help me with/i, "Let me look… that error means your disk is almost full. Want me to open Storage settings? 👀", "👀 Screen read"],
-    [/free|price|cost|pay|money|subscription/i, "Totally free. No subscription, no catch — you just use your own free AI key. 💸", "💸 $0 forever"],
-    [/mac|linux|iphone|android|phone|mobile/i, "I'm on Windows 10 & 11, and on any phone through my free web app — you can even call me. Mac and Linux are coming. 📱", "📱 In your pocket"],
-    [/who are you|your name|what are you|what can you do|izuki/i, "I'm Izuki — Nova to my friends. I live on your screen, talk with you, and do the clicking for you. 💜", "💜 Nice to meet you"],
-    [/thank|thx|ty\b/i, "Anytime! 💜", "💜"],
-    [/love|cute|cool|amazing|awesome|nice/i, ["Aww, stop it. 🥹💜", "You're pretty cool yourself. 😎"], "🥹 Blushing"],
-    [/\b(hi|hey|hello|yo|sup|hiya)\b/i, "Hey! 👋 What are we doing today?", "👋 Hi!"],
+    [/^\*boop\*$/, () => TAPS[tapN++ % TAPS.length], "Boop"],
+    [/\b(hey|hi|hello|yo|sup|hiya|howdy)\b.*\bnova\b|\bhey nova\b/i, "Mhm? I'm listening. What can I do for you?", " Listening"],
+    [/joke|funny|laugh/i, ["Why did the PC go to therapy? Too many unresolved tabs.", "I told my computer a joke about UDP. Not sure it got it.", "Why was the laptop cold? It left its Windows open."], "Nailed it"],
+    [/stop|cancel|esc\b|shut up|quiet/i, "Stopped.  Press Esc any time and I let go — instantly.", " Stopped"],
+    [/play|song|music|youtube|spotify|playlist|afrobeat|lofi|beats/i, "Playing it now — and I'll skip the ad for you. ", "✓ Ad skipped"],
+    [/remind|reminder|alarm|wake me/i, "Done! I'll remind you then — out loud on your PC, and on your phone.", "Reminder set"],
+    [/homework|assignment|due|school|blackboard|canvas|class|exam|test\b|study/i, "You've got a History essay due tomorrow at 11:59 PM and a quiz Friday. Want me to make you a study plan?", "2 things due"],
+    [/math|math|equation|solve|algebra|\d\s*x|x\s*=|explain|teach/i, "Easy — watch, I'll draw it. 2x + 3 = 11, take 3 from both sides: 2x = 8. Halve it: x = 4.", "Drawn on screen"],
+    [/email|inbox|gmail|mail|reply/i, "You've got 3 new emails — one from Sam about Friday. Want me to draft a reply? (I'll show you before sending.)", "Draft ready"],
+    [/schedule|calendar|plan|week|meeting|busy|free time/i, "You're free Tuesday after 3 and all of Thursday. Shall I block Thursday morning for study? ", " Week planned"],
+    [/weather|news|search|google|look up|latest|who is|who's|what's happening/i, "On it — searching the web and reading the pages for you… here's the short version, with links if you want more.", "3 pages read"],
+    [/file|folder|document|pdf|essay|download|desktop/i, "Found it in Documents → School. Want me to open it? (I always ask before changing a file.) ", " Found it"],
+    [/screen|error|what('s| is) this|help me with/i, "Let me look… that error means your disk is almost full. Want me to open Storage settings?", "Screen read"],
+    [/free|price|cost|pay|money|subscription/i, "Totally free. No subscription, no catch — you just use your own free AI key.", " $0 forever"],
+    [/mac|linux|iphone|android|phone|mobile/i, "I'm on Windows 10 & 11, and on any phone through my free web app — you can even call me. Mac and Linux are coming.", "In your pocket"],
+    [/who are you|your name|what are you|what can you do|izuki/i, "I'm Izuki — Nova to my friends. I live on your screen, talk with you, and do the clicking for you. ", " Nice to meet you"],
+    [/thank|thx|ty\b/i, "Anytime! ", ""],
+    [/love|cute|cool|amazing|awesome|nice/i, ["Aww, stop it. ", "You're pretty cool yourself. "], " Blushing"],
+    [/\b(hi|hey|hello|yo|sup|hiya)\b/i, "Hey! What are we doing today?", "Hi!"],
   ];
   const FALLBACK = [
-    "Ooh, I'd love to do that on your PC. Download me free and ask again — for real this time. 😉",
-    "On your PC I'd just go and do that. Here I'm only a preview — grab the free download! ⬇",
-    "Good one. The real me would look at your screen and handle it. This me is just showing off. ✨",
+    "Ooh, I'd love to do that on your PC. Download me free and ask again — for real this time. ",
+    "On your PC I'd just go and do that. Here I'm only a preview — grab the free download!",
+    "Good one. The real me would look at your screen and handle it. This me is just showing off.",
   ];
   const playOrbEl = $("play-orb");
   const playOrb = makeOrb(playOrbEl);
@@ -2433,7 +2795,7 @@
     soundBtn.addEventListener("click", () => {
       sound = !sound;
       soundBtn.setAttribute("aria-pressed", String(sound));
-      soundBtn.textContent = sound ? "🔊 Talking out loud" : "🔈 Hear it talk";
+      soundBtn.textContent = sound ? "Talking out loud" : "Hear it talk";
       if (!sound) speechSynthesis.cancel();
     });
   }
@@ -2450,7 +2812,7 @@
     for (const [re, a, done] of BRAIN) {
       if (re.test(q)) return [typeof a === "function" ? a() : Array.isArray(a) ? a[Math.floor(Math.random() * a.length)] : a, done];
     }
-    return [FALLBACK[fallN++ % FALLBACK.length], "✨ Download to do it for real"];
+    return [FALLBACK[fallN++ % FALLBACK.length], "Download to do it for real"];
   }
   new MutationObserver(() => (playLog.scrollTop = playLog.scrollHeight)).observe(playLog, { childList: true, subtree: true, characterData: true });
   function bubble(cls, text) {
@@ -2499,8 +2861,9 @@
   playOrbEl.addEventListener("click", (e) => { burst(e.clientX, e.clientY); ask("*boop*"); });
   // ------------------------------------------------ ticker
   const SAYS = ["Open Spotify and play something chill.", "What's on my screen?", "Reply to this email saying I'll be late.", "Explain this chart to me.",
-    "Where's the save button?", "Find me a cheap flight to Lagos.", "Remind me in 20 minutes to stretch.", "Summarise this page.",
-    "Close all these tabs.", "What's in my inbox today?", "Teach me this equation.", "Keep going."];
+    "Where's the save button?", "Find a flight to Chicago on Friday.", "Remind me in 20 minutes to stretch.", "Summarize this page.",
+    "Close all these tabs.", "What's in my inbox today?", "Teach me this equation.", "Find the nearest Target.",
+    "When do the Warriors play?", "Keep going."];
   const track = $("ticker");
   for (const s of [...SAYS, ...SAYS]) { const el = document.createElement("span"); el.className = "say"; el.textContent = s; track.appendChild(el); }
 
@@ -2576,6 +2939,7 @@
 
   // ------------------------------------------------ stars
   const sc = $("stars"), sx = sc.getContext("2d");
+  const starsOff = getComputedStyle(sc).display === "none";
   let stars = [], W = 0, H = 0;
   const seed = () => {
     const dpr = Math.min(2, devicePixelRatio || 1);
@@ -2590,6 +2954,7 @@
   }, { passive: true });
   let lastStarFrame = -Infinity;
   const drawStars = (now) => {
+    if (starsOff) return;
     if (document.hidden || now - lastStarFrame < 50) { if (!reduce) requestAnimationFrame(drawStars); return; }
     lastStarFrame = now;
     sx.clearRect(0, 0, W, H);
@@ -2638,7 +3003,7 @@
         caption.textContent = "Skipped.";
       } else {
         miniOrb.mode = "speaking"; ad.style.opacity = 0; skip.style.opacity = 0; vid.style.opacity = 1; vidTitle.style.opacity = 1; place(88, 86);
-        caption.textContent = "Playing Chill Lofi Beats — enjoy! 🎶";
+        caption.textContent = "Playing Focus Beats.";
       }
     }
     $("ytprog").style.width = `${clamp((p - 0.62) / 0.38, 0, 1) * 40}%`;
@@ -2828,7 +3193,8 @@
     filmSound.addEventListener("click", () => {
       film.muted = !film.muted;
       if (!film.muted) { film.currentTime = 0; film.play().catch(() => {}); }
-      filmSound.textContent = film.muted ? "🔊 Tap for sound" : "🔇 Mute";
+      filmSound.textContent = film.muted ? "Enable sound" : "Mute";
+      filmSound.setAttribute("aria-pressed", String(!film.muted));
     });
   }
 
@@ -2840,7 +3206,7 @@
     if (voiceOn === b && !voiceAudio.paused) { voiceAudio.pause(); voiceOn = null; return; }
     voiceOn = b;
     b.classList.add("on");
-    if (film && !film.muted) { film.muted = true; filmSound.textContent = "🔊 Tap for sound"; }
+    if (film && !film.muted) { film.muted = true; filmSound.textContent = "Enable sound"; filmSound.setAttribute("aria-pressed", "false"); }
     voiceAudio.src = b.dataset.src;
     voiceAudio.play().catch(() => b.classList.remove("on"));
   }));
@@ -2949,12 +3315,12 @@
         return;
       }
       if (kind === "call") {
-        heard.textContent = "“Hey Nova, call Mum”";
+        heard.textContent = "“Hey Nova, call Mom”";
         line.textContent = "Preparing a draft…";
         notifText.textContent = "Listening for “Hey Nova”";
         step(() => {
           status.textContent = "WAITING";
-          line.textContent = "Draft ready — “Calling Mum”";
+          line.textContent = "Draft ready — “Calling Mom”";
           note.textContent = "Draft only. Izuki asks before it calls, sends, pays or buys — even by voice.";
         }, 760);
         step(() => {

@@ -4,7 +4,7 @@ Izuki drives a real mouse and keyboard, so security reports get priority.
 
 ## Reporting a vulnerability
 
-Email **izuki.hq@gmail.com** with **"Security"** in the subject. Please include:
+Email **support@izukinova.ai** with **"Security"** in the subject. Please include:
 
 - the Izuki version (it's shown in Settings);
 - what an attacker could do;
