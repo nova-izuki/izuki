@@ -136,8 +136,9 @@
       // Android opens Maps' own turn-by-turn screen directly. If that bridge is
       // missing, the web directions still work.
       if (native?.installed?.() && native.navigate) {
-        void native.orb?.("listen", "Maps is driving — tap to talk");
-        void native.navigate(place).then((r) => { if (!r) open(web); }).catch(() => open(web));
+        // navigate() opens turn-by-turn and raises the orb itself. If Android
+        // only had a place search, keep the trip going with web directions.
+        void native.navigate(place).then((r) => { if (!r || r.navigation === false) open(web); }).catch(() => open(web));
         return;
       }
       open(web);

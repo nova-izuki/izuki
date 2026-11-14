@@ -781,6 +781,9 @@
   function syncNativeOrb() {
     const native = window.IzukiNative;
     if (!native?.installed?.()) return;
+    // One gate for every producer: the page, a live call and Autopilot all
+    // keep their orb inside Izuki when this is off.
+    if (!keepOrb) { void native.orb?.("idle"); return; }
     if (!document.hidden) { void native.orb?.("idle"); return; }
     const auto = !!window.IzukiAutopilot?.state?.running;
     const mode = orbState || (auto ? "thinking" : keepOrb ? "listening" : "");

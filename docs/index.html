@@ -4169,6 +4169,16 @@ $("nw-wake")?.addEventListener("click", async () => {
     else if (stopped) state.textContent = "You took over";
     else if (paused) state.textContent = "Paused";
     else state.textContent = "Working";
+    if (reduce.matches) {
+      // The reduced-motion preview starts complete. There is no timer (and no
+      // intersection observer) to run it again, so do not offer a dead button.
+      pauseBtn.textContent = "Complete";
+      pauseBtn.disabled = true;
+      pauseBtn.setAttribute("aria-pressed", "false");
+      if (stopBtn) stopBtn.disabled = true;
+      return;
+    }
+    pauseBtn.disabled = false;
     pauseBtn.textContent = current >= steps.length || stopped ? "Run it again" : paused ? "Resume" : "Pause after step";
     pauseBtn.setAttribute("aria-pressed", String(paused));
     if (stopBtn) stopBtn.disabled = stopped || current >= steps.length;
@@ -4221,8 +4231,12 @@ $("nw-wake")?.addEventListener("click", async () => {
     render();
     const observer = new IntersectionObserver(([entry]) => {
       visible = entry.isIntersecting;
-      if (visible && !paused && !stopped && current < steps.length) start();
-      else clear();
+      if (visible && !paused && !stopped) {
+        if (current < steps.length) start();
+        // Coming back to a finished preview used to leave it stuck on
+        // "Complete" because the offscreen observer had cleared the restart.
+        else if (!restart) restart = setTimeout(reset, 4200);
+      } else clear();
     }, { threshold: .2 });
     observer.observe(scene);
   }

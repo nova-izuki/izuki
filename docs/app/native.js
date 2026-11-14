@@ -138,12 +138,17 @@
     },
     /** Start Google Maps turn-by-turn; the app must stay plugged in behind it. */
     async navigate(to) {
-      try { return (await control()?.navigate({ to: String(to || "").trim() })) || null; } catch { return null; }
+      try { return (await control()?.navigate({ to: String(to || "").trim(), orb: orbOverApps })) || null; } catch { return null; }
     },
     /** The floating glass orb over other apps: listen, think, talk, or idle. */
     async orb(state = "idle", text = "") {
       if (!control() || platform() === "web") return false;
-      try { await control().orb({ state: String(state || "idle"), text: String(text || "") }); return true; } catch { return false; }
+      const mode = String(state || "idle");
+      // "Keep the glass orb over other apps" is the one gate for every
+      // producer, including Maps and Drive. Idle is always allowed so turning
+      // the setting off can take an existing orb away.
+      if (!orbOverApps && mode !== "idle" && mode !== "hide") return false;
+      try { await control().orb({ state: mode, text: String(text || "") }); return true; } catch { return false; }
     },
     /** Installed launchable apps: [{ name, id }]. */
     async apps() {
@@ -265,7 +270,16 @@
           .replace(/\s+on (?:my |the |this )?(?:phone|android)[.!?]*$/i, "")
           .replace(/[.!?]+$/, "").trim();
         const map = await window.IzukiNative.navigate(destination);
-        return map?.to ? `Taking you to ${map.to}. Google Maps has the turns — tap the orb when you need me.` : failed;
+        if (map?.to && map.navigation !== false) {
+          return `Taking you to ${map.to}. Google Maps has the turns — tap the orb when you need me.`;
+        }
+        if (map?.to) {
+          // The phone only had a place-search handler, not turn-by-turn.
+          const web = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving&dir_action=navigate`;
+          try { window.open(web, "_blank", "noopener"); } catch {}
+          return "Google Maps couldn't start turn-by-turn, so I opened directions in your browser.";
+        }
+        return failed;
       }
       const open = text.match(/^open (.+)$/);
       if (open) {

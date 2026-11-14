@@ -6,7 +6,7 @@ const path = require("path");
 const vm = require("vm");
 
 const calls = [];
-let prompted = false, appSettings = 0;
+let prompted = false, appSettings = 0, lastNavigate = null;
 const window = {
   Capacitor: {
     isNativePlatform: () => true,
@@ -22,7 +22,7 @@ const window = {
           calls.push("launch:YouTube");
           return { name: "YouTube" };
         },
-        navigate: async ({ to }) => { calls.push(`navigate:${to}`); return { to }; },
+        navigate: async ({ to, orb }) => { calls.push(`navigate:${to}`); lastNavigate = { to, orb }; return { to }; },
         orb: async ({ state, text }) => { calls.push(`orb:${state}${text ? `:${text}` : ""}`); return true; },
         act: async ({ op, text }) => { calls.push(`act:${op}${text ? `:${text}` : ""}`); return { done: true }; },
         media: async ({ key }) => { calls.push(`media:${key}`); return true; },
@@ -58,8 +58,13 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   assert.deepEqual(calls, ["home", "launch:YouTube"]);
   assert.equal(await window.IzukiNative.quickDeviceCommand("take me to Walmart"), "Taking you to Walmart. Google Maps has the turns — tap the orb when you need me.");
   assert.equal(calls.at(-1), "navigate:Walmart");
+  assert.equal(lastNavigate.orb, true, "Maps respects the orb preference");
   assert.equal(await window.IzukiNative.orb("listen", ""), true);
   assert.equal(calls.at(-1), "orb:listen");
+  window.IzukiNative.setOrbOverApps(false);
+  assert.equal(await window.IzukiNative.orb("listen", ""), false, "the off switch gates the native orb");
+  assert.equal(await window.IzukiNative.orb("idle", ""), true, "idle can always take an orb away");
+  window.IzukiNative.setOrbOverApps(true);
   assert.equal(await window.IzukiNative.quickDeviceCommand("tap Search"), "Tapped search.");
   assert.equal(await window.IzukiNative.quickDeviceCommand("volume up"), "Turned the volume up.");
   assert.equal(await window.IzukiNative.quickDeviceCommand("next song"), "Done.");

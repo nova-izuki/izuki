@@ -2700,6 +2700,10 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
             // the stage waited for the "Step 1/N" status after the first
             // action, which made a real task look like it started late.
             if steps.len() > 1 {
+                // The stage lives in the follow overlay; if the person has
+                // every always-on surface switched off it still needs a home
+                // for Pause/Stop while a real task runs.
+                let _ = crate::overlay::ensure_caption_visible(app);
                 let _ = app.emit(
                     events::STATUS,
                     StatusEvent {

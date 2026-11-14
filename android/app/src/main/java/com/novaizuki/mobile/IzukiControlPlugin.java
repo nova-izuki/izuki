@@ -465,7 +465,7 @@ public class IzukiControlPlugin extends Plugin {
     // Only after a real launch: leave the glass orb above Photos, Maps or the
     // app that just opened, when the person kept that setting on.
     if (!Boolean.FALSE.equals(call.getBoolean("orb", true))) {
-      IzukiAccessibilityService.orb("listen", "");
+      IzukiAccessibilityService.orbFor("launch", "listen", "");
     }
     JSObject result = new JSObject();
     result.put("name", best.loadLabel(pm).toString());
@@ -478,29 +478,33 @@ public class IzukiControlPlugin extends Plugin {
     if (IzukiAccessibilityService.locked(getContext())) { call.reject("locked"); return; }
     String to = call.getString("to", "").trim();
     if (to.isEmpty()) { call.reject("Where should I go?"); return; }
-    boolean opened = false;
+    boolean navigating = false;
     try {
       Intent go = new Intent(Intent.ACTION_VIEW,
           Uri.parse("google.navigation:q=" + Uri.encode(to) + "&mode=d"));
       go.setPackage("com.google.android.apps.maps");
       go.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
       getContext().startActivity(go);
-      opened = true;
+      navigating = true;
     } catch (Exception ignored) { }
-    if (!opened) {
+    if (!navigating) {
       try {
+        // `geo:` may open a place search rather than turn-by-turn. Keep that
+        // separate from a real navigation so the page can offer web directions
+        // instead of claiming Maps has the turns.
         Intent geo = new Intent(Intent.ACTION_VIEW,
             Uri.parse("geo:0,0?q=" + Uri.encode(to)));
         geo.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         getContext().startActivity(geo);
-        opened = true;
       } catch (Exception ignored) { }
     }
-    if (!opened) { call.reject("I couldn't open Google Maps on this phone."); return; }
-    // Keep the glass orb above Maps, ready for "when I get there, remind me…".
-    IzukiAccessibilityService.orb("listen", "Maps is driving — tap to talk");
+    if (navigating && !Boolean.FALSE.equals(call.getBoolean("orb", true))) {
+      // Keep the glass orb above Maps, ready for "when I get there, remind me…".
+      IzukiAccessibilityService.orbFor("maps", "listen", "Maps is driving — tap to talk");
+    }
     JSObject result = new JSObject();
     result.put("to", to);
+    result.put("navigation", navigating);
     call.resolve(result);
   }
 

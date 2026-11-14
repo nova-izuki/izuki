@@ -275,6 +275,9 @@ fn hover_then_click(
 }
 
 fn click_at_here(button: Button, times: u8) -> Result<()> {
+    // The Task Stage is clickable while a task runs so the person can pause
+    // or stop it. Shield it for the instant Izuki's own click is injected.
+    let _shield = crate::overlay::shield_pointer();
     tiny_pause();
     let mut e = enigo()?;
     for i in 0..times.max(1) {
@@ -297,6 +300,8 @@ pub fn drag(from: (i32, i32), to: (i32, i32), duration_ms: u64) -> Result<()> {
             return Err(anyhow!("{}", off_screen_message(b, x, y)));
         }
     }
+    // Keep the whole press-travel-release sequence away from the Task Stage.
+    let _shield = crate::overlay::shield_pointer();
     glide_to(from.0, from.1, duration_ms / 2)?;
     tiny_pause();
     {
@@ -325,6 +330,8 @@ pub fn stroke(points: &[[i32; 2]], move_ms: u64) -> Result<()> {
     if let Some(p) = points.iter().find(|p| !on_screen(b, p[0], p[1])) {
         return Err(anyhow!("{}", off_screen_message(b, p[0], p[1])));
     }
+    // The pen is a held drag too: shield the Task Stage until the pen lifts.
+    let _shield = crate::overlay::shield_pointer();
     glide_to(first[0], first[1], move_ms / 2)?;
     tiny_pause();
     let mut e = enigo()?;

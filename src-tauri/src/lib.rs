@@ -343,6 +343,7 @@ pub fn run() {
             commands::close_overlay,
             commands::set_overlay_interactive,
             commands::set_overlay_hit,
+            commands::task_status,
             commands::set_overlay_wheel,
             commands::frontend_log,
             commands::list_memories,

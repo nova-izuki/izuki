@@ -1,7 +1,7 @@
 //! Window plumbing: the drawing overlay, and the Windows 11 glass treatment
 //! applied to the config panel.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use anyhow::{anyhow, Result};
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewUrl,
@@ -34,6 +34,15 @@ pub fn track_orb(app: &AppHandle) {
     app.listen_any("izuki://orb", |e| {
         ORB_UP.store(!e.payload().contains("hidden"), Ordering::Relaxed);
     });
+    // Keep the last task-shaped status for an overlay that mounts a moment
+    // after "Task Stage is ready". Without this, the start event was lost
+    // while the follow overlay was still loading.
+    app.listen_any(crate::events::STATUS, |e| {
+        let payload = e.payload().to_string();
+        if task_shaped_status(&payload) {
+            *LAST_TASK_STATUS.lock() = Some(payload);
+        }
+    });
     // The last "show yourself like this", kept for an overlay that wasn't
     // listening yet: at start-up it's told to show before its page has
     // loaded, and used to stay blank until the hand was toggled off and on.
@@ -43,6 +52,29 @@ pub fn track_orb(app: &AppHandle) {
 }
 
 static LAST_OPEN: parking_lot::Mutex<Option<String>> = parking_lot::Mutex::new(None);
+static LAST_TASK_STATUS: parking_lot::Mutex<Option<String>> = parking_lot::Mutex::new(None);
+
+/// Only the task-shaped lines are replayed to a newly mounted Task Stage;
+/// ordinary chatty statuses must not overwrite the last real step progress.
+fn task_shaped_status(payload: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else { return false };
+    let kind = value.get("kind").and_then(|v| v.as_str()).unwrap_or_default();
+    let message = value.get("message").and_then(|v| v.as_str()).unwrap_or_default().trim();
+    kind == "success"
+        || kind == "error"
+        || message.starts_with("Task Stage")
+        || message.starts_with("Step ")
+        || message.starts_with("Pausing")
+        || message.starts_with("Paused")
+        || message.starts_with("Continuing")
+        || message.starts_with("Resuming")
+        || message.starts_with("Stopped")
+}
+
+/// The latest task status, for a Task Stage that mounted after it was sent.
+pub fn last_task_status() -> Option<String> {
+    LAST_TASK_STATUS.lock().clone()
+}
 
 /// What the overlay should be showing right now (the last open request, as
 /// JSON), if it's up — asked by the overlay page once it has loaded.
@@ -392,17 +424,39 @@ pub fn end_quickdraw(app: &AppHandle) {
     let _ = app.emit(crate::events::QUICKDRAW_COMMIT, ());
 }
 
+/// A click is being injected by Izuki's own hand right now. The Task Stage
+/// is normally reachable while a task runs, but never while that click is in
+/// flight — otherwise Izuki could press its own Pause/Stop buttons.
+static POINTER_SHIELDED: AtomicUsize = AtomicUsize::new(0);
+
+/// Whether this hit-test result may take the pointer from the app behind.
+/// Acting makes every ordinary widget click-through; the Task Stage is the
+/// deliberate human-intervention hole, except during an injected click.
+fn may_take_pointer(hit: bool, task: bool, acting: bool, shielded: bool) -> bool {
+    !hit || !acting || (task && !shielded)
+}
+
 /// Per-widget click-through. In follow/preview mode the overlay ignores the
 /// mouse so you can use your PC underneath it — but that also means its own
 /// chat bubble and caption box can't be clicked. The overlay hit-tests the
 /// real cursor against those widgets and flips this on only while you're
 /// over one. Deliberately never takes focus: hovering the bubble must not
 /// yank the keyboard away from whatever you're typing in.
-pub fn set_overlay_hit(app: &AppHandle, hit: bool) -> Result<()> {
+pub fn set_overlay_hit(app: &AppHandle, hit: bool, task: bool) -> Result<()> {
     // While Izuki's own hands are working, its orb and bubbles never catch
-    // the click it's making — see `Acting`.
-    if hit && ACTING.load(std::sync::atomic::Ordering::SeqCst) {
+    // the click it's making — see `Acting`. The Task Stage is the exception:
+    // it must stay reachable so a person can Pause or Stop. It is shielded
+    // again below for the instant an automated click is actually injected.
+    if !may_take_pointer(
+        hit,
+        task,
+        ACTING.load(Ordering::SeqCst),
+        POINTER_SHIELDED.load(Ordering::SeqCst) > 0,
+    ) {
         OVERLAY_CLICKABLE.store(false, Ordering::Relaxed);
+        if let Some(w) = app.get_webview_window(OVERLAY_LABEL) {
+            w.set_ignore_cursor_events(true)?;
+        }
         return Ok(());
     }
     if let Some(w) = app.get_webview_window(OVERLAY_LABEL) {
@@ -410,6 +464,31 @@ pub fn set_overlay_hit(app: &AppHandle, hit: bool) -> Result<()> {
     }
     OVERLAY_CLICKABLE.store(hit, Ordering::Relaxed);
     Ok(())
+}
+
+/// Keep the overlay from catching the click Izuki's hand is about to inject.
+/// The guard lasts for the whole press/drag/click, then the next cursor frame
+/// (or the overlay's safety reassert) makes the Task Stage hole available
+/// again. Air control and the person's own mouse never take this guard.
+pub struct PointerShield;
+
+pub fn shield_pointer() -> PointerShield {
+    POINTER_SHIELDED.fetch_add(1, Ordering::SeqCst);
+    OVERLAY_CLICKABLE.store(false, Ordering::Relaxed);
+    if let Some(app) = crate::state::app() {
+        if let Some(w) = app.get_webview_window(OVERLAY_LABEL) {
+            let _ = w.set_ignore_cursor_events(true);
+        }
+    }
+    PointerShield
+}
+
+impl Drop for PointerShield {
+    fn drop(&mut self) {
+        // The browser's cursor stream (or its 1.5 s safety reassert) restores
+        // the Task Stage hole as soon as the injected input is over.
+        POINTER_SHIELDED.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 /// Set by the overlay as the pointer moves: is it over something that really
@@ -492,6 +571,20 @@ pub fn set_overlay_interactive(app: &AppHandle, interactive: bool) -> Result<()>
 /// monitors with different scaling.
 pub fn normalise_config_size(window: &WebviewWindow) {
     let _ = window.set_min_size(Some(LogicalSize::new(460.0, 560.0)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_stage_is_the_only_pointer_hole_while_acting() {
+        assert!(!may_take_pointer(true, false, true, false), "ordinary widgets stay click-through");
+        assert!(may_take_pointer(true, true, true, false), "Pause/Stop must be reachable");
+        assert!(!may_take_pointer(true, true, true, true), "never during an injected click");
+        assert!(may_take_pointer(true, false, false, false), "normal follow-mode widgets work");
+        assert!(may_take_pointer(false, false, true, true), "releasing the pointer always works");
+    }
 }
 
 /// When a drag ends with the panel partly off its screen (its chat box hidden

@@ -5,6 +5,7 @@ import { api, EV, on } from "../lib/ipc";
 import type { StatusEvent } from "../lib/types";
 
 type Step = { current: number; total: number; before: boolean };
+type Pending = "pause" | "resume" | "stop" | null;
 
 function totalFrom(status: StatusEvent | null): number {
   if (!status) return 0;
@@ -22,6 +23,15 @@ function readStep(status: StatusEvent | null): Step | null {
   return { current, total, before: /(?:before|then)\s+step\s+\d+/i.test(`${status.message} ${status.detail ?? ""}`) };
 }
 
+/** A status that means there is no task left to show. */
+function ended(status: StatusEvent): boolean {
+  return (
+    status.kind === "success" ||
+    status.kind === "error" ||
+    /^(stopped|nothing|no active|you took over)\b/i.test(status.message.trim())
+  );
+}
+
 /**
  * A small, contained view of a real desktop task.
  *
@@ -30,10 +40,13 @@ function readStep(status: StatusEvent | null): Step | null {
  * step and the stop controls in one place — and stays out of the way when no
  * task is running.
  */
-export function TaskStage() {
+export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolean) => void }) {
   const [status, setStatus] = useState<StatusEvent | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [total, setTotal] = useState(0);
+  // Kept across "Pausing…"/"Continuing…" lines, which carry no step number.
+  const [step, setStep] = useState<Step | null>(null);
+  const [pending, setPending] = useState<Pending>(null);
 
   useEffect(() => {
     let alive = true;
@@ -50,37 +63,88 @@ export function TaskStage() {
     };
   }, []);
 
+  // The overlay can finish loading just after "Task Stage is ready" was sent.
+  // Ask for the last task line; an event that arrived first wins.
+  useEffect(() => {
+    let alive = true;
+    void api.taskStatus().then((last) => {
+      if (alive && last) setStatus((prev) => prev ?? last);
+    }).catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   useEffect(() => {
     if (!status) setCollapsed(false);
   }, [status]);
 
-  const step = readStep(status);
-  const paused = !!status && /^(pausing|paused)\b/i.test(status.message.trim());
-  const working = !!status && status.kind === "working";
-
-  // The start event names the number of steps before the first click, so the
-  // stage can appear while Izuki is still taking its first look. Keep that
-  // count through the short "looking…" statuses; clear it when the task ends.
+  // Keep the last real progress while a short status ("Pausing after this
+  // step…", "Continuing…") has no numbers of its own. Clear it only when the
+  // task has actually ended.
   useEffect(() => {
-    if (!status) return;
-    const announced = totalFrom(status) || readStep(status)?.total || 0;
-    if (announced) setTotal(announced);
-    if (status.kind === "success" || status.kind === "error" || /^(stopped|nothing|no active)\b/i.test(status.message.trim())) {
+    if (!status) {
       setTotal(0);
+      setStep(null);
+      return;
     }
+    if (ended(status)) {
+      setTotal(0);
+      setStep(null);
+      return;
+    }
+    const numbered = readStep(status);
+    if (numbered) {
+      setStep(numbered);
+      setTotal(numbered.total);
+      return;
+    }
+    const announced = totalFrom(status);
+    if (announced && announced !== total) {
+      setTotal(announced);
+      // The start event names the plan before the first click; this is what
+      // lets the stage appear while Izuki is still taking its first look.
+      setStep({ current: 1, total: announced, before: true });
+    }
+  }, [status, total]);
+
+  // A new status answers the last button press; do not leave it disabled.
+  useEffect(() => {
+    setPending(null);
   }, [status]);
 
-  // Don't turn every passing status line into a panel. A real task has a
-  // total, either from its start event or from a step line.
-  const visible = !!status && total > 0 && (working || paused);
-  if (!visible) return null;
+  const pausing = !!status && /^pausing\b/i.test(status.message.trim());
+  const paused = !!status && /^(pausing|paused)\b/i.test(status.message.trim());
+  const working = !!status && status.kind === "working";
+  const continuing = !!status && /^(resuming|continuing)\b/i.test(status.message.trim());
+  const active = !!status && total > 0 && (working || paused || continuing);
 
-  const done = step ? (step.before ? step.current - 1 : step.current) : 0;
+  useEffect(() => {
+    onActiveChange?.(active);
+    return () => onActiveChange?.(false);
+  }, [active, onActiveChange]);
+
+  if (!active) return null;
+
+  const done = step ? Math.max(0, step.before ? step.current - 1 : step.current) : 0;
   const percent = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
-  const pausing = !!status && /^pausing\b/i.test(status.message);
+  const currentLabel = step
+    ? step.before
+      ? `Ready for step ${step.current}`
+      : `Step ${step.current}`
+    : "Preparing the first step";
+  // Before the first action the step is "ready" but not done, so the count
+  // and the bar agree at zero. After it, the step number is complete.
+  const countLabel = `${done}/${total}`;
+
+  const run = (kind: Exclude<Pending, null>, command: () => Promise<unknown>) => {
+    if (pending) return;
+    setPending(kind);
+    void command().finally(() => setPending(null));
+  };
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-[58px] z-[70] flex justify-center px-3">
+    <div data-izk-task className="pointer-events-none fixed inset-x-0 top-[58px] z-[70] flex justify-center px-3">
       <AnimatePresence initial={false}>
         {collapsed ? (
           <motion.div
@@ -93,7 +157,7 @@ export function TaskStage() {
             className="izk-task-pill pointer-events-auto"
           >
             <span className="izk-task-live-dot" aria-hidden />
-            <span className="izk-task-pill-text">Task Stage · {step ? `${step.current}/${step.total}` : "working"}</span>
+            <span className="izk-task-pill-text">Task Stage · {step ? `${step.current}/${total}` : "working"}</span>
             <button type="button" aria-label="Expand Task Stage" title="Expand" onClick={() => setCollapsed(false)}>
               <ChevronDown size={13} />
             </button>
@@ -113,7 +177,7 @@ export function TaskStage() {
               <span className="izk-task-mark" aria-hidden><i /><i /><i /></span>
               <div className="izk-task-heading">
                 <b>Task Stage</b>
-                <span>{paused ? "Holding after this step" : step ? "Working on your desktop" : "Getting the first step ready"}</span>
+                <span>{pausing ? "Pausing after this step" : paused ? "Holding after this step" : step ? (step.before ? `Ready for step ${step.current}` : "Working on your desktop") : "Getting the first step ready"}</span>
               </div>
               <span className="izk-task-state" data-paused={paused || pausing ? "true" : undefined}>
                 <i aria-hidden />
@@ -131,13 +195,15 @@ export function TaskStage() {
               </button>
             </header>
 
-            <div className="izk-task-message">{status?.message}</div>
-            {status?.detail && <p className="izk-task-detail">{status.detail}</p>}
+            <div aria-live="polite" aria-atomic="true">
+              <div className="izk-task-message">{status?.message}</div>
+              {status?.detail && <p className="izk-task-detail">{status.detail}</p>}
+            </div>
 
             <div className="izk-task-progress-wrap">
               <div className="izk-task-progress-label">
-                <span>{step ? (step.before ? `Ready for step ${step.current}` : `Step ${step.current}`) : "Preparing the first step"}</span>
-                <span>{step ? `${step.current}/${step.total}` : `0/${total}`}</span>
+                <span>{currentLabel}</span>
+                <span>{countLabel}</span>
               </div>
               <div
                 className="izk-task-progress"
@@ -152,29 +218,36 @@ export function TaskStage() {
             </div>
 
             <div className="izk-task-actions">
-              {paused ? (
-                <button type="button" data-izk-hit className="izk-task-button primary" onClick={() => void api.resumeTask()}>
-                  <Play size={11} fill="currentColor" /> Resume
+              {paused && !pausing ? (
+                <button
+                  type="button"
+                  data-izk-hit
+                  className="izk-task-button primary"
+                  disabled={pending !== null}
+                  onClick={() => run("resume", () => api.resumeTask())}
+                >
+                  <Play size={11} fill="currentColor" /> {pending === "resume" ? "Resuming…" : "Resume"}
                 </button>
               ) : (
                 <button
                   type="button"
                   data-izk-hit
                   className="izk-task-button primary"
-                  disabled={pausing}
-                  onClick={() => void api.pauseTask()}
+                  disabled={pausing || pending !== null}
+                  onClick={() => run("pause", () => api.pauseTask())}
                 >
-                  <Pause size={11} fill="currentColor" /> {pausing ? "Pausing…" : "Pause after step"}
+                  <Pause size={11} fill="currentColor" /> {pausing || pending === "pause" ? "Pausing…" : "Pause after step"}
                 </button>
               )}
               <button
                 type="button"
                 data-izk-hit
                 className="izk-task-button danger"
-                onClick={() => void api.cancelTask()}
+                disabled={pending === "stop"}
+                onClick={() => run("stop", () => api.cancelTask())}
                 title="Stop this task and take the mouse yourself"
               >
-                <Square size={10} fill="currentColor" /> Stop
+                <Square size={10} fill="currentColor" /> {pending === "stop" ? "Stopping…" : "Stop"}
               </button>
             </div>
 

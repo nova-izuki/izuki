@@ -408,8 +408,8 @@ public class IzukiAccessibilityService extends AccessibilityService {
     List<String> free = freeApps(pkg);
     String say = app + " wants a subscription or payment here."
       + (free.isEmpty() ? " Tubi, Pluto TV and YouTube are free instead." : " Free on this TV: " + String.join(", ", free) + " — say “Hey Nova, open " + free.get(0) + "”.");
-    orb("talk", say);
-    ui.postDelayed(IzukiAccessibilityService::hideOrb, 10000);
+    orbFor("paywall", "talk", say);
+    ui.postDelayed(() -> orbFor("paywall", "idle", ""), 10000);
     IzukiControlPlugin.emit("paywall", app, pkg, say);
   };
 
@@ -455,14 +455,42 @@ public class IzukiAccessibilityService extends AccessibilityService {
   private static View orbView;
   private static OrbDot dot;
   private static TextView caption;
+  /** Who put the shared orb up (page, wake listener, Maps, a paywall). */
+  private static String orbOwner;
   private static final Handler ui = new Handler(Looper.getMainLooper());
 
-  /** Show the orb in a corner over whatever's on ("listen", "think", "talk"), or hide it ("idle"). */
+  /**
+   * The page's own orb. An idle here always dismisses the shared orb: the
+   * page is in front and has its own orb, so a native one would duplicate it.
+   * The wake listener uses {@link #orbFor} instead, so stopping it cannot
+   * take down a Maps orb that is still in use.
+   */
   static void orb(String state, String words) {
+    if (state == null || "idle".equals(state) || "hide".equals(state)) {
+      hideOrb();
+      return;
+    }
+    orbFor("page", state, words);
+  }
+
+  /**
+   * The orb is shared by the page, the wake listener, Maps and the paywall
+   * watcher. An idle from one must not take down an orb another still owns —
+   * stopping the wake listener used to hide the Maps orb and strand the
+   * driver with no way back to Izuki.
+   */
+  static void orbFor(String owner, String state, String words) {
     ui.post(() -> {
       IzukiAccessibilityService service = active;
       if (service == null) return;
-      if (state == null || "idle".equals(state) || "hide".equals(state)) { hideOrb(); return; }
+      if (state == null || "idle".equals(state) || "hide".equals(state)) {
+        if (orbOwner == null || orbOwner.equals(owner)) {
+          orbOwner = null;
+          hideOrb();
+        }
+        return;
+      }
+      orbOwner = owner;
       if (orbView == null) {
         WindowManager wm = (WindowManager) service.getSystemService(WINDOW_SERVICE);
         LinearLayout box = new LinearLayout(service);
@@ -518,6 +546,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
 
   private static void hideOrb() {
     ui.post(() -> {
+      orbOwner = null;
       IzukiAccessibilityService service = active;
       if (orbView != null && service != null) {
         try { ((WindowManager) service.getSystemService(WINDOW_SERVICE)).removeView(orbView); } catch (Exception ignored) { }
