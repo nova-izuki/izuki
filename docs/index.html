@@ -1535,6 +1535,432 @@
       .tapme, .voice, .card, .btn { animation: none !important; transition: none !important; }
     }
   </style>
+  <style>
+    /* ============================================================
+       GLASS ATELIER — the cinematic layer, restored on purpose.
+       Deep space, pearl light, bent glass. One centred composition.
+       ============================================================ */
+    :root {
+      --ground: #05070d;
+      --ink: #f6f9ff;
+      --muted: #a7b3c8;
+      --faint: #75849d;
+      --line: rgba(206, 226, 255, 0.14);
+      --glass: rgba(13, 21, 36, 0.38);
+      --cyan: #8ee8ff;
+      --violet: #b9a7ff;
+      --pink: #ffc6e5;
+      --pearl: #f1e8d8;
+      --gold: #e7d2ad;
+      --grad: linear-gradient(100deg, #f8fcff 0%, #bcefff 34%, #c8b9ff 67%, #ffd8ec 100%);
+      --wrap: min(1180px, 100% - 40px);
+      --ease: cubic-bezier(.16, 1, .3, 1);
+    }
+    html { background: var(--ground); }
+    body {
+      background:
+        radial-gradient(58% 44% at 76% 2%, rgba(91, 188, 255, .13), transparent 66%),
+        radial-gradient(48% 36% at 12% 8%, rgba(160, 132, 255, .14), transparent 70%),
+        radial-gradient(40% 32% at 62% 54%, rgba(255, 183, 221, .055), transparent 72%),
+        var(--ground);
+    }
+    body::before {
+      background-image:
+        linear-gradient(rgba(193, 220, 255, .045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(193, 220, 255, .045) 1px, transparent 1px);
+      background-size: 84px 84px;
+      mask-image: radial-gradient(ellipse 92% 64% at 50% 0%, #000 12%, transparent 72%);
+      -webkit-mask-image: radial-gradient(ellipse 92% 64% at 50% 0%, #000 12%, transparent 72%);
+    }
+    #stars, .aurora, .spot, .scene { display: block !important; }
+    #stars { opacity: .68; }
+    .aurora { opacity: .62; filter: saturate(1.1); }
+    .spot { opacity: .55; }
+    ::selection { background: rgba(142, 232, 255, .28); color: #fff; }
+
+    /* ---------- glass nav ---------- */
+    .nav-in {
+      margin-top: 12px;
+      padding: 10px 11px 10px 18px;
+      border-radius: 18px;
+      background: linear-gradient(115deg, rgba(14, 23, 40, .72), rgba(7, 12, 23, .58));
+      border-color: rgba(211, 233, 255, .18);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, .38), inset 0 1px 0 rgba(255, 255, 255, .13), 0 0 0 1px rgba(0, 0, 0, .18);
+      backdrop-filter: blur(24px) saturate(1.45);
+      -webkit-backdrop-filter: blur(24px) saturate(1.45);
+    }
+    .brand { letter-spacing: .23em; font-size: 14px; }
+    .brand img { width: 30px; height: 30px; border-radius: 10px; box-shadow: 0 0 28px rgba(142, 232, 255, .32); }
+    .nav-links a { position: relative; }
+    .nav-links a::after { content: ""; position: absolute; left: 0; right: 0; bottom: -6px; height: 1px; background: var(--grad); transform: scaleX(0); transform-origin: 50%; transition: transform .25s var(--ease); }
+    .nav-links a:hover::after { transform: scaleX(1); }
+    #progress { background: linear-gradient(90deg, #8ee8ff, #d6c7ff, #ffd6eb); box-shadow: 0 0 18px rgba(142, 232, 255, .5); }
+
+    /* ---------- pearl buttons ---------- */
+    .btn {
+      border-radius: 999px;
+      padding: 13px 23px;
+      font-weight: 700;
+      letter-spacing: -.012em;
+      border-color: rgba(210, 232, 255, .18);
+      transition: transform .3s var(--ease), box-shadow .3s var(--ease), background .3s, border-color .3s;
+    }
+    .btn:hover { transform: translateY(-2px); }
+    .btn.primary {
+      color: #06101b;
+      background: linear-gradient(112deg, #eefbff 0%, #c2efff 33%, #d6c5ff 68%, #ffd9ec 100%);
+      border: 1px solid rgba(255, 255, 255, .72);
+      box-shadow: 0 16px 46px rgba(108, 196, 255, .24), 0 0 48px rgba(190, 165, 255, .18), inset 0 1px 0 rgba(255, 255, 255, .95);
+    }
+    .btn.primary::after { display: block; background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, .62) 50%, transparent 70%); animation: sheen 5.5s ease-in-out infinite; }
+    .btn.primary:hover { background: linear-gradient(112deg, #fff, #d5f6ff 33%, #ded1ff 68%, #ffe2f0); box-shadow: 0 20px 64px rgba(108, 196, 255, .34), 0 0 60px rgba(190, 165, 255, .24), inset 0 1px 0 #fff; }
+    .btn.ghost {
+      background: linear-gradient(120deg, rgba(226, 242, 255, .09), rgba(187, 166, 255, .07));
+      border-color: rgba(211, 233, 255, .2);
+      color: #eaf6ff;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1);
+    }
+    .btn.ghost:hover { background: rgba(226, 242, 255, .13); border-color: rgba(142, 232, 255, .4); }
+    .btn.small { padding: 9px 17px; }
+
+    /* ---------- the hero: one centred breath ---------- */
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      width: var(--wrap);
+      height: auto;
+      min-height: min(860px, calc(100svh - 82px));
+      max-height: none;
+      padding-block: clamp(34px, 5.2vh, 68px) clamp(58px, 9vw, 104px);
+      gap: 0;
+    }
+    .hero::before {
+      inset: -100px calc(50% - 50vw) -140px;
+      background:
+        radial-gradient(36% 40% at 50% 24%, rgba(192, 240, 255, .18), transparent 72%),
+        radial-gradient(26% 34% at 42% 54%, rgba(191, 167, 255, .14), transparent 74%),
+        radial-gradient(18% 22% at 62% 50%, rgba(255, 200, 230, .08), transparent 76%);
+    }
+    .scene { top: -82px; bottom: -10vh; }
+    .scene .photo img { filter: saturate(1.16) contrast(1.08) brightness(.84); }
+    .scene.has-photo .grade { opacity: .4; }
+    .scene .shade {
+      background:
+        radial-gradient(62% 54% at 50% 36%, rgba(5, 7, 13, .06) 0%, rgba(5, 7, 13, .34) 62%, rgba(5, 7, 13, .78) 100%),
+        linear-gradient(180deg, rgba(5, 7, 13, .34) 0%, transparent 22%, transparent 62%, rgba(5, 7, 13, .64) 84%, #05070d 100%);
+    }
+    .scene .grain { opacity: .045; }
+    .hero-copy { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 1000px; }
+    .hero-art { position: relative; z-index: 2; width: min(500px, 56vh); margin-top: clamp(22px, 3.2vh, 38px); }
+    .stage { width: 100%; max-width: none; }
+    .eyebrow {
+      gap: 10px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font: 500 10.5px var(--mono);
+      letter-spacing: .14em;
+      color: #c9d9eb;
+      background: linear-gradient(120deg, rgba(217, 240, 255, .08), rgba(192, 166, 255, .055));
+      border-color: rgba(211, 233, 255, .18);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 8px 28px rgba(0, 0, 0, .22);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+    .eyebrow b { width: 24px; height: 1px; border-radius: 0; background: linear-gradient(90deg, transparent, #bcefff); box-shadow: 0 0 10px rgba(142, 232, 255, .7); }
+    .hero h1 {
+      max-width: 18ch;
+      margin-top: clamp(18px, 2.6vh, 28px);
+      font-size: clamp(46px, min(6.4vw, 9.4vh), 92px);
+      line-height: .95;
+      letter-spacing: -.055em;
+      text-wrap: balance;
+      text-shadow: 0 10px 44px rgba(0, 0, 0, .46);
+    }
+    .shine {
+      color: transparent;
+      background: var(--grad);
+      background-size: 280% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: shimmer 9s linear infinite;
+      filter: drop-shadow(0 0 24px rgba(142, 232, 255, .13));
+    }
+    .lede {
+      max-width: 42em;
+      margin-inline: auto;
+      margin-top: clamp(17px, 2.3vh, 24px);
+      font-size: clamp(16px, min(1.24vw, 2.1vh), 18px);
+      line-height: 1.68;
+      color: #b9c7d9;
+      text-wrap: pretty;
+    }
+    .lede b { color: #f5fbff; }
+    .ctas { justify-content: center; margin-top: clamp(20px, 3.2vh, 30px); }
+    .rel { justify-content: center; margin-top: 15px; }
+    .fine { margin-top: 16px; color: #8d9db1; }
+    .fine a { color: #bcefff !important; }
+    .rel-chip {
+      border-radius: 999px;
+      padding: 8px 14px 8px 10px;
+      background: rgba(8, 15, 27, .55);
+      border-color: rgba(205, 229, 255, .16);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+    .rel-chip:hover { border-color: rgba(142, 232, 255, .44); background: rgba(14, 26, 43, .72); }
+    .rel-chip b { color: #d7eaff; }
+    .rel-dot { width: 5px; height: 5px; border-radius: 50%; background: #bcefff; box-shadow: 0 0 10px rgba(142, 232, 255, .9); }
+    .plats { border-radius: 999px; background: rgba(9, 17, 30, .5); border-color: rgba(205, 229, 255, .14); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+    .plats a { border-radius: 999px; }
+    .plats a:hover { background: rgba(142, 232, 255, .1); }
+    .stage .chip {
+      gap: 9px;
+      border-radius: 14px;
+      background: linear-gradient(120deg, rgba(18, 28, 45, .7), rgba(10, 17, 29, .58));
+      border-color: rgba(205, 231, 255, .2);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, .42), inset 0 1px 0 rgba(255, 255, 255, .14);
+      font-size: 12.5px;
+      backdrop-filter: blur(18px) saturate(1.3);
+      -webkit-backdrop-filter: blur(18px) saturate(1.3);
+    }
+    .stage .chip i { flex: none; color: #bcefff; background: rgba(142, 232, 255, .12); }
+    .tapme { color: #07111c; background: #ecfaff; border-radius: 999px; box-shadow: 0 12px 34px rgba(142, 232, 255, .25); }
+    .tapme::after { background: #ecfaff; }
+    .bubble { border-radius: 16px; border-color: rgba(208, 231, 255, .16); background: rgba(11, 20, 34, .62); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+    .bubble.you { background: linear-gradient(120deg, rgba(204, 239, 255, .95), rgba(216, 201, 255, .95)); color: #07111c; }
+    .bubble.iz { background: rgba(11, 20, 34, .76); }
+
+    /* ---------- ticker + spec shelf ---------- */
+    .ticker { background: transparent; border-color: rgba(205, 231, 255, .1); }
+    .say { border-radius: 999px; background: rgba(12, 21, 35, .42); border-color: rgba(205, 231, 255, .12); color: #a7b6c8; }
+    .spec-strip {
+      margin-top: 8px;
+      padding: 4px 12px;
+      border: 1px solid rgba(205, 231, 255, .13);
+      border-radius: 20px;
+      background: linear-gradient(120deg, rgba(18, 29, 47, .5), rgba(10, 17, 29, .36));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), 0 22px 60px rgba(0, 0, 0, .22);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+    .spec-strip div { border-left-color: rgba(205, 231, 255, .1); }
+    .spec-strip span { color: #8293aa; }
+    .spec-strip b { color: #e8f2fd; }
+
+    /* ---------- sections, glass cards ---------- */
+    section { padding-block: clamp(76px, 10vw, 126px) 0; }
+    .kicker { color: #a5e9ff; letter-spacing: .18em; font-size: 11px; }
+    .kicker::before { content: ""; display: inline-block; width: 18px; height: 1px; margin-right: 9px; vertical-align: 3px; background: linear-gradient(90deg, transparent, #a5e9ff); }
+    section h2 { font-size: clamp(34px, 4.8vw, 62px); line-height: 1.02; letter-spacing: -.045em; }
+    .sub { color: #a5b3c6; }
+    .card, .nw-card, .trust-card, .stat, .use-card, .way, .voice, .play, .wake-demo, .film-phone {
+      border-radius: 22px;
+      border-color: rgba(205, 231, 255, .13);
+      background: linear-gradient(135deg, rgba(22, 34, 54, .52), rgba(9, 15, 27, .38));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 26px 70px rgba(0, 0, 0, .2);
+      backdrop-filter: blur(18px) saturate(1.15);
+      -webkit-backdrop-filter: blur(18px) saturate(1.15);
+    }
+    /* Glass is a look, not a licence to blur every layer while scrolling:
+       these surfaces get the gradient and edge light without the GPU cost. */
+    .card, .nw-card, .trust-card, .stat, .use-card, .way, .voice, .play, .wake-demo, .film-phone, .task-shell { backdrop-filter: none; -webkit-backdrop-filter: none; }
+    .card { padding: 27px; transform: none !important; transition: transform .35s var(--ease), border-color .35s, box-shadow .35s; }
+    .card:hover { transform: translateY(-5px) !important; border-color: rgba(161, 229, 255, .32); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), 0 32px 90px rgba(0, 0, 0, .32), 0 0 50px rgba(142, 232, 255, .06); }
+    .card h3 { font-size: 20px; }
+    .card p { color: #a5b3c6; }
+    .use-card { padding: 26px; transition: transform .35s var(--ease), border-color .35s; }
+    .use-card:hover { transform: translateY(-5px); border-color: rgba(161, 229, 255, .28); }
+    .use-card .no { color: #a5e9ff; }
+    .use-card a { color: #bcefff; }
+    .trust-card a { color: #bcefff; }
+    .stat b { color: #f2f8ff; }
+    .how-step .num { background: rgba(10, 18, 31, .8); border-color: rgba(161, 229, 255, .3); box-shadow: 0 0 34px rgba(142, 232, 255, .08); }
+    .how::before { background: linear-gradient(90deg, transparent, rgba(142, 232, 255, .34), transparent); }
+    .tip { border-radius: 24px; border-color: rgba(205, 231, 255, .14); background: linear-gradient(120deg, rgba(29, 43, 64, .55), rgba(12, 19, 32, .4)); }
+    .btn.cash { background: linear-gradient(112deg, #eefbff, #c2efff 45%, #e0d0ff); color: #06101b; box-shadow: 0 16px 46px rgba(108, 196, 255, .22); }
+    .avatar { background: linear-gradient(135deg, #a6ecff, #c7b4ff 60%, #ffd5e9); color: #07111c; border-color: rgba(255, 255, 255, .3); }
+    .socials a { border-radius: 13px; background: rgba(12, 21, 35, .42); }
+    .socials a:hover { transform: translateY(-3px); }
+    .faq-grid details { border-top-color: rgba(205, 231, 255, .12); }
+    .faq-grid summary { color: #eaf4ff; }
+    .faq-grid p { color: #a5b3c6; }
+    .final-glow { opacity: .6; }
+    .final h2 { text-wrap: balance; }
+    footer { border-top-color: rgba(205, 231, 255, .12); }
+
+    /* Reveals: a soft lift instead of a full-surface blur. */
+    .js .rv { filter: none !important; transform: translateY(18px); transition: opacity .62s var(--ease), transform .72s var(--ease); }
+    .js .rv.in { transform: none; }
+    @keyframes chIn {
+      from { opacity: 0; transform: translateY(.34em) scale(.97); }
+      to { opacity: 1; transform: none; }
+    }
+    /* The old title assembled a letter every 32ms: beautiful, but the page
+       looked empty for over two seconds. Keep the gesture, lose the wait. */
+    html.js.ready #hero-h1 .ch, html.js.ready #hero-h1 .shine {
+      animation-duration: .62s;
+      animation-delay: calc(.16s + var(--i, 0) * 12ms);
+    }
+
+    /* ---------- task stage section ---------- */
+    .stage-head { max-width: 780px; }
+    .stage-head h2 { max-width: 15ch; }
+    .stage-head .sub { max-width: 42em; }
+    .task-scene {
+      position: relative;
+      margin-top: 38px;
+      padding: clamp(18px, 4vw, 54px);
+      border-radius: 32px;
+      overflow: hidden;
+      isolation: isolate;
+      perspective: 1600px;
+      border: 1px solid rgba(205, 231, 255, .13);
+      background:
+        radial-gradient(50% 70% at 20% 14%, rgba(116, 210, 255, .16), transparent 68%),
+        radial-gradient(46% 64% at 86% 78%, rgba(189, 160, 255, .16), transparent 70%),
+        linear-gradient(140deg, rgba(13, 23, 40, .72), rgba(5, 9, 17, .68));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 40px 120px rgba(0, 0, 0, .34);
+    }
+    .task-scene::before {
+      content: ""; position: absolute; inset: 10% 18%; z-index: -1; border-radius: 50%;
+      background: radial-gradient(circle, rgba(142, 232, 255, .16), rgba(185, 167, 255, .08) 42%, transparent 70%);
+      filter: blur(28px);
+    }
+    .task-scene::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .45;
+      background-image: linear-gradient(rgba(196, 225, 255, .05) 1px, transparent 1px), linear-gradient(90deg, rgba(196, 225, 255, .05) 1px, transparent 1px);
+      background-size: 52px 52px; mask-image: linear-gradient(180deg, transparent, #000 30%, transparent 92%); -webkit-mask-image: linear-gradient(180deg, transparent, #000 30%, transparent 92%);
+    }
+    .task-shell {
+      position: relative; z-index: 1; width: min(980px, 100%); margin: 0 auto;
+      border-radius: 26px; overflow: hidden;
+      border: 1px solid rgba(218, 238, 255, .23);
+      background: linear-gradient(145deg, rgba(22, 35, 56, .8), rgba(7, 12, 23, .86));
+      box-shadow: 0 44px 130px rgba(0, 0, 0, .55), 0 0 0 1px rgba(0, 0, 0, .2), inset 0 1px 0 rgba(255, 255, 255, .2), 0 0 90px rgba(142, 232, 255, .09);
+      backdrop-filter: blur(24px) saturate(1.25); -webkit-backdrop-filter: blur(24px) saturate(1.25);
+      transform: rotateX(var(--tx, 2.5deg)) rotateY(var(--ty, -3deg));
+      transform-style: preserve-3d;
+      transition: transform .4s var(--ease);
+      will-change: transform;
+    }
+    .task-top { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid rgba(205, 231, 255, .1); background: rgba(7, 13, 24, .38); }
+    .task-dots { display: flex; gap: 5px; }
+    .task-dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(220, 237, 255, .25); }
+    .task-dots i:first-child { background: rgba(255, 180, 205, .65); }
+    .task-dots i:nth-child(2) { background: rgba(255, 218, 158, .65); }
+    .task-dots i:nth-child(3) { background: rgba(158, 233, 255, .65); }
+    .task-title { font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: #8396af; }
+    .task-live { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; padding: 5px 9px; border-radius: 999px; border: 1px solid rgba(142, 232, 255, .2); background: rgba(142, 232, 255, .07); font: 500 9.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: #bcefff; }
+    .task-live i { width: 5px; height: 5px; border-radius: 50%; background: #8ee8ff; box-shadow: 0 0 9px #8ee8ff; animation: breathe 2.4s ease-in-out infinite; }
+    .task-body { display: grid; grid-template-columns: 1.05fr .95fr; gap: 0; }
+    .task-copy { padding: 24px 26px 22px; }
+    .task-label { font: 500 9.5px var(--mono); letter-spacing: .15em; text-transform: uppercase; color: #8195ae; }
+    .task-ask { margin-top: 8px; font: 600 clamp(17px, 2vw, 23px)/1.25 var(--display); letter-spacing: -.025em; color: #edf7ff; max-width: 24ch; }
+    .task-steps { list-style: none; padding: 0; margin: 19px 0 0; display: grid; gap: 5px; }
+    .task-step { display: grid; grid-template-columns: 23px 1fr auto; gap: 10px; align-items: center; padding: 9px 10px; border-radius: 12px; border: 1px solid transparent; color: #8699b1; transition: background .4s var(--ease), border-color .4s, color .4s, transform .4s var(--ease); }
+    .task-step .marker { display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; border: 1px solid rgba(205, 231, 255, .2); font: 600 8px var(--mono); color: #9db0c8; transition: inherit; }
+    .task-step .label { font-size: 12.5px; line-height: 1.3; }
+    .task-step .step-time { font: 500 9px var(--mono); color: #64788f; }
+    .task-step.active { color: #ecf8ff; background: rgba(142, 232, 255, .075); border-color: rgba(142, 232, 255, .18); transform: translateX(3px); }
+    .task-step.active .marker { border-color: rgba(142, 232, 255, .5); color: #bcefff; box-shadow: 0 0 14px rgba(142, 232, 255, .18); }
+    .task-step.done { color: #a5b9ce; }
+    .task-step.done .marker { color: #07121b; background: #b9eeff; border-color: #b9eeff; }
+    .task-progress { margin-top: 18px; height: 3px; border-radius: 3px; background: rgba(205, 231, 255, .1); overflow: hidden; }
+    .task-progress span { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, #8ee8ff, #d0bfff, #ffd8ec); box-shadow: 0 0 12px rgba(142, 232, 255, .55); transition: width .7s var(--ease); }
+    .task-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 17px; }
+    .task-btn { border: 1px solid rgba(205, 231, 255, .16); background: rgba(255, 255, 255, .05); color: #c4d5e7; border-radius: 999px; padding: 7px 12px; font: 600 10.5px var(--body); cursor: pointer; transition: background .2s, border-color .2s, color .2s; }
+    .task-btn:hover { background: rgba(142, 232, 255, .1); border-color: rgba(142, 232, 255, .3); color: #f3fbff; }
+    .task-btn.primary { background: #e9faff; border-color: #e9faff; color: #07111c; }
+    .task-note { margin-left: auto; font: 500 9px var(--mono); letter-spacing: .08em; color: #71859c; }
+    .task-window { margin: 18px 20px 20px 0; border-radius: 17px; overflow: hidden; border: 1px solid rgba(205, 231, 255, .14); background: #0c1422; box-shadow: 0 22px 60px rgba(0, 0, 0, .34); }
+    .task-window-top { display: flex; align-items: center; gap: 4px; height: 29px; padding: 0 10px; background: rgba(255, 255, 255, .045); border-bottom: 1px solid rgba(205, 231, 255, .08); }
+    .task-window-top i { width: 5px; height: 5px; border-radius: 50%; background: rgba(221, 238, 255, .22); }
+    .task-window-top span { margin-left: 7px; font: 500 8px var(--mono); letter-spacing: .08em; color: #71869e; }
+    .task-doc { position: relative; min-height: 247px; padding: 18px 17px 16px; background: linear-gradient(160deg, #121c2c, #0b1320 75%); }
+    .task-doc h4 { font: 600 12px var(--display); color: #e6f2fc; }
+    .task-doc .doc-line { height: 5px; border-radius: 4px; background: rgba(202, 227, 249, .12); margin-top: 10px; }
+    .task-doc .doc-line.short { width: 62%; }
+    .task-doc .doc-line.mid { width: 82%; }
+    .task-doc .doc-block { margin-top: 17px; padding: 11px; border-radius: 9px; border: 1px solid rgba(142, 232, 255, .16); background: rgba(142, 232, 255, .055); }
+    .task-doc .doc-block b { display: block; font: 600 8.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: #a8e9ff; }
+    .task-doc .doc-block span { display: block; margin-top: 5px; font-size: 9px; line-height: 1.45; color: #9fb1c5; }
+    .task-cursor { position: absolute; right: 13%; bottom: 23%; width: 18px; height: 18px; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .6)); animation: cursor-float 3.6s ease-in-out infinite; }
+    .task-cursor::before { content: ""; position: absolute; inset: 0; background: #f4fbff; clip-path: polygon(0 0, 100% 55%, 58% 62%, 47% 100%); }
+    .task-cursor::after { content: ""; position: absolute; left: 10px; top: 10px; width: 32px; height: 32px; border-radius: 50%; border: 1px solid rgba(142, 232, 255, .38); animation: cursor-ring 2.4s ease-out infinite; }
+    .task-legend { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 14px; }
+    .task-legend div { padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(205, 231, 255, .11); background: rgba(12, 20, 33, .35); }
+    .task-legend b { display: block; font: 600 12px var(--display); color: #dbeafa; }
+    .task-legend span { display: block; margin-top: 4px; font-size: 11.5px; line-height: 1.45; color: #8498ae; }
+    @keyframes cursor-float { 50% { transform: translate(-8px, -6px); } }
+    @keyframes cursor-ring { 0% { transform: scale(.4); opacity: .7; } 100% { transform: scale(1.6); opacity: 0; } }
+    @keyframes breathe { 50% { opacity: .35; transform: scale(.8); } }
+
+    /* ---------- mobile: a composition, not a squashed desktop ---------- */
+    @media (max-width: 900px) {
+      :root { --wrap: min(1180px, 100% - 28px); }
+      .hero { min-height: 0; padding-block: 26px 52px; }
+      .hero h1 { max-width: 16ch; font-size: clamp(40px, 8.8vw, 68px); }
+      .hero-art { width: min(410px, 70vw); margin-top: 20px; }
+      .hero .lede { max-width: 34em; }
+      .spec-strip { grid-template-columns: 1fr 1fr; border-radius: 18px; }
+      .task-body { grid-template-columns: 1fr; }
+      .task-window { margin: 0 20px 20px; }
+      .task-legend { grid-template-columns: 1fr; }
+      .task-scene { border-radius: 24px; }
+    }
+    @media (max-width: 560px) {
+      :root { --wrap: calc(100% - 24px); }
+      .nav-in { border-radius: 15px; padding: 8px 8px 8px 12px; margin-top: 8px; }
+      .brand { letter-spacing: .18em; font-size: 13px; gap: 8px; }
+      .brand img { width: 27px; height: 27px; border-radius: 9px; }
+      .hero { padding-block: 18px 40px; }
+      .hero .eyebrow { font-size: 9px; letter-spacing: .07em; padding: 7px 10px; white-space: nowrap; }
+      .hero .eyebrow b { width: 16px; }
+      .hero h1 { max-width: 100%; font-size: clamp(38px, 10.4vw, 54px); line-height: .96; margin-top: 16px; }
+      .hero .lede { font-size: 15.5px; line-height: 1.62; margin-top: 15px; }
+      .hero .ctas { margin-top: 18px; }
+      .hero .ctas .btn { width: 100%; justify-content: center; }
+      .hero .rel { margin-top: 13px; }
+      .hero .fine { margin-top: 13px; font-size: 12px; }
+      .hero .rel { flex-direction: column; }
+      .hero .rel-chip { flex-wrap: nowrap; max-width: 100%; font-size: 10.5px; padding: 8px 12px; }
+      .hero .rel-chip b { display: none; }
+      .hero .rel-dot { flex: none; }
+      .hero-art { width: min(330px, 78vw); margin-top: 18px; }
+      .stage .chip { font-size: 11px; padding: 7px 9px; }
+      .stage .chip.c1 { left: -2%; top: 14%; }
+      .stage .chip.c2, .stage .chip.c3 { display: none; }
+      .stage .chip i { width: 20px; height: 20px; font-size: 11px; }
+      .stage .tapme { right: 4%; top: 8%; font-size: 10.5px; }
+      .stage .state { font-size: 9px; letter-spacing: .18em; }
+      .stage .chat { width: 94%; bottom: 1%; }
+      .stage .bubble { font-size: 11.5px; padding: 8px 11px; border-radius: 12px; }
+      .spec-strip { padding: 3px 6px; margin-top: 2px; }
+      .spec-strip div { padding: 12px 10px; }
+      .spec-strip span { font-size: 9px; letter-spacing: .1em; }
+      .spec-strip b { font-size: 12px; }
+      .task-scene { margin-top: 26px; padding: 10px; border-radius: 20px; }
+      .task-shell { border-radius: 19px; transform: none; }
+      .task-copy { padding: 18px 16px 16px; }
+      .task-ask { font-size: 18px; }
+      .task-step { grid-template-columns: 21px 1fr; }
+      .task-step .step-time { display: none; }
+      .task-note { width: 100%; margin-left: 0; margin-top: 3px; }
+      .task-window { margin: 0 14px 14px; }
+      .task-doc { min-height: 208px; }
+      .task-legend { gap: 8px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .scene, .scene *, .task-cursor, .task-cursor::after, .task-live i { animation: none !important; }
+      .task-shell { transform: none !important; }
+    }
+  </style>
 </head>
 <body>
   <canvas id="stars" aria-hidden="true"></canvas>
@@ -1549,6 +1975,7 @@
       <a class="brand" href="#top"><img src="icon-96.png" width="30" height="30" alt="" />IZUKI</a>
       <div class="nav-links">
         <a href="#app">Product</a>
+        <a href="#stage">Task Stage</a>
         <a href="#features">Capabilities</a>
         <a href="#phone">Phone</a>
         <a href="#trust">Security</a>
@@ -1563,6 +1990,7 @@
     <div class="menu-sheet" id="menu-sheet" hidden>
       <div class="menu-grid">
         <a href="#app"><b>Product</b><span>See the desktop assistant</span></a>
+        <a href="#stage"><b>Task Stage</b><span>A real task, in glass</span></a>
         <a href="#features"><b>Capabilities</b><span>Voice, screen and control</span></a>
         <a href="#everything"><b>Capability index</b><span>Search the full list</span></a>
         <a href="#phone"><b>Phone</b><span>Your PC, from your phone</span></a>
@@ -1580,6 +2008,46 @@
   <main id="top">
     <!-- ========== hero ========== -->
     <header class="hero">
+      <div class="scene" aria-hidden="true">
+        <!-- Earth at night from the ISS (NASA, via Unsplash). Local copy: no
+             third-party request on first paint, and it works offline. -->
+        <div class="photo" id="photo">
+          <div class="orbit">
+            <img id="photo-img" alt="" decoding="async" fetchpriority="high" src="media/earth-night.jpg" />
+            <svg class="sunrise" viewBox="0 0 400 266" preserveAspectRatio="xMidYMin slice" aria-hidden="true">
+              <defs>
+                <radialGradient id="sr-core"><stop offset="0" stop-color="#fff"/><stop offset=".18" stop-color="#fff" stop-opacity=".95"/><stop offset=".45" stop-color="#e0f2fe" stop-opacity=".35"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></radialGradient>
+                <radialGradient id="sr-halo"><stop offset="0" stop-color="#f5f3ff" stop-opacity=".55"/><stop offset=".35" stop-color="#c4b5fd" stop-opacity=".22"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/></radialGradient>
+                <linearGradient id="sr-streak" x1="0" x2="1"><stop offset="0" stop-color="#67e8f9" stop-opacity="0"/><stop offset=".5" stop-color="#fff"/><stop offset="1" stop-color="#f0abfc" stop-opacity="0"/></linearGradient>
+                <linearGradient id="sr-rim" gradientUnits="userSpaceOnUse" x1="40" y1="0" x2="400" y2="0">
+                  <stop offset="0" stop-color="#8b5cf6" stop-opacity="0"/><stop offset=".45" stop-color="#a5f3fc" stop-opacity=".55"/>
+                  <stop offset=".62" stop-color="#fff" stop-opacity="1"/><stop offset=".8" stop-color="#c4b5fd" stop-opacity=".5"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+                </linearGradient>
+                <filter id="sr-soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.6"/></filter>
+              </defs>
+              <path class="rim-glow" d="M 20 128 A 771.1 771.1 0 0 1 400 88.6" stroke="url(#sr-rim)" stroke-width="3" fill="none" filter="url(#sr-soft)"/>
+              <path class="rim" d="M 20 128 A 771.1 771.1 0 0 1 400 88.6" stroke="url(#sr-rim)" stroke-width=".55" fill="none"/>
+              <g class="sun" transform="translate(368 85.4)">
+                <circle r="34" fill="url(#sr-halo)"/>
+                <rect class="streak" x="-150" y="-.45" width="300" height=".9" fill="url(#sr-streak)"/>
+                <g class="rays" stroke="#fff" stroke-linecap="round">
+                  <line x1="0" y1="-26" x2="0" y2="26" stroke-width=".35" stroke-opacity=".8"/>
+                  <line x1="-26" y1="0" x2="26" y2="0" stroke-width=".35" stroke-opacity=".8"/>
+                  <line x1="-10" y1="-10" x2="10" y2="10" stroke-width=".22" stroke-opacity=".5"/>
+                  <line x1="-10" y1="10" x2="10" y2="-10" stroke-width=".22" stroke-opacity=".5"/>
+                </g>
+                <circle r="7" fill="url(#sr-core)"/>
+                <circle r="1.4" fill="#fff"/>
+              </g>
+            </svg>
+          </div>
+        </div>
+        <div class="grade"></div>
+        <div class="glass" aria-hidden="true"><i class="g1"></i><i class="g2"></i><i class="g3"></i><i class="g4"></i><i class="g5"></i></div>
+        <canvas id="scene"></canvas>
+        <div class="shade"></div>
+        <div class="grain"></div>
+      </div>
 
       <div class="hero-copy">
         <span class="eyebrow rv"><b></b>IZUKI · WINDOWS 10 &amp; 11 · FREE</span>
@@ -1587,7 +2055,7 @@
         <p class="lede rv" style="--d:.16s">Say <b>“Hey Nova”</b> and speak normally. Izuki reads your screen, answers aloud, and operates your mouse and keyboard — with clear approval before anything consequential. It can also pick up a pen and teach directly on your screen.</p>
         <div class="ctas rv" style="--d:.24s" id="download">
           <a class="btn primary dl" href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Setup.exe">Download for Windows</a>
-          <a class="btn ghost" href="#features">Explore capabilities</a>
+          <a class="btn ghost" href="#stage">Meet the Task Stage</a>
         </div>
         <div class="rel rv" style="--d:.28s">
           <a class="rel-chip" id="rel-chip" href="https://github.com/nova-izuki/izuki/releases/latest">
@@ -1628,7 +2096,7 @@
       <div><span>Platform</span><b>Windows 10 &amp; 11</b></div>
       <div><span>AI providers</span><b>Gemini · Groq · OpenRouter · Mistral</b></div>
       <div><span>Everywhere else</span><b>iPhone · Android · Web</b></div>
-      <div><span>License</span><b>MIT · Free</b></div>
+      <div><span>Updates</span><b>Automatic checks · signed installs</b></div>
     </div>
 
     <!-- ========== the film ========== -->
@@ -1838,6 +2306,62 @@
       <div class="band-row" id="band1"><span>SEES</span><span>TALKS</span><span>CLICKS</span><span>TEACHES</span><span>REMINDS</span><span>SEES</span><span>TALKS</span><span>CLICKS</span><span>TEACHES</span><span>REMINDS</span></div>
       <div class="band-row outline" id="band2"><span>FREE</span><span>HANDS‑FREE</span><span>OPEN SOURCE</span><span>FREE</span><span>HANDS‑FREE</span><span>OPEN SOURCE</span><span>FREE</span><span>HANDS‑FREE</span><span>OPEN SOURCE</span></div>
     </div>
+
+    <!-- ========== task stage ========== -->
+    <section id="stage" aria-labelledby="stage-title">
+      <div class="stage-head">
+        <div class="kicker rv">New · Task Stage</div>
+        <h2 class="rv" id="stage-title">A task, in its own glass room.</h2>
+        <p class="sub rv">When a job takes more than one step, Izuki brings it into a quiet floating stage: the plan, the live step, and the controls, together in one place. Your desktop keeps working underneath — this is a clear view of the real task, not a hidden desktop.</p>
+      </div>
+
+      <div class="task-scene rv" data-task-stage>
+        <div class="task-shell" data-task-shell>
+          <div class="task-top">
+            <span class="task-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="task-title">Izuki · Task Stage</span>
+            <span class="task-live"><i></i><span data-task-state>Working</span></span>
+          </div>
+          <div class="task-body">
+            <div class="task-copy">
+              <span class="task-label">Your request</span>
+              <p class="task-ask">“Plan my Thursday, then put the reading list in my notes.”</p>
+              <ol class="task-steps" aria-label="Task steps">
+                <li class="task-step active" data-step><span class="marker">01</span><span class="label">Read today's calendar</span><span class="step-time">0:04</span></li>
+                <li class="task-step" data-step><span class="marker">02</span><span class="label">Open your notes</span><span class="step-time">0:07</span></li>
+                <li class="task-step" data-step><span class="marker">03</span><span class="label">Add the reading list</span><span class="step-time">0:12</span></li>
+                <li class="task-step" data-step><span class="marker">04</span><span class="label">Check it landed</span><span class="step-time">0:16</span></li>
+              </ol>
+              <div class="task-progress" role="progressbar" aria-label="Task progress" aria-valuemin="0" aria-valuemax="4" aria-valuenow="1"><span data-task-progress></span></div>
+              <div class="task-controls">
+                <button type="button" class="task-btn primary" data-task-pause>Pause after step</button>
+                <button type="button" class="task-btn" data-task-takeover>Take over</button>
+                <button type="button" class="task-btn" data-task-stop>Stop</button>
+                <span class="task-note">Preview · the real stage runs on your desktop</span>
+              </div>
+            </div>
+            <div class="task-window" aria-hidden="true">
+              <div class="task-window-top"><i></i><i></i><i></i><span>Notes — Week 12</span></div>
+              <div class="task-doc">
+                <h4>Thursday, 14 November</h4>
+                <div class="doc-line mid"></div>
+                <div class="doc-line short"></div>
+                <div class="doc-block"><b>Reading · 10:30</b><span>Finish chapter 6, then add the seminar notes to this page.</span></div>
+                <div class="doc-line mid"></div>
+                <div class="doc-line"></div>
+                <div class="doc-line short"></div>
+                <span class="task-cursor"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="task-legend">
+          <div><b>One clear focus</b><span>No dashboard to decode. The current step is always the brightest thing in the room.</span></div>
+          <div><b>Contained, not trapped</b><span>Your files and apps stay where they are. The stage comes forward while Izuki works.</span></div>
+          <div><b>You can always take over</b><span>Pause after the current step, take the mouse, or stop everything with Esc.</span></div>
+        </div>
+      </div>
+    </section>
 
     <!-- ========== what's new (live) ========== -->
     <section id="new">
@@ -3570,6 +4094,102 @@ $("nw-wake")?.addEventListener("click", async () => {
   grid.classList.add("fx-ready");
   tools.hidden = false;
   apply();
+})();
+</script>
+
+<script>
+/* Task Stage: a small, self-contained preview of the floating surface the
+   desktop app shows while a real task runs. It pauses offscreen and honours
+   reduced motion; it never pretends to control the visitor's PC. */
+(() => {
+  const scene = document.querySelector("[data-task-stage]");
+  if (!scene) return;
+  const shell = scene.querySelector("[data-task-shell]");
+  const steps = [...scene.querySelectorAll("[data-step]")];
+  const progress = scene.querySelector("[data-task-progress]");
+  const meter = scene.querySelector("[role='progressbar']");
+  const state = scene.querySelector("[data-task-state]");
+  const pauseBtn = scene.querySelector("[data-task-pause]");
+  const takeoverBtn = scene.querySelector("[data-task-takeover]");
+  const stopBtn = scene.querySelector("[data-task-stop]");
+  if (!steps.length || !progress || !state || !pauseBtn) return;
+
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+  let current = 0, paused = false, stopped = false, timer = 0, restart = 0, visible = false;
+
+  const render = () => {
+    steps.forEach((step, index) => {
+      step.classList.toggle("done", index < current || current >= steps.length);
+      step.classList.toggle("active", index === current && current < steps.length);
+      const marker = step.querySelector(".marker");
+      if (marker) marker.textContent = index < current || current >= steps.length ? "✓" : String(index + 1).padStart(2, "0");
+    });
+    const percent = Math.min(100, Math.round((current / steps.length) * 100));
+    progress.style.width = `${percent}%`;
+    if (meter) meter.setAttribute("aria-valuenow", String(current));
+    if (current >= steps.length) state.textContent = "Complete";
+    else if (stopped) state.textContent = "You took over";
+    else if (paused) state.textContent = "Paused";
+    else state.textContent = "Working";
+    pauseBtn.textContent = current >= steps.length || stopped ? "Run it again" : paused ? "Resume" : "Pause after step";
+    pauseBtn.setAttribute("aria-pressed", String(paused));
+    if (takeoverBtn) takeoverBtn.disabled = stopped || current >= steps.length;
+    if (stopBtn) stopBtn.disabled = stopped || current >= steps.length;
+  };
+
+  const clear = () => {
+    if (timer) { clearInterval(timer); timer = 0; }
+    if (restart) { clearTimeout(restart); restart = 0; }
+  };
+  const tick = () => {
+    if (!visible || paused || stopped) return;
+    if (current < steps.length) { current += 1; render(); }
+    if (current >= steps.length) {
+      clear();
+      // Let the finished state breathe, then show the motion again for the
+      // next visitor scrolling by. Paused / taken-over states never loop.
+      if (visible && !paused && !stopped) restart = setTimeout(reset, 4200);
+    }
+  };
+  const start = () => { clear(); if (!paused && !stopped && current < steps.length && !reduce.matches) timer = setInterval(tick, 2800); };
+  const reset = () => { clear(); current = 0; paused = false; stopped = false; render(); start(); };
+
+  pauseBtn.addEventListener("click", () => {
+    if (current >= steps.length || stopped) { reset(); return; }
+    paused = !paused;
+    render();
+    if (paused) clear(); else start();
+  });
+  takeoverBtn?.addEventListener("click", () => { stopped = true; paused = false; clear(); render(); });
+  stopBtn?.addEventListener("click", () => { stopped = true; paused = false; clear(); render(); });
+
+  // A gentle 3D lean, only while the pointer is over the stage.
+  if (shell && !reduce.matches) {
+    scene.addEventListener("pointermove", (event) => {
+      const rect = scene.getBoundingClientRect();
+      const x = (event.clientX - rect.left) / rect.width - .5;
+      const y = (event.clientY - rect.top) / rect.height - .5;
+      shell.style.setProperty("--ty", `${(x * 4).toFixed(2)}deg`);
+      shell.style.setProperty("--tx", `${(-y * 3).toFixed(2)}deg`);
+    }, { passive: true });
+    scene.addEventListener("pointerleave", () => {
+      shell.style.setProperty("--ty", "-3deg");
+      shell.style.setProperty("--tx", "2.5deg");
+    });
+  }
+
+  if (reduce.matches) {
+    current = steps.length;
+    render();
+  } else {
+    render();
+    const observer = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      if (visible && !paused && !stopped && current < steps.length) start();
+      else clear();
+    }, { threshold: .2 });
+    observer.observe(scene);
+  }
 })();
 </script>
 

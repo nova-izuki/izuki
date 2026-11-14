@@ -18,6 +18,7 @@ import { ActionHand } from "./ActionHand";
 import { Island, islandPointer } from "./Island";
 import { IslandChatWorkspace } from "./IslandChatWorkspace";
 import { Hud } from "./Hud";
+import { TaskStage } from "./TaskStage";
 import { HandGlyph } from "./IzukiMark";
 import { PointOutLayer, type PointOut } from "./PointOutLayer";
 import { PenLayer, PEN_INKS, type PenMark } from "./PenLayer";
@@ -878,6 +879,7 @@ export function OverlayCanvas() {
           </div>
         )}
         <Hud />
+        <TaskStage />
         <IslandChatWorkspace />
         {islandOn && <Island
             always={islandAlways}
