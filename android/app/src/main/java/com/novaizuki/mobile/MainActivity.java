@@ -52,10 +52,10 @@ public class MainActivity extends BridgeActivity {
     if (intent == null) return;
     String token = intent.getStringExtra("izuki_wake_token");
     if (!IzukiControlPlugin.consumeWakeHandoff(token)) return;
-    // A warm WebView might not get a visibility change when the Quick Settings
-    // tile brings Izuki forward; tell the open page too. The page's duplicate
-    // guard folds this into the pending phrase when both arrive.
-    IzukiControlPlugin.notifyWake("Hey Nova");
+    // The producer already emitted the wake event for a warm page (with the
+    // actual spoken phrase); a cold page takes the pending phrase from the
+    // plugin. Do not emit a second, bare event here: it could overwrite the
+    // command while the page is waiting on device().
     intent.removeExtra("izuki_wake_token");
   }
 }

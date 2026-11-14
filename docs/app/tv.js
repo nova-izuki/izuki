@@ -640,27 +640,40 @@ async function checkForUpdate() {
   tile.className = "tv-tile tv-update";
   tile.innerHTML = `<span>⬆️</span><b>Update Izuki</b><small>Version ${u.latest} is ready</small>`;
   let installing = false;
-  const idle = () => {
+  let stage = "idle";
+  const reset = (text) => {
     installing = false;
+    stage = "idle";
     tile.disabled = false;
-    tile.querySelector("small").textContent = `Version ${u.latest} is ready`;
+    if (text) tile.querySelector("small").textContent = text;
   };
   // Android resolves installUpdate when the installer opens, not when the
   // user actually replaces the package. If they cancel and come back, let
   // them tap again; a completed install reloads the app before this matters.
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && installing) idle(); });
+  // Do not reset during the download: coming back early must not start a
+  // second attempt over the first one.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && stage === "installer") reset(`Version ${u.latest} is ready`);
+  });
   tile.onclick = async () => {
     if (installing) return;
     installing = true;
+    stage = "download";
     tile.disabled = true;
     tile.querySelector("small").textContent = "Downloading and verifying…";
-    const r = await window.IzukiNative.installUpdate(u);
+    let r;
+    try {
+      r = await window.IzukiNative.installUpdate(u);
+    } catch (e) {
+      r = { error: e?.message || "The update didn't start." };
+    }
+    stage = r?.ok ? "installer" : "idle";
     tile.querySelector("small").textContent = r?.ok
       ? "Press Install on the next screen"
       : r?.allow
         ? "Allow Izuki to install, then press again"
         : (r?.signature ? "Install once from the download page" : (r?.error || "The update didn't install"));
-    if (!r?.ok) idle();
+    if (!r?.ok) reset();
   };
   document.querySelector(".tv-tiles")?.prepend(tile);
   document.querySelector(".tv-tiles").style.gridTemplateColumns = "repeat(7, 1fr)";

@@ -151,9 +151,11 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   }
 
   private Notification notification(String text) {
-    Intent open = new Intent(this, IzukiWakeLaunchReceiver.class)
-        .putExtra("phrase", "Hey Nova");
-    PendingIntent content = PendingIntent.getBroadcast(this, 0, open,
+    // Keep this an activity PendingIntent: Android 12+ blocks notification
+    // trampolines that launch an activity from a broadcast receiver.
+    Intent open = new Intent(this, MainActivity.class)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+    PendingIntent content = PendingIntent.getActivity(this, 0, open,
         PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     Intent stop = new Intent(this, IzukiWakeService.class).setAction(ACTION_STOP);
     PendingIntent stopIntent = PendingIntent.getService(this, 1, stop,

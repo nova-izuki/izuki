@@ -24,6 +24,7 @@ public class IzukiTileService extends TileService {
     super.onClick();
     Intent open = new Intent(this, MainActivity.class);
     open.putExtra("izuki_wake_token", IzukiControlPlugin.beginWake("Hey Nova"));
+    IzukiControlPlugin.notifyWake("Hey Nova");
     open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
     try {
       if (Build.VERSION.SDK_INT >= 34) {
