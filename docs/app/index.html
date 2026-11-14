@@ -3819,6 +3819,14 @@
       updateProgress = percent;
       if (updateBusy) renderUpdatePanel();
     });
+    // A failed check should not stay failed for the rest of the session just
+    // because Wi-Fi was not back yet when the app opened.
+    window.addEventListener("online", () => { if (updateInfo?.error) void checkForUpdates(true); });
+    // Keep a long-running installed app from showing yesterday's answer.
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden || !updateInfo) return;
+      if (Date.now() - Number(updateInfo.checkedAt || 0) > 6 * 60 * 60 * 1000) void checkForUpdates(false);
+    });
     setTimeout(() => { if (!window.IzukiTv?.active) void checkForUpdates(false); }, 3000);
     void verifyPendingUpdate();
   }
