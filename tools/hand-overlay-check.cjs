@@ -101,9 +101,20 @@ let server, browser, ws, profile, cache;
     assert.equal(await run('canvasTest.count()'),1,'Actual canvas must wire the optional action visual');
     await run('canvasTest.preference(false)');await pause(150);
     assert.equal(await run('canvasTest.count()'),0,'Actual settings change clears the visual');
+    await run('canvasTest.task()');await pause(250);
+    let task=await run('canvasTest.taskState()');
+    assert.equal(task.visible,true,'Task Stage must appear from its start event, before step 1');
+    assert.equal(task.buttons,2,'Task Stage must not duplicate the same stop action');
+    assert.match(task.text,/Preparing the first step/,'Task Stage must show the ready state before the first click');
+    await run('canvasTest.taskStep()');await pause(150);
+    task=await run('canvasTest.taskState()');
+    assert.equal(task.visible,true,'Task Stage must stay up through step statuses');
+    assert.match(task.text,/Step 1/,'Task Stage must show the live step');
+    await run('canvasTest.taskDone()');await pause(150);
+    assert.equal((await run('canvasTest.taskState()')).visible,false,'Task Stage must leave when the task succeeds');
     await run('canvasTest.unmount()');
   }
-  console.log(`Hand overlay: disabled/idle/expiry/stop/window switch/session/close/reopen/toggle/unmount/input/camera checks passed (${native?'native Windows Tauri/WebView2':desktop?'Windows desktop Edge':'headless Edge'}).`);
+  console.log(`Hand overlay: disabled/idle/expiry/stop/window switch/session/close/reopen/toggle/unmount/input/camera/Task Stage start-step-exit checks passed (${native?'native Windows Tauri/WebView2':desktop?'Windows desktop Edge':'headless Edge'}).`);
   if(native)await run("setTimeout(()=>import('/node_modules/@tauri-apps/api/core.js').then(m=>m.invoke('probe_finish')),50);true");
 })().catch(e=>{console.error(e);process.exitCode=1}).finally(async()=>{
   try{ws?.close()}catch{}await closeTestBrowser(browser,profile);await server?.close();

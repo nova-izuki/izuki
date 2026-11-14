@@ -17,6 +17,10 @@ window.canvasTest={
   async open(mode){await emit(EV.overlayOpen,{mode,freeze:false,desktop:{x:0,y:0,w:innerWidth,h:innerHeight,scale:1}})},
   async point(){await emit(EV.hand,{x:150,y:140,action:'click',duration_ms:3000})},
   async preference(on){settings={...settings,action_hand_enabled:on};await emit(EV.settingsChanged)},
+  async task(){await emit(EV.status,{kind:'working',message:'Task Stage is ready',detail:'4 steps ready. Taking a first look before step 1.'})},
+  async taskStep(){await emit(EV.status,{kind:'working',message:'Step 1/4',detail:'Opened your notes.'})},
+  async taskDone(){await emit(EV.status,{kind:'success',message:'Step 4/4',detail:'Done.'})},
+  taskState(){const el=document.querySelector('.izk-task-stage');return el?{visible:true,text:el.textContent,buttons:el.querySelectorAll('.izk-task-button').length}:{visible:false}},
   count(){return document.querySelectorAll('[data-izk-hand-cursor]').length},
   unmount(){root.unmount()}
 };

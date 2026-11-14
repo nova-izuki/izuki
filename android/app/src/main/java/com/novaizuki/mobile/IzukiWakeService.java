@@ -236,6 +236,9 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     stopListening();
     wakeScreen();
     vibrate();
+    // Show the glass orb over the lock screen / current app immediately, before
+    // the page finishes waking. Tapping it opens Izuki ready to listen.
+    IzukiAccessibilityService.orb("listen", "Hey Nova — tap to talk");
     IzukiControlPlugin.setWakePhrase(phrase);
     IzukiControlPlugin.notifyWake(phrase);
     updateNotification("I'm here — unlock your phone to talk.");
@@ -293,6 +296,7 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   @Override public void onDestroy() {
     enabled = false;
     running = false;
+    IzukiAccessibilityService.orb("idle", "");
     stopListening();
     if (recognizer != null) {
       try { recognizer.destroy(); } catch (Exception ignored) { }

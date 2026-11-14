@@ -468,28 +468,34 @@ public class IzukiAccessibilityService extends AccessibilityService {
         LinearLayout box = new LinearLayout(service);
         box.setOrientation(LinearLayout.HORIZONTAL);
         box.setGravity(Gravity.CENTER_VERTICAL);
-        int pad = dp(service, 14);
-        box.setPadding(pad, pad / 2, pad * 2, pad / 2);
-        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
-        bg.setColor(Color.argb(200, 8, 9, 20));
-        bg.setCornerRadius(dp(service, 40));
-        box.setBackground(bg);
+        box.setPadding(dp(service, 4), dp(service, 4), dp(service, 4), dp(service, 4));
+        box.setBackground(null);
+        box.setContentDescription("Izuki. Tap to talk.");
+        box.setClickable(true);
+        box.setOnClickListener(v -> openFromOrb());
         dot = new OrbDot(service);
         box.addView(dot, new LinearLayout.LayoutParams(dp(service, 64), dp(service, 64)));
         caption = new TextView(service);
         caption.setTextColor(Color.WHITE);
-        caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-        caption.setMaxWidth(dp(service, 520));
-        caption.setMaxLines(3);
-        caption.setPadding(dp(service, 12), 0, 0, 0);
-        box.addView(caption);
+        caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        caption.setMaxWidth(dp(service, 220));
+        caption.setMaxLines(2);
+        caption.setPadding(dp(service, 10), dp(service, 6), dp(service, 12), dp(service, 6));
+        android.graphics.drawable.GradientDrawable capBg = new android.graphics.drawable.GradientDrawable();
+        capBg.setColor(Color.argb(210, 8, 9, 20));
+        capBg.setCornerRadius(dp(service, 18));
+        caption.setBackground(capBg);
+        LinearLayout.LayoutParams captionLp = new LinearLayout.LayoutParams(
+          LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        captionLp.setMargins(dp(service, 8), 0, 0, 0);
+        box.addView(caption, captionLp);
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
           WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
           WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
           PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.BOTTOM | Gravity.END;
-        lp.x = dp(service, 40); lp.y = dp(service, 40);
+        lp.x = dp(service, 24); lp.y = dp(service, 32);
         try { wm.addView(box, lp); orbView = box; } catch (Exception e) { return; }
       }
       dot.setState(state);
@@ -498,6 +504,16 @@ public class IzukiAccessibilityService extends AccessibilityService {
       caption.setText(shown);
       caption.setVisibility(shown.isEmpty() ? View.GONE : View.VISIBLE);
     });
+  }
+
+  /** Tapping the floating orb brings Izuki's page back and starts a voice turn. */
+  private static void openFromOrb() {
+    IzukiAccessibilityService service = active;
+    if (service == null) return;
+    Intent open = new Intent(service, MainActivity.class)
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+      .putExtra("izuki_wake", "Hey Nova");
+    try { service.startActivity(open); } catch (Exception ignored) { }
   }
 
   private static void hideOrb() {

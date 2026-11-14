@@ -50,9 +50,12 @@
     },
   };
 
+  let orbOverApps = true;
   window.IzukiNative = {
     installed: () => !!window.Capacitor?.isNativePlatform?.(),
     platform,
+    /** Match the Android setting; app launches only leave an orb when this is on. */
+    setOrbOverApps(on) { orbOverApps = !!on; },
     async haptic() {
       try { return !!(await (device() || control())?.haptic())?.done; } catch { return false; }
     },
@@ -131,7 +134,16 @@
     },
     /** Open an installed app by name. */
     async launch(name) {
-      try { return (await control()?.launch({ name })) || null; } catch { return null; }
+      try { return (await control()?.launch({ name, orb: orbOverApps })) || null; } catch { return null; }
+    },
+    /** Start Google Maps turn-by-turn; the app must stay plugged in behind it. */
+    async navigate(to) {
+      try { return (await control()?.navigate({ to: String(to || "").trim() })) || null; } catch { return null; }
+    },
+    /** The floating glass orb over other apps: listen, think, talk, or idle. */
+    async orb(state = "idle", text = "") {
+      if (!control() || platform() === "web") return false;
+      try { await control().orb({ state: String(state || "idle"), text: String(text || "") }); return true; } catch { return false; }
     },
     /** Installed launchable apps: [{ name, id }]. */
     async apps() {
@@ -245,10 +257,20 @@
         const key = media[1].startsWith("next") ? "next" : media[1].startsWith("previous") ? "previous" : media[1] === "pause" ? "pause" : media[1] === "play" ? "play" : "playpause";
         return (await window.IzukiNative.media(key)) ? "Done." : failed;
       }
+      const go = text.match(/^(?:take me to|navigate to|directions to|drive me to|get me to|route me to|head to)\s+(.+)$/);
+      if (go) {
+        const typed = String(words || "").trim();
+        const original = typed.match(/^(?:take me to|navigate to|directions to|drive me to|get me to|route me to|head to)\s+(.+)$/i);
+        const destination = (original?.[1] || go[1])
+          .replace(/\s+on (?:my |the |this )?(?:phone|android)[.!?]*$/i, "")
+          .replace(/[.!?]+$/, "").trim();
+        const map = await window.IzukiNative.navigate(destination);
+        return map?.to ? `Taking you to ${map.to}. Google Maps has the turns — tap the orb when you need me.` : failed;
+      }
       const open = text.match(/^open (.+)$/);
       if (open) {
         const app = await window.IzukiNative.launch(open[1]);
-        return app?.name ? `Opened ${app.name}.` : null;
+        return app?.name ? `Opened ${app.name}. Tap the orb to come back to me.` : null;
       }
       const tap = text.match(/^(?:tap|press|click) (.+)$/);
       if (tap) {

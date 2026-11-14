@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronDown, ChevronUp, Hand, Pause, Play, Square } from "lucide-react";
+import { ChevronDown, ChevronUp, Pause, Play, Square } from "lucide-react";
 import { api, EV, on } from "../lib/ipc";
 import type { StatusEvent } from "../lib/types";
 
 type Step = { current: number; total: number; before: boolean };
+
+function totalFrom(status: StatusEvent | null): number {
+  if (!status) return 0;
+  const hit = /(\d+)\s+steps?\s+ready/i.exec(`${status.message} ${status.detail ?? ""}`);
+  return hit ? Math.max(1, Number.parseInt(hit[1], 10) || 1) : 0;
+}
 
 /** Same quiet step grammar the status card uses ("Step 2 of 5"). */
 function readStep(status: StatusEvent | null): Step | null {
@@ -27,6 +33,7 @@ function readStep(status: StatusEvent | null): Step | null {
 export function TaskStage() {
   const [status, setStatus] = useState<StatusEvent | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [total, setTotal] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -50,13 +57,26 @@ export function TaskStage() {
   const step = readStep(status);
   const paused = !!status && /^(pausing|paused)\b/i.test(status.message.trim());
   const working = !!status && status.kind === "working";
+
+  // The start event names the number of steps before the first click, so the
+  // stage can appear while Izuki is still taking its first look. Keep that
+  // count through the short "looking…" statuses; clear it when the task ends.
+  useEffect(() => {
+    if (!status) return;
+    const announced = totalFrom(status) || readStep(status)?.total || 0;
+    if (announced) setTotal(announced);
+    if (status.kind === "success" || status.kind === "error" || /^(stopped|nothing|no active)\b/i.test(status.message.trim())) {
+      setTotal(0);
+    }
+  }, [status]);
+
   // Don't turn every passing status line into a panel. A real task has a
-  // step count, or is explicitly waiting at a pause point.
-  const visible = !!status && (working && !!step || paused && !!step);
+  // total, either from its start event or from a step line.
+  const visible = !!status && total > 0 && (working || paused);
   if (!visible) return null;
 
   const done = step ? (step.before ? step.current - 1 : step.current) : 0;
-  const percent = step ? Math.max(0, Math.min(100, Math.round((done / step.total) * 100))) : 0;
+  const percent = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
   const pausing = !!status && /^pausing\b/i.test(status.message);
 
   return (
@@ -93,7 +113,7 @@ export function TaskStage() {
               <span className="izk-task-mark" aria-hidden><i /><i /><i /></span>
               <div className="izk-task-heading">
                 <b>Task Stage</b>
-                <span>{paused ? "Holding after this step" : "Working on your desktop"}</span>
+                <span>{paused ? "Holding after this step" : step ? "Working on your desktop" : "Getting the first step ready"}</span>
               </div>
               <span className="izk-task-state" data-paused={paused || pausing ? "true" : undefined}>
                 <i aria-hidden />
@@ -114,24 +134,22 @@ export function TaskStage() {
             <div className="izk-task-message">{status?.message}</div>
             {status?.detail && <p className="izk-task-detail">{status.detail}</p>}
 
-            {step && (
-              <div className="izk-task-progress-wrap">
-                <div className="izk-task-progress-label">
-                  <span>{step.before ? `Ready for step ${step.current}` : `Step ${step.current}`}</span>
-                  <span>{step.current}/{step.total}</span>
-                </div>
-                <div
-                  className="izk-task-progress"
-                  role="progressbar"
-                  aria-label={`Step ${step.current} of ${step.total}`}
-                  aria-valuemin={0}
-                  aria-valuemax={step.total}
-                  aria-valuenow={done}
-                >
-                  <span style={{ width: `${percent}%` }} />
-                </div>
+            <div className="izk-task-progress-wrap">
+              <div className="izk-task-progress-label">
+                <span>{step ? (step.before ? `Ready for step ${step.current}` : `Step ${step.current}`) : "Preparing the first step"}</span>
+                <span>{step ? `${step.current}/${step.total}` : `0/${total}`}</span>
               </div>
-            )}
+              <div
+                className="izk-task-progress"
+                role="progressbar"
+                aria-label={step ? `Step ${step.current} of ${step.total}` : `${total} steps ready`}
+                aria-valuemin={0}
+                aria-valuemax={total}
+                aria-valuenow={done}
+              >
+                <span style={{ width: `${percent}%` }} />
+              </div>
+            </div>
 
             <div className="izk-task-actions">
               {paused ? (
@@ -152,24 +170,15 @@ export function TaskStage() {
               <button
                 type="button"
                 data-izk-hit
-                className="izk-task-button"
-                onClick={() => void api.cancelTask()}
-                title="Stop Izuki and take the mouse yourself"
-              >
-                <Hand size={11} /> Take over
-              </button>
-              <button
-                type="button"
-                data-izk-hit
                 className="izk-task-button danger"
                 onClick={() => void api.cancelTask()}
-                title="Stop this task"
+                title="Stop this task and take the mouse yourself"
               >
                 <Square size={10} fill="currentColor" /> Stop
               </button>
             </div>
 
-            <p className="izk-task-foot">A view of the real task. This is not a separate or hidden desktop.</p>
+            <p className="izk-task-foot">A view of the real task — move your mouse to take over, or Stop to end it. This is not a hidden desktop.</p>
           </motion.section>
         )}
       </AnimatePresence>

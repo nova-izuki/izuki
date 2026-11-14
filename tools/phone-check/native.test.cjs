@@ -22,6 +22,8 @@ const window = {
           calls.push("launch:YouTube");
           return { name: "YouTube" };
         },
+        navigate: async ({ to }) => { calls.push(`navigate:${to}`); return { to }; },
+        orb: async ({ state, text }) => { calls.push(`orb:${state}${text ? `:${text}` : ""}`); return true; },
         act: async ({ op, text }) => { calls.push(`act:${op}${text ? `:${text}` : ""}`); return { done: true }; },
         media: async ({ key }) => { calls.push(`media:${key}`); return true; },
         volume: async ({ dir }) => { calls.push(`volume:${dir}`); return true; },
@@ -52,8 +54,12 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   assert.deepEqual(calls, ["home"]);
   assert.equal(await window.IzukiNative.quickDeviceCommand("open my banking app"), null);
   assert.deepEqual(calls, ["home"], "unrecognised words must never become device actions");
-  assert.equal(await window.IzukiNative.quickDeviceCommand("open YouTube"), "Opened YouTube.");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("open YouTube"), "Opened YouTube. Tap the orb to come back to me.");
   assert.deepEqual(calls, ["home", "launch:YouTube"]);
+  assert.equal(await window.IzukiNative.quickDeviceCommand("take me to Walmart"), "Taking you to Walmart. Google Maps has the turns — tap the orb when you need me.");
+  assert.equal(calls.at(-1), "navigate:Walmart");
+  assert.equal(await window.IzukiNative.orb("listen", ""), true);
+  assert.equal(calls.at(-1), "orb:listen");
   assert.equal(await window.IzukiNative.quickDeviceCommand("tap Search"), "Tapped search.");
   assert.equal(await window.IzukiNative.quickDeviceCommand("volume up"), "Turned the volume up.");
   assert.equal(await window.IzukiNative.quickDeviceCommand("next song"), "Done.");
