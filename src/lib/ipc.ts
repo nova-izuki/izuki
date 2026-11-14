@@ -23,7 +23,7 @@ import type {
   NoteLinks,
   VoiceCatalog,
   FoundKey,
-  N8nImport, AirSafety, FreeSearch} from "./types";
+  N8nImport, AirSafety, FreeSearch, StatusEvent} from "./types";
 
 export const IS_TAURI =
   typeof window !== "undefined" &&
@@ -841,7 +841,16 @@ export const api = {
   setOverlayInteractive: (interactive: boolean) =>
     call<void>("set_overlay_interactive", { interactive }, () => undefined),
   /** Clickable only while the cursor is over a floating widget — no focus steal. */
-  setOverlayHit: (hit: boolean) => call<void>("set_overlay_hit", { hit }, () => undefined),
+  setOverlayHit: (hit: boolean, task = false) => call<void>("set_overlay_hit", { hit, task }, () => undefined),
+  /** The latest Task Stage line, if the overlay mounted after it was sent. */
+  taskStatus: async (): Promise<StatusEvent | null> => {
+    const raw = await call<StatusEvent | string | null>("task_status", undefined, () => null);
+    if (!raw) return null;
+    if (typeof raw !== "string") return raw;
+    // The native command caches the event payload as JSON; hand the stage a
+    // real object, never a string it will call `.message` on.
+    try { return JSON.parse(raw) as StatusEvent; } catch { return null; }
+  },
   setOverlayWheel: (on: boolean) => call<void>("set_overlay_wheel", { on }, () => undefined),
   /** Bring the overlay up (click-through) if a caption needs somewhere to render. */
   showCaptionOverlay: () => call<void>("show_caption_overlay", undefined, () => undefined),

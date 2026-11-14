@@ -6,7 +6,25 @@ const path = require("path");
 const vm = require("vm");
 
 const calls = [];
-let prompted = false, appSettings = 0;
+let prompted = false, appSettings = 0, lastNavigate = null, lastInstall = null, lastProgress = null;
+const stored = {};
+const localStorage = {
+  getItem: (key) => (Object.prototype.hasOwnProperty.call(stored, key) ? stored[key] : null),
+  setItem: (key, value) => { stored[key] = String(value); },
+  removeItem: (key) => { delete stored[key]; },
+};
+const release = {
+  tag_name: "v1.0.211",
+  html_url: "https://github.com/nova-izuki/izuki/releases/tag/v1.0.211",
+  body: "A calmer update.",
+  assets: [{
+    name: "Izuki-Companion-Android-preview.apk",
+    size: 123456,
+    digest: "sha256:" + "a".repeat(64),
+    browser_download_url: "https://github.com/nova-izuki/izuki/releases/download/v1.0.211/Izuki-Companion-Android-preview.apk",
+  }],
+};
+const fetch = async () => ({ ok: true, status: 200, json: async () => release });
 const window = {
   Capacitor: {
     isNativePlatform: () => true,
@@ -14,14 +32,21 @@ const window = {
     Plugins: {
       IzukiControl: {
         haptic: async () => ({ done: true }),
-        status: async () => ({ enabled: true }),
+        status: async () => ({ enabled: true, version: "1.0.210", versionCode: 210, updateAllowed: true }),
         perform: async ({ action }) => calls.push(action),
+        installUpdate: async (args) => { lastInstall = args; return { started: true, version: "1.0.211" }; },
+        addListener: (name, callback) => {
+          if (name === "updateProgress") lastProgress = callback;
+          return { remove() {} };
+        },
         openAccessibilitySettings: async () => calls.push("settings"),
         launch: async ({ name }) => {
           if (String(name).toLowerCase() !== "youtube") throw new Error("not installed");
           calls.push("launch:YouTube");
           return { name: "YouTube" };
         },
+        navigate: async ({ to, orb }) => { calls.push(`navigate:${to}`); lastNavigate = { to, orb }; return { to }; },
+        orb: async ({ state, text }) => { calls.push(`orb:${state}${text ? `:${text}` : ""}`); return true; },
         act: async ({ op, text }) => { calls.push(`act:${op}${text ? `:${text}` : ""}`); return { done: true }; },
         media: async ({ key }) => { calls.push(`media:${key}`); return true; },
         volume: async ({ dir }) => { calls.push(`volume:${dir}`); return true; },
@@ -40,7 +65,7 @@ const window = {
     },
   },
 };
-vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/native.js"), "utf8"), { window, console });
+vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/native.js"), "utf8"), { window, console, fetch, localStorage });
 
 (async () => {
   assert.equal(window.IzukiNative.installed(), true);
@@ -48,12 +73,51 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   assert.equal(await window.IzukiNative.haptic(), true);
   assert.equal(await window.IzukiNative.takeLaunchPrompt(), "");
   assert.equal(await window.IzukiNative.controlStatus(), true);
+  assert.equal(await window.IzukiNative.phoneAction("home"), true);
+  assert.equal(calls.at(-1), "home");
+  assert.equal(await window.IzukiNative.phoneAction("delete everything"), false, "the dock only invokes known phone actions");
+  calls.length = 0;
+  const update = await window.IzukiNative.checkUpdate({ force: true });
+  assert.equal(update.update, true, "a newer tag is an update");
+  assert.equal(update.current, "1.0.210");
+  assert.equal(update.latest, "1.0.211");
+  assert.equal(update.size, 123456);
+  assert.equal(update.sha256, "a".repeat(64), "GitHub's digest is passed through for native verification");
+  assert.match(update.url, /releases\/download\/v1\.0\.211/);
+  const installed = await window.IzukiNative.installUpdate(update);
+  assert.equal(installed.ok, true);
+  assert.equal(lastInstall.url, update.url);
+  assert.equal(lastInstall.sha256, update.sha256);
+  assert.equal(lastInstall.size, update.size);
+  assert.equal(lastInstall.version, "1.0.211");
+  assert.equal(window.IzukiNative.pendingUpdate(), null);
+  window.IzukiNative.setPendingUpdate("1.0.211");
+  assert.equal(window.IzukiNative.pendingUpdate().version, "1.0.211");
+  window.IzukiNative.clearPendingUpdate();
+  assert.equal(window.IzukiNative.pendingUpdate(), null);
+  assert.ok(window.IzukiNative.onUpdateProgress(() => {}), "a progress listener can subscribe");
+  assert.equal(typeof lastProgress, "function", "progress listeners are wired through the native bridge");
+  window.Capacitor.Plugins.IzukiControl.status = async () => ({ enabled: true, version: "1.0.211" });
+  assert.equal((await window.IzukiNative.checkUpdate({ force: true })).update, false, "the same version is not an update");
+  window.Capacitor.Plugins.IzukiControl.status = async () => ({ enabled: true, version: "1.0.210" });
+  release.assets = [];
+  assert.match((await window.IzukiNative.checkUpdate({ force: true })).error, /APK isn't attached/, "a release without an APK never offers a broken download");
+  release.assets = [{ name: "Izuki-Companion-Android-preview.apk", size: 123456, digest: "sha256:" + "a".repeat(64), browser_download_url: "https://github.com/nova-izuki/izuki/releases/download/v1.0.211/Izuki-Companion-Android-preview.apk" }];
   assert.equal(await window.IzukiNative.quickDeviceCommand("go home"), "Opened Home.");
   assert.deepEqual(calls, ["home"]);
   assert.equal(await window.IzukiNative.quickDeviceCommand("open my banking app"), null);
   assert.deepEqual(calls, ["home"], "unrecognised words must never become device actions");
-  assert.equal(await window.IzukiNative.quickDeviceCommand("open YouTube"), "Opened YouTube.");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("open YouTube"), "Opened YouTube. Tap the orb to come back to me.");
   assert.deepEqual(calls, ["home", "launch:YouTube"]);
+  assert.equal(await window.IzukiNative.quickDeviceCommand("take me to Walmart"), "Taking you to Walmart. Google Maps has the turns — tap the orb when you need me.");
+  assert.equal(calls.at(-1), "navigate:Walmart");
+  assert.equal(lastNavigate.orb, true, "Maps respects the orb preference");
+  assert.equal(await window.IzukiNative.orb("listen", ""), true);
+  assert.equal(calls.at(-1), "orb:listen");
+  window.IzukiNative.setOrbOverApps(false);
+  assert.equal(await window.IzukiNative.orb("listen", ""), false, "the off switch gates the native orb");
+  assert.equal(await window.IzukiNative.orb("idle", ""), true, "idle can always take an orb away");
+  window.IzukiNative.setOrbOverApps(true);
   assert.equal(await window.IzukiNative.quickDeviceCommand("tap Search"), "Tapped search.");
   assert.equal(await window.IzukiNative.quickDeviceCommand("volume up"), "Turned the volume up.");
   assert.equal(await window.IzukiNative.quickDeviceCommand("next song"), "Done.");

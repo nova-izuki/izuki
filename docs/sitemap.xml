@@ -2,13 +2,14 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
     <loc>https://izukinova.ai/</loc>
-    <image:image><image:loc>https://izukinova.ai/og.png</image:loc><image:title>Izuki — the AI that lives on your screen</image:title><image:caption>Izuki’s official artwork: the glowing orb and brand name.</image:caption></image:image>
+    <image:image><image:loc>https://izukinova.ai/og.jpg</image:loc><image:title>Izuki — the AI that lives on your screen</image:title><image:caption>Izuki’s glass homepage: the centred orb, Earth backdrop and claim.</image:caption></image:image>
     <image:image><image:loc>https://izukinova.ai/icon-512.png</image:loc><image:title>Izuki orb logo</image:title><image:caption>The Izuki orb logo in cyan, violet and pink.</image:caption></image:image>
     <image:image><image:loc>https://izukinova.ai/shots/panel-draw.jpg</image:loc><image:title>Izuki Draw on Windows</image:title><image:caption>Circle anything on screen and ask Izuki about it.</image:caption></image:image>
     <image:image><image:loc>https://izukinova.ai/shots/panel-chat.jpg</image:loc><image:title>Izuki Chat</image:title><image:caption>A free Windows AI assistant that answers and does tasks.</image:caption></image:image>
     <image:image><image:loc>https://izukinova.ai/shots/panel-watchers.jpg</image:loc><image:title>Izuki Watchers</image:title><image:caption>Izuki watches part of the screen and tells you when it changes.</image:caption></image:image>
     <image:image><image:loc>https://izukinova.ai/shots/panel-settings.jpg</image:loc><image:title>Izuki settings</image:title><image:caption>Pick a free AI brain, voice and look for your screen assistant.</image:caption></image:image>
     <image:image><image:loc>https://izukinova.ai/shots/phone-call.jpg</image:loc><image:title>Izuki on your phone</image:title><image:caption>Call Izuki hands-free and control your PC from anywhere.</image:caption></image:image>
+    <image:image><image:loc>https://izukinova.ai/shots/task-stage.jpg</image:loc><image:title>Izuki Task Stage</image:title><image:caption>The Task Stage shows a real desktop task, its live step and its controls.</image:caption></image:image>
     <lastmod>2026-11-14</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
@@ -63,7 +64,8 @@
     <image:image><image:loc>https://izukinova.ai/shots/panel-settings.jpg</image:loc><image:title>Izuki settings</image:title></image:image>
     <image:image><image:loc>https://izukinova.ai/shots/phone-call.jpg</image:loc><image:title>Izuki on your phone</image:title></image:image>
     <image:image><image:loc>https://izukinova.ai/icon-512.png</image:loc><image:title>Izuki orb logo</image:title></image:image>
-    <image:image><image:loc>https://izukinova.ai/og.png</image:loc><image:title>Izuki website artwork</image:title></image:image>
+    <image:image><image:loc>https://izukinova.ai/shots/task-stage.jpg</image:loc><image:title>Izuki Task Stage</image:title></image:image>
+    <image:image><image:loc>https://izukinova.ai/og.jpg</image:loc><image:title>Izuki website artwork</image:title></image:image>
     <lastmod>2026-11-14</lastmod>
   </url>
 </urlset>

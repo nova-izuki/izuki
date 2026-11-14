@@ -13,17 +13,23 @@ import { api } from "./ipc";
  * `document.elementFromPoint` is pure DOM hit-testing, unaffected by the
  * OS-level flag, and it skips `pointer-events: none` layers — exactly the
  * semantics wanted.
+ *
+ * The Task Stage is the one widget that can take the pointer while Izuki is
+ * acting, so it is reported separately: Rust lets it through unless an
+ * automated click is being injected at that exact moment.
  */
 
 let current = false;
+let currentTask = false;
 let locks = 0;
 let wheelOk = false;
 let last: [number, number] | null = null;
 
-function apply(want: boolean, force = false) {
-  if (want === current && !force) return;
+function apply(want: boolean, force = false, task = false) {
+  if (want === current && task === currentTask && !force) return;
   current = want;
-  void api.setOverlayHit(want);
+  currentTask = task;
+  void api.setOverlayHit(want, task);
 }
 
 /**
@@ -70,7 +76,7 @@ export function hitTest(clientX: number, clientY: number) {
   // and this runs on every cursor update).
   if (locks > 0) return apply(true);
   const el = document.elementFromPoint(clientX, clientY);
-  apply(!!el?.closest("[data-izk-hit]"));
+  apply(!!el?.closest("[data-izk-hit]"), false, !!el?.closest("[data-izk-task]"));
   applyWheel(!!el && scrolls(el));
 }
 
@@ -91,6 +97,7 @@ export function unlockHit() {
 /** Rust just reset the window's click-through state itself (a mode change). */
 export function resetHit() {
   current = false;
+  currentTask = false;
   locks = 0;
   wheelOk = false;
 }
@@ -102,6 +109,7 @@ export function resetHit() {
  */
 export function markHit() {
   current = true;
+  currentTask = false;
 }
 
 /**
@@ -116,5 +124,5 @@ export function reassertHit() {
   if (locks > 0) return;
   const el = last ? document.elementFromPoint(last[0], last[1]) : null;
   applyWheel(!!el && scrolls(el));
-  apply(!!el?.closest("[data-izk-hit]"), true);
+  apply(!!el?.closest("[data-izk-hit]"), true, !!el?.closest("[data-izk-task]"));
 }

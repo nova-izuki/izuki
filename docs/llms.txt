@@ -9,6 +9,8 @@ Izuki is free to use. It runs on free AI keys from Google Gemini, Groq (includin
 - Hands-free voice ("Hey Nova") or hold Ctrl + Windows + Space to talk
 - Sees the screen and answers questions about it ("what does this error mean?")
 - Does tasks on the PC: opens apps, searches, clicks, types, scrolls, fills in forms, checking each step worked
+- Task Stage: a compact glass panel below the Island shows the plan and current step while a real desktop task runs, with Pause after step, Resume, Take over and Stop. It is a view of the real desktop, not a separate sandbox.
+- Signed updates check automatically after startup and every hour; downloads and installation still need the user's click
 - Jarvis mode: presses buttons and types into boxes straight through Windows, so the user's own mouse stays free
 - Works beside you: if you use the mouse while it works, it waits, then carries on
 - Teacher mode for quizzes and homework: explains with an on-screen pen, never submits for you
@@ -29,5 +31,6 @@ Izuki is free to use. It runs on free AI keys from Google Gemini, Groq (includin
 - Phone web app: https://izukinova.ai/app/
 - Source code: https://github.com/nova-izuki/izuki
 - Is it safe? Verify your download, signed updates, safety rules: https://izukinova.ai/security/
+- See the Task Stage on the homepage: https://izukinova.ai/#stage
 - Privacy policy: https://izukinova.ai/privacy/
 - Terms of use: https://izukinova.ai/terms/

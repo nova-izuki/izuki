@@ -234,8 +234,14 @@ pub fn frontend_log(message: String) {
 }
 
 #[tauri::command]
-pub fn set_overlay_hit(app: AppHandle, hit: bool) -> R<()> {
-    overlay::set_overlay_hit(&app, hit).map_err(err)
+pub fn set_overlay_hit(app: AppHandle, hit: bool, task: bool) -> R<()> {
+    overlay::set_overlay_hit(&app, hit, task).map_err(err)
+}
+
+/// The latest Task Stage status, replayed to an overlay that mounted late.
+#[tauri::command]
+pub fn task_status() -> Option<String> {
+    overlay::last_task_status()
 }
 
 /// The overlay says whether the pointer is over something that can scroll, so

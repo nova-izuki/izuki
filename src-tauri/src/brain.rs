@@ -2696,6 +2696,26 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
             let executed = std::cell::Cell::new(0usize);
             let settings = store.settings();
             let move_ms = settings.move_duration_ms;
+            // Let the Task Stage appear before the first click. Without this
+            // the stage waited for the "Step 1/N" status after the first
+            // action, which made a real task look like it started late.
+            if steps.len() > 1 {
+                // The stage lives in the follow overlay; if the person has
+                // every always-on surface switched off it still needs a home
+                // for Pause/Stop while a real task runs.
+                let _ = crate::overlay::ensure_caption_visible(app);
+                let _ = app.emit(
+                    events::STATUS,
+                    StatusEvent {
+                        kind: "working",
+                        message: "Task Stage is ready".into(),
+                        detail: Some(format!(
+                            "{} steps ready. Taking a first look before step 1.",
+                            steps.len()
+                        )),
+                    },
+                );
+            }
             // No clear_abort() here: each task clears the flag once, when it
             // starts. Clearing it again right before the clicks threw away a
             // stop pressed while the model was still thinking.

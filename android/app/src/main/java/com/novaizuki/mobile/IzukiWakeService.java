@@ -151,9 +151,10 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   }
 
   private Notification notification(String text) {
+    // Keep this an activity PendingIntent: Android 12+ blocks notification
+    // trampolines that launch an activity from a broadcast receiver.
     Intent open = new Intent(this, MainActivity.class)
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-        .putExtra("izuki_wake", "Hey Nova");
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
     PendingIntent content = PendingIntent.getActivity(this, 0, open,
         PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     Intent stop = new Intent(this, IzukiWakeService.class).setAction(ACTION_STOP);
@@ -236,12 +237,15 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     stopListening();
     wakeScreen();
     vibrate();
-    IzukiControlPlugin.setWakePhrase(phrase);
+    // Show the glass orb over the lock screen / current app immediately, before
+    // the page finishes waking. Tapping it opens Izuki ready to listen.
+    IzukiAccessibilityService.orbFor("wake", "listen", "Hey Nova — tap to talk");
+    String token = IzukiControlPlugin.beginWake(phrase);
     IzukiControlPlugin.notifyWake(phrase);
     updateNotification("I'm here — unlock your phone to talk.");
     Intent open = new Intent(this, MainActivity.class)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-        .putExtra("izuki_wake", phrase);
+        .putExtra("izuki_wake_token", token);
     try { startActivity(open); } catch (Exception ignored) { }
     handler.postDelayed(() -> {
       if (!enabled) return;
@@ -293,6 +297,8 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   @Override public void onDestroy() {
     enabled = false;
     running = false;
+    // Only take down the wake listener's own orb; Maps may still own it.
+    IzukiAccessibilityService.orbFor("wake", "idle", "");
     stopListening();
     if (recognizer != null) {
       try { recognizer.destroy(); } catch (Exception ignored) { }

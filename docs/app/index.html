@@ -15,10 +15,10 @@
 <meta property="og:title" content="Izuki on your phone — free AI companion" />
 <meta property="og:description" content="Chat or talk hands-free, set reminders, and reach your PC from your phone." />
 <meta property="og:url" content="https://izukinova.ai/app/" />
-<meta property="og:image" content="https://izukinova.ai/og.png" />
+  <meta property="og:image" content="https://izukinova.ai/og.jpg" />
 <meta property="og:image:alt" content="Izuki — the AI that lives on your screen" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:image" content="https://izukinova.ai/og.png" />
+  <meta name="twitter:image" content="https://izukinova.ai/og.jpg" />
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -122,6 +122,21 @@
   .compact-action { width: auto; min-width: 40px; padding: 0 11px; gap: 5px; font-size: 12px; font-weight: 700; display: inline-flex; }
   .compact-action svg { width: 17px; height: 17px; }
   @media (max-width: 430px) { .compact-action span { display: none; } .compact-action { padding: 0; } }
+  /* On a phone the header had more buttons than pixels: give the person a
+     full first row, then a dock that scrolls inside itself instead of
+     pushing the whole page one-sided. */
+  @media (max-width: 620px) {
+    .app { padding-inline: 12px; }
+    header { flex-wrap: wrap; row-gap: 6px; padding-block: 9px 3px; }
+    .who { flex: 1 1 100%; padding: 2px 0; }
+    .tools { flex: 0 0 100%; order: 2; justify-content: flex-start; gap: 6px; overflow-x: auto; padding: 2px 0 3px;
+      scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+    .tools::-webkit-scrollbar { display: none; }
+    .tools > * { flex: none; }
+    .icon-btn, .call-btn { height: 38px; }
+    .icon-btn { width: 38px; }
+    .call-btn { padding: 0 13px; }
+  }
 
   /* the conversation */
   #log { flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 10px; padding-block: 8px 14px; }
@@ -518,6 +533,22 @@
       <p id="native-ios-limits" class="note" hidden>Siri Shortcuts can open a question in Izuki. iOS does not allow this app to tap through or read other apps. Connected accounts work through their supported integrations.</p>
     </section>
 
+    <section id="native-update" hidden>
+      <h3>App updates</h3>
+      <div class="update-card" id="update-card">
+        <div class="update-head"><b id="update-title">Checking for updates…</b><span class="update-badge" id="update-version">—</span></div>
+        <div class="update-track" id="update-track" role="progressbar" aria-label="Update download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><i id="update-fill"></i></div>
+        <p class="note" id="update-detail" role="status">Asking GitHub for the latest preview…</p>
+        <details id="update-notes-wrap" hidden><summary>What's new in <span id="update-notes-version">this build</span></summary><p class="update-notes" id="update-notes"></p></details>
+        <div class="row update-actions">
+          <button class="btn" id="update-install" type="button" hidden>Install update</button>
+          <button class="btn ghost" id="update-check" type="button">Check now</button>
+          <a class="chip" id="update-site" href="https://izukinova.ai/#download" target="_blank" rel="noopener">Download page ↗</a>
+        </div>
+        <p class="note" id="update-security">Downloads are checked against GitHub's SHA-256 and must be newer than the installed app before Android's installer opens. This is a preview build, so Android may ask you to allow installs once.</p>
+      </div>
+    </section>
+
     <section>
       <h3>Drive mode</h3>
       <p class="note">Tap <b>Drive</b> at the top (or say “drive mode”): Izuki becomes your co-pilot, hands-free. “Take me to…” starts Google Maps' turn-by-turn; “find gas near me”, “play music”, “text that I'm on my way” are done at once. It speaks up after two hours at the wheel and when your battery runs low. 🎉 Fun mode makes it a cheeky road-trip buddy.</p>
@@ -533,6 +564,7 @@
       <p id="native-controls-status" class="note">Checking Android control…</p>
       <div class="row" style="margin-top:8px"><button class="btn" id="open-android-controls" type="button">Enable Android controls</button></div>
       <p class="note">Optional and visible: Android opens its own Accessibility settings. When enabled, Izuki can do the phone navigation you directly ask for: Home, Back, recent apps, notifications, Quick Settings, lock, screenshots, taps, swipes, typing and scrolling. Autopilot runs a short routine one visible step at a time, and never sends, pays or deletes. It never acts in the background by itself.</p>
+      <p class="note">New: swipe down twice and add <b>Ask Izuki</b> to Android Quick Settings for a one-tap wake from any app.</p>
     </section>
 
     <section id="native-wake" hidden>
@@ -540,6 +572,8 @@
       <p id="wake-status" class="note">Checking the wake listener…</p>
       <div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="btn" id="wake-toggle" type="button">Turn on</button><button class="btn ghost" id="wake-fix" type="button" hidden>Fix permissions</button></div>
       <p class="note" style="margin-top:8px">Optional. Android shows a persistent listening notification while it is on. “Hey Nova” wakes the screen, but <b>never unlocks the phone</b>: if the lock screen is up, Izuki waits for you. Android's own speech service does the listening; Izuki only receives the words, and the listener can use battery.</p>
+      <label class="swatch" style="margin-top:10px"><input type="checkbox" id="keep-orb" checked> Keep the glass orb over other apps</label>
+      <p class="note" style="margin-top:4px">When you open Photos, Maps or any other app, a small orb stays on top. Tap it to come back to Izuki and keep talking — it never acts until you ask. Needs Accessibility control.</p>
     </section>
 
     <section id="native-sound" hidden>
@@ -757,12 +791,31 @@
     status.textContent = s || "";
     $("live-status").textContent = s || LIVE_LABEL[orbState] || (talking ? "Listening…" : "");
   };
+  // The Android app can keep the same glass orb above other apps. On the page
+  // it is hidden (the page has its own orb); when you leave for Photos or Maps
+  // it stays, and a tap brings Izuki back ready to listen.
+  let keepOrb = store.get("keepOrb", true);
+  function syncNativeOrb() {
+    const native = window.IzukiNative;
+    if (!native?.installed?.()) return;
+    // One gate for every producer: the page, a live call and Autopilot all
+    // keep their orb inside Izuki when this is off.
+    if (!keepOrb) { void native.orb?.("idle"); return; }
+    if (!document.hidden) { void native.orb?.("idle"); return; }
+    const auto = !!window.IzukiAutopilot?.state?.running;
+    const mode = orbState || (auto ? "thinking" : keepOrb ? "listening" : "");
+    if (!mode) { void native.orb?.("idle"); return; }
+    const state = mode === "listening" ? "listen" : mode === "thinking" ? "think" : mode === "speaking" ? "talk" : "idle";
+    const words = state === "talk" ? "Tap to talk" : state === "think" ? "Working…" : "";
+    void native.orb?.(state, words);
+  }
   const setOrb = (mode) => {
     orbState = mode || "";
     try { window.IzukiTv?.orb?.(orbState); } catch {}
     orb.className = orbState;
     refreshIsland();
     IzukiOrb.mode(orbState || "idle");
+    syncNativeOrb();
     if (!status.textContent) $("live-status").textContent = LIVE_LABEL[orbState] || "";
   };
   const liveHeard = (t) => { $("live-heard").textContent = t || ""; try { window.IzukiTv?.heard?.(t || ""); } catch {} };
@@ -885,6 +938,31 @@
       pilotBtn.type = "button";
       pilotBtn.onclick = () => window.IzukiPilot.open();
       w.appendChild(pilotBtn);
+    }
+    // A small, visible phone dock: the same actions are still available by
+    // voice, but this works before the microphone or model is ready.
+    if (window.IzukiNative?.installed?.() && window.IzukiNative.platform?.() === "android") {
+      const dock = el("details", "phone-dock");
+      dock.append(el("summary", "", "\ud83d\udcf1 One-tap phone controls"));
+      const grid = el("div", "phone-grid");
+      for (const [action, icon, label] of [
+        ["home", "\u2302", "Home"], ["back", "\u2190", "Back"], ["recents", "\u25a3", "Recents"],
+        ["notifications", "\u25be", "Notifications"], ["screenshot", "\u25c9", "Screenshot"], ["lock", "\u2318", "Lock"],
+      ]) {
+        const b = el("button", "phone-action");
+        b.type = "button";
+        b.setAttribute("aria-label", label);
+        b.append(el("i", "", icon), el("span", "", label));
+        b.onclick = async () => {
+          const done = await window.IzukiNative.phoneAction(action);
+          if (!done) { setStatus("Turn on Android control in Settings \u2192 Phone first, then try this again."); return; }
+          void window.IzukiNative.haptic?.();
+          if (action !== "lock") setStatus(label + " \u2014 done.");
+        };
+        grid.appendChild(b);
+      }
+      dock.appendChild(grid);
+      w.appendChild(dock);
     }
     const pendingReminders = reminders.filter((r) => !r.done).length;
     pulseItem("Private", "Chats stay on this phone");
@@ -2618,7 +2696,7 @@
   const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
   const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   let talking = false, recog = null, recorder = null;
-  let useRecorder = false;
+  let useRecorder = false, missed = 0;
 
   function stopTalking(message) {
     talking = false;
@@ -2658,8 +2736,10 @@
         bug("speech recognition unusable: " + failed);
         return stopTalking("Your phone won't let me listen here. Add a free Gemini key in Settings and I'll hear you anyway — or type.");
       }
-      if (final.trim()) return ask(final.trim());
-      // A pause isn't the end of the call: listen again.
+      if (final.trim()) { missed = 0; return ask(final.trim()); }
+      // A pause isn't the end of the call: listen again. If the phone keeps
+      // returning silence, say so instead of looking frozen.
+      if (!heardAny && ++missed >= 2) { liveHeard("I didn't catch that — say it again."); missed = 0; }
       setTimeout(listen, heardAny ? 120 : 350);
     };
     setOrb("listening");
@@ -2740,9 +2820,9 @@
       clearInterval(vad);
       if (recorder === rec) recorder = null;
       if (!talking || busy) return;
-      if (discard || !chunks.length) return listen();
+      if (discard || !chunks.length) { liveHeard("I didn't catch that — say it again."); return listen(); }
       const blob = new Blob(chunks, { type: chunks[0].type || type || "audio/mp4" });
-      if (blob.size < 2500) return listen(); // a tap or a cough, not words
+      if (blob.size < 2500) { liveHeard("I didn't hear words — try again."); return listen(); } // a tap or a cough, not words
       setOrb("thinking");
       const b64 = await blobToB64(blob);
       ask("", { type: (blob.type || "audio/mp4").split(";")[0], b64 });
@@ -2849,9 +2929,24 @@
     clearInterval(callClock);
     note("call ended");
     if (talking) stopTalking("");
+    setOrb("");
+    syncNativeOrb();
     restoreWakeAfterCall();
   }
   $("go-live").onclick = openLive;
+  window.IzukiNative?.setOrbOverApps?.(keepOrb);
+  if ($("keep-orb")) {
+    $("keep-orb").checked = keepOrb;
+    $("keep-orb").onchange = () => {
+      keepOrb = !!$("keep-orb").checked;
+      store.set("keepOrb", keepOrb);
+      window.IzukiNative?.setOrbOverApps?.(keepOrb);
+      syncNativeOrb();
+      setStatus(keepOrb ? "The orb will stay over other apps." : "The orb only shows inside Izuki now.");
+      setTimeout(() => setStatus(""), 2200);
+    };
+  }
+  try { window.IzukiAutopilot?.subscribe?.(() => syncNativeOrb()); } catch {}
 
   /** Hear a recorded clip: its words (Groq's Whisper, else Gemini). */
   async function hearClip(audio) {
@@ -3213,17 +3308,29 @@
       $("open-android-controls").onclick = () => void window.IzukiNative.openAndroidControlSettings();
       $("native-wake").hidden = false;
       $("native-sound").hidden = false;
+      $("native-update").hidden = false;
+      renderUpdatePanel();
+      if (!updateInfo) void checkForUpdates(false);
+      void verifyPendingUpdate();
       void loadWakePanel();
       void loadSoundPanel();
     } else {
       controlPanel.hidden = true;
       $("native-wake").hidden = true;
       $("native-sound").hidden = true;
+      $("native-update").hidden = true;
+      removeUpdateBanner();
     }
     $("bug-result").textContent = "";
     if (window.izukiApps?.configured()) showApps();
     sheet.hidden = false;
-    if (focusId) setTimeout(() => $(focusId)?.focus({ preventScroll: false }), 0);
+    if (focusId) setTimeout(() => {
+      const target = $(focusId);
+      if (!target) return;
+      // A section (App updates) is not focusable, but it can still be scrolled to.
+      target.scrollIntoView?.({ block: "start" });
+      target.focus?.({ preventScroll: true });
+    }, 0);
   }
   const closeSettings = () => { sheet.hidden = true; render(); };
   $("open-settings").onclick = openSettings;
@@ -3552,20 +3659,170 @@
     }
   };
 
-  // A newer Izuki app on the phone: one tap to update (Android installer).
-  setTimeout(async () => {
-    if (window.IzukiTv?.active) return;
-    const u = await window.IzukiNative?.checkUpdate?.();
-    if (!u) return;
-    const bar = el("button", "update-bar", `⬆️ Izuki ${u.latest} is ready — tap to update`);
-    bar.type = "button";
-    bar.onclick = async () => {
-      bar.textContent = "Downloading the update…";
-      const r = await window.IzukiNative.installUpdate(u.url);
-      bar.textContent = r === "ok" ? "Press Install on the next screen" : r === "allow" ? "Allow Izuki to install updates, then tap again" : r;
-    };
+  // ------------------------------------------------------------ updates
+  // The banner is only a doorway. The real update happens in Settings,
+  // where the app can show the installed/latest versions, verify the
+  // download, show progress and tell the truth if Android refuses it.
+  const UPDATE_PAGE = "https://izukinova.ai/#download";
+  let updateInfo = null, updateBusy = false, updateProgress = -1, updateVerifyTimer = null;
+  const updateParts = (v) => String(v || "").replace(/^v/i, "").split(/[^0-9]+/).filter(Boolean).map((n) => parseInt(n, 10) || 0);
+  const updateCmp = (a, b) => {
+    const x = updateParts(a), y = updateParts(b);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+      const left = x[i] || 0, right = y[i] || 0;
+      if (left !== right) return left > right ? 1 : -1;
+    }
+    return 0;
+  };
+  const updateSize = (n) => {
+    const bytes = Number(n) || 0;
+    return bytes > 0 ? (bytes / 1048576).toFixed(1) + " MB" : "unknown size";
+  };
+  const updateWhen = (t) => {
+    const d = Date.now() - Number(t || 0);
+    return d < 60e3 ? "just now" : d < 3600e3 ? Math.max(1, Math.round(d / 60e3)) + " min ago" : d < 86400e3 ? Math.round(d / 3600e3) + " h ago" : new Date(t).toLocaleDateString();
+  };
+  function removeUpdateBanner() { $("update-banner")?.remove(); }
+  function showUpdateBanner() {
+    if (!updateInfo?.update || window.IzukiTv?.active) return;
+    try { if (sessionStorage.getItem("izuki.updateDismissed") === updateInfo.latest) return; } catch {}
+    removeUpdateBanner();
+    const bar = el("div", "update-bar");
+    bar.id = "update-banner";
+    bar.setAttribute("role", "status");
+    const copy = el("div", "update-copy");
+    copy.append(el("b", "", `Izuki ${updateInfo.latest} is ready`), el("span", "", `You're on ${updateInfo.current} — review before installing.`));
+    const open = el("button", "update-open", "Review update");
+    open.type = "button";
+    open.onclick = () => { bar.remove(); openSettings("native-update"); };
+    const close = el("button", "update-close", "\u2715");
+    close.type = "button";
+    close.setAttribute("aria-label", "Dismiss update reminder");
+    close.onclick = () => { try { sessionStorage.setItem("izuki.updateDismissed", updateInfo.latest); } catch {} bar.remove(); };
+    bar.append(copy, open, close);
     document.body.appendChild(bar);
-  }, 3000);
+  }
+  function renderUpdatePanel() {
+    const panel = $("native-update");
+    if (!panel) return;
+    const native = !!window.IzukiNative?.installed?.() && window.IzukiNative.platform?.() === "android";
+    panel.hidden = !native;
+    if (!native) return;
+    const info = updateInfo;
+    const title = $("update-title"), badge = $("update-version"), detail = $("update-detail");
+    const install = $("update-install"), check = $("update-check"), track = $("update-track"), fill = $("update-fill");
+    const notesWrap = $("update-notes-wrap"), notes = $("update-notes"), notesVersion = $("update-notes-version"), site = $("update-site");
+    if (!title || !badge || !detail || !install || !check || !track || !fill) return;
+    let heading = "Not checked yet", note = "Tap Check now to ask GitHub for the latest preview.", tag = "—";
+    if (info?.error) {
+      heading = "Couldn't check for updates";
+      note = info.error;
+      tag = info.current ? `on ${info.current}` : "—";
+    } else if (info?.update) {
+      heading = `Izuki ${info.latest} is ready`;
+      note = info.lastError || `You're on ${info.current}. ${updateSize(info.size)} · preview build.`;
+      tag = "NEW";
+    } else if (info) {
+      heading = "You're up to date";
+      note = `Latest preview: ${info.latest} · checked ${updateWhen(info.checkedAt)}.`;
+      tag = info.current || "—";
+    }
+    if (updateBusy) {
+      heading = updateProgress >= 0 ? `Downloading… ${updateProgress}%` : "Checking the update…";
+      note = updateProgress >= 100 ? "Verifying the APK before Android's installer opens…" : "Keep Izuki open while the download finishes.";
+    }
+    title.textContent = heading;
+    badge.textContent = tag;
+    detail.className = info?.error || info?.lastError ? "bad" : "note";
+    detail.textContent = note;
+    install.hidden = !info?.update;
+    install.disabled = updateBusy;
+    check.disabled = updateBusy;
+    track.hidden = !(updateBusy || (info?.update && updateProgress >= 0));
+    fill.style.width = `${Math.max(0, Math.min(100, updateProgress))}%`;
+    fill.parentElement?.setAttribute("aria-valuenow", String(Math.max(0, Math.min(100, updateProgress))));
+    notesWrap.hidden = !(info?.notes && info?.update);
+    if (notes) notes.textContent = info?.notes || "";
+    if (notesVersion) notesVersion.textContent = info?.latest || "this build";
+    if (site) site.href = info?.releaseUrl || UPDATE_PAGE;
+  }
+  async function checkForUpdates(force = false) {
+    if (updateBusy) return;
+    updateBusy = true;
+    updateProgress = -1;
+    renderUpdatePanel();
+    try {
+      const info = await window.IzukiNative?.checkUpdate?.({ force });
+      updateInfo = info || { update: false, error: "This build can't check for updates. Use the download page." };
+    } catch (e) {
+      updateInfo = { update: false, error: String(e?.message || e || "Couldn't check for updates."), releaseUrl: UPDATE_PAGE };
+    }
+    updateBusy = false;
+    renderUpdatePanel();
+    if (updateInfo?.update) showUpdateBanner(); else removeUpdateBanner();
+  }
+  async function installUpdateNow() {
+    if (updateBusy || !updateInfo?.update) return;
+    updateBusy = true;
+    updateProgress = 0;
+    updateInfo = { ...updateInfo, lastError: "" };
+    renderUpdatePanel();
+    try {
+      const result = await window.IzukiNative?.installUpdate?.(updateInfo);
+      if (!result?.ok) {
+        updateInfo = { ...updateInfo, lastError: result?.signature
+          ? "Android blocked this update because the installed copy was signed with a different key. Use the Download page for a one-time reinstall; Android may ask you to uninstall first, which clears this app's local chats."
+          : result?.allow
+            ? "Allow Izuki to install updates, then tap Install update again."
+            : (result?.error || "The update didn't install.") + " You can retry, or use the Download page." };
+      } else {
+        window.IzukiNative.setPendingUpdate?.(updateInfo.latest);
+        updateInfo = { ...updateInfo, lastError: "Android's installer is opening. Tap Install there; Izuki will confirm the version when you come back." };
+      }
+    } catch (e) {
+      updateInfo = { ...updateInfo, lastError: String(e?.message || e || "The update didn't install.") };
+    }
+    updateBusy = false;
+    renderUpdatePanel();
+  }
+  async function verifyPendingUpdate() {
+    const pending = window.IzukiNative?.pendingUpdate?.();
+    if (!pending?.version) return;
+    const status = await window.IzukiNative.appStatus?.();
+    const current = String(status?.version || "").replace(/^v/i, "").trim();
+    if (!current) return;
+    if (updateCmp(current, pending.version) >= 0) {
+      window.IzukiNative.clearPendingUpdate?.();
+      clearTimeout(updateVerifyTimer);
+      updateInfo = { ...(updateInfo || {}), update: false, current, latest: updateInfo?.latest || current, checkedAt: Date.now() };
+      removeUpdateBanner();
+      renderUpdatePanel();
+      setStatus(`Updated to Izuki ${current}.`);
+      return;
+    }
+    if (!pending.seen) {
+      try { localStorage.setItem("izuki.updatePending.v1", JSON.stringify({ ...pending, seen: true })); } catch {}
+      clearTimeout(updateVerifyTimer);
+      updateVerifyTimer = setTimeout(() => void verifyPendingUpdate(), 2500);
+      return;
+    }
+    window.IzukiNative.clearPendingUpdate?.();
+    updateInfo = { ...(updateInfo || {}), update: true, lastError: `Android still reports ${current}. The installer may have been cancelled or blocked. If it said “App not installed”, use the Download page once.` };
+    renderUpdatePanel();
+    showUpdateBanner();
+  }
+  function wireUpdates() {
+    if (!window.IzukiNative?.installed?.() || window.IzukiNative.platform?.() !== "android") return;
+    $("update-check")?.addEventListener("click", () => void checkForUpdates(true));
+    $("update-install")?.addEventListener("click", () => void installUpdateNow());
+    window.IzukiNative.onUpdateProgress?.((percent) => {
+      updateProgress = percent;
+      if (updateBusy) renderUpdatePanel();
+    });
+    setTimeout(() => { if (!window.IzukiTv?.active) void checkForUpdates(false); }, 3000);
+    void verifyPendingUpdate();
+  }
+  wireUpdates();
 
   // "Something wrong?": the user's words + what happened just before.
   $("bug-send").onclick = async () => {
@@ -3648,6 +3905,9 @@
       setStatus("I heard “Hey Nova”. Unlock your phone and I'll pick up.");
       return;
     }
+    // The wake event and visibilitychange can both await device(); whichever
+    // returns second must not start a second, empty live session.
+    if (!pendingWake) return;
     const phrase = pendingWake;
     pendingWake = "";
     startWake(phrase);
@@ -3660,8 +3920,12 @@
   // ACTION_USER_PRESENT is earlier and more reliable than a focus event here.
   window.IzukiNative?.onUnlock?.(() => { if (pendingWake) void receiveWake(); });
   document.addEventListener("visibilitychange", () => {
+    syncNativeOrb();
     if (document.hidden) return;
     void receiveWake();
+    // Coming back from the installer: check the package Android actually
+    // reports, not the version the page hoped to install.
+    void verifyPendingUpdate();
     // Coming back from Android settings: refresh the permission row instead
     // of leaving a stale “Permission needed”.
     if ($("native-wake") && !$("native-wake").hidden) void loadWakePanel();

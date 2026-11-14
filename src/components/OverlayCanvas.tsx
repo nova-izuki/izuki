@@ -18,6 +18,7 @@ import { ActionHand } from "./ActionHand";
 import { Island, islandPointer } from "./Island";
 import { IslandChatWorkspace } from "./IslandChatWorkspace";
 import { Hud } from "./Hud";
+import { TaskStage } from "./TaskStage";
 import { HandGlyph } from "./IzukiMark";
 import { PointOutLayer, type PointOut } from "./PointOutLayer";
 import { PenLayer, PEN_INKS, type PenMark } from "./PenLayer";
@@ -206,6 +207,8 @@ export function OverlayCanvas() {
    * "working" after, so the top pill never claims work that isn't happening.
    */
   const [acting, setActing] = useState(false);
+  /** A real Task Stage is up; keep the overlay alive until it ends. */
+  const [taskActive, setTaskActive] = useState(false);
   // Read inside the long-lived bus listeners without re-subscribing them.
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -819,7 +822,7 @@ export function OverlayCanvas() {
     window.addEventListener("izuki:island-chat-visible", changed);
     return () => window.removeEventListener("izuki:island-chat-visible", changed);
   }, []);
-  const idle = open && mode === "follow" && !chatOn && !islandOn && !islandChatVisible && !talkWave && !air && !listening && !caption && orb === "hidden" && !transcript;
+  const idle = open && mode === "follow" && !taskActive && !chatOn && !islandOn && !islandChatVisible && !talkWave && !air && !listening && !caption && orb === "hidden" && !transcript;
   useEffect(() => {
     if (!idle) return;
     const t = setTimeout(() => void api.closeOverlay(), 1500);
@@ -878,6 +881,7 @@ export function OverlayCanvas() {
           </div>
         )}
         <Hud />
+        <TaskStage onActiveChange={setTaskActive} />
         <IslandChatWorkspace />
         {islandOn && <Island
             always={islandAlways}

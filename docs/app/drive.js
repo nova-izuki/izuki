@@ -118,15 +118,31 @@
   function open(url) {
     // In the Android app, leaving for a link hands it to the Maps / Spotify /
     // Messages app (Capacitor opens anything off the app's own pages there).
-    // In a browser, a new tab keeps Izuki where it is.
-    if (window.Capacitor?.isNativePlatform?.()) { location.href = url; return; }
+    // Keep the glass orb above it so Izuki is still one tap away.
+    if (window.Capacitor?.isNativePlatform?.()) {
+      void window.IzukiNative?.orb?.("listen", "");
+      location.href = url;
+      return;
+    }
     const w = window.open(url, "_blank", "noopener");
     if (!w) location.assign(url);
   }
   const enc = encodeURIComponent;
   const navigateTo = (place) => ({
     say: `Taking you to ${place} — Google Maps has the turns. I'm still here if you need me.`,
-    then: () => open(`https://www.google.com/maps/dir/?api=1&destination=${enc(place)}&travelmode=driving&dir_action=navigate`),
+    then: () => {
+      const web = `https://www.google.com/maps/dir/?api=1&destination=${enc(place)}&travelmode=driving&dir_action=navigate`;
+      const native = window.IzukiNative;
+      // Android opens Maps' own turn-by-turn screen directly. If that bridge is
+      // missing, the web directions still work.
+      if (native?.installed?.() && native.navigate) {
+        // navigate() opens turn-by-turn and raises the orb itself. If Android
+        // only had a place search, keep the trip going with web directions.
+        void native.navigate(place).then((r) => { if (!r || r.navigation === false) open(web); }).catch(() => open(web));
+        return;
+      }
+      open(web);
+    },
   });
   const nearby = (what) => ({
     say: `Here's ${/s$/.test(what) ? "" : "the nearest "}${what} near you in Google Maps.`.replace("the nearest food", "food"),

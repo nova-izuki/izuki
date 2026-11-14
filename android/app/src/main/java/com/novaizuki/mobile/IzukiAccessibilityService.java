@@ -408,8 +408,8 @@ public class IzukiAccessibilityService extends AccessibilityService {
     List<String> free = freeApps(pkg);
     String say = app + " wants a subscription or payment here."
       + (free.isEmpty() ? " Tubi, Pluto TV and YouTube are free instead." : " Free on this TV: " + String.join(", ", free) + " — say “Hey Nova, open " + free.get(0) + "”.");
-    orb("talk", say);
-    ui.postDelayed(IzukiAccessibilityService::hideOrb, 10000);
+    orbFor("paywall", "talk", say);
+    ui.postDelayed(() -> orbFor("paywall", "idle", ""), 10000);
     IzukiControlPlugin.emit("paywall", app, pkg, say);
   };
 
@@ -455,41 +455,78 @@ public class IzukiAccessibilityService extends AccessibilityService {
   private static View orbView;
   private static OrbDot dot;
   private static TextView caption;
+  /** Who put the shared orb up (page, wake listener, Maps, a paywall). */
+  private static String orbOwner;
   private static final Handler ui = new Handler(Looper.getMainLooper());
 
-  /** Show the orb in a corner over whatever's on ("listen", "think", "talk"), or hide it ("idle"). */
+  /**
+   * The page's own orb. An idle here always dismisses the shared orb: the
+   * page is in front and has its own orb, so a native one would duplicate it.
+   * The wake listener uses {@link #orbFor} instead, so stopping it cannot
+   * take down a Maps orb that is still in use.
+   */
   static void orb(String state, String words) {
+    if (state == null || "idle".equals(state) || "hide".equals(state)) {
+      hideOrb();
+      return;
+    }
+    orbFor("page", state, words);
+  }
+
+  /**
+   * The orb is shared by the page, the wake listener, Maps and the paywall
+   * watcher. An idle from one must not take down an orb another still owns —
+   * stopping the wake listener used to hide the Maps orb and strand the
+   * driver with no way back to Izuki.
+   */
+  static void orbFor(String owner, String state, String words) {
     ui.post(() -> {
       IzukiAccessibilityService service = active;
       if (service == null) return;
-      if (state == null || "idle".equals(state) || "hide".equals(state)) { hideOrb(); return; }
+      if (state == null || "idle".equals(state) || "hide".equals(state)) {
+        if (orbOwner == null || orbOwner.equals(owner)) {
+          orbOwner = null;
+          // Remove in this same UI callback. Calling hideOrb() here would
+          // post a second callback, letting a newer Maps/listen acquire the
+          // orb in between and then be removed by this stale release.
+          removeOrbNow();
+        }
+        return;
+      }
+      orbOwner = owner;
       if (orbView == null) {
         WindowManager wm = (WindowManager) service.getSystemService(WINDOW_SERVICE);
         LinearLayout box = new LinearLayout(service);
         box.setOrientation(LinearLayout.HORIZONTAL);
         box.setGravity(Gravity.CENTER_VERTICAL);
-        int pad = dp(service, 14);
-        box.setPadding(pad, pad / 2, pad * 2, pad / 2);
-        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
-        bg.setColor(Color.argb(200, 8, 9, 20));
-        bg.setCornerRadius(dp(service, 40));
-        box.setBackground(bg);
+        box.setPadding(dp(service, 4), dp(service, 4), dp(service, 4), dp(service, 4));
+        box.setBackground(null);
+        box.setContentDescription("Izuki. Tap to talk.");
+        box.setClickable(true);
+        box.setOnClickListener(v -> openFromOrb());
         dot = new OrbDot(service);
         box.addView(dot, new LinearLayout.LayoutParams(dp(service, 64), dp(service, 64)));
         caption = new TextView(service);
         caption.setTextColor(Color.WHITE);
-        caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-        caption.setMaxWidth(dp(service, 520));
-        caption.setMaxLines(3);
-        caption.setPadding(dp(service, 12), 0, 0, 0);
-        box.addView(caption);
+        caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        caption.setMaxWidth(dp(service, 220));
+        caption.setMaxLines(2);
+        caption.setPadding(dp(service, 10), dp(service, 6), dp(service, 12), dp(service, 6));
+        android.graphics.drawable.GradientDrawable capBg = new android.graphics.drawable.GradientDrawable();
+        capBg.setColor(Color.argb(210, 8, 9, 20));
+        capBg.setCornerRadius(dp(service, 18));
+        caption.setBackground(capBg);
+        LinearLayout.LayoutParams captionLp = new LinearLayout.LayoutParams(
+          LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        captionLp.setMargins(dp(service, 8), 0, 0, 0);
+        box.addView(caption, captionLp);
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
           WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
           WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
           PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.BOTTOM | Gravity.END;
-        lp.x = dp(service, 40); lp.y = dp(service, 40);
+        lp.x = dp(service, 24); lp.y = dp(service, 32);
         try { wm.addView(box, lp); orbView = box; } catch (Exception e) { return; }
       }
       dot.setState(state);
@@ -500,15 +537,32 @@ public class IzukiAccessibilityService extends AccessibilityService {
     });
   }
 
+  /** Tapping the floating orb brings Izuki's page back and starts a voice turn. */
+  private static void openFromOrb() {
+    IzukiAccessibilityService service = active;
+    if (service == null) return;
+    Intent open = new Intent(service, MainActivity.class)
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+      .putExtra("izuki_wake_token", IzukiControlPlugin.beginWake("Hey Nova"));
+    IzukiControlPlugin.notifyWake("Hey Nova");
+    try { service.startActivity(open); } catch (Exception ignored) { }
+  }
+
   private static void hideOrb() {
     ui.post(() -> {
-      IzukiAccessibilityService service = active;
-      if (orbView != null && service != null) {
-        try { ((WindowManager) service.getSystemService(WINDOW_SERVICE)).removeView(orbView); } catch (Exception ignored) { }
-      }
-      if (dot != null) dot.stop();
-      orbView = null; dot = null; caption = null;
+      orbOwner = null;
+      removeOrbNow();
     });
+  }
+
+  /** UI-thread removal, used by both hideOrb and the owner-checked path. */
+  private static void removeOrbNow() {
+    IzukiAccessibilityService service = active;
+    if (orbView != null && service != null) {
+      try { ((WindowManager) service.getSystemService(WINDOW_SERVICE)).removeView(orbView); } catch (Exception ignored) { }
+    }
+    if (dot != null) dot.stop();
+    orbView = null; dot = null; caption = null;
   }
 
   private static int dp(Context c, int v) {
