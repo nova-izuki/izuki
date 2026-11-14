@@ -1,5 +1,15 @@
 # Integration tracker: what's in, what's next, what's blocked
 
+## Website search setup (#86, owner resumed Codex for this task, 2026-11-13)
+
+`codex/site-ai-search`: static canonical/social/structured-data URLs, robots,
+image sitemap and crawler links migrate to izukinova.ai. Existing favicons
+and screenshots stay unchanged. No app, Eye, phone or version edits.
+Verification and review results are recorded in docs/SEARCH-SETUP.md.
+Publication follows Claude's normal milestone coordination. Google Search
+Console ownership, sitemap submission and index requests remain owner actions;
+no ranking, image placement or favicon display is guaranteed.
+
 One shared list for Claude, Freebuff and Codex. Update the row for your own
 work when its state changes, and add a row for anything new you finish. The
 release coordinator (Claude, AGENTS.md rule 2) cuts a release only from

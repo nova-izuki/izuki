@@ -204,3 +204,7 @@ Merged after green CI and resolved CodeRabbit threads: PR #33 (weighted agent sc
 ## Two developers, one app (owner, 2026-11-08, latest)
 
 Only Claude Code and Freebuff are developing Izuki now; Codex is paused and its finished work (robot hand, fallback contract, mobile, companion) stays merged. Either assistant may work on any part of Izuki, one owner per GitHub issue (claim it first, agree on the issue before touching files the other holds, move the `agent:` label when taking over a bug). Eye Control stays Claude's main responsibility, and Claude stays the release coordinator. The rules are in AGENTS.md ("Two developers, one app"); the shared status is `docs/INTEGRATION.md`.
+
+## Codex: custom-domain search setup (#86, owner request 2026-11-13)
+
+Owner explicitly resumed Codex for this website-only task. Branch codex/site-ai-search. Files: docs/index.html, docs/help/index.html, docs/links/index.html, docs/screenshots/index.html, docs/robots.txt, docs/sitemap.xml, docs/llms.txt, docs/SEARCH-SETUP.md. Atomic canonical/social/structured-data URL migration, existing logo and images preserved. No application, Eye, phone app, release or version edits. Search Console remains owner-authenticated; no ranking or display guarantees. Claude coordinates publication.
