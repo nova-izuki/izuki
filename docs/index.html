@@ -2289,7 +2289,7 @@
         </div>
         <div class="rel rv" style="--d:.28s">
           <a class="rel-chip" id="rel-chip" href="https://github.com/nova-izuki/izuki/releases/latest">
-            <span class="rel-v" id="rel-v">New</span><span class="rel-meta" id="rel-text">Signed · updates itself</span><span class="rel-go">What's new<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span class="rel-v" id="rel-v">New</span><span class="rel-meta" id="rel-text">Free · updates itself</span><span class="rel-go">What's new<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           </a>
           <div class="plats" aria-label="Other devices">
             <a href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Companion-Android-preview.apk">Android <small>preview</small></a>
@@ -2324,7 +2324,7 @@
 
     <div class="spec-strip" aria-label="Izuki product specifications">
       <div tabindex="0"><span>Platform</span><b>Windows 10 &amp; 11</b>
-        <ul class="spec-more" aria-label="Platform details"><li>One free installer, signed</li><li>Works on everyday laptops</li><li>Voice, eyes and hands on your own PC</li><li>No account needed</li></ul></div>
+        <ul class="spec-more" aria-label="Platform details"><li>One free installer</li><li>Works on everyday laptops</li><li>Voice, eyes and hands on your own PC</li><li>No account needed</li></ul></div>
       <div tabindex="0"><span>AI providers</span><b>Gemini · Claude · OpenAI <em>+9</em></b>
         <ul class="spec-more" aria-label="Every AI provider Izuki works with"><li>Google Gemini</li><li>Anthropic Claude</li><li>OpenAI</li><li>Groq</li><li>NVIDIA</li><li>Mistral</li><li>xAI Grok</li><li>Meta Llama</li><li>OpenRouter</li><li>9Router</li><li>Ollama, offline on your PC</li><li>Any OpenAI-compatible server</li></ul></div>
       <div tabindex="0"><span>Everywhere else</span><b>Phone · TV · Browser</b>
@@ -3610,28 +3610,36 @@
   }
   // "at 6", "6:30 pm", "in 20 minutes", "tonight", "tomorrow morning".
   const WHEN = /\b(?:in\s+(?:(\d+)|an?|half an)\s*(min(?:ute)?s?|hours?|hrs?)|(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)|at\s+(\d{1,2})(?::(\d{2}))?|(tonight|this evening|tomorrow morning|tomorrow|noon|midnight))\b/i;
+  const DAYTIME = { tonight: "8:00 PM", "this evening": "6:00 PM", "tomorrow morning": "Tomorrow, 8:00 AM", tomorrow: "Tomorrow, 9:00 AM", noon: "12:00 PM", midnight: "12:00 AM" };
+  // A day and a clock time are kept apart and put back together, so
+  // "tomorrow at 6" stays tomorrow at 6, and "tonight at 9" means 9 PM.
   function whenOf(q) {
-    const m = q.match(WHEN);
-    if (!m) return null;
-    if (m[2]) {
-      const n = m[1] ? Number(m[1]) : /half/i.test(m[0]) ? 30 : 1;
-      const mins = /h/i.test(m[2]) ? (/half/i.test(m[0]) ? 30 : n * 60) : n;
-      const at = new Date(Date.now() + mins * 60000);
-      const unit = mins % 60 === 0 && mins >= 60 ? `${mins / 60} hour${mins === 60 ? "" : "s"}` : `${mins} minute${mins === 1 ? "" : "s"}`;
-      return { say: `in ${unit}`, label: at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) };
+    let clock = null, day = null;
+    for (const m of q.matchAll(new RegExp(WHEN.source, "gi"))) {
+      if (m[2] && !clock) {
+        const n = m[1] ? Number(m[1]) : /half/i.test(m[0]) ? 30 : 1;
+        const mins = /h/i.test(m[2]) ? (/half/i.test(m[0]) ? 30 : n * 60) : n;
+        const at = new Date(Date.now() + mins * 60000);
+        const unit = mins % 60 === 0 && mins >= 60 ? `${mins / 60} hour${mins === 60 ? "" : "s"}` : `${mins} minute${mins === 1 ? "" : "s"}`;
+        clock = { say: `in ${unit}`, label: at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), soon: true };
+      } else if (m[8] && !day) day = m[8].toLowerCase();
+      else if ((m[3] || m[6]) && !clock) clock = { h: Number(m[3] || m[6]), min: Number(m[4] || m[7] || 0), ap: (m[5] || "").toLowerCase().replace(/\./g, "") };
     }
-    if (m[8]) {
-      const w = m[8].toLowerCase();
-      const label = { tonight: "8:00 PM", "this evening": "6:00 PM", "tomorrow morning": "Tomorrow, 8:00 AM", tomorrow: "Tomorrow, 9:00 AM", noon: "12:00 PM", midnight: "12:00 AM" }[w];
-      return { say: w === "noon" || w === "midnight" ? `at ${w}` : w, label };
+    if (clock && !clock.soon) {
+      let { h, min, ap } = clock;
+      if (h > 23 || min > 59) clock = null;
+      else {
+        if (!ap) ap = h >= 12 || /tonight|evening/.test(day || "") ? "pm" : /morning/.test(day || "") ? "am" : h < 8 ? "pm" : "am";
+        if (h > 12) { h -= 12; ap = "pm"; }
+        if (h === 0) h = 12;
+        clock = { say: `at ${h}${min ? ":" + String(min).padStart(2, "0") : ""} ${ap === "pm" ? "PM" : "AM"}`, label: `${h}:${String(min).padStart(2, "0")} ${ap.toUpperCase()}` };
+      }
     }
-    let h = Number(m[3] || m[6]), min = Number(m[4] || m[7] || 0), ap = (m[5] || "").toLowerCase().replace(/\./g, "");
-    if (h > 23 || min > 59) return null;
-    if (!ap) ap = h >= 12 ? "pm" : h < 8 ? "pm" : "am";
-    if (h > 12) { h -= 12; ap = "pm"; }
-    if (h === 0) h = 12;
-    const label = `${h}:${String(min).padStart(2, "0")} ${ap.toUpperCase()}`;
-    return { say: `at ${h}${min ? ":" + String(min).padStart(2, "0") : ""} ${ap === "pm" ? "PM" : "AM"}`, label };
+    if (clock && (clock.soon || !day)) return clock;
+    if (clock && day.startsWith("tomorrow")) return { say: `tomorrow ${clock.say}`, label: `Tomorrow, ${clock.label}` };
+    if (clock) return clock;
+    if (!day) return null;
+    return { say: day === "noon" || day === "midnight" ? `at ${day}` : day, label: DAYTIME[day] };
   }
   function whatOf(q) {
     let t = " " + q.toLowerCase().replace(/[.!?]+$/, "") + " ";
@@ -3688,10 +3696,10 @@
     [/\b(hi|hey|hello|yo|sup|hiya)\b/i, () => ({ say: "Hey! What are we working on?", done: "Hi!" })],
   ];
   function answer(q) {
+    // Practice stays open until it's solved, or the talk moves on.
     if (pending?.kind === "math") {
-      pending = null;
-      if (/\b5\b|five/i.test(q)) return { say: "Yes! x is 5. Add 4 to both sides to get 3x equals 15, then divide by 3. You've got this.", done: "Nailed it" };
-      return { say: "So close. Start by adding 4 to both sides, so 3x is 15. Then divide both sides by 3. What do you get?", done: "Hint" };
+      if (/\b5\b|five/i.test(q)) { pending = null; return { say: "Yes! x is 5. Add 4 to both sides to get 3x equals 15, then divide by 3. You've got this.", done: "Nailed it" }; }
+      if (/\d|\bx\b|one|two|three|four|six|seven|eight|nine|ten/i.test(q)) return { say: "So close. Start by adding 4 to both sides, so 3x is 15. Then divide both sides by 3. What do you get?", done: "Hint" };
     }
     if (pending?.kind === "reminder" && (whenOf(q) || !RULES.some(([re]) => re.test(q)))) return reminder(q, pending);
     pending = null;
@@ -4183,7 +4191,7 @@
       const fresh = days <= 0 ? "Updated today" : days === 1 ? "Updated yesterday" : days < 30 ? `Updated ${days} days ago` : "";
       const size = setup ? `${(setup.size / 1048576).toFixed(0)} MB` : "";
       $("rel-v").textContent = "v" + v;
-      $("rel-text").textContent = [fresh, size].filter(Boolean).join(" · ") || "Signed · updates itself";
+      $("rel-text").textContent = [fresh, size].filter(Boolean).join(" · ") || "Free · updates itself";
       $("rel-chip").href = `https://github.com/nova-izuki/izuki/blob/main/docs/RELEASE-${v}.md`;
     })
     .catch(() => {});
@@ -4517,7 +4525,9 @@ if (hudBox && wakeBtn) {
       said.textContent = text;
       said.classList.remove("in"); void said.offsetWidth; said.classList.add("in");
       let over = false;
-      const finish = () => { if (over) return; over = true; clearTimeout(watch); voice.onended = voice.onerror = null; setTimeout(done, 240); };
+      // Only this clip's own handlers are cleared: a late watchdog from an
+      // earlier run must not unhook the clip that's playing now.
+      const finish = () => { if (over) return; over = true; clearTimeout(watch); if (voice.onended === finish) voice.onended = null; if (voice.onerror === finish) voice.onerror = null; setTimeout(done, 240); };
       const watch = setTimeout(finish, Math.max(2600, text.length * 75));
       voice.onended = finish;
       voice.onerror = finish;
