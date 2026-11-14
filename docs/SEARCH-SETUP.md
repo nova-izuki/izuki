@@ -54,6 +54,23 @@ Do not merge unrelated app changes merely to publish these website files.
 After publication, verify the live canonical tags, robots.txt, sitemap and
 images on .ai. Keep .com as a 301 redirect, not a duplicate website.
 
+Validation on 2026-11-13:
+
+- Canonical URLs and JSON-LD parse correctly on the homepage, help, links
+  and screenshot pages; all use the primary .ai domain.
+- The homepage and child pages reference the same WebSite identity.
+- All 22 sitemap page/image entries map to files in docs; the 19 distinct
+  page/image/favicon URLs checked live returned HTTPS 200 without redirects.
+- Existing PNG favicon dimensions are square and at least 48 pixels.
+- HTML script syntax, source encoding and git diff whitespace checks pass.
+- TypeScript and the production build pass; conversation tests: 35 passed;
+  Air voice: 18 passed; scroll and pinch checks pass.
+- CodeRabbit completed its initial review with two minor URL findings;
+  both were fixed. Its follow-up review completed with zero findings.
+- The owner confirmed successful Domain-property verification in Google
+  Search Console. The public verification TXT record must remain in DNS.
+  Sitemap submission, indexing and search appearance are not verified here.
+
 References:
 
 - https://developers.google.com/search/docs/appearance/site-names
