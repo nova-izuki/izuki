@@ -2281,6 +2281,15 @@ pub async fn air_target(app: AppHandle, nx: f64, ny: f64) -> Option<crate::air::
     blocking(move || crate::air::target_norm(nx, ny, overlay)).await.ok().flatten()
 }
 
+/// Eye Control: where a steady look settles — the control under it, or the
+/// nearest one within 6% of the screen's width. It aims the drawn eye
+/// cursor; the mouse still only follows under the eye safety rules.
+#[tauri::command]
+pub async fn eye_target(app: AppHandle, nx: f64, ny: f64) -> Option<crate::air::Seen> {
+    let overlay = app.get_webview_window("overlay").and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize);
+    blocking(move || crate::air::eye_target(nx, ny, 0.06, overlay)).await.ok().flatten()
+}
+
 /// Where the desktop mate's character is in its window, so only clicks on it are caught.
 #[tauri::command]
 pub fn mate_hot(x: f64, y: f64, w: f64, h: f64) {

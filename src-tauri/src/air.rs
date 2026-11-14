@@ -310,6 +310,70 @@ pub fn target_norm(nx: f64, ny: f64, overlay: Option<isize>) -> Option<Seen> {
     Some(Seen { nx: (t.x - b.x) as f64 / w, ny: (t.y - b.y) as f64 / h, nw: t.w as f64 / w, nh: t.h as f64 / h, kind: t.kind, field: t.field })
 }
 
+/// Eye Control: what a steady look most likely means. Even a good gaze map
+/// lands a few percent off, so a look *near* a button usually means that
+/// button: first the control under the gaze, otherwise the nearest one in
+/// the window in front within `reach` (a share of the screen's width).
+/// Normalized like the pointer. Only aims the eye cursor; whether the mouse
+/// may follow is still decided by `airsafe`.
+pub fn eye_target(nx: f64, ny: f64, reach: f64, overlay: Option<isize>) -> Option<Seen> {
+    let b = crate::capture::virtual_bounds();
+    let (w, h) = (b.w.max(1) as f64, b.h.max(1) as f64);
+    let norm = |r: Rect, kind: &'static str, field: bool| Seen { nx: (r.x - b.x) as f64 / w, ny: (r.y - b.y) as f64 / h, nw: r.w as f64 / w, nh: r.h as f64 / h, kind, field };
+    let (x, y) = to_screen(nx, ny);
+    if let Some(t) = unseen(overlay, || target(x, y)).filter(|t| t.kind == "control") {
+        return Some(norm(Rect { x: t.x, y: t.y, w: t.w, h: t.h }, t.kind, t.field));
+    }
+    nearest(&eye_controls(), x, y, (reach.clamp(0.0, 0.2) * w) as i32, b.w).map(|(r, field)| norm(r, "control", field))
+}
+
+/// What a look can settle on: things you press, pick or type into. Panes,
+/// toolbars and lists are only the space around them.
+const AIMABLE: &[&str] = &[
+    "Button", "SplitButton", "Hyperlink", "MenuItem", "TabItem", "ListItem", "TreeItem", "CheckBox", "RadioButton",
+    "ComboBox", "Edit", "Slider", "Spinner", "DataItem", "Document", "HeaderItem",
+];
+
+/// The control whose edge is closest to (x, y), within `radius` pixels; a
+/// smaller control wins a tie. Hidden, scrolled-away and pane-sized ones,
+/// and containers, don't count.
+fn nearest(controls: &[crate::uia::Control], x: i32, y: i32, radius: i32, screen_w: i32) -> Option<(Rect, bool)> {
+    let mut best: Option<(i64, Rect, bool)> = None;
+    for c in controls {
+        let r = c.rect;
+        if c.hidden || c.below || r.w < 6 || r.h < 6 || r.w >= screen_w / 2 || !AIMABLE.contains(&c.kind.as_str()) {
+            continue;
+        }
+        let dx = (r.x - x).max(0).max(x - (r.x + r.w));
+        let dy = (r.y - y).max(0).max(y - (r.y + r.h));
+        let d = ((dx as f64).hypot(dy as f64)) as i64;
+        if d > radius as i64 {
+            continue;
+        }
+        let score = d * 4096 + (r.area() / 64).min(4095);
+        if best.as_ref().map_or(true, |(s, ..)| score < *s) {
+            best = Some((score, r, matches!(c.kind.as_str(), "Edit" | "ComboBox" | "Document")));
+        }
+    }
+    best.map(|(_, r, field)| (r, field))
+}
+
+/// The window in front's controls, walked at most every 2.5 s while it stays
+/// in front: a look settles every second or so, a walk can take longer.
+fn eye_controls() -> Vec<crate::uia::Control> {
+    use std::time::{Duration, Instant};
+    static SEEN: parking_lot::Mutex<Option<(Instant, Option<isize>, Vec<crate::uia::Control>)>> = parking_lot::Mutex::new(None);
+    let window = crate::uia::target_window();
+    if let Some((at, w, list)) = SEEN.lock().as_ref() {
+        if *w == window && at.elapsed() < Duration::from_millis(2500) {
+            return list.clone();
+        }
+    }
+    let list = crate::uia::list_controls(300);
+    *SEEN.lock() = Some((Instant::now(), window, list.clone()));
+    list
+}
+
 /// Run `f` with the overlay hidden from screen grabs (still on screen for you).
 #[cfg(windows)]
 fn unseen<T>(overlay: Option<isize>, f: impl FnOnce() -> T) -> T {
@@ -515,6 +579,43 @@ pub fn app_spot_norm(name: &str) -> Option<(f64, f64)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_steady_look_settles_on_the_nearest_control() {
+        use super::nearest;
+        use crate::model::Rect;
+        let c = |kind: &str, x, y, w, h| crate::uia::Control {
+            id: 0,
+            kind: kind.into(),
+            name: String::new(),
+            rect: Rect { x, y, w, h },
+            hidden: false,
+            value: String::new(),
+            focused: false,
+            below: false,
+            section: String::new(),
+            identity: None,
+        };
+        let send = c("Button", 500, 400, 80, 30);
+        let field = c("Edit", 100, 400, 300, 30);
+        let toolbar = c("ToolBar", 480, 380, 400, 70);
+        let controls = vec![toolbar.clone(), send.clone(), field.clone()];
+        // A look 40 px right of the button, still inside the toolbar: the
+        // button, never the toolbar around it.
+        let (r, typing) = nearest(&controls, 620, 415, 100, 1920).unwrap();
+        assert_eq!((r, typing), (send.rect, false));
+        // Just left of the box: the box, and it takes typing.
+        assert_eq!(nearest(&controls, 90, 410, 100, 1920).map(|(r, f)| (r, f)), Some((field.rect, true)));
+        // Too far from everything: nothing, the cursor stays where the eyes are.
+        assert!(nearest(&controls, 1500, 900, 100, 1920).is_none());
+        // Hidden, scrolled away or pane-sized controls are never the answer.
+        let mut gone = send.clone();
+        gone.hidden = true;
+        let mut away = send.clone();
+        away.below = true;
+        let pane = c("Pane", 0, 0, 1900, 1000);
+        assert!(nearest(&[gone, away, pane], 540, 415, 100, 1920).is_none());
+    }
+
     #[test]
     #[cfg(windows)]
     fn ordinary_windows_are_never_blocked() {

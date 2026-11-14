@@ -1045,6 +1045,8 @@ export const api = {
   airDraw: () => call<void>("air_draw", undefined, () => undefined),
   /** Air control: the box around what's under a normalized spot (normalized). */
   airTarget: (nx: number, ny: number) => call<{ nx: number; ny: number; nw: number; nh: number; kind: string; field: boolean } | null>("air_target", { nx, ny }, () => null),
+  /** Eye Control: the control a steady look settles on — under it, or the nearest within reach (normalized). */
+  eyeTarget: (nx: number, ny: number) => call<{ nx: number; ny: number; nw: number; nh: number; kind: string; field: boolean } | null>("eye_target", { nx, ny }, () => null),
   /** 24/7 PC fast, live: when it last looked and what it last did by itself. */
   /** Dictated text with its grammar and punctuation fixed (unchanged if no brain answers). */
   /** Hold a key down / let it go (Air control's game controls). */
