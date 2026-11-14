@@ -312,19 +312,18 @@ pub fn target_norm(nx: f64, ny: f64, overlay: Option<isize>) -> Option<Seen> {
 
 /// Eye Control: what a steady look most likely means. Even a good gaze map
 /// lands a few percent off, so a look *near* a button usually means that
-/// button: first the control under the gaze, otherwise the nearest one in
-/// the window in front within `reach` (a share of the screen's width).
-/// Normalized like the pointer. Only aims the eye cursor; whether the mouse
-/// may follow is still decided by `airsafe`.
-pub fn eye_target(nx: f64, ny: f64, reach: f64, overlay: Option<isize>) -> Option<Seen> {
+/// button: the control under the gaze (distance 0) or the nearest one in the
+/// window in front within `reach` (a share of the screen's width). Only
+/// things you press, pick or type into count, so a look at a toolbar's empty
+/// space settles on its nearest button, never on the toolbar. Normalized
+/// like the pointer. Only aims the eye cursor; whether the mouse may follow
+/// is still decided by `airsafe`.
+pub fn eye_target(nx: f64, ny: f64, reach: f64) -> Option<Seen> {
     let b = crate::capture::virtual_bounds();
     let (w, h) = (b.w.max(1) as f64, b.h.max(1) as f64);
-    let norm = |r: Rect, kind: &'static str, field: bool| Seen { nx: (r.x - b.x) as f64 / w, ny: (r.y - b.y) as f64 / h, nw: r.w as f64 / w, nh: r.h as f64 / h, kind, field };
     let (x, y) = to_screen(nx, ny);
-    if let Some(t) = unseen(overlay, || target(x, y)).filter(|t| t.kind == "control") {
-        return Some(norm(Rect { x: t.x, y: t.y, w: t.w, h: t.h }, t.kind, t.field));
-    }
-    nearest(&eye_controls(), x, y, (reach.clamp(0.0, 0.2) * w) as i32, b.w).map(|(r, field)| norm(r, "control", field))
+    let (r, field) = nearest(&eye_controls(), x, y, (reach.clamp(0.0, 0.2) * w) as i32, b.w)?;
+    Some(Seen { nx: (r.x - b.x) as f64 / w, ny: (r.y - b.y) as f64 / h, nw: r.w as f64 / w, nh: r.h as f64 / h, kind: "control", field })
 }
 
 /// What a look can settle on: things you press, pick or type into. Panes,
@@ -359,18 +358,25 @@ fn nearest(controls: &[crate::uia::Control], x: i32, y: i32, radius: i32, screen
 }
 
 /// The window in front's controls, walked at most every 2.5 s while it stays
-/// in front: a look settles every second or so, a walk can take longer.
+/// in front: a look settles every second or so, a walk can take longer. One
+/// walk at a time: a look that lands mid-walk uses the last list.
 fn eye_controls() -> Vec<crate::uia::Control> {
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};
     static SEEN: parking_lot::Mutex<Option<(Instant, Option<isize>, Vec<crate::uia::Control>)>> = parking_lot::Mutex::new(None);
+    static WALKING: AtomicBool = AtomicBool::new(false);
     let window = crate::uia::target_window();
     if let Some((at, w, list)) = SEEN.lock().as_ref() {
         if *w == window && at.elapsed() < Duration::from_millis(2500) {
             return list.clone();
         }
     }
+    if WALKING.swap(true, Ordering::AcqRel) {
+        return SEEN.lock().as_ref().filter(|(_, w, _)| *w == window).map(|(.., list)| list.clone()).unwrap_or_default();
+    }
     let list = crate::uia::list_controls(300);
     *SEEN.lock() = Some((Instant::now(), window, list.clone()));
+    WALKING.store(false, Ordering::Release);
     list
 }
 

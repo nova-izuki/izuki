@@ -2285,9 +2285,8 @@ pub async fn air_target(app: AppHandle, nx: f64, ny: f64) -> Option<crate::air::
 /// nearest one within 6% of the screen's width. It aims the drawn eye
 /// cursor; the mouse still only follows under the eye safety rules.
 #[tauri::command]
-pub async fn eye_target(app: AppHandle, nx: f64, ny: f64) -> Option<crate::air::Seen> {
-    let overlay = app.get_webview_window("overlay").and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize);
-    blocking(move || crate::air::eye_target(nx, ny, 0.06, overlay)).await.ok().flatten()
+pub async fn eye_target(nx: f64, ny: f64) -> Option<crate::air::Seen> {
+    blocking(move || crate::air::eye_target(nx, ny, 0.06)).await.ok().flatten()
 }
 
 /// Where the desktop mate's character is in its window, so only clicks on it are caught.
