@@ -487,6 +487,7 @@ pub fn run() {
             commands::air_grip_3d,
             commands::air_keys,
             commands::air_target,
+            commands::eye_target,
             commands::air_key,
             commands::air_draw,
             commands::window_spot,

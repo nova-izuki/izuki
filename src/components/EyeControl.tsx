@@ -219,6 +219,11 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
     let readyForCalibration = false;
     let lastFrameAt = 0;
     let steadySince = performance.now();
+    // Where a steady look has settled: the control it's on or nearest to,
+    // because even a good gaze map lands a few percent off. Asked once per
+    // look; when the eyes move on (steadySince changes) it lets go.
+    let lock: { x: number; y: number; nx: number; ny: number; nw: number; nh: number; since: number } | null = null;
+    let lockAsked = -1;
     let runtimeStopped = false;
     let endedHandler: (() => void) | null = null;
     // The camera went away: tried again on a timer, and at once when a camera
@@ -454,8 +459,20 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
       if (!g) return;
       g.clearRect(0, 0, W, H);
       if (!show) return;
-      const px = pointer.x * W;
-      const py = pointer.y * H;
+      const held = lock && lock.since === steadySince ? lock : null;
+      const px = (held ? held.x : pointer.x) * W;
+      const py = (held ? held.y : pointer.y) * H;
+      if (held) {
+        // The control the look settled on, outlined.
+        g.beginPath();
+        g.roundRect(held.nx * W - 4, held.ny * H - 4, held.nw * W + 8, held.nh * H + 8, 8);
+        g.strokeStyle = "rgba(94,231,255,0.85)";
+        g.lineWidth = 2;
+        g.shadowColor = "rgba(94,231,255,0.6)";
+        g.shadowBlur = 10;
+        g.stroke();
+        g.shadowBlur = 0;
+      }
       // The dark under-stroke keeps the eye cursor visible on white pages.
       g.beginPath();
       g.arc(px, py, 13, 0, Math.PI * 2);
@@ -955,7 +972,18 @@ export function EyeControl({ sensitivity, clicks }: { sensitivity: EyeSensitivit
         }
       }
       const pointerMode = pointerAllowed() && head.level !== "far";
-      if (pointerMode && now > calAt && now - steadySince >= FIXATION_MS) void api.airPointer(pointer.x, pointer.y, true).catch(() => undefined);
+      const settled = now > calAt && now - steadySince >= FIXATION_MS;
+      if (lock && lock.since !== steadySince) lock = null;
+      if (settled && lockAsked !== steadySince) {
+        lockAsked = steadySince;
+        const since = steadySince;
+        void api.eyeTarget(pointer.x, pointer.y).then((box) => {
+          if (!box || since !== steadySince) return;
+          lock = { x: box.nx + box.nw / 2, y: box.ny + box.nh / 2, nx: box.nx, ny: box.ny, nw: box.nw, nh: box.nh, since };
+        }).catch(() => undefined);
+      }
+      const aim = lock && lock.since === steadySince ? lock : pointer;
+      if (pointerMode && settled) void api.airPointer(aim.x, aim.y, true).catch(() => undefined);
       draw(true);
 
       const steady = now - steadySince >= 500;
