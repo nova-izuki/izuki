@@ -42,16 +42,20 @@ public class MainActivity extends BridgeActivity {
     super.onDestroy();
   }
 
-  /** The wake listener posts a phrase; the web page takes it when it is ready. */
+  /**
+   * The wake listener posts a phrase; the web page takes it when it is ready.
+   * MainActivity is exported for the launcher, so never trust a phrase in the
+   * intent: require the one-use token minted by our own service/tile. Another
+   * app can open Izuki, but it cannot make the assistant talk.
+   */
   private void handleWake(Intent intent) {
     if (intent == null) return;
-    String phrase = intent.getStringExtra("izuki_wake");
-    if (phrase == null) return;
-    IzukiControlPlugin.setWakePhrase(phrase);
+    String token = intent.getStringExtra("izuki_wake_token");
+    if (!IzukiControlPlugin.consumeWakeHandoff(token)) return;
     // A warm WebView might not get a visibility change when the Quick Settings
     // tile brings Izuki forward; tell the open page too. The page's duplicate
     // guard folds this into the pending phrase when both arrive.
-    IzukiControlPlugin.notifyWake(phrase);
-    intent.removeExtra("izuki_wake");
+    IzukiControlPlugin.notifyWake("Hey Nova");
+    intent.removeExtra("izuki_wake_token");
   }
 }

@@ -3905,6 +3905,9 @@
       setStatus("I heard “Hey Nova”. Unlock your phone and I'll pick up.");
       return;
     }
+    // The wake event and visibilitychange can both await device(); whichever
+    // returns second must not start a second, empty live session.
+    if (!pendingWake) return;
     const phrase = pendingWake;
     pendingWake = "";
     startWake(phrase);

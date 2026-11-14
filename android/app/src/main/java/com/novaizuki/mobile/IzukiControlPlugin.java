@@ -66,13 +66,27 @@ public class IzukiControlPlugin extends Plugin {
   private final ExecutorService work = Executors.newCachedThreadPool();
   private static volatile IzukiControlPlugin instance;
   private static volatile String pendingWake = "";
+  private static String wakeToken = "";
   private AudioManager.OnAudioFocusChangeListener focusListener;
 
   @Override public void load() { instance = this; }
 
-  /** Remember a wake phrase delivered before the web page was ready. */
-  static void setWakePhrase(String phrase) {
+  /**
+   * Remember a wake phrase and mint a one-use hand-off token. Only our own
+   * services/tile can call this; MainActivity refuses a wake without a token,
+   * so an exported launcher entry cannot inject a phrase from another app.
+   */
+  static synchronized String beginWake(String phrase) {
     pendingWake = phrase == null ? "" : phrase;
+    wakeToken = UUID.randomUUID().toString();
+    return wakeToken;
+  }
+
+  /** True once, for the activity launch that belongs to the latest wake. */
+  static synchronized boolean consumeWakeHandoff(String token) {
+    if (token == null || token.isEmpty() || wakeToken.isEmpty() || !wakeToken.equals(token)) return false;
+    wakeToken = "";
+    return true;
   }
 
   /** Tell an already-open Izuki page that “Hey Nova” was heard. */

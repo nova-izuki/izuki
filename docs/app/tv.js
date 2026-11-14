@@ -640,6 +640,15 @@ async function checkForUpdate() {
   tile.className = "tv-tile tv-update";
   tile.innerHTML = `<span>⬆️</span><b>Update Izuki</b><small>Version ${u.latest} is ready</small>`;
   let installing = false;
+  const idle = () => {
+    installing = false;
+    tile.disabled = false;
+    tile.querySelector("small").textContent = `Version ${u.latest} is ready`;
+  };
+  // Android resolves installUpdate when the installer opens, not when the
+  // user actually replaces the package. If they cancel and come back, let
+  // them tap again; a completed install reloads the app before this matters.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && installing) idle(); });
   tile.onclick = async () => {
     if (installing) return;
     installing = true;
@@ -651,7 +660,7 @@ async function checkForUpdate() {
       : r?.allow
         ? "Allow Izuki to install, then press again"
         : (r?.signature ? "Install once from the download page" : (r?.error || "The update didn't install"));
-    if (!r?.ok) { installing = false; tile.disabled = false; }
+    if (!r?.ok) idle();
   };
   document.querySelector(".tv-tiles")?.prepend(tile);
   document.querySelector(".tv-tiles").style.gridTemplateColumns = "repeat(7, 1fr)";

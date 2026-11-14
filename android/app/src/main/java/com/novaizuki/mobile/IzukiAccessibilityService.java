@@ -543,7 +543,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
     if (service == null) return;
     Intent open = new Intent(service, MainActivity.class)
       .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-      .putExtra("izuki_wake", "Hey Nova");
+      .putExtra("izuki_wake_token", IzukiControlPlugin.beginWake("Hey Nova"));
     try { service.startActivity(open); } catch (Exception ignored) { }
   }
 

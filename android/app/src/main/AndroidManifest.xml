@@ -41,6 +41,10 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".IzukiWakeLaunchReceiver"
+            android:exported="false" />
+
         <service
             android:name=".IzukiTileService"
             android:label="@string/app_name"
