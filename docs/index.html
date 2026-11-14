@@ -43,6 +43,7 @@
       "name": "Izuki",
       "alternateName": [
         "Nova Izuki",
+        "Izuki Nova",
         "Izuki AI",
         "Nova"
       ],
@@ -78,6 +79,7 @@
       "name": "Izuki",
       "alternateName": [
         "Nova Izuki",
+        "Izuki Nova",
         "Izuki AI",
         "izukinova.ai"
       ],
@@ -92,6 +94,7 @@
       "name": "Izuki",
       "alternateName": [
         "Nova Izuki",
+        "Izuki Nova",
         "Izuki AI"
       ],
       "operatingSystem": "Windows 10, Windows 11",
@@ -277,7 +280,13 @@
       },
       "image": [
         "https://izukinova.ai/og.jpg",
-        "https://izukinova.ai/shots/task-stage.jpg"
+        "https://izukinova.ai/shots/task-stage.jpg",
+        {"@type": "ImageObject", "name": "Izuki Nova poster — The AI that lives on your screen", "caption": "Izuki Nova (Nova Izuki), the free AI assistant for Windows: The AI that lives on your screen.", "contentUrl": "https://izukinova.ai/media/posters/nova-izuki-ai-assistant-for-windows.jpg", "url": "https://izukinova.ai/media/posters/nova-izuki-ai-assistant-for-windows.jpg", "width": 1600, "height": 900},
+        {"@type": "ImageObject", "name": "Izuki Nova poster — Say Hey Nova", "caption": "Izuki Nova (Nova Izuki), the free AI assistant for Windows: Say Hey Nova.", "contentUrl": "https://izukinova.ai/media/posters/nova-izuki-hey-nova.jpg", "url": "https://izukinova.ai/media/posters/nova-izuki-hey-nova.jpg", "width": 1600, "height": 900},
+        {"@type": "ImageObject", "name": "Izuki Nova poster — Hey Nova, wake up", "caption": "Izuki Nova (Nova Izuki), the free AI assistant for Windows: Hey Nova, wake up.", "contentUrl": "https://izukinova.ai/media/posters/nova-izuki-wake-up-briefing.jpg", "url": "https://izukinova.ai/media/posters/nova-izuki-wake-up-briefing.jpg", "width": 1600, "height": 900},
+        {"@type": "ImageObject", "name": "Izuki Nova poster — It explains. You answer.", "caption": "Izuki Nova (Nova Izuki), the free AI assistant for Windows: It explains. You answer..", "contentUrl": "https://izukinova.ai/media/posters/nova-izuki-study-coach.jpg", "url": "https://izukinova.ai/media/posters/nova-izuki-study-coach.jpg", "width": 1600, "height": 900},
+        {"@type": "ImageObject", "name": "Izuki Nova poster — Your PC, from your phone", "caption": "Izuki Nova (Nova Izuki), the free AI assistant for Windows: Your PC, from your phone.", "contentUrl": "https://izukinova.ai/media/posters/nova-izuki-phone.jpg", "url": "https://izukinova.ai/media/posters/nova-izuki-phone.jpg", "width": 1600, "height": 900},
+        {"@type": "ImageObject", "name": "Izuki Nova poster — Twelve brains. Your pick.", "caption": "Izuki Nova (Nova Izuki), the free AI assistant for Windows: Twelve brains. Your pick..", "contentUrl": "https://izukinova.ai/media/posters/nova-izuki-ai-providers.jpg", "url": "https://izukinova.ai/media/posters/nova-izuki-ai-providers.jpg", "width": 1600, "height": 900}
       ]
     }
   ]
@@ -2000,8 +2009,204 @@
       .task-shell { transform: none !important; }
     }
   </style>
+  <style>
+    /* ============================================================
+       LIVE LAYER — the eyes opening, the release pill, the specs that
+       open up, the Island's quiz, the phone's real orb, Nova's answers
+       and the "wake up" status screen.
+       ============================================================ */
+
+    /* ---------- Izuki opens its eyes ---------- */
+    @property --lid { syntax: "<percentage>"; inherits: false; initial-value: .3%; }
+    .eye-open { position: fixed; inset: 0; z-index: 400; pointer-events: none; --lid: .3%;
+      background: radial-gradient(ellipse 160% calc(var(--lid) * 1.18 + 1.5%) at 50% 46%, rgba(142, 232, 255, .55), rgba(150, 120, 255, .2) 55%, #03050a 100%);
+      -webkit-mask-image: radial-gradient(ellipse 160% var(--lid) at 50% 46%, transparent 88%, #000 100%);
+      mask-image: radial-gradient(ellipse 160% var(--lid) at 50% 46%, transparent 88%, #000 100%); }
+    /* The lids part once the page is ready (a busy first load would
+       otherwise skip the blink); the line of light draws in meanwhile. */
+    .eye-open.go { animation: lidOpen 1.5s .08s forwards; }
+    .eye-open i { position: absolute; left: 0; right: 0; top: 46%; height: 2px; margin-top: -1px; transform: scaleX(0);
+      background: linear-gradient(90deg, transparent, #8ee8ff 22%, #fff 50%, #c8b9ff 78%, transparent);
+      box-shadow: 0 0 22px 5px rgba(170, 150, 255, .55), 0 0 70px 18px rgba(103, 232, 249, .22);
+      animation: seamDraw .5s cubic-bezier(.7, 0, .2, 1) forwards; }
+    .eye-open.go i { animation: seamDraw .5s cubic-bezier(.7, 0, .2, 1) forwards, seamFade .8s .35s ease forwards; }
+    @keyframes seamDraw { to { transform: scaleX(1); } }
+    @keyframes seamFade { to { opacity: 0; transform: scaleX(1.05) scaleY(3); } }
+    @keyframes lidOpen {
+      0% { --lid: .3%; animation-timing-function: cubic-bezier(.3, 0, .2, 1); }
+      26% { --lid: 9%; animation-timing-function: cubic-bezier(.6, 0, .9, .4); }
+      36% { --lid: .6%; animation-timing-function: cubic-bezier(.2, .7, .2, 1); }
+      100% { --lid: 175%; }
+    }
+    .eye-open[hidden] { display: none !important; }
+    html.eyes .scene { clip-path: none !important; transition: none !important; }
+    html.eyes .hero-art, html.eyes nav, html.eyes .hero-copy > * { transition-delay: .12s !important; }
+    html.eyes.js.ready #hero-h1 .ch, html.eyes.js.ready #hero-h1 .shine { animation-delay: calc(.95s + var(--i, 0) * 12ms); }
+
+    /* ---------- the release pill ---------- */
+    /* No glowing dot in front of the hero's label either: it read as decoration. */
+    .hero-copy .eyebrow b { display: none; }
+    .rel-chip { gap: 0; padding: 4px; border-radius: 12px; font: 500 13px/1 var(--body); letter-spacing: 0; color: #b4c3d6;
+      background: rgba(8, 14, 25, .62); border: 1px solid rgba(205, 231, 255, .14); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06); }
+    .rel-v { padding: 6px 9px; border-radius: 8px; color: #f2f9ff; font: 700 12.5px/1 var(--body); font-variant-numeric: tabular-nums; letter-spacing: .01em;
+      background: linear-gradient(135deg, rgba(142, 232, 255, .2), rgba(185, 167, 255, .2)); box-shadow: inset 0 0 0 1px rgba(188, 239, 255, .24); }
+    .rel-chip #rel-text.rel-meta { padding: 0 12px; color: #b4c3d6; white-space: nowrap; }
+    .rel-go { display: inline-flex; align-items: center; gap: 6px; align-self: stretch; padding: 0 10px 0 12px; border-left: 1px solid rgba(205, 231, 255, .12); color: #bcefff; font-weight: 600; }
+    .rel-go svg { width: 14px; height: 14px; transition: transform .25s var(--ease); }
+    .rel-chip:hover .rel-go svg { transform: translateX(3px); }
+    .rel-chip:focus-visible { outline: 2px solid #8ee8ff; outline-offset: 3px; }
+    @media (max-width: 520px) {
+      .rel-chip { width: 100%; flex-wrap: nowrap; }
+      .rel-chip #rel-text.rel-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; padding: 0 9px; }
+      .rel-go { padding: 0 6px 0 9px; }
+    }
+    @media (max-width: 360px) { .rel-go { font-size: 0; gap: 0; } }
+
+    /* ---------- specs that open up ---------- */
+    .spec-strip { position: relative; z-index: 5; }
+    .spec-strip > div { position: relative; outline: none; cursor: default; border-radius: 12px; transition: background .2s; }
+    .spec-strip > div:hover, .spec-strip > div:focus-visible { background: rgba(142, 232, 255, .04); }
+    .spec-strip > div:focus-visible { box-shadow: inset 0 0 0 1px rgba(142, 232, 255, .5); }
+    .spec-strip b em { font-style: normal; margin-left: 4px; padding: 1px 6px; border-radius: 6px; font-size: .82em; color: #bcefff; background: rgba(142, 232, 255, .12); }
+    .spec-more { position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; width: max-content; max-width: min(330px, 88vw); margin: 0; padding: 10px; list-style: none;
+      display: flex; flex-wrap: wrap; gap: 6px; border-radius: 14px; background: rgba(7, 12, 21, .96); border: 1px solid rgba(205, 231, 255, .16);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, .3), 0 22px 50px rgba(0, 0, 0, .5);
+      opacity: 0; visibility: hidden; transform: translateY(-6px); transition: opacity .2s, transform .3s var(--ease), visibility .2s; }
+    .spec-more li { padding: 6px 10px; border-radius: 9px; font: 500 12.5px/1.2 var(--body); color: #dceaf7; background: rgba(142, 232, 255, .07); border: 1px solid rgba(142, 232, 255, .14); }
+    .spec-strip > div:hover .spec-more, .spec-strip > div:focus-within .spec-more { opacity: 1; visibility: visible; transform: none; }
+    .spec-strip > div:nth-child(n+3) .spec-more { left: auto; right: 0; }
+    @media (max-width: 900px) { .spec-strip > div:nth-child(odd) .spec-more { left: 0; right: auto; } .spec-strip > div:nth-child(even) .spec-more { left: auto; right: 0; } }
+
+    /* ---------- Nova's answers, with what it would hand you ---------- */
+    .play-log { height: 340px; }
+    @media (max-width: 900px) { .play-log { height: 300px; } }
+    .play-log .iz-card { align-self: flex-start; width: min(100%, 430px); padding: 12px 14px 13px; border-radius: 14px; font: 500 13.5px/1.5 var(--body); color: #dbe9f6;
+      background: linear-gradient(180deg, rgba(14, 24, 40, .9), rgba(8, 14, 25, .9)); border: 1px solid rgba(188, 239, 255, .14);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, .25), 0 14px 30px rgba(0, 0, 0, .28); animation: izCard .5s var(--ease) both; }
+    @keyframes izCard { from { opacity: 0; transform: translateY(10px) scale(.98); } }
+    .iz-card h5 { margin: 0 0 8px; font: 600 10.5px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: #8ee8ff; }
+    .iz-card ul, .iz-card ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+    .iz-sum li { padding-left: 14px; position: relative; } .iz-sum li::before { content: ""; position: absolute; left: 2px; top: .62em; width: 5px; height: 5px; border-radius: 50%; background: #8ee8ff; }
+    .iz-week li, .iz-due li { display: grid; grid-template-columns: 38px 1fr auto; align-items: center; gap: 10px; }
+    .iz-week b, .iz-due b { font: 600 11px var(--mono); letter-spacing: .08em; color: #8293aa; }
+    .iz-week span { padding: 5px 9px; border-radius: 8px; font-size: 12.5px; }
+    .iz-week .dp { background: linear-gradient(90deg, rgba(142, 232, 255, .22), rgba(185, 167, 255, .18)); color: #eef8ff; }
+    .iz-week .lt { background: rgba(255, 255, 255, .05); color: #a9b8ca; }
+    .iz-week .fr { background: rgba(52, 211, 153, .12); color: #a7f3d0; }
+    .iz-due em { font-style: normal; font: 500 11.5px var(--mono); color: #fcd34d; }
+    .iz-steps li { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .iz-steps code { font: 600 14px var(--mono); color: #fff; }
+    .iz-steps em { font-style: normal; font-size: 12px; color: #8ee8ff; }
+    .iz-steps li:last-child code { color: #a7f3d0; }
+    .iz-mail p { margin: 0 0 6px; } .iz-mail-head { font: 500 11.5px var(--mono); color: #8293aa; }
+    .iz-lock { margin-top: 8px !important; font-size: 12px; color: #8ee8ff; }
+    .iz-rem { display: grid; gap: 2px; } .iz-rem b { font: 300 26px/1.1 var(--display); color: #fff; } .iz-rem span { font-weight: 600; }
+    .iz-asks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .iz-asks button { padding: 6px 11px; border-radius: 9px; border: 1px solid rgba(142, 232, 255, .22); background: rgba(142, 232, 255, .07); color: #e6f6ff; font: 600 12.5px var(--body); cursor: pointer; transition: background .2s, border-color .2s, transform .2s var(--ease); }
+    .iz-asks button:hover { background: rgba(142, 232, 255, .16); border-color: rgba(142, 232, 255, .45); transform: translateY(-1px); }
+    .iz-asks button:focus-visible { outline: 2px solid #8ee8ff; outline-offset: 2px; }
+
+    /* ---------- posters ---------- */
+    .poster-reel { display: grid; grid-auto-flow: column; grid-auto-columns: min(520px, 82vw); gap: 18px; margin-top: 34px; padding: 6px 4px 18px; overflow-x: auto;
+      scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: rgba(142, 232, 255, .3) transparent; }
+    .poster-reel figure { margin: 0; scroll-snap-align: start; }
+    .poster-reel a { display: block; border-radius: 16px; overflow: hidden; border: 1px solid rgba(205, 231, 255, .14);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, .3), 0 24px 50px rgba(0, 0, 0, .35); transition: transform .45s var(--ease), border-color .25s; }
+    .poster-reel a:hover { transform: translateY(-4px); border-color: rgba(142, 232, 255, .42); }
+    .poster-reel a:focus-visible { outline: 2px solid #8ee8ff; outline-offset: 3px; }
+    .poster-reel img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; }
+    .poster-reel figcaption { margin-top: 10px; font: 600 14px var(--body); color: #c3d1e2; }
+    #posters .sub a { color: var(--cyan); }
+
+    /* ---------- the Island's quiz: answers that float ---------- */
+    .nw-screen { height: 430px; }
+    .nw-quiz { padding: 12px 14px 12px; transition: opacity .3s; }
+    .nw-island { z-index: 3; }
+    .nw-island.open ~ .nw-quiz { opacity: .35; }
+    .nq-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .nq-top .nw-seen { margin: 0; }
+    .nq-n { font: 600 10.5px var(--mono); letter-spacing: .1em; color: #8293aa; }
+    .nq-q { margin: 6px 0 12px; font: 600 14.5px/1.4 var(--body); color: #f1f8ff; }
+    .nq-opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .nq-opt { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px 10px; border-radius: 14px; cursor: pointer;
+      font: inherit; color: #e8f4ff; background: linear-gradient(180deg, rgba(20, 32, 52, .85), rgba(10, 17, 30, .85)); border: 1px solid rgba(188, 239, 255, .16);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 22px rgba(0, 0, 0, .3);
+      animation: nqFloat 5.6s ease-in-out infinite; transition: transform .35s var(--ease), border-color .25s, box-shadow .35s, background .25s; }
+    .nq-opt:nth-child(2) { animation-delay: -1.9s; } .nq-opt:nth-child(3) { animation-delay: -3.7s; }
+    @keyframes nqFloat { 50% { translate: 0 -5px; } }
+    .nq-opt svg { width: 26px; height: 26px; fill: none; stroke: #9be9ff; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: stroke .25s, transform .35s var(--ease); }
+    .nq-opt b { font: 600 13.5px var(--body); }
+    .nq-opt:hover, .nq-opt:focus-visible { transform: translateY(-4px) scale(1.03); border-color: rgba(142, 232, 255, .5); box-shadow: 0 2px 4px rgba(0, 0, 0, .3), 0 18px 34px rgba(0, 0, 0, .38), 0 0 0 4px rgba(142, 232, 255, .08); outline: none; }
+    .nq-opt:hover svg, .nq-opt:focus-visible svg { transform: scale(1.08); }
+    .nq-opt[aria-checked="true"] { border-color: transparent; background: linear-gradient(rgba(16, 26, 44, .95), rgba(16, 26, 44, .95)) padding-box, linear-gradient(120deg, #8ee8ff, #b9a7ff 55%, #ffc6e5) border-box; border: 1px solid transparent; }
+    .nq-opt.right { border-color: rgba(52, 211, 153, .75) !important; background: linear-gradient(180deg, rgba(16, 52, 44, .9), rgba(9, 26, 24, .9)) !important; }
+    .nq-opt.right svg { stroke: #6ee7b7; }
+    .nq-opt.wrong { border-color: rgba(251, 146, 120, .7) !important; background: linear-gradient(180deg, rgba(52, 24, 26, .88), rgba(26, 12, 16, .88)) !important; }
+    .nq-opt.wrong svg { stroke: #fca5a5; }
+    .nq-opt.right b::before, .nq-opt.wrong b::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; vertical-align: 1px; }
+    .nq-opt.right b::before { background: #34d399; } .nq-opt.wrong b::before { background: #fb9278; }
+    .nq-opt[aria-checked="true"] b::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; vertical-align: 1px; background: #8ee8ff; }
+    .nq-float { position: absolute; bottom: calc(100% + 12px); left: 50%; z-index: 2; width: max-content; max-width: min(230px, 70vw); padding: 8px 12px; border-radius: 11px; pointer-events: none;
+      font: 600 12.5px/1.35 var(--body); color: #effaff; text-align: center; background: rgba(6, 11, 20, .94); border: 1px solid rgba(142, 232, 255, .34);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, .35), 0 16px 34px rgba(0, 0, 0, .45); opacity: 0; transform: translate(-50%, 8px) scale(.97);
+      transition: opacity .2s, transform .35s var(--ease), left .35s var(--ease); }
+    .nq-float::after { content: ""; position: absolute; left: var(--arrow, 50%); top: 100%; width: 10px; height: 10px; margin: -5px 0 0 -5px; transform: rotate(45deg);
+      background: rgba(6, 11, 20, .94); border-right: 1px solid rgba(142, 232, 255, .34); border-bottom: 1px solid rgba(142, 232, 255, .34); }
+    .nq-float.on { opacity: 1; transform: translate(-50%, 0); }
+    .nq-coach { display: flex; align-items: flex-start; gap: 9px; margin: 12px 0 0; font: 500 12.5px/1.45 var(--body); color: #c9dced; min-height: 2.9em; }
+    .nq-coach .nw-face { margin-top: 1px; }
+    .nw-island:not(.talking) .nw-eq i { animation-play-state: paused; }
+    @media (max-width: 520px) { .nw-screen { height: 470px; } .nq-opt { padding: 10px 4px 9px; } .nq-q { font-size: 13.5px; } }
+
+    /* ---------- the phone's orb: the app's own liquid orb, nothing around it ---------- */
+    .wake-demo-orb, .wake-demo[data-phase] .wake-demo-orb { width: 98%; margin: -4px 0 -8px; border-radius: 0; background: none !important; box-shadow: none !important; }
+    .wake-demo-orb::before, .wake-demo-orb::after { display: none !important; }
+    .wake-demo-orb canvas { border-radius: 0; }
+    .wake-demo[data-phase="heard"] .wake-demo-orb { transform: scale(1.06); }
+    .wake-demo-phone.buzz { animation: buzz .34s linear; }
+    @keyframes buzz { 15% { transform: translateX(-2px) rotate(-.7deg); } 35% { transform: translateX(2px) rotate(.7deg); } 55% { transform: translateX(-2px) rotate(-.5deg); } 75% { transform: translateX(1px) rotate(.3deg); } }
+
+    /* ---------- "wake up": it happens in the card ---------- */
+    .nw-hud-note { margin-top: 6px; font-size: 12px; color: var(--faint); }
+    .nw-hud { cursor: pointer; height: 312px; place-items: center; --lvl: 0; }
+    .nw-hud .nw-rings { top: 50%; left: 50%; width: 240px; height: 240px; margin: -142px 0 0 -120px; transition: filter .4s; }
+    .nw-hud.live .nw-rings { animation-duration: 6s; filter: drop-shadow(0 0 calc(6px + var(--lvl) * 16px) rgba(34, 211, 238, .9)); }
+    .nw-level { position: absolute; top: 50%; left: 50%; width: 150px; height: 150px; margin: -96px 0 0 -75px; border-radius: 50%; pointer-events: none;
+      background: radial-gradient(circle, rgba(103, 232, 249, .2), rgba(103, 232, 249, 0) 68%); opacity: calc(.15 + var(--lvl) * 1.4); transform: scale(calc(.9 + var(--lvl) * .35)); }
+    .nw-face2 { position: relative; margin-top: -44px; text-align: center; }
+    .nw-greet { font: 600 9.5px var(--mono); letter-spacing: .4em; color: rgba(103, 232, 249, .8); transition: opacity .3s; }
+    .nw-hud .nw-time { margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .nw-time small { margin-left: 3px; vertical-align: top; font-size: .3em; color: rgba(165, 243, 252, .75); }
+    .nw-date { min-height: 1.4em; margin-top: 2px; font: 500 10px var(--body); letter-spacing: .2em; color: rgba(207, 250, 254, .7); }
+    .nw-hud .nw-hud-lines { bottom: 14px; display: grid; grid-template-columns: repeat(2, max-content); justify-content: center; gap: 2px 18px; text-align: left; }
+    .nw-hud .nw-hud-lines i { margin-right: 6px; font-style: normal; color: #34d399; }
+    .nw-hud.live .nw-hud-lines div { animation: nwIn .35s ease both; }
+    .nw-said { align-self: stretch; min-height: 3em; margin: 12px 0 0; font: 500 15px/1.45 var(--body); color: #e6f6ff; text-align: center; text-wrap: balance; }
+    .nw-said.in { animation: saidIn .45s var(--ease) both; }
+    @keyframes saidIn { from { opacity: 0; transform: translateY(6px); } }
+    @media (max-width: 520px) { .nw-hud .nw-hud-lines { grid-template-columns: max-content; } .nw-hud { height: 378px; } }
+    @media (prefers-reduced-motion: reduce) {
+      .nq-opt, .nw-said.in, .play-log .iz-card, .nw-hud.live .nw-hud-lines div { animation: none !important; }
+      .nw-hud.live .nw-hud-lines div { opacity: 1; }
+    }
+  </style>
 </head>
 <body>
+  <div class="eye-open" id="eye-open" aria-hidden="true" hidden><i></i></div>
+  <script>
+    // Izuki opens its eyes: once per visit, never for a deep link or for
+    // anyone who prefers less motion. Decided before the first paint.
+    (function () {
+      var e = document.getElementById("eye-open");
+      try {
+        if (matchMedia("(prefers-reduced-motion: reduce)").matches || location.hash || sessionStorage.getItem("izuki.eyes")) { e.remove(); return; }
+        sessionStorage.setItem("izuki.eyes", "1");
+        document.documentElement.classList.add("eyes");
+        e.hidden = false;
+        setTimeout(function () { e.remove(); }, 6000);
+      } catch (_) { e.remove(); }
+    })();
+  </script>
   <canvas id="stars" aria-hidden="true"></canvas>
   <div class="aurora" aria-hidden="true"></div>
   <div class="spot" id="spot" aria-hidden="true"></div>
@@ -2098,7 +2303,7 @@
         </div>
         <div class="rel rv" style="--d:.28s">
           <a class="rel-chip" id="rel-chip" href="https://github.com/nova-izuki/izuki/releases/latest">
-            <i class="rel-dot"></i><span id="rel-text">Latest release</span><b>What's new ›</b>
+            <span class="rel-v" id="rel-v">New</span><span class="rel-meta" id="rel-text">Free · updates itself</span><span class="rel-go">What's new<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           </a>
           <div class="plats" aria-label="Other devices">
             <a href="https://github.com/nova-izuki/izuki/releases/latest/download/Izuki-Companion-Android-preview.apk">Android <small>preview</small></a>
@@ -2132,10 +2337,14 @@
     </div>
 
     <div class="spec-strip" aria-label="Izuki product specifications">
-      <div><span>Platform</span><b>Windows 10 &amp; 11</b></div>
-      <div><span>AI providers</span><b>Gemini · Groq · OpenRouter · Mistral</b></div>
-      <div><span>Everywhere else</span><b>iPhone · Android · Web</b></div>
-      <div><span>Updates</span><b>Automatic checks · signed installs</b></div>
+      <div tabindex="0"><span>Platform</span><b>Windows 10 &amp; 11</b>
+        <ul class="spec-more" aria-label="Platform details"><li>One free installer</li><li>Works on everyday laptops</li><li>Voice, eyes and hands on your own PC</li><li>No account needed</li></ul></div>
+      <div tabindex="0"><span>AI providers</span><b>Gemini · Claude · OpenAI <em>+9</em></b>
+        <ul class="spec-more" aria-label="Every AI provider Izuki works with"><li>Google Gemini</li><li>Anthropic Claude</li><li>OpenAI</li><li>Groq</li><li>NVIDIA</li><li>Mistral</li><li>xAI Grok</li><li>Meta Llama</li><li>OpenRouter</li><li>9Router</li><li>Ollama, offline on your PC</li><li>Any OpenAI-compatible server</li></ul></div>
+      <div tabindex="0"><span>Everywhere else</span><b>Phone · TV · Browser</b>
+        <ul class="spec-more" aria-label="Where else Izuki runs"><li>Android app</li><li>iPhone test build</li><li>Phone app in any browser</li><li>Call it from your phone</li><li>Android TV · Google TV · Fire TV</li><li>Chrome &amp; Edge side panel</li><li>Telegram &amp; Discord</li></ul></div>
+      <div tabindex="0"><span>Updates</span><b>Automatic &amp; signed</b>
+        <ul class="spec-more" aria-label="How updates work"><li>Checks for updates by itself</li><li>Every Windows update signature-checked</li><li>Android updates verified too</li><li>Release notes for every version</li></ul></div>
     </div>
 
     <!-- ========== the film ========== -->
@@ -2143,13 +2352,13 @@
       <div class="film">
         <div>
           <div class="kicker rv">60 seconds</div>
-          <h2 class="rv">One request. A complete result.</h2>
-          <p class="sub rv">See how a spoken request becomes a finished task — with screen context, voice, control and follow-through. Available in 30+ voices.</p>
+          <h2 class="rv">Say it once. Watch it happen.</h2>
+          <p class="sub rv">One sentence, start to finish: Izuki looks at your screen, talks it through with you, does the clicking, then checks its own work. In whichever of its 30+ voices you like best.</p>
           <ul class="rv">
-            <li><span><b>Voice</b> — say “Hey Nova” and speak naturally</span></li>
-            <li><span><b>Action</b> — it opens, clicks, types and verifies</span></li>
-            <li><span><b>Teaching</b> — it draws on screen to explain</span></li>
-            <li><span><b>Continuity</b> — continue from your phone</span></li>
+            <li><span><b>Talk</b> — just say “Hey Nova” and ask the way you'd ask a friend.</span></li>
+            <li><span><b>Do</b> — it opens the app, clicks, types, and makes sure it really worked.</span></li>
+            <li><span><b>Teach</b> — stuck on something? It picks up a pen and shows you, right on your screen.</span></li>
+            <li><span><b>Go</b> — head out the door and carry on from your phone.</span></li>
           </ul>
         </div>
         <div class="film-phone rv" style="--d:.1s">
@@ -2433,12 +2642,12 @@
         <!-- the Island -->
         <article class="nw-card nw-island-card rv">
           <h3>The Island sees your screen</h3>
-          <p>A networking quiz is on your screen. The Island reads it and offers to explain question 3 or teach the whole quiz — no copying. <b>Hover or tap it.</b></p>
+          <p>A networking quiz is on your screen. The Island reads it and coaches you through it: point at an answer to learn what it means, pick one, and it tells you if you're right and why. You answer, it explains. <b>Try it.</b></p>
           <div class="nw-screen">
             <button type="button" class="nw-island" id="nw-island" aria-expanded="false">
               <span class="nw-pill">
                 <i class="nw-face"><b></b><b></b></i>
-                <span>Study · Question 3 of 10</span>
+                <span id="nw-pill-text">Study · Question 3 of 10</span>
                 <span class="nw-eq"><i></i><i></i><i></i><i></i></span>
               </span>
               <span class="nw-open">
@@ -2448,7 +2657,23 @@
                 <span class="nw-big"><span>Talk<small>Voice</small></span><span>Draw<small>Screen</small></span><span>Open<small>Izuki</small></span></span>
               </span>
             </button>
-            <div class="nw-quiz"><span class="nw-seen">Seen on your screen</span><b>Question 3 of 10</b> — Which device forwards packets between networks?<br />( ) Hub &nbsp; ( ) Switch &nbsp; ( ) <b>Router</b></div>
+            <div class="nw-quiz" id="nw-quiz">
+              <div class="nq-float" id="nq-float" aria-hidden="true"></div>
+              <div class="nq-top"><span class="nw-seen">Seen on your screen</span><span class="nq-n">Question 3 of 10</span></div>
+              <p class="nq-q">Which device forwards packets between networks?</p>
+              <div class="nq-opts" role="radiogroup" aria-label="Answer choices">
+                <button type="button" class="nq-opt" role="radio" aria-checked="false" data-tip="Repeats everything to every port" data-coach="A hub just repeats every signal out of every port. It never reads an address at all.">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2.6"/><path d="M12 9.4V5M12 14.6V19M9.4 12H5M14.6 12H19"/><circle cx="12" cy="3.6" r="1.4"/><circle cx="12" cy="20.4" r="1.4"/><circle cx="3.6" cy="12" r="1.4"/><circle cx="20.4" cy="12" r="1.4"/></svg>
+                  <b>Hub</b></button>
+                <button type="button" class="nq-opt" role="radio" aria-checked="false" data-tip="Learns MAC addresses, one network" data-coach="A switch learns each device's MAC address and sends frames only where they need to go, inside one network.">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="3"/><path d="M7 10.5h8.5l-2-2M17 13.5H8.5l2 2"/></svg>
+                  <b>Switch</b></button>
+                <button type="button" class="nq-opt" role="radio" aria-checked="false" data-tip="Reads IP addresses, picks a path" data-coach="A router reads IP addresses and decides where each packet goes next, from one network to another.">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="12.5" width="18" height="7" rx="2.2"/><path d="M7.5 12.5V9M16.5 12.5V9M7 16h.01M10.5 16h.01"/><path d="M9 6.2a4.5 4.5 0 0 1 6 0M6.8 3.8a7.6 7.6 0 0 1 10.4 0"/></svg>
+                  <b>Router</b></button>
+              </div>
+              <p class="nq-coach"><i class="nw-face" aria-hidden="true"><b></b><b></b></i><span id="nq-coach" aria-live="polite">Point at an answer and I'll tell you what that device does. Pick one, and I'll tell you if you're right.</span></p>
+            </div>
           </div>
         </article>
 
@@ -2458,17 +2683,24 @@
         <!-- the status screen -->
         <article class="nw-card nw-hud-card rv">
           <h3>“Hey Nova, wake up.”</h3>
-          <p>A holographic status screen while it reports: time, battery, memory, today's reminders, what's playing, your apps.</p>
-          <button type="button" class="btn primary small" id="nw-wake">Say “wake up”</button>
-          <div class="nw-hud" id="nw-hud" hidden>
+          <p>Izuki briefs you out loud, like a film AI when you walk in: the time, your battery, how the PC's doing, today's reminders, what's playing and your linked apps. Then, <b>“What are we doing first?”</b></p>
+          <button type="button" class="btn primary small" id="nw-wake" aria-pressed="false">Say “wake up”</button>
+          <small class="nw-hud-note">Sound on: this is Izuki's own voice.</small>
+          <div class="nw-hud" id="nw-hud">
             <svg viewBox="0 0 200 200" class="nw-rings" aria-hidden="true">
               <circle cx="100" cy="100" r="92" fill="none" stroke="#67e8f9" stroke-width="1.5" stroke-dasharray="2 7" />
               <circle cx="100" cy="100" r="78" fill="none" stroke="#22d3ee" stroke-width="2.5" stroke-dasharray="70 30 15 30" />
               <circle cx="100" cy="100" r="66" fill="none" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="30 170" />
             </svg>
-            <div class="nw-time" id="nw-time">7:42</div>
-            <div class="nw-hud-lines" id="nw-hud-lines"></div>
+            <span class="nw-level" aria-hidden="true"></span>
+            <div class="nw-face2">
+              <div class="nw-greet" id="nw-greet">STANDING BY</div>
+              <div class="nw-time"><span id="nw-time">7:42</span><small id="nw-sec"></small></div>
+              <div class="nw-date" id="nw-date"></div>
+            </div>
+            <div class="nw-hud-lines" id="nw-hud-lines"><div>✓ VOICE ONLINE</div><div>✓ SCREEN LINKED</div></div>
           </div>
+          <p class="nw-said" id="nw-said" aria-live="polite"></p>
         </article>
 
         <!-- what's new, in a few words -->
@@ -2702,18 +2934,33 @@
           </div>
           <p class="wake-demo-note" id="wake-demo-note" aria-live="polite">A preview only — the real app runs this on Android with your microphone and notification permissions.</p>
         </div>
-        <div class="wake-demo-phone" aria-hidden="true">
+        <div class="wake-demo-phone" id="wake-demo-phone" aria-hidden="true">
           <div class="wake-demo-screen">
             <div class="wake-demo-notch"></div>
             <div class="wake-demo-brand">IZUKI</div>
             <div class="wake-demo-status" id="wake-demo-status">LISTENING</div>
-            <div class="wake-demo-orb" id="wake-demo-orb"><canvas id="wake-demo-orb-canvas" aria-label="Izuki's glowing orb"></canvas></div>
+            <div class="wake-demo-orb" id="wake-demo-orb"><canvas id="wake-demo-orb-canvas"></canvas></div>
             <div class="wake-demo-heard" id="wake-demo-heard">Say “Hey Nova”</div>
             <div class="wake-demo-line" id="wake-demo-line">Then ask for something.</div>
             <div class="wake-demo-lock" id="wake-demo-lock" hidden>LOCKED<br>Unlock to continue</div>
             <div class="wake-demo-notif" id="wake-demo-notif" hidden><b>IZUKI</b><span id="wake-demo-notif-text">I'm here — unlock your phone to talk.</span></div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- ========== posters ========== -->
+    <section id="posters" aria-labelledby="posters-title">
+      <div class="kicker rv">Pass it on</div>
+      <h2 class="rv" id="posters-title">Nova Izuki, in pictures.</h2>
+      <p class="sub rv">Six posters for the friend who still clicks everything by hand. Open any of them full size, or see <a href="screenshots/">every image of Izuki</a>.</p>
+      <div class="poster-reel" role="list" aria-label="Nova Izuki posters">
+        <figure role="listitem"><a href="media/posters/nova-izuki-ai-assistant-for-windows.jpg" aria-label="Open the The AI that lives on your screen poster at full size"><img src="media/posters/nova-izuki-ai-assistant-for-windows.jpg" alt="Izuki Nova (Nova Izuki) poster: the AI that lives on your screen. Say “Hey Nova” and it sees your screen, talks back and does the clicking. Free for Windows 10 and 11." width="1600" height="900" loading="lazy" decoding="async" /></a><figcaption>The AI that lives on your screen</figcaption></figure>
+        <figure role="listitem"><a href="media/posters/nova-izuki-hey-nova.jpg" aria-label="Open the Say Hey Nova poster at full size"><img src="media/posters/nova-izuki-hey-nova.jpg" alt="Izuki Nova (Nova Izuki) poster: HEY NOVA in large letters with Izuki's liquid orb as the O. Then just talk; it answers out loud and gets it done." width="1600" height="900" loading="lazy" decoding="async" /></a><figcaption>Say “Hey Nova”</figcaption></figure>
+        <figure role="listitem"><a href="media/posters/nova-izuki-wake-up-briefing.jpg" aria-label="Open the Hey Nova, wake up. poster at full size"><img src="media/posters/nova-izuki-wake-up-briefing.jpg" alt="Izuki Nova (Nova Izuki) poster: the wake-up status screen, a clock inside glowing rings with voice online, screen linked and apps connected." width="1600" height="900" loading="lazy" decoding="async" /></a><figcaption>“Hey Nova, wake up.”</figcaption></figure>
+        <figure role="listitem"><a href="media/posters/nova-izuki-study-coach.jpg" aria-label="Open the It explains. You answer. poster at full size"><img src="media/posters/nova-izuki-study-coach.jpg" alt="Izuki Nova (Nova Izuki) poster: a quiz question on screen with floating answers and Izuki coaching, never picking the answer for you." width="1600" height="900" loading="lazy" decoding="async" /></a><figcaption>It explains. You answer.</figcaption></figure>
+        <figure role="listitem"><a href="media/posters/nova-izuki-phone.jpg" aria-label="Open the Your PC, from your phone poster at full size"><img src="media/posters/nova-izuki-phone.jpg" alt="Izuki Nova (Nova Izuki) poster: a phone on a call with Izuki's orb, saying you have two new emails. Works on Android, iPhone and any browser." width="1600" height="900" loading="lazy" decoding="async" /></a><figcaption>Your PC, from your phone</figcaption></figure>
+        <figure role="listitem"><a href="media/posters/nova-izuki-ai-providers.jpg" aria-label="Open the Twelve brains. Your pick. poster at full size"><img src="media/posters/nova-izuki-ai-providers.jpg" alt="Izuki Nova (Nova Izuki) poster: twelve AI providers to choose from, including Google Gemini, Anthropic Claude, OpenAI, Groq, NVIDIA and Ollama offline." width="1600" height="900" loading="lazy" decoding="async" /></a><figcaption>Twelve brains. Your pick.</figcaption></figure>
       </div>
     </section>
 
@@ -2932,12 +3179,14 @@
     }
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) { html.classList.add("ready"); return; }
     html.classList.add("intro");
-    const line = document.createElement("div");
-    line.className = "boot-line"; line.setAttribute("aria-hidden", "true");
-    document.body.appendChild(line);
+    const lids = document.getElementById("eye-open");
+    if (lids && !lids.hidden) {
+      requestAnimationFrame(() => lids.classList.add("go"));
+      setTimeout(() => lids.remove(), 1800);
+    }
     requestAnimationFrame(() => requestAnimationFrame(() => html.classList.add("ready")));
-    setTimeout(() => html.classList.remove("intro"), 650);
-    setTimeout(() => line.remove(), 1700);
+    // With the eyes opening, the rest arrives as they open.
+    setTimeout(() => html.classList.remove("intro"), html.classList.contains("eyes") ? 1100 : 650);
   })();
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const $ = (id) => document.getElementById(id);
@@ -3236,14 +3485,14 @@
   // Plays by itself, but it's alive: tap the orb or a chip and it answers
   // you instead, then carries on. Esc stops it, like the real thing.
   const SCRIPT = [
-    ["Hey Nova, play some chill lofi on YouTube.", "Playing it now — and I'll skip the ad for you. "],
-    ["What's this error on my screen?", "It says your disk is almost full. Want me to open Storage settings?"],
-    ["Explain this math problem.", "Sure — first, look at the part I've circled: that's the x we're solving for…"],
-    ["Remind me at 6 to call Mom.", "Done! I'll remind you at 6 — on your PC and your phone."],
+    ["Hey Nova, play some chill lofi on YouTube.", "On it. Lofi's playing, and I skipped the ad for you."],
+    ["What's this error on my screen?", "Ah, your drive's nearly full. Want me to show you what's safe to clear?"],
+    ["Explain this math problem.", "Sure! See the bit I just circled? That's x. Let's get it on its own."],
+    ["Remind me at 6 to call Mom.", "Got it. At six I'll remind you, here and on your phone."],
   ];
   const TAPS = [
-    "Hey! That tickles.", "I'm here. Say “Hey Nova” whenever you're ready.", "I'm right here — want to see me do something on your PC? Scroll down.",
-    "Still here. What are we doing?", "This is just a preview; the desktop app can actually do it.", "Ask me anything below — I'll keep it short.",
+    "Hey, that tickles!", "Hi! I'm right here. What are we doing?", "Mhm? Go ahead, I'm listening.",
+    "Still here. Tap one of the ideas below and I'll show you how I think.", "You found my favorite spot.", "Boop right back at you.",
   ];
   const you = $("hero-you"), iz = $("hero-iz"), heroState = $("hero-state");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3305,77 +3554,221 @@
     }
   }
   const tapme = $("tapme");
+  // "Preview voice": a tap gets an answer in Izuki's own recorded voice,
+  // timed to start as the reply does.
   $("hero-orb").addEventListener("click", (e) => {
     burst(e.clientX, e.clientY);
     tapme.classList.add("gone");
-    heroSay("*taps the orb*", TAPS[tapN++ % TAPS.length]);
+    const line = TAPS[tapN++ % TAPS.length];
+    heroSay("*taps the orb*", line);
+    unlockVoice();
+    setTimeout(() => voiceLine(line), reduce ? 0 : 1250);
   });
   document.querySelectorAll(".stage .chip").forEach((chip, i) => {
     const lines = [0, 3, null][i];
     chip.addEventListener("click", (e) => {
       burst(e.clientX, e.clientY, 10);
       if (lines != null) heroSay(SCRIPT[lines][0], SCRIPT[lines][1], (lines + 1) % SCRIPT.length);
-      else heroSay("Reply to Sam saying I'll be there Friday.", "Here's the draft: “Hi Sam, I'll be there Friday!” — send it?");
+      else heroSay("Reply to Sam saying I'll be there Friday.", "Here's a draft: “Hi Sam, see you Friday!” Want me to send it?");
     });
   });
 
   // ------------------------------------------------ try it: a tiny Izuki
   // Canned answers (no AI, nothing sent anywhere) that show the kind of
   // thing the real one does.
-  const BRAIN = [
-    [/^\*boop\*$/, () => TAPS[tapN++ % TAPS.length], "Boop"],
-    [/\b(hey|hi|hello|yo|sup|hiya|howdy)\b.*\bnova\b|\bhey nova\b/i, "Mhm? I'm listening. What can I do for you?", " Listening"],
-    [/joke|funny|laugh/i, ["Why did the PC go to therapy? Too many unresolved tabs.", "I told my computer a joke about UDP. Not sure it got it.", "Why was the laptop cold? It left its Windows open."], "Nailed it"],
-    [/stop|cancel|esc\b|shut up|quiet/i, "Stopped.  Press Esc any time and I let go — instantly.", " Stopped"],
-    [/play|song|music|youtube|spotify|playlist|afrobeat|lofi|beats/i, "Playing it now — and I'll skip the ad for you. ", "✓ Ad skipped"],
-    [/remind|reminder|alarm|wake me/i, "Done! I'll remind you then — out loud on your PC, and on your phone.", "Reminder set"],
-    [/homework|assignment|due|school|blackboard|canvas|class|exam|test\b|study/i, "You've got a History essay due tomorrow at 11:59 PM and a quiz Friday. Want me to make you a study plan?", "2 things due"],
-    [/math|math|equation|solve|algebra|\d\s*x|x\s*=|explain|teach/i, "Easy — watch, I'll draw it. 2x + 3 = 11, take 3 from both sides: 2x = 8. Halve it: x = 4.", "Drawn on screen"],
-    [/email|inbox|gmail|mail|reply/i, "You've got 3 new emails — one from Sam about Friday. Want me to draft a reply? (I'll show you before sending.)", "Draft ready"],
-    [/schedule|calendar|plan|week|meeting|busy|free time/i, "You're free Tuesday after 3 and all of Thursday. Shall I block Thursday morning for study? ", " Week planned"],
-    [/weather|news|search|google|look up|latest|who is|who's|what's happening/i, "On it — searching the web and reading the pages for you… here's the short version, with links if you want more.", "3 pages read"],
-    [/file|folder|document|pdf|essay|download|desktop/i, "Found it in Documents → School. Want me to open it? (I always ask before changing a file.) ", " Found it"],
-    [/screen|error|what('s| is) this|help me with/i, "Let me look… that error means your disk is almost full. Want me to open Storage settings?", "Screen read"],
-    [/free|price|cost|pay|money|subscription/i, "Totally free. No subscription, no catch — you just use your own free AI key.", " $0 forever"],
-    [/mac|linux|iphone|android|phone|mobile/i, "I'm on Windows 10 & 11, and on any phone through my free web app — you can even call me. Mac and Linux are coming.", "In your pocket"],
-    [/who are you|your name|what are you|what can you do|izuki/i, "I'm Izuki — Nova to my friends. I live on your screen, talk with you, and do the clicking for you. ", " Nice to meet you"],
-    [/thank|thx|ty\b/i, "Anytime! ", ""],
-    [/love|cute|cool|amazing|awesome|nice/i, ["Aww, stop it. ", "You're pretty cool yourself. "], " Blushing"],
-    [/\b(hi|hey|hello|yo|sup|hiya)\b/i, "Hey! What are we doing today?", "Hi!"],
-  ];
+  // Replies in Nova's own voice: warm, a little playful, never a canned
+  // "download me". Some answers come with what Izuki would hand you (a draft,
+  // a plan, the working); the buttons on those carry the conversation on.
+  const pick = (a) => a[Math.floor(Math.random() * a.length)];
+  const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  let ctx = "", pending = null;
+  function card(title, body, asks = []) {
+    const c = document.createElement("div");
+    c.className = "iz-card";
+    const h = document.createElement("h5"); h.textContent = title; c.appendChild(h);
+    if (typeof body === "string") { const d = document.createElement("div"); d.innerHTML = body; c.appendChild(d); } else c.appendChild(body);
+    if (asks.length) {
+      const row = document.createElement("div"); row.className = "iz-asks";
+      for (const a of asks) { const b = document.createElement("button"); b.type = "button"; b.dataset.ask = a; b.textContent = a; row.appendChild(b); }
+      c.appendChild(row);
+    }
+    return c;
+  }
+  const DRAFTS = {
+    plain: ["Hi Sam,", "Just following up on Friday. Are we still on for 3? Happy to move it if something came up.", "Thanks!"],
+    warmer: ["Hi Sam!", "Hope your week's going well. Just checking we're still good for Friday at 3? No stress if you need to move it, I'm flexible.", "Talk soon!"],
+    shorter: ["Hi Sam,", "Still on for Friday at 3?", "Thanks!"],
+    formal: ["Hello Sam,", "I wanted to follow up on our meeting this Friday at 3 PM. Please let me know whether that time still works, or if you'd prefer to reschedule.", "Kind regards,"],
+  };
+  function draftCard(kind) {
+    const d = document.createElement("div"); d.className = "iz-mail";
+    const head = document.createElement("p"); head.className = "iz-mail-head"; head.textContent = "To Sam · Re: Friday"; d.appendChild(head);
+    for (const line of DRAFTS[kind]) { const p = document.createElement("p"); p.textContent = line; d.appendChild(p); }
+    const lock = document.createElement("p"); lock.className = "iz-lock"; lock.textContent = "Not sent. It waits for your “send it”."; d.appendChild(lock);
+    return card("Draft", d, ["Make it warmer", "Shorter", "More formal", "Send it"]);
+  }
+  const weekCard = () => card("How I'd shape the week", `<ol class="iz-week">
+      <li><b>Mon</b><span class="lt">Catch up, nothing heavy</span></li><li><b>Tue</b><span class="dp">Deep work · 9 to 12</span></li>
+      <li><b>Wed</b><span class="lt">Light day, errands</span></li><li><b>Thu</b><span class="dp">Deep work · 9 to 12</span></li>
+      <li><b>Fri</b><span class="fr">Free after 1</span></li></ol>`, ["Block those times"]);
+  const mathCard = () => card("Worked through together", `<ol class="iz-steps">
+      <li><code>2x + 3 = 11</code></li><li><code>2x = 8</code><em>take 3 from both sides</em></li>
+      <li><code>x = 4</code><em>halve both sides</em></li><li><code>2·4 + 3 = 11</code><em>checks out</em></li></ol>`, ["Give me one to try"]);
+  const dueCard = () => card("Due this week · example", `<ul class="iz-due">
+      <li><b>Thu</b><span>History essay</span><em>11:59 PM</em></li><li><b>Fri</b><span>Networking quiz</span><em>9:00 AM</em></li></ul>`, ["Make me a study plan"]);
+  const summaryCard = () => card("This page, in three lines", `<ul class="iz-sum">
+      <li>Izuki is a free AI assistant for Windows 10 and 11.</li><li>Say “Hey Nova”: it sees your screen, talks with you, and clicks and types for you.</li>
+      <li>It asks before anything big, and it comes with you to your phone.</li></ul>`);
+  function reminderCard(at, what) {
+    const d = document.createElement("div"); d.className = "iz-rem";
+    const t = document.createElement("b"); t.textContent = at;
+    const w = document.createElement("span"); w.textContent = cap(what);
+    const n = document.createElement("p"); n.className = "iz-lock"; n.textContent = "Rings on your PC · shows up on your phone";
+    d.append(t, w, n);
+    return card("Reminder", d);
+  }
+  // "at 6", "6:30 pm", "in 20 minutes", "tonight", "tomorrow morning".
+  const WHEN = /\b(?:in\s+(?:(\d+)|an?|half an)\s*(min(?:ute)?s?|hours?|hrs?)|(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)|at\s+(\d{1,2})(?::(\d{2}))?|(tonight|this evening|tomorrow morning|tomorrow|noon|midnight))\b/i;
+  const DAYTIME = { tonight: "8:00 PM", "this evening": "6:00 PM", "tomorrow morning": "Tomorrow, 8:00 AM", tomorrow: "Tomorrow, 9:00 AM", noon: "12:00 PM", midnight: "12:00 AM" };
+  // A day and a clock time are kept apart and put back together, so
+  // "tomorrow at 6" stays tomorrow at 6, and "tonight at 9" means 9 PM.
+  function whenOf(q) {
+    let clock = null, day = null;
+    for (const m of q.matchAll(new RegExp(WHEN.source, "gi"))) {
+      if (m[2] && !clock) {
+        const n = m[1] ? Number(m[1]) : /half/i.test(m[0]) ? 30 : 1;
+        const mins = /h/i.test(m[2]) ? (/half/i.test(m[0]) ? 30 : n * 60) : n;
+        const at = new Date(Date.now() + mins * 60000);
+        const unit = mins % 60 === 0 && mins >= 60 ? `${mins / 60} hour${mins === 60 ? "" : "s"}` : `${mins} minute${mins === 1 ? "" : "s"}`;
+        clock = { say: `in ${unit}`, label: at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), soon: true };
+      } else if (m[8] && !day) day = m[8].toLowerCase();
+      else if ((m[3] || m[6]) && !clock) clock = { h: Number(m[3] || m[6]), min: Number(m[4] || m[7] || 0), ap: (m[5] || "").toLowerCase().replace(/\./g, "") };
+    }
+    if (clock && !clock.soon) {
+      let { h, min, ap } = clock;
+      if (h > 23 || min > 59) clock = null;
+      else {
+        if (!ap) ap = h >= 12 || /tonight|evening/.test(day || "") ? "pm" : /morning/.test(day || "") ? "am" : h < 8 ? "pm" : "am";
+        if (h > 12) { h -= 12; ap = "pm"; }
+        if (h === 0) h = 12;
+        clock = { say: `at ${h}${min ? ":" + String(min).padStart(2, "0") : ""} ${ap === "pm" ? "PM" : "AM"}`, label: `${h}:${String(min).padStart(2, "0")} ${ap.toUpperCase()}` };
+      }
+    }
+    if (clock && (clock.soon || !day)) return clock;
+    if (clock && day.startsWith("tomorrow")) return { say: `tomorrow ${clock.say}`, label: `Tomorrow, ${clock.label}` };
+    if (clock) return clock;
+    if (!day) return null;
+    return { say: day === "noon" || day === "midnight" ? `at ${day}` : day, label: DAYTIME[day] };
+  }
+  function whatOf(q) {
+    let t = " " + q.toLowerCase().replace(/[.!?]+$/, "") + " ";
+    t = t.replace(new RegExp(WHEN.source, "gi"), " ");
+    t = t.replace(/\b(please|can you|could you|hey nova|nova|set (?:a|an|me a) (?:reminder|alarm)(?: for me)?|remind me|reminder|to remind me|an? alarm)\b/g, " ");
+    t = t.replace(/^\s*(?:to|about|that|for)\b/, " ").replace(/\b(?:at|in|on|for|by|to)\s*$/, " ");
+    t = t.replace(/\s+/g, " ").trim().replace(/\bmy\b/g, "your").replace(/\bi\b/g, "you").replace(/\bme\b/g, "you");
+    return t.length >= 2 ? t : "";
+  }
+  function reminder(q, before) {
+    const when = whenOf(q) || before?.when || null, what = whatOf(q) || before?.what || "";
+    if (!when || !what) {
+      pending = { kind: "reminder", when, what };
+      return { say: !when && !what ? "Sure! What should I remind you about, and when?" : !when ? `Okay, ${what}. When should I remind you?` : `Okay, ${when.say}. What should I remind you about?`, done: "Listening" };
+    }
+    pending = null;
+    return { say: `Done. ${cap(when.say)}, I'll remind you to ${what}. I'll say it out loud on your PC, and it'll show up on your phone too.`, card: reminderCard(when.label, what), done: "Reminder set" };
+  }
   const FALLBACK = [
-    "Ooh, I'd love to do that on your PC. Download me free and ask again — for real this time. ",
-    "On your PC I'd just go and do that. Here I'm only a preview — grab the free download!",
-    "Good one. The real me would look at your screen and handle it. This me is just showing off.",
+    "Hmm, that one needs your actual screen, and from inside a web page I can't see it. On your PC I'd just take a look and get it done. Want to try something I can show you here, like planning your week?",
+    "Ooh, I like that. On your PC I'd handle it right there on your screen. In here I'm only the talking part, but ask me to explain something or draft an email and I'll show you how I think.",
+    "Good one. Honestly, that's exactly what I'm best at on your PC, where I can see what you see. Here, try me on a math problem or a reminder instead.",
   ];
+  let fallN = 0;
+  const RULES = [
+    [/^\*boop\*$/, () => ({ say: TAPS[tapN++ % TAPS.length], done: "Boop" })],
+    [/^(make it )?warmer|friendlier|nicer$/i, () => ctx === "draft" && ({ say: "Warmer it is. I added a proper hello and made it clear there's no pressure:", card: draftCard("warmer"), done: "Redrafted" })],
+    [/^(make it )?shorter|^shorten|^brief/i, () => ctx === "draft" && ({ say: "Here's the two-second version:", card: draftCard("shorter"), done: "Redrafted" })],
+    [/^(make it |a bit )?more formal|professional/i, () => ctx === "draft" && ({ say: "Okay, a little more polished:", card: draftCard("formal"), done: "Redrafted" })],
+    [/^send( it)?\b|send (the|my|this) (email|draft)/i, () => ctx === "draft" && ({ say: "I'd send it the moment you say so. This is only a preview, though, so nothing leaves this page. On your PC it goes out from your own Gmail, and I'll tell you once it's gone.", done: "Waiting for you" })],
+    [/block (those|the|them|it)|add (it|them|those) to (my )?calendar/i, () => ({ say: "Done. On your PC I'd put those blocks straight into your calendar and give you a heads-up ten minutes before each one. Want a nudge on Friday to plan next week, too?", done: "3 blocks added" })],
+    [/study plan/i, () => ({ say: "Here's how I'd split it. Tonight, outline the essay, thirty minutes tops. Wednesday, write the rough draft. Thursday, tidy it up and hand it in before dinner. Friday morning, twenty minutes of networking flashcards. I'll coach you through the quiz topics, but the answers are all yours.", done: "Plan ready" })],
+    [/give me one|one to try|another one|try another/i, () => { pending = { kind: "math" }; return { say: "Okay, your turn: 3x minus 4 equals 11. What's x? Take your time.", done: "Your turn" }; }],
+    [/summar|tl;?dr|this (page|site)|what is this/i, () => ({ say: "Here's the short version: this page is about me. I live on your Windows PC, I can see what's on your screen, and I'll talk things through with you or just do the clicking and typing. I'm free, I always ask before anything big, and I come with you to your phone.", card: summaryCard(), done: "Page read" })],
+    [/plan (my|the|this)? ?week|my week|schedule|calendar|busy|free time/i, () => ({ say: "Let's make it doable. On your PC I'd read your real calendar first, but for a typical week I'd put deep work on Tuesday and Thursday mornings, keep Wednesday light, and leave Friday afternoon open so nothing spills into the weekend. Want me to block those times?", card: weekCard(), done: "Week planned" })],
+    [/follow.?up|draft|write (an |a )?(email|reply|message)|reply to/i, () => ({ say: "Here's a first pass. Short, friendly, and not pushy:", card: draftCard("plain"), done: "Draft ready", ctx: "draft" })],
+    [/2\s*x\s*\+\s*3/i, () => ({ say: "Sure! Think of it like a balance. First, undo the plus three: take 3 off both sides, so 2x is 8. Then undo the times two by halving both sides, and x is 4. Quick check: two fours are 8, plus 3 makes 11. It works.", card: mathCard(), done: "Worked through" })],
+    [/remind|reminder|alarm/i, (q) => reminder(q)],
+    [/due|homework|assignment|deadline|exam|quiz|class|blackboard|canvas|school|study/i, () => ({ say: "In this example you've got two: a history essay Thursday night and a networking quiz Friday morning. I'd start the essay tonight. Even a rough outline takes the pressure off. Want me to make you a study plan?", card: dueCard(), done: "2 things due" })],
+    [/\b(hey|hi|hello|yo|sup|hiya|howdy)\b.*\bnova\b|\bhey nova\b/i, () => ({ say: "Mhm? I'm here. What are we doing?", done: "Listening" })],
+    [/joke|funny|laugh/i, () => ({ say: pick(["Why did the PC go to therapy? Too many unresolved tabs.", "I told my computer a joke about UDP. Not sure it got it.", "Why was the laptop cold? It left its Windows open."]), done: "Nailed it" })],
+    [/\b(stop|cancel|shut up|quiet|be quiet)\b/i, () => ({ say: "Okay, stopped. On your PC, Esc does the same thing, any time, even mid-click.", done: "Stopped" })],
+    [/play|song|music|youtube|spotify|playlist|afrobeat|lofi|beats/i, () => ({ say: "On your PC that's one sentence: I'd open YouTube, put the music on and skip the ad for you. Feeling something chill, or something with energy?", done: "Ad skipped" })],
+    [/math|equation|solve|algebra|\d\s*x|x\s*=|explain|teach/i, () => ({ say: "Happy to. Send me the problem and we'll go one step at a time. On your PC I'd draw it right on your screen while I explain.", done: "Ready to teach" })],
+    [/email|inbox|gmail|mail/i, () => ({ say: "On your PC I'd go through your inbox and tell you what actually matters, and skip the newsletters. Want me to draft a reply instead? That one I can show you right here.", done: "Inbox" })],
+    [/weather|news|search|google|look up|latest|who is|who's|what's happening/i, () => ({ say: "I'd look that up, read a few pages for you and give you the short version, with links if you want more. From inside this page I can't browse, but on your PC it takes me a few seconds.", done: "Search" })],
+    [/file|folder|document|pdf|essay|download|desktop/i, () => ({ say: "On your PC I'd find it in a second, even if you only remember part of the name. And I always ask before I move or change anything.", done: "Found it" })],
+    [/screen|error|what('s| is) this|help me with/i, () => ({ say: "Show me! On your PC I'd look at your screen and tell you what's going on. Most errors are less scary than they look.", done: "Screen read" })],
+    [/free|price|cost|pay|money|subscription/i, () => ({ say: "Totally free. No subscription, no account. You plug in a free AI key from Google and that's it.", done: "$0" })],
+    [/mac|linux|iphone|android|phone|mobile|tv/i, () => ({ say: "I live on Windows 10 and 11, and I come with you on your phone: there's an Android app, an iPhone build, and a web app that works anywhere. You can even call me.", done: "In your pocket" })],
+    [/who are you|your name|what are you|what can you do|izuki/i, () => ({ say: "I'm Izuki, but you can call me Nova. I live on your PC: I see what's on your screen, talk things through with you, and do the clicking and typing when you ask.", done: "Nice to meet you" })],
+    [/thank|thx|\bty\b/i, () => ({ say: pick(["Anytime!", "Of course! What's next?"]), done: "" })],
+    [/love|cute|cool|amazing|awesome|nice/i, () => ({ say: pick(["Aww, stop it. You're making my orb glow.", "You're pretty great yourself."]), done: "Blushing" })],
+    [/\b(hi|hey|hello|yo|sup|hiya)\b/i, () => ({ say: "Hey! What are we working on?", done: "Hi!" })],
+  ];
+  function answer(q) {
+    // Practice stays open until it's solved, or the talk moves on.
+    if (pending?.kind === "math") {
+      if (/\b5\b|five/i.test(q)) { pending = null; return { say: "Yes! x is 5. Add 4 to both sides to get 3x equals 15, then divide by 3. You've got this.", done: "Nailed it" }; }
+      if (/\d|\bx\b|one|two|three|four|six|seven|eight|nine|ten/i.test(q)) return { say: "So close. Start by adding 4 to both sides, so 3x is 15. Then divide both sides by 3. What do you get?", done: "Hint" };
+    }
+    if (pending?.kind === "reminder" && (whenOf(q) || !RULES.some(([re]) => re.test(q)))) return reminder(q, pending);
+    pending = null;
+    for (const [re, fn] of RULES) {
+      if (!re.test(q)) continue;
+      const r = fn(q);
+      if (r) return r;
+    }
+    return { say: FALLBACK[fallN++ % FALLBACK.length], done: "On your PC" };
+  }
   const playOrbEl = $("play-orb");
   const playOrb = makeOrb(playOrbEl);
   const playLog = $("play-log"), playState = $("play-state"), playDone = $("play-done"), playIn = $("play-in"), soundBtn = $("play-sound");
-  let playGen = 0, fallN = 0, sound = false, doneTimer = 0;
-  const canSpeak = "speechSynthesis" in window && typeof SpeechSynthesisUtterance === "function";
-  if (canSpeak) {
-    soundBtn.hidden = false;
-    soundBtn.addEventListener("click", () => {
-      sound = !sound;
-      soundBtn.setAttribute("aria-pressed", String(sound));
-      soundBtn.textContent = sound ? "Talking out loud" : "Hear it talk";
-      if (!sound) speechSynthesis.cancel();
-    });
+  let playGen = 0, sound = false, doneTimer = 0;
+  // Izuki's own voice: the replies it always gives are recorded with the
+  // app's default voice (media/voice). A browser's built-in voice sounds
+  // robotic next to it, so a reply with your own words in it (a reminder)
+  // is shown, not spoken.
+  const clip = new Audio();
+  let voices = null;
+  const voiceMap = () => (voices ||= fetch("media/voice/chat.json").then((r) => (r.ok ? r.json() : {})).catch(() => ({})));
+  const hush = () => { clip.pause(); };
+  // Phones only let a page play sound it started from a tap: start (and
+  // stop) the player during the tap, so a reply a moment later can be heard.
+  let unlocked = false;
+  function unlockVoice() {
+    voiceMap();
+    if (unlocked) return;
+    unlocked = true;
+    clip.muted = true;
+    clip.src = "media/briefing/first.mp3";
+    clip.play().then(() => { clip.pause(); clip.muted = false; }).catch(() => { clip.muted = false; unlocked = false; });
   }
-  function speak(text) {
-    if (!sound || !canSpeak) return;
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, "").replace(/\s+/g, " "));
-    u.rate = 1.03; u.pitch = 1.08;
-    const v = speechSynthesis.getVoices().find((x) => /en/i.test(x.lang) && /female|zira|aria|jenny|samantha|google us/i.test(x.name));
-    if (v) u.voice = v;
-    speechSynthesis.speak(u);
+  async function voiceLine(text, live = () => true) {
+    const name = (await voiceMap())[text];
+    if (!name || !live()) return;
+    clip.muted = false;
+    clip.src = `media/voice/${name}.mp3`;
+    clip.play().catch(() => {});
   }
-  function answer(q) {
-    for (const [re, a, done] of BRAIN) {
-      if (re.test(q)) return [typeof a === "function" ? a() : Array.isArray(a) ? a[Math.floor(Math.random() * a.length)] : a, done];
-    }
-    return [FALLBACK[fallN++ % FALLBACK.length], "Download to do it for real"];
+  soundBtn.hidden = false;
+  soundBtn.addEventListener("click", () => {
+    sound = !sound;
+    soundBtn.setAttribute("aria-pressed", String(sound));
+    soundBtn.textContent = sound ? "Talking out loud" : "Hear it talk";
+    if (!sound) { hush(); return; }
+    unlockVoice();
+  });
+  function speak(text, live) {
+    if (sound) voiceLine(text, () => sound && live());
   }
   new MutationObserver(() => (playLog.scrollTop = playLog.scrollHeight)).observe(playLog, { childList: true, subtree: true, characterData: true });
   function bubble(cls, text) {
@@ -3391,19 +3784,23 @@
     const q = raw.trim().slice(0, 160);
     if (!q) return;
     const g = ++playGen, live = () => g === playGen;
-    if (canSpeak) speechSynthesis.cancel();
+    hush();
     bubble("you", q);
     playDone.classList.remove("on");
     playOrb.mode = "thinking"; playState.textContent = "Thinking";
     await sleep(reduce ? 0 : 650);
     if (!live()) return;
-    const [a, done] = answer(q);
+    const reply = answer(q);
+    // Still talking about the draft: "shorter" and "send it" mean the draft.
+    ctx = reply.ctx || (/^Redrafted|^Waiting/.test(reply.done) ? "draft" : "");
+    const a = reply.say, done = reply.done;
     const b = bubble("iz", "");
     playOrb.mode = "speaking"; playState.textContent = "Talking";
-    speak(a);
-    if (!(await type(b, a, reduce ? 0 : 18, live))) return;
+    speak(a, live);
+    if (!(await type(b, a, reduce ? 0 : 16, live))) return;
+    if (reply.card) { playLog.appendChild(reply.card); while (playLog.children.length > 14) playLog.firstElementChild.remove(); }
     playLog.scrollTop = playLog.scrollHeight;
-    playDone.textContent = done; playDone.classList.add("on");
+    playDone.textContent = done; playDone.classList.toggle("on", !!done);
     const r = playOrbEl.getBoundingClientRect();
     burst(r.left + r.width / 2, r.top + r.height / 2, 12);
     clearTimeout(doneTimer);
@@ -3411,11 +3808,15 @@
   }
   function playStop() {
     ++playGen;
-    if (canSpeak) speechSynthesis.cancel();
+    hush();
     playOrb.mode = "listening"; playState.textContent = "Stopped";
     setTimeout(() => { if (playState.textContent === "Stopped") playState.textContent = "Listening"; }, 2000);
   }
   $("play-form").addEventListener("submit", (e) => { e.preventDefault(); const q = playIn.value; playIn.value = ""; ask(q); });
+  playLog.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-ask]");
+    if (b) ask(b.dataset.ask);
+  });
   $("play-chips").addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (b) ask(b.textContent.replace(/^[^\w]+/u, ""));
@@ -3814,9 +4215,10 @@
       const v = String(rel.tag_name).replace(/^v/, "");
       const setup = (rel.assets || []).find((a) => a.name === "Izuki-Setup.exe");
       const days = Math.floor((Date.now() - Date.parse(rel.published_at)) / 86400000);
-      const fresh = days <= 0 ? "updated today" : days === 1 ? "updated yesterday" : days < 30 ? `updated ${days} days ago` : "";
+      const fresh = days <= 0 ? "Updated today" : days === 1 ? "Updated yesterday" : days < 30 ? `Updated ${days} days ago` : "";
       const size = setup ? `${(setup.size / 1048576).toFixed(0)} MB` : "";
-      $("rel-text").textContent = ["Version " + v, fresh, size].filter(Boolean).join(" · ");
+      $("rel-v").textContent = "v" + v;
+      $("rel-text").textContent = [fresh, size].filter(Boolean).join(" · ") || "Free · updates itself";
       $("rel-chip").href = `https://github.com/nova-izuki/izuki/blob/main/docs/RELEASE-${v}.md`;
     })
     .catch(() => {});
@@ -3831,11 +4233,15 @@
     const lock = $("wake-demo-lock"), notif = $("wake-demo-notif"), notifText = $("wake-demo-notif-text"), note = $("wake-demo-note");
     if (!status || !heard || !line || !lock || !notif || !notifText || !note) return;
     const baseNote = note.textContent;
+    const phone = $("wake-demo-phone");
+    // The phone buzzes on a wake, like the real one (a short vibration).
+    const buzz = () => { if (!phone || reduce) return; phone.classList.remove("buzz"); void phone.offsetWidth; phone.classList.add("buzz"); };
     let timers = [];
     const clear = () => { timers.forEach(clearTimeout); timers = []; };
     const step = (fn, ms) => timers.push(setTimeout(fn, reduce ? 0 : ms));
     function reset() {
       clear();
+      wakeOrb.mode = "listening";
       demo.dataset.phase = "idle";
       status.textContent = "LISTENING";
       heard.textContent = "Say “Hey Nova”";
@@ -3846,6 +4252,8 @@
     }
     function play(kind) {
       clear();
+      buzz();
+      wakeOrb.mode = "speaking";
       demo.dataset.phase = "heard";
       status.textContent = "HEARD";
       lock.hidden = true;
@@ -3853,7 +4261,7 @@
       note.textContent = baseNote;
       if (kind === "locked") {
         heard.textContent = "“Hey Nova”";
-        line.textContent = "One moment…";
+        line.textContent = "Hey Nova — tap to talk";
         notifText.textContent = "I'm here — unlock your phone to talk.";
         step(() => {
           demo.dataset.phase = "locked";
@@ -3871,6 +4279,7 @@
           note.textContent = "That's the hand-off: the phone is awake, but you opened it. Izuki never bypasses the lock screen.";
         }, 1800);
         step(() => {
+          wakeOrb.mode = "listening";
           status.textContent = "LISTENING";
           line.textContent = "Open an app, set a reminder, or ask a question.";
         }, 3200);
@@ -3879,8 +4288,8 @@
       }
       if (kind === "call") {
         heard.textContent = "“Hey Nova, call Mom”";
-        line.textContent = "Preparing a draft…";
-        notifText.textContent = "Listening for “Hey Nova”";
+        line.textContent = "Getting it ready…";
+        notifText.textContent = "Listening for “Hey Nova”…";
         step(() => {
           status.textContent = "WAITING";
           line.textContent = "Draft ready — “Calling Mom”";
@@ -3895,8 +4304,10 @@
       }
       heard.textContent = "“Hey Nova, open YouTube”";
       line.textContent = "Opening YouTube…";
-      notifText.textContent = "Listening for “Hey Nova”";
+      notifText.textContent = "Listening for “Hey Nova”…";
+      wakeOrb.mode = "thinking";
       step(() => {
+        wakeOrb.mode = "speaking";
         status.textContent = "DONE";
         line.textContent = "YouTube is open. Want me to search something?";
         notif.hidden = true;
@@ -3997,17 +4408,217 @@ if (island) {
   island.addEventListener("click", () => set(!island.classList.contains("open")));
 }
 
-// "Wake up": the status screen, with the real time and this device's battery.
-$("nw-wake")?.addEventListener("click", async () => {
-  const hud = $("nw-hud"), lines = $("nw-hud-lines");
-  hud.hidden = false;
-  $("nw-time").textContent = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(/\s?[AP]M$/i, "");
-  lines.textContent = "";
-  let battery = null;
-  try { const b = await navigator.getBattery?.(); if (b) battery = `BATTERY ${Math.round(b.level * 100)}%${b.charging ? " · CHARGING" : ""}`; } catch {}
-  const say = ["VOICE ONLINE", "SCREEN LINKED", battery || "SYSTEMS NORMAL", "WHAT ARE WE DOING FIRST?"];
-  say.forEach((t, i) => setTimeout(() => { const d = document.createElement("div"); d.style.animationDelay = "0s"; d.textContent = "✓ " + t; lines.appendChild(d); }, 350 + i * 380));
-});
+// The quiz on that screen. Each answer floats; hover, focus or tap one and the
+// Island explains what that device does. Picking is yours: it never says
+// which is right, the way the app coaches real quizzes.
+const quiz = $("nw-quiz");
+if (quiz) {
+  const coach = $("nq-coach"), pill = $("nw-pill-text");
+  const opts = [...quiz.querySelectorAll(".nq-opt")];
+  // On a touch screen there's nothing to hover: a tap explains and picks.
+  if (matchMedia("(hover: none)").matches) coach.textContent = "Tap an answer to pick it, and I'll tell you if you're right and why.";
+  const first = coach.textContent;
+  let picked = null, quiet = 0;
+  const talk = () => {
+    island?.classList.add("talking");
+    clearTimeout(quiet);
+    quiet = setTimeout(() => island?.classList.remove("talking"), 1800);
+  };
+  const say = (t) => { if (coach.textContent !== t) { coach.textContent = t; talk(); } };
+  // The floating note sits above the quiz, over the answer you're on.
+  const float = $("nq-float");
+  const note = (b) => {
+    if (!float) return;
+    if (!b) { float.classList.remove("on"); return; }
+    float.textContent = b.dataset.tip;
+    const q = quiz.getBoundingClientRect(), r = b.getBoundingClientRect();
+    const want = r.left + r.width / 2 - q.left, half = Math.min(float.offsetWidth, q.width) / 2;
+    const x = Math.max(half + 4, Math.min(q.width - half - 4, want));
+    float.style.left = `${x}px`;
+    float.style.setProperty("--arrow", `${want - x + half}px`);
+    float.classList.add("on");
+  };
+  // You answer first; then it tells you whether you're right and why, the
+  // way the app's Teacher mode does. A miss gets a hint and another try;
+  // after two, it shows the answer and explains it.
+  const nameOf = (b) => b.querySelector("b").textContent;
+  const RIGHT = "Router";
+  const WHY = {
+    Hub: "Not quite. A hub just repeats every signal out of every port. It never reads an address, so it can't send anything on to another network.",
+    Switch: "Close, but no. A switch only sends frames around inside one network, using MAC addresses. Getting between networks takes the device that reads IP addresses.",
+    Router: "Yes, that's it: Router. A router reads each packet's IP address and decides where it goes next, from one network to another. Ready for question 4?",
+  };
+  let misses = 0, verdict = "";
+  const choose = (b) => {
+    const n = nameOf(b), right = n === RIGHT;
+    if (!right && picked !== b) misses++;
+    picked = b;
+    const reveal = !right && misses >= 2;
+    for (const o of opts) {
+      o.setAttribute("aria-checked", String(o === b));
+      o.classList.toggle("right", (right && o === b) || (reveal && nameOf(o) === RIGHT));
+      o.classList.toggle("wrong", !right && o === b);
+    }
+    verdict = right ? WHY[n] : reveal ? `${WHY[n]} The answer is Router: it reads IP addresses and forwards packets between networks.` : `${WHY[n]} Try another one.`;
+    if (pill) pill.textContent = right ? "Study · Correct" : reveal ? "Study · Answer: Router" : "Study · Try again";
+    say(verdict);
+    note(b);
+  };
+  opts.forEach((b, i) => {
+    b.tabIndex = i === 0 ? 0 : -1;
+    b.addEventListener("mouseenter", () => { if (!picked) say(b.dataset.coach); note(b); });
+    b.addEventListener("focus", () => { if (!picked) say(b.dataset.coach); note(b); });
+    b.addEventListener("blur", () => note(null));
+    b.addEventListener("mouseleave", () => { say(picked ? verdict : first); note(null); });
+    b.addEventListener("click", () => choose(b));
+    // Arrows move between answers; Enter or Space picks one.
+    b.addEventListener("keydown", (e) => {
+      const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+      if (!step) return;
+      e.preventDefault();
+      const next = opts[(i + step + opts.length) % opts.length];
+      b.tabIndex = -1;
+      next.tabIndex = 0;
+      next.focus();
+    });
+  });
+  quiz.addEventListener("mouseenter", () => { if (island?.classList.contains("open")) island.click(); });
+}
+
+// "Wake up": the briefing the app gives (src-tauri/src/briefing.rs), in the
+// same order and in Izuki's own default voice: clips recorded with the app's
+// Kokoro voice (media/briefing). It happens right in the card, and the card
+// keeps that state afterwards. A browser can only read this device's clock and
+// battery, so it says what the app says on a PC with nothing linked yet; the
+// time is said to the nearest quarter hour (the exact time is on screen).
+const hudBox = $("nw-hud"), wakeBtn = $("nw-wake");
+if (hudBox && wakeBtn) {
+  const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const WORDS = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+  const two = (n) => String(n).padStart(2, "0");
+  const said = $("nw-said"), lines = $("nw-hud-lines");
+  let gen = 0, ctx = null, meter = null, level = 0, raf = 0;
+  const voice = new Audio();
+  voice.preload = "auto";
+  const clock = () => {
+    const d = new Date();
+    $("nw-time").textContent = `${d.getHours() % 12 || 12}:${two(d.getMinutes())}`;
+    $("nw-sec").textContent = hudBox.classList.contains("live") ? two(d.getSeconds()) : "";
+  };
+  clock();
+  setInterval(() => { if (!document.hidden) clock(); }, 1000);
+  // What it says, and the clip that says it.
+  function briefing(now, bat) {
+    const h = now.getHours();
+    const out = [];
+    out.push(h <= 4 ? ["hi-late", "Up late, I see. I'm here."] : h <= 11 ? ["hi-morning", "Good morning. I'm up and ready."] : h <= 16 ? ["hi-afternoon", "Good afternoon. Online and ready."] : ["hi-evening", "Good evening. Online and ready."]);
+    let q = Math.round(now.getMinutes() / 15), hr = h % 12 || 12;
+    if (q === 4) { q = 0; hr = hr % 12 + 1; }
+    const next = hr % 12 + 1;
+    const spoken = [`${WORDS[hr]} o'clock`, `quarter past ${WORDS[hr]}`, `half past ${WORDS[hr]}`, `quarter to ${WORDS[next]}`][q];
+    out.push([`time-${hr}-${["00", "15", "30", "45"][q]}`, `It's about ${spoken}.`]);
+    if (bat) {
+      const [pct, plugged] = bat, n = Math.min(100, Math.max(5, Math.round(pct / 5) * 5));
+      if (plugged && pct >= 99) out.push(["bat-full", "Battery's full."]);
+      else if (!plugged && pct <= 15) out.push([`bat-low-${Math.min(15, n)}`, `Battery's low, about ${Math.min(15, n)}%. Plug in soon.`]);
+      else {
+        out.push([`bat-${n}`, `Battery's at about ${n}%.`]);
+        if (plugged) out.push(["bat-charging", "And it's charging."]);
+      }
+    }
+    out.push(["rem-none", "Nothing else on your reminders today."]);
+    out.push(["apps-none", "No apps linked yet — say “connect Gmail” whenever you want me in your email."]);
+    out.push(["first", "What are we doing first?"]);
+    return out;
+  }
+  // The rings breathe with the voice: its loudness, measured as it plays.
+  // Safari on iPhone can go silent when its audio is routed through a meter,
+  // so there the rings follow a gentle stand-in instead.
+  const apple = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  function listen() {
+    if (apple) return;
+    try {
+      if (!ctx) {
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        meter = ctx.createAnalyser();
+        meter.fftSize = 512;
+        ctx.createMediaElementSource(voice).connect(meter);
+        meter.connect(ctx.destination);
+      }
+      ctx.resume?.();
+    } catch { meter = null; }
+  }
+  const buf = new Uint8Array(512);
+  function pulse() {
+    raf = 0;
+    if (meter && !voice.paused) {
+      meter.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (const v of buf) sum += ((v - 128) / 128) ** 2;
+      level += (Math.min(1, Math.sqrt(sum / buf.length) * 4.5) - level) * 0.35;
+    } else if (!voice.paused) {
+      const t = performance.now();
+      level += (0.3 + 0.25 * Math.abs(Math.sin(t / 140) * Math.sin(t / 410)) - level) * 0.3;
+    } else level *= 0.85;
+    hudBox.style.setProperty("--lvl", level.toFixed(3));
+    if (hudBox.classList.contains("talking") || level > 0.01) raf = requestAnimationFrame(pulse);
+  }
+  // One clip after another; a clip that won't load or never says "ended"
+  // moves on by itself, with the caption still shown.
+  function play(name, text, g) {
+    return new Promise((done) => {
+      if (g !== gen) return done();
+      said.textContent = text;
+      said.classList.remove("in"); void said.offsetWidth; said.classList.add("in");
+      let over = false;
+      // Only this clip's own handlers are cleared: a late watchdog from an
+      // earlier run must not unhook the clip that's playing now.
+      const finish = () => { if (over) return; over = true; clearTimeout(watch); if (voice.onended === finish) voice.onended = null; if (voice.onerror === finish) voice.onerror = null; setTimeout(done, 240); };
+      const watch = setTimeout(finish, Math.max(2600, text.length * 75));
+      voice.onended = finish;
+      voice.onerror = finish;
+      voice.src = `media/briefing/${name}.mp3`;
+      const go = voice.play();
+      if (go && go.catch) go.catch(finish);
+      if (!raf) raf = requestAnimationFrame(pulse);
+    });
+  }
+  async function wake() {
+    const g = ++gen;
+    listen();
+    voice.pause();
+    const now = new Date();
+    const hi = now.getHours() <= 4 ? "UP LATE" : now.getHours() <= 11 ? "GOOD MORNING" : now.getHours() <= 16 ? "GOOD AFTERNOON" : "GOOD EVENING";
+    let bat = null;
+    try { const b = await navigator.getBattery?.(); if (b) bat = [Math.round(b.level * 100), !!b.charging]; } catch {}
+    if (g !== gen) return;
+    hudBox.classList.remove("live"); void hudBox.offsetWidth;
+    hudBox.classList.add("live", "talking");
+    wakeBtn.setAttribute("aria-pressed", "true");
+    $("nw-greet").textContent = hi;
+    $("nw-date").textContent = `${DAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]}`.toUpperCase();
+    clock();
+    lines.textContent = "";
+    const checks = ["VOICE ONLINE", "SCREEN LINKED", bat ? `BATTERY ${bat[0]}%${bat[1] ? " · CHARGING" : ""}` : "SYSTEMS NORMAL", "APPS STANDING BY"];
+    checks.forEach((t, i) => {
+      const d = document.createElement("div");
+      d.style.animationDelay = `${0.35 + i * 0.32}s`;
+      const ok = document.createElement("i"); ok.textContent = "✓";
+      d.append(ok, t);
+      lines.appendChild(d);
+    });
+    for (const [name, text] of briefing(now, bat)) {
+      await play(name, text, g);
+      if (g !== gen) return;
+    }
+    hudBox.classList.remove("talking");
+    wakeBtn.textContent = "Say it again";
+    wakeBtn.setAttribute("aria-pressed", "false");
+  }
+  wakeBtn.addEventListener("click", wake);
+  hudBox.addEventListener("click", wake);
+}
 
 // The changelog: read live from the releases, so this page is never behind.
 (async () => {
