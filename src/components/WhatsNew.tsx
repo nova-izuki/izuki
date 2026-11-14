@@ -23,6 +23,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "👁️", title: "Eye Control settles where you look", how: "A look at a toolbar's empty space now chooses its nearest real button, a slow drift counts as a new look, and only one control walk runs at a time. Looking near the right control is enough; looking at nothing no longer grabs the toolbar." },
+  { icon: "🧊", title: "The site opens its eyes", how: "izukinova.ai opens with the eye-blink, answers in Nova's own recorded voice, coaches a quiz without choosing for you, and shows the phone, TV and PC in one place. The Android orb above other apps is the same liquid glass orb.", try: { label: "Open the site", say: "open izukinova.ai" } },
   { icon: "⬆️", title: "Updates that prove they worked", how: "Settings → Phone → App updates now downloads and verifies the APK (size, SHA-256, package, version and signer), shows the release notes, and only says “Updated” after Android reports the new version. If the installer was cancelled, it says so and offers a retry.", try: { label: "Open updates", tab: "settings", id: "settings-phone" } },
   { icon: "⚡", title: "Ask Izuki from Quick Settings", how: "Add “Ask Izuki” to Android's Quick Settings. One swipe and a tap opens the companion ready to listen, without hunting for the app.", try: { label: "Open Phone", tab: "settings", id: "settings-phone" } },
   { icon: "📱", title: "Phone controls in one tap", how: "The phone dock puts Home, Back, Recents, Notifications, Quick Settings, Screenshot and Power one tap from the companion. Every action is explicit; nothing is guessed.", try: { label: "Open Phone", tab: "settings", id: "settings-phone" } },
