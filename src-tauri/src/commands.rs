@@ -411,6 +411,15 @@ fn forced_do(said: &str) -> bool {
 /// everyday commands (instant.rs).
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
+    if let Some(request) = crate::rescue::request(&said) {
+        // Capture the epoch now, before this request waits in the blocking
+        // pool. Capturing it in restore() there would adopt a newer stop.
+        let epoch = overlay::rescue_epoch();
+        return Some(blocking(move || match request {
+            crate::rescue::Request::Hide => crate::rescue::reset(&app),
+            crate::rescue::Request::Restore => crate::rescue::restore_at(&app, epoch),
+        }).await.unwrap_or_else(|error| format!("The overlay recovery could not finish: {error}. Press Esc three times for native emergency hiding.")));
+    }
     // Eye control's voice stop, pause and resume come first (airsafe.rs).
     if let Some(reply) = crate::airsafe::voice(&said) {
         return Some(reply);

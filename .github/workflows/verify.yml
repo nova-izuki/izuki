@@ -81,3 +81,5 @@ jobs:
       - run: npm run icons
       - name: Windows unit tests (Common Controls v6 manifest)
         run: ./tools/test-windows.ps1
+      - name: Native overlay emergency rescue (disposable windows only)
+        run: npm run test:rescue

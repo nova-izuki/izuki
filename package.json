@@ -5,6 +5,7 @@
   "type": "module",
   "description": "IZUKI — YO IZUKI, DO IT. Draw on your screen, Izuki does it.",
   "scripts": {
+    "test:rescue": "node tools/rescue-check.mjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
