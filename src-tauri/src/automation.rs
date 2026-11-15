@@ -9,19 +9,19 @@
 use anyhow::{anyhow, Result};
 use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 use rand::Rng;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use crate::model::{ActionStep, Intent};
 use crate::uia;
 
-/// Flipped by the panic hotkey; every loop checks it between steps.
-static ABORT: AtomicBool = AtomicBool::new(false);
-/// When the last stop was asked for, as milliseconds from process start.
-/// An atomic means the emergency path can never skip recording the stop
-/// behind a busy lock; a missing timestamp would look stale to a watcher.
-static ABORT_AT: AtomicU64 = AtomicU64::new(0);
+/// The stop flag and when it was last pressed, in one word. The high bit is
+/// the flag; the remaining bits are milliseconds from process start. Keeping
+/// them together means a stale-clear cannot read the old stop and then erase
+/// a newer one between two atomics.
+static ABORT_STATE: AtomicU64 = AtomicU64::new(0);
+const ABORT_ACTIVE: u64 = 1 << 63;
 static ABORT_CLOCK: OnceLock<Instant> = OnceLock::new();
 
 fn stop_clock_ms() -> u64 {
@@ -29,38 +29,42 @@ fn stop_clock_ms() -> u64 {
     u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX - 1) + 1
 }
 
+fn mark_aborted() {
+    let at = stop_clock_ms() & !ABORT_ACTIVE;
+    ABORT_STATE.store(ABORT_ACTIVE | at, Ordering::SeqCst);
+}
+
 pub fn request_abort() {
-    // Timestamp first, then the flag: a concurrent stale check that sees the
-    // old 0 must also see ABORT=false and leave it alone.
-    ABORT_AT.store(stop_clock_ms(), Ordering::SeqCst);
-    ABORT.store(true, Ordering::SeqCst);
+    mark_aborted();
 }
 
 /// Emergency escape cannot wait behind an input worker's bookkeeping lock.
 pub fn emergency_abort() {
-    ABORT_AT.store(stop_clock_ms(), Ordering::SeqCst);
-    ABORT.store(true, Ordering::SeqCst);
+    mark_aborted();
 }
 
 /// Forget a stop that's older than `age` — for work nobody is watching
 /// start (a watcher firing), which shouldn't fail forever because the
 /// user once pressed stop, but must still honour a stop pressed just now.
 pub fn clear_stale_abort(age: Duration) {
-    if !ABORT.load(Ordering::SeqCst) {
+    let state = ABORT_STATE.load(Ordering::SeqCst);
+    if state & ABORT_ACTIVE == 0 {
         return;
     }
-    let at = ABORT_AT.load(Ordering::SeqCst);
+    let at = state & !ABORT_ACTIVE;
     if at == 0 || stop_clock_ms().saturating_sub(at) > age.as_millis() as u64 {
-        clear_abort();
+        // Only clear the exact stop we judged stale. A newer press changes
+        // the word first, so this fails and that stop survives.
+        let _ = ABORT_STATE.compare_exchange(state, 0, Ordering::SeqCst, Ordering::SeqCst);
     }
 }
 
 pub fn clear_abort() {
-    ABORT.store(false, Ordering::SeqCst);
+    ABORT_STATE.store(0, Ordering::SeqCst);
 }
 
 pub fn aborted() -> bool {
-    ABORT.load(Ordering::SeqCst)
+    ABORT_STATE.load(Ordering::SeqCst) & ABORT_ACTIVE != 0
 }
 
 fn enigo() -> Result<Enigo> {

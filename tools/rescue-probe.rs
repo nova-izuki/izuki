@@ -70,7 +70,11 @@ mod probe {
                                 Ok("quit")=>{stop=true;break;},
                                 _=>{},
                             }
-                            pump();std::thread::sleep(Duration::from_millis(3));
+                            // Deliberately do not pump: this thread is the
+                            // window's message loop, so no pump means a queued
+                            // ShowWindowAsync cannot hide it. Release still
+                            // arrives on the channel without window messages.
+                            std::thread::sleep(Duration::from_millis(3));
                         }
                         marked.store(false,Ordering::SeqCst);
                     },

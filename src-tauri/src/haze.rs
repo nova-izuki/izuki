@@ -487,7 +487,21 @@ mod win {
             return None;
         }
         WINDOW.store(veil.0 as isize, Ordering::SeqCst);
+        // An emergency stop can land after begin()'s first check but before
+        // this window is shown. Check on both sides of the show: a stop just
+        // before it is caught here, and one just after it is hidden by the
+        // native rescue pass that follows.
+        if crate::overlay::rescue_check().is_err() {
+            WINDOW.store(0, Ordering::SeqCst);
+            let _ = DestroyWindow(veil);
+            return None;
+        }
         follow(veil, true);
+        if crate::overlay::rescue_check().is_err() {
+            WINDOW.store(0, Ordering::SeqCst);
+            let _ = DestroyWindow(veil);
+            return None;
+        }
         Some(veil)
     }
 }
