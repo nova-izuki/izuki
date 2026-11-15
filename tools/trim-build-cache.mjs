@@ -15,6 +15,7 @@
 // junctions) are skipped, and every path is checked to really sit inside
 // the cache before it's touched.
 import { readdirSync, lstatSync, realpathSync, rmSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -59,7 +60,7 @@ const sizeOf = (p) => {
   const walk = (q) => {
     const st = inside(q);
     if (!st) return;
-    if (st.isDirectory()) { for (const n of readdirSync(q)) walk(path.join(q, n)); } else total += st.size;
+    if (st.isDirectory()) { for (const n of list(q)) walk(path.join(q, n)); } else total += st.size;
   };
   walk(p);
   return total;
@@ -71,23 +72,37 @@ const newest = (p) => {
     const st = inside(q);
     if (!st) return;
     latest = Math.max(latest, st.mtimeMs);
-    if (st.isDirectory()) for (const n of readdirSync(q)) walk(path.join(q, n));
+    if (st.isDirectory()) for (const n of list(q)) walk(path.join(q, n));
   };
   walk(p);
   return latest;
 };
 const gb = (n) => `${(n / 1024 ** 3).toFixed(2)} GB`;
+/** A folder's entries, or none if it vanished meanwhile (another build or cleaner). */
+const list = (dir) => { try { return readdirSync(dir); } catch { return []; } };
+// A Rust build running anywhere on this PC (cargo or rustc): incremental
+// folders aren't touched at all, however old they look.
+const building = (() => {
+  try {
+    const out = process.platform === 'win32'
+      ? execFileSync('tasklist', ['/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true })
+      : execFileSync('ps', ['-A', '-o', 'comm='], { encoding: 'utf8' });
+    return /(^|[\\/"\s])(cargo|rustc)(\.exe)?"?(,|\s|$)/im.test(out);
+  } catch {
+    return true; // can't tell: assume one is, and keep them
+  }
+})();
 const dirIn = (p) => inside(p)?.isDirectory() ?? false;
 
 const victims = [];
 // Profile folders: target/<profile>, and target/<triple>/<profile> for a
 // build with --target (e.g. target/x86_64-pc-windows-msvc/release).
 const profiles = [];
-for (const name of readdirSync(target)) {
+for (const name of list(target)) {
   const dir = path.join(target, name);
   if (!dirIn(dir)) continue;
   if (dirIn(path.join(dir, 'deps')) || dirIn(path.join(dir, 'incremental'))) profiles.push(dir);
-  else for (const sub of readdirSync(dir)) {
+  else for (const sub of list(dir)) {
     const inner = path.join(dir, sub);
     if (dirIn(inner) && (dirIn(path.join(inner, 'deps')) || dirIn(path.join(inner, 'incremental')))) profiles.push(inner);
   }
@@ -95,7 +110,7 @@ for (const name of readdirSync(target)) {
 for (const profileDir of profiles) {
   const deps = path.join(profileDir, 'deps');
   if (dirIn(deps)) {
-    for (const name of readdirSync(deps)) {
+    for (const name of list(deps)) {
       if (!/^(lib)?izuki[-_.]/i.test(name)) continue;
       const file = path.join(deps, name);
       const st = inside(file);
@@ -105,10 +120,11 @@ for (const profileDir of profiles) {
   // The incremental folder only when nothing in it changed for --hours: a
   // build running right now (any profile) keeps its data.
   const incremental = path.join(profileDir, 'incremental');
-  if (dirIn(incremental) && newest(incremental) < cutoff) victims.push({ file: incremental, size: sizeOf(incremental) });
+  if (!building && dirIn(incremental) && newest(incremental) < cutoff) victims.push({ file: incremental, size: sizeOf(incremental) });
 }
 const total = victims.reduce((n, v) => n + v.size, 0);
 console.log(`trim: cache ${gb(sizeOf(target))}; ${victims.length} old Izuki build outputs (${gb(total)}) older than ${hours} h${apply ? '' : ' — run with --apply to remove them'}`);
+if (building) console.log('trim: a Rust build is running, so incremental folders are kept');
 if (apply) {
   let removed = 0;
   for (const v of victims) {
