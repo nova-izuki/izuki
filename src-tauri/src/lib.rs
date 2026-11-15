@@ -123,6 +123,7 @@ pub mod planner;
 pub mod recipes;
 pub mod reminders;
 pub mod settings;
+pub mod siteaccess;
 pub mod state;
 pub mod store;
 pub mod suggest;

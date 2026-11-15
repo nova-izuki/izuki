@@ -39,7 +39,7 @@ static WAKE: Mutex<Option<Sender<()>>> = Mutex::new(None);
 
 /// The newest extension (extension/manifest.json). Older copies don't know
 /// every request Izuki makes (Blackboard, finding your school's tab).
-pub const LATEST: &str = "1.6.1";
+pub const LATEST: &str = "1.6.2";
 /// The connected extension's version; empty: one from before 1.4.1, which
 /// didn't say.
 static VERSION: Mutex<String> = Mutex::new(String::new());
@@ -1210,9 +1210,25 @@ pub fn dom_id_for(control: u32) -> Option<String> {
     LISTED.lock().iter().find(|(id, _)| *id == control).map(|(_, d)| d.clone())
 }
 
-/// Click an element inside the page — no mouse.
+/// The page the listed elements came from, whichever window it's in.
+fn listed_page_url() -> Option<String> {
+    LAST_URL.lock().clone().map(|(url, _)| url)
+}
+
+/// The site rule for the page the elements came from, and its host — sent
+/// with the action, so the extension only acts if the tab is still on that
+/// site (it may have moved on since the look).
+fn checked_host() -> Result<String> {
+    let url = listed_page_url().unwrap_or_default();
+    crate::siteaccess::gate(&url)?;
+    Ok(crate::siteaccess::host_of(&url))
+}
+
+/// Click an element inside the page — no mouse. Never on a site you've kept
+/// Izuki out of, or a careful one you haven't said yes to (siteaccess.rs).
 pub fn click(dom_id: &str) -> Result<()> {
-    let done = request("click", json!({ "id": dom_id }), Duration::from_secs(4))?;
+    let host = checked_host()?;
+    let done = request("click", json!({ "id": dom_id, "host": host }), Duration::from_secs(4))?;
     // A click that leaves the page is reported a moment before it happens,
     // so its reply gets out before the page goes. Wait for it to land before
     // anyone looks at the page or tries again: a look inside that gap sees
@@ -1229,9 +1245,11 @@ fn deferred_ms(reply: &Value) -> Option<u64> {
     reply["deferred"].as_u64().map(|ms| ms.min(1000) + 60)
 }
 
-/// Type into an element inside the page — no keyboard.
+/// Type into an element inside the page — no keyboard. The same site rule
+/// as clicks; the extension itself refuses password, card and code boxes.
 pub fn type_into(dom_id: &str, text: &str) -> Result<()> {
-    request("type", json!({ "id": dom_id, "text": text }), Duration::from_secs(4)).map(|_| ())
+    let host = checked_host()?;
+    request("type", json!({ "id": dom_id, "text": text, "host": host }), Duration::from_secs(4)).map(|_| ())
 }
 
 #[cfg(test)]

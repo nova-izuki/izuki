@@ -407,6 +407,10 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     if let Some(reply) = crate::airsafe::voice(&said) {
         return Some(reply);
     }
+    // "Let Izuki use chase.com", "never let Izuki use reddit.com" (siteaccess.rs).
+    if let Some(ask) = crate::siteaccess::parse(&said) {
+        return Some(crate::siteaccess::handle(ask));
+    }
     if crate::notes::is_study_prompt(&said) { return None; }
     if crate::brain::direct_answer_requested(&said) {
         crate::coach::stop();

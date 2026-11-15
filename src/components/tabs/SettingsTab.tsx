@@ -32,7 +32,7 @@ import { AndroidCard } from "../AndroidCard";
 import { TvCard } from "../TvCard";
 import { ThemePicker } from "../ThemePicker";
 import { ExtensionCard } from "../ExtensionCard";
-import { AccessCard, ActivityCard, MyDataCard } from "../PrivacyCards";
+import { AccessCard, ActivityCard, MyDataCard, SitesCard } from "../PrivacyCards";
 import { BugCard } from "../BugCard";
 import { DeveloperMode } from "../DeveloperMode";
 import { Badge, CollapsibleSections, Row, Section, SectionControls, Segmented, SettingsSearch, Slider, Toggle, cx } from "../ui";
@@ -674,6 +674,7 @@ export function SettingsTab() {
       <div id="settings-browser"><ExtensionCard /></div>
 
       <AccessCard />
+      <SitesCard />
       <ActivityCard />
       <MyDataCard />
 

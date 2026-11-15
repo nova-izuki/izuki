@@ -223,6 +223,8 @@ export const MOCK_SETTINGS: Settings = {
   screen_time_enabled: true,
   keep_activity: true,
   focus_dims: false,
+  sites_allowed: [],
+  sites_blocked: [],
   home_city: "",
   learn_city: false,
   app_theme: "nova",

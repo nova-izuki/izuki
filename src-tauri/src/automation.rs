@@ -760,6 +760,16 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
     // these have no Windows control id, so Precision's check below refused
     // them, and Windows names a link "Next" where the list says
     // "Next → https://…", so the safety check could never match either.
+    // The same site rule for the screen: a click or typing in the browser
+    // window whose page Izuki last read (only while that window is in front).
+    // Keys that only leave (close the tab, go back, Esc…) stay free; keys
+    // that act on the page (Enter, Space, paste…) follow the same rule.
+    let acting_key = step.action == Intent::Key && !crate::siteaccess::leaving_key(step.key.as_deref().unwrap_or_default());
+    if !dry_run && (clicking || acting_key || matches!(step.action, Intent::Type | Intent::Drag)) {
+        if let Some(url) = crate::ext::snapshot_url_cached() {
+            crate::siteaccess::gate(&url)?;
+        }
+    }
     if !dry_run && (matches!(step.action, Intent::Click | Intent::Auto) || targeted_type) {
         if let Some(dom) = step.target.and_then(crate::ext::dom_id_for) {
             let done = if targeted_type {
@@ -771,6 +781,8 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
                 Ok(what) => return Ok(format!("{what} page element {} directly (browser extension)", step.target.unwrap_or(0))),
                 // It may have gone through: never do it a second time with the mouse.
                 Err(e) if e.to_string().starts_with(crate::ext::UNCONFIRMED) => return Err(e),
+                // A site you've kept Izuki out of: the mouse isn't a way around it.
+                Err(e) if crate::siteaccess::refused(&e) => return Err(e),
                 Err(e) => eprintln!("[ext] couldn't act inside the page ({e}) — using the screen instead"),
             }
         }
@@ -1273,6 +1285,8 @@ fn execute_behind(step: &ActionStep, win: isize) -> Result<String> {
             Some(Ok(done)) => return Ok(done),
             // It may have gone through: never do it again through Windows.
             Some(Err(e)) if e.to_string().starts_with(crate::ext::UNCONFIRMED) => return Err(e),
+            // A site you've kept Izuki out of: not through Windows either.
+            Some(Err(e)) if crate::siteaccess::refused(&e) => return Err(e),
             _ => {}
         }
     }

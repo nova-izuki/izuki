@@ -144,14 +144,27 @@ async function run(op, args) {
     case "snapshot":
       return { ...(await inPage(tab.id, snapshot)), url: tab.url, title: tab.title };
     case "click": {
+      if (args.host) {
+        const now = await chrome.tabs.get(tab.id).catch(() => null);
+        const host = (() => { try { return new URL(now?.url || "").hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } })();
+        if (host !== String(args.host)) throw new Error("page_changed: the page moved on since I looked, so I didn't act. Taking a fresh look.");
+      }
       const clicked = await inPage(tab.id, clickEl, [args.id]);
       if (!clicked) throw new Error("that element is gone");
       // A click still to come tells the app how long to wait before looking.
       return clicked === true ? true : { deferred: clicked.deferred };
     }
-    case "type":
-      if (!(await inPage(tab.id, typeEl, [args.id, String(args.text || "")]))) throw new Error("that box is gone");
+    case "type": {
+      if (args.host) {
+        const now = await chrome.tabs.get(tab.id).catch(() => null);
+        const host = (() => { try { return new URL(now?.url || "").hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } })();
+        if (host !== String(args.host)) throw new Error("page_changed: the page moved on since I looked, so I didn't act. Taking a fresh look.");
+      }
+      const typed = await inPage(tab.id, typeEl, [args.id, String(args.text || "")]);
+      if (typed === "secret") throw new Error("secret: I never type passwords, card numbers or security codes. You type that part, then tell me to carry on.");
+      if (!typed) throw new Error("that box is gone");
       return true;
+    }
     case "scroll":
       await inPage(tab.id, (dy) => window.scrollBy({ top: dy, behavior: "smooth" }), [Number(args.dy) || 600]);
       return true;
@@ -243,6 +256,14 @@ async function readLinked(url) {
 
 function snapshot() {
   const SEL = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[role=radio],[role=option],[role=switch],[contenteditable="true"],[onclick]';
+  // Passwords, card numbers, security and one-time codes: never typed by
+  // Izuki, on any site. (Repeated in typeEl: each runs alone in the page.)
+  const secret = (el) => {
+    const type = (el.getAttribute("type") || "").toLowerCase();
+    const ac = (el.getAttribute("autocomplete") || "").toLowerCase();
+    const label = `${el.getAttribute("name") || ""} ${el.id || ""} ${el.getAttribute("aria-label") || ""} ${el.getAttribute("placeholder") || ""} ${[...(el.labels || [])].map((l) => l.textContent || "").join(" ")}`.toLowerCase();
+    return type === "password" || /(^|\s)(current-password|new-password|one-time-code|cc-number|cc-csc|cc-exp)/.test(ac) || /\b(password|passcode|cvv|cvc|card ?number|security code|one.?time code|otp)\b/.test(label);
+  };
   const kindOf = (el) => {
     const tag = el.tagName.toLowerCase();
     const role = (el.getAttribute("role") || "").toLowerCase();
@@ -250,6 +271,7 @@ function snapshot() {
     if (type === "checkbox" || role === "checkbox" || role === "switch") return "CheckBox";
     if (type === "radio" || role === "radio") return "RadioButton";
     if (tag === "select") return "ComboBox";
+    if (tag === "input" && secret(el)) return "Secret";
     if (tag === "textarea" || el.isContentEditable || (tag === "input" && !["button", "submit", "reset", "image"].includes(type))) return "Edit";
     if (role === "tab") return "TabItem";
     if (role === "menuitem" || role === "option") return "MenuItem";
@@ -318,8 +340,17 @@ function clickEl(id) {
   });
 }
 function typeEl(id, text) {
+  // Passwords, card numbers, security and one-time codes: never typed by
+  // Izuki, on any site. (Repeated in typeEl: each runs alone in the page.)
+  const secret = (el) => {
+    const type = (el.getAttribute("type") || "").toLowerCase();
+    const ac = (el.getAttribute("autocomplete") || "").toLowerCase();
+    const label = `${el.getAttribute("name") || ""} ${el.id || ""} ${el.getAttribute("aria-label") || ""} ${el.getAttribute("placeholder") || ""} ${[...(el.labels || [])].map((l) => l.textContent || "").join(" ")}`.toLowerCase();
+    return type === "password" || /(^|\s)(current-password|new-password|one-time-code|cc-number|cc-csc|cc-exp)/.test(ac) || /\b(password|passcode|cvv|cvc|card ?number|security code|one.?time code|otp)\b/.test(label);
+  };
   const el = document.querySelector(`[data-izuki-id="${CSS.escape(id)}"]`);
   if (!el) return false;
+  if (secret(el)) return "secret";
   el.scrollIntoView({ block: "center" });
   el.focus();
   try { globalThis.__izukiBubbleDodge?.(el.getBoundingClientRect()); } catch {}

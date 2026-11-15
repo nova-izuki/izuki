@@ -152,6 +152,90 @@ export function AccessCard() {
   );
 }
 
+/** "https://www.Chase.com/x" or "chase.com" → "chase.com" ("" when it isn't a site). */
+function hostOf(raw: string): string {
+  const t = raw.trim();
+  if (!t) return "";
+  try {
+    const host = new URL(t.includes("://") ? t : `https://${t}`).hostname.toLowerCase().replace(/^www\./, "");
+    return host.includes(".") ? host : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Sites you're signed into: where Izuki may click and type through the
+ * browser extension (siteaccess.rs). Ordinary sites just work; bank, payment,
+ * health, government and sign-in pages wait for a yes; blocked sites never.
+ * Passwords, card numbers and codes are never typed, anywhere.
+ */
+export function SitesCard() {
+  const allowed = useIzuki((s) => s.settings.sites_allowed);
+  const blocked = useIzuki((s) => s.settings.sites_blocked);
+  const patch = useIzuki((s) => s.patchSettings);
+  const [typed, setTyped] = useState("");
+  const host = hostOf(typed);
+  const set = (nextAllowed: string[], nextBlocked: string[]) => patch({ sites_allowed: nextAllowed, sites_blocked: nextBlocked });
+  const allow = (h: string) => set([...allowed.filter((x) => x !== h), h], blocked.filter((x) => x !== h));
+  const block = (h: string) => set(allowed.filter((x) => x !== h), [...blocked.filter((x) => x !== h), h]);
+  const forget = (h: string) => set(allowed.filter((x) => x !== h), blocked.filter((x) => x !== h));
+  const list = (title: string, sites: string[], empty: string) => (
+    <div>
+      <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-izk-muted">{title}</p>
+      {sites.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {sites.map((h) => (
+            <span key={h} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] py-0.5 pl-2.5 pr-1 text-[11.5px] text-izk-ink">
+              {h}
+              <button type="button" onClick={() => forget(h)} aria-label={`Forget ${h}`} className="izk-no-drag grid h-5 w-5 place-items-center rounded-full text-izk-muted hover:bg-white/10 hover:text-izk-ink">
+                ✕
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[11px] text-izk-muted">{empty}</p>
+      )}
+    </div>
+  );
+  return (
+    <Section id="settings-sites" title="Sites Izuki can use" group="Privacy" foldable hint="Izuki works inside sites you're already signed into, through its browser extension. It never sees or types your passwords.">
+      <div className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-1 text-[11.5px] leading-snug text-izk-muted">
+          <li>✅ <b className="text-izk-ink">Ordinary sites</b> just work: YouTube, shopping, school, email.</li>
+          <li>✋ <b className="text-izk-ink">Bank, payment, health, government and sign-in pages</b> wait until you say so (“let Izuki use chase.com”).</li>
+          <li>🔒 <b className="text-izk-ink">Never typed, anywhere:</b> passwords, card numbers, security and one-time codes. You type those.</li>
+        </ul>
+        {list("You said yes to", allowed, "None yet.")}
+        {list("Never", blocked, "None.")}
+        <form
+          className="flex flex-wrap items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (host) allow(host);
+            setTyped("");
+          }}
+        >
+          <input
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder="chase.com"
+            aria-label="A site"
+            className="izk-field izk-no-drag h-[30px] w-[180px] px-2.5 text-[12px]"
+          />
+          <button type="submit" disabled={!host} className="izk-pill izk-no-drag px-3 py-1 text-[11.5px] disabled:opacity-40">
+            Let Izuki use it
+          </button>
+          <button type="button" disabled={!host} onClick={() => { block(host); setTyped(""); }} className="izk-no-drag rounded-full border border-izk-danger/40 px-3 py-1 text-[11.5px] text-izk-danger hover:bg-izk-danger/10 disabled:opacity-40">
+            Never
+          </button>
+        </form>
+      </div>
+    </Section>
+  );
+}
+
 const KIND_ICON: Record<string, string> = { screen: "🖱️", apps: "🚀", style: "🎨", files: "🗂️", messages: "✉️", phone: "📱", system: "⚙️" };
 
 /** "Today", "Yesterday", or "Mon 9 Nov" for a day like "2026-11-09". */
