@@ -32,6 +32,19 @@ let server,browser,profile,ws;
   const wait=async(expression)=>{for(let n=0;n<120;n++){if(await run(`Boolean(${expression})`))return;await pause(100);}throw Error('Not ready: '+expression);};
   await call('Runtime.enable');await call('Page.enable');await call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/extension/sidepanel.html`});
   await wait('document.querySelectorAll("#provider option").length===10');
+  // The four views are real tabs: Page/Tasks/Settings show their own pane
+  // and the composer stays put; Ask brings the conversation back.
+  await run('document.querySelector("#views [data-view=page]").click()');
+  assert.equal(await run('document.body.dataset.view'),'page');
+  assert.equal(await run('getComputedStyle(document.getElementById("view-page")).display'),'block');
+  assert.equal(await run('document.getElementById("q").getBoundingClientRect().height>0'),true,'the composer stays visible');
+  await run('document.querySelector("#views [data-view=tasks]").click()');
+  assert.equal(await run('getComputedStyle(document.getElementById("view-tasks")).display'),'block');
+  await run('document.querySelector("#views [data-view=settings]").click()');
+  assert.equal(await run('getComputedStyle(document.getElementById("view-settings")).display'),'block');
+  await run('document.querySelector("#views [data-view=ask]").click()');
+  assert.equal(await run('document.body.dataset.view'),'ask');
+  assert.equal(await run('getComputedStyle(document.getElementById("log")).display'),'flex');
   const ask=async(text)=>run(`document.getElementById('q').value=${JSON.stringify(text)};document.getElementById('ask').requestSubmit();`);
   await ask('what is a botnet?');await wait('panelTest.asks.length===1');
   const first=await run('panelTest.asks[0].body.requestId');
