@@ -217,3 +217,14 @@ Only Claude Code and Freebuff are developing Izuki now; Codex is paused and its 
 The owner asked for the Android companion to be genuinely more autonomous, with bugs fixed and a Tesla-like cockpit, plus more in the PC app. Branch `freebuff/android-cockpit` (PR pending). Files: `android/app/src/main/java/com/novaizuki/mobile/{IzukiAccessibilityService,IzukiControlPlugin}.java`, `android/app/src/main/res/xml/izuki_accessibility_service.xml`, `docs/app/{native,autopilot,cockpit,drive,index,sw}.js/html/css`, `tools/phone-check/{native,autopilot}.test.cjs`, `package.json`, `src/components/{AndroidCard,AndroidRemote}.tsx`, `src/lib/ipc.ts`, `src-tauri/src/{android,commands,lib}.rs`, `docs/NEXT-RELEASE.md`.
 
 What changed: real touch gestures (tap/swipe/long-press), tap-by-label, Enter/Search, lock/screenshot/power, safe device facts, password-field and node-leak fixes in the screen reader; a visible Autopilot with Stop and hard refusals for Send/Pay/Delete; a phone Cockpit UI; and a PC-side live phone screen over ADB with tap/swipe/navigation/typing that refuses the lock screen. Evidence: `npm run -s test:phone` (28 + 39 + native + audio + 16 drive + autopilot) passes, `npx tsc --noEmit` passes, `npm run -s build` passes, and `cargo check --lib` passes. No local Android SDK/JDK on this host, so the APK compile is CI's job; live phone gestures and the PC screen view still need a real device check.
+
+## Codex — Nova Notch review follow-up (owner resumed team work, 2026-11-15)
+
+Isolated branch `codex/notch-review`, based on `freebuff/nova-notch` at
+`10d7402`; Freebuff's branch/worktree and all version files remain untouched.
+Scope: eight unresolved PR #103 review threads, verified against current code:
+Island keyboard activation and notch paint/contrast, shared direct-answer intent,
+and focused conversation/browser regressions. Existing menu pointer-events,
+Shadow-off shell filter and ordinary qualified-refusal fixes are already present;
+verify those rather than duplicate them. Review evidence is recorded in
+`docs/REVIEW-NOTCH-2026-11-15.md`. No merge or release is performed by this lane.

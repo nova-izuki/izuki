@@ -218,6 +218,20 @@ is("a qualifier before the answer is still a refusal", mem.wantsDirectAnswer("Ex
 is("a normal answer request is still direct", mem.wantsDirectAnswer("answer it"), true);
 is("a mission-add stays a mission", mem.MISSION_ADD.test("add to my missions: answer question 5"), true);
 
+for (const request of [
+  "Start tutor mode and explain how to answer question 5",
+  "Turn on teacher mode and answer question 5",
+  "Please teach me this question and answer the question with me",
+  "Walk me through how to answer question 5",
+  "Coach me through how to answer question 5",
+  "Explain how to answer question 5",
+  "Answer question 5 without giving the correct answer",
+  "Answer question 5 but never show the exact answer",
+]) is(`coaching/refusal stays intact: ${request}`, mem.wantsDirectAnswer(request), false);
+is("combined tutor command still reaches teacher mode", mem.TUTOR_START.test("Start tutor mode and explain how to answer question 5"), true);
+is("answer then explanation remains direct", mem.wantsDirectAnswer("Answer question 5 and explain why"), true);
+is("do not explain is not a refusal of the answer", mem.wantsDirectAnswer("Answer question 5, do not explain how to solve it"), true);
+
 console.log("");
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

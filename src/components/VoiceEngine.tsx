@@ -6,7 +6,7 @@ import { useDictation } from "../hooks/useDictation";
 import { isNoteStudyPrompt } from "../lib/notes";
 import { AIR_SLOTS, actionLabel, airBindings, parseAirVoice, slotLabel } from "../lib/airActions";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
-import { answerOnScreenPrompt, answersInBackground, cancelChat, chatLane, directionsTask, looksLikeDirections, MISSION_ADD, needsApps, needsScreen, recentHistory, remember, wantsBackground, wantsDirectAnswer, wantsToWatch, type LaneResult } from "../lib/conversation";
+import { answerOnScreenPrompt, answersInBackground, cancelChat, chatLane, directionsTask, looksLikeDirections, MISSION_ADD, needsApps, needsScreen, recentHistory, remember, TUTOR_START, wantsBackground, wantsDirectAnswer, wantsToWatch, type LaneResult } from "../lib/conversation";
 import { speakable } from "../lib/speakable";
 import { parseInstant, type Instant } from "../lib/instant";
 import { isEcho, noteSaid, noteStillSaying } from "../lib/echo";
@@ -612,8 +612,6 @@ function answerOnScreen(t: string): string {
 // A lesson, not an answer key: Izuki explains each question with the pen,
 // lets the student answer, says whether they're right and why, and moves on
 // when they're ready. It never picks answers by itself.
-const TUTOR_START =
-  /^(?:(?:hey |ok |okay )?(?:nova|izuki|atlas)[,. ]*)?(?:please )?(?:(?:start|turn on|use|go into|switch to) )?(?:teacher|tutor|teaching) mode\b|^(?:please )?teach me (?:this|the|my) (?:questions?|worksheet)\b|^(?:be|act as|act like) my (?:teacher|tutor)\b|^help me (?:through|with) (?:this|the|my) worksheet\b/i;
 /** Asked for it to be kept: "…and save it to my notes", "put it in my notes", "take notes". */
 const SAVE_TO_NOTES = /\b(?:save|put|keep|add|store|write)\b.*\b(?:my|izuki|the|study)\s+notes?\b|\btake\s+(?:some\s+)?notes\b/i;
 /** "Don't save it to my notes", "no notes": the opposite (as notes.rs reads it). */

@@ -788,7 +788,7 @@ export function Island({
             <motion.div
               key="open"
               {...fade}
-              className={`relative z-10 w-[372px] max-w-[calc(100vw-32px)] p-3.5 ${look === "notch" ? "izk-notch-content" : ""}`}
+              className={`izk-island-content relative z-10 w-[372px] max-w-[calc(100vw-32px)] p-3.5 ${look === "notch" ? "izk-notch-content" : ""}`}
               style={look === "notch" ? { paddingLeft: 14, paddingRight: 14, paddingBottom: 14 } : undefined}
             >
               <Expanded
@@ -829,7 +829,7 @@ export function Island({
             // still opens the full Island; this is what the notch shows the
             // rest of the time.
             <motion.div key="notch-mini" {...fade}>
-              <NotchMini live={live} doing={doing} thinking={thinking} now={now} />
+              <NotchMini live={live} doing={doing} thinking={thinking} now={now} onOpen={() => { taskOpened.current = true; setOpen(true); }} />
             </motion.div>
           ) : live.kind === "rest" ? (
             // At rest outside the notch look: the faint sliver. "Always show"
@@ -998,14 +998,17 @@ function NotchRing({ step }: { step: MiniStep | null }) {
 }
 
 /** Level 1 of the notch: a small, screen-attached live card. */
-function NotchMini({ live, doing, thinking, now }: { live: Live; doing: string | null; thinking: boolean; now: number }) {
+function NotchMini({ live, doing, thinking, now, onOpen }: { live: Live; doing: string | null; thinking: boolean; now: number; onOpen: () => void }) {
   const copy = notchMiniCopy(live, doing, thinking);
   const time = new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return (
-    <div
-      className={"izk-notch-mini" + (copy.alert ? " is-alert" : "") + (copy.done ? " is-done" : "")}
-      role="status"
-      aria-label={`IZUKI: ${copy.line}. ${copy.meta}`}
+    <button
+      type="button"
+      data-izk-hit
+      onClick={onOpen}
+      className={"izk-notch-mini pointer-events-auto" + (copy.alert ? " is-alert" : "") + (copy.done ? " is-done" : "")}
+      aria-label={`Open Izuki Island. ${copy.line}. ${copy.meta}`}
+      aria-expanded={false}
       title={copy.line}
     >
       <div className="izk-notch-mini-head">
@@ -1015,7 +1018,7 @@ function NotchMini({ live, doing, thinking, now }: { live: Live; doing: string |
       </div>
       <div className="izk-notch-mini-line">{copy.line}</div>
       <div className="izk-notch-mini-meta">{copy.meta}</div>
-    </div>
+    </button>
   );
 }
 
@@ -1496,7 +1499,7 @@ function Expanded({
         <Face size={40} mood={busy ? "busy" : live.kind === "finished" ? "happy" : dancing && !calm ? "dancing" : "idle"} pokeable calm={calm} />
         <div className="min-w-0 flex-1">
           <div className="text-[15px] font-semibold leading-tight">{busy ? "On it" : greeting(now)}</div>
-          <div className="truncate text-[12.5px] text-white/60">
+          <div className="izk-island-subtitle truncate text-[12.5px] text-white/60">
             {busy
               ? doing || "Thinking…"
               : live.kind === "finished"

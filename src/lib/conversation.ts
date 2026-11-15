@@ -210,9 +210,17 @@ const ON_SCREEN_ANSWER =
 const DECLINES_DIRECT =
   /(?:^|[^a-z])(?:don['’]?t|do not|never|without)\s+(?:(?:(?:the|an?)\s+)?answers?|(?:giv(?:e|ing)|tell|say|show)(?:\s+me)?\s+(?:(?:the|an?)\s+)?(?:(?!(?:work|steps?|reasoning|explanation|how|why)\b)[a-z]+\s+){0,2}answers?)(?:[^a-z]|$)/i;
 
+/** Shared with voice mode: preserve the command before answer conversion. */
+export const TUTOR_START =
+  /^(?:(?:hey |ok |okay )?(?:nova|izuki|atlas)[,. ]*)?(?:please )?(?:(?:start|turn on|use|go into|switch to) )?(?:teacher|tutor|teaching) mode\b|^(?:please )?teach me (?:this|the|my) (?:questions?|worksheet)\b|^(?:be|act as|act like) my (?:teacher|tutor)\b|^help me (?:through|with) (?:this|the|my) worksheet\b/i;
+
+const COACHES_ANSWER = /\b(?:coach me|explain how to|help me understand how to|(?:just|only) explain)\b/i;
+
 /** A direct answer is wanted, not a refusal or a "just explain it" request. */
 export function wantsDirectAnswer(text: string): boolean {
-  return answersOnScreenQuestion(text) && !DECLINES_DIRECT.test(text);
+  // Declining an explanation is still a request for the answer itself.
+  const coaching = text.replace(/\b(?:don['’]?t|do not|never|without)\s+(?:explain how to|show me how|walk me through|guide me|coach me)\b/gi, "");
+  return answersOnScreenQuestion(text) && !DECLINES_DIRECT.test(text) && !PRACTICAL.test(coaching) && !COACHES_ANSWER.test(coaching) && !TUTOR_START.test(text);
 }
 
 /** "add to my missions: answer question 5" must be saved, not read off-screen. */

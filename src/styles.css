@@ -758,6 +758,8 @@ html[data-backdrop="tabbed"] .izk-card {
   overflow: visible !important;
   border-radius: 0 !important;
 }
+/* The parent glow is rectangular; only the masked shell paints the notch. */
+.izk-island.izk-theme-notch.izk-island-open::before { content: none; }
 .izk-island.izk-theme-notch .izk-notch-shell {
   --notch-cut-x: 7.5%;
   --notch-cut-y: 18px;
@@ -970,26 +972,34 @@ html[data-backdrop="tabbed"] .izk-card {
    stronger as the glass gets more transparent: at the 50% floor it is a real
    contrast layer, while at the default 94% it is almost invisible. */
 .izk-island.izk-island-light .izk-notch-mini,
-.izk-island.izk-island-light .izk-notch-content {
+.izk-island.izk-island-light .izk-island-content {
   isolation: isolate;
   text-shadow: 0 1px 2px rgba(5, 10, 18, 0.5);
 }
 .izk-island.izk-island-light .izk-notch-mini::before,
-.izk-island.izk-island-light .izk-notch-content::before {
+.izk-island.izk-island-light .izk-island-content::before {
   content: "";
   position: absolute;
   z-index: -1;
   pointer-events: none;
-  background: rgba(7, 11, 19, calc((1 - var(--izk-island-alpha, 0.96)) * 0.82));
+  background: rgba(7, 11, 19, max(0.66, calc((1 - var(--izk-island-alpha, 0.96)) * 0.82)));
 }
 .izk-island.izk-island-light .izk-notch-mini::before {
   inset: 6px 8px;
   border-radius: 16px;
 }
-.izk-island.izk-island-light .izk-notch-content::before {
+.izk-island.izk-island-light .izk-island-content::before {
   inset: 2px 4px 4px;
   border-radius: 22px;
 }
+
+/* Local readable copy over the light-glass scrim, even with blur disabled. */
+.izk-island-light .izk-island-subtitle,
+.izk-island-light [role="tab"][aria-selected="false"],
+.izk-island-light .izk-notch-mini-brand,
+.izk-island-light .izk-notch-mini-clock,
+.izk-island-light .izk-notch-mini-meta { color: rgba(255, 255, 255, 0.85); }
+.izk-notch-mini:focus-visible { outline: 2px solid #a5f3fc; outline-offset: -4px; }
 
 /* Floating glass pill: detached from the edge, so it can be moved anywhere. */
 .izk-island.izk-theme-float {
