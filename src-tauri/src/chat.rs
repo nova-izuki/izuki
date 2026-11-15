@@ -383,7 +383,8 @@ assistant at their desk. Same rule — reply with only the tag:\n\
 [OPEN: path] — read a file (text, notes, code, CSV, PDF, Word .docx, Excel .xlsx with cell addresses, PowerPoint \
 .pptx, OpenDocument .odt/.ods/.odp).\n\
 [WRITE: path] then, on the next lines, the whole content — save a text file (a new one, or a fixed version). \
-A NEW .docx is made from the text as a real Word document (# heading, ## subheading, - bullet); a NEW .xlsx from comma- or tab-separated rows (=formulas work). Never [WRITE:] over an existing Word, Excel, PowerPoint or PDF file: use [EDIT:].\n\
+A NEW .docx is made from the text as a real Word document (# heading, ## subheading, - bullet); a NEW .xlsx from comma- or tab-separated rows (=formulas work); a NEW .pptx from \
+# slide titles with - bullet lines under each (one slide per # line). Never [WRITE:] over an existing Word, Excel, PowerPoint or PDF file: use [EDIT:].\n\
 [EDIT: path] then, on the next lines, the changes — edit any file, Word .docx, Excel .xlsx, PowerPoint .pptx \
 and PDFs included, into a copy beside it (the original stays): REPLACE: exact words / WITH: new words · ADD AFTER: words \
 in the paragraph before / TEXT: the new paragraph · ADD: a paragraph at the end · CELL B3: value (or \

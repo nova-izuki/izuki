@@ -429,13 +429,13 @@ pub fn write(path: &str, content: &str) -> Result<String> {
     if crate::officeedit::is_office(&p) && p.exists() {
         return Err(anyhow!("{} is an Office file: plain text would break it. Change it with [EDIT: path] (REPLACE/WITH, ADD AFTER/TEXT, ADD, CELL lines) — the changes go into a copy beside it", p.display()));
     }
-    // A new Word or Excel file from text: built as a real one.
+    // A new Word, Excel or PowerPoint file from text: built as a real one.
     let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     let office = match ext.as_str() {
         "docx" => Some(("Word", crate::officeedit::new_docx(content)?)),
         "xlsx" => Some(("Excel", crate::officeedit::new_xlsx(content)?)),
-        "pptx" => return Err(anyhow!("making a new slide deck isn't something I can do yet — I can edit an existing .pptx with [EDIT:]")),
-        "pdf" | "doc" | "xls" | "ppt" => return Err(anyhow!("I can't make a .{ext} — save it as .docx or .xlsx (Word and Excel open those)")),
+        "pptx" => Some(("PowerPoint", crate::officeedit::new_pptx(content)?)),
+        "pdf" | "doc" | "xls" | "ppt" => return Err(anyhow!("I can't make a .{ext} — save it as .docx, .xlsx or .pptx (Word, Excel and PowerPoint open those)")),
         _ => None,
     };
     if let Some((kind, bytes)) = office {
