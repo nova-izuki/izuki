@@ -195,7 +195,11 @@ background mode, confirm before acting, practice mode (dry run).
 
 - **Chat tab** — a written chat with the same companion, using the fast chat lane (no
   screenshot, no controls scan — the lightest request Izuki makes). If the reply is `[SCREEN]`,
-  the chat offers "Do it on my PC", which runs the normal task loop.
+  the chat offers "Do it on my PC", which runs the normal task loop. Every finished reply also
+  has **Do it** (sends `[DO IT]`, which skips the local shortcuts and forces the screen task
+  loop) and **Type it** (types that reply exactly into the app behind Izuki, sending nothing).
+  The keyboard button beside the composer does the same for whatever is in the box. A plain
+  "do my assignment" is a screen task; "teach me this assignment" is the study coach.
 - **Reminders** — no extra AI call: each chat lane is told the time and adds
   `[REMIND YYYY-MM-DD HH:MM | text]` when asked. The core pulls those out (`reminders.rs`)
   before anything is shown or spoken, saves them to `reminders.json`, and when one is due

@@ -398,6 +398,14 @@ pub fn open_log_folder() -> R<()> {
     std::process::Command::new("explorer").arg(&dir).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// The chat's "Do it on my PC" button puts this marker first. It is the
+/// person's explicit "act now" click, so the local shortcuts (including the
+/// assignment coach) must leave the words alone and let the screen agent do
+/// them. It is never consent to submit, send or delete anything.
+fn forced_do(said: &str) -> bool {
+    said.trim_start().starts_with("[DO IT]")
+}
+
 /// "Scroll down", "louder", "next song"…: done at once with no AI, and the
 /// few words to say back — or `None` when it isn't one of those plain
 /// everyday commands (instant.rs).
@@ -406,6 +414,11 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     // Eye control's voice stop, pause and resume come first (airsafe.rs).
     if let Some(reply) = crate::airsafe::voice(&said) {
         return Some(reply);
+    }
+    // The button in the chat says do it; never turn the same words into a
+    // study guide or another local answer before the screen agent sees them.
+    if forced_do(&said) {
+        return None;
     }
     // Commands are short. A long text is a prompt or a pasted page, never a
     // command — and must never flip a setting by containing the right words.
@@ -466,12 +479,16 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
             return Some(text);
         }
     }
-    if let Some(ask) = crate::study::parse(&said) {
-        // "Open my lab assignment and teach me…" needs the screen agent first —
-        // that goes on to submit_task, which opens it and then coaches.
-        if ask.open_first.is_none() {
-            let s2 = said.clone();
-            return blocking(move || crate::study::coach(&s2).unwrap_or_else(|e| e.to_string())).await.ok();
+    // A plain "do my assignment" / "finish my homework" is a job for the
+    // screen agent, not a request for a guide. Only teaching words (or saving
+    // the guide to Notes) start the coach here; "open it and teach me" still
+    // goes on to the screen agent, which opens it and then coaches.
+    if crate::study::wants_guide(&said) {
+        if let Some(ask) = crate::study::parse(&said) {
+            if ask.open_first.is_none() {
+                let s2 = said.clone();
+                return blocking(move || crate::study::coach(&s2).unwrap_or_else(|e| e.to_string())).await.ok();
+            }
         }
     }
     // "What do I keep getting wrong?", "what have I studied this week?" (studytrack.rs).

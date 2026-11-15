@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, AlertTriangle, Check, ChevronDown, ChevronRight, Copy, FolderOpen, History, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, Pencil, Pin, RotateCcw, Send, Sparkles, Square, Trash2, Volume2, X } from "lucide-react";
+import { AlarmClock, AlertTriangle, Check, ChevronDown, ChevronRight, Copy, FolderOpen, History, Keyboard, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, Pencil, Pin, RotateCcw, Send, Sparkles, Square, Trash2, Volume2, X } from "lucide-react";
 import { api, CAMERA_PICTURE_KEY, emit, EV, ISLAND_TO_CHAT_KEY, on, type CodingUpdate, type ResearchUpdate } from "../../lib/ipc";
 import { ResearchPanel, researchAsk, type ResearchState } from "../ResearchPanel";
 import { CodingPanel, type CodingState } from "../CodingPanel";
@@ -701,6 +701,8 @@ export function ChatTab() {
    *  second thought during a lab isn't silently dropped. */
   const [queued, setQueued] = useState<{ text: string; pics: string[]; docs: ChatAttachment[] } | null>(null);
   const [fileError, setFileError] = useState("");
+  /** "Typed it" / "couldn't type" after the keyboard button under the composer. */
+  const [typedNote, setTypedNote] = useState("");
   const [readingFiles, setReadingFiles] = useState(false);
   const fileGeneration = useRef(0);
   const readingNow = useRef(false);
@@ -1377,7 +1379,20 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
     const ask = [...msgs.slice(0, i)].reverse().find((m) => m.role === "user")?.content;
     if (!ask) return;
     setMsgs((m) => m.map((x, j) => (j === i ? { ...x, content: "On it — watch your screen. 🖥️", screen: false } : x)));
-    void sendChatCommand(ask);
+    // The marker is the user pressing the button: it bypasses the local
+    // shortcuts (including the assignment coach) so the screen agent actually
+    // does the task instead of turning it into another plan.
+    void sendChatCommand(`[DO IT] On my screen, do this for me: actually do it, don't explain the steps. Stop before submitting, sending or deleting anything.\n\n${ask}`);
+  };
+
+  /** Type text into the app behind Izuki — exactly as written, with no AI in
+   *  the middle and nothing sent or submitted. This is the keyboard path for
+   *  words the user already has (a draft, notes, a journal they wrote). */
+  const typeText = async (text: string) => {
+    if (!text.trim()) return;
+    const ok = await api.typeHere(text).catch(() => false);
+    setTypedNote(ok ? "Typed it on your PC — nothing was sent or submitted." : "I couldn't type there — click into the text box first, then try again.");
+    window.setTimeout(() => setTypedNote(""), 4500);
   };
 
   return (
@@ -1753,7 +1768,13 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
                   <ResearchPanel r={m.research} footer text={m.content} onContinue={i === msgs.length - 1 && !busy ? () => void send("continue the research", false, false, [], [], false) : undefined} />
                 )}
                 {m.role === "assistant" && m.content && !m.failed && !(busy && i === msgs.length - 1) && (
-                  <ReplyTools text={m.content} onRetry={i === msgs.length - 1 ? () => retry(i) : undefined} onAsk={i === msgs.length - 1 ? (ask) => void send(ask, false, false, [], [], false) : undefined} />
+                  <ReplyTools
+                    text={m.content}
+                    onRetry={i === msgs.length - 1 ? () => retry(i) : undefined}
+                    onAsk={i === msgs.length - 1 ? (ask) => void send(ask, false, false, [], [], false) : undefined}
+                    onDo={!m.screen && i === msgs.length - 1 && !busy && msgs.slice(0, i).some((x) => x.role === "user" && x.content.trim()) ? () => doOnPc(i) : undefined}
+                    onType={() => void typeText(m.content)}
+                  />
                 )}
                 {m.setup && i === msgs.length - 1 && (
                   <button
@@ -1828,6 +1849,7 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
           {documents.length > 0 && <div className="mb-2 flex flex-wrap gap-2">{documents.map((file, i) => <span key={i} className="flex max-w-full items-center gap-2 rounded-lg border border-white/15 px-2 py-1 text-[11px]"><span className="truncate">📎 {file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setDocuments((all) => all.filter((_, j) => j !== i))}><X size={12} /></button></span>)}</div>}
           {readingFiles && <p role="status" className="mb-2 text-[11px] text-izk-muted">Reading your files…</p>}
           {fileError && <p role="alert" className="mb-2 text-[11px] text-izk-danger">{fileError}</p>}
+          {typedNote && <p role="status" className="mb-2 text-[11px] text-izk-teal">{typedNote}</p>}
           {notKept && (
             <p role="alert" className="mb-2 text-[11px] text-izk-danger">
               {notKept}
@@ -1881,6 +1903,16 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
               ) : (
                 <Mic size={15} strokeWidth={2.3} className="text-izk-ink" />
               )}
+            </button>
+            <button
+              type="button"
+              onClick={() => void typeText(draft)}
+              disabled={!draft.trim()}
+              aria-label="Type it on my PC"
+              title="Type what's in the box into the app behind Izuki — exactly as written, nothing sent or submitted"
+              className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/6 hover:bg-white/10 disabled:opacity-40"
+            >
+              <Keyboard size={15} strokeWidth={2.3} className="text-izk-ink" />
             </button>
             {/* Ask first ↔ Auto-run, like Claude Code's modes (the same switch as the orb's chat bar). */}
             <button
@@ -2320,7 +2352,7 @@ function ActionCard({ action, busy, onAnswer, ran }: { action: NonNullable<Msg["
 
 /** Copy, read it out loud, or ask again — under each finished reply — and
  * a ⋯ menu like ChatGPT's: shorter, simpler, more, translate, save, share. */
-function ReplyTools({ text, onRetry, onAsk }: { text: string; onRetry?: () => void; onAsk?: (ask: string) => void }) {
+function ReplyTools({ text, onRetry, onAsk, onDo, onType }: { text: string; onRetry?: () => void; onAsk?: (ask: string) => void; onDo?: () => void; onType?: () => void }) {
   const [copied, setCopied] = useState(false);
   const [more, setMore] = useState(false);
   const [saved, setSaved] = useState("");
@@ -2363,6 +2395,16 @@ function ReplyTools({ text, onRetry, onAsk }: { text: string; onRetry?: () => vo
       <button type="button" className={btn} title="Read it out loud" onClick={() => void emit(EV.say, { text, reply: true })}>
         <Volume2 size={11} /> Read aloud
       </button>
+      {onType && (
+        <button type="button" className={btn} title="Type this into the app behind Izuki — exactly as written, nothing sent" onClick={onType}>
+          <Keyboard size={11} /> Type it
+        </button>
+      )}
+      {onDo && (
+        <button type="button" className={btn} title="Actually do this on your PC — Izuki stops before submitting" onClick={onDo}>
+          <MonitorSmartphone size={11} /> Do it
+        </button>
+      )}
       {onRetry && (
         <button type="button" className={btn} title="Ask again for a different answer" onClick={onRetry}>
           <RotateCcw size={11} /> Again
