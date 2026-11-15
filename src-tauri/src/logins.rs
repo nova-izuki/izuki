@@ -817,9 +817,11 @@ mod tests {
 
     #[test]
     fn separate_password_attempts_are_not_swallowed_by_one_probe() {
-        let log = "Nov 14 03:00:00 lab sshd[1]: Invalid user bob from 203.0.113.9 port 50000
-Nov 14 03:00:01 lab sshd[1]: Failed password for invalid user bob from 203.0.113.9 port 50000 ssh2
-Nov 14 03:00:02 lab sshd[1]: Failed password for invalid user bob from 203.0.113.9 port 50000 ssh2";
+        // Explicit UTC offsets: a legacy syslog line is local time and this
+        // assertion must not depend on the machine running the test.
+        let log = "2026-11-14T03:00:00+0000 lab sshd[1]: Invalid user bob from 203.0.113.9 port 50000
+2026-11-14T03:00:01+0000 lab sshd[1]: Failed password for invalid user bob from 203.0.113.9 port 50000 ssh2
+2026-11-14T03:00:02+0000 lab sshd[1]: Failed password for invalid user bob from 203.0.113.9 port 50000 ssh2";
         let ev = parse_linux(log, 2026);
         assert_eq!(ev.len(), 2, "the Invalid user line plus one separate failed attempt: {ev:#?}");
         assert_eq!(ev[1].at, "2026-11-14T03:00:02", "the first matching failure is the duplicate, the next one counts");

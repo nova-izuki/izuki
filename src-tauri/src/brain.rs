@@ -3067,7 +3067,10 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     // A keyboard shortcut is sent to whatever window is in
                     // front. After a hand-back, the person may also have
                     // switched windows: never send it into the wrong one.
-                    if step.action == Intent::Key {
+                    // (Behind a held window, execute_behind sends keys to that
+                    // window through Windows itself: only a direct press needs
+                    // the foreground check.)
+                    if step.action == Intent::Key && uia::working_behind().is_none() {
                         if let Some(planned) = uia::held_window() {
                             if uia::front_raw().is_some_and(|front| front != planned) {
                                 *STEP_SNAG.lock() = Some(
