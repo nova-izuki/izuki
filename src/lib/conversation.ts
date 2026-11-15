@@ -208,7 +208,7 @@ const ON_SCREEN_ANSWER =
 
 /** "Don't answer it", "without giving the answer": respect the refusal. */
 const DECLINES_DIRECT =
-  /(?:^|[^a-z])(?:don['’]?t|do not|never|without)\s+(?:(?:(?:the|an?)\s+)?answers?|(?:giv(?:e|ing)|tell|say|show)(?:\s+me)?\s+(?:(?:the|an?)\s+)?answers?)(?:[^a-z]|$)/i;
+  /(?:^|[^a-z])(?:don['’]?t|do not|never|without)\s+(?:(?:(?:the|an?)\s+)?answers?|(?:giv(?:e|ing)|tell|say|show)(?:\s+me)?\s+(?:(?:the|an?)\s+)?(?:(?!(?:work|steps?|reasoning|explanation|how|why)\b)[a-z]+\s+){0,2}answers?)(?:[^a-z]|$)/i;
 
 /** A direct answer is wanted, not a refusal or a "just explain it" request. */
 export function wantsDirectAnswer(text: string): boolean {
