@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Check, ChevronDown, ChevronUp, Pause, Play, RotateCcw, Square } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Hand, Pause, Play, RotateCcw, Square } from "lucide-react";
 import { api, EV, on } from "../lib/ipc";
 import type { StatusEvent } from "../lib/types";
 
 type Step = { current: number; total: number; before: boolean };
-type Pending = "pause" | "resume" | "stop" | "rerun" | null;
+type Pending = "pause" | "resume" | "stop" | "rerun" | "turn" | null;
 type TrailItem = { n: number; label: string; at: number };
 
 function clock(ms: number): string {
@@ -249,6 +249,8 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
   const countLabel = `${done}/${total}${startedAt ? ` · ${elapsed}` : ""}`;
   const recentTrail = trail.slice(-4);
 
+  // Practical mode: a step that's the person's (practical.rs).
+  const yourTurn = /^your turn\b/i.test(status?.message ?? "");
   const run = (kind: Exclude<Pending, null>, command: () => Promise<unknown>) => {
     if (pending) return;
     setPending(kind);
@@ -358,6 +360,28 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
             </div>
 
             <div className="izk-task-actions">
+              {yourTurn && (
+                <>
+                  <button
+                    type="button"
+                    data-izk-hit
+                    className="izk-task-button primary"
+                    disabled={pending !== null}
+                    onClick={() => run("turn", () => api.practicalTurn(true))}
+                  >
+                    <Check size={11} /> I did it
+                  </button>
+                  <button
+                    type="button"
+                    data-izk-hit
+                    className="izk-task-button"
+                    disabled={pending !== null}
+                    onClick={() => run("turn", () => api.practicalTurn(false))}
+                  >
+                    <Hand size={11} /> Do it for me
+                  </button>
+                </>
+              )}
               {finished ? (
                 <>
                   {complete && (

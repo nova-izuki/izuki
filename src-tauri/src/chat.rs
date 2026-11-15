@@ -345,7 +345,8 @@ left (what isn't handed in yet, and what is) · first (what to do first) · grad
 course · textbook | their question about their textbook · cite | a link, DOI or ISBN (APA reference) · money | what \
 they asked (spending, unusual charges, subscriptions) · shop | orders, sales or stock · study | progress or mistakes · \
 screentime | their question · recall | their question about what was on their screen earlier · storage | \
-what they want (what's taking up space, free up space, empty the Recycle Bin) · fl | what to do in FL Studio, in \
+what they want (what's taking up space, free up space, empty the Recycle Bin) · logins | how far back (today, week or month): who signed in to this PC and who failed to, \
+read from the system's own log (add the word admin only after the person said yes to Windows' administrator prompt) · fl | what to do in FL Studio, in \
 plain words (quantize the hats, line the 808 up with the kick or the sample, tune the 808, match the sample to the metronome, balance the mix, add an 808 / a melody / chords, mix the \
 vocals, add an intro or a fill, tempo 140). E.g. \
 [IZUKI: grades | biology], [IZUKI: due | week]. For these, use it BEFORE [APPS] or [BROWSE]; if it says it has no \
@@ -1125,6 +1126,12 @@ fn run_tool(tool: &Tool, last_user: &str) -> String {
         Tool::Izuki(request) if !crate::studylog::change_authorized(request, last_user) => {
             eprintln!("[chat] blocked unrequested study-log change");
             Ok("I didn't change the Study log — that needs an explicit request from you in this chat.".into())
+        }
+        // Reading the Security log as administrator brings up Windows' own
+        // prompt: only once the person's own words said yes to it.
+        Tool::Izuki(request) if crate::companion::elevates(request) && !crate::logins::agreed(last_user) => {
+            eprintln!("[chat] held an administrator read the person hadn't agreed to");
+            Ok("Not read as administrator: ask the person first (Windows will show its own prompt), and only after they say yes, ask again with admin.".into())
         }
         // Deleting (emptying the Recycle Bin, clearing files) can't be undone:
         // only when the person's own words asked for exactly that.

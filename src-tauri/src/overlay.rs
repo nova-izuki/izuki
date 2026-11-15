@@ -547,6 +547,31 @@ impl Drop for Acting {
     }
 }
 
+/// A step that's the person's in the middle of a task (practical.rs): while
+/// it lasts Izuki's own widgets take clicks again (the Task Stage's "I did
+/// it", Stop), and when it ends they let clicks through as before.
+pub struct Yours {
+    app: AppHandle,
+    was: bool,
+}
+
+pub fn yours(app: &AppHandle) -> Yours {
+    let was = ACTING.swap(false, std::sync::atomic::Ordering::SeqCst);
+    Yours { app: app.clone(), was }
+}
+
+impl Drop for Yours {
+    fn drop(&mut self) {
+        if self.was {
+            ACTING.store(true, std::sync::atomic::Ordering::SeqCst);
+            OVERLAY_CLICKABLE.store(false, Ordering::Relaxed);
+            if let Some(w) = self.app.get_webview_window(OVERLAY_LABEL) {
+                let _ = w.set_ignore_cursor_events(true);
+            }
+        }
+    }
+}
+
 /// A caption needs somewhere to render even when nothing else has the
 /// overlay up (follow mode off, background execution). Brings it up in the
 /// plain click-through state if it's hidden; leaves it alone if a draw or

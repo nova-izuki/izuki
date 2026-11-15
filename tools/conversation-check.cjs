@@ -148,6 +148,14 @@ mem.remember("user", "open a youtube video");
 is("not offered mid-request, before an answer", mem.suggestions(), []);
 
 fresh();
+mem.remember("user", "help me investigate suspicious login activity on my computer");
+mem.remember("assistant", "Happy to. Want me to do it, do it with you, or teach you step by step?");
+is("the three ways are offered as chips", mem.suggestions(), ["Teach me", "Do it with me", "Just do it", "Start over"]);
+is("teach me goes to the screen", mem.needsScreen("Teach me"), true);
+is("so does doing it together", mem.needsScreen("do it with me"), true);
+is("a plain question doesn't", mem.needsScreen("what is a firewall"), false);
+
+fresh();
 mem.remember("user", "what's the weather in Lagos");
 mem.remember("assistant", "It's 31°C and humid in Lagos right now, with a slight breeze off the coast.");
 is("a short answer still offers more", mem.suggestions(), ["Tell me more", "Keep going", "Start over"]);

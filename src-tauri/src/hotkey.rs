@@ -158,7 +158,25 @@ pub fn working() -> Working {
 }
 
 fn esc_armed() -> bool {
-    ESC_ON.load(Ordering::SeqCst) || WORKING.load(Ordering::SeqCst) > 0
+    YOURS.load(Ordering::SeqCst) == 0 && (ESC_ON.load(Ordering::SeqCst) || WORKING.load(Ordering::SeqCst) > 0)
+}
+
+/// A step that's the person's in the middle of a task (practical.rs): Esc is
+/// theirs for the app they're in (closing a menu), not Izuki's Stop. Stop
+/// stays on the Task Stage, the stop hotkey and "stop".
+static YOURS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub struct Yours(());
+
+impl Drop for Yours {
+    fn drop(&mut self) {
+        YOURS.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+pub fn yours() -> Yours {
+    YOURS.fetch_add(1, Ordering::SeqCst);
+    Yours(())
 }
 
 /// Start the Esc watcher (once, at startup). Costs nothing while idle.

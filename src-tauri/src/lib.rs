@@ -124,6 +124,8 @@ pub mod recipes;
 pub mod reminders;
 pub mod settings;
 pub mod siteaccess;
+pub mod practical;
+pub mod logins;
 pub mod state;
 pub mod store;
 pub mod suggest;
@@ -490,6 +492,8 @@ pub fn run() {
             commands::air_target,
             commands::eye_target,
             commands::sites_change,
+            commands::practical_say,
+            commands::practical_turn,
             commands::air_key,
             commands::air_draw,
             commands::window_spot,

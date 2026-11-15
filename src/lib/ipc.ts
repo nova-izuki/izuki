@@ -1048,6 +1048,10 @@ export const api = {
   /** Air control: the box around what's under a normalized spot (normalized). */
   airTarget: (nx: number, ny: number) => call<{ nx: number; ny: number; nw: number; nh: number; kind: string; field: boolean } | null>("air_target", { nx, ny }, () => null),
   /** Eye Control: the control a steady look settles on — under it, or the nearest within reach (normalized). */
+  /** Practical mode: words said while a task runs ("I did it", "do it for me"); null when they're not about turns. */
+  practicalSay: (said: string) => call<string | null>("practical_say", { said }, () => null),
+  /** Practical mode: the Task Stage's "I did it" (true) / "Do it for me" (false). */
+  practicalTurn: (done: boolean) => call<boolean>("practical_turn", { done }, () => false),
   /** Settings → Privacy: one change to the site rules, on the stored lists (their only way to change). */
   sitesChange: (op: "allow" | "block" | "forget", host: string) =>
     call<{ allowed: string[]; blocked: string[]; note: string }>("sites_change", { op, host }, () => ({ allowed: [], blocked: [], note: "" })),
