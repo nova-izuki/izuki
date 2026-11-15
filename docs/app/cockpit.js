@@ -33,7 +33,7 @@
         <div class="ck-top">
           <div class="ck-brand">IZUKI // COCKPIT<small>PHONE INSTRUMENT PANEL</small></div>
           <div class="ck-live" id="ck-live"><i></i><span id="ck-live-text">CONNECTED</span></div>
-          <button class="ck-close" id="ck-close" type="button" aria-label="Close cockpit">×</button>
+          <button class="ck-close" id="ck-close" type="button" aria-label="Close cockpit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
         </div>
         <div class="ck-grid">
           <section class="ck-card ck-left" aria-label="Phone power and connection">
@@ -62,12 +62,12 @@
             <div class="ck-clock" id="ck-clock">--:--</div>
             <div class="ck-date" id="ck-date"></div>
             <div class="ck-actions">
-              <button type="button" id="ck-home"><i>⌂</i>Home</button>
-              <button type="button" id="ck-back"><i>↩</i>Back</button>
-              <button type="button" id="ck-music"><i>♫</i>Music</button>
-              <button type="button" id="ck-lock"><i>⏻</i>Lock</button>
-              <button type="button" id="ck-drive"><i>◈</i>Drive</button>
-              <button type="button" id="ck-shot"><i>◉</i>Shot</button>
+              <button type="button" id="ck-home"><i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M9 22v-6h6v6"/></svg></i>Home</button>
+              <button type="button" id="ck-back"><i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H4M11 5l-7 7 7 7"/></svg></i>Back</button>
+              <button type="button" id="ck-music"><i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg></i>Music</button>
+              <button type="button" id="ck-lock"><i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></i>Lock</button>
+              <button type="button" id="ck-drive"><i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17h16M5.5 17l1.7-6.8A2.5 2.5 0 0 1 9.6 8.3h4.8a2.5 2.5 0 0 1 2.4 1.9L18.5 17"/><circle cx="7.5" cy="17.5" r="1.8"/><circle cx="16.5" cy="17.5" r="1.8"/></svg></i>Drive</button>
+              <button type="button" id="ck-shot"><i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/><circle cx="12" cy="12" r="3.5"/></svg></i>Shot</button>
             </div>
           </section>
           <section class="ck-card ck-right" aria-label="Phone status">

@@ -1,0 +1,1206 @@
+/* Izuki on Android — midnight glass.
+ *
+ * Loaded after platform.css so it refines, rather than fights, Android's
+ * platform rules. One floating surface language: night-blue glass, a thin
+ * light rim, soft depth, and controls that stay at least 44dp. Motion is
+ * limited to press feedback and one arrival transition; nothing loops.
+ */
+
+html[data-os] {
+  --ag-ground: #060811;
+  --ag-glass: rgba(15, 19, 32, 0.72);
+  --ag-glass-solid: #101522;
+  --ag-glass-soft: rgba(255, 255, 255, 0.055);
+  --ag-rim: rgba(181, 208, 255, 0.16);
+  --ag-rim-bright: rgba(208, 226, 255, 0.28);
+  --ag-ink: #f5f7ff;
+  --ag-muted: #9aa6c4;
+  --ag-teal: #6ee7df;
+  --ag-blue: #8fb4ff;
+  --ag-violet: #b7a1ff;
+  --ag-good: #74e6b1;
+  --ag-warn: #ffd18c;
+  --ag-radius: 24px;
+  --ag-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+html[data-os="android"] body {
+  background:
+    radial-gradient(95% 42% at 50% -12%, rgba(83, 120, 255, 0.3), transparent 72%),
+    radial-gradient(68% 36% at 105% 92%, rgba(22, 210, 196, 0.14), transparent 70%),
+    radial-gradient(55% 30% at -8% 100%, rgba(157, 112, 255, 0.11), transparent 70%),
+    var(--ag-ground);
+  color: var(--ag-ink);
+  font-family: "Google Sans Text", "Segoe UI Variable Text", Roboto, system-ui, sans-serif;
+}
+
+html[data-os="android"] .app {
+  max-width: 720px;
+  padding: var(--safe-top) 10px 0;
+}
+
+/* ---------------------------------------------------------------- header */
+
+html[data-os="android"] .app > header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 9px;
+  margin: 8px 0 10px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--ag-rim);
+  border-radius: 27px;
+  background:
+    linear-gradient(148deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.018) 46%),
+    var(--ag-glass);
+  -webkit-backdrop-filter: blur(26px) saturate(155%);
+  backdrop-filter: blur(26px) saturate(155%);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.2),
+    inset 0 -1px rgba(0, 0, 0, 0.22),
+    0 18px 44px rgba(0, 0, 0, 0.34);
+  position: sticky;
+  top: calc(var(--safe-top) + 6px);
+  z-index: 8;
+}
+
+html[data-os="android"] .app > header .who {
+  flex: none;
+  width: 100%;
+  gap: 11px;
+  padding: 3px 4px 2px;
+}
+
+html[data-os="android"] .avatar {
+  width: 43px;
+  height: 43px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background:
+    radial-gradient(80% 75% at 28% 18%, rgba(255, 255, 255, 0.52), transparent 48%),
+    linear-gradient(145deg, #a28bff, #4f8dff 55%, #42d8cb);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.55),
+    0 8px 22px rgba(70, 105, 255, 0.3);
+  color: #fff;
+  font-size: 17px;
+}
+
+html[data-os="android"] .who-text b {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+html[data-os="android"] .who-text span {
+  color: var(--ag-muted);
+  font-size: 12.5px;
+}
+
+html[data-os="android"] .app > header .tools {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+  overflow: visible;
+  padding: 0;
+}
+
+html[data-os="android"] .app > header .icon-btn,
+html[data-os="android"] .app > header .call-btn {
+  width: 100%;
+  min-width: 0;
+  height: 46px;
+  min-height: 46px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.095);
+  background: rgba(255, 255, 255, 0.045);
+  color: #dce6ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.09), 0 8px 18px rgba(0, 0, 0, 0.16);
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms ease, background 180ms ease;
+}
+
+html[data-os="android"] .app > header .icon-btn {
+  width: 46px;
+  max-width: 100%;
+  justify-self: center;
+  border-radius: 50%;
+}
+
+html[data-os="android"] .app > header .call-btn {
+  width: 46px;
+  max-width: 100%;
+  justify-self: center;
+  border-radius: 50%;
+}
+
+html[data-os="android"] .app > header .icon-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+html[data-os="android"] .app > header .compact-action span,
+html[data-os="android"] .app > header .call-btn {
+  font-size: 0;
+}
+
+html[data-os="android"] .app > header .call-btn {
+  border-color: rgba(168, 207, 255, 0.3);
+  background:
+    radial-gradient(circle at 32% 18%, rgba(255, 255, 255, 0.34), transparent 46%),
+    linear-gradient(145deg, rgba(126, 168, 255, 0.36), rgba(52, 200, 197, 0.18));
+  color: #eef7ff;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.38),
+    0 10px 24px rgba(67, 113, 255, 0.28),
+    0 2px 5px rgba(0, 0, 0, 0.16);
+}
+
+html[data-os="android"] .app > header .call-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+html[data-os="android"] .app > header .icon-btn.on {
+  background:
+    radial-gradient(circle at 32% 18%, rgba(255, 255, 255, 0.28), transparent 46%),
+    linear-gradient(145deg, rgba(110, 231, 223, 0.3), rgba(100, 150, 255, 0.22));
+  border-color: rgba(110, 231, 223, 0.42);
+  color: #c8fffa;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.24), 0 10px 24px rgba(37, 213, 197, 0.18);
+}
+
+/* Press: a short, physical dip instead of a flat tint. */
+html[data-os="android"] .app > header .icon-btn::after,
+html[data-os="android"] .app > header .call-btn::after {
+  content: none;
+}
+
+html[data-os="android"] .app > header .icon-btn:active,
+html[data-os="android"] .app > header .call-btn:active {
+  transform: scale(0.94);
+  filter: brightness(1.12);
+}
+
+html[data-os="android"] #open-settings {
+  position: relative;
+}
+
+#more-tools { order: 10; }
+html:not([data-os]) #more-tools { display: none; }
+html:not([data-os="android"]) #tools-health,
+html:not([data-os="android"]) #tools-cockpit,
+html:not([data-os="android"]) #tools-pilot { display: none; }
+html:not([data-os="android"]) .tools-advanced { display: none; }
+
+/* The Command Centre adds a sixth control; give the iPhone one clean row. */
+html[data-os="ios"] .app > header .tools {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+html[data-os="ios"] .app > header .tools > button {
+  min-width: 0;
+  height: 44px;
+  padding-inline: 0;
+}
+html[data-os="ios"] .app > header .tools .call-btn { font-size: 0; gap: 0; }
+html[data-os="ios"] .app > header .tools > .icon-btn {
+  width: 44px;
+  max-width: 100%;
+  justify-self: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 18%, rgba(255, 255, 255, 0.14), transparent 46%),
+    rgba(255, 255, 255, 0.055);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.12), 0 8px 18px rgba(0, 0, 0, 0.22);
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms ease, background 180ms ease;
+}
+html[data-os="ios"] .app > header .tools > .icon-btn.on {
+  background:
+    radial-gradient(circle at 32% 18%, rgba(255, 255, 255, 0.32), transparent 46%),
+    linear-gradient(145deg, rgba(176, 152, 255, 0.48), rgba(124, 92, 245, 0.3));
+  border-color: rgba(197, 181, 255, 0.48);
+  color: #f5f0ff;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.25),
+    0 10px 24px rgba(112, 82, 255, 0.24),
+    0 0 0 1px rgba(180, 160, 255, 0.08);
+}
+html[data-os="ios"] .app > header .tools > .icon-btn:active {
+  transform: scale(0.92);
+  opacity: 1;
+}
+html[data-os="ios"] .app > header .tools > .call-btn {
+  width: 44px;
+  max-width: 100%;
+  justify-self: center;
+  border-radius: 50%;
+  border: 1px solid rgba(176, 208, 255, 0.28);
+  background:
+    radial-gradient(circle at 32% 18%, rgba(255, 255, 255, 0.34), transparent 46%),
+    linear-gradient(145deg, rgba(150, 170, 255, 0.38), rgba(108, 92, 245, 0.2));
+  color: #f0f6ff;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.32),
+    0 10px 24px rgba(96, 110, 255, 0.26),
+    0 2px 6px rgba(0, 0, 0, 0.22);
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms ease;
+}
+html[data-os="ios"] .app > header .tools > .call-btn:active {
+  transform: scale(0.92);
+  opacity: 1;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.28),
+    0 5px 14px rgba(96, 110, 255, 0.22);
+}
+
+/* Give Home and New their names back where there is room, still one row. */
+@media (min-width: 600px) {
+  html[data-os="ios"] .app > header .tools > .compact-action {
+    width: auto;
+    max-width: 100%;
+    justify-self: center;
+    gap: 6px;
+    padding-inline: 13px;
+    border-radius: 999px;
+  }
+}
+@media (max-width: 599px) {
+  html[data-os="ios"] .app > header .compact-action span { display: none; }
+}
+
+html[data-os="android"] #open-settings.needs-attention::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ag-warn);
+  box-shadow: 0 0 0 2px rgba(15, 19, 32, 0.9), 0 0 12px rgba(255, 209, 140, 0.7);
+}
+
+/* ------------------------------------------------------- command centre */
+
+.tools-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 34;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 14px;
+  background: rgba(3, 5, 11, 0.62);
+  -webkit-backdrop-filter: blur(13px);
+  backdrop-filter: blur(13px);
+}
+
+.tools-sheet[hidden] { display: none; }
+
+.tools-panel {
+  width: 100%;
+  max-width: 560px;
+  padding: 18px 16px calc(18px + var(--safe-bottom));
+  border: 1px solid var(--ag-rim-bright);
+  border-radius: 30px;
+  background:
+    radial-gradient(80% 45% at 50% 0%, rgba(112, 147, 255, 0.16), transparent 70%),
+    linear-gradient(150deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.015) 50%),
+    rgba(13, 17, 29, 0.94);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.2),
+    0 30px 80px rgba(0, 0, 0, 0.52);
+  animation: ag-rise 240ms var(--ag-ease);
+}
+
+@keyframes ag-rise {
+  from { opacity: 0; transform: translateY(18px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.tools-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.tools-head .eyebrow {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ag-teal);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.tools-head h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.tools-close {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ag-ink);
+  display: grid;
+  place-items: center;
+}
+
+.tools-close svg { width: 18px; height: 18px; }
+
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.tool-card {
+  min-height: 118px;
+  padding: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 21px;
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.085), rgba(255, 255, 255, 0.018) 62%),
+    rgba(255, 255, 255, 0.025);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.11);
+  color: var(--ag-ink);
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.tool-card .tool-icon {
+  width: 42px;
+  height: 42px;
+  margin-bottom: 5px;
+  border: 1px solid rgba(172, 207, 255, 0.25);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(143, 180, 255, 0.25), rgba(76, 215, 206, 0.12));
+  color: #dceaff;
+  display: grid;
+  place-items: center;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.tool-card .tool-icon svg { width: 21px; height: 21px; }
+.tool-card b { font-size: 14.5px; font-weight: 700; }
+.tool-card small { color: var(--ag-muted); font-size: 11.5px; line-height: 1.35; }
+.tool-card:active { transform: scale(0.975); border-color: rgba(172, 207, 255, 0.32); }
+
+.tools-advanced {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tools-advanced button {
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--ag-ink);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.tools-advanced .adv-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: rgba(143, 180, 255, 0.12);
+  color: #cfe0ff;
+  display: grid;
+  place-items: center;
+}
+
+.tools-advanced .adv-icon svg { width: 17px; height: 17px; }
+.tools-advanced .adv-copy { flex: 1; min-width: 0; }
+.tools-advanced b { display: block; font-size: 13.5px; }
+.tools-advanced small { display: block; color: var(--ag-muted); font-size: 11px; }
+.tools-advanced .chev { flex: none; width: 16px; height: 16px; color: var(--ag-muted); }
+
+/* ---------------------------------------------------------- home surface */
+
+html[data-os="android"] .welcome {
+  padding-top: 6px;
+}
+
+html[data-os="android"] .hero-orb {
+  width: clamp(160px, 45vw, 210px);
+  filter: drop-shadow(0 24px 48px rgba(76, 117, 255, 0.22));
+}
+
+html[data-os="android"] .hello {
+  color: #b9c7e6;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+
+html[data-os="android"] .welcome h1 {
+  color: #fbfcff;
+  font-size: clamp(24px, 6.4vw, 30px);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.14;
+}
+
+html[data-os="android"] .welcome .sub {
+  color: var(--ag-muted);
+  font-size: 14px;
+}
+
+html[data-os="android"] .home-label {
+  color: #8fa1c5;
+  font-size: 10px;
+  letter-spacing: 0.13em;
+}
+
+html[data-os="android"] .idea,
+html[data-os="android"] .pulse,
+html[data-os="android"] .recent-open,
+html[data-os="android"] .home-resume {
+  border: 1px solid rgba(255, 255, 255, 0.085);
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.012) 65%),
+    rgba(255, 255, 255, 0.02);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+}
+
+html[data-os="android"] .idea {
+  border-radius: 20px;
+  min-height: 64px;
+}
+
+html[data-os="android"] .idea:active,
+html[data-os="android"] .pulse:active {
+  transform: scale(0.985);
+}
+
+html[data-os="android"] .home-pulse {
+  gap: 7px;
+}
+
+html[data-os="android"] .pulse {
+  border-radius: 18px;
+  padding: 11px 12px;
+}
+
+html[data-os="android"] .pulse b {
+  font-size: 13.5px;
+}
+
+html[data-os="android"] .pulse span {
+  font-size: 11px;
+  color: var(--ag-muted);
+}
+
+/* The setup strip appears only when a permission genuinely needs a tap. */
+.setup-strip {
+  width: 100%;
+  max-width: 440px;
+  margin-top: 10px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 209, 140, 0.32);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(255, 209, 140, 0.13), rgba(255, 255, 255, 0.025) 65%),
+    rgba(22, 20, 24, 0.7);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.11), 0 10px 26px rgba(0, 0, 0, 0.2);
+  color: var(--ag-ink);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.setup-strip[hidden] { display: none; }
+
+.setup-strip .setup-icon {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 13px;
+  background: rgba(255, 209, 140, 0.14);
+  color: var(--ag-warn);
+  display: grid;
+  place-items: center;
+}
+
+.setup-strip .setup-icon svg { width: 19px; height: 19px; }
+.setup-strip .setup-copy { flex: 1; min-width: 0; }
+.setup-strip b { display: block; font-size: 13.5px; line-height: 1.3; }
+.setup-strip small { display: block; margin-top: 2px; color: #c9bda9; font-size: 11px; }
+.setup-strip .setup-go {
+  flex: none;
+  border: 1px solid rgba(255, 209, 140, 0.38);
+  border-radius: 999px;
+  padding: 7px 11px;
+  background: rgba(255, 209, 140, 0.12);
+  color: #ffe2b3;
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+/* One-tap phone controls: a real dock, no unicode glyphs. */
+html[data-os="android"] .phone-dock {
+  width: 100%;
+  max-width: 440px;
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid var(--ag-rim);
+  border-radius: 22px;
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.012) 60%),
+    rgba(15, 20, 33, 0.62);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.11), 0 14px 34px rgba(0, 0, 0, 0.2);
+}
+
+html[data-os="android"] .phone-dock summary {
+  color: #9fb0d2;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  list-style: none;
+  padding: 2px 3px 1px;
+}
+
+html[data-os="android"] .phone-dock summary::-webkit-details-marker { display: none; }
+
+html[data-os="android"] .phone-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+html[data-os="android"] .phone-action {
+  min-height: 50px;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #c2cfe8;
+  transition: transform 140ms var(--ag-ease), background 140ms linear;
+}
+
+html[data-os="android"] .phone-action i {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(143, 180, 255, 0.18), rgba(110, 231, 223, 0.09));
+  color: #d5e6ff;
+}
+
+html[data-os="android"] .phone-action i svg {
+  width: 17px;
+  height: 17px;
+}
+
+html[data-os="android"] .phone-action:active {
+  transform: scale(0.94);
+  background: rgba(143, 180, 255, 0.12);
+}
+
+/* ------------------------------------------------------------- composer */
+
+html[data-os="android"] footer {
+  padding-inline: 2px;
+}
+
+html[data-os="android"] .composer {
+  border: 1px solid rgba(191, 214, 255, 0.18);
+  border-radius: 25px;
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.015) 55%),
+    rgba(14, 19, 32, 0.82);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.16),
+    0 16px 38px rgba(0, 0, 0, 0.3);
+  padding: 5px;
+}
+
+html[data-os="android"] #clip {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  color: #b9c9e6;
+  background: transparent;
+}
+
+html[data-os="android"] #text {
+  font-size: 16px;
+  padding: 9px 4px;
+  color: var(--ag-ink);
+}
+
+html[data-os="android"] #text::placeholder { color: #7f8cab; }
+
+html[data-os="android"] #send {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(145deg, #89afff, #5f7dff);
+  color: #071127;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.45), 0 7px 18px rgba(77, 113, 255, 0.3);
+}
+
+html[data-os="android"] #send:disabled {
+  background: rgba(255, 255, 255, 0.07);
+  color: #707d99;
+  box-shadow: none;
+}
+
+html[data-os="android"] #orb {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: rgba(108, 146, 255, 0.1);
+  border: 1px solid rgba(155, 193, 255, 0.22);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.12), 0 0 24px rgba(90, 130, 255, 0.16);
+}
+
+html[data-os="android"] #orb canvas {
+  inset: -5px;
+  width: 54px;
+  height: 54px;
+}
+
+/* ---------------------------------------------------------------- sheets */
+
+html[data-os="android"] .sheet {
+  background: rgba(3, 5, 11, 0.66);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+html[data-os="android"] .panel {
+  border: 1px solid var(--ag-rim-bright);
+  border-bottom: 0;
+  border-radius: 30px 30px 0 0 !important;
+  background:
+    radial-gradient(75% 35% at 50% 0%, rgba(104, 140, 255, 0.15), transparent 70%),
+    linear-gradient(150deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.008) 38%),
+    rgba(13, 17, 28, 0.97);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.17),
+    0 -28px 80px rgba(0, 0, 0, 0.5);
+  padding: 24px 14px calc(24px + var(--safe-bottom));
+  gap: 10px;
+}
+
+html[data-os="android"] .panel::before {
+  top: 10px;
+  width: 36px;
+  height: 4px;
+  margin-left: -18px;
+  background: rgba(196, 214, 245, 0.33);
+}
+
+html[data-os="android"] .panel h2 {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+html[data-os="android"] .panel section {
+  border: 1px solid rgba(255, 255, 255, 0.085);
+  border-radius: 21px;
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.01) 62%),
+    rgba(255, 255, 255, 0.018);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.075);
+  padding: 13px;
+}
+
+html[data-os="android"] .panel h3 {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+html[data-os="android"] .panel p,
+html[data-os="android"] .panel li {
+  color: var(--ag-muted);
+  font-size: 13px;
+}
+
+html[data-os="android"] .btn {
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 15px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(145deg, #87adff, #6580ff);
+  color: #071127;
+  font-weight: 750;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.4);
+}
+
+html[data-os="android"] .btn.ghost {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--ag-ink);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+}
+
+html[data-os="android"] .field input,
+html[data-os="android"] .field select,
+html[data-os="android"] .panel textarea {
+  border: 1px solid rgba(255, 255, 255, 0.115);
+  border-radius: 15px;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--ag-ink);
+}
+
+html[data-os="android"] .field input:focus,
+html[data-os="android"] .field select:focus,
+html[data-os="android"] .panel textarea:focus {
+  outline: none;
+  border-color: rgba(144, 184, 255, 0.65);
+  box-shadow: 0 0 0 3px rgba(112, 151, 255, 0.13);
+}
+
+/* ---------------------------------------------------------- phone health */
+
+.health-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+
+.health-head h3 { margin: 0 !important; }
+
+.health-kicker {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ag-teal);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+}
+
+.health-score {
+  flex: none;
+  margin-top: 2px;
+  padding: 5px 9px;
+  border: 1px solid rgba(110, 231, 223, 0.28);
+  border-radius: 999px;
+  background: rgba(110, 231, 223, 0.09);
+  color: #b9fff9;
+  font-size: 10.5px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.health-score.needs {
+  border-color: rgba(255, 209, 140, 0.3);
+  background: rgba(255, 209, 140, 0.09);
+  color: #ffe0ac;
+}
+
+.health-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.health-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.health-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ag-warn);
+  box-shadow: 0 0 0 3px rgba(255, 209, 140, 0.09);
+}
+
+.health-row.ok .health-dot {
+  background: var(--ag-good);
+  box-shadow: 0 0 0 3px rgba(116, 230, 177, 0.09);
+}
+
+.health-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.health-copy b {
+  display: block;
+  color: var(--ag-ink);
+  font-size: 12.5px;
+  line-height: 1.3;
+}
+
+.health-copy small {
+  display: block;
+  margin-top: 1px;
+  color: var(--ag-muted);
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+
+.health-fix {
+  flex: none;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid rgba(143, 180, 255, 0.28);
+  border-radius: 11px;
+  background: rgba(143, 180, 255, 0.1);
+  color: #d6e5ff;
+  font-size: 10.5px;
+  font-weight: 800;
+}
+
+.health-fix:disabled {
+  border-color: transparent;
+  background: transparent;
+  color: #7d8aa5;
+  opacity: 1;
+}
+
+.health-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.health-actions .btn {
+  min-height: 36px;
+  padding: 7px 11px;
+  border-radius: 12px;
+  font-size: 11.5px;
+}
+
+.health-quick-note {
+  margin-top: 9px !important;
+  padding: 8px 9px;
+  border-left: 2px solid rgba(110, 231, 223, 0.3);
+  border-radius: 0 9px 9px 0;
+  background: rgba(110, 231, 223, 0.045);
+  font-size: 11px !important;
+  line-height: 1.45;
+}
+
+/* ----------------------------------------------------------- sound mixer */
+
+.sound-presets {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 12px;
+}
+
+.sound-presets button {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.095);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #c7d4ec;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.sound-presets button:active {
+  background: rgba(143, 180, 255, 0.16);
+  border-color: rgba(143, 180, 255, 0.28);
+}
+
+.sound-presets button:disabled { opacity: 0.4; }
+
+.sound-presets button.active {
+  border-color: rgba(143, 180, 255, 0.4);
+  background: rgba(143, 180, 255, 0.16);
+  color: #eaf2ff;
+}
+
+.mixer {
+  display: grid;
+  gap: 7px;
+}
+
+.mix-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mix-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(143, 180, 255, 0.17), rgba(110, 231, 223, 0.08));
+  color: #d4e5ff;
+  display: grid;
+  place-items: center;
+}
+
+.mix-icon svg { width: 18px; height: 18px; }
+.mix-body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+
+.mix-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mix-top b {
+  color: var(--ag-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mix-top output {
+  color: var(--ag-muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mix-body input[type="range"] {
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  accent-color: var(--ag-blue);
+}
+
+.mix-body input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, #8fb4ff var(--fill, 0%), rgba(255, 255, 255, 0.1) var(--fill, 0%));
+}
+
+.mix-body input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.mix-body input[type="range"]::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: #8fb4ff;
+}
+
+.mix-body input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border: 2px solid #dce9ff;
+  border-radius: 50%;
+  background: #7d9fff;
+  box-shadow: 0 2px 8px rgba(82, 122, 255, 0.45);
+}
+
+.mix-body input[type="range"]::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border: 2px solid #dce9ff;
+  border-radius: 50%;
+  background: #7d9fff;
+  box-shadow: 0 2px 8px rgba(82, 122, 255, 0.45);
+}
+
+.mix-body input[type="range"]:disabled {
+  opacity: 0.45;
+}
+
+/* ------------------------------------------------------------------ live */
+
+html[data-os="android"] #live {
+  background:
+    radial-gradient(78% 42% at 50% 24%, rgba(65, 105, 255, 0.24), transparent 75%),
+    radial-gradient(60% 32% at 50% 100%, rgba(35, 203, 192, 0.1), transparent 72%),
+    rgba(4, 7, 14, 0.97);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+}
+
+html[data-os="android"] .live-top b {
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+html[data-os="android"] .live-top span {
+  color: var(--ag-muted);
+}
+
+html[data-os="android"] #live-orb {
+  position: relative;
+  filter: drop-shadow(0 30px 60px rgba(75, 116, 255, 0.24));
+}
+
+html[data-os="android"] #live-orb::before {
+  content: "";
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(106, 150, 255, 0.26), transparent 66%);
+  filter: blur(22px);
+  pointer-events: none;
+}
+
+html[data-os="android"] #live-orb canvas {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-os="android"] #live-heard { color: #f8faff; }
+html[data-os="android"] #live-said { color: #c8d6ff; }
+
+html[data-os="android"] .live-bar {
+  gap: 30px;
+}
+
+html[data-os="android"] .round {
+  color: #b8c6e2;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+html[data-os="android"] .round i {
+  width: 66px;
+  height: 66px;
+  border: 1px solid rgba(190, 214, 255, 0.17);
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.025) 60%),
+    rgba(17, 23, 38, 0.68);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+  backdrop-filter: blur(18px) saturate(145%);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.18),
+    0 14px 32px rgba(0, 0, 0, 0.3);
+  color: #eaf2ff;
+  transition: transform 140ms var(--ag-ease), background 160ms linear;
+}
+
+html[data-os="android"] .round:active i {
+  transform: scale(0.93);
+  background: rgba(143, 180, 255, 0.18);
+}
+
+html[data-os="android"] .round[aria-pressed="true"] i {
+  background: #eef4ff;
+  color: #0c1424;
+  box-shadow: 0 0 0 5px rgba(238, 244, 255, 0.08), 0 14px 32px rgba(0, 0, 0, 0.3);
+}
+
+html[data-os="android"] .round.end i {
+  width: 74px;
+  height: 74px;
+  border-color: rgba(255, 166, 178, 0.45);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0) 52%),
+    linear-gradient(145deg, #ff7b8d, #e9435e);
+  color: #fff;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.45),
+    0 16px 38px rgba(214, 51, 78, 0.34);
+}
+
+/* ------------------------------------------------------------- smallest */
+
+@media (max-width: 360px) {
+  html[data-os="android"] .app { padding-inline: 8px; }
+  html[data-os="android"] .app > header { padding-inline: 6px; }
+  html[data-os="android"] .app > header .tools { gap: 2px; }
+  html[data-os="ios"] .app > header { padding-inline: 10px; }
+  html[data-os="ios"] .app > header .tools { gap: 2px; }
+  html[data-os] .app > header .tools {
+    grid-template-columns: repeat(6, 44px);
+    justify-content: space-between;
+  }
+  html[data-os] .app > header .tools > button { min-width: 44px; }
+  html[data-os] .app > header .tools svg { width: 18px; min-width: 18px; height: 18px; }
+  html[data-os="android"] .app > header .icon-btn,
+  html[data-os="android"] .app > header .call-btn { height: 44px; min-height: 44px; }
+  html[data-os="android"] .phone-action { min-height: 48px; padding-inline: 7px; }
+  .tools-grid { grid-template-columns: minmax(0, 1fr); }
+  .tool-card { min-height: 94px; }
+  .mix-row { padding: 8px; gap: 8px; }
+  .mix-icon { width: 33px; height: 33px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tools-panel { animation: none; }
+  html[data-os="android"] .app > header .icon-btn:active,
+  html[data-os="android"] .app > header .call-btn:active,
+  .tool-card:active,
+  html[data-os="android"] .phone-action:active,
+  html[data-os="android"] .round:active i { transform: none; }
+  .mix-body input[type="range"]::-webkit-slider-thumb,
+  .mix-body input[type="range"]::-moz-range-thumb { transition: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-os="android"] .app > header,
+  html[data-os="android"] .composer,
+  .tools-panel,
+  html[data-os="android"] .panel,
+  html[data-os="android"] .round i {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background-color: var(--ag-glass-solid);
+  }
+}

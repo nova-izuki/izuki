@@ -128,10 +128,18 @@ let server, browser, ws, profile, cache;
     assert.match(task.text,/Continuing/,'Continuing must keep the stage visible');
     assert.match(task.text,/1\/4/,'Continuing must retain completed progress');
     await run('canvasTest.taskDone()');await pause(150);
-    assert.equal((await run('canvasTest.taskState()')).visible,false,'Task Stage must leave when the task succeeds');
+    task=await run('canvasTest.taskState()');
+    assert.equal(task.visible,true,'Task Stage must stay for a real finish state');
+    assert.match(task.text,/Complete/,'Finish state must say Complete');
+    assert.match(task.text,/Run it again/,'Finish state must offer Run it again');
+    assert.match(task.text,/Done/,'Finish state must offer a way to close');
+    assert.match(task.text,/4\/4/,'Finish state must show every step complete');
+    assert.equal(task.buttons,2,'Finish state must offer exactly two actions');
+    await run('canvasTest.taskDismiss()');await pause(150);
+    assert.equal((await run('canvasTest.taskState()')).visible,false,'Done must close the finished stage');
     await run('canvasTest.unmount()');
   }
-  console.log(`Hand overlay: disabled/idle/expiry/stop/window switch/session/close/reopen/toggle/unmount/input/camera/Task Stage start-step-exit checks passed (${native?'native Windows Tauri/WebView2':desktop?'Windows desktop Edge':'headless Edge'}).`);
+  console.log(`Hand overlay: disabled/idle/expiry/stop/window switch/session/close/reopen/toggle/unmount/input/camera/Task Stage start-step-finish checks passed (${native?'native Windows Tauri/WebView2':desktop?'Windows desktop Edge':'headless Edge'}).`);
   if(native)await run("setTimeout(()=>import('/node_modules/@tauri-apps/api/core.js').then(m=>m.invoke('probe_finish')),50);true");
 })().catch(e=>{console.error(e);process.exitCode=1}).finally(async()=>{
   try{ws?.close()}catch{}await closeTestBrowser(browser,profile);await server?.close();
