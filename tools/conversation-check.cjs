@@ -115,6 +115,18 @@ mem.shareHistory(long);
 is("only the recent turns are kept", count() <= 16, true);
 is("and they are the newest", last(), "turn 59");
 
+console.log("a deleted chat leaves the shared conversation:");
+fresh();
+mem.shareHistory([
+  { role: "user", content: "my bank pin is 1234" },
+  { role: "assistant", content: "Noted." },
+  { role: "user", content: "play lofi" },
+]);
+mem.forgetHistory([{ role: "user", content: "my bank pin is 1234" }, { role: "assistant", content: "Noted." }]);
+is("only that chat's lines go", shape(), ["user:play lofi"]);
+mem.forgetHistory(null);
+is("Clear all empties it", count(), 0);
+
 console.log("suggested next replies:");
 
 fresh();

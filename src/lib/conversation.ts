@@ -83,6 +83,23 @@ export function shareHistory(turns: Turn[]): void {
 }
 
 /**
+ * A chat was deleted: its lines leave the shared conversation too, so it
+ * can't come back as context for the next request (voice, typed or the
+ * phone). `null`: every line — Clear all.
+ */
+export function forgetHistory(turns: ReadonlyArray<{ role: string; content?: string }> | null): void {
+  if (!turns) {
+    history.length = 0;
+  } else {
+    const gone = new Set(turns.map((t) => `${t.role}\u0000${(t.content ?? "").trim()}`));
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (gone.has(`${history[i].role}\u0000${history[i].content}`)) history.splice(i, 1);
+    }
+  }
+  publish();
+}
+
+/**
  * What they might want to say next, as one-tap chips — so the reply that
  * carries on the conversation is a tap rather than something to type. This is
  * read off the thread itself rather than asked of the model on purpose: the

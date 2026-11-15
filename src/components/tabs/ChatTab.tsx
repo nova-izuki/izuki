@@ -20,7 +20,7 @@ import { attachmentContext, CHAT_FILE_TYPES, keepDocumentText, readChatFile, typ
 import { rememberPrompt } from "../../lib/recentPrompts";
 import { chatTitle, orderSessions, pinSession, rememberSession, removeSession, renameSession, searchSessions, startingMessages, timeAgo, type ChatSession, type LiveCopy } from "../../lib/chatHistory";
 import { clarificationFor, friendlyProviderError, providerRefusal, PROVIDER_REFUSAL_NOTE } from "../../lib/chatIntent";
-import { looksLikeDirections, needsApps, opensAnApp, recentHistory, shareHistory } from "../../lib/conversation";
+import { forgetHistory, looksLikeDirections, needsApps, opensAnApp, recentHistory, shareHistory } from "../../lib/conversation";
 
 /**
  * Izuki as a plain chat companion — no screen, no mouse. Ask anything,
@@ -1243,6 +1243,8 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
 
   const deleteChat = (chat: RecentChat) => {
     commitRecent(removeSession(recentRef.current, chat.id));
+    // Its lines leave the conversation the orb and the phone share, too.
+    forgetHistory(chat.id === chatSessionId ? msgs : chat.messages);
     if (chat.id === chatSessionId) beginChat(false);
   };
   /** The chat being renamed, and the title typed so far. */
@@ -1268,6 +1270,7 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
     }
     setArmedClear(false);
     commitRecent([]);
+    forgetHistory(null);
     beginChat(false); setRecentsOpen(false); setRecentQuery("");
   };
 
