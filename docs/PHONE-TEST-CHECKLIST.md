@@ -1,4 +1,4 @@
-# Izuki phone checklist (1.0.212)
+# Izuki phone checklist (1.0.213)
 
 This is the acceptance pass for the Android companion. CI proves the APK
 compiles and that the JavaScript tests pass; it does not prove Android grants
@@ -8,7 +8,7 @@ update. Run this on a real phone before calling a phone release verified.
 Record the APK's SHA-256 first. A debug build from a different commit is not
 the build being tested.
 
-- Build: `1.0.212` / versionCode `212`
+- Build: `1.0.213` / versionCode `213`
 - APK:
 - SHA-256:
 - Phone / Android / OEM:
@@ -26,8 +26,8 @@ the build being tested.
 
 ## 10-minute smoke
 
-- [ ] Install 1.0.212 over the existing app. It opens without a crash and
-      **Settings → Phone** shows `1.0.212`.
+- [ ] Install 1.0.213 over the existing app. It opens without a crash and
+      **Settings → Phone** shows `1.0.213`.
 - [ ] The existing PC pairing still works; no re-pair was needed.
 - [ ] Enable Android control, then say “go home” and “go back”.
 - [ ] Enable the over-apps orb. It appears over one other app and tapping it
@@ -35,33 +35,37 @@ the build being tested.
 - [ ] Add **Ask Izuki** to Quick Settings and wake it once from another app.
 - [ ] Run **Autopilot → self-test**; it finishes with its Stop control present.
 - [ ] Ask Nova to speak; sound starts, and Mute/Stop stops it immediately.
+- [ ] The header has six controls; **More** opens the Command Centre with
+      Drive, Remote, Lecture and Touch Grass, and each one opens.
+- [ ] The Home dock and live-call buttons use drawn icons, not text glyphs.
+      Every button is easy to hit and nothing is clipped at the screen edge.
 
 If any smoke item fails, the full pass does not start.
 
-## 1. Update from 1.0.211 (the important one)
+## 1. Update from 1.0.212 (the important one)
 
-Use the installed 1.0.211 build. Do not download the new APK by hand for this
+Use the installed 1.0.212 build. Do not download the new APK by hand for this
 section.
 
-- [ ] **Settings → Phone → App updates** finds 1.0.212 and shows the APK size,
+- [ ] **Settings → Phone → App updates** finds 1.0.213 and shows the APK size,
       version and release notes.
 - [ ] The displayed file size is about 46 MB and the SHA-256 shown (if shown)
       matches the published release.
 - [ ] Download starts and real progress is visible. Backgrounding the app does
       not make it claim success instantly.
-- [ ] Cancelling the install prompt leaves the app on 1.0.211 and usable. The
+- [ ] Cancelling the install prompt leaves the app on 1.0.212 and usable. The
       app does **not** say the update was installed.
 - [ ] Start again and complete the install. Android's installer opens; the
       preview-build warning is expected.
-- [ ] Return to Izuki. The installed version is now `1.0.212`; it is not still
-      reporting `1.0.211`.
+- [ ] Return to Izuki. The installed version is now `1.0.213`; it is not still
+      reporting `1.0.212`.
 - [ ] No data was lost: chats, reminders, settings, face/orb choice and PC
       pairing are still there.
 - [ ] The updater now says the installed version is up to date.
-- [ ] Reboot the phone and confirm it still opens on 1.0.212.
+- [ ] Reboot the phone and confirm it still opens on 1.0.213.
 
-Repeat at least once from 1.0.210 if that build is available. If only 1.0.211
-is available, record that 1.0.210 was not tested.
+Repeat at least once from 1.0.211 if that build is available. If only 1.0.212
+is available, record that 1.0.211 was not tested.
 
 ### Direct APK path
 
@@ -69,25 +73,33 @@ is available, record that 1.0.210 was not tested.
       browser. The file is complete (no 0-byte or HTML error page).
 - [ ] Android accepts it over the installed preview only when the signer is the
       same. A signature-mismatch error is a release blocker.
-- [ ] The installed version changes to 1.0.212 and the app opens.
+- [ ] The installed version changes to 1.0.213 and the app opens.
 
 ## 2. Permissions and service health
 
-Open **Settings → Phone** once per row.
+Open **Settings → Phone → Phone health** once per row.
 
-- [ ] Android control off: the row explains what is off and opens the correct
-      Android Accessibility settings page.
-- [ ] Enable it; the service stays enabled after leaving and returning to the
-      app.
-- [ ] Overlay permission off: the orb row explains it and opens the correct
-      app-level “display over other apps” page.
-- [ ] Microphone denied: voice and wake rows explain it and offer the right
-      settings page. Allow it there; the row refreshes without a restart.
-- [ ] Notifications denied: the wake row explains it and opens app settings.
-      Allow it and return; the row refreshes.
-- [ ] Battery optimization / background restriction: the app explains what
-      Android may do and links to the right setting. Change it, force-stop the
-      app, reopen, and confirm the UI reflects the current state.
+- [ ] Android control off: the row explains what is off and its **Allow**
+      button opens the correct Android Accessibility settings page.
+- [ ] Enable it; the row flips to **Ready** when you return, and the service
+      stays enabled after leaving and returning to the app.
+- [ ] Overlay permission off: the row’s **Allow** button opens Izuki’s own
+      *Display over other apps* page, not the full app list.
+- [ ] Microphone denied: the row opens Android’s microphone prompt. Allow it;
+      the row refreshes without a restart. If Android refuses, the app opens
+      Izuki’s app settings instead of looping.
+- [ ] Notifications denied: the row opens Izuki’s app notification page, where
+      Android 13+ keeps the allow switch. Allow it and return; the row
+      refreshes.
+- [ ] Battery freedom: **Review** opens Android’s optimisation list. Choose
+      **Izuki → Unrestricted**; the row flips to Ready when you return. This row
+      is recommended, not required for the main health score.
+- [ ] Pull back to Home while one permission is missing: the setup strip names
+      the missing rows, and tapping it opens Phone health.
+- [ ] The Settings button shows a small amber dot only while a core permission
+      is missing. It clears once the rows are ready.
+- [ ] Force-stop the app, reopen, and confirm the rows report the state Android
+      actually has, not a remembered one.
 - [ ] TTS: Nova speaks through the phone's selected engine. Changing the
       system TTS engine does not crash the app.
 - [ ] Revoke the microphone while Izuki is in the background. Reopen it; the

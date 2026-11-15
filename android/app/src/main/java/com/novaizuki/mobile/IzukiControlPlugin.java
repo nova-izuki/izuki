@@ -469,6 +469,64 @@ public class IzukiControlPlugin extends Plugin {
     call.resolve();
   }
 
+  /**
+   * One honest health check for the setup card. Each value maps to a settings
+   * screen the person can open directly, instead of a paragraph of directions.
+   */
+  @PluginMethod
+  public void repairStatus(PluginCall call) {
+    JSObject result = new JSObject();
+    result.put("control", IzukiAccessibilityService.isEnabled(getContext()));
+    result.put("running", IzukiAccessibilityService.running());
+    result.put("overlay", Settings.canDrawOverlays(getContext()));
+    result.put("mic", hasMicrophone());
+    result.put("notifications", notificationsShown());
+    PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+    result.put("battery", pm != null && pm.isIgnoringBatteryOptimizations(getContext().getPackageName()));
+    try {
+      PackageInfo info = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
+      result.put("version", info.versionName);
+      result.put("versionCode", Build.VERSION.SDK_INT >= 28 ? info.getLongVersionCode() : info.versionCode);
+      result.put("updateAllowed", Build.VERSION.SDK_INT < 26 || getContext().getPackageManager().canRequestPackageInstalls());
+    } catch (Exception ignored) { }
+    call.resolve(result);
+  }
+
+  /** “Display over other apps” for this package, not the full app list. */
+  @PluginMethod
+  public void openOverlaySettings(PluginCall call) {
+    Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+        Uri.parse("package:" + getContext().getPackageName()));
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    try { getContext().startActivity(intent); call.resolve(); }
+    catch (Exception e) { call.reject("Couldn't open the overlay settings: " + e.getMessage()); }
+  }
+
+  /** Izuki's own notification page, where Android 13+ keeps the allow switch. */
+  @PluginMethod
+  public void openNotificationSettings(PluginCall call) {
+    Intent intent;
+    if (Build.VERSION.SDK_INT >= 26) {
+      intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+          .putExtra(Settings.EXTRA_APP_PACKAGE, getContext().getPackageName());
+    } else {
+      intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+          Uri.parse("package:" + getContext().getPackageName()));
+    }
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    try { getContext().startActivity(intent); call.resolve(); }
+    catch (Exception e) { call.reject("Couldn't open notification settings: " + e.getMessage()); }
+  }
+
+  /** Android's battery-optimisation list, where Izuki can be set to Unrestricted. */
+  @PluginMethod
+  public void openBatterySettings(PluginCall call) {
+    Intent intent = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    try { getContext().startActivity(intent); call.resolve(); }
+    catch (Exception e) { call.reject("Couldn't open battery settings: " + e.getMessage()); }
+  }
+
   @PluginMethod
   public void perform(PluginCall call) {
     String action = call.getString("action", "");

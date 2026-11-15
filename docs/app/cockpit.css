@@ -47,7 +47,8 @@
 .ck-live { margin-left: auto; display: flex; align-items: center; gap: 7px; font-size: 10.5px; letter-spacing: 0.14em; color: rgba(236, 254, 255, 0.62); }
 .ck-live i { width: 7px; height: 7px; border-radius: 50%; background: #34d399; box-shadow: 0 0 10px #34d399; animation: ckPulse 2s ease-in-out infinite; }
 .ck-live.off i { background: #fbbf24; box-shadow: 0 0 10px #fbbf24; }
-.ck-close { width: 38px; height: 38px; border-radius: 50%; border: 1px solid rgba(103, 232, 249, 0.28); background: rgba(0, 0, 0, 0.3); color: #cffafe; font-size: 20px; line-height: 1; }
+.ck-close { width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(160, 205, 235, 0.24); background: linear-gradient(150deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02)); color: #e2fbff; display: grid; place-items: center; box-shadow: inset 0 1px rgba(255, 255, 255, 0.14), 0 8px 22px rgba(0, 0, 0, 0.25); }
+.ck-close svg { width: 18px; height: 18px; }
 .ck-grid { display: grid; grid-template-columns: 1fr minmax(250px, 1.15fr) 1fr; gap: 12px; align-items: stretch; }
 .ck-card {
   position: relative;
@@ -92,23 +93,39 @@
 .ck-mode { margin-top: 8px; font-size: 10px; font-weight: 800; letter-spacing: 0.3em; color: rgba(103, 232, 249, 0.8); }
 .ck-clock { margin-top: 14px; font-size: 28px; font-weight: 300; letter-spacing: 0.04em; }
 .ck-date { margin-top: 3px; font-size: 10px; letter-spacing: 0.18em; color: rgba(236, 254, 255, 0.46); }
-.ck-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; margin-top: 16px; }
+.ck-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; width: 100%; margin-top: 16px; }
 .ck-actions button {
-  min-height: 62px;
-  border-radius: 16px;
-  border: 1px solid rgba(103, 232, 249, 0.16);
-  background: rgba(103, 232, 249, 0.06);
-  color: #ecfeff;
-  font-size: 11px;
+  min-height: 70px;
+  border-radius: 19px;
+  border: 1px solid rgba(167, 211, 239, 0.14);
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.012) 60%),
+    rgba(7, 17, 27, 0.46);
+  color: #e8fbff;
+  font-size: 10.5px;
   font-weight: 700;
+  letter-spacing: 0.02em;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 6px;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.1), 0 10px 24px rgba(0, 0, 0, 0.18);
+  transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1), background 140ms linear;
 }
-.ck-actions button i { font-style: normal; font-size: 20px; line-height: 1; }
-.ck-actions button:active { transform: scale(0.97); background: rgba(103, 232, 249, 0.16); }
+.ck-actions button i {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-style: normal;
+  background: linear-gradient(145deg, rgba(103, 232, 249, 0.15), rgba(139, 92, 246, 0.1));
+  border: 1px solid rgba(167, 227, 245, 0.12);
+  color: #bff8ff;
+}
+.ck-actions button i svg { width: 18px; height: 18px; }
+.ck-actions button:active { transform: scale(0.95); background: rgba(103, 232, 249, 0.1); }
 .ck-actions button:disabled { opacity: 0.4; }
 .ck-right .ck-big { font-size: 20px; font-weight: 300; margin-bottom: 2px; }
 .ck-right .ck-sub { font-size: 11.5px; color: rgba(236, 254, 255, 0.5); line-height: 1.45; }
