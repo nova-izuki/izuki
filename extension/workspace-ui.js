@@ -2,7 +2,7 @@ import "./lab-state.js";
 const $=id=>document.getElementById(id);
 export async function workspaceMessage(body) {
   const response=await chrome.runtime.sendMessage({izukiWorkspace:body});
-  if(!response?.ok)throw Error(response?.text||"The browser workspace is unavailable. Reload the extension and reopen it.");
+  if(!response?.ok){const error=Error(response?.text||"The browser workspace is unavailable. Reload the extension and reopen it.");error.code=response?.code;error.state=response?.state;throw error;}
   return response;
 }
 export async function setUpWorkspace({windowId,getSource,getConnection,readTab,onHistory,onError,beforeRun}) {
@@ -36,7 +36,28 @@ export async function setUpWorkspace({windowId,getSource,getConnection,readTab,o
   // questions just pasted into the chat, and starting a run would cancel it.
   const QUIZ_RUN=new RegExp(`(?<![a-z])(?:answer|ans|solve|complete|do|take)\\s+${BETWEEN}(?:questions|quiz(?:zes)?|tests?)${NOT_COMPOUND}|^(?:ans|answer) +all(?: +of +them)?(?: +please)?[.!?]?$`,"i");
   const LAB_RUN=new RegExp(`(?<![a-z])(?:plan|do|complete|finish|start)\\s+${BETWEEN}(?:lab|labs|laboratory)${NOT_COMPOUND}`,"i");
+  // One bar above the message box for whatever is running (a question run
+  // or a lab), always in sight with no section to open: what it's doing,
+  // Stop, the way back after a pause, and — when a new run would replace one
+  // still going — the choice, asked rather than done silently.
+  const runs={quiz:null,lab:null};let asking=null,dismissed="";
+  function paintRunBar(){
+    const kind=active(runs.quiz)?"quiz":active(runs.lab)?"lab":null;
+    const state=kind?runs[kind]:runs.quiz;
+    const recover=!kind&&["paused","review"].includes(state?.phase)&&dismissed!==state?.text;
+    $("run-bar").hidden=!(kind||asking||recover);
+    text("run-text",asking?asking.text:`${kind==="lab"?"Lab":"Question run"}: ${String(state?.text||"").split("\n")[0]}`);
+    $("run-stop").hidden=!kind;$("run-stop").dataset.kind=kind||"";
+    $("run-replace").hidden=!asking;$("run-keep").hidden=!asking;
+    $("run-again").hidden=!(recover&&!asking);$("run-close").hidden=!(recover&&!asking);
+  }
+  $("run-stop").onclick=()=>void request("stop",{kind:$("run-stop").dataset.kind||"quiz"}).catch(onError);
+  $("run-replace").onclick=()=>{const source=asking?.source;asking=null;paintRunBar();void startQuiz(source,true).catch(onError);};
+  $("run-keep").onclick=()=>{asking=null;paintRunBar();};
+  $("run-again").onclick=()=>void startQuiz().catch(onError);
+  $("run-close").onclick=()=>{dismissed=runs.quiz?.text||"";paintRunBar();};
   function showLab(state) {
+    runs.lab=state||null;paintRunBar();
     if(!state?.plan)return;
     lastLab=state;text("lab-status",state.text);
     if(!plan){plan=state.plan;planSource=state.source;drawPlan();}
@@ -79,14 +100,24 @@ export async function setUpWorkspace({windowId,getSource,getConnection,readTab,o
   };
   $("quiz-start").onclick=()=>void startQuiz().catch(onError);
   $("quiz-stop").onclick=()=>void request("stop",{kind:"quiz"}).catch(onError);
-  async function startQuiz(source=getSource()) {
+  async function startQuiz(source=getSource(),replace=false) {
     if(!source || !$("share").checked)throw Error("Choose and share the tab with your questions first.");
     beforeRun();$("follow-questions").checked=false;$("follow-questions").dispatchEvent(new Event("change"));
     $("pin-page").checked=true;
-    const result=await request("quizStart",{source,connection:connection()});
-    paintQuiz(result.state);
+    let result;
+    try{result=await request("quizStart",{source,connection:connection(),replace});}
+    catch(error){
+      // A run still going: asked on the bar (Stop it and start this one /
+      // Keep it), and said in the chat too.
+      if(error.code==="run_active"){asking={source,text:error.message};paintRunBar();}
+      throw error;
+    }
+    asking=null;paintQuiz(result.state);
   }
-  function paintQuiz(state){text("quiz-status",state?.text||"Choose your question page, then start. On a page that says it's practice, Izuki picks each answer and presses Next. On a graded or unclear quiz it explains each one and you choose. You press Submit. Stop with Esc on that page or Alt+Shift+X.");$("quiz-start").disabled=active(state);$("quiz-stop").hidden=!active(state);text("quiz-answer",state?.answer||"");}
+  function paintQuiz(state){
+    runs.quiz=state||null;paintRunBar();
+    // A run going on: its section opens too, for the answers as they come.
+    if(active(state))$("quiz-tools").open=true;text("quiz-status",state?.text||"Choose your question page, then start. On a page that says it's practice, Izuki picks each answer and presses Next. On a graded or unclear quiz it explains each one and you choose. You press Submit. Stop with Esc on that page or Alt+Shift+X.");$("quiz-start").disabled=active(state);$("quiz-stop").hidden=!active(state);text("quiz-answer",state?.answer||"");}
   async function planLab() {
     if(planning)return;
     const source=getSource();if(!source||!$("share").checked)throw Error("Choose and share the page containing your lab first.");
