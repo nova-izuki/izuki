@@ -189,9 +189,9 @@ export function TalkToIzuki() {
         )}
         {settings.island_enabled && <QuietHoursRow value={settings.quiet_hours ?? ""} onChange={(v) => patch({ quiet_hours: v })} />}
         {settings.island_enabled && (
-          <Row label="Island look" hint="How the Island looks. “Windows bar” makes it flat and squared in your system colours, so docked at the top it reads as part of Windows rather than a floating pill. “Tiny dot” stays out of the way until something happens; “Wide strip” runs across the top.">
+          <Row label="Island Shape Studio" hint="Pick the Island's shape live — no restart. The screen notch attaches to the top edge with a narrow lip that sweeps out into a wide glass body; Float is a detached glass pill. Classic, Nova and the other looks are unchanged.">
             <div className="flex flex-wrap justify-end gap-1">
-              {([["nova", "✨ Nova"], ["default", "Default"], ["windows", "Windows bar"], ["dot", "Tiny dot"], ["strip", "Wide strip"], ["glass", "Glass"], ["bubble", "Bubble"], ["squircle", "Squircle"], ["outline", "Neon outline"], ["aero", "Aero (classic)"]] as const).map(([k, l]) => (
+              {([["nova", "✨ Nova"], ["default", "Classic"], ["notch", "Screen notch"], ["float", "Float"], ["windows", "Windows bar"], ["dot", "Tiny dot"], ["strip", "Wide strip"], ["glass", "Glass"], ["bubble", "Bubble"], ["squircle", "Squircle"], ["outline", "Neon outline"], ["aero", "Aero (classic)"]] as const).map(([k, l]) => (
                 <button
                   key={k}
                   type="button"
@@ -203,6 +203,53 @@ export function TalkToIzuki() {
                 </button>
               ))}
             </div>
+          </Row>
+        )}
+        {settings.island_enabled && (
+          <Row label="Glass opacity" hint="How solid the Island's glass is. Lower lets more of your desktop through; the text stays readable.">
+            <Slider label="Glass opacity" value={settings.island_opacity ?? 94} min={50} max={100} onChange={(v) => patch({ island_opacity: v })} suffix="%" />
+          </Row>
+        )}
+        {settings.island_enabled && (
+          <Row label="Glass blur" hint="0 is the low-power default. A little blur softens the desktop behind the Island; it costs more on integrated graphics.">
+            <Slider label="Glass blur" value={settings.island_blur ?? 0} min={0} max={24} onChange={(v) => patch({ island_blur: v })} suffix=" px" />
+          </Row>
+        )}
+        {settings.island_enabled && ["notch", "float"].includes(settings.island_style ?? "default") && (
+          <Row label="Light glass" hint="A brighter, frostier slate glass on the Screen notch and Float. Off is smoked black.">
+            <Toggle label="Light glass" checked={!!settings.island_light_glass} onChange={(v) => patch({ island_light_glass: v })} />
+          </Row>
+        )}
+        {settings.island_enabled && (
+          <Row label="Accent" hint="The rim and glow colour on the Notch and Float shapes. Classic keeps its original white rim.">
+            <div className="flex flex-wrap justify-end gap-1.5">
+              {(["#22d3ee", "#a78bfa", "#f472b6", "#fbbf24", "#94a3b8"] as const).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  aria-label={`Accent ${c}`}
+                  aria-pressed={(settings.island_accent ?? "#22d3ee") === c}
+                  onClick={() => patch({ island_accent: c })}
+                  className={`h-6 w-6 rounded-full border-2 ${(settings.island_accent ?? "#22d3ee") === c ? "border-white" : "border-transparent"}`}
+                  style={{ background: c }}
+                />
+              ))}
+            </div>
+          </Row>
+        )}
+        {settings.island_enabled && (
+          <Row label="Expand while a task runs" hint="Off: the compact notch shows live progress while you keep working. On: it opens into the live task panel when a task starts, with Stop and Take Over ready.">
+            <Toggle label="Expand while a task runs" checked={!!settings.island_auto_expand} onChange={(v) => patch({ island_auto_expand: v })} />
+          </Row>
+        )}
+        {settings.island_enabled && (
+          <Row label="Shadow" hint="A soft drop shadow lifts the Island off the desktop. Off is flatter and cheaper to draw.">
+            <Toggle label="Shadow" checked={settings.island_shadow ?? true} onChange={(v) => patch({ island_shadow: v })} />
+          </Row>
+        )}
+        {settings.island_enabled && (
+          <Row label="Calm motion" hint="Turn off the springy expansion and decorative drift for a still, low-power Island. Reduced-motion settings always win.">
+            <Toggle label="Calm motion" checked={!(settings.island_motion ?? true)} onChange={(v) => patch({ island_motion: !v })} />
           </Row>
         )}
         {settings.island_enabled && (

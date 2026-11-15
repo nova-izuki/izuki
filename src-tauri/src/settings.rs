@@ -294,6 +294,28 @@ pub struct Settings {
     /// How big the Island is: "small", "normal" or "large".
     #[serde(default = "default_island_size")]
     pub island_size: String,
+    /// Glass opacity, percent (50–100).
+    #[serde(default = "default_island_opacity")]
+    pub island_opacity: u8,
+    /// Glass blur in px (0–24; 0 is the low-power default).
+    #[serde(default = "default_island_blur")]
+    pub island_blur: u8,
+    /// Accent colour for the rim and glow (#rrggbb).
+    #[serde(default = "default_island_accent")]
+    pub island_accent: String,
+    /// Draw the Island's soft shadow (off for a flatter, cheaper look).
+    #[serde(default = "default_true")]
+    pub island_shadow: bool,
+    /// A brighter, frostier glass for the Screen notch and Float.
+    #[serde(default)]
+    pub island_light_glass: bool,
+    /// Springy transitions; off for a calm/low-power Island.
+    #[serde(default = "default_true")]
+    pub island_motion: bool,
+    /// Open the Island into the live task panel when a task starts. Off keeps
+    /// the compact progress notch, so gaming or music is not interrupted.
+    #[serde(default)]
+    pub island_auto_expand: bool,
     /// Press "Skip ad" on YouTube by itself (off until turned on).
     #[serde(default)]
     pub auto_skip_ads: bool,
@@ -834,6 +856,18 @@ fn default_island_size() -> String {
     "normal".into()
 }
 
+fn default_island_opacity() -> u8 {
+    94
+}
+
+fn default_island_blur() -> u8 {
+    0
+}
+
+fn default_island_accent() -> String {
+    "#22d3ee".into()
+}
+
 fn default_island_wave() -> String {
     "auto".into()
 }
@@ -928,8 +962,12 @@ impl Settings {
         if !self.edge_glow { self.glow_only = false; }
         if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro"].contains(&self.orb_style.as_str()) && !face_ok(&self.orb_style) && !toon_ok(&self.orb_style) { self.orb_style = "liquid".into(); }
         if !["auto", "silk", "bars", "mirror", "neon", "dots"].contains(&self.island_wave.as_str()) { self.island_wave = default_island_wave(); }
-        if !["default", "glass", "bubble", "squircle", "outline", "aero", "nova", "windows", "dot", "strip"].contains(&self.island_style.as_str()) { self.island_style = default_island_style(); }
+        if !["default", "glass", "bubble", "squircle", "outline", "aero", "nova", "windows", "dot", "strip", "notch", "float"].contains(&self.island_style.as_str()) { self.island_style = default_island_style(); }
         if !["small", "normal", "large"].contains(&self.island_size.as_str()) { self.island_size = default_island_size(); }
+        self.island_opacity = self.island_opacity.clamp(50, 100);
+        self.island_blur = self.island_blur.min(24);
+        let accent = self.island_accent.trim().to_ascii_lowercase();
+        self.island_accent = if accent.len() == 7 && accent.starts_with('#') && accent[1..].chars().all(|c| c.is_ascii_hexdigit()) { accent } else { default_island_accent() };
         self.orb_response = if self.orb_response.is_finite() { self.orb_response.clamp(0.5, 1.5) } else { 1.0 };
         let defaults = Self::default();
         for d in defaults.providers {
@@ -1215,6 +1253,13 @@ impl Default for Settings {
             island_wave: default_island_wave(),
             island_style: default_island_style(),
             island_size: default_island_size(),
+            island_opacity: default_island_opacity(),
+            island_blur: default_island_blur(),
+            island_accent: default_island_accent(),
+            island_shadow: true,
+            island_light_glass: false,
+            island_motion: true,
+            island_auto_expand: false,
             auto_skip_ads: false,
             auto_reject_cookies: false,
             follow_hand_size: default_follow_hand_size(),
@@ -1422,6 +1467,31 @@ mod tests {
         s.hotkey_dictate = format!(" {} ", s.hotkey_draw.to_lowercase());
         s.heal();
         assert_ne!(s.hotkey_dictate.trim().to_lowercase(), s.hotkey_draw.to_lowercase());
+    }
+
+    #[test]
+    fn island_shape_studio_values_are_sane() {
+        let mut s = Settings::default();
+        assert_eq!(s.island_style, "default", "Classic stays the default look");
+        assert_eq!(s.island_opacity, 94);
+        assert_eq!(s.island_blur, 0);
+        assert_eq!(s.island_accent, "#22d3ee");
+        assert!(!s.island_light_glass, "smoked glass stays the default");
+        assert!(!s.island_auto_expand, "a task must not open the panel unless asked");
+
+        s.island_style = "notch".into();
+        s.island_opacity = 5;
+        s.island_blur = 255;
+        s.island_accent = "not-a-colour".into();
+        s.heal();
+        assert_eq!(s.island_style, "notch", "the new shape survives a heal");
+        assert_eq!(s.island_opacity, 50);
+        assert_eq!(s.island_blur, 24);
+        assert_eq!(s.island_accent, "#22d3ee");
+
+        s.island_style = "ushape".into();
+        s.heal();
+        assert_eq!(s.island_style, "default", "a stale shape falls back to Classic");
     }
 
     #[test]
