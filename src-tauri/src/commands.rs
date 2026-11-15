@@ -921,6 +921,14 @@ pub fn resume_task(app: AppHandle) -> bool {
     true
 }
 
+/// Run the last completed multi-step plan again from the Task Stage's finish
+/// card. False when there is no safe plan to replay.
+#[tauri::command]
+pub fn rerun_task(app: AppHandle) -> bool {
+    let store = state::store();
+    brain::rerun_last_task(&app, &store)
+}
+
 /// Self-test mode (developer only): launched with IZUKI_SELFTEST=1, the
 /// engine runs a scripted set of requests and logs how each one behaved.
 #[tauri::command]

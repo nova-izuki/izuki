@@ -2390,6 +2390,18 @@ pub fn run_steps(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep]) {
     run_steps_then(app, store, steps, || {});
 }
 
+/// Replay the last real multi-step plan from the Task Stage's finished card.
+/// Only a plan that actually ran is kept, and a replay still stops rather than
+/// guessing when the screen has moved on.
+pub fn rerun_last_task(app: &AppHandle, store: &Arc<Store>) -> bool {
+    let steps = LAST_TASK_STEPS.lock().clone();
+    if steps.len() < 2 {
+        return false;
+    }
+    run_steps(app, store, &steps);
+    true
+}
+
 /// Same as [`run_steps`], but calls `on_done` once the plan finishes — whether
 /// it completed, failed on a step, or was stopped with the panic key. Voice
 /// and chat commands use this to close the preview overlay behind them
@@ -2404,6 +2416,11 @@ where
 fn run_steps_for_task<F>(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], task: u64, on_done: F)
 where F: FnOnce() + Send + 'static,
 {
+    // The finished Task Stage offers the last real plan again. Keep only a
+    // multi-step plan; a single stray click is not a task worth replaying.
+    if steps.len() > 1 {
+        *LAST_TASK_STEPS.lock() = steps.to_vec();
+    }
     let steps = steps.to_vec();
     let app = app.clone();
     let store = store.clone();
@@ -5215,6 +5232,9 @@ const CIRCLES_BEFORE_STOPPING: u32 = 3;
 /// so there's only ever one task working the screen, and "stop" really
 /// stops it instead of just muting it.
 static TASK_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The last multi-step plan that actually ran, for the Task Stage's replay.
+static LAST_TASK_STEPS: Mutex<Vec<ActionStep>> = Mutex::new(Vec::new());
 
 /// How many step runners are live right now. Pause only makes sense while a
 /// task is actually between steps; it is not a pause on a model request.

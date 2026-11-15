@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronDown, ChevronUp, Pause, Play, Square } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Pause, Play, RotateCcw, Square } from "lucide-react";
 import { api, EV, on } from "../lib/ipc";
 import type { StatusEvent } from "../lib/types";
 
 type Step = { current: number; total: number; before: boolean };
-type Pending = "pause" | "resume" | "stop" | null;
+type Pending = "pause" | "resume" | "stop" | "rerun" | null;
 type TrailItem = { n: number; label: string; at: number };
 
 function clock(ms: number): string {
@@ -57,9 +57,11 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
   const [trail, setTrail] = useState<TrailItem[]>([]);
   const [startedAt, setStartedAt] = useState(0);
   const [clockMs, setClockMs] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
   const startedRef = useRef(0);
   const lastNumber = useRef(0);
   const lastTotal = useRef(0);
+  const liveRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -104,7 +106,6 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
       lastTotal.current = 0;
     };
     if (!status) { reset(); return; }
-    if (ended(status)) { reset(); return; }
     const numbered = readStep(status);
     const announced = totalFrom(status);
     if (numbered?.before) {
@@ -150,8 +151,8 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
   }, [status]);
 
   // Keep the last real progress while a short status ("Pausing after this
-  // step…", "Continuing…") has no numbers of its own. Clear it only when the
-  // task has actually ended.
+  // step…", "Continuing…") has no numbers of its own. The final step stays
+  // visible on the completion card, so only "nothing at all" clears it.
   useEffect(() => {
     if (!status) {
       setTotal(0);
@@ -159,8 +160,11 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
       return;
     }
     if (ended(status)) {
-      setTotal(0);
-      setStep(null);
+      const finalStep = readStep(status);
+      if (finalStep) {
+        setStep(finalStep);
+        setTotal(finalStep.total);
+      }
       return;
     }
     const numbered = readStep(status);
@@ -183,11 +187,36 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
     setPending(null);
   }, [status]);
 
+  // Only a task that was actually live on this stage gets a finish card: an
+  // old final line replayed when the overlay mounts is not a new completion.
+  useEffect(() => {
+    if (!status) {
+      liveRef.current = false;
+      setDismissed(false);
+      return;
+    }
+    if (!ended(status)) {
+      liveRef.current = true;
+      setDismissed(false);
+    }
+  }, [status]);
+
   const pausing = !!status && /^pausing\b/i.test(status.message.trim());
   const paused = !!status && /^(pausing|paused)\b/i.test(status.message.trim());
   const working = !!status && status.kind === "working";
   const continuing = !!status && /^(resuming|continuing)\b/i.test(status.message.trim());
-  const active = !!status && total > 0 && (working || paused || continuing);
+  const finished = !!status && ended(status) && total > 0 && liveRef.current && !dismissed;
+  const complete = !!status && status.kind === "success" && finished;
+  const active = !!status && total > 0 && (working || paused || continuing || finished);
+
+  useEffect(() => {
+    if (!finished) return;
+    const timer = window.setTimeout(() => {
+      setDismissed(true);
+      setStatus(null);
+    }, 30_000);
+    return () => window.clearTimeout(timer);
+  }, [finished, status]);
 
   useEffect(() => {
     if (!active) return;
@@ -203,13 +232,17 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
 
   if (!active) return null;
 
-  const done = step ? Math.max(0, step.before ? step.current - 1 : step.current) : 0;
-  const percent = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
-  const currentLabel = step
-    ? step.before
-      ? `Ready for step ${step.current}`
-      : `Step ${step.current}`
-    : "Preparing the first step";
+  const done = complete ? total : step ? Math.max(0, step.before ? step.current - 1 : step.current) : 0;
+  const percent = complete ? 100 : Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+  const currentLabel = finished
+    ? complete
+      ? `All ${total} steps finished`
+      : "Task ended"
+    : step
+      ? step.before
+        ? `Ready for step ${step.current}`
+        : `Step ${step.current}`
+      : "Preparing the first step";
   // Before the first action the step is "ready" but not done, so the count
   // and the bar agree at zero. After it, the step number is complete.
   const elapsed = startedAt ? clock(clockMs - startedAt) : "0:00";
@@ -220,6 +253,18 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
     if (pending) return;
     setPending(kind);
     void command().finally(() => setPending(null));
+  };
+
+  const dismiss = () => {
+    setDismissed(true);
+    setStatus(null);
+  };
+  const rerun = () => {
+    if (pending) return;
+    setPending("rerun");
+    void api.rerunTask()
+      .then((ok) => { if (ok) { setDismissed(true); setStatus(null); } })
+      .finally(() => setPending(null));
   };
 
   return (
@@ -236,7 +281,7 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
             className="izk-task-pill pointer-events-auto"
           >
             <span className="izk-task-live-dot" aria-hidden />
-            <span className="izk-task-pill-text">Task Stage · {step ? `${step.current}/${total}` : "working"}</span>
+            <span className="izk-task-pill-text">Task Stage · {finished ? (complete ? "complete" : "ended") : step ? `${step.current}/${total}` : "working"}</span>
             <button type="button" aria-label="Expand Task Stage" title="Expand" onClick={() => setCollapsed(false)}>
               <ChevronDown size={13} />
             </button>
@@ -249,6 +294,7 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
             exit={{ opacity: 0, y: -8, scale: 0.98 }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
             data-izk-hit
+            data-finished={finished ? "true" : undefined}
             aria-label="Izuki Task Stage"
             className="izk-task-stage pointer-events-auto"
           >
@@ -256,11 +302,11 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
               <span className="izk-task-mark" aria-hidden><i /><i /><i /></span>
               <div className="izk-task-heading">
                 <b>Task Stage</b>
-                <span>{pausing ? "Pausing after this step" : paused ? "Holding after this step" : step ? (step.before ? `Ready for step ${step.current}` : "Working on your desktop") : "Getting the first step ready"}</span>
+                <span>{finished ? (complete ? "Finished on your desktop" : "This task ended") : pausing ? "Pausing after this step" : paused ? "Holding after this step" : step ? (step.before ? `Ready for step ${step.current}` : "Working on your desktop") : "Getting the first step ready"}</span>
               </div>
-              <span className="izk-task-state" data-paused={paused || pausing ? "true" : undefined}>
+              <span className="izk-task-state" data-paused={paused || pausing ? "true" : undefined} data-finished={finished ? "true" : undefined} data-ended={finished && !complete ? "true" : undefined}>
                 <i aria-hidden />
-                {pausing ? "Pausing" : paused ? "Paused" : "Live"}
+                {finished ? (complete ? "Complete" : "Ended") : pausing ? "Pausing" : paused ? "Paused" : "Live"}
               </span>
               <button
                 type="button"
@@ -275,13 +321,13 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
             </header>
 
             <div aria-live="polite" aria-atomic="true">
-              <div className="izk-task-message">{status?.message}</div>
+              <div className="izk-task-message">{finished && complete ? "Complete" : status?.message}</div>
               {status?.detail && <p className="izk-task-detail">{status.detail}</p>}
             </div>
 
             {recentTrail.length > 0 && (
               <div className="izk-task-trail" aria-label="Completed steps">
-                <span className="izk-task-trail-label">Plan so far</span>
+                <span className="izk-task-trail-label">{finished ? "Finished steps" : "Plan so far"}</span>
                 <ol>
                   {recentTrail.map((item) => (
                     <li key={item.n}>
@@ -312,7 +358,24 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
             </div>
 
             <div className="izk-task-actions">
-              {paused && !pausing ? (
+              {finished ? (
+                <>
+                  {complete && (
+                    <button
+                      type="button"
+                      data-izk-hit
+                      className="izk-task-button primary"
+                      disabled={pending !== null}
+                      onClick={rerun}
+                    >
+                      <RotateCcw size={11} /> {pending === "rerun" ? "Starting…" : "Run it again"}
+                    </button>
+                  )}
+                  <button type="button" data-izk-hit className="izk-task-button" onClick={dismiss}>
+                    <Check size={11} /> Done
+                  </button>
+                </>
+              ) : paused && !pausing ? (
                 <button
                   type="button"
                   data-izk-hit
@@ -333,19 +396,21 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
                   <Pause size={11} fill="currentColor" /> {pausing || pending === "pause" ? "Pausing…" : "Pause after step"}
                 </button>
               )}
-              <button
-                type="button"
-                data-izk-hit
-                className="izk-task-button danger"
-                disabled={pending === "stop"}
-                onClick={() => run("stop", () => api.cancelTask())}
-                title="Stop this task and take the mouse yourself"
-              >
-                <Square size={10} fill="currentColor" /> {pending === "stop" ? "Stopping…" : "Stop"}
-              </button>
+              {!finished && (
+                <button
+                  type="button"
+                  data-izk-hit
+                  className="izk-task-button danger"
+                  disabled={pending === "stop"}
+                  onClick={() => run("stop", () => api.cancelTask())}
+                  title="Stop this task and take the mouse yourself"
+                >
+                  <Square size={10} fill="currentColor" /> {pending === "stop" ? "Stopping…" : "Stop"}
+                </button>
+              )}
             </div>
 
-            <p className="izk-task-foot">A view of the real task — move your mouse to take over, or Stop to end it. This is not a hidden desktop.</p>
+            <p className="izk-task-foot">{finished ? "The stage closes on its own in 30 seconds. Your desktop is yours again." : "A view of the real task — move your mouse to take over, or Stop to end it. This is not a hidden desktop."}</p>
           </motion.section>
         )}
       </AnimatePresence>
