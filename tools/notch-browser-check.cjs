@@ -46,24 +46,31 @@ let browser, ws, profile, server, cacheDir;
   await call('Page.bringToFront');
   await call('Page.navigate',{url:origin+'/tools/fixtures/notch.html'},90000);
   await wait('window.notchReady && document.querySelector(".izk-notch-mini")');
+  // AnimatePresence keeps the outgoing card mounted while it shrinks. Wait for
+  // the compact 148px card and no open panel before focusing or clicking it.
+  const closed=()=>wait('document.querySelector(".izk-notch-mini") && !document.querySelector(".izk-island-open") && document.querySelector(".izk-notch-mini").getBoundingClientRect().width < 200');
+  await closed();
   // A button's default activation needs the matching text payload too; a bare
   // keyDown/keyUp never produces the click Chromium gives a real key press.
   const key=async(key,code,n)=>{const text=n===13?'\r':n===32?' ':undefined;await call('Input.dispatchKeyEvent',{type:'keyDown',key,code,windowsVirtualKeyCode:n,nativeVirtualKeyCode:n,...(text?{text,unmodifiedText:text}:{})});await call('Input.dispatchKeyEvent',{type:'keyUp',key,code,windowsVirtualKeyCode:n,nativeVirtualKeyCode:n});};
   const click=async(selector,button='left')=>{const r=await evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await call('Input.dispatchMouseEvent',{type:'mousePressed',...r,button,clickCount:1});await call('Input.dispatchMouseEvent',{type:'mouseReleased',...r,button,clickCount:1});};
   for(const activation of ['Enter','Space','click']){
+    await closed();
     await evaluate(`document.querySelector('.izk-notch-mini').focus()`);
     assert.equal(await evaluate('document.activeElement.tagName'),'BUTTON');
     assert.match(await evaluate('document.activeElement.getAttribute("aria-label")'),/Open Izuki Island/);
     if(activation==='click')await click('.izk-notch-mini');else await key(activation==='Space'?' ':activation,activation==='Space'?'Space':'Enter',activation==='Space'?32:13);
     await wait('document.querySelector(".izk-island-open")',10000);
     assert.equal(await evaluate(`getComputedStyle(document.querySelector('.izk-island'),'::before').content`),'none','rectangular glow escaped notch');
-    const shoulder=await evaluate(`(()=>{const r=document.querySelector('.izk-island').getBoundingClientRect();return document.elementFromPoint(r.left+1,r.top+1)?.closest('.izk-island')===null})()`);
-    assert.equal(shoulder,true,'transparent shoulder blocked desktop');
+    await pause(500);
+    const shoulder=await evaluate(`(()=>{const r=document.querySelector('.izk-island').getBoundingClientRect(),hit=document.elementFromPoint(r.left+1,r.top+1);return {clear:hit?.closest('.izk-island')===null,hit:hit?.tagName+'.'+hit?.className,rect:[r.x,r.y,r.width,r.height]}})()`);
+    assert.equal(shoulder.clear,true,'transparent shoulder blocked desktop: '+JSON.stringify(shoulder));
     await evaluate(`document.querySelector('.izk-island [role=tab]').focus()`);await key('Escape','Escape',27);
-    await wait('document.querySelector(".izk-notch-mini") && !document.querySelector(".izk-island-open")');
+    await closed();
   }
   // Existing fixes stay effective, including actual pointer dispatch to the menu.
-  await click('.izk-notch-mini');await wait('document.querySelector(".izk-island-open")');
+  await closed();
+  await click('.izk-notch-mini');await wait('document.querySelector(".izk-island-open")',10000);
   await click('.izk-island-subtitle','right');await wait('document.querySelector("[role=menu]")');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('[role=menu]')).pointerEvents`),'auto');
   await click('[role=menu] button:nth-child(1)');
@@ -74,6 +81,7 @@ let browser, ws, profile, server, cacheDir;
   await evaluate('mountNotch({shadow:true})');
   assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('.izk-notch-shell')).filter`),'none');
   // Hover remains available after adding keyboard/click activation.
+  await closed();
   await evaluate(`(()=>{const r=document.querySelector('.izk-notch-mini').getBoundingClientRect();window.izukiPoint(r.left+r.width/2,r.top+20)})()`);
   await wait('document.querySelector(".izk-island-open")');
   const sharp=require('sharp');
