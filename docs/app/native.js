@@ -526,13 +526,17 @@
         // Android accepting a press isn't proof it did anything (a WebView
         // button can take the action and ignore it): compare the screen.
         const look = (s) => `${s?.app || ""}|${(s?.items || []).slice(0, 40).map((i) => `${i.kind}:${i.text}${i.focused ? "*" : ""}${i.on ? "+" : ""}`).join("|")}`;
-        const before = look(await window.IzukiNative.screen());
+        const first = await window.IzukiNative.screen();
         const done = await window.IzukiNative.act({ op: "tapText", text: tap[1] });
         const name = done?.matched && done.matched.toLowerCase() !== tap[1] ? `“${done.matched}”` : tap[1];
         if (!done?.done) return window.IzukiNative.why(done, `“${tap[1]}”`) || failed;
+        // Only two readable screens can show a change; otherwise say it wasn't checked.
+        if (!first) return `I pressed ${name}, but couldn't read the screen to check that it worked.`;
+        const before = look(first);
         for (let i = 0; i < 5; i++) {
           await new Promise((r) => setTimeout(r, 350));
-          if (look(await window.IzukiNative.screen()) !== before) return `Tapped ${name}.`;
+          const now = await window.IzukiNative.screen();
+          if (now && look(now) !== before) return `Tapped ${name}.`;
         }
         return `I pressed ${name}, but nothing on the screen changed — it may need another try.`;
       }
