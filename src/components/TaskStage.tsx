@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ChevronDown, ChevronUp, Pause, Play, Square } from "lucide-react";
 import { api, EV, on } from "../lib/ipc";
@@ -6,6 +6,12 @@ import type { StatusEvent } from "../lib/types";
 
 type Step = { current: number; total: number; before: boolean };
 type Pending = "pause" | "resume" | "stop" | null;
+type TrailItem = { n: number; label: string; at: number };
+
+function clock(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
 
 function totalFrom(status: StatusEvent | null): number {
   if (!status) return 0;
@@ -48,6 +54,12 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
   // Kept across "Pausing…"/"Continuing…" lines, which carry no step number.
   const [step, setStep] = useState<Step | null>(null);
   const [pending, setPending] = useState<Pending>(null);
+  const [trail, setTrail] = useState<TrailItem[]>([]);
+  const [startedAt, setStartedAt] = useState(0);
+  const [clockMs, setClockMs] = useState(0);
+  const startedRef = useRef(0);
+  const lastNumber = useRef(0);
+  const lastTotal = useRef(0);
 
   useEffect(() => {
     let alive = true;
@@ -78,6 +90,63 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
 
   useEffect(() => {
     if (!status) setCollapsed(false);
+  }, [status]);
+
+  // The stage keeps the steps it has already finished, so a long task reads
+  // as a short plan rather than a single line that replaces itself. This is
+  // built only from real per-step results — nothing here is invented.
+  useEffect(() => {
+    const reset = () => {
+      setTrail([]);
+      startedRef.current = 0;
+      setStartedAt(0);
+      lastNumber.current = 0;
+      lastTotal.current = 0;
+    };
+    if (!status) { reset(); return; }
+    if (ended(status)) { reset(); return; }
+    const numbered = readStep(status);
+    const announced = totalFrom(status);
+    if (numbered?.before) {
+      if (!lastTotal.current || lastTotal.current !== numbered.total || lastNumber.current > 0) {
+        setTrail([]);
+        lastNumber.current = 0;
+      }
+      lastTotal.current = numbered.total;
+      if (!startedRef.current) {
+        startedRef.current = Date.now();
+        setStartedAt(startedRef.current);
+      }
+      return;
+    }
+    if (announced && !numbered) {
+      lastTotal.current = announced;
+      if (!startedRef.current) {
+        startedRef.current = Date.now();
+        setStartedAt(startedRef.current);
+      }
+      return;
+    }
+    if (!numbered) return;
+    if (!lastTotal.current || lastTotal.current !== numbered.total) {
+      setTrail([]);
+      lastNumber.current = 0;
+    }
+    lastTotal.current = numbered.total;
+    if (!startedRef.current) {
+      startedRef.current = Date.now();
+      setStartedAt(startedRef.current);
+    }
+    if (numbered.current > lastNumber.current) {
+      const label = (status.detail || status.message || "").trim();
+      if (label && !/^step\s+\d+\s*$/i.test(label)) {
+        setTrail((previous) => [
+          ...previous.filter((item) => item.n !== numbered.current),
+          { n: numbered.current, label, at: Date.now() },
+        ].slice(-24));
+      }
+      lastNumber.current = numbered.current;
+    }
   }, [status]);
 
   // Keep the last real progress while a short status ("Pausing after this
@@ -121,6 +190,13 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
   const active = !!status && total > 0 && (working || paused || continuing);
 
   useEffect(() => {
+    if (!active) return;
+    setClockMs(Date.now());
+    const timer = window.setInterval(() => setClockMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [active]);
+
+  useEffect(() => {
     onActiveChange?.(active);
     return () => onActiveChange?.(false);
   }, [active, onActiveChange]);
@@ -136,7 +212,9 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
     : "Preparing the first step";
   // Before the first action the step is "ready" but not done, so the count
   // and the bar agree at zero. After it, the step number is complete.
-  const countLabel = `${done}/${total}`;
+  const elapsed = startedAt ? clock(clockMs - startedAt) : "0:00";
+  const countLabel = `${done}/${total}${startedAt ? ` · ${elapsed}` : ""}`;
+  const recentTrail = trail.slice(-4);
 
   const run = (kind: Exclude<Pending, null>, command: () => Promise<unknown>) => {
     if (pending) return;
@@ -200,6 +278,21 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
               <div className="izk-task-message">{status?.message}</div>
               {status?.detail && <p className="izk-task-detail">{status.detail}</p>}
             </div>
+
+            {recentTrail.length > 0 && (
+              <div className="izk-task-trail" aria-label="Completed steps">
+                <span className="izk-task-trail-label">Plan so far</span>
+                <ol>
+                  {recentTrail.map((item) => (
+                    <li key={item.n}>
+                      <span className="tick" aria-hidden>✓</span>
+                      <span className="label">{item.label}</span>
+                      <time>{startedAt ? clock(item.at - startedAt) : ""}</time>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
 
             <div className="izk-task-progress-wrap">
               <div className="izk-task-progress-label">

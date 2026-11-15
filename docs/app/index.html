@@ -25,9 +25,12 @@
 <title>Izuki on your phone — free AI companion</title>
 <!-- The bug catcher first, so it hears about anything that goes wrong below. -->
 <script>
+  // An explicit phone preview wins over the TV/headless-browser heuristic:
+  // ?os=android and ?os=ios must show the phone skin everywhere.
+  const askedOS = new URLSearchParams(location.search).get("os");
   // On a TV (Android TV, Google TV, Fire TV, smart TVs): bigger text and a
   // strong highlight for the remote.
-  if (/\b(Android TV|GoogleTV|Google TV|AFT[A-Z]|BRAVIA|SMART-TV|SmartTV|Tizen|Web0S|webOS|AppleTV|CrKey)\b/i.test(navigator.userAgent) || matchMedia("(pointer: none)").matches) {
+  if (!askedOS && (/\b(Android TV|GoogleTV|Google TV|AFT[A-Z]|BRAVIA|SMART-TV|SmartTV|Tizen|Web0S|webOS|AppleTV|CrKey)\b/i.test(navigator.userAgent) || matchMedia("(pointer: none)").matches)) {
     document.documentElement.classList.add("tv");
   }
   // Each phone in its own language (platform.css): the device's own OS,
@@ -36,14 +39,13 @@
     const h = document.documentElement;
     if (h.classList.contains("tv")) return;
     const ua = navigator.userAgent;
-    const asked = new URLSearchParams(location.search).get("os");
-    const os = asked === "ios" || asked === "android" ? asked
+    const os = askedOS === "ios" || askedOS === "android" ? askedOS
       : /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? "ios"
       : /Android/.test(ua) ? "android" : "";
     if (!os) return;
     h.dataset.os = os;
     // The status bar matches the top bar on Android.
-    if (os === "android") document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#211f26");
+    if (os === "android") document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#060811");
   })();
 </script>
 <script src="../shared/bugs.js" data-app="phone" data-version="2.1"></script>
@@ -304,6 +306,7 @@
 </style>
 <link rel="stylesheet" href="companion.css">
 <link rel="stylesheet" href="platform.css">
+<link rel="stylesheet" href="android-glass.css">
 <link rel="stylesheet" href="cockpit.css">
 <link rel="stylesheet" href="pilot.css">
 </head>
@@ -316,6 +319,9 @@
       <span class="who-text"><b id="who-name">Nova</b><span id="who-sub">your Izuki</span></span>
     </button>
     <span class="tools">
+      <button class="icon-btn" id="more-tools" type="button" aria-label="More tools" title="More tools" aria-haspopup="dialog" aria-controls="tools-sheet">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
+      </button>
       <button class="icon-btn compact-action" id="go-home" type="button" aria-label="Go to companion home" title="Home">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M9 22v-6h6v6"/></svg><span>Home</span>
       </button>
@@ -324,18 +330,6 @@
       </button>
       <button class="icon-btn" id="read-aloud" type="button" aria-label="Read replies aloud" title="Read replies aloud">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
-      </button>
-      <button class="icon-btn compact-action" id="go-drive" type="button" aria-label="Drive mode — Izuki as your co-pilot" title="Drive mode">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M6 17l1.5-6.5A2 2 0 0 1 9.4 9h5.2a2 2 0 0 1 1.9 1.5L18 17"/><circle cx="7.5" cy="17" r="2"/><circle cx="16.5" cy="17" r="2"/><path d="M4 13h2M18 13h2"/></svg><span>Drive</span>
-      </button>
-      <button class="icon-btn compact-action" id="go-remote" type="button" aria-label="Remote — control your PC from this phone" title="Remote for your PC">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6M6 9h12"/></svg><span>Remote</span>
-      </button>
-      <button class="icon-btn compact-action" id="go-lecture" type="button" aria-label="Record a lecture — your PC makes the notes" title="Record a lecture">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c3 2 9 2 12 0v-5"/></svg><span>Lecture</span>
-      </button>
-      <button class="icon-btn compact-action" id="go-touch" type="button" aria-label="Touch Grass — your PC's missions and approvals" title="Touch Grass">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M7 20c0-5 1-9 3-12"/><path d="M12 20c0-6 .5-10 1-14"/><path d="M17 20c0-4-1-7-3-9"/></svg><span>Grass</span>
       </button>
       <button class="call-btn" id="go-live" type="button" aria-label="Call Izuki — talk hands-free">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>
@@ -346,6 +340,52 @@
       </button>
     </span>
   </header>
+
+  <div class="tools-sheet" id="tools-sheet" hidden>
+    <div class="tools-panel" role="dialog" aria-modal="true" aria-labelledby="tools-title">
+      <div class="tools-head">
+        <div><span class="eyebrow">COMMAND CENTRE</span><h2 id="tools-title">What do you need?</h2></div>
+        <button class="tools-close" id="close-tools" type="button" aria-label="Close tools">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="tools-grid">
+        <button class="tool-card" id="go-drive" type="button" data-close-tools aria-label="Drive mode — Izuki as your co-pilot">
+          <span class="tool-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17h16M5.5 17l1.7-6.8A2.5 2.5 0 0 1 9.6 8.3h4.8a2.5 2.5 0 0 1 2.4 1.9L18.5 17"/><circle cx="7.5" cy="17.5" r="1.8"/><circle cx="16.5" cy="17.5" r="1.8"/><path d="M5 12h2M17 12h2"/></svg></span>
+          <b>Drive mode</b><small>Hands-free co-pilot, maps and music</small>
+        </button>
+        <button class="tool-card" id="go-remote" type="button" data-close-tools aria-label="Remote — control your PC from this phone">
+          <span class="tool-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="4"/><path d="M12 3v6M6.5 9h11"/><circle cx="9" cy="14" r=".8" fill="currentColor" stroke="none"/><circle cx="12" cy="14" r=".8" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r=".8" fill="currentColor" stroke="none"/></svg></span>
+          <b>Remote</b><small>Your PC's screen, keyboard and mouse</small>
+        </button>
+        <button class="tool-card" id="go-lecture" type="button" data-close-tools aria-label="Record a lecture — your PC makes the notes">
+          <span class="tool-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9l10-4.7L22 9 12 13.7z"/><path d="M6 11.2V16c3 2 9 2 12 0v-4.8M22 9v5"/></svg></span>
+          <b>Lecture</b><small>Record it; your PC writes the notes</small>
+        </button>
+        <button class="tool-card" id="go-touch" type="button" data-close-tools aria-label="PC Missions — tasks and approvals from your PC">
+          <span class="tool-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M6.5 20c0-5.5 1.2-9.8 3.2-13"/><path d="M12 20c0-6.5.6-11 1.5-15"/><path d="M17.5 20c0-4.4-1.1-7.5-3.2-9.5"/></svg></span>
+          <b>PC Missions</b><small>Check tasks and approve what your PC did</small>
+        </button>
+      </div>
+      <div class="tools-advanced">
+        <button id="tools-health" type="button">
+          <span class="adv-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z"/><path d="M8 12h2l1.2-2.4 1.8 4.8 1.2-2.4H16"/></svg></span>
+          <span class="adv-copy"><b>Phone health</b><small>Fix every Android permission in one place</small></span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 5 7 7-7 7"/></svg>
+        </button>
+        <button id="tools-cockpit" type="button">
+          <span class="adv-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 12l3-3M7 17h10"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/></svg></span>
+          <span class="adv-copy"><b>Cockpit &amp; Autopilot</b><small>Live phone panel and visible one-line routines</small></span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 5 7 7-7 7"/></svg>
+        </button>
+        <button id="tools-pilot" type="button">
+          <span class="adv-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M4 19h16"/><path d="m7 15 4-4 3 2 5-6"/><circle cx="19" cy="7" r="1.4"/></svg></span>
+          <span class="adv-copy"><b>Autopilot</b><small>Open, search, tap and type — step by step</small></span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 5 7 7-7 7"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
 
   <button class="island" id="island" type="button" hidden aria-live="polite"></button>
   <main id="log" aria-live="polite"></main>
@@ -559,6 +599,20 @@
       <p class="note">Your speed comes from your phone's location, while Drive mode is on only — it isn't saved or sent anywhere.</p>
     </section>
 
+    <section id="native-health" hidden>
+      <div class="health-head">
+        <div><span class="health-kicker">PHONE HEALTH</span><h3>Setup, checked</h3></div>
+        <span class="health-score" id="health-score">Checking…</span>
+      </div>
+      <p class="note">Everything Izuki needs, in one place. Each button opens the exact Android screen for that permission — no hunting through menus.</p>
+      <div class="health-list" id="health-list" aria-live="polite"><p class="note">Checking Android setup…</p></div>
+      <div class="health-actions">
+        <button class="btn ghost" id="health-refresh" type="button">Check again</button>
+        <button class="btn ghost" id="health-quick" type="button">Quick Settings tile</button>
+      </div>
+      <p class="note health-quick-note" id="health-note">For a one-tap wake from any app: open Quick Settings, tap Edit, then drag <b>Ask Izuki</b> onto your tiles.</p>
+    </section>
+
     <section id="native-controls" hidden>
       <h3>Android hands-free controls</h3>
       <p id="native-controls-status" class="note">Checking Android control…</p>
@@ -578,9 +632,25 @@
 
     <section id="native-sound" hidden>
       <h3>Phone sound</h3>
-      <div class="field"><label for="sound-media">Media <span id="sound-media-val">—</span></label><input id="sound-media" type="range" min="0" max="15" value="0"></div>
-      <div class="field"><label for="sound-ring">Ring <span id="sound-ring-val">—</span></label><input id="sound-ring" type="range" min="0" max="7" value="0"></div>
-      <div class="field"><label for="sound-alarm">Alarm <span id="sound-alarm-val">—</span></label><input id="sound-alarm" type="range" min="0" max="7" value="0"></div>
+      <div class="sound-presets" aria-label="Sound presets">
+        <button type="button" data-preset="quiet">Quiet</button>
+        <button type="button" data-preset="balanced">Balanced</button>
+        <button type="button" data-preset="loud">Loud</button>
+      </div>
+      <div class="mixer">
+        <label class="mix-row" for="sound-media">
+          <span class="mix-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg></span>
+          <span class="mix-body"><span class="mix-top"><b>Media</b><output id="sound-media-val">—</output></span><input id="sound-media" type="range" min="0" max="15" value="0" aria-label="Media volume"></span>
+        </label>
+        <label class="mix-row" for="sound-ring">
+          <span class="mix-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8M10.3 21h3.4"/></svg></span>
+          <span class="mix-body"><span class="mix-top"><b>Ring</b><output id="sound-ring-val">—</output></span><input id="sound-ring" type="range" min="0" max="7" value="0" aria-label="Ring volume"></span>
+        </label>
+        <label class="mix-row" for="sound-alarm">
+          <span class="mix-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="7"/><path d="M12 9v4l2.5 2M5 3 2.5 5.5M19 3l2.5 2.5M8 20l-1.5 2M16 20l1.5 2"/></svg></span>
+          <span class="mix-body"><span class="mix-top"><b>Alarm</b><output id="sound-alarm-val">—</output></span><input id="sound-alarm" type="range" min="0" max="7" value="0" aria-label="Alarm volume"></span>
+        </label>
+      </div>
       <label class="note" style="display:flex;align-items:center;gap:8px;margin-top:8px"><input id="sound-duck" type="checkbox"> Quiet other audio while Izuki talks</label>
       <p class="note">These change the phone's own streams. “Quiet other audio” only asks Android to duck other media while Izuki is speaking; it does not mute or record anything else.</p>
     </section>
@@ -676,7 +746,7 @@
     if (pc) window.IzukiRemote?.open(pc, { pass: store.get("pcPass", ""), savePass: (p) => store.set("pcPass", p) });
     else alert("Link this phone to your PC first: on the PC, Izuki → Settings → Phone → Call Izuki from your phone, then scan the QR code.");
   });
-  // 🌱 Touch Grass (touchgrass.js): missions and approvals for the linked PC.
+  // 🌱 PC Missions (touchgrass.js): missions and approvals for the linked PC.
   const openTouch = () => {
     if (!pc) return alert("Link this phone to your PC first: on the PC, Izuki → Settings → Phone → Call Izuki from your phone, then scan the QR code.");
     const remote = () => window.IzukiRemote?.open(pc, { pass: store.get("pcPass", ""), savePass: (p) => store.set("pcPass", p) });
@@ -688,7 +758,7 @@
     if (!pc) return alert("Link this phone to your PC first: on the PC, Izuki → Settings → Phone → Call Izuki from your phone, then scan the QR code.");
     window.IzukiLecture?.open(pc);
   });
-  // A tapped notification opens Touch Grass (#touch, or a message from the worker).
+  // A tapped notification opens PC Missions (#touch, or a message from the worker).
   if (location.hash === "#touch") setTimeout(openTouch, 300);
   navigator.serviceWorker?.addEventListener("message", (e) => { if (e.data?.type === "open-touch") openTouch(); });
   /** Report a problem to Izuki's bug catcher (../shared/bugs.js). */
@@ -920,6 +990,7 @@
       w.appendChild(resume);
     }
     recentChats(w);
+    addSetupStrip(w);
     const pulse = el("div", "home-pulse");
     const pulseItem = (title, sub) => {
       const item = el("div", "pulse");
@@ -943,16 +1014,23 @@
     // voice, but this works before the microphone or model is ready.
     if (window.IzukiNative?.installed?.() && window.IzukiNative.platform?.() === "android") {
       const dock = el("details", "phone-dock");
-      dock.append(el("summary", "", "\ud83d\udcf1 One-tap phone controls"));
+      dock.open = true;
+      dock.append(el("summary", "", "One-tap phone controls"));
       const grid = el("div", "phone-grid");
       for (const [action, icon, label] of [
-        ["home", "\u2302", "Home"], ["back", "\u2190", "Back"], ["recents", "\u25a3", "Recents"],
-        ["notifications", "\u25be", "Notifications"], ["screenshot", "\u25c9", "Screenshot"], ["lock", "\u2318", "Lock"],
+        ["home", "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><path d='m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z'/><path d='M9 22v-6h6v6'/></svg>", "Home"],
+        ["back", "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 12H4M11 5l-7 7 7 7'/></svg>", "Back"],
+        ["recents", "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='5' width='13' height='15' rx='2.5'/><path d='M8 2h10a3 3 0 0 1 3 3v12'/></svg>", "Recents"],
+        ["notifications", "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><path d='M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8M10.3 21h3.4'/></svg>", "Notifications"],
+        ["screenshot", "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><path d='M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3'/><circle cx='12' cy='12' r='3.5'/></svg>", "Shot"],
+        ["lock", "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><rect x='4' y='10' width='16' height='11' rx='3'/><path d='M8 10V7a4 4 0 0 1 8 0v3'/></svg>", "Lock"],
       ]) {
         const b = el("button", "phone-action");
         b.type = "button";
         b.setAttribute("aria-label", label);
-        b.append(el("i", "", icon), el("span", "", label));
+        const glyph = el("i");
+        glyph.innerHTML = icon;
+        b.append(glyph, el("span", "", label));
         b.onclick = async () => {
           const done = await window.IzukiNative.phoneAction(action);
           if (!done) { setStatus("Turn on Android control in Settings \u2192 Phone first, then try this again."); return; }
@@ -3163,6 +3241,185 @@
     }
   };
 
+  // ---- Phone health -----------------------------------------------------
+  // The exact Android screens, with the current state of each permission.
+  // Newer APKs expose repairStatus; older ones fall back to the fields they
+  // already had, so this never invents a fix it cannot perform.
+  let healthSnapshot = null;
+  let healthCheckedAt = 0;
+  let healthWatching = false;
+
+  function healthChecks(st) {
+    const known = (value) => value !== undefined && value !== null;
+    const checks = [];
+    const control = known(st.control) ? !!st.control : undefined;
+    if (control !== undefined) checks.push({
+      id: "control", title: "Android control",
+      ok: control && st.running !== false,
+      good: "Home, Back, notifications and Autopilot are ready.",
+      bad: control ? "Android has the permission, but the service isn't running. Tap to restart it." : "Needed for Home, Back, notifications and Autopilot.",
+      fix: control ? "Restart" : "Allow",
+    });
+    if (known(st.overlay)) checks.push({
+      id: "overlay", title: "Floating glass orb",
+      ok: !!st.overlay,
+      good: "The orb can float above your other apps.",
+      bad: "Allow Izuki to draw over other apps for the floating orb.",
+      fix: "Allow",
+    });
+    if (known(st.mic)) checks.push({
+      id: "mic", title: "Microphone",
+      ok: !!st.mic,
+      good: "Live calls and “Hey Nova” can hear you.",
+      bad: "Allow the microphone for calls and the wake word.",
+      fix: "Allow",
+    });
+    if (known(st.notifications)) checks.push({
+      id: "notifications", title: "Notifications",
+      ok: !!st.notifications,
+      good: "Reminders and the listening indicator can appear.",
+      bad: "Allow notifications so reminders and the listening indicator appear.",
+      fix: "Allow",
+    });
+    if (known(st.battery)) checks.push({
+      id: "battery", title: "Battery freedom", optional: true,
+      ok: !!st.battery,
+      good: "Android lets Izuki stay awake for the wake word.",
+      bad: "Recommended for “Hey Nova”: choose Izuki → Unrestricted in Android's battery list.",
+      fix: "Review",
+    });
+    return checks;
+  }
+
+  function paintHealth() {
+    const checks = healthChecks(healthSnapshot || {});
+    const core = checks.filter((check) => !check.optional);
+    const issues = core.filter((check) => !check.ok);
+    const score = $("health-score");
+    if (score) {
+      score.textContent = !core.length ? "Update app" : !issues.length ? "All set" : `${core.length - issues.length} of ${core.length} ready`;
+      score.classList.toggle("needs", !!issues.length);
+    }
+    $("open-settings")?.classList.toggle("needs-attention", !!issues.length);
+    const list = $("health-list");
+    if (list) {
+      list.replaceChildren();
+      for (const check of checks) {
+        const row = el("div", "health-row" + (check.ok ? " ok" : ""));
+        const dot = el("span", "health-dot");
+        dot.setAttribute("aria-hidden", "true");
+        const copy = el("span", "health-copy");
+        copy.append(el("b", "", check.title), el("small", "", check.ok ? check.good : check.bad));
+        const button = el("button", "health-fix", check.ok ? "Ready" : check.fix);
+        button.type = "button";
+        button.disabled = check.ok;
+        if (!check.ok) button.onclick = () => { void runHealthFix(check.id, button); };
+        row.append(dot, copy, button);
+        list.appendChild(row);
+      }
+      if (!checks.length) list.appendChild(el("p", "note", "Update the Android companion to see its permission checks here."));
+    }
+    updateSetupStrip();
+  }
+
+  function updateSetupStrip() {
+    const strip = $("setup-strip");
+    if (!strip || !healthSnapshot) return;
+    const issues = healthChecks(healthSnapshot).filter((check) => !check.optional && !check.ok);
+    strip.hidden = !issues.length;
+    if (!issues.length) return;
+    const title = strip.querySelector(".setup-copy b");
+    const detail = strip.querySelector(".setup-copy small");
+    if (title) title.textContent = `${issues.length} phone setting${issues.length === 1 ? "" : "s"} to finish`;
+    if (detail) detail.textContent = issues.map((check) => check.title).slice(0, 2).join(" · ") + (issues.length > 2 ? " · and more" : "");
+  }
+
+  function addSetupStrip(w) {
+    if (!window.IzukiNative?.installed?.() || window.IzukiNative.platform?.() !== "android") return;
+    const strip = el("button", "setup-strip");
+    strip.id = "setup-strip";
+    strip.type = "button";
+    strip.hidden = true;
+    strip.setAttribute("aria-label", "Finish phone setup");
+    const icon = el("span", "setup-icon");
+    icon.innerHTML = "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3 3 8v5c0 5 4 7.5 9 9 5-1.5 9-4 9-9V8z'/><path d='m8.5 12 2.2 2.2 4.8-5'/></svg>";
+    const copy = el("span", "setup-copy");
+    copy.append(el("b", "", "Checking phone setup…"), el("small", "", "Permissions, orb and battery"));
+    const go = el("span", "setup-go", "Finish");
+    strip.append(icon, copy, go);
+    strip.onclick = () => openSettings("native-health");
+    w.appendChild(strip);
+    void loadHealthPanel().then(updateSetupStrip);
+  }
+
+  function watchHealth() {
+    if (healthWatching) return;
+    healthWatching = true;
+    const again = () => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - healthCheckedAt < 1200) return;
+      void loadHealthPanel(true);
+    };
+    document.addEventListener("visibilitychange", again);
+    window.addEventListener("focus", again);
+  }
+
+  async function loadHealthPanel(force = false) {
+    const section = $("native-health");
+    if (!section) return null;
+    if (!force && healthSnapshot && Date.now() - healthCheckedAt < 5000) { paintHealth(); return healthSnapshot; }
+    const n = window.IzukiNative;
+    let status = null;
+    try { status = await n?.repairStatus?.(); } catch { status = null; }
+    if (!status) {
+      // An older APK has no repairStatus. Keep the checks it can answer.
+      try {
+        const [control, wake] = await Promise.all([n?.controlStatus?.(), n?.wakeStatus?.()]);
+        status = { control: !!control, running: !!control, mic: wake?.mic, notifications: wake?.notifications };
+      } catch { status = {}; }
+    }
+    healthSnapshot = status || {};
+    healthCheckedAt = Date.now();
+    watchHealth();
+    paintHealth();
+    return healthSnapshot;
+  }
+
+  async function runHealthFix(id, button) {
+    const n = window.IzukiNative;
+    if (!n) return;
+    button.disabled = true;
+    button.textContent = "Opening…";
+    try {
+      if (id === "control") {
+        await n.openAndroidControlSettings?.();
+      } else if (id === "overlay") {
+        if (!await n.openOverlaySettings?.()) await n.openAppSettings?.();
+      } else if (id === "battery") {
+        if (!await n.openBatterySettings?.()) await n.openAppSettings?.();
+      } else if (id === "mic") {
+        let stream = null;
+        try { stream = await navigator.mediaDevices?.getUserMedia?.({ audio: true }); } catch {}
+        stream?.getTracks?.().forEach((track) => track.stop());
+        const after = (await n.repairStatus?.()) || (await n.wakeStatus?.());
+        if (!after?.mic) await n.openAppSettings?.();
+        await loadHealthPanel(true);
+      } else if (id === "notifications") {
+        try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch {}
+        const after = (await n.repairStatus?.()) || (await n.wakeStatus?.());
+        const allowed = after ? after.notifications : ("Notification" in window && Notification.permission === "granted");
+        if (!allowed) {
+          if (!await n.openNotificationSettings?.()) await n.openAppSettings?.();
+        }
+        await loadHealthPanel(true);
+      }
+      button.textContent = "Opened";
+    } catch {
+      button.textContent = "Try again";
+      button.disabled = false;
+    }
+  }
+
   async function loadWakePanel() {
     const status = $("wake-status"), button = $("wake-toggle"), fix = $("wake-fix");
     if (!status || !button || !fix) return;
@@ -3206,7 +3463,7 @@
             await window.IzukiNative?.openAppSettings?.();
           }
         } else {
-          await window.IzukiNative?.openAppSettings?.();
+          if (!await window.IzukiNative?.openNotificationSettings?.()) await window.IzukiNative?.openAppSettings?.();
         }
         fix.disabled = false;
         await loadWakePanel();
@@ -3244,13 +3501,40 @@
       const value = Number(a?.[name]);
       if (Number.isFinite(max) && max > 0) slider.max = String(max);
       if (Number.isFinite(value)) slider.value = String(value);
-      const show = () => { label.textContent = `${slider.value} / ${slider.max}`; };
+      const show = () => {
+        label.textContent = `${slider.value} / ${slider.max}`;
+        slider.setAttribute("aria-valuetext", `${slider.value} of ${slider.max}`);
+        const top = Math.max(1, Number(slider.max) || 1);
+        slider.style.setProperty("--fill", `${Math.round((Number(slider.value) / top) * 100)}%`);
+      };
       show();
       slider.disabled = !a;
       slider.oninput = show;
       slider.onchange = () => { void window.IzukiNative?.setVolume?.(name, Number(slider.value)); };
     };
     bind("media"); bind("ring"); bind("alarm");
+    const presets = { quiet: { media: 0.18, ring: 0, alarm: 0.75 }, balanced: { media: 0.55, ring: 0.55, alarm: 0.8 }, loud: { media: 1, ring: 1, alarm: 1 } };
+    for (const button of document.querySelectorAll(".sound-presets button")) {
+      button.disabled = !a;
+      button.onclick = async () => {
+        const levels = presets[button.dataset.preset];
+        if (!a || !levels) return;
+        button.disabled = true;
+        for (const name of ["media", "ring", "alarm"]) {
+          const slider = $("sound-" + name);
+          const max = Number(a[name + "Max"]) || Number(slider?.max) || 1;
+          const level = Math.round(max * levels[name]);
+          if (slider) {
+            slider.value = String(level);
+            slider.oninput?.();
+          }
+          await window.IzukiNative?.setVolume?.(name, level);
+        }
+        for (const other of document.querySelectorAll(".sound-presets button")) other.classList.toggle("active", other === button);
+        setStatus(`Sound set to ${button.textContent.toLowerCase()}.`);
+        button.disabled = false;
+      };
+    }
     const duck = $("sound-duck");
     if (duck) {
       duck.checked = localStorage.getItem("izuki.duck") === "1";
@@ -3283,6 +3567,7 @@
     };
     renderMemories();
     const controlPanel = $("native-controls");
+    const healthPanel = $("native-health");
     $("web-install").hidden = native;
     $("native-device").hidden = !native;
     $("native-device-title").textContent = platform === "ios" ? "Your iPhone companion" : "Your Android companion";
@@ -3302,6 +3587,7 @@
       $("native-feedback").textContent = done ? "Scheduled for 10 seconds from now. Lock your phone to test the notification. Focus mode may silence it." : "Reminder unavailable. Check Izuki's notification permission in your phone settings.";
     };
     if (native && platform === "android") {
+      if (healthPanel) healthPanel.hidden = false;
       controlPanel.hidden = false;
       const status = $("native-controls-status");
       window.IzukiNative.controlStatus().then((enabled) => { status.textContent = enabled ? "Android control is enabled. Say “go home”, “go back”, “show recent apps”, “open notifications” or “open quick settings”." : "Android control is off. Enable it once to use direct phone navigation."; });
@@ -3312,9 +3598,11 @@
       renderUpdatePanel();
       if (!updateInfo) void checkForUpdates(false);
       void verifyPendingUpdate();
+      void loadHealthPanel();
       void loadWakePanel();
       void loadSoundPanel();
     } else {
+      if (healthPanel) healthPanel.hidden = true;
       controlPanel.hidden = true;
       $("native-wake").hidden = true;
       $("native-sound").hidden = true;
@@ -3334,6 +3622,37 @@
   }
   const closeSettings = () => { sheet.hidden = true; render(); };
   $("open-settings").onclick = openSettings;
+  const toolsSheet = $("tools-sheet");
+  const closeTools = () => {
+    if (!toolsSheet) return;
+    toolsSheet.hidden = true;
+    document.body.style.overflow = "";
+  };
+  const openTools = () => {
+    if (!toolsSheet) return;
+    toolsSheet.hidden = false;
+    document.body.style.overflow = "hidden";
+    $("close-tools")?.focus?.();
+  };
+  $("more-tools")?.addEventListener("click", openTools);
+  $("close-tools")?.addEventListener("click", closeTools);
+  toolsSheet?.addEventListener("click", (event) => {
+    if (event.target === toolsSheet) closeTools();
+    if (event.target.closest?.("[data-close-tools]")) setTimeout(closeTools, 0);
+  });
+  $("tools-health")?.addEventListener("click", () => { closeTools(); openSettings("native-health"); });
+  $("tools-cockpit")?.addEventListener("click", () => { closeTools(); window.IzukiCockpit?.open?.(); });
+  $("tools-pilot")?.addEventListener("click", () => { closeTools(); window.IzukiPilot?.open?.(); });
+  $("health-refresh")?.addEventListener("click", () => { healthCheckedAt = 0; void loadHealthPanel(true); });
+  $("health-quick")?.addEventListener("click", async () => {
+    const done = await window.IzukiNative?.phoneAction?.("quick_settings");
+    setStatus(done
+      ? "Quick Settings open. Tap Edit, then drag Ask Izuki onto your tiles."
+      : "Turn on Android control first, then add Ask Izuki from Quick Settings.");
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && toolsSheet && !toolsSheet.hidden) closeTools();
+  });
   $("who").onclick = openSettings;
   $("go-home").onclick = () => welcome();
   $("new-chat").onclick = () => {

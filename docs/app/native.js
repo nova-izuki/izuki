@@ -223,6 +223,10 @@
         return !!status?.enabled;
       } catch { return false; }
     },
+    /** Every permission the companion uses, for the one-tap Phone health card. */
+    async repairStatus() {
+      try { return (await control()?.repairStatus?.()) || null; } catch { return null; }
+    },
     /** The phone's accessibility screen: {app, items, w, h, locked}. */
     async screen() {
       try { return (await control()?.screen()) || null; } catch { return null; }
@@ -327,6 +331,22 @@
     async openAndroidControlSettings() {
       if (!control()) return false;
       try { await control().openAccessibilitySettings(); return true; } catch { return false; }
+    },
+    /** The exact Android screens, so nobody has to hunt through Settings. */
+    async openOverlaySettings() {
+      const p = control();
+      if (!p?.openOverlaySettings) return false;
+      try { await p.openOverlaySettings(); return true; } catch { return false; }
+    },
+    async openNotificationSettings() {
+      const p = control();
+      if (!p?.openNotificationSettings) return false;
+      try { await p.openNotificationSettings(); return true; } catch { return false; }
+    },
+    async openBatterySettings() {
+      const p = control();
+      if (!p?.openBatterySettings) return false;
+      try { await p.openBatterySettings(); return true; } catch { return false; }
     },
     /** Izuki's own Android app settings: microphone and notifications. */
     async openAppSettings() {
