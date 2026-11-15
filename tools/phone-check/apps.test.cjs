@@ -123,6 +123,33 @@ async function integration() {
   for (const v of [{ error: { message: "denied" } }, { data: { success: false } }, {}]) is("failure envelope rejected", !!T.toolError(v), true);
   answer = await A.ask([{ role: "user", text: "Check my Gmail accounts" }], async () => JSON.stringify({ ask: "Work or personal Gmail?" }));
   is("clarification is allowed without fabricating account data", answer.text, "Work or personal Gmail?");
+  // Stop can arrive while a missing/expired session is being resolved.
+  // Run the actual router via ask(), including the 404 execute retry.
+  for (const phase of ["discovery", "execute-retry", "search-retry", "link-retry"]) {
+    A.saveKey("ak_example_test_only");
+    let cancelled = false, sessions = 0, postsAfterStop = 0, rounds = 0;
+    sandbox.fetch = async (url) => {
+      if (cancelled) postsAfterStop++;
+      if (url.endsWith("/session")) {
+        sessions++;
+        if (phase === "discovery" || sessions === 2) cancelled = true;
+        return { ok: true, json: async () => ({ session_id: "trs_" + sessions }) };
+      }
+      if ((phase === "execute-retry" && url.endsWith("/execute"))
+        || (phase === "search-retry" && url.endsWith("/search") && rounds > 0)
+        || (phase === "link-retry" && url.endsWith("/link"))) {
+        return { ok: false, status: 404, json: async () => ({ message: "expired" }) };
+      }
+      return { ok: true, json: async () => ({ results: [] }) };
+    };
+    const result = await A.ask([{ role: "user", text: "Check my apps" }], async () => {
+      rounds++;
+      return JSON.stringify(phase === "search-retry" ? { search: "Gmail" }
+        : phase === "link-retry" ? { connect: "gmail" } : { run: { tool: "GMAIL_FETCH_EMAILS", arguments: {} } });
+    }, () => cancelled);
+    is(phase + ": no POST starts after Stop during session resolution", postsAfterStop, 0);
+    is(phase + ": the request ends stopped", result.stopped, true);
+  }
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 }

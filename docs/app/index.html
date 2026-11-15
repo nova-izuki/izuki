@@ -2304,7 +2304,14 @@
       finishRequest();
       busy = false; refreshSend(); setStatus("");
       // Stopped (or out of time) while hearing: a late transcript starts nothing.
-      if (stoppedHearing) { setOrb(""); return; }
+      if (stoppedHearing) {
+        setOrb("");
+        if (requestEnd === "timeout") {
+          bubble("izuki", endedSay(new Error("timeout")), { error: true });
+          if (talking) listen();
+        }
+        return;
+      }
       if (!said) { setOrb(""); if (talking) listen(); return; }
       liveHeard(said);
       return ask(said);
@@ -4561,6 +4568,11 @@
     const said = String(phrase || "").replace(/^.*?\b(?:hey|hi|ok|okay)[\s,]+(?:nova|izuki)\b[\s,]*/i, "").trim();
     if (!ready()) {
       setStatus("I heard “Hey Nova”. Add a free AI key or link your PC first.");
+      return;
+    }
+    if (said && wakeTurn) {
+      setStatus("Voice match is on: say it again so I can check it's you.");
+      openLive();
       return;
     }
     if (said) { void ask(said); return; }

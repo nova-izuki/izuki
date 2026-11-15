@@ -145,12 +145,9 @@
     || screen?.items?.find((item) => item.kind === "box") || null;
   /** A box that says it's for searching (its words or its id): never a message box. */
   const SEARCHY = /(^|[^a-z])(search|find|query|url|address|omnibox|urlbar|searchbar|searchbox)([^a-z]|$)/i;
+  // A field's purpose comes from its metadata, never a person's draft.
+  const forSearch = (item) => SEARCHY.test(String(item?.hint || "")) || SEARCHY.test(String(item?.id || ""));
   const searchBoxIn = (screen) => {
-    // What the box is for (its hint and id), not what's typed in it: a
-    // draft can say anything. A box that only exposes its text counts when
-    // that text reads like a search placeholder.
-    const forSearch = (item) => SEARCHY.test(String(item.hint || "")) || SEARCHY.test(String(item.id || ""))
-      || (!item.hint && /^\s*(search|find)\b/i.test(String(item.text || "")));
     const boxes = (screen?.items || []).filter((item) => item.kind === "box" && forSearch(item));
     return boxes.find((item) => item.focused) || boxes[0] || null;
   };
@@ -213,12 +210,10 @@
   async function submit() {
     const n = needBridge();
     const screen = await readScreen();
-    const items = Array.isArray(screen.items) ? screen.items : [];
-    // Only submit where the screen itself shows a Search/Go control or a
-    // search box. Pressing Enter in a chat box would send a message, which
-    // Autopilot must never do.
-    const searchable = items.some((item) => /\b(search|go)\b/i.test(String(item.text || "")) || /search/i.test(String(item.id || "")));
-    if (!searchable) throw new Error("I couldn't find a Search control on this screen, so I didn't press Enter.");
+    // Recheck the focused field on this fresh screen. A Search button
+    // elsewhere cannot authorize Enter in a message composer.
+    const box = (screen.items || []).find((item) => item.kind === "box" && item.focused);
+    if (!box || !forSearch(box)) throw new Error("The focused box isn't a search or address box, so I didn't press Enter.");
     const before = look(screen);
     assertRunning();
     let result = await n.act({ op: "submit" });

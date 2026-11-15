@@ -202,6 +202,41 @@ let server,browser,profile,ws;
   assert.equal(drafts.afterOwn, 'A new question');
   assert.deepEqual(drafts.kept, { ok: false, why: 'draft' }, "the person's own draft is left alone");
   assert.equal(drafts.afterTheirs, 'my own words, not sent yet');
+  // Exercise the real composer while its asynchronous paste is in flight,
+  // then retry. Stop must prevent the old Send and preserve draft ownership.
+  const pasteRaces = await run(`(async () => {
+    const { typeIntoComposer } = await import('/extension/providers.js');
+    const host=document.createElement('div');host.style.cssText='position:fixed;top:0;left:0;width:300px;height:100px;z-index:9999';
+    const box=document.createElement('div');box.contentEditable='true';box.style.cssText='width:280px;height:40px';
+    const send=document.createElement('button');send.textContent='Send';send.setAttribute('data-race-send','');
+    let sent=[],mode='stop';send.onclick=()=>{sent.push(box.textContent);box.textContent='';};
+    box.addEventListener('paste',e=>{
+      e.preventDefault();
+      if(mode==='stop'||mode==='retry')box.textContent=e.clipboardData.getData('text/plain');
+      if(mode==='stop')setTimeout(()=>globalThis.__izukiStoppedRelay.add('old'),10);
+      if(mode==='edit')setTimeout(()=>{box.textContent='my private draft';},10);
+      if(mode==='append') { box.textContent=e.clipboardData.getData('text/plain');setTimeout(()=>{box.textContent+=' my addition';},10); }
+      if(mode==='replace')setTimeout(()=>box.remove(),10);
+    });
+    host.append(box,send);document.body.append(host);
+    globalThis.__izukiTyped='';globalThis.__izukiStoppedRelay=new Set();
+    const type=(text,id)=>typeIntoComposer(text,['div[contenteditable="true"]'],['button[data-race-send]'],true,location.origin,id);
+    const stopped=await type('Old question','old'),owned=globalThis.__izukiTyped;
+    mode='retry';const retried=await type('New question','new');
+    mode='edit';box.textContent='';const edited=await type('Overwrite attempt','edit'),draft=box.textContent;
+    mode='append';box.textContent='';const appended=await type('Original question','append'),appendDraft=box.textContent;
+    mode='replace';box.textContent='';const replaced=await type('Detached composer','replace');
+    host.remove();return {stopped,owned,retried,sent,edited,draft,appended,appendDraft,replaced};
+  })()`);
+  assert.deepEqual(pasteRaces.stopped,{ok:false,why:'stopped'});
+  assert.equal(pasteRaces.owned,'Old question','Stop retains ownership of text already pasted');
+  assert.deepEqual(pasteRaces.retried,{ok:true,sent:true});
+  assert.deepEqual(pasteRaces.sent,['New question'],'only the new request can be sent after Stop and retry');
+  assert.deepEqual(pasteRaces.edited,{ok:false,why:'draft'});
+  assert.equal(pasteRaces.draft,'my private draft','a draft typed during paste wait is preserved');
+  assert.deepEqual(pasteRaces.appended,{ok:false,why:'draft'});
+  assert.equal(pasteRaces.appendDraft,'Original question my addition','a matching prefix does not authorize sending user edits');
+  assert.deepEqual(pasteRaces.replaced,{ok:false,why:'changed-page'},'a replaced composer cannot be written or sent');
   // Esc has to end a desktop task from anywhere in the panel, as it promises.
   await run('document.getElementById("q").value="Summarise the page into my notes";document.getElementById("task-open").click();document.getElementById("task-run").click();');
   await wait('panelTest.tasks.filter((t)=>t.route==="run").length===2');

@@ -180,3 +180,11 @@ Reviewed before the merge. None of the three touches the Windows release, so 1.0
 - CodeRabbit reviews every file (`.coderabbit.yaml` switches off all its default skips). Binary files (images, audio, models, archives) are in scope, but their bytes can't be read as code. `tools/asset-check.mjs` checks them in CI.
 - A push can go unreviewed (rate or service limits). This log records that, rather than assuming a review happened.
 - A clean review is not a release decision. The tests and `docs/MILESTONE-1.0.196.md` are.
+
+## PR #108 post-merge findings (Codex, claimed 2026-11-15)
+
+Claimed for verification: comments 4580259664 (search metadata), 4580259671 (wake inline voice check), 4580259676 (wake metadata), 4580293701 (apps cancellation), 4580293704 (search draft metadata), 4580332829 (refreshed target identity), 4580332831 (wake queued start failure), 4580332836 (address submission), 4580332840 (composer ownership and user edit recheck). Separate regressions and current-code results will be recorded before integration. No native/release ownership taken.
+
+Adjacent confirmed review follow-up: comment 4580348042 (active-call transcription timeout). The current ask() discards a partial transcript returned after abort but returns before timeout feedback/listener recovery. Codex claims this phone-only fix and actual-function regression; explicit Stop remains silent.
+
+Post-merge verification result (Codex, 2026-11-15): all nine findings confirmed and fixed, plus 4580348042. Local build/TypeScript, phone (including actual function/race regressions), conversation, Air, panel, workspace/relay, HTML and real Edge panel-browser checks pass. Extension ZIP rebuilt; Android/JUnit compile requires mobile CI (no JDK on host), real Samsung behavior remains unverified. Details: docs/VALIDATION-2026-11-15-post108.md. Local CodeRabbit review is in progress; PR review/CI remain integration gates. No native Rust, version files, root worktree or Freebuff work changed.

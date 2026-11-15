@@ -70,6 +70,15 @@ const window = {
 vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/native.js"), "utf8"), { window, console, fetch, localStorage, setTimeout, clearTimeout });
 
 (async () => {
+  let wake = { phrase: "Hey Nova open maps", audio: "recorded-wake", voice: true };
+  window.Capacitor.Plugins.IzukiControl.takeWake = async () => { const value = wake; wake = {}; return value; };
+  assert.equal(await window.IzukiNative.takeWake(), "Hey Nova open maps");
+  assert.equal(await window.IzukiNative.takeWake(), "");
+  assert.equal(window.IzukiNative.takeWakeAudio().audio, "recorded-wake", "an empty overlapping wake poll preserves the audio");
+  assert.equal(window.IzukiNative.takeWakeAudio().voice, false, "wake metadata is consumed once");
+  wake = { phrase: "Hey Nova", audio: "", voice: true };
+  await window.IzukiNative.takeWake(); await window.IzukiNative.takeWake();
+  assert.equal(window.IzukiNative.takeWakeAudio().voice, true, "an empty poll cannot turn a spoken wake into an unverified wake");
   assert.equal(window.IzukiNative.installed(), true);
   assert.equal(window.IzukiNative.platform(), "android");
   assert.equal(await window.IzukiNative.haptic(), true);

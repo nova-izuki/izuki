@@ -65,6 +65,7 @@ function fakePage({ kind = 'textarea', sendButton = true, disabled = false } = {
     value: '',
     textContent: '',
     disabled: false,
+    isConnected: true,
     attrs: {},
     getAttribute(name) { return this.attrs[name] ?? null; },
     getBoundingClientRect: () => ({ width: 300, height: 40, top: 10, bottom: 50, left: 0, right: 300 }),
