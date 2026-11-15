@@ -413,6 +413,8 @@ pub fn heard(said: &str, task_running: bool) -> Option<String> {
         }
         "take turns" | "lets take turns" | "do it with me" => {
             session.mode = Mode::WithMe;
+            // Turns start fresh: a queued "you do this one" doesn't carry over.
+            session.next = None;
             Some("Deal — we'll take turns.".into())
         }
         _ => None,
