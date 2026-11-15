@@ -20,12 +20,20 @@
   let labelHits = 0;
   let longHits = 0;
   let longTimer = null;
+  let lastScreenApp = "";
 
   /** The accessibility tree's copy of a test target. Pure and testable. */
-  function findTarget(screen, needle) {
+  function findTarget(screen, needle, widest = false) {
     const wanted = String(needle || "").toLowerCase();
     const items = Array.isArray(screen?.items) ? screen.items : [];
-    return items.find((item) => String(item?.text || "").toLowerCase().includes(wanted)) || null;
+    const matches = items.filter((item) =>
+      String(item?.text || "").toLowerCase().includes(wanted) ||
+      String(item?.id || "").toLowerCase().includes(wanted.replace(/\s+/g, "-")));
+    if (!matches.length) return null;
+    // A swipe strip can expose both the strip and its child text. The widest
+    // match is the thing a finger must actually drag across.
+    if (widest) matches.sort((a, b) => (Number(b.w) * Number(b.h)) - (Number(a.w) * Number(a.h)));
+    return matches[0];
   }
 
   /** Centre of an accessibility item in the phone's own pixels. */
@@ -67,7 +75,7 @@
             <button class="pl-target" id="pl-gesture-target" type="button">Izuki gesture target</button>
             <button class="pl-target" id="pl-label-target" type="button">Izuki label target</button>
           </div>
-          <div class="pl-swipe" id="pl-swipe-zone" aria-label="Izuki swipe test" tabindex="0"><div class="pl-swipe-inner"><span>Izuki swipe test — swipe across this strip</span><span>← keep going →</span></div></div>
+          <div class="pl-swipe" id="pl-swipe-zone" role="group" aria-label="Izuki swipe test" tabindex="0"><div class="pl-swipe-inner"><span>Izuki swipe test — swipe across this strip</span><span>← keep going →</span></div></div>
           <button class="pl-target" id="pl-long-target" type="button">Izuki long-press target</button>
         </div>
         <p class="pl-note">Android Accessibility control must be on and the phone unlocked. Autopilot runs only when you press Run; a locked phone is never touched.</p>
@@ -252,52 +260,84 @@
       const label = await testLabel(bridge);
       line(out, label.ok ? "ok" : "bad", label.text);
 
-      const swipe = await testSwipe(bridge);
+      const swipe = await testSwipe(bridge, tap.map);
       line(out, swipe.ok ? "ok" : "bad", swipe.text);
 
       const long = await testLong(bridge);
       line(out, long.ok ? "ok" : "warn", long.text);
 
-      if (tap.ok && label.ok && swipe.ok) line(out, "ok", "Tap, tap-by-label and swipe reached Izuki's test targets.");
-      else line(out, "bad", "Some controls did not fire. Keep the phone unlocked and retry once.");
+      const failed = [tap.ok ? "" : "tap", label.ok ? "" : "tap-by-label", swipe.ok ? "" : "swipe"].filter(Boolean);
+      if (!failed.length) line(out, "ok", "Tap, tap-by-label and swipe reached Izuki's test targets.");
+      else line(out, "bad", `Not working yet: ${failed.join(", ")}. The lines above say what Android reported. Settings → Phone → Diagnostics has the details to share.`);
     } finally {
       button.disabled = false;
     }
   }
 
-  async function targetOnScreen(bridge, id, needle) {
+  async function targetOnScreen(bridge, id, needle, widest = false) {
     const el = $(id);
     el?.scrollIntoView?.({ block: "center" });
-    await sleep(300);
+    await sleep(450);
     const screen = await bridge.screen?.();
-    return findTarget(screen, needle);
+    lastScreenApp = screen?.app || "";
+    return findTarget(screen, needle, widest);
+  }
+
+  /** Android's reason in plain words, e.g. "Android cancelled the touch". */
+  const why = (result) => n()?.why?.(result, "the target") || (result?.reason ? `Android said: ${result.reason}.` : "Android gave no reason.");
+
+  /**
+   * Page pixels → screen pixels, measured from a target both sides can see
+   * (its rectangle here and its bounds from Android). Pure and testable.
+   */
+  function screenMap(rect, item) {
+    if (!rect || !item || !(rect.width > 0) || !(Number(item.w) > 0)) return null;
+    const scale = Number(item.w) / rect.width;
+    return { scale, x: Number(item.x) - rect.left * scale, y: Number(item.y) - rect.top * scale };
   }
 
   async function testTap(bridge) {
     const item = await targetOnScreen(bridge, "pl-gesture-target", "gesture target");
     const point = center(item);
-    if (!point) return { ok: false, text: "The tap target was not listed by the screen reader. Try again after unlocking." };
+    if (!point) return { ok: false, text: "The tap target was not listed by the screen reader. Unlock the phone and keep Izuki in front, then run it again." };
+    const map = screenMap($("pl-gesture-target")?.getBoundingClientRect?.(), item);
+    if (map) map.app = lastScreenApp;
     const result = await bridge.gesture({ op: "tap", x: point.x, y: point.y });
     await sleep(650);
     return tapHits > 0
-      ? { ok: true, text: `Coordinate tap reached the target at ${point.x},${point.y}.` }
-      : { ok: false, text: result?.done ? "The tap was sent but the target did not fire." : "The phone refused the tap." };
+      ? { ok: true, map, text: `Coordinate tap reached the target at ${point.x},${point.y}.` }
+      : { ok: false, map, text: result?.done ? "Android completed the tap, but the target didn't fire." : `The tap didn't happen: ${why(result)}` };
   }
 
   async function testLabel(bridge) {
     const item = await targetOnScreen(bridge, "pl-label-target", "label target");
     if (!item) return { ok: false, text: "The tap-by-label target was not listed by the screen reader." };
     const result = await bridge.act({ op: "tapText", text: "Izuki label target" });
-    await sleep(500);
-    return labelHits > 0 && result?.done
-      ? { ok: true, text: "Tap-by-label reached the target." }
-      : { ok: false, text: "Tap-by-label did not reach the target." };
+    await sleep(600);
+    const how = result?.how === "touch" ? "a real touch on the label" : result?.how === "action" ? "Android's press action" : "a press";
+    if (labelHits > 0) return { ok: true, text: `Tap-by-label reached the target (${how}).` };
+    return { ok: false, text: result?.done
+      ? `Android accepted ${how} on “${result.matched || "the label"}”, but the button didn't fire.`
+      : `Tap-by-label didn't happen: ${why(result)}` };
   }
 
-  async function testSwipe(bridge) {
+  async function testSwipe(bridge, map) {
     const zone = $("pl-swipe-zone");
-    const item = await targetOnScreen(bridge, "pl-swipe-zone", "swipe test");
-    if (!zone || !item) return { ok: false, text: "The swipe strip was not listed by the screen reader." };
+    if (!zone) return { ok: false, text: "The swipe strip is missing from this page." };
+    let item = await targetOnScreen(bridge, "pl-swipe-zone", "swipe test", true);
+    let where = "the screen reader's bounds";
+    // Chromium may not name a scroll strip. The page knows where it is, and the
+    // tap target gave the page-to-screen mapping: use that instead.
+    if (!item && map) {
+      // Only while Izuki's own page is in front: a swipe at these
+      // coordinates must never land in another app.
+      const front = await bridge.screen?.().catch?.(() => null);
+      if (!front || front.app !== map.app) return { ok: false, text: "Izuki isn't in front any more, so the swipe test stopped." };
+      const r = zone.getBoundingClientRect();
+      item = { x: Math.round(map.x + r.left * map.scale), y: Math.round(map.y + r.top * map.scale), w: Math.round(r.width * map.scale), h: Math.round(r.height * map.scale) };
+      where = "the page's own position";
+    }
+    if (!item) return { ok: false, text: "The swipe strip was not listed by the screen reader, and the tap test didn't give a position to use." };
     zone.scrollLeft = 0;
     const y = Math.round(item.y + item.h / 2);
     const from = Math.round(item.x + item.w - 18);
@@ -305,8 +345,8 @@
     const result = await bridge.gesture({ op: "swipe", x: from, y, x2: to, y2: y, ms: 320 });
     await sleep(650);
     return zone.scrollLeft > 4
-      ? { ok: true, text: "Swipe moved the test strip." }
-      : { ok: false, text: result?.done ? "The swipe was sent but the test strip did not move." : "The phone refused the swipe." };
+      ? { ok: true, text: `Swipe moved the test strip (found by ${where}).` }
+      : { ok: false, text: result?.done ? "Android completed the swipe, but the strip didn't move." : `The swipe didn't happen: ${why(result)}` };
   }
 
   async function testLong(bridge) {
@@ -320,5 +360,5 @@
       : { ok: false, text: "Long-press was not observed; Android may reserve it for text selection. Tap and swipe are the primary checks." };
   }
 
-  window.IzukiPilot = { open, close, selfTest, findTarget, center };
+  window.IzukiPilot = { open, close, selfTest, findTarget, center, screenMap };
 })();

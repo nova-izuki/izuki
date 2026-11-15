@@ -317,7 +317,7 @@
    * Answer a request that needs the user's apps. `complete(messages)` runs the
    * phone's own brain. Returns {text, links}.
    */
-  async function ask(history, complete) {
+  async function ask(history, complete, stopped = () => false) {
     if (!configured()) {
       return { text: "Link your apps in Settings first, and I can read and handle them from here.", links: [] };
     }
@@ -352,7 +352,9 @@
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
       if (Date.now() - began > BUDGET_MS) break;
+      if (stopped()) return { text: "Stopped.", links, stopped: true };
       const raw = await complete(messages);
+      if (stopped()) return { text: "Stopped.", links, stopped: true };
       const step = parseStep(raw);
       if (!step) return executed ? { text: String(raw || "").trim().replace(/`/g, ""), links } : unavailable();
 
@@ -411,6 +413,7 @@
           seen = `Couldn't make a sign-in link: ${e.message}`;
         }
       } else if (step.run && typeof step.run === "object") {
+        if (stopped()) return { text: "Stopped.", links, stopped: true };
         // A failed latest operation invalidates any earlier success in this turn.
         executed = false;
         const tool = String(step.run.tool || "");
@@ -436,9 +439,11 @@
     }
 
     if (!executed) return unavailable();
+    if (stopped()) return { text: "Stopped.", links, stopped: true };
     // Out of steps: say what it got to rather than nothing.
     messages.push({ role: "user", content: 'Out of steps — reply now with what you found or did, as {"reply": …}.' });
     const raw = await complete(messages);
+    if (stopped()) return { text: "Stopped.", links, stopped: true };
     const step = parseStep(raw);
     const text = (step && typeof step.reply === "string" ? step.reply : String(raw || "")).trim().replace(/`/g, "");
     if (readApp) snapPut(readApp, text);

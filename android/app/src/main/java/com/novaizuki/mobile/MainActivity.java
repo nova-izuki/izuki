@@ -9,6 +9,9 @@ import android.os.Build;
 import android.os.Bundle;
 
 public class MainActivity extends BridgeActivity {
+  /** Izuki's own page is the window in front (so an Izuki window elsewhere is the orb). */
+  static volatile boolean inFront = false;
+
   private final BroadcastReceiver unlockReceiver = new BroadcastReceiver() {
     @Override public void onReceive(Context context, Intent intent) {
       if (intent != null && Intent.ACTION_USER_PRESENT.equals(intent.getAction())) {
@@ -34,6 +37,35 @@ public class MainActivity extends BridgeActivity {
     super.onNewIntent(intent);
     setIntent(intent);
     handleWake(intent);
+  }
+
+  /**
+   * Back in front, often from Android Settings: the page re-checks every
+   * permission at once instead of showing what was true before it left. The
+   * wake listener steps aside while the page owns the microphone.
+   */
+  @Override
+  public void onResume() {
+    super.onResume();
+    inFront = true;
+    IzukiWakeService.foreground(this, true);
+    // Coming back from Settings must never leave a wake/page orb over the
+    // permission screen. The page redraws its own orb when it actually needs one.
+    IzukiAccessibilityService.orbFor("wake", "idle", "");
+    IzukiAccessibilityService.orbFor("page", "idle", "");
+    IzukiControlPlugin.notifyResume();
+  }
+
+  @Override
+  public void onPause() {
+    inFront = false;
+    super.onPause();
+  }
+
+  @Override
+  public void onStop() {
+    IzukiWakeService.foreground(this, false);
+    super.onStop();
   }
 
   @Override

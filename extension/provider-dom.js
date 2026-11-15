@@ -1,6 +1,10 @@
 (function(root) {
-async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend, expectedOrigin = "", requestId = "") {
+async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend, expectedOrigin = "", requestId = "", deadline = 0) {
   if (expectedOrigin && location.origin !== expectedOrigin) return { ok: false, why: "changed-page" };
+  // The relay stopped waiting for this call (it took too long, or Stop):
+  // checked here and after every wait, before the box is touched again.
+  const gone = () => (deadline && Date.now() > deadline) || Boolean(requestId && globalThis.__izukiStoppedRelay?.has(requestId));
+  if (gone()) return { ok: false, why: "stopped" };
   const visible = (el) => {
     if (!el) return false;
     const box = el.getBoundingClientRect();
@@ -55,6 +59,7 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
       sel.addRange(range);
       document.execCommand("delete");
       await new Promise((resolve) => setTimeout(resolve, 80));
+      if (gone()) return { ok: false, why: "stopped" };
     }
     if (squash(box.value || box.textContent)) return { ok: false, why: "draft" };
   }
@@ -66,6 +71,7 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
     data.setData("text/plain", text);
     box.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
     await new Promise((resolve) => setTimeout(resolve, 120));
+    if (gone()) return { ok: false, why: "stopped" };
   }
   // Did the words actually land? A paste event is a request, not a paste:
   // an editor can cancel it and insert nothing, and synthetic input is
@@ -81,6 +87,7 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
   const probe = text.replace(/\s+/g, " ").trim().slice(0, 24);
   const landed = () => Boolean(probe) && inBox().includes(probe);
   if (!landed()) {
+    if (gone()) return { ok: false, why: "stopped" };
     setValue(text);
     // An editor that re-renders from its own state throws a plain text node
     // away on the next frame. Give it that frame, then believe what's there.
@@ -104,6 +111,7 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
   }
   if (button) {
     if (requestId && globalThis.__izukiStoppedRelay?.has(requestId)) return {ok:false,why:"stopped"};
+    if (deadline && Date.now() > deadline) return { ok: false, why: "stopped" };
     button.click();
     // Sent: whatever is in the box from now on is the person's.
     globalThis.__izukiTyped = "";

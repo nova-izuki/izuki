@@ -1026,6 +1026,9 @@ fn ask_model(
             + &crate::reminders::prompt_block()
             + &crate::voices::prompt_block()
             + &crate::lessons::prompt_block(&uia::foreground_app(), crate::ext::snapshot_url_cached().as_deref())
+            // Hardware requests start from facts: this PC's maker, model and
+            // maker apps, and where a setting like a charge limit really lives.
+            + &crate::hardware::prompt_block(&session.prompt)
             + crate::selfknow::PROMPT
             + match (on_a_test, direct_answer_requested(&session.prompt)) {
                 (true, true) => DIRECT_ANSWER_PROMPT,
@@ -4117,6 +4120,12 @@ fn submit_task(
     // Failed steps that were re-planned from a fresh look. Bounded so a step
     // that cannot work can never become a loop.
     let mut step_replans = 0u32;
+    // Why steps failed, in order: the stop message says what really happened
+    // instead of "a step keeps failing".
+    let mut snags_seen: Vec<String> = Vec::new();
+    // The last round's step failed: the next plan's "I'll …" isn't said out
+    // loud as if it were progress (it repeated four times on the owner's PC).
+    let mut retrying = false;
     // A step held back and nothing done since: the last word must say so.
     let mut held_back: Option<String> = None;
     let mut all_steps: Vec<ActionStep> = Vec::new();
@@ -4835,7 +4844,11 @@ fn submit_task(
         // (Teaching: the explanation is the point — it's never held back.
         // Nor is saying that something was held back.)
         let spaced = explaining || held_why.is_some() || last_said_at.elapsed() >= Duration::from_secs(12);
-        if !steps.is_empty() && !done && !plan.done && spaced && worth_saying(&progress, &last_said) {
+        // After a failed step the new plan is another attempt, not progress:
+        // show it quietly instead of announcing "I'll …" again.
+        if retrying && !steps.is_empty() && !explaining && held_why.is_none() {
+            let _ = app.emit(events::STATUS, StatusEvent::working("That didn't work — trying another way…"));
+        } else if !steps.is_empty() && !done && !plan.done && spaced && worth_saying(&progress, &last_said) {
             last_said = progress.clone();
             last_said_at = std::time::Instant::now();
             let _ = app.emit(
@@ -4941,6 +4954,21 @@ fn submit_task(
         // A click that couldn't happen (something on top, a greyed-out
         // button) isn't the end: tell the brain, and it deals with it.
         let snag = STEP_SNAG.lock().take();
+        retrying = snag.as_deref().is_some_and(|why| why.starts_with("target_changed:")
+            || why.starts_with(crate::ext::UNCONFIRMED) || why.starts_with("covered:")
+            || why.starts_with("disabled:") || why.starts_with("typed_mismatch:"));
+        // Every failure goes in the stop report (not only the kinds that
+        // keep the next try quiet).
+        if let Some(why) = snag.as_deref().filter(|why| {
+            // A person's own step, a pause or a wait isn't a failed attempt.
+            !why.starts_with(crate::practical::YOUR_TURN_DONE)
+                && *why != crate::practical::YOUR_TURN_IDLE
+                && !why.starts_with("paused:")
+                && *why != USER_WAIT_OVER
+                && *why != TAB_WAIT_OVER
+        }) {
+            snags_seen.push(why.to_string());
+        }
         if snag.as_deref() == Some(USER_WAIT_OVER) {
             set_unfinished((prompt.clone(), done_so_far.clone()));
             let mut plan = last_plan.take().unwrap_or_default();
@@ -5014,7 +5042,11 @@ fn submit_task(
                 remember_final_warning(&mut done_so_far);
                 set_unfinished((prompt.clone(), done_so_far.clone()));
                 if let Some(p) = last_plan.as_mut() {
-                    p.summary = "A step keeps failing after fresh looks, so I've stopped rather than loop. The screen is as it is now: check it, and tell me what to do or say \"keep going\".".into();
+                    p.summary = stop_report(
+                        &snags_seen,
+                        &uia::foreground_title(),
+                        crate::hardware::about_charge_limit(&prompt).then(crate::hardware::device).as_ref(),
+                    );
                     p.mood = Some("sympathetic".into());
                     final_word = Some(p.summary.clone());
                 }
@@ -5408,6 +5440,63 @@ const MAX_STEP_REPLANS: u32 = 3;
 /// Whether another failed step may be re-planned from a fresh look.
 fn can_replan(used: u32) -> bool {
     used < MAX_STEP_REPLANS
+}
+
+/// One failed step in plain words, from the reason the hands gave.
+fn snag_words(why: &str) -> String {
+    let low = why.to_lowercase();
+    if low.contains("numbered target") || low.contains("guessed coordinates") {
+        "I couldn't tie the thing I wanted to press to a real control on the screen, so I didn't click".into()
+    } else if why.starts_with(crate::ext::UNCONFIRMED) && low.contains("scroll") {
+        "scrolling didn't move the page (it may already show everything)".into()
+    } else if why.starts_with("target_changed:") {
+        "the control moved or was covered just before I could press it".into()
+    } else if why.starts_with("covered:") {
+        "something on top was covering the control".into()
+    } else if why.starts_with("disabled:") {
+        "the button was greyed out".into()
+    } else if why.starts_with("typed_mismatch:") {
+        "the typing didn't come out as intended".into()
+    } else if why.starts_with(crate::ext::UNCONFIRMED) {
+        "an action went out but I couldn't confirm it did anything".into()
+    } else {
+        why.split_once(':').map(|(_, rest)| rest).unwrap_or(why).trim().chars().take(90).collect()
+    }
+}
+
+/// The last word when re-plans run out: where it was, what actually went
+/// wrong (each kind once), and — for a hardware task — where the setting
+/// really lives on this PC. Replaces "A step keeps failing after fresh looks".
+fn stop_report(snags: &[String], window: &str, device: Option<&crate::hardware::Device>) -> String {
+    let mut reasons: Vec<String> = Vec::new();
+    for why in snags {
+        let words = snag_words(why);
+        if !words.is_empty() && !reasons.contains(&words) {
+            reasons.push(words);
+        }
+    }
+    let tries = snags.len().max(1);
+    let window = window.trim();
+    let mut out = format!("I stopped after {tries} attempt{} that didn't work, rather than keep looping", if tries == 1 { "" } else { "s" });
+    if !window.is_empty() {
+        out += &format!(" in “{}”", window.chars().take(60).collect::<String>());
+    }
+    out += ".";
+    if !reasons.is_empty() {
+        let listed: Vec<String> = reasons.iter().take(3).cloned().collect();
+        out += &format!(" What happened: {}.", listed.join("; "));
+    }
+    if let Some(d) = device {
+        if let Some(route) = crate::hardware::charge_limit_route(d) {
+            let installed = route.apps.iter().find(|a| d.has_app(a).is_some());
+            out += &match installed {
+                Some(app) => format!(" Windows Settings doesn't have a charge limit on this {}: it's in {app} → {}. Say “open {app}” and I'll take you there.", d.name(), route.path),
+                None => format!(" Windows Settings doesn't have a charge limit on this {}: it's in {}, which isn't installed here.", d.name(), route.apps.join(" or ")),
+            };
+        }
+    }
+    out += " Tell me what to do next, or say “keep going”.";
+    out
 }
 /// Did this round do nothing it hadn't already done?
 ///
@@ -7375,5 +7464,47 @@ mod chat_model_tests {
         ]);
         assert_eq!(picked.as_deref(), Some("qwen3.5:4b"));
         assert_eq!(local_chat_choice(vec!["moondream:latest".into()]), None);
+    }
+}
+
+#[cfg(test)]
+mod stop_report_tests {
+    use super::*;
+
+    /// The owner's battery-limit run: a covered control, a refused guess,
+    /// two scrolls that moved nothing — on a ThinkPad with Commercial Vantage.
+    #[test]
+    fn the_stop_says_what_happened_and_where_the_setting_lives() {
+        let snags = vec![
+            "target_changed: another element covers the detected control; parse the screen again".to_string(),
+            "target_changed: Precision needs a numbered target from the current screen parser; choose its target ID, not guessed coordinates".to_string(),
+            "unconfirmed:scrolled at 1050,450, but nothing under the pointer moved — it may be at the end already, or that spot doesn't scroll".to_string(),
+            "unconfirmed:scrolled at 960,540, but nothing under the pointer moved".to_string(),
+        ];
+        let thinkpad = crate::hardware::Device {
+            maker: "LENOVO".into(),
+            model: "20S1SA4W03".into(),
+            family: "ThinkPad T14 Gen 1".into(),
+            apps: vec![("Lenovo Commercial Vantage".into(), "E046963F.LenovoSettingsforEnterprise_k1h2ywk1493x8".into())],
+            apps_known: true,
+        };
+        let said = stop_report(&snags, "Settings", Some(&thinkpad));
+        assert!(said.starts_with("I stopped after 4 attempts that didn't work"), "{said}");
+        assert!(said.contains("in “Settings”"));
+        assert!(said.contains("the control moved or was covered"));
+        assert!(said.contains("didn't click"));
+        assert!(said.contains("scrolling didn't move the page"));
+        assert_eq!(said.matches("scrolling didn't move").count(), 1, "each kind of failure once");
+        assert!(said.contains("Lenovo Commercial Vantage → Device → Power → Battery Charge Threshold"));
+        assert!(!said.contains("fresh looks"));
+    }
+
+    #[test]
+    fn without_a_hardware_task_it_names_no_app() {
+        let said = stop_report(&["covered:a dialog".to_string()], "", None);
+        assert!(said.starts_with("I stopped after 1 attempt that didn't work, rather than keep looping."), "{said}");
+        assert!(said.contains("something on top was covering the control"));
+        assert!(!said.contains("Vantage"));
+        assert!(said.ends_with("say “keep going”."));
     }
 }
