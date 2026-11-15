@@ -2267,13 +2267,18 @@
     }
     // Voice match: a wake that couldn't be checked checks the first command.
     if (audio && wakeTurn) {
-      wakeTurn = false;
       const heard = await window.IzukiVoiceMatch?.check?.(audio);
-      if (heard && !heard.ok) {
-        bubble("izuki", heard.why === "unclear"
-          ? "I couldn't hear that clearly enough to check it was you — say it again?"
-          : "That didn't sound like you, so I didn't act on it. (Voice match is on in Settings → Phone.)", { error: true });
+      if (heard && !heard.ok && heard.why === "unclear") {
+        // Still unchecked: the next thing said is checked too.
+        bubble("izuki", "I couldn't hear that clearly enough to check it was you — say it again?", { error: true });
         if (talking) listen();
+        return;
+      }
+      wakeTurn = false;
+      if (heard && !heard.ok) {
+        // Not the taught voice: the wake ends here, nothing more is heard.
+        bubble("izuki", "That didn't sound like you, so I didn't act on it. (Voice match is on in Settings → Phone.)", { error: true });
+        if (talking) stopTalking();
         return;
       }
     }

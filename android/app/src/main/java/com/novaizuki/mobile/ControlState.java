@@ -107,4 +107,24 @@ final class ControlState {
   static boolean risky(String label) {
     return RISKY.matcher(norm(label)).find();
   }
+
+  /**
+   * May this label be pressed for this request? A risky label only when the
+   * request names every risky action in it: "Order" never presses
+   * "Delete order"; "delete order" does.
+   */
+  static boolean riskyAllowed(String label, String query) {
+    java.util.regex.Matcher m = RISKY.matcher(norm(label));
+    while (m.find()) {
+      if (!wholeWord(query, m.group(1))) return false;
+    }
+    return true;
+  }
+
+  private static final Pattern SEARCHY = Pattern.compile("search|find|query|url|address|omnibox|location bar|go to");
+
+  /** Words around a text box that say it's for searching or an address. */
+  static boolean searchy(String words) {
+    return SEARCHY.matcher(norm(words)).find();
+  }
 }

@@ -280,7 +280,8 @@ public class IzukiControlPlugin extends Plugin {
     JSObject result = new JSObject();
     result.put("phrase", pendingWake);
     pendingWake = "";
-    result.put("voice", wakeByVoice && System.currentTimeMillis() - wakeAudioAt < 30_000);
+    // Whether it was a voice outlives its audio: an expired clip still means "check the command".
+    result.put("voice", wakeByVoice);
     result.put("audio", takeWakeAudio());
     wakeByVoice = false;
     call.resolve(result);

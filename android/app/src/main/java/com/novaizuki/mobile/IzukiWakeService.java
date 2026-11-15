@@ -154,7 +154,7 @@ public class IzukiWakeService extends Service implements RecognitionListener {
 
   static void start(Context context) {
     IzukiWakeService s = self;
-    if (s != null) { s.main.post(s::startAgain); return; }
+    if (s != null && !s.stopping) { s.main.post(s::startAgain); return; }
     Intent intent = new Intent(context, IzukiWakeService.class).setAction(ACTION_START);
     if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent);
     else context.startService(intent);
@@ -260,6 +260,8 @@ public class IzukiWakeService extends Service implements RecognitionListener {
       shutDown(true);
       return START_NOT_STICKY;
     }
+    // A start that arrived while stopping: this instance carries on.
+    stopping = false;
     try {
       startInForeground("Starting “Hey Nova”…");
     } catch (Exception e) {
@@ -286,6 +288,8 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   private void startAgain() {
     getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_WAKE, true).apply();
     enabled = true;
+    stopping = false;
+    if (terminal) { terminal = false; retryAt = 0; gate.reset(); }
     if (!SpeechRecognizer.isRecognitionAvailable(this)) {
       fail(WakeGate.Failure.UNAVAILABLE, "Android's speech recognition isn't available on this phone.");
       return;
@@ -312,11 +316,22 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     arm();
   }
 
+  /** Set while stopping: a start now goes through Android (a fresh start), not this instance. */
+  private volatile boolean stopping = false;
+
+  /** This service's own timers; never the queued start/stop commands. */
+  private void cancelTimers() {
+    main.removeCallbacks(rearm);
+    main.removeCallbacks(sessionTimeout);
+    main.removeCallbacks(handoffTimeout);
+  }
+
   private void shutDown(boolean byPerson) {
     if (byPerson) getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_WAKE, false).apply();
+    stopping = true;
     enabled = false;
     move(WakeGate.State.STOPPING);
-    main.removeCallbacksAndMessages(null);
+    cancelTimers();
     endSession();
     closeMic();
     destroyRecognizer();
@@ -328,7 +343,7 @@ public class IzukiWakeService extends Service implements RecognitionListener {
 
   @Override public void onDestroy() {
     enabled = false;
-    main.removeCallbacksAndMessages(null);
+    cancelTimers();
     endSession();
     closeMic();
     destroyRecognizer();
@@ -366,6 +381,22 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     if (!enabled) return;
     long now = SystemClock.elapsedRealtime();
     if (state == WakeGate.State.HEARING) endSession();
+    // Stopped after repeated failures: only "Try again" (or switching it
+    // back on) starts it — not opening or leaving Izuki.
+    if (terminal) {
+      closeMic();
+      move(WakeGate.State.ERROR);
+      showState();
+      return;
+    }
+    // Still backing off: keep the deadline; listen again only after it.
+    if (retryAt > now && !appInFront && now >= callHoldUntil) {
+      closeMic();
+      move(WakeGate.State.ERROR);
+      showState();
+      main.postDelayed(rearm, retryAt - now + 50);
+      return;
+    }
     if (appInFront || now < callHoldUntil) {
       closeMic();
       noteText = appInFront ? "Paused while Izuki is open — it listens again when you leave." : "Paused during a call.";
@@ -397,12 +428,22 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   }
 
   /** A failure: back off and try again, or stop with the reason. Never a tight loop. */
+  /** Stopped after repeated failures; cleared only by an explicit start or retry. */
+  private boolean terminal = false;
+
   private void fail(WakeGate.Failure failure, String why) {
     endSession();
     closeMic();
+    // The session that failed may have been the last of the budget: rest
+    // after it, as a completed one would, instead of "armed" but refusing.
+    if (budgetSpent) {
+      synchronized (gate) { gate.rest(SystemClock.elapsedRealtime()); }
+      budgetSpent = false;
+    }
     long delay = gate.after(failure);
     String reason = why != null ? why : WakeGate.say(failure);
     if (delay < 0) {
+      terminal = true;
       remember(reason);
       noteText = "“Hey Nova” stopped: " + reason + " Tap to try again.";
       move(WakeGate.State.ERROR);
@@ -631,6 +672,7 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     endSession();
     if (budgetSpent) {
       synchronized (gate) { gate.rest(SystemClock.elapsedRealtime()); }
+      budgetSpent = false;
       log("resting: lots of speech nearby");
     }
     arm();
@@ -717,7 +759,11 @@ public class IzukiWakeService extends Service implements RecognitionListener {
       finishSession();
       return;
     }
-    if (failure == WakeGate.Failure.SILENCE) { finishSession(); return; }
+    if (failure == WakeGate.Failure.SILENCE) {
+      synchronized (gate) { gate.after(WakeGate.Failure.SILENCE); }
+      finishSession();
+      return;
+    }
     fail(failure, null);
   }
 

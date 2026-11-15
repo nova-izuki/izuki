@@ -175,11 +175,17 @@
         box = boxIn(screen);
       }
     }
-    if (!box) throw new Error("I can't see a text box on this screen, and no Search button opened one. Open the search field, then say the request again.");
     assertRunning();
-    await n.act({ op: "click", n: box.n });
-    assertRunning();
-    const result = await n.act({ op: "type", text, n: box.n });
+    // A focused box the listing missed (deep in a page, or past its limit)
+    // still takes the words: n = 0 types into the focused field.
+    if (box) {
+      await n.act({ op: "click", n: box.n });
+      assertRunning();
+    }
+    const result = await n.act({ op: "type", text, n: box ? box.n : 0 });
+    if (!box && result?.reason === "no-box") {
+      throw new Error("I can't see a text box on this screen, and no Search button opened one. Open the search field, then say the request again.");
+    }
     if (!result?.done) {
       throw new Error(n.why?.(result, "") || `I found the text box but couldn't type in it (${result?.reason || "Android gave no reason"}).`);
     }

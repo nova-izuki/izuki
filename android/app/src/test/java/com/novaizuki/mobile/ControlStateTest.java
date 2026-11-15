@@ -60,6 +60,20 @@ public class ControlStateTest {
     assertEquals(0, ControlState.bestLabel(Arrays.asList("Wi‑Fi  calling", "Wi-Fi"), "“Wi‑Fi calling”"));
   }
 
+  @Test public void aRiskyActionMustBeTheOneNamed() {
+    assertFalse("“Order” never presses “Delete order”", ControlState.riskyAllowed("Delete order", "Order"));
+    assertTrue(ControlState.riskyAllowed("Delete order", "delete order"));
+    assertTrue(ControlState.riskyAllowed("Send", "tap send"));
+    assertFalse(ControlState.riskyAllowed("Buy now", "now"));
+    assertTrue("a harmless label needs nothing", ControlState.riskyAllowed("Search", "search"));
+  }
+
+  @Test public void onlySearchBoxesGetEnter() {
+    assertTrue(ControlState.searchy("Search YouTube com.google.android.youtube:id/search_edit_text"));
+    assertTrue(ControlState.searchy("com.android.chrome:id/url_bar"));
+    assertFalse("a chat composer never gets Enter", ControlState.searchy("Message com.whatsapp:id/entry android.widget.EditText"));
+  }
+
   @Test public void riskyControlsNeedTheirNameInTheRequest() {
     assertTrue(ControlState.risky("Send"));
     assertTrue(ControlState.risky("Buy now"));

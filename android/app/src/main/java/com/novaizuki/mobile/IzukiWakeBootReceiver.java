@@ -12,16 +12,18 @@ import android.os.Build;
 /**
  * Boot only brings the listener back if the switch was explicitly left on.
  *
- * Android 14+ won't let a microphone service start from the background (and
- * Android 15 refuses it from boot outright): trying used to fail silently and
- * looked like the switch was on while nothing listened. There a quiet
+ * From Android 11 a microphone service started in the background can't
+ * hear (and Android 14+ refuses to start it): trying used to fail silently
+ * and looked like the switch was on while nothing listened. There a quiet
  * notification says so instead, and opening Izuki starts it again.
  */
 public class IzukiWakeBootReceiver extends BroadcastReceiver {
   @Override public void onReceive(Context context, Intent intent) {
     if (intent == null || !Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
     if (!IzukiWakeService.wanted(context)) return;
-    if (Build.VERSION.SDK_INT < 34) {
+    // From Android 11, a foreground service started in the background gets
+    // no microphone, even when it starts: only older phones restart here.
+    if (Build.VERSION.SDK_INT < 30) {
       try { IzukiWakeService.start(context); return; } catch (Exception ignored) { }
     }
     tellToOpen(context);

@@ -95,6 +95,10 @@ public class IzukiAccessibilityService extends AccessibilityService {
   }
 
   @Override public void onAccessibilityEvent(AccessibilityEvent event) {
+    // A new screen with the orb up: if it's Android Settings, the orb goes.
+    if (event != null && event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && orbView != null) {
+      ui.post(settingsGuard);
+    }
     // Only the paywall guard listens, and only to "a new screen opened".
     if (!watching || event == null || event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
     CharSequence pkg = event.getPackageName();
@@ -350,7 +354,15 @@ public class IzukiAccessibilityService extends AccessibilityService {
   private static void press(AccessibilityNodeInfo node, String matched, boolean preferTouch, Consumer<JSONObject> done) {
     node.refresh();
     if (!node.isVisibleToUser()) { done.accept(result(false, null, "hidden")); return; }
-    try { node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.getId()); } catch (Exception ignored) { }
+    boolean revealed = false;
+    try { revealed = node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.getId()); } catch (Exception ignored) { }
+    if (revealed) {
+      // It may have scrolled: let it settle, then read the node again — a
+      // node's bounds are a snapshot, and a stale one taps the wrong thing.
+      try { Thread.sleep(250); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+      node.refresh();
+      if (!node.isVisibleToUser()) { done.accept(result(false, null, "hidden")); return; }
+    }
     AccessibilityNodeInfo target = pressable(node);
     AccessibilityNodeInfo used = target != null ? target : node;
     // A WebView button may report itself disabled while its HTML parent is
@@ -376,8 +388,9 @@ public class IzukiAccessibilityService extends AccessibilityService {
     // the real control and bubbles to its row. Fall back to the parent only
     // when the label has no usable bounds.
     Rect b = new Rect();
+    node.refresh();
     node.getBoundsInScreen(b);
-    if (b.isEmpty()) used.getBoundsInScreen(b);
+    if (b.isEmpty()) { used.refresh(); used.getBoundsInScreen(b); }
     if (b.isEmpty()) { JSONObject r = result(false, null, "no-bounds"); put(r, "matched", matched); done.accept(r); return; }
     gesture("tap", b.exactCenterX(), b.exactCenterY(), 0, 0, 60, (touch) -> {
       put(touch, "matched", matched);
@@ -423,6 +436,8 @@ public class IzukiAccessibilityService extends AccessibilityService {
     if (!node.isEditable()) {
       AccessibilityNodeInfo box = node.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
       if (box != null) node = box;
+      // The box actually typed into: never a password field.
+      if (node.isPassword()) return result(false, null, "password");
     }
     Bundle args = new Bundle();
     args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, words);
@@ -539,7 +554,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
     int best = ControlState.bestLabel(labels, q);
     if (best < 0) { done.accept(result(false, null, "not-found")); return; }
     String matched = labels.get(best);
-    if (ControlState.risky(matched) && !ControlState.risky(q)) {
+    if (!ControlState.riskyAllowed(matched, q)) {
       JSONObject r = result(false, null, "needs-person");
       put(r, "matched", matched);
       done.accept(r);
@@ -584,7 +599,10 @@ public class IzukiAccessibilityService extends AccessibilityService {
     AccessibilityNodeInfo root = appRoot(service);
     if (root == null) { done.accept(result(false, null, "no-window")); return; }
     AccessibilityNodeInfo node = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
-    if (node != null && Build.VERSION.SDK_INT >= 30
+    // Android doesn't expose a box's Enter action (Search vs Send), so Enter
+    // is only pressed in a box that says it's for searching or an address;
+    // a chat composer gets the Search/Go control below, or nothing.
+    if (node != null && Build.VERSION.SDK_INT >= 30 && looksLikeSearch(node)
         && node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.getId())) {
       done.accept(result(true, "enter", null));
       return;
@@ -597,6 +615,21 @@ public class IzukiAccessibilityService extends AccessibilityService {
       if (best >= 0 && ControlState.wholeWord(labels.get(best), word)) { press(nodes.get(best), labels.get(best), preferTouch(nodes.get(best), service), done); return; }
     }
     done.accept(result(false, null, "no-search-control"));
+  }
+
+  /** A search or address box: its hint, id, description or a near parent says so. */
+  private static boolean looksLikeSearch(AccessibilityNodeInfo box) {
+    AccessibilityNodeInfo n = box;
+    for (int i = 0; i < 4 && n != null; i++) {
+      StringBuilder words = new StringBuilder();
+      if (Build.VERSION.SDK_INT >= 26 && n.getHintText() != null) words.append(n.getHintText()).append(' ');
+      if (n.getViewIdResourceName() != null) words.append(n.getViewIdResourceName()).append(' ');
+      if (n.getContentDescription() != null) words.append(n.getContentDescription()).append(' ');
+      if (n.getClassName() != null) words.append(n.getClassName()).append(' ');
+      if (ControlState.searchy(words.toString())) return true;
+      n = n.getParent();
+    }
+    return false;
   }
 
   // ---- a picture of the screen ------------------------------------------------
