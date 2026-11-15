@@ -514,7 +514,16 @@ const QUIZ_PROMPT: &str = "QUIZ OR TEST IN PROGRESS: the student answers it. Exp
 /// remains a separate mode; answering never authorizes a click or submission.
 pub(crate) fn direct_answer_requested(prompt: &str) -> bool {
     let latest = prompt.split("\n\n(The conversation just before,").next().unwrap_or(prompt);
-    let s = latest.to_lowercase();
+    let s = latest.replace('’', "'").to_lowercase();
+    // The front-end wraps the request in instructions that say "do not click
+    // or submit". Those prohibitions must not look like a request to act.
+    // When the wrapper quotes the person, judge the action words from that
+    // quote; otherwise judge the whole request.
+    let asked = latest
+        .split_once("They said: \"")
+        .and_then(|(_, rest)| rest.split_once('"').map(|(said, _)| said))
+        .unwrap_or(latest)
+        .to_lowercase();
     if ["don't answer", "do not answer", "without the answer", "coach me", "tutor mode", "teacher mode"].iter().any(|p| s.contains(p)) {
         return false;
     }
@@ -525,10 +534,10 @@ pub(crate) fn direct_answer_requested(prompt: &str) -> bool {
     const PICKS_OR_SENDS: [&str; 11] = [
         "submit", "select", "choose", "pick", "tick", "check the box", "mark it", "finish the test", "end test", "hand in", "turn it in",
     ];
-    if PICKS_OR_SENDS.iter().any(|w| s.contains(w)) {
+    if PICKS_OR_SENDS.iter().any(|w| asked.contains(w)) {
         return false;
     }
-    if crate::companion::asks_to_do(latest) && !["next", "previous", "back", "forward", "carry on", "keep going"].iter().any(|w| s.contains(w)) {
+    if crate::companion::asks_to_do(&asked) && !["next", "previous", "back", "forward", "carry on", "keep going"].iter().any(|w| s.contains(w)) {
         return false;
     }
     // Not a list of exact sentences: people don't say "what is the answer",
@@ -1025,8 +1034,9 @@ fn ask_model(
                 (true, true) => DIRECT_ANSWER_PROMPT,
                 (true, false) => QUIZ_PROMPT,
                 // Practice: answered on the page. Anywhere else, "answer this"
-                // is left to the request itself (it may mean "tell me").
+                // is still a factual answer: say it, don't act on the page.
                 (false, true) if on_practice => ANSWER_ON_PAGE_PROMPT,
+                (false, true) => DIRECT_ANSWER_PROMPT,
                 _ => "",
             }
             + if wants_pointing(&session.prompt) { POINTING_PROMPT } else { "" }
@@ -6386,10 +6396,16 @@ mod speed_tests {
         assert!(super::direct_answer_requested("Answer the question on my screen directly."));
         assert!(super::direct_answer_requested("which option is correct?"));
         assert!(!super::direct_answer_requested("Coach me but don't answer the question"));
+        assert!(!super::direct_answer_requested("Don’t answer the question; explain it instead"));
         // How the owner actually asks, not a list of exact sentences.
         assert!(super::direct_answer_requested("help me ans the quiz and explain"));
         assert!(super::direct_answer_requested("help me answer this"));
         assert!(super::direct_answer_requested("answer it and explain why"));
+        // The real front-end wrapper says "do not click or submit"; that
+        // prohibition must not turn a direct answer into a quiz coach.
+        assert!(super::direct_answer_requested(
+            "Answer the question on my screen directly. They said: \"answer it\". Give the answer first. Do not start a walkthrough, offer Notes, or click or submit anything."
+        ));
         assert!(super::direct_answer_requested("which one is correct"));
         // Working through a quiz: answering and moving on is allowed, and the
         // step filter below keeps it to Next/Previous.

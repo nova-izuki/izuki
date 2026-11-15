@@ -6,7 +6,7 @@ import { useDictation } from "../hooks/useDictation";
 import { isNoteStudyPrompt } from "../lib/notes";
 import { AIR_SLOTS, actionLabel, airBindings, parseAirVoice, slotLabel } from "../lib/airActions";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
-import { answersInBackground, cancelChat, chatLane, directionsTask, looksLikeDirections, needsApps, needsScreen, recentHistory, remember, wantsBackground, wantsToWatch, type LaneResult } from "../lib/conversation";
+import { answerOnScreenPrompt, answersInBackground, cancelChat, chatLane, directionsTask, looksLikeDirections, MISSION_ADD, needsApps, needsScreen, recentHistory, remember, TUTOR_START, wantsBackground, wantsDirectAnswer, wantsToWatch, type LaneResult } from "../lib/conversation";
 import { speakable } from "../lib/speakable";
 import { parseInstant, type Instant } from "../lib/instant";
 import { isEcho, noteSaid, noteStillSaying } from "../lib/echo";
@@ -603,18 +603,15 @@ function chime(up = true) {
 /** "ans", "answer?", "what's the answer", "answer pls" — on its own, that's
  * the question on the screen. */
 function answerOnScreen(t: string): string {
-  const bare = t.trim().replace(/[?.!]+$/, "").toLowerCase();
-  return /^(?:(?:the|what'?s the|whats the|give me the|tell me the|say the)\s+)?answers?(?:\s+(?:it|this|that|please|pls|now|quick|fast))?$/.test(bare)
-    ? "Answer the question on my screen directly. Give the answer first (including the option label if clearly visible), then explain why in one or two sentences. If the question or options are unreadable, say what you need to see. Do not start a walkthrough, offer Notes, or click or submit anything."
-    : t;
+  // Bare "answer" and the many ways people point at the question in front of
+  // them ("answer this", "what's the answer to number 3", "give ans").
+  return wantsDirectAnswer(t) ? answerOnScreenPrompt(t) : t;
 }
 
 // ---- teacher mode -----------------------------------------------------------
 // A lesson, not an answer key: Izuki explains each question with the pen,
 // lets the student answer, says whether they're right and why, and moves on
 // when they're ready. It never picks answers by itself.
-const TUTOR_START =
-  /^(?:(?:hey |ok |okay )?(?:nova|izuki|atlas)[,. ]*)?(?:please )?(?:(?:start|turn on|use|go into|switch to) )?(?:teacher|tutor|teaching) mode\b|^(?:please )?teach me (?:this|the|my) (?:questions?|worksheet)\b|^(?:be|act as|act like) my (?:teacher|tutor)\b|^help me (?:through|with) (?:this|the|my) worksheet\b/i;
 /** Asked for it to be kept: "…and save it to my notes", "put it in my notes", "take notes". */
 const SAVE_TO_NOTES = /\b(?:save|put|keep|add|store|write)\b.*\b(?:my|izuki|the|study)\s+notes?\b|\btake\s+(?:some\s+)?notes\b/i;
 /** "Don't save it to my notes", "no notes": the opposite (as notes.rs reads it). */
@@ -954,7 +951,10 @@ export function VoiceEngine() {
     // them. Matching commands against `t` once turned the Study log off when
     // someone asked "what's the answer" (the built instruction says "Notes").
     const own = expandShortWords(text.trim());
-    const t = answerOnScreen(own);
+    // While dictating, every word is content for the focused box — never a
+    // request to look at the screen. Expanding "answer question 5" here would
+    // type the whole instruction into their document.
+    const t = dictating || isNoteStudyPrompt(own) || MISSION_ADD.test(own) ? own : answerOnScreen(own);
     if (!t) return;
     // "What are you doing?" — the real answer, from the task actually
     // running (never made up). Asked mid-task, it doesn't stop the task.
@@ -1095,7 +1095,7 @@ export function VoiceEngine() {
 
     // Missions (Rest mode): "add to my missions: check my assignments",
     // "start my missions" / "rest mode", "what's on my missions".
-    const missionAdd = t.match(/^(?:please\s+)?(?:add|put)\s+(?:this\s+)?(?:to|on)\s+(?:my\s+)?(?:missions?|mission list|rest mode)[:,\s-]+(.{3,})$/i);
+    const missionAdd = t.match(MISSION_ADD);
     // Only a clear "start my missions" / "start rest mode" — never a passing "do the mission".
     const missionGo = /^(?:please\s+)?(?:start|run|begin|do)\s+(?:my\s+missions?|the\s+missions|missions)\b|^(?:please\s+)?(?:start|turn\s+on|go\s+into|switch\s+to)\s+rest\s+mode\b/i.test(t);
     if (missionAdd || missionGo) {
