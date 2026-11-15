@@ -697,7 +697,14 @@ fn done_line(step: &ActionStep) -> Option<String> {
 /// first; `dry_run` animates nothing at the OS level. Every step that really
 /// ran goes on "What Izuki did".
 pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -> Result<String> {
-    let done = execute_step(step, move_ms, magnetic, dry_run);
+    execute_in(step, move_ms, magnetic, dry_run, None)
+}
+
+/// Like [`execute`], but a direct keyboard shortcut is only sent if the
+/// window in front is still `planned_window` (the one the step was planned
+/// for), checked immediately before the keys go out.
+pub fn execute_in(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool, planned_window: Option<isize>) -> Result<String> {
+    let done = execute_step(step, move_ms, magnetic, dry_run, planned_window);
     if !dry_run && done.is_ok() {
         if let Some(line) = done_line(step) {
             crate::actlog::record("screen", &line);
@@ -706,7 +713,7 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     done
 }
 
-fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -> Result<String> {
+fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool, planned_window: Option<isize>) -> Result<String> {
     // Never act on the lock screen: a keystroke there goes into the PIN or
     // password box.
     if crate::uia::screen_locked() {
@@ -1185,6 +1192,17 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
         }
         Intent::Key => {
             if let Some(k) = &step.key {
+                // A direct shortcut goes to whatever is in front right now.
+                // The step was planned for a particular window: if the person
+                // switched (or one of Izuki's own overlays took focus), stop
+                // instead of pressing it into an unrelated app.
+                if let Some(planned) = planned_window {
+                    if crate::uia::foreground_hwnd() != Some(planned) {
+                        return Err(anyhow!(
+                            "target_changed: the window in front is not the one this shortcut was planned for — taking a fresh look"
+                        ));
+                    }
+                }
                 // Look at the app in front before the keys, so the shortcut's
                 // effect can be told from nothing happening. Only for keys that
                 // will be judged: Enter, Tab or the arrows cost no capture.

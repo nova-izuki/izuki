@@ -3064,25 +3064,17 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                         && !asked_for_window(&WORK_TASK.lock().1, "minimise"))
                     .then(uia::front_raw)
                     .flatten();
-                    // A keyboard shortcut is sent to whatever window is in
-                    // front. After a hand-back, the person may also have
-                    // switched windows: never send it into the wrong one.
-                    // (Behind a held window, execute_behind sends keys to that
-                    // window through Windows itself: only a direct press needs
-                    // the foreground check.)
-                    if step.action == Intent::Key && uia::working_behind().is_none() {
-                        if let Some(planned) = uia::held_window() {
-                            if uia::front_raw().is_some_and(|front| front != planned) {
-                                *STEP_SNAG.lock() = Some(
-                                    "target_changed: the window in front is not the one this shortcut was planned for — take a fresh look before pressing it"
-                                        .into(),
-                                );
-                                request_step_replan();
-                                return false;
-                            }
-                        }
-                    }
-                    match automation::execute(step, move_ms, settings.magnetic_hand, settings.dry_run)
+                    // Carry the window this step was planned for into the
+                    // executor: a direct shortcut is checked against it
+                    // immediately before the keys are sent, so a window switch
+                    // after a hand-back cannot receive it.
+                    match automation::execute_in(
+                        step,
+                        move_ms,
+                        settings.magnetic_hand,
+                        settings.dry_run,
+                        uia::held_window(),
+                    )
                     {
                         Ok(detail) => {
                             // Opening something has its own result check: it can
