@@ -155,6 +155,17 @@ is("teach me goes to the screen", mem.needsScreen("Teach me"), true);
 is("so does doing it together", mem.needsScreen("do it with me"), true);
 is("but an explicit background lesson stays in the background", mem.needsScreen("Teach me about firewalls in the background"), false);
 is("a plain question doesn't", mem.needsScreen("what is a firewall"), false);
+is("but 'answer this' is about the question on screen", mem.needsScreen("answer this"), true);
+is("and 'what's the answer to number 3' too", mem.needsScreen("what's the answer to number 3"), true);
+is("a general factual question still stays in chat", mem.needsScreen("what is the capital of France"), false);
+is("the answer request is recognised", mem.answersOnScreenQuestion("answer this question"), true);
+is("so is a short 'give ans'", mem.answersOnScreenQuestion("give me the answer"), true);
+is("and bare 'give ans'", mem.answersOnScreenQuestion("give ans"), true);
+is("and 'answer question 5'", mem.answersOnScreenQuestion("answer question 5"), true);
+is("and 'can you answer this'", mem.answersOnScreenQuestion("can you answer this"), true);
+is("and 'answer all of them'", mem.answersOnScreenQuestion("answer all of them"), true);
+is("an email is not a quiz answer", mem.answersOnScreenQuestion("answer my email"), false);
+is("the prompt never submits", /Do not .*submit/i.test(mem.answerOnScreenPrompt("answer this")), true);
 
 fresh();
 mem.remember("user", "what's the weather in Lagos");
@@ -197,6 +208,29 @@ const cases = JSON.parse(fs.readFileSync(path.join(__dirname, "opens-app-cases.j
 for (const t of cases.opens) is(`"${t}" opens the app`, mem.opensAnApp(t) && !mem.needsApps(t), true);
 for (const t of cases.account) is(`"${t}" isn't just opening the app`, mem.opensAnApp(t), false);
 for (const t of ["read my emails", "what's in my inbox", "check my outlook"]) is(`"${t}" is about the account`, mem.needsApps(t), true);
+
+fresh();
+is("a refusal of the answer is not a direct-answer request", mem.wantsDirectAnswer("Don't answer the question; explain it instead"), false);
+is("a curly-apostrophe refusal is respected too", mem.wantsDirectAnswer("Don’t answer the question; explain it instead"), false);
+is("asking to skip the working is still an answer", mem.wantsDirectAnswer("Answer question 5, don't show your work"), true);
+is("an article before the answer still counts as a refusal", mem.wantsDirectAnswer("Explain how to answer the question, but don't give me an answer"), false);
+is("a qualifier before the answer is still a refusal", mem.wantsDirectAnswer("Explain how to answer the question, but don't give me the final answer"), false);
+is("a normal answer request is still direct", mem.wantsDirectAnswer("answer it"), true);
+is("a mission-add stays a mission", mem.MISSION_ADD.test("add to my missions: answer question 5"), true);
+
+for (const request of [
+  "Start tutor mode and explain how to answer question 5",
+  "Turn on teacher mode and answer question 5",
+  "Please teach me this question and answer the question with me",
+  "Walk me through how to answer question 5",
+  "Coach me through how to answer question 5",
+  "Explain how to answer question 5",
+  "Answer question 5 without giving the correct answer",
+  "Answer question 5 but never show the exact answer",
+]) is(`coaching/refusal stays intact: ${request}`, mem.wantsDirectAnswer(request), false);
+is("combined tutor command still reaches teacher mode", mem.TUTOR_START.test("Start tutor mode and explain how to answer question 5"), true);
+is("answer then explanation remains direct", mem.wantsDirectAnswer("Answer question 5 and explain why"), true);
+is("do not explain is not a refusal of the answer", mem.wantsDirectAnswer("Answer question 5, do not explain how to solve it"), true);
 
 console.log("");
 console.log(`${pass} passed, ${fail} failed`);

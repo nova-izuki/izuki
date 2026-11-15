@@ -20,7 +20,8 @@ import { attachmentContext, CHAT_FILE_TYPES, keepDocumentText, readChatFile, typ
 import { rememberPrompt } from "../../lib/recentPrompts";
 import { chatTitle, orderSessions, pinSession, rememberSession, removeSession, renameSession, searchSessions, startingMessages, timeAgo, type ChatSession, type LiveCopy } from "../../lib/chatHistory";
 import { clarificationFor, friendlyProviderError, providerRefusal, PROVIDER_REFUSAL_NOTE } from "../../lib/chatIntent";
-import { forgetHistory, looksLikeDirections, needsApps, opensAnApp, recentHistory, shareHistory } from "../../lib/conversation";
+import { isNoteStudyPrompt } from "../../lib/notes";
+import { answerOnScreenPrompt, answersOnScreenQuestion, forgetHistory, looksLikeDirections, MISSION_ADD, needsApps, opensAnApp, recentHistory, shareHistory, wantsDirectAnswer } from "../../lib/conversation";
 
 /**
  * Izuki as a plain chat companion — no screen, no mouse. Ask anything,
@@ -920,7 +921,9 @@ export function ChatTab() {
         }
       }
       const hasChatContext = msgs.some((m) => m.role === "user" && m.content.trim() && !clarificationFor(m.content, false)) || images.length > 0 || attached.length > 0;
-      const ask = !note && !here ? clarificationFor(t, hasChatContext) : null;
+      // "answer" / "answer this" is already a complete request: don't stop a
+      // first turn at "Which question do you mean?" before the answer branch.
+      const ask = !note && !here && !answersOnScreenQuestion(t) ? clarificationFor(t, hasChatContext) : null;
       if (ask) {
         setMsgs((m) => [...m, { role: "user", content: t }, { role: "assistant", content: ask }]);
         return;
@@ -1034,6 +1037,33 @@ export function ChatTab() {
         }
         return;
       }
+      // "Answer this" / "what's the answer to number 3": read the actual
+      // question on screen. This used to fall through to the Study-log
+      // fallback and reply "Study log off. What's already saved stays in
+      // Notes." instead of answering.
+      if (!note && !here && !images.length && !attached.length && !isNoteStudyPrompt(t) && !MISSION_ADD.test(t) && wantsDirectAnswer(t)) {
+        // The user turn and its reply bubble were already added above. Ask the
+        // same screen agent the voice path uses, then put its answer in this
+        // bubble: calling sendChatCommand() here would speak the answer while
+        // leaving this chat stuck on "Reading…" forever.
+        setLast({ content: "Reading the question on your screen… 👀", status: undefined });
+        // Stop calls finish.current before clearing the stream, so this can
+        // replace the placeholder even though the late native result is ignored.
+        const finishReading = (why: string) => setLast({ content: why || "Stopped.", status: undefined });
+        finish.current = finishReading;
+        try {
+          const plan = await api.submitVoiceCommand(answerOnScreenPrompt(t), history);
+          if (streamId.current !== id) return;
+          setLast({ content: plan.summary?.trim() || "I couldn't read a clear answer on this screen. Give me a clearer view and ask again.", status: undefined });
+        } catch (e) {
+          if (streamId.current !== id) return;
+          setLast({ content: `I couldn't read the question — ${String(e)}`, failed: true, retry: true, status: undefined });
+        } finally {
+          if (finish.current === finishReading) finish.current = null;
+          if (streamId.current === id) { streamId.current = null; setBusy(false); }
+        }
+        return;
+      }
       // The Later list ("remind me later I'm buying…", "what's on my list"): done at once.
       if (!attached.length && (LATER.test(t) || (MAIL_ASK.test(t) && wantsApps(t)) || INSTANT_ASK.test(t) || STORAGE_ASK.test(t) || STUDY_ASK.test(t))) {
         const said = await api.instantCommand(t).catch(() => null);
@@ -1045,8 +1075,8 @@ export function ChatTab() {
           if (streamId.current === id) { streamId.current = null; setBusy(false); }
           return;
         }
-        if (STUDY_ASK.test(t)) {
-          setLast({ content: "Open the quiz or assignment in your browser, then ask again — I can walk you through it, but I won't answer or submit it for you.", status: undefined });
+        if (STUDY_ASK.test(t) && !answersOnScreenQuestion(t)) {
+          setLast({ content: "Open the quiz or assignment in your browser, then ask again — I can answer the question you point at, or walk you through it. I won't submit it for you.", status: undefined });
           if (streamId.current === id) { streamId.current = null; setBusy(false); }
           return;
         }

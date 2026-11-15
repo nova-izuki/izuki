@@ -197,11 +197,65 @@ const APPS = new RegExp(
 const PRACTICAL =
   /\b(teach me|walk me through|guide me|help me learn|show me how|do (it|this|that) with me|do it together|take turns|let me try|i'?ll do it myself)\b/i;
 
+/**
+ * "Answer this", "what's the answer to number 3", "give me the answer":
+ * a question about the question on screen, not a request to explain the
+ * Study log. These go to the screen agent so it can actually read the
+ * choices; a plain factual question ("what is a firewall") stays in chat.
+ */
+const ON_SCREEN_ANSWER =
+  /\b(?:answers?|ans|solve)\s+(?:(?:the|this|that|these|those)\s+)?(?:questions?|quiz|test|problem|one|number\s*\d+|q\s*\d+|#\s*\d+|options?|choices?|all(?:\s+of\s+them)?)\b|\b(?:what'?s|what\s+is|give\s+me|tell\s+me|show\s+me)\s+the\s+(?:correct\s+|right\s+)?(?:answer|option|one)\b|\b(?:can|could|would|will)\s+you\s+(?:answer|solve)\s+(?:it|this|that|these|those)\b/i;
+
+/** "Don't answer it", "without giving the answer": respect the refusal. */
+const DECLINES_DIRECT =
+  /(?:^|[^a-z])(?:don['’]?t|do not|never|without)\s+(?:(?:(?:the|an?)\s+)?answers?|(?:giv(?:e|ing)|tell|say|show)(?:\s+me)?\s+(?:(?:the|an?)\s+)?(?:(?!(?:work|steps?|reasoning|explanation|how|why)\b)[a-z]+\s+){0,2}answers?)(?:[^a-z]|$)/i;
+
+/** Shared with voice mode: preserve the command before answer conversion. */
+export const TUTOR_START =
+  /^(?:(?:hey |ok |okay )?(?:nova|izuki|atlas)[,. ]*)?(?:please )?(?:(?:start|turn on|use|go into|switch to) )?(?:teacher|tutor|teaching) mode\b|^(?:please )?teach me (?:this|the|my) (?:questions?|worksheet)\b|^(?:be|act as|act like) my (?:teacher|tutor)\b|^help me (?:through|with) (?:this|the|my) worksheet\b/i;
+
+const COACHES_ANSWER = /\b(?:coach me|explain how to|help me understand how to|(?:just|only) explain)\b/i;
+
+/** A direct answer is wanted, not a refusal or a "just explain it" request. */
+export function wantsDirectAnswer(text: string): boolean {
+  // Declining an explanation is still a request for the answer itself.
+  const coaching = text.replace(/\b(?:don['’]?t|do not|never|without)\s+(?:explain how to|show me how|walk me through|guide me|coach me)\b/gi, "");
+  return answersOnScreenQuestion(text) && !DECLINES_DIRECT.test(text) && !PRACTICAL.test(coaching) && !COACHES_ANSWER.test(coaching) && !TUTOR_START.test(text);
+}
+
+/** "add to my missions: answer question 5" must be saved, not read off-screen. */
+export const MISSION_ADD =
+  /^(?:please\s+)?(?:add|put)\s+(?:this\s+)?(?:to|on)\s+(?:my\s+)?(?:missions?|mission list|rest mode)[:,\s-]+(.{3,})$/i;
+
+export function answersOnScreenQuestion(text: string): boolean {
+  const t = text.trim();
+  const bare = t.replace(/[?.!]+$/, "").trim().toLowerCase();
+  if (/^(?:(?:the|what'?s the|whats the|give me the|tell me the|say the)\s+)?answers?(?:\s+(?:it|this|that|please|pls|now|quick|fast))?$/.test(bare)) {
+    return true;
+  }
+  // "give ans", "tell me the ans" and "ans it" are the same request.
+  if (/^(?:(?:can|could|would|will)\s+you\s+)?(?:(?:give|tell|say|show)\s+(?:me\s+)?(?:the\s+)?|(?:the\s+)?)(?:ans|answer)s?(?:\s+(?:it|this|that|please|pls|now|quick|fast))?$/.test(bare)) {
+    return true;
+  }
+  return ON_SCREEN_ANSWER.test(t);
+}
+
+/** The instruction that makes the screen agent answer (and never submit). */
+export function answerOnScreenPrompt(text: string): string {
+  return (
+    `Answer the question on my screen directly. They said: "${text.trim()}". ` +
+    "Give the answer first (including the option letter and its text when clearly visible), then explain why in one or two sentences. " +
+    "If the question or options are unreadable, say what you need to see. Do not start a walkthrough, offer Notes, or click or submit anything."
+  );
+}
+
 export function needsScreen(text: string): boolean {
   // The user's explicit preference wins: "teach me in the background" is
   // still a background request, not permission to take over the screen.
   if (wantsBackground(text) || answersInBackground(text)) return false;
   if (PRACTICAL.test(text)) return true;
+  // "Answer this" means the question in front of them, not one to guess at.
+  if (answersOnScreenQuestion(text)) return true;
   // "While I watch" / "on my screen" means the screen.
   if (wantsToWatch(text)) return true;
   return (SCREEN.test(text) && !/\b(remind me|set (a |an )?reminder)\b/i.test(text)) || looksLikeDirections(text);
